@@ -135,7 +135,7 @@ module.exports = {
     // Components with deliberate :global usage (rendered HTML from
     // external sources). These are exceptions, not cleanup targets.
     {
-      files: ['src/lib/components/Markdown.svelte', 'src/routes/(legal)/+layout.svelte'],
+      files: ['src/lib/components/Prose.svelte', 'src/lib/components/Markdown.svelte'],
       rules: {
         'selector-pseudo-class-disallowed-list': null,
         'selector-pseudo-class-no-unknown': null,
