@@ -12,7 +12,7 @@
 
 <h2>Facts Are Free</h2>
 <p>
-  Facts — such as release dates, player counts, manufacturer names, and design credits — is not
+  Facts — such as release dates, player counts, manufacturer names, and design credits — are not
   copyrightable. You are free to use the factual information in {SITE_NAME} for any purpose without restriction.
 </p>
 
