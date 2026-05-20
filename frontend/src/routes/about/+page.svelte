@@ -1,0 +1,56 @@
+<script lang="ts">
+  import { resolve } from '$app/paths';
+  import { SITE_NAME, pageTitle } from '$lib/constants';
+  import Prose from '$lib/components/Prose.svelte';
+</script>
+
+<svelte:head>
+  <title>{pageTitle('About')}</title>
+</svelte:head>
+
+<Prose>
+  <h1>About {SITE_NAME}</h1>
+
+  <p>
+    {SITE_NAME} is a collaborative encyclopedia for pinball knowledge: the machines, the people behind
+    each machine, the manufacturers, the history, the weird edge cases and the facts hiding in somebody's
+    memory or basement binder.
+  </p>
+
+  <section>
+    <h2>Why we're building it</h2>
+    <p>
+      Pinball has nearly a century of history spread across flyers, manuals, forums, collectors,
+      museums, operators, designers and half-remembered stories. We want a collaborative,
+      truth-seeking place where that knowledge can be collected, debated, corrected and made public.
+    </p>
+  </section>
+
+  <section>
+    <h2>Facts need footnotes</h2>
+    <p>
+      A lot of pinball facts come with asterisks. Who built what? Which company name counts? Was
+      this a prototype, remake, conversion, export version? Instead of pretending every question has
+      one simple answer, {SITE_NAME} is built on a system of claims, citations and sources, so disagreements
+      can be seen, discussed and resolved without losing the history underneath.
+    </p>
+  </section>
+
+  <section>
+    <h2>Relationship to The Flip</h2>
+    <p>
+      This site grew out of work for <a href="https://www.theflip.museum/">The Flip</a>, Chicago's
+      Playable Pinball Museum. Museums need good data to tell good stories. But this isn't only a
+      museum catalog. It's meant to be useful to players, enthusiasts, researchers, contributors,
+      collectors and anyone else who thinks pinball deserves better public memory.
+    </p>
+  </section>
+
+  <section>
+    <h2>Who started it</h2>
+    <p>
+      {SITE_NAME} was started by two friends building a thing we wished existed.
+      <a href={resolve('/about/people')}>Meet the people</a> who got it going.
+    </p>
+  </section>
+</Prose>
