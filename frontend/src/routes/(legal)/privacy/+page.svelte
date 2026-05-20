@@ -1,5 +1,6 @@
 <script lang="ts">
   import { SITE_NAME, pageTitle } from '$lib/constants';
+  import LastUpdated from '$lib/components/LastUpdated.svelte';
 </script>
 
 <svelte:head>
@@ -7,7 +8,7 @@
 </svelte:head>
 
 <h1>Privacy Policy</h1>
-<p class="last-updated">Last updated: March 2026</p>
+<LastUpdated>Last updated: March 2026</LastUpdated>
 
 <h2>How We Operate</h2>
 <p>

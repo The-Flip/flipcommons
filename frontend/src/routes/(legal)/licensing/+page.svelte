@@ -1,5 +1,6 @@
 <script lang="ts">
   import { SITE_NAME, pageTitle } from '$lib/constants';
+  import LastUpdated from '$lib/components/LastUpdated.svelte';
 </script>
 
 <svelte:head>
@@ -7,12 +8,12 @@
 </svelte:head>
 
 <h1>Licensing</h1>
-<p class="last-updated">Last updated: March 2026</p>
+<LastUpdated>Last updated: May 2026</LastUpdated>
 
 <h2>Facts Are Free</h2>
 <p>
-  Factual data in {SITE_NAME} — such as release dates, player counts, manufacturer names, and design credits
-  — is not copyrightable. You are free to use this information for any purpose without restriction.
+  Facts — such as release dates, player counts, manufacturer names, and design credits — is not
+  copyrightable. You are free to use the factual information in {SITE_NAME} for any purpose without restriction.
 </p>
 
 <h2>Text and Images Are Licensed Per-Source</h2>
