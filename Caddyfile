@@ -38,6 +38,37 @@ header {
 @fonts path /fonts/*
 header @fonts Cache-Control "public, max-age=31536000, immutable"
 
+# Short TTL on the deploy-version probe. SvelteKit writes the current
+# SHA to this path and the client polls it hourly (svelte.config.js
+# kit.version.pollInterval) to detect deploys. Without an explicit
+# header, Bunny applies its 30-day zone default and open tabs would
+# miss new deploys until the cache expires.
+#
+# CORS headers are required because the poll runs cross-origin once
+# kit.paths.assets points at the CDN — see node_modules/@sveltejs/kit
+# runtime/client/utils.js, which fetches `${assets}/_app/version.json`
+# with `pragma` and `cache-control` request headers. Both are non-
+# safelisted, which forces a browser preflight; without ACAO + an
+# Allow-Headers entry covering them, the preflight fails and version
+# polling silently breaks in every tab. Bunny passes preflights through
+# to Caddy verbatim, so handling them here is sufficient — the
+# dedicated handle below short-circuits OPTIONS to a 204 rather than
+# letting SvelteKit serve the full body on a preflight.
+@version path /_app/version.json
+header @version {
+	Cache-Control "public, max-age=60"
+	Access-Control-Allow-Origin "*"
+	Access-Control-Allow-Headers "Cache-Control, Pragma"
+	Access-Control-Max-Age "7200"
+}
+@version_preflight {
+	method OPTIONS
+	path /_app/version.json
+}
+handle @version_preflight {
+	respond 204
+}
+
 # XFF rewrite must live inside reverse_proxy: Caddy's reverse_proxy has
 # special handling for X-Forwarded-* headers and overrides any
 # site-level request_header mutations. header_up is proxy-aware and
