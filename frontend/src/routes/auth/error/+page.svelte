@@ -88,62 +88,16 @@
 
 <script lang="ts">
   import { page } from '$app/state';
-  import { SITE_TITLE } from '$lib/constants';
   import Button from '$lib/components/Button.svelte';
-  import Page from '$lib/components/Page.svelte';
+  import ErrorPage from '$lib/components/ErrorPage.svelte';
 
   const content = $derived(resolveAuthErrorContent(page.url.searchParams.get('reason')));
 </script>
 
-<svelte:head>
-  <title>{content.heading} — {SITE_TITLE}</title>
-</svelte:head>
-
-<Page width="narrow">
-  <div class="error-content">
-    <section class="error-card" role="alert">
-      <h1>{content.heading}</h1>
-      <p class="body">{content.body}</p>
-      <div class="cta-row">
-        {#if content.cta.reload}
-          <Button tag="a" href={content.cta.href} data-sveltekit-reload>{content.cta.label}</Button>
-        {:else}
-          <Button tag="a" href={content.cta.href}>{content.cta.label}</Button>
-        {/if}
-      </div>
-    </section>
-  </div>
-</Page>
-
-<style>
-  .error-content {
-    padding: var(--size-6) var(--size-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-6);
-  }
-
-  .error-card {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-4);
-    padding: var(--size-5);
-    border: 1px solid var(--color-border-soft);
-    border-radius: var(--radius-2);
-    background: var(--color-surface, transparent);
-  }
-
-  h1 {
-    margin: 0;
-    font-size: var(--font-size-3);
-  }
-
-  .body {
-    margin: 0;
-    color: var(--color-text-muted);
-  }
-
-  .cta-row {
-    display: flex;
-  }
-</style>
+<ErrorPage heading={content.heading} body={content.body}>
+  {#snippet cta()}
+    <Button tag="a" href={content.cta.href} data-sveltekit-reload={content.cta.reload || undefined}>
+      {content.cta.label}
+    </Button>
+  {/snippet}
+</ErrorPage>
