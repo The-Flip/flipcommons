@@ -18,7 +18,7 @@ from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import active_claims, claims_prefetch
-from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import RichTextSchema
 
 from ..models import Credit, MachineModel, Series, Title
@@ -180,12 +180,11 @@ def list_series(request: HttpRequest) -> list[SeriesListItemSchema]:
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_series_claims(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> SeriesDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     series = get_object_or_404(
         Series.objects.active(), **{Series.public_id_field: public_id}
     )

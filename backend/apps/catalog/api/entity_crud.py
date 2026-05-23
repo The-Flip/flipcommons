@@ -48,7 +48,7 @@ from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     DELETE_RATE_LIMIT_SPEC,
-    check_and_record,
+    rate_limited,
 )
 from apps.provenance.schemas import ChangeSetInputSchema
 
@@ -173,8 +173,6 @@ def register_entity_delete_restore[ModelT: CatalogModel, SchemaT: Schema](
     def _delete(
         request: HttpRequest, public_id: str, data: ChangeSetInputSchema
     ) -> DeleteResponseSchema | Status[SoftDeleteBlockedSchema | AlreadyDeletedSchema]:
-        check_and_record(request.user, DELETE_RATE_LIMIT_SPEC)
-
         obj = get_object_or_404(
             model_cls.objects.active(), **{public_id_field: public_id}
         )
@@ -227,7 +225,9 @@ def register_entity_delete_restore[ModelT: CatalogModel, SchemaT: Schema](
         )
 
     _delete.__name__ = f"{entity_label.lower()}_delete"
-    _delete = requires(Activity.CATALOG_DELETE)(_delete)
+    _delete = requires(Activity.CATALOG_DELETE)(
+        rate_limited(DELETE_RATE_LIMIT_SPEC)(_delete)
+    )
     router.post(
         "/{path:public_id}/delete/",
         auth=django_auth,
@@ -242,8 +242,6 @@ def register_entity_delete_restore[ModelT: CatalogModel, SchemaT: Schema](
     def _restore(
         request: HttpRequest, public_id: str, data: ChangeSetInputSchema
     ) -> SchemaT | Status[ErrorDetailSchema]:
-        check_and_record(request.user, CREATE_RATE_LIMIT_SPEC)
-
         # Bypass .active() — we're looking for soft-deleted rows.
         obj = get_object_or_404(model_cls, **{public_id_field: public_id})
         if obj.status != "deleted":
@@ -276,7 +274,9 @@ def register_entity_delete_restore[ModelT: CatalogModel, SchemaT: Schema](
     # Restore consumes the create rate-limit bucket (it reintroduces a record),
     # so it is classified as CATALOG_CREATE even though the underlying
     # ``execute_claims`` writes action=EDIT. See docs/RecordLifecycle.md.
-    _restore = requires(Activity.CATALOG_CREATE)(_restore)
+    _restore = requires(Activity.CATALOG_CREATE)(
+        rate_limited(CREATE_RATE_LIMIT_SPEC)(_restore)
+    )
     router.post(
         "/{path:public_id}/restore/",
         auth=django_auth,
@@ -420,8 +420,6 @@ def register_entity_create[ModelT: CatalogModel, SchemaT: Schema](
         data: EntityCreateInputSchema,
         parent: CatalogModel | None = None,
     ) -> Status[SchemaT]:
-        check_and_record(request.user, CREATE_RATE_LIMIT_SPEC)
-
         scope_filter = (
             scope_filter_builder(data, parent)
             if scope_filter_builder is not None
@@ -501,7 +499,9 @@ def register_entity_create[ModelT: CatalogModel, SchemaT: Schema](
             return _do_create(request, data, parent=parent)
 
         _create_parented.__name__ = f"{entity_label.lower()}_create{op_id_suffix}"
-        _create_parented = requires(Activity.CATALOG_CREATE)(_create_parented)
+        _create_parented = requires(Activity.CATALOG_CREATE)(
+            rate_limited(CREATE_RATE_LIMIT_SPEC)(_create_parented)
+        )
         router.post(
             f"/{{path:parent_public_id}}/{route_suffix}/",
             auth=django_auth,
@@ -521,7 +521,9 @@ def register_entity_create[ModelT: CatalogModel, SchemaT: Schema](
             return _do_create(request, data)
 
         _create_unparented.__name__ = f"{entity_label.lower()}_create{op_id_suffix}"
-        _create_unparented = requires(Activity.CATALOG_CREATE)(_create_unparented)
+        _create_unparented = requires(Activity.CATALOG_CREATE)(
+            rate_limited(CREATE_RATE_LIMIT_SPEC)(_create_unparented)
+        )
         router.post(
             "/",
             auth=django_auth,

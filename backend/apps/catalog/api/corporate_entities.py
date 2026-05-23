@@ -17,7 +17,7 @@ from apps.core.authz.types import Activity
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import active_claims, claims_prefetch
-from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import RichTextSchema
 
 from ..models import (
@@ -177,12 +177,11 @@ def list_corporate_entities(
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_corporate_entity_claims(
     request: HttpRequest, public_id: str, data: CorporateEntityClaimPatchSchema
 ) -> CorporateEntityDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     if not data.fields and data.aliases is None:
         raise_form_error("No changes provided.")
 

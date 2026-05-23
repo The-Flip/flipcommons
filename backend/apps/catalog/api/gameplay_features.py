@@ -16,7 +16,7 @@ from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
 from apps.provenance.helpers import active_claims, claims_prefetch
-from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import RichTextSchema
 
 from ..models import GameplayFeature
@@ -142,12 +142,11 @@ def list_gameplay_features(
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_gameplay_feature_claims(
     request: HttpRequest, public_id: str, data: HierarchyClaimPatchSchema
 ) -> GameplayFeatureDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     if not data.fields and data.parents is None and data.aliases is None:
         raise_form_error("No changes provided.")
 

@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import re
 
 import pytest
 from ninja import Schema
 
+from apps.core.authz.route_walker import iter_operations
+from apps.provenance.rate_limits import get_rate_limit_spec
 from config.api import api
 
 ALLOWED_SUFFIXES = ("Schema", "Ref")
@@ -145,4 +148,49 @@ class TestMutatingEndpointsHave4xx:
             "error responses (ValidationErrorSchema, RateLimitErrorSchema, "
             "etc.) or add to NO_4XX_ALLOWLIST with justification: "
             f"{violations}"
+        )
+
+
+class TestRateLimitedEndpointsDeclare429:
+    """Every ``@rate_limited`` route must advertise ``429: RateLimitErrorSchema``.
+
+    The decorator can raise ``RateLimitExceededError`` → 429 at request
+    time, but the OpenAPI response map is hand-written on
+    ``@router.<verb>(... response={...})`` and the decorator can't
+    fabricate it. This boundary test makes the omission visible.
+    """
+
+    # `iter_operations` yields paths with Ninja's typed-converter syntax
+    # (`{path:public_id}`); OpenAPI strips the converter prefix
+    # (`{public_id}`). Match the OpenAPI form.
+    _STRIP_CONVERTER = re.compile(r"\{[^:}]+:([^}]+)\}")
+
+    def test_rate_limited_routes_declare_429(self):
+        paths = api.get_openapi_schema()["paths"]
+        missing: list[str] = []
+        for method, path, view in iter_operations(api):
+            if get_rate_limit_spec(view) is None:
+                continue
+            full_path = f"/api{self._STRIP_CONVERTER.sub(r'{\1}', path)}"
+            method_lc = method.lower()
+            responses = paths.get(full_path, {}).get(method_lc, {}).get("responses", {})
+            # Ninja keys the responses dict by int when registered via
+            # `response={429: ...}`; the rendered JSON OpenAPI doc keys
+            # by string. ``get_openapi_schema()`` returns the live dict
+            # (int keys today) — accept either so a future Ninja
+            # normalization doesn't silently report "missing 429"
+            # everywhere.
+            entry = responses.get(429) or responses.get("429") or {}
+            schema_ref = (
+                entry.get("content", {}).get("application/json", {}).get("schema", {})
+            )
+            ref = schema_ref.get("$ref", "")
+            if not ref.endswith("/RateLimitErrorSchema"):
+                missing.append(
+                    f"{method} {full_path} → {view.__module__}.{view.__qualname__}"
+                )
+        assert not missing, (
+            "These @rate_limited routes don't declare "
+            "`429: RateLimitErrorSchema` in their response map:\n  "
+            + "\n  ".join(missing)
         )

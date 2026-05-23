@@ -9,12 +9,19 @@ import pytest
 from django.core.cache import cache
 
 from apps.accounts.test_factories import make_user
+from apps.core.authz.markers import get_required_activity, requires
+from apps.core.authz.types import Activity
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     DELETE_RATE_LIMIT_SPEC,
+    EDIT_RATE_LIMIT_SPEC,
     RateLimitExceededError,
     RateLimitSpec,
     check_and_record,
+    get_rate_limit_exempt_reason,
+    get_rate_limit_spec,
+    rate_limit_exempt,
+    rate_limited,
     reset_for_user,
 )
 
@@ -148,6 +155,122 @@ class TestBucketConfig:
             check_and_record(user, DELETE_RATE_LIMIT_SPEC)
         reset_for_user(user, CREATE_RATE_LIMIT_SPEC.bucket)
         reset_for_user(user, DELETE_RATE_LIMIT_SPEC.bucket)
+
+
+class TestEditBucketConfig:
+    def test_edit_bucket_is_60_per_hour(self):
+        assert EDIT_RATE_LIMIT_SPEC.bucket == "edit"
+        assert EDIT_RATE_LIMIT_SPEC.limit == 60
+        assert EDIT_RATE_LIMIT_SPEC.window_seconds == 3_600
+
+    def test_edit_bucket_is_independent_of_create_and_delete(self, user):
+        for _ in range(CREATE_RATE_LIMIT_SPEC.limit):
+            check_and_record(user, CREATE_RATE_LIMIT_SPEC)
+        for _ in range(DELETE_RATE_LIMIT_SPEC.limit):
+            check_and_record(user, DELETE_RATE_LIMIT_SPEC)
+        # Filling create + delete leaves edit fully available.
+        check_and_record(user, EDIT_RATE_LIMIT_SPEC)
+        reset_for_user(user, CREATE_RATE_LIMIT_SPEC.bucket)
+        reset_for_user(user, DELETE_RATE_LIMIT_SPEC.bucket)
+        reset_for_user(user, EDIT_RATE_LIMIT_SPEC.bucket)
+
+
+class _Req:
+    """Minimal request stand-in carrying ``.user`` only."""
+
+    def __init__(self, user):
+        self.user = user
+
+
+class TestRateLimitedDecorator:
+    """Unit tests for the @rate_limited decorator itself."""
+
+    def test_charges_the_bucket_per_request(self, user):
+        spec = RateLimitSpec(bucket="dec_charge", limit=2, window_seconds=60)
+
+        @rate_limited(spec)
+        def view(request):
+            return "ok"
+
+        try:
+            assert view(_Req(user)) == "ok"
+            assert view(_Req(user)) == "ok"
+            with pytest.raises(RateLimitExceededError) as exc:
+                view(_Req(user))
+            assert exc.value.bucket == "dec_charge"
+        finally:
+            reset_for_user(user, spec.bucket)
+
+    def test_stamps_marker_readable_via_accessor(self):
+        spec = RateLimitSpec(bucket="dec_stamp", limit=1, window_seconds=60)
+
+        @rate_limited(spec)
+        def view(request):
+            return None
+
+        assert get_rate_limit_spec(view) is spec
+
+    def test_stacking_with_requires_propagates_both_markers(self):
+        """Pin the `update_wrapper.__dict__` propagation the inventory
+        walker relies on. If a future refactor of ``@requires`` drops
+        ``WRAPPER_UPDATES`` (the ``__dict__`` copy), the outer marker
+        would silently disappear and only this test would catch it."""
+        spec = RateLimitSpec(bucket="dec_stack", limit=1, window_seconds=60)
+
+        @requires(Activity.CATALOG_EDIT)
+        @rate_limited(spec)
+        def view_a(request):
+            return None
+
+        @rate_limited(spec)
+        @requires(Activity.CATALOG_EDIT)
+        def view_b(request):
+            return None
+
+        # Both orders: the outermost callable carries BOTH markers.
+        for view in (view_a, view_b):
+            assert get_required_activity(view) == Activity.CATALOG_EDIT
+            assert get_rate_limit_spec(view) is spec
+
+
+class TestRateLimitExemptDecorator:
+    def test_stamps_reason_readable_via_accessor(self):
+        @rate_limit_exempt("undo inverts an existing changeset")
+        def view(request):
+            return None
+
+        assert get_rate_limit_exempt_reason(view) == (
+            "undo inverts an existing changeset"
+        )
+
+    def test_stacking_with_requires_propagates_both_markers(self):
+        """Unlike ``@rate_limited``, ``@rate_limit_exempt`` doesn't wrap —
+        it just ``setattr``s on the original function. When stacked under
+        ``@requires`` (which rebuilds the function via ``FunctionType``),
+        the exempt marker must still reach the outermost callable via
+        ``update_wrapper``'s ``__dict__`` copy. Pin that, so the first
+        caller doesn't trip a silent regression."""
+
+        @requires(Activity.CATALOG_EDIT)
+        @rate_limit_exempt("test")
+        def view(request):
+            return None
+
+        assert get_required_activity(view) == Activity.CATALOG_EDIT
+        assert get_rate_limit_exempt_reason(view) == "test"
+
+    def test_empty_reason_rejected_at_decoration_time(self):
+        with pytest.raises(ValueError, match="non-empty reason"):
+
+            @rate_limit_exempt("")
+            def view_a(request):
+                return None
+
+        with pytest.raises(ValueError, match="non-empty reason"):
+
+            @rate_limit_exempt("   ")
+            def view_b(request):
+                return None
 
 
 # Silence time.sleep warnings in case any test uses real time.
