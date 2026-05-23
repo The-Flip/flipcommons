@@ -102,7 +102,7 @@
     a video of your session, not to run pop-up surveys, not to record your screen or window size, and not to capture
     marketing or ad-tracking tags from the address bar (things like <code>utm_source</code> or
     <code>gclid</code>) or the search terms that brought you here from Google or Bing. A temporary ID
-    groups records from the same browser tab together and is forgotten when you close the tab.
+    groups activities from the same browser tab together and is forgotten when you close the tab.
   </li>
 </ul>
 
