@@ -82,12 +82,22 @@ def _use_locmem_cache(settings):
 
     File-based cache persists across test boundaries and causes flaky
     failures when other tests call invalidate_all() during their execution.
+
+    LocMemCache instances created with the default ``LOCATION`` share the
+    same process-level storage dict, so even though ``settings.CACHES`` is
+    re-applied per test, leftover entries (especially rate-limit buckets
+    keyed by reused user PKs) persist across tests. Clear explicitly.
     """
+    from django.core.cache import cache
+
     settings.CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         }
     }
+    cache.clear()
+    yield
+    cache.clear()
 
 
 # ---------------------------------------------------------------------------

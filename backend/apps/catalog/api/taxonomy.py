@@ -17,8 +17,9 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
-from apps.core.schemas import ValidationErrorSchema
+from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
 from apps.provenance.schemas import RichTextSchema
 
 from ..models import (
@@ -186,6 +187,8 @@ def _patch_taxonomy(  # noqa: UP047
     data: ClaimPatchSchema,
 ) -> TaxonomySchema:
     """Shared PATCH handler for all taxonomy entities."""
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     obj = get_object_or_404(
         model_class.objects.active(), **{model_class.public_id_field: public_id}
     )
@@ -328,7 +331,11 @@ def _bulk_title_counts_for_subgenerations(
 @technology_generations_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: TaxonomySchema, 422: ValidationErrorSchema},
+    response={
+        200: TaxonomySchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -383,7 +390,11 @@ def list_display_types(request: HttpRequest) -> list[DisplayTypeListItemSchema]:
 @display_types_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: TaxonomySchema, 422: ValidationErrorSchema},
+    response={
+        200: TaxonomySchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -403,7 +414,11 @@ technology_subgenerations_router = Router(tags=["technology-subgenerations"])
 @technology_subgenerations_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: TaxonomySchema, 422: ValidationErrorSchema},
+    response={
+        200: TaxonomySchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -423,7 +438,11 @@ display_subtypes_router = Router(tags=["display-subtypes"])
 @display_subtypes_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: TaxonomySchema, 422: ValidationErrorSchema},
+    response={
+        200: TaxonomySchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -449,7 +468,11 @@ def list_cabinets(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema]:
 @cabinets_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: TaxonomySchema, 422: ValidationErrorSchema},
+    response={
+        200: TaxonomySchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -477,7 +500,11 @@ def list_game_formats(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema
 @game_formats_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: TaxonomySchema, 422: ValidationErrorSchema},
+    response={
+        200: TaxonomySchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -536,13 +563,19 @@ def list_reward_types(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema
 @reward_types_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: RewardTypeDetailSchema, 422: ValidationErrorSchema},
+    response={
+        200: RewardTypeDetailSchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 def patch_reward_type(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> RewardTypeDetailSchema:
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     obj = get_object_or_404(
         RewardType.objects.active(), **{RewardType.public_id_field: public_id}
     )
@@ -572,7 +605,11 @@ def list_tags(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema]:
 @tags_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: TaxonomySchema, 422: ValidationErrorSchema},
+    response={
+        200: TaxonomySchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -712,13 +749,19 @@ def list_credit_roles(request: HttpRequest) -> list[TaxonomySchema]:
 @credit_roles_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: CreditRoleDetailSchema, 422: ValidationErrorSchema},
+    response={
+        200: CreditRoleDetailSchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
 def patch_credit_role(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> CreditRoleDetailSchema:
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     obj = get_object_or_404(
         CreditRole.objects.active(), **{CreditRole.public_id_field: public_id}
     )
