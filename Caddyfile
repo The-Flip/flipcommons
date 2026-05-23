@@ -11,12 +11,14 @@ request_header -Forwarded
 
 # Response-side security headers. HSTS is tracked separately (#404); CSP
 # is tracked in #448 — it needs a per-request nonce from SvelteKit, so
-# it doesn't belong here. SAMEORIGIN (not DENY) so Django admin previews
-# and same-origin embeds still work.
+# it doesn't belong here. DENY because we have no use case for
+# same-origin framing. Referrer-Policy here overwrites Django's stricter
+# same-origin default on /admin/ — accepted because the public site
+# needs strict-origin-when-cross-origin for analytics attribution.
 header {
 	X-Content-Type-Options nosniff
 	Referrer-Policy strict-origin-when-cross-origin
-	X-Frame-Options SAMEORIGIN
+	X-Frame-Options DENY
 }
 
 # XFF rewrite must live inside reverse_proxy: Caddy's reverse_proxy has
