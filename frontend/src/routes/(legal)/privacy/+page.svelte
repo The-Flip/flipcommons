@@ -97,8 +97,18 @@
     email addresses, request bodies, and query strings are stripped before delivery. Does not use cookie
     tracking or record browser sessions.
   </li>
+  <li>
+    <strong><a href="https://posthog.com" target="_blank" rel="noopener">PostHog</a></strong> — receives
+    pageview counts so we can understand which parts of the site are used and where contributors get stuck.
+    We have configured it not to set cookies, not to use local storage, not to store your IP address,
+    not to autocapture clicks or form input, not to record browser sessions, not to run surveys, not to
+    record screen or viewport dimensions, not to capture URL query strings, not to capture campaign or
+    click-tracking parameters (UTM, gclid, fbclid, and similar), and not to capture search-engine referral
+    keywords. What it does receive: the path of the page you visited (no query string), the referring
+    site's origin and path, and browser and operating system family derived from your user-agent string.
+    A session identifier is held in memory only and is discarded when you close the tab.
+  </li>
 </ul>
-<!-- TODO: Add any analytics services if applicable -->
 
 <h2>Your Rights</h2>
 <p>
