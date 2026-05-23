@@ -93,10 +93,10 @@
   </li>
   <li>
     <strong><a href="https://posthog.com">PostHog</a></strong> — helps us understand which parts of
-    the site are used and where contributors get stuck, so we can improve them. It receives a record each
-    time you visit a page, and may in future also record specific actions like a successful edit or a
-    failed upload. Each record includes the page you were on (without anything after the <code>?</code>
-    in the address bar), the site that referred you (if any), and your browser and operating system family.
+    the site are used and where contributors get stuck, so we can improve them. We notify PostHog each
+    time you do specific actions like visit a page, successfully save an edit, or have an upload fail.
+    Each notification includes the page you were on (without anything after the <code>?</code> in the
+    address bar), the site that referred you (if any), and your browser and operating system family.
     We have configured it not to set cookies, not to remember anything about you between visits, not to
     store your IP address, not to silently record the buttons you click or text you type, not to record
     a video of your session, not to run pop-up surveys, not to record your screen or window size, and not to capture
