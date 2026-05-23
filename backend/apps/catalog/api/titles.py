@@ -48,6 +48,7 @@ from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     DELETE_RATE_LIMIT_SPEC,
+    EDIT_RATE_LIMIT_SPEC,
     check_and_record,
 )
 from apps.provenance.schemas import (
@@ -968,7 +969,11 @@ def list_all_titles(request: HttpRequest) -> HttpResponse:
 @titles_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: TitleDetailSchema, 422: ValidationErrorSchema},
+    response={
+        200: TitleDetailSchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -976,6 +981,8 @@ def patch_title_claims(
     request: HttpRequest, public_id: str, data: TitleClaimPatchSchema
 ) -> TitleDetailSchema:
     """Assert title-owned claims and return the refreshed title detail."""
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     if not data.fields and data.abbreviations is None:
         raise_form_error("No changes provided.")
 
@@ -1240,7 +1247,7 @@ def delete_title(
     },
     tags=["private"],
 )
-@requires(Activity.CATALOG_EDIT)
+@requires(Activity.CATALOG_CREATE)
 def restore_title(
     request: HttpRequest, public_id: str, data: ChangeSetInputSchema
 ) -> TitleDetailSchema | Status[ErrorDetailSchema]:

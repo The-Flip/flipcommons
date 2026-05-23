@@ -40,6 +40,8 @@ from .constants import (
     CREATE_WINDOW_SECONDS,
     DELETE_RATE_LIMIT,
     DELETE_WINDOW_SECONDS,
+    EDIT_RATE_LIMIT,
+    EDIT_WINDOW_SECONDS,
 )
 
 _CACHE_TTL_FUDGE_SECONDS = 60
@@ -83,6 +85,16 @@ CREATE_RATE_LIMIT_SPEC = RateLimitSpec(
     bucket="create",
     limit=CREATE_RATE_LIMIT,
     window_seconds=CREATE_WINDOW_SECONDS,
+)
+
+# Shared bucket for user-driven record edits. All record types share one
+# bucket so that a burst of edits across types is capped in aggregate. Every
+# PATCH-claim route consumes one slot per request (including requests that
+# fail validation — see ``check_and_record``).
+EDIT_RATE_LIMIT_SPEC = RateLimitSpec(
+    bucket="edit",
+    limit=EDIT_RATE_LIMIT,
+    window_seconds=EDIT_WINDOW_SECONDS,
 )
 
 # Shared bucket for user-driven record deletion. A cascading delete counts as

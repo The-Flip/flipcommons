@@ -100,7 +100,9 @@ there. Limits are rolling-window, per-user, and apply to user-driven
 `ChangeSet`s. Ingest is not rate-limited, staff accounts are exempt through the
 rate-limit policy, and a cascading delete counts as one delete action.
 
-Buckets follow the `ChangeSet` action: create, edit, and delete each have their
-own rolling window. Restore counts against the create bucket because it
-re-introduces a record. Undo does not consume any bucket — reverting a recent
-mistake should not cost the user a slot.
+Each route's activity classification determines which bucket the request
+charges: `CATALOG_CREATE` → create, `CATALOG_EDIT` → edit, `CATALOG_DELETE` →
+delete. Create, edit and delete each have their own rolling window. Restore is
+classified as `CATALOG_CREATE` because it reintroduces a record, even though
+the underlying `ChangeSet` carries `action=EDIT`. Undo does not consume any
+bucket — reverting a recent mistake should not cost the user a slot.

@@ -273,9 +273,10 @@ def register_entity_delete_restore[ModelT: CatalogModel, SchemaT: Schema](
         return serialize_detail(refreshed)
 
     _restore.__name__ = f"{entity_label.lower()}_restore"
-    # Restore writes via execute_claims(action=EDIT), so the activity is
-    # CATALOG_EDIT, not a separate "restore" act.
-    _restore = requires(Activity.CATALOG_EDIT)(_restore)
+    # Restore consumes the create rate-limit bucket (it reintroduces a record),
+    # so it is classified as CATALOG_CREATE even though the underlying
+    # ``execute_claims`` writes action=EDIT. See docs/RecordLifecycle.md.
+    _restore = requires(Activity.CATALOG_CREATE)(_restore)
     router.post(
         "/{path:public_id}/restore/",
         auth=django_auth,

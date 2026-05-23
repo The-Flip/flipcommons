@@ -22,7 +22,11 @@ from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import active_claims, claims_prefetch
-from apps.provenance.rate_limits import CREATE_RATE_LIMIT_SPEC, check_and_record
+from apps.provenance.rate_limits import (
+    CREATE_RATE_LIMIT_SPEC,
+    EDIT_RATE_LIMIT_SPEC,
+    check_and_record,
+)
 from apps.provenance.schemas import RichTextSchema
 
 from ..models import MachineModel, Manufacturer, System
@@ -220,7 +224,11 @@ def list_all_systems(request: HttpRequest) -> list[SystemListItemSchema]:
 @systems_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: SystemDetailSchema, 422: ValidationErrorSchema},
+    response={
+        200: SystemDetailSchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -228,6 +236,8 @@ def patch_system_claims(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> SystemDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     system = get_object_or_404(
         System.objects.active(), **{System.public_id_field: public_id}
     )
