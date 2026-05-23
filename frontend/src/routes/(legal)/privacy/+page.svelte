@@ -73,32 +73,26 @@
 </p>
 <ul>
   <li>
-    <strong><a href="https://workos.com" target="_blank" rel="noopener">WorkOS</a></strong> — handles
-    sign-in and authentication.
+    <strong><a href="https://workos.com">WorkOS</a></strong> — handles sign-in and authentication.
   </li>
   <li>
-    <strong><a href="https://railway.com" target="_blank" rel="noopener">Railway</a></strong> — hosts
-    the application.
+    <strong><a href="https://railway.com">Railway</a></strong> — hosts the application.
   </li>
   <li>
-    <strong><a href="https://bunny.net" target="_blank" rel="noopener">Bunny CDN</a></strong> — serves
-    images and other media.
+    <strong><a href="https://bunny.net">Bunny CDN</a></strong> — serves images and other media.
   </li>
   <li>
-    <strong
-      ><a href="https://www.idrive.com/e2/" target="_blank" rel="noopener">iDrive e2</a></strong
-    >
-    — stores uploaded files.
+    <strong><a href="https://www.idrive.com/e2/">iDrive e2</a></strong> — stores uploaded files.
   </li>
   <li>
-    <strong><a href="https://sentry.io" target="_blank" rel="noopener">Sentry</a></strong> — receives
+    <strong><a href="https://sentry.io">Sentry</a></strong> — receives
     error reports when something breaks in your browser or on our servers, so we can fix it. Reports include
     your account ID and username if you're signed in; personally identifying information like IP addresses,
     email addresses, request bodies, and query strings are stripped before delivery. Does not use cookie
     tracking or record browser sessions.
   </li>
   <li>
-    <strong><a href="https://posthog.com" target="_blank" rel="noopener">PostHog</a></strong> — receives
+    <strong><a href="https://posthog.com">PostHog</a></strong> — receives
     pageview counts so we can understand which parts of the site are used and where contributors get stuck.
     We have configured it not to set cookies, not to use local storage, not to store your IP address,
     not to autocapture clicks or form input, not to record browser sessions, not to run surveys, not to
