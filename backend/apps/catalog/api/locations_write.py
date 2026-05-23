@@ -38,7 +38,8 @@ from pydantic import ConfigDict, field_validator
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
-from apps.core.schemas import ValidationErrorSchema
+from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
 from apps.provenance.schemas import ChangeSetInputSchema
 
 from ..models import CatalogModel, Location
@@ -274,7 +275,11 @@ register_entity_create(
 @locations_write_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: LocationDetailSchema, 422: ValidationErrorSchema},
+    response={
+        200: LocationDetailSchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -290,6 +295,8 @@ def patch_location_claims(
     it; that's tracked in a follow-up that teaches ``NameEditor`` a
     name-only mode.
     """
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     loc = get_object_or_404(
         Location.objects.active(), **{Location.public_id_field: public_id}
     )

@@ -16,8 +16,9 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
-from apps.core.schemas import ValidationErrorSchema
+from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
 from apps.provenance.schemas import RichTextSchema
 
 from ..models import Franchise, MachineModel, Title
@@ -120,7 +121,11 @@ def _serialize_franchise_detail(franchise: Franchise) -> FranchiseDetailSchema:
 @franchises_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: FranchiseDetailSchema, 422: ValidationErrorSchema},
+    response={
+        200: FranchiseDetailSchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -128,6 +133,8 @@ def patch_franchise_claims(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> FranchiseDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     franchise = get_object_or_404(
         Franchise.objects.active(), **{Franchise.public_id_field: public_id}
     )

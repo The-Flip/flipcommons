@@ -21,10 +21,11 @@ from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.pagination import NamedPageNumberPagination
-from apps.core.schemas import ValidationErrorSchema
+from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
 from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
 from apps.provenance.schemas import RichTextSchema
 
 from ..cache import get_cached_response, manufacturers_all_key, set_cached_response
@@ -496,7 +497,11 @@ def list_all_manufacturers(
 @manufacturers_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: ManufacturerDetailSchema, 422: ValidationErrorSchema},
+    response={
+        200: ManufacturerDetailSchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -504,6 +509,8 @@ def patch_manufacturer_claims(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> ManufacturerDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     mfr = get_object_or_404(
         Manufacturer.objects.active(), **{Manufacturer.public_id_field: public_id}
     )

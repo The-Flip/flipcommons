@@ -34,6 +34,7 @@ from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     DELETE_RATE_LIMIT_SPEC,
+    EDIT_RATE_LIMIT_SPEC,
     check_and_record,
 )
 from apps.provenance.schemas import (
@@ -967,7 +968,11 @@ _SELF_REF_FIELDS = frozenset({"variant_of", "converted_from", "remake_of"})
 @models_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: ModelDetailSchema, 422: ValidationErrorSchema},
+    response={
+        200: ModelDetailSchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -975,6 +980,8 @@ def patch_model_claims(
     request: HttpRequest, public_id: str, data: ModelClaimPatchSchema
 ) -> ModelDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve the model."""
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     pm = get_object_or_404(
         MachineModel.objects.active().prefetch_related(
             "themes",
@@ -1140,7 +1147,7 @@ def delete_model(
     },
     tags=["private"],
 )
-@requires(Activity.CATALOG_EDIT)
+@requires(Activity.CATALOG_CREATE)
 def restore_model(
     request: HttpRequest, public_id: str, data: ChangeSetInputSchema
 ) -> ModelDetailSchema | Status[ErrorDetailSchema]:

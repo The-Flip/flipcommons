@@ -13,8 +13,9 @@ from ninja.security import django_auth
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
-from apps.core.schemas import ValidationErrorSchema
+from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
 from apps.provenance.schemas import RichTextSchema
 
 from ..models import MachineModel, Theme
@@ -143,7 +144,11 @@ def list_themes(request: HttpRequest) -> list[ThemeListItemSchema]:
 @themes_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: ThemeDetailSchema, 422: ValidationErrorSchema},
+    response={
+        200: ThemeDetailSchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -151,6 +156,8 @@ def patch_theme_claims(
     request: HttpRequest, public_id: str, data: HierarchyClaimPatchSchema
 ) -> ThemeDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     if not data.fields and data.parents is None and data.aliases is None:
         raise_form_error("No changes provided.")
 

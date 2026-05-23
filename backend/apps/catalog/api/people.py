@@ -35,6 +35,7 @@ from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     DELETE_RATE_LIMIT_SPEC,
+    EDIT_RATE_LIMIT_SPEC,
     check_and_record,
 )
 from apps.provenance.schemas import ChangeSetInputSchema, RichTextSchema
@@ -314,7 +315,11 @@ def list_all_people(
 @people_router.patch(
     "/{path:public_id}/claims/",
     auth=django_auth,
-    response={200: PersonDetailSchema, 422: ValidationErrorSchema},
+    response={
+        200: PersonDetailSchema,
+        422: ValidationErrorSchema,
+        429: RateLimitErrorSchema,
+    },
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
@@ -322,6 +327,8 @@ def patch_person_claims(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> PersonDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
+    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+
     person = get_object_or_404(
         Person.objects.active(), **{Person.public_id_field: public_id}
     )
@@ -537,7 +544,7 @@ def delete_person(
     },
     tags=["private"],
 )
-@requires(Activity.CATALOG_EDIT)
+@requires(Activity.CATALOG_CREATE)
 def restore_person(
     request: HttpRequest, public_id: str, data: ChangeSetInputSchema
 ) -> PersonDetailSchema | Status[ErrorDetailSchema]:
