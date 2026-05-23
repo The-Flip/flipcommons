@@ -92,15 +92,17 @@
     tracking or record browser sessions.
   </li>
   <li>
-    <strong><a href="https://posthog.com">PostHog</a></strong> — receives
-    pageview counts so we can understand which parts of the site are used and where contributors get stuck.
-    We have configured it not to set cookies, not to use local storage, not to store your IP address,
-    not to autocapture clicks or form input, not to record browser sessions, not to run surveys, not to
-    record screen or viewport dimensions, not to capture URL query strings, not to capture campaign or
-    click-tracking parameters (UTM, gclid, fbclid, and similar), and not to capture search-engine referral
-    keywords. What it does receive: the path of the page you visited (no query string), the referring
-    site's origin and path, and browser and operating system family derived from your user-agent string.
-    A session identifier is held in memory only and is discarded when you close the tab.
+    <strong><a href="https://posthog.com">PostHog</a></strong> — helps us understand which parts of
+    the site are used and where contributors get stuck, so we can improve them. It receives a record each
+    time you visit a page, and may in future also record specific actions like a successful edit or a
+    failed upload. Each record includes the page you were on (without anything after the <code>?</code>
+    in the address bar), the site that referred you (if any), and your browser and operating system family.
+    We have configured it not to set cookies, not to remember anything about you between visits, not to
+    store your IP address, not to silently record the buttons you click or text you type, not to record
+    a video of your session, not to run pop-up surveys, not to record your screen or window size, and not to capture
+    marketing or ad-tracking tags from the address bar (things like <code>utm_source</code> or
+    <code>gclid</code>) or the search terms that brought you here from Google or Bing. A temporary ID
+    groups records from the same browser tab together and is forgotten when you close the tab.
   </li>
 </ul>
 
