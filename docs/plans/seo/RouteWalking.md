@@ -2,6 +2,12 @@
 
 Plan for the shared classification machinery — `frontend/src/lib/route-metadata.server.ts` — that answers "is this route indexable?" for sitemap, robots, noindex meta, canonical, SSR enforcement and title/description enforcement. Those consumers live downstream and are described in [`SearchEngines.md`](SearchEngines.md).
 
+## Status: ✅ Implemented
+
+This plan has been implemented.
+
+## Key design element
+
 The headline design choice: **derive indexability from the catalog entity registry where possible, declare it per-route only for the small set of routes that can't be derived.** This follows the project's [model-driven metadata](../model_driven_metadata/ModelDrivenMetadata.md) discipline — the catalog model is the source of truth, not parallel per-route declarations.
 
 ## Why
@@ -22,7 +28,7 @@ The design MUST satisfy these two properties:
 1. **Adding a new catalog entity requires zero SEO declarations.** Once the entity ships in `CATALOG_META`, detail / listing / edit-history / sources / edit / new / delete routes all classify correctly without any human-authored per-route metadata. Any design that requires the contributor to remember to add an SEO declaration alongside their new entity violates this invariant.
 2. **Adding a non-catalog route forces an explicit classification decision.** The walker test fails until the route appears in `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`, `SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS`, or under a non-catalog auth-gated layout (today `/admin/*` and `/kiosk/edit/*`). There is no silent default — an unclassified route is a test failure, not an "implicitly included" or "implicitly excluded" route.
 
-The first invariant comes from the [model-driven metadata](../model_driven_metadata/ModelDrivenMetadata.md) discipline: parallel hand-maintained per-route declarations are exactly the drift surface model-driven design eliminates. The second invariant comes from the SEO consequences of "wrong default": a route silently included that shouldn't be leaks into the index and is expensive to remove (Google caches removed pages for months); a route silently excluded that shouldn't be costs traffic invisibly. Both directions of failure are slow to detect; forcing the decision at PR time is cheap by comparison.
+The first invariant comes from the [model-driven metadata](../model_driven_metadata/ModelDrivenMetadata.md) discipline: parallel hand-maintained per-route declarations are exactly the drift surface model-driven design eliminates. The second invariant comes from the SEO consequences of "wrong default": a route silently included that shouldn't be leaks into search indexes and is expensive to remove (every major engine caches removed pages for months); a route silently excluded that shouldn't be costs traffic invisibly. Both directions of failure are slow to detect; forcing the decision at PR time is cheap by comparison.
 
 ## The classification
 
@@ -223,7 +229,7 @@ That's the whole walker-test surface. The separate `catalog-auth-convention.test
 - Move the `import.meta.glob` walk into `route-metadata.server.ts`'s `allRoutes()`.
 - Have `catalog-meta.test.ts` consume `allRoutes()` + `classifyRoute()` instead of doing its own glob + regex. The `ROUTE_DIR_TO_KEY` / `UNMAPPED_ROUTE_DIRS` / `DEFERRED_KEYS` structure becomes redundant: catalog membership now comes from `CATALOG_META` and the route-class match, not a parallel hand-maintained map.
 
-The module is suffixed `.server.ts` because it uses `import.meta.glob('/src/routes/**/+layout.server.ts', { eager: true, query: '?raw' })` to scan auth-gate imports. Vite inlines each matched file's source as a string literal at build time, and SvelteKit's normal "you can't import a `.server.ts` from client code" check doesn't apply to `?raw` (it's a string, not a module). Without the `.server` suffix on this module, any client-side importer would ship every `+layout.server.ts` and `+page.server.ts` source string into the browser bundle. Downstream consumers (noindex meta injection, canonical URL helper, etc.) should compute the boolean in a server load and pass it down as data — not call `isSearchEngineIndexable()` from a `.svelte` file.
+The module is suffixed `.server.ts` because it uses `import.meta.glob('/src/routes/**/+layout.server.ts', { eager: true, query: '?raw' })` to scan auth-gate imports. Vite inlines each matched file's source as a string literal at build time, and SvelteKit's normal "you can't import a `.server.ts` from client code" check doesn't apply to `?raw` (it's a string, not a module). Without the `.server` suffix on this module, any client-side importer would ship every `+layout.server.ts` and `+page.server.ts` source string into the browser bundle. Downstream consumers (noindex meta injection, canonical URL helper, etc.) should call `isSearchEngineIndexable()` from a `.server.ts` site (a server `handle` hook, a server load) — not from a `.svelte` file.
 
 Out of scope — don't touch:
 
@@ -236,7 +242,7 @@ Full consumer list lives in [`SearchEngines.md`](SearchEngines.md); short versio
 
 - **`robots.txt`** — see [`Robots.md`](Robots.md). Server-endpoint disallows, mostly orthogonal to route classification.
 - **`sitemap.xml`** — see [`Sitemap.md`](Sitemap.md). Enumerates per-entity URLs from `CATALOG_META` + entity data: the detail page plus an `/edit-history` and `/sources` URL per entity. Adds the entries from `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`. The walker's `isSearchEngineIndexable()` is the filter for any include/exclude question.
-- **`<meta name="robots" content="noindex">`** — see [`NoindexMeta.md`](NoindexMeta.md). Layout-level injection driven by `isSearchEngineIndexable(page.route.id)`.
+- **`<meta name="robots" content="noindex" />`** — see [`NoindexMeta.md`](NoindexMeta.md). Injected by a `handle` hook (`hooks.server.ts`) via `transformPageChunk`, driven by `isSearchEngineIndexable(event.route.id)`. The hook also sets the `X-Robots-Tag` response header.
 - **Canonical URL** — see [`CanonicalUrl.md`](CanonicalUrl.md). Catalog detail derives the canonical from the entity's `link_url_pattern`; listed indexable routes derive it from the route ID.
 - **Title/description presence test** — every indexable route declares a meaningful `<title>` and `<meta name="description">`. Catalog detail derives both from entity data; listed indexable routes declare them in the page.
 

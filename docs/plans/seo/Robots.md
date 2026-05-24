@@ -4,13 +4,9 @@ This is the plan for introducing `robots.txt` to the project. SvelteKit owns pub
 
 Addresses the "gating non-prod deploys" and "crawler traffic for non-page paths" concerns in [`SearchEngines.md`](SearchEngines.md); per-page index exclusion lives in [`NoindexMeta.md`](NoindexMeta.md), and the affirmative "what to index" signal lives in [`Sitemap.md`](Sitemap.md).
 
-## Dependency
+## What robots.txt is and isn't for
 
-This plan consumes [`RouteWalking.md`](RouteWalking.md) — the route-metadata primitive that other consumers in the SEO strategy share. robots.txt itself only needs the env-var gate and a small static list of non-page paths, but landing on top of RouteWalking keeps the directory's dependency story straight.
-
-## Scope — what robots.txt is and isn't for
-
-Per [Google's current guidance](https://developers.google.com/search/docs/crawling-indexing/robots/intro): **robots.txt is for managing crawl traffic, not for keeping pages out of the index.** A URL `Disallow`-ed in robots.txt can still appear in Google results (URL + anchor text, no snippet) if anything links to it. The recommended mechanism for "do not index this page" is per-page `<meta name="robots" content="noindex">`, covered in [`NoindexMeta.md`](NoindexMeta.md).
+Per [Google's current guidance](https://developers.google.com/search/docs/crawling-indexing/robots/intro) (Bing and others behave similarly): **robots.txt is for managing crawl traffic, not for keeping pages out of the index.** A URL `Disallow`-ed in robots.txt can still appear in search results (URL + anchor text, no snippet) if anything links to it. The recommended mechanism for "do not index this page" is per-page `<meta name="robots" content="noindex">`, covered in [`NoindexMeta.md`](NoindexMeta.md).
 
 Concretely:
 
@@ -29,7 +25,7 @@ Concretely:
 
 Whether a given deploy should be crawled is a deploy-identity question, and the answer needs to stay correct as we add environments (preview, staging, future prod-like services). The constraints we're designing against:
 
-- **Preview/staging must not leak into Google.** A preview deploy with an `https://` origin and `DEBUG=false` looks production-shaped to any heuristic — sniffing `SITE_ORIGIN` for a hostname or keying off `NODE_ENV` will silently misclassify it.
+- **Preview/staging must not leak into any search engine index.** A preview deploy with an `https://` origin and `DEBUG=false` looks production-shaped to any heuristic — sniffing `SITE_ORIGIN` for a hostname or keying off `NODE_ENV` will silently misclassify it.
 - **Read-time default must be off.** If the flag is ever read without being set — local dev, a misconfigured env, an emergency rollback that drops env vars — the safe outcome is "not indexable." Production is the one place that opts in.
 - **Deploys must declare intent.** A new preview service that ships without the flag set is exactly the leak we're trying to prevent. The read-time default protects against accidents at runtime; a deploy-time check forces the operator to make the call before the service goes live.
 - **Typos must fail safe.** `"True"` or `"1"` quietly disabling indexing on prod is a much better failure than the reverse.
@@ -46,7 +42,7 @@ A single opt-in env var satisfies all four — production explicitly turns it on
 
 ## 2. robots.txt contents
 
-> **Do not add user-facing routes (`/login`, `/search`, `/*/edit`, etc.) to this list** — they're handled by per-page `noindex` meta per [`NoindexMeta.md`](NoindexMeta.md). Adding a `Disallow:` for them blocks crawling, which means Googlebot never sees the `noindex` and the URL can still appear in results via inbound links.
+> **Do not add user-facing routes (`/login`, `/search`, `/*/edit`, etc.) to this list** — they're handled by per-page `noindex` meta per [`NoindexMeta.md`](NoindexMeta.md). Adding a `Disallow:` for them blocks crawling, which means crawlers never see the `noindex` and the URL can still appear in results via inbound links.
 
 When `ALLOW_SEARCH_ENGINE_INDEXING != "true"`:
 
@@ -78,7 +74,7 @@ Validated at the earliest point it's consumed (deploy/runtime). Pattern and conv
 
 Frontend env vars are validated in Python because backend and frontend share the Railway env (per `docs/DeployChecks.md` § "Frontend checks belong in Python"). Add to `backend/apps/core/checks.py` (alongside `check_observability_env`):
 
-- **`ALLOW_SEARCH_ENGINE_INDEXING`** — `@register(Tags.security, deploy=True)` check that errors when `ALLOW_SEARCH_ENGINE_INDEXING` is empty, and errors when set to anything other than the literal `"true"` or `"false"`. Every deployed environment must declare its intent (catches the new-preview-service-leaks-into-Google failure mode) and the strict-shape rule catches typos like `"True"` or `"1"` that would silently leave production un-indexed. Local dev is unaffected: the check is `deploy=True`, so it only runs under `manage.py check --deploy`. New error ids `core.E303` (missing) and `core.E304` (malformed).
+- **`ALLOW_SEARCH_ENGINE_INDEXING`** — `@register(Tags.security, deploy=True)` check that errors when `ALLOW_SEARCH_ENGINE_INDEXING` is empty, and errors when set to anything other than the literal `"true"` or `"false"`. Every deployed environment must declare its intent (catches the new-preview-service-leaks-into-search-indexes failure mode) and the strict-shape rule catches typos like `"True"` or `"1"` that would silently leave production un-indexed. Local dev is unaffected: the check is `deploy=True`, so it only runs under `manage.py check --deploy`. New error ids `core.E303` (missing) and `core.E304` (malformed).
 
 Tests in `backend/apps/core/tests/test_checks.py` (matching the existing pattern): one test per error id — flip the env state, assert the message id appears (or doesn't).
 

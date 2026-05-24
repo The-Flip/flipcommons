@@ -7,7 +7,7 @@ This is a hub document about how the project interacts with search engines -- su
 One function answers "should search engines index this route?" for every consumer in the SEO stack:
 
 - **Sitemap** filters routes _in_ — only `isSearchEngineIndexable() === true` routes appear.
-- **`<meta name="robots" content="noindex">`** is injected _out_ — only `isSearchEngineIndexable() === false` routes get the tag.
+- **`<meta name="robots" content="noindex" />`** is injected _out_ — only `isSearchEngineIndexable() === false` routes get the tag.
 - **Canonical URL, SSR-enabled, title/description-present** enforcement tests all gate on the same predicate.
 
 They can't drift because they all read from one source. The predicate is defined in [`RouteWalking.md`](RouteWalking.md); its classification is **derived from the catalog entity registry where possible, declared per-route only for routes outside the catalog convention**. This applies the project's [model-driven metadata](../model_driven_metadata/ModelDrivenMetadata.md) discipline to the SEO surface — the catalog model is the source of truth, parallel per-route declarations would be drift waiting to happen.
@@ -44,7 +44,7 @@ That's the only file you touch. Effects cascade automatically:
 
 - `isSearchEngineIndexable('/login')` returns `false`.
 - The sitemap omits `/login`. Sitemaps list pages we _want_ indexed; non-indexable routes don't appear.
-- The root layout injects `<meta name="robots" content="noindex">` into `/login`'s HTML so crawlers reaching it via inbound links (password-reset emails, OAuth redirects, etc.) don't index it.
+- The server `handle` hook injects `<meta name="robots" content="noindex" />` into `/login`'s HTML (and sets the `X-Robots-Tag: noindex` response header) so crawlers reaching it via inbound links (password-reset emails, OAuth redirects, etc.) don't index it.
 - The SSR-on-indexable, title-and-description-on-indexable and canonical-on-indexable enforcement tests skip `/login` — they only apply to indexable routes.
 
 A common confusion worth heading off: a non-indexable route gets a meta tag _and_ is excluded from the sitemap. Both, not either-or. The sitemap is "please crawl these"; the noindex tag is "if you do reach this anyway, don't index it." Different signals, both needed.
@@ -81,7 +81,7 @@ A "not found" page must return HTTP 404, not 200 with apologetic copy ("soft-404
 
 ### Gating staging deploys
 
-Staging environments should never appear in Google, regardless of what links to them. See [`Robots.md`](Robots.md).
+Staging environments should never appear in any search index, regardless of what links to them. See [`Robots.md`](Robots.md).
 
 ### Excluding pages from crawling
 
@@ -91,7 +91,7 @@ See [`Robots.md`](Robots.md).
 
 ### Excluding pages from search indexes
 
-Routes like `/login`, `/search`, `/style-lab`, `/kiosk/*`, and `/*/edit` are real pages that crawlers can reach via inbound links — but they shouldn't appear in search results. Per [Google's guidance](https://developers.google.com/search/docs/crawling-indexing/block-indexing), robots.txt is the wrong tool for this (see § "Why the split between robots.txt and noindex" below).
+Routes like `/login`, `/search`, `/style-lab`, `/kiosk/*`, and `/*/edit` are real pages that crawlers can reach via inbound links — but they shouldn't appear in search results. Per [Google's guidance](https://developers.google.com/search/docs/crawling-indexing/block-indexing) (Bing and other major engines behave the same way), robots.txt is the wrong tool for this (see § "Why the split between robots.txt and noindex" below).
 
 See [`NoindexMeta.md`](NoindexMeta.md).
 
@@ -101,7 +101,7 @@ Every indexable route needs a unique, meaningful `<title>` and `<meta name="desc
 
 ### Canonical URLs
 
-Multiple URLs can serve the same or near-identical content: trailing-slash variants, query-string variants, scheme/host variants. Without `<link rel="canonical">`, Google picks one to index and may pick wrong, splitting ranking signals across duplicates. (The Single-Model-Title case where Title and Model pages show the same content is already collapsed by a 301 redirect on `/models/[slug]`, so canonical tags aren't load-bearing there.)
+Multiple URLs can serve the same or near-identical content: trailing-slash variants, query-string variants, scheme/host variants. Without `<link rel="canonical">`, search engines pick one to index and may pick wrong, splitting ranking signals across duplicates. (The Single-Model-Title case where Title and Model pages show the same content is already collapsed by a 301 redirect on `/models/[slug]`, so canonical tags aren't load-bearing there.)
 
 See [`CanonicalUrl.md`](CanonicalUrl.md).
 
@@ -117,7 +117,7 @@ The catalog supports slug edits. Without `301` redirects from the old slug to th
 
 ### Structured data
 
-JSON-LD or microdata using schema.org types — `Product`-like schemas for Models, `Person` for designers and artists, `Organization` for manufacturers, `BreadcrumbList` for navigation. Google uses these for rich results: knowledge panels, carousels, breadcrumb display in SERPs. High-leverage for a domain catalog like this, but only valuable if maintained accurately per entity type.
+JSON-LD or microdata using schema.org types — `Product`-like schemas for Models, `Person` for designers and artists, `Organization` for manufacturers, `BreadcrumbList` for navigation. Search engines consume these for rich-result features — Google's knowledge panels, carousels and breadcrumb display in SERPs; Bing's equivalents — and the same markup feeds non-search consumers like LLM crawlers. High-leverage for a domain catalog like this, but only valuable if maintained accurately per entity type.
 
 ### Faceted and paginated listing URLs
 
