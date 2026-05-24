@@ -1,83 +1,43 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { GET, createServerClient } = vi.hoisted(() => {
-  const get = vi.fn();
-  return {
-    GET: get,
-    createServerClient: vi.fn(() => ({ GET: get })),
-  };
-});
+const requireCapability = vi.fn();
 
-vi.mock('$lib/api/server', () => ({ createServerClient }));
-vi.mock('$app/paths', () => ({ resolve: (p: string) => p }));
+vi.mock('$lib/require-capability.server', () => ({
+  requireCapability: (...args: unknown[]) => requireCapability(...args),
+}));
 
-import { load } from './+layout.server';
+const { load } = await import('./+layout.server');
 
-function makeEvent() {
-  const url = new URL('http://localhost/kiosk/edit');
-  const request = new Request(url, { headers: { cookie: 'sessionid=abc' } });
-  return {
-    fetch: globalThis.fetch,
-    url,
-    request,
-  };
+function makeEvent(url: URL) {
+  const fetchStub = (() => undefined) as unknown as typeof globalThis.fetch;
+  const request = new Request(url);
+  return { fetch: fetchStub, url, request };
 }
 
-async function expectRedirectTo(target: string) {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await load(makeEvent() as any);
-    throw new Error('expected redirect, got nothing thrown');
-  } catch (e) {
-    // SvelteKit's `redirect` helper throws an object with status + location.
-    expect((e as { status: number }).status).toBe(302);
-    expect((e as { location: string }).location).toBe(target);
-  }
-}
-
-describe('/kiosk/edit auth gate', () => {
+describe('/kiosk/edit +layout.server.ts load', () => {
   beforeEach(() => {
-    GET.mockReset();
-    createServerClient.mockClear();
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+    requireCapability.mockReset();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  it('gates the kiosk-edit area through requireCapability with kiosk.edit', async () => {
+    requireCapability.mockResolvedValueOnce(undefined);
+    const event = makeEvent(new URL('http://localhost/kiosk/edit'));
 
-  it('forwards the incoming request to createServerClient (cookie plumbing)', async () => {
-    GET.mockResolvedValue({
-      data: { is_authenticated: true, capabilities: { 'kiosk.edit': true } },
+    await load(event as unknown as Parameters<typeof load>[0]);
+
+    expect(requireCapability).toHaveBeenCalledWith({
+      fetch: event.fetch,
+      url: event.url,
+      request: event.request,
+      activity: 'kiosk.edit',
     });
-    const event = makeEvent();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await load(event as any);
-    expect(createServerClient).toHaveBeenCalledWith(event.fetch, event.url, event.request);
   });
 
-  it('redirects anon to /login (via shared auth helper)', async () => {
-    GET.mockResolvedValue({ data: { is_authenticated: false, capabilities: {} } });
-    await expectRedirectTo('/login');
-  });
+  it('propagates the redirect/error thrown by requireCapability', async () => {
+    const denied = Object.assign(new Error('redirect'), { status: 302, location: '/login' });
+    requireCapability.mockRejectedValueOnce(denied);
+    const event = makeEvent(new URL('http://localhost/kiosk/edit'));
 
-  it('redirects authed user without kiosk.edit to /', async () => {
-    GET.mockResolvedValue({
-      data: { is_authenticated: true, capabilities: { 'kiosk.edit': false } },
-    });
-    await expectRedirectTo('/');
-  });
-
-  it('redirects authed user with missing kiosk.edit key to /', async () => {
-    GET.mockResolvedValue({ data: { is_authenticated: true, capabilities: {} } });
-    await expectRedirectTo('/');
-  });
-
-  it('lets users with kiosk.edit through', async () => {
-    GET.mockResolvedValue({
-      data: { is_authenticated: true, capabilities: { 'kiosk.edit': true } },
-    });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await expect(load(makeEvent() as any)).resolves.toEqual({});
+    await expect(load(event as unknown as Parameters<typeof load>[0])).rejects.toBe(denied);
   });
 });
