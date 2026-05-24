@@ -1,12 +1,8 @@
-import { redirect } from '@sveltejs/kit';
-import { resolve } from '$app/paths';
-import { createServerClient } from '$lib/api/server';
-import { loadAuthenticatedMe } from '$lib/api/load-me.server';
+import { requireCapability } from '$lib/require-capability.server';
 import type { LayoutServerLoad } from './$types';
 
+// Single auth gate for the kiosk-edit SPA area. Any page that lands
+// under `/kiosk/edit/*` inherits this gate; do not re-implement per-page.
 export const load: LayoutServerLoad = async ({ fetch, url, request }) => {
-  const client = createServerClient(fetch, url, request);
-  const me = await loadAuthenticatedMe(client, 'kiosk/edit gate');
-  if (!me.capabilities?.['kiosk.edit']) throw redirect(302, resolve('/'));
-  return {};
+  await requireCapability({ fetch, url, request, activity: 'kiosk.edit' });
 };
