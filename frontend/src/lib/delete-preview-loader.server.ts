@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import { createServerClient } from '$lib/api/server';
-import { loadAuthenticatedMe } from '$lib/api/load-me.server';
+import { requireCapability } from '$lib/require-capability.server';
 import type { paths } from '$lib/api/schema';
 
 // Entity-segment union derived from the schema's delete-preview routes.
@@ -43,9 +43,10 @@ export async function loadDeletePreview<E extends DeletePreviewEntity>({
   public_id: string;
 }> {
   const endpoint = `/api/${entity}/{public_id}/delete-preview/`;
-  const client = createServerClient(fetch, url, request);
 
-  await loadAuthenticatedMe(client, 'loadDeletePreview');
+  await requireCapability({ fetch, url, request, activity: 'catalog.delete' });
+
+  const client = createServerClient(fetch, url, request);
 
   // openapi-fetch can't resolve a typed response for a path it sees as a
   // dynamic string, so the casts are localized here. `entity` is already

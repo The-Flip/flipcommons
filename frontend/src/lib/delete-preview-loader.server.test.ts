@@ -45,17 +45,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const capableMe = ok({ is_authenticated: true, capabilities: { 'catalog.delete': true } });
+
 describe('loadDeletePreview', () => {
   // #420: must forward `request` so /me/ sees the user's cookie over SSR.
   it('forwards (fetch, url, request) to createServerClient', async () => {
-    GET.mockResolvedValueOnce(ok({ is_authenticated: true })).mockResolvedValueOnce(ok({}));
+    GET.mockResolvedValueOnce(capableMe).mockResolvedValueOnce(ok({}));
     await loadDeletePreview(args());
     expect(createServerClient).toHaveBeenCalledWith(fetchStub, url, request);
   });
 
   it('returns the preview body and public_id on success', async () => {
     const preview = { name: 'Theme', changeset_count: 3 };
-    GET.mockResolvedValueOnce(ok({ is_authenticated: true })).mockResolvedValueOnce(ok(preview));
+    GET.mockResolvedValueOnce(capableMe).mockResolvedValueOnce(ok(preview));
 
     const result = await loadDeletePreview(args());
 
@@ -67,7 +69,7 @@ describe('loadDeletePreview', () => {
   });
 
   it('redirects anonymous users to /login (via shared auth helper)', async () => {
-    GET.mockResolvedValueOnce(ok({ is_authenticated: false }));
+    GET.mockResolvedValueOnce(ok({ is_authenticated: false, capabilities: {} }));
 
     await expect(loadDeletePreview(args())).rejects.toMatchObject({
       status: 302,
@@ -75,8 +77,19 @@ describe('loadDeletePreview', () => {
     });
   });
 
+  it('redirects authenticated-but-uncapable users to /verify-email', async () => {
+    GET.mockResolvedValueOnce(
+      ok({ is_authenticated: true, capabilities: { 'catalog.delete': false } }),
+    );
+
+    await expect(loadDeletePreview(args())).rejects.toMatchObject({
+      status: 302,
+      location: '/verify-email',
+    });
+  });
+
   it('redirects to the fallback URL on 404', async () => {
-    GET.mockResolvedValueOnce(ok({ is_authenticated: true })).mockResolvedValueOnce(fail(404));
+    GET.mockResolvedValueOnce(capableMe).mockResolvedValueOnce(fail(404));
 
     await expect(loadDeletePreview(args({ public_id: 'missing' }))).rejects.toMatchObject({
       status: 302,
@@ -85,7 +98,7 @@ describe('loadDeletePreview', () => {
   });
 
   it('throws on other non-OK responses', async () => {
-    GET.mockResolvedValueOnce(ok({ is_authenticated: true })).mockResolvedValueOnce(fail(500));
+    GET.mockResolvedValueOnce(capableMe).mockResolvedValueOnce(fail(500));
 
     await expect(loadDeletePreview(args())).rejects.toThrow(/500/);
   });
