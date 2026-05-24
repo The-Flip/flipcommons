@@ -35,7 +35,7 @@ from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     DELETE_RATE_LIMIT_SPEC,
     EDIT_RATE_LIMIT_SPEC,
-    check_and_record,
+    rate_limited,
 )
 from apps.provenance.schemas import (
     AttributionSchema,
@@ -976,12 +976,11 @@ _SELF_REF_FIELDS = frozenset({"variant_of", "converted_from", "remake_of"})
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_model_claims(
     request: HttpRequest, public_id: str, data: ModelClaimPatchSchema
 ) -> ModelDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve the model."""
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     pm = get_object_or_404(
         MachineModel.objects.active().prefetch_related(
             "themes",
@@ -1097,6 +1096,7 @@ def model_delete_preview(
     tags=["private"],
 )
 @requires(Activity.CATALOG_DELETE)
+@rate_limited(DELETE_RATE_LIMIT_SPEC)
 def delete_model(
     request: HttpRequest, public_id: str, data: ChangeSetInputSchema
 ) -> DeleteResponseSchema | Status[SoftDeleteBlockedSchema | AlreadyDeletedSchema]:
@@ -1109,8 +1109,6 @@ def delete_model(
     points here, …) would be left dangling. Never cascades to the parent
     Title — orphan Titles are supported by spec.
     """
-    check_and_record(request.user, DELETE_RATE_LIMIT_SPEC)
-
     pm = get_object_or_404(
         MachineModel.objects.active(), **{MachineModel.public_id_field: public_id}
     )
@@ -1148,6 +1146,7 @@ def delete_model(
     tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
+@rate_limited(CREATE_RATE_LIMIT_SPEC)
 def restore_model(
     request: HttpRequest, public_id: str, data: ChangeSetInputSchema
 ) -> ModelDetailSchema | Status[ErrorDetailSchema]:
@@ -1157,8 +1156,6 @@ def restore_model(
     delete ChangeSet). Shares the ``create`` rate-limit bucket. The parent
     Title is untouched — consistent with delete's no-cascade-to-parent rule.
     """
-    check_and_record(request.user, CREATE_RATE_LIMIT_SPEC)
-
     # Bypass .active() — we're looking for soft-deleted models.
     pm = get_object_or_404(MachineModel, **{MachineModel.public_id_field: public_id})
     if pm.status != "deleted":

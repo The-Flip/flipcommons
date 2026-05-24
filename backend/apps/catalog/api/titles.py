@@ -49,7 +49,7 @@ from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     DELETE_RATE_LIMIT_SPEC,
     EDIT_RATE_LIMIT_SPEC,
-    check_and_record,
+    rate_limited,
 )
 from apps.provenance.schemas import (
     ChangeSetInputSchema,
@@ -977,12 +977,11 @@ def list_all_titles(request: HttpRequest) -> HttpResponse:
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_title_claims(
     request: HttpRequest, public_id: str, data: TitleClaimPatchSchema
 ) -> TitleDetailSchema:
     """Assert title-owned claims and return the refreshed title detail."""
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     if not data.fields and data.abbreviations is None:
         raise_form_error("No changes provided.")
 
@@ -1035,6 +1034,7 @@ def patch_title_claims(
     tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
+@rate_limited(CREATE_RATE_LIMIT_SPEC)
 def create_title(
     request: HttpRequest, data: EntityCreateInputSchema
 ) -> Status[TitleDetailSchema]:
@@ -1047,8 +1047,6 @@ def create_title(
 
     Rate-limited per user. Staff bypass.
     """
-    check_and_record(request.user, CREATE_RATE_LIMIT_SPEC)
-
     name = validate_name(data.name, max_length=MAX_CATALOG_NAME_LENGTH)
     slug = validate_slug_format(data.slug)
     _assert_title_name_available(name)
@@ -1082,6 +1080,7 @@ def create_title(
     tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
+@rate_limited(CREATE_RATE_LIMIT_SPEC)
 def create_model(
     request: HttpRequest, title_public_id: str, data: EntityCreateInputSchema
 ) -> Status[ModelDetailSchema]:
@@ -1097,8 +1096,6 @@ def create_model(
     titles can legitimately share a model name (e.g. "Pro"). Slug
     uniqueness is global — the ``/models/{public_id}`` URL pattern requires it.
     """
-    check_and_record(request.user, CREATE_RATE_LIMIT_SPEC)
-
     title = get_object_or_404(
         Title.objects.active(), **{Title.public_id_field: title_public_id}
     )
@@ -1193,6 +1190,7 @@ def title_delete_preview(
     tags=["private"],
 )
 @requires(Activity.CATALOG_DELETE)
+@rate_limited(DELETE_RATE_LIMIT_SPEC)
 def delete_title(
     request: HttpRequest, public_id: str, data: ChangeSetInputSchema
 ) -> TitleDeleteResponseSchema | Status[SoftDeleteBlockedSchema | AlreadyDeletedSchema]:
@@ -1204,8 +1202,6 @@ def delete_title(
     active PROTECT referrer outside the cascade tree would be left
     dangling; the response body lists the referrers so the UI can explain.
     """
-    check_and_record(request.user, DELETE_RATE_LIMIT_SPEC)
-
     title = get_object_or_404(
         Title.objects.active(), **{Title.public_id_field: public_id}
     )
@@ -1248,6 +1244,7 @@ def delete_title(
     tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
+@rate_limited(CREATE_RATE_LIMIT_SPEC)
 def restore_title(
     request: HttpRequest, public_id: str, data: ChangeSetInputSchema
 ) -> TitleDetailSchema | Status[ErrorDetailSchema]:
@@ -1259,8 +1256,6 @@ def restore_title(
     or the original delete ChangeSet is undone. Shares the ``create``
     rate-limit bucket (Restore is semantically a re-create).
     """
-    check_and_record(request.user, CREATE_RATE_LIMIT_SPEC)
-
     # Bypass .active() — we're looking for soft-deleted titles.
     title = get_object_or_404(Title, **{Title.public_id_field: public_id})
     if title.status != "deleted":

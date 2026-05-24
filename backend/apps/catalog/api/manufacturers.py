@@ -25,7 +25,7 @@ from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
 from apps.provenance.helpers import active_claims, claims_prefetch
-from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import RichTextSchema
 
 from ..cache import get_cached_response, manufacturers_all_key, set_cached_response
@@ -505,12 +505,11 @@ def list_all_manufacturers(
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_manufacturer_claims(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> ManufacturerDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     mfr = get_object_or_404(
         Manufacturer.objects.active(), **{Manufacturer.public_id_field: public_id}
     )

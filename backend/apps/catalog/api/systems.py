@@ -25,7 +25,7 @@ from apps.provenance.helpers import active_claims, claims_prefetch
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     EDIT_RATE_LIMIT_SPEC,
-    check_and_record,
+    rate_limited,
 )
 from apps.provenance.schemas import RichTextSchema
 
@@ -232,12 +232,11 @@ def list_all_systems(request: HttpRequest) -> list[SystemListItemSchema]:
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_system_claims(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> SystemDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     system = get_object_or_404(
         System.objects.active(), **{System.public_id_field: public_id}
     )
@@ -267,6 +266,7 @@ def patch_system_claims(
     tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
+@rate_limited(CREATE_RATE_LIMIT_SPEC)
 def create_system(
     request: HttpRequest, data: SystemCreateSchema
 ) -> Status[SystemDetailSchema]:
@@ -280,8 +280,6 @@ def create_system(
     required non-URL-nested FK (manufacturer) which the shared registrar
     doesn't express. Uses the same building blocks.
     """
-    check_and_record(request.user, CREATE_RATE_LIMIT_SPEC)
-
     name_field = System._meta.get_field("name")
     assert isinstance(name_field, models.Field)
     assert name_field.max_length is not None

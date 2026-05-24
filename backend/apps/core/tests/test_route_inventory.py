@@ -24,9 +24,18 @@ from apps.core.authz.markers import (
     GATED_INLINE_ATTR,
     PUBLIC_ATTR,
     get_gated_inline_activity,
+    get_required_activity,
 )
 from apps.core.authz.route_walker import iter_operations
 from apps.core.authz.types import Activity
+from apps.provenance.rate_limits import (
+    CREATE_RATE_LIMIT_SPEC,
+    DELETE_RATE_LIMIT_SPEC,
+    EDIT_RATE_LIMIT_SPEC,
+    RateLimitSpec,
+    get_rate_limit_exempt_reason,
+    get_rate_limit_spec,
+)
 from config.api import api
 
 # `op.methods` from Ninja is uppercase. Do NOT reuse the lowercase
@@ -177,4 +186,77 @@ def test_gated_inline_routes_call_enforce_or_check() -> None:
         "@gated_inline routes whose body never calls enforce()/check() — "
         "the marker is informational; the view body must invoke the "
         "policy or the route is silently ungated:\n  " + "\n  ".join(missing)
+    )
+
+
+# Activities whose mutating routes MUST carry @rate_limited (or
+# @rate_limit_exempt). The mapping below dictates which bucket each
+# activity charges — adding a new activity here forces every matching
+# route to declare a bucket or an exemption, and is a deliberate policy
+# decision rather than an emergent default.
+EXPECTED_BUCKET_FOR_ACTIVITY: dict[Activity, RateLimitSpec] = {
+    Activity.CATALOG_CREATE: CREATE_RATE_LIMIT_SPEC,
+    Activity.CATALOG_EDIT: EDIT_RATE_LIMIT_SPEC,
+    Activity.CATALOG_DELETE: DELETE_RATE_LIMIT_SPEC,
+}
+
+
+def _route_activity(view: object) -> Activity | None:
+    """Return the rate-limit-relevant activity stamped on the view, if any.
+
+    Walks both ``@requires`` and ``@gated_inline``. Today's relevant set
+    (CATALOG_CREATE/EDIT/DELETE) only overlaps with ``@requires`` routes;
+    consulting both anyway future-proofs us against adding e.g.
+    CITATION_EDIT when some citation routes are gated inline.
+    """
+    return get_required_activity(view) or get_gated_inline_activity(view)
+
+
+def test_rate_limit_relevant_routes_are_classified() -> None:
+    """Every mutating route gated by a rate-limit-relevant activity
+    must carry @rate_limited(spec) or @rate_limit_exempt(reason), and
+    the spec must match the bucket the activity dictates.
+
+    Mirrors ``test_every_mutating_route_is_classified`` — presence of a
+    rate-limit marker on the route is mandatory; correctness of the
+    bucket is mandatory too (catches the
+    ``@rate_limited(CREATE_RATE_LIMIT_SPEC)``-on-an-edit-route typo).
+    """
+    unclassified: list[str] = []
+    wrong_bucket: list[str] = []
+    for method, path, view in iter_operations(api):
+        if method not in MUTATING_METHODS:
+            continue
+        activity = _route_activity(view)
+        if activity is None or activity not in EXPECTED_BUCKET_FOR_ACTIVITY:
+            continue
+
+        route_id = f"{method} {path} → {view.__module__}.{view.__qualname__}"
+        spec = get_rate_limit_spec(view)
+        exempt_reason = get_rate_limit_exempt_reason(view)
+
+        if spec is None and exempt_reason is None:
+            unclassified.append(f"{route_id} (activity={activity.value})")
+            continue
+        if spec is not None and exempt_reason is not None:
+            wrong_bucket.append(
+                f"{route_id}: route is both @rate_limited and "
+                f"@rate_limit_exempt — pick one"
+            )
+            continue
+        if spec is not None:
+            expected = EXPECTED_BUCKET_FOR_ACTIVITY[activity]
+            if spec != expected:
+                wrong_bucket.append(
+                    f"{route_id}: activity={activity.value} expects "
+                    f"bucket={expected.bucket!r}, got bucket={spec.bucket!r}"
+                )
+
+    assert not unclassified, (
+        "Rate-limit-relevant mutating routes missing @rate_limited / "
+        "@rate_limit_exempt:\n  " + "\n  ".join(unclassified)
+    )
+    assert not wrong_bucket, (
+        "Rate-limit bucket disagrees with route activity (or route is "
+        "double-stamped):\n  " + "\n  ".join(wrong_bucket)
     )

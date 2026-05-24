@@ -19,7 +19,7 @@ from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
-from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import RichTextSchema
 
 from ..models import (
@@ -186,9 +186,12 @@ def _patch_taxonomy(  # noqa: UP047
     public_id: str,
     data: ClaimPatchSchema,
 ) -> TaxonomySchema:
-    """Shared PATCH handler for all taxonomy entities."""
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
+    """Shared PATCH handler for all taxonomy entities.
 
+    Each calling route is decorated with ``@rate_limited(EDIT_RATE_LIMIT_SPEC)``
+    — keeping the bucket charge on the public route (not in this helper)
+    so the inventory walker can read the marker off ``op.view_func``.
+    """
     obj = get_object_or_404(
         model_class.objects.active(), **{model_class.public_id_field: public_id}
     )
@@ -339,6 +342,7 @@ def _bulk_title_counts_for_subgenerations(
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_technology_generation(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> TaxonomySchema:
@@ -398,6 +402,7 @@ def list_display_types(request: HttpRequest) -> list[DisplayTypeListItemSchema]:
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_display_type(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> TaxonomySchema:
@@ -422,6 +427,7 @@ technology_subgenerations_router = Router(tags=["technology-subgenerations"])
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_technology_subgeneration(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> TaxonomySchema:
@@ -446,6 +452,7 @@ display_subtypes_router = Router(tags=["display-subtypes"])
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_display_subtype(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> TaxonomySchema:
@@ -476,6 +483,7 @@ def list_cabinets(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema]:
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_cabinet(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> TaxonomySchema:
@@ -508,6 +516,7 @@ def list_game_formats(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_game_format(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> TaxonomySchema:
@@ -571,11 +580,10 @@ def list_reward_types(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_reward_type(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> RewardTypeDetailSchema:
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     obj = get_object_or_404(
         RewardType.objects.active(), **{RewardType.public_id_field: public_id}
     )
@@ -613,6 +621,7 @@ def list_tags(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema]:
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_tag(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> TaxonomySchema:
@@ -757,11 +766,10 @@ def list_credit_roles(request: HttpRequest) -> list[TaxonomySchema]:
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_credit_role(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> CreditRoleDetailSchema:
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     obj = get_object_or_404(
         CreditRole.objects.active(), **{CreditRole.public_id_field: public_id}
     )

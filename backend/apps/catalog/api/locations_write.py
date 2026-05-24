@@ -39,7 +39,7 @@ from pydantic import ConfigDict, field_validator
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import ChangeSetInputSchema
 
 from ..models import CatalogModel, Location
@@ -283,6 +283,7 @@ register_entity_create(
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_location_claims(
     request: HttpRequest, public_id: str, data: LocationPatchClaimSchema
 ) -> LocationDetailSchema:
@@ -295,8 +296,6 @@ def patch_location_claims(
     it; that's tracked in a follow-up that teaches ``NameEditor`` a
     name-only mode.
     """
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     loc = get_object_or_404(
         Location.objects.active(), **{Location.public_id_field: public_id}
     )

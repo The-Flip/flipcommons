@@ -36,7 +36,7 @@ from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     DELETE_RATE_LIMIT_SPEC,
     EDIT_RATE_LIMIT_SPEC,
-    check_and_record,
+    rate_limited,
 )
 from apps.provenance.schemas import ChangeSetInputSchema, RichTextSchema
 
@@ -323,12 +323,11 @@ def list_all_people(
     tags=["private"],
 )
 @requires(Activity.CATALOG_EDIT)
+@rate_limited(EDIT_RATE_LIMIT_SPEC)
 def patch_person_claims(
     request: HttpRequest, public_id: str, data: ClaimPatchSchema
 ) -> PersonDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve."""
-    check_and_record(request.user, EDIT_RATE_LIMIT_SPEC)
-
     person = get_object_or_404(
         Person.objects.active(), **{Person.public_id_field: public_id}
     )
@@ -359,6 +358,7 @@ def patch_person_claims(
     tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
+@rate_limited(CREATE_RATE_LIMIT_SPEC)
 def create_person(
     request: HttpRequest, data: EntityCreateInputSchema
 ) -> Status[PersonDetailSchema]:
@@ -372,8 +372,6 @@ def create_person(
 
     Rate-limited per user on the shared ``create`` bucket. Staff bypass.
     """
-    check_and_record(request.user, CREATE_RATE_LIMIT_SPEC)
-
     # Introspect the model's field rather than using MAX_CATALOG_NAME_LENGTH
     # directly — Person.name happens to be capped at 200, while Title/Model
     # are 300, and the shared constant is a ceiling not a floor. Mismatch
@@ -475,6 +473,7 @@ def person_delete_preview(
     tags=["private"],
 )
 @requires(Activity.CATALOG_DELETE)
+@rate_limited(DELETE_RATE_LIMIT_SPEC)
 def delete_person(
     request: HttpRequest, public_id: str, data: ChangeSetInputSchema
 ) -> (
@@ -488,8 +487,6 @@ def delete_person(
     rationale. Also defers to the generic PROTECT walker for any future
     blockers (none expected today).
     """
-    check_and_record(request.user, DELETE_RATE_LIMIT_SPEC)
-
     person = get_object_or_404(
         Person.objects.active(), **{Person.public_id_field: public_id}
     )
@@ -545,6 +542,7 @@ def delete_person(
     tags=["private"],
 )
 @requires(Activity.CATALOG_CREATE)
+@rate_limited(CREATE_RATE_LIMIT_SPEC)
 def restore_person(
     request: HttpRequest, public_id: str, data: ChangeSetInputSchema
 ) -> PersonDetailSchema | Status[ErrorDetailSchema]:
@@ -553,8 +551,6 @@ def restore_person(
     Shares the ``create`` rate-limit bucket (Restore is semantically a
     re-create). Person has no lifecycle children, so nothing cascades.
     """
-    check_and_record(request.user, CREATE_RATE_LIMIT_SPEC)
-
     # Bypass .active() — we're looking for soft-deleted people.
     person = get_object_or_404(Person, **{Person.public_id_field: public_id})
     if person.status != "deleted":
