@@ -8,10 +8,7 @@ This PR builds on [`Robots.md`](Robots.md), which already shipped the `ALLOW_SEA
 
 ## Dependencies
 
-- [`RouteWalking.md`](RouteWalking.md) — provides `allRoutes()`, `isSearchEngineIndexable(routeId)`, and the `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS` constant in `frontend/src/lib/route-metadata.server.ts`.
 - [`Robots.md`](Robots.md) — provides the `ALLOW_SEARCH_ENGINE_INDEXING` env var, `lib/server/search-engine-indexable.ts`, and the deploy-time validation that prevents preview/staging from leaking. The sitemap endpoint reuses the same helper rather than re-reading the env var.
-
-Throughout this doc, `isSearchEngineIndexable(routeId)` refers to the predicate defined in `RouteWalking.md` — true when the route is a `catalog-detail` / `catalog-edit-history` / `catalog-sources` route or appears in `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`; false otherwise.
 
 ## Goals
 
