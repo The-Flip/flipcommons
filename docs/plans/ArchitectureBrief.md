@@ -20,22 +20,22 @@ Also, I love Github Actions as a CI system. Require PRs to submit to main.
 
 Single origin and seamless Django admin. In production, route by path on the same domain:
 
-- /admin/ → Django
+- /djadmin/ → Django
 - /api/ → Django Ninja
 - / and everything else → static Svelte build (served by the same reverse proxy)
-  Because Django is the auth authority, users can authenticate once and switch to /admin/ without a separate login.
+  Because Django is the auth authority, users can authenticate once and switch to /djadmin/ without a separate login.
 
 On localhost, dev proxy:
 
 - Run both dev servers, but have the browser only talk to SvelteKit, proxying to Django:
 - Browser hits http://localhost:5173
-- `/api/_` and `/admin/_` are proxied to http://127.0.0.1:8000
+- `/api/_` and `/djadmin/_` are proxied to http://127.0.0.1:8000
 
-Because the browser always talks to a single origin — localhost:5173 in dev, yourdomain.com in prod — Django's standard session cookie auth just works with zero special handling. No CORS headers needed, no JWT complexity, no "secure cookie on different subdomain" headaches. The cookie Django sets for /admin/ or a /api/auth/login/ endpoint is a same-origin cookie from the browser's perspective. SvelteKit's fetch calls to /api/ automatically include it.
+Because the browser always talks to a single origin — localhost:5173 in dev, yourdomain.com in prod — Django's standard session cookie auth just works with zero special handling. No CORS headers needed, no JWT complexity, no "secure cookie on different subdomain" headaches. The cookie Django sets for /djadmin/ or a /api/auth/login/ endpoint is a same-origin cookie from the browser's perspective. SvelteKit's fetch calls to /api/ automatically include it.
 
 CSRF works the same way. Django sees requests coming from the same origin, so its CSRF middleware is satisfied. You'll want to make sure SvelteKit reads the csrftoken cookie and sends it as X-CSRFToken on mutating requests, which is about 10 lines of a shared fetch wrapper.
 
-Vite proxy in dev to kill CORS. Proxy /api and /admin to Django, to test authenticated flows without CORS thrash.
+Vite proxy in dev to kill CORS. Proxy /api and /djadmin to Django, to test authenticated flows without CORS thrash.
 
 This is meaningfully simpler than any JWT or OAuth flow, and it's the same mental model in dev and prod — the proxy is just an implementation detail of how same-origin is achieved.
 

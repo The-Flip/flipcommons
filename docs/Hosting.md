@@ -14,7 +14,7 @@ Browser ──→ Railway (single Caddy service)
               ├─ frontend routes        → SvelteKit Node SSR
               ├─ /_app/*                → SvelteKit Node SSR
               ├─ /api/*                 → Django Ninja API
-              ├─ /admin/*               → Django Admin
+              ├─ /djadmin/*             → Django Admin
               └─ /static/*              → Django staticfiles / WhiteNoise
 
 Browser ──→ media.flipcommons.org       → Bunny CDN → iDrive e2 private bucket
@@ -27,7 +27,7 @@ Browser ──→ media.flipcommons.org       → Bunny CDN → iDrive e2 privat
    Svelte runtime, Django, and Caddy in one container.
 
 2. **Caddy reverse proxy**: Caddy listens on Railway's public `PORT` and
-   routes `/api/`, `/admin/`, and `/static/` to Django on `127.0.0.1:8000`.
+   routes `/api/`, `/djadmin/`, and `/static/` to Django on `127.0.0.1:8000`.
    All other requests are forwarded to SvelteKit SSR on `127.0.0.1:3000`.
 
 3. **WhiteNoise static files**: Django still serves collected static files
@@ -87,7 +87,7 @@ This is acceptable for the current bootstrap phase because it is simple and fail
 | Request                        | Handled by                           |
 | ------------------------------ | ------------------------------------ |
 | `GET /api/models/`             | Django Ninja                         |
-| `GET /admin/`                  | Django Admin                         |
+| `GET /djadmin/`                | Django Admin                         |
 | `GET /__health`                | Caddy → SvelteKit readiness endpoint |
 | `GET /titles/medieval-madness` | Caddy → SvelteKit SSR                |
 | `GET /_app/immutable/app.js`   | Caddy → SvelteKit SSR                |

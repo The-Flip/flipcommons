@@ -14,14 +14,14 @@ function makeEvent(url: URL) {
   return { fetch: fetchStub, url, request };
 }
 
-describe('/a +layout.server.ts load', () => {
+describe('/admin +layout.server.ts load', () => {
   beforeEach(() => {
     requireCapability.mockReset();
   });
 
   it('gates the admin area through requireCapability with admin_area.view', async () => {
     requireCapability.mockResolvedValueOnce(undefined);
-    const event = makeEvent(new URL('http://localhost/a/dashboard'));
+    const event = makeEvent(new URL('http://localhost/admin/dashboard'));
 
     await load(event as unknown as Parameters<typeof load>[0]);
 
@@ -36,7 +36,7 @@ describe('/a +layout.server.ts load', () => {
   it('propagates the redirect/error thrown by requireCapability', async () => {
     const denied = Object.assign(new Error('redirect'), { status: 302, location: '/login' });
     requireCapability.mockRejectedValueOnce(denied);
-    const event = makeEvent(new URL('http://localhost/a/dashboard'));
+    const event = makeEvent(new URL('http://localhost/admin/dashboard'));
 
     await expect(load(event as unknown as Parameters<typeof load>[0])).rejects.toBe(denied);
   });

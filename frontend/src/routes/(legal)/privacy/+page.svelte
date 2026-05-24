@@ -85,24 +85,27 @@
     <strong><a href="https://www.idrive.com/e2/">iDrive e2</a></strong> — stores uploaded files.
   </li>
   <li>
-    <strong><a href="https://sentry.io">Sentry</a></strong> — receives
-    error reports when something breaks in your browser or on our servers, so we can fix it. Reports include
-    your account ID and username if you're signed in; personally identifying information like IP addresses,
-    email addresses, request bodies, and query strings are stripped before delivery. Does not use cookie
-    tracking or record browser sessions.
+    <strong><a href="https://sentry.io">Sentry</a></strong> — receives error reports when something breaks
+    in your browser or on our servers, so we can fix it. Reports include your account ID and username
+    if you're signed in; personally identifying information like IP addresses, email addresses, request
+    bodies, and query strings are stripped before delivery. Does not use cookie tracking or record browser
+    sessions.
   </li>
   <li>
     <strong><a href="https://posthog.com">PostHog</a></strong> — helps us understand which parts of
-    the site are used and where contributors get stuck, so we can improve them. We notify PostHog each
-    time you do specific actions like visit a page, successfully save an edit, or have an upload fail.
-    Each notification includes the page you were on (without anything after the <code>?</code> in the
-    address bar), the site that referred you (if any), and your browser and operating system family.
-    We have configured PostHog not to set cookies, not to remember anything about you between visits, not to
-    store your IP address, not to silently record the buttons you click or text you type, not to record
-    a video of your session, not to run pop-up surveys, not to record your screen or window size, and not to capture
-    marketing or ad-tracking tags from the address bar (things like <code>utm_source</code> or
-    <code>gclid</code>) or the search terms that brought you here from Google or Bing. A temporary ID
-    groups activities from the same browser tab together and is forgotten when you close the tab.
+    the site are used and where contributors get stuck, so we can improve them. We notify PostHog
+    each time you do specific actions like visit a page, successfully save an edit, or have an
+    upload fail. Each notification includes the page you were on (without anything after the
+    <code>?</code>
+    in the address bar), the site that referred you (if any), and your browser and operating system family.
+    We have configured PostHog not to set cookies, not to remember anything about you between visits,
+    not to store your IP address, not to silently record the buttons you click or text you type, not to
+    record a video of your session, not to run pop-up surveys, not to record your screen or window size,
+    and not to capture marketing or ad-tracking tags from the address bar (things like
+    <code>utm_source</code>
+    or
+    <code>gclid</code>) or the search terms that brought you here from Google or Bing. A temporary
+    ID groups activities from the same browser tab together and is forgotten when you close the tab.
   </li>
 </ul>
 

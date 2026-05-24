@@ -13,7 +13,7 @@ request_header -Forwarded
 # is tracked in #448 — it needs a per-request nonce from SvelteKit, so
 # it doesn't belong here. DENY because we have no use case for
 # same-origin framing. Referrer-Policy here overwrites Django's stricter
-# same-origin default on /admin/ — accepted because the public site
+# same-origin default on /djadmin/ — accepted because the public site
 # needs strict-origin-when-cross-origin for analytics attribution.
 header {
 	X-Content-Type-Options nosniff
@@ -27,7 +27,7 @@ header {
 # wins. Duplicated across the two reverse_proxy blocks because Caddyfile
 # snippets must be defined at global scope (before any site address),
 # which is awkward to thread here for a single-line directive.
-@django path /api /api/* /admin /admin/* /media/* /static /static/*
+@django path /api /api/* /djadmin /djadmin/* /media/* /static /static/*
 handle @django {
 	reverse_proxy 127.0.0.1:{$DJANGO_PORT:8000} {
 		header_up X-Forwarded-For {http.request.header.X-Real-IP}

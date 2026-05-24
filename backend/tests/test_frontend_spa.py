@@ -22,9 +22,9 @@ def test_api_health_not_intercepted():
     }
 )
 def test_admin_login_not_intercepted():
-    """GET /admin/login/ should reach Django Admin, not the catch-all."""
+    """GET /djadmin/login/ should reach Django Admin, not the catch-all."""
     client = Client()
-    response = client.get("/admin/login/")
+    response = client.get("/djadmin/login/")
     assert response.status_code == 200
 
 
@@ -39,9 +39,9 @@ def test_api_no_trailing_slash_not_intercepted():
 
 
 def test_admin_no_trailing_slash_not_intercepted():
-    """GET /admin should not be caught by the SPA catch-all."""
+    """GET /djadmin should not be caught by the SPA catch-all."""
     client = Client()
-    response = client.get("/admin")
+    response = client.get("/djadmin")
     assert response.status_code in (200, 301, 302)
 
 

@@ -151,7 +151,7 @@ def resolve_view(request: HttpRequest) -> HttpResponse:
   <p>Re-resolve catalog entities from their claims after changing source settings.</p>
   {buttons_html}
   <p id="status">Resolving&hellip; the page will refresh when complete.</p>
-  <a href="/admin/">&larr; Back to admin</a>
+  <a href="/djadmin/">&larr; Back to admin</a>
 </body>
 </html>""",
         content_type="text/html",

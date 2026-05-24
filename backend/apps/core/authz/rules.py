@@ -18,7 +18,7 @@ some are redundant on today's call paths — the next caller might
 take a different path. ``RATE_LIMIT_EXEMPT`` requires email
 verification because rate-limit exemption is a privilege we only
 grant to verified staff; ``DJANGO_ADMIN_ACCESS`` does not (today)
-because Django itself only gates ``/admin/`` on ``is_staff`` and the
+because Django itself only gates ``/djadmin/`` on ``is_staff`` and the
 SPA nav link mirrors what's actually reachable.
 
 Predicate conventions for rules in this module:
