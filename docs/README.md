@@ -46,6 +46,7 @@ For setup and common commands, start with the repository [README](../README.md).
 
 ## Frontend Development
 
+- [Typescript.md](Typescript.md) frontend TypeScript conventions.
 - [Svelte.md](Svelte.md) Svelte 5 authoring conventions and rendering strategy.
 - [SSRConversion.md](SSRConversion.md) workflow for converting routes from CSR to SSR.
 - [DetailLayoutPatterns.md](DetailLayoutPatterns.md) detail-page layout patterns.

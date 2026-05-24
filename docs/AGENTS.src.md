@@ -171,6 +171,10 @@ The frontend uses **Svelte 5 runes mode** (`runes: true` in compiler options). D
 - `<slot>` → use `{@render children()}` snippets
 - `$$props` / `$$restProps` → use `$props()` with rest syntax
 
+### TypeScript declaration comments use `/** */`
+
+Use JSDoc `/** */` (not `//`) for comments on TypeScript functions, classes, types, and exported constants, so they appear in IDE hover tooltips.
+
 ### No `:global` in Svelte styles
 
 NEVER use `:global` in Svelte component styles without explicit approval from the user. Scoped styles are the default and preferred approach. We rearchitect components rather than use `:global`.

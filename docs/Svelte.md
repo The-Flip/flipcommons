@@ -2,6 +2,8 @@
 
 This document defines how to think about and develop SvelteKit pages in this project.
 
+For language-level TypeScript conventions that apply across the frontend, see [Typescript.md](Typescript.md).
+
 ## Authoring Conventions
 
 You MUST use Svelte 5 runes mode. Use modern Svelte 5 patterns, not legacy Svelte 4 syntax:
