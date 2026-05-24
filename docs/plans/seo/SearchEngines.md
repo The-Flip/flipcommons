@@ -2,17 +2,54 @@
 
 This is a hub document about how the project interacts with search engines -- such as which deploys are crawlable, which pages on a crawlable deploy belong in the index, how we tell crawlers about them, how the data on each page is presented in results.
 
-## The concerns
+## Single source of truth: `isSearchEngineIndexable(routeId)`
 
-## Per-route metadata
+One function answers "should search engines index this route?" for every consumer in the SEO stack:
 
-Several consumers — sitemap, noindex meta, and any future per-route enforcement (canonical declaration, title/description presence) — read from the same per-route classification:
+- **Sitemap** filters routes _in_ — only `isSearchEngineIndexable() === true` routes appear.
+- **`<meta name="robots" content="noindex">`** is injected _out_ — only `isSearchEngineIndexable() === false` routes get the tag.
+- **Canonical URL, SSR-enabled, title/description-present** enforcement tests all gate on the same predicate.
+
+They can't drift because they all read from one source. The predicate is defined in [`RouteWalking.md`](RouteWalking.md); its classification is **derived from the catalog entity registry where possible, declared per-route only for routes outside the catalog convention**. This applies the project's [model-driven metadata](../model_driven_metadata/ModelDrivenMetadata.md) discipline to the SEO surface — the catalog model is the source of truth, parallel per-route declarations would be drift waiting to happen.
+
+### How to make a route (non-)indexable
+
+The answer depends on whether you're adding a new **instance of an existing catalog pattern**, a new **catalog pattern itself**, or a **non-catalog route**.
+
+**New instance of an existing catalog pattern.** Adding a new entity to `CATALOG_META` (or adding the standard subroutes for an entity that's already there) — nothing to do. The seven catalog patterns (`listing`, `detail`, `edit-history`, `sources`, `edit`, `new`, `delete`) already cover the entity's routes. `isSearchEngineIndexable()` lights up correctly with zero SEO declarations.
+
+**New catalog pattern.** Adding a subroute that doesn't fit any existing pattern (a hypothetical `*/comments`, `*/related-titles`, etc.) — edit `frontend/src/lib/route-metadata.server.ts`: add a `kind: 'catalog-<name>'` to the `RouteClass` union, match it in `classifyRoute()`, decide its indexability in `isSearchEngineIndexable()` and — if it's auth-gated — add it to the convention test. This is rare; the existing patterns cover the catalog's CRUD + audit surface.
+
+**Non-catalog route** (`/login`, `/about`, `/some-new-page`) — add the route ID to exactly one of two allowlists in `frontend/src/lib/route-metadata.server.ts`:
+
+- `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS` — should appear in search results.
+- `SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS` — shouldn't.
+
+For non-catalog and new-catalog-pattern routes, the walker test fails until the route is classified, so the choice is forced — there's no silent default. See [`RouteWalking.md`](RouteWalking.md) for the full classification table.
+
+#### Worked example: marking `/login` non-indexable
+
+Add the route ID to the non-indexable list:
 
 ```ts
-isIndexable(routeId): boolean
+// frontend/src/lib/route-metadata.server.ts
+const SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS = [
+  "/login", // ← add here
+  "/signup",
+  // ...
+] as const;
 ```
 
-defined in [`RouteWalking.md`](RouteWalking.md). The predicate composes the per-route `searchEngineInclusion` export with the auth-gating layout-chain check. Each consumer applies it differently — sitemap filters _in_, noindex injects _out_, robots.txt mostly ignores it (its scope is server endpoints, not pages) — but they can't drift, because there's only one source.
+That's the only file you touch. Effects cascade automatically:
+
+- `isSearchEngineIndexable('/login')` returns `false`.
+- The sitemap omits `/login`. Sitemaps list pages we _want_ indexed; non-indexable routes don't appear.
+- The root layout injects `<meta name="robots" content="noindex">` into `/login`'s HTML so crawlers reaching it via inbound links (password-reset emails, OAuth redirects, etc.) don't index it.
+- The SSR-on-indexable, title-and-description-on-indexable and canonical-on-indexable enforcement tests skip `/login` — they only apply to indexable routes.
+
+A common confusion worth heading off: a non-indexable route gets a meta tag _and_ is excluded from the sitemap. Both, not either-or. The sitemap is "please crawl these"; the noindex tag is "if you do reach this anyway, don't index it." Different signals, both needed.
+
+## The concerns
 
 ### Server-side rendering
 
@@ -32,15 +69,11 @@ This was a deliberate performance choice; the listings hydrate a large client-si
 
 Fixing this isn't urgent; the listing pages are not super important for driving search traffic, unlike detail pages.
 
-Either the SSR path needs a different (lighter) data shape, or the page architecture changes, or we accept the tradeoff and mark listings `searchEngineInclusion = 'excluded'`, relying on the sitemap of detail pages for discovery. Decision still open.
-
-##### `/users/[username]` is CSR-only
-
-([`+page.ts:6`](frontend/src/routes/users/[username]/+page.ts#L6)). Smaller scope than listings; likely just needs an SSR path.
+**Decision for now:** listings classify as non-indexable. The sitemap of detail pages covers discovery, so the cost of staying out of the index is small. We'll revisit when the listing data-shape problem is solved (a lighter SSR data path, or a page-architecture change) — at that point the classification flips by adding listings to the indexable side of the table in [`RouteWalking.md`](RouteWalking.md), no other changes needed.
 
 ##### No enforcement test
 
-There's nothing today that catches a regression where someone adds `ssr = false` to a new indexable route. The check is exactly the kind of route-tree property `RouteWalking.md` is built for: walk the layout chain, assert every indexable route has SSR enabled. Belongs there as a follow-up.
+There's nothing today that catches a regression where someone adds `ssr = false` to a new indexable route. The check is exactly the kind of route-tree property [`RouteWalking.md`](RouteWalking.md) is built for: walk the layout chain, assert every indexable route has SSR enabled. Ships as part of `route-metadata.test.ts` — see [`RouteWalking.md`](RouteWalking.md) § The test.
 
 ### ✅ DONE: 404 status integrity
 
