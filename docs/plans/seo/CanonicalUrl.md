@@ -29,17 +29,27 @@ None hard. Slots in alongside [`NoindexMeta.md`](NoindexMeta.md) — both are ro
 
 ## Mechanism
 
-Inject in the root `+layout.svelte` next to the noindex meta. Both are driven by the same `page` state.
+`route-metadata.server.ts` is a server-only module (see [`NoindexMeta.md`](NoindexMeta.md) for why), so the indexable flag is computed in the root `+layout.server.ts` alongside `noindex` and rides down as load data. The `+layout.svelte` then computes the canonical URL from `page.url` only when the flag says it should:
+
+```ts
+// frontend/src/routes/+layout.server.ts (the same file NoindexMeta.md adds)
+import { isSearchEngineIndexable } from "$lib/route-metadata.server";
+import type { LayoutServerLoad } from "./$types";
+
+export const load: LayoutServerLoad = ({ route }) => {
+  const indexable = isSearchEngineIndexable(route.id);
+  return { noindex: !indexable, indexable };
+};
+```
 
 ```svelte
 <!-- frontend/src/routes/+layout.svelte -->
 <script lang="ts">
   import { page } from '$app/state';
-  import { isIndexable } from '$lib/route-metadata';
   import { canonicalUrl } from '$lib/seo/canonical';
 
-  let indexable = $derived(isIndexable(page.route.id));
-  let canonical = $derived(indexable ? canonicalUrl(page.url, page.route.id) : null);
+  let { data, children } = $props();
+  let canonical = $derived(data.indexable ? canonicalUrl(page.url, page.route.id) : null);
 </script>
 
 <svelte:head>
@@ -59,7 +69,7 @@ Inject in the root `+layout.svelte` next to the noindex meta. Both are driven by
 
 ## What gets a canonical
 
-Every route where `isIndexable(routeId) === true`. Non-indexable routes get `noindex` instead and don't need a canonical.
+Every route where `isSearchEngineIndexable(routeId) === true`. Non-indexable routes get `noindex` instead and don't need a canonical.
 
 ## Gate on `ALLOW_SEARCH_ENGINE_INDEXING`?
 
@@ -87,7 +97,7 @@ Unit tests for `canonicalUrl()` cover trailing-slash normalization and the per-r
 
 - **Use `page.url.href` directly.** Rejected: bakes in the request host and query string, so a request to a preview origin or with a tracking param would emit a wrong canonical.
 - **Per-page `<svelte:head>` blocks in each indexable route.** Rejected for the same reason as in [`NoindexMeta.md`](NoindexMeta.md): centralizing in the root layout means a new route inherits correct behavior without per-page wiring.
-- **Fold into `NoindexMeta.md` and rename it `HeadSeoTags.md`.** Considered — same mechanism, same test file, both driven by `isIndexable()`. Rejected to keep each plan single-purpose and matching the existing `seo/` directory pattern.
+- **Fold into `NoindexMeta.md` and rename it `HeadSeoTags.md`.** Considered — same mechanism, same test file, both driven by `isSearchEngineIndexable()`. Rejected to keep each plan single-purpose and matching the existing `seo/` directory pattern.
 
 ## Open questions
 

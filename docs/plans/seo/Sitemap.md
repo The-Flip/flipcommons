@@ -8,10 +8,10 @@ This PR builds on [`Robots.md`](Robots.md), which already shipped the `ALLOW_SEA
 
 ## Dependencies
 
-- [`RouteWalking.md`](RouteWalking.md) — provides `allRoutes()`, `isIndexable(routeId)`, and the per-route `searchEngineInclusion` exports.
+- [`RouteWalking.md`](RouteWalking.md) — provides `allRoutes()`, `isSearchEngineIndexable(routeId)`, and the `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS` constant in `frontend/src/lib/route-metadata.server.ts`.
 - [`Robots.md`](Robots.md) — provides the `ALLOW_SEARCH_ENGINE_INDEXING` env var, `lib/server/search-engine-indexable.ts`, and the deploy-time validation that prevents preview/staging from leaking. The sitemap endpoint reuses the same helper rather than re-reading the env var.
 
-Throughout this doc, `isIndexable(routeId)` refers to the predicate defined in `RouteWalking.md` (true when the route declares `searchEngineInclusion = 'included'` AND is not auth-gated).
+Throughout this doc, `isSearchEngineIndexable(routeId)` refers to the predicate defined in `RouteWalking.md` — true when the route is a `catalog-detail` / `catalog-edit-history` / `catalog-sources` route or appears in `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`; false otherwise.
 
 ## Goals
 
@@ -153,36 +153,47 @@ The frontend uses [`super-sitemap`](https://github.com/jasongitmail/super-sitema
 // frontend/src/routes/sitemap.xml/+server.ts
 import * as sitemap from "super-sitemap";
 import { SITE_ORIGIN } from "$env/static/private";
-import { allRoutes, isIndexable } from "$lib/route-metadata";
+import { allRoutes, isSearchEngineIndexable } from "$lib/route-metadata.server";
+
+// Every entity's detail page has two indexable sibling subroutes —
+// /edit-history and /sources — that share the same slug. One loader serves
+// all three pattern keys; super-sitemap renders one URL per (pattern, slug)
+// combination. Keep this list aligned with the indexable catalog-* kinds
+// in route-metadata.server.ts; if a new indexable subroute lands (or one
+// flips to non-indexable), update both places.
+const INDEXABLE_CATALOG_SUBROUTE_SUFFIXES = [
+  "",
+  "/edit-history",
+  "/sources",
+] as const;
 
 export const GET = async ({ fetch }) => {
   const feeds = await fetch("/api/sitemap/").then((r) => r.json());
-  const paramValues = Object.fromEntries(
-    feeds.map(({ kind, route_pattern }) => [
-      route_pattern,
-      async () => {
-        const entries = await fetch(`/api/sitemap/${kind}/`).then((r) =>
-          r.json(),
-        );
-        return entries.map((e) => ({
-          values: [e.slug],
-          lastmod: e.updated_at,
-        }));
-      },
-    ]),
-  );
+
+  const paramValues: Record<string, () => Promise<sitemap.ParamValues>> = {};
+  for (const { kind, route_pattern } of feeds) {
+    const loader = async () => {
+      const entries = await fetch(`/api/sitemap/${kind}/`).then((r) =>
+        r.json(),
+      );
+      return entries.map((e) => ({ values: [e.slug], lastmod: e.updated_at }));
+    };
+    for (const suffix of INDEXABLE_CATALOG_SUBROUTE_SUFFIXES) {
+      paramValues[`${route_pattern}${suffix}`] = loader;
+    }
+  }
 
   return sitemap.response({
     origin: SITE_ORIGIN,
     excludeRoutePatterns: allRoutes()
-      .filter((id) => !isIndexable(id))
+      .filter((id) => !isSearchEngineIndexable(id))
       .map(routeIdToRegex),
     paramValues,
   });
 };
 ```
 
-That's the whole endpoint. Adding a new entity type requires zero changes here — `GET /api/sitemap/` reports the new feed, the loop wires it into `paramValues` automatically.
+That's the whole endpoint. Adding a new entity type requires zero changes here — `GET /api/sitemap/` reports the new feed, the loop wires it into `paramValues` for detail + edit-history + sources automatically.
 
 ### Why super-sitemap
 
@@ -220,14 +231,15 @@ One-line additive change. Update the existing robots vitest to assert the line i
 - `/`
 - `/about`, `/about/people`
 - `/legal/privacy`, `/legal/terms`, `/legal/licensing`
-- All catalog listing pages: `/titles`, `/models`, `/manufacturers`, `/people`, `/systems`, `/series`, `/franchises`, `/locations`, plus taxonomy listings
-- All catalog detail pages with their `updated_at` as `lastmod`, except:
+- All catalog detail pages with their `updated_at` as `lastmod`, plus per-entity `/edit-history` and `/sources` URLs (every `catalog-detail` / `catalog-edit-history` / `catalog-sources` route classifies as indexable), except:
   - **Single-Model Titles** — when a Title has exactly one Model, include the Title route and **exclude** the Model route. The UI collapses single-Model Titles into the Model page (per `docs/SingleModelTitles.md`), but the Title slug is the canonical URL; indexing both would split signals and create duplicate-content noise. Enforced in `ModelSitemapFeed.entries()`.
 
 **Out:**
 
 - `/style-lab`, `/api-docs`, `/search`, `/kiosk`, `/_sentry_test`, `/auth/error`
-- Anything auth-gated — recognized by `requireCapability` in the layout chain; non-indexable routes are excluded by `isIndexable(routeId)`; never enumerated by hand
+- Catalog listing pages (`/titles`, `/models`, `/manufacturers`, etc.) — non-indexable today per [`RouteWalking.md`](RouteWalking.md) (low search value + CSR-only); discoverability is covered by the catalog detail entries above. Revisit when listing SSR lands.
+- Catalog `/new` and `/delete` subroutes — non-indexable.
+- Anything auth-gated — recognized by `requireCapability` in the layout chain; non-indexable routes are excluded by `isSearchEngineIndexable(routeId)`; never enumerated by hand
 - Models whose parent Title has exactly one Model (see above)
 
 ## 5. Startup validation — `SITE_ORIGIN`
@@ -261,7 +273,7 @@ The check is deploy-gated (`deploy=True`), so it only runs under `manage.py chec
   - One test per `core.E301` / `core.E302` error id in `apps/core/tests/test_checks.py`.
   - **XSD validation** — fetch `/sitemap.xml` via an in-process test client and validate the response against the sitemaps.org XSD using `xmllint --noout --schema`. Catches schema drift on every CI run.
 - **Frontend (vitest):**
-  - `sitemap.xml/+server.ts` builds super-sitemap's `paramValues` correctly from a mocked `/api/sitemap/` response.
+  - `sitemap.xml/+server.ts` builds super-sitemap's `paramValues` correctly from a mocked `/api/sitemap/` response, including the fan-out: a single backend feed produces param entries under three pattern keys (detail + `/edit-history` + `/sources`) with the same slug list.
   - `sitemap.xml/+server.ts` returns 404 when `ALLOW_SEARCH_ENGINE_INDEXING != "true"`.
   - Existing robots.txt test extended to assert the `Sitemap:` line is present iff `ALLOW_SEARCH_ENGINE_INDEXING == "true"`.
 
