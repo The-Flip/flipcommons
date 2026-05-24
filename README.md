@@ -8,10 +8,10 @@ It's sponsored and hosted by [The Flip](https://www.theflip.museum/), Chicago's 
 
 This is a Django + SvelteKit monorepo. SvelteKit handles the user-facing frontend. Django owns the backend: the database data model, APIs, and it also serves Django's admin UI.
 
-- **Backend**: Django + Django Ninja API at `/api/`, admin at `/admin/`
+- **Backend**: Django + Django Ninja API at `/api/`, admin at `/djadmin/`
 - **Frontend**: SvelteKit with Node SSR for public routes and CSR-only authenticated app routes
 - **Auth**: Session-based, same-origin (no JWT, no CORS)
-- **Dev proxy**: Vite proxies `/api/`, `/admin/`, `/media/`, and `/static/` to Django
+- **Dev proxy**: Vite proxies `/api/`, `/djadmin/`, `/media/`, and `/static/` to Django
 - **Production routing**: Caddy fronts SvelteKit SSR and Django inside one Railway service
 
 ## Getting started

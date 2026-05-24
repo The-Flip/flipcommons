@@ -77,7 +77,7 @@ docs/             Documentation source files
 - Backend dependencies managed with `uv`, frontend with `pnpm`
 - Session cookies for auth (no JWT, no CORS); SPA auth gates are UX-only — the backend is the source of truth for access control
 - CSRF: Django sets `csrftoken` cookie; the frontend `client.ts` reads it and sends `X-CSRFToken` on mutating requests
-- Vite dev server proxies `/api/`, `/admin/`, `/media/`, and `/static/` to Django at `127.0.0.1:8000`
+- Vite dev server proxies `/api/`, `/djadmin/`, `/media/`, and `/static/` to Django at `127.0.0.1:8000`
 - For SSR route conventions, see [Svelte.md](Svelte.md). For API design — both endpoint shape (page-oriented vs resource) and schema design heuristics (when to consolidate, when to keep separate, inheritance smells) — see [ApiDesign.md](ApiDesign.md)
 
 ### Generated API Types
@@ -264,7 +264,7 @@ Pre-commit hooks auto-regenerate `CLAUDE.md` and `AGENTS.md` when `docs/AGENTS.s
 
 ## Deployment
 
-Single Railway service: Caddy fronts SvelteKit Node SSR and Django/Gunicorn inside one container. Multi-stage Dockerfile builds the frontend with Node/pnpm, then copies the SSR runtime into the Python image. WhiteNoise still serves Django static assets, while Caddy routes frontend requests to SvelteKit and `/api/`/`/admin/` to Django. See [docs/Hosting.md](Hosting.md) for setup and troubleshooting.
+Single Railway service: Caddy fronts SvelteKit Node SSR and Django/Gunicorn inside one container. Multi-stage Dockerfile builds the frontend with Node/pnpm, then copies the SSR runtime into the Python image. WhiteNoise still serves Django static assets, while Caddy routes frontend requests to SvelteKit and `/api/`/`/djadmin/` to Django. See [docs/Hosting.md](Hosting.md) for setup and troubleshooting.
 
 ## Testing
 

@@ -58,14 +58,14 @@
 {#snippet adminSection()}
   <MenuSectionHeader>admin</MenuSectionHeader>
   {#if auth.can('admin_area.view')}
-    <MenuItem href={resolve('/a/dashboard')} current={isActive('/a')}>Stats</MenuItem>
+    <MenuItem href={resolve('/admin/dashboard')} current={isActive('/admin')}>Stats</MenuItem>
   {/if}
   {#if auth.can('kiosk.edit')}
     <MenuItem href={resolve('/kiosk/edit')} current={isActive('/kiosk/edit')}>Kiosks</MenuItem>
     <MenuItem href={resolve('/style-lab')} current={isActive('/style-lab')}>Style Lab</MenuItem>
   {/if}
   {#if auth.can('django_admin.access')}
-    <MenuItem href="/admin/" reload>Django Admin</MenuItem>
+    <MenuItem href="/djadmin/" reload>Django Admin</MenuItem>
   {/if}
 {/snippet}
 

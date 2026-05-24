@@ -45,11 +45,11 @@ def test_every_activity_has_a_registered_rule(activity: Activity) -> None:
 _ACTIVITIES_EXEMPT_FROM_EMAIL_VERIFIED = frozenset(
     {
         # `django_admin.access` exists to drive the SPA's "Django
-        # Admin" nav link. Django itself gates `/admin/` on `is_staff`
+        # Admin" nav link. Django itself gates `/djadmin/` on `is_staff`
         # only — not email verification — so the SPA link mirrors
         # what's actually reachable. Tightening this activity without
         # also tightening Django's gate would hide the link from
-        # users who can still type `/admin/` directly.
+        # users who can still type `/djadmin/` directly.
         Activity.DJANGO_ADMIN_ACCESS,
     }
 )

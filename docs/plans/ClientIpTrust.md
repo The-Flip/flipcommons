@@ -94,7 +94,7 @@ handle @www {
 
 request_header -Forwarded
 
-@django path /api /api/* /admin /admin/* /media/* /static /static/*
+@django path /api /api/* /djadmin /djadmin/* /media/* /static /static/*
 handle @django {
     reverse_proxy 127.0.0.1:{$DJANGO_PORT:8000} {
         header_up X-Forwarded-For {http.request.header.X-Real-IP}

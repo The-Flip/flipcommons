@@ -14,8 +14,8 @@ function makeEvent(): LoadEvent {
   const fetchStub = (() => undefined) as unknown as typeof globalThis.fetch;
   return {
     fetch: fetchStub,
-    url: new URL('http://localhost/a/dashboard'),
-    request: new Request('http://localhost/a/dashboard'),
+    url: new URL('http://localhost/admin/dashboard'),
+    request: new Request('http://localhost/admin/dashboard'),
     depends: vi.fn(),
   } as unknown as LoadEvent;
 }
@@ -27,7 +27,7 @@ const samplePayload = {
   generated_at: '2026-05-18T18:00:00Z',
 };
 
-describe('/a/dashboard +page.server.ts load', () => {
+describe('/admin/dashboard +page.server.ts load', () => {
   beforeEach(() => {
     apiGet.mockReset();
   });

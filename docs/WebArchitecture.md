@@ -82,7 +82,7 @@ In local development, the browser talks to the SvelteKit dev server. Vite handle
 ```text
 Browser
   -> SvelteKit dev server
-     -> /api/*, /admin/*, /media/*, /static/* proxied to Django
+     -> /api/*, /djadmin/*, /media/*, /static/* proxied to Django
      -> frontend routes handled by SvelteKit
 ```
 
@@ -93,7 +93,7 @@ Public routes can still be server-rendered in development because SvelteKit's de
 In production, one Railway service handles:
 
 - `/api/` via Django Ninja
-- `/admin/` via Django admin
+- `/djadmin/` via Django admin
 - `/static/` via Django/WhiteNoise
 - frontend routes via SvelteKit Node SSR
 
@@ -107,7 +107,7 @@ At a high level:
 Browser
   -> Caddy
      -> /api/* handled by Django/Gunicorn
-     -> /admin/* handled by Django admin
+     -> /djadmin/* handled by Django admin
      -> /static/* handled by Django/WhiteNoise
      -> frontend routes handled by SvelteKit Node SSR
 

@@ -106,7 +106,7 @@ describe('Nav', () => {
     expect(screen.getByRole('menuitem', { name: 'Kiosks' })).toHaveAttribute('href', '/kiosk/edit');
     expect(screen.getByRole('menuitem', { name: 'Django Admin' })).toHaveAttribute(
       'href',
-      '/admin/',
+      '/djadmin/',
     );
   });
 
