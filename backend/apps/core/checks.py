@@ -361,3 +361,75 @@ def check_observability_env(
             )
         )
     return messages
+
+
+# The literal env-var values that `isDeploymentSearchEngineIndexable()`
+# accepts. The SvelteKit helper only treats `"true"` as on, but the
+# deploy-time check additionally requires `"false"` as the explicit
+# opt-out — anything else (including unset, `"1"`, `"yes"`, `"True"`)
+# fails so operators must declare intent on every deployed service.
+_ALLOWED_INDEXING_VALUES: frozenset[str] = frozenset({"true", "false"})
+
+
+@register(Tags.security, deploy=True)
+def check_search_engine_indexing_env(
+    app_configs: Sequence[AppConfig] | None,
+    **kwargs: Any,  # noqa: ANN401
+) -> list[CheckMessage]:
+    """Block deploy when ALLOW_SEARCH_ENGINE_INDEXING is missing or malformed.
+
+    The SvelteKit `robots.txt` and (later) `sitemap.xml` endpoints read
+    this env var via `isDeploymentSearchEngineIndexable()` to decide
+    whether to expose crawlable signals. Read-time default is off, so
+    an unset preview won't *leak*; this deploy check exists to force
+    every deployed service (prod, staging, every preview) to *declare*
+    intent — otherwise prod can ship with the var unset, default off,
+    and silently drop out of search indexes for weeks before anyone
+    notices traffic crater.
+
+    Backend and frontend share the Railway env (per `docs/DeployChecks.md`
+    § "Frontend checks belong in Python"), so this check runs server-side
+    and reads `os.environ` directly. It never probes the running service.
+
+    Unlike the sibling `check_observability_env` / `check_rate_limit_proxy_trust`,
+    this check intentionally does NOT short-circuit on ``settings.DEBUG``:
+    reproducing the deploy gate locally per `docs/DeployChecks.md`
+    § "Running deploy checks locally" is part of the contract, and the
+    cost of setting a single bool to verify is nil.
+    """
+    _ = app_configs, kwargs
+    # Read the raw value without stripping: the SvelteKit helper does a
+    # strict `=== 'true'` comparison, so a Railway-input value like
+    # " true " (trailing space) would silently misclassify — pass the
+    # backend check, then read as off at runtime, then prod drops out of
+    # search indexes. Rejecting any whitespace at the check keeps the two
+    # halves of the contract in lockstep.
+    raw = os.environ.get("ALLOW_SEARCH_ENGINE_INDEXING", "")
+    if not raw:
+        return [
+            Error(
+                "ALLOW_SEARCH_ENGINE_INDEXING is empty. Every deployed "
+                "service must declare crawler-indexing intent explicitly.",
+                hint=(
+                    'Set ALLOW_SEARCH_ENGINE_INDEXING="true" on the '
+                    'production Railway service and "false" on every '
+                    "other deployed service (preview, staging)."
+                ),
+                id="core.E301",
+            )
+        ]
+    if raw not in _ALLOWED_INDEXING_VALUES:
+        return [
+            Error(
+                f"ALLOW_SEARCH_ENGINE_INDEXING={raw!r} is not a recognised "
+                'value. Only the literal "true" or "false" is accepted.',
+                hint=(
+                    'Set ALLOW_SEARCH_ENGINE_INDEXING to "true" (production) '
+                    'or "false" (every other deployed service). Values like '
+                    '"1", "yes", or "True" are rejected so a typo cannot '
+                    "silently disable production indexing."
+                ),
+                id="core.E302",
+            )
+        ]
+    return []

@@ -42,7 +42,8 @@ Browser ──→ media.flipcommons.org       → Bunny CDN → iDrive e2 privat
    runs `manage.py check --deploy && manage.py migrate` before the new
    container accepts traffic. `check --deploy` surfaces production-only
    system checks (HSTS, SSL redirect, `core.W001` for missing
-   `RATE_LIMIT_TRUST_PROXY_HEADERS`, etc.); Error-level findings fail the
+   `RATE_LIMIT_TRUST_PROXY_HEADERS`, `core.E301`/`core.E302` for missing or
+   malformed `ALLOW_SEARCH_ENGINE_INDEXING`, etc.); Error-level findings fail the
    deploy, Warning-level findings are visible in logs but non-blocking.
    If anything in the pre-deploy command fails, the old container keeps
    serving.
@@ -128,6 +129,12 @@ This is the second fail-closed layer behind the X-Real-IP-only header choice. Bo
 - **Moving off Railway, or adding a CDN.** The current scheme relies on Railway's edge to populate `X-Real-IP` and strip client-supplied versions of it. Any infra change to the proxy chain — different host, Cloudflare/Bunny in front, enabling Railway's CDN — invalidates that assumption and likely needs a Caddy `trusted_proxies` block plus a re-verification probe.
 - **A new code path reads `X-Forwarded-For`.** Don't. The function in `apps/core/rate_limits.py` is the single sanctioned reader of forwarded client IP. Adding analytics, geoip, or logging that reads XFF reintroduces the parsing-bug class this design deliberately deleted.
 
+## Search-engine indexing
+
+`ALLOW_SEARCH_ENGINE_INDEXING` gates SvelteKit's `robots.txt` body. Set `"true"` on prod, `"false"` on every other deployed service. Only the literal `"true"` enables indexing; anything else is off.
+
+`check --deploy` refuses any deploy where the var is unset (`core.E301`) or not exactly `"true"`/`"false"` (`core.E302`) — so a new Railway service needs the var set before its first deploy.
+
 ## Setup
 
 ### 1. Create Railway project
@@ -142,14 +149,15 @@ automatically via a reference variable.
 
 In the Railway service dashboard:
 
-| Variable                         | Value                                                                         |
-| -------------------------------- | ----------------------------------------------------------------------------- |
-| `SECRET_KEY`                     | Random string: `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
-| `DEBUG`                          | `false`                                                                       |
-| `ALLOWED_HOSTS`                  | Comma-separated hosts, e.g. `flipcommons.org,www.flipcommons.org`             |
-| `CSRF_TRUSTED_ORIGINS`           | Full origins, e.g. `https://flipcommons.org,https://www.flipcommons.org`      |
-| `INTERNAL_API_BASE_URL`          | `http://127.0.0.1:8000`                                                       |
-| `RATE_LIMIT_TRUST_PROXY_HEADERS` | `true` — required in production. See [Client IP trust](#client-ip-trust).     |
+| Variable                         | Value                                                                                     |
+| -------------------------------- | ----------------------------------------------------------------------------------------- |
+| `SECRET_KEY`                     | Random string: `python -c "import secrets; print(secrets.token_urlsafe(50))"`             |
+| `DEBUG`                          | `false`                                                                                   |
+| `ALLOWED_HOSTS`                  | Comma-separated hosts, e.g. `flipcommons.org,www.flipcommons.org`                         |
+| `CSRF_TRUSTED_ORIGINS`           | Full origins, e.g. `https://flipcommons.org,https://www.flipcommons.org`                  |
+| `INTERNAL_API_BASE_URL`          | `http://127.0.0.1:8000`                                                                   |
+| `RATE_LIMIT_TRUST_PROXY_HEADERS` | `true` — required in production. See [Client IP trust](#client-ip-trust).                 |
+| `ALLOW_SEARCH_ENGINE_INDEXING`   | `true` on prod, `false` elsewhere. See [Search-engine indexing](#search-engine-indexing). |
 
 `DATABASE_URL` and `PORT` are set automatically by Railway.
 

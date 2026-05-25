@@ -1,20 +1,18 @@
 # sitemap.xml
 
-This is the plan for introducing `sitemap.xml` to the project. SvelteKit owns public pages, so the file lives there as a `+server.ts` endpoint. The frontend uses [`super-sitemap`](https://github.com/jasongitmail/super-sitemap) for XML rendering, and discovers dynamic-route slugs from a Django-side registry of per-entity sitemap feeds.
-
-Addresses the "aiding search engine discovery" concern in [`SearchEngines.md`](SearchEngines.md); see that doc for how this fits with robots.txt and the per-page noindex meta.
-
-This PR builds on [`Robots.md`](Robots.md), which already shipped the `ALLOW_SEARCH_ENGINE_INDEXING` env var, the `lib/server/search-engine-indexable.ts` helper, and the deploy-time validation. It also adds the `Sitemap: ${SITE_ORIGIN}/sitemap.xml` line to the existing `robots.txt`.
-
-## Dependencies
-
-- [`Robots.md`](Robots.md) — provides the `ALLOW_SEARCH_ENGINE_INDEXING` env var, `lib/server/search-engine-indexable.ts`, and the deploy-time validation that prevents preview/staging from leaking. The sitemap endpoint reuses the same helper rather than re-reading the env var.
+This is the plan for introducing `sitemap.xml` to the project.
 
 ## Goals
 
-- Tell crawlers what to index (the public catalog).
+- Let crawlers what is available to be indexed.
 - Give search engines accurate `<lastmod>` per catalog page so they can prioritize re-crawls.
 - Adding a new indexable entity type should be a one-file backend change with no frontend touch.
+
+See [`SearchEngines.md`](SearchEngines.md) for how this fits with robots.txt and the per-page noindex meta.
+
+## Overview
+
+The sitemap will be a SvelteKit `+server.ts` endpoint that renders `/sitemap.xml` via [`super-sitemap`](https://github.com/jasongitmail/super-sitemap), with route slugs supplied by a Django-side registry each app can plug into. Appends a `Sitemap:` line to the existing `frontend/src/routes/robots.txt/+server.ts`.
 
 ## 1. Backend — sitemap feed registry
 
@@ -151,6 +149,7 @@ The frontend uses [`super-sitemap`](https://github.com/jasongitmail/super-sitema
 import * as sitemap from "super-sitemap";
 import { SITE_ORIGIN } from "$env/static/private";
 import { allRoutes, isSearchEngineIndexable } from "$lib/route-metadata.server";
+import { isDeploymentSearchEngineIndexable } from "$lib/is-deployment-search-engine-indexable.server";
 
 // Every entity's detail page has two indexable sibling subroutes —
 // /edit-history and /sources — that share the same slug. One loader serves
@@ -209,11 +208,11 @@ Start with the simple version; harden only if observed.
 
 ### Gate on `ALLOW_SEARCH_ENGINE_INDEXING`
 
-Reuse the `lib/server/search-engine-indexable.ts` helper from `Robots.md`. When `ALLOW_SEARCH_ENGINE_INDEXING != "true"`, return `404 Not Found` for `/sitemap.xml` — a non-indexable deploy has nothing to advertise. The robots.txt-side `Disallow: /` already keeps crawlers out; the 404 is defense in depth.
+Call `isDeploymentSearchEngineIndexable()` from `frontend/src/lib/is-deployment-search-engine-indexable.server.ts`. When it returns false, return `404 Not Found` for `/sitemap.xml` — a non-indexable deploy has nothing to advertise. The robots.txt-side `Disallow: /` already keeps crawlers out; the 404 is defense in depth.
 
 ## 3. Add `Sitemap:` line to robots.txt
 
-The `robots.txt` endpoint shipped in [`Robots.md`](Robots.md) does not yet emit a `Sitemap:` line. Once `/sitemap.xml` exists, append it to the indexable-mode body:
+The existing `robots.txt` endpoint at `frontend/src/routes/robots.txt/+server.ts` does not yet emit a `Sitemap:` line. Once `/sitemap.xml` exists, append it to the indexable-mode body:
 
 ```text
 Sitemap: ${SITE_ORIGIN}/sitemap.xml
@@ -253,11 +252,11 @@ Add `SITE_ORIGIN` to `Dockerfile` `ARG` declarations alongside the existing buil
 
 ### Deploy-phase check
 
-Frontend env vars are validated in Python because backend and frontend share the Railway env (per `docs/DeployChecks.md` § "Frontend checks belong in Python"). Add to `backend/apps/core/checks.py` (alongside `check_observability_env` and the `ALLOW_SEARCH_ENGINE_INDEXING` check from `Robots.md`):
+Frontend env vars are validated in Python because backend and frontend share the Railway env (per `docs/DeployChecks.md` § "Frontend checks belong in Python"). Add to `backend/apps/core/checks.py` (alongside `check_observability_env` and `check_search_engine_indexing_env`):
 
-- **`SITE_ORIGIN`** — `@register(Tags.security, deploy=True)` check that errors when `SITE_ORIGIN` is empty in non-DEBUG. Shape-validate it as an `https://` origin with a netloc and no path/trailing slash (reuse the `urlparse` pattern from `_is_valid_dsn`). New error ids `core.E301` (missing) and `core.E302` (malformed). Catches the case where the build had a value but the running container does not.
+- **`SITE_ORIGIN`** — `@register(Tags.security, deploy=True)` check that errors when `SITE_ORIGIN` is empty in non-DEBUG. Shape-validate it as an `https://` origin with a netloc and no path/trailing slash (reuse the `urlparse` pattern from `_is_valid_dsn`). New error ids `core.E303` (missing) and `core.E304` (malformed) — `core.E301`/`core.E302` are taken by `check_search_engine_indexing_env`. Catches the case where the build had a value but the running container does not.
 
-Tests in `backend/apps/core/tests/test_checks.py`: one test per error id — flip the env state, assert the message id appears (or doesn't).
+Tests in a new `backend/apps/core/tests/test_site_origin_check.py` (matching the one-file-per-check pattern set by `test_search_engine_indexing_env_check.py` and `test_observability_env_check.py`): one test per error id — flip the env state, assert the message id appears (or doesn't).
 
 The check is deploy-gated (`deploy=True`), so it only runs under `manage.py check --deploy` — i.e., Railway's `preDeployCommand`. Reproduce locally per `docs/DeployChecks.md` § "Running deploy checks locally".
 
@@ -267,7 +266,7 @@ The check is deploy-gated (`deploy=True`), so it only runs under `manage.py chec
   - `apps/core/tests/test_sitemap_registry.py` — registry mechanics: register, lookup, list, duplicate-kind raises. Uses a fake feed; doesn't import catalog.
   - `apps/core/tests/test_sitemap_api.py` — dispatch endpoint: 200 with expected shape for a registered kind, 404 for an unknown kind, listing endpoint returns the registered feeds, rate-limit returns 429 with `Retry-After` past the threshold.
   - `apps/catalog/tests/test_sitemap_feeds.py` — each catalog feed's queryset shape, ordering, `max_updated_at` matches newest row. Includes the single-Model-Title exclusion test for `ModelSitemapFeed`.
-  - One test per `core.E301` / `core.E302` error id in `apps/core/tests/test_checks.py`.
+  - One test per `core.E303` / `core.E304` error id in `apps/core/tests/test_site_origin_check.py`.
   - **XSD validation** — fetch `/sitemap.xml` via an in-process test client and validate the response against the sitemaps.org XSD using `xmllint --noout --schema`. Catches schema drift on every CI run.
 - **Frontend (vitest):**
   - `sitemap.xml/+server.ts` builds super-sitemap's `paramValues` correctly from a mocked `/api/sitemap/` response, including the fan-out: a single backend feed produces param entries under three pattern keys (detail + `/edit-history` + `/sources`) with the same slug list.
@@ -284,7 +283,7 @@ The check is deploy-gated (`deploy=True`), so it only runs under `manage.py chec
 6. `apps/catalog/apps.py` — trigger registration in `AppConfig.ready()`.
 7. `make api-gen`.
 8. `pnpm add super-sitemap@~1.0.12`.
-9. `frontend/src/routes/sitemap.xml/+server.ts` — wire super-sitemap to `/api/sitemap/` + `/api/sitemap/{kind}/`, with `excludeRoutePatterns` derived from the manifest. Gate on `ALLOW_SEARCH_ENGINE_INDEXING` via the helper from `Robots.md`.
+9. `frontend/src/routes/sitemap.xml/+server.ts` — wire super-sitemap to `/api/sitemap/` + `/api/sitemap/{kind}/`, with `excludeRoutePatterns` derived from the manifest. Gate on `ALLOW_SEARCH_ENGINE_INDEXING` via `isDeploymentSearchEngineIndexable()`.
 10. Append the `Sitemap:` line to `frontend/src/routes/robots.txt/+server.ts` (indexable-mode only). Extend the existing robots test.
 11. Add the XSD validation test (backend pytest, fetches its own endpoint and pipes through `xmllint`).
 12. Verify locally: `curl localhost:5173/sitemap.xml`, validate with `xmllint --noout --schema`.
