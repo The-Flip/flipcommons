@@ -23,7 +23,6 @@
     items: T[];
     loading: boolean;
     error: string | null;
-    rowStyle?: string;
     headerSnippet?: Snippet;
     rowSnippet?: Snippet<[item: T]>;
     /**
@@ -59,7 +58,6 @@
     items,
     loading,
     error,
-    rowStyle,
     headerSnippet,
     rowSnippet,
     listSnippet,
@@ -165,7 +163,7 @@
       <ul class="item-list">
         {#each filteredItems as item (item.slug)}
           <li>
-            <a href={resolveHref(`${basePath}/${item.slug}`)} class="item-row" style={rowStyle}>
+            <a href={resolveHref(`${basePath}/${item.slug}`)} class="item-row">
               {#if rowSnippet}
                 {@render rowSnippet(item)}
               {:else}
@@ -193,6 +191,8 @@
   .item-row {
     display: flex;
     align-items: baseline;
+    justify-content: space-between;
+    gap: var(--size-4);
     padding: var(--size-3) 0;
     border-bottom: 1px solid var(--color-border-soft);
     text-decoration: none;

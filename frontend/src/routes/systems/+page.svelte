@@ -42,7 +42,6 @@
   error={systems.error}
   canCreate
   filterFn={filterByManufacturer}
-  rowStyle="display: flex; justify-content: space-between; gap: var(--size-4);"
 >
   {#snippet headerSnippet()}
     <p class="overview">
