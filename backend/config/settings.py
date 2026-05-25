@@ -32,7 +32,7 @@ for _host in ("localhost", "127.0.0.1"):
         ALLOWED_HOSTS.append(_host)
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    "apps.core.admin_apps.FlipAdminConfig",  # replaces "django.contrib.admin" — disables admin password login
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",

@@ -27,11 +27,13 @@ make dev
 
 Then open http://localhost:5173
 
-To create a Django admin superuser:
+To grant yourself Django admin access, sign in to the local site at http://localhost:5173 (which routes through WorkOS), then promote your account:
 
 ```bash
-cd backend && uv run python manage.py createsuperuser
+cd backend && uv run python manage.py grant_admin you@example.com
 ```
+
+The admin password form is disabled — WorkOS is the only login surface — so `createsuperuser` produces a row that can never sign in.
 
 ## Development Commands
 
