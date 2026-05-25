@@ -124,6 +124,13 @@ SILENCED_SYSTEM_CHECKS = [
     # redirect. Enabling this without SECURE_PROXY_SSL_HEADER would
     # cause an infinite redirect loop. See docs/Hosting.md.
     "security.W008",
+    # HSTS family (W004 SECONDS, W005 INCLUDE_SUBDOMAINS, W021 PRELOAD)
+    # — HSTS is emitted by Caddy, not Django (Django sees plaintext
+    # loopback from Caddy, so SecurityMiddleware's is_secure() gate
+    # would suppress the header anyway). See docs/Hosting.md § HSTS.
+    "security.W004",
+    "security.W005",
+    "security.W021",
 ]
 
 AUTH_PASSWORD_VALIDATORS = [
