@@ -14,20 +14,6 @@ def test_api_health_not_intercepted():
     assert response.json() == {"status": "ok"}
 
 
-@override_settings(
-    STORAGES={
-        "staticfiles": {
-            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
-        },
-    }
-)
-def test_admin_login_not_intercepted():
-    """GET /djadmin/login/ should reach Django Admin, not the catch-all."""
-    client = Client()
-    response = client.get("/djadmin/login/")
-    assert response.status_code == 200
-
-
 def test_api_no_trailing_slash_not_intercepted():
     """GET /api should not be caught by the SPA catch-all."""
     client = Client()

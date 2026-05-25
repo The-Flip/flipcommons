@@ -191,12 +191,12 @@ Push to `main`. Railway builds the Docker image and deploys. The
 followed by `manage.py migrate` before the new container starts
 accepting traffic.
 
-### 4. Create superuser (one-time)
+### 4. Grant admin access (one-time)
 
-In the Railway service shell (or via `railway run`):
+The Django admin password form is disabled — WorkOS is the only login surface — so `createsuperuser` produces a row that can never sign in. Instead, open the deployed site and sign in via WorkOS to create your user, then promote it in the Railway service shell (or via `railway run`):
 
 ```bash
-uv run python manage.py createsuperuser
+uv run python manage.py grant_admin you@example.com
 ```
 
 ## Custom domain

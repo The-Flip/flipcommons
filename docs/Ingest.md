@@ -178,18 +178,14 @@ dashboard (you will need to re-link `DATABASE_URL` to the app service).
 Merge the branch into `main`. Railway auto-deploys and the `preDeployCommand`
 runs `manage.py migrate`, rebuilding the schema from scratch.
 
-### 3. Re-create the superuser
+### 3. Re-create your admin account
 
-Get the public `DATABASE_URL` from the Postgres service variables in the
-Railway dashboard, then run locally:
+After the wipe, your admin row is gone. The admin password form is disabled, so `createsuperuser` produces a row that can never sign in. Instead, open the deployed site and sign up through WorkOS — even if your WorkOS identity still exists, Django sees no matching row and routes you through `/signup` to pick a handle, which creates a fresh `User`. Then grant admin access using the public `DATABASE_URL` from the Postgres service variables in the Railway dashboard:
 
 ```bash
 cd backend
-DJANGO_SUPERUSER_USERNAME=<user> \
-DJANGO_SUPERUSER_PASSWORD=<pass> \
-DJANGO_SUPERUSER_EMAIL="" \
 DATABASE_URL=<public-url> \
-uv run python manage.py createsuperuser --noinput
+uv run python manage.py grant_admin you@example.com
 ```
 
 ### 4. Re-run ingest
