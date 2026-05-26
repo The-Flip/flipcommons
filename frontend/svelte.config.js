@@ -146,8 +146,9 @@ const appHtmlStyleHash = computeAppHtmlStyleHash();
 //     correctly — a wildcard like `*.ingest.sentry.io` would NOT match
 //     those) plus PostHog's api_host. PostHog's external chunk loads
 //     (session-recording.js, surveys.js, /flags) are all disabled in
-//     lib/analytics/config.ts — us.posthog.com is the only host the
-//     SDK actually contacts. When no DSN is configured the Sentry
+//     lib/analytics/config.ts — us.i.posthog.com (the dedicated US
+//     ingestion subdomain that PostHog recommends as api_host) is the
+//     only host the SDK actually contacts. When no DSN is configured the Sentry
 //     entry is omitted; the runtime SDK is also inert in that case.
 //   - `frame-ancestors 'none'` prevents other origins from framing us
 //     (the modern equivalent of X-Frame-Options: DENY in Caddyfile, kept
@@ -168,13 +169,23 @@ const cspReportOnlyDirectives = {
   'default-src': ['self'],
   'script-src': ['self', ...cdnEntry],
   'style-src': ['self', appHtmlStyleHash, ...cdnEntry],
+  // Svelte's `style:` directive (and any hand-written `style="..."`
+  // attribute) compiles to an inline style attribute, which CSP gates
+  // separately under style-src-attr. Without this entry the browser
+  // falls back to style-src — which doesn't permit attribute styles
+  // even with hashes — and every page with e.g. SiteHeader's dynamic
+  // SVG-filter id reports a violation. style-src-attr is much lower
+  // risk than style-src-elem (an attacker can restyle but can't load
+  // a remote stylesheet or inject a <style> block), so 'unsafe-inline'
+  // here is the standard compromise for Svelte/React apps.
+  'style-src-attr': ['unsafe-inline'],
   'img-src': ['self', 'https:', 'data:'],
   'font-src': ['self', ...cdnEntry],
   'connect-src': [
     'self',
     ...cdnEntry,
     ...(sentryOrigin ? [sentryOrigin] : []),
-    'https://us.posthog.com',
+    'https://us.i.posthog.com',
   ],
   'frame-ancestors': ['none'],
   'frame-src': ['none'],
