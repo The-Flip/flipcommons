@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models.functions import Coalesce, Greatest
 
 from apps.core.markdown import MarkdownField
 from apps.core.models import (
@@ -121,6 +122,39 @@ class Title(
                 name="catalog_title_fandom_page_id_min",
             ),
         ]
+
+    @classmethod
+    def sitemap_queryset(cls) -> models.QuerySet[Title]:
+        # Title is the only catalog page whose primary content aggregates
+        # other catalog entities (the Model list, plus — for single-Model
+        # Titles — the collapsed Model's content). Bump ``lastmod`` whenever
+        # any child Model changes.
+        #
+        # ``Max("machine_models__updated_at")`` intentionally includes
+        # deleted Models: soft-deleting a Model shrinks the Title's Model
+        # list, which IS a change to the Title's rendered content, so the
+        # delete time should bump ``lastmod``.
+        #
+        # Built from ``cls.objects.active()`` rather than ``super()`` to
+        # avoid a double-``annotate`` on ``_sitemap_lastmod`` (whose
+        # last-wins behavior varies across Django versions). ``Coalesce``
+        # falls back to ``updated_at`` when a Title has no MachineModels —
+        # Postgres' ``GREATEST`` already ignores NULLs but the explicit
+        # fallback keeps the expression portable.
+        return (
+            cls.objects.active()
+            .annotate(
+                _sitemap_lastmod=Greatest(
+                    models.F("updated_at"),
+                    Coalesce(
+                        models.Max("machine_models__updated_at"),
+                        models.F("updated_at"),
+                    ),
+                ),
+            )
+            .only(cls.public_id_field, "updated_at")
+            .order_by(cls.public_id_field)
+        )
 
     def __str__(self) -> str:
         return self.name

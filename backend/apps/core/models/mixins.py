@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import ClassVar, Self, TypeVar
+from collections.abc import Iterable
+from typing import ClassVar, Self, TypeVar, cast
 
 from django.core.exceptions import ImproperlyConfigured
 from django.db import models
@@ -250,3 +251,62 @@ class LinkableModel(models.Model):
         """Return this entity's URL-identity value (``self.<public_id_field>``)."""
         value: str = getattr(self, self.public_id_field)
         return value
+
+    # ---------------------------------------------------------------------
+    # Sitemap hooks
+    # ---------------------------------------------------------------------
+    # Defaults assume the concrete subclass also inherits
+    # ``LifecycleStatusModel`` (for ``.active()``) and ``TimeStampedModel``
+    # (for ``updated_at``). Every shipped concrete ``LinkableModel`` does, via
+    # ``CatalogModel`` + ``TimeStampedModel``. The parity test in
+    # ``apps/core/tests/test_linkable_model_lifecycle_parity.py`` pins that
+    # contract so a future subclass without the mixins fails CI rather than
+    # crashing at sitemap render. A subclass that doesn't / can't satisfy the
+    # contract MUST override ``sitemap_queryset`` (return ``cls.objects.none()``
+    # to opt out, or build the queryset by hand).
+
+    @classmethod
+    def sitemap_queryset(cls) -> models.QuerySet[Self]:
+        """Active rows to include in the sitemap, annotated with ``_sitemap_lastmod``.
+
+        Default: ``.active()`` rows with ``_sitemap_lastmod = updated_at``.
+        Override to widen ``lastmod`` (e.g. aggregate child timestamps) — not
+        to narrow membership for canonical-URL reasons; use
+        ``non_canonical_detail_slugs()`` for that.
+
+        Return ``cls.objects.none()`` to opt a ``LinkableModel`` out of the
+        sitemap entirely.
+        """
+        # ``LinkableModel`` itself doesn't carry ``status`` or the lifecycle
+        # manager; the default depends on the parity-tested mixin contract
+        # above, so cast at the boundary rather than tightening the abstract
+        # base's bases (which would force every ``LinkableModel`` to be a
+        # ``LifecycleStatusModel`` — too tight for future non-lifecycle
+        # entities that opt out via override).
+        objects = cast("LifecycleManager[Self]", cls._default_manager)
+        return cast(
+            "models.QuerySet[Self]",
+            objects.active()
+            .annotate(_sitemap_lastmod=models.F("updated_at"))
+            # ``updated_at`` comes from ``TimeStampedModel``; django-stubs
+            # can't see fields from a sibling mixin on the abstract base.
+            # Parity test pins the contract.
+            .only(cls.public_id_field, "updated_at")  # type: ignore[misc]
+            .order_by(cls.public_id_field),
+        )
+
+    @classmethod
+    def non_canonical_detail_slugs(cls) -> Iterable[str]:
+        """Slugs whose ``catalog-detail`` URL is non-canonical.
+
+        Default: empty. Override when the detail page collapses to a
+        different entity's page in the UI (canonical URL lives elsewhere) —
+        the row stays in ``sitemap_queryset()`` so ``/edit-history`` and
+        ``/sources`` still emit, but its detail URL is omitted from the
+        sitemap.
+
+        Returned slugs must already be members of ``sitemap_queryset()``;
+        slugs outside that set are ignored (defensive — they wouldn't appear
+        anyway).
+        """
+        return ()

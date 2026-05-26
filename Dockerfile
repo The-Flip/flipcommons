@@ -64,6 +64,18 @@ ENV PUBLIC_SENTRY_DSN=$PUBLIC_SENTRY_DSN
 ARG CDN_URL=""
 ENV CDN_URL=$CDN_URL
 
+# SITE_ORIGIN is baked into prerendered canonical URLs and OG tags at
+# build time via svelte.config.js prerender.origin, and is read at
+# runtime by /sitemap.xml and /robots.txt. Same Railway-build-arg rule
+# applies as above: without an explicit ARG declaration the variable
+# never reaches `pnpm build` and prerendered HTML silently ships
+# localhost URLs. Empty (the default) means the svelte.config.js
+# localhost fallback applies, so local/CI Docker builds without the var
+# still work; the build-phase gate in svelte.config.js refuses Railway
+# builds where the var is unset.
+ARG SITE_ORIGIN=""
+ENV SITE_ORIGIN=$SITE_ORIGIN
+
 COPY frontend/ .
 RUN pnpm build
 # Keep only runtime dependencies for the Node SSR server we copy below.

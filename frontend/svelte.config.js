@@ -105,6 +105,36 @@ if (cdnUrl && !/^https:\/\/[^/]+$/.test(cdnUrl)) {
   );
 }
 
+// SITE_ORIGIN feeds prerender.origin (baked into the canonical href and OG
+// tags on prerendered routes) and — once /sitemap.xml ships — the sitemap
+// URLs and the robots.txt `Sitemap:` line. The svelte.config.js fallback
+// below (`'http://localhost:5173'`) is fine for `make dev`, but a Railway
+// build with the var unset would silently bake localhost URLs into every
+// prerendered HTML file. Fail-closed in Railway builds (same shape as the
+// CDN_URL guard above); the matching deploy-time check
+// (`apps/core/checks.py:check_site_origin`, error ids core.E303 / E304)
+// catches the case where the var drifted between build and deploy.
+const rawSiteOrigin = process.env.SITE_ORIGIN?.trim() ?? '';
+if (isRailwayBuild && !rawSiteOrigin) {
+  throw new Error(
+    'SITE_ORIGIN is required in Railway builds. Set SITE_ORIGIN=https://<host> ' +
+      '(production is https://flipcommons.org) so prerendered canonical URLs, ' +
+      'OG tags, and the sitemap point at the real origin.',
+  );
+}
+// Stricter than the CDN_URL regex above ([^/]+ would accept `?` and `#`),
+// because SITE_ORIGIN is string-concatenated with paths to build canonical
+// URLs and the sitemap Sitemap: line — a stray query or fragment in the
+// origin would produce broken URLs downstream. Stays in lockstep with the
+// deploy-time `_is_valid_site_origin()` check in apps/core/checks.py.
+if (rawSiteOrigin && !/^https:\/\/[^/?#]+$/.test(rawSiteOrigin)) {
+  throw new Error(
+    `SITE_ORIGIN must be an https:// origin with no path, trailing slash, ` +
+      `query string, or fragment (e.g. https://flipcommons.org). Got: ` +
+      `${JSON.stringify(rawSiteOrigin)}`,
+  );
+}
+
 // Hash the inline <style> block in app.html so it survives an enforced
 // `style-src 'self'`. SvelteKit only auto-hashes inline styles it injects
 // itself (bundler-inlined CSS, sub-threshold component styles) — the
@@ -264,7 +294,7 @@ const config = {
       pollInterval: isRailwayBuild ? 60 * 60 * 1000 : 0,
     },
     prerender: {
-      origin: process.env.SITE_ORIGIN || 'http://localhost:5173',
+      origin: rawSiteOrigin || 'http://localhost:5173',
       handleHttpError: ({ path, message }) => {
         // API endpoints are served by Django, not SvelteKit — ignore
         // them when the prerender crawler discovers <link rel="preload">
