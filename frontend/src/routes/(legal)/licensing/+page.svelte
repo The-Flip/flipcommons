@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SITE_NAME, pageTitle } from '$lib/constants';
   import LastUpdated from '$lib/components/LastUpdated.svelte';
+  import { STATIC_LASTMOD, formatLastUpdated } from '$lib/static-lastmod';
 </script>
 
 <svelte:head>
@@ -8,7 +9,7 @@
 </svelte:head>
 
 <h1>Licensing</h1>
-<LastUpdated>Last updated: May 2026</LastUpdated>
+<LastUpdated>Last updated: {formatLastUpdated(STATIC_LASTMOD['/(legal)/licensing'])}</LastUpdated>
 
 <h2>Facts Are Free</h2>
 <p>
@@ -53,7 +54,6 @@
 
 <h2>Questions</h2>
 <p>
-  If you have questions about licensing or data usage, please
-  <!-- TODO: Add contact method -->
-  contact us.
+  If you have questions about licensing or data usage, email
+  <a href="mailto:licensing@flipcommons.org">licensing@flipcommons.org</a>.
 </p>

@@ -149,15 +149,16 @@ automatically via a reference variable.
 
 In the Railway service dashboard:
 
-| Variable                         | Value                                                                                     |
-| -------------------------------- | ----------------------------------------------------------------------------------------- |
-| `SECRET_KEY`                     | Random string: `python -c "import secrets; print(secrets.token_urlsafe(50))"`             |
-| `DEBUG`                          | `false`                                                                                   |
-| `ALLOWED_HOSTS`                  | Comma-separated hosts, e.g. `flipcommons.org,www.flipcommons.org`                         |
-| `CSRF_TRUSTED_ORIGINS`           | Full origins, e.g. `https://flipcommons.org,https://www.flipcommons.org`                  |
-| `INTERNAL_API_BASE_URL`          | `http://127.0.0.1:8000`                                                                   |
-| `RATE_LIMIT_TRUST_PROXY_HEADERS` | `true` — required in production. See [Client IP trust](#client-ip-trust).                 |
-| `ALLOW_SEARCH_ENGINE_INDEXING`   | `true` on prod, `false` elsewhere. See [Search-engine indexing](#search-engine-indexing). |
+| Variable                         | Value                                                                                                                                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SECRET_KEY`                     | Random string: `python -c "import secrets; print(secrets.token_urlsafe(50))"`                                                                                                              |
+| `DEBUG`                          | `false`                                                                                                                                                                                    |
+| `ALLOWED_HOSTS`                  | Comma-separated hosts, e.g. `flipcommons.org,www.flipcommons.org`                                                                                                                          |
+| `CSRF_TRUSTED_ORIGINS`           | Full origins, e.g. `https://flipcommons.org,https://www.flipcommons.org`                                                                                                                   |
+| `INTERNAL_API_BASE_URL`          | `http://127.0.0.1:8000`                                                                                                                                                                    |
+| `RATE_LIMIT_TRUST_PROXY_HEADERS` | `true` — required in production. See [Client IP trust](#client-ip-trust).                                                                                                                  |
+| `ALLOW_SEARCH_ENGINE_INDEXING`   | `true` on prod, `false` elsewhere. See [Search-engine indexing](#search-engine-indexing).                                                                                                  |
+| `SITE_ORIGIN`                    | Public origin, no trailing slash, e.g. `https://flipcommons.org`. Build arg + runtime var; baked into prerendered canonical URLs and OG tags, consumed by `/sitemap.xml` and `robots.txt`. |
 
 `DATABASE_URL` and `PORT` are set automatically by Railway.
 
