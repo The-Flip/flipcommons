@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SITE_NAME, pageTitle } from '$lib/constants';
   import LastUpdated from '$lib/components/LastUpdated.svelte';
+  import { STATIC_LASTMOD, formatLastUpdated } from '$lib/static-lastmod';
 </script>
 
 <svelte:head>
@@ -8,7 +9,7 @@
 </svelte:head>
 
 <h1>Terms of Service</h1>
-<LastUpdated>Last updated: March 2026</LastUpdated>
+<LastUpdated>Last updated: {formatLastUpdated(STATIC_LASTMOD['/(legal)/terms'])}</LastUpdated>
 
 <h2>Acceptance of Terms</h2>
 <p>
@@ -63,7 +64,6 @@
 
 <h2>Contact</h2>
 <p>
-  If you have questions about these terms, please
-  <!-- TODO: Add contact method -->
-  contact us.
+  If you have questions about these terms, email
+  <a href="mailto:howdy@flipcommons.org">howdy@flipcommons.org</a>.
 </p>

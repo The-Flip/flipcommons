@@ -53,4 +53,12 @@
       <a href={resolve('/about/people')}>Meet the people</a> who got it going.
     </p>
   </section>
+
+  <section>
+    <h2>Get in touch</h2>
+    <p>
+      Say hi, share a correction, or tell us what's missing:
+      <a href="mailto:howdy@flipcommons.org">howdy@flipcommons.org</a>.
+    </p>
+  </section>
 </Prose>

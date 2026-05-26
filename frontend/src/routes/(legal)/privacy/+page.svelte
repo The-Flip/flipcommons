@@ -1,6 +1,7 @@
 <script lang="ts">
   import { SITE_NAME, pageTitle } from '$lib/constants';
   import LastUpdated from '$lib/components/LastUpdated.svelte';
+  import { STATIC_LASTMOD, formatLastUpdated } from '$lib/static-lastmod';
 </script>
 
 <svelte:head>
@@ -8,7 +9,7 @@
 </svelte:head>
 
 <h1>Privacy Policy</h1>
-<LastUpdated>Last updated: March 2026</LastUpdated>
+<LastUpdated>Last updated: {formatLastUpdated(STATIC_LASTMOD['/(legal)/privacy'])}</LastUpdated>
 
 <h2>How We Operate</h2>
 <p>
@@ -62,10 +63,9 @@
 <h2>Data Retention</h2>
 <p>
   Account information is retained while your account is active. Server logs are retained for a
-  limited period for operational purposes. You may request deletion of your account and associated
-  data at any time.
+  limited period for operational purposes. To delete your account and associated data, email
+  <a href="mailto:privacy@flipcommons.org">privacy@flipcommons.org</a>.
 </p>
-<!-- TODO: Add account deletion process details -->
 
 <h2>Third-Party Services</h2>
 <p>
@@ -112,9 +112,7 @@
 <h2>Your Rights</h2>
 <p>
   You have the right to access, correct, or delete your personal information. To exercise these
-  rights, please
-  <!-- TODO: Add contact method -->
-  contact us.
+  rights, email <a href="mailto:privacy@flipcommons.org">privacy@flipcommons.org</a>.
 </p>
 
 <h2>Changes to This Policy</h2>
@@ -125,7 +123,6 @@
 
 <h2>Contact</h2>
 <p>
-  If you have questions about this privacy policy, please
-  <!-- TODO: Add contact method -->
-  contact us.
+  If you have questions about this privacy policy, email
+  <a href="mailto:privacy@flipcommons.org">privacy@flipcommons.org</a>.
 </p>
