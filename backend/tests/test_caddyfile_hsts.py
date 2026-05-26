@@ -17,7 +17,7 @@ from django.conf import settings
 def test_caddyfile_emits_hsts() -> None:
     caddyfile = (settings.BASE_DIR.parent / "Caddyfile").read_text()
     assert re.search(
-        r'^\s*Strict-Transport-Security\s+"max-age=60"\s*$',
+        r'^\s*Strict-Transport-Security\s+"max-age=86400"\s*$',
         caddyfile,
         re.MULTILINE,
     ), "Caddyfile must carry Strict-Transport-Security; see docs/Hosting.md § HSTS"
