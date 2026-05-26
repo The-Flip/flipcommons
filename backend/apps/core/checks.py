@@ -433,3 +433,85 @@ def check_search_engine_indexing_env(
             )
         ]
     return []
+
+
+def _is_valid_site_origin(value: str) -> bool:
+    """Shape check for SITE_ORIGIN: ``https://<host>`` with no path.
+
+    Kept in lockstep with the build-phase regex in
+    ``frontend/svelte.config.js`` (``^https://[^/?#]+$``) so a value that
+    passes the build can't be rejected at deploy time, or vice versa.
+    Rejects ``http://``, trailing slashes, paths, query strings, and
+    fragments — production canonical URLs and the sitemap's ``Sitemap:``
+    line are built by string concatenation, so a stray suffix silently
+    produces double-slashes or garbage URLs downstream.
+    """
+    parsed = urlparse(value)
+    return (
+        parsed.scheme == "https"
+        and bool(parsed.netloc)
+        and parsed.path == ""
+        and parsed.query == ""
+        and parsed.fragment == ""
+    )
+
+
+@register(Tags.security, deploy=True)
+def check_site_origin(
+    app_configs: Sequence[AppConfig] | None,
+    **kwargs: Any,  # noqa: ANN401
+) -> list[CheckMessage]:
+    """Block deploy when SITE_ORIGIN is missing or malformed.
+
+    SITE_ORIGIN is consumed by the SvelteKit build for prerendered meta
+    tags (canonical URLs, OG tags) and by the runtime ``/sitemap.xml``
+    and ``/robots.txt`` endpoints. Today ``frontend/svelte.config.js``
+    falls back to ``http://localhost:5173`` when unset — fine for ``make
+    dev``, but a production build with the var unset silently bakes
+    localhost URLs into prerendered HTML.
+
+    The build-phase gate in ``svelte.config.js`` already refuses Railway
+    builds without SITE_ORIGIN. This deploy check is defense in depth:
+    it catches the case where SITE_ORIGIN drifted between build and
+    deploy (or was never set on a freshly created service), and it
+    surfaces the failure with an operator-grep-friendly id.
+
+    Unlike ``check_search_engine_indexing_env``, this check short-
+    circuits on ``settings.DEBUG``: ``svelte.config.js`` falls back to
+    ``http://localhost:5173`` when the var is unset, so requiring an
+    explicit value locally would just add friction without catching any
+    deployment risk.
+    """
+    _ = app_configs, kwargs
+    if settings.DEBUG:
+        return []
+    raw = os.environ.get("SITE_ORIGIN", "").strip()
+    if not raw:
+        return [
+            Error(
+                "SITE_ORIGIN is empty in a non-DEBUG environment. "
+                "Canonical URLs, OG tags, robots.txt, and the sitemap "
+                "will point at incorrect or relative hosts.",
+                hint=(
+                    "Set SITE_ORIGIN=https://<host> on the Railway service "
+                    "(production is https://flipcommons.org)."
+                ),
+                id="core.E303",
+            )
+        ]
+    if not _is_valid_site_origin(raw):
+        return [
+            Error(
+                f"SITE_ORIGIN={raw!r} is not a valid origin "
+                "(expected https://<host> with no path, trailing slash, "
+                "query string, or fragment).",
+                hint=(
+                    "Set SITE_ORIGIN=https://<host> on the Railway service "
+                    "(production is https://flipcommons.org). The value is "
+                    "concatenated with paths to build canonical URLs, so a "
+                    "trailing slash or stray path produces broken links."
+                ),
+                id="core.E304",
+            )
+        ]
+    return []
