@@ -62,6 +62,49 @@ const sentry = parseSentryDsn(process.env.PUBLIC_SENTRY_DSN);
 const sentryCspReportUri = sentry?.reportUri ?? null;
 const sentryOrigin = sentry?.origin ?? null;
 
+// Production deploys serve SvelteKit-emitted asset URLs through a CDN
+// pull zone (currently a Bunny zone at https://static.flipcommons.org;
+// CDN_URL accepts any https origin to allow swapping providers or
+// testing against an alternate zone). When set, paths.assets rewrites
+// the references SvelteKit itself emits — entry script and modulepreload
+// tags, bundled CSS links, %sveltekit.assets% placeholders in app.html,
+// the /_app/version.json poll, and url() refs inside hashed CSS that
+// resolve relative to the CSS file's URL. Hand-written URLs in component
+// markup (e.g. `<img src="/og-default.png">`) are NOT rewritten — they
+// stay on origin unless threaded through the `assets` helper from
+// $app/paths. Local dev and CI leave CDN_URL unset; Vite's dev server
+// would otherwise emit CDN URLs for chunks that only exist locally. See
+// docs/plans/perf/StaticAssetCDN.md.
+//
+// Three valid states:
+//   - "https://host"  → CDN enabled
+//   - "DISABLED"      → CDN explicitly off (rollback path; also the
+//                       right value for Railway preview deploys that
+//                       inherit RAILWAY_GIT_COMMIT_SHA but shouldn't
+//                       route through production's CDN)
+//   - unset / empty   → CDN off locally; ERROR in Railway builds
+//                       (fail-closed per docs/Reviewing.md, so a
+//                       forgotten env var doesn't silently ship
+//                       same-origin assets)
+const rawCdn = process.env.CDN_URL?.trim() ?? '';
+const isRailwayBuild =
+  !!process.env.RAILWAY_GIT_COMMIT_SHA && process.env.RAILWAY_GIT_COMMIT_SHA !== 'dev';
+if (isRailwayBuild && !rawCdn) {
+  throw new Error(
+    'CDN_URL is required in Railway builds. Set CDN_URL=https://<host> (production ' +
+      'is https://static.flipcommons.org) to enable the CDN, or CDN_URL=DISABLED to ' +
+      'explicitly opt out (rollback path, or preview deploys). See ' +
+      'docs/plans/perf/StaticAssetCDN.md.',
+  );
+}
+const cdnUrl = rawCdn && rawCdn !== 'DISABLED' ? rawCdn : null;
+if (cdnUrl && !/^https:\/\/[^/]+$/.test(cdnUrl)) {
+  throw new Error(
+    `CDN_URL must be an https:// origin with no path or trailing slash (e.g. ` +
+      `https://static.flipcommons.org). Got: ${JSON.stringify(cdnUrl)}`,
+  );
+}
+
 // Hash the inline <style> block in app.html so it survives an enforced
 // `style-src 'self'`. SvelteKit only auto-hashes inline styles it injects
 // itself (bundler-inlined CSS, sub-threshold component styles) — the
@@ -103,8 +146,9 @@ const appHtmlStyleHash = computeAppHtmlStyleHash();
 //     correctly — a wildcard like `*.ingest.sentry.io` would NOT match
 //     those) plus PostHog's api_host. PostHog's external chunk loads
 //     (session-recording.js, surveys.js, /flags) are all disabled in
-//     lib/analytics/config.ts — us.posthog.com is the only host the
-//     SDK actually contacts. When no DSN is configured the Sentry
+//     lib/analytics/config.ts — us.i.posthog.com (the dedicated US
+//     ingestion subdomain that PostHog recommends as api_host) is the
+//     only host the SDK actually contacts. When no DSN is configured the Sentry
 //     entry is omitted; the runtime SDK is also inert in that case.
 //   - `frame-ancestors 'none'` prevents other origins from framing us
 //     (the modern equivalent of X-Frame-Options: DENY in Caddyfile, kept
@@ -116,13 +160,33 @@ const appHtmlStyleHash = computeAppHtmlStyleHash();
 //     because the directive is ignored in report-only mode (per spec) and
 //     it's safe to enforce on day one — it just upgrades http:// sub-
 //     resource URLs to https://, which our code already uses everywhere.
+// CDN host appears in script-/style-/font-/connect-src because flipping
+// kit.paths.assets routes the chunk, CSS, @font-face url(), and the
+// hourly /_app/version.json fetch through the CDN origin. img-src is
+// already permissive enough (https:) to cover CDN-hosted images.
+const cdnEntry = cdnUrl ? [cdnUrl] : [];
 const cspReportOnlyDirectives = {
   'default-src': ['self'],
-  'script-src': ['self'],
-  'style-src': ['self', appHtmlStyleHash],
+  'script-src': ['self', ...cdnEntry],
+  'style-src': ['self', appHtmlStyleHash, ...cdnEntry],
+  // Svelte's `style:` directive (and any hand-written `style="..."`
+  // attribute) compiles to an inline style attribute, which CSP gates
+  // separately under style-src-attr. Without this entry the browser
+  // falls back to style-src — which doesn't permit attribute styles
+  // even with hashes — and every page with e.g. SiteHeader's dynamic
+  // SVG-filter id reports a violation. style-src-attr is much lower
+  // risk than style-src-elem (an attacker can restyle but can't load
+  // a remote stylesheet or inject a <style> block), so 'unsafe-inline'
+  // here is the standard compromise for Svelte/React apps.
+  'style-src-attr': ['unsafe-inline'],
   'img-src': ['self', 'https:', 'data:'],
-  'font-src': ['self'],
-  'connect-src': ['self', ...(sentryOrigin ? [sentryOrigin] : []), 'https://us.posthog.com'],
+  'font-src': ['self', ...cdnEntry],
+  'connect-src': [
+    'self',
+    ...cdnEntry,
+    ...(sentryOrigin ? [sentryOrigin] : []),
+    'https://us.i.posthog.com',
+  ],
   'frame-ancestors': ['none'],
   'frame-src': ['none'],
   'object-src': ['none'],
@@ -143,6 +207,11 @@ const config = {
   preprocess: [injectCustomMedia, vitePreprocess()],
   kit: {
     adapter: adapter(),
+    // CDN-fronted asset URLs (production only). paths.relative MUST be
+    // false when paths.assets is set; SvelteKit then emits absolute URLs
+    // for every asset reference in SSR'd HTML. Dropped entirely when
+    // CDN_URL is unset so local dev keeps same-origin asset loading.
+    ...(cdnUrl ? { paths: { assets: cdnUrl, relative: false } } : {}),
     // Initial CSP rollout is report-only for the fetch directives:
     // browsers send violation reports to Sentry but nothing is blocked.
     // `upgrade-insecure-requests` is enforced from day one (see comment
@@ -185,10 +254,14 @@ const config = {
       instrumentation: { server: true },
     },
     version: {
-      name: process.env.RAILWAY_GIT_COMMIT_SHA || 'dev',
+      name: isRailwayBuild ? process.env.RAILWAY_GIT_COMMIT_SHA : 'dev',
       // Only poll when a real SHA is stamped (production builds). In dev the
-      // version stays 'dev' forever, so polling would just be noise.
-      pollInterval: process.env.RAILWAY_GIT_COMMIT_SHA ? 60 * 60 * 1000 : 0,
+      // version stays 'dev' forever, so polling would just be noise. The
+      // Dockerfile sets RAILWAY_GIT_COMMIT_SHA to the literal "dev" outside
+      // Railway, so checking truthiness alone would (wrongly) enable polling
+      // for local Docker builds — share the isRailwayBuild signal with the
+      // CDN_URL guard above to keep "is this Railway?" defined in one place.
+      pollInterval: isRailwayBuild ? 60 * 60 * 1000 : 0,
     },
     prerender: {
       origin: process.env.SITE_ORIGIN || 'http://localhost:5173',

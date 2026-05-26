@@ -227,8 +227,8 @@ In practice, modern providers cover their own subdomains. `media.flipcommons.org
 
 Three steps, not four — the conventional 1-week intermediate buys ceremony, not signal:
 
-1. **`max-age=60`** — current. The 60s window is too short to be a real soak; this step just verifies the header is emitted correctly (`curl -sI https://flipcommons.org | grep -i strict-transport`). No need to wait long.
-2. **`max-age=86400`** (1 day) — the actual soak. A day of real user traffic with sticky HSTS. If anything is going to break (an HTTP-only resource on the apex, a redirect loop) it surfaces here. Recovery cost is bounded at 24h of lockout for affected users.
+1. **`max-age=60`** — header-emission check. The 60s window is too short to be a real soak; this step just verifies the header is emitted correctly (`curl -sI https://flipcommons.org | grep -i strict-transport` and the same for `https://www.flipcommons.org`). No need to wait long.
+2. **`max-age=86400`** (1 day) — current. The actual soak: a day of real user traffic with sticky HSTS. If anything is going to break (an HTTP-only resource on the apex, a redirect loop) it surfaces here. Recovery cost is bounded at 24h of lockout for affected users.
 3. **`max-age=31536000`** (1 year) — destination value. Edit the `Strict-Transport-Security` line in `Caddyfile`, commit, deploy.
 
 Verify after each step: response includes `Strict-Transport-Security: max-age=N` (no `includeSubDomains`, by design).
