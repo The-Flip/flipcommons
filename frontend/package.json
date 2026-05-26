@@ -46,7 +46,8 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.60.0",
     "vite": "^7.3.2",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.7",
+    "xmllint-wasm": "~5.2.0"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.7.6",
@@ -57,7 +58,8 @@
     "open-props": "^1.7.23",
     "openapi-fetch": "^0.17.0",
     "postcss-jit-props": "^1.0.16",
-    "posthog-js": "^1.376.0"
+    "posthog-js": "^1.376.0",
+    "super-sitemap": "~1.0.12"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

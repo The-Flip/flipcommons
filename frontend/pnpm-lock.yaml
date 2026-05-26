@@ -35,6 +35,9 @@ importers:
       posthog-js:
         specifier: ^1.376.0
         version: 1.376.0
+      super-sitemap:
+        specifier: ~1.0.12
+        version: 1.0.12(svelte@5.55.9(@typescript-eslint/types@8.60.0))
     devDependencies:
       '@sveltejs/adapter-node':
         specifier: ^5.5.4
@@ -114,6 +117,9 @@ importers:
       vitest:
         specifier: ^4.1.7
         version: 4.1.7(@opentelemetry/api@1.9.1)(@types/node@25.9.1)(jsdom@29.1.1)(vite@7.3.2(@types/node@25.9.1)(jiti@2.7.0)(yaml@2.9.0))
+      xmllint-wasm:
+        specifier: ~5.2.0
+        version: 5.2.0(@types/node@25.9.1)
 
 packages:
 
@@ -3159,6 +3165,11 @@ packages:
     engines: {node: '>=20.19.0'}
     hasBin: true
 
+  super-sitemap@1.0.12:
+    resolution: {integrity: sha512-C3gfAS1RZxL5bbZGtgnIOitMhfqAt8RmhW8AWTia6c8n9RW3Zx7f/SxVeFWZD0I1nUAx2pkxuWazVtev0Nmb5w==}
+    peerDependencies:
+      svelte: '>=4.0.0 <6.0.0'
+
   supports-color@10.2.2:
     resolution: {integrity: sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g==}
     engines: {node: '>=18'}
@@ -3451,6 +3462,12 @@ packages:
 
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
+
+  xmllint-wasm@5.2.0:
+    resolution: {integrity: sha512-GVMuR3ViU8R7sakcVm/4GClMtCV8p7xgjXZlc6GmvPpInIz4V41lmRnjSd4uKhVkf5MZj97wEZkPM4RMAhojuQ==}
+    engines: {node: '>=16'}
+    peerDependencies:
+      '@types/node': '>=16'
 
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
@@ -6596,6 +6613,10 @@ snapshots:
       - supports-color
       - typescript
 
+  super-sitemap@1.0.12(svelte@5.55.9(@typescript-eslint/types@8.60.0)):
+    dependencies:
+      svelte: 5.55.9(@typescript-eslint/types@8.60.0)
+
   supports-color@10.2.2: {}
 
   supports-hyperlinks@4.4.0:
@@ -6844,6 +6865,10 @@ snapshots:
   xml-name-validator@5.0.0: {}
 
   xmlchars@2.2.0: {}
+
+  xmllint-wasm@5.2.0(@types/node@25.9.1):
+    dependencies:
+      '@types/node': 25.9.1
 
   xtend@4.0.2: {}
 

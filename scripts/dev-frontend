@@ -1,6 +1,17 @@
 #!/usr/bin/env sh
 set -e
-cd "$(dirname "$0")/../frontend"
+cd "$(dirname "$0")/.."
 
+# Load .env if present (matches scripts/dev-backend). SvelteKit reads
+# `$env/dynamic/private` from process.env; without this, vars set in the
+# monorepo-root .env never reach the Vite dev server (kit.env.dir defaults
+# to cwd = frontend/, which has no .env of its own).
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
+cd frontend
 pkill -f "pnpm dev" 2>/dev/null || true
 pnpm dev

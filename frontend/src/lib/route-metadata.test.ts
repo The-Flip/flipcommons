@@ -5,11 +5,12 @@ import {
   isCatalogRoute,
   isSearchEngineIndexable,
   allRoutes,
+  LISTED_INDEXABLE_ENTITY_SLUG_SOURCE,
   SEARCH_ENGINE_INDEXABLE_ROUTE_IDS,
   SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS,
   type RouteClass,
 } from './route-metadata.server';
-import type { CatalogEntityKey } from './api/catalog-meta';
+import { CATALOG_META, type CatalogEntityKey } from './api/catalog-meta';
 
 // SvelteKit's ssr resolution rule: walk leaf-to-root through the
 // +page.ts / +page.server.ts / +layout.ts / +layout.server.ts chain; the
@@ -110,6 +111,40 @@ describe('route-metadata', () => {
     const indexable = new Set<string>(SEARCH_ENGINE_INDEXABLE_ROUTE_IDS);
     const overlap = SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS.filter((id) => indexable.has(id));
     expect(overlap, 'A route ID cannot appear in both allowlists').toEqual([]);
+  });
+
+  // The sitemap endpoint uses LISTED_INDEXABLE_ENTITY_SLUG_SOURCE to wire
+  // catalog-entity slugs into non-catalog dynamic routes. Three invariants
+  // matter: (a) keys are real indexable routes (else dead entries silently
+  // drop URLs from the sitemap), (b) values are real CatalogEntityKeys
+  // (else the feed lookup misses), and (c) keys are NOT catalog-* routes
+  // (those go through catalogRoutesByEntity — a duplicate here would
+  // double-emit). The `satisfies` clause covers (a)/(b) at typecheck for
+  // typos; this test pins runtime correctness too so failures have a name.
+  describe('LISTED_INDEXABLE_ENTITY_SLUG_SOURCE', () => {
+    const ENTRIES = Object.entries(LISTED_INDEXABLE_ENTITY_SLUG_SOURCE) as [
+      RouteId,
+      CatalogEntityKey,
+    ][];
+
+    it('is non-empty (else the constant should be deleted, not empty)', () => {
+      expect(ENTRIES.length).toBeGreaterThan(0);
+    });
+
+    it.each(ENTRIES)('%s: route is in SEARCH_ENGINE_INDEXABLE_ROUTE_IDS', (routeId) => {
+      const indexable = new Set<string>(SEARCH_ENGINE_INDEXABLE_ROUTE_IDS);
+      expect(indexable.has(routeId)).toBe(true);
+    });
+
+    it.each(ENTRIES)('%s → %s: entity is a known CatalogEntityKey', (_routeId, entity) => {
+      expect(entity in CATALOG_META).toBe(true);
+    });
+
+    it.each(ENTRIES)('%s: classifies as listed-indexable, not catalog-*', (routeId) => {
+      const cls = classifyRoute(routeId);
+      expect(cls.kind).toBe('listed-indexable');
+      expect(isCatalogRoute(cls)).toBe(false);
+    });
   });
 
   // Anchor sanity. Inputs are in route-pattern form (the shape page.route.id
