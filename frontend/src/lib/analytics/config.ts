@@ -7,7 +7,7 @@ import type { PostHogConfig } from 'posthog-js';
 // test. See docs/Analytics.md § Privacy posture for the contract this
 // enforces.
 export const config: Partial<PostHogConfig> = {
-  api_host: 'https://us.posthog.com',
+  api_host: 'https://us.i.posthog.com',
   persistence: 'memory', // satisfies "no persistent client-side identity"
   autocapture: false, // satisfies "no autocapture / implicit tracking"
   capture_pageview: 'history_change', // SPA-aware: initial load + every CSR navigation

@@ -6,7 +6,7 @@ import { config } from './config';
 // is a contract — weakening any option fails this test, which is the point.
 describe('analytics config (locked-down PostHog init)', () => {
   it('uses the US API host', () => {
-    expect(config.api_host).toBe('https://us.posthog.com');
+    expect(config.api_host).toBe('https://us.i.posthog.com');
   });
 
   it('uses heap-only persistence (no cookies, no storage)', () => {
