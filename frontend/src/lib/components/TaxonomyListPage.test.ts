@@ -70,18 +70,23 @@ describe('TaxonomyListPage', () => {
     expect(body).toContain('No tags found.');
   });
 
-  it('applies rowStyle to row links', () => {
+  // Inline style="…" attributes require `style-src-attr 'unsafe-hashes'`
+  // (or 'unsafe-inline') under our CSP. A regression here — e.g. a new
+  // prop that passes a style string through to .item-row — would only
+  // surface as Sentry violation reports during the report-only window,
+  // and would block the eventual flip to enforce. Catch it at unit time.
+  it('does not emit inline style attributes on row links (CSP)', () => {
     const { body } = render(TaxonomyListPage, {
       props: {
         catalogKey: 'tag',
         items: ITEMS,
         loading: false,
         error: null,
-        rowStyle: 'justify-content: space-between',
       },
     });
 
-    expect(body).toContain('justify-content: space-between');
+    expect(body).toMatch(/class="[^"]*\bitem-row\b[^"]*"/);
+    expect(body).not.toMatch(/<a[^>]*\bitem-row\b[^>]*\sstyle=/);
   });
 
   it('includes preload link for endpoint', () => {

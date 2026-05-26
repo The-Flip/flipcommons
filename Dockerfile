@@ -45,6 +45,16 @@ ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN \
     SENTRY_ORG=$SENTRY_ORG \
     SENTRY_PROJECT=$SENTRY_PROJECT
 
+# PUBLIC_SENTRY_DSN is consumed at build time by svelte.config.js to
+# derive both the CSP report-uri and the connect-src allowlist entry
+# for the runtime Sentry SDK. Same Railway-build-arg rule applies as
+# above: without an explicit ARG declaration the variable never
+# reaches `pnpm build` and the report-only CSP silently degrades to
+# nothing (the malformed-DSN guard in svelte.config.js throws if it's
+# set but unparseable; an empty value is treated as "unconfigured").
+ARG PUBLIC_SENTRY_DSN=""
+ENV PUBLIC_SENTRY_DSN=$PUBLIC_SENTRY_DSN
+
 COPY frontend/ .
 RUN pnpm build
 # Keep only runtime dependencies for the Node SSR server we copy below.

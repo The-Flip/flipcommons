@@ -9,12 +9,18 @@ handle @www {
 # values through verbatim, so it's attacker-controlled.
 request_header -Forwarded
 
-# Response-side security headers. CSP is tracked in #448 — it needs a
-# per-request nonce from SvelteKit, so it doesn't belong here. DENY
-# because we have no use case for same-origin framing. Referrer-Policy
-# here overwrites Django's stricter same-origin default on /djadmin/ —
-# accepted because the public site needs strict-origin-when-cross-origin
-# for analytics attribution. HSTS lives here rather than Django; see
+# Response-side security headers. CSP is owned by SvelteKit
+# (svelte.config.js `kit.csp`) because it needs a per-page hash/nonce
+# for the inline hydration script — Caddy can't synthesize that. Django
+# paths (/api/, /djadmin/, /static/, /media/) are intentionally left
+# without CSP: /api/ and /media/ don't render HTML, /static/ is already-
+# bundled assets, and /djadmin/ has inline scripts that wouldn't
+# tolerate a strict policy. X-Frame-Options below still applies site-
+# wide as belt-and-suspenders against framing (CSP frame-ancestors
+# covers modern browsers). Referrer-Policy here overwrites Django's
+# stricter same-origin default on /djadmin/ — accepted because the
+# public site needs strict-origin-when-cross-origin for analytics
+# attribution. HSTS lives here rather than Django; see
 # docs/Hosting.md § HSTS.
 header {
 	X-Content-Type-Options nosniff
@@ -22,6 +28,15 @@ header {
 	X-Frame-Options DENY
 	Strict-Transport-Security "max-age=60"
 }
+
+# Long-cache the self-hosted fonts. SvelteKit's Node adapter serves
+# files from frontend/static/ without cache headers because they're
+# unfingerprinted; we know these specific bytes are stable, so override.
+# `immutable` means browsers will NOT revalidate — if Lora is ever
+# updated, the file MUST be renamed (e.g. lora-latin-v2.woff2) or
+# cached clients will never see the new version.
+@fonts path /fonts/*
+header @fonts Cache-Control "public, max-age=31536000, immutable"
 
 # XFF rewrite must live inside reverse_proxy: Caddy's reverse_proxy has
 # special handling for X-Forwarded-* headers and overrides any
