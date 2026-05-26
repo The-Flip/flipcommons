@@ -47,6 +47,28 @@ export const SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS = [
   '/_sentry_test',
 ] as const satisfies readonly RouteId[];
 
+/**
+ * Indexable dynamic routes whose `[slug]` param is fed by a catalog entity's
+ * slugs but whose route ID is NOT a `catalog-*` shape (so it can't be reached
+ * via `catalogRoutesByEntity()`). Maps the route ID to the entity whose
+ * `sitemap_queryset()` supplies its slugs and `lastmod`.
+ *
+ * Today: just `/manufacturers/[slug]/systems` under `manufacturer`. A new
+ * entry must be on a route that is also in `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`
+ * and must NOT name a `catalog-*` route ID (those are already wired through
+ * `catalogRoutesByEntity()` and would double-emit). Parity tests in
+ * `route-metadata.test.ts` pin both invariants at runtime; the
+ * `satisfies` clause pins the key/value types at typecheck.
+ *
+ * `lastmod` for these routes is the parent entity's `_sitemap_lastmod` — an
+ * acknowledged under-report when the listing's content changes without
+ * bumping the parent (e.g. a new System linked to a Manufacturer). Revisit
+ * per-route lastmod widening if/when traffic data shows lost re-crawls.
+ */
+export const LISTED_INDEXABLE_ENTITY_SLUG_SOURCE = {
+  '/manufacturers/[slug]/systems': 'manufacturer',
+} as const satisfies Partial<Record<RouteId, CatalogEntityKey>>;
+
 /** Classification of a SvelteKit route for search engine indexing purposes. */
 export type RouteClass =
   | { kind: 'catalog-listing'; entity: CatalogEntityKey }
