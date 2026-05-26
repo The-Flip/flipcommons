@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from apps.core.api.admin_dashboard_page import admin_pages_router
 from apps.core.api.link_types import link_types_router
+from apps.core.api.sitemap import sitemap_router
 
 routers = [
     ("/link-types/", link_types_router),
     ("/pages/admin/", admin_pages_router),
+    ("/sitemap/", sitemap_router),
 ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from django.contrib.contenttypes.fields import GenericRelation
@@ -12,6 +13,7 @@ from apps.core.markdown import MarkdownField
 from apps.core.models import (
     SluggedModel,
     TimeStampedModel,
+    active_status_q,
     field_not_blank,
     nullable_id_not_empty,
     slug_lowercase,
@@ -383,6 +385,27 @@ class MachineModel(
             models.Index(fields=["technology_generation", "year"]),
             models.Index(fields=["display_type"]),
         ]
+
+    @classmethod
+    def non_canonical_detail_slugs(cls) -> Iterable[str]:
+        # Single-Model-Title rule (docs/SingleModelTitles.md): when a Title
+        # has exactly one active MachineModel, the UI collapses to the Model
+        # page but the Title slug is the canonical URL for the detail page,
+        # so the Model's ``/models/<slug>`` is non-canonical. The Model's
+        # ``/edit-history`` and ``/sources`` remain canonical (they list the
+        # Model's history / sources, not the Title's), so we don't drop the
+        # row from ``sitemap_queryset()`` — only its detail URL.
+        return (
+            cls.objects.active()
+            .annotate(
+                _sibling_count=models.Count(
+                    "title__machine_models",
+                    filter=active_status_q("title__machine_models"),
+                )
+            )
+            .filter(_sibling_count=1)
+            .values_list(cls.public_id_field, flat=True)
+        )
 
     def __str__(self) -> str:
         parts = [self.name]
