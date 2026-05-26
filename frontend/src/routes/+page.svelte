@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { resolve } from '$app/paths';
+  import { assets, resolve } from '$app/paths';
   import client from '$lib/api/client';
   import MachineCard from '$lib/components/cards/MachineCard.svelte';
   import { SITE_NAME, SITE_TITLE } from '$lib/constants';
@@ -47,7 +47,7 @@
   title={SITE_TITLE}
   description="The encyclopedia of pinball machines, manufacturers, and the people who make them."
   url={page.url.href}
-  image={`${page.url.origin}/og-default.png`}
+  image={`${assets || page.url.origin}/og-default.png`}
   imageAlt={SITE_NAME}
 />
 
