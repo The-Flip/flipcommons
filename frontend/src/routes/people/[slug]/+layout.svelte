@@ -124,6 +124,7 @@
   url={page.url.href}
   image={person.photo_url}
   imageAlt={person.photo_url ? `Photo of ${person.name}` : undefined}
+  ogType="profile"
 />
 
 {#if isFocusMode}

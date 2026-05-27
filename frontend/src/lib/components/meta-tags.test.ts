@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
   buildFullTitle,
-  truncateDescription,
+  truncateMetaDescription,
+  truncateOgDescription,
   buildCanonicalUrl,
   twitterCardType,
 } from './meta-tags';
@@ -17,21 +18,39 @@ describe('buildFullTitle', () => {
   });
 });
 
-describe('truncateDescription', () => {
+describe('truncateMetaDescription', () => {
   test('short description passes through unchanged', () => {
-    expect(truncateDescription('A short description.')).toBe('A short description.');
+    expect(truncateMetaDescription('A short description.')).toBe('A short description.');
   });
 
   test('exactly 155 chars passes through unchanged', () => {
     const desc = 'x'.repeat(155);
-    expect(truncateDescription(desc)).toBe(desc);
+    expect(truncateMetaDescription(desc)).toBe(desc);
   });
 
   test('truncates at 154 chars with ellipsis', () => {
     const desc = 'x'.repeat(200);
-    const result = truncateDescription(desc);
+    const result = truncateMetaDescription(desc);
     expect(result).toHaveLength(155);
     expect(result).toBe('x'.repeat(154) + '\u2026');
+  });
+});
+
+describe('truncateOgDescription', () => {
+  test('short description passes through unchanged', () => {
+    expect(truncateOgDescription('A short description.')).toBe('A short description.');
+  });
+
+  test('exactly 200 chars passes through unchanged', () => {
+    const desc = 'x'.repeat(200);
+    expect(truncateOgDescription(desc)).toBe(desc);
+  });
+
+  test('truncates at 199 chars with ellipsis', () => {
+    const desc = 'x'.repeat(250);
+    const result = truncateOgDescription(desc);
+    expect(result).toHaveLength(200);
+    expect(result).toBe('x'.repeat(199) + '\u2026');
   });
 });
 

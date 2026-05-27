@@ -2,7 +2,8 @@
   import { SITE_NAME } from '$lib/constants';
   import {
     buildFullTitle,
-    truncateDescription,
+    truncateMetaDescription,
+    truncateOgDescription,
     buildCanonicalUrl,
     twitterCardType,
   } from './meta-tags';
@@ -13,28 +14,31 @@
     url,
     image,
     imageAlt,
+    ogType = 'article',
   }: {
     title: string;
     description: string;
     url: string;
     image?: string | null;
     imageAlt?: string;
+    ogType?: 'website' | 'article' | 'profile';
   } = $props();
 
   let canonicalUrl = $derived(buildCanonicalUrl(url));
   let fullTitle = $derived(buildFullTitle(title));
-  let truncatedDescription = $derived(truncateDescription(description));
+  let metaDescription = $derived(truncateMetaDescription(description));
+  let ogDescription = $derived(truncateOgDescription(description));
 </script>
 
 <svelte:head>
   <title>{fullTitle}</title>
-  <meta name="description" content={truncatedDescription} />
+  <meta name="description" content={metaDescription} />
   <link rel="canonical" href={canonicalUrl} />
 
-  <meta property="og:type" content="website" />
+  <meta property="og:type" content={ogType} />
   <meta property="og:site_name" content={SITE_NAME} />
   <meta property="og:title" content={title} />
-  <meta property="og:description" content={truncatedDescription} />
+  <meta property="og:description" content={ogDescription} />
   <meta property="og:url" content={canonicalUrl} />
   {#if image}
     <meta property="og:image" content={image} />
@@ -44,12 +48,4 @@
   {/if}
 
   <meta name="twitter:card" content={twitterCardType(image)} />
-  <meta name="twitter:title" content={title} />
-  <meta name="twitter:description" content={truncatedDescription} />
-  {#if image}
-    <meta name="twitter:image" content={image} />
-    {#if imageAlt}
-      <meta name="twitter:image:alt" content={imageAlt} />
-    {/if}
-  {/if}
 </svelte:head>

@@ -25,27 +25,25 @@ Open Graph (OG) is de facto link-preview standard: Facebook, LinkedIn, iMessage,
 
 It uses `<meta property="og:*">` tags in `<head>`. Small fixed property set per page — `og:type`, `og:title`, `og:description`, `og:image`, `og:url`, `og:site_name`. `og:type` draws from a small vocabulary (`article`, `profile`, `website`, etc.).
 
-This project emits `og:type`, `og:site_name`, `og:title`, `og:description`, `og:url`, `og:image` and `og:image:alt`, but there are gaps to close:
+This project emits `og:type`, `og:site_name`, `og:title`, `og:description`, `og:url`, `og:image` and `og:image:alt`. Remaining gaps:
 
-- Every page hardcodes `og:type` to `website`; some pages like a Person page should be other things, like `profile`.
-- `og:image:alt` is built per-layout as `` `${entity.name} pinball machine` `` — wrong for Person, Manufacturer, CorporateEntity (a designer is not a pinball machine)
-- Same six layouts as the head info; listing pages emit nothing
+- ✅ DONE — `og:type` now per-page (see [Open Graph page types](#open-graph-page-types)); Person/User layouts emit `profile`, static pages emit `website`, default is `article`.
+- TODO — `og:image:alt` is built per-layout as `` `${entity.name} pinball machine` `` — wrong for Person, Manufacturer, CorporateEntity (a designer is not a pinball machine).
+- TODO — listing pages emit nothing (CSR; see [CSR pages: out of scope](#csr-pages-out-of-scope)).
 
 ### Twitter card
 
-`<meta name="twitter:*">` tags that Twitter uses to control previews on its site.
+`<meta name="twitter:*">` tags that Twitter uses to control previews on its site. Twitter cascades from OG when Twitter-specific tags are absent, so the only one worth emitting is `twitter:card`.
 
-This project currently emits `twitter:card`, `twitter:title`, `twitter:description`, `twitter:image` and `twitter:image:alt`; see [`MetaTags.svelte`](frontend/src/lib/components/MetaTags.svelte).
+✅ DONE — remove redundant `twitter:title` / `twitter:description` / `twitter:image` / `twitter:image:alt`; keep only `twitter:card`. `twitterCardType()` selects `summary_large_image` when an image is present, else `summary`.
 
-However, Twitter cascades from OG when Twitter-specific tags are absent, so the only one worth emitting is `twitter:card`. The title/description/image trio are redundant (OG cascade covers them) and should be removed.
-
-The current `twitter:card` selects between `summary` (small icon preview) and `summary_large_image` (hero card preview) based on whether the entity has a promotable image — the `twitterCardType()` function keys off image presence, which matches the target behavior. Post-refactor the image source becomes [`MediaSupportedModel.primary_image`](#mediasupportedmodel) (present → `summary_large_image`, absent or for non-MediaSupported entities → `summary`); selection logic itself is unchanged.
+TODO — once entity layouts migrate to [`MediaSupportedModel.primary_image`](#mediasupportedmodel), wire the image source through there instead of the per-layout `image` prop. Selection logic itself stays the same.
 
 ### JSON-LD
 
 A JSON document inside `<script type="application/ld+json">` in `<head>`, using vocabularies from [schema.org](https://schema.org). Consumed by search engines for rich results and knowledge panels, by LLM crawlers for citation accuracy and by other databases linking in via `sameAs`. Each page emits a `@graph` of one or more typed nodes (`Game`, `Person`, `Organization`, etc.) with `@id` cross-references to related entities and `sameAs` to external IDs. The highest-fidelity representation — arbitrarily rich, nested and addressable.
 
-This project does not yet include any JSON-LD info.
+✅ DONE — static pages (`/`, `/about`, `/about/people`, `/privacy`, `/terms`, `/licensing`) emit JSON-LD via the [`JsonLd.svelte`](frontend/src/lib/components/JsonLd.svelte) component and [`jsonld.ts`](frontend/src/lib/components/jsonld.ts) helpers (`jsonLdGraph`, `webSite`, `pageNode`, `breadcrumbList`). TODO — entity detail pages and entity meta-pages.
 
 ### Sitemap
 
@@ -98,6 +96,8 @@ Legal pages get `website` rather than `article` because they aren't articles in 
 `article` isn't a perfect semantic match for any of those (a Manufacturer isn't an article, a taxonomy term isn't an article), but it's the closest of OG's available choices and it's at least less wrong than calling everything a `website`. The Person → profile case is the one genuine fit and the one place dynamic typing pays off — Facebook and LinkedIn render profile-card previews differently from article previews, so designer/artist pages get a small but visible improvement when shared on social.
 
 No per-entity declaration in the per-model TS files. The mapping is a central function keyed off whether the page is the home page, whether the entity's `schemaOrg.types` contains `Person`, and a default of `article`. About 10 lines.
+
+✅ DONE (static + Person/User layouts) — `MetaTags.svelte` accepts an `ogType` prop with `article` default; static pages and `/people/[slug]` set the right value explicitly. Remaining catalog entity layouts (Title, MachineModel, Manufacturer, etc.) still inherit the `article` default — correct per the table, no further work needed there.
 
 We deliberately don't use `product` (Facebook's extension) for MachineModel — it's commerce-oriented (price, availability, SKU) and we're not selling machines.
 
@@ -379,39 +379,27 @@ These pages emit the same `BreadcrumbList` node pattern as entity detail pages, 
 
 Static pages use the same `<head>` / OG / Twitter primitive as entity pages, but with hand-authored values. No model derivation because there's no model. Each page also emits a `BreadcrumbList` node.
 
-#### /
+#### / ✅ DONE
 
-The home page emits site-level metadata, such as a `WebSite` node with a `SearchAction` describing the site's search endpoint, which Google uses to render the sitelinks search box in SERPs. Hand-authored, one-off.
+`WebSite` node. No `BreadcrumbList` — the home page is the root.
 
-No `BreadcrumbList` — the home page is the root; a breadcrumb of `Home` pointing at itself adds nothing.
+No `SearchAction` despite Google's sitelinks-searchbox hook: the search endpoint is CSR, so declaring a SearchAction would lie to crawlers that don't execute JS. Revisit if/when `/search` goes SSR.
 
-#### /about
+#### /about ✅ DONE
 
-Schema.org `@type`: `AboutPage` (a `WebPage` subtype) so Google understands it's the site's about page.
+`AboutPage` (a `WebPage` subtype). `BreadcrumbList`: `Home › About`.
 
-`BreadcrumbList`: `Home › About`.
+#### /about/people ✅ DONE
 
-Body content is hand-authored prose; no additional JSON-LD nodes.
+`CollectionPage` (the page presents a collection of team members; `AboutPage` is taken by `/about`, `ProfilePage` is single-person). `BreadcrumbList`: `Home › About › People`.
 
-#### /about/people
+Persons attach to the `CollectionPage` via its `about` property — `about` is `Thing`-typed (Person qualifies) whereas `hasPart` is `CreativeWork`-typed (Person does not). Each Person is a blank node (no `@id`; page-scoped, never referenced).
 
-Schema.org `@type`: `CollectionPage` — the page presents a collection (team members). `AboutPage` is already taken by `/about` itself; `ProfilePage` would be wrong (that's for a single person, and this page has two).
+If/when team members get FlipCommons User accounts and User pages go SSR, the User's canonical URL becomes their `@id`; the blank-node interim is a stopgap. Future: a FlipCommons `Organization` node (likely on `/`) could carry `founder` references to the same Persons.
 
-`BreadcrumbList`: `Home › About › People`.
+#### /privacy, /terms, /licensing ✅ DONE
 
-Body: one `Person` node per team member, emitted as blank nodes (no `@id`) — same rationale as `BreadcrumbList`: page-scoped, never referenced from anywhere else. Each carries `name`, `description`, `image`, `homeLocation` (and `sameAs` for any external profiles linked from the bio). If we later emit a FlipCommons `Organization` node (likely on the home page), each Person can include a `worksFor` or be referenced from the Organization's `founder` property to make the founding relationship machine-readable.
-
-If/when team members get FlipCommons User accounts and User pages go SSR, the User's canonical URL becomes their `@id`; the blank-node interim is just a stopgap.
-
-#### /privacy
-
-Schema.org `@type`: plain `WebPage` (no specific subtype fits).
-
-`BreadcrumbList`: `Home › Privacy`. Treated as a top-level peer of About, not a child — the legal pages live under SvelteKit's `(legal)` layout group, not under `/about`.
-
-Body content is hand-authored prose; no additional JSON-LD nodes.
-
-The same shape applies to `/terms` and `/licensing` — plain `WebPage`, `BreadcrumbList[Home, [page name]]`, no body nodes. Listed as separate subsections if you want each to have its own anchor.
+Plain `WebPage` (no specific subtype fits). `BreadcrumbList[Home, [page name]]`. Treated as top-level peers of About, not children — the legal pages live under SvelteKit's `(legal)` layout group, not under `/about`.
 
 ### CSR pages: out of scope
 

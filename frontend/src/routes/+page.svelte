@@ -1,10 +1,13 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { assets, resolve } from '$app/paths';
+  import { resolve } from '$app/paths';
   import client from '$lib/api/client';
   import MachineCard from '$lib/components/cards/MachineCard.svelte';
   import { SITE_NAME, SITE_TITLE } from '$lib/constants';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import JsonLd from '$lib/components/JsonLd.svelte';
+  import { jsonLdGraph, webSite } from '$lib/components/jsonld';
+  import { absoluteAssetUrl } from '$lib/utils';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import type { ModelRecentSchema } from '$lib/api/schema';
@@ -47,9 +50,12 @@
   title={SITE_TITLE}
   description="The encyclopedia of pinball machines, manufacturers, and the people who make them."
   url={page.url.href}
-  image={`${assets || page.url.origin}/og-default.png`}
+  image={absoluteAssetUrl('/og-default.png', page.url)}
   imageAlt={SITE_NAME}
+  ogType="website"
 />
+
+<JsonLd data={jsonLdGraph([webSite(page.url)])} />
 
 <div class="home">
   <form class="hero-search" onsubmit={handleSubmit}>
