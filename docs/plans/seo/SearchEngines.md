@@ -117,7 +117,9 @@ The catalog supports slug edits. Without `301` redirects from the old slug to th
 
 ### Structured data
 
-JSON-LD or microdata using schema.org types — `Product`-like schemas for Models, `Person` for designers and artists, `Organization` for manufacturers, `BreadcrumbList` for navigation. Search engines consume these for rich-result features — Google's knowledge panels, carousels and breadcrumb display in SERPs; Bing's equivalents — and the same markup feeds non-search consumers like LLM crawlers. High-leverage for a domain catalog like this, but only valuable if maintained accurately per entity type.
+JSON-LD using schema.org types — `Product`-like schemas for Models, `Person` for designers and artists, `Organization` for manufacturers, `BreadcrumbList` for navigation. Search engines consume these for rich-result features — Google's knowledge panels, carousels and breadcrumb display in SERPs; Bing's equivalents — and the same markup feeds non-search consumers like LLM crawlers. High-leverage for a domain catalog like this, but only valuable if maintained accurately per entity type.
+
+See [JsonLdAndFriends.md](JsonLdAndFriends.md)
 
 ### Faceted and paginated listing URLs
 
