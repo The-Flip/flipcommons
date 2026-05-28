@@ -9,7 +9,7 @@ const PAGE = new URL(`${ORIGIN}/themes/fantasy`);
 function entity(over: Partial<EntityBaseFacts> = {}): EntityBaseFacts {
   return {
     name: 'Fantasy',
-    slug: 'fantasy',
+    public_id: 'fantasy',
     description: { text: '', html: '', plain: 'Dragons and wizards.', citations: [] },
     ...over,
   };
@@ -37,14 +37,14 @@ describe('buildSchemaOrgNode', () => {
 
   test('function-form types are evaluated against the entity', () => {
     const node = buildSchemaOrgNode(
-      entity({ slug: 'sci-fi' }),
-      info({ types: (e) => (e.slug === 'sci-fi' ? ['DefinedTerm'] : ['Thing']) }),
+      entity({ public_id: 'sci-fi' }),
+      info({ types: (e) => (e.public_id === 'sci-fi' ? ['DefinedTerm'] : ['Thing']) }),
       PAGE,
     );
     expect(node['@type']).toBe('DefinedTerm');
   });
 
-  test('@id is the canonical /{plural}/{slug} URL, independent of the page path', () => {
+  test('@id is the canonical /{plural}/{public_id} URL, independent of the page path', () => {
     const node = buildSchemaOrgNode(
       entity(),
       info({ types: ['DefinedTerm'] }),
@@ -55,11 +55,20 @@ describe('buildSchemaOrgNode', () => {
 
   test('@id uses the entity_type_plural of the declared entityType', () => {
     const node = buildSchemaOrgNode(
-      entity({ slug: 'design' }),
+      entity({ public_id: 'design' }),
       info({ types: ['Occupation'] }, 'credit-role'),
       PAGE,
     );
     expect(node['@id']).toBe(`${ORIGIN}/credit-roles/design`);
+  });
+
+  test('@id uses the full public_id path (Location), not a collapsed last segment', () => {
+    const node = buildSchemaOrgNode(
+      entity({ public_id: 'usa/il/chicago', name: 'Chicago' }),
+      info({ types: ['City'] }, 'location'),
+      new URL(`${ORIGIN}/locations/usa/il/chicago`),
+    );
+    expect(node['@id']).toBe(`${ORIGIN}/locations/usa/il/chicago`);
   });
 
   test('description is omitted when .plain is empty', () => {

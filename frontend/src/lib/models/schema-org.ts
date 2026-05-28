@@ -5,11 +5,15 @@ import type { ModelFrontendInfo } from './types';
 
 /**
  * The minimal entity facts every schema.org node needs. Widens in a later
- * tranche (images, external IDs, the `public_id` body-layer migration).
+ * tranche (images, external IDs).
+ *
+ * `public_id` is the entity's uniform URL identity (`slug` for most entities,
+ * `location_path` for Location) — the backend twin of `LinkableDetailSchema`.
+ * The `@id` is built from it, never from `slug`.
  */
 export interface EntityBaseFacts {
   name: string;
-  slug: string;
+  public_id: string;
   description?: RichTextSchema | null;
 }
 
@@ -17,8 +21,8 @@ export interface EntityBaseFacts {
  * Build the schema.org node for a single catalog entity: `@type`, a canonical
  * `@id`, `name`, and an untruncated `description` (the backend's flattened
  * `description.plain`). The `@id` is the entity's canonical URL
- * (`/{entity_type_plural}/{slug}`), independent of the current path — so it's
- * stable even when the layout load runs on a sub-route.
+ * (`/{entity_type_plural}/{public_id}`), independent of the current path — so
+ * it's stable even when the layout load runs on a sub-route.
  */
 export function buildSchemaOrgNode<T extends EntityBaseFacts>(
   entity: T,
@@ -30,7 +34,7 @@ export function buildSchemaOrgNode<T extends EntityBaseFacts>(
   const meta = CATALOG_META[info.entityType];
   const node: JsonLdNode = {
     '@type': types.length === 1 ? types[0] : [...types],
-    '@id': absolutize(pageUrl, `/${meta.entity_type_plural}/${entity.slug}`),
+    '@id': absolutize(pageUrl, `/${meta.entity_type_plural}/${entity.public_id}`),
     name: entity.name,
   };
   const desc = entity.description?.plain?.trim() ?? '';
