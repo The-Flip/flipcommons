@@ -43,7 +43,7 @@ const MOCK_MANUFACTURER = {
   entities: [
     {
       name: 'Williams Electronics',
-      slug: 'williams-electronics',
+      public_id: 'williams-electronics',
       year_start: 1985,
       year_end: 1999,
       locations: [],
@@ -52,13 +52,13 @@ const MOCK_MANUFACTURER = {
   titles: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
       thumbnail_url: null,
     },
   ],
-  systems: [{ name: 'WPC-95', slug: 'wpc-95' }],
-  persons: [{ name: 'Pat Lawlor', slug: 'pat-lawlor', roles: ['Designer'] }],
+  systems: [{ name: 'WPC-95', public_id: 'wpc-95' }],
+  persons: [{ name: 'Pat Lawlor', public_id: 'pat-lawlor', roles: ['Designer'] }],
   uploaded_media: [
     {
       asset_uuid: 'asset-1',

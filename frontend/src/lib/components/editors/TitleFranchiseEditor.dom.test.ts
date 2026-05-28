@@ -33,7 +33,7 @@ const SERIES = {
 };
 
 const INITIAL_TITLE = {
-  franchise: { slug: 'addams-family' },
+  franchise: { public_id: 'addams-family' },
   series: null,
 };
 

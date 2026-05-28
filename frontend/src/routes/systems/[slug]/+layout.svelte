@@ -130,7 +130,7 @@
   {#snippet sidebar()}
     {#if system.manufacturer}
       <SidebarSection heading="Manufacturer">
-        <a href={resolve(`/manufacturers/${system.manufacturer.slug}`)}
+        <a href={resolve(`/manufacturers/${system.manufacturer.public_id}`)}
           >{system.manufacturer.name}</a
         >
       </SidebarSection>
@@ -139,9 +139,9 @@
     {#if system.sibling_systems.length > 0}
       <SidebarSection heading="Other Systems By This Manufacturer">
         <SidebarList>
-          {#each system.sibling_systems as sibling (sibling.slug)}
+          {#each system.sibling_systems as sibling (sibling.public_id)}
             <SidebarListItem>
-              <a href={resolve(`/systems/${sibling.slug}`)}>{sibling.name}</a>
+              <a href={resolve(`/systems/${sibling.public_id}`)}>{sibling.name}</a>
             </SidebarListItem>
           {/each}
         </SidebarList>

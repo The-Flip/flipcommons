@@ -3,7 +3,7 @@
   import { saveSystemClaims } from '../../../routes/systems/[slug]/edit/save-system-claims';
 
   type InitialData = {
-    technology_subgeneration?: { slug: string } | null;
+    technology_subgeneration?: { public_id: string } | null;
   };
 
   let {

@@ -10,7 +10,7 @@ const MOCK_DATA = {
   titles: [
     {
       name: 'Eight Ball Deluxe',
-      slug: 'eight-ball-deluxe',
+      public_id: 'eight-ball-deluxe',
       abbreviations: [],
       model_count: 1,
       year: 1981,

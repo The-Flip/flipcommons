@@ -80,9 +80,11 @@ def _serialize_detail(feature: GameplayFeature) -> GameplayFeatureDetailSchema:
         slug=feature.slug,
         description=build_rich_text(feature, "description", active_claims(feature)),
         aliases=[a.value for a in feature.aliases.all()],
-        parents=[EntityRef(name=p.name, slug=p.slug) for p in feature.parents.all()],
+        parents=[
+            EntityRef(name=p.name, public_id=p.public_id) for p in feature.parents.all()
+        ],
         children=[
-            EntityRef(name=c.name, slug=c.slug)
+            EntityRef(name=c.name, public_id=c.public_id)
             for c in feature.children.order_by("name")
         ],
         uploaded_media=serialize_uploaded_media(all_media(feature)),

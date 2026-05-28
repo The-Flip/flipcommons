@@ -93,7 +93,7 @@
   let metaItems = $derived(isMobile && yearsActive ? [{ text: yearsActive }] : []);
   let parentLink = $derived({
     text: ce.manufacturer.name,
-    href: resolve(`/manufacturers/${ce.manufacturer.slug}`),
+    href: resolve(`/manufacturers/${ce.manufacturer.public_id}`),
   });
 
   let editSections: EditSectionMenuItem[] = $derived([
@@ -147,7 +147,7 @@
   {#snippet sidebar()}
     <SidebarSection heading="Manufacturer">
       <p class="sidebar-value">
-        <a href={resolve(`/manufacturers/${ce.manufacturer.slug}`)}>{ce.manufacturer.name}</a>
+        <a href={resolve(`/manufacturers/${ce.manufacturer.public_id}`)}>{ce.manufacturer.name}</a>
       </p>
     </SidebarSection>
 

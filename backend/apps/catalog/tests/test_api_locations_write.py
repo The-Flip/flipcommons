@@ -544,7 +544,8 @@ class TestDeletePreview:
         assert resp.status_code == 200, resp.content
         body = resp.json()
         assert body["parent"] is not None
-        assert body["parent"]["slug"] == "il"
+        # A Location's public_id is its location_path, not its bare slug.
+        assert body["parent"]["public_id"] == "usa/il"
 
 
 # ---------------------------------------------------------------------------

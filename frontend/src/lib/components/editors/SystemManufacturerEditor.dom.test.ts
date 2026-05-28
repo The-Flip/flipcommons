@@ -29,7 +29,7 @@ const MANUFACTURERS = {
 };
 
 const INITIAL = {
-  manufacturer: { slug: 'williams' },
+  manufacturer: { public_id: 'williams' },
 };
 
 function mockGetResponses() {

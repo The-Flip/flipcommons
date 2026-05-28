@@ -28,11 +28,11 @@
   ] as const;
 
   type TechnologyModel = {
-    technology_generation?: { slug: string } | null;
-    technology_subgeneration?: { slug: string } | null;
-    system?: { slug: string } | null;
-    display_type?: { slug: string } | null;
-    display_subtype?: { slug: string } | null;
+    technology_generation?: { public_id: string } | null;
+    technology_subgeneration?: { public_id: string } | null;
+    system?: { public_id: string } | null;
+    display_type?: { public_id: string } | null;
+    display_subtype?: { public_id: string } | null;
   };
 
   let {
@@ -53,11 +53,11 @@
 
   function extractFields(m: TechnologyModel): TechnologyFormFields {
     return {
-      technology_generation: m.technology_generation?.slug ?? '',
-      technology_subgeneration: m.technology_subgeneration?.slug ?? '',
-      system: m.system?.slug ?? '',
-      display_type: m.display_type?.slug ?? '',
-      display_subtype: m.display_subtype?.slug ?? '',
+      technology_generation: m.technology_generation?.public_id ?? '',
+      technology_subgeneration: m.technology_subgeneration?.public_id ?? '',
+      system: m.system?.public_id ?? '',
+      display_type: m.display_type?.public_id ?? '',
+      display_subtype: m.display_subtype?.public_id ?? '',
     };
   }
 

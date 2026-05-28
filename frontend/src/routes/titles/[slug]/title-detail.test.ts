@@ -16,9 +16,9 @@ const MOCK_TITLE = {
   machines: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
-      manufacturer: { name: 'Williams', slug: 'williams' },
+      manufacturer: { name: 'Williams', public_id: 'williams' },
       technology_generation_name: 'Solid State',
       thumbnail_url: null,
       variants: [],

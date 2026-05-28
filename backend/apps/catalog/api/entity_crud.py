@@ -151,7 +151,7 @@ def register_entity_delete_restore[ModelT: CatalogModel, SchemaT: Schema](
             # case rather than dereferencing a missing row.
             parent = getattr(obj, parent_field)
             if parent is not None:
-                parent_ref = EntityRef(name=parent.name, slug=parent.slug)
+                parent_ref = EntityRef(name=parent.name, public_id=parent.public_id)
 
         return TaxonomyDeletePreviewSchema(
             name=obj.name,

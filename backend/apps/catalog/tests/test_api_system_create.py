@@ -66,7 +66,7 @@ class TestCreateHappyPath:
         body = resp.json()
         assert body["slug"] == "spike"
         assert body["name"] == "SPIKE"
-        assert body["manufacturer"]["slug"] == "stern"
+        assert body["manufacturer"]["public_id"] == "stern"
 
         system = System.objects.get(slug="spike")
         assert system.status == "active"

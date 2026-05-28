@@ -17,7 +17,7 @@
     { field: 'remake_of', label: 'Remake of' },
   ] as const;
 
-  type HierarchyRef = { slug: string; name?: string } | null | undefined;
+  type HierarchyRef = { public_id: string; name?: string } | null | undefined;
 
   type RelatedModelsModel = {
     variant_of?: HierarchyRef;
@@ -35,9 +35,9 @@
 
   // Flatten nested FK objects to slug strings for form state
   const original = untrack(() => ({
-    variant_of: initialData.variant_of?.slug ?? '',
-    converted_from: initialData.converted_from?.slug ?? '',
-    remake_of: initialData.remake_of?.slug ?? '',
+    variant_of: initialData.variant_of?.public_id ?? '',
+    converted_from: initialData.converted_from?.public_id ?? '',
+    remake_of: initialData.remake_of?.public_id ?? '',
   }));
 
   let fieldErrors = $state<FieldErrors>({});

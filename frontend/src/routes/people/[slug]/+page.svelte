@@ -102,7 +102,7 @@
     >
       {#snippet children(title)}
         <TitleCard
-          slug={title.slug}
+          slug={title.public_id}
           name={title.name}
           year={title.year}
           thumbnailUrl={title.thumbnail_url}

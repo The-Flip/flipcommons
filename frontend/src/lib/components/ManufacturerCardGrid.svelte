@@ -8,7 +8,7 @@
   }: {
     manufacturers: {
       name: string;
-      slug: string;
+      public_id: string;
       model_count: number;
       thumbnail_url?: string | null;
     }[];
@@ -19,7 +19,7 @@
 <ClientFilteredGrid items={manufacturers} entityName="manufacturer" {showCount}>
   {#snippet children(mfr)}
     <ManufacturerCard
-      slug={mfr.slug}
+      slug={mfr.public_id}
       name={mfr.name}
       thumbnailUrl={mfr.thumbnail_url}
       modelCount={mfr.model_count}

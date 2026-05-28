@@ -14,9 +14,9 @@ const MOCK_DATA = {
   machines: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
-      manufacturer: { name: 'Williams', slug: 'williams' },
+      manufacturer: { name: 'Williams', public_id: 'williams' },
       thumbnail_url: null,
       variants: [],
     },

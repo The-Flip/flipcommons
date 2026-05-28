@@ -11,7 +11,7 @@
   <div class="relationship-group">
     <h3>Parent Title</h3>
     <ul>
-      <li><a href={resolve(`/titles/${model.title.slug}`)}>{model.title.name}</a></li>
+      <li><a href={resolve(`/titles/${model.title.public_id}`)}>{model.title.name}</a></li>
     </ul>
   </div>
 {/if}
@@ -21,7 +21,7 @@
     <h3>Parent Model</h3>
     <ul>
       <li>
-        <a href={resolve(`/models/${model.variant_of.slug}`)}>{model.variant_of.name}</a>
+        <a href={resolve(`/models/${model.variant_of.public_id}`)}>{model.variant_of.name}</a>
         {#if model.variant_of.year}
           <span class="muted">({model.variant_of.year})</span>
         {/if}
@@ -34,9 +34,9 @@
   <div class="relationship-group">
     <h3>Variants</h3>
     <ul>
-      {#each model.variants as variant (variant.slug)}
+      {#each model.variants as variant (variant.public_id)}
         <li>
-          <a href={resolve(`/models/${variant.slug}`)}>{variant.name}</a>
+          <a href={resolve(`/models/${variant.public_id}`)}>{variant.name}</a>
           {#if variant.year}
             <span class="muted">({variant.year})</span>
           {/if}
@@ -50,9 +50,9 @@
   <div class="relationship-group">
     <h3>Other Variants</h3>
     <ul>
-      {#each model.variant_siblings as sibling (sibling.slug)}
+      {#each model.variant_siblings as sibling (sibling.public_id)}
         <li>
-          <a href={resolve(`/models/${sibling.slug}`)}>{sibling.name}</a>
+          <a href={resolve(`/models/${sibling.public_id}`)}>{sibling.name}</a>
           {#if sibling.year}
             <span class="muted">({sibling.year})</span>
           {/if}
@@ -67,7 +67,9 @@
     <h3>Converted From</h3>
     <ul>
       <li>
-        <a href={resolve(`/models/${model.converted_from.slug}`)}>{model.converted_from.name}</a>
+        <a href={resolve(`/models/${model.converted_from.public_id}`)}
+          >{model.converted_from.name}</a
+        >
         {#if model.converted_from.year}
           <span class="muted">({model.converted_from.year})</span>
         {/if}
@@ -80,9 +82,9 @@
   <div class="relationship-group">
     <h3>Conversions</h3>
     <ul>
-      {#each model.conversions as conversion (conversion.slug)}
+      {#each model.conversions as conversion (conversion.public_id)}
         <li>
-          <a href={resolve(`/models/${conversion.slug}`)}>{conversion.name}</a>
+          <a href={resolve(`/models/${conversion.public_id}`)}>{conversion.name}</a>
           {#if conversion.year}
             <span class="muted">({conversion.year})</span>
           {/if}
@@ -97,7 +99,7 @@
     <h3>Remake Of</h3>
     <ul>
       <li>
-        <a href={resolve(`/models/${model.remake_of.slug}`)}>{model.remake_of.name}</a>
+        <a href={resolve(`/models/${model.remake_of.public_id}`)}>{model.remake_of.name}</a>
         {#if model.remake_of.year}
           <span class="muted">({model.remake_of.year})</span>
         {/if}
@@ -110,9 +112,9 @@
   <div class="relationship-group">
     <h3>Remakes</h3>
     <ul>
-      {#each model.remakes as remake (remake.slug)}
+      {#each model.remakes as remake (remake.public_id)}
         <li>
-          <a href={resolve(`/models/${remake.slug}`)}>{remake.name}</a>
+          <a href={resolve(`/models/${remake.public_id}`)}>{remake.name}</a>
           {#if remake.year}
             <span class="muted">({remake.year})</span>
           {/if}

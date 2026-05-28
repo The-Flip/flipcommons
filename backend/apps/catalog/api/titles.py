@@ -241,7 +241,7 @@ def _dedup_facet_refs(items: Iterable[SlugName]) -> list[EntityRef]:
     for slug, name in items:
         if slug and slug not in seen:
             seen.add(slug)
-            result.append(EntityRef(slug=slug, name=name))
+            result.append(EntityRef(public_id=slug, name=name))
     return result
 
 
@@ -259,7 +259,7 @@ def _dedup_facet_dicts(
     for slug, name in items:
         if slug and slug not in seen:
             seen.add(slug)
-            out.append({"slug": slug, "name": name})
+            out.append({"public_id": slug, "name": name})
     return out
 
 
@@ -323,16 +323,20 @@ def _serialize_title_list(
             if first.corporate_entity and first.corporate_entity.manufacturer
             else None
         )
-        manufacturer = EntityRef(slug=mfr.slug, name=mfr.name) if mfr else None
+        manufacturer = (
+            EntityRef(public_id=mfr.public_id, name=mfr.name) if mfr else None
+        )
         year = first.year
 
     # Franchise and Series (both FKs on Title)
     franchise: EntityRef | None = None
     if title.franchise:
-        franchise = EntityRef(slug=title.franchise.slug, name=title.franchise.name)
+        franchise = EntityRef(
+            public_id=title.franchise.public_id, name=title.franchise.name
+        )
     series: EntityRef | None = None
     if title.series:
-        series = EntityRef(slug=title.series.slug, name=title.series.name)
+        series = EntityRef(public_id=title.series.public_id, name=title.series.name)
 
     return TitleListItemSchema(
         name=title.name,
@@ -406,47 +410,49 @@ def _compute_agreed_specs(models: Sequence[MachineModel]) -> AgreedSpecsSchema:
 
     def _fk_pair(m: MachineModel, attr: str) -> tuple[str, str] | None:
         obj = getattr(m, attr, None)
-        return (obj.name, obj.slug) if obj else None
+        return (obj.name, obj.public_id) if obj else None
 
     def _ref_for(attr: str) -> EntityRef | None:
         def accessor(m: MachineModel) -> tuple[str, str] | None:
             return _fk_pair(m, attr)
 
         val = _agreed_value(models, accessor)
-        return EntityRef(name=val[0], slug=val[1]) if val else None
+        return EntityRef(name=val[0], public_id=val[1]) if val else None
 
     # Themes: only roll up when every model has the same set.
-    theme_sets = [frozenset((t.slug, t.name) for t in m.themes.all()) for m in models]
+    theme_sets = [
+        frozenset((t.public_id, t.name) for t in m.themes.all()) for m in models
+    ]
     themes: list[EntityRef] = []
     if (
         theme_sets
         and all(ts for ts in theme_sets)
         and all(ts == theme_sets[0] for ts in theme_sets)
     ):
-        themes = [EntityRef(name=n, slug=s) for s, n in sorted(theme_sets[0])]
+        themes = [EntityRef(name=n, public_id=pid) for pid, n in sorted(theme_sets[0])]
 
     # Gameplay features: intersection across all models (with count agreement).
     gf_maps: list[dict[str, GameplayFeatureAgreement]] = []
     for m in models:
         gf_map: dict[str, GameplayFeatureAgreement] = {}
         for t in m.machinemodelgameplayfeature_set.all():
-            gf_map[t.gameplayfeature.slug] = GameplayFeatureAgreement(
+            gf_map[t.gameplayfeature.public_id] = GameplayFeatureAgreement(
                 t.gameplayfeature.name, t.count
             )
         gf_maps.append(gf_map)
 
     gameplay_features: list[GameplayFeatureRef] = []
     if gf_maps and all(gf_maps):
-        common_slugs = set(gf_maps[0])
+        common_public_ids = set(gf_maps[0])
         for gf_map in gf_maps[1:]:
-            common_slugs &= set(gf_map)
-        if common_slugs:
-            for slug in sorted(common_slugs):
-                name = gf_maps[0][slug].name
-                counts = [gf_map[slug].count for gf_map in gf_maps]
+            common_public_ids &= set(gf_map)
+        if common_public_ids:
+            for public_id in sorted(common_public_ids):
+                name = gf_maps[0][public_id].name
+                counts = [gf_map[public_id].count for gf_map in gf_maps]
                 count = counts[0] if all(c == counts[0] for c in counts) else None
                 gameplay_features.append(
-                    GameplayFeatureRef(slug=slug, name=name, count=count)
+                    GameplayFeatureRef(public_id=public_id, name=name, count=count)
                 )
 
     pq = _agreed_value(models, lambda m: m.production_quantity or None)
@@ -491,8 +497,10 @@ def _collect_related_titles(
             items.append(
                 CrossTitleLinkSchema(
                     relation=attr,
-                    other_title=EntityRef(slug=other.title.slug, name=other.title.name),
-                    source_model=EntityRef(slug=m.slug, name=m.name),
+                    other_title=EntityRef(
+                        public_id=other.title.public_id, name=other.title.name
+                    ),
+                    source_model=EntityRef(public_id=m.public_id, name=m.name),
                 )
             )
     return items
@@ -505,7 +513,7 @@ def _collect_aggregated_media(
     the source model each item came from."""
     items: list[AggregatedMediaSchema] = []
     for m in models:
-        source_ref = EntityRef(slug=m.slug, name=m.name)
+        source_ref = EntityRef(public_id=m.public_id, name=m.name)
         for em in all_media(m):
             items.append(
                 AggregatedMediaSchema(
@@ -571,7 +579,7 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
         for pm in model_objs
     ]
     series = (
-        EntityRef(name=title.series.name, slug=title.series.slug)
+        EntityRef(name=title.series.name, public_id=title.series.public_id)
         if title.series
         else None
     )
@@ -610,7 +618,7 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
     # For single-model titles with no variants, include full model detail inline.
     model_detail: ModelDetailSchema | None = None
     if len(machines) == 1 and not machines[0].variants:
-        pm = _model_detail_qs().get(slug=machines[0].slug)
+        pm = _model_detail_qs().get(slug=machines[0].public_id)
         model_detail = _serialize_model_detail(pm)
 
     description = build_rich_text(title, "description", active_claims(title))
@@ -627,7 +635,7 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
         review_links=review_links,
         hero_image_url=hero_image_url,
         franchise=(
-            EntityRef(slug=title.franchise.slug, name=title.franchise.name)
+            EntityRef(public_id=title.franchise.public_id, name=title.franchise.name)
             if title.franchise
             else None
         ),
@@ -909,8 +917,10 @@ def list_all_titles(request: HttpRequest) -> HttpResponse:
     # round-trip via ``model_dump`` — exactly what the cache exists to avoid.
     # ``set_cached_response`` validates this dict shape against the response
     # Schema in DEBUG mode to catch drift; the prod path is raw ``json.dumps``.
-    def _ref_dict(slug: str | None, name: str | None) -> dict[str, str | None] | None:
-        return {"slug": slug, "name": name} if slug else None
+    def _ref_dict(
+        public_id: str | None, name: str | None
+    ) -> dict[str, str | None] | None:
+        return {"public_id": public_id, "name": name} if public_id else None
 
     result: list[dict[str, Any]] = []
     for r in title_rows:

@@ -7,12 +7,12 @@ const MOCK_DATA = {
   name: 'WPC-95',
   slug: 'wpc-95',
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
-  manufacturer: { name: 'Williams', slug: 'williams' },
-  technology_subgeneration: { name: 'Integrated', slug: 'integrated' },
+  manufacturer: { name: 'Williams', public_id: 'williams' },
+  technology_subgeneration: { name: 'Integrated', public_id: 'integrated' },
   titles: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
       manufacturer_name: 'Williams',
       thumbnail_url: null,

@@ -12,6 +12,6 @@ export const load: PageServerLoad = async ({ parent }) => {
     model.title_models[0].variants.length === 0 &&
     !model.variant_of
   ) {
-    redirect(301, `/titles/${model.title.slug}`);
+    redirect(301, `/titles/${model.title.public_id}`);
   }
 };

@@ -7,14 +7,14 @@ const MOCK_DATA = {
   name: 'Williams Electronics',
   slug: 'williams-electronics',
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
-  manufacturer: { name: 'Williams', slug: 'williams' },
+  manufacturer: { name: 'Williams', public_id: 'williams' },
   year_start: 1985,
   year_end: 1999,
   aliases: [],
   titles: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
       manufacturer_name: 'Williams',
       thumbnail_url: null,

@@ -4,13 +4,13 @@
   let {
     basePath = '/gameplay-features',
     children = [
-      { name: 'Slingshot', slug: 'slingshot' },
-      { name: 'Bumper', slug: 'bumper' },
+      { name: 'Slingshot', public_id: 'slingshot' },
+      { name: 'Bumper', public_id: 'bumper' },
     ],
     heading = 'Subtypes',
   }: {
     basePath?: string;
-    children?: { name: string; slug: string }[];
+    children?: { name: string; public_id: string }[];
     heading?: string;
   } = $props();
 </script>

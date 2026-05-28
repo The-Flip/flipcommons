@@ -10,7 +10,7 @@ import { normalizeText } from '$lib/utils';
 // ---------------------------------------------------------------------------
 
 export interface FacetRef {
-  slug: string;
+  public_id: string;
   name: string;
 }
 
@@ -19,7 +19,7 @@ export interface FacetedTitle {
   slug: string;
   abbreviations: string[];
   model_count: number;
-  manufacturer?: { slug: string; name: string } | null;
+  manufacturer?: { public_id: string; name: string } | null;
   year?: number | null;
   thumbnail_url?: string | null;
   tech_generations: FacetRef[];
@@ -194,7 +194,7 @@ export function matchesQuery(
 
 function matchesTechGen(t: FacetedTitle, slug: string | null): boolean {
   if (!slug) return true;
-  return t.tech_generations.some((tg) => tg.slug === slug);
+  return t.tech_generations.some((tg) => tg.public_id === slug);
 }
 
 function matchesYear(t: FacetedTitle, ymin: number | null, ymax: number | null): boolean {
@@ -209,35 +209,35 @@ function matchesYear(t: FacetedTitle, ymin: number | null, ymax: number | null):
 
 function matchesManufacturer(t: FacetedTitle, slug: string | null): boolean {
   if (!slug) return true;
-  return t.manufacturer?.slug === slug;
+  return t.manufacturer?.public_id === slug;
 }
 
 function matchesPerson(t: FacetedTitle, slug: string | null): boolean {
   if (!slug) return true;
-  return t.persons.some((p) => p.slug === slug);
+  return t.persons.some((p) => p.public_id === slug);
 }
 
 function matchesThemes(t: FacetedTitle, slugs: string[]): boolean {
   if (slugs.length === 0) return true;
-  const titleThemes = new Set(t.themes.map((th) => th.slug));
+  const titleThemes = new Set(t.themes.map((th) => th.public_id));
   return slugs.every((s) => titleThemes.has(s));
 }
 
 function matchesFeatures(t: FacetedTitle, slugs: string[]): boolean {
   if (slugs.length === 0) return true;
-  const titleFeatures = new Set(t.gameplay_features.map((f) => f.slug));
+  const titleFeatures = new Set(t.gameplay_features.map((f) => f.public_id));
   return slugs.every((s) => titleFeatures.has(s));
 }
 
 function matchesRewardTypes(t: FacetedTitle, slugs: string[]): boolean {
   if (slugs.length === 0) return true;
-  const titleRewardTypes = new Set(t.reward_types.map((r) => r.slug));
+  const titleRewardTypes = new Set(t.reward_types.map((r) => r.public_id));
   return slugs.every((s) => titleRewardTypes.has(s));
 }
 
 function matchesDisplayType(t: FacetedTitle, slug: string | null): boolean {
   if (!slug) return true;
-  return t.display_types.some((d) => d.slug === slug);
+  return t.display_types.some((d) => d.public_id === slug);
 }
 
 function matchesPlayerCount(t: FacetedTitle, count: number | null): boolean {
@@ -248,17 +248,17 @@ function matchesPlayerCount(t: FacetedTitle, count: number | null): boolean {
 
 function matchesSystem(t: FacetedTitle, slug: string | null): boolean {
   if (!slug) return true;
-  return t.systems.some((s) => s.slug === slug);
+  return t.systems.some((s) => s.public_id === slug);
 }
 
 function matchesFranchise(t: FacetedTitle, slug: string | null): boolean {
   if (!slug) return true;
-  return t.franchise?.slug === slug;
+  return t.franchise?.public_id === slug;
 }
 
 function matchesSeries(t: FacetedTitle, slug: string | null): boolean {
   if (!slug) return true;
-  return t.series?.slug === slug;
+  return t.series?.public_id === slug;
 }
 
 function matchesRating(t: FacetedTitle, min: number | null): boolean {
@@ -357,7 +357,7 @@ export function computeFacetCounts(titles: FacetedTitle[], state: FilterState): 
     for (let ti = 0; ti < titles.length; ti++) {
       if ((masks[ti] & requiredMask) === requiredMask) {
         for (const ref of extractor(titles[ti])) {
-          counts.set(ref.slug, (counts.get(ref.slug) ?? 0) + 1);
+          counts.set(ref.public_id, (counts.get(ref.public_id) ?? 0) + 1);
         }
       }
     }
@@ -375,7 +375,7 @@ export function computeFacetCounts(titles: FacetedTitle[], state: FilterState): 
       if ((masks[ti] & requiredMask) === requiredMask) {
         const ref = extractor(titles[ti]);
         if (ref) {
-          counts.set(ref.slug, (counts.get(ref.slug) ?? 0) + 1);
+          counts.set(ref.public_id, (counts.get(ref.public_id) ?? 0) + 1);
         }
       }
     }
@@ -432,13 +432,13 @@ export function buildFacetRefOptions<T>(
   const seen = new Map<string, string>();
   for (const t of items) {
     for (const ref of extractor(t)) {
-      if (!seen.has(ref.slug)) seen.set(ref.slug, ref.name);
+      if (!seen.has(ref.public_id)) seen.set(ref.public_id, ref.name);
     }
   }
-  return Array.from(seen.entries()).map(([slug, name]) => ({
-    slug,
+  return Array.from(seen.entries()).map(([publicId, name]) => ({
+    slug: publicId,
     label: name,
-    count: counts.get(slug) ?? 0,
+    count: counts.get(publicId) ?? 0,
   }));
 }
 
@@ -450,12 +450,12 @@ export function buildSingleRefOptions<T>(
   const seen = new Map<string, string>();
   for (const t of items) {
     const ref = extractor(t);
-    if (ref && !seen.has(ref.slug)) seen.set(ref.slug, ref.name);
+    if (ref && !seen.has(ref.public_id)) seen.set(ref.public_id, ref.name);
   }
-  return Array.from(seen.entries()).map(([slug, name]) => ({
-    slug,
+  return Array.from(seen.entries()).map(([publicId, name]) => ({
+    slug: publicId,
     label: name,
-    count: counts.get(slug) ?? 0,
+    count: counts.get(publicId) ?? 0,
   }));
 }
 
@@ -493,16 +493,16 @@ export function getActiveFilterLabels(
   const seriesNames = new Map<string, string>();
 
   for (const t of allTitles) {
-    for (const ref of t.tech_generations) techGenNames.set(ref.slug, ref.name);
-    for (const ref of t.display_types) displayTypeNames.set(ref.slug, ref.name);
-    if (t.manufacturer) manufacturerNames.set(t.manufacturer.slug, t.manufacturer.name);
-    for (const ref of t.persons) personNames.set(ref.slug, ref.name);
-    for (const ref of t.themes) themeNames.set(ref.slug, ref.name);
-    for (const ref of t.gameplay_features) featureNames.set(ref.slug, ref.name);
-    for (const ref of t.reward_types) rewardTypeNames.set(ref.slug, ref.name);
-    for (const ref of t.systems) systemNames.set(ref.slug, ref.name);
-    if (t.franchise) franchiseNames.set(t.franchise.slug, t.franchise.name);
-    if (t.series) seriesNames.set(t.series.slug, t.series.name);
+    for (const ref of t.tech_generations) techGenNames.set(ref.public_id, ref.name);
+    for (const ref of t.display_types) displayTypeNames.set(ref.public_id, ref.name);
+    if (t.manufacturer) manufacturerNames.set(t.manufacturer.public_id, t.manufacturer.name);
+    for (const ref of t.persons) personNames.set(ref.public_id, ref.name);
+    for (const ref of t.themes) themeNames.set(ref.public_id, ref.name);
+    for (const ref of t.gameplay_features) featureNames.set(ref.public_id, ref.name);
+    for (const ref of t.reward_types) rewardTypeNames.set(ref.public_id, ref.name);
+    for (const ref of t.systems) systemNames.set(ref.public_id, ref.name);
+    if (t.franchise) franchiseNames.set(t.franchise.public_id, t.franchise.name);
+    if (t.series) seriesNames.set(t.series.public_id, t.series.name);
   }
 
   if (filters.techGeneration) {
@@ -672,7 +672,7 @@ export function expandTitlesWithAncestorThemes(
 
     const expanded = new Map<string, string>();
     for (const theme of title.themes) {
-      const allAncestors = ancestorMap.get(theme.slug);
+      const allAncestors = ancestorMap.get(theme.public_id);
       if (allAncestors) {
         for (const slug of allAncestors) {
           if (!expanded.has(slug)) {
@@ -680,13 +680,16 @@ export function expandTitlesWithAncestorThemes(
           }
         }
       } else {
-        expanded.set(theme.slug, theme.name);
+        expanded.set(theme.public_id, theme.name);
       }
     }
 
     return {
       ...title,
-      themes: Array.from(expanded.entries()).map(([slug, name]) => ({ slug, name })),
+      themes: Array.from(expanded.entries()).map(([public_id, name]) => ({
+        public_id,
+        name,
+      })),
     };
   });
 }
@@ -718,7 +721,7 @@ export function expandTitlesWithAncestorFeatures(
 
     const expanded = new Map<string, string>();
     for (const feature of title.gameplay_features) {
-      const allAncestors = ancestorMap.get(feature.slug);
+      const allAncestors = ancestorMap.get(feature.public_id);
       if (allAncestors) {
         for (const slug of allAncestors) {
           if (!expanded.has(slug)) {
@@ -726,14 +729,14 @@ export function expandTitlesWithAncestorFeatures(
           }
         }
       } else {
-        expanded.set(feature.slug, feature.name);
+        expanded.set(feature.public_id, feature.name);
       }
     }
 
     return {
       ...title,
-      gameplay_features: Array.from(expanded.entries()).map(([slug, name]) => ({
-        slug,
+      gameplay_features: Array.from(expanded.entries()).map(([public_id, name]) => ({
+        public_id,
         name,
       })),
     };

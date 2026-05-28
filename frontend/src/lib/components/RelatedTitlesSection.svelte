@@ -3,8 +3,8 @@
 
   type RelatedTitleLink = {
     relation: string;
-    other_title: { name: string; slug: string };
-    source_model: { name: string; slug: string };
+    other_title: { name: string; public_id: string };
+    source_model: { name: string; public_id: string };
   };
 
   let { relatedTitles }: { relatedTitles: RelatedTitleLink[] } = $props();
@@ -17,11 +17,11 @@
 </script>
 
 <ul class="related-titles">
-  {#each relatedTitles as link (`${link.source_model.slug}-${link.relation}-${link.other_title.slug}`)}
+  {#each relatedTitles as link (`${link.source_model.public_id}-${link.relation}-${link.other_title.public_id}`)}
     <li>
       <span class="source">{link.source_model.name}</span>
       <span class="relation">{label(link.relation)}</span>
-      <a href={resolve(`/titles/${link.other_title.slug}`)}>{link.other_title.name}</a>
+      <a href={resolve(`/titles/${link.other_title.public_id}`)}>{link.other_title.name}</a>
     </li>
   {/each}
 </ul>

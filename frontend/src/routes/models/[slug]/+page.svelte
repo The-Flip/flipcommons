@@ -105,7 +105,7 @@
       <ModelHierarchy
         models={model.title_models}
         heading="Other Models In Title"
-        excludeSlug={model.variant_of?.slug ?? model.slug}
+        excludeSlug={model.variant_of?.public_id ?? model.slug}
         inline
       />
     </AccordionSection>

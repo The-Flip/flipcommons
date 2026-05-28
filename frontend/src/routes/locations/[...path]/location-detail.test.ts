@@ -16,8 +16,8 @@ const BASE_LOCATION = {
   ancestors: [],
   children: [],
   manufacturers: [
-    { slug: 'williams', name: 'Williams', model_count: 12, thumbnail_url: null },
-    { slug: 'stern', name: 'Stern', model_count: 8, thumbnail_url: null },
+    { public_id: 'williams', name: 'Williams', model_count: 12, thumbnail_url: null },
+    { public_id: 'stern', name: 'Stern', model_count: 8, thumbnail_url: null },
   ],
 };
 

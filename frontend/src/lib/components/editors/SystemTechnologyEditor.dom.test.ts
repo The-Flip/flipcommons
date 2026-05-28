@@ -30,7 +30,7 @@ const SUBGENS = {
 };
 
 const INITIAL = {
-  technology_subgeneration: { slug: 'integrated' },
+  technology_subgeneration: { public_id: 'integrated' },
 };
 
 function mockGetResponses() {

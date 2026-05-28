@@ -4,8 +4,8 @@
   type BasicsModel = {
     year?: number | null;
     month?: number | null;
-    title?: { slug: string } | null;
-    corporate_entity?: { slug: string } | null;
+    title?: { public_id: string } | null;
+    corporate_entity?: { public_id: string } | null;
   };
 
   let {

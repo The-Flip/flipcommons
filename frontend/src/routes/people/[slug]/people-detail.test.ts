@@ -25,7 +25,7 @@ const MOCK_DATA = {
   titles: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
       manufacturer_name: 'Williams',
       thumbnail_url: null,

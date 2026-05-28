@@ -76,7 +76,7 @@
     if (md.manufacturer) {
       items.push({
         text: md.manufacturer.name,
-        href: resolve(`/manufacturers/${md.manufacturer.slug}`),
+        href: resolve(`/manufacturers/${md.manufacturer.public_id}`),
       });
     }
     if (md.year) {
@@ -257,9 +257,9 @@
       {#if md.variants.length > 0}
         <SidebarSection heading="Variants">
           <SidebarList>
-            {#each md.variants as variant (variant.slug)}
+            {#each md.variants as variant (variant.public_id)}
               <SidebarListItem>
-                <a href={resolve(`/models/${variant.slug}`)}>{variant.name}</a>
+                <a href={resolve(`/models/${variant.public_id}`)}>{variant.name}</a>
                 {#if variant.year}
                   <span class="muted">{variant.year}</span>
                 {/if}
@@ -283,7 +283,8 @@
             {#if specs.technology_generation}
               <dt>Generation</dt>
               <dd>
-                <a href={resolve(`/technology-generations/${specs.technology_generation.slug}`)}
+                <a
+                  href={resolve(`/technology-generations/${specs.technology_generation.public_id}`)}
                   >{specs.technology_generation.name}</a
                 >
               </dd>
@@ -291,7 +292,7 @@
             {#if specs.display_type}
               <dt>Display Type</dt>
               <dd>
-                <a href={resolve(`/display-types/${specs.display_type.slug}`)}
+                <a href={resolve(`/display-types/${specs.display_type.public_id}`)}
                   >{specs.display_type.name}</a
                 >
               </dd>
@@ -311,24 +312,24 @@
             {#if specs.system}
               <dt>System</dt>
               <dd>
-                <a href={resolve(`/systems/${specs.system.slug}`)}>{specs.system.name}</a>
+                <a href={resolve(`/systems/${specs.system.public_id}`)}>{specs.system.name}</a>
               </dd>
             {/if}
             {#if specs.themes && specs.themes.length > 0}
               <dt>Themes</dt>
               <dd>
-                {#each specs.themes as theme, i (theme.slug)}
+                {#each specs.themes as theme, i (theme.public_id)}
                   {#if i > 0},{/if}
-                  <a href={resolve(`/themes/${theme.slug}`)}>{theme.name}</a>
+                  <a href={resolve(`/themes/${theme.public_id}`)}>{theme.name}</a>
                 {/each}
               </dd>
             {/if}
             {#if specs.gameplay_features && specs.gameplay_features.length > 0}
               <dt>Features</dt>
               <dd>
-                {#each specs.gameplay_features as feature, i (feature.slug)}
+                {#each specs.gameplay_features as feature, i (feature.public_id)}
                   {#if i > 0},{/if}
-                  <a href={resolve(`/gameplay-features/${feature.slug}`)}>{feature.name}</a
+                  <a href={resolve(`/gameplay-features/${feature.public_id}`)}>{feature.name}</a
                   >{#if feature.count}&nbsp;({feature.count}){/if}
                 {/each}
               </dd>
@@ -336,9 +337,9 @@
             {#if specs.reward_types && specs.reward_types.length > 0}
               <dt>Reward Types</dt>
               <dd>
-                {#each specs.reward_types as rt, i (rt.slug)}
+                {#each specs.reward_types as rt, i (rt.public_id)}
                   {#if i > 0},{/if}
-                  <a href={resolve(`/reward-types/${rt.slug}`)}>{rt.name}</a>
+                  <a href={resolve(`/reward-types/${rt.public_id}`)}>{rt.name}</a>
                 {/each}
               </dd>
             {/if}
@@ -349,13 +350,13 @@
             {#if specs.cabinet}
               <dt>Cabinet</dt>
               <dd>
-                <a href={resolve(`/cabinets/${specs.cabinet.slug}`)}>{specs.cabinet.name}</a>
+                <a href={resolve(`/cabinets/${specs.cabinet.public_id}`)}>{specs.cabinet.name}</a>
               </dd>
             {/if}
             {#if specs.game_format}
               <dt>Format</dt>
               <dd>
-                <a href={resolve(`/game-formats/${specs.game_format.slug}`)}
+                <a href={resolve(`/game-formats/${specs.game_format.public_id}`)}
                   >{specs.game_format.name}</a
                 >
               </dd>
@@ -363,7 +364,7 @@
             {#if specs.display_subtype}
               <dt>Display</dt>
               <dd>
-                <a href={resolve(`/display-subtypes/${specs.display_subtype.slug}`)}
+                <a href={resolve(`/display-subtypes/${specs.display_subtype.public_id}`)}
                   >{specs.display_subtype.name}</a
                 >
               </dd>

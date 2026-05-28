@@ -23,12 +23,13 @@ vi.mock('$lib/auth.svelte', () => ({
 }));
 
 import Harness from './layout.test-harness.svelte';
+import type { TitleDetailSchema } from '$lib/api/schema';
 
 const MOCK_TITLE = {
   name: 'Medieval Madness',
   slug: 'medieval-madness',
   abbreviations: [],
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
   needs_review: false,
   needs_review_notes: '',
   review_links: [],
@@ -37,9 +38,9 @@ const MOCK_TITLE = {
   machines: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
-      manufacturer: { name: 'Williams', slug: 'williams' },
+      manufacturer: { name: 'Williams', public_id: 'williams' },
       technology_generation_name: 'Solid State',
       thumbnail_url: null,
       variants: [],
@@ -53,8 +54,7 @@ const MOCK_TITLE = {
   opdb_id: null,
   fandom_page_id: null,
   model_detail: null,
-  sources: [],
-};
+} satisfies TitleDetailSchema;
 
 describe('title layout', () => {
   beforeEach(() => {
@@ -115,11 +115,10 @@ describe('title layout', () => {
       model_detail: {
         name: 'Doctor Who',
         slug: 'doctor-who-1992',
-        description: { text: '', html: '', citations: [], attribution: null },
+        description: { text: '', html: '', plain: '', citations: [], attribution: null },
         abbreviations: [],
         extra_data: {},
         credits: [],
-        sources: [],
         uploaded_media: [],
         variant_features: [],
         variants: [],
@@ -133,10 +132,10 @@ describe('title layout', () => {
         title_models: [],
         production_quantity: '',
       },
-    };
+    } satisfies TitleDetailSchema;
 
     const { body } = render(Harness, {
-      props: { data: { title: singleModelTitle } } as never,
+      props: { data: { title: singleModelTitle } },
     });
 
     // Two ActionMenu triggers: History and Sources. (Multi-Model titles have
@@ -157,8 +156,8 @@ describe('title layout', () => {
         data: {
           title: {
             ...MOCK_TITLE,
-            franchise: { name: 'Williams Classics', slug: 'williams-classics' },
-          },
+            franchise: { name: 'Williams Classics', public_id: 'williams-classics' },
+          } satisfies TitleDetailSchema,
         },
       },
     });

@@ -2,11 +2,11 @@
   import TechnologyEditor from './TechnologyEditor.svelte';
 
   type TechnologyModel = {
-    technology_generation?: { slug: string } | null;
-    technology_subgeneration?: { slug: string } | null;
-    system?: { slug: string } | null;
-    display_type?: { slug: string } | null;
-    display_subtype?: { slug: string } | null;
+    technology_generation?: { public_id: string } | null;
+    technology_subgeneration?: { public_id: string } | null;
+    system?: { public_id: string } | null;
+    display_type?: { public_id: string } | null;
+    display_subtype?: { public_id: string } | null;
   };
 
   let {

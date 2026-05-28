@@ -137,7 +137,7 @@ class TestManufacturersAPI:
     def test_list_all_manufacturers_serializes_persons_and_tech_gens(
         self, client, manufacturer, williams_entity, person, solid_state, db
     ):
-        """Persons and tech generations must serialize as plain ``{slug, name}``
+        """Persons and tech generations must serialize as plain ``{public_id, name}``
         dicts in the cached response. Other tests don't exercise these fields,
         so without this case the cache write path could ship Schema instances
         that fail JSON serialization."""
@@ -152,9 +152,9 @@ class TestManufacturersAPI:
         resp = client.get("/api/manufacturers/all/")
         assert resp.status_code == 200
         mfr = resp.json()[0]
-        assert mfr["persons"] == [{"slug": "pat-lawlor", "name": "Pat Lawlor"}]
+        assert mfr["persons"] == [{"public_id": "pat-lawlor", "name": "Pat Lawlor"}]
         assert mfr["tech_generations"] == [
-            {"slug": "solid-state", "name": "Solid State"}
+            {"public_id": "solid-state", "name": "Solid State"}
         ]
 
     def test_list_all_manufacturers_search_text_includes_ce_aliases(

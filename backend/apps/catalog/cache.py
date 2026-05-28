@@ -21,11 +21,20 @@ from pydantic import TypeAdapter
 
 from apps.core.licensing import current_audience
 
-_MODELS_ALL_BASE = "catalog:models:all"
-_MANUFACTURERS_ALL_BASE = "catalog:manufacturers:all"
-_PEOPLE_ALL_BASE = "catalog:people:all"
-_TITLES_ALL_BASE = "catalog:titles:all"
-_LOCATIONS_TREE_BASE = "catalog:locations:tree"
+# Bump when a cached /all/ payload's JSON shape changes. FileBasedCache writes
+# with ``timeout=None`` and can survive a deploy (its dir is not always wiped),
+# while ``invalidate_all()`` only runs on data mutation — never on deploy. So a
+# shape change without a version bump can keep serving old-shaped JSON to the
+# new frontend until the next write. Versioning the keys orphans the stale
+# entries instead. (The unversioned keys were the implicit "v1"; v2 = the
+# public_id reference-body migration that reshaped titles/manufacturers refs.)
+_CACHE_VERSION = "v2"
+
+_MODELS_ALL_BASE = f"catalog:models:all:{_CACHE_VERSION}"
+_MANUFACTURERS_ALL_BASE = f"catalog:manufacturers:all:{_CACHE_VERSION}"
+_PEOPLE_ALL_BASE = f"catalog:people:all:{_CACHE_VERSION}"
+_TITLES_ALL_BASE = f"catalog:titles:all:{_CACHE_VERSION}"
+_LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
 
 _BASES: tuple[str, ...] = (
     _MODELS_ALL_BASE,

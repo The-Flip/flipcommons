@@ -90,9 +90,12 @@ def _serialize_detail(theme: Theme) -> ThemeDetailSchema:
         slug=theme.slug,
         description=build_rich_text(theme, "description", active_claims(theme)),
         aliases=[a.value for a in theme.aliases.all()],
-        parents=[EntityRef(name=t.name, slug=t.slug) for t in theme.parents.all()],
+        parents=[
+            EntityRef(name=t.name, public_id=t.public_id) for t in theme.parents.all()
+        ],
         children=[
-            EntityRef(name=t.name, slug=t.slug) for t in theme.children.order_by("name")
+            EntityRef(name=t.name, public_id=t.public_id)
+            for t in theme.children.order_by("name")
         ],
         machines=[
             serialize_title_machine(

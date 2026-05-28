@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { creditsChanged, diffScalarFields, slugSetChanged, stringSetChanged } from './edit-helpers';
+import {
+  creditsChanged,
+  diffScalarFields,
+  publicIdSetChanged,
+  stringSetChanged,
+} from './edit-helpers';
 
 // Form fields use string | number (NumberField returns number, cleared fields are '')
 type TestFields = Record<string, string | number>;
@@ -43,25 +48,27 @@ describe('diffScalarFields', () => {
   });
 });
 
-describe('slugSetChanged', () => {
+describe('publicIdSetChanged', () => {
   it('returns false when sets match', () => {
-    expect(slugSetChanged(['a', 'b'], [{ slug: 'b' }, { slug: 'a' }])).toBe(false);
+    expect(publicIdSetChanged(['a', 'b'], [{ public_id: 'b' }, { public_id: 'a' }])).toBe(false);
   });
 
   it('returns true when slug added', () => {
-    expect(slugSetChanged(['a', 'b', 'c'], [{ slug: 'a' }, { slug: 'b' }])).toBe(true);
+    expect(publicIdSetChanged(['a', 'b', 'c'], [{ public_id: 'a' }, { public_id: 'b' }])).toBe(
+      true,
+    );
   });
 
   it('returns true when slug removed', () => {
-    expect(slugSetChanged(['a'], [{ slug: 'a' }, { slug: 'b' }])).toBe(true);
+    expect(publicIdSetChanged(['a'], [{ public_id: 'a' }, { public_id: 'b' }])).toBe(true);
   });
 
   it('returns false for empty vs empty', () => {
-    expect(slugSetChanged([], [])).toBe(false);
+    expect(publicIdSetChanged([], [])).toBe(false);
   });
 
   it('returns true for empty vs non-empty', () => {
-    expect(slugSetChanged([], [{ slug: 'a' }])).toBe(true);
+    expect(publicIdSetChanged([], [{ public_id: 'a' }])).toBe(true);
   });
 });
 
@@ -90,8 +97,8 @@ describe('creditsChanged', () => {
       { person_slug: 'john-youssi', role: 'artwork' },
     ];
     const original = [
-      { person: { slug: 'pat-lawlor' }, role: 'game-design' },
-      { person: { slug: 'john-youssi' }, role: 'artwork' },
+      { person: { public_id: 'pat-lawlor' }, role: 'game-design' },
+      { person: { public_id: 'john-youssi' }, role: 'artwork' },
     ];
     expect(creditsChanged(current, original)).toBe(false);
   });
@@ -101,22 +108,22 @@ describe('creditsChanged', () => {
       { person_slug: 'pat-lawlor', role: 'game-design' },
       { person_slug: 'john-youssi', role: 'artwork' },
     ];
-    const original = [{ person: { slug: 'pat-lawlor' }, role: 'game-design' }];
+    const original = [{ person: { public_id: 'pat-lawlor' }, role: 'game-design' }];
     expect(creditsChanged(current, original)).toBe(true);
   });
 
   it('returns true when a credit is removed', () => {
     const current = [{ person_slug: 'pat-lawlor', role: 'game-design' }];
     const original = [
-      { person: { slug: 'pat-lawlor' }, role: 'game-design' },
-      { person: { slug: 'john-youssi' }, role: 'artwork' },
+      { person: { public_id: 'pat-lawlor' }, role: 'game-design' },
+      { person: { public_id: 'john-youssi' }, role: 'artwork' },
     ];
     expect(creditsChanged(current, original)).toBe(true);
   });
 
   it('returns true when a role is changed', () => {
     const current = [{ person_slug: 'pat-lawlor', role: 'mechanical-design' }];
-    const original = [{ person: { slug: 'pat-lawlor' }, role: 'game-design' }];
+    const original = [{ person: { public_id: 'pat-lawlor' }, role: 'game-design' }];
     expect(creditsChanged(current, original)).toBe(true);
   });
 
@@ -126,7 +133,7 @@ describe('creditsChanged', () => {
       { person_slug: '', role: 'artwork' },
       { person_slug: 'john-youssi', role: '' },
     ];
-    const original = [{ person: { slug: 'pat-lawlor' }, role: 'game-design' }];
+    const original = [{ person: { public_id: 'pat-lawlor' }, role: 'game-design' }];
     expect(creditsChanged(current, original)).toBe(false);
   });
 
@@ -136,7 +143,7 @@ describe('creditsChanged', () => {
       { person_slug: 'pat-lawlor', role: 'game-design' },
       { person_slug: 'john-youssi', role: null as unknown as string },
     ];
-    const original = [{ person: { slug: 'pat-lawlor' }, role: 'game-design' }];
+    const original = [{ person: { public_id: 'pat-lawlor' }, role: 'game-design' }];
     expect(creditsChanged(current, original)).toBe(false);
   });
 
@@ -150,8 +157,8 @@ describe('creditsChanged', () => {
       { person_slug: 'pat-lawlor', role: 'game-design' },
     ];
     const original = [
-      { person: { slug: 'pat-lawlor' }, role: 'game-design' },
-      { person: { slug: 'john-youssi' }, role: 'artwork' },
+      { person: { public_id: 'pat-lawlor' }, role: 'game-design' },
+      { person: { public_id: 'john-youssi' }, role: 'artwork' },
     ];
     expect(creditsChanged(current, original)).toBe(false);
   });

@@ -2,7 +2,7 @@ import pytest
 from constance.signals import config_updated
 from django.core.cache import cache
 
-from apps.catalog.cache import models_all_key, titles_all_key
+from apps.catalog.cache import _MODELS_ALL_BASE, models_all_key, titles_all_key
 from apps.catalog.models import (
     Cabinet,
     CorporateEntity,
@@ -141,8 +141,8 @@ class TestPolicyChangeInvalidation:
         # signal must clear both.
         client.get("/api/models/all/")
         client.get("/api/models/all/", HTTP_COOKIE="mode=kiosk")
-        assert cache.get("catalog:models:all:default") is not None
-        assert cache.get("catalog:models:all:kiosk") is not None
+        assert cache.get(f"{_MODELS_ALL_BASE}:default") is not None
+        assert cache.get(f"{_MODELS_ALL_BASE}:kiosk") is not None
 
         config_updated.send(
             sender=None,
@@ -150,8 +150,8 @@ class TestPolicyChangeInvalidation:
             old_value="licensed-only",
             new_value="show-all",
         )
-        assert cache.get("catalog:models:all:default") is None
-        assert cache.get("catalog:models:all:kiosk") is None
+        assert cache.get(f"{_MODELS_ALL_BASE}:default") is None
+        assert cache.get(f"{_MODELS_ALL_BASE}:kiosk") is None
 
     def test_unrelated_key_change_does_not_invalidate(self, client, machine_model):
         client.get("/api/models/all/")
@@ -183,38 +183,38 @@ class TestKioskAudienceCacheIsolation:
 
     def test_kiosk_request_populates_kiosk_slot_only(self, client, machine_model):
         client.get("/api/models/all/", HTTP_COOKIE="mode=kiosk")
-        assert cache.get("catalog:models:all:kiosk") is not None
-        assert cache.get("catalog:models:all:default") is None
+        assert cache.get(f"{_MODELS_ALL_BASE}:kiosk") is not None
+        assert cache.get(f"{_MODELS_ALL_BASE}:default") is None
 
     def test_default_request_populates_default_slot_only(self, client, machine_model):
         client.get("/api/models/all/")
-        assert cache.get("catalog:models:all:default") is not None
-        assert cache.get("catalog:models:all:kiosk") is None
+        assert cache.get(f"{_MODELS_ALL_BASE}:default") is not None
+        assert cache.get(f"{_MODELS_ALL_BASE}:kiosk") is None
 
     def test_invalidate_all_clears_both_audience_slots(self, client, machine_model):
         from apps.catalog.cache import invalidate_all
 
         client.get("/api/models/all/")
         client.get("/api/models/all/", HTTP_COOKIE="mode=kiosk")
-        assert cache.get("catalog:models:all:default") is not None
-        assert cache.get("catalog:models:all:kiosk") is not None
+        assert cache.get(f"{_MODELS_ALL_BASE}:default") is not None
+        assert cache.get(f"{_MODELS_ALL_BASE}:kiosk") is not None
 
         invalidate_all()
 
-        assert cache.get("catalog:models:all:default") is None
-        assert cache.get("catalog:models:all:kiosk") is None
+        assert cache.get(f"{_MODELS_ALL_BASE}:default") is None
+        assert cache.get(f"{_MODELS_ALL_BASE}:kiosk") is None
 
     def test_kiosk_payload_not_served_to_default_request(self, client, machine_model):
         # Warm only the kiosk slot.
         client.get("/api/models/all/", HTTP_COOKIE="mode=kiosk")
-        assert cache.get("catalog:models:all:kiosk") is not None
-        assert cache.get("catalog:models:all:default") is None
+        assert cache.get(f"{_MODELS_ALL_BASE}:kiosk") is not None
+        assert cache.get(f"{_MODELS_ALL_BASE}:default") is None
 
         # A subsequent default-audience request must not reuse the kiosk
         # slot — it populates its own slot fresh.
         resp = client.get("/api/models/all/")
         assert resp.status_code == 200
-        assert cache.get("catalog:models:all:default") is not None
+        assert cache.get(f"{_MODELS_ALL_BASE}:default") is not None
 
 
 class TestConditionalGet:

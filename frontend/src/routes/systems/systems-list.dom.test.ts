@@ -15,27 +15,28 @@ vi.mock('$lib/api/client', () => ({
 vi.mock('$lib/auth.svelte', () => ({ auth: authMock }));
 
 import Page from './+page.svelte';
+import type { SystemListItemSchema } from '$lib/api/schema';
 
 const SYSTEMS = [
   {
     name: 'SPIKE',
     slug: 'spike',
-    manufacturer: { slug: 'stern', name: 'Stern' },
+    manufacturer: { public_id: 'stern', name: 'Stern' },
     model_count: 42,
   },
   {
     name: 'WPC-95',
     slug: 'wpc-95',
-    manufacturer: { slug: 'williams', name: 'Williams' },
+    manufacturer: { public_id: 'williams', name: 'Williams' },
     model_count: 30,
   },
   {
     name: 'Whitestar',
     slug: 'whitestar',
-    manufacturer: { slug: 'stern', name: 'Stern' },
+    manufacturer: { public_id: 'stern', name: 'Stern' },
     model_count: 12,
   },
-];
+] satisfies SystemListItemSchema[];
 
 async function renderAndWait() {
   mockGet.mockResolvedValue({ data: SYSTEMS });

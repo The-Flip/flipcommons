@@ -3,7 +3,7 @@
   import { saveSystemClaims } from '../../../routes/systems/[slug]/edit/save-system-claims';
 
   type InitialData = {
-    manufacturer?: { slug: string } | null;
+    manufacturer?: { public_id: string } | null;
   };
 
   let {

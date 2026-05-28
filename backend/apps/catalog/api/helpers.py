@@ -36,7 +36,7 @@ from .schemas import (
 def serialize_credit(credit: Credit) -> CreditSchema:
     """Serialize a Credit row into a CreditSchema."""
     return CreditSchema(
-        person=EntityRef(name=credit.person.name, slug=credit.person.slug),
+        person=EntityRef(name=credit.person.name, public_id=credit.person.public_id),
         role=credit.role.slug,
         role_display=credit.role.name,
         role_sort_order=credit.role.display_order,
@@ -46,14 +46,14 @@ def serialize_credit(credit: Credit) -> CreditSchema:
 def _intersect_facet_sets(
     models: Iterable[MachineModel], relation_name: str
 ) -> list[EntityRef]:
-    """Return the intersection of a slug/name M2M across all *models*.
+    """Return the intersection of a public_id/name M2M across all *models*.
 
-    Each model's related set is collected as ``frozenset((slug, name))``.
-    Only slugs present on **every** model are included.
+    Each model's related set is collected as ``frozenset((public_id, name))``.
+    Only public_ids present on **every** model are included.
     Returns ``[]`` when any model has an empty set or models disagree.
     """
     sets = [
-        frozenset((obj.slug, obj.name) for obj in getattr(m, relation_name).all())
+        frozenset((obj.public_id, obj.name) for obj in getattr(m, relation_name).all())
         for m in models
     ]
     if not sets or not all(sets):
@@ -61,7 +61,11 @@ def _intersect_facet_sets(
     common = sets[0]
     for s in sets[1:]:
         common &= s
-    return [EntityRef(slug=s, name=n) for s, n in sorted(common)] if common else []
+    return (
+        [EntityRef(public_id=pid, name=n) for pid, n in sorted(common)]
+        if common
+        else []
+    )
 
 
 def serialize_title_ref(
@@ -93,7 +97,7 @@ def serialize_title_ref(
         year = first.year
     return TitleRef(
         name=title.name,
-        slug=title.slug,
+        public_id=title.public_id,
         abbreviations=[a.value for a in title.abbreviations.all()],
         # model_count is a queryset .annotate() attribute, not on Title itself.
         model_count=getattr(title, "model_count", 0),
@@ -136,7 +140,7 @@ def collect_titles(
                 manufacturer_name = mfr.name if mfr else None
             titles[key] = RelatedTitleSchema(
                 name=m.title.name,
-                slug=m.title.slug,
+                public_id=m.title.public_id,
                 year=m.year,
                 thumbnail_url=thumbnail_url,
                 manufacturer_name=manufacturer_name,
@@ -237,7 +241,7 @@ def serialize_title_machine(
     variants = [
         TitleModelVariantSchema(
             name=v.name,
-            slug=v.slug,
+            public_id=v.public_id,
             year=v.year,
             thumbnail_url=extract_image_urls(
                 v.extra_data or {},
@@ -255,9 +259,9 @@ def serialize_title_machine(
     )
     return TitleModelSchema(
         name=pm.name,
-        slug=pm.slug,
+        public_id=pm.public_id,
         year=pm.year,
-        manufacturer=EntityRef(name=mfr.name, slug=mfr.slug) if mfr else None,
+        manufacturer=EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None,
         technology_generation_name=(
             pm.technology_generation.name if pm.technology_generation else None
         ),

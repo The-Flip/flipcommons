@@ -105,7 +105,7 @@ def _system_detail_qs() -> QuerySet[System]:
 @dataclass
 class _RelatedTitleAccum:
     name: str
-    slug: str
+    public_id: str
     year: int | None
     manufacturer_name: str | None
     thumbnail_url: str | None
@@ -131,7 +131,7 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
             )
             accum[key] = _RelatedTitleAccum(
                 name=m.title.name,
-                slug=m.title.slug,
+                public_id=m.title.public_id,
                 year=m.year,
                 manufacturer_name=mfr.name if mfr else None,
                 thumbnail_url=thumbnail_url,
@@ -141,7 +141,7 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
     titles = [
         RelatedTitleSchema(
             name=a.name,
-            slug=a.slug,
+            public_id=a.public_id,
             year=a.year,
             manufacturer_name=a.manufacturer_name,
             thumbnail_url=a.thumbnail_url,
@@ -152,7 +152,7 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
     sibling_systems: list[EntityRef] = []
     if system.manufacturer:
         sibling_systems = [
-            EntityRef(name=row["name"], slug=row["slug"])
+            EntityRef(name=row["name"], public_id=row["slug"])
             for row in System.objects.active()
             .filter(manufacturer=system.manufacturer)
             .exclude(pk=system.pk)
@@ -166,14 +166,17 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
         slug=system.slug,
         description=build_rich_text(system, "description", active_claims(system)),
         manufacturer=(
-            EntityRef(name=system.manufacturer.name, slug=system.manufacturer.slug)
+            EntityRef(
+                name=system.manufacturer.name,
+                public_id=system.manufacturer.public_id,
+            )
             if system.manufacturer
             else None
         ),
         technology_subgeneration=(
             EntityRef(
                 name=system.technology_subgeneration.name,
-                slug=system.technology_subgeneration.slug,
+                public_id=system.technology_subgeneration.public_id,
             )
             if system.technology_subgeneration
             else None
@@ -211,7 +214,7 @@ def list_all_systems(request: HttpRequest) -> list[SystemListItemSchema]:
             name=s.name,
             slug=s.slug,
             manufacturer=(
-                EntityRef(name=s.manufacturer.name, slug=s.manufacturer.slug)
+                EntityRef(name=s.manufacturer.name, public_id=s.manufacturer.public_id)
                 if s.manufacturer
                 else None
             ),

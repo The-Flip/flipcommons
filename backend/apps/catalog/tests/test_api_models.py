@@ -182,7 +182,7 @@ class TestModelsAPI:
         resp = client.get(f"/api/pages/model/{machine_model.slug}")
         data = resp.json()
         assert data["title"]["name"] == "Medieval Madness"
-        assert data["title"]["slug"] == title.slug
+        assert data["title"]["public_id"] == title.public_id
 
     def test_detail_includes_conversion_fields(self, client, db):
         """Detail response includes conversion fields."""
@@ -195,7 +195,7 @@ class TestModelsAPI:
         resp = client.get(f"/api/pages/model/{conv.slug}")
         data = resp.json()
         assert data["converted_from"]["name"] == "Star Trek"
-        assert data["converted_from"]["slug"] == "star-trek"
+        assert data["converted_from"]["public_id"] == "star-trek"
         assert data["converted_from"]["year"] == 1991
 
     def test_detail_includes_conversions_list(self, client, db):
@@ -210,7 +210,7 @@ class TestModelsAPI:
         data = resp.json()
         assert len(data["conversions"]) == 1
         assert data["conversions"][0]["name"] == "Dark Rider"
-        assert data["conversions"][0]["slug"] == "dark-rider"
+        assert data["conversions"][0]["public_id"] == "dark-rider"
 
     def test_conversions_appear_in_list(self, client, db):
         """Conversions are NOT filtered from the list endpoint (unlike variants)."""

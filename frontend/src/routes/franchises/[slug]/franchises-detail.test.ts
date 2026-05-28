@@ -10,7 +10,7 @@ const MOCK_DATA = {
   titles: [
     {
       name: 'Star Trek TNG',
-      slug: 'star-trek-tng',
+      public_id: 'star-trek-tng',
       abbreviations: [],
       model_count: 1,
       manufacturer_name: 'Williams',

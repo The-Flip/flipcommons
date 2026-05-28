@@ -41,7 +41,7 @@
   <ClientFilteredGrid items={theme.machines} showCount={false}>
     {#snippet children(machine)}
       <MachineCard
-        slug={machine.slug}
+        slug={machine.public_id}
         name={machine.name}
         thumbnailUrl={machine.thumbnail_url}
         manufacturerName={machine.manufacturer?.name}

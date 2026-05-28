@@ -24,9 +24,9 @@
     {#if parents.length > 0}
       <span class="part">
         <span class="label">{parentLabel}:</span>
-        {#each parents as parent, i (parent.slug)}
+        {#each parents as parent, i (parent.public_id)}
           {#if i > 0}<span class="sep">, </span>{/if}
-          <a href={resolveHref(`${basePath}/${parent.slug}`)}>{parent.name}</a>
+          <a href={resolveHref(`${basePath}/${parent.public_id}`)}>{parent.name}</a>
         {/each}
       </span>
     {/if}

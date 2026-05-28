@@ -14,7 +14,7 @@
     preview.parent
       ? {
           text: preview.parent.name,
-          href: `/display-types/${preview.parent.slug}`,
+          href: `/display-types/${preview.parent.public_id}`,
         }
       : undefined,
   );

@@ -37,7 +37,7 @@ This project emits `og:type`, `og:site_name`, `og:title`, `og:description`, `og:
 
 `<meta name="twitter:*">` tags that Twitter uses to control previews on its site. Twitter cascades from OG when Twitter-specific tags are absent, so the only one worth emitting is `twitter:card`.
 
-✅ DONE — remove redundant `twitter:title` / `twitter:description` / `twitter:image` / `twitter:image:alt`; keep only `twitter:card`. `twitterCardType()` selects `summary_large_image` when an image is present, else `summary`.
+The project already emits `twitter:card`. `twitterCardType()` selects `summary_large_image` when an image is present, else `summary`.
 
 TODO — once entity layouts migrate to [`MediaSupportedModel.primary_image`](#mediasupportedmodel), wire the image source through there instead of the per-layout `image` prop. Selection logic itself stays the same.
 
@@ -139,7 +139,7 @@ All metadata assembly — JSON-LD, head, OG, Twitter — lives in the frontend. 
 
 #### Backend's job
 
-Serve raw entity facts on the entity detail API response: `name`, `description` (`RichTextSchema`, including backend-rendered `.plain`), `hero_image_url` (the `display` rendition's absolute URL), `updated_at` (ISO 8601), FK / M2M references as `EntityRef` (`{name, slug}` — no `href`; the frontend constructs canonical URLs, see [Related-entity URLs](#related-entity-urls-from-catalog-metats)), external-ID scalars (`ipdb_id`, `opdb_id`, `wikidata_id`, etc.). Mostly what's already shipped today; see [API response audit](#api-response-audit) below.
+Serve raw entity facts on the entity detail API response: `name`, `description` (`RichTextSchema`, including backend-rendered `.plain`), `hero_image_url` (the `display` rendition's absolute URL), `updated_at` (ISO 8601), FK / M2M references as public-id-bearing refs (`{name, public_id}` — no `href`; the frontend constructs canonical URLs, see [Related-entity URLs](#related-entity-urls-from-catalog-metats)), external-ID scalars (`ipdb_id`, `opdb_id`, `wikidata_id`, etc.). Mostly what's already shipped today; see [API response audit](#api-response-audit) below.
 
 #### Frontend's job
 
@@ -152,7 +152,7 @@ Serve raw entity facts on the entity detail API response: `name`, `description` 
 
 **Two cross-cutting disciplines** apply to every JSON-LD emission, including the model-driven entity-page assembler:
 
-- **`paths.base` discipline.** Every internal URL emitted into JSON-LD — entity `@id`s derived from `get_absolute_url()`, cross-reference `@id`s constructed from a referent's slug + relationship shape, `BreadcrumbList` items, `isPartOf` references — must be routed through `resolveHref()` before being concatenated with the origin, so a future `config.kit.paths.base` setting doesn't desynchronize JSON-LD URLs from rendered `<a>` hrefs. Reuse the `absolutize(pageUrl, path)` helper in [`jsonld.ts`](frontend/src/lib/components/jsonld.ts) — it already does this. Note that `pageUrl.pathname` already contains the base prefix, so callers using the current page's pathname should NOT route it back through `absolutize()`.
+- **`paths.base` discipline.** Every internal URL emitted into JSON-LD — entity `@id`s derived from `get_absolute_url()`, cross-reference `@id`s constructed from a referent's `public_id` + relationship shape, `BreadcrumbList` items, `isPartOf` references — must be routed through `resolveHref()` before being concatenated with the origin, so a future `config.kit.paths.base` setting doesn't desynchronize JSON-LD URLs from rendered `<a>` hrefs. Reuse the `absolutize(pageUrl, path)` helper in [`jsonld.ts`](frontend/src/lib/components/jsonld.ts) — it already does this. Note that `pageUrl.pathname` already contains the base prefix, so callers using the current page's pathname should NOT route it back through `absolutize()`.
 - **HTML-safe serialization.** All JSON-LD must be emitted through the [`JsonLd.svelte`](frontend/src/lib/components/JsonLd.svelte) component, which escapes `<`, `>`, `&` to `\uXXXX` so user-controlled content (entity descriptions, names) can't break out of the `<script>` tag. Never inline a raw `<script type="application/ld+json">` tag in a route — it bypasses the escape and exposes a content-injection hole. (Aside: Svelte treats literal `<script>` element children as opaque text and skips `{@html}` interpolation inside them, so the component emits the whole tag-payload-tag string via `{@html}` instead.)
 
 #### Why frontend assembly
@@ -163,11 +163,14 @@ This applies to the _presentation vocabulary_ only. The _structural shape_ of th
 
 #### Related-entity URLs from `catalog-meta.ts`
 
-A cross-reference emits `{"@id": "<canonical URL of the referent>"}`. The referent ships as an `EntityRef` (`{name, slug}`), no `href` and no type tag. A `LinkableModel`'s canonical URL is `link_url_pattern` = `/{entity_type_plural}/{public_id}` — keyed on **`public_id`**, the uniform URL identity from [ModelDrivenLinkability.md](../model_driven_metadata/ModelDrivenLinkability.md), _not_ on `slug`. For most entities `public_id` is the slug; for `Location` it's `location_path` (route `/locations/[...path]`). To build the URL the assembler needs three facts about the target, all **derivable from the model** (`_meta` + `LinkableModel` ClassVars) and therefore codegen'd, not hand-declared:
+A cross-reference emits `{"@id": "<canonical URL of the referent>"}`. The referent ships as an `EntityRef` or equivalent nested referent shape (`{name, public_id}` plus any display extras), no `href` and no type tag. A `LinkableModel`'s canonical URL is `link_url_pattern` = `/{entity_type_plural}/{public_id}` — keyed on **`public_id`**, the uniform URL identity from [ModelDrivenLinkability.md](../model_driven_metadata/ModelDrivenLinkability.md), _not_ on `slug`. For most entities `public_id` is the slug; for `Location` it's `location_path` (route `/locations/[...path]`).
+
+✅ DONE — the reference-body layer also uses `public_id`: nested referent schemas (`EntityRef`, `TitleRef`, `GameplayFeatureRef`, `ModelRef`, `ModelVariantSchema`, `TitleModelSchema`, `TitleModelVariantSchema`, `RelatedTitleSchema` and subclasses) expose `public_id` rather than a mislabeled `slug`. Location-backed facet refs that already carried `location_path` under `slug` now expose the same value as `public_id`. That means the assembler reads `ref.public_id` uniformly for every target.
+
+To build the URL the assembler needs two facts about the target, both **derivable from the model** (`_meta` + `LinkableModel` ClassVars) and therefore codegen'd, not hand-declared:
 
 - which entity type a given FK / M2M field targets — `field.related_model.entity_type`
 - that entity type's URL prefix — `entity_type_plural`, already emitted
-- which field on the ref carries the `public_id` value — `public_id_field` (`'slug'` for most, `'location_path'` for Location)
 
 Both ride the existing `export_catalog_meta` → [`catalog-meta.ts`](frontend/src/lib/api/catalog-meta.ts) channel (today it ships `entity_type`, `entity_type_plural`, `label`, `label_plural` per entity). The per-entity record gains a nested `relationships` map so the whole shape stays cohesive — one object per entity, indexed `CATALOG_META[entityType].relationships[field]`:
 
@@ -176,7 +179,6 @@ export const CATALOG_META = {
   model: {
     entity_type: "model",
     entity_type_plural: "models",
-    public_id_field: "slug", // 'location_path' for Location
     label: "Model",
     label_plural: "Models",
     relationships: {
@@ -193,19 +195,10 @@ Keys are snake_case to match the file's existing convention (`entity_type`, `ent
 
 ```ts
 const rel = CATALOG_META[entityType].relationships[field]; // { target_type: 'corporate-entity', many: false }
-const target = CATALOG_META[rel.target_type]; // { entity_type_plural: 'corporate-entities', public_id_field: 'slug', ... }
-const publicId = ref[target.public_id_field]; // ref.slug — or ref.location_path for a Location target
+const target = CATALOG_META[rel.target_type]; // { entity_type_plural: 'corporate-entities', ... }
+const publicId = ref.public_id;
 const url = resolveHref(`/${target.entity_type_plural}/${publicId}`); // → absolutized into the @id
 ```
-
-**The ref must carry the target's `public_id` value, and the bare `EntityRef` doesn't — because `public_id` only conquered half the system.** [ModelDrivenLinkability.md](../model_driven_metadata/ModelDrivenLinkability.md) migrated the system to `public_id` in **two layers, but only finished one:**
-
-- **URL / route / lookup layer — fully `public_id`.** Every route is `{path:public_id}` and every lookup is `**{model.public_id_field: public_id}`. No `slug=` lookups remain in the catalog API.
-- **Reference-_body_ layer — still `slug`.** The objects nested in a response to describe a referent were never migrated. The generic `EntityRef` is `{name, slug}` ([schemas.py:13-17](backend/apps/catalog/api/schemas.py#L13-L17)); ModelDrivenLinkability's only ref-related follow-up ("Rename JS-side `slug` parameter to `publicId`") renames JS _variables_ and explicitly keeps the wire value as `slug`.
-
-It mostly doesn't bite because for slug-keyed entities `slug` **is** the `public_id` — so a `{name, slug}` ref's `slug` is the value the URL needs, by coincidence of equality. It breaks only for `Location`, whose `public_id` is `location_path ≠ slug`. The codebase already shows the ad-hoc workaround: Location-bearing FKs hand-roll richer ref schemas carrying `location_path` ([CorporateEntityLocationSchema:310-320](backend/apps/catalog/api/schemas.py#L310-L320) ships both `location_path` and `slug`; its ancestor rows [:300-307](backend/apps/catalog/api/schemas.py#L300-L307) keep `location_path` and drop `slug` precisely because that's the linkable identity). So **a forward relation targeting `Location` must serialize a `location_path`-bearing ref**, not a bare `EntityRef`, or the URL can't be built — the one case needing a ref-shape check during entity-page rollout.
-
-**The clean fix that removes the carve-out entirely is finishing `public_id` into the body layer:** have refs expose `public_id` directly (`EntityRef` renames/adds `public_id`, populated from `obj.public_id`), so Layer 2 matches Layer 1. Then the assembler reads `ref.public_id` uniformly — no `public_id_field` indirection, no Location special case. This isn't tracked anywhere today (ModelDrivenLinkability's follow-up doesn't cover it), so it's a genuine prerequisite-or-workaround fork for the entity-page rollout: either finish the migration first, or special-case Location-targeting refs until it lands.
 
 For `many: true` relations the assembler emits an array of `@id`s; the API must serialize the M2M in a deterministic order (an explicit `order_by` on the relation, not a bare `.all()`) so the emitted `@graph` is byte-stable across requests and stays cache-friendly.
 
@@ -227,10 +220,6 @@ for f in cls._meta.get_fields():
     ):
         relationships[f.name] = Relationship(f.related_model.entity_type, f.many_to_many)
 ```
-
-The per-entity entry also emits `public_id_field` straight from the `LinkableModel.public_id_field` ClassVar (`cls.public_id_field` — no walk needed; it's `'slug'` for every shipped model, `'location_path'` for Location). That's the field the assembler reads off the ref to get the `public_id` value for the URL.
-
-**This `public_id_field` codegen belongs to the workaround path only.** It exists so the assembler can locate the `public_id` value inside a `slug`-shaped ref body (the two-layer wrinkle below). If we instead finish the `public_id` body-layer migration — refs expose `public_id` directly — then `public_id_field` becomes dead code: **drop it from the codegen and read `ref.public_id` uniformly.** Don't emit both. Resolve the fork (workaround vs. finish-the-migration) before implementing the exporter, not mid-way.
 
 `not f.auto_created` is load-bearing: `get_fields()` also returns reverse accessors (e.g. `MachineModel.manufacturer` shows up on `Manufacturer` as a reverse FK), which satisfy `is_relation` + `related_model` and would bloat `relationships` with dozens of unused inverse entries. `f.concrete` is _not_ the right filter — `ManyToManyField` is non-concrete, so it would wrongly drop forward M2M like `themes`.
 
@@ -290,11 +279,11 @@ The frontend assembler needs raw values, not presentation-shaped ones. Audit fin
 - **Description:** ✅ ships as `RichTextSchema` with four slots — `.text` (authoring markdown, including `[[type:slug]]` reference tokens), `.html` (rendered, tokens resolved to `<a>` tags), `.plain` (backend-flattened prose with tokens resolved and markdown/HTML stripped), and `.citations`. The frontend should use `.plain` for `<meta name="description">`, `og:description`, JSON-LD `description`, and other machine-readable text consumers. Display-limited surfaces still truncate frontend-side per consumer; JSON-LD uses `.plain` untruncated.
 - **Image:** ✅ `hero_image_url` is a constructed absolute URL string (`build_public_url(build_storage_key(...))`) — raw enough for the v1 commitment to emit the `display` rendition uniformly.
 - **External IDs:** ✅ raw scalars (`ipdb_id: int`, `opdb_id: str`, `pinside_id`, `fandom_page_id`), not formatted strings — **except** `wikidata_id`, explicitly omitted from `PersonDetailSchema`. Shipping it is a one-field widening, required before Person JSON-LD can emit a Wikidata `sameAs`.
-- **FK / M2M references:** ship as `EntityRef` (`{name, slug}`) — **no `href`, no type tag**. `EntityRef` is shared infrastructure (hundreds of call sites); widening it is out of scope. The referent's canonical URL is instead constructed frontend-side from the slug plus the codegen'd relationship shape — see [Related-entity URLs](#related-entity-urls-from-catalog-metats).
+- **FK / M2M references:** ✅ ship as public-id-bearing nested refs (`{name, public_id}` plus any display extras) — **no `href`, no type tag**. The referent's canonical URL is constructed frontend-side from `public_id` plus the codegen'd relationship shape — see [Related-entity URLs](#related-entity-urls-from-catalog-metats).
 
 Completed response-widening for the taxonomy tranche: the backend-owned `description.plain` projection.
 
-Remaining response/codegen prerequisites for richer entity pages: `wikidata_id` on `PersonDetailSchema` (one field) and the relationship-shape codegen above. Nothing structural beyond the unresolved `public_id` body-layer fork.
+Remaining response/codegen prerequisites for richer entity pages: `wikidata_id` on `PersonDetailSchema` (one field) and the relationship-shape codegen above.
 
 ### Per-model frontend info
 
@@ -432,7 +421,7 @@ Field values shipped raw from the backend often need shape-shifting before they'
 
 The target-property-aware dispatch matters because the source type alone can't determine the right coercion: an integer field could be a year, a count, or an external ID, and the target property tells the assembler which shape to emit.
 
-**`relationshipMap` is walked separately:** for each declared FK / M2M attribute, the assembler reads the referenced `EntityRef` (`{name, slug}`) from the API response — a single object for an FK, an array when the relationship shape says `many: true` — constructs the referent's canonical URL from its slug and the codegen'd relationship shape (see [Related-entity URLs](#related-entity-urls-from-catalog-metats)), and emits `{"@id": "https://flipcommons.org/..."}` under the declared schema.org property. Unlike `fieldMap`, this doesn't go through value transforms — the relationship value is always an `@id` reference, never a scalar.
+**`relationshipMap` is walked separately:** for each declared FK / M2M attribute, the assembler reads the referenced public-id-bearing ref from the API response — a single object for an FK, an array when the relationship shape says `many: true` — constructs the referent's canonical URL from `ref.public_id` and the codegen'd relationship shape (see [Related-entity URLs](#related-entity-urls-from-catalog-metats)), and emits `{"@id": "https://flipcommons.org/..."}` under the declared schema.org property. Unlike `fieldMap`, this doesn't go through value transforms — the relationship value is always an `@id` reference, never a scalar.
 
 ✅ DONE — glossary entities (`Theme`, `GameplayFeature`, all taxonomy classes) don't need any field-mapped properties — name and description are everything schema.org wants from them. Their per-model TS files omit `fieldMap` and `relationshipMap`.
 

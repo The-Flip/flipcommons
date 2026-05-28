@@ -42,7 +42,7 @@ describe('HierarchicalTaxonomyChildrenAccordion', () => {
     render(HierarchicalTaxonomyChildrenAccordionFixture, {
       props: {
         basePath: '/themes',
-        children: [{ name: 'Hockey', slug: 'hockey' }],
+        children: [{ name: 'Hockey', public_id: 'hockey' }],
         heading: 'Sub-themes (1)',
       },
     });

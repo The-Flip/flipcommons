@@ -43,8 +43,8 @@ const FIELD_CONSTRAINTS = {
 const INITIAL_MODEL = {
   year: 1997,
   month: 6,
-  title: { slug: 'medieval-madness' },
-  corporate_entity: { slug: 'williams-electronics' },
+  title: { public_id: 'medieval-madness' },
+  corporate_entity: { public_id: 'williams-electronics' },
 };
 
 function mockGetResponses() {

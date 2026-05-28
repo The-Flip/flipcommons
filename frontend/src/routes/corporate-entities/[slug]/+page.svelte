@@ -29,7 +29,7 @@
     >
       {#snippet children(title)}
         <TitleCard
-          slug={title.slug}
+          slug={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}
           year={title.year}

@@ -3,7 +3,7 @@
   import SearchableSelect from '$lib/components/SearchableSelect.svelte';
   import Fieldset from '$lib/components/form/Fieldset.svelte';
   import NumberField from '$lib/components/form/NumberField.svelte';
-  import { diffScalarFields, slugSetChanged } from '$lib/edit-helpers';
+  import { diffScalarFields, publicIdSetChanged } from '$lib/edit-helpers';
   import { fetchFieldConstraints, fc, type FieldConstraints } from '$lib/field-constraints';
   import type { SectionEditorProps } from './editor-contract';
   import {
@@ -14,14 +14,14 @@
   import type { FieldErrors } from '$lib/api/parse-api-error';
   import { saveModelClaims, type SaveResult, type SaveMeta } from './save-model-claims';
 
-  type GameplayFeatureRef = { slug: string; name?: string; count?: number | null };
+  type GameplayFeatureRef = { public_id: string; name?: string; count?: number | null };
 
   type FeaturesModel = {
-    game_format?: { slug: string } | null;
-    cabinet?: { slug: string } | null;
-    reward_types: { slug: string }[];
-    tags: { slug: string }[];
-    themes: { slug: string }[];
+    game_format?: { public_id: string } | null;
+    cabinet?: { public_id: string } | null;
+    reward_types: { public_id: string }[];
+    tags: { public_id: string }[];
+    themes: { public_id: string }[];
     production_quantity: string;
     player_count?: number | null;
     flipper_count?: number | null;
@@ -46,8 +46,8 @@
 
   function extractFields(m: FeaturesModel): FeaturesFormFields {
     return {
-      game_format: m.game_format?.slug ?? '',
-      cabinet: m.cabinet?.slug ?? '',
+      game_format: m.game_format?.public_id ?? '',
+      cabinet: m.cabinet?.public_id ?? '',
       production_quantity: m.production_quantity ?? '',
       player_count: m.player_count ?? '',
       flipper_count: m.flipper_count ?? '',
@@ -63,16 +63,18 @@
   const originalTags = untrack(() => initialData.tags);
   const originalRewardTypes = untrack(() => initialData.reward_types);
 
-  let themes = $state<string[]>(untrack(() => initialData.themes.map((t) => t.slug)));
-  let tags = $state<string[]>(untrack(() => initialData.tags.map((t) => t.slug)));
-  let rewardTypes = $state<string[]>(untrack(() => initialData.reward_types.map((t) => t.slug)));
+  let themes = $state<string[]>(untrack(() => initialData.themes.map((t) => t.public_id)));
+  let tags = $state<string[]>(untrack(() => initialData.tags.map((t) => t.public_id)));
+  let rewardTypes = $state<string[]>(
+    untrack(() => initialData.reward_types.map((t) => t.public_id)),
+  );
 
   // Gameplay features — slug + optional count
   type KeyedFeature = { key: number; slug: string; count: string | number };
   let keyCounter = 0;
 
   function toKeyed(features: GameplayFeatureRef[]): KeyedFeature[] {
-    return features.map((f) => ({ key: keyCounter++, slug: f.slug, count: f.count ?? '' }));
+    return features.map((f) => ({ key: keyCounter++, slug: f.public_id, count: f.count ?? '' }));
   }
 
   const originalFeatures = untrack(() => initialData.gameplay_features);
@@ -107,16 +109,16 @@
       .filter((f) => f.slug)
       .map((f) => `${f.slug}:${f.count}`)
       .sort();
-    const orig = originalFeatures.map((f) => `${f.slug}:${f.count ?? ''}`).sort();
+    const orig = originalFeatures.map((f) => `${f.public_id}:${f.count ?? ''}`).sort();
     return JSON.stringify(clean) !== JSON.stringify(orig);
   }
 
   let dirty = $derived.by(
     () =>
       Object.keys(diffScalarFields(fields, original)).length > 0 ||
-      slugSetChanged(themes, originalThemes) ||
-      slugSetChanged(tags, originalTags) ||
-      slugSetChanged(rewardTypes, originalRewardTypes) ||
+      publicIdSetChanged(themes, originalThemes) ||
+      publicIdSetChanged(tags, originalTags) ||
+      publicIdSetChanged(rewardTypes, originalRewardTypes) ||
       featuresChanged(),
   );
 
@@ -142,9 +144,9 @@
     }
 
     const changed = diffScalarFields(fields, original);
-    const themesChanged = slugSetChanged(themes, originalThemes);
-    const tagsChanged = slugSetChanged(tags, originalTags);
-    const rewardTypesChanged = slugSetChanged(rewardTypes, originalRewardTypes);
+    const themesChanged = publicIdSetChanged(themes, originalThemes);
+    const tagsChanged = publicIdSetChanged(tags, originalTags);
+    const rewardTypesChanged = publicIdSetChanged(rewardTypes, originalRewardTypes);
     const gfChanged = featuresChanged();
 
     if (!dirty) {

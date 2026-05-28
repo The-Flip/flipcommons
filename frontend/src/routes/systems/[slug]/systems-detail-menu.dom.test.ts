@@ -25,17 +25,17 @@ vi.mock('$lib/components/SectionEditorHost.svelte', async () => {
 });
 
 import Layout from './+layout.svelte';
+import type { SystemDetailSchema } from '$lib/api/schema';
 
 const SYSTEM = {
   name: 'WPC-95',
   slug: 'wpc-95',
-  description: { text: '', html: '', citations: [], attribution: null },
-  manufacturer: { name: 'Williams', slug: 'williams' },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
+  manufacturer: { name: 'Williams', public_id: 'williams' },
   technology_subgeneration: null,
   titles: [],
   sibling_systems: [],
-  sources: [],
-};
+} satisfies SystemDetailSchema;
 
 function renderLayout() {
   render(Layout, {

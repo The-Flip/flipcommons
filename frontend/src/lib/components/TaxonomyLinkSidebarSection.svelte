@@ -13,7 +13,7 @@
     heading: string;
     /** Section prefix, e.g. '/franchises' or '/series'. */
     basePath: string;
-    item: { slug: string; name: string } | null | undefined;
+    item: { public_id: string; name: string } | null | undefined;
     onEdit?: (() => void) | undefined;
   } = $props();
 </script>
@@ -22,7 +22,7 @@
   <SidebarSection {heading} {onEdit}>
     <SidebarList>
       <SidebarListItem>
-        <a href={resolveHref(`${basePath}/${item.slug}`)}>{item.name}</a>
+        <a href={resolveHref(`${basePath}/${item.public_id}`)}>{item.name}</a>
       </SidebarListItem>
     </SidebarList>
   </SidebarSection>

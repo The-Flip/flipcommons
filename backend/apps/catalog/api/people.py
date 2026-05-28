@@ -125,7 +125,7 @@ class PersonDetailSchema(Schema):
 @dataclass
 class _PersonTitleAccum:
     name: str
-    slug: str
+    public_id: str
     year: int | None
     manufacturer_name: str | None
     thumbnail_url: str | None
@@ -158,7 +158,7 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
         if key not in accum:
             accum[key] = _PersonTitleAccum(
                 name=title.name,
-                slug=title.slug,
+                public_id=title.public_id,
                 year=c.model.year,
                 manufacturer_name=(
                     c.model.corporate_entity.manufacturer.name
@@ -176,7 +176,7 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
     titles = [
         PersonTitleSchema(
             name=a.name,
-            slug=a.slug,
+            public_id=a.public_id,
             year=a.year,
             manufacturer_name=a.manufacturer_name,
             thumbnail_url=a.thumbnail_url,

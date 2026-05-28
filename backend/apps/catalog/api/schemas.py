@@ -11,10 +11,10 @@ from apps.provenance.schemas import ChangeSetInputSchema
 
 
 class EntityRef(Schema):
-    """A reference to a named entity with a slug."""
+    """A reference to a named entity by its public id."""
 
     name: str
-    slug: str
+    public_id: str
 
 
 class EntityCreateInputSchema(ChangeSetInputSchema):
@@ -251,7 +251,7 @@ class TitleModelVariantSchema(Schema):
     """A variant of a machine model, shown nested under its parent."""
 
     name: str
-    slug: str
+    public_id: str
     year: int | None = None
     thumbnail_url: str | None = None
 
@@ -260,7 +260,7 @@ class TitleModelSchema(Schema):
     """A machine model shown in a list context (title detail, theme detail, etc.)."""
 
     name: str
-    slug: str
+    public_id: str
     year: int | None = None
     manufacturer: EntityRef | None = None
     technology_generation_name: str | None = None
@@ -272,7 +272,7 @@ class RelatedTitleSchema(Schema):
     """A title shown in a related-entity list context (manufacturer, system, etc.)."""
 
     name: str
-    slug: str
+    public_id: str
     year: int | None = None
     manufacturer_name: str | None = None
     thumbnail_url: str | None = None

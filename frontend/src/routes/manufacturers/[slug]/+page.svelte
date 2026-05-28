@@ -59,10 +59,10 @@
         <div class="detail-block">
           <h3>Companies</h3>
           <ul class="stack-list">
-            {#each mfr.entities as entity (entity.slug)}
+            {#each mfr.entities as entity (entity.public_id)}
               <li>
                 <div class="entity">
-                  <a href={resolve(`/corporate-entities/${entity.slug}`)} class="entity-name"
+                  <a href={resolve(`/corporate-entities/${entity.public_id}`)} class="entity-name"
                     >{entity.name}</a
                   >
                   {#if formatYearRange(entity.year_start, entity.year_end)}
@@ -109,7 +109,7 @@
     >
       {#snippet children(title)}
         <TitleCard
-          slug={title.slug}
+          slug={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}
           year={title.year}
@@ -122,9 +122,9 @@
 {#if mfr.systems.length > 0}
   <AccordionSection heading={systemsHeading}>
     <ul class="stack-list">
-      {#each mfr.systems as system (system.slug)}
+      {#each mfr.systems as system (system.public_id)}
         <li>
-          <a href={resolve(`/systems/${system.slug}`)}>{system.name}</a>
+          <a href={resolve(`/systems/${system.public_id}`)}>{system.name}</a>
         </li>
       {/each}
     </ul>
@@ -134,10 +134,10 @@
 {#if mfr.persons.length > 0}
   <AccordionSection heading={peopleHeading}>
     <ul class="stack-list">
-      {#each mfr.persons as person (person.slug)}
+      {#each mfr.persons as person (person.public_id)}
         <li>
           <div class="entity">
-            <a href={resolve(`/people/${person.slug}`)}>{person.name}</a>
+            <a href={resolve(`/people/${person.public_id}`)}>{person.name}</a>
             {#if person.roles.length > 0}
               <span class="muted">{person.roles.join(', ')}</span>
             {/if}

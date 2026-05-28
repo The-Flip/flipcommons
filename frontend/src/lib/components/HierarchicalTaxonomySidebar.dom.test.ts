@@ -63,8 +63,8 @@ describe('HierarchicalTaxonomySidebar', () => {
     render(HierarchicalTaxonomySidebarFixture, {
       props: {
         basePath: '/themes',
-        parents: [{ name: 'Sports', slug: 'sports' }],
-        children: [{ name: 'Hockey', slug: 'hockey' }],
+        parents: [{ name: 'Sports', public_id: 'sports' }],
+        children: [{ name: 'Hockey', public_id: 'hockey' }],
         parentHeading: 'Parent themes',
         childHeading: 'Sub-themes',
       },

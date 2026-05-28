@@ -62,7 +62,7 @@ def kiosk_display_page(request: HttpRequest, config_id: int) -> KioskPageSchema:
                 else None
             )
             if mfr is not None:
-                manufacturer = EntityRef(name=mfr.name, slug=mfr.slug)
+                manufacturer = EntityRef(name=mfr.name, public_id=mfr.public_id)
         page_items.append(
             KioskPageItemSchema(
                 position=item.position,

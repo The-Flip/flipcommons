@@ -5,13 +5,13 @@
 
   interface Variant {
     name: string;
-    slug: string;
+    public_id: string;
     year?: number | null;
   }
 
   interface Model {
     name: string;
-    slug: string;
+    public_id: string;
     year?: number | null;
     variants: Variant[];
   }
@@ -37,27 +37,27 @@
   }
 
   let filteredModels = $derived(
-    excludeSlug ? models.filter((m) => m.slug !== excludeSlug) : models,
+    excludeSlug ? models.filter((m) => m.public_id !== excludeSlug) : models,
   );
 </script>
 
 {#snippet listItems()}
-  {#each filteredModels as parent (parent.slug)}
+  {#each filteredModels as parent (parent.public_id)}
     <li
       class:current={currentSlug !== undefined &&
-        (parent.slug === currentSlug || parent.slug === variantOfSlug)}
+        (parent.public_id === currentSlug || parent.public_id === variantOfSlug)}
     >
-      <a href={resolve(`/models/${parent.slug}`)}>{parent.name}</a>
+      <a href={resolve(`/models/${parent.public_id}`)}>{parent.name}</a>
       {#if parent.year}
         <span class="muted">{parent.year}</span>
       {/if}
     </li>
-    {#each sortedVariants(parent.variants) as variant (variant.slug)}
+    {#each sortedVariants(parent.variants) as variant (variant.public_id)}
       <li
         class="variant-indent"
-        class:current={currentSlug !== undefined && variant.slug === currentSlug}
+        class:current={currentSlug !== undefined && variant.public_id === currentSlug}
       >
-        <a href={resolve(`/models/${variant.slug}`)}>{variant.name}</a>
+        <a href={resolve(`/models/${variant.public_id}`)}>{variant.name}</a>
         {#if variant.year}
           <span class="muted">{variant.year}</span>
         {/if}

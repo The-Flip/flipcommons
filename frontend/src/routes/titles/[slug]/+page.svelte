@@ -36,7 +36,7 @@
     }> = [];
     for (const m of title.machines) {
       out.push({
-        slug: m.slug,
+        slug: m.public_id,
         name: m.name,
         year: m.year,
         thumbnailUrl: m.thumbnail_url,
@@ -44,7 +44,7 @@
       });
       for (const v of m.variants ?? []) {
         out.push({
-          slug: v.slug,
+          slug: v.public_id,
           name: v.name,
           year: v.year,
           thumbnailUrl: v.thumbnail_url,
@@ -190,7 +190,7 @@
         {#if specs.technology_generation}
           <dt>Generation</dt>
           <dd>
-            <a href={resolve(`/technology-generations/${specs.technology_generation.slug}`)}
+            <a href={resolve(`/technology-generations/${specs.technology_generation.public_id}`)}
               >{specs.technology_generation.name}</a
             >
           </dd>
@@ -198,15 +198,17 @@
         {#if specs.technology_subgeneration}
           <dt>Subgeneration</dt>
           <dd>
-            <a href={resolve(`/technology-subgenerations/${specs.technology_subgeneration.slug}`)}
-              >{specs.technology_subgeneration.name}</a
+            <a
+              href={resolve(
+                `/technology-subgenerations/${specs.technology_subgeneration.public_id}`,
+              )}>{specs.technology_subgeneration.name}</a
             >
           </dd>
         {/if}
         {#if specs.display_type}
           <dt>Display Type</dt>
           <dd>
-            <a href={resolve(`/display-types/${specs.display_type.slug}`)}
+            <a href={resolve(`/display-types/${specs.display_type.public_id}`)}
               >{specs.display_type.name}</a
             >
           </dd>
@@ -214,7 +216,7 @@
         {#if specs.display_subtype}
           <dt>Display Subtype</dt>
           <dd>
-            <a href={resolve(`/display-subtypes/${specs.display_subtype.slug}`)}
+            <a href={resolve(`/display-subtypes/${specs.display_subtype.public_id}`)}
               >{specs.display_subtype.name}</a
             >
           </dd>
@@ -222,7 +224,7 @@
         {#if specs.system}
           <dt>System</dt>
           <dd>
-            <a href={resolve(`/systems/${specs.system.slug}`)}>{specs.system.name}</a>
+            <a href={resolve(`/systems/${specs.system.public_id}`)}>{specs.system.name}</a>
           </dd>
         {/if}
       </dl>
@@ -236,26 +238,27 @@
         {#if title.franchise}
           <dt>Franchise</dt>
           <dd>
-            <a href={resolve(`/franchises/${title.franchise.slug}`)}>{title.franchise.name}</a>
+            <a href={resolve(`/franchises/${title.franchise.public_id}`)}>{title.franchise.name}</a>
           </dd>
         {/if}
         {#if title.series}
           <dt>Series</dt>
           <dd>
-            <a href={resolve(`/series/${title.series.slug}`)}>{title.series.name}</a>
+            <a href={resolve(`/series/${title.series.public_id}`)}>{title.series.name}</a>
           </dd>
         {/if}
         {#if specs.game_format}
           <dt>Format</dt>
           <dd>
-            <a href={resolve(`/game-formats/${specs.game_format.slug}`)}>{specs.game_format.name}</a
+            <a href={resolve(`/game-formats/${specs.game_format.public_id}`)}
+              >{specs.game_format.name}</a
             >
           </dd>
         {/if}
         {#if specs.cabinet}
           <dt>Cabinet</dt>
           <dd>
-            <a href={resolve(`/cabinets/${specs.cabinet.slug}`)}>{specs.cabinet.name}</a>
+            <a href={resolve(`/cabinets/${specs.cabinet.public_id}`)}>{specs.cabinet.name}</a>
           </dd>
         {/if}
         {#if specs.player_count}
@@ -273,20 +276,20 @@
         {#if specs.themes && specs.themes.length > 0}
           <dt>Themes</dt>
           <dd>
-            {#each specs.themes as theme, i (theme.slug)}
+            {#each specs.themes as theme, i (theme.public_id)}
               {#if i > 0},
               {/if}
-              <a href={resolve(`/themes/${theme.slug}`)}>{theme.name}</a>
+              <a href={resolve(`/themes/${theme.public_id}`)}>{theme.name}</a>
             {/each}
           </dd>
         {/if}
         {#if specs.gameplay_features && specs.gameplay_features.length > 0}
           <dt>Gameplay</dt>
           <dd>
-            {#each specs.gameplay_features as gf, i (gf.slug)}
+            {#each specs.gameplay_features as gf, i (gf.public_id)}
               {#if i > 0},
               {/if}
-              <a href={resolve(`/gameplay-features/${gf.slug}`)}>{gf.name}</a
+              <a href={resolve(`/gameplay-features/${gf.public_id}`)}>{gf.name}</a
               >{#if gf.count}&nbsp;({gf.count}){/if}
             {/each}
           </dd>
@@ -294,20 +297,20 @@
         {#if specs.reward_types && specs.reward_types.length > 0}
           <dt>Reward Types</dt>
           <dd>
-            {#each specs.reward_types as rt, i (rt.slug)}
+            {#each specs.reward_types as rt, i (rt.public_id)}
               {#if i > 0},
               {/if}
-              <a href={resolve(`/reward-types/${rt.slug}`)}>{rt.name}</a>
+              <a href={resolve(`/reward-types/${rt.public_id}`)}>{rt.name}</a>
             {/each}
           </dd>
         {/if}
         {#if specs.tags && specs.tags.length > 0}
           <dt>Tags</dt>
           <dd>
-            {#each specs.tags as tag, i (tag.slug)}
+            {#each specs.tags as tag, i (tag.public_id)}
               {#if i > 0},
               {/if}
-              <a href={resolve(`/tags/${tag.slug}`)}>{tag.name}</a>
+              <a href={resolve(`/tags/${tag.public_id}`)}>{tag.name}</a>
             {/each}
           </dd>
         {/if}

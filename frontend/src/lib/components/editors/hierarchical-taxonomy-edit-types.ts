@@ -8,6 +8,6 @@ export type HierarchicalTaxonomyEditView = {
   name: string;
   slug: string;
   description: RichTextSchema;
-  parents: { name: string; slug: string }[];
+  parents: { name: string; public_id: string }[];
   aliases: string[];
 };

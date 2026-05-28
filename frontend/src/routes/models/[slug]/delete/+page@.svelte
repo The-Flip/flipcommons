@@ -35,9 +35,9 @@
   {public_id}
   submit={submitDelete}
   cancelHref={`/models/${public_id}`}
-  redirectAfterDelete={`/titles/${preview.parent.slug}`}
+  redirectAfterDelete={`/titles/${preview.parent.public_id}`}
   editHistoryHref={`/models/${public_id}/edit-history`}
-  parentBreadcrumb={{ text: preview.parent.name, href: `/titles/${preview.parent.slug}` }}
+  parentBreadcrumb={{ text: preview.parent.name, href: `/titles/${preview.parent.public_id}` }}
   {blocked}
   {impact}
 />

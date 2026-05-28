@@ -110,7 +110,9 @@ def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
         name=ce.name,
         slug=ce.slug,
         description=build_rich_text(ce, "description", active_claims(ce)),
-        manufacturer=EntityRef(name=ce.manufacturer.name, slug=ce.manufacturer.slug),
+        manufacturer=EntityRef(
+            name=ce.manufacturer.name, public_id=ce.manufacturer.public_id
+        ),
         year_start=ce.year_start,
         year_end=ce.year_end,
         aliases=[a.value for a in ce.aliases.all()],
@@ -155,7 +157,7 @@ def list_corporate_entities(
             name=ce.name,
             slug=ce.slug,
             manufacturer=EntityRef(
-                name=ce.manufacturer.name, slug=ce.manufacturer.slug
+                name=ce.manufacturer.name, public_id=ce.manufacturer.public_id
             ),
             year_start=ce.year_start,
             year_end=ce.year_end,

@@ -27,9 +27,9 @@
 {#if parents.length > 0}
   <SidebarSection heading={parentHeading}>
     <SidebarList>
-      {#each parents as parent (parent.slug)}
+      {#each parents as parent (parent.public_id)}
         <SidebarListItem>
-          <a href={resolveHref(`${basePath}/${parent.slug}`)}>{parent.name}</a>
+          <a href={resolveHref(`${basePath}/${parent.public_id}`)}>{parent.name}</a>
         </SidebarListItem>
       {/each}
     </SidebarList>
@@ -39,9 +39,9 @@
 {#if children.length > 0}
   <SidebarSection heading={childHeading}>
     <SidebarList>
-      {#each children as child (child.slug)}
+      {#each children as child (child.public_id)}
         <SidebarListItem>
-          <a href={resolveHref(`${basePath}/${child.slug}`)}>{child.name}</a>
+          <a href={resolveHref(`${basePath}/${child.public_id}`)}>{child.name}</a>
         </SidebarListItem>
       {/each}
     </SidebarList>

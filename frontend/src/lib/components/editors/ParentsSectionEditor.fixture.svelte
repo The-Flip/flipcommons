@@ -3,7 +3,7 @@
   import type { SaveMeta, SaveResult } from './save-claims-shared';
 
   let {
-    initialData = { parents: [{ slug: 'physical-feature', name: 'Physical Feature' }] },
+    initialData = { parents: [{ public_id: 'physical-feature', name: 'Physical Feature' }] },
     slug = 'pop-bumper',
     saveResult = { ok: true } as SaveResult,
     options = [
@@ -12,7 +12,7 @@
       { slug: 'spinner', label: 'Spinner', count: 25 },
     ],
   }: {
-    initialData?: { parents: { slug: string; name?: string }[] };
+    initialData?: { parents: { public_id: string; name?: string }[] };
     slug?: string;
     saveResult?: SaveResult;
     options?: { slug: string; label: string; count?: number }[];

@@ -83,7 +83,7 @@ class TestListCorporateEntities:
         resp = client.get("/api/corporate-entities/")
         data = resp.json()
         assert data[0]["manufacturer"]["name"] == "Gottlieb"
-        assert data[0]["manufacturer"]["slug"] == "gottlieb"
+        assert data[0]["manufacturer"]["public_id"] == "gottlieb"
 
     def test_list_includes_model_count(self, client, entity):
         make_machine_model(

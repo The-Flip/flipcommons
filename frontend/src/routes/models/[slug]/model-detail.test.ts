@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { ModelDetailSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_MODEL = {
@@ -6,13 +7,13 @@ const MOCK_MODEL = {
   slug: 'medieval-madness',
   year: 1997,
   month: null,
-  manufacturer: { name: 'Williams', slug: 'williams' },
+  manufacturer: { name: 'Williams', public_id: 'williams' },
   corporate_entity: {
     name: 'Williams Electronics',
-    slug: 'williams-electronics',
+    public_id: 'williams-electronics',
   },
-  title: { name: 'Medieval Madness', slug: 'medieval-madness' },
-  description: { text: '', html: '', citations: [], attribution: null },
+  title: { name: 'Medieval Madness', public_id: 'medieval-madness' },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
   technology_generation: null,
   technology_subgeneration: null,
   display_type: null,
@@ -31,7 +32,6 @@ const MOCK_MODEL = {
   pinside_id: null,
   ipdb_rating: null,
   pinside_rating: null,
-  website: '',
   variant_of: null,
   variants: [],
   variant_siblings: [],
@@ -51,15 +51,14 @@ const MOCK_MODEL = {
   title_models: [],
   credits: [
     {
-      person: { name: 'Pat Lawlor', slug: 'pat-lawlor' },
+      person: { name: 'Pat Lawlor', public_id: 'pat-lawlor' },
       role: 'designer',
       role_display: 'Designed',
       role_sort_order: 1,
     },
   ],
   uploaded_media: [],
-  sources: [],
-};
+} satisfies ModelDetailSchema;
 
 describe('model detail SSR route', () => {
   it('loads the model from the page endpoint', async () => {

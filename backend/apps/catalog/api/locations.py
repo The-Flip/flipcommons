@@ -40,7 +40,7 @@ from .rich_text import build_rich_text
 
 class LocationManufacturerSchema(Schema):
     name: str
-    slug: str
+    public_id: str
     model_count: int = 0
     thumbnail_url: str | None = None
 
@@ -252,7 +252,7 @@ def _get_manufacturers_for_pks(pks: Iterable[int]) -> list[LocationManufacturerS
     return [
         LocationManufacturerSchema(
             name=mfr.name,
-            slug=mfr.slug,
+            public_id=mfr.public_id,
             model_count=cast(HasModelCount, mfr).model_count,
             thumbnail_url=first_thumbnail(mfr.entities.all(), min_rank=min_rank),
         )
