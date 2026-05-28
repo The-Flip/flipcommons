@@ -4,7 +4,7 @@ This is step 11 of [MypyFixing.md](MypyFixing.md).
 
 Goal: improve the Python type surface area of the Media app. Same up-front-design discipline as Step 10 (ResolveHardening) — every helper signature, endpoint return type, and schema boundary decided here, before any code change. Avoids the gradual dict-return reverse-engineering that slowed Steps 1–7.
 
-Same execution pattern as Step 2: helpers first, endpoints after, `make api-gen` + frontend typecheck between batches.
+Same execution pattern as Step 2: helpers first, endpoints after, `make codegen` + frontend typecheck between batches.
 
 ## Scope
 
@@ -113,7 +113,7 @@ Pure annotation work. No public-API change.
 - [admin.py](../../../backend/apps/media/admin.py): generic params on the three admin classes; `has_*_permission` annotations.
 - [processing.py](../../../backend/apps/media/processing.py): `dict[str, Any]` for `save_kwargs`; `Image.Image` typed local in `process_original` / `generate_rendition`.
 
-`./scripts/mypy` after each file. No `make api-gen` needed (no schema changes).
+`./scripts/mypy` after each file. No `make codegen` needed (no schema changes).
 
 ### Step 11.2: `media/api.py`
 
@@ -124,7 +124,7 @@ Helpers first within the file, then endpoints:
 3. Replace the `on_commit` lambda with `functools.partial`.
 4. Annotate **one** endpoint first (`upload_media`) with `request: HttpRequest` + return type. Run `./scripts/mypy` to confirm `django_auth` doesn't trip the annotation. Catalog Step 5 already validated this combo, so expect clean — but verify before fanning out. Then annotate the other two.
 
-**`make api-gen` gate.** After step 4, regenerate `frontend/src/lib/api/schema.d.ts`. Annotations should not change the OpenAPI shape — Ninja already inferred endpoint return types from `response=`. **If the diff is non-zero, STOP** and reconcile before proceeding to tests: a non-zero diff means either (a) Ninja inferred a Form param default differently when typed, or (b) the `Status[None]` return annotation surfaces a 200 schema change. Either way, the frontend would break silently if we shipped tests on top.
+**`make codegen` gate.** After step 4, regenerate `frontend/src/lib/api/schema.d.ts`. Annotations should not change the OpenAPI shape — Ninja already inferred endpoint return types from `response=`. **If the diff is non-zero, STOP** and reconcile before proceeding to tests: a non-zero diff means either (a) Ninja inferred a Form param default differently when typed, or (b) the `Status[None]` return annotation surfaces a 200 schema change. Either way, the frontend would break silently if we shipped tests on top.
 
 Then frontend typecheck.
 

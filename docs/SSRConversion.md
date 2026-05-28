@@ -160,7 +160,7 @@ When the page endpoint replaces a resource detail endpoint (`GET /api/titles/{sl
 2. Check that the removal did not leave unused imports (e.g. `cache_control`, `decorate_view`). The list, all, and claims endpoints on the same router usually still need them, but verify.
 3. Grep for every test that GETs the old URL pattern **across the entire `backend/` tree**. The search pattern is `client.get(.*"/api/{entity_plural}/` excluding `/claims/`, list (`/`), and `/all/` endpoints.
 4. Rewrite each test GET to use `/api/pages/{entity_singular}/{slug}`.
-5. Regenerate API types (`make api-gen`) so the old path is removed from `schema.d.ts`.
+5. Regenerate API types (`make codegen`) so the old path is removed from `schema.d.ts`.
 6. If step 3 found tests to migrate, delete any page endpoint tests that now duplicate them. The migrated tests already cover the page endpoint with richer assertions (ordering, variant exclusion, nulls-last, etc.), so basic "returns 200" and "returns 404" tests written separately for the page endpoint are redundant.
 7. If step 3 found no tests to migrate (the old endpoint had no GET test coverage), write page endpoint tests from scratch — at minimum a 200 with meaningful assertions and a 404.
 
@@ -183,7 +183,7 @@ When old tests exist, migrating them _is_ writing the backend page endpoint test
 - keeping stale comments like `// Data loaded in +layout.ts` after the loader moved to `+layout.server.ts`
 - adding only backend tests and forgetting frontend SSR tests
 - proving only the data fetch path, but not that meaningful HTML is actually rendered
-- wondering why the new `/api/pages/...` path doesn't type-check — `schema.d.ts` is gitignored and must be regenerated locally with `make api-gen` before the typed client sees the new endpoint
+- wondering why the new `/api/pages/...` path doesn't type-check — `schema.d.ts` is gitignored and must be regenerated locally with `make codegen` before the typed client sees the new endpoint
 
 ## Definition Of Done
 

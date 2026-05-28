@@ -44,7 +44,7 @@ The admin password form is disabled — WorkOS is the only login surface — so 
 | `make lint`        | Run ruff (backend) + eslint/prettier (frontend)            |
 | `make mypy`        | Run backend type checks                                    |
 | `make quality`     | Lint + regenerate API types + svelte-check                 |
-| `make api-gen`     | Regenerate frontend API types from the backend schema      |
+| `make codegen`     | Regenerate frontend API types from the backend schema      |
 | `make pull-ingest` | Download catalog data from R2                              |
 | `make ingest`      | Run full ingestion pipeline                                |
 | `make agent-docs`  | Regenerate CLAUDE.md and AGENTS.md from docs/AGENTS.src.md |

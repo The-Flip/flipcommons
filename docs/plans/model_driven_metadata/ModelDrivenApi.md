@@ -244,7 +244,7 @@ Backend:
 
 Frontend / generated API:
 
-- `make api-gen` emits stable route types for generated endpoints
+- `make codegen` emits stable route types for generated endpoints
 - catalog metadata parity tests fail when an entity has backend API capability but no matching frontend route handling
 - dynamic frontend pages consume `(entity_type, public_id)` instead of per-entity loader files where possible
 
@@ -266,7 +266,7 @@ Suggested first proof:
 - Pick a simple taxonomy entity with a normal slug, scalar fields, and shared lifecycle behavior.
 - Move only its detail-page and lifecycle route ownership to `CatalogApiSpec`.
 - Keep the wire URLs identical.
-- Prove `make api-gen` produces no consumer-facing route churn beyond operation names.
+- Prove `make codegen` produces no consumer-facing route churn beyond operation names.
 
 Suggested steel thread:
 

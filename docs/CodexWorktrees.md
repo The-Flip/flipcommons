@@ -21,7 +21,7 @@ Use separate git worktrees when multiple Codex sessions need to work in parallel
 
 `frontend/src/lib/api/schema.d.ts` is generated and gitignored. Fresh worktrees will not have it automatically.
 
-- Run `make api-gen` in the worktree when practical.
+- Run `make codegen` in the worktree when practical.
 - If generation is unnecessary or expensive for the current task, provide a local symlink or copy from an existing checkout that already has the generated file.
 - Do not commit `schema.d.ts`.
 

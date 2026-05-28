@@ -54,7 +54,7 @@ Ninja API Routers are defined per Django app (`apps.catalog.api`, `apps.accounts
 
 ### Typed client
 
-The OpenAPI schema is generated from the Ninja routers and compiled into TypeScript types in `frontend/src/lib/api/schema.d.ts` (gitignored, regenerated via `make api-gen`). A hand-written client in `frontend/src/lib/api/client.ts` wraps `fetch` with the schema's typed paths, bodies, and responses.
+The OpenAPI schema is generated from the Ninja routers and compiled into TypeScript types in `frontend/src/lib/api/schema.d.ts` (gitignored, regenerated via `make codegen`). A hand-written client in `frontend/src/lib/api/client.ts` wraps `fetch` with the schema's typed paths, bodies, and responses.
 
 ### Authentication and authorization
 

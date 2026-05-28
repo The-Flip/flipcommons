@@ -7,7 +7,7 @@ Iterates ``CatalogModel`` subclasses to produce a TypeScript file with:
   entities (e.g. the global changes feed, prop-type narrowing).
 - MEDIA_CATEGORIES: per-entity media category lists, keyed by entity_type.
 
-Run via ``make api-gen`` or directly::
+Run via ``make codegen`` or directly::
 
     python manage.py export_catalog_meta
 """

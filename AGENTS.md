@@ -44,7 +44,7 @@ make test         # Run pytest (backend) + vitest (frontend)
 make lint         # Run ruff (backend) + eslint/prettier (frontend)
 make mypy         # Run backend type checks
 make quality      # Lint + regenerate API types + svelte-check
-make api-gen      # Regenerate frontend API types from the backend schema
+make codegen      # Regenerate frontend API types from the backend schema
 make pull-ingest  # Download catalog data from R2
 make ingest       # Run full ingestion pipeline
 make agent-docs   # Regenerate CLAUDE.md and AGENTS.md
@@ -71,6 +71,28 @@ docs/             Documentation source files
 - Vite dev server proxies `/api/`, `/djadmin/`, `/media/`, and `/static/` to Django at `127.0.0.1:8000`
 - For SSR route conventions, see [Svelte.md](Svelte.md). For API design — both endpoint shape (page-oriented vs resource) and schema design heuristics (when to consolidate, when to keep separate, inheritance smells) — see [ApiDesign.md](ApiDesign.md)
 
+### The Catalog Must Be Model-Driven
+
+We are trying to make the system as model-agnostic as possible for the catalog entities. Adding a new catalog entity is a huge endeavor because of all the model-specific knowledge in various subsystems.
+
+For that reason, for catalog entities, the Django model is the source of truth. Derive metadata from introspection (`_meta`, `__subclasses__()`) wherever possible; declare only what Django can't express.
+
+Stop and look for the model-driven pattern if you're about to:
+
+- branch on type in shared code (`isinstance(entity, X)`, `entity_type == "y"`)
+- hand-maintain a list/dict enumerating a model set Django already knows
+- write a model-named function in shared code, or a per-model near-clone file
+
+Smallest pattern that fits: `_meta` walk → base-class ClassVar → typed spec → codegen. Existing channels: `core/entity_types.py` (registry), `LinkableModel`/`ClaimControlledModel` (ClassVars), `catalog-meta.ts` (codegen).
+
+See [ModelDrivenMetadata.md](plans/model_driven_metadata/ModelDrivenMetadata.md).
+
+#### Generated Catalog Schema Info
+
+The system generates frontend Typescript info from the backend Django model classes.
+
+`make codegen` runs `manage.py export_catalog_meta`, which walks `CatalogModel` subclasses and writes `frontend/src/lib/api/catalog-meta.ts` — the model→frontend metadata channel (per-entity `entity_type`, `entity_type_plural`, labels, media categories). Use it for any code that needs the catalog's entity-type registry or per-entity metadata rather than hardcoding it. Generated; don't hand-edit.
+
 ### Generated API Types
 
 The system generates frontend Typescript types from the backend Python API types.
@@ -79,9 +101,9 @@ The system generates frontend Typescript types from the backend Python API types
 
 `frontend/src/lib/api/schema.d.ts` is generated and **not committed**. Do not stage or commit it.
 
-#### Run `make api-gen` to regenerate API types
+#### Run `make codegen` to regenerate API types
 
-After adding or changing any API endpoint, run `make api-gen` to regenerate it — the typed client will not see new endpoints until you do.
+After adding or changing any API endpoint, run `make codegen` to regenerate it — the typed client will not see new endpoints until you do.
 
 #### ALWAYS use named imports
 
@@ -107,7 +129,7 @@ When you need a subset of a generated type's field — most commonly a Literal u
 import type { SignupCheckResponseSchema } from "$lib/api/schema";
 type CheckReason = NonNullable<SignupCheckResponseSchema["reason"]>;
 
-// Wrong — silently drifts from the backend after the next api-gen
+// Wrong — silently drifts from the backend after the next codegen
 type CheckReason =
   | "too_short"
   | "too_long"

@@ -23,7 +23,7 @@ Mostly DONE. Steps 1–11 complete. Step 12 and Step 7.1 remain open.
 
 - **Type callees before callers.** Most `no-untyped-call` errors evaporate when the function being called gets annotated. Sweeping caller signatures against `Any`-returning helpers just means revisiting them.
 - **Ratchet via the baseline, not per-module strictness.** `strict = true` is already global in [backend/pyproject.toml](../../../backend/pyproject.toml); the only per-module levers are _relaxations_, and the enforceable direction is removing them. Concretely: (a) shrink `mypy-baseline.txt` monotonically and fail CI on new entries (`mypy-baseline --fail-on-new-error` or equivalent); (b) as `apps.*.api.*` packages clean up, narrow or remove the `disallow_untyped_decorators = false` relaxation at [pyproject.toml:136](../../../backend/pyproject.toml#L136).
-- **Re-run `make api-gen` after any Ninja endpoint retyping.** Annotated return types change the generated OpenAPI schema and therefore `frontend/src/lib/api/schema.d.ts`. Run the frontend typecheck too, not just pytest.
+- **Re-run `make codegen` after any Ninja endpoint retyping.** Annotated return types change the generated OpenAPI schema and therefore `frontend/src/lib/api/schema.d.ts`. Run the frontend typecheck too, not just pytest.
 
 ## Idioms
 
@@ -115,7 +115,7 @@ Return Schema instances (see idiom above). Add schemas for shapes that don't hav
 
 ## Step 2: `catalog/api` signatures - DONE
 
-With taxonomy + titles done, the rest of the package falls into two groups. Order matters: shared-helper modules first (callee-before-caller), then endpoint-only files. Run `make api-gen` + frontend typecheck after each batch.
+With taxonomy + titles done, the rest of the package falls into two groups. Order matters: shared-helper modules first (callee-before-caller), then endpoint-only files. Run `make codegen` + frontend typecheck after each batch.
 
 ### Step 2.1: shared helper signatures - DONE
 
@@ -141,7 +141,7 @@ Order: Schema-return conversion (3.1) before error-schema swap (3.2) because 3.1
 
 ### Step 3.1: Convert `_serialize_model_detail` to return Schema - DONE
 
-Step 1's deferred work. Two bridges in [titles.py](../../../backend/apps/catalog/api/titles.py) still read `MachineModelDetailSchema.model_validate(_serialize_model_detail(pm))`; they must be removed, not left to rot. `_serialize_model_detail` is currently typed `-> dict[str, Any]` as a minimal-touch unblock. Flip the return to the Schema, drop the two `model_validate` wrappers in titles.py, and re-run `make api-gen` + frontend check.
+Step 1's deferred work. Two bridges in [titles.py](../../../backend/apps/catalog/api/titles.py) still read `MachineModelDetailSchema.model_validate(_serialize_model_detail(pm))`; they must be removed, not left to rot. `_serialize_model_detail` is currently typed `-> dict[str, Any]` as a minimal-touch unblock. Flip the return to the Schema, drop the two `model_validate` wrappers in titles.py, and re-run `make codegen` + frontend check.
 
 **Done when:** `_serialize_model_detail` returns `MachineModelDetailSchema`, the two `model_validate` wrappers are gone from titles.py, `./scripts/mypy` stays clean, and frontend typecheck passes.
 
@@ -228,7 +228,7 @@ Remaining "return Schema, not dict" debt in `catalog/api`. No baseline impact �
 
 ## Step 8: `citation/api` - DONE
 
-Same pattern as Step 2 — helpers first, endpoints after, `make api-gen` between batches. Unlike Step 2, the type catalog was designed up-front (every helper signature, endpoint return type, and schema boundary decided before any code change) to avoid the gradual dict-return reverse-engineering that slowed Steps 1–7.
+Same pattern as Step 2 — helpers first, endpoints after, `make codegen` between batches. Unlike Step 2, the type catalog was designed up-front (every helper signature, endpoint return type, and schema boundary decided before any code change) to avoid the gradual dict-return reverse-engineering that slowed Steps 1–7.
 
 Scope landed: `citation/api.py` (38 → 0), `citation/url_extraction.py` (7 → 0), plus three adjacent files:
 
@@ -258,7 +258,7 @@ Scope landed: no `apps/catalog/resolve/*` entries remain in `backend/mypy-baseli
 
 ## Step 11: `media/*` - DONE
 
-Same pattern as Step 2 — helpers first, endpoints after, `make api-gen` between batches. See [MediaTyping.md](MediaTyping.md) for the up-front type catalog and per-step decisions.
+Same pattern as Step 2 — helpers first, endpoints after, `make codegen` between batches. See [MediaTyping.md](MediaTyping.md) for the up-front type catalog and per-step decisions.
 
 Scope landed (~39 entries cleared): `admin.py` (12), `api.py` (9), `apps.py` (8), `processing.py` (6), `tests/*` (4). Two helpers added to `api.py`: `_authed_user` (originally added per-app; consolidated to [apps.core.api_helpers.authed_user](../../../backend/apps/core/api_helpers.py) in Step 9.3 alongside `ErrorDetailSchema`) and a tightened `_resolve_entity` returning `tuple[ContentType, MediaSupported]` via `_default_manager`.
 

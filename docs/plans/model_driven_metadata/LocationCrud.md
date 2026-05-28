@@ -35,7 +35,7 @@ Remaining work (next session):
 
 - Frontend write routes per §"Frontend": `/locations/new`, `/locations/[...path]/new`, `/edit`, `/edit/[section]`, `/edit-history`, `/sources`, `/delete`. Editor wiring (`location-edit-sections.ts`, `LocationEditorSwitch.svelte`, `save-location-claims.ts`). Drop `'location'` from `catalog-meta.test.ts` `DEFERRED_KEYS`.
 - Frontend tests per §"Tests" minus the helper tests (already done): `saveLocationClaims` sends `public_id` not `slug`; delete page renders blocked + unblocked states; `catalog-meta.test.ts` parity for Location.
-- `make api-gen && make lint && make test`.
+- `make codegen && make lint && make test`.
 
 For reference, the cross-cutting prework was:
 
@@ -206,7 +206,7 @@ Delete, delete-preview, and restore:
   - `POST /api/locations/{public_id:path}/restore/` rejecting restore while the parent is deleted (via `parent_field="parent"`).
 - Blocker semantics ride on the model-level class attributes (see §"Model setup").
 - Delete and restore are both row-only and symmetric — same as every other catalog entity. Deleting `usa` requires deleting every state and city under it first; restoring `usa` (after some descendants are independently restored) does not touch descendants.
-- The frontend gets `createDeleteSubmitter('locations')` and the shared `DeletePage.svelte` for free once `make api-gen` regenerates `schema.d.ts`.
+- The frontend gets `createDeleteSubmitter('locations')` and the shared `DeletePage.svelte` for free once `make codegen` regenerates `schema.d.ts`.
 
 ### Read API — DONE
 
@@ -232,7 +232,7 @@ Add the missing write routes under `frontend/src/routes/locations/`.
 - `/locations/[...path]/edit` and `/edit/[section]` reuse the shared taxonomy edit base components.
 - `/locations/[...path]/edit-history` uses the generic edit-history loader with `entity_type="location"` and `public_id=path`.
 - `/locations/[...path]/sources` uses the generic sources loader.
-- `/locations/[...path]/delete` reuses the shared `DeletePage.svelte` component and `createDeleteSubmitter('locations')` (the wire shape matches every other entity once `make api-gen` regenerates `schema.d.ts`), but still needs the standard per-entity wrapper that every existing delete route has — see [`series-delete.ts`](../../../frontend/src/routes/series/[slug]/delete/series-delete.ts) and [`+page@.svelte`](../../../frontend/src/routes/series/[slug]/delete/+page@.svelte) for the canonical shape. Concretely:
+- `/locations/[...path]/delete` reuses the shared `DeletePage.svelte` component and `createDeleteSubmitter('locations')` (the wire shape matches every other entity once `make codegen` regenerates `schema.d.ts`), but still needs the standard per-entity wrapper that every existing delete route has — see [`series-delete.ts`](../../../frontend/src/routes/series/[slug]/delete/series-delete.ts) and [`+page@.svelte`](../../../frontend/src/routes/series/[slug]/delete/+page@.svelte) for the canonical shape. Concretely:
   - `frontend/src/routes/locations/[...path]/delete/location-delete.ts` exporting `submitDelete = createDeleteSubmitter('locations')`.
   - `frontend/src/routes/locations/[...path]/delete/+page.ts` (or `+page.server.ts`) — load `params.path` (a string for `[...path]`), fetch the delete-preview, and pass `{ preview, path }` to the page.
   - `frontend/src/routes/locations/[...path]/delete/+page@.svelte` — builds `BlockedState` from `preview.blocked_by` with a Location-specific lead ("This location can't be deleted because active corporate-entity locations still point at it") and `renderReferrerHref: (r) => r.slug ? '/corporate-entities/' + r.slug : null`. The standard `active_children_count` blocked state (provided by the shared `DeletePage`) covers the "delete child Locations first" path with no Location-specific text needed. Builds `impact` for the row-only delete ("this location only — child locations are unaffected"); wires `cancelHref` and `editHistoryHref` from `path` (not `slug`); and chooses `redirectAfterDelete` per tier — for a country, redirect to `/locations`; for a child, redirect to the parent's detail page (`/locations/{parent_path}`, computed by stripping the last segment of `path`).
@@ -295,7 +295,7 @@ Frontend tests:
 Run the smallest useful set while implementing, then finish with:
 
 ```bash
-make api-gen
+make codegen
 make lint
 make test
 ```
