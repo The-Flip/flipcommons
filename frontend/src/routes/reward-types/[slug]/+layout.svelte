@@ -7,6 +7,7 @@
 
 <SimpleTaxonomyDetailLayout
   {profile}
+  jsonLd={data.jsonLd}
   parentLabel="Reward Types"
   basePath="/reward-types"
   claimsPath={'/api/reward-types/{public_id}/claims/'}

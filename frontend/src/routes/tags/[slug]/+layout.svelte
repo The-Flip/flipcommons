@@ -7,6 +7,7 @@
 
 <SimpleTaxonomyDetailLayout
   {profile}
+  jsonLd={data.jsonLd}
   parentLabel="Tags"
   basePath="/tags"
   claimsPath={'/api/tags/{public_id}/claims/'}

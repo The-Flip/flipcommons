@@ -14,7 +14,9 @@ export function jsonLdGraph(nodes: JsonLdNode[]): Record<string, unknown> {
  * Internal paths are routed through `resolveHref()` so any configured
  * `config.kit.paths.base` prefix is applied — matching what rendered <a>
  * hrefs look like and avoiding a base-vs-no-base mismatch between the
- * visible breadcrumb and the JSON-LD one.
+ * visible breadcrumb and the JSON-LD one. `resolveHref()` returns a path
+ * relative to the current route (e.g. `../`), so it is resolved against
+ * `pageUrl` rather than concatenated onto the origin.
  *
  * `pageUrl.pathname` already includes the base prefix, so callers reading
  * the *current* page's URL should use `pageUrl.origin + pageUrl.pathname`
@@ -22,7 +24,7 @@ export function jsonLdGraph(nodes: JsonLdNode[]): Record<string, unknown> {
  */
 export function absolutize(pageUrl: URL, path: string): string {
   if (/^https?:\/\//.test(path)) return path;
-  return pageUrl.origin + resolveHref(path);
+  return new URL(resolveHref(path), pageUrl).href;
 }
 
 /**

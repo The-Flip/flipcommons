@@ -7,6 +7,7 @@
 
 <SimpleTaxonomyDetailLayout
   {profile}
+  jsonLd={data.jsonLd}
   parentLabel="Display Types"
   basePath="/display-subtypes"
   parentHref="/display-types"

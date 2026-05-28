@@ -39,6 +39,7 @@
 
 <TaxonomyDetailBaseLayout
   {profile}
+  jsonLd={data.jsonLd}
   parentLabel="Gameplay Features"
   basePath={BASE_PATH}
   {sections}

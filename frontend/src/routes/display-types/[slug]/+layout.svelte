@@ -7,6 +7,7 @@
 
 <SimpleTaxonomyDetailLayout
   {profile}
+  jsonLd={data.jsonLd}
   parentLabel="Display Types"
   basePath="/display-types"
   claimsPath={'/api/display-types/{public_id}/claims/'}

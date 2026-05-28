@@ -35,6 +35,7 @@
 
 <TaxonomyDetailBaseLayout
   profile={theme}
+  jsonLd={data.jsonLd}
   parentLabel="Themes"
   basePath={BASE_PATH}
   {sections}

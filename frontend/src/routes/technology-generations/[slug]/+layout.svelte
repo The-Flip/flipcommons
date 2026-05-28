@@ -7,6 +7,7 @@
 
 <SimpleTaxonomyDetailLayout
   {profile}
+  jsonLd={data.jsonLd}
   parentLabel="Technology Generations"
   basePath="/technology-generations"
   claimsPath={'/api/technology-generations/{public_id}/claims/'}

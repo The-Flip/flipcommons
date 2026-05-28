@@ -1,5 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { createServerClient } from '$lib/api/server';
+import { tag } from '$lib/models';
+import { buildEntityJsonLd } from '$lib/models/schema-org';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ fetch, url, request, params }) => {
@@ -13,5 +15,5 @@ export const load: LayoutServerLoad = async ({ fetch, url, request, params }) =>
     throw error(response.status || 500, 'Failed to load page');
   }
 
-  return { profile: data };
+  return { profile: data, jsonLd: buildEntityJsonLd(data, tag, url) };
 };

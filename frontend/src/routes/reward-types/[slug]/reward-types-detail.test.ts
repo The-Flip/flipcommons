@@ -25,7 +25,10 @@ describe('reward-types detail SSR route', () => {
       params: { slug: 'extra-ball' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ profile: MOCK_DATA });
+    expect(result).toEqual({
+      profile: MOCK_DATA,
+      jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
+    });
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/reward-type/extra-ball');

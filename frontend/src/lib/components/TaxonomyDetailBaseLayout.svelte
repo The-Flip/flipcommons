@@ -6,6 +6,7 @@
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import JsonLd from '$lib/components/JsonLd.svelte';
   import { metaDescriptionFor } from '$lib/components/meta-tags';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
@@ -34,6 +35,7 @@
 
   let {
     profile,
+    jsonLd,
     parentLabel,
     basePath,
     parentHref,
@@ -48,6 +50,9 @@
     children,
   }: {
     profile: { name: string; slug: string; description: { plain: string } };
+    /** JSON-LD `@graph` for this entity's detail page. Rendered only on the
+     * detail route (not edit-history/sources sub-routes). */
+    jsonLd?: Record<string, unknown>;
     parentLabel: string;
     /** Used to construct this entity's own sub-route URLs (edit, sources, etc.). */
     basePath: string;
@@ -191,6 +196,10 @@
 </script>
 
 <MetaTags title={profile.name} description={metaDescription} url={page.url.href} />
+
+{#if isDetail && jsonLd}
+  <JsonLd data={jsonLd} />
+{/if}
 
 {#if isFocusMode}
   {@render children()}
