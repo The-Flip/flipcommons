@@ -20,7 +20,7 @@ export function jsonLdGraph(nodes: JsonLdNode[]): Record<string, unknown> {
  * the *current* page's URL should use `pageUrl.origin + pageUrl.pathname`
  * directly rather than running pathname back through this helper.
  */
-function absolutize(pageUrl: URL, path: string): string {
+export function absolutize(pageUrl: URL, path: string): string {
   if (/^https?:\/\//.test(path)) return path;
   return pageUrl.origin + resolveHref(path);
 }
