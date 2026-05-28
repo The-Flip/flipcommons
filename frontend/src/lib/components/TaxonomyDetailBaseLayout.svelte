@@ -3,9 +3,10 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resolveHref } from '$lib/utils';
-  import { SITE_NAME, WIDE_BREAKPOINT } from '$lib/constants';
+  import { WIDE_BREAKPOINT } from '$lib/constants';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/meta-tags';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
@@ -46,7 +47,7 @@
     createChild,
     children,
   }: {
-    profile: { name: string; slug: string; description: { text: string } };
+    profile: { name: string; slug: string; description: { plain: string } };
     parentLabel: string;
     /** Used to construct this entity's own sub-route URLs (edit, sources, etc.). */
     basePath: string;
@@ -79,7 +80,7 @@
 
   let slug = $derived(page.params.slug);
 
-  let metaDescription = $derived(profile.description.text || `${profile.name} — ${SITE_NAME}`);
+  let metaDescription = $derived(metaDescriptionFor(profile));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
   let isDetail = $derived(mode === 'detail');
   let isFocusMode = $derived(isFocusModePath(page.url.pathname));

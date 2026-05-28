@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'vitest';
 import {
   buildFullTitle,
+  metaDescriptionFor,
   truncateMetaDescription,
   truncateOgDescription,
   buildCanonicalUrl,
   twitterCardType,
 } from './meta-tags';
-import { SITE_TITLE } from '$lib/constants';
+import { SITE_NAME, SITE_TITLE } from '$lib/constants';
 
 describe('buildFullTitle', () => {
   test('appends site title suffix', () => {
@@ -15,6 +16,32 @@ describe('buildFullTitle', () => {
 
   test('does not double site title', () => {
     expect(buildFullTitle(SITE_TITLE)).toBe(SITE_TITLE);
+  });
+});
+
+describe('metaDescriptionFor', () => {
+  test('sources the clean .plain text, not raw .text markdown', () => {
+    const profile = {
+      name: 'Multiball',
+      description: {
+        plain: 'A mode where multiple balls are in play at once.',
+        text: 'A mode where **multiple balls** are in play, see [[tag:multiball]].',
+      },
+    };
+    expect(metaDescriptionFor(profile)).toBe('A mode where multiple balls are in play at once.');
+  });
+
+  test('falls back to "{name} — {SITE_NAME}" when .plain is empty', () => {
+    const profile = { name: 'Multiball', description: { plain: '' } };
+    expect(metaDescriptionFor(profile)).toBe(`Multiball — ${SITE_NAME}`);
+  });
+
+  test('returns untruncated prose (MetaTags owns the length budgets)', () => {
+    const long = 'word '.repeat(100).trim();
+    const profile = { name: 'X', description: { plain: long } };
+    const result = metaDescriptionFor(profile);
+    expect(result).toBe(long);
+    expect(result).not.toContain('…');
   });
 });
 
