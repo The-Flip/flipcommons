@@ -3,9 +3,10 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Single Player',
+  public_id: 'single-player',
   slug: 'single-player',
   display_order: 0,
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
   sources: [],
 };
 

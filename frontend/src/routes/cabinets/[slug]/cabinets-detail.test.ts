@@ -3,9 +3,10 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Standard Body',
+  public_id: 'standard-body',
   slug: 'standard-body',
   display_order: 0,
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
   sources: [],
 };
 

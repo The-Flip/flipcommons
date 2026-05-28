@@ -3,8 +3,9 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Multiball',
+  public_id: 'multiball',
   slug: 'multiball',
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
   display_order: 0,
   parents: [],
   machines: [],

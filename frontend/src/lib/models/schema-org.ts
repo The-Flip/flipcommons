@@ -14,7 +14,7 @@ import type { ModelFrontendInfo } from './types';
 export interface EntityBaseFacts {
   name: string;
   public_id: string;
-  description?: RichTextSchema | null;
+  description: RichTextSchema;
 }
 
 /**
@@ -37,7 +37,7 @@ export function buildSchemaOrgNode<T extends EntityBaseFacts>(
     '@id': absolutize(pageUrl, `/${meta.entity_type_plural}/${entity.public_id}`),
     name: entity.name,
   };
-  const desc = entity.description?.plain?.trim() ?? '';
+  const desc = entity.description.plain.trim();
   if (desc) node.description = desc;
   return node;
 }

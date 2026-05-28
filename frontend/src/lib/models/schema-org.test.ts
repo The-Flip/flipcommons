@@ -88,15 +88,6 @@ describe('buildSchemaOrgNode', () => {
     );
     expect(node).not.toHaveProperty('description');
   });
-
-  test('description is omitted when description is null', () => {
-    const node = buildSchemaOrgNode(
-      entity({ description: null }),
-      info({ types: ['DefinedTerm'] }),
-      PAGE,
-    );
-    expect(node).not.toHaveProperty('description');
-  });
 });
 
 describe('buildEntityJsonLd', () => {

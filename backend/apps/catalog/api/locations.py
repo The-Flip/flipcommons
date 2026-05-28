@@ -13,7 +13,6 @@ from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
 from ninja.decorators import decorate_view
 from ninja.errors import HttpError
-from pydantic import Field
 
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
@@ -69,7 +68,7 @@ class LocationDetailSchema(LinkableDetailSchema):
     # frontend uses this to suppress the "+ New …" action rather than
     # show a wrong label.
     expected_child_type: str | None = None
-    description: RichTextSchema = Field(default_factory=RichTextSchema)
+    description: RichTextSchema = RichTextSchema()
     short_name: str | None = None
     code: str | None = None
     divisions: list[str] | None = None
