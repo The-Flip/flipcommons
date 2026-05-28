@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Rename generated schema-name references in frontend/src after backend Python
-// schema classes are renamed and `make api-gen` regenerates schema.d.ts.
+// schema classes are renamed and `make codegen` regenerates schema.d.ts.
 //
 // Scope: word-boundary substitution of `OldName -> NewName` for each entry
 // in rename-table.json, excluding client.ts. For .svelte files only the

@@ -37,7 +37,7 @@ interface DeleteSubmitOptions {
 }
 
 // Entity-segment union derived from the schema's delete routes.
-// New linkable entities pick this up automatically when api-gen runs.
+// New linkable entities pick this up automatically when codegen runs.
 type DeleteEntity =
   Extract<
     keyof paths,
