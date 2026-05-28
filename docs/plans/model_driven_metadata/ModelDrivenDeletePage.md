@@ -124,7 +124,7 @@ After these three hooks, no entity needs a hand-rolled wrapper.
 Single PR:
 
 1. Add `delete_blocked_lead`, `delete_referrer_hint_template`, `delete_blocked_footer`, `delete_impact_singular`, `delete_restore_note` ClassVars to `LifecycleStatusModel` with defaults derived from `Meta.verbose_name` / `verbose_name_plural`. Override on Person, CorporateEntity, Location where they differ.
-2. Extend `export_catalog_meta` to emit the new `delete` block. Regenerate `frontend/src/lib/api/catalog-meta.ts` via `make codegen`.
+2. Extend `export_catalog_meta` to emit the new `delete` block. Regenerate `frontend/src/lib/models/model-meta.ts` via `make codegen`.
 3. Add `frontend/src/routes/[entity_plural]/[...public_id]/delete/{+page.server.ts,+page@.svelte}` driven by the registry.
 4. Delete the 19 per-entity delete trees (`+page@.svelte`, `+page.server.ts`, `*-delete.ts`) and their tests. Keep `createDeleteSubmitter` — it's still the right factory; the dynamic route just calls it once with `meta.entity_type_plural` instead of each wrapper baking the collection in at module scope.
 5. Add `tests/routes/dynamic-delete.test.ts` (DOM test, same harness as the existing `DeletePage.dom.test.ts`) covering: registry-driven copy substitution, `referrer_hint_template`'s `{relation}` substitution, `parentBreadcrumb` from `preview.parent`, parent-aware `redirectAfterDelete`, `blocked_message` (Person path), unknown `entity_plural` → 404.

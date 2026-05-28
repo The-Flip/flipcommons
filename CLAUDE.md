@@ -83,7 +83,7 @@ Stop and look for the model-driven pattern if you're about to:
 - hand-maintain a list/dict enumerating a model set Django already knows
 - write a model-named function in shared code, or a per-model near-clone file
 
-Smallest pattern that fits: `_meta` walk → base-class ClassVar → typed spec → codegen. Existing channels: `core/entity_types.py` (registry), `LinkableModel`/`ClaimControlledModel` (ClassVars), `catalog-meta.ts` (codegen).
+Smallest pattern that fits: `_meta` walk → base-class ClassVar → typed spec → codegen. Existing channels: `core/entity_types.py` (registry), `LinkableModel`/`ClaimControlledModel` (ClassVars), `model-meta.ts` (codegen).
 
 See [ModelDrivenMetadata.md](plans/model_driven_metadata/ModelDrivenMetadata.md).
 
@@ -91,7 +91,7 @@ See [ModelDrivenMetadata.md](plans/model_driven_metadata/ModelDrivenMetadata.md)
 
 The system generates frontend Typescript info from the backend Django model classes.
 
-`make codegen` runs `manage.py export_catalog_meta`, which walks `CatalogModel` subclasses and writes `frontend/src/lib/api/catalog-meta.ts` — the model→frontend metadata channel (per-entity `entity_type`, `entity_type_plural`, labels, media categories). Use it for any code that needs the catalog's entity-type registry or per-entity metadata rather than hardcoding it. Generated; don't hand-edit.
+`make codegen` runs `manage.py export_catalog_meta`, which walks `CatalogModel` subclasses and writes `frontend/src/lib/models/model-meta.ts` — the model→frontend metadata channel (per-entity `entity_type`, `entity_type_plural`, labels, media categories). Use it for any code that needs the catalog's entity-type registry or per-entity metadata rather than hardcoding it. Generated; don't hand-edit.
 
 ### Generated API Types
 

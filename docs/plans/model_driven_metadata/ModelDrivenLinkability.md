@@ -230,7 +230,7 @@ Each linkable entity must have these two subroutes ([`catalog-meta.test.ts`](../
 
 Two options worth weighing:
 
-- **Code-gen** alongside `make codegen` — emit the wrapper files from `CATALOG_META`. Aligns with how `catalog-meta.ts` is already generated. Adds a generator to maintain.
+- **Code-gen** alongside `make codegen` — emit the wrapper files from `CATALOG_META`. Aligns with how `model-meta.ts` is already generated. Adds a generator to maintain.
 - **Lift the load into a shared `+layout.server.ts`** — the entity layout already runs `loadEntityDetail`; have it expose `loadEditHistory` / `loadSources` lazily so the subroute pages become a single `+page.svelte` referencing parent-layout data. Hits the SvelteKit caveat the existing test comment notes (parent-layout re-runs on subroute navigation), so this needs validation.
 
 ### Rename JS-side `slug` parameter to `publicId`

@@ -1,6 +1,6 @@
 <script lang="ts">
   import client from '$lib/api/client';
-  import { MEDIA_CATEGORIES } from '$lib/api/catalog-meta';
+  import { MEDIA_CATEGORIES } from '$lib/models/model-meta';
   import AccordionSection from '$lib/components/AccordionSection.svelte';
   import AttributionLine from '$lib/components/AttributionLine.svelte';
   import HierarchicalTaxonomyChildrenAccordion from '$lib/components/HierarchicalTaxonomyChildrenAccordion.svelte';

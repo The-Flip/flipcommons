@@ -4,7 +4,7 @@
   import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
   import CreditsList from '$lib/components/CreditsList.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
-  import { MEDIA_CATEGORIES } from '$lib/api/catalog-meta';
+  import { MEDIA_CATEGORIES } from '$lib/models/model-meta';
   import RichTextOverviewAccordion from '$lib/components/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/rich-text-accordion-state.svelte';

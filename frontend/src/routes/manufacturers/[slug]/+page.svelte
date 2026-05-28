@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { MEDIA_CATEGORIES } from '$lib/api/catalog-meta';
+  import { MEDIA_CATEGORIES } from '$lib/models/model-meta';
   import AccordionSection from '$lib/components/AccordionSection.svelte';
   import CreateFirstCorporateEntityPrompt from '$lib/components/CreateFirstCorporateEntityPrompt.svelte';
   import RichTextOverviewAccordion from '$lib/components/RichTextOverviewAccordion.svelte';

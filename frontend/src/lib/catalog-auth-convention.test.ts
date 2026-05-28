@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CATALOG_META, type CatalogEntityKey } from './api/catalog-meta';
+import { CATALOG_META, type CatalogEntityKey } from './models/model-meta';
 import { catalogRoutesByEntity } from './route-metadata.server';
 
 // The route-metadata walker classifies /{plural}/[public-id]/edit (and

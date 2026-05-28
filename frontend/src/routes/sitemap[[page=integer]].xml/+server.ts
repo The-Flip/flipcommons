@@ -28,7 +28,7 @@ import { isDeploymentSearchEngineIndexable } from '$lib/is-deployment-search-eng
 import { STATIC_LASTMOD } from '$lib/static-lastmod';
 import { stripRouteGroups, routeIdToRegex } from '$lib/sitemap-helpers';
 import { createServerClient } from '$lib/api/server';
-import { CATALOG_META, type CatalogEntityKey } from '$lib/api/catalog-meta';
+import { CATALOG_META, type CatalogEntityKey } from '$lib/models/model-meta';
 
 /**
  * Type guard for the `feed.kind` wire boundary. Django serializes

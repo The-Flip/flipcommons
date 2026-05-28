@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MEDIA_CATEGORIES } from './catalog-meta';
+import { MEDIA_CATEGORIES } from '../models/model-meta';
 import { MAX_FILE_SIZE_BYTES, IMAGE_ACCEPT } from './media-api';
 
 describe('media-api constants', () => {

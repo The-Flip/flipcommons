@@ -154,7 +154,7 @@ Meta-norm: no model carries a spec it doesn't apply to. Absence is default; decl
 
 **When to use it.** Model metadata needs to reach consumers that can't import Python — the SvelteKit frontend, the OpenAPI schema, external tools, any sibling service. The patterns above cover Python runtime consumers; codegen extends any of them to non-Python consumers.
 
-The canonical example already in the codebase: `export_catalog_meta` generates `frontend/src/lib/api/catalog-meta.ts` from Django models. The rules generalize to any upstream shape → any downstream artifact:
+The canonical example already in the codebase: `export_catalog_meta` generates `frontend/src/lib/models/model-meta.ts` from Django models. The rules generalize to any upstream shape → any downstream artifact:
 
 - Generators read models + specs + `_meta`. They never invert the dependency.
 - Generated artifacts are derived and not hand-edited; checking them into git is fine but they stay clearly downstream.

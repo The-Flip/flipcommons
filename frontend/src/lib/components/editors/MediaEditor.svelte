@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
   import { detachMedia, setCategory, setPrimary } from '$lib/api/media-api';
-  import { MEDIA_CATEGORIES } from '$lib/api/catalog-meta';
+  import { MEDIA_CATEGORIES } from '$lib/models/model-meta';
   import type { UploadedMediaSchema } from '$lib/api/schema';
   import Button from '$lib/components/Button.svelte';
   import MediaUploadZone from '$lib/components/media/MediaUploadZone.svelte';

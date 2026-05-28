@@ -1,4 +1,4 @@
-"""Generate frontend/src/lib/api/catalog-meta.ts from catalog models.
+"""Generate frontend/src/lib/models/model-meta.ts from catalog models.
 
 Iterates ``CatalogModel`` subclasses to produce a TypeScript file with:
 - CATALOG_META: per-entity record keyed by entity_type, exposing
@@ -31,7 +31,7 @@ class CatalogEntry(NamedTuple):
 
 
 class Command(BaseCommand):
-    help = "Generate frontend/src/lib/api/catalog-meta.ts from catalog models."
+    help = "Generate frontend/src/lib/models/model-meta.ts from catalog models."
 
     def handle(
         self,
@@ -78,7 +78,7 @@ class Command(BaseCommand):
         lines.append("")
 
         output_path = (
-            Path(settings.BASE_DIR).parent / "frontend/src/lib/api/catalog-meta.ts"
+            Path(settings.BASE_DIR).parent / "frontend/src/lib/models/model-meta.ts"
         )
         output_path.write_text("\n".join(lines))
         self.stdout.write(self.style.SUCCESS(f"Wrote {output_path}"))

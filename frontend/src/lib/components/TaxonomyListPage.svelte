@@ -14,7 +14,7 @@
   import { auth } from '$lib/auth.svelte';
   import { normalizeText, resolveHref } from '$lib/utils';
   import { pageTitle } from '$lib/constants';
-  import { CATALOG_META, type CatalogEntityKey } from '$lib/api/catalog-meta';
+  import { CATALOG_META, type CatalogEntityKey } from '$lib/models/model-meta';
 
   interface Props {
     /** Catalog entity key. Title, basePath, singular/plural labels, and endpoint are derived from CATALOG_META. */

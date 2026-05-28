@@ -11,7 +11,7 @@ Unknown (or concatenated / Django-internal) entity_type strings raise
 
 See ``docs/EntityNaming.md`` for the naming rule (hyphenated singular; the
 frontend route segment is its plural) and the generated frontend mirror at
-``frontend/src/lib/api/catalog-meta.ts``.
+``frontend/src/lib/models/model-meta.ts``.
 """
 
 from __future__ import annotations

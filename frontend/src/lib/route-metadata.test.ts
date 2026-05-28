@@ -10,7 +10,7 @@ import {
   SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS,
   type RouteClass,
 } from './route-metadata.server';
-import { CATALOG_META, type CatalogEntityKey } from './api/catalog-meta';
+import { CATALOG_META, type CatalogEntityKey } from './models/model-meta';
 
 // SvelteKit's ssr resolution rule: walk leaf-to-root through the
 // +page.ts / +page.server.ts / +layout.ts / +layout.server.ts chain; the

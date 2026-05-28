@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { catalogRoutesByEntity } from '../route-metadata.server';
-import { CATALOG_META, type CatalogEntityKey } from './catalog-meta';
+import { CATALOG_META, type CatalogEntityKey } from './model-meta';
 
 // Every linkable entity must have detail + edit-history + sources routes.
 // edit-history/ and sources/ are thin wrappers over $lib/provenance-loaders
@@ -30,7 +30,7 @@ const detailRoutes = catalogRoutesByEntity((cls) => cls.kind === 'catalog-detail
 const editHistoryRoutes = catalogRoutesByEntity((cls) => cls.kind === 'catalog-edit-history');
 const sourcesRoutes = catalogRoutesByEntity((cls) => cls.kind === 'catalog-sources');
 
-describe('catalog-meta vs route tree', () => {
+describe('model-meta vs route tree', () => {
   it.each(Object.keys(CATALOG_META) as CatalogEntityKey[])(
     '%s has a catalog-detail route',
     (key) => {

@@ -3,7 +3,7 @@
  */
 
 import type { RouteId } from '$app/types';
-import { CATALOG_META, type CatalogEntityKey } from '$lib/api/catalog-meta';
+import { CATALOG_META, type CatalogEntityKey } from '$lib/models/model-meta';
 
 /**
  * Non-catalog routes that should be indexed by search engines.

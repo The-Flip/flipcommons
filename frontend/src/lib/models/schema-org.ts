@@ -1,5 +1,5 @@
 import type { RichTextSchema } from '$lib/api/schema';
-import { CATALOG_META } from '$lib/api/catalog-meta';
+import { CATALOG_META } from '$lib/models/model-meta';
 import { jsonLdGraph, breadcrumbList, absolutize, type JsonLdNode } from '$lib/components/jsonld';
 import type { ModelFrontendInfo } from './types';
 

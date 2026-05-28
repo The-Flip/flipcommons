@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MEDIA_CATEGORIES } from '$lib/api/catalog-meta';
+  import { MEDIA_CATEGORIES } from '$lib/models/model-meta';
   import { IMAGE_ACCEPT } from '$lib/api/media-api';
   import { createUploadManager } from '$lib/media-upload.svelte';
   import Button from '$lib/components/Button.svelte';

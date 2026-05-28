@@ -1,4 +1,4 @@
-import type { CatalogEntityKey } from '$lib/api/catalog-meta';
+import type { CatalogEntityKey } from '$lib/models/model-meta';
 
 /**
  * Per-model schema.org presentation declarations. Lives frontend-side because

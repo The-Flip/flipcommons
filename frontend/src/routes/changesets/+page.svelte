@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ChangeSetDetailSchema, ChangeSetSummarySchema } from '$lib/api/schema';
   import client from '$lib/api/client';
-  import { CATALOG_META } from '$lib/api/catalog-meta';
+  import { CATALOG_META } from '$lib/models/model-meta';
   import { SITE_TITLE } from '$lib/constants';
   import { resolveHref } from '$lib/utils';
   import ClaimAttribution from '$lib/components/ClaimAttribution.svelte';
