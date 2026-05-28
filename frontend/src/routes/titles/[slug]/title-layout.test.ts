@@ -65,7 +65,7 @@ describe('title layout', () => {
 
   it('omits the Back link on the detail route', () => {
     const { body } = render(Harness, {
-      props: { data: { title: MOCK_TITLE } },
+      props: { data: { profile: MOCK_TITLE } },
     });
 
     expect(body).toContain('History');
@@ -76,7 +76,7 @@ describe('title layout', () => {
     pageState.url = new URL('http://localhost:5173/titles/medieval-madness/sources');
 
     const { body } = render(Harness, {
-      props: { data: { title: MOCK_TITLE } },
+      props: { data: { profile: MOCK_TITLE } },
     });
 
     // Layout renders only the child in focus mode; chrome is gone.
@@ -90,7 +90,7 @@ describe('title layout', () => {
     pageState.url = new URL('http://localhost:5173/titles/medieval-madness/edit-history');
 
     const { body } = render(Harness, {
-      props: { data: { title: MOCK_TITLE } },
+      props: { data: { profile: MOCK_TITLE } },
     });
 
     expect(body).toContain('Child content');
@@ -135,7 +135,7 @@ describe('title layout', () => {
     } satisfies TitleDetailSchema;
 
     const { body } = render(Harness, {
-      props: { data: { title: singleModelTitle } },
+      props: { data: { profile: singleModelTitle } },
     });
 
     // Two ActionMenu triggers: History and Sources. (Multi-Model titles have
@@ -154,7 +154,7 @@ describe('title layout', () => {
     const { body } = render(Harness, {
       props: {
         data: {
-          title: {
+          profile: {
             ...MOCK_TITLE,
             franchise: { name: 'Williams Classics', public_id: 'williams-classics' },
           } satisfies TitleDetailSchema,

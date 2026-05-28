@@ -7,7 +7,7 @@
   import Markdown from '$lib/components/Markdown.svelte';
 
   let { data } = $props();
-  let theme = $derived(data.theme);
+  let theme = $derived(data.profile);
 
   let childHeading = 'Sub-themes';
 </script>

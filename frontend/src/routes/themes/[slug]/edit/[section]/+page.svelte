@@ -9,7 +9,7 @@
   } from '$lib/components/editors/hierarchical-taxonomy-edit-sections';
 
   let { data } = $props();
-  let theme = $derived(data.theme);
+  let theme = $derived(data.profile);
 
   const sections = HIERARCHICAL_TAXONOMY_EDIT_SECTIONS.map((section) =>
     section.key === 'parents' ? { ...section, label: 'Parent Themes' } : section,

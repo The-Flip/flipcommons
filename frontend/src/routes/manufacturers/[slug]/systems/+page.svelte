@@ -2,7 +2,7 @@
   import { resolve } from '$app/paths';
 
   let { data } = $props();
-  let mfr = $derived(data.manufacturer);
+  let mfr = $derived(data.profile);
 </script>
 
 <section class="systems">

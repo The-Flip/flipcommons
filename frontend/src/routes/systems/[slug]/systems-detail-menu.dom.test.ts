@@ -39,7 +39,7 @@ const SYSTEM = {
 
 function renderLayout() {
   render(Layout, {
-    data: { system: SYSTEM },
+    data: { profile: SYSTEM },
     children: () => ({}) as never,
   } as unknown as Parameters<typeof render>[1]);
 }

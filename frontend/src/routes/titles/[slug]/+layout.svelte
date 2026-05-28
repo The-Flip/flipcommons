@@ -35,7 +35,7 @@
   import TitleEditorSwitch from './edit/TitleEditorSwitch.svelte';
 
   let { data, children } = $props();
-  let title = $derived(data.title);
+  let title = $derived(data.profile);
   let md = $derived(title.model_detail);
   let specs = $derived(title.agreed_specs);
   let slug = $derived(page.params.slug);

@@ -5,7 +5,7 @@
   import TitleList from '$lib/components/TitleList.svelte';
 
   let { data } = $props();
-  let series = $derived(data.series);
+  let series = $derived(data.profile);
 </script>
 
 {#if series.description?.html}

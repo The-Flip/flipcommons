@@ -88,7 +88,7 @@ describe('manufacturer detail SSR route', () => {
       params: { slug: 'williams' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ manufacturer: MOCK_MANUFACTURER });
+    expect(result).toEqual({ profile: MOCK_MANUFACTURER });
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/manufacturer/williams');
@@ -109,7 +109,7 @@ describe('manufacturer detail SSR route', () => {
   it('renders meaningful manufacturer content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { manufacturer: MOCK_MANUFACTURER },
+        data: { profile: MOCK_MANUFACTURER },
       },
     });
 

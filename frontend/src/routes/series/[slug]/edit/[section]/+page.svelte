@@ -3,7 +3,7 @@
   import { SIMPLE_TAXONOMY_EDIT_SECTIONS_NO_DISPLAY_ORDER } from '$lib/components/editors/simple-taxonomy-edit-sections';
 
   let { data } = $props();
-  let series = $derived(data.series);
+  let series = $derived(data.profile);
 </script>
 
 <SimpleTaxonomyEditSectionPage

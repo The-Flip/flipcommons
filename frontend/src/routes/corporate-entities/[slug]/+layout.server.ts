@@ -1,17 +1,5 @@
-import { error } from '@sveltejs/kit';
-import { createServerClient } from '$lib/api/server';
+import { loadEntityPage } from '$lib/entity-page-loader.server';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ fetch, url, request, params }) => {
-  const client = createServerClient(fetch, url, request);
-  const { data, response } = await client.GET('/api/pages/corporate-entity/{public_id}', {
-    params: { path: { public_id: params.slug } },
-  });
-
-  if (!data) {
-    if (response?.status === 404) throw error(404, 'Corporate entity not found');
-    throw error(response.status || 500, 'Failed to load page');
-  }
-
-  return { corporateEntity: data };
-};
+export const load: LayoutServerLoad = (event) =>
+  loadEntityPage(event, '/api/pages/corporate-entity/{public_id}', 'Corporate entity');

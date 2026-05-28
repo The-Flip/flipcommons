@@ -24,7 +24,7 @@
   import PersonEditorSwitch from './edit/PersonEditorSwitch.svelte';
 
   let { data, children } = $props();
-  let person = $derived(data.person);
+  let person = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
   let metaDescription = $derived(

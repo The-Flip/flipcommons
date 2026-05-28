@@ -1,19 +1,9 @@
-import { error } from '@sveltejs/kit';
-import { createServerClient } from '$lib/api/server';
+import { loadEntityPage } from '$lib/entity-page-loader.server';
 import { theme } from '$lib/models';
 import { buildEntityJsonLd } from '$lib/models/schema-org';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ fetch, url, request, params }) => {
-  const client = createServerClient(fetch, url, request);
-  const { data, response } = await client.GET('/api/pages/theme/{public_id}', {
-    params: { path: { public_id: params.slug } },
-  });
-
-  if (!data) {
-    if (response?.status === 404) throw error(404, 'Theme not found');
-    throw error(response.status || 500, 'Failed to load page');
-  }
-
-  return { theme: data, jsonLd: buildEntityJsonLd(data, theme, url) };
+export const load: LayoutServerLoad = async (event) => {
+  const { profile } = await loadEntityPage(event, '/api/pages/theme/{public_id}', 'Theme');
+  return { profile, jsonLd: buildEntityJsonLd(profile, theme, event.url) };
 };

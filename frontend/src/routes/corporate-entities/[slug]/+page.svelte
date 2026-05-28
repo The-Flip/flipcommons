@@ -5,7 +5,7 @@
   import TitleCard from '$lib/components/cards/TitleCard.svelte';
 
   let { data } = $props();
-  let ce = $derived(data.corporateEntity);
+  let ce = $derived(data.profile);
   let titlesHeading = $derived(`Titles by ${ce.name}`);
 </script>
 

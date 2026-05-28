@@ -26,7 +26,7 @@
   import SystemEditorSwitch from './edit/SystemEditorSwitch.svelte';
 
   let { data, children } = $props();
-  let system = $derived(data.system);
+  let system = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
   let metaDescription = $derived(system.description?.text || `${system.name} — ${SITE_NAME}`);

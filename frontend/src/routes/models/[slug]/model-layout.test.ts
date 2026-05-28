@@ -74,7 +74,7 @@ describe('model layout', () => {
 
   it('omits the Back link on the detail route', () => {
     const { body } = render(Harness, {
-      props: { data: { model: MOCK_MODEL } },
+      props: { data: { profile: MOCK_MODEL } },
     });
 
     expect(body).toContain('History');
@@ -85,7 +85,7 @@ describe('model layout', () => {
     pageState.url = new URL('http://localhost:5173/models/medieval-madness/media');
 
     const { body } = render(Harness, {
-      props: { data: { model: MOCK_MODEL } },
+      props: { data: { profile: MOCK_MODEL } },
     });
 
     expect(body).toContain('>Back<');

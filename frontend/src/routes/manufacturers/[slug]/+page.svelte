@@ -14,7 +14,7 @@
   import { formatYearRange, websiteHostname } from '$lib/utils';
 
   let { data } = $props();
-  let mfr = $derived(data.manufacturer);
+  let mfr = $derived(data.profile);
   let editAction = manufacturerEditActionContext.get();
   const richTextState = createRichTextAccordionState();
 

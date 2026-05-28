@@ -15,7 +15,7 @@
   import ManufacturerEditorSwitch from '../ManufacturerEditorSwitch.svelte';
 
   let { data } = $props();
-  let manufacturer = $derived(data.manufacturer);
+  let manufacturer = $derived(data.profile);
   let slug = $derived(page.params.slug);
   let sectionSegment = $derived(page.params.section);
   let section = $derived(

@@ -5,7 +5,7 @@
   import TitleCard from '$lib/components/cards/TitleCard.svelte';
 
   let { data } = $props();
-  let system = $derived(data.system);
+  let system = $derived(data.profile);
 </script>
 
 {#if system.description?.html}

@@ -40,7 +40,7 @@ describe('themes detail SSR route', () => {
     } as unknown as Parameters<typeof load>[0]);
 
     expect(result).toEqual({
-      theme: MOCK_DATA,
+      profile: MOCK_DATA,
       jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
     });
     const request = fetch.mock.calls[0]?.[0];
@@ -63,7 +63,7 @@ describe('themes detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { theme: MOCK_DATA, jsonLd: {} },
+        data: { profile: MOCK_DATA, jsonLd: {} },
       },
     });
 

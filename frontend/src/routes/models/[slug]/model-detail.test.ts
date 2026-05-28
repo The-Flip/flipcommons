@@ -75,7 +75,7 @@ describe('model detail SSR route', () => {
       params: { slug: 'medieval-madness' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ model: MOCK_MODEL });
+    expect(result).toEqual({ profile: MOCK_MODEL });
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/model/medieval-madness');

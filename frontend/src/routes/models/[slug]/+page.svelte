@@ -12,7 +12,7 @@
   import { modelEditActionContext } from '$lib/components/editors/edit-action-context';
 
   let { data } = $props();
-  let model = $derived(data.model);
+  let model = $derived(data.profile);
 
   // On desktop, editAction opens the modal editor; on mobile, it navigates to the edit route.
   const editAction = modelEditActionContext.get();

@@ -17,7 +17,7 @@
   import PersonEditorSwitch from '../PersonEditorSwitch.svelte';
 
   let { data } = $props();
-  let person = $derived(data.person);
+  let person = $derived(data.profile);
   let slug = $derived(page.params.slug);
   let sectionSegment = $derived(page.params.section);
   let section = $derived(sectionSegment ? findPersonSectionBySegment(sectionSegment) : undefined);

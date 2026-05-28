@@ -14,7 +14,7 @@
   } from '$lib/components/editors/title-edit-sections';
 
   let { data } = $props();
-  let title = $derived(data.title);
+  let title = $derived(data.profile);
   let slug = $derived(page.params.slug);
   let sectionSegment = $derived(page.params.section);
   let isSingleModel = $derived(!!title.model_detail);
@@ -52,7 +52,7 @@
   async function handleSaved() {
     editLayout.setDirty(false);
     await invalidateAll();
-    const updatedSlug = data.title.slug;
+    const updatedSlug = data.profile.slug;
     if (updatedSlug !== slug) {
       await goto(resolve(`/titles/${updatedSlug}/edit/${sectionSegment}`), {
         replaceState: true,

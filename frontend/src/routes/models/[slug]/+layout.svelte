@@ -27,7 +27,7 @@
   import ModelEditorSwitch from './edit/ModelEditorSwitch.svelte';
 
   let { data, children } = $props();
-  let model = $derived(data.model);
+  let model = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
   $effect(() => {

@@ -27,7 +27,7 @@
   import CorporateEntityEditorSwitch from './edit/CorporateEntityEditorSwitch.svelte';
 
   let { data, children } = $props();
-  let ce = $derived(data.corporateEntity);
+  let ce = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
   let yearsActive = $derived(formatYearRange(ce.year_start, ce.year_end));

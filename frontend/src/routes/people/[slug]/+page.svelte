@@ -10,7 +10,7 @@
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
 
   let { data } = $props();
-  let person = $derived(data.person);
+  let person = $derived(data.profile);
   let editAction = personEditActionContext.get();
   const richTextState = createRichTextAccordionState();
 

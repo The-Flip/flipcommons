@@ -29,7 +29,7 @@
   import ManufacturerEditorSwitch from './edit/ManufacturerEditorSwitch.svelte';
 
   let { data, children } = $props();
-  let mfr = $derived(data.manufacturer);
+  let mfr = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
   let yearsActive = $derived(formatYearRange(mfr.year_start, mfr.year_end));

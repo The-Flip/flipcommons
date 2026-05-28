@@ -14,7 +14,7 @@
   import { titleAreaEditActionContext } from '$lib/components/editors/edit-action-context';
 
   let { data } = $props();
-  let title = $derived(data.title);
+  let title = $derived(data.profile);
   let md = $derived(title.model_detail);
   let specs = $derived(title.agreed_specs);
   let overviewRichText = $derived(md ? md.description : title.description);
