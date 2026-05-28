@@ -34,6 +34,7 @@ from .rich_text import build_rich_text
 from .schemas import (
     ClaimPatchSchema,
     CreditSchema,
+    LinkableDetailSchema,
     TitleRef,
 )
 
@@ -50,8 +51,7 @@ class SeriesListItemSchema(Schema):
     thumbnail_url: str | None = None
 
 
-class SeriesDetailSchema(Schema):
-    name: str
+class SeriesDetailSchema(LinkableDetailSchema):
     slug: str
     description: RichTextSchema = RichTextSchema()
     titles: list[TitleRef]
@@ -104,6 +104,7 @@ def _serialize_series_detail(series: Series) -> SeriesDetailSchema:
     media_by_model = fetch_title_media_map(titles_list)
     return SeriesDetailSchema(
         name=series.name,
+        public_id=series.public_id,
         slug=series.slug,
         description=build_rich_text(series, "description", active_claims(series)),
         titles=[

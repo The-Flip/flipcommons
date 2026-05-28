@@ -101,6 +101,7 @@ from .schemas import (
     EditOptionSchema,
     EntityRef,
     GameplayFeatureRef,
+    LinkableDetailSchema,
     ModelClaimPatchSchema,
     ModelDeletePreviewSchema,
     ModelEditOptionsSchema,
@@ -166,8 +167,7 @@ class ModelRef(Schema):
     year: int | None = None
 
 
-class ModelDetailSchema(Schema):
-    name: str
+class ModelDetailSchema(LinkableDetailSchema):
     slug: str
     manufacturer: EntityRef | None = None
     corporate_entity: EntityRef | None = None
@@ -408,6 +408,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
 
     return ModelDetailSchema(
         name=pm.name,
+        public_id=pm.public_id,
         slug=pm.slug,
         description=description,
         manufacturer=EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None,

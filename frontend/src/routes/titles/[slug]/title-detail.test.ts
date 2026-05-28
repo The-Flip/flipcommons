@@ -5,6 +5,7 @@ import { load } from './+layout.server';
 
 const MOCK_TITLE = {
   name: 'Medieval Madness',
+  public_id: 'medieval-madness',
   slug: 'medieval-madness',
   abbreviations: [],
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
@@ -95,6 +96,7 @@ describe('title detail SSR route', () => {
       ...MOCK_TITLE,
       model_detail: {
         name: 'Medieval Madness',
+        public_id: 'medieval-madness',
         slug: 'medieval-madness',
         description: {
           text: 'foo [1] bar [2] baz [1]',

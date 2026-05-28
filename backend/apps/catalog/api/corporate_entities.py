@@ -46,6 +46,7 @@ from .schemas import (
     CorporateEntityLocationSchema,
     EntityCreateInputSchema,
     EntityRef,
+    LinkableDetailSchema,
     RelatedTitleSchema,
 )
 
@@ -64,8 +65,7 @@ class CorporateEntityListItemSchema(Schema):
     locations: list[CorporateEntityLocationSchema] = []
 
 
-class CorporateEntityDetailSchema(Schema):
-    name: str
+class CorporateEntityDetailSchema(LinkableDetailSchema):
     slug: str
     description: RichTextSchema = RichTextSchema()
     manufacturer: EntityRef
@@ -108,6 +108,7 @@ def _detail_qs() -> QuerySet[CorporateEntity]:
 def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
     return CorporateEntityDetailSchema(
         name=ce.name,
+        public_id=ce.public_id,
         slug=ce.slug,
         description=build_rich_text(ce, "description", active_claims(ce)),
         manufacturer=EntityRef(

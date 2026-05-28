@@ -4,6 +4,7 @@ import { load } from './+layout.server';
 
 const MOCK_MODEL = {
   name: 'Medieval Madness',
+  public_id: 'medieval-madness',
   slug: 'medieval-madness',
   year: 1997,
   month: null,

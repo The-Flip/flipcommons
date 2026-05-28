@@ -17,6 +17,7 @@ import type { ModelDetailSchema } from '$lib/api/schema';
 
 const MOCK_MODEL = {
   name: 'Medieval Madness',
+  public_id: 'medieval-madness',
   slug: 'medieval-madness',
   year: 1997,
   month: null,

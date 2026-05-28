@@ -64,6 +64,7 @@ from .schemas import (
     ClaimPatchSchema,
     DeleteResponseSchema,
     EntityCreateInputSchema,
+    LinkableDetailSchema,
     PersonDeletePreviewSchema,
     PersonSoftDeleteBlockedSchema,
     RelatedTitleSchema,
@@ -100,8 +101,7 @@ class PersonTitleSchema(RelatedTitleSchema):
     roles: list[str] = []
 
 
-class PersonDetailSchema(Schema):
-    name: str
+class PersonDetailSchema(LinkableDetailSchema):
     slug: str
     description: RichTextSchema = RichTextSchema()
     birth_year: int | None = None
@@ -186,6 +186,7 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
     ]
     return PersonDetailSchema(
         name=person.name,
+        public_id=person.public_id,
         slug=person.slug,
         description=build_rich_text(person, "description", active_claims(person)),
         birth_year=person.birth_year,

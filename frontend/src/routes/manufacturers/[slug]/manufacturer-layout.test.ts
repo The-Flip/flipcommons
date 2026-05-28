@@ -27,6 +27,7 @@ import type { ManufacturerDetailSchema } from '$lib/api/schema';
 
 const MOCK_MANUFACTURER = {
   name: 'Williams',
+  public_id: 'williams',
   slug: 'williams',
   description: {
     text: 'Historic manufacturer [1].',

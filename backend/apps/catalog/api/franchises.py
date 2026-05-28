@@ -28,7 +28,7 @@ from .entity_crud import register_entity_create, register_entity_delete_restore
 from .helpers import serialize_title_ref
 from .images import fetch_title_media_map
 from .rich_text import build_rich_text
-from .schemas import ClaimPatchSchema, TitleRef
+from .schemas import ClaimPatchSchema, LinkableDetailSchema, TitleRef
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -41,8 +41,7 @@ class FranchiseListItemSchema(Schema):
     title_count: int = 0
 
 
-class FranchiseDetailSchema(Schema):
-    name: str
+class FranchiseDetailSchema(LinkableDetailSchema):
     slug: str
     description: RichTextSchema = RichTextSchema()
     titles: list[TitleRef]
@@ -109,6 +108,7 @@ def _serialize_franchise_detail(franchise: Franchise) -> FranchiseDetailSchema:
     media_by_model = fetch_title_media_map(titles_list)
     return FranchiseDetailSchema(
         name=franchise.name,
+        public_id=franchise.public_id,
         slug=franchise.slug,
         description=build_rich_text(franchise, "description", active_claims(franchise)),
         titles=[

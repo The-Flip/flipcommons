@@ -32,6 +32,7 @@ from ..services.location_paths import lookup_child_division
 from ._typing import HasModelCount
 from .images import first_thumbnail
 from .rich_text import build_rich_text
+from .schemas import LinkableDetailSchema
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -59,8 +60,7 @@ class LocationAncestorRef(Schema):
     location_path: str
 
 
-class LocationDetailSchema(Schema):
-    name: str
+class LocationDetailSchema(LinkableDetailSchema):
     slug: str
     location_path: str
     location_type: str | None = None
@@ -282,6 +282,7 @@ def _get_location_detail(location_path: str) -> LocationDetailSchema:
         )
         return LocationDetailSchema(
             name="",
+            public_id="",
             slug="",
             location_path="",
             location_type=None,
@@ -311,6 +312,7 @@ def _get_location_detail(location_path: str) -> LocationDetailSchema:
 
     return LocationDetailSchema(
         name=node.name,
+        public_id=location_path,
         slug=node.slug,
         location_path=location_path,
         location_type=node.location_type,

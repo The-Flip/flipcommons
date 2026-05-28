@@ -5,6 +5,7 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Pat Lawlor',
+  public_id: 'pat-lawlor',
   slug: 'pat-lawlor',
   description: {
     text: 'Pinball designer.',

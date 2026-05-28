@@ -5,6 +5,7 @@ import { load } from './+layout.server';
 
 const MOCK_MANUFACTURER = {
   name: 'Williams',
+  public_id: 'williams',
   slug: 'williams',
   description: {
     text: 'Historic manufacturer [1].',

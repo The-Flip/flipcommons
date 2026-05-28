@@ -34,6 +34,7 @@ from .rich_text import build_rich_text
 from .schemas import (
     EntityRef,
     HierarchyClaimPatchSchema,
+    LinkableDetailSchema,
 )
 
 # ---------------------------------------------------------------------------
@@ -49,8 +50,7 @@ class GameplayFeatureListItemSchema(Schema):
     parent_slugs: list[str] = []
 
 
-class GameplayFeatureDetailSchema(Schema):
-    name: str
+class GameplayFeatureDetailSchema(LinkableDetailSchema):
     slug: str
     description: RichTextSchema = RichTextSchema()
     aliases: list[str] = []
@@ -77,6 +77,7 @@ def _detail_qs() -> QuerySet[GameplayFeature]:
 def _serialize_detail(feature: GameplayFeature) -> GameplayFeatureDetailSchema:
     return GameplayFeatureDetailSchema(
         name=feature.name,
+        public_id=feature.public_id,
         slug=feature.slug,
         description=build_rich_text(feature, "description", active_claims(feature)),
         aliases=[a.value for a in feature.aliases.all()],

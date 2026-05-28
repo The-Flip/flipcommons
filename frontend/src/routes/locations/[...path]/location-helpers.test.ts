@@ -19,6 +19,7 @@ function child(name: string, type: string): LocationChild {
 function profile(overrides: Partial<LocationDetail>): LocationDetail {
   return {
     name: '',
+    public_id: '',
     slug: '',
     location_path: '',
     location_type: null,

@@ -5,6 +5,7 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Medieval',
+  public_id: 'medieval',
   slug: 'medieval',
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
   display_order: 0,

@@ -51,6 +51,7 @@ from .schemas import (
     ClaimPatchSchema,
     EntityCreateInputSchema,
     EntityRef,
+    LinkableDetailSchema,
     RelatedTitleSchema,
 )
 
@@ -70,8 +71,7 @@ class SystemCreateSchema(EntityCreateInputSchema):
     manufacturer_slug: str
 
 
-class SystemDetailSchema(Schema):
-    name: str
+class SystemDetailSchema(LinkableDetailSchema):
     slug: str
     description: RichTextSchema = RichTextSchema()
     manufacturer: EntityRef | None = None
@@ -163,6 +163,7 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
 
     return SystemDetailSchema(
         name=system.name,
+        public_id=system.public_id,
         slug=system.slug,
         description=build_rich_text(system, "description", active_claims(system)),
         manufacturer=(

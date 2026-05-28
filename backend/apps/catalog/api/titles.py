@@ -99,6 +99,7 @@ from .schemas import (
     EntityCreateInputSchema,
     EntityRef,
     GameplayFeatureRef,
+    LinkableDetailSchema,
     SoftDeleteBlockedSchema,
     TitleClaimPatchSchema,
     TitleDeletePreviewSchema,
@@ -185,8 +186,7 @@ class AggregatedMediaSchema(Schema):
     source_model: EntityRef
 
 
-class TitleDetailSchema(Schema):
-    name: str
+class TitleDetailSchema(LinkableDetailSchema):
     slug: str
     opdb_id: str | None = None
     fandom_page_id: int | None = None
@@ -625,6 +625,7 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
 
     return TitleDetailSchema(
         name=title.name,
+        public_id=title.public_id,
         slug=title.slug,
         opdb_id=title.opdb_id,
         fandom_page_id=title.fandom_page_id,

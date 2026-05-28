@@ -5,6 +5,7 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Star Trek',
+  public_id: 'star-trek',
   slug: 'star-trek',
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
   titles: [

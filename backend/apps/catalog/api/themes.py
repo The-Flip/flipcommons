@@ -34,6 +34,7 @@ from .rich_text import build_rich_text
 from .schemas import (
     EntityRef,
     HierarchyClaimPatchSchema,
+    LinkableDetailSchema,
     TitleModelSchema,
 )
 
@@ -50,8 +51,7 @@ class ThemeListItemSchema(Schema):
     parent_slugs: list[str] = []
 
 
-class ThemeDetailSchema(Schema):
-    name: str
+class ThemeDetailSchema(LinkableDetailSchema):
     slug: str
     description: RichTextSchema = RichTextSchema()
     aliases: list[str] = []
@@ -87,6 +87,7 @@ def _serialize_detail(theme: Theme) -> ThemeDetailSchema:
     media_by_model = fetch_model_media_map(pm.pk for pm in machines_list)
     return ThemeDetailSchema(
         name=theme.name,
+        public_id=theme.public_id,
         slug=theme.slug,
         description=build_rich_text(theme, "description", active_claims(theme)),
         aliases=[a.value for a in theme.aliases.all()],

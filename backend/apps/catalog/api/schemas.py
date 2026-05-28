@@ -17,6 +17,18 @@ class EntityRef(Schema):
     public_id: str
 
 
+class LinkableDetailSchema(Schema):
+    """Shared base for top-level catalog detail responses: the entity's display
+    name and its uniform URL identity. Backend twin of the frontend's
+    ``EntityBaseFacts``. ``public_id`` is ``LinkableModel.public_id`` — ``slug``
+    for most entities, ``location_path`` for Location. Required (no default) so
+    every serializer is forced to source it.
+    """
+
+    name: str
+    public_id: str
+
+
 class EntityCreateInputSchema(ChangeSetInputSchema):
     """Base shape for catalog entity create operations."""
 
