@@ -10,6 +10,7 @@ from apps.core.markdown import (
     render_all_links,
     render_markdown_fields,
     render_markdown_html,
+    render_markdown_plain,
 )
 from apps.core.markdown.references import sync_references
 from apps.core.models import RecordReference
@@ -253,6 +254,52 @@ class TestRenderAllLinks:
         result = render_all_links(text)
         assert "[Williams](/manufacturers/williams)" in result
         assert "[WPC-95](/systems/wpc-95)" in result
+
+
+class TestRenderMarkdownPlain:
+    def test_empty_string(self):
+        assert render_markdown_plain("") == ""
+
+    def test_none_input(self):
+        assert render_markdown_plain(None) == ""
+
+    def test_strips_bold(self):
+        result = render_markdown_plain("**bold** text")
+        assert result == "bold text"
+
+    def test_strips_heading_syntax(self):
+        result = render_markdown_plain("# Heading")
+        assert result == "Heading"
+
+    def test_resolves_token_to_label(self, manufacturer):
+        result = render_markdown_plain(f"Made by [[manufacturer:id:{manufacturer.pk}]]")
+        assert result == "Made by Williams"
+        assert "[[" not in result
+        assert "(" not in result  # no leftover markdown link syntax
+
+    def test_broken_link_renders_plain_marker(self, db):
+        result = render_markdown_plain("See [[manufacturer:id:99999]]")
+        assert result == "See [broken link]"
+        assert "*" not in result
+
+    def test_decodes_html_entities(self):
+        result = render_markdown_plain("Tom & Jerry")
+        assert result == "Tom & Jerry"
+        assert "&amp;" not in result
+
+    def test_no_tags_leak(self):
+        result = render_markdown_plain("**bold** and *italic*")
+        assert "<" not in result
+        assert ">" not in result
+
+    def test_list_items_separated_not_concatenated(self):
+        # Block boundaries must separate; never collapse to "onetwothree".
+        result = render_markdown_plain("- one\n- two\n- three")
+        assert result == "one two three"
+
+    def test_paragraphs_collapse_to_single_separated_line(self):
+        result = render_markdown_plain("First para.\n\nSecond para.")
+        assert result == "First para. Second para."
 
 
 class TestAuthoringToStorage:

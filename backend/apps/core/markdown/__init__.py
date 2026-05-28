@@ -30,6 +30,7 @@ from apps.core.markdown.render import (
     render_markdown_field,
     render_markdown_fields,
     render_markdown_html,
+    render_markdown_plain,
 )
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "render_markdown_field",
     "render_markdown_fields",
     "render_markdown_html",
+    "render_markdown_plain",
 ]

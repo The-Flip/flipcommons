@@ -8,6 +8,7 @@ const MOCK_MANUFACTURER = {
   slug: 'williams',
   description: {
     text: 'Historic manufacturer [1].',
+    plain: 'Historic manufacturer.',
     html: '<p>Historic manufacturer.</p>',
     citations: [
       {

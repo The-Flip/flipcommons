@@ -7,7 +7,7 @@ const MOCK_TITLE = {
   name: 'Medieval Madness',
   slug: 'medieval-madness',
   abbreviations: [],
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', plain: '', html: '', citations: [], attribution: null },
   needs_review: false,
   needs_review_notes: '',
   review_links: [],
@@ -98,6 +98,7 @@ describe('title detail SSR route', () => {
         slug: 'medieval-madness',
         description: {
           text: 'foo [1] bar [2] baz [1]',
+          plain: 'foo bar baz',
           html: '<p>foo bar baz</p>',
           citations: [makeCite(10, 1), makeCite(20, 2), makeCite(30, 1)],
           attribution: null,

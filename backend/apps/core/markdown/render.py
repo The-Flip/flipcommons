@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from html import unescape
 from typing import Any
 
 import nh3
 from django.db import models
+from django.utils.html import strip_tags
 from django.utils.safestring import mark_safe
 from markdown_it import MarkdownIt
 
@@ -311,6 +313,33 @@ def render_markdown_html(
     return mark_safe(_convert_task_list_items(safe_html))  # noqa: S308 — HTML sanitized by nh3
 
 
+def _html_to_plain(html: str) -> str:
+    """Flatten rendered, sanitized HTML to a single whitespace-normalized line.
+
+    markdown-it emits a trailing newline after each block token (preserved
+    through sanitization), so collapsing whitespace after tag removal keeps
+    block boundaries — list items and paragraphs separate rather than
+    concatenating into ``onetwo`` — while inline tags drop without a spurious
+    separator (``Williams</a>.`` → ``Williams.``). Entities are decoded
+    *after* tag stripping so escaped markup (``&lt;script&gt;``) can't
+    reintroduce tags.
+    """
+    return " ".join(unescape(strip_tags(html)).split())
+
+
+def render_markdown_plain(text: str | None) -> str:
+    """Render markdown text to clean, single-line plain prose.
+
+    Resolves ``[[type:ref]]`` tokens to their labels and flattens all
+    markdown/HTML structure, producing a whitespace-normalized single line
+    suitable for ``<meta name="description">`` and machine-readable
+    ``description`` fields. Built on :func:`render_markdown_html` so token
+    resolution, sanitization and entity handling stay identical to the
+    rendered HTML.
+    """
+    return _html_to_plain(render_markdown_html(text))
+
+
 @dataclass(frozen=True, slots=True)
 class RenderedField:
     """Rendered markdown output for a single field.
@@ -319,20 +348,25 @@ class RenderedField:
     and ``apps.core`` has no business naming provenance-layer schemas (see
     ``render_markdown_html`` note). Callers validate citations into their
     own schemas via ``Schema.model_validate(...)`` at the boundary.
+
+    ``plain`` is the flattened single-line projection of ``html``, computed
+    once here so consumers (meta descriptions, machine-readable
+    ``description`` fields) don't re-render the markdown.
     """
 
     html: str
+    plain: str = ""
     citations: list[dict[str, Any]] = field(default_factory=list)
 
 
 def render_markdown_field(obj: models.Model, field_name: str) -> RenderedField:
-    """Render one markdown field on *obj* to HTML + collected citations.
+    """Render one markdown field on *obj* to HTML + plain text + citations.
 
     Returns empty ``RenderedField`` if the field's raw value is blank.
     """
     citations: list[dict[str, Any]] = []
     html = render_markdown_html(getattr(obj, field_name, ""), metadata_out=citations)
-    return RenderedField(html=html, citations=citations)
+    return RenderedField(html=html, plain=_html_to_plain(html), citations=citations)
 
 
 # Return value mixes rendered HTML strings and free-form metadata dicts

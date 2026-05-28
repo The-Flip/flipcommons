@@ -59,7 +59,9 @@ def build_rich_text(
 
     The ``text`` value is returned in authoring format (``[[type:slug]]``)
     so edit forms show human-readable link references.  The ``html`` value
-    is rendered from the storage format and is display-ready.
+    is rendered from the storage format and is display-ready.  The ``plain``
+    value is the flattened, token-free projection for meta descriptions and
+    machine-readable consumers.
     """
     raw_text = getattr(obj, field_name, "") or ""
     text = convert_storage_to_authoring(raw_text) if raw_text else raw_text
@@ -73,6 +75,7 @@ def build_rich_text(
     return RichTextSchema(
         text=text,
         html=rendered.html,
+        plain=rendered.plain,
         citations=citations,
         attribution=attribution,
     )

@@ -8,6 +8,7 @@ const MOCK_DATA = {
   slug: 'pat-lawlor',
   description: {
     text: 'Pinball designer.',
+    plain: 'Pinball designer.',
     html: '<p>Pinball designer.</p>',
     citations: [],
     attribution: null,

@@ -6,7 +6,7 @@ import { load } from './+layout.server';
 const MOCK_DATA = {
   name: 'Medieval',
   slug: 'medieval',
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', plain: '', html: '', citations: [], attribution: null },
   display_order: 0,
   aliases: [],
   parents: [],

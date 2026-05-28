@@ -22,7 +22,7 @@ function profile(overrides: Partial<LocationDetail>): LocationDetail {
     slug: '',
     location_path: '',
     location_type: null,
-    description: { text: '', html: '', citations: [], attribution: null },
+    description: { text: '', plain: '', html: '', citations: [], attribution: null },
     aliases: [],
     manufacturer_count: 0,
     ancestors: [],

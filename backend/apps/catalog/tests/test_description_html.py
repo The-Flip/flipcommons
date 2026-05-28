@@ -208,6 +208,42 @@ class TestDescriptionCitations:
 
 
 @pytest.mark.django_db
+class TestDescriptionPlain:
+    """API responses include a flattened, token-free `plain` projection."""
+
+    def test_plain_strips_markdown(self, client):
+        Manufacturer.objects.create(
+            name="Williams",
+            slug="williams",
+            description="A **legendary** pinball manufacturer.",
+        )
+        resp = client.get("/api/pages/manufacturer/williams")
+        data = resp.json()
+        assert data["description"]["plain"] == "A legendary pinball manufacturer."
+
+    def test_plain_resolves_links_to_labels(self, client):
+        williams = Manufacturer.objects.create(name="Williams", slug="williams")
+        System.objects.create(
+            name="WPC-95",
+            slug="wpc-95",
+            manufacturer=williams,
+            description=f"Made by [[manufacturer:id:{williams.pk}]].",
+        )
+        resp = client.get("/api/pages/system/wpc-95")
+        data = resp.json()
+        plain = data["description"]["plain"]
+        assert plain == "Made by Williams."
+        assert "[[" not in plain
+        assert "<" not in plain
+
+    def test_plain_empty_when_no_description(self, client):
+        Manufacturer.objects.create(name="Stern", slug="stern")
+        resp = client.get("/api/pages/manufacturer/stern")
+        data = resp.json()
+        assert data["description"]["plain"] == ""
+
+
+@pytest.mark.django_db
 class TestReferenceSync:
     def test_resolve_creates_references(self):
         """Resolving a manufacturer with links creates RecordReference rows."""

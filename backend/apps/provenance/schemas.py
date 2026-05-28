@@ -281,6 +281,7 @@ class RichTextSchema(Schema):
 
     text: str = ""
     html: str = ""
+    plain: str = ""
     citations: list[InlineCitationSchema] = []
     attribution: AttributionSchema | None = None
 
