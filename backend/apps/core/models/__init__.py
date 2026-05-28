@@ -24,6 +24,7 @@ from .constraints import (
 from .fields import BoundedTextField
 from .license import License
 from .mixins import (
+    DescribedModel,
     EntityStatus,
     LifecycleManager,
     LifecycleQuerySet,
@@ -38,6 +39,7 @@ from .references import RecordReference, register_reference_cleanup
 
 __all__ = [
     "BoundedTextField",
+    "DescribedModel",
     "EntityStatus",
     "License",
     "LifecycleManager",

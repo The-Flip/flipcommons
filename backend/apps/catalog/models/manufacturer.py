@@ -7,7 +7,6 @@ from django.core.validators import MaxValueValidator, MinValueValidator, RegexVa
 from django.db import models
 from django.db.models.functions import Lower
 
-from apps.core.markdown import MarkdownField
 from apps.core.models import (
     SluggedModel,
     TimeStampedModel,
@@ -77,7 +76,6 @@ class Manufacturer(
             )
         ],
     )
-    description = MarkdownField(blank=True)
     logo_url = models.URLField(null=True, blank=True)
     website = models.URLField(blank=True)
 
@@ -150,7 +148,6 @@ class CorporateEntity(
         related_name="entities",
     )
     slug = models.SlugField(max_length=300, unique=True)
-    description = MarkdownField(blank=True)
     name = models.CharField(
         max_length=300,
         help_text='Full corporate name, e.g., "D. Gottlieb & Company"',

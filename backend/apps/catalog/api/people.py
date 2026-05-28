@@ -30,7 +30,7 @@ from apps.core.schemas import (
 )
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
@@ -38,7 +38,7 @@ from apps.provenance.rate_limits import (
     EDIT_RATE_LIMIT_SPEC,
     rate_limited,
 )
-from apps.provenance.schemas import ChangeSetInputSchema, RichTextSchema
+from apps.provenance.schemas import ChangeSetInputSchema
 
 from ..cache import get_cached_response, people_all_key, set_cached_response
 from ..models import Credit, MachineModel, Person
@@ -58,13 +58,13 @@ from .images import (
     media_prefetch,
     serialize_uploaded_media,
 )
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
+    CatalogDetailSchema,
     ClaimPatchSchema,
     DeleteResponseSchema,
     EntityCreateInputSchema,
-    LinkableDetailSchema,
     PersonDeletePreviewSchema,
     PersonSoftDeleteBlockedSchema,
     RelatedTitleSchema,
@@ -101,9 +101,8 @@ class PersonTitleSchema(RelatedTitleSchema):
     roles: list[str] = []
 
 
-class PersonDetailSchema(LinkableDetailSchema):
+class PersonDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     birth_year: int | None = None
     birth_month: int | None = None
     birth_day: int | None = None
@@ -188,7 +187,7 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
         name=person.name,
         public_id=person.public_id,
         slug=person.slug,
-        description=build_rich_text(person, "description", active_claims(person)),
+        description=describe(person),
         birth_year=person.birth_year,
         birth_month=person.birth_month,
         birth_day=person.birth_day,

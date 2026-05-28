@@ -7,7 +7,6 @@ from typing import ClassVar
 from django.db import models
 from django.db.models.functions import Lower
 
-from apps.core.markdown import MarkdownField
 from apps.core.models import (
     SluggedModel,
     TimeStampedModel,
@@ -47,7 +46,6 @@ class Theme(
     children: models.Manager[Theme]
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
-    description = MarkdownField(blank=True)
     parents = models.ManyToManyField(
         "self",
         symmetrical=False,

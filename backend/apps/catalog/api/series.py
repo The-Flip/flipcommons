@@ -17,7 +17,7 @@ from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import RichTextSchema
 
@@ -30,11 +30,11 @@ from .helpers import (
     serialize_title_ref,
 )
 from .images import extract_image_urls, fetch_title_media_map
-from .rich_text import build_rich_text
+from .rich_text import build_rich_text, describe
 from .schemas import (
+    CatalogDetailSchema,
     ClaimPatchSchema,
     CreditSchema,
-    LinkableDetailSchema,
     TitleRef,
 )
 
@@ -51,9 +51,8 @@ class SeriesListItemSchema(Schema):
     thumbnail_url: str | None = None
 
 
-class SeriesDetailSchema(LinkableDetailSchema):
+class SeriesDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     titles: list[TitleRef]
     credits: list[CreditSchema] = []
 
@@ -106,7 +105,7 @@ def _serialize_series_detail(series: Series) -> SeriesDetailSchema:
         name=series.name,
         public_id=series.public_id,
         slug=series.slug,
-        description=build_rich_text(series, "description", active_claims(series)),
+        description=describe(series),
         titles=[
             serialize_title_ref(t, min_rank=min_rank, media_by_model=media_by_model)
             for t in titles_list

@@ -21,13 +21,12 @@ from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     EDIT_RATE_LIMIT_SPEC,
     rate_limited,
 )
-from apps.provenance.schemas import RichTextSchema
 
 from ..models import MachineModel, Manufacturer, System
 from ._typing import HasModelCount
@@ -46,12 +45,12 @@ from .entity_create import (
 )
 from .entity_crud import register_entity_delete_restore
 from .images import extract_image_urls, fetch_model_media_map
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
+    CatalogDetailSchema,
     ClaimPatchSchema,
     EntityCreateInputSchema,
     EntityRef,
-    LinkableDetailSchema,
     RelatedTitleSchema,
 )
 
@@ -71,9 +70,8 @@ class SystemCreateSchema(EntityCreateInputSchema):
     manufacturer_slug: str
 
 
-class SystemDetailSchema(LinkableDetailSchema):
+class SystemDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     manufacturer: EntityRef | None = None
     technology_subgeneration: EntityRef | None = None
     titles: list[RelatedTitleSchema]
@@ -165,7 +163,7 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
         name=system.name,
         public_id=system.public_id,
         slug=system.slug,
-        description=build_rich_text(system, "description", active_claims(system)),
+        description=describe(system),
         manufacturer=(
             EntityRef(
                 name=system.manufacturer.name,

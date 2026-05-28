@@ -29,7 +29,7 @@ from apps.core.types import JsonBody
 from apps.media.helpers import all_media, primary_media
 from apps.media.models import EntityMedia
 from apps.media.schemas import UploadedMediaSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
@@ -40,7 +40,6 @@ from apps.provenance.rate_limits import (
 from apps.provenance.schemas import (
     AttributionSchema,
     ChangeSetInputSchema,
-    RichTextSchema,
 )
 
 from ..cache import get_cached_response, models_all_key, set_cached_response
@@ -93,15 +92,15 @@ from .images import (
     media_prefetch,
     serialize_uploaded_media,
 )
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
+    CatalogDetailSchema,
     CreditSchema,
     DeleteResponseSchema,
     EditOptionSchema,
     EntityRef,
     GameplayFeatureRef,
-    LinkableDetailSchema,
     ModelClaimPatchSchema,
     ModelDeletePreviewSchema,
     ModelEditOptionsSchema,
@@ -167,7 +166,7 @@ class ModelRef(Schema):
     year: int | None = None
 
 
-class ModelDetailSchema(LinkableDetailSchema):
+class ModelDetailSchema(CatalogDetailSchema):
     slug: str
     manufacturer: EntityRef | None = None
     corporate_entity: EntityRef | None = None
@@ -186,7 +185,6 @@ class ModelDetailSchema(LinkableDetailSchema):
     pinside_id: int | None = None
     ipdb_rating: float | None = None
     pinside_rating: float | None = None
-    description: RichTextSchema = RichTextSchema()
     abbreviations: list[str] = []
     extra_data: JsonBody
     credits: list[CreditSchema]
@@ -355,8 +353,6 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
 
     credits = [serialize_credit(c) for c in pm.credits.all()]
 
-    claims = active_claims(pm)
-
     media = all_media(pm)
     primary = [em for em in media if em.is_primary]
     thumbnail_url, hero_image_url = extract_image_urls(
@@ -364,7 +360,6 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
     )
     image_attribution = extract_image_attribution(pm.extra_data or {}, primary or None)
     uploaded_media = serialize_uploaded_media(media)
-    description = build_rich_text(pm, "description", claims)
     variant_features = _extract_variant_features(pm.extra_data or {})
 
     variants = [
@@ -410,7 +405,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         name=pm.name,
         public_id=pm.public_id,
         slug=pm.slug,
-        description=description,
+        description=describe(pm),
         manufacturer=EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None,
         corporate_entity=(
             EntityRef(

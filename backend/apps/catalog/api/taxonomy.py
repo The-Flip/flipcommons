@@ -20,7 +20,6 @@ from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import RichTextSchema
 
 from ..models import (
     Cabinet,
@@ -48,8 +47,8 @@ from .images import extract_image_urls, fetch_model_media_map
 from .people import PersonGridItemSchema
 from .rich_text import build_rich_text
 from .schemas import (
+    CatalogDetailSchema,
     ClaimPatchSchema,
-    LinkableDetailSchema,
     TitleModelSchema,
 )
 
@@ -58,10 +57,9 @@ from .schemas import (
 # ---------------------------------------------------------------------------
 
 
-class TaxonomySchema(LinkableDetailSchema):
+class TaxonomySchema(CatalogDetailSchema):
     slug: str
     display_order: int
-    description: RichTextSchema = RichTextSchema()
     aliases: list[str] = []
 
 

@@ -16,7 +16,7 @@ from ninja.errors import HttpError
 
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.schemas import RichTextSchema
 
 from ..cache import locations_tree_key
@@ -30,8 +30,8 @@ from ..models import (
 from ..services.location_paths import lookup_child_division
 from ._typing import HasModelCount
 from .images import first_thumbnail
-from .rich_text import build_rich_text
-from .schemas import LinkableDetailSchema
+from .rich_text import describe
+from .schemas import CatalogDetailSchema
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -59,7 +59,7 @@ class LocationAncestorRef(Schema):
     location_path: str
 
 
-class LocationDetailSchema(LinkableDetailSchema):
+class LocationDetailSchema(CatalogDetailSchema):
     slug: str
     location_path: str
     location_type: str | None = None
@@ -68,7 +68,6 @@ class LocationDetailSchema(LinkableDetailSchema):
     # frontend uses this to suppress the "+ New …" action rather than
     # show a wrong label.
     expected_child_type: str | None = None
-    description: RichTextSchema = RichTextSchema()
     short_name: str | None = None
     code: str | None = None
     divisions: list[str] | None = None
@@ -170,7 +169,7 @@ def _get_location_tree() -> _LocationTree:
             short_name=loc.short_name,
             code=loc.code,
             aliases=tuple(a.value for a in loc.aliases.all()),
-            description=build_rich_text(loc, "description", active_claims(loc)),
+            description=describe(loc),
             divisions=tuple(loc.divisions or ()),
         )
         children_index.setdefault(parent_path, []).append(loc.location_path)

@@ -7,7 +7,7 @@ from typing import Any
 from ninja import Schema
 from pydantic import ConfigDict
 
-from apps.provenance.schemas import ChangeSetInputSchema
+from apps.provenance.schemas import ChangeSetInputSchema, RichTextSchema
 
 
 class EntityRef(Schema):
@@ -18,15 +18,28 @@ class EntityRef(Schema):
 
 
 class LinkableDetailSchema(Schema):
-    """Shared base for top-level catalog detail responses: the entity's display
-    name and its uniform URL identity. Backend twin of the frontend's
-    ``EntityBaseFacts``. ``public_id`` is ``LinkableModel.public_id`` — ``slug``
-    for most entities, ``location_path`` for Location. Required (no default) so
-    every serializer is forced to source it.
+    """Wire twin of ``LinkableModel``: a top-level entity's display name and
+    uniform URL identity. ``public_id`` is ``LinkableModel.public_id`` —
+    ``slug`` for most entities, ``location_path`` for Location. Required (no
+    default) so every serializer is forced to source it.
     """
 
     name: str
     public_id: str
+
+
+class DescribedDetailSchema(Schema):
+    """Wire twin of ``DescribedModel``: the rich-text description."""
+
+    description: RichTextSchema = RichTextSchema()
+
+
+class CatalogDetailSchema(LinkableDetailSchema, DescribedDetailSchema):
+    """Wire twin of ``CatalogModel`` (linkable + describable) and backend
+    counterpart of the frontend's ``EntityBaseFacts`` (name + URL identity +
+    description; identity is exposed as ``public_id``). Top-level catalog
+    detail responses inherit this single base and do not relist the mixins.
+    """
 
 
 class EntityCreateInputSchema(ChangeSetInputSchema):

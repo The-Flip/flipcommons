@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from apps.catalog.models import CatalogModel
 from apps.core.markdown import convert_storage_to_authoring, render_markdown_field
+from apps.provenance.helpers import active_claims
 from apps.provenance.licensing import (
     build_source_field_license_map,
     resolve_effective_license,
@@ -17,7 +18,7 @@ from apps.provenance.schemas import (
     RichTextSchema,
 )
 
-__all__ = ["build_rich_text"]
+__all__ = ["build_rich_text", "describe"]
 
 
 def _extract_description_attribution(
@@ -79,3 +80,8 @@ def build_rich_text(
         citations=citations,
         attribution=attribution,
     )
+
+
+def describe(obj: CatalogModel) -> RichTextSchema:
+    """Build the description RichTextSchema for any catalog entity."""
+    return build_rich_text(obj, "description", active_claims(obj))

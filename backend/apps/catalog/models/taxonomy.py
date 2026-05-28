@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, ClassVar
 from django.db import models
 from django.db.models.functions import Lower
 
-from apps.core.markdown import MarkdownField
 from apps.core.models import (
     SluggedModel,
     TimeStampedModel,
@@ -59,7 +58,6 @@ class TechnologyGeneration(
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
-    description = MarkdownField(blank=True)
 
     class Meta:
         ordering = ["display_order"]
@@ -92,7 +90,6 @@ class TechnologySubgeneration(
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
-    description = MarkdownField(blank=True)
     technology_generation = models.ForeignKey(
         TechnologyGeneration,
         on_delete=models.CASCADE,
@@ -129,7 +126,6 @@ class DisplayType(
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
-    description = MarkdownField(blank=True)
 
     class Meta:
         ordering = ["display_order"]
@@ -162,7 +158,6 @@ class DisplaySubtype(
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
-    description = MarkdownField(blank=True)
     display_type = models.ForeignKey(
         DisplayType,
         on_delete=models.CASCADE,
@@ -196,7 +191,6 @@ class Cabinet(
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
-    description = MarkdownField(blank=True)
 
     class Meta:
         ordering = ["display_order"]
@@ -225,7 +219,6 @@ class GameFormat(
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
-    description = MarkdownField(blank=True)
 
     class Meta:
         ordering = ["display_order"]
@@ -259,7 +252,6 @@ class RewardType(
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
-    description = MarkdownField(blank=True)
 
     class Meta:
         ordering = ["display_order", "name"]
@@ -330,7 +322,6 @@ class Tag(
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
-    description = MarkdownField(blank=True)
 
     class Meta:
         ordering = ["display_order"]
@@ -385,7 +376,6 @@ class CreditRole(
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
-    description = MarkdownField(blank=True)
 
     machine_models: models.ManyToManyField[MachineModel, Credit] = (
         models.ManyToManyField(

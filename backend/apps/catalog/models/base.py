@@ -7,6 +7,7 @@ from typing import ClassVar, Self
 from django.db import models
 
 from apps.core.models import (
+    DescribedModel,
     LifecycleManager,
     LifecycleStatusModel,
     LinkableModel,
@@ -63,16 +64,19 @@ class AliasModel(models.Model):
         return self.value
 
 
-class CatalogModel(LinkableModel, LifecycleStatusModel, ClaimControlledModel):
+class CatalogModel(
+    DescribedModel, LinkableModel, LifecycleStatusModel, ClaimControlledModel
+):
     """Abstract marker for top-level catalog entities.
 
-    Combines URL-addressability (``LinkableModel``), claim-controlled
-    lifecycle status (``LifecycleStatusModel``), and claim-driven display
-    fields (``ClaimControlledModel``). Used to distinguish catalog-specific
-    code paths (e.g. ``ingest_pindata``, soft-delete wire format) that must
-    not widen to other ``LinkableModel`` subclasses.
+    Combines a long-form ``description`` (``DescribedModel``),
+    URL-addressability (``LinkableModel``), claim-controlled lifecycle
+    status (``LifecycleStatusModel``), and claim-driven display fields
+    (``ClaimControlledModel``). Used to distinguish catalog-specific code
+    paths (e.g. ``ingest_pindata``, soft-delete wire format) that must not
+    widen to other ``LinkableModel`` subclasses.
 
-    Concrete subclasses inherit all three capabilities transitively and do
+    Concrete subclasses inherit all four capabilities transitively and do
     not relist them in their own bases. Each concrete subclass must still
     carry its own ``status_valid()`` constraint in ``Meta`` because Django
     does not inherit abstract-parent constraints when a concrete model

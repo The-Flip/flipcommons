@@ -24,9 +24,8 @@ from apps.core.pagination import NamedPageNumberPagination
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import RichTextSchema
 
 from ..cache import get_cached_response, manufacturers_all_key, set_cached_response
 from ..models import (
@@ -54,12 +53,12 @@ from .images import (
     media_prefetch,
     serialize_uploaded_media,
 )
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
+    CatalogDetailSchema,
     ClaimPatchSchema,
     CorporateEntityLocationSchema,
     EntityRef,
-    LinkableDetailSchema,
     RelatedTitleSchema,
 )
 from .titles import _dedup_facet_dicts
@@ -108,9 +107,8 @@ class ManufacturerPersonSchema(Schema):
     roles: list[str] = []
 
 
-class ManufacturerDetailSchema(LinkableDetailSchema):
+class ManufacturerDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     year_start: int | None = None
     year_end: int | None = None
     country: str | None = None
@@ -178,7 +176,7 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
         name=mfr.name,
         public_id=mfr.public_id,
         slug=mfr.slug,
-        description=build_rich_text(mfr, "description", active_claims(mfr)),
+        description=describe(mfr),
         year_start=min(year_starts) if year_starts else None,
         year_end=max(year_ends) if year_ends else None,
         logo_url=mfr.logo_url,

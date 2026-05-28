@@ -16,9 +16,8 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import RichTextSchema
 
 from ..models import (
     CatalogModel,
@@ -40,13 +39,13 @@ from .helpers import (
     serialize_locations,
 )
 from .manufacturers import manufacturers_router
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
+    CatalogDetailSchema,
     CorporateEntityClaimPatchSchema,
     CorporateEntityLocationSchema,
     EntityCreateInputSchema,
     EntityRef,
-    LinkableDetailSchema,
     RelatedTitleSchema,
 )
 
@@ -65,9 +64,8 @@ class CorporateEntityListItemSchema(Schema):
     locations: list[CorporateEntityLocationSchema] = []
 
 
-class CorporateEntityDetailSchema(LinkableDetailSchema):
+class CorporateEntityDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     manufacturer: EntityRef
     year_start: int | None = None
     year_end: int | None = None
@@ -110,7 +108,7 @@ def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
         name=ce.name,
         public_id=ce.public_id,
         slug=ce.slug,
-        description=build_rich_text(ce, "description", active_claims(ce)),
+        description=describe(ce),
         manufacturer=EntityRef(
             name=ce.manufacturer.name, public_id=ce.manufacturer.public_id
         ),

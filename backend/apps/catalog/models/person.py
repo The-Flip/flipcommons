@@ -7,7 +7,6 @@ from django.core.validators import MaxValueValidator, MinValueValidator, RegexVa
 from django.db import models
 from django.db.models.functions import Lower
 
-from apps.core.markdown import MarkdownField
 from apps.core.models import (
     SluggedModel,
     TimeStampedModel,
@@ -48,7 +47,6 @@ class Person(
     link_sort_order = 40
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
-    description = MarkdownField(blank=True)
 
     # Wikidata cross-reference — direct field, not a claim
     wikidata_id = models.CharField(

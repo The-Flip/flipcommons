@@ -9,7 +9,6 @@ from django.contrib.contenttypes.fields import GenericRelation
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
-from apps.core.markdown import MarkdownField
 from apps.core.models import (
     SluggedModel,
     TimeStampedModel,
@@ -135,8 +134,6 @@ class MachineModel(
         blank=True,
         help_text="Original model if this is a remake (resolved from claims).",
     )
-
-    description = MarkdownField(blank=True)
 
     # Core filterable fields
     corporate_entity = models.ForeignKey(

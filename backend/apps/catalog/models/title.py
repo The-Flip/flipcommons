@@ -8,7 +8,6 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models.functions import Coalesce, Greatest
 
-from apps.core.markdown import MarkdownField
 from apps.core.models import (
     BoundedTextField,
     SluggedModel,
@@ -74,7 +73,6 @@ class Title(
     )
     name = models.CharField(max_length=300, validators=[validate_no_mojibake])
     slug = models.SlugField(max_length=300, unique=True)
-    description = MarkdownField(blank=True)
     franchise = models.ForeignKey(
         "Franchise",
         on_delete=models.PROTECT,

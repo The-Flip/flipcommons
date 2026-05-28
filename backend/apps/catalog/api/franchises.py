@@ -17,9 +17,8 @@ from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import RichTextSchema
 
 from ..models import Franchise, MachineModel, Title
 from ._typing import HasTitleCount
@@ -27,8 +26,8 @@ from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .helpers import serialize_title_ref
 from .images import fetch_title_media_map
-from .rich_text import build_rich_text
-from .schemas import ClaimPatchSchema, LinkableDetailSchema, TitleRef
+from .rich_text import describe
+from .schemas import CatalogDetailSchema, ClaimPatchSchema, TitleRef
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -41,9 +40,8 @@ class FranchiseListItemSchema(Schema):
     title_count: int = 0
 
 
-class FranchiseDetailSchema(LinkableDetailSchema):
+class FranchiseDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     titles: list[TitleRef]
 
 
@@ -110,7 +108,7 @@ def _serialize_franchise_detail(franchise: Franchise) -> FranchiseDetailSchema:
         name=franchise.name,
         public_id=franchise.public_id,
         slug=franchise.slug,
-        description=build_rich_text(franchise, "description", active_claims(franchise)),
+        description=describe(franchise),
         titles=[
             serialize_title_ref(t, min_rank=min_rank, media_by_model=media_by_model)
             for t in titles_list

@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from html import unescape
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import nh3
 from django.db import models
@@ -22,11 +22,9 @@ from django.utils.safestring import mark_safe
 from markdown_it import MarkdownIt
 
 from apps.core.markdown.field import get_markdown_fields
-from apps.core.wikilinks import (
-    LinkType,
-    get_enabled_link_types,
-    get_patterns,
-)
+
+if TYPE_CHECKING:
+    from apps.core.wikilinks import LinkType
 
 # CommonMark-compliant markdown parser.
 # - linkify: auto-link bare URLs during parsing (structure-aware, won't
@@ -147,6 +145,8 @@ def render_all_links(
             callback append structured dicts to this list (one per unique
             resolved object).
     """
+    from apps.core.wikilinks import get_enabled_link_types, get_patterns
+
     for lt in get_enabled_link_types():
         pats = get_patterns(lt)
         if lt.public_id_field is not None:

@@ -43,7 +43,7 @@ from apps.media.helpers import all_media
 from apps.media.models import EntityMedia
 from apps.media.schemas import MediaRenditionsSchema
 from apps.media.storage import build_public_url, build_storage_key
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
@@ -54,7 +54,6 @@ from apps.provenance.rate_limits import (
 from apps.provenance.schemas import (
     ChangeSetInputSchema,
     ReviewLinkSchema,
-    RichTextSchema,
 )
 
 from ..cache import get_cached_response, set_cached_response, titles_all_key
@@ -92,14 +91,14 @@ from .machine_models import (
     _model_detail_qs,
     _serialize_model_detail,
 )
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
+    CatalogDetailSchema,
     CreditSchema,
     EntityCreateInputSchema,
     EntityRef,
     GameplayFeatureRef,
-    LinkableDetailSchema,
     SoftDeleteBlockedSchema,
     TitleClaimPatchSchema,
     TitleDeletePreviewSchema,
@@ -186,12 +185,11 @@ class AggregatedMediaSchema(Schema):
     source_model: EntityRef
 
 
-class TitleDetailSchema(LinkableDetailSchema):
+class TitleDetailSchema(CatalogDetailSchema):
     slug: str
     opdb_id: str | None = None
     fandom_page_id: int | None = None
     abbreviations: list[str] = []
-    description: RichTextSchema = RichTextSchema()
     needs_review: bool = False
     needs_review_notes: str = ""
     review_links: list[ReviewLinkSchema] = []
@@ -621,8 +619,6 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
         pm = _model_detail_qs().get(slug=machines[0].public_id)
         model_detail = _serialize_model_detail(pm)
 
-    description = build_rich_text(title, "description", active_claims(title))
-
     return TitleDetailSchema(
         name=title.name,
         public_id=title.public_id,
@@ -630,7 +626,7 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
         opdb_id=title.opdb_id,
         fandom_page_id=title.fandom_page_id,
         abbreviations=[a.value for a in title.abbreviations.all()],
-        description=description,
+        description=describe(title),
         needs_review=title.needs_review,
         needs_review_notes=title.needs_review_notes,
         review_links=review_links,

@@ -10,6 +10,8 @@ from django.db import models
 from django.db.models.functions import Now
 from django.utils.text import slugify
 
+from apps.core.markdown import MarkdownField
+
 
 class TimeStampedModel(models.Model):
     """Abstract base adding created_at / updated_at timestamps."""
@@ -140,6 +142,23 @@ class LifecycleStatusModel(models.Model):
     # statement either loses the ``[Self]`` subscript or crashes the django-stubs
     # plugin under multiple inheritance, so we keep the assignment form.
     objects: ClassVar[LifecycleManager[Self]] = LifecycleManager()  # pyright: ignore[reportInvalidTypeForm]
+
+    class Meta:
+        abstract = True
+
+
+# ---------------------------------------------------------------------------
+# DescribedModel
+# ---------------------------------------------------------------------------
+
+
+class DescribedModel(models.Model):
+    """Adds a long-form markdown ``description`` field.
+
+    Inherit on any model that needs a description.
+    """
+
+    description = MarkdownField(blank=True)
 
     class Meta:
         abstract = True
