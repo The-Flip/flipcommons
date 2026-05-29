@@ -27,18 +27,17 @@ type Manufacturer = {
 
 type ChildRef = {
   name: string;
-  slug: string;
-  location_path: string;
+  public_id: string;
   location_type: string;
   manufacturer_count: number;
 };
 
-type AncestorRef = { name: string; slug: string; location_path: string };
+type AncestorRef = { name: string; public_id: string };
 
 type Profile = {
   name: string;
   slug: string;
-  location_path: string;
+  public_id: string;
   location_type: string | null;
   manufacturer_count: number;
   ancestors: AncestorRef[];
@@ -56,22 +55,20 @@ function renderLayout(profile: Profile) {
 const ROOT: Profile = {
   name: '',
   slug: '',
-  location_path: '',
+  public_id: '',
   location_type: null,
   manufacturer_count: 4,
   ancestors: [],
   children: [
     {
       name: 'United States',
-      slug: 'usa',
-      location_path: 'usa',
+      public_id: 'usa',
       location_type: 'country',
       manufacturer_count: 3,
     },
     {
       name: 'Netherlands',
-      slug: 'netherlands',
-      location_path: 'netherlands',
+      public_id: 'netherlands',
       location_type: 'country',
       manufacturer_count: 1,
     },
@@ -82,15 +79,14 @@ const ROOT: Profile = {
 const COUNTRY: Profile = {
   name: 'United States',
   slug: 'usa',
-  location_path: 'usa',
+  public_id: 'usa',
   location_type: 'country',
   manufacturer_count: 3,
   ancestors: [],
   children: [
     {
       name: 'Illinois',
-      slug: 'il',
-      location_path: 'usa/il',
+      public_id: 'usa/il',
       location_type: 'state',
       manufacturer_count: 3,
     },
@@ -101,12 +97,12 @@ const COUNTRY: Profile = {
 const CITY: Profile = {
   name: 'Chicago',
   slug: 'chicago',
-  location_path: 'usa/il/chicago',
+  public_id: 'usa/il/chicago',
   location_type: 'city',
   manufacturer_count: 2,
   ancestors: [
-    { name: 'United States', slug: 'usa', location_path: 'usa' },
-    { name: 'Illinois', slug: 'il', location_path: 'usa/il' },
+    { name: 'United States', public_id: 'usa' },
+    { name: 'Illinois', public_id: 'usa/il' },
   ],
   children: [],
   manufacturers: [],

@@ -9,8 +9,7 @@ import {
 function child(name: string, type: string): LocationChild {
   return {
     name,
-    slug: name.toLowerCase(),
-    location_path: name.toLowerCase(),
+    public_id: name.toLowerCase(),
     location_type: type,
     manufacturer_count: 0,
   };
@@ -22,7 +21,6 @@ function profile(overrides: Partial<LocationDetail>): LocationDetail {
     public_id: '',
     last_modified: '2026-01-01T00:00:00Z',
     slug: '',
-    location_path: '',
     location_type: null,
     description: { text: '', plain: '', html: '', citations: [], attribution: null },
     aliases: [],

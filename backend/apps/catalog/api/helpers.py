@@ -162,7 +162,7 @@ def _location_ancestors(loc: Location) -> list[CorporateEntityLocationAncestorRe
         ancestors.append(
             CorporateEntityLocationAncestorRef(
                 display_name=current.short_name or current.name,
-                location_path=current.location_path,
+                public_id=current.location_path,
             )
         )
         current = current.parent
@@ -175,10 +175,9 @@ def serialize_locations(
     """Serialize CorporateEntityLocation rows with ancestor chains."""
     return [
         CorporateEntityLocationSchema(
-            location_path=cel.location.location_path,
+            public_id=cel.location.location_path,
             location_type=cel.location.location_type,
             display_name=cel.location.short_name or cel.location.name,
-            slug=cel.location.slug,
             ancestors=_location_ancestors(cel.location),
         )
         for cel in entity.locations.all()

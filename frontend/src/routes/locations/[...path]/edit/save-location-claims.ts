@@ -27,5 +27,5 @@ export async function saveLocationClaims(
   }
 
   await invalidateAll();
-  return { ok: true, updatedSlug: data?.location_path ?? publicId };
+  return { ok: true, updatedSlug: data?.public_id ?? publicId };
 }

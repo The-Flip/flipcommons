@@ -74,7 +74,7 @@
       <LocationEditorSwitch
         sectionKey={section.key}
         initialData={profile}
-        publicId={profile.location_path}
+        publicId={profile.public_id}
         bind:editorRef
         onsaved={handleSaved}
         onerror={(msg) => (editError = msg)}

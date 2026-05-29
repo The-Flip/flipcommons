@@ -6,7 +6,7 @@
 
   let { data } = $props();
   let profile = $derived<LocationDetailSchema>(data.profile);
-  let parentPath = $derived(profile.location_path);
+  let parentPath = $derived(profile.public_id);
   let expected = $derived(profile.expected_child_type);
   let entityLabel = $derived(expected ? childLabelFor(expected) : 'Location');
 </script>

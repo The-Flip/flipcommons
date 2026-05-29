@@ -343,22 +343,21 @@ class CreditSchema(Schema):
 
 class CorporateEntityLocationAncestorRef(Schema):
     """Narrowed ancestor row in :class:`CorporateEntityLocationSchema.ancestors`
-    — omits ``slug``/``location_type`` because ancestors render as a
-    breadcrumb, not as links.
+    — omits ``location_type`` because ancestors render as a breadcrumb, not as
+    links. ``public_id`` is the location's ``location_path``.
     """
 
     display_name: str
-    location_path: str
+    public_id: str
 
 
 class CorporateEntityLocationSchema(Schema):
-    """A corporate entity's location plus its ancestor chain. The location
-    itself is linkable (``slug``, ``location_type``); ancestors use the
-    narrower :class:`CorporateEntityLocationAncestorRef`.
+    """A corporate entity's location plus its ancestor chain. ``public_id`` is
+    the location's ``location_path``; ancestors use the narrower
+    :class:`CorporateEntityLocationAncestorRef`.
     """
 
-    location_path: str
+    public_id: str
     location_type: str
     display_name: str
-    slug: str
     ancestors: list[CorporateEntityLocationAncestorRef] = []

@@ -25,7 +25,7 @@ describe('saveLocationClaims', () => {
   });
 
   it('PATCHes the locations claims endpoint with public_id (not slug) as the path param', async () => {
-    PATCH.mockResolvedValueOnce({ data: { location_path: 'usa/il/chicago' }, error: undefined });
+    PATCH.mockResolvedValueOnce({ data: { public_id: 'usa/il/chicago' }, error: undefined });
 
     const result = await saveLocationClaims('usa/il/chicago', {
       fields: { description: 'Windy City' },
@@ -48,7 +48,7 @@ describe('saveLocationClaims', () => {
   });
 
   it('forwards aliases payloads', async () => {
-    PATCH.mockResolvedValueOnce({ data: { location_path: 'usa' }, error: undefined });
+    PATCH.mockResolvedValueOnce({ data: { public_id: 'usa' }, error: undefined });
 
     const result = await saveLocationClaims('usa', {
       aliases: ['United States', 'America'],
@@ -62,7 +62,7 @@ describe('saveLocationClaims', () => {
   });
 
   it('forwards top-level divisions payloads (country-only field)', async () => {
-    PATCH.mockResolvedValueOnce({ data: { location_path: 'usa' }, error: undefined });
+    PATCH.mockResolvedValueOnce({ data: { public_id: 'usa' }, error: undefined });
 
     const result = await saveLocationClaims('usa', {
       divisions: ['state', 'city'],

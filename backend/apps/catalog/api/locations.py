@@ -49,21 +49,18 @@ class LocationManufacturerSchema(Schema):
 
 class LocationChildRef(Schema):
     name: str
-    slug: str
-    location_path: str
+    public_id: str
     location_type: str
     manufacturer_count: int = 0
 
 
 class LocationAncestorRef(Schema):
     name: str
-    slug: str
-    location_path: str
+    public_id: str
 
 
 class LocationDetailSchema(CatalogDetailSchema):
     slug: str
-    location_path: str
     location_type: str | None = None
     # Server-derived label for the next tier of children (e.g. "state",
     # "city"). ``None`` when divisions are missing or exhausted; the
@@ -217,8 +214,7 @@ def _ancestors_of(path: str, nodes: dict[str, _LocationNode]) -> list[_LocationN
 def _to_child_ref(node: _LocationNode) -> LocationChildRef:
     return LocationChildRef(
         name=node.name,
-        slug=node.slug,
-        location_path=node.location_path,
+        public_id=node.location_path,
         location_type=node.location_type,
         manufacturer_count=len(node.manufacturer_pks),
     )
@@ -296,7 +292,6 @@ def _get_location_detail(location_path: str) -> LocationDetailSchema:
                 default=timezone.now(),
             ),
             slug="",
-            location_path="",
             location_type=None,
             # Top-level "+ New …" creates a country; the form has its
             # own divisions input so no derivation is needed here.
@@ -327,7 +322,6 @@ def _get_location_detail(location_path: str) -> LocationDetailSchema:
         public_id=location_path,
         last_modified=node.last_modified,
         slug=node.slug,
-        location_path=location_path,
         location_type=node.location_type,
         expected_child_type=expected_child_type,
         description=node.description,
@@ -337,7 +331,7 @@ def _get_location_detail(location_path: str) -> LocationDetailSchema:
         aliases=list(node.aliases),
         manufacturer_count=len(node.manufacturer_pks),
         ancestors=[
-            LocationAncestorRef(name=a.name, slug=a.slug, location_path=a.location_path)
+            LocationAncestorRef(name=a.name, public_id=a.location_path)
             for a in ancestors
         ],
         children=[_to_child_ref(c) for c in children],

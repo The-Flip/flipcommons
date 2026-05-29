@@ -7,7 +7,6 @@ const BASE_LOCATION = {
   public_id: 'usa',
   last_modified: '2026-01-01T00:00:00Z',
   slug: 'usa',
-  location_path: 'usa',
   location_type: 'country',
   expected_child_type: 'state',
   short_name: 'USA',
