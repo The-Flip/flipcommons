@@ -11,9 +11,9 @@ export interface SchemaOrgInfo<TSchema> {
    * function when the type depends on entity data (e.g. Location).
    */
   types: readonly string[] | ((entity: TSchema) => readonly string[]);
-  /** Maps API field names → schema.org property names. Not consumed yet. */
+  /** Maps API field names → schema.org property names. */
   fieldMap?: Partial<Record<keyof TSchema, string>>;
-  /** Maps API FK/M2M field names → schema.org property names. Not consumed yet. */
+  /** Maps API FK/M2M field names → schema.org property names (emitted as `@id` cross-references). */
   relationshipMap?: Partial<Record<keyof TSchema, string>>;
 }
 

@@ -66,7 +66,7 @@ describe('manufacturer layout', () => {
 
   it('renders the action bar without the legacy tab navigation on the detail route', () => {
     const { body } = render(Harness, {
-      props: { data: { profile: MOCK_MANUFACTURER } },
+      props: { data: { profile: MOCK_MANUFACTURER, jsonLd: {} } },
     });
 
     expect(body).toContain('History');
@@ -78,7 +78,7 @@ describe('manufacturer layout', () => {
     pageState.url = new URL('http://localhost:5173/manufacturers/williams/media');
 
     const { body } = render(Harness, {
-      props: { data: { profile: MOCK_MANUFACTURER } },
+      props: { data: { profile: MOCK_MANUFACTURER, jsonLd: {} } },
     });
 
     expect(body).toContain('>Back<');
@@ -89,7 +89,7 @@ describe('manufacturer layout', () => {
     pageState.url = new URL('http://localhost:5173/manufacturers/williams/sources');
 
     const { body } = render(Harness, {
-      props: { data: { profile: MOCK_MANUFACTURER } },
+      props: { data: { profile: MOCK_MANUFACTURER, jsonLd: {} } },
     });
 
     expect(body).toContain('Child content');
@@ -101,7 +101,7 @@ describe('manufacturer layout', () => {
     pageState.url = new URL('http://localhost:5173/manufacturers/williams/edit-history');
 
     const { body } = render(Harness, {
-      props: { data: { profile: MOCK_MANUFACTURER } },
+      props: { data: { profile: MOCK_MANUFACTURER, jsonLd: {} } },
     });
 
     expect(body).toContain('Child content');
@@ -112,7 +112,7 @@ describe('manufacturer layout', () => {
     authState.isAuthenticated = true;
 
     const { body } = render(Harness, {
-      props: { data: { profile: MOCK_MANUFACTURER } },
+      props: { data: { profile: MOCK_MANUFACTURER, jsonLd: {} } },
     });
 
     expect(body).toContain('Links');

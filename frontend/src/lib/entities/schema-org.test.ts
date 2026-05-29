@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { buildSchemaOrgNode, buildEntityJsonLd, type EntityBaseFacts } from './schema-org';
-import type { EntityInfo } from './types';
-import { creditRole, theme } from './index';
+import type { EntityInfo, SchemaOrgInfo } from './types';
+import { creditRole, manufacturer, system, theme } from './index';
 
 const ORIGIN = 'https://flipcommons.org';
 const PAGE = new URL(`${ORIGIN}/themes/fantasy`);
@@ -20,6 +20,24 @@ function info(
   entityType: EntityInfo<EntityBaseFacts>['entityType'] = 'theme',
 ): EntityInfo<EntityBaseFacts> {
   return { entityType, schemaOrg };
+}
+
+/**
+ * Build a node from a loosely-typed entity + schemaOrg, so tests can exercise
+ * `fieldMap`/`relationshipMap` keys (e.g. `logo_url`, `manufacturer`) that
+ * aren't on `EntityBaseFacts`. The casts are localized to this harness.
+ */
+function buildNode(
+  ent: Record<string, unknown>,
+  schemaOrg: SchemaOrgInfo<Record<string, unknown>>,
+  entityType: EntityInfo<EntityBaseFacts>['entityType'] = 'theme',
+  page: URL = PAGE,
+) {
+  return buildSchemaOrgNode(
+    ent as unknown as EntityBaseFacts,
+    { entityType, schemaOrg } as unknown as EntityInfo<EntityBaseFacts>,
+    page,
+  );
 }
 
 describe('buildSchemaOrgNode', () => {
@@ -108,6 +126,90 @@ describe('buildEntityJsonLd', () => {
   });
 });
 
+describe('fieldMap', () => {
+  test('maps source fields to their schema.org property names', () => {
+    const node = buildNode(
+      { ...entity(), logo_url: 'https://cdn.example/logo.png', website: 'https://stern.example' },
+      { types: ['Brand'], fieldMap: { logo_url: 'logo', website: 'url' } },
+      'manufacturer',
+    );
+    expect(node.logo).toBe('https://cdn.example/logo.png');
+    expect(node.url).toBe('https://stern.example');
+  });
+
+  test('null or empty source values are dropped', () => {
+    const node = buildNode(
+      { ...entity(), logo_url: null, website: '' },
+      { types: ['Brand'], fieldMap: { logo_url: 'logo', website: 'url' } },
+      'manufacturer',
+    );
+    expect(node).not.toHaveProperty('logo');
+    expect(node).not.toHaveProperty('url');
+  });
+});
+
+describe('relationshipMap (single FK)', () => {
+  test('emits a single @id ref using the target entity_type_plural', () => {
+    const node = buildNode(
+      { ...entity({ public_id: 'spike-2' }), manufacturer: { name: 'Stern', public_id: 'stern' } },
+      { types: ['CreativeWork'], relationshipMap: { manufacturer: 'producer' } },
+      'system',
+    );
+    // /manufacturers/, not /systems/ — the target's plural, not the subject's.
+    expect(node.producer).toEqual({ '@id': `${ORIGIN}/manufacturers/stern` });
+  });
+
+  test('a null ref drops the property', () => {
+    const node = buildNode(
+      { ...entity(), manufacturer: null },
+      { types: ['CreativeWork'], relationshipMap: { manufacturer: 'producer' } },
+      'system',
+    );
+    expect(node).not.toHaveProperty('producer');
+  });
+});
+
+describe('relationshipMap (many)', () => {
+  test('emits an array of @id refs', () => {
+    const node = buildNode(
+      {
+        ...entity(),
+        parents: [
+          { name: 'Solid State', public_id: 'solid-state' },
+          { name: 'Electromechanical', public_id: 'em' },
+        ],
+      },
+      { types: ['DefinedTerm'], relationshipMap: { parents: 'isPartOf' } },
+      'theme',
+    );
+    expect(node.isPartOf).toEqual([
+      { '@id': `${ORIGIN}/themes/solid-state` },
+      { '@id': `${ORIGIN}/themes/em` },
+    ]);
+  });
+
+  test('an empty list drops the property', () => {
+    const node = buildNode(
+      { ...entity(), parents: [] },
+      { types: ['DefinedTerm'], relationshipMap: { parents: 'isPartOf' } },
+      'theme',
+    );
+    expect(node).not.toHaveProperty('isPartOf');
+  });
+});
+
+describe('relationshipMap guard', () => {
+  test('mapping a non-relationship (scalar) field throws', () => {
+    expect(() =>
+      buildNode(
+        { ...entity() },
+        { types: ['DefinedTerm'], relationshipMap: { name: 'producer' } },
+        'theme',
+      ),
+    ).toThrow(/not a declared relationship/);
+  });
+});
+
 describe('per-model declarations', () => {
   test('theme is a DefinedTerm', () => {
     expect(theme.entityType).toBe('theme');
@@ -117,5 +219,21 @@ describe('per-model declarations', () => {
   test('credit-role is an Occupation', () => {
     expect(creditRole.entityType).toBe('credit-role');
     expect(creditRole.schemaOrg.types).toEqual(['Occupation']);
+  });
+
+  test('manufacturer is a Brand with a logo/url fieldMap', () => {
+    expect(manufacturer.entityType).toBe('manufacturer');
+    expect(manufacturer.schemaOrg.types).toEqual(['Brand']);
+    expect(manufacturer.schemaOrg.fieldMap).toEqual({ logo_url: 'logo', website: 'url' });
+  });
+
+  test('system is a CreativeWork mapping manufacturer → producer', () => {
+    expect(system.entityType).toBe('system');
+    expect(system.schemaOrg.types).toEqual(['CreativeWork']);
+    expect(system.schemaOrg.relationshipMap).toEqual({ manufacturer: 'producer' });
+  });
+
+  test('theme maps parents → isPartOf', () => {
+    expect(theme.schemaOrg.relationshipMap).toEqual({ parents: 'isPartOf' });
   });
 });

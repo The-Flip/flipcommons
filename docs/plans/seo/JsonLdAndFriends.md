@@ -31,7 +31,7 @@ We emit the full set of OG tags: `og:site_name`, `og:type`, `og:title`, `og:desc
 
 Each layout hand-picks the relevant fields:
 
-- `og:type`: Person/User layouts emit `profile`, static pages emit `website`, default is `article`. See [Open Graph page types](#open-graph-page-types).
+- `og:type`: Person layouts emit `profile`, static pages emit `website`, default is `article`. User pages are CSR-only today and still use a hand-written `<title>` rather than `MetaTags`; see [CSR pages: out of scope](#csr-pages-out-of-scope).
 - `og:image:alt` is phrased to match what the image actually is: Model/Title emit `` `${name} pinball machine` ``, Person `` `Photo of ${name}` ``, Manufacturer `` `${name} logo` ``. CorporateEntity and System emit no image, so no alt.
 
 Gaps:
@@ -61,9 +61,14 @@ As a public data project, JSON-LD should be a key part of our public data strate
 
 ✅ DONE — static pages (`/`, `/about`, `/about/people`, `/privacy`, `/terms`, `/licensing`) emit JSON-LD via the [`JsonLd.svelte`](frontend/src/lib/components/JsonLd.svelte) component and [`jsonld.ts`](frontend/src/lib/components/jsonld.ts) helpers (`jsonLdGraph`, `webSite`, `pageNode`, `breadcrumbList`).
 
-✅ DONE — the catalog's taxonomy detail pages emit JSON-LD: Theme, GameplayFeature, TechnologyGeneration, TechnologySubgeneration, DisplayType, DisplaySubtype, Cabinet, GameFormat, RewardType, Tag and CreditRole. Each graph contains the entity node plus a page-scoped `BreadcrumbList`. Rendering is gated to the detail route, not `/edit-history` or `/sources`.
+✅ DONE — the catalog's taxonomy detail pages emit JSON-LD: Theme, GameplayFeature, TechnologyGeneration, TechnologySubgeneration, DisplayType, DisplaySubtype, Cabinet, GameFormat, RewardType, Tag and CreditRole. Each graph contains the entity node plus a page-scoped `BreadcrumbList`. Rendering is confined to the detail route, not `/edit-history` or `/sources`.
 
-TODO — richer non-taxonomy entity detail pages (Title, MachineModel, Manufacturer, CorporateEntity, Person/User, Location, Series, Franchise, System) and entity meta-pages.
+✅ DONE — Manufacturer and System detail pages. Manufacturer emits a `Brand` node carrying `logo` and `url`; System emits a `CreativeWork` node with a `producer` cross-reference to its manufacturer. Theme and GameplayFeature now also emit `isPartOf` cross-references to their parent terms.
+
+TODO:
+
+- The remaining richer entity detail pages (Title, MachineModel, CorporateEntity, Person/User, Location, Series, Franchise) and entity meta-pages.
+- Still to widen the assembler for: `dateModified` (from the sitemap's shared lastmod definition — `_sitemap_lastmod`, which `Title` aggregates from child Models — not raw `updated_at`), `sameAs` (external IDs), images sourced from `primary_image`, `fieldMap` value transforms (date coercion), and Single-Model Title dual-node composition. The crawlable/linkable omit-branch is tracked separately — it lands with `User` (see [Linkable, crawlable, and the `@id` decision](#linkable-crawlable-and-the-id-decision)).
 
 ### Sitemap
 
@@ -106,7 +111,8 @@ This project currently uses `super-sitemap` to generate the sitemap, which doesn
 | Page                                                            | `og:type` |
 | --------------------------------------------------------------- | --------- |
 | Home (`/`) and legal pages (`/privacy`, `/terms`, `/licensing`) | `website` |
-| Person and User detail pages                                    | `profile` |
+| Person detail pages                                             | `profile` |
+| User detail pages, once SSR + `MetaTags` land                   | `profile` |
 | Everything else                                                 | `article` |
 
 "Everything else" includes all other catalog entity detail pages (Title, MachineModel, Manufacturer, CorporateEntity, Location, Series, Franchise, System, Theme, all taxonomy classes), all entity meta-pages (`/edit-history`, `/sources`), and the prose static pages (`/about`, `/about/people`).
@@ -115,11 +121,9 @@ Legal pages get `website` rather than `article` because they aren't articles in 
 
 `article` isn't a perfect semantic match for any of those (a Manufacturer isn't an article, a taxonomy term isn't an article), but it's the closest of OG's available choices and it's at least less wrong than calling everything a `website`. The Person → profile case is the one genuine fit and the one place dynamic typing pays off — Facebook and LinkedIn render profile-card previews differently from article previews, so designer/artist pages get a small but visible improvement when shared on social.
 
-No per-entity declaration in the per-model TS files. The mapping is a central function keyed off whether the page is the home page, whether the entity's `schemaOrg.types` contains `Person`, and a default of `article`. About 10 lines.
+We don't use `product` (Facebook's extension) for MachineModel — it's commerce-oriented (price, availability, SKU) and we're not selling machines.
 
-✅ DONE (static + Person/User layouts) — `MetaTags.svelte` accepts an `ogType` prop with `article` default; static pages and `/people/[slug]` set the right value explicitly. Remaining catalog entity layouts (Title, MachineModel, Manufacturer, etc.) still inherit the `article` default — correct per the table, no further work needed there.
-
-We deliberately don't use `product` (Facebook's extension) for MachineModel — it's commerce-oriented (price, availability, SKU) and we're not selling machines.
+The og:type mapping is a single central rule keyed off the page, not a per-entity declaration in the per-model TS files — don't look for an `ogType` there.
 
 ## Architecture
 
@@ -136,16 +140,16 @@ Some come from the Django model (backend), some from the per-model TS file ([see
 - **Canonical URL** — `LinkableModel.get_absolute_url()` (backend; already in API responses)
 - **Display name** — `LinkableModel.name` (backend)
 - **Description** — `RichTextSchema.plain`, a backend-flattened prose projection of the entity's markdown description. Frontend display consumers truncate it per surface: `<meta name="description">` ~155 chars (Google SERP display limit), `og:description` ~200 chars (Facebook/LinkedIn preview cards), `twitter:description` ~200 chars (when emitted; usually cascades from OG). JSON-LD `description` is **not truncated** — machine-readable consumers (LLMs, search engines, linked-data crawlers) benefit from the full text and have no display constraint.
-- **Primary image** — [`MediaSupportedModel`](#mediasupportedmodel)`.primary_image`: primary image of primary category. Emitted as the `display` rendition's absolute URL via `build_public_url(build_storage_key(asset.uuid, "display"))` on the backend; shipped as a URL string on the API response. Same URL used across JSON-LD `image`, OG `og:image`, Twitter `twitter:image` and sitemap `<image:loc>`. Aspect-ratio crops per consumer are a [Bunny-Optimizer follow-up](#bunny-optimizer-driven-aspect-ratio-crops); v1 uses one rendition for all.
+- **Image URL** — current detail schemas expose image fields per entity (`hero_image_url` for Title/Model, `logo_url` for Manufacturer, `photo_url` for Person). These are constructed absolute URL strings from the media pipeline and are already suitable for OG / JSON-LD consumers. A future [`MediaSupportedModel.primary_image`](#mediasupportedmodel) helper could consolidate image selection for entities with own media, but it is not implemented yet; Title's image still comes from its child-Model aggregation, and CorporateEntity currently omits an image.
 
   **Deliberate exception to "presentation lives frontend-side":** the choice of which rendition to emit (`display` vs `thumb` vs `original`) is a presentation decision, but it's encoded in the Python `build_public_url(... "display")` call rather than in TS. The CDN base URL (`MEDIA_PUBLIC_BASE_URL`) is server-side config that isn't (and shouldn't be) exposed to the frontend, so URL construction has to happen backend. We could ship the asset's UUID + rendition_type and have TS build the URL — but that means duplicating the base URL into frontend env, and the storage layer's URL conventions naturally belong with the storage layer. Net: one small backend presentational decision (rendition selection), justified by where the URL construction primitive lives.
 
   **Frontend static assets** (`/og-default.png`, future auto-composited share images stored under `static/`) are a separate path — absolutize via `lib/utils.absoluteAssetUrl(path, pageUrl)`, which routes through SvelteKit's `asset()` and the URL constructor so a configured CDN base or empty-base local dev both work. Backend-served images already arrive absolute and skip this helper.
 
-- **Last modified** — `TimeStampedModel.updated_at` (backend)
+- **Last modified** — the same value the sitemap emits as `<lastmod>`: `LinkableModel.sitemap_queryset()`'s `_sitemap_lastmod` annotation (backend), **not** raw `updated_at`. The default annotation is `updated_at`, but overrides widen it — `Title` aggregates `Greatest(updated_at, Max(machine_models__updated_at))` so a Title's freshness reflects edits to its child Models. JSON-LD `dateModified` must source from this same definition so the two never disagree.
 - **Schema.org types** — declared in the per-model TS file's `schemaOrg.types` field. Static array for most entities; per-row function for Location. See [Per-model frontend info](#per-model-frontend-info).
 - **Cross-references** — declared in the per-model TS file's `schemaOrg.relationshipMap`. Each declared FK / M2M attribute carries **only** its schema.org property name (`corporate_entity → brand`, `title → exampleOfWork`, `themes → genre`, etc.) — that name is presentation vocabulary Django can't express. The referent's canonical URL is _not_ declared here; it's constructed from the codegen'd relationship shape (see [Related-entity URLs](#related-entity-urls-from-entity-metats)). The frontend metadata builder walks the declared set and emits an `@id` reference to the referent's canonical URL under the declared property. Undeclared relationships are not emitted.
-- **External-system identity** — small hand-edited TS constant mapping specific field names (`wikidata_id`, `opdb_id`, `ipdb_id`, `opdb_manufacturer_id`, `ipdb_manufacturer_id`) to URL templates. Field-name-based, not prefix-based — `ipdb_rating` is a number stored on our model, not an ID, and won't accidentally match. Each present, non-null field becomes a `sameAs` entry.
+- **External-system identity** — TODO. The intended design is a small hand-edited TS constant mapping specific field names (`wikidata_id`, `opdb_id`, `ipdb_id`, `opdb_manufacturer_id`, `ipdb_manufacturer_id`) to URL templates. Field-name-based, not prefix-based — `ipdb_rating` is a number stored on our model, not an ID, and won't accidentally match. Once implemented, each present, non-null field becomes a `sameAs` entry.
 
 ### Backend vs frontend responsibilities
 
@@ -153,18 +157,19 @@ All metadata assembly — JSON-LD, head, OG, Twitter — lives in the frontend. 
 
 #### Backend's job
 
-Serve raw entity facts on the entity detail API response: `name`, `description` (`RichTextSchema`, including backend-rendered `.plain`), `hero_image_url` (the `display` rendition's absolute URL), `updated_at` (ISO 8601), FK / M2M references as public-id-bearing refs (`{name, public_id}` — no `href`; the frontend constructs canonical URLs, see [Related-entity URLs](#related-entity-urls-from-entity-metats)), external-ID scalars (`ipdb_id`, `opdb_id`, `wikidata_id`, etc.). Mostly what's already shipped today; see [API response audit](#api-response-audit) below.
+Serve raw entity facts on the entity detail API response: `name`, `description` (`RichTextSchema`, including backend-rendered `.plain`), any per-entity image URL field (`hero_image_url`, `logo_url`, `photo_url`, etc.), FK / M2M references as public-id-bearing refs (`{name, public_id}` — no `href`; the frontend constructs canonical URLs, see [Related-entity URLs](#related-entity-urls-from-entity-metats)), and external-ID scalars where a schema already exposes them (`ipdb_id`, `opdb_id`, etc.). `updated_at`, `wikidata_id`, and a normalized image field are not universal detail-schema facts yet; see [API response audit](#api-response-audit) below.
 
 #### Frontend's job
 
-- **Hold per-model presentation declarations** in [`frontend/src/lib/entities/<model-name>.ts`](#per-model-frontend-info) — one file per Django model, containing the schema.org types, field map, relationship map, and any other purely-presentation per-model info. ✅ DONE for the taxonomy tranche's 11 entities.
+- **Hold per-model presentation declarations** in [`frontend/src/lib/entities/<model-name>.ts`](#per-model-frontend-info) — one file per Django model, containing the schema.org types, field map, relationship map, and any other purely-presentation per-model info. ✅ DONE for the taxonomy tranche's 11 entities, plus `manufacturer.ts` and `system.ts`.
 - **Assemble the SchemaOrgNode** for each entity via a generic `buildSchemaOrgNode(entity, modelInfo)` function that walks the declarations against the entity facts.
-  - ✅ DONE for the minimal no-relation shape (`@type`, `@id`, `name`, untruncated `description.plain`);
-  - TODO to widen for field maps, relationship maps, images and `sameAs`.
+  - ✅ DONE for `@type`, `@id`, `name` and untruncated `description.plain`;
+  - ✅ DONE for the `fieldMap` walk (identity copy of a scalar field to its schema.org property, skipping null/empty — e.g. `logo_url → logo`) and the `relationshipMap` walk (cross-reference `@id`s: a single object for an FK, an array for a `many: true` M2M, dropped when empty);
+  - TODO to widen for `sameAs` (external IDs), images sourced from `primary_image` (today an image rides `fieldMap` under its per-entity field name, e.g. `logo_url`), and `fieldMap` value transforms (date coercion — see [Value transformations](#value-transformations)).
 - **Compose the `@graph`** per page — pick which nodes go in (entity node always; Model node for single-Model Titles when `data.model_detail` is present; `BreadcrumbList`; `CollectionPage` for meta-pages).
 - **Apply route-specific page typing** — entity detail pages emit the entity node; meta-pages emit `CollectionPage` with `about` → entity; static pages emit `AboutPage` / `WebPage`.
 - **Assemble head / OG / Twitter tags** (already happens today in [`MetaTags.svelte`](frontend/src/lib/components/MetaTags.svelte) and [`./meta-tags.ts`](frontend/src/lib/components/meta-tags.ts)). Truncation, site-name suffix, canonical URL absolutization, OG-type bucket, Twitter-card decision — all presentation transforms with knowledge that lives frontend-side.
-- **Maintain the External-IDs registry** as a small hand-edited TS constant (`{wikidata_id: "https://...", opdb_id: "https://...", ...}`). Stable, small.
+- **Maintain the External-IDs registry** as a small hand-edited TS constant (`{wikidata_id: "https://...", opdb_id: "https://...", ...}`) once `sameAs` lands. Stable, small, but not implemented yet.
 
 **Two cross-cutting disciplines** apply to every JSON-LD emission, including the model-driven entity-page assembler:
 
@@ -188,7 +193,7 @@ To build the URL the assembler needs two facts about the target, both **derivabl
 - which entity type a given FK / M2M field targets — `field.related_model.entity_type`
 - that entity type's URL prefix — `entity_type_plural`, already emitted
 
-Both ride the existing `export_entity_meta` → [`entity-meta.ts`](frontend/src/lib/entities/entity-meta.ts) channel (today it ships `entity_type`, `entity_type_plural`, `label`, `label_plural` per entity). The per-entity record gains a nested `relationships` map so the whole shape stays cohesive — one object per entity, indexed `ENTITY_META[entityType].relationships[field]`:
+Both ride the existing `export_entity_meta` → [`entity-meta.ts`](frontend/src/lib/entities/entity-meta.ts) channel, which ships `entity_type`, `entity_type_plural`, labels, media categories, and the relationship map per entity. The per-entity record keeps the shape cohesive — one object per entity, indexed `ENTITY_META[entityType].relationships[field]`:
 
 ```ts
 export const ENTITY_META = {
@@ -282,9 +287,11 @@ The two flags drive the emission decision:
 | ✓        | ✗         | the `@id` anyway — a valid global identifier that silently starts dereferencing once the page goes SSR — or omit. The choice is the assembler's, not baked into the data |
 | ✗        | —         | omit — no URL to point at                                                                                                                                                |
 
+⏸️ DEFERRED (implementation) — every cross-reference target in the wired tranche is a crawlable SSR catalog-detail page, so the `linkable ✓ / crawlable ✗` row never fires yet. `buildSchemaOrgNode` therefore emits `{"@id": …}` for **any linkable target** (any target with an `ENTITY_META` entry), full stop — `isEntityDetailCrawlable` and the omit-branch are not yet built. They land when `User` becomes a `LinkableModel` and the first non-crawlable target (`user`) appears.
+
 **Cross-references are an `@id` or nothing; v1 never emits a name-only blank node here.** A useful blank node would carry the referent's `@type` (`{"@type": "Brand", "name": "Stern"}`), but that type lives in the _referent's_ `schemaOrg.types` — neither `relationshipMap` (property name only) nor `ENTITY_META` (no schema.org types) has it, so a typed blank node would mean cross-loading the referent's `EntityInfo` via the `index.ts` aggregator. v1 has no case that needs it (catalog targets are crawlable → `@id`; `user` is omitted pre-SSR), so the generic walk emits `@id` or omits, full stop, and the cross-load is deferred until a concrete case demands it. (The page-scoped blank nodes elsewhere — team members on `/about/people` — are a different path: the _page_ knows the type and composes them directly, no cross-load.)
 
-**Why a declared relation can't fail to resolve.** The hazard this forecloses: a `relationshipMap` entry whose target has no `ENTITY_META` entry, leaving the assembler to read `relationships[field]` as `undefined` and crash at render. The `LinkableModel` boundary plus the widened entry set removes it structurally — every linkable target has an entry, so any relation the assembler is asked to emit resolves. The one remaining mistake worth a light guard is a `relationshipMap` key that names a _scalar_ field rather than a relation; that's a different, rarer error and a small assertion covers it.
+**Why a declared relation can't fail to resolve.** The hazard this forecloses: a `relationshipMap` entry whose target has no `ENTITY_META` entry, leaving the assembler to read `relationships[field]` as `undefined` and crash at render. The `LinkableModel` boundary plus the widened entry set removes it structurally — every linkable target has an entry, so any relation the assembler is asked to emit resolves. The one remaining mistake worth a light guard is a `relationshipMap` key that names a _scalar_ field rather than a relation; ✅ DONE — `buildSchemaOrgNode` throws a descriptive `Error` when a declared `relationshipMap` key has no matching `_meta`-backed relationship.
 
 **`user` is the worked example of the split, and is currently mis-declared.** It is linkable in truth — `/users/[username]` exists — but `User(AbstractUser)` is _not_ a `LinkableModel` ([accounts/models.py](backend/apps/accounts/models.py)), and its detail route sits in `SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS` (CSR, not crawlable). So today a `created_by → user` reference can't be emitted at all (no entry). Once `User` is promoted to `LinkableModel` the reference becomes emittable as an `@id` (linkable ✓, crawlable ✗ → the assembler may emit the `@id` or omit per the table) — never a blank node, per the rule above. **Prerequisite for any User cross-reference: promote `User` to `LinkableModel`** — which also dovetails with the sitemap's existing "User would need to be a `LinkableModel`" note. Until then, User refs are simply absent.
 
@@ -300,7 +307,7 @@ The frontend assembler needs raw values, not presentation-shaped ones. Audit fin
 
   **The fix is a single shared base, `LinkableDetailSchema(Schema) { name: str; public_id: str }`**, that every top-level catalog detail schema inherits. `public_id` is sourced from `LinkableModel.public_id` (`slug` for most entities, `location_path` for Location). The assembler reads `entity.public_id` with zero branching, and a **required** `public_id` on the base forces every hand-constructed serializer call to pass it (enforcing sourcing, not just declaration). This base is the backend twin of the frontend's `EntityBaseFacts` contract — both require `public_id`, not `slug`. It's a real shared invariant (uniform `str`, no subclass re-narrows it), so it sits on the right side of the [ApiDesign.md](../../ApiDesign.md) shape-only-base smell test, alongside the blessed `DeletePreviewBase` precedent.
 
-  **Deliberately scoped to `LinkableModel`, not the wider model-base hierarchy.** Do _not_ add parallel `MediaSupportedDetailSchema` / `AliasDetailSchema` / etc. mirroring the Django bases in [DataModeling.md](../../DataModeling.md). The model bases encode behavior + persistence (claims control, soft-delete, wikilink autocomplete, prefetch contracts) — most contribute zero serialized fields, and the one that looks like it'd map, media, actively _mismatches_: image presence on the wire does not track `MediaSupportedModel` membership (`Title` isn't media-supported yet ships `hero_image_url` via child-Model aggregation; `CorporateEntity` is the omit-or-migrate fork). A `MediaSupportedDetailSchema` base would have a membership list contradicting the model's, i.e. a base subclasses fight. `LinkableModel`'s `{name, public_id}` is the _only_ grouping that's identical on both the model and the wire. Per-entity-varying fields (images, aliases, external IDs) stay declared per-schema where they apply. `updated_at` (universal, from `TimeStampedModel`) is a future addition to the base if/when the assembler consumes `dateModified` — not now.
+  **Deliberately scoped to `LinkableModel`, not the wider model-base hierarchy.** Do _not_ add parallel `MediaSupportedDetailSchema` / `AliasDetailSchema` / etc. mirroring the Django bases in [DataModeling.md](../../DataModeling.md). The model bases encode behavior + persistence (claims control, soft-delete, wikilink autocomplete, prefetch contracts) — most contribute zero serialized fields, and the one that looks like it'd map, media, actively _mismatches_: image presence on the wire does not track `MediaSupportedModel` membership (`Title` isn't media-supported yet ships `hero_image_url` via child-Model aggregation; `CorporateEntity` is the omit-or-migrate fork). A `MediaSupportedDetailSchema` base would have a membership list contradicting the model's, i.e. a base subclasses fight. `LinkableModel`'s `{name, public_id}` is the _only_ grouping that's identical on both the model and the wire. Per-entity-varying fields (images, aliases, external IDs) stay declared per-schema where they apply. A last-modified field is a future addition to the base if/when the assembler consumes `dateModified` — not now, and **not** raw `updated_at`: it must serialize the sitemap's `_sitemap_lastmod` value (see [Last modified](#information-sources)) so JSON-LD freshness and sitemap `<lastmod>` share one definition, including `Title`'s child-Model aggregation.
 
 Completed response-widening for the taxonomy tranche: the backend-owned `description.plain` projection.
 
@@ -310,6 +317,7 @@ Response/codegen prerequisites for richer entity pages:
 - ✅ DONE (backend) — `LinkableDetailSchema` base (`name` + `public_id`) introduced; all 11 named top-level detail schemas + `TaxonomySchema` inherit it, with `public_id` sourced from `LinkableModel.public_id` (`location_path` for Location, `slug` for the rest). A model-driven parity test pins that every linkable entity's detail response carries `public_id`. Deliberately scoped to `LinkableModel`, not the wider model-base hierarchy.
 - ✅ DONE (frontend) — `EntityBaseFacts` requires `public_id`, and `buildSchemaOrgNode` builds the `@id` from `entity.public_id` instead of `entity.slug`. No-op for the 11 wired taxonomy entities (`public_id == slug`); the assembler test pins the divergent Location case (`public_id` = `usa/il/chicago`) so the full path is emitted, not a collapsed segment.
 - ⏸️ DEFERRED — `wikidata_id` serialization on `PersonDetailSchema` / `ManufacturerDetailSchema`. The fields exist on the models but are unpopulated (see External IDs above); we widen the schemas and the JSON-LD `sameAs` together, when a Wikidata ingest starts filling them.
+- ⏸️ DEFERRED — a last-modified field on `LinkableDetailSchema`, sourced from the sitemap's `_sitemap_lastmod` (not raw `updated_at`), serialized when the assembler starts emitting `dateModified`. Sharing the sitemap definition keeps `<lastmod>` and `dateModified` in lockstep and reuses `Title`'s child-Model aggregation; if we ever refine lastmod for content-change accuracy (the claims-churn question), both consumers inherit the fix.
 
 ### Per-model frontend info
 
@@ -317,7 +325,7 @@ Each Django model has a companion TypeScript file at `frontend/src/lib/entities/
 
 A Django model's full definition therefore spans two files: the Django class (persistence, validation, URLs, claim machinery) and its companion TS file (schema.org info, and future buckets for any other purely-presentation per-model concern). See [ModelDrivenMetadata.md](docs/plans/model_driven_metadata/ModelDrivenMetadata.md) for the broader principle.
 
-✅ DONE for the taxonomy tranche: `frontend/src/lib/entities/types.ts`, `frontend/src/lib/entities/schema-org.ts`, the 11 taxonomy per-model files and `index.ts` exist. The current assembler intentionally supports only the no-relation entity shape needed by these pages: `schemaOrg.types`, canonical `@id`, `name` and untruncated `description.plain`.
+✅ DONE for the taxonomy tranche: `frontend/src/lib/entities/types.ts`, `frontend/src/lib/entities/schema-org.ts`, the 11 taxonomy per-model files and `index.ts` exist, plus `manufacturer.ts` and `system.ts`. Beyond the no-relation shape (`schemaOrg.types`, canonical `@id`, `name`, untruncated `description.plain`), the assembler now also walks `fieldMap` (scalar field → schema.org property, identity copy) and `relationshipMap` (FK/M2M → cross-reference `@id`s). Still unimplemented: `sameAs` and `fieldMap` value transforms (see [Value transformations](#value-transformations)).
 
 **Key naming:** `fieldMap` and `relationshipMap` keys are the entity field names as they appear on the API response — which is the project's snake_case (Django Ninja schemas don't rename fields). `release_year`, not `releaseYear`. Type-checked via `Partial<Record<keyof TSchema, string>>` against the codegen'd schema, so a serializer convention change (or a renamed Django field) breaks the per-model TS file at compile.
 
@@ -433,7 +441,7 @@ frontend/src/lib/entities/
 └── index.ts            (optional aggregator)
 ```
 
-✅ DONE files from the taxonomy tranche: `theme.ts`, `gameplay-feature.ts`, `technology-generation.ts`, `technology-subgeneration.ts`, `display-type.ts`, `display-subtype.ts`, `cabinet.ts`, `game-format.ts`, `reward-type.ts`, `tag.ts`, `credit-role.ts`, plus the shared files listed above. The non-taxonomy files in this layout remain future work.
+✅ DONE files from the taxonomy tranche: `theme.ts`, `gameplay-feature.ts`, `technology-generation.ts`, `technology-subgeneration.ts`, `display-type.ts`, `display-subtype.ts`, `cabinet.ts`, `game-format.ts`, `reward-type.ts`, `tag.ts`, `credit-role.ts`, plus the shared files listed above. Also `manufacturer.ts` and `system.ts` (the first non-taxonomy entities). The remaining non-taxonomy files in this layout remain future work.
 
 **Consumer access:** route layouts import their specific model directly. A generic consumer (rare today) can use the `index.ts` aggregator for lookup by `entity_type`.
 
@@ -447,9 +455,11 @@ Field values shipped raw from the backend often need shape-shifting before they'
 
 The target-property-aware dispatch matters because the source type alone can't determine the right coercion: an integer field could be a year, a count, or an external ID, and the target property tells the assembler which shape to emit.
 
-**`relationshipMap` is walked separately:** for each declared FK / M2M attribute, the assembler reads the referenced public-id-bearing ref from the API response — a single object for an FK, an array when the relationship shape says `many: true` — constructs the referent's canonical URL from `ref.public_id` and the codegen'd relationship shape (see [Related-entity URLs](#related-entity-urls-from-entity-metats)), and emits `{"@id": "https://flipcommons.org/..."}` under the declared schema.org property. Unlike `fieldMap`, this doesn't go through value transforms — the relationship value is always an `@id` reference, never a scalar.
+⏸️ DEFERRED (implementation) — none of the wired entities (Manufacturer, System, the taxonomy classes) ships a value that needs coercion, so the current `buildSchemaOrgNode` `fieldMap` walk is an **identity copy** (skip null/`undefined`/`''`, assign as-is). The target-property dispatch above is the documented design but is built alongside its first real consumer — `MachineModel.release_year` (`number → "1992"`) — rather than shipped dead and untested.
 
-✅ DONE — glossary entities (`Theme`, `GameplayFeature`, all taxonomy classes) don't need any field-mapped properties — name and description are everything schema.org wants from them. Their per-model TS files omit `fieldMap` and `relationshipMap`.
+**✅ DONE — `relationshipMap` is walked separately:** for each declared FK / M2M attribute, the assembler reads the referenced public-id-bearing ref from the API response — a single object for an FK, an array when the relationship shape says `many: true` — constructs the referent's canonical URL from `ref.public_id` and the codegen'd relationship shape (see [Related-entity URLs](#related-entity-urls-from-entity-metats)), and emits `{"@id": "https://flipcommons.org/..."}` under the declared schema.org property. Unlike `fieldMap`, this doesn't go through value transforms — the relationship value is always an `@id` reference, never a scalar.
+
+✅ DONE — most glossary entities (the flat taxonomy classes) don't need any field-mapped properties — name and description are everything schema.org wants from them; their per-model TS files omit both `fieldMap` and `relationshipMap`. The two hierarchical ones, `Theme` and `GameplayFeature`, declare a self-referential `relationshipMap` (`parents → isPartOf`) and otherwise omit `fieldMap`.
 
 ### Schema.org IDs
 
@@ -538,7 +548,7 @@ Target shape for every SSR entity detail page: each page emits two top-level nod
 - The entity itself as a typed node (`Game`, `Person`, `Organization`, etc.) with `@id` cross-references to related entities and `sameAs` links to external IDs. No `WebPage` wrapper — the type is the thing, not the medium.
 - A `BreadcrumbList` node carrying the page's hierarchical trail. Google's BreadcrumbList rich result replaces the URL in SERPs with a readable trail, measurably lifting click-through. Example chains: Title page → `Home › Godzilla`; Model page → `Home › Godzilla › Godzilla Pro` (Model's parent is its Title; there's no `/models` listing page, and we skip `/titles` since it's CSR-only and an empty shell to crawlers). The JSON-LD chain is richer than the visible UI breadcrumb — that's allowed by Google's policies as long as every item in the chain is a real, accessible page reflecting the site's genuine hierarchy.
 
-✅ DONE for taxonomy detail pages: Theme, GameplayFeature, TechnologyGeneration, TechnologySubgeneration, DisplayType, DisplaySubtype, Cabinet, GameFormat, RewardType, Tag and CreditRole now emit the entity node plus a `Home › {name}` `BreadcrumbList`. These no-relation pages intentionally omit cross-references, images and `sameAs` until the richer entity-page tranche widens the assembler.
+✅ DONE for taxonomy detail pages: Theme, GameplayFeature, TechnologyGeneration, TechnologySubgeneration, DisplayType, DisplaySubtype, Cabinet, GameFormat, RewardType, Tag and CreditRole now emit the entity node plus a `Home › {name}` `BreadcrumbList`. Most omit cross-references, images and `sameAs`; `Theme` and `GameplayFeature` additionally emit `parents → isPartOf` cross-references. ✅ DONE for Manufacturer (`Brand`, with `logo`/`url` via `fieldMap`) and System (`CreativeWork`, with `manufacturer → producer`). Images and `sameAs` await later tranches.
 
 ### Entity meta-pages
 

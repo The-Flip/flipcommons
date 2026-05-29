@@ -4,6 +4,7 @@
   import { resolve } from '$app/paths';
   import { formatYearRange, websiteHostname } from '$lib/utils';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import JsonLd from '$lib/components/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import ExpandableSidebarList from '$lib/components/ExpandableSidebarList.svelte';
   import LocationLink from '$lib/components/LocationLink.svelte';
@@ -133,6 +134,10 @@
   image={mfr.logo_url}
   imageAlt={mfr.logo_url ? `${mfr.name} logo` : undefined}
 />
+
+{#if isDetail && data.jsonLd}
+  <JsonLd data={data.jsonLd} />
+{/if}
 
 {#if isFocusMode}
   {@render children()}

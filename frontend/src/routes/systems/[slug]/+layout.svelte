@@ -5,6 +5,7 @@
   import { SITE_NAME } from '$lib/constants';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import JsonLd from '$lib/components/JsonLd.svelte';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
@@ -110,6 +111,10 @@
 </script>
 
 <MetaTags title={system.name} description={metaDescription} url={page.url.href} />
+
+{#if isDetail && data.jsonLd}
+  <JsonLd data={data.jsonLd} />
+{/if}
 
 {#if isFocusMode}
   {@render children()}

@@ -3,5 +3,5 @@ import type { EntityInfo } from './types';
 
 export const gameplayFeature: EntityInfo<GameplayFeatureDetailSchema> = {
   entityType: 'gameplay-feature',
-  schemaOrg: { types: ['DefinedTerm'] },
+  schemaOrg: { types: ['DefinedTerm'], relationshipMap: { parents: 'isPartOf' } },
 };

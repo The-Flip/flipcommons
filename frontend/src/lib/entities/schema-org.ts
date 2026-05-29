@@ -1,11 +1,11 @@
 import type { RichTextSchema } from '$lib/api/schema';
-import { ENTITY_META } from '$lib/entities/entity-meta';
+import { ENTITY_META, type EntityRelationship } from '$lib/entities/entity-meta';
 import { jsonLdGraph, breadcrumbList, absolutize, type JsonLdNode } from '$lib/components/jsonld';
 import type { EntityInfo } from './types';
 
 /**
  * The minimal entity facts every schema.org node needs. Widens in a later
- * tranche (images, external IDs).
+ * tranche (external IDs / `sameAs`).
  *
  * `public_id` is the entity's uniform URL identity (`slug` for most entities,
  * `location_path` for Location) — the backend twin of `LinkableDetailSchema`.
@@ -15,6 +15,11 @@ export interface EntityBaseFacts {
   name: string;
   public_id: string;
   description: RichTextSchema;
+}
+
+/** The minimal shape of a relationship referent: refs ship `{ name, public_id }`. */
+interface RefLike {
+  public_id: string;
 }
 
 /**
@@ -39,6 +44,42 @@ export function buildSchemaOrgNode<T extends EntityBaseFacts>(
   };
   const desc = entity.description.plain.trim();
   if (desc) node.description = desc;
+
+  // fieldMap: copy scalar API fields to their schema.org property names.
+  // Iterate the map's own keys (not Object.entries, which widens the key to
+  // `string` and breaks the typed `entity[key]` read).
+  const fieldMap: Partial<Record<keyof T, string>> = info.schemaOrg.fieldMap ?? {};
+  for (const key of Object.keys(fieldMap) as (keyof T)[]) {
+    const targetProp = fieldMap[key];
+    if (targetProp === undefined) continue;
+    const value = entity[key];
+    if (value === null || value === undefined || value === '') continue;
+    node[targetProp] = value;
+  }
+
+  // relationshipMap: emit cross-reference `@id`s for FK/M2M fields.
+  const relationshipMap: Partial<Record<keyof T, string>> = info.schemaOrg.relationshipMap ?? {};
+  const rels: Readonly<Record<string, EntityRelationship>> = meta.relationships;
+  for (const field of Object.keys(relationshipMap) as (keyof T)[]) {
+    const property = relationshipMap[field];
+    if (property === undefined) continue;
+    const rel = rels[field as string];
+    if (rel === undefined) {
+      throw new Error(
+        `relationshipMap for '${info.entityType}' maps '${String(field)}' to '${property}', but it is not a declared relationship`,
+      );
+    }
+    const raw = entity[field];
+    const list: readonly unknown[] = Array.isArray(raw) ? raw : [raw];
+    const refs = list.filter((ref): ref is RefLike => ref !== null && ref !== undefined);
+    if (refs.length === 0) continue;
+    const targetPlural = ENTITY_META[rel.entity_target_type].entity_type_plural;
+    const ids = refs.map((ref) => ({
+      '@id': absolutize(pageUrl, `/${targetPlural}/${ref.public_id}`),
+    }));
+    node[property] = rel.many ? ids : ids[0];
+  }
+
   return node;
 }
 

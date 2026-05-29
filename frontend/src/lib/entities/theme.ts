@@ -3,5 +3,5 @@ import type { EntityInfo } from './types';
 
 export const theme: EntityInfo<ThemeDetailSchema> = {
   entityType: 'theme',
-  schemaOrg: { types: ['DefinedTerm'] },
+  schemaOrg: { types: ['DefinedTerm'], relationshipMap: { parents: 'isPartOf' } },
 };

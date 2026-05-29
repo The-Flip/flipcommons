@@ -38,7 +38,10 @@ describe('systems detail SSR route', () => {
       params: { slug: 'wpc-95' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ profile: MOCK_DATA });
+    expect(result).toEqual({
+      profile: MOCK_DATA,
+      jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
+    });
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/system/wpc-95');
@@ -59,7 +62,7 @@ describe('systems detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: MOCK_DATA },
+        data: { profile: MOCK_DATA, jsonLd: {} },
       },
     });
 
