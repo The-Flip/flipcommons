@@ -82,9 +82,4 @@ describe('model +layout.server jsonLd', () => {
     } satisfies ModelDetailSchema;
     expect(await crumbNames(sameName)).toEqual(['Home', 'Godzilla', 'Godzilla']);
   });
-
-  it('omits the Title crumb entirely when the model has no title', async () => {
-    const orphan = { ...BASE_MODEL, title: null } satisfies ModelDetailSchema;
-    expect(await crumbNames(orphan)).toEqual(['Home', 'Medieval Madness (Williams)']);
-  });
 });

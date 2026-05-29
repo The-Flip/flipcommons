@@ -10,10 +10,10 @@ export const load: LayoutServerLoad = async (event) => {
   // Breadcrumb: Home › Title › Model.
   // There's no Titles (plural): the /titles listing is CSR (excluded).
   // There's no Models (plural): there's no /models listing, only titles.
-  const crumbs: Crumb[] = [{ label: 'Home', href: '/' }];
-  if (profile.title) {
-    crumbs.push({ label: profile.title.name, href: `/titles/${profile.title.public_id}` });
-  }
+  const crumbs: Crumb[] = [
+    { label: 'Home', href: '/' },
+    { label: profile.title.name, href: `/titles/${profile.title.public_id}` },
+  ];
 
   return { profile, jsonLd: buildEntityJsonLd(profile, model, event.url, crumbs) };
 };

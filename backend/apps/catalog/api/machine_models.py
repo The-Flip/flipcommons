@@ -194,7 +194,7 @@ class ModelDetailSchema(CatalogDetailSchema):
     uploaded_media: list[UploadedMediaSchema] = []
     variant_features: list[str] = []
     variants: list[ModelVariantSchema] = []
-    title: EntityRef | None = None
+    title: EntityRef
     cabinet: EntityRef | None = None
     game_format: EntityRef | None = None
     display_subtype: EntityRef | None = None
@@ -494,11 +494,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
             ModelRef(name=r.name, public_id=r.public_id, year=r.year)
             for r in pm.remakes.all()
         ],
-        title=(
-            EntityRef(name=pm.title.name, public_id=pm.title.public_id)
-            if pm.title
-            else None
-        ),
+        title=EntityRef(name=pm.title.name, public_id=pm.title.public_id),
         cabinet=(
             EntityRef(name=pm.cabinet.name, public_id=pm.cabinet.public_id)
             if pm.cabinet

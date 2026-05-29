@@ -243,15 +243,13 @@
     <TaxonomyLinkSidebarSection heading="Franchise" basePath="/franchises" item={model.franchise} />
     <TaxonomyLinkSidebarSection heading="Series" basePath="/series" item={model.series} />
 
-    {#if model.title}
-      <SidebarSection heading="Parent Title">
-        <SidebarList>
-          <SidebarListItem>
-            <a href={resolve(`/titles/${model.title.public_id}`)}>{model.title.name}</a>
-          </SidebarListItem>
-        </SidebarList>
-      </SidebarSection>
-    {/if}
+    <SidebarSection heading="Parent Title">
+      <SidebarList>
+        <SidebarListItem>
+          <a href={resolve(`/titles/${model.title.public_id}`)}>{model.title.name}</a>
+        </SidebarListItem>
+      </SidebarList>
+    </SidebarSection>
 
     {#if model.variants.length > 0}
       <SidebarSection

@@ -49,6 +49,7 @@ const MODEL_DETAIL = {
   title_models: [],
   production_quantity: '',
   year: 1992,
+  title: { name: 'Doctor Who', public_id: 'doctor-who' },
 } satisfies ModelDetailSchema;
 
 function machine(name: string, public_id: string) {

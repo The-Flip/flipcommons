@@ -39,8 +39,6 @@ const MOCK_MANUFACTURER = {
   },
   year_start: 1985,
   year_end: 1999,
-  country: null,
-  headquarters: null,
   logo_url: null,
   website: 'https://williams.example',
   entities: [

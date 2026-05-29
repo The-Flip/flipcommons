@@ -16,7 +16,7 @@
   let manufacturerOptions = $derived.by(() => {
     const seen: Record<string, string> = {};
     for (const s of systems.data) {
-      if (s.manufacturer && !(s.manufacturer.public_id in seen)) {
+      if (!(s.manufacturer.public_id in seen)) {
         seen[s.manufacturer.public_id] = s.manufacturer.name;
       }
     }
@@ -27,7 +27,7 @@
 
   function filterByManufacturer(s: SystemRow): boolean {
     if (!manufacturerFilter) return true;
-    return s.manufacturer?.public_id === manufacturerFilter;
+    return s.manufacturer.public_id === manufacturerFilter;
   }
 </script>
 

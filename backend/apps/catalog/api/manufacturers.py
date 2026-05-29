@@ -111,8 +111,6 @@ class ManufacturerDetailSchema(CatalogDetailSchema):
     slug: str
     year_start: int | None = None
     year_end: int | None = None
-    country: str | None = None
-    headquarters: str | None = None
     logo_url: str | None = None
     website: str = ""
     entities: list[ManufacturerCorporateEntitySchema]

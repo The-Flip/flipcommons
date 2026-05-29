@@ -19,10 +19,7 @@
   const richTextState = createRichTextAccordionState();
 
   let yearsActive = $derived(formatYearRange(mfr.year_start, mfr.year_end));
-  let hasEntityLocations = $derived(mfr.entities.some((entity) => entity.locations.length > 0));
-  let hasCompanyDetails = $derived(
-    !!(yearsActive || mfr.entities.length > 0 || mfr.website || mfr.headquarters || mfr.country),
-  );
+  let hasCompanyDetails = $derived(!!(yearsActive || mfr.entities.length > 0 || mfr.website));
   let titlesHeading = $derived(`Titles (${mfr.titles.length})`);
   let systemsHeading = $derived(`Systems (${mfr.systems.length})`);
   let peopleHeading = $derived(`People (${mfr.persons.length})`);
@@ -77,13 +74,6 @@
               </li>
             {/each}
           </ul>
-        </div>
-      {/if}
-
-      {#if !hasEntityLocations && (mfr.headquarters || mfr.country)}
-        <div class="detail-block">
-          <h3>Location</h3>
-          <p>{[mfr.headquarters, mfr.country].filter(Boolean).join(', ')}</p>
         </div>
       {/if}
 

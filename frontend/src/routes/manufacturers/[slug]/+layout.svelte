@@ -90,7 +90,6 @@
     updateEditQuery(editing);
   });
 
-  let hasEntityLocations = $derived(mfr.entities.some((entity) => entity.locations.length > 0));
   let metaItems = $derived(yearsActive ? [{ text: yearsActive }] : []);
   let editSections: EditSectionMenuItem[] = $derived([
     ...MANUFACTURER_EDIT_SECTIONS.map((section) =>
@@ -189,14 +188,6 @@
             </SidebarListItem>
           {/each}
         </SidebarList>
-      </SidebarSection>
-    {/if}
-
-    {#if !hasEntityLocations && (mfr.headquarters || mfr.country)}
-      <SidebarSection heading="Location">
-        <p class="sidebar-value">
-          {[mfr.headquarters, mfr.country].filter(Boolean).join(', ')}
-        </p>
       </SidebarSection>
     {/if}
 

@@ -136,6 +136,7 @@ describe('title layout', () => {
         remakes: [],
         title_models: [],
         production_quantity: '',
+        title: { name: 'Doctor Who', public_id: 'doctor-who' },
       },
     } satisfies TitleDetailSchema;
 

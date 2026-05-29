@@ -62,7 +62,7 @@ from .schemas import (
 class SystemListItemSchema(Schema):
     name: str
     slug: str
-    manufacturer: EntityRef | None = None
+    manufacturer: EntityRef
     model_count: int = 0
 
 
@@ -72,7 +72,7 @@ class SystemCreateSchema(EntityCreateInputSchema):
 
 class SystemDetailSchema(CatalogDetailSchema):
     slug: str
-    manufacturer: EntityRef | None = None
+    manufacturer: EntityRef
     technology_subgeneration: EntityRef | None = None
     titles: list[RelatedTitleSchema]
     sibling_systems: list[EntityRef] = []
@@ -165,13 +165,9 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
         last_modified=system.last_modified,
         slug=system.slug,
         description=describe(system),
-        manufacturer=(
-            EntityRef(
-                name=system.manufacturer.name,
-                public_id=system.manufacturer.public_id,
-            )
-            if system.manufacturer
-            else None
+        manufacturer=EntityRef(
+            name=system.manufacturer.name,
+            public_id=system.manufacturer.public_id,
         ),
         technology_subgeneration=(
             EntityRef(
@@ -213,10 +209,8 @@ def list_all_systems(request: HttpRequest) -> list[SystemListItemSchema]:
         SystemListItemSchema(
             name=s.name,
             slug=s.slug,
-            manufacturer=(
-                EntityRef(name=s.manufacturer.name, public_id=s.manufacturer.public_id)
-                if s.manufacturer
-                else None
+            manufacturer=EntityRef(
+                name=s.manufacturer.name, public_id=s.manufacturer.public_id
             ),
             model_count=cast(HasModelCount, s).model_count,
         )

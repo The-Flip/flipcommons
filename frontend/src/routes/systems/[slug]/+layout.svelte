@@ -133,13 +133,11 @@
   {/snippet}
 
   {#snippet sidebar()}
-    {#if system.manufacturer}
-      <SidebarSection heading="Manufacturer">
-        <a href={resolve(`/manufacturers/${system.manufacturer.public_id}`)}
-          >{system.manufacturer.name}</a
-        >
-      </SidebarSection>
-    {/if}
+    <SidebarSection heading="Manufacturer">
+      <a href={resolve(`/manufacturers/${system.manufacturer.public_id}`)}
+        >{system.manufacturer.name}</a
+      >
+    </SidebarSection>
 
     {#if system.sibling_systems.length > 0}
       <SidebarSection heading="Other Systems By This Manufacturer">
