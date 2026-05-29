@@ -17,27 +17,39 @@ This is not just SEO. A catalog/encyclopedia site that emits consistent, address
 
 The original SEO primitives: `<title>`, `<meta name="description">` and `<link rel="canonical">`. These are still consumed by every search engine, browser tab, bookmark system and accessibility tool. Lowest fidelity but most universal.
 
-This project emits all three on entity detail pages. Each layout hand-picks the relevant fields (title, description, hero image, alt text) and passes them in. Listing pages emit `<title>` only (no description, no canonical) because they're CSR.
+Each layout hand-picks the relevant fields (title, description, hero image, alt text) and passes them in:
 
-✅ DONE — taxonomy, Series and Franchise detail layouts source their meta/OG descriptions from `RichTextSchema.plain` via `metaDescriptionFor(profile)`, so markdown syntax and `[[type:slug]]` reference tokens do not leak into machine-readable descriptions.
+- Listing pages emit `<title>` only (no description, no canonical) because they're CSR for now.
+- Detail pages emit all three.
+  - Taxonomy, Series and Franchise detail layouts source their meta/OG descriptions from `RichTextSchema.plain` via `metaDescriptionFor(profile)`, so markdown syntax and `[[type:slug]]` reference tokens do not leak into machine-readable descriptions.
 
 ### Open Graph
 
-Open Graph (OG) is de facto link-preview standard: Facebook, LinkedIn, iMessage, Slack, Discord, Bluesky, Mastodon (and Twitter as a fallback) all read OG.
+Open Graph (OG) is the de facto link-preview standard: Facebook, LinkedIn, iMessage, Slack, Discord, Bluesky, Mastodon (and Twitter as a fallback) all read OG. These are `<meta property="og:*">` tags.
 
-It uses `<meta property="og:*">` tags in `<head>`. Small fixed property set per page — `og:type`, `og:title`, `og:description`, `og:image`, `og:url`, `og:site_name`. `og:type` draws from a small vocabulary (`article`, `profile`, `website`, etc.).
+We emit the full set of OG tags: `og:site_name`, `og:type`, `og:title`, `og:description`, `og:url`, `og:image` and `og:image:alt`.
 
-This project emits `og:type`, `og:site_name`, `og:title`, `og:description`, `og:url`, `og:image` and `og:image:alt`. Remaining gaps:
+Each layout hand-picks the relevant fields:
 
-- ✅ DONE — `og:type` now per-page (see [Open Graph page types](#open-graph-page-types)); Person/User layouts emit `profile`, static pages emit `website`, default is `article`.
-- TODO — `og:image:alt` is built per-layout as `` `${entity.name} pinball machine` `` — wrong for Person, Manufacturer, CorporateEntity (a designer is not a pinball machine).
-- TODO — listing pages emit nothing (CSR; see [CSR pages: out of scope](#csr-pages-out-of-scope)).
+- `og:type`: Person/User layouts emit `profile`, static pages emit `website`, default is `article`. See [Open Graph page types](#open-graph-page-types).
+- `og:image:alt` is phrased to match what the image actually is: Model/Title emit `` `${name} pinball machine` ``, Person `` `Photo of ${name}` ``, Manufacturer `` `${name} logo` ``. CorporateEntity and System emit no image, so no alt.
+
+Gaps:
+
+- listing pages are currently CSR and therefore emit nothing (see [CSR pages: out of scope](#csr-pages-out-of-scope)).
 
 ### Twitter card
 
-`<meta name="twitter:*">` tags that Twitter uses to control previews on its site. Twitter cascades from OG when Twitter-specific tags are absent, so the only one worth emitting is `twitter:card`.
+Twitter uses `<meta name="twitter:*">` tags to control previews on its site. Twitter cascades from Open Graph when Twitter-specific tags are absent, so the only one worth emitting is `twitter:card`.
 
-The project already emits `twitter:card`. `twitterCardType()` selects `summary_large_image` when an image is present, else `summary`.
+The project emits `twitter:card`. Possible values:
+
+- `summary` — small square thumbnail beside title + description
+- `summary_large_image` — big full-width image above title + description (the rich, eye-catching one)
+- `player` — embedded video/audio player
+- `app` — mobile app install card
+
+We use `summary_large_image` when an image is present, else `summary`.
 
 TODO — once entity layouts migrate to [`MediaSupportedModel.primary_image`](#mediasupportedmodel), wire the image source through there instead of the per-layout `image` prop. Selection logic itself stays the same.
 
@@ -45,9 +57,11 @@ TODO — once entity layouts migrate to [`MediaSupportedModel.primary_image`](#m
 
 A JSON document inside `<script type="application/ld+json">` in `<head>`, using vocabularies from [schema.org](https://schema.org). Consumed by search engines for rich results and knowledge panels, by LLM crawlers for citation accuracy and by other databases linking in via `sameAs`. Each page emits a `@graph` of one or more typed nodes (`Game`, `Person`, `Organization`, etc.) with `@id` cross-references to related entities and `sameAs` to external IDs. The highest-fidelity representation — arbitrarily rich, nested and addressable.
 
+As a public data project, JSON-LD should be a key part of our public data strategy. We want to emit consistent, addressable, machine-readable JSON-LD to become a reference source on the open web — LLM crawlers cite it more accurately, other databases can link in, link previews on Discord and Reddit read as archival and authoritative.
+
 ✅ DONE — static pages (`/`, `/about`, `/about/people`, `/privacy`, `/terms`, `/licensing`) emit JSON-LD via the [`JsonLd.svelte`](frontend/src/lib/components/JsonLd.svelte) component and [`jsonld.ts`](frontend/src/lib/components/jsonld.ts) helpers (`jsonLdGraph`, `webSite`, `pageNode`, `breadcrumbList`).
 
-✅ DONE — taxonomy detail pages emit JSON-LD: Theme, GameplayFeature, TechnologyGeneration, TechnologySubgeneration, DisplayType, DisplaySubtype, Cabinet, GameFormat, RewardType, Tag (`DefinedTerm`) and CreditRole (`Occupation`). Each graph contains the entity node plus a page-scoped `BreadcrumbList`; descriptions come from backend `RichTextSchema.plain` and are not truncated. Rendering is gated to the detail route, not `/edit-history` or `/sources`.
+✅ DONE — the catalog's taxonomy detail pages emit JSON-LD: Theme, GameplayFeature, TechnologyGeneration, TechnologySubgeneration, DisplayType, DisplaySubtype, Cabinet, GameFormat, RewardType, Tag and CreditRole. Each graph contains the entity node plus a page-scoped `BreadcrumbList`. Rendering is gated to the detail route, not `/edit-history` or `/sources`.
 
 TODO — richer non-taxonomy entity detail pages (Title, MachineModel, Manufacturer, CorporateEntity, Person/User, Location, Series, Franchise, System) and entity meta-pages.
 
