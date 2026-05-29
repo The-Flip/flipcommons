@@ -1,7 +1,7 @@
 import type { CreditRoleDetailSchema } from '$lib/api/schema';
-import type { ModelFrontendInfo } from './types';
+import type { EntityInfo } from './types';
 
-export const creditRole: ModelFrontendInfo<CreditRoleDetailSchema> = {
+export const creditRole: EntityInfo<CreditRoleDetailSchema> = {
   entityType: 'credit-role',
   schemaOrg: { types: ['Occupation'] },
 };

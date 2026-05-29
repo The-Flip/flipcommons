@@ -6,7 +6,7 @@
  */
 
 import client from '$lib/api/client';
-import type { CatalogEntityKey } from '$lib/models/model-meta';
+import type { CatalogEntityKey } from '$lib/entities/entity-meta';
 import type { FieldConstraintSchema } from '$lib/api/schema';
 
 export type FieldConstraints = Record<string, FieldConstraintSchema>;

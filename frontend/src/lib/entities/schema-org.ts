@@ -1,7 +1,7 @@
 import type { RichTextSchema } from '$lib/api/schema';
-import { CATALOG_META } from '$lib/models/model-meta';
+import { ENTITY_META } from '$lib/entities/entity-meta';
 import { jsonLdGraph, breadcrumbList, absolutize, type JsonLdNode } from '$lib/components/jsonld';
-import type { ModelFrontendInfo } from './types';
+import type { EntityInfo } from './types';
 
 /**
  * The minimal entity facts every schema.org node needs. Widens in a later
@@ -26,12 +26,12 @@ export interface EntityBaseFacts {
  */
 export function buildSchemaOrgNode<T extends EntityBaseFacts>(
   entity: T,
-  info: ModelFrontendInfo<T>,
+  info: EntityInfo<T>,
   pageUrl: URL,
 ): JsonLdNode {
   const typeSpec = info.schemaOrg.types;
   const types = typeof typeSpec === 'function' ? typeSpec(entity) : typeSpec;
-  const meta = CATALOG_META[info.entityType];
+  const meta = ENTITY_META[info.entityType];
   const node: JsonLdNode = {
     '@type': types.length === 1 ? types[0] : [...types],
     '@id': absolutize(pageUrl, `/${meta.entity_type_plural}/${entity.public_id}`),
@@ -49,7 +49,7 @@ export function buildSchemaOrgNode<T extends EntityBaseFacts>(
  */
 export function buildEntityJsonLd<T extends EntityBaseFacts>(
   entity: T,
-  info: ModelFrontendInfo<T>,
+  info: EntityInfo<T>,
   pageUrl: URL,
 ): Record<string, unknown> {
   return jsonLdGraph([

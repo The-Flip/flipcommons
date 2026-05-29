@@ -28,7 +28,7 @@ import { isDeploymentSearchEngineIndexable } from '$lib/is-deployment-search-eng
 import { STATIC_LASTMOD } from '$lib/static-lastmod';
 import { stripRouteGroups, routeIdToRegex } from '$lib/sitemap-helpers';
 import { createServerClient } from '$lib/api/server';
-import { CATALOG_META, type CatalogEntityKey } from '$lib/models/model-meta';
+import { CATALOG_ENTITY_KEYS, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
 /**
  * Type guard for the `feed.kind` wire boundary. Django serializes
@@ -39,7 +39,7 @@ import { CATALOG_META, type CatalogEntityKey } from '$lib/models/model-meta';
  * dropped — same outcome as if `.get()` returned undefined.
  */
 function isCatalogEntityKey(kind: string): kind is CatalogEntityKey {
-  return kind in CATALOG_META;
+  return (CATALOG_ENTITY_KEYS as readonly string[]).includes(kind);
 }
 
 /**

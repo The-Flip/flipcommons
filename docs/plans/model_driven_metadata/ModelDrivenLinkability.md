@@ -226,11 +226,11 @@ The backend already made these endpoints model-agnostic via `register_entity_det
 
 ### Generate `[slug]/edit-history/` and `[slug]/sources/` boilerplate
 
-Each linkable entity must have these two subroutes ([`catalog-meta.test.ts`](../../../frontend/src/lib/api/catalog-meta.test.ts) enforces it). 19 entities × 2 subroutes × 2 files (`+page.server.ts` + `+page.svelte`) = ~76 files of pure boilerplate, varying only by entity-type string. The test's own comment acknowledges the cost: _"~10 lines of boilerplate per entity; the cost of forgetting is an invisible UX gap."_
+Each linkable entity must have these two subroutes ([`entity-meta.test.ts`](../../../frontend/src/lib/entities/entity-meta.test.ts) enforces it). 19 entities × 2 subroutes × 2 files (`+page.server.ts` + `+page.svelte`) = ~76 files of pure boilerplate, varying only by entity-type string. The test's own comment acknowledges the cost: _"~10 lines of boilerplate per entity; the cost of forgetting is an invisible UX gap."_
 
 Two options worth weighing:
 
-- **Code-gen** alongside `make codegen` — emit the wrapper files from `CATALOG_META`. Aligns with how `model-meta.ts` is already generated. Adds a generator to maintain.
+- **Code-gen** alongside `make codegen` — emit the wrapper files from `ENTITY_META`. Aligns with how `model-meta.ts` is already generated. Adds a generator to maintain.
 - **Lift the load into a shared `+layout.server.ts`** — the entity layout already runs `loadEntityDetail`; have it expose `loadEditHistory` / `loadSources` lazily so the subroute pages become a single `+page.svelte` referencing parent-layout data. Hits the SvelteKit caveat the existing test comment notes (parent-layout re-runs on subroute navigation), so this needs validation.
 
 ### Rename JS-side `slug` parameter to `publicId`

@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { MEDIA_CATEGORIES } from '../models/model-meta';
+import { ENTITY_META } from '$lib/entities/entity-meta';
 import { MAX_FILE_SIZE_BYTES, IMAGE_ACCEPT } from './media-api';
 
 describe('media-api constants', () => {
-  it('MEDIA_CATEGORIES.model has expected values', () => {
-    expect(MEDIA_CATEGORIES.model).toEqual(['backglass', 'playfield', 'cabinet', 'other']);
+  it('model media_categories has expected values', () => {
+    expect(ENTITY_META.model.media_categories).toEqual([
+      'backglass',
+      'playfield',
+      'cabinet',
+      'other',
+    ]);
   });
 
   it('MAX_FILE_SIZE_BYTES is 20 MB', () => {

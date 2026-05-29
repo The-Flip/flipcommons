@@ -1,7 +1,7 @@
 import type { ThemeDetailSchema } from '$lib/api/schema';
-import type { ModelFrontendInfo } from './types';
+import type { EntityInfo } from './types';
 
-export const theme: ModelFrontendInfo<ThemeDetailSchema> = {
+export const theme: EntityInfo<ThemeDetailSchema> = {
   entityType: 'theme',
   schemaOrg: { types: ['DefinedTerm'] },
 };

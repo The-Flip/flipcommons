@@ -10,7 +10,7 @@ Today every catalog model that supports soft-delete has its own `frontend/src/ro
 
 The shared infra is already in place. [`DeletePage.svelte`](../../../frontend/src/lib/components/DeletePage.svelte) is one component. [`createDeleteSubmitter`](../../../frontend/src/lib/delete-flow.ts) is one factory keyed by entity collection. The wire shape (`/api/{collection}/{public_id}/delete-preview/` and `/api/{collection}/{public_id}/delete/`) is identical across every entity. What's missing is a metadata registry that lets a single dynamic route resolve "given this entity_type, what label / copy / redirect should I use?" without 19 hand-rolled wrappers.
 
-This plan replaces all 19 wrappers (and `+page.server.ts` + `*-delete.ts` siblings) with a single dynamic delete route driven by extended `catalog-meta`.
+This plan replaces all 19 wrappers (and `+page.server.ts` + `*-delete.ts` siblings) with a single dynamic delete route driven by extended `entity-meta`.
 
 ## Family of plans (Soft-Delete Metadata)
 
@@ -18,7 +18,7 @@ This is one of three coordinated plans that put soft-delete-related metadata on 
 
 - [ModelDrivenSoftDeleteMetadata.md](ModelDrivenSoftDeleteMetadata.md) — **data layer.** Cascade and block declarations consumed by the soft-delete planner (`apps/catalog/api/soft_delete.py`).
 - [ModelDrivenDeleteRoutes.md](ModelDrivenDeleteRoutes.md) — **API layer.** Route registration for the delete-preview / delete / restore trio, with `__subclasses__()`-driven discovery.
-- **[ModelDrivenDeletePage.md](ModelDrivenDeletePage.md) (this doc) — frontend layer.** Per-entity copy strings exported via `CATALOG_META`, consumed by a single dynamic delete-page route.
+- **[ModelDrivenDeletePage.md](ModelDrivenDeletePage.md) (this doc) — frontend layer.** Per-entity copy strings exported via `ENTITY_META`, consumed by a single dynamic delete-page route.
 
 The three docs share a base class but consume different things and ship in any order.
 
@@ -43,7 +43,7 @@ These are additive, so they can land independently of [ModelDrivenDeleteRoutes.m
 
 ## The contracts
 
-Extend `CATALOG_META` (generated from the backend by `export_catalog_meta`) with delete-specific metadata per entity:
+Extend `ENTITY_META` (generated from the backend by `export_entity_meta`) with delete-specific metadata per entity:
 
 ```ts
 type DeleteMeta = {
@@ -63,7 +63,7 @@ type CatalogEntry = {
 };
 ```
 
-The backend exporter (`apps/catalog/management/commands/export_catalog_meta.py`) reads each model's existing `verbose_name` / `verbose_name_plural` for `label` and a new `Meta`-adjacent contract for delete copy:
+The backend exporter (`apps/catalog/management/commands/export_entity_meta.py`) reads each model's existing `verbose_name` / `verbose_name_plural` for `label` and a new `Meta`-adjacent contract for delete copy:
 
 ```python
 class Theme(...):
@@ -86,7 +86,7 @@ The dynamic route gets a single shared `renderReferrerHref`:
 ```ts
 function renderReferrerHref(r: BlockingReferrer): string | null {
   if (!r.slug) return null;
-  const meta = CATALOG_META[r.entity_type];
+  const meta = ENTITY_META[r.entity_type];
   if (!meta) return null;
   return `/${meta.entity_type_plural}/${r.slug}`;
 }
@@ -98,10 +98,10 @@ This is strictly an improvement over the status quo — most wrappers' `() => nu
 
 Replace all 19 per-entity delete trees with a single route under `frontend/src/routes/[entity_plural]/[...public_id]/delete/`:
 
-- `+page.server.ts` — load `params.entity_plural` + `params.public_id`, resolve to a `CATALOG_META` entry by matching `entity_type_plural` (the URL segment carries the plural form like `gameplay-features`, but `CATALOG_META` is keyed by singular `entity_type` like `gameplay-feature`). 404 if no match. Fetch the delete-preview via `client.GET('/api/{collection}/{public_id}/delete-preview/')`, return `{ preview, meta, public_id }`.
+- `+page.server.ts` — load `params.entity_plural` + `params.public_id`, resolve to a `ENTITY_META` entry by matching `entity_type_plural` (the URL segment carries the plural form like `gameplay-features`, but `ENTITY_META` is keyed by singular `entity_type` like `gameplay-feature`). 404 if no match. Fetch the delete-preview via `client.GET('/api/{collection}/{public_id}/delete-preview/')`, return `{ preview, meta, public_id }`.
 - `+page@.svelte` — build `BlockedState` from `preview.blocked_by` using `meta.delete.blocked_lead` / `referrer_hint_template` / `blocked_footer`, build `impact` from `meta.delete.impact_singular` + `pluralize(preview.changeset_count, 'change set')` + `meta.delete.restore_note`, render `<DeletePage>` with `submit={createDeleteSubmitter(meta.entity_type_plural)}`, `redirectAfterDelete={'/' + meta.entity_type_plural}`, `cancelHref={'/' + meta.entity_type_plural + '/' + public_id}`, `editHistoryHref={cancelHref + '/edit-history'}`.
 
-The plural-to-singular lookup wants either an indexed helper (`getCatalogMetaByPlural(plural)`) co-located with `CATALOG_META`, or a parallel index emitted by `export_catalog_meta`. Pick whichever feels lighter; the `Object.values(CATALOG_META).find(...)` form is fine for ~20 entries but the helper makes the route's intent obvious.
+The plural-to-singular lookup wants either an indexed helper (`getCatalogMetaByPlural(plural)`) co-located with `ENTITY_META`, or a parallel index emitted by `export_entity_meta`. Pick whichever feels lighter; the `Object.values(ENTITY_META).find(...)` form is fine for ~20 entries but the helper makes the route's intent obvious.
 
 `[...public_id]` (rest segment) makes the route work for both single-segment slugs (themes/`abc`) and multi-segment public IDs (locations/`usa/il/chicago`) without a second route.
 
@@ -124,7 +124,7 @@ After these three hooks, no entity needs a hand-rolled wrapper.
 Single PR:
 
 1. Add `delete_blocked_lead`, `delete_referrer_hint_template`, `delete_blocked_footer`, `delete_impact_singular`, `delete_restore_note` ClassVars to `LifecycleStatusModel` with defaults derived from `Meta.verbose_name` / `verbose_name_plural`. Override on Person, CorporateEntity, Location where they differ.
-2. Extend `export_catalog_meta` to emit the new `delete` block. Regenerate `frontend/src/lib/models/model-meta.ts` via `make codegen`.
+2. Extend `export_entity_meta` to emit the new `delete` block. Regenerate `frontend/src/lib/entities/entity-meta.ts` via `make codegen`.
 3. Add `frontend/src/routes/[entity_plural]/[...public_id]/delete/{+page.server.ts,+page@.svelte}` driven by the registry.
 4. Delete the 19 per-entity delete trees (`+page@.svelte`, `+page.server.ts`, `*-delete.ts`) and their tests. Keep `createDeleteSubmitter` — it's still the right factory; the dynamic route just calls it once with `meta.entity_type_plural` instead of each wrapper baking the collection in at module scope.
 5. Add `tests/routes/dynamic-delete.test.ts` (DOM test, same harness as the existing `DeletePage.dom.test.ts`) covering: registry-driven copy substitution, `referrer_hint_template`'s `{relation}` substitution, `parentBreadcrumb` from `preview.parent`, parent-aware `redirectAfterDelete`, `blocked_message` (Person path), unknown `entity_plural` → 404.
@@ -135,17 +135,17 @@ The PR is large by line count (19 trees deleted + 1 added + 1 backend file + 1 g
 
 Backend:
 
-- `export_catalog_meta` emits `delete` block per entity with default-derived strings for plain models and overridden strings for Person / CorporateEntity / Location.
+- `export_entity_meta` emits `delete` block per entity with default-derived strings for plain models and overridden strings for Person / CorporateEntity / Location.
 - Person delete-preview returns `blocked_message` when `active_credit_count > 0` and `blocked_by` otherwise.
 - CorporateEntity delete-preview surfaces `preview.parent` with `parent_entity_type='manufacturer'` when applicable.
 
 Frontend:
 
-- Dynamic delete route resolves `params.entity_plural` to a `CATALOG_META` entry via `entity_type_plural`, 404s on unknown.
+- Dynamic delete route resolves `params.entity_plural` to a `ENTITY_META` entry via `entity_type_plural`, 404s on unknown.
 - Substitutes `{relation}` in `referrer_hint_template`.
 - Renders `parentBreadcrumb` when `preview.parent` is set; redirects to parent collection on success.
 - Renders `kind: 'message'` blocked state when `preview.blocked_message` is set.
-- `referrerHref` builds correct URLs from `BlockingReferrer.entity_type` + `slug` for every entity in `CATALOG_META`.
+- `referrerHref` builds correct URLs from `BlockingReferrer.entity_type` + `slug` for every entity in `ENTITY_META`.
 
 ## Out of Scope
 

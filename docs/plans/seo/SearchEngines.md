@@ -16,7 +16,7 @@ They can't drift because they all read from one source. The predicate is defined
 
 The answer depends on whether you're adding a new **instance of an existing catalog pattern**, a new **catalog pattern itself**, or a **non-catalog route**.
 
-**New instance of an existing catalog pattern.** Adding a new entity to `CATALOG_META` (or adding the standard subroutes for an entity that's already there) — nothing to do. The seven catalog patterns (`listing`, `detail`, `edit-history`, `sources`, `edit`, `new`, `delete`) already cover the entity's routes. `isSearchEngineIndexable()` lights up correctly with zero SEO declarations.
+**New instance of an existing catalog pattern.** Adding a new catalog entity (one that lands in `CATALOG_ENTITY_KEYS`) — or adding the standard subroutes for an entity that's already there — nothing to do. The seven catalog patterns (`listing`, `detail`, `edit-history`, `sources`, `edit`, `new`, `delete`) already cover the entity's routes. `isSearchEngineIndexable()` lights up correctly with zero SEO declarations.
 
 **New catalog pattern.** Adding a subroute that doesn't fit any existing pattern (a hypothetical `*/comments`, `*/related-titles`, etc.) — edit `frontend/src/lib/route-metadata.server.ts`: add a `kind: 'catalog-<name>'` to the `RouteClass` union, match it in `classifyRoute()`, decide its indexability in `isSearchEngineIndexable()` and — if it's auth-gated — add it to the convention test. This is rare; the existing patterns cover the catalog's CRUD + audit surface.
 

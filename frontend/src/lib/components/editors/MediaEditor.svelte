@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
   import { detachMedia, setCategory, setPrimary } from '$lib/api/media-api';
-  import { MEDIA_CATEGORIES } from '$lib/models/model-meta';
+  import { ENTITY_META, type MediaSupportedEntityKey } from '$lib/entities/entity-meta';
   import type { UploadedMediaSchema } from '$lib/api/schema';
   import Button from '$lib/components/Button.svelte';
   import MediaUploadZone from '$lib/components/media/MediaUploadZone.svelte';
@@ -9,7 +9,7 @@
   import { toast } from '$lib/toast/toast.svelte';
 
   type UploadedMedia = UploadedMediaSchema;
-  type MediaEntityKey = keyof typeof MEDIA_CATEGORIES;
+  type MediaEntityKey = MediaSupportedEntityKey;
 
   let {
     entityType,
@@ -21,7 +21,7 @@
     media: UploadedMedia[];
   } = $props();
 
-  const categories = $derived(MEDIA_CATEGORIES[entityType]);
+  const categories = $derived(ENTITY_META[entityType].media_categories);
 
   let actionError = $state('');
   let mode = $state<'list' | 'upload'>('list');

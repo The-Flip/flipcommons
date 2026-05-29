@@ -1,6 +1,6 @@
 import { loadEntityPage } from '$lib/entity-page-loader.server';
-import { cabinet } from '$lib/models';
-import { buildEntityJsonLd } from '$lib/models/schema-org';
+import { cabinet } from '$lib/entities';
+import { buildEntityJsonLd } from '$lib/entities/schema-org';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async (event) => {

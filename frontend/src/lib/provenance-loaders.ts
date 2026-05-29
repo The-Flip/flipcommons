@@ -7,7 +7,7 @@
  */
 import { error } from '@sveltejs/kit';
 import { createServerClient } from '$lib/api/server';
-import type { CatalogEntityKey } from '$lib/models/model-meta';
+import type { CatalogEntityKey } from '$lib/entities/entity-meta';
 
 type LoadEvent = {
   fetch: typeof fetch;

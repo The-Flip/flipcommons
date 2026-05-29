@@ -21,8 +21,8 @@ agent-docs:
 
 codegen:
 	cd backend && uv run python manage.py export_openapi_schema
-	cd backend && uv run python manage.py export_catalog_meta
-	cd frontend && pnpm exec prettier --write src/lib/models/model-meta.ts
+	cd backend && uv run python manage.py export_entity_meta
+	cd frontend && pnpm exec prettier --write src/lib/entities/entity-meta.ts
 	cd frontend && pnpm api:gen
 
 ingest:

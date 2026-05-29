@@ -13,7 +13,7 @@ Examples that shipped, got reviewed, and had to be tightened in a follow-up PR:
 - `build_edit_history(entity: Any)` where the body immediately calls `ContentType.get_for_model(entity)` and reads `entity.pk` — the author knew it was a `Model`, the annotation didn't say so.
 - `ExtractionResult.match: dict[str, Any]` with a comment `# {"id": int, "name": str, "skip_locator": bool}` — the comment was doing the TypedDict's job.
 - `discover_alias_types() -> tuple[tuple[type, str], ...]` — four call sites unpacking positional tuples where `AliasType(parent_model, claim_field)` would document itself.
-- `list[tuple[str, str, str, str]]` in `export_catalog_meta` — four same-typed fields, zero labels on what any position meant.
+- `list[tuple[str, str, str, str]]` in `export_entity_meta` — four same-typed fields, zero labels on what any position meant.
 - `cast(Any, default_storage)` in `get_media_storage()` — active type erasure for every caller.
 - Any use of `setattr` or `getattr`
 

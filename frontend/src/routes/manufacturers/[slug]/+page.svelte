@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { MEDIA_CATEGORIES } from '$lib/models/model-meta';
+  import { ENTITY_META } from '$lib/entities/entity-meta';
   import AccordionSection from '$lib/components/AccordionSection.svelte';
   import CreateFirstCorporateEntityPrompt from '$lib/components/CreateFirstCorporateEntityPrompt.svelte';
   import RichTextOverviewAccordion from '$lib/components/RichTextOverviewAccordion.svelte';
@@ -152,7 +152,7 @@
   <AccordionSection heading={mediaHeading}>
     <MediaGrid
       media={mfr.uploaded_media}
-      categories={[...MEDIA_CATEGORIES.manufacturer]}
+      categories={[...ENTITY_META.manufacturer.media_categories]}
       canEdit={false}
     />
   </AccordionSection>

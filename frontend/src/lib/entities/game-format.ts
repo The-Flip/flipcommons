@@ -1,7 +1,7 @@
 import type { TaxonomySchema } from '$lib/api/schema';
-import type { ModelFrontendInfo } from './types';
+import type { EntityInfo } from './types';
 
-export const gameFormat: ModelFrontendInfo<TaxonomySchema> = {
+export const gameFormat: EntityInfo<TaxonomySchema> = {
   entityType: 'game-format',
   schemaOrg: { types: ['DefinedTerm'] },
 };

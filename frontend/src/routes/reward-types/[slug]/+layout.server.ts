@@ -1,6 +1,6 @@
 import { loadEntityPage } from '$lib/entity-page-loader.server';
-import { rewardType } from '$lib/models';
-import { buildEntityJsonLd } from '$lib/models/schema-org';
+import { rewardType } from '$lib/entities';
+import { buildEntityJsonLd } from '$lib/entities/schema-org';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async (event) => {

@@ -22,7 +22,7 @@ This is one of three coordinated plans that put soft-delete-related metadata on 
 
 - [ModelDrivenSoftDeleteMetadata.md](ModelDrivenSoftDeleteMetadata.md) — **data layer.** Cascade and block declarations consumed by the soft-delete planner (`apps/catalog/api/soft_delete.py`).
 - **[ModelDrivenDeleteRoutes.md](ModelDrivenDeleteRoutes.md) (this doc) — API layer.** Route registration for the delete-preview / delete / restore trio, with `__subclasses__()`-driven discovery.
-- [ModelDrivenDeletePage.md](ModelDrivenDeletePage.md) — **frontend layer.** Per-entity copy strings exported via `CATALOG_META`, consumed by a single dynamic delete-page route.
+- [ModelDrivenDeletePage.md](ModelDrivenDeletePage.md) — **frontend layer.** Per-entity copy strings exported via `ENTITY_META`, consumed by a single dynamic delete-page route.
 
 The three docs share a base class but consume different things and ship in any order.
 

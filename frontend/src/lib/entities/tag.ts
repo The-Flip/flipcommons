@@ -1,7 +1,7 @@
 import type { TaxonomySchema } from '$lib/api/schema';
-import type { ModelFrontendInfo } from './types';
+import type { EntityInfo } from './types';
 
-export const tag: ModelFrontendInfo<TaxonomySchema> = {
+export const tag: EntityInfo<TaxonomySchema> = {
   entityType: 'tag',
   schemaOrg: { types: ['DefinedTerm'] },
 };

@@ -188,9 +188,9 @@ This avoids the entire `NameEditor` / slug-sync hazard: `NameEditor` is never in
 
 **Deferred work — only needed if a future model wants both a `NameEditor` and an immutable slug:**
 
-- Extend `export_catalog_meta` to emit `immutable_after_create` per entity into `CATALOG_META`.
-- Teach `NameEditor` to read `CATALOG_META[entity_type].immutable_after_create` and (a) skip `reconcileSlug` when `"slug"` is in the set, (b) render the slug `TextField` as read-only.
-- Parity test in `catalog-meta.test.ts` so backend declarations don't drift from the emitted file.
+- Extend `export_entity_meta` to emit `immutable_after_create` per entity into `ENTITY_META`.
+- Teach `NameEditor` to read `ENTITY_META[entity_type].immutable_after_create` and (a) skip `reconcileSlug` when `"slug"` is in the set, (b) render the slug `TextField` as read-only.
+- Parity test in `entity-meta.test.ts` so backend declarations don't drift from the emitted file.
 
 None of this is required for Location. Drop the frontend tests below from the immediate scope; they belong to the deferred work above.
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MEDIA_CATEGORIES } from '$lib/models/model-meta';
+  import { ENTITY_META } from '$lib/entities/entity-meta';
   import AccordionSection from '$lib/components/AccordionSection.svelte';
   import RichTextOverviewAccordion from '$lib/components/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/RichTextReferencesAccordion.svelte';
@@ -84,7 +84,7 @@
   <AccordionSection heading={mediaHeading} onEdit={editAction('media')}>
     <MediaGrid
       media={person.uploaded_media}
-      categories={[...MEDIA_CATEGORIES.person]}
+      categories={[...ENTITY_META.person.media_categories]}
       canEdit={false}
     />
   </AccordionSection>

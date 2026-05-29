@@ -1,7 +1,7 @@
 import type { GameplayFeatureDetailSchema } from '$lib/api/schema';
-import type { ModelFrontendInfo } from './types';
+import type { EntityInfo } from './types';
 
-export const gameplayFeature: ModelFrontendInfo<GameplayFeatureDetailSchema> = {
+export const gameplayFeature: EntityInfo<GameplayFeatureDetailSchema> = {
   entityType: 'gameplay-feature',
   schemaOrg: { types: ['DefinedTerm'] },
 };

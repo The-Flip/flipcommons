@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { MEDIA_CATEGORIES } from '$lib/models/model-meta';
+  import { ENTITY_META, type MediaSupportedEntityKey } from '$lib/entities/entity-meta';
   import { IMAGE_ACCEPT } from '$lib/api/media-api';
   import { createUploadManager } from '$lib/media-upload.svelte';
   import Button from '$lib/components/Button.svelte';
 
-  type MediaEntityKey = keyof typeof MEDIA_CATEGORIES;
+  type MediaEntityKey = MediaSupportedEntityKey;
 
   let {
     entityType,
@@ -18,7 +18,7 @@
     onuploadingchange?: (uploading: boolean) => void;
   } = $props();
 
-  const categories = $derived(MEDIA_CATEGORIES[entityType]);
+  const categories = $derived(ENTITY_META[entityType].media_categories);
 
   let fileInput: HTMLInputElement | undefined = $state();
   let category = $state('');

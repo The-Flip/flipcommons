@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CATALOG_META, type CatalogEntityKey } from './models/model-meta';
+import { CATALOG_ENTITY_KEYS } from '$lib/entities/entity-meta';
 import { catalogRoutesByEntity } from './route-metadata.server';
 
 // The route-metadata walker classifies /{plural}/[public-id]/edit (and
@@ -103,7 +103,7 @@ const editRoutesByEntity = catalogRoutesByEntity(
 );
 
 describe('catalog auth-gate convention', () => {
-  for (const key of Object.keys(CATALOG_META) as CatalogEntityKey[]) {
+  for (const key of CATALOG_ENTITY_KEYS) {
     describe(key, () => {
       it('every /edit route has a +layout.server.ts gated with catalog.edit', () => {
         const ids = editRoutesByEntity.get(key) ?? [];

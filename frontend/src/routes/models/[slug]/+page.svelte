@@ -4,7 +4,7 @@
   import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
   import CreditsList from '$lib/components/CreditsList.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
-  import { MEDIA_CATEGORIES } from '$lib/models/model-meta';
+  import { ENTITY_META } from '$lib/entities/entity-meta';
   import RichTextOverviewAccordion from '$lib/components/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/rich-text-accordion-state.svelte';
@@ -117,7 +117,7 @@
   <AccordionSection heading={mediaHeading} onEdit={editAction('media')}>
     <MediaGrid
       media={model.uploaded_media}
-      categories={[...MEDIA_CATEGORIES.model]}
+      categories={[...ENTITY_META.model.media_categories]}
       canEdit={false}
     />
   </AccordionSection>

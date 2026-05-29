@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { buildSchemaOrgNode, buildEntityJsonLd, type EntityBaseFacts } from './schema-org';
-import type { ModelFrontendInfo } from './types';
+import type { EntityInfo } from './types';
 import { creditRole, theme } from './index';
 
 const ORIGIN = 'https://flipcommons.org';
@@ -16,9 +16,9 @@ function entity(over: Partial<EntityBaseFacts> = {}): EntityBaseFacts {
 }
 
 function info(
-  schemaOrg: ModelFrontendInfo<EntityBaseFacts>['schemaOrg'],
-  entityType: ModelFrontendInfo<EntityBaseFacts>['entityType'] = 'theme',
-): ModelFrontendInfo<EntityBaseFacts> {
+  schemaOrg: EntityInfo<EntityBaseFacts>['schemaOrg'],
+  entityType: EntityInfo<EntityBaseFacts>['entityType'] = 'theme',
+): EntityInfo<EntityBaseFacts> {
   return { entityType, schemaOrg };
 }
 

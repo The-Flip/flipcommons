@@ -142,7 +142,7 @@ New tests:
    - `cd backend && uv run pytest` — full backend suite. Particular eyes on `apps/catalog/tests/` for picker-registry tests and any test that checks specific `LinkType` membership.
    - The new tests described above (negative, parity, default serializer, renderer/validator resolution parity).
 1. **API regen**
-   - `make codegen` — regenerate `frontend/src/lib/api/schema.d.ts` and `frontend/src/lib/models/model-meta.ts`. `model-meta.ts` reads `_meta.verbose_name` directly (not `link_label`), so it should be byte-identical post-hoist; regen anyway as cheap insurance against an emitted shape we haven't traced.
+   - `make codegen` — regenerate `frontend/src/lib/api/schema.d.ts` and `frontend/src/lib/entities/entity-meta.ts`. `model-meta.ts` reads `_meta.verbose_name` directly (not `link_label`), so it should be byte-identical post-hoist; regen anyway as cheap insurance against an emitted shape we haven't traced.
 1. **Smoke**
    - `make dev`, then exercise the wikilink picker in a markdown editor. Confirm: every entity in the post-hoist target list appears in the picker; Location does not; the existing `link_sort_order` overrides on Title/MachineModel/Manufacturer/Person still control the displayed order.
    - **Render-resolution check** (covers the kebab-case flip noted in §Current state step 3): after running `make pull-ingest && make ingest` against the kebab-case pindata, open a rendered markdown body containing a multi-word wikilink — `[[gameplay-feature:...]]` and `[[display-type:...]]` are good candidates — and confirm the link resolves to the target page rather than rendering as a broken-ref placeholder. This locks in that the hoist's key change matches the pindata-side rewrite end to end before either ships to prod.

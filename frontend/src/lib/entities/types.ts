@@ -1,4 +1,4 @@
-import type { CatalogEntityKey } from '$lib/models/model-meta';
+import type { EntityKey } from '$lib/entities/entity-meta';
 
 /**
  * Per-model schema.org presentation declarations. Lives frontend-side because
@@ -18,11 +18,11 @@ export interface SchemaOrgInfo<TSchema> {
 }
 
 /**
- * The frontend companion to a Django catalog model: presentation declarations
- * the backend doesn't need. One file per model under `$lib/models/`.
+ * The frontend companion to a Django linkable entity: presentation declarations
+ * the backend doesn't need. One file per entity under `$lib/entities/`.
  */
-export interface ModelFrontendInfo<TSchema> {
-  /** The CATALOG_META key (`entity_type`), e.g. 'theme' — NOT the export name. */
-  entityType: CatalogEntityKey;
+export interface EntityInfo<TSchema> {
+  /** The ENTITY_META key (`entity_type`), e.g. 'theme' — NOT the export name. */
+  entityType: EntityKey;
   schemaOrg: SchemaOrgInfo<TSchema>;
 }

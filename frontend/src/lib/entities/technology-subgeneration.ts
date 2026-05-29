@@ -1,7 +1,7 @@
 import type { TaxonomySchema } from '$lib/api/schema';
-import type { ModelFrontendInfo } from './types';
+import type { EntityInfo } from './types';
 
-export const technologySubgeneration: ModelFrontendInfo<TaxonomySchema> = {
+export const technologySubgeneration: EntityInfo<TaxonomySchema> = {
   entityType: 'technology-subgeneration',
   schemaOrg: { types: ['DefinedTerm'] },
 };

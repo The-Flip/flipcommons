@@ -192,7 +192,7 @@ class LinkableModel(models.Model):
 
     ``entity_type`` and ``entity_type_plural`` together are the linguistic
     identity of a kind of entity — the single source of truth consumed by
-    ``get_linkable_model`` and ``export_catalog_meta``. All URL shapes and
+    ``get_linkable_model`` and ``export_entity_meta``. All URL shapes and
     UI labels derive from them; they do not drive backend behavior beyond
     URL and UI consistency.
 

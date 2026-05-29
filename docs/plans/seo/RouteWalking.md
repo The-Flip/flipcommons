@@ -17,7 +17,7 @@ Two facts about the route tree make per-route co-located classification the wron
 1. **Most routes are catalog routes.** The entity registry has 20 entries today. Each one has a detail route, a listing route and edit / delete / edit-history / sources / new subroutes. That's ~140 catalog routes vs. ~14 non-catalog ones. Their indexability is a class fact, not a per-route fact: every detail page is indexable, every edit subroute isn't. Co-locating an export on each one would be ~140 mechanical declarations that all say the same thing — and adding a new catalog entity would mean remembering to add five more. That's exactly the "code expansion instead of declaration" smell [ModelDrivenMetadata.md](../model_driven_metadata/ModelDrivenMetadata.md) is fighting.
 2. **A small set of routes are outside the catalog convention.** `/`, `/about`, `/(legal)/*`, `/login`, `/signup`, `/verify-email`, `/auth/error`, `/search`, `/style-lab`, `/api-docs`, `/kiosk/*`, `/users/[username]`, `/_sentry_test`. Their indexability isn't derivable from any registry — it's a per-route product decision. (`/__health` is a `+server.ts` endpoint, not a page — `allRoutes()` doesn't enumerate it and the classifier never sees it.)
 
-The right split: catalog routes inherit class-level answers from the existing entity registry ([`model-meta.ts`](frontend/src/lib/models/model-meta.ts)); the rest get short hand-maintained allowlists. The walker exists mainly to enforce "every route fits into exactly one bucket" — catching anything that slips through unclassified.
+The right split: catalog routes inherit class-level answers from the existing entity registry ([`entity-meta.ts`](frontend/src/lib/entities/entity-meta.ts)); the rest get short hand-maintained allowlists. The walker exists mainly to enforce "every route fits into exactly one bucket" — catching anything that slips through unclassified.
 
 The auth-gate check the walker needs anyway (gated routes aren't indexable) covers `/admin/*` and `/kiosk/edit/*` for free.
 
@@ -25,14 +25,14 @@ The auth-gate check the walker needs anyway (gated routes aren't indexable) cove
 
 The design MUST satisfy these two properties:
 
-1. **Adding a new catalog entity requires zero SEO declarations.** Once the entity ships in `CATALOG_META`, detail / listing / edit-history / sources / edit / new / delete routes all classify correctly without any human-authored per-route metadata. Any design that requires the contributor to remember to add an SEO declaration alongside their new entity violates this invariant.
+1. **Adding a new catalog entity requires zero SEO declarations.** Once the entity ships as a catalog entity (in `CATALOG_ENTITY_KEYS`), detail / listing / edit-history / sources / edit / new / delete routes all classify correctly without any human-authored per-route metadata. Any design that requires the contributor to remember to add an SEO declaration alongside their new entity violates this invariant.
 2. **Adding a non-catalog route forces an explicit classification decision.** The walker test fails until the route appears in `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`, `SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS`, or under a non-catalog auth-gated layout (today `/admin/*` and `/kiosk/edit/*`). There is no silent default — an unclassified route is a test failure, not an "implicitly included" or "implicitly excluded" route.
 
 The first invariant comes from the [model-driven metadata](../model_driven_metadata/ModelDrivenMetadata.md) discipline: parallel hand-maintained per-route declarations are exactly the drift surface model-driven design eliminates. The second invariant comes from the SEO consequences of "wrong default": a route silently included that shouldn't be leaks into search indexes and is expensive to remove (every major engine caches removed pages for months); a route silently excluded that shouldn't be costs traffic invisibly. Both directions of failure are slow to detect; forcing the decision at PR time is cheap by comparison.
 
 ## The classification
 
-Catalog routes are classified by **URL pattern** against the `entity_type_plural` values in `CATALOG_META`. Auth-gated areas outside the catalog (`/admin/*` and `/kiosk/edit/*` today) are classified by **import scan**. Everything else comes from short hand-maintained allowlists.
+Catalog routes are classified by **URL pattern** against the `entity_type_plural` values of the catalog entities — `CATALOG_ENTITY_KEYS`, the `CatalogEntityKey` subset, **not** the broader `ENTITY_META`. (`ENTITY_META` is the full linkable-entity registry; once a non-catalog entity such as `user` joins it, that entity must _not_ pick up the catalog route patterns — hence classification walks the catalog subset.) Auth-gated areas outside the catalog (`/admin/*` and `/kiosk/edit/*` today) are classified by **import scan**. Everything else comes from short hand-maintained allowlists.
 
 | Bucket                       | How it's recognized                                                                                                                                               | Indexable?                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -47,7 +47,7 @@ Catalog routes are classified by **URL pattern** against the `entity_type_plural
 | **Listed indexable**         | Route ID appears in `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`                                                                                                           | Yes                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | **Listed non-indexable**     | Route ID appears in `SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS`                                                                                                       | No                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-`{plural}` matches any `entity_type_plural` value from `CATALOG_META`. `[public-id]` is the entity's public identifier and may contain slashes — most entities use a single path segment (`/titles/medieval-madness`), but Location uses a multi-segment hierarchical path (`/locations/usa/il/chicago/logan-arcade`). The matcher accepts both forms. New catalog entities light up every row automatically as soon as they appear in the registry — this is how Invariant 1 is satisfied. The walker-test "every route is classified" rule is how Invariant 2 is enforced.
+`{plural}` matches the `entity_type_plural` of any catalog entity (`CATALOG_ENTITY_KEYS`). `[public-id]` is the entity's public identifier and may contain slashes — most entities use a single path segment (`/titles/medieval-madness`), but Location uses a multi-segment hierarchical path (`/locations/usa/il/chicago/logan-arcade`). The matcher accepts both forms. New catalog entities light up every row automatically as soon as they appear in `CATALOG_ENTITY_KEYS` — this is how Invariant 1 is satisfied. The walker-test "every route is classified" rule is how Invariant 2 is enforced.
 
 `/models/[slug]` classifies as `catalog-detail` (indexable) like every other detail route; the existing 301 redirect on single-model Titles handles the Title↔Model duplicate at request time, so the walker doesn't need to know about the collapse rule.
 
@@ -61,7 +61,7 @@ With N=1, we don't introduce a `catalog-nested-listing` class. A regex for that 
 
 ```ts
 // frontend/src/lib/route-metadata.server.ts
-import { CATALOG_META, type CatalogEntityKey } from "$lib/api/catalog-meta";
+import { CATALOG_ENTITY_KEYS, ENTITY_META, type CatalogEntityKey } from "$lib/entities/entity-meta";
 
 // Route IDs (SvelteKit page.route.id form — groups like (legal) and params
 // like [username] preserved). NOT URLs — /(legal)/privacy, not /privacy.
@@ -110,7 +110,7 @@ export type RouteClass =
   | { kind: "unclassified" };
 
 export function classifyRoute(id: RouteId): RouteClass {
-  // 1. Try catalog patterns against every CATALOG_META[*].entity_type_plural
+  // 1. Try catalog patterns against every CATALOG_ENTITY_KEYS entity's entity_type_plural
   // 2. Try non-catalog auth-gate (ancestor +layout.server.ts imports $lib/require-capability.server)
   // 3. Try the two listed allowlists
   // 4. Fall through to 'unclassified'
@@ -156,9 +156,9 @@ export function allRoutes(): RouteId[] {
 }
 ```
 
-Public surface: `classifyRoute`, `isSearchEngineIndexable`, `allRoutes`, the two `SEARCH_ENGINE_*_ROUTE_IDS` constants (consumed by the sitemap), and the `RouteClass` / `CatalogRouteClass` types plus the `isCatalogRoute` type guard (consumed by the catalog-meta and convention tests). Pattern-match helpers and the auth-gate import-scan stay file-private.
+Public surface: `classifyRoute`, `isSearchEngineIndexable`, `allRoutes`, the two `SEARCH_ENGINE_*_ROUTE_IDS` constants (consumed by the sitemap), and the `RouteClass` / `CatalogRouteClass` types plus the `isCatalogRoute` type guard (consumed by the entity-meta and convention tests). Pattern-match helpers and the auth-gate import-scan stay file-private.
 
-Catalog pattern-matching is straightforward: walk `CATALOG_META`, build a regex per `entity_type_plural`, match against `routeId`. The `[public-id]` slot realizes as `[slug]` at the SvelteKit level for most entities and as `[...path]` for Location; the matcher handles both. Nested-create routes (e.g. `/titles/[public-id]/models/new`, `/manufacturers/[public-id]/corporate-entities/new`) are recognized as `catalog-new` for the inner entity.
+Catalog pattern-matching is straightforward: walk `CATALOG_ENTITY_KEYS`, build a regex per catalog entity's `entity_type_plural` (looked up via `ENTITY_META[key]`), match against `routeId`. The `[public-id]` slot realizes as `[slug]` at the SvelteKit level for most entities and as `[...path]` for Location; the matcher handles both. Nested-create routes (e.g. `/titles/[public-id]/models/new`, `/manufacturers/[public-id]/corporate-entities/new`) are recognized as `catalog-new` for the inner entity.
 
 Non-catalog auth-gate detection: scan every ancestor `+layout.server.ts` for a `$lib/require-capability.server` import. The scan matches `/admin/+layout.server.ts`, `/kiosk/edit/+layout.server.ts`, and every `/{plural}/[slug]/edit/+layout.server.ts`. The catalog-edit hits are redundant with the catalog-pattern bucket: classification tries catalog patterns first, so catalog-edit routes are claimed before this scan ever fires. After catalog-pattern matching, the routes the scan effectively catches are `/admin/*` and `/kiosk/edit/*` (and `/kiosk/edit` itself — see prefix-match note below). A new non-catalog gated area (say `/ops/*`) is covered by the same rule — no allowlist needed.
 
@@ -168,7 +168,7 @@ The catalog classification trusts that `catalog-edit` / `catalog-new` / `catalog
 
 A small test (lives next to the walker) asserts the gate is in place for every catalog entity:
 
-- For each `CATALOG_META[*].entity_type_plural`:
+- For each catalog key in `CATALOG_ENTITY_KEYS` (its `ENTITY_META[key].entity_type_plural`):
   - The `edit` route's `+layout.server.ts` imports `$lib/require-capability.server` and calls `requireCapability({ activity: 'catalog.edit', ... })`.
   - The `new` route's `+page.server.ts` (and any nested-create page) imports `$lib/require-capability.server` and uses `activity: 'catalog.create'`.
   - The `delete` route's `+page.server.ts` imports `$lib/delete-preview-loader.server` (the helper that calls `requireCapability({ activity: 'catalog.delete' })`).
@@ -179,7 +179,7 @@ Cheap text-match scan. Fails loudly if someone adds a catalog entity without wir
 
 `isSearchEngineIndexable(routeId)` runs on every SSR request that injects a noindex meta tag, so per-request cost matters. Every lookup is O(small) and touches no filesystem:
 
-- **Catalog pattern match.** Regex against a small precomputed set of patterns derived from `CATALOG_META` at module load.
+- **Catalog pattern match.** Regex against a small precomputed set of patterns derived from `CATALOG_ENTITY_KEYS` at module load.
 - **Non-catalog auth-gate.** A precomputed set of gated route-ID prefixes: `/admin`, `/kiosk/edit`, and every `/{plural}/[slug]/edit` (the catalog-edit ones are dead code in practice since catalog-pattern matching runs first, but the set has them). Prefixes are in SvelteKit pattern form (literal `[slug]` / `[...path]` brackets) — same shape as `page.route.id`, so no URL normalization needed. The match is `routeId === prefix || routeId.startsWith(prefix + '/')`, **not** a plain `startsWith(prefix + '/')` — the latter misses the layout's own page (e.g. the route ID for `/kiosk/edit/+page.svelte` is `/kiosk/edit`, with no trailing slash). Built via `import.meta.glob('/src/routes/**/+layout.server.ts', { eager: true, query: '?raw', import: 'default' })` — Vite resolves this at **build time** and bakes each matched layout's source into the SSR bundle as a top-level string-literal `const`. At module load, one pass over the matched strings substring-checks for `from '$lib/require-capability.server'` and computes the prefix set. No filesystem I/O at runtime. Do NOT implement this with `fs.readFile` / `fs.readdir` at module load — that pays real I/O on every cold worker start and breaks when the SSR bundle is deployed without the source tree.
 - **Listed allowlist.** `Set.has(routeId)` against the two `SEARCH_ENGINE_*_ROUTE_IDS` constants.
 
@@ -224,10 +224,10 @@ That's the whole walker-test surface. The separate `catalog-auth-convention.test
 
 ## Refactor: fold the existing route walker into this module
 
-[`frontend/src/lib/api/catalog-meta.test.ts`](frontend/src/lib/api/catalog-meta.test.ts) already walks the route tree via `import.meta.glob('/src/routes/**/+*')` to enforce that every `CATALOG_META` key has detail and edit-history / sources subroutes. The `route-metadata` walker needs the same enumeration. Two changes:
+[`frontend/src/lib/entities/entity-meta.test.ts`](frontend/src/lib/entities/entity-meta.test.ts) already walks the route tree via `import.meta.glob('/src/routes/**/+*')` to enforce that every catalog key (`CATALOG_ENTITY_KEYS`) has detail and edit-history / sources subroutes. The `route-metadata` walker needs the same enumeration. Two changes:
 
 - Move the `import.meta.glob` walk into `route-metadata.server.ts`'s `allRoutes()`.
-- Have `catalog-meta.test.ts` consume `allRoutes()` + `classifyRoute()` instead of doing its own glob + regex. The `ROUTE_DIR_TO_KEY` / `UNMAPPED_ROUTE_DIRS` / `DEFERRED_KEYS` structure becomes redundant: catalog membership now comes from `CATALOG_META` and the route-class match, not a parallel hand-maintained map.
+- Have `entity-meta.test.ts` consume `allRoutes()` + `classifyRoute()` instead of doing its own glob + regex. The `ROUTE_DIR_TO_KEY` / `UNMAPPED_ROUTE_DIRS` / `DEFERRED_KEYS` structure becomes redundant: catalog membership now comes from `CATALOG_ENTITY_KEYS` and the route-class match, not a parallel hand-maintained map.
 
 The module is suffixed `.server.ts` because it uses `import.meta.glob('/src/routes/**/+layout.server.ts', { eager: true, query: '?raw' })` to scan auth-gate imports. Vite inlines each matched file's source as a string literal at build time, and SvelteKit's normal "you can't import a `.server.ts` from client code" check doesn't apply to `?raw` (it's a string, not a module). Without the `.server` suffix on this module, any client-side importer would ship every `+layout.server.ts` and `+page.server.ts` source string into the browser bundle. Downstream consumers (noindex meta injection, canonical URL helper, etc.) should call `isSearchEngineIndexable()` from a `.server.ts` site (a server `handle` hook, a server load) — not from a `.svelte` file.
 
@@ -241,7 +241,7 @@ Out of scope — don't touch:
 Full consumer list lives in [`SearchEngines.md`](SearchEngines.md); short version:
 
 - **`robots.txt`** — see [`Robots.md`](Robots.md). Server-endpoint disallows, mostly orthogonal to route classification.
-- **`sitemap.xml`** — see [`Sitemap.md`](Sitemap.md). Enumerates per-entity URLs from `CATALOG_META` + entity data: the detail page plus an `/edit-history` and `/sources` URL per entity. Adds the entries from `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`. The walker's `isSearchEngineIndexable()` is the filter for any include/exclude question.
+- **`sitemap.xml`** — see [`Sitemap.md`](Sitemap.md). Enumerates per-entity URLs from the catalog entities (`CATALOG_ENTITY_KEYS`) + entity data: the detail page plus an `/edit-history` and `/sources` URL per entity. Adds the entries from `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`. The walker's `isSearchEngineIndexable()` is the filter for any include/exclude question.
 - **`<meta name="robots" content="noindex" />`** — see [`NoindexMeta.md`](NoindexMeta.md). Injected by a `handle` hook (`hooks.server.ts`) via `transformPageChunk`, driven by `isSearchEngineIndexable(event.route.id)`. The hook also sets the `X-Robots-Tag` response header.
 - **Canonical URL** — see [`CanonicalUrl.md`](CanonicalUrl.md). Catalog detail derives the canonical from the entity's `link_url_pattern`; listed indexable routes derive it from the route ID.
 - **Title/description presence test** — every indexable route declares a meaningful `<title>` and `<meta name="description">`. Catalog detail derives both from entity data; listed indexable routes declare them in the page.
@@ -252,8 +252,8 @@ Full consumer list lives in [`SearchEngines.md`](SearchEngines.md); short versio
 
 1. Write `frontend/src/lib/route-metadata.server.ts`: types, `allRoutes()`, `classifyRoute()` (catalog pattern-match + non-catalog import-scan + listed allowlists), `isSearchEngineIndexable()`.
 2. Add `route-metadata.test.ts`: every-route-classified + anchor sanity + disjoint allowlists + SSR-enforcement (every indexable route resolves to `ssr === true` after walking the config-file ancestor chain). Expect the unclassified check to surface genuinely-unclassified routes during development — that's the point.
-3. Add `catalog-auth-convention.test.ts` (next to the walker): for every `CATALOG_META` entity, assert the standard `edit` / `new` / `delete` route files exist and import the expected gating helpers.
-4. Refactor `catalog-meta.test.ts` to consume `allRoutes()` + `classifyRoute()`; drop `ROUTE_DIR_TO_KEY` / `UNMAPPED_ROUTE_DIRS`.
+3. Add `catalog-auth-convention.test.ts` (next to the walker): for every catalog entity (`CATALOG_ENTITY_KEYS`), assert the standard `edit` / `new` / `delete` route files exist and import the expected gating helpers.
+4. Refactor `entity-meta.test.ts` to consume `allRoutes()` + `classifyRoute()`; drop `ROUTE_DIR_TO_KEY` / `UNMAPPED_ROUTE_DIRS`.
 5. Open PR. The follow-on work in [`Robots.md`](Robots.md), [`Sitemap.md`](Sitemap.md), [`NoindexMeta.md`](NoindexMeta.md) and [`CanonicalUrl.md`](CanonicalUrl.md) can stack on top.
 
 ## Deliberately not in this plan
