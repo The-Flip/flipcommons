@@ -1,14 +1,15 @@
-"""Tests for ``Title.sitemap_queryset()``'s aggregated ``lastmod``.
+"""Tests for ``Title.lastmod_expression()``'s aggregated ``lastmod``.
 
 ``Title`` is the only catalog page whose primary content aggregates
-another catalog entity (its Models). ``_sitemap_lastmod`` widens to
+another catalog entity (its Models). ``_last_modified`` widens to
 ``max(Title.updated_at, max(machine_models.updated_at))`` so a Model edit
-bumps the Title's detail-page freshness signal.
+bumps the Title's detail-page freshness signal — feeding both the sitemap
+``<lastmod>`` and the detail response's ``last_modified``.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from django.utils import timezone
@@ -17,16 +18,16 @@ from apps.catalog.models import MachineModel, Title
 
 
 def _refresh_lastmod(title: Title):
-    """Re-fetch the annotated ``_sitemap_lastmod`` for *title*."""
+    """Re-fetch the annotated ``_last_modified`` for *title*."""
     refreshed = Title.sitemap_queryset().get(pk=title.pk)
-    # ``_sitemap_lastmod`` is a queryset annotation, not a declared field.
-    return refreshed._sitemap_lastmod  # type: ignore[attr-defined]
+    # ``_last_modified`` is a queryset annotation, not a declared field.
+    return refreshed._last_modified  # type: ignore[attr-defined]
 
 
 @pytest.mark.django_db
 class TestTitleSitemapLastmod:
     def test_title_only_edit_uses_title_updated_at(self) -> None:
-        """A Title with no Models — ``_sitemap_lastmod = Title.updated_at``
+        """A Title with no Models — ``_last_modified = Title.updated_at``
         via ``Coalesce(Max(...), updated_at)``."""
         title = Title.objects.create(name="Lonely", slug="lonely")
 
@@ -118,3 +119,29 @@ class TestTitleSitemapLastmod:
         lastmod = _refresh_lastmod(title)
         assert lastmod == mm.updated_at
         assert lastmod > title.updated_at
+
+
+@pytest.mark.django_db
+class TestTitleDetailLastModified:
+    """The Title detail response sources ``last_modified`` from the same
+    ``lastmod_expression()`` the sitemap uses — so a child Model edit bumps
+    ``dateModified`` exactly as it bumps the sitemap ``<lastmod>``, never
+    diverging to the Title's bare ``updated_at``.
+    """
+
+    def test_detail_last_modified_aggregates_child_model(self, client) -> None:
+        title = Title.objects.create(name="Aggro", slug="aggro")
+        mm = MachineModel.objects.create(title=title, name="Aggro", slug="aggro-only")
+
+        newer = timezone.now() + timedelta(hours=1)
+        MachineModel.objects.filter(pk=mm.pk).update(updated_at=newer)
+        mm.refresh_from_db()
+
+        resp = client.get("/api/pages/title/aggro")
+        assert resp.status_code == 200
+        # Freshness reflects the newest child Model, not the Title's updated_at.
+        # (Ninja serializes to millisecond precision, so compare with tolerance.)
+        got = datetime.fromisoformat(resp.json()["last_modified"])
+        assert abs(got - mm.updated_at) < timedelta(milliseconds=1)
+        assert got > title.updated_at
+        assert mm.updated_at > title.updated_at

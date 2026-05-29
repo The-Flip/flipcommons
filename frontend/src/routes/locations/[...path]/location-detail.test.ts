@@ -5,6 +5,7 @@ import Page from './location-detail.test-harness.svelte';
 const BASE_LOCATION = {
   name: 'USA',
   public_id: 'usa',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'usa',
   location_path: 'usa',
   location_type: 'country',

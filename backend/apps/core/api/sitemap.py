@@ -1,12 +1,12 @@
-"""``GET /api/sitemap/`` — derives feeds from every ``LinkableModel``.
+"""``GET /api/sitemap/`` — derives feeds from every ``SitemappedModel``.
 
 A single endpoint returns every feed in one shot, cached in the shared
-Django cache for an hour. The SvelteKit ``/sitemap[[page]].xml`` server
+Django cache. The SvelteKit ``/sitemap[[page]].xml`` server
 route is the only public caller and arrives from the Node container's
 single IP, so an IP-keyed rate limiter would just 429 the entire sitemap
 render on post-deploy cache-miss bursts. The cache collapses the cost
-ceiling to one materialization per hour across all Gunicorn workers, which
-is the workload we actually care about bounding.
+ceiling to one materialization for the cache TTL across all Gunicorn
+workers, which is the workload we actually care about bounding.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def _build_response() -> SitemapResponseSchema:
 
 @sitemap_router.get("", response=SitemapResponseSchema)
 def get_sitemap(request: HttpRequest, response: HttpResponse) -> SitemapResponseSchema:
-    """Return every ``LinkableModel`` feed in a single payload.
+    """Return every ``SitemappedModel`` feed in a single payload.
 
     Cached process-wide for ``SITEMAP_CACHE_TTL`` seconds. ``Cache-Control``
     asks downstream callers (the SvelteKit endpoint, crawlers if exposed

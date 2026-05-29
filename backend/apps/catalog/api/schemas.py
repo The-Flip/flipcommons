@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from ninja import Schema
@@ -34,11 +35,29 @@ class DescribedDetailSchema(Schema):
     description: RichTextSchema = RichTextSchema()
 
 
-class CatalogDetailSchema(LinkableDetailSchema, DescribedDetailSchema):
-    """Wire twin of ``CatalogModel`` (linkable + describable) and backend
-    counterpart of the frontend's ``EntityBaseFacts`` (name + URL identity +
-    description; identity is exposed as ``public_id``). Top-level catalog
-    detail responses inherit this single base and do not relist the mixins.
+class LastModifiedDetailSchema(Schema):
+    """Wire twin of ``LastUpdatedModel``: the freshness timestamp the sitemap
+    emits as ``<lastmod>`` and JSON-LD emits as ``dateModified``. Sourced from
+    ``LastUpdatedModel.last_modified`` (the ``_last_modified`` annotation), NOT
+    raw ``updated_at`` — so a ``Title`` reflects edits to its child Models.
+    Required (no default) so every serializer is forced to source it.
+    """
+
+    last_modified: datetime
+
+
+class CatalogDetailSchema(
+    LinkableDetailSchema, LastModifiedDetailSchema, DescribedDetailSchema
+):
+    """Wire twin of ``CatalogModel`` (linkable + freshness + describable) and
+    backend counterpart of the frontend's ``EntityBaseFacts`` (name + URL
+    identity + last-modified + description; identity is exposed as
+    ``public_id``). Top-level catalog detail responses inherit this single
+    base and do not relist the mixins. ``last_modified`` rides its own
+    concern base (``LastModifiedDetailSchema``), composed here rather than
+    folded into ``LinkableDetailSchema`` — linkability ("has a canonical URL")
+    and freshness ("when did this last change") are orthogonal, mirroring the
+    ``LinkableModel`` / ``LastUpdatedModel`` split on the model side.
     """
 
 

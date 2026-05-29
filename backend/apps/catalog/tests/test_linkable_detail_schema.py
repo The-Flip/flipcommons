@@ -10,6 +10,7 @@ detail schema that forgets the base would emit a wrong identity.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -75,6 +76,34 @@ class TestLinkableDetailSchemaParity:
             f"`LinkableDetailSchema` and source it from the model: {missing}"
         )
 
+    def test_every_detail_response_exposes_last_modified(self) -> None:
+        """Every linkable catalog entity's detail response carries
+        ``last_modified`` (freshness for JSON-LD ``dateModified``), so a future
+        entity that forgets ``LastModifiedDetailSchema`` / ``CatalogDetailSchema``
+        fails here rather than silently dropping ``dateModified``.
+        """
+        schema = api.get_openapi_schema()
+        paths = schema["paths"]
+        components = schema["components"]["schemas"]
+
+        missing: list[str] = []
+        for model in linkable_models():
+            name = _detail_response_component(
+                paths, model.entity_type, model.entity_type_plural
+            )
+            assert name is not None, (
+                f"No /api/pages detail GET found for {model.__name__} "
+                f"(entity_type={model.entity_type!r})"
+            )
+            if "last_modified" not in components[name].get("properties", {}):
+                missing.append(f"{model.__name__} → {name}")
+
+        assert not missing, (
+            "These catalog detail responses don't expose `last_modified`. "
+            "Inherit `CatalogDetailSchema` and pass "
+            f"`last_modified=obj.last_modified`: {missing}"
+        )
+
 
 @pytest.mark.django_db
 class TestLocationPublicIdCorrectness:
@@ -127,3 +156,20 @@ class TestSlugKeyedPublicIdParity:
         assert resp.status_code == 200
         data = resp.json()
         assert data["public_id"] == data["slug"] == manufacturer.slug
+
+
+@pytest.mark.django_db
+class TestLastModifiedSourcing:
+    """``last_modified`` is the sitemap's freshness value, not raw
+    ``updated_at`` — identical for a non-aggregating entity, widened for Title.
+    """
+
+    def test_manufacturer_last_modified_equals_updated_at(
+        self, client, manufacturer
+    ) -> None:
+        resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
+        assert resp.status_code == 200
+        # Manufacturer doesn't widen lastmod, so detail freshness == updated_at.
+        # (Ninja serializes to millisecond precision, so compare with tolerance.)
+        got = datetime.fromisoformat(resp.json()["last_modified"])
+        assert abs(got - manufacturer.updated_at) < timedelta(milliseconds=1)

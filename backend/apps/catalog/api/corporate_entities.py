@@ -107,6 +107,7 @@ def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
     return CorporateEntityDetailSchema(
         name=ce.name,
         public_id=ce.public_id,
+        last_modified=ce.last_modified,
         slug=ce.slug,
         description=describe(ce),
         manufacturer=EntityRef(

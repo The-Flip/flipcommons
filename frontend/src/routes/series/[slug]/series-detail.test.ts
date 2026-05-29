@@ -6,6 +6,7 @@ import { load } from './+layout.server';
 const MOCK_DATA = {
   name: 'Eight Ball',
   public_id: 'eight-ball',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'eight-ball',
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
   titles: [

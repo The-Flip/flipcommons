@@ -10,6 +10,7 @@ function entity(over: Partial<EntityBaseFacts> = {}): EntityBaseFacts {
   return {
     name: 'Fantasy',
     public_id: 'fantasy',
+    last_modified: '2026-05-29T16:12:08.340Z',
     description: { text: '', html: '', plain: 'Dragons and wizards.', citations: [] },
     ...over,
   };
@@ -46,6 +47,24 @@ describe('buildSchemaOrgNode', () => {
     expect(node['@type']).toBe('DefinedTerm');
     expect(node.name).toBe('Fantasy');
     expect(node.description).toBe('Dragons and wizards.');
+  });
+
+  test('emits dateModified from last_modified (ISO string, as-is)', () => {
+    const node = buildSchemaOrgNode(
+      entity({ last_modified: '2026-05-29T16:12:08.340Z' }),
+      info({ types: ['DefinedTerm'] }),
+      PAGE,
+    );
+    expect(node.dateModified).toBe('2026-05-29T16:12:08.340Z');
+  });
+
+  test('omits dateModified when last_modified is empty', () => {
+    const node = buildSchemaOrgNode(
+      entity({ last_modified: '' }),
+      info({ types: ['DefinedTerm'] }),
+      PAGE,
+    );
+    expect(node.dateModified).toBeUndefined();
   });
 
   test('multiple types emit @type as an array', () => {

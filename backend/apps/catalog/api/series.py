@@ -104,6 +104,7 @@ def _serialize_series_detail(series: Series) -> SeriesDetailSchema:
     return SeriesDetailSchema(
         name=series.name,
         public_id=series.public_id,
+        last_modified=series.last_modified,
         slug=series.slug,
         description=describe(series),
         titles=[

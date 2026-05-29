@@ -622,6 +622,7 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
     return TitleDetailSchema(
         name=title.name,
         public_id=title.public_id,
+        last_modified=title.last_modified,
         slug=title.slug,
         opdb_id=title.opdb_id,
         fandom_page_id=title.fandom_page_id,

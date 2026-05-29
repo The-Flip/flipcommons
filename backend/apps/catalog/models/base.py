@@ -10,7 +10,7 @@ from apps.core.models import (
     DescribedModel,
     LifecycleManager,
     LifecycleStatusModel,
-    LinkableModel,
+    SitemappedModel,
 )
 from apps.provenance.models import ClaimControlledModel
 
@@ -30,12 +30,6 @@ class AliasModel(models.Model):
     - ``alias_claim_field``: the claim namespace on the parent that carries
       alias values (e.g. ``"theme_alias"``). Enforced at class creation
       via ``__init_subclass__``; read by ``discover_alias_types``.
-
-    ``AliasModel`` does not bundle ``TimeStampedModel``. Row-level
-    timestamps are an independent choice per subclass — the meaningful
-    "when was this asserted" lives on the originating claim, not on the
-    alias row. Existing concrete aliases all inherit ``TimeStampedModel``
-    by convention, but a future alias subclass could opt out.
     """
 
     alias_claim_field: ClassVar[str]
@@ -47,7 +41,7 @@ class AliasModel(models.Model):
         ordering = ["value"]
 
     def __init_subclass__(cls, **kwargs: object) -> None:
-        # NB: we can't gate on ``cls._meta.abstract`` here — Django's ModelBase
+        # We can't gate on ``cls._meta.abstract`` here — Django's ModelBase
         # runs ``__init_subclass__`` with ``abstract`` still inherited as True
         # from the parent, then rewrites it to False for concrete subclasses
         # later. So this check runs for every AliasModel subclass, concrete or
@@ -65,22 +59,17 @@ class AliasModel(models.Model):
 
 
 class CatalogModel(
-    DescribedModel, LinkableModel, LifecycleStatusModel, ClaimControlledModel
+    DescribedModel, SitemappedModel, LifecycleStatusModel, ClaimControlledModel
 ):
     """Abstract marker for top-level catalog entities.
 
-    Combines a long-form ``description`` (``DescribedModel``),
-    URL-addressability (``LinkableModel``), claim-controlled lifecycle
-    status (``LifecycleStatusModel``), and claim-driven display fields
-    (``ClaimControlledModel``). Used to distinguish catalog-specific code
-    paths (e.g. ``ingest_pindata``, soft-delete wire format) that must not
-    widen to other ``LinkableModel`` subclasses.
+    Used to distinguish catalog-specific code paths (e.g. ``ingest_pindata``,
+    soft-delete wire format), as well as define the capabilies that all catalog
+    models must have.
 
-    Concrete subclasses inherit all four capabilities transitively and do
-    not relist them in their own bases. Each concrete subclass must still
-    carry its own ``status_valid()`` constraint in ``Meta`` because Django
-    does not inherit abstract-parent constraints when a concrete model
-    defines its own ``Meta``.
+    Each concrete subclass must still carry its own ``status_valid()`` constraint
+    in ``Meta`` because Django does not inherit abstract-parent constraints when
+    a concrete model defines its own ``Meta``.
     """
 
     # Redeclared from ``LifecycleStatusModel`` so ``Self`` rebinds at the

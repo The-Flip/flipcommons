@@ -4,16 +4,14 @@ import { jsonLdGraph, breadcrumbList, absolutize, type JsonLdNode } from '$lib/c
 import type { EntityInfo } from './types';
 
 /**
- * The minimal entity facts every schema.org node needs. Widens in a later
- * tranche (external IDs / `sameAs`).
- *
- * `public_id` is the entity's uniform URL identity (`slug` for most entities,
- * `location_path` for Location) — the backend twin of `LinkableDetailSchema`.
- * The `@id` is built from it, never from `slug`.
+ * Entity facts shared by every schema.org node.
  */
 export interface EntityBaseFacts {
   name: string;
+  /** For most entities this will be its slug.  For Location it'll be its location_path. */
   public_id: string;
+  /** ISO 8601 freshness timestamp, same value as sitemap `<lastmod>` */
+  last_modified: string;
   description: RichTextSchema;
 }
 
@@ -44,6 +42,12 @@ export function buildSchemaOrgNode<T extends EntityBaseFacts>(
   };
   const desc = entity.description.plain.trim();
   if (desc) node.description = desc;
+
+  // dateModified is universal (every catalog entity is TimeStamped), so it's
+  // emitted directly here rather than declared in each per-model fieldMap. The
+  // value is the sitemap's `<lastmod>` (ISO 8601), already date-shaped — no
+  // coercion, unlike the fieldMap value transforms.
+  if (entity.last_modified) node.dateModified = entity.last_modified;
 
   // fieldMap: copy scalar API fields to their schema.org property names.
   // Iterate the map's own keys (not Object.entries, which widens the key to

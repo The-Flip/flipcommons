@@ -162,6 +162,7 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
     return SystemDetailSchema(
         name=system.name,
         public_id=system.public_id,
+        last_modified=system.last_modified,
         slug=system.slug,
         description=describe(system),
         manufacturer=(

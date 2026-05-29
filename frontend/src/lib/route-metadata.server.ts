@@ -60,7 +60,7 @@ export const SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS = [
  * `route-metadata.test.ts` pin both invariants at runtime; the
  * `satisfies` clause pins the key/value types at typecheck.
  *
- * `lastmod` for these routes is the parent entity's `_sitemap_lastmod` — an
+ * `lastmod` for these routes is the parent entity's `_last_modified` — an
  * acknowledged under-report when the listing's content changes without
  * bumping the parent (e.g. a new System linked to a Manufacturer). Revisit
  * per-route lastmod widening if/when traffic data shows lost re-crawls.

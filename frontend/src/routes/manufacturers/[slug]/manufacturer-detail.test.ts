@@ -6,6 +6,7 @@ import { load } from './+layout.server';
 const MOCK_MANUFACTURER = {
   name: 'Williams',
   public_id: 'williams',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'williams',
   description: {
     text: 'Historic manufacturer [1].',

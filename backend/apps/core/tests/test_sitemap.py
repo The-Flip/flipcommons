@@ -1,8 +1,8 @@
 """Tests for ``apps.core.sitemap.all_sitemap_feeds()`` and the underlying
-``LinkableModel`` sitemap classmethods.
+``SitemappedModel`` sitemap classmethods.
 
 Mirrors the registry-walk shape from ``apps.core.entity_types`` — adding a
-new ``LinkableModel`` automatically picks up the parameterized parity
+new ``SitemappedModel`` automatically picks up the parameterized parity
 checks below.
 """
 
@@ -14,7 +14,7 @@ import pytest
 from django.apps import apps
 
 from apps.catalog.models import Title
-from apps.core.models import LinkableModel
+from apps.core.models import SitemappedModel
 from apps.core.sitemap import (
     SitemapEntry,
     SitemapFeed,
@@ -22,32 +22,32 @@ from apps.core.sitemap import (
 )
 
 
-def _concrete_linkable_models() -> list[type[LinkableModel]]:
+def _concrete_sitemapped_models() -> list[type[SitemappedModel]]:
     return [
         cls
         for cls in apps.get_models()
-        if issubclass(cls, LinkableModel) and not cls._meta.abstract
+        if issubclass(cls, SitemappedModel) and not cls._meta.abstract
     ]
 
 
 # ---------------------------------------------------------------------------
-# Per-model default behavior (parameterized over every LinkableModel)
+# Per-model default behavior (parameterized over every SitemappedModel)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     "model",
-    _concrete_linkable_models(),
+    _concrete_sitemapped_models(),
     ids=lambda m: m.__name__,
 )
 class TestPerModelDefaults:
-    """Parity checks fired once per concrete ``LinkableModel`` subclass."""
+    """Parity checks fired once per concrete ``SitemappedModel`` subclass."""
 
     def test_sitemap_queryset_returns_queryset(self, model):
         qs = model.sitemap_queryset()
         # Cheap structural check that the queryset is annotated correctly.
-        assert "_sitemap_lastmod" in qs.query.annotations
+        assert "_last_modified" in qs.query.annotations
 
     def test_sitemap_queryset_excludes_deleted_rows(self, model):
         """Default ``sitemap_queryset()`` calls ``.active()`` — no
@@ -70,7 +70,7 @@ class TestPerModelDefaults:
 @pytest.mark.django_db
 class TestAllSitemapFeeds:
     def test_empty_database_returns_no_feeds(self):
-        """With no rows in any LinkableModel table, no feed is emitted."""
+        """With no rows in any SitemappedModel table, no feed is emitted."""
         feeds = all_sitemap_feeds()
         assert feeds == []
 

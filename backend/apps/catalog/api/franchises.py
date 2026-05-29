@@ -107,6 +107,7 @@ def _serialize_franchise_detail(franchise: Franchise) -> FranchiseDetailSchema:
     return FranchiseDetailSchema(
         name=franchise.name,
         public_id=franchise.public_id,
+        last_modified=franchise.last_modified,
         slug=franchise.slug,
         description=describe(franchise),
         titles=[

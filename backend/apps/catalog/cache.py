@@ -27,8 +27,12 @@ from apps.core.licensing import current_audience
 # shape change without a version bump can keep serving old-shaped JSON to the
 # new frontend until the next write. Versioning the keys orphans the stale
 # entries instead. (The unversioned keys were the implicit "v1"; v2 = the
-# public_id reference-body migration that reshaped titles/manufacturers refs.)
-_CACHE_VERSION = "v2"
+# public_id reference-body migration that reshaped titles/manufacturers refs;
+# v3 = added `last_modified` to the cached location tree's `_LocationNode` —
+# unpickling a stale v2 node post-deploy would miss the new slot. The version
+# is shared across all bases, so this also harmlessly orphans the unchanged
+# `/all/` grid payloads, which rebuild on first read.)
+_CACHE_VERSION = "v3"
 
 _MODELS_ALL_BASE = f"catalog:models:all:{_CACHE_VERSION}"
 _MANUFACTURERS_ALL_BASE = f"catalog:manufacturers:all:{_CACHE_VERSION}"

@@ -86,6 +86,7 @@ def _serialize_detail(theme: Theme) -> ThemeDetailSchema:
     return ThemeDetailSchema(
         name=theme.name,
         public_id=theme.public_id,
+        last_modified=theme.last_modified,
         slug=theme.slug,
         description=describe(theme),
         aliases=[a.value for a in theme.aliases.all()],

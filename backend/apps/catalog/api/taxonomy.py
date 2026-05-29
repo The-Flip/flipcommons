@@ -129,6 +129,7 @@ def _serialize_taxonomy(
     return TaxonomySchema(
         name=obj.name,
         public_id=obj.public_id,
+        last_modified=obj.last_modified,
         slug=obj.slug,
         display_order=obj.display_order,
         description=build_rich_text(

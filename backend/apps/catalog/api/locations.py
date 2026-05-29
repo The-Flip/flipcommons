@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import NamedTuple, cast
 
 from django.core.cache import cache
 from django.db.models import Count, F, Prefetch, Q
 from django.http import HttpRequest
+from django.utils import timezone
 from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
 from ninja.decorators import decorate_view
@@ -96,6 +98,10 @@ class _LocationNode:
     short_name: str
     code: str
     aliases: tuple[str, ...]
+    # Freshness for JSON-LD ``dateModified`` / sitemap ``<lastmod>``; sourced
+    # from ``Location.last_modified`` (== ``updated_at``, Location doesn't
+    # widen) at cache-build time so detail reads stay zero-query.
+    last_modified: datetime
     # Pre-rendered at cache-build time so public detail reads stay
     # zero-query. Description rendering has no rank dependency
     # (``build_rich_text`` only consults claims for attribution; rank
@@ -171,6 +177,7 @@ def _get_location_tree() -> _LocationTree:
             aliases=tuple(a.value for a in loc.aliases.all()),
             description=describe(loc),
             divisions=tuple(loc.divisions or ()),
+            last_modified=loc.last_modified,
         )
         children_index.setdefault(parent_path, []).append(loc.location_path)
 
@@ -281,6 +288,13 @@ def _get_location_detail(location_path: str) -> LocationDetailSchema:
         return LocationDetailSchema(
             name="",
             public_id="",
+            # Synthetic root (the /locations listing, not a real entity):
+            # freshness is the newest location in the tree, falling back to
+            # now when the catalog has no locations yet.
+            last_modified=max(
+                (n.last_modified for n in nodes.values()),
+                default=timezone.now(),
+            ),
             slug="",
             location_path="",
             location_type=None,
@@ -311,6 +325,7 @@ def _get_location_detail(location_path: str) -> LocationDetailSchema:
     return LocationDetailSchema(
         name=node.name,
         public_id=location_path,
+        last_modified=node.last_modified,
         slug=node.slug,
         location_path=location_path,
         location_type=node.location_type,

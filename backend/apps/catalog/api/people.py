@@ -186,6 +186,7 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
     return PersonDetailSchema(
         name=person.name,
         public_id=person.public_id,
+        last_modified=person.last_modified,
         slug=person.slug,
         description=describe(person),
         birth_year=person.birth_year,

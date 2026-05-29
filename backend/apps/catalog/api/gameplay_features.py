@@ -76,6 +76,7 @@ def _serialize_detail(feature: GameplayFeature) -> GameplayFeatureDetailSchema:
     return GameplayFeatureDetailSchema(
         name=feature.name,
         public_id=feature.public_id,
+        last_modified=feature.last_modified,
         slug=feature.slug,
         description=describe(feature),
         aliases=[a.value for a in feature.aliases.all()],

@@ -28,6 +28,7 @@ import type { TitleDetailSchema } from '$lib/api/schema';
 const MOCK_TITLE = {
   name: 'Medieval Madness',
   public_id: 'medieval-madness',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'medieval-madness',
   abbreviations: [],
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
@@ -117,6 +118,7 @@ describe('title layout', () => {
       model_detail: {
         name: 'Doctor Who',
         public_id: 'doctor-who-1992',
+        last_modified: '2026-01-01T00:00:00Z',
         slug: 'doctor-who-1992',
         description: { text: '', html: '', plain: '', citations: [], attribution: null },
         abbreviations: [],

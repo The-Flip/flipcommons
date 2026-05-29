@@ -30,6 +30,7 @@ import type { SystemDetailSchema } from '$lib/api/schema';
 const SYSTEM = {
   name: 'WPC-95',
   public_id: 'wpc-95',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'wpc-95',
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
   manufacturer: { name: 'Williams', public_id: 'williams' },

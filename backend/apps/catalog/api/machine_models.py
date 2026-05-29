@@ -404,6 +404,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
     return ModelDetailSchema(
         name=pm.name,
         public_id=pm.public_id,
+        last_modified=pm.last_modified,
         slug=pm.slug,
         description=describe(pm),
         manufacturer=EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None,

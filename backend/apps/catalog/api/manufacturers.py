@@ -175,6 +175,7 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
     return ManufacturerDetailSchema(
         name=mfr.name,
         public_id=mfr.public_id,
+        last_modified=mfr.last_modified,
         slug=mfr.slug,
         description=describe(mfr),
         year_start=min(year_starts) if year_starts else None,
