@@ -51,7 +51,7 @@
   );
   let peopleHeading = $derived(`People (${model.credits.length})`);
   let mediaHeading = $derived(`Media (${model.uploaded_media.length})`);
-  let hasExternalLinks = $derived(!!(model.ipdb_id || model.opdb_id || model.pinside_id));
+  let hasExternalLinks = $derived(!!(model.ipdb_id || model.pinside_id));
 </script>
 
 {#if model.description?.html}
@@ -133,9 +133,6 @@
           <a href="https://www.ipdb.org/machine.cgi?id={model.ipdb_id}">
             Internet Pinball Database
           </a>
-        {/if}
-        {#if model.opdb_id}
-          <a href="https://opdb.org/machines/{model.opdb_id}">Open Pinball Database</a>
         {/if}
         {#if model.pinside_id}
           <a href="https://pinside.com/pinball/machine/{model.pinside_id}">Pinside</a>

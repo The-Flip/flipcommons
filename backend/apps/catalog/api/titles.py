@@ -375,12 +375,6 @@ def _build_review_links(title: Title) -> list[ReviewLinkSchema]:
     )
     for rt in related:
         links.append(ReviewLinkSchema(label=rt.name, url=f"/titles/{rt.slug}"))
-        links.append(
-            ReviewLinkSchema(
-                label=f"OPDB {rt.opdb_id}",
-                url=f"https://opdb.org/machines/{rt.opdb_id}",
-            )
-        )
 
     return links
 

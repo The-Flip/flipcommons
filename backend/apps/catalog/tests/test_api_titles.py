@@ -400,6 +400,26 @@ class TestTitleDetailAggregation:
         )
 
 
+@pytest.mark.django_db
+class TestTitleReviewLinks:
+    """A needs-review title's review_links carry the internal related-title
+    link only — the OPDB machine URL was broken (a Title opdb_id is a group
+    id, not a machine id) and was removed."""
+
+    def test_review_links_internal_only_no_opdb(self, client):
+        # OPDB-backed related title sharing the same name.
+        Title.objects.create(name="Whirlwind", slug="whirlwind-opdb", opdb_id="G5pe4")
+        title = Title.objects.create(
+            name="Whirlwind", slug="whirlwind", needs_review=True
+        )
+
+        resp = client.get(f"/api/pages/title/{title.slug}")
+        data = resp.json()
+        urls = [link["url"] for link in data["review_links"]]
+        assert "/titles/whirlwind-opdb" in urls
+        assert not any("opdb.org" in url for url in urls)
+
+
 class TestTitlesAllFacets:
     """Test that /api/titles/all/ returns enriched facet data."""
 

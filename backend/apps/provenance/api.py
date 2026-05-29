@@ -95,12 +95,6 @@ def _build_claim_review_context(
     )
     for rt in related:
         links.append(ReviewLinkSchema(label=rt.name, url=rt.get_absolute_url()))
-        links.append(
-            ReviewLinkSchema(
-                label=f"OPDB {rt.opdb_id}",
-                url=f"https://opdb.org/machines/{rt.opdb_id}",
-            )
-        )
 
     return links, title.public_id
 

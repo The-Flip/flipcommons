@@ -276,7 +276,6 @@
 
       <ExternalLinksSidebarSection
         ipdbId={md.ipdb_id}
-        opdbId={md.opdb_id}
         pinsideId={md.pinside_id}
         note="See this title on other sites:"
         onEdit={editAction('model:external-data')}

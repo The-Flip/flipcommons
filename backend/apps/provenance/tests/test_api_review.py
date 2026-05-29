@@ -6,7 +6,7 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from apps.catalog.models import CreditRole, Person, Series
+from apps.catalog.models import CreditRole, Person, Series, Title
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.models import Claim, Source
 
@@ -51,6 +51,22 @@ class TestReviewClaimsDisplay:
             ("person", "Pat Lawlor"),
             ("role", "Art"),
         ]
+
+    def test_title_claim_review_links_internal_only_no_opdb(self, client, source):
+        """A flagged ``title`` claim surfaces the internal related-title link
+        only; the broken OPDB machine URL was removed."""
+        title = Title.objects.create(name="Whirlwind", slug="whirlwind")
+        Title.objects.create(name="Whirlwind", slug="whirlwind-opdb", opdb_id="G5pe4")
+        pm = make_machine_model(name="Whirlwind", slug="whirlwind-mm")
+        claim = Claim.objects.assert_claim(pm, "title", title.public_id, source=source)
+        _flag(claim)
+
+        resp = client.get("/api/review/claims/")
+        assert resp.status_code == 200
+        row = next(r for r in resp.json() if r["field_name"] == "title")
+        urls = [link["url"] for link in row["review_links"]]
+        assert any(url.endswith("/whirlwind-opdb") for url in urls)
+        assert not any("opdb.org" in url for url in urls)
 
     def test_scalar_claim_value_has_null_display(self, client, source):
         series = Series.objects.create(slug="s", name="S")

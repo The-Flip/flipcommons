@@ -81,7 +81,7 @@
     ),
   );
 
-  let hasExternalLinks = $derived(!!(title.opdb_id || title.fandom_page_id));
+  let hasExternalLinks = $derived(!!title.fandom_page_id);
 </script>
 
 {#if md}
@@ -125,20 +125,14 @@
     </AccordionSection>
   {/if}
 
-  {#if md.ipdb_id || md.opdb_id || md.pinside_id || title.opdb_id || title.fandom_page_id}
+  {#if md.ipdb_id || md.pinside_id || title.fandom_page_id}
     <AccordionSection heading="External Links" onEdit={editAction('model:external-data')}>
       <div class="external-ids">
         {#if md.ipdb_id}
           <a href="https://www.ipdb.org/machine.cgi?id={md.ipdb_id}">Internet Pinball Database</a>
         {/if}
-        {#if md.opdb_id}
-          <a href="https://opdb.org/machines/{md.opdb_id}">Open Pinball Database</a>
-        {/if}
         {#if md.pinside_id}
           <a href="https://pinside.com/pinball/machine/{md.pinside_id}">Pinside</a>
-        {/if}
-        {#if title.opdb_id}
-          <a href="https://opdb.org/groups/{title.opdb_id}">OPDB</a>
         {/if}
         {#if title.fandom_page_id}
           <a href="https://pinball.fandom.com/?curid={title.fandom_page_id}">Pinball Wiki</a>
@@ -343,9 +337,6 @@
   {#if hasExternalLinks}
     <AccordionSection heading="External Links" onEdit={editAction('title:external-data')}>
       <div class="external-ids">
-        {#if title.opdb_id}
-          <a href="https://opdb.org/groups/{title.opdb_id}">OPDB</a>
-        {/if}
         {#if title.fandom_page_id}
           <a href="https://pinball.fandom.com/?curid={title.fandom_page_id}">Pinball Wiki</a>
         {/if}

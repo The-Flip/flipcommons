@@ -366,7 +366,6 @@
 
     <ExternalLinksSidebarSection
       ipdbId={model.ipdb_id}
-      opdbId={model.opdb_id}
       pinsideId={model.pinside_id}
       note="See this model on other sites:"
     />
