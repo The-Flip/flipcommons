@@ -8,7 +8,7 @@
     onEdit = undefined,
   }: {
     ipdbId?: number | null;
-    pinsideId?: number | null;
+    pinsideId?: string | null;
     note?: string;
     onEdit?: (() => void) | undefined;
   } = $props();

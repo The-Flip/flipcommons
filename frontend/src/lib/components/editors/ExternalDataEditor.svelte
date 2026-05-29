@@ -12,7 +12,7 @@
   type ExternalDataModel = {
     ipdb_id?: number | null;
     opdb_id?: string | null;
-    pinside_id?: number | null;
+    pinside_id?: string | null;
     ipdb_rating?: number | null;
     pinside_rating?: number | null;
   };
@@ -28,7 +28,7 @@
   type ExternalDataFormFields = {
     ipdb_id: string | number;
     opdb_id: string;
-    pinside_id: string | number;
+    pinside_id: string;
     ipdb_rating: string | number;
     pinside_rating: string | number;
   };
@@ -100,11 +100,10 @@
         {...fc(constraints, 'ipdb_id')}
       />
       <TextField label="OPDB ID" bind:value={fields.opdb_id} error={fieldErrors.opdb_id ?? ''} />
-      <NumberField
+      <TextField
         label="Pinside ID"
         bind:value={fields.pinside_id}
         error={fieldErrors.pinside_id ?? ''}
-        {...fc(constraints, 'pinside_id')}
       />
     </div>
   </Fieldset>

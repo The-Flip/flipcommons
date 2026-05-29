@@ -95,12 +95,13 @@ class MachineModel(
         verbose_name="OPDB ID",
         validators=[validate_no_mojibake],
     )
-    pinside_id = models.PositiveIntegerField(
+    pinside_id = models.CharField(
+        max_length=120,
         unique=True,
         null=True,
         blank=True,
         verbose_name="Pinside ID",
-        validators=[MinValueValidator(EXTERNAL_ID_MIN)],
+        validators=[validate_no_mojibake],
     )
 
     # Hierarchy
@@ -340,13 +341,9 @@ class MachineModel(
                 | models.Q(ipdb_id__gte=EXTERNAL_ID_MIN),
                 name="catalog_machinemodel_ipdb_id_min",
             ),
-            models.CheckConstraint(
-                condition=models.Q(pinside_id__isnull=True)
-                | models.Q(pinside_id__gte=EXTERNAL_ID_MIN),
-                name="catalog_machinemodel_pinside_id_min",
-            ),
             # Nullable string IDs: NULL or non-empty
             nullable_id_not_empty("opdb_id"),
+            nullable_id_not_empty("pinside_id"),
             # Cross-field: month requires year
             models.CheckConstraint(
                 condition=models.Q(month__isnull=True) | models.Q(year__isnull=False),

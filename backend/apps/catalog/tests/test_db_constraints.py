@@ -281,6 +281,15 @@ class TestNullableIdConstraints:
         with pytest.raises(IntegrityError):
             _raw_update(MachineModel, mm.pk, opdb_id="")
 
+    def test_machine_model_pinside_id_empty_string_rejected(self, db):
+        mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
+        ce = CorporateEntity.objects.create(
+            name="Test Corp", slug="test-corp", manufacturer=mfr
+        )
+        mm = make_machine_model(name="Test", slug="test-mm", corporate_entity=ce)
+        with pytest.raises(IntegrityError):
+            _raw_update(MachineModel, mm.pk, pinside_id="")
+
     def test_machine_model_opdb_id_null_accepted(self, db):
         mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
         ce = CorporateEntity.objects.create(

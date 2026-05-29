@@ -4,7 +4,7 @@
   type ExternalDataModel = {
     ipdb_id?: number | null;
     opdb_id?: string | null;
-    pinside_id?: number | null;
+    pinside_id?: string | null;
     ipdb_rating?: number | null;
     pinside_rating?: number | null;
   };

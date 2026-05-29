@@ -182,7 +182,7 @@ class ModelDetailSchema(CatalogDetailSchema):
     flipper_count: int | None = None
     ipdb_id: int | None = None
     opdb_id: str | None = None
-    pinside_id: int | None = None
+    pinside_id: str | None = None
     ipdb_rating: float | None = None
     pinside_rating: float | None = None
     abbreviations: list[str] = []
