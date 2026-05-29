@@ -37,6 +37,16 @@ class TestManufacturersAPI:
         assert len(data["titles"]) == 1
         assert data["titles"][0]["name"] == "Medieval Madness"
 
+    def test_get_manufacturer_detail_external_ids(self, client, manufacturer):
+        manufacturer.opdb_manufacturer_id = 42
+        manufacturer.wikidata_id = "Q12345"
+        manufacturer.save()
+        resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["opdb_manufacturer_id"] == 42
+        assert data["wikidata_id"] == "Q12345"
+
     def test_get_manufacturer_entities_ordered_by_years(self, client, manufacturer):
         CorporateEntity.objects.create(
             manufacturer=manufacturer,

@@ -34,6 +34,13 @@ class TestPeopleAPI:
         assert data["titles"][0]["roles"] == ["Design"]
         assert data["titles"][0]["year"] == 1997
 
+    def test_get_person_detail_external_ids(self, client, person):
+        person.wikidata_id = "Q98765"
+        person.save()
+        resp = client.get(f"/api/pages/person/{person.slug}")
+        assert resp.status_code == 200
+        assert resp.json()["wikidata_id"] == "Q98765"
+
     def test_get_person_detail_year_desc_nulls_last(
         self, client, person, db, credit_roles
     ):

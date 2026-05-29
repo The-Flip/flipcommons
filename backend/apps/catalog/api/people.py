@@ -112,6 +112,7 @@ class PersonDetailSchema(CatalogDetailSchema):
     birth_place: str | None = None
     nationality: str | None = None
     photo_url: str | None = None
+    wikidata_id: str | None = None
     titles: list[PersonTitleSchema]
     uploaded_media: list[UploadedMediaSchema] = []
 
@@ -198,6 +199,7 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
         birth_place=person.birth_place,
         nationality=person.nationality,
         photo_url=person.photo_url,
+        wikidata_id=person.wikidata_id,
         titles=titles,
         uploaded_media=serialize_uploaded_media(all_media(person)),
     )

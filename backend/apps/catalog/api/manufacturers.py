@@ -113,6 +113,8 @@ class ManufacturerDetailSchema(CatalogDetailSchema):
     year_end: int | None = None
     logo_url: str | None = None
     website: str = ""
+    opdb_manufacturer_id: int | None = None
+    wikidata_id: str | None = None
     entities: list[ManufacturerCorporateEntitySchema]
     titles: list[RelatedTitleSchema]
     systems: list[ManufacturerSystemSchema]
@@ -180,6 +182,8 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
         year_end=max(year_ends) if year_ends else None,
         logo_url=mfr.logo_url,
         website=mfr.website,
+        opdb_manufacturer_id=mfr.opdb_manufacturer_id,
+        wikidata_id=mfr.wikidata_id,
         entities=[
             ManufacturerCorporateEntitySchema(
                 name=e.name,

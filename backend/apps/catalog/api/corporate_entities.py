@@ -69,6 +69,7 @@ class CorporateEntityDetailSchema(CatalogDetailSchema):
     manufacturer: EntityRef
     year_start: int | None = None
     year_end: int | None = None
+    ipdb_manufacturer_id: int | None = None
     aliases: list[str] = []
     locations: list[CorporateEntityLocationSchema] = []
     titles: list[RelatedTitleSchema]
@@ -115,6 +116,7 @@ def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
         ),
         year_start=ce.year_start,
         year_end=ce.year_end,
+        ipdb_manufacturer_id=ce.ipdb_manufacturer_id,
         aliases=[a.value for a in ce.aliases.all()],
         locations=serialize_locations(ce),
         titles=collect_titles(ce.models.all()),
