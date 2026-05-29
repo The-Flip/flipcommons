@@ -1,7 +1,13 @@
 import type { RichTextSchema } from '$lib/api/schema';
 import { ENTITY_META, type EntityRelationship } from '$lib/entities/entity-meta';
-import { jsonLdGraph, breadcrumbList, absolutize, type JsonLdNode } from '$lib/components/jsonld';
-import type { EntityInfo } from './types';
+import {
+  jsonLdGraph,
+  breadcrumbList,
+  absolutize,
+  type JsonLdNode,
+  type Crumb,
+} from '$lib/components/jsonld';
+import type { EntityInfo, FieldMapEntry } from './types';
 
 /**
  * Entity facts shared by every schema.org node.
@@ -49,16 +55,21 @@ export function buildSchemaOrgNode<T extends EntityBaseFacts>(
   // coercion, unlike the fieldMap value transforms.
   if (entity.last_modified) node.dateModified = entity.last_modified;
 
-  // fieldMap: copy scalar API fields to their schema.org property names.
-  // Iterate the map's own keys (not Object.entries, which widens the key to
-  // `string` and breaks the typed `entity[key]` read).
-  const fieldMap: Partial<Record<keyof T, string>> = info.schemaOrg.fieldMap ?? {};
+  // fieldMap: copy scalar API fields to their schema.org property names,
+  // applying any declared value transform. Iterate the map's own keys (not
+  // Object.entries, which widens the key to `string` and breaks the typed
+  // `entity[key]` read).
+  const fieldMap: Partial<Record<keyof T, FieldMapEntry>> = info.schemaOrg.fieldMap ?? {};
   for (const key of Object.keys(fieldMap) as (keyof T)[]) {
-    const targetProp = fieldMap[key];
-    if (targetProp === undefined) continue;
+    const entry = fieldMap[key];
+    if (entry === undefined) continue;
     const value = entity[key];
     if (value === null || value === undefined || value === '') continue;
-    node[targetProp] = value;
+    const { property, transform } =
+      typeof entry === 'string' ? { property: entry, transform: undefined } : entry;
+    // `transform: 'year'` coerces an int year (e.g. 1992) to a partial ISO
+    // date string ("1992") that schema.org date properties accept.
+    node[property] = transform === 'year' ? String(value) : value;
   }
 
   // relationshipMap: emit cross-reference `@id`s for FK/M2M fields.
@@ -89,16 +100,19 @@ export function buildSchemaOrgNode<T extends EntityBaseFacts>(
 
 /**
  * Build the full `@graph` for an entity detail page: the entity node plus a
- * `Home › {name}` breadcrumb. The listing page is omitted from the trail
- * because it's CSR/non-crawlable.
+ * breadcrumb. `crumbs` is the trail leading up to (but not including) this
+ * page; it defaults to `[Home]` because most listing pages are
+ * CSR/non-crawlable. Entities with an SSR parent chain (Model → its Title,
+ * Location → its ancestors) pass a richer trail.
  */
 export function buildEntityJsonLd<T extends EntityBaseFacts>(
   entity: T,
   info: EntityInfo<T>,
   pageUrl: URL,
+  crumbs: Crumb[] = [{ label: 'Home', href: '/' }],
 ): Record<string, unknown> {
   return jsonLdGraph([
     buildSchemaOrgNode(entity, info, pageUrl),
-    breadcrumbList(pageUrl, [{ label: 'Home', href: '/' }], entity.name),
+    breadcrumbList(pageUrl, crumbs, entity.name),
   ]);
 }

@@ -52,7 +52,7 @@ describe('title detail SSR route', () => {
       params: { slug: 'medieval-madness' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ profile: MOCK_TITLE });
+    expect(result).toEqual(expect.objectContaining({ profile: MOCK_TITLE }));
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/title/medieval-madness');
@@ -73,7 +73,7 @@ describe('title detail SSR route', () => {
   it('renders meaningful title content into initial HTML', () => {
     const { body } = render(Harness, {
       props: {
-        data: { profile: MOCK_TITLE },
+        data: { profile: MOCK_TITLE, jsonLd: {} },
       },
     });
 
@@ -127,7 +127,7 @@ describe('title detail SSR route', () => {
 
     const { body } = render(Harness, {
       props: {
-        data: { profile: singleModelTitle },
+        data: { profile: singleModelTitle, jsonLd: {} },
       } as never,
     });
 

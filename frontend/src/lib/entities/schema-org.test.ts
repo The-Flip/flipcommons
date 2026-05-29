@@ -1,7 +1,20 @@
 import { describe, expect, test } from 'vitest';
 import { buildSchemaOrgNode, buildEntityJsonLd, type EntityBaseFacts } from './schema-org';
 import type { EntityInfo, SchemaOrgInfo } from './types';
-import { creditRole, manufacturer, system, theme } from './index';
+import {
+  corporateEntity,
+  creditRole,
+  franchise,
+  location,
+  manufacturer,
+  model,
+  person,
+  series,
+  system,
+  theme,
+  title,
+} from './index';
+import type { LocationDetailSchema } from '$lib/api/schema';
 
 const ORIGIN = 'https://flipcommons.org';
 const PAGE = new URL(`${ORIGIN}/themes/fantasy`);
@@ -165,6 +178,36 @@ describe('fieldMap', () => {
     expect(node).not.toHaveProperty('logo');
     expect(node).not.toHaveProperty('url');
   });
+
+  test('transform "year" coerces an int year to a partial-ISO string', () => {
+    const node = buildNode(
+      { ...entity(), year: 1992 },
+      { types: ['Game'], fieldMap: { year: { property: 'releaseDate', transform: 'year' } } },
+      'model',
+    );
+    expect(node.releaseDate).toBe('1992');
+  });
+
+  test('a bare-string entry still copies the value as-is', () => {
+    const node = buildNode(
+      { ...entity(), hero_image_url: 'https://cdn.example/hero.png' },
+      { types: ['Game'], fieldMap: { hero_image_url: 'image' } },
+      'model',
+    );
+    expect(node.image).toBe('https://cdn.example/hero.png');
+  });
+
+  test('transform "year" still drops a null source value', () => {
+    const node = buildNode(
+      { ...entity(), year_start: null },
+      {
+        types: ['Organization'],
+        fieldMap: { year_start: { property: 'foundingDate', transform: 'year' } },
+      },
+      'corporate-entity',
+    );
+    expect(node).not.toHaveProperty('foundingDate');
+  });
 });
 
 describe('relationshipMap (single FK)', () => {
@@ -254,5 +297,70 @@ describe('per-model declarations', () => {
 
   test('theme maps parents → isPartOf', () => {
     expect(theme.schemaOrg.relationshipMap).toEqual({ parents: 'isPartOf' });
+  });
+
+  test('corporate-entity maps year_start/year_end to founding/dissolution dates', () => {
+    expect(corporateEntity.schemaOrg.types).toEqual(['Organization']);
+    expect(corporateEntity.schemaOrg.fieldMap).toEqual({
+      year_start: { property: 'foundingDate', transform: 'year' },
+      year_end: { property: 'dissolutionDate', transform: 'year' },
+    });
+    expect(corporateEntity.schemaOrg.relationshipMap).toEqual({ manufacturer: 'brand' });
+  });
+
+  test('series and franchise are bare CreativeWork(Series) with no maps', () => {
+    expect(series.schemaOrg.types).toEqual(['CreativeWorkSeries']);
+    expect(series.schemaOrg.fieldMap).toBeUndefined();
+    expect(franchise.schemaOrg.types).toEqual(['CreativeWork']);
+    expect(franchise.schemaOrg.relationshipMap).toBeUndefined();
+  });
+
+  test('model is Game+ProductModel with releaseDate/image and FK refs', () => {
+    expect(model.schemaOrg.types).toEqual(['Game', 'ProductModel']);
+    expect(model.schemaOrg.fieldMap).toEqual({
+      year: { property: 'releaseDate', transform: 'year' },
+      hero_image_url: 'image',
+    });
+    expect(model.schemaOrg.relationshipMap).toEqual({
+      corporate_entity: 'brand',
+      title: 'exampleOfWork',
+      themes: 'genre',
+    });
+  });
+
+  test('title maps series/franchise to distinct properties (no key collision)', () => {
+    expect(title.schemaOrg.types).toEqual(['Game']);
+    expect(title.schemaOrg.relationshipMap).toEqual({
+      series: 'isPartOf',
+      franchise: 'isBasedOn',
+    });
+  });
+
+  test('person maps birth/death years and photo', () => {
+    expect(person.schemaOrg.types).toEqual(['Person']);
+    expect(person.schemaOrg.fieldMap).toEqual({
+      birth_year: { property: 'birthDate', transform: 'year' },
+      death_year: { property: 'deathDate', transform: 'year' },
+      photo_url: 'image',
+    });
+  });
+});
+
+describe('location per-row types', () => {
+  const typesFor = (location_type: string | null) => {
+    const fn = location.schemaOrg.types;
+    if (typeof fn !== 'function') throw new Error('expected a function');
+    return fn({ location_type } as unknown as LocationDetailSchema);
+  };
+
+  test('country/state/city map to their schema.org types', () => {
+    expect(typesFor('country')).toEqual(['Country']);
+    expect(typesFor('state')).toEqual(['State']);
+    expect(typesFor('city')).toEqual(['City']);
+  });
+
+  test('both null and empty-string fall through to AdministrativeArea', () => {
+    expect(typesFor(null)).toEqual(['AdministrativeArea']);
+    expect(typesFor('')).toEqual(['AdministrativeArea']);
   });
 });

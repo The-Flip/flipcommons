@@ -5,6 +5,7 @@
   import { formatYearRange } from '$lib/utils';
   import { SITE_NAME } from '$lib/constants';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import JsonLd from '$lib/components/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import LocationLink from '$lib/components/LocationLink.svelte';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
@@ -127,6 +128,10 @@
 </script>
 
 <MetaTags title={ce.name} description={metaDescription} url={page.url.href} />
+
+{#if isDetail && data.jsonLd}
+  <JsonLd data={data.jsonLd} />
+{/if}
 
 {#if isFocusMode}
   {@render children()}

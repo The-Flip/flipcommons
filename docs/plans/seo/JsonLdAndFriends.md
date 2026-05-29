@@ -36,7 +36,7 @@ Each layout hand-picks the relevant fields:
 
 **Gaps**:
 
-- listing pages are currently CSR and therefore emit nothing (see [CSR pages: out of scope](#csr-pages-out-of-scope)).
+- Listing pages. They're currently CSR and therefore emit nothing (see [CSR pages: out of scope](#csr-pages-out-of-scope)).
 
 ### Twitter card
 
@@ -53,7 +53,7 @@ We use `summary_large_image` when an image is present, else `summary`.
 
 **Gaps**:
 
-— once entity layouts migrate to [`MediaSupportedModel.primary_image`](#mediasupportedmodel), wire the image source through there instead of the per-layout `image` prop. Selection logic itself stays the same.
+- Default branded OG/Twitter image (logo) for imageless pages, served as a `summary` card — keep `summary_large_image` reserved for real content images.
 
 ### JSON-LD
 
@@ -61,16 +61,18 @@ A JSON document inside `<script type="application/ld+json">` in `<head>`, using 
 
 As a public data project, JSON-LD should be a key part of our public data strategy. We want to emit consistent, addressable, machine-readable JSON-LD to become a reference source on the open web — LLM crawlers cite it more accurately, other databases can link in, link previews on Discord and Reddit read as archival and authoritative.
 
-✅ DONE — static pages (`/`, `/about`, `/about/people`, `/privacy`, `/terms`, `/licensing`) emit JSON-LD.
+What currently emits JSON-LD:
 
-✅ DONE — the catalog's taxonomy detail pages emit JSON-LD: Theme, GameplayFeature, TechnologyGeneration, TechnologySubgeneration, DisplayType, DisplaySubtype, Cabinet, GameFormat, RewardType, Tag and CreditRole. Each graph contains the entity node plus a page-scoped `BreadcrumbList`. Rendering is confined to the detail route, not `/edit-history` or `/sources`.
-
-✅ DONE — Manufacturer and System detail pages. Manufacturer emits a `Brand` node carrying `logo` and `url`; System emits a `CreativeWork` node with a `producer` cross-reference to its manufacturer. Theme and GameplayFeature now also emit `isPartOf` cross-references to their parent terms.
+- Every catalog detail page
+- Every static page (About, Privacy etc)
 
 **Gaps**:
 
-- The richer entity detail pages (Title, MachineModel, CorporateEntity, Person/User, Location, Series, Franchise) and entity meta-pages.
-- Still to widen the assembler for: `sameAs` (external IDs), images sourced from `primary_image`, `fieldMap` value transforms (date coercion), and Single-Model Title dual-node composition. The crawlable/linkable omit-branch is tracked separately — it lands with `User` (see [Linkable, crawlable, and the `@id` decision](#linkable-crawlable-and-the-id-decision)).
+- Support `sameAs` external IDs. This is important! It's what makes it a network of data.
+- Person date precision (v1 is year-only, we collect month and day and should emit them).
+- `User` detail (it's CSR not SSR right now).
+- Support the remaining MachineModel FK mappings (system, technology_generation, display_type, cabinet, …, which have no clean schema.org property yet).
+- Entity meta-pages: edit history, sources.
 
 ### Sitemap
 
@@ -166,8 +168,8 @@ Serve raw entity facts on the entity detail API response: `name`, `description` 
 - **Hold per-model presentation declarations** in [`frontend/src/lib/entities/<model-name>.ts`](#per-model-frontend-info) — one file per Django model, containing the schema.org types, field map, relationship map, and any other purely-presentation per-model info. ✅ DONE for the taxonomy tranche's 11 entities, plus `manufacturer.ts` and `system.ts`.
 - **Assemble the SchemaOrgNode** for each entity via a generic `buildSchemaOrgNode(entity, modelInfo)` function that walks the declarations against the entity facts.
   - ✅ DONE for `@type`, `@id`, `name` and untruncated `description.plain`;
-  - ✅ DONE for the `fieldMap` walk (identity copy of a scalar field to its schema.org property, skipping null/empty — e.g. `logo_url → logo`) and the `relationshipMap` walk (cross-reference `@id`s: a single object for an FK, an array for a `many: true` M2M, dropped when empty);
-  - TODO to widen for `sameAs` (external IDs), images sourced from `primary_image` (today an image rides `fieldMap` under its per-entity field name, e.g. `logo_url`), and `fieldMap` value transforms (date coercion — see [Value transformations](#value-transformations)).
+  - ✅ DONE for the `fieldMap` walk (scalar field → schema.org property, skipping null/empty — e.g. `logo_url → logo`), its `{ property, transform: 'year' }` value-transform form (int year → partial-ISO string — see [Value transformations](#value-transformations)) and the `relationshipMap` walk (cross-reference `@id`s: a single object for an FK, an array for a `many: true` M2M, dropped when empty);
+  - TODO to widen for `sameAs` (external IDs) and images sourced from `primary_image` (today an image rides `fieldMap` under its per-entity field name, e.g. `logo_url`).
 - **Compose the `@graph`** per page — pick which nodes go in (entity node always; Model node for single-Model Titles when `data.model_detail` is present; `BreadcrumbList`; `CollectionPage` for meta-pages).
 - **Apply route-specific page typing** — entity detail pages emit the entity node; meta-pages emit `CollectionPage` with `about` → entity; static pages emit `AboutPage` / `WebPage`.
 - **Assemble head / OG / Twitter tags** (already happens today in [`MetaTags.svelte`](frontend/src/lib/components/MetaTags.svelte) and [`./meta-tags.ts`](frontend/src/lib/components/meta-tags.ts)). Truncation, site-name suffix, canonical URL absolutization, OG-type bucket, Twitter-card decision — all presentation transforms with knowledge that lives frontend-side.
@@ -327,9 +329,9 @@ Each Django model has a companion TypeScript file at `frontend/src/lib/entities/
 
 A Django model's full definition therefore spans two files: the Django class (persistence, validation, URLs, claim machinery) and its companion TS file (schema.org info, and future buckets for any other purely-presentation per-model concern). See [ModelDrivenMetadata.md](docs/plans/model_driven_metadata/ModelDrivenMetadata.md) for the broader principle.
 
-✅ DONE for the taxonomy tranche: `frontend/src/lib/entities/types.ts`, `frontend/src/lib/entities/schema-org.ts`, the 11 taxonomy per-model files and `index.ts` exist, plus `manufacturer.ts` and `system.ts`. Beyond the no-relation shape (`schemaOrg.types`, canonical `@id`, `name`, untruncated `description.plain`), the assembler now also walks `fieldMap` (scalar field → schema.org property, identity copy) and `relationshipMap` (FK/M2M → cross-reference `@id`s). Still unimplemented: `sameAs` and `fieldMap` value transforms (see [Value transformations](#value-transformations)).
+✅ DONE: `frontend/src/lib/entities/types.ts`, `frontend/src/lib/entities/schema-org.ts`, the 11 taxonomy per-model files and `index.ts`, plus `manufacturer.ts`, `system.ts` and the 7 richer-entity files (`corporate-entity.ts`, `series.ts`, `franchise.ts`, `location.ts`, `model.ts`, `title.ts`, `person.ts`). Beyond the no-relation shape (`schemaOrg.types`, canonical `@id`, `name`, untruncated `description.plain`), the assembler walks `fieldMap` (scalar field → schema.org property, with an optional `{ property, transform: 'year' }` value transform) and `relationshipMap` (FK/M2M → cross-reference `@id`s). Still unimplemented: `sameAs`.
 
-**Key naming:** `fieldMap` and `relationshipMap` keys are the entity field names as they appear on the API response — which is the project's snake_case (Django Ninja schemas don't rename fields). `release_year`, not `releaseYear`. Type-checked via `Partial<Record<keyof TSchema, string>>` against the codegen'd schema, so a serializer convention change (or a renamed Django field) breaks the per-model TS file at compile.
+**Key naming:** `fieldMap` and `relationshipMap` keys are the entity field names as they appear on the API response — which is the project's snake_case (Django Ninja schemas don't rename fields). `year`, not `releaseYear`. Type-checked via `Partial<Record<keyof TSchema, …>>` against the codegen'd schema, so a serializer convention change (or a renamed Django field) breaks the per-model TS file at compile.
 
 **Shared interfaces** (one place for all per-model files to conform to):
 
@@ -337,9 +339,11 @@ A Django model's full definition therefore spans two files: the Django class (pe
 // frontend/src/lib/entities/types.ts
 import type { EntityKey } from "$lib/entities/entity-meta";
 
+export type FieldMapEntry = string | { property: string; transform: "year" };
+
 export interface SchemaOrgInfo<TSchema> {
   types: readonly string[] | ((entity: TSchema) => readonly string[]);
-  fieldMap?: Partial<Record<keyof TSchema, string>>;
+  fieldMap?: Partial<Record<keyof TSchema, FieldMapEntry>>;
   relationshipMap?: Partial<Record<keyof TSchema, string>>;
 }
 
@@ -361,18 +365,22 @@ export interface EntityInfo<TSchema> {
 **Per-model file:**
 
 ```ts
-// frontend/src/lib/entities/machine-model.ts
-import type { MachineModelDetailSchema } from "$lib/api/schema";
+// frontend/src/lib/entities/model.ts
+import type { ModelDetailSchema } from "$lib/api/schema";
 import type { EntityInfo } from "./types";
 
-export const machineModel: EntityInfo<MachineModelDetailSchema> = {
-  entityType: "model", // the ENTITY_META key, NOT "machineModel"
+export const model: EntityInfo<ModelDetailSchema> = {
+  entityType: "model", // the ENTITY_META key
   schemaOrg: {
     types: ["Game", "ProductModel"],
-    fieldMap: { release_year: "releaseDate" },
+    fieldMap: {
+      year: { property: "releaseDate", transform: "year" },
+      hero_image_url: "image",
+    },
     relationshipMap: {
       corporate_entity: "brand",
       title: "exampleOfWork",
+      themes: "genre",
     },
   },
 };
@@ -396,9 +404,8 @@ export const location: EntityInfo<LocationDetailSchema> = {
           return ["State"];
         case "city":
           return ["City"];
-        case "":
-          return ["Place"];
         default:
+          // `location_type` is `str | null`; both null and "" land here.
           return ["AdministrativeArea"];
       }
     },
@@ -412,7 +419,7 @@ No asymmetry vs other models — `schemaOrg.types` just accepts either form. The
 **Type checking and drift detection:**
 
 - The `: EntityInfo<TSchema>` annotation type-checks the whole entry against the contract.
-- `Partial<Record<keyof TSchema, string>>` on `fieldMap` and `relationshipMap` requires keys to be actual fields of the API schema. A renamed Django field invalidates the per-model TS file after `make codegen` regenerates `schema.d.ts` — TS compile fails until the file is updated. Drift caught at build time without custom validation.
+- `Partial<Record<keyof TSchema, …>>` on `fieldMap` (`FieldMapEntry` values) and `relationshipMap` (string values) requires keys to be actual fields of the API schema. A renamed Django field invalidates the per-model TS file after `make codegen` regenerates `schema.d.ts` — TS compile fails until the file is updated. Drift caught at build time without custom validation.
 
 **File layout:**
 
@@ -449,15 +456,15 @@ frontend/src/lib/entities/
 
 #### Value transformations
 
-Field values shipped raw from the backend often need shape-shifting before they're emitted under a schema.org property. The transforms live in the frontend's `buildSchemaOrgNode` (or per-bucket assembler) and dispatch on the **target schema.org property name**, not on the source Django field type:
+Field values shipped raw from the backend often need shape-shifting before they're emitted under a schema.org property. The transforms live in the frontend's `buildSchemaOrgNode` and are declared **locally at the `fieldMap` entry** via the optional tagged form `{ property, transform }`, not inferred from the target property name or the source field type:
 
-- Target is a date-shaped property (`releaseDate`, `birthDate`, `deathDate`, `foundingDate`, etc.) — coerce the source value to a partial ISO 8601 string. For year-only integers (`release_year` is `PositiveIntegerField`, not `DateField`), that's `String(year)` — schema.org accepts `"1992"` as a valid partial `releaseDate`. For full date values, the API already serializes ISO 8601.
-- Target is a numeric property (`aggregateRating`, etc.) — already shipped as a number from the backend.
-- Target is a text property sourced from rich text — use the backend's plain projection (`RichTextSchema.plain`). Do not reconstruct prose with a frontend markdown stripper; if a future MarkdownField needs structured-data text, expose the same backend-owned plain projection first.
+- `transform: 'year'` — coerce a year-only integer to a partial ISO 8601 string. `release_year`/`year`/`birth_year`/`death_year`/`year_start`/`year_end` are `PositiveIntegerField`s, not `DateField`s, so `String(year)` yields `"1992"`, which schema.org accepts as a valid partial `releaseDate`/`birthDate`/`foundingDate`/etc. (Full date values, if ever added, ship ISO 8601 from the API and need no transform — a bare-string `fieldMap` entry.)
+- A numeric property (`aggregateRating`, etc.) ships as a number from the backend — bare-string entry, no transform.
+- A text property sourced from rich text uses the backend's plain projection (`RichTextSchema.plain`). Do not reconstruct prose with a frontend markdown stripper; if a future MarkdownField needs structured-data text, expose the same backend-owned plain projection first.
 
-The target-property-aware dispatch matters because the source type alone can't determine the right coercion: an integer field could be a year, a count, or an external ID, and the target property tells the assembler which shape to emit.
+Local declaration beats both target-name dispatch and source-type dispatch: the codebase has no schema.org target-type system (`releaseDate`-is-a-`Date` isn't represented), and source type alone is ambiguous — an integer could be a year, a count, or an external ID. The author writing `year → releaseDate` already knows it's a date-year, so the intent (`transform: 'year'`) is encoded next to the field. `transform` is a typed union, so a typo fails at compile.
 
-⏸️ DEFERRED (implementation) — none of the wired entities (Manufacturer, System, the taxonomy classes) ships a value that needs coercion, so the current `buildSchemaOrgNode` `fieldMap` walk is an **identity copy** (skip null/`undefined`/`''`, assign as-is). The target-property dispatch above is the documented design but is built alongside its first real consumer — `MachineModel.release_year` (`number → "1992"`) — rather than shipped dead and untested.
+✅ DONE — `buildSchemaOrgNode` normalizes each `fieldMap` entry to `{ property, transform? }` after the null/`undefined`/`''` skip and applies the named transform (`transform === 'year' ? String(value) : value`). First consumers: `MachineModel.year`, `CorporateEntity.year_start`/`year_end`, `Person.birth_year`/`death_year`.
 
 **✅ DONE — `relationshipMap` is walked separately:** for each declared FK / M2M attribute, the assembler reads the referenced public-id-bearing ref from the API response — a single object for an FK, an array when the relationship shape says `many: true` — constructs the referent's canonical URL from `ref.public_id` and the codegen'd relationship shape (see [Related-entity URLs](#related-entity-urls-from-entity-metats)), and emits `{"@id": "https://flipcommons.org/..."}` under the declared schema.org property. Unlike `fieldMap`, this doesn't go through value transforms — the relationship value is always an `@id` reference, never a scalar.
 
@@ -550,7 +557,7 @@ Target shape for every SSR entity detail page: each page emits two top-level nod
 - The entity itself as a typed node (`Game`, `Person`, `Organization`, etc.) with `@id` cross-references to related entities and `sameAs` links to external IDs. No `WebPage` wrapper — the type is the thing, not the medium.
 - A `BreadcrumbList` node carrying the page's hierarchical trail. Google's BreadcrumbList rich result replaces the URL in SERPs with a readable trail, measurably lifting click-through. Example chains: Title page → `Home › Godzilla`; Model page → `Home › Godzilla › Godzilla Pro` (Model's parent is its Title; there's no `/models` listing page, and we skip `/titles` since it's CSR-only and an empty shell to crawlers). The JSON-LD chain is richer than the visible UI breadcrumb — that's allowed by Google's policies as long as every item in the chain is a real, accessible page reflecting the site's genuine hierarchy.
 
-✅ DONE for taxonomy detail pages: Theme, GameplayFeature, TechnologyGeneration, TechnologySubgeneration, DisplayType, DisplaySubtype, Cabinet, GameFormat, RewardType, Tag and CreditRole now emit the entity node plus a `Home › {name}` `BreadcrumbList`. Most omit cross-references, images and `sameAs`; `Theme` and `GameplayFeature` additionally emit `parents → isPartOf` cross-references. ✅ DONE for Manufacturer (`Brand`, with `logo`/`url` via `fieldMap`) and System (`CreativeWork`, with `manufacturer → producer`). Images and `sameAs` await later tranches.
+✅ DONE for taxonomy detail pages: Theme, GameplayFeature, TechnologyGeneration, TechnologySubgeneration, DisplayType, DisplaySubtype, Cabinet, GameFormat, RewardType, Tag and CreditRole now emit the entity node plus a `Home › {name}` `BreadcrumbList`. Most omit cross-references, images and `sameAs`; `Theme` and `GameplayFeature` additionally emit `parents → isPartOf` cross-references. ✅ DONE for Manufacturer (`Brand`, with `logo`/`url` via `fieldMap`), System (`CreativeWork`, with `manufacturer → producer`) and the 7 richer entities (CorporateEntity, Series, Franchise, Location, MachineModel, Title, Person — see the top-of-section DONE entry for per-entity types and the Model/Location breadcrumb enrichment + Title dual-node composition). `sameAs` and `primary_image`-sourced images await later tranches.
 
 ### Entity meta-pages
 

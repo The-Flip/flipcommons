@@ -39,7 +39,7 @@ describe('series detail SSR route', () => {
       params: { slug: 'eight-ball' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ profile: MOCK_DATA });
+    expect(result).toEqual(expect.objectContaining({ profile: MOCK_DATA }));
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/series/eight-ball');
@@ -60,7 +60,7 @@ describe('series detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: MOCK_DATA },
+        data: { profile: MOCK_DATA, jsonLd: {} },
       },
     });
 

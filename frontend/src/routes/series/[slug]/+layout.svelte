@@ -8,6 +8,7 @@
 
 <SimpleTaxonomyDetailLayout
   profile={series}
+  jsonLd={data.jsonLd}
   parentLabel="Series"
   basePath="/series"
   claimsPath={'/api/series/{public_id}/claims/'}
