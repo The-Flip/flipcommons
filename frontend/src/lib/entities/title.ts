@@ -11,4 +11,11 @@ export const title: EntityInfo<TitleDetailSchema> = {
     // year lives on the nested Model schema and is emitted on the Model node.
     relationshipMap: { series: 'isPartOf', franchise: 'isBasedOn' },
   },
+  externalRefs: {
+    fandom_page_id: {
+      label: 'Pinball Wiki',
+      urlTemplate: 'https://pinball.fandom.com/?curid={id}',
+    },
+    opdb_id: { identifier: 'OPDB' }, // a Title's opdb_id is a group id; URL is a non-resolvable autoincrement
+  },
 };

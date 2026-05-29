@@ -7,7 +7,7 @@ import {
   type JsonLdNode,
   type Crumb,
 } from '$lib/components/jsonld';
-import type { EntityInfo, FieldMapEntry } from './types';
+import type { EntityInfo, ExternalReference, FieldMapEntry } from './types';
 
 /**
  * Entity facts shared by every schema.org node.
@@ -94,6 +94,33 @@ export function buildSchemaOrgNode<T extends EntityBaseFacts>(
     }));
     node[property] = rel.many ? ids : ids[0];
   }
+
+  // externalRefs: the same registry that drives the visible "External Links" UI
+  // (see external-links.ts) feeds the open-linked-data identities here. Resolvable
+  // entries become `sameAs` URLs; non-resolvable ones become `identifier`
+  // PropertyValues. External URLs bypass absolutize() — that discipline is for
+  // internal `@id`s only.
+  const externalRefs: Partial<Record<keyof T, ExternalReference>> = info.externalRefs ?? {};
+  const sameAs: string[] = [];
+  const identifiers: JsonLdNode[] = [];
+  for (const key of Object.keys(externalRefs) as (keyof T)[]) {
+    const entry = externalRefs[key];
+    if (entry === undefined) continue;
+    const value = entity[key];
+    if (value === null || value === undefined || value === '') continue; // same skip rule as fieldMap
+    if ('urlTemplate' in entry) {
+      sameAs.push(entry.urlTemplate.replace('{id}', String(value)));
+    } else {
+      identifiers.push({
+        '@type': 'PropertyValue',
+        propertyID: entry.identifier,
+        value: String(value),
+      });
+    }
+  }
+  // Always arrays → byte-stable, declaration-ordered output (cache-friendly @graph).
+  if (sameAs.length) node.sameAs = sameAs;
+  if (identifiers.length) node.identifier = identifiers;
 
   return node;
 }

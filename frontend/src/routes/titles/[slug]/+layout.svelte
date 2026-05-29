@@ -6,6 +6,9 @@
   import MetaTags from '$lib/components/MetaTags.svelte';
   import JsonLd from '$lib/components/JsonLd.svelte';
   import ExternalLinksSidebarSection from '$lib/components/ExternalLinksSidebarSection.svelte';
+  import { externalLinks } from '$lib/entities/external-links';
+  import { model as modelInfo } from '$lib/entities/model';
+  import { title as titleInfo } from '$lib/entities/title';
   import ModelHierarchy from '$lib/components/ModelHierarchy.svelte';
   import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
@@ -38,6 +41,12 @@
   let { data, children } = $props();
   let title = $derived(data.profile);
   let md = $derived(title.model_detail);
+  // Model identities (IPDB/Pinside) plus the Title's own (Fandom): one source of
+  // truth shared with the JSON-LD and the mobile accordion.
+  let externalSiteLinks = $derived([
+    ...(md ? externalLinks(md, modelInfo) : []),
+    ...externalLinks(title, titleInfo),
+  ]);
   let specs = $derived(title.agreed_specs);
   let slug = $derived(page.params.slug);
 
@@ -275,8 +284,7 @@
       {/if}
 
       <ExternalLinksSidebarSection
-        ipdbId={md.ipdb_id}
-        pinsideId={md.pinside_id}
+        links={externalSiteLinks}
         note="See this title on other sites:"
         onEdit={editAction('model:external-data')}
       />

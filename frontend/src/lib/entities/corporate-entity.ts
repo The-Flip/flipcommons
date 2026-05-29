@@ -11,4 +11,7 @@ export const corporateEntity: EntityInfo<CorporateEntityDetailSchema> = {
     },
     relationshipMap: { manufacturer: 'brand' },
   },
+  externalRefs: {
+    ipdb_manufacturer_id: { identifier: 'IPDB' }, // IPDB has no manufacturer URL
+  },
 };

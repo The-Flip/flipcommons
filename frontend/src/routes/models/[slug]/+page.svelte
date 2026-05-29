@@ -10,6 +10,8 @@
   import { createRichTextAccordionState } from '$lib/components/rich-text-accordion-state.svelte';
   import ModelRelationshipsList from '$lib/components/ModelRelationshipsList.svelte';
   import { modelEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { externalLinks } from '$lib/entities/external-links';
+  import { model as modelInfo } from '$lib/entities/model';
 
   let { data } = $props();
   let model = $derived(data.profile);
@@ -51,7 +53,7 @@
   );
   let peopleHeading = $derived(`People (${model.credits.length})`);
   let mediaHeading = $derived(`Media (${model.uploaded_media.length})`);
-  let hasExternalLinks = $derived(!!(model.ipdb_id || model.pinside_id));
+  let externalSiteLinks = $derived(externalLinks(model, modelInfo));
 </script>
 
 {#if model.description?.html}
@@ -124,19 +126,14 @@
 {/if}
 
 <!-- External Links — mobile only -->
-{#if hasExternalLinks}
+{#if externalSiteLinks.length}
   <div class="mobile-only">
     <AccordionSection heading="External Links" onEdit={editAction('external-data')}>
       <p class="external-note">See this model on other sites:</p>
       <div class="external-ids">
-        {#if model.ipdb_id}
-          <a href="https://www.ipdb.org/machine.cgi?id={model.ipdb_id}">
-            Internet Pinball Database
-          </a>
-        {/if}
-        {#if model.pinside_id}
-          <a href="https://pinside.com/pinball/machine/{model.pinside_id}">Pinside</a>
-        {/if}
+        {#each externalSiteLinks as link (link.href)}
+          <a href={link.href}>{link.label}</a>
+        {/each}
       </div>
     </AccordionSection>
   </div>

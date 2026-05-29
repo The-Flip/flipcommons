@@ -13,4 +13,7 @@ export const person: EntityInfo<PersonDetailSchema> = {
       photo_url: 'image',
     },
   },
+  externalRefs: {
+    wikidata_id: { label: 'Wikidata', urlTemplate: 'https://www.wikidata.org/wiki/{id}' },
+  },
 };

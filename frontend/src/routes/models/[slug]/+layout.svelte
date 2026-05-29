@@ -6,6 +6,8 @@
   import MetaTags from '$lib/components/MetaTags.svelte';
   import JsonLd from '$lib/components/JsonLd.svelte';
   import ExternalLinksSidebarSection from '$lib/components/ExternalLinksSidebarSection.svelte';
+  import { externalLinks } from '$lib/entities/external-links';
+  import { model as modelInfo } from '$lib/entities/model';
   import ModelHierarchy from '$lib/components/ModelHierarchy.svelte';
   import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
@@ -29,6 +31,7 @@
 
   let { data, children } = $props();
   let model = $derived(data.profile);
+  let externalSiteLinks = $derived(externalLinks(model, modelInfo));
   let slug = $derived(page.params.slug);
 
   $effect(() => {
@@ -364,11 +367,7 @@
       excludeSlug={model.variant_of?.public_id ?? model.slug}
     />
 
-    <ExternalLinksSidebarSection
-      ipdbId={model.ipdb_id}
-      pinsideId={model.pinside_id}
-      note="See this model on other sites:"
-    />
+    <ExternalLinksSidebarSection links={externalSiteLinks} note="See this model on other sites:" />
   {/snippet}
 
   <RecordDetailShell

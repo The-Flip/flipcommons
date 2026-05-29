@@ -12,6 +12,9 @@
   import RelatedTitlesSection from '$lib/components/RelatedTitlesSection.svelte';
   import CreateFirstModelPrompt from '$lib/components/CreateFirstModelPrompt.svelte';
   import { titleAreaEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { externalLinks } from '$lib/entities/external-links';
+  import { model as modelInfo } from '$lib/entities/model';
+  import { title as titleInfo } from '$lib/entities/title';
 
   let { data } = $props();
   let title = $derived(data.profile);
@@ -81,7 +84,12 @@
     ),
   );
 
-  let hasExternalLinks = $derived(!!title.fandom_page_id);
+  // External-DB links, one source of truth shared with the sidebar and JSON-LD.
+  // The single-model view shows the Model's (IPDB/Pinside) + the Title's
+  // (Fandom); the multi-model view shows only the Title's.
+  let titleLinks = $derived(externalLinks(title, titleInfo));
+  let modelLinks = $derived(md ? externalLinks(md, modelInfo) : []);
+  let combinedLinks = $derived([...modelLinks, ...titleLinks]);
 </script>
 
 {#if md}
@@ -125,18 +133,12 @@
     </AccordionSection>
   {/if}
 
-  {#if md.ipdb_id || md.pinside_id || title.fandom_page_id}
+  {#if combinedLinks.length}
     <AccordionSection heading="External Links" onEdit={editAction('model:external-data')}>
       <div class="external-ids">
-        {#if md.ipdb_id}
-          <a href="https://www.ipdb.org/machine.cgi?id={md.ipdb_id}">Internet Pinball Database</a>
-        {/if}
-        {#if md.pinside_id}
-          <a href="https://pinside.com/pinball/machine/{md.pinside_id}">Pinside</a>
-        {/if}
-        {#if title.fandom_page_id}
-          <a href="https://pinball.fandom.com/?curid={title.fandom_page_id}">Pinball Wiki</a>
-        {/if}
+        {#each combinedLinks as link (link.href)}
+          <a href={link.href}>{link.label}</a>
+        {/each}
       </div>
     </AccordionSection>
   {/if}
@@ -334,12 +336,12 @@
   {/if}
 
   <!-- External Links -->
-  {#if hasExternalLinks}
+  {#if titleLinks.length}
     <AccordionSection heading="External Links" onEdit={editAction('title:external-data')}>
       <div class="external-ids">
-        {#if title.fandom_page_id}
-          <a href="https://pinball.fandom.com/?curid={title.fandom_page_id}">Pinball Wiki</a>
-        {/if}
+        {#each titleLinks as link (link.href)}
+          <a href={link.href}>{link.label}</a>
+        {/each}
       </div>
     </AccordionSection>
   {/if}

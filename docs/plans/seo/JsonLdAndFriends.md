@@ -68,11 +68,10 @@ What currently emits JSON-LD:
 
 **Gaps**:
 
-- Support `sameAs` external IDs. This is important! It's what makes it a network of data.
-- Person date precision (v1 is year-only, we collect month and day and should emit them).
-- `User` detail (it's CSR not SSR right now).
-- Support the remaining MachineModel FK mappings (system, technology_generation, display_type, cabinet, …, which have no clean schema.org property yet).
-- Entity meta-pages: edit history, sources.
+- Person date precision is year-only. We collect month and day and should emit them.
+- `User` detail does not emit JSON-LD (it's CSR not SSR right now).
+- Some MachineModel FK mappings — system, technology_generation, display_type, cabinet — have no clean schema.org property yet and thus are not emitted in JSON-LD.
+- Entity meta-pages — edit history, sources — do not emit JSON-LD.
 
 ### Sitemap
 
@@ -108,7 +107,7 @@ This project currently uses `super-sitemap` to generate the sitemap, which doesn
 | Tag                     | Prototype     | DefinedTerm        |
 | CreditRole              | Design        | Occupation         |
 
-† Location will be a specific type of Place: AdministrativeArea, Country, State, or City. See the Location example in [Per-model frontend info](#per-model-frontend-info).
+† Each individual Location record will be a specific type of Place: AdministrativeArea, Country, State, or City. See the Location example in [Per-model frontend info](#per-model-frontend-info).
 
 ## Open Graph page types
 
@@ -153,7 +152,7 @@ Some come from the Django model (backend), some from the per-model TS file ([see
 - **Last modified** — the same value the sitemap emits as `<lastmod>`: the freshness concept lives on `LastUpdatedModel` as `lastmod_expression()` (the queryset expression both the sitemap and the detail-page annotation consume) and `last_modified` (the per-instance value, read off the `_last_modified` annotation), **not** raw `updated_at`. The default expression is `F("updated_at")`, but overrides widen it — `Title` overrides `lastmod_expression()` to `Greatest(updated_at, Max(machine_models__updated_at))` so a Title's freshness reflects edits to its child Models. JSON-LD `dateModified` and sitemap `<lastmod>` both annotate via that one expression so they can't disagree; the detail response carries it as `LastModifiedDetailSchema.last_modified` and the central `register_entity_detail_page` annotates every detail queryset with `model_cls.lastmod_expression()`.
 - **Schema.org types** — declared in the per-model TS file's `schemaOrg.types` field. Static array for most entities; per-row function for Location. See [Per-model frontend info](#per-model-frontend-info).
 - **Cross-references** — declared in the per-model TS file's `schemaOrg.relationshipMap`. Each declared FK / M2M attribute carries **only** its schema.org property name (`corporate_entity → brand`, `title → exampleOfWork`, `themes → genre`, etc.) — that name is presentation vocabulary Django can't express. The referent's canonical URL is _not_ declared here; it's constructed from the codegen'd relationship shape (see [Related-entity URLs](#related-entity-urls-from-entity-metats)). The frontend metadata builder walks the declared set and emits an `@id` reference to the referent's canonical URL under the declared property. Undeclared relationships are not emitted.
-- **External-system identity** — TODO. The intended design is a small hand-edited TS constant mapping specific field names (`wikidata_id`, `opdb_id`, `ipdb_id`, `opdb_manufacturer_id`, `ipdb_manufacturer_id`) to URL templates. Field-name-based, not prefix-based — `ipdb_rating` is a number stored on our model, not an ID, and won't accidentally match. Once implemented, each present, non-null field becomes a `sameAs` entry.
+- **External-system identity** — ✅ DONE via the per-entity `externalRefs` registry (`frontend/src/lib/entities/<model>.ts`), keyed by field name (`wikidata_id`, `opdb_id`, `ipdb_id`, `opdb_manufacturer_id`, `ipdb_manufacturer_id`, `pinside_id`, `fandom_page_id`). Field-name-based, not prefix-based — `ipdb_rating` is a number, not an ID, and won't accidentally match. Each present, non-null field with a `urlTemplate` becomes a `sameAs`; one with only an `identifier` becomes a schema.org `PropertyValue`. The same registry drives the visible "External Links" UI, so links and structured-data identities can't drift. See [External references](#external-references--sameas--identifier).
 
 ### Backend vs frontend responsibilities
 
@@ -169,11 +168,12 @@ Serve raw entity facts on the entity detail API response: `name`, `description` 
 - **Assemble the SchemaOrgNode** for each entity via a generic `buildSchemaOrgNode(entity, modelInfo)` function that walks the declarations against the entity facts.
   - ✅ DONE for `@type`, `@id`, `name` and untruncated `description.plain`;
   - ✅ DONE for the `fieldMap` walk (scalar field → schema.org property, skipping null/empty — e.g. `logo_url → logo`), its `{ property, transform: 'year' }` value-transform form (int year → partial-ISO string — see [Value transformations](#value-transformations)) and the `relationshipMap` walk (cross-reference `@id`s: a single object for an FK, an array for a `many: true` M2M, dropped when empty);
-  - TODO to widen for `sameAs` (external IDs) and images sourced from `primary_image` (today an image rides `fieldMap` under its per-entity field name, e.g. `logo_url`).
+  - ✅ DONE for the `externalRefs` walk (`sameAs` array + `identifier` `PropertyValue`s — see [External references](#external-references--sameas--identifier));
+  - TODO to widen for images sourced from `primary_image` (today an image rides `fieldMap` under its per-entity field name, e.g. `logo_url`).
 - **Compose the `@graph`** per page — pick which nodes go in (entity node always; Model node for single-Model Titles when `data.model_detail` is present; `BreadcrumbList`; `CollectionPage` for meta-pages).
 - **Apply route-specific page typing** — entity detail pages emit the entity node; meta-pages emit `CollectionPage` with `about` → entity; static pages emit `AboutPage` / `WebPage`.
 - **Assemble head / OG / Twitter tags** (already happens today in [`MetaTags.svelte`](frontend/src/lib/components/MetaTags.svelte) and [`./meta-tags.ts`](frontend/src/lib/components/meta-tags.ts)). Truncation, site-name suffix, canonical URL absolutization, OG-type bucket, Twitter-card decision — all presentation transforms with knowledge that lives frontend-side.
-- **Maintain the External-IDs registry** as a small hand-edited TS constant (`{wikidata_id: "https://...", opdb_id: "https://...", ...}`) once `sameAs` lands. Stable, small, but not implemented yet.
+- **Maintain the `externalRefs` registry** — ✅ DONE. Each entity's per-model TS file declares `externalRefs` (keyed by field name, values typed `ExternalReference`). It's the single source of truth for both the JSON-LD `sameAs`/`identifier` and the visible "External Links" UI. See [External references](#external-references--sameas--identifier).
 
 **Two cross-cutting disciplines** apply to every JSON-LD emission, including the model-driven entity-page assembler:
 
@@ -305,7 +305,7 @@ The frontend assembler needs raw values, not presentation-shaped ones. Audit fin
 
 - **Description:** ✅ ships as `RichTextSchema` with four slots — `.text` (authoring markdown, including `[[type:slug]]` reference tokens), `.html` (rendered, tokens resolved to `<a>` tags), `.plain` (backend-flattened prose with tokens resolved and markdown/HTML stripped), and `.citations`. The frontend should use `.plain` for `<meta name="description">`, `og:description`, JSON-LD `description`, and other machine-readable text consumers. Display-limited surfaces still truncate frontend-side per consumer; JSON-LD uses `.plain` untruncated.
 - **Image:** ✅ `hero_image_url` is a constructed absolute URL string (`build_public_url(build_storage_key(...))`) — raw enough for the v1 commitment to emit the `display` rendition uniformly.
-- **External IDs:** ✅ raw scalars (`ipdb_id: int`, `opdb_id: str`, `pinside_id`, `fandom_page_id`), not formatted strings — **except** `wikidata_id`, which is not serialized on any detail schema. Both `Person` and `Manufacturer` carry a `wikidata_id` model field (`CorporateEntity` does not), but **no rows are populated yet** (0/582 Person, 0/724 Manufacturer as of 2026-05-28 local DB). Serializing the field is a one-field-per-schema widening, but there's nothing to emit until a Wikidata ingest fills it in. **Deferred: we'll widen `PersonDetailSchema` / `ManufacturerDetailSchema` and expand the JSON-LD `sameAs` at the same time we start actually populating `wikidata_id`** — no point shipping a field that's null for every record.
+- **External IDs:** ✅ DONE — raw scalars, not formatted strings, serialized on every owning detail schema: `ipdb_id`/`opdb_id`/`pinside_id` (Model), `fandom_page_id`/`opdb_id` (Title), `opdb_manufacturer_id`/`wikidata_id` (Manufacturer), `ipdb_manufacturer_id` (CorporateEntity), `wikidata_id` (Person). `wikidata_id` and `pinside_id` are 0-populated today (0/582 Person, 0/724 Manufacturer as of 2026-05-28 local DB) but the schema fields and `externalRefs` declarations are in place, so they auto-emit the instant a future ingest fills them — no later code change. (`pinside_id` was retyped from a numeric field to hold the Pinside slug, so its `sameAs` URL resolves.)
 - **FK / M2M references:** ✅ ship as public-id-bearing nested refs (`{name, public_id}` plus any display extras) — **no `href`, no type tag**. The referent's canonical URL is constructed frontend-side from `public_id` plus the codegen'd relationship shape — see [Related-entity URLs](#related-entity-urls-from-entity-metats).
 - **Top-level detail-schema identity:** ✅ DONE — the **referent** schemas were migrated to `public_id` earlier, and the **top-level** detail schemas now do too: every one inherits `LinkableDetailSchema` and exposes a uniform `public_id` alongside the retained `slug`. The frontend assembler (`buildSchemaOrgNode` in [schema-org.ts](../../../frontend/src/lib/entities/schema-org.ts)) builds the own-`@id` from `entity.public_id`, and `EntityBaseFacts` requires `public_id`. The entity's own `@id` is `/{entity_type_plural}/{public_id}` — a **uniform `public_id`**, never `slug`. Reading `slug` would be a hidden hardcoded rule ("the URL key is always `slug`") that is correct for 8 of 9 widening entities (`public_id == slug`) but **wrong for `Location`**, whose `public_id` is `location_path` on route `/locations/[...path]` — `slug` would emit a non-dereferenceable `@id`. **Location is not special-cased in the assembler** — that would reintroduce the per-type knowledge the model-driven design eliminates.
 
@@ -320,7 +320,7 @@ Response/codegen prerequisites for richer entity pages:
 - ✅ DONE — the relationship-shape codegen above (`relationships` map in `entity-meta.ts`).
 - ✅ DONE (backend) — `LinkableDetailSchema` base (`name` + `public_id`) introduced; all 11 named top-level detail schemas + `TaxonomySchema` inherit it, with `public_id` sourced from `LinkableModel.public_id` (`location_path` for Location, `slug` for the rest). A model-driven parity test pins that every linkable entity's detail response carries `public_id`. Deliberately scoped to `LinkableModel`, not the wider model-base hierarchy.
 - ✅ DONE (frontend) — `EntityBaseFacts` requires `public_id`, and `buildSchemaOrgNode` builds the `@id` from `entity.public_id` instead of `entity.slug`. No-op for the 11 wired taxonomy entities (`public_id == slug`); the assembler test pins the divergent Location case (`public_id` = `usa/il/chicago`) so the full path is emitted, not a collapsed segment.
-- ⏸️ DEFERRED — `wikidata_id` serialization on `PersonDetailSchema` / `ManufacturerDetailSchema`. The fields exist on the models but are unpopulated (see External IDs above); we widen the schemas and the JSON-LD `sameAs` together, when a Wikidata ingest starts filling them.
+- ✅ DONE — external-ID serialization on the owning detail schemas (`wikidata_id` + `opdb_manufacturer_id` on Manufacturer, `ipdb_manufacturer_id` on CorporateEntity, `wikidata_id` on Person; Model/Title already shipped theirs), plus the `externalRefs` declarations and the assembler walk. `wikidata_id`/`pinside_id` are still unpopulated (see External IDs above), but the wiring is in place so emission auto-fires once a future ingest populates them.
 - ✅ DONE — a `last_modified` field on its **own** concern base (`LastModifiedDetailSchema`, composed onto `CatalogDetailSchema` alongside `LinkableDetailSchema` — _not_ folded into it; see the audit note above), sourced from `LastUpdatedModel.last_modified` (not raw `updated_at`). Backend: the freshness concept is `LastUpdatedModel.lastmod_expression()` / `last_modified`; the sitemap concern moved off `LinkableModel` to `SitemappedModel(LinkableModel, LastUpdatedModel)`; `register_entity_detail_page` annotates every detail queryset with `lastmod_expression()` (one chokepoint). Frontend: `EntityBaseFacts.last_modified` is required and `buildSchemaOrgNode` emits `dateModified` directly. Sharing the one definition keeps `<lastmod>` and `dateModified` in lockstep and reuses `Title`'s child-Model aggregation; if we ever refine lastmod for content-change accuracy (the claims-churn question), both consumers inherit the fix.
 
 ### Per-model frontend info
@@ -329,7 +329,7 @@ Each Django model has a companion TypeScript file at `frontend/src/lib/entities/
 
 A Django model's full definition therefore spans two files: the Django class (persistence, validation, URLs, claim machinery) and its companion TS file (schema.org info, and future buckets for any other purely-presentation per-model concern). See [ModelDrivenMetadata.md](docs/plans/model_driven_metadata/ModelDrivenMetadata.md) for the broader principle.
 
-✅ DONE: `frontend/src/lib/entities/types.ts`, `frontend/src/lib/entities/schema-org.ts`, the 11 taxonomy per-model files and `index.ts`, plus `manufacturer.ts`, `system.ts` and the 7 richer-entity files (`corporate-entity.ts`, `series.ts`, `franchise.ts`, `location.ts`, `model.ts`, `title.ts`, `person.ts`). Beyond the no-relation shape (`schemaOrg.types`, canonical `@id`, `name`, untruncated `description.plain`), the assembler walks `fieldMap` (scalar field → schema.org property, with an optional `{ property, transform: 'year' }` value transform) and `relationshipMap` (FK/M2M → cross-reference `@id`s). Still unimplemented: `sameAs`.
+✅ DONE: `frontend/src/lib/entities/types.ts`, `frontend/src/lib/entities/schema-org.ts`, the 11 taxonomy per-model files and `index.ts`, plus `manufacturer.ts`, `system.ts` and the 7 richer-entity files (`corporate-entity.ts`, `series.ts`, `franchise.ts`, `location.ts`, `model.ts`, `title.ts`, `person.ts`). Beyond the no-relation shape (`schemaOrg.types`, canonical `@id`, `name`, untruncated `description.plain`), the assembler walks `fieldMap` (scalar field → schema.org property, with an optional `{ property, transform: 'year' }` value transform) and `relationshipMap` (FK/M2M → cross-reference `@id`s), and `externalRefs` (external IDs → `sameAs`/`identifier`, also driving the visible "External Links" UI — see [External references](#external-references--sameas--identifier)).
 
 **Key naming:** `fieldMap` and `relationshipMap` keys are the entity field names as they appear on the API response — which is the project's snake_case (Django Ninja schemas don't rename fields). `year`, not `releaseYear`. Type-checked via `Partial<Record<keyof TSchema, …>>` against the codegen'd schema, so a serializer convention change (or a renamed Django field) breaks the per-model TS file at compile.
 
@@ -498,14 +498,14 @@ On single-model titles, because `/titles/[slug]` is the place to surface informa
       "@id": "https://flipcommons.org/titles/doctor-who",
       "name": "Doctor Who",
       "workExample": {"@id": "https://flipcommons.org/models/doctor-who"},
-      ...title-tier fields (name, abbreviations, franchise, series; sameAs for Title's external IDs)
+      ...title-tier fields (name, abbreviations, franchise, series; externalRefs for the Title: fandom_page_id → sameAs, opdb_id → identifier)
     },
     {
       "@type": ["Game", "ProductModel"],
       "@id": "https://flipcommons.org/models/doctor-who",
       "exampleOfWork": {"@id": "https://flipcommons.org/titles/doctor-who"},
       "name": "Doctor Who",
-      ...model-tier fields (description, manufacturer, releaseDate, gameplay/technology cross-references; sameAs for Model's external IDs)
+      ...model-tier fields (description, manufacturer, releaseDate, gameplay/technology cross-references; externalRefs for the Model: ipdb_id/pinside_id → sameAs, opdb_id → identifier)
     },
     {
       "@type": "BreadcrumbList",
@@ -545,6 +545,70 @@ graph.push(buildBreadcrumbList(crumbs));
 The second arg is the per-model info _object_ (`title`, `machineModel`), not a string. `buildSchemaOrgNode` reads `info.entityType` (`'title'`, `'model'`) to index `ENTITY_META` — so the camelCase export name `machineModel` never has to match the `entity_type` `'model'`.
 
 The trigger condition (`data.model_detail` populated) already exists — `TitleDetailSchema.model_detail` is populated inline only for single-Model Titles, per SingleModelTitles.md. The frontend's rule is "if the API embedded the Model, assemble its node too." Same `buildSchemaOrgNode()` machinery as any other entity — no special path.
+
+## External references → `sameAs` / `identifier`
+
+✅ DONE. External-database identities are emitted via a per-entity `externalRefs` registry. The same
+registry is the single source of truth for **both** the JSON-LD identities and the visible "External
+Links" UI — components render links from it rather than hardcoding URLs in markup.
+
+### Why not a flat global map
+
+The original sketch was a single global `{ fieldName: urlPrefix }` constant. That can't work: the
+same field name resolves differently per entity (a Title's `opdb_id` is an OPDB _group_; a Model's
+is a _machine_), and some stored IDs aren't URL-addressable at all. So the declaration is
+**per-entity**, co-located with the entity's other `SchemaOrgInfo`.
+
+### The registry
+
+Each entity declares `externalRefs` keyed by API field name, with values of type `ExternalReference`
+(`frontend/src/lib/entities/types.ts`):
+
+```ts
+externalRefs?: Partial<Record<keyof TSchema, ExternalReference>>;
+
+type ExternalReference =
+  | { label: string; urlTemplate: string } // resolvable: `{id}` ← stored value
+  | { identifier: string }; // non-resolvable id, no buildable URL
+```
+
+- `{ label, urlTemplate }` — a resolvable reference. `{id}` is replaced by the stored value to make
+  a URL, emitted as JSON-LD `sameAs` and as a visible link labelled `label`.
+- `{ identifier }` — a machine-readable id with no URL we can build from what we store. Emitted as a
+  schema.org `PropertyValue` (`propertyID` ← `identifier`); no visible link. Graduates to
+  `{ label, urlTemplate }` with zero consumer churn once we ingest the resolvable form.
+
+### The two consumers
+
+- `externalLinks(entity, info)` (`external-links.ts`) — returns `ExternalLink[]` for the UI;
+  resolves `urlTemplate`, skips `identifier`-only and empty values. Pages compose across entities,
+  e.g. a Title page shows its Model's IPDB/Pinside links plus the Title's Fandom link.
+- `buildSchemaOrgNode` (`schema-org.ts`) — walks the same registry to emit the `sameAs` array and
+  `identifier` `PropertyValue`s on the entity node.
+
+Both apply the same skip rule (`null` / `undefined` / `''`), so the visible links and the
+structured-data identities can never drift apart. Keys are `keyof TSchema`, so a renamed or removed
+API field fails `svelte-check` rather than silently dropping a reference. Output is always an array
+(declaration-ordered), keeping the `@graph` byte-stable and cache-friendly.
+
+### Emission today
+
+| Entity.Field                           | Emits                 |
+| -------------------------------------- | --------------------- |
+| Model.`ipdb_id`                        | `sameAs`              |
+| Model.`opdb_id`                        | `identifier` (`OPDB`) |
+| Model.`pinside_id`                     | `sameAs`              |
+| Title.`fandom_page_id`                 | `sameAs`              |
+| Title.`opdb_id`                        | `identifier` (`OPDB`) |
+| Manufacturer.`opdb_manufacturer_id`    | `identifier` (`OPDB`) |
+| Manufacturer.`wikidata_id`             | `sameAs`              |
+| CorporateEntity.`ipdb_manufacturer_id` | `identifier` (`IPDB`) |
+| Person.`wikidata_id`                   | `sameAs`              |
+
+OPDB ships as `identifier` because its public URLs key off an internal autoincrement we don't store;
+ingesting that numeric id would flip `opdb_id` to a `sameAs` `urlTemplate` with no consumer change.
+`wikidata_id` and `pinside_id` are 0-populated today but declared now so they auto-emit once a future
+ingest fills them.
 
 ## Types of pages
 
