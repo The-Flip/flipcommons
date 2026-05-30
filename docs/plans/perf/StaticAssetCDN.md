@@ -21,7 +21,7 @@ Everything under `/_app/immutable/*`:
 By virtue of how SveltKit works, we end up CDN'ing all files referenced through SvelteKit's asset machinery, which all carry the `paths.assets` prefix automatically once the env var is set. This includes:
 
 - `favicon.png` (via `%sveltekit.assets%` in [`app.html`](../../../frontend/src/app.html))
-- `og-default.png` (via the `assets` helper from `$app/paths`)
+- `social_default.png` (via the `assets` helper from `$app/paths`)
 - `/_app/version.json` (via SvelteKit's client runtime, which fetches `${assets}/_app/version.json` for deploy-version polling). This one came along with the flip rather than as a deliberate target — the unhashed file in tension with Bunny's 30-day default TTL forced a 60s `Cache-Control` and a CORS preflight handler in Caddy to keep deploy detection working.
 
 ### Reaches the CDN as a side effect of CSS being CDN-served

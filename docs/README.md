@@ -51,6 +51,7 @@ For setup and common commands, start with the repository [README](../README.md).
 - [SSRConversion.md](SSRConversion.md) workflow for converting routes from CSR to SSR.
 - [DetailLayoutPatterns.md](DetailLayoutPatterns.md) detail-page layout patterns.
 - [TestingFrontend.md](TestingFrontend.md) frontend test tiers and DOM test patterns.
+- [Brand.md](Brand.md) brand style guidelines.
 
 ## Testing And Review
 
