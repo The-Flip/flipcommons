@@ -66,16 +66,16 @@
 - [x] LICENSE (Apache 2.0).
 - [x] ToS, Privacy Policy (includes PostHog and Sentry disclosure), Licensing pages exist.
 - [x] About page.
-- [x] **Contact / feedback channel** ✅ — `howdy@flipcommons.org` (About, Terms), `privacy@flipcommons.org` (Privacy Policy), `licensing@flipcommons.org` (Licensing).
-- [x] **Account deletion** ✅ — Privacy Policy directs users to email `privacy@flipcommons.org` (deletions handled manually for now).
-- [x] **Cookie consent** ✅ — only essential cookies are set (session + CSRF). PostHog is configured with `persistence: 'memory'` and does not set cookies, so EU consent requirements don't apply. Revisit if any tracker that sets cookies is added later.
-- [ ] **Code of Conduct** ❌ — public collaborative knowledge site needs one. Add `frontend/src/routes/(legal)/conduct/` and link from footer and signup.
+- [x] **Contact / feedback channel** — `howdy@flipcommons.org` (About, Terms), `privacy@flipcommons.org` (Privacy Policy), `licensing@flipcommons.org` (Licensing).
+- [x] **Account deletion** — Privacy Policy directs users to email `privacy@flipcommons.org` (deletions handled manually for now).
+- [x] **Cookie consent** — only essential cookies are set (session + CSRF). PostHog is configured with `persistence: 'memory'` and does not set cookies, so EU consent requirements don't apply. Revisit if any tracker that sets cookies is added later.
+- [ ] **Code of Conduct** — public collaborative knowledge site needs one. Add `frontend/src/routes/(legal)/conduct/` and link from footer and signup.
 - [ ] **Contributor expectations** — short page or section describing what edits are welcome, what gets reverted, how disputes are handled (you have ChangeSet revert capability — surface the policy).
-- [ ] **DMCA / takedown process** ❌ — A pinball catalog attracts copyright complaints (manufacturer images, manuals, ROM references). Publish a designated agent / email + a documented response process; link from the footer.
+- [ ] **DMCA / takedown process** — A pinball catalog attracts copyright complaints (manufacturer images, manuals, ROM references). Publish a designated agent / email + a documented response process; link from the footer.
 
 ## User-facing polish
 
-- [x] **Custom 404 / 500 pages** ✅ — SvelteKit covered by #450; Django admin is staff-only so default templates are fine.
+- [x] **Custom 404 / 500 pages** — SvelteKit covered by #450; Django admin is staff-only so default templates are fine.
 - [ ] **Empty states** — search results, "no edits yet", new user dashboard. Walk through the app cold and note where copy is missing.
 - [ ] **First-run experience** — what does a brand-new visitor see on the homepage? Is there a "what is this?" hook?
 - [ ] **Loading states** — make sure SSR pages don't flash unstyled content and CSR transitions show feedback.
@@ -86,7 +86,7 @@
 
 - [ ] **Database index audit** — no custom indexes spotted in models. Check slow queries with `django-debug-toolbar` locally on representative pages, add indexes on filter/sort fields (slug already unique-indexed via constraints; check `status`, `type`, FK chains used in list queries).
 - [ ] **N+1 audit on list pages** — Title/Model browse pages are the obvious risk. `select_related` / `prefetch_related` review.
-- [x] **Immutable static assets via CDN** ✅ — #470 (`4558492`) flips `kit.paths.assets` to the Bunny pull zone at `static.flipcommons.org` when `CDN_URL` is set; hashed chunks, CSS, fonts, and the version.json poll all load from CDN. Caddy serves `/fonts/*` with `Cache-Control: public, max-age=1y, immutable`.
+- [x] **Immutable static assets via CDN** — #470 (`4558492`) flips `kit.paths.assets` to the Bunny pull zone at `static.flipcommons.org` when `CDN_URL` is set; hashed chunks, CSS, fonts, and the version.json poll all load from CDN. Caddy serves `/fonts/*` with `Cache-Control: public, max-age=1y, immutable`.
 - [ ] **HTML response Cache-Control** — SvelteKit SSR pages still need explicit `Cache-Control` (private for authed pages, short public TTL for public pages). Static assets covered above.
 - [ ] **Image sizing** — large source images served as-is hurt LCP. If Bunny isn't already doing on-the-fly resizing, configure it or pre-generate responsive variants.
 - [ ] **Load test** — run a quick `k6`/`oha` against a few public pages to know your ceiling before announcement.
