@@ -435,7 +435,7 @@ All media UI is built as decomposed SvelteKit components with logic extracted to
 - **`media-upload.ts`** — Upload state machine for multi-file uploads: per-file validation, per-file progress tracking, batch API calls. Exports reactive state (file list with individual statuses) and action functions.
 - **`media-api.ts`** — API client functions for media endpoints (upload, delete).
 
-Types for media API responses come from the existing OpenAPI-generated `schema.d.ts` via `make api-gen`.
+Types for media API responses come from the existing OpenAPI-generated `schema.d.ts` via `make codegen`.
 
 #### Svelte Components (thin UI wrappers)
 
@@ -579,7 +579,7 @@ Uploaded-first fallback in `thumbnail_url` / `hero_image_url`, local dev media s
 
 ### Phase 6: Frontend Components
 
-Run `make api-gen` to generate frontend types from the updated detail schema.
+Run `make codegen` to generate frontend types from the updated detail schema.
 
 - `MediaUploadButton.svelte`, `MediaGrid.svelte`, `MediaCard.svelte`, `HeroImage.svelte`.
 - `media-upload.ts`, `media-api.ts` TypeScript modules.

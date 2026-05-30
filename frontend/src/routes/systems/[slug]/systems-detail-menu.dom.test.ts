@@ -7,7 +7,7 @@ const { authMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$app/paths', () => ({ resolve: (p: string) => p }));
+vi.mock('$app/paths', () => ({ resolve: (p: string) => p, asset: (p: string) => p }));
 vi.mock('$app/state', () => ({
   page: {
     params: { slug: 'wpc-95' },
@@ -25,21 +25,23 @@ vi.mock('$lib/components/SectionEditorHost.svelte', async () => {
 });
 
 import Layout from './+layout.svelte';
+import type { SystemDetailSchema } from '$lib/api/schema';
 
 const SYSTEM = {
   name: 'WPC-95',
+  public_id: 'wpc-95',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'wpc-95',
-  description: { text: '', html: '', citations: [], attribution: null },
-  manufacturer: { name: 'Williams', slug: 'williams' },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
+  manufacturer: { name: 'Williams', public_id: 'williams' },
   technology_subgeneration: null,
   titles: [],
   sibling_systems: [],
-  sources: [],
-};
+} satisfies SystemDetailSchema;
 
 function renderLayout() {
   render(Layout, {
-    data: { system: SYSTEM },
+    data: { profile: SYSTEM },
     children: () => ({}) as never,
   } as unknown as Parameters<typeof render>[1]);
 }

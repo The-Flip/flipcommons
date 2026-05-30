@@ -15,7 +15,7 @@
   import SystemEditorSwitch from '../SystemEditorSwitch.svelte';
 
   let { data } = $props();
-  let system = $derived(data.system);
+  let system = $derived(data.profile);
   let slug = $derived(page.params.slug);
   let sectionSegment = $derived(page.params.section);
   let section = $derived(sectionSegment ? findSystemSectionBySegment(sectionSegment) : undefined);

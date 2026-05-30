@@ -14,6 +14,7 @@ the write registrars and stays in its own module.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import cast
 
 from django.db.models import QuerySet
 from django.http import HttpRequest
@@ -42,7 +43,21 @@ def register_entity_detail_page[ModelT: CatalogModel, SchemaT: Schema](
 
     def _detail(request: HttpRequest, public_id: str) -> SchemaT:
         _ = request
-        obj = get_object_or_404(detail_qs(), **{public_id_field: public_id})
+        # Annotate the freshness value from the one shared definition
+        # (``LastUpdatedModel.lastmod_expression()``) so the detail response's
+        # ``last_modified`` and the sitemap's ``<lastmod>`` can't disagree —
+        # including ``Title``'s child-Model aggregation. ``last_modified``
+        # (the model property) reads this ``_last_modified`` annotation.
+        # ``.annotate()`` widens the queryset's element type to a
+        # ``WithAnnotations[...]`` variant in django-stubs; the row is still a
+        # ``ModelT`` instance at runtime (with an extra ``_last_modified`` attr
+        # the model's ``last_modified`` property reads), so cast it back.
+        annotated_qs = detail_qs().annotate(
+            _last_modified=model_cls.lastmod_expression()
+        )
+        obj = cast(
+            "ModelT", get_object_or_404(annotated_qs, **{public_id_field: public_id})
+        )
         return serialize_detail(obj)
 
     _detail.__name__ = f"{entity_type.replace('-', '_')}_detail_page"

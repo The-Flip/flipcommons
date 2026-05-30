@@ -51,7 +51,7 @@
   let idleSeconds = $state(config.idle_seconds);
   let items = $state<EditorItem[]>(
     config.items.map((i) => ({
-      titleSlug: i.title.slug,
+      titleSlug: i.title.public_id,
       titleName: i.title.name,
       hook: i.hook,
     })),

@@ -12,6 +12,7 @@
 
   let {
     profile,
+    jsonLd,
     parentLabel,
     basePath,
     parentHref,
@@ -22,6 +23,7 @@
     children,
   }: {
     profile: SimpleTaxonomyEditView;
+    jsonLd?: Record<string, unknown>;
     parentLabel: string;
     basePath: string;
     parentHref?: string;
@@ -41,6 +43,7 @@
 
 <TaxonomyDetailBaseLayout
   {profile}
+  {jsonLd}
   {parentLabel}
   {basePath}
   {parentHref}

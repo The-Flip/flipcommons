@@ -41,14 +41,14 @@ const medievalMadness = makeTitle({
   name: 'Medieval Madness',
   slug: 'medieval-madness',
   abbreviations: ['MM'],
-  manufacturer: { slug: 'williams', name: 'Williams' },
+  manufacturer: { public_id: 'williams', name: 'Williams' },
   year: 1997,
-  tech_generations: [{ slug: 'solid-state', name: 'Solid State' }],
-  display_types: [{ slug: 'dmd', name: 'DMD' }],
+  tech_generations: [{ public_id: 'solid-state', name: 'Solid State' }],
+  display_types: [{ public_id: 'dmd', name: 'DMD' }],
   player_counts: [4],
-  systems: [{ slug: 'wpc-95', name: 'WPC-95' }],
-  themes: [{ slug: 'medieval', name: 'Medieval' }],
-  persons: [{ slug: 'pat-lawlor', name: 'Pat Lawlor' }],
+  systems: [{ public_id: 'wpc-95', name: 'WPC-95' }],
+  themes: [{ public_id: 'medieval', name: 'Medieval' }],
+  persons: [{ public_id: 'pat-lawlor', name: 'Pat Lawlor' }],
   franchise: null,
   year_min: 1997,
   year_max: 1997,
@@ -59,16 +59,16 @@ const mandalorian = makeTitle({
   name: 'The Mandalorian',
   slug: 'the-mandalorian',
   abbreviations: ['Mando'],
-  manufacturer: { slug: 'stern', name: 'Stern' },
+  manufacturer: { public_id: 'stern', name: 'Stern' },
   year: 2021,
-  tech_generations: [{ slug: 'solid-state', name: 'Solid State' }],
-  display_types: [{ slug: 'lcd', name: 'LCD' }],
+  tech_generations: [{ public_id: 'solid-state', name: 'Solid State' }],
+  display_types: [{ public_id: 'lcd', name: 'LCD' }],
   player_counts: [4],
-  systems: [{ slug: 'spike-2', name: 'Spike 2' }],
-  themes: [{ slug: 'sci-fi', name: 'Sci-Fi' }],
-  persons: [{ slug: 'tim-sexton', name: 'Tim Sexton' }],
-  franchise: { slug: 'star-wars', name: 'Star Wars' },
-  series: { slug: 'star-wars-series', name: 'Star Wars Series' },
+  systems: [{ public_id: 'spike-2', name: 'Spike 2' }],
+  themes: [{ public_id: 'sci-fi', name: 'Sci-Fi' }],
+  persons: [{ public_id: 'tim-sexton', name: 'Tim Sexton' }],
+  franchise: { public_id: 'star-wars', name: 'Star Wars' },
+  series: { public_id: 'star-wars-series', name: 'Star Wars Series' },
   year_min: 2021,
   year_max: 2021,
   ipdb_rating_max: 7.2,
@@ -78,16 +78,16 @@ const eightBall = makeTitle({
   name: 'Eight Ball Deluxe',
   slug: 'eight-ball-deluxe',
   abbreviations: ['EBD'],
-  manufacturer: { slug: 'bally', name: 'Bally' },
+  manufacturer: { public_id: 'bally', name: 'Bally' },
   year: 1981,
-  tech_generations: [{ slug: 'solid-state', name: 'Solid State' }],
-  display_types: [{ slug: 'score-reels', name: 'Score Reels' }],
+  tech_generations: [{ public_id: 'solid-state', name: 'Solid State' }],
+  display_types: [{ public_id: 'score-reels', name: 'Score Reels' }],
   player_counts: [4],
   themes: [
-    { slug: 'sports', name: 'Sports' },
-    { slug: 'pool', name: 'Pool' },
+    { public_id: 'sports', name: 'Sports' },
+    { public_id: 'pool', name: 'Pool' },
   ],
-  persons: [{ slug: 'george-christian', name: 'George Christian' }],
+  persons: [{ public_id: 'george-christian', name: 'George Christian' }],
   year_min: 1981,
   year_max: 1981,
   ipdb_rating_max: 7.8,
@@ -129,7 +129,7 @@ describe('filterTitles', () => {
   it('filters by tech generation', () => {
     const em = makeTitle({
       slug: 'em-game',
-      tech_generations: [{ slug: 'electromechanical', name: 'EM' }],
+      tech_generations: [{ public_id: 'electromechanical', name: 'EM' }],
     });
     const titles = [...allTitles, em];
     const state: FilterState = { ...emptyFilterState(), techGeneration: 'electromechanical' };
@@ -331,7 +331,7 @@ describe('buildFacetRefOptions', () => {
       ['electromechanical', 0],
     ]);
     const em = makeTitle({
-      tech_generations: [{ slug: 'electromechanical', name: 'EM' }],
+      tech_generations: [{ public_id: 'electromechanical', name: 'EM' }],
     });
     const options = buildFacetRefOptions([...allTitles, em], (t) => t.tech_generations, counts);
     const ss = options.find((o) => o.slug === 'solid-state');
@@ -546,11 +546,11 @@ describe('expandTitlesWithAncestorThemes', () => {
     const titles = [
       makeTitle({
         slug: 'air-race-pin',
-        themes: [{ slug: 'air-racing', name: 'Air Racing' }],
+        themes: [{ public_id: 'air-racing', name: 'Air Racing' }],
       }),
     ];
     const expanded = expandTitlesWithAncestorThemes(titles, hierarchy);
-    const slugs = expanded[0].themes.map((t) => t.slug).sort();
+    const slugs = expanded[0].themes.map((t) => t.public_id).sort();
     expect(slugs).toEqual(['air-racing', 'racing', 'sports']);
   });
 
@@ -559,13 +559,13 @@ describe('expandTitlesWithAncestorThemes', () => {
       makeTitle({
         slug: 'sport-pin',
         themes: [
-          { slug: 'air-racing', name: 'Air Racing' },
-          { slug: 'sports', name: 'Sports' },
+          { public_id: 'air-racing', name: 'Air Racing' },
+          { public_id: 'sports', name: 'Sports' },
         ],
       }),
     ];
     const expanded = expandTitlesWithAncestorThemes(titles, hierarchy);
-    const slugs = expanded[0].themes.map((t) => t.slug).sort();
+    const slugs = expanded[0].themes.map((t) => t.public_id).sort();
     expect(slugs).toEqual(['air-racing', 'racing', 'sports']);
   });
 
@@ -576,7 +576,7 @@ describe('expandTitlesWithAncestorThemes', () => {
   });
 
   it('returns original titles when hierarchy is empty', () => {
-    const titles = [makeTitle({ themes: [{ slug: 'medieval', name: 'Medieval' }] })];
+    const titles = [makeTitle({ themes: [{ public_id: 'medieval', name: 'Medieval' }] })];
     const expanded = expandTitlesWithAncestorThemes(titles, []);
     expect(expanded).toBe(titles);
   });
@@ -585,11 +585,11 @@ describe('expandTitlesWithAncestorThemes', () => {
     const titles = [
       makeTitle({
         slug: 'air-race-pin',
-        themes: [{ slug: 'air-racing', name: 'Air Racing' }],
+        themes: [{ public_id: 'air-racing', name: 'Air Racing' }],
       }),
       makeTitle({
         slug: 'medieval-pin',
-        themes: [{ slug: 'medieval', name: 'Medieval' }],
+        themes: [{ public_id: 'medieval', name: 'Medieval' }],
       }),
     ];
     const expanded = expandTitlesWithAncestorThemes(titles, hierarchy);

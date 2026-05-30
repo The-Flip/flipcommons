@@ -4,8 +4,9 @@ import Page from './location-detail.test-harness.svelte';
 
 const BASE_LOCATION = {
   name: 'USA',
+  public_id: 'usa',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'usa',
-  location_path: 'usa',
   location_type: 'country',
   expected_child_type: 'state',
   short_name: 'USA',
@@ -16,12 +17,12 @@ const BASE_LOCATION = {
   ancestors: [],
   children: [],
   manufacturers: [
-    { slug: 'williams', name: 'Williams', model_count: 12, thumbnail_url: null },
-    { slug: 'stern', name: 'Stern', model_count: 8, thumbnail_url: null },
+    { public_id: 'williams', name: 'Williams', model_count: 12, thumbnail_url: null },
+    { public_id: 'stern', name: 'Stern', model_count: 8, thumbnail_url: null },
   ],
 };
 
-const EMPTY_DESCRIPTION = { text: '', html: '', citations: [], attribution: null };
+const EMPTY_DESCRIPTION = { text: '', plain: '', html: '', citations: [], attribution: null };
 
 describe('location detail SSR route', () => {
   it('renders the manufacturers heading with count when no description is present', () => {
@@ -43,6 +44,7 @@ describe('location detail SSR route', () => {
             ...BASE_LOCATION,
             description: {
               text: 'A federal republic.[1]',
+              plain: 'A federal republic.',
               html: '<p>A <strong>federal</strong> republic.</p>',
               citations: [
                 {

@@ -44,7 +44,7 @@ def _serialize_item(item: KioskConfigItem) -> KioskConfigItemDetailSchema:
         id=item.pk,
         position=item.position,
         hook=item.hook,
-        title=EntityRef(name=item.title.name, slug=item.title.slug),
+        title=EntityRef(name=item.title.name, public_id=item.title.public_id),
     )
 
 

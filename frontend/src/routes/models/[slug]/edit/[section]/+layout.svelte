@@ -15,7 +15,7 @@
   let slug = $derived(page.params.slug);
   let sectionSegment = $derived(page.params.section);
   let currentSection = $derived(sectionSegment ? findSectionBySegment(sectionSegment) : undefined);
-  let availableSections = $derived(modelSectionsFor(modelHasTitleOwnedIdentity(data.model)));
+  let availableSections = $derived(modelSectionsFor(modelHasTitleOwnedIdentity(data.profile)));
 
   $effect(() => {
     auth.load();

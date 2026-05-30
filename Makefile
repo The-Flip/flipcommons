@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev test lint quality agent-docs api-gen ingest pull-ingest mypy mypy-warm mypy-restart mypy-status
+.PHONY: bootstrap dev test lint quality agent-docs codegen ingest pull-ingest mypy mypy-warm mypy-restart mypy-status
 
 bootstrap:
 	./scripts/bootstrap
@@ -12,17 +12,17 @@ test:
 lint:
 	./scripts/lint
 
-quality: lint api-gen
+quality: lint codegen
 	cd frontend && pnpm check
 	@echo "All quality checks passed!"
 
 agent-docs:
 	python3 scripts/build_agent_docs.py
 
-api-gen:
+codegen:
 	cd backend && uv run python manage.py export_openapi_schema
-	cd backend && uv run python manage.py export_catalog_meta
-	cd frontend && pnpm exec prettier --write src/lib/api/catalog-meta.ts
+	cd backend && uv run python manage.py export_entity_meta
+	cd frontend && pnpm exec prettier --write src/lib/entities/entity-meta.ts
 	cd frontend && pnpm api:gen
 
 ingest:

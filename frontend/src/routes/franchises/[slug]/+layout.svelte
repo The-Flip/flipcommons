@@ -3,11 +3,12 @@
   import { SIMPLE_TAXONOMY_EDIT_SECTIONS_NO_DISPLAY_ORDER } from '$lib/components/editors/simple-taxonomy-edit-sections';
 
   let { data, children } = $props();
-  let franchise = $derived(data.franchise);
+  let franchise = $derived(data.profile);
 </script>
 
 <SimpleTaxonomyDetailLayout
   profile={franchise}
+  jsonLd={data.jsonLd}
   parentLabel="Franchises"
   basePath="/franchises"
   claimsPath={'/api/franchises/{public_id}/claims/'}

@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from django.db import models
 
-from apps.core.markdown import MarkdownField
 from apps.core.models import (
     SluggedModel,
     TimeStampedModel,
@@ -43,7 +42,6 @@ class Franchise(
     titles: models.Manager[Title]
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
-    description = MarkdownField(blank=True)
 
     class Meta:
         ordering = ["name"]
@@ -78,7 +76,6 @@ class Series(
     titles: models.Manager[Title]
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
-    description = MarkdownField(blank=True)
 
     class Meta:
         ordering = ["name"]

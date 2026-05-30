@@ -12,9 +12,12 @@
   import RelatedTitlesSection from '$lib/components/RelatedTitlesSection.svelte';
   import CreateFirstModelPrompt from '$lib/components/CreateFirstModelPrompt.svelte';
   import { titleAreaEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { externalLinks } from '$lib/entities/external-links';
+  import { model as modelInfo } from '$lib/entities/model';
+  import { title as titleInfo } from '$lib/entities/title';
 
   let { data } = $props();
-  let title = $derived(data.title);
+  let title = $derived(data.profile);
   let md = $derived(title.model_detail);
   let specs = $derived(title.agreed_specs);
   let overviewRichText = $derived(md ? md.description : title.description);
@@ -36,7 +39,7 @@
     }> = [];
     for (const m of title.machines) {
       out.push({
-        slug: m.slug,
+        slug: m.public_id,
         name: m.name,
         year: m.year,
         thumbnailUrl: m.thumbnail_url,
@@ -44,7 +47,7 @@
       });
       for (const v of m.variants ?? []) {
         out.push({
-          slug: v.slug,
+          slug: v.public_id,
           name: v.name,
           year: v.year,
           thumbnailUrl: v.thumbnail_url,
@@ -81,7 +84,12 @@
     ),
   );
 
-  let hasExternalLinks = $derived(!!(title.opdb_id || title.fandom_page_id));
+  // External-DB links, one source of truth shared with the sidebar and JSON-LD.
+  // The single-model view shows the Model's (IPDB/Pinside) + the Title's
+  // (Fandom); the multi-model view shows only the Title's.
+  let titleLinks = $derived(externalLinks(title, titleInfo));
+  let modelLinks = $derived(md ? externalLinks(md, modelInfo) : []);
+  let combinedLinks = $derived([...modelLinks, ...titleLinks]);
 </script>
 
 {#if md}
@@ -125,24 +133,12 @@
     </AccordionSection>
   {/if}
 
-  {#if md.ipdb_id || md.opdb_id || md.pinside_id || title.opdb_id || title.fandom_page_id}
+  {#if combinedLinks.length}
     <AccordionSection heading="External Links" onEdit={editAction('model:external-data')}>
       <div class="external-ids">
-        {#if md.ipdb_id}
-          <a href="https://www.ipdb.org/machine.cgi?id={md.ipdb_id}">Internet Pinball Database</a>
-        {/if}
-        {#if md.opdb_id}
-          <a href="https://opdb.org/machines/{md.opdb_id}">Open Pinball Database</a>
-        {/if}
-        {#if md.pinside_id}
-          <a href="https://pinside.com/pinball/machine/{md.pinside_id}">Pinside</a>
-        {/if}
-        {#if title.opdb_id}
-          <a href="https://opdb.org/groups/{title.opdb_id}">OPDB</a>
-        {/if}
-        {#if title.fandom_page_id}
-          <a href="https://pinball.fandom.com/?curid={title.fandom_page_id}">Pinball Wiki</a>
-        {/if}
+        {#each combinedLinks as link (link.href)}
+          <a href={link.href}>{link.label}</a>
+        {/each}
       </div>
     </AccordionSection>
   {/if}
@@ -190,7 +186,7 @@
         {#if specs.technology_generation}
           <dt>Generation</dt>
           <dd>
-            <a href={resolve(`/technology-generations/${specs.technology_generation.slug}`)}
+            <a href={resolve(`/technology-generations/${specs.technology_generation.public_id}`)}
               >{specs.technology_generation.name}</a
             >
           </dd>
@@ -198,15 +194,17 @@
         {#if specs.technology_subgeneration}
           <dt>Subgeneration</dt>
           <dd>
-            <a href={resolve(`/technology-subgenerations/${specs.technology_subgeneration.slug}`)}
-              >{specs.technology_subgeneration.name}</a
+            <a
+              href={resolve(
+                `/technology-subgenerations/${specs.technology_subgeneration.public_id}`,
+              )}>{specs.technology_subgeneration.name}</a
             >
           </dd>
         {/if}
         {#if specs.display_type}
           <dt>Display Type</dt>
           <dd>
-            <a href={resolve(`/display-types/${specs.display_type.slug}`)}
+            <a href={resolve(`/display-types/${specs.display_type.public_id}`)}
               >{specs.display_type.name}</a
             >
           </dd>
@@ -214,7 +212,7 @@
         {#if specs.display_subtype}
           <dt>Display Subtype</dt>
           <dd>
-            <a href={resolve(`/display-subtypes/${specs.display_subtype.slug}`)}
+            <a href={resolve(`/display-subtypes/${specs.display_subtype.public_id}`)}
               >{specs.display_subtype.name}</a
             >
           </dd>
@@ -222,7 +220,7 @@
         {#if specs.system}
           <dt>System</dt>
           <dd>
-            <a href={resolve(`/systems/${specs.system.slug}`)}>{specs.system.name}</a>
+            <a href={resolve(`/systems/${specs.system.public_id}`)}>{specs.system.name}</a>
           </dd>
         {/if}
       </dl>
@@ -236,26 +234,27 @@
         {#if title.franchise}
           <dt>Franchise</dt>
           <dd>
-            <a href={resolve(`/franchises/${title.franchise.slug}`)}>{title.franchise.name}</a>
+            <a href={resolve(`/franchises/${title.franchise.public_id}`)}>{title.franchise.name}</a>
           </dd>
         {/if}
         {#if title.series}
           <dt>Series</dt>
           <dd>
-            <a href={resolve(`/series/${title.series.slug}`)}>{title.series.name}</a>
+            <a href={resolve(`/series/${title.series.public_id}`)}>{title.series.name}</a>
           </dd>
         {/if}
         {#if specs.game_format}
           <dt>Format</dt>
           <dd>
-            <a href={resolve(`/game-formats/${specs.game_format.slug}`)}>{specs.game_format.name}</a
+            <a href={resolve(`/game-formats/${specs.game_format.public_id}`)}
+              >{specs.game_format.name}</a
             >
           </dd>
         {/if}
         {#if specs.cabinet}
           <dt>Cabinet</dt>
           <dd>
-            <a href={resolve(`/cabinets/${specs.cabinet.slug}`)}>{specs.cabinet.name}</a>
+            <a href={resolve(`/cabinets/${specs.cabinet.public_id}`)}>{specs.cabinet.name}</a>
           </dd>
         {/if}
         {#if specs.player_count}
@@ -273,20 +272,20 @@
         {#if specs.themes && specs.themes.length > 0}
           <dt>Themes</dt>
           <dd>
-            {#each specs.themes as theme, i (theme.slug)}
+            {#each specs.themes as theme, i (theme.public_id)}
               {#if i > 0},
               {/if}
-              <a href={resolve(`/themes/${theme.slug}`)}>{theme.name}</a>
+              <a href={resolve(`/themes/${theme.public_id}`)}>{theme.name}</a>
             {/each}
           </dd>
         {/if}
         {#if specs.gameplay_features && specs.gameplay_features.length > 0}
           <dt>Gameplay</dt>
           <dd>
-            {#each specs.gameplay_features as gf, i (gf.slug)}
+            {#each specs.gameplay_features as gf, i (gf.public_id)}
               {#if i > 0},
               {/if}
-              <a href={resolve(`/gameplay-features/${gf.slug}`)}>{gf.name}</a
+              <a href={resolve(`/gameplay-features/${gf.public_id}`)}>{gf.name}</a
               >{#if gf.count}&nbsp;({gf.count}){/if}
             {/each}
           </dd>
@@ -294,20 +293,20 @@
         {#if specs.reward_types && specs.reward_types.length > 0}
           <dt>Reward Types</dt>
           <dd>
-            {#each specs.reward_types as rt, i (rt.slug)}
+            {#each specs.reward_types as rt, i (rt.public_id)}
               {#if i > 0},
               {/if}
-              <a href={resolve(`/reward-types/${rt.slug}`)}>{rt.name}</a>
+              <a href={resolve(`/reward-types/${rt.public_id}`)}>{rt.name}</a>
             {/each}
           </dd>
         {/if}
         {#if specs.tags && specs.tags.length > 0}
           <dt>Tags</dt>
           <dd>
-            {#each specs.tags as tag, i (tag.slug)}
+            {#each specs.tags as tag, i (tag.public_id)}
               {#if i > 0},
               {/if}
-              <a href={resolve(`/tags/${tag.slug}`)}>{tag.name}</a>
+              <a href={resolve(`/tags/${tag.public_id}`)}>{tag.name}</a>
             {/each}
           </dd>
         {/if}
@@ -337,15 +336,12 @@
   {/if}
 
   <!-- External Links -->
-  {#if hasExternalLinks}
+  {#if titleLinks.length}
     <AccordionSection heading="External Links" onEdit={editAction('title:external-data')}>
       <div class="external-ids">
-        {#if title.opdb_id}
-          <a href="https://opdb.org/groups/{title.opdb_id}">OPDB</a>
-        {/if}
-        {#if title.fandom_page_id}
-          <a href="https://pinball.fandom.com/?curid={title.fandom_page_id}">Pinball Wiki</a>
-        {/if}
+        {#each titleLinks as link (link.href)}
+          <a href={link.href}>{link.label}</a>
+        {/each}
       </div>
     </AccordionSection>
   {/if}

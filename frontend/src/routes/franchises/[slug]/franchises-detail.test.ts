@@ -5,12 +5,14 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Star Trek',
+  public_id: 'star-trek',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'star-trek',
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', plain: '', html: '', citations: [], attribution: null },
   titles: [
     {
       name: 'Star Trek TNG',
-      slug: 'star-trek-tng',
+      public_id: 'star-trek-tng',
       abbreviations: [],
       model_count: 1,
       manufacturer_name: 'Williams',
@@ -36,7 +38,7 @@ describe('franchises detail SSR route', () => {
       params: { slug: 'star-trek' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ franchise: MOCK_DATA });
+    expect(result).toEqual(expect.objectContaining({ profile: MOCK_DATA }));
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/franchise/star-trek');
@@ -57,7 +59,7 @@ describe('franchises detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { franchise: MOCK_DATA },
+        data: { profile: MOCK_DATA, jsonLd: {} },
       },
     });
 

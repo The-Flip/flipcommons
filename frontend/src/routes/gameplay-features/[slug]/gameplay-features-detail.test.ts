@@ -3,8 +3,9 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Multiball',
+  public_id: 'multiball',
   slug: 'multiball',
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
   display_order: 0,
   parents: [],
   machines: [],
@@ -27,7 +28,10 @@ describe('gameplay-features detail SSR route', () => {
       params: { slug: 'multiball' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ profile: MOCK_DATA });
+    expect(result).toEqual({
+      profile: MOCK_DATA,
+      jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
+    });
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/gameplay-feature/multiball');

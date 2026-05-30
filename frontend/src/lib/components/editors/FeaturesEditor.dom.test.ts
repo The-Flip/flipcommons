@@ -58,12 +58,12 @@ const FIELD_CONSTRAINTS = {
 };
 
 const INITIAL_MODEL = {
-  themes: [{ slug: 'medieval' }],
-  tags: [{ slug: 'classic' }],
-  reward_types: [{ slug: 'replay' }],
-  gameplay_features: [{ slug: 'multiball', count: 3 }],
-  game_format: { slug: 'pinball-machine' },
-  cabinet: { slug: 'standard' },
+  themes: [{ public_id: 'medieval' }],
+  tags: [{ public_id: 'classic' }],
+  reward_types: [{ public_id: 'replay' }],
+  gameplay_features: [{ public_id: 'multiball', count: 3 }],
+  game_format: { public_id: 'pinball-machine' },
+  cabinet: { public_id: 'standard' },
   player_count: 4,
   flipper_count: 2,
   production_quantity: '4016',

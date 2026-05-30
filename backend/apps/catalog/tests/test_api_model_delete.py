@@ -296,7 +296,7 @@ class TestDeletePreview:
         body = resp.json()
         assert body["name"] == m.name
         assert body["slug"] == "mm-pro"
-        assert body["parent"] == {"name": "Medieval Madness", "slug": "mm"}
+        assert body["parent"] == {"name": "Medieval Madness", "public_id": "mm"}
         assert body["changeset_count"] >= 1
         assert body["blocked_by"] == []
 

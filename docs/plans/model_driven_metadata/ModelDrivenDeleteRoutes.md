@@ -22,7 +22,7 @@ This is one of three coordinated plans that put soft-delete-related metadata on 
 
 - [ModelDrivenSoftDeleteMetadata.md](ModelDrivenSoftDeleteMetadata.md) — **data layer.** Cascade and block declarations consumed by the soft-delete planner (`apps/catalog/api/soft_delete.py`).
 - **[ModelDrivenDeleteRoutes.md](ModelDrivenDeleteRoutes.md) (this doc) — API layer.** Route registration for the delete-preview / delete / restore trio, with `__subclasses__()`-driven discovery.
-- [ModelDrivenDeletePage.md](ModelDrivenDeletePage.md) — **frontend layer.** Per-entity copy strings exported via `CATALOG_META`, consumed by a single dynamic delete-page route.
+- [ModelDrivenDeletePage.md](ModelDrivenDeletePage.md) — **frontend layer.** Per-entity copy strings exported via `ENTITY_META`, consumed by a single dynamic delete-page route.
 
 The three docs share a base class but consume different things and ship in any order.
 
@@ -223,7 +223,7 @@ Splitting the work this way keeps each step minimal and makes the data-layer fix
 
 ## What this does not do
 
-- **Doesn't change route URLs, response shapes, or any handler behavior.** Pure refactor — `make api-gen` produces no diff, all existing delete-restore tests pass.
+- **Doesn't change route URLs, response shapes, or any handler behavior.** Pure refactor — `make codegen` produces no diff, all existing delete-restore tests pass.
 - **Doesn't touch create routes.** `register_entity_create` has more per-entity variation (parented vs. unparented, scope filters, body schemas, extra-fields builders). Natural follow-up plan once this pattern proves out.
 - **Doesn't touch PATCH-claims handlers.** Discussed and deferred separately.
 - **Doesn't migrate Title / MachineModel / Person off bespoke handlers.** Their hand-rolled delete-preview / delete / restore routes in `titles.py` / `machine_models.py` / `people.py` keep working unchanged; they declare `expose_delete_routes=False` to opt out of factory auto-registration. Migration is a follow-up — the factory has to grow whatever extra hooks the bespoke handlers needed (e.g. Title's `active_model_count` in delete-preview).
@@ -233,7 +233,7 @@ Splitting the work this way keeps each step minimal and makes the data-layer fix
 ## Validation
 
 - `make test` passes — same handler bodies, same routes, same URLs.
-- `make api-gen` produces no diff — schema is identical.
+- `make codegen` produces no diff — schema is identical.
 - `manage.py check` is clean. A probe commit deliberately breaking a registration fails the check loudly.
 - Parity test in `apps/catalog/tests/test_delete_route_registry.py` asserts the auto-registered set matches an explicit list of 17 entity classes. Adding or removing a participating entity triggers the test.
 - Spot-check delete / delete-preview / restore on one entity per category (one regular entity, one taxonomy entity, one parented entity, Location).

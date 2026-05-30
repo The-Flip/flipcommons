@@ -16,18 +16,18 @@
   let manufacturerOptions = $derived.by(() => {
     const seen: Record<string, string> = {};
     for (const s of systems.data) {
-      if (s.manufacturer && !(s.manufacturer.slug in seen)) {
-        seen[s.manufacturer.slug] = s.manufacturer.name;
+      if (!(s.manufacturer.public_id in seen)) {
+        seen[s.manufacturer.public_id] = s.manufacturer.name;
       }
     }
     return Object.entries(seen)
-      .map(([slug, name]) => ({ slug, name }))
+      .map(([publicId, name]) => ({ slug: publicId, name }))
       .sort((a, b) => a.name.localeCompare(b.name));
   });
 
   function filterByManufacturer(s: SystemRow): boolean {
     if (!manufacturerFilter) return true;
-    return s.manufacturer?.slug === manufacturerFilter;
+    return s.manufacturer.public_id === manufacturerFilter;
   }
 </script>
 

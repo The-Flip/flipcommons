@@ -1,17 +1,9 @@
-import { error } from '@sveltejs/kit';
-import { createServerClient } from '$lib/api/server';
+import { loadEntityPage } from '$lib/entity-page-loader.server';
+import { series } from '$lib/entities';
+import { buildEntityJsonLd } from '$lib/entities/schema-org';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ fetch, url, request, params }) => {
-  const client = createServerClient(fetch, url, request);
-  const { data, response } = await client.GET('/api/pages/series/{public_id}', {
-    params: { path: { public_id: params.slug } },
-  });
-
-  if (!data) {
-    if (response?.status === 404) throw error(404, 'Series not found');
-    throw error(response.status || 500, 'Failed to load page');
-  }
-
-  return { series: data };
+export const load: LayoutServerLoad = async (event) => {
+  const { profile } = await loadEntityPage(event, '/api/pages/series/{public_id}', 'Series');
+  return { profile, jsonLd: buildEntityJsonLd(profile, series, event.url) };
 };

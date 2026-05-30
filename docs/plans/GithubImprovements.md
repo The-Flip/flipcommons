@@ -55,7 +55,7 @@ Only worth doing once there's a staging target or a reason to want a manual gate
 
 ## Minor
 
-- **PR template** — a short `.github/pull_request_template.md` checklist (migrations run? `make api-gen`? tests added?) as a self-nag. Low value solo; skip unless forgetting these becomes a pattern.
+- **PR template** — a short `.github/pull_request_template.md` checklist (migrations run? `make codegen`? tests added?) as a self-nag. Low value solo; skip unless forgetting these becomes a pattern.
 - **CODEOWNERS** — no value on a single-reviewer repo. Revisit if contributors grow.
 - **Issue templates** — only if issues are actually triaged here.
 - **Signed commits requirement** — nice-to-have for provenance; not load-bearing given the solo workflow.

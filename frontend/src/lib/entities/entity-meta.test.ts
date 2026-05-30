@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { catalogRoutesByEntity } from '../route-metadata.server';
-import { CATALOG_META, type CatalogEntityKey } from './catalog-meta';
+import { ENTITY_META, CATALOG_ENTITY_KEYS } from './entity-meta';
 
 // Every linkable entity must have detail + edit-history + sources routes.
 // edit-history/ and sources/ are thin wrappers over $lib/provenance-loaders
@@ -30,20 +30,17 @@ const detailRoutes = catalogRoutesByEntity((cls) => cls.kind === 'catalog-detail
 const editHistoryRoutes = catalogRoutesByEntity((cls) => cls.kind === 'catalog-edit-history');
 const sourcesRoutes = catalogRoutesByEntity((cls) => cls.kind === 'catalog-sources');
 
-describe('catalog-meta vs route tree', () => {
-  it.each(Object.keys(CATALOG_META) as CatalogEntityKey[])(
-    '%s has a catalog-detail route',
-    (key) => {
-      expect(
-        detailRoutes.has(key),
-        `CATALOG_META contains "${key}" but no route classifies as catalog-detail for it. ` +
-          `Either add the /${CATALOG_META[key].entity_type_plural}/[slug] (or [...path]) route, ` +
-          `or remove the entity from CATALOG_META.`,
-      ).toBe(true);
-    },
-  );
+describe('entity-meta vs route tree', () => {
+  it.each(CATALOG_ENTITY_KEYS)('%s has a catalog-detail route', (key) => {
+    expect(
+      detailRoutes.has(key),
+      `ENTITY_META contains catalog entity "${key}" but no route classifies as catalog-detail for it. ` +
+        `Either add the /${ENTITY_META[key].entity_type_plural}/[slug] (or [...path]) route, ` +
+        `or remove the entity from ENTITY_META.`,
+    ).toBe(true);
+  });
 
-  it.each(Object.keys(CATALOG_META) as CatalogEntityKey[])(
+  it.each(CATALOG_ENTITY_KEYS)(
     '%s has a catalog-edit-history route with a +page.server.ts loader',
     (key) => {
       const ids = editHistoryRoutes.get(key) ?? [];
@@ -58,7 +55,7 @@ describe('catalog-meta vs route tree', () => {
     },
   );
 
-  it.each(Object.keys(CATALOG_META) as CatalogEntityKey[])(
+  it.each(CATALOG_ENTITY_KEYS)(
     '%s has a catalog-sources route with a +page.server.ts loader',
     (key) => {
       const ids = sourcesRoutes.get(key) ?? [];

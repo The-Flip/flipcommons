@@ -11,7 +11,7 @@ Unknown (or concatenated / Django-internal) entity_type strings raise
 
 See ``docs/EntityNaming.md`` for the naming rule (hyphenated singular; the
 frontend route segment is its plural) and the generated frontend mirror at
-``frontend/src/lib/api/catalog-meta.ts``.
+``frontend/src/lib/entities/entity-meta.ts``.
 """
 
 from __future__ import annotations
@@ -39,6 +39,25 @@ def _build_map() -> dict[str, type[LinkableModel]]:
             )
         result[key] = cls
     return result
+
+
+def all_linkable_models() -> list[type[LinkableModel]]:
+    """Every concrete ``LinkableModel`` class, in registry order.
+
+    Cross-app: walks the full app registry (see ``_build_map``), so it spans
+    catalog and any other app whose models subclass ``LinkableModel``. This is
+    the source set for ``export_entity_meta`` — the generated frontend entity
+    registry mirrors exactly these classes. Because it is registry-driven, a new
+    linkable entity (e.g. a future SSR ``User``) joins automatically by
+    subclassing ``LinkableModel`` and declaring its ``entity_type``.
+
+    No ordering is promised; callers that need a stable order (e.g. codegen)
+    sort for themselves.
+    """
+    global _ENTITY_TYPE_MAP
+    if _ENTITY_TYPE_MAP is None:
+        _ENTITY_TYPE_MAP = _build_map()
+    return list(_ENTITY_TYPE_MAP.values())
 
 
 def get_linkable_model(entity_type: str) -> type[LinkableModel]:

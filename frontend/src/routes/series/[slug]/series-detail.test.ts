@@ -5,12 +5,14 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Eight Ball',
+  public_id: 'eight-ball',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'eight-ball',
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', plain: '', html: '', citations: [], attribution: null },
   titles: [
     {
       name: 'Eight Ball Deluxe',
-      slug: 'eight-ball-deluxe',
+      public_id: 'eight-ball-deluxe',
       abbreviations: [],
       model_count: 1,
       year: 1981,
@@ -37,7 +39,7 @@ describe('series detail SSR route', () => {
       params: { slug: 'eight-ball' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ series: MOCK_DATA });
+    expect(result).toEqual(expect.objectContaining({ profile: MOCK_DATA }));
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/series/eight-ball');
@@ -58,7 +60,7 @@ describe('series detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { series: MOCK_DATA },
+        data: { profile: MOCK_DATA, jsonLd: {} },
       },
     });
 

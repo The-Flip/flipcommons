@@ -46,7 +46,7 @@ function makeCredit(
   roleDisplay: string,
 ): Credit {
   return {
-    person: { slug: personSlug, name: personName },
+    person: { public_id: personSlug, name: personName },
     role,
     role_display: roleDisplay,
     role_sort_order: 0,

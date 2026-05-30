@@ -4,7 +4,6 @@ export type LocationEditView = Pick<
   LocationDetailSchema,
   | 'name'
   | 'slug'
-  | 'location_path'
   | 'location_type'
   | 'description'
   | 'short_name'

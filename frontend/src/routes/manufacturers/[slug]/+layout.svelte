@@ -4,6 +4,8 @@
   import { resolve } from '$app/paths';
   import { formatYearRange, websiteHostname } from '$lib/utils';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/meta-tags';
+  import JsonLd from '$lib/components/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import ExpandableSidebarList from '$lib/components/ExpandableSidebarList.svelte';
   import LocationLink from '$lib/components/LocationLink.svelte';
@@ -29,11 +31,11 @@
   import ManufacturerEditorSwitch from './edit/ManufacturerEditorSwitch.svelte';
 
   let { data, children } = $props();
-  let mfr = $derived(data.manufacturer);
+  let mfr = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
   let yearsActive = $derived(formatYearRange(mfr.year_start, mfr.year_end));
-  let metaDescription = $derived(mfr.description?.text || `${mfr.name} — pinball manufacturer`);
+  let metaDescription = $derived(metaDescriptionFor(mfr, `${mfr.name} — pinball manufacturer`));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
   let isDetail = $derived(mode === 'detail');
   let isFocusMode = $derived(isFocusModePath(page.url.pathname));
@@ -89,7 +91,6 @@
     updateEditQuery(editing);
   });
 
-  let hasEntityLocations = $derived(mfr.entities.some((entity) => entity.locations.length > 0));
   let metaItems = $derived(yearsActive ? [{ text: yearsActive }] : []);
   let editSections: EditSectionMenuItem[] = $derived([
     ...MANUFACTURER_EDIT_SECTIONS.map((section) =>
@@ -134,6 +135,10 @@
   imageAlt={mfr.logo_url ? `${mfr.name} logo` : undefined}
 />
 
+{#if isDetail && data.jsonLd}
+  <JsonLd data={data.jsonLd} />
+{/if}
+
 {#if isFocusMode}
   {@render children()}
 {:else}
@@ -166,10 +171,10 @@
     {#if mfr.entities.length > 0}
       <SidebarSection heading="Companies">
         <SidebarList>
-          {#each mfr.entities as entity (entity.slug)}
+          {#each mfr.entities as entity (entity.public_id)}
             <SidebarListItem>
               <div class="entity">
-                <a href={resolve(`/corporate-entities/${entity.slug}`)} class="entity-name"
+                <a href={resolve(`/corporate-entities/${entity.public_id}`)} class="entity-name"
                   >{entity.name}</a
                 >
                 {#if formatYearRange(entity.year_start, entity.year_end)}
@@ -187,20 +192,12 @@
       </SidebarSection>
     {/if}
 
-    {#if !hasEntityLocations && (mfr.headquarters || mfr.country)}
-      <SidebarSection heading="Location">
-        <p class="sidebar-value">
-          {[mfr.headquarters, mfr.country].filter(Boolean).join(', ')}
-        </p>
-      </SidebarSection>
-    {/if}
-
     {#if mfr.systems.length > 0}
       <SidebarSection heading="Systems">
         <SidebarList>
-          {#each mfr.systems as system (system.slug)}
+          {#each mfr.systems as system (system.public_id)}
             <SidebarListItem>
-              <a href={resolve(`/systems/${system.slug}`)}>{system.name}</a>
+              <a href={resolve(`/systems/${system.public_id}`)}>{system.name}</a>
             </SidebarListItem>
           {/each}
         </SidebarList>
@@ -209,10 +206,10 @@
 
     {#if mfr.persons.length > 0}
       <SidebarSection heading="Notable People">
-        <ExpandableSidebarList items={mfr.persons} limit={10} key={(person) => person.slug}>
+        <ExpandableSidebarList items={mfr.persons} limit={10} key={(person) => person.public_id}>
           {#snippet children(person)}
             <SidebarListItem>
-              <a href={resolve(`/people/${person.slug}`)}>{person.name}</a>
+              <a href={resolve(`/people/${person.public_id}`)}>{person.name}</a>
               {#if person.roles.length > 0}
                 <span class="muted">{person.roles.join(', ')}</span>
               {/if}

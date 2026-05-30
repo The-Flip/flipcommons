@@ -116,7 +116,7 @@ function matchesQuery(m: FacetedManufacturer, q: string): boolean {
 
 function matchesLocation(m: FacetedManufacturer, slug: string | null): boolean {
   if (!slug) return true;
-  return m.locations.some((loc) => loc.slug === slug);
+  return m.locations.some((loc) => loc.public_id === slug);
 }
 
 function matchesYear(m: FacetedManufacturer, ymin: number | null, ymax: number | null): boolean {
@@ -131,12 +131,12 @@ function matchesYear(m: FacetedManufacturer, ymin: number | null, ymax: number |
 
 function matchesPerson(m: FacetedManufacturer, slug: string | null): boolean {
   if (!slug) return true;
-  return m.persons.some((p) => p.slug === slug);
+  return m.persons.some((p) => p.public_id === slug);
 }
 
 function matchesTechGen(m: FacetedManufacturer, slug: string | null): boolean {
   if (!slug) return true;
-  return m.tech_generations.some((tg) => tg.slug === slug);
+  return m.tech_generations.some((tg) => tg.public_id === slug);
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ export function computeMfrFacetCounts(
     for (let i = 0; i < manufacturers.length; i++) {
       if ((masks[i] & requiredMask) === requiredMask) {
         for (const ref of extractor(manufacturers[i])) {
-          counts.set(ref.slug, (counts.get(ref.slug) ?? 0) + 1);
+          counts.set(ref.public_id, (counts.get(ref.public_id) ?? 0) + 1);
         }
       }
     }
@@ -257,9 +257,9 @@ export function getMfrActiveFilterLabels(
   const techGenNames = new Map<string, string>();
 
   for (const m of allManufacturers) {
-    for (const ref of m.locations) locationNames.set(ref.slug, ref.name);
-    for (const ref of m.persons) personNames.set(ref.slug, ref.name);
-    for (const ref of m.tech_generations) techGenNames.set(ref.slug, ref.name);
+    for (const ref of m.locations) locationNames.set(ref.public_id, ref.name);
+    for (const ref of m.persons) personNames.set(ref.public_id, ref.name);
+    for (const ref of m.tech_generations) techGenNames.set(ref.public_id, ref.name);
   }
 
   if (filters.location) {

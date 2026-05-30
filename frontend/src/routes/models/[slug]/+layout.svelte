@@ -4,7 +4,11 @@
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/meta-tags';
+  import JsonLd from '$lib/components/JsonLd.svelte';
   import ExternalLinksSidebarSection from '$lib/components/ExternalLinksSidebarSection.svelte';
+  import { externalLinks } from '$lib/entities/external-links';
+  import { model as modelInfo } from '$lib/entities/model';
   import ModelHierarchy from '$lib/components/ModelHierarchy.svelte';
   import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
@@ -27,7 +31,8 @@
   import ModelEditorSwitch from './edit/ModelEditorSwitch.svelte';
 
   let { data, children } = $props();
-  let model = $derived(data.model);
+  let model = $derived(data.profile);
+  let externalSiteLinks = $derived(externalLinks(model, modelInfo));
   let slug = $derived(page.params.slug);
 
   $effect(() => {
@@ -54,16 +59,17 @@
   let isMobile = $derived(isMobileFlag.current);
 
   let metaDescription = $derived.by(() => {
-    if (model.description?.text) return model.description.text;
     const parts = [model.name];
     if (model.year) parts.push(`a ${model.year} pinball machine`);
     else parts.push('pinball machine');
     if (model.manufacturer) parts.push(`by ${model.manufacturer.name}`);
-    return parts.join(' — ');
+    return metaDescriptionFor(model, parts.join(' — '));
   });
 
   let parentLink = $derived(
-    model.title ? { text: model.title.name, href: resolve(`/titles/${model.title.slug}`) } : null,
+    model.title
+      ? { text: model.title.name, href: resolve(`/titles/${model.title.public_id}`) }
+      : null,
   );
 
   let metaItems = $derived.by(() => {
@@ -71,7 +77,7 @@
     if (model.manufacturer) {
       items.push({
         text: model.manufacturer.name,
-        href: resolve(`/manufacturers/${model.manufacturer.slug}`),
+        href: resolve(`/manufacturers/${model.manufacturer.public_id}`),
       });
     }
     if (model.year) {
@@ -202,6 +208,10 @@
   imageAlt={model.hero_image_url ? `${model.name} pinball machine` : undefined}
 />
 
+{#if isDetail && data.jsonLd}
+  <JsonLd data={data.jsonLd} />
+{/if}
+
 {#if isFocusMode}
   {@render children()}
 {:else}
@@ -236,15 +246,13 @@
     <TaxonomyLinkSidebarSection heading="Franchise" basePath="/franchises" item={model.franchise} />
     <TaxonomyLinkSidebarSection heading="Series" basePath="/series" item={model.series} />
 
-    {#if model.title}
-      <SidebarSection heading="Parent Title">
-        <SidebarList>
-          <SidebarListItem>
-            <a href={resolve(`/titles/${model.title.slug}`)}>{model.title.name}</a>
-          </SidebarListItem>
-        </SidebarList>
-      </SidebarSection>
-    {/if}
+    <SidebarSection heading="Parent Title">
+      <SidebarList>
+        <SidebarListItem>
+          <a href={resolve(`/titles/${model.title.public_id}`)}>{model.title.name}</a>
+        </SidebarListItem>
+      </SidebarList>
+    </SidebarSection>
 
     {#if model.variants.length > 0}
       <SidebarSection
@@ -252,9 +260,9 @@
         note="These play identically, differing only cosmetically:"
       >
         <SidebarList>
-          {#each model.variants as variant (variant.slug)}
+          {#each model.variants as variant (variant.public_id)}
             <SidebarListItem>
-              <a href={resolve(`/models/${variant.slug}`)}>{variant.name}</a>
+              <a href={resolve(`/models/${variant.public_id}`)}>{variant.name}</a>
               {#if variant.year}
                 <span class="muted">{variant.year}</span>
               {/if}
@@ -268,7 +276,7 @@
       <SidebarSection heading="Parent Model">
         <SidebarList>
           <SidebarListItem>
-            <a href={resolve(`/models/${model.variant_of.slug}`)}>{model.variant_of.name}</a>
+            <a href={resolve(`/models/${model.variant_of.public_id}`)}>{model.variant_of.name}</a>
             {#if model.variant_of.year}
               <span class="muted">{model.variant_of.year}</span>
             {/if}
@@ -280,9 +288,9 @@
     {#if model.variant_siblings && model.variant_siblings.length > 0}
       <SidebarSection heading="Other Variants">
         <SidebarList>
-          {#each model.variant_siblings as sibling (sibling.slug)}
+          {#each model.variant_siblings as sibling (sibling.public_id)}
             <SidebarListItem>
-              <a href={resolve(`/models/${sibling.slug}`)}>{sibling.name}</a>
+              <a href={resolve(`/models/${sibling.public_id}`)}>{sibling.name}</a>
               {#if sibling.year}
                 <span class="muted">{sibling.year}</span>
               {/if}
@@ -296,7 +304,8 @@
       <SidebarSection heading="Converted From" note="This game was rebuilt from the hardware of:">
         <SidebarList>
           <SidebarListItem>
-            <a href={resolve(`/models/${model.converted_from.slug}`)}>{model.converted_from.name}</a
+            <a href={resolve(`/models/${model.converted_from.public_id}`)}
+              >{model.converted_from.name}</a
             >
             {#if model.converted_from.year}
               <span class="muted">{model.converted_from.year}</span>
@@ -312,9 +321,9 @@
         note="Different games rebuilt from this machine's hardware:"
       >
         <SidebarList>
-          {#each model.conversions as conversion (conversion.slug)}
+          {#each model.conversions as conversion (conversion.public_id)}
             <SidebarListItem>
-              <a href={resolve(`/models/${conversion.slug}`)}>{conversion.name}</a>
+              <a href={resolve(`/models/${conversion.public_id}`)}>{conversion.name}</a>
               {#if conversion.year}
                 <span class="muted">{conversion.year}</span>
               {/if}
@@ -328,7 +337,7 @@
       <SidebarSection heading="Remake Of" note="This game is a remake of:">
         <SidebarList>
           <SidebarListItem>
-            <a href={resolve(`/models/${model.remake_of.slug}`)}>{model.remake_of.name}</a>
+            <a href={resolve(`/models/${model.remake_of.public_id}`)}>{model.remake_of.name}</a>
             {#if model.remake_of.year}
               <span class="muted">{model.remake_of.year}</span>
             {/if}
@@ -340,9 +349,9 @@
     {#if model.remakes && model.remakes.length > 0}
       <SidebarSection heading="Remakes" note="Later remakes of this machine:">
         <SidebarList>
-          {#each model.remakes as remake (remake.slug)}
+          {#each model.remakes as remake (remake.public_id)}
             <SidebarListItem>
-              <a href={resolve(`/models/${remake.slug}`)}>{remake.name}</a>
+              <a href={resolve(`/models/${remake.public_id}`)}>{remake.name}</a>
               {#if remake.year}
                 <span class="muted">{remake.year}</span>
               {/if}
@@ -355,15 +364,10 @@
     <ModelHierarchy
       models={model.title_models}
       heading="Other Models In Title"
-      excludeSlug={model.variant_of?.slug ?? model.slug}
+      excludeSlug={model.variant_of?.public_id ?? model.slug}
     />
 
-    <ExternalLinksSidebarSection
-      ipdbId={model.ipdb_id}
-      opdbId={model.opdb_id}
-      pinsideId={model.pinside_id}
-      note="See this model on other sites:"
-    />
+    <ExternalLinksSidebarSection links={externalSiteLinks} note="See this model on other sites:" />
   {/snippet}
 
   <RecordDetailShell

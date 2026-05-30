@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ChangeSetDetailSchema, ChangeSetSummarySchema } from '$lib/api/schema';
   import client from '$lib/api/client';
-  import { CATALOG_META } from '$lib/api/catalog-meta';
+  import { CATALOG_ENTITY_KEYS, ENTITY_META } from '$lib/entities/entity-meta';
   import { SITE_TITLE } from '$lib/constants';
   import { resolveHref } from '$lib/utils';
   import ClaimAttribution from '$lib/components/ClaimAttribution.svelte';
@@ -168,7 +168,7 @@
       <span class="filter-label">Entity type</span>
       <select bind:value={entityType}>
         <option value="">All types</option>
-        {#each Object.values(CATALOG_META) as et (et.entity_type)}
+        {#each CATALOG_ENTITY_KEYS.map((k) => ENTITY_META[k]) as et (et.entity_type)}
           <option value={et.entity_type}>{et.label}</option>
         {/each}
       </select>

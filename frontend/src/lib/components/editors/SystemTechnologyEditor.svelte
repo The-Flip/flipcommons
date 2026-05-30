@@ -20,7 +20,7 @@
   ) => Promise<SaveResult>;
 
   type InitialData = {
-    technology_subgeneration?: { slug: string } | null;
+    technology_subgeneration?: { public_id: string } | null;
   };
 
   let {
@@ -33,7 +33,7 @@
   }: SectionEditorProps<InitialData> & { save: SaveFn } = $props();
 
   const original = untrack(() => ({
-    technology_subgeneration: initialData.technology_subgeneration?.slug ?? '',
+    technology_subgeneration: initialData.technology_subgeneration?.public_id ?? '',
   }));
   let fields = $state<TechnologyFields>({ ...original });
   let fieldErrors = $state<FieldErrors>({});

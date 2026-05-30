@@ -15,7 +15,7 @@
   import CorporateEntityEditorSwitch from '../CorporateEntityEditorSwitch.svelte';
 
   let { data } = $props();
-  let ce = $derived(data.corporateEntity);
+  let ce = $derived(data.profile);
   let slug = $derived(page.params.slug);
   let sectionSegment = $derived(page.params.section);
   let section = $derived(

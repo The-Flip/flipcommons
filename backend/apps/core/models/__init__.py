@@ -2,9 +2,9 @@
 
 Implementation lives in submodules:
 
-- ``mixins`` — abstract bases (TimeStampedModel, SluggedModel,
-  LifecycleStatusModel, LinkableModel), the EntityStatus enum, and the
-  unique_slug helper.
+- ``mixins`` — abstract bases (TimeStampedModel, LastUpdatedModel,
+  SluggedModel, LifecycleStatusModel, LinkableModel, SitemappedModel), the
+  EntityStatus enum, and the unique_slug helper.
 - ``constraints`` — CHECK / UNIQUE constraint factories used in concrete Meta.
 - ``license`` — the License model.
 - ``references`` — RecordReference graph + post_delete cleanup signal.
@@ -24,11 +24,14 @@ from .constraints import (
 from .fields import BoundedTextField
 from .license import License
 from .mixins import (
+    DescribedModel,
     EntityStatus,
+    LastUpdatedModel,
     LifecycleManager,
     LifecycleQuerySet,
     LifecycleStatusModel,
     LinkableModel,
+    SitemappedModel,
     SluggedModel,
     TimeStampedModel,
     active_status_q,
@@ -38,13 +41,16 @@ from .references import RecordReference, register_reference_cleanup
 
 __all__ = [
     "BoundedTextField",
+    "DescribedModel",
     "EntityStatus",
+    "LastUpdatedModel",
     "License",
     "LifecycleManager",
     "LifecycleQuerySet",
     "LifecycleStatusModel",
     "LinkableModel",
     "RecordReference",
+    "SitemappedModel",
     "SluggedModel",
     "TimeStampedModel",
     "active_status_q",

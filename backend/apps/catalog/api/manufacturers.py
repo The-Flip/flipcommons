@@ -24,9 +24,8 @@ from apps.core.pagination import NamedPageNumberPagination
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import RichTextSchema
 
 from ..cache import get_cached_response, manufacturers_all_key, set_cached_response
 from ..models import (
@@ -54,8 +53,9 @@ from .images import (
     media_prefetch,
     serialize_uploaded_media,
 )
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
+    CatalogDetailSchema,
     ClaimPatchSchema,
     CorporateEntityLocationSchema,
     EntityRef,
@@ -90,7 +90,7 @@ class ManufacturerListItemSchema(Schema):
 
 class ManufacturerCorporateEntitySchema(Schema):
     name: str
-    slug: str
+    public_id: str
     year_start: int | None
     year_end: int | None
     locations: list[CorporateEntityLocationSchema]
@@ -98,25 +98,23 @@ class ManufacturerCorporateEntitySchema(Schema):
 
 class ManufacturerSystemSchema(Schema):
     name: str
-    slug: str
+    public_id: str
 
 
 class ManufacturerPersonSchema(Schema):
     name: str
-    slug: str
+    public_id: str
     roles: list[str] = []
 
 
-class ManufacturerDetailSchema(Schema):
-    name: str
+class ManufacturerDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     year_start: int | None = None
     year_end: int | None = None
-    country: str | None = None
-    headquarters: str | None = None
     logo_url: str | None = None
     website: str = ""
+    opdb_manufacturer_id: int | None = None
+    wikidata_id: str | None = None
     entities: list[ManufacturerCorporateEntitySchema]
     titles: list[RelatedTitleSchema]
     systems: list[ManufacturerSystemSchema]
@@ -156,17 +154,17 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
         for m in e.models.all():
             for credit in m.credits.all():
                 p = credit.person
-                if p.slug not in person_roles:
-                    person_roles[p.slug] = _PersonAccum(name=p.name)
+                if p.public_id not in person_roles:
+                    person_roles[p.public_id] = _PersonAccum(name=p.name)
                 if credit.role:
-                    person_roles[p.slug].roles.add(credit.role.name)
+                    person_roles[p.public_id].roles.add(credit.role.name)
 
     persons = sorted(
         (
             ManufacturerPersonSchema(
-                name=accum.name, slug=slug, roles=sorted(accum.roles)
+                name=accum.name, public_id=public_id, roles=sorted(accum.roles)
             )
-            for slug, accum in person_roles.items()
+            for public_id, accum in person_roles.items()
         ),
         key=lambda p: p.name,
     )
@@ -176,16 +174,20 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
 
     return ManufacturerDetailSchema(
         name=mfr.name,
+        public_id=mfr.public_id,
+        last_modified=mfr.last_modified,
         slug=mfr.slug,
-        description=build_rich_text(mfr, "description", active_claims(mfr)),
+        description=describe(mfr),
         year_start=min(year_starts) if year_starts else None,
         year_end=max(year_ends) if year_ends else None,
         logo_url=mfr.logo_url,
         website=mfr.website,
+        opdb_manufacturer_id=mfr.opdb_manufacturer_id,
+        wikidata_id=mfr.wikidata_id,
         entities=[
             ManufacturerCorporateEntitySchema(
                 name=e.name,
-                slug=e.slug,
+                public_id=e.public_id,
                 year_start=e.year_start,
                 year_end=e.year_end,
                 locations=serialize_locations(e),
@@ -194,7 +196,7 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
         ],
         titles=collect_titles(all_models, media_by_model=media_by_model),
         systems=[
-            ManufacturerSystemSchema(name=s.name, slug=s.slug)
+            ManufacturerSystemSchema(name=s.name, public_id=s.public_id)
             for s in mfr.systems.all()
         ],
         persons=persons,
@@ -236,7 +238,8 @@ def _build_location_refs(
 ) -> list[dict[str, str]]:
     """Build location Refs for each location and all its ancestors.
 
-    Uses location_path as the slug so refs are globally unique and stable.
+    A Location's ``public_id`` is its ``location_path`` (globally unique and
+    stable), so that's what each ref carries as its ``public_id``.
     """
     refs: dict[str, str] = {}  # location_path -> name
     for entity in entities:
@@ -246,7 +249,7 @@ def _build_location_refs(
                 if cur.location_path not in refs:
                     refs[cur.location_path] = cur.name
                 cur = cur.parent
-    return [{"slug": path, "name": name} for path, name in refs.items()]
+    return [{"public_id": path, "name": name} for path, name in refs.items()]
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +477,7 @@ def list_all_manufacturers(
 
         loc_refs_map = mfr_location_refs.get(mfr_id, {})
         locations = [
-            {"slug": path, "name": name} for path, name in loc_refs_map.items()
+            {"public_id": path, "name": name} for path, name in loc_refs_map.items()
         ]
 
         result.append(

@@ -9,7 +9,7 @@ function makeTitle(overrides: Partial<FacetedTitle> = {}): FacetedTitle {
     slug: 'godzilla',
     abbreviations: [],
     model_count: 1,
-    manufacturer: { slug: 'stern', name: 'Stern' },
+    manufacturer: { public_id: 'stern', name: 'Stern' },
     year: 2021,
     thumbnail_url: null,
     tech_generations: [],
@@ -86,7 +86,7 @@ describe('decideCreatePrompt', () => {
         makeTitle({
           name: 'Godzilla',
           slug: 'godzilla-stern',
-          manufacturer: { slug: 'stern', name: 'Stern' },
+          manufacturer: { public_id: 'stern', name: 'Stern' },
         }),
       ],
       query: 'Godzilla',

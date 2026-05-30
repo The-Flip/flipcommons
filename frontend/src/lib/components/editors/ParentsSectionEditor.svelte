@@ -2,11 +2,11 @@
   import { untrack } from 'svelte';
   import SearchableSelect from '$lib/components/SearchableSelect.svelte';
   import type { SectionEditorProps } from './editor-contract';
-  import { slugSetChanged } from '$lib/edit-helpers';
+  import { publicIdSetChanged } from '$lib/edit-helpers';
   import type { FieldErrors } from '$lib/api/parse-api-error';
   import type { SaveMeta, SaveResult } from './save-claims-shared';
 
-  type ParentRef = { slug: string; name?: string };
+  type ParentRef = { public_id: string; name?: string };
   type ParentOption = { slug: string; label: string; count?: number };
 
   type ParentsData = { parents: ParentRef[] };
@@ -37,10 +37,10 @@
   } = $props();
 
   const originalParents: ParentRef[] = untrack(() => initialData.parents.map((p) => ({ ...p })));
-  let selectedParents = $state<string[]>(originalParents.map((p) => p.slug));
+  let selectedParents = $state<string[]>(originalParents.map((p) => p.public_id));
   let parentOptions = $state<ParentOption[]>([]);
   let fieldErrors = $state<FieldErrors>({});
-  let dirty = $derived(slugSetChanged(selectedParents, originalParents));
+  let dirty = $derived(publicIdSetChanged(selectedParents, originalParents));
 
   $effect(() => {
     const currentSlug = untrack(() => slug);

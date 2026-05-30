@@ -5,8 +5,10 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Medieval',
+  public_id: 'medieval',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'medieval',
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', plain: '', html: '', citations: [], attribution: null },
   display_order: 0,
   aliases: [],
   parents: [],
@@ -14,9 +16,9 @@ const MOCK_DATA = {
   machines: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
-      manufacturer: { name: 'Williams', slug: 'williams' },
+      manufacturer: { name: 'Williams', public_id: 'williams' },
       thumbnail_url: null,
       variants: [],
     },
@@ -39,7 +41,10 @@ describe('themes detail SSR route', () => {
       params: { slug: 'medieval' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ theme: MOCK_DATA });
+    expect(result).toEqual({
+      profile: MOCK_DATA,
+      jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
+    });
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/theme/medieval');
@@ -60,7 +65,7 @@ describe('themes detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { theme: MOCK_DATA },
+        data: { profile: MOCK_DATA, jsonLd: {} },
       },
     });
 

@@ -83,7 +83,7 @@ class TestListCorporateEntities:
         resp = client.get("/api/corporate-entities/")
         data = resp.json()
         assert data[0]["manufacturer"]["name"] == "Gottlieb"
-        assert data[0]["manufacturer"]["slug"] == "gottlieb"
+        assert data[0]["manufacturer"]["public_id"] == "gottlieb"
 
     def test_list_includes_model_count(self, client, entity):
         make_machine_model(
@@ -121,6 +121,13 @@ class TestGetCorporateEntity:
         assert data["year_start"] == 1927
         assert data["year_end"] == 1983
         assert data["manufacturer"]["name"] == "Gottlieb"
+
+    def test_detail_includes_ipdb_manufacturer_id(self, client, entity):
+        entity.ipdb_manufacturer_id = 77
+        entity.save()
+        resp = client.get(f"/api/pages/corporate-entity/{entity.slug}")
+        assert resp.status_code == 200
+        assert resp.json()["ipdb_manufacturer_id"] == 77
 
     def test_detail_includes_aliases(self, client, entity):
         entity.aliases.create(value="Gottlieb Co")

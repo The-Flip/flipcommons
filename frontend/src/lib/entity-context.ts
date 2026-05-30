@@ -3,8 +3,9 @@ import { getContext, setContext } from 'svelte';
 /**
  * Context exposed by every entity `[slug]/+layout.svelte` so descendant
  * routes (audit pages, focus shells, etc.) can read the entity's display
- * name and detail URL without coupling to the loader's data-key (which
- * varies across entities: `data.title`, `data.profile`, `data.model`, …).
+ * name and detail URL. Detail loaders all return the entity under `profile`,
+ * but child routes don't inherit parent layout data, so the layout still
+ * republishes the bits descendants need through this context.
  *
  * Callers should pass an object whose properties are getters so values
  * stay reactive across navigation (e.g. `/titles/A/sources` → `/titles/B/sources`

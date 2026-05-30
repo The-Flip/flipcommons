@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import { MEDIA_CATEGORIES } from '$lib/api/catalog-meta';
+  import { ENTITY_META } from '$lib/entities/entity-meta';
   import AccordionSection from '$lib/components/AccordionSection.svelte';
   import CreateFirstCorporateEntityPrompt from '$lib/components/CreateFirstCorporateEntityPrompt.svelte';
   import RichTextOverviewAccordion from '$lib/components/RichTextOverviewAccordion.svelte';
@@ -14,15 +14,12 @@
   import { formatYearRange, websiteHostname } from '$lib/utils';
 
   let { data } = $props();
-  let mfr = $derived(data.manufacturer);
+  let mfr = $derived(data.profile);
   let editAction = manufacturerEditActionContext.get();
   const richTextState = createRichTextAccordionState();
 
   let yearsActive = $derived(formatYearRange(mfr.year_start, mfr.year_end));
-  let hasEntityLocations = $derived(mfr.entities.some((entity) => entity.locations.length > 0));
-  let hasCompanyDetails = $derived(
-    !!(yearsActive || mfr.entities.length > 0 || mfr.website || mfr.headquarters || mfr.country),
-  );
+  let hasCompanyDetails = $derived(!!(yearsActive || mfr.entities.length > 0 || mfr.website));
   let titlesHeading = $derived(`Titles (${mfr.titles.length})`);
   let systemsHeading = $derived(`Systems (${mfr.systems.length})`);
   let peopleHeading = $derived(`People (${mfr.persons.length})`);
@@ -59,10 +56,10 @@
         <div class="detail-block">
           <h3>Companies</h3>
           <ul class="stack-list">
-            {#each mfr.entities as entity (entity.slug)}
+            {#each mfr.entities as entity (entity.public_id)}
               <li>
                 <div class="entity">
-                  <a href={resolve(`/corporate-entities/${entity.slug}`)} class="entity-name"
+                  <a href={resolve(`/corporate-entities/${entity.public_id}`)} class="entity-name"
                     >{entity.name}</a
                   >
                   {#if formatYearRange(entity.year_start, entity.year_end)}
@@ -77,13 +74,6 @@
               </li>
             {/each}
           </ul>
-        </div>
-      {/if}
-
-      {#if !hasEntityLocations && (mfr.headquarters || mfr.country)}
-        <div class="detail-block">
-          <h3>Location</h3>
-          <p>{[mfr.headquarters, mfr.country].filter(Boolean).join(', ')}</p>
         </div>
       {/if}
 
@@ -109,7 +99,7 @@
     >
       {#snippet children(title)}
         <TitleCard
-          slug={title.slug}
+          slug={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}
           year={title.year}
@@ -122,9 +112,9 @@
 {#if mfr.systems.length > 0}
   <AccordionSection heading={systemsHeading}>
     <ul class="stack-list">
-      {#each mfr.systems as system (system.slug)}
+      {#each mfr.systems as system (system.public_id)}
         <li>
-          <a href={resolve(`/systems/${system.slug}`)}>{system.name}</a>
+          <a href={resolve(`/systems/${system.public_id}`)}>{system.name}</a>
         </li>
       {/each}
     </ul>
@@ -134,10 +124,10 @@
 {#if mfr.persons.length > 0}
   <AccordionSection heading={peopleHeading}>
     <ul class="stack-list">
-      {#each mfr.persons as person (person.slug)}
+      {#each mfr.persons as person (person.public_id)}
         <li>
           <div class="entity">
-            <a href={resolve(`/people/${person.slug}`)}>{person.name}</a>
+            <a href={resolve(`/people/${person.public_id}`)}>{person.name}</a>
             {#if person.roles.length > 0}
               <span class="muted">{person.roles.join(', ')}</span>
             {/if}
@@ -152,7 +142,7 @@
   <AccordionSection heading={mediaHeading}>
     <MediaGrid
       media={mfr.uploaded_media}
-      categories={[...MEDIA_CATEGORIES.manufacturer]}
+      categories={[...ENTITY_META.manufacturer.media_categories]}
       canEdit={false}
     />
   </AccordionSection>

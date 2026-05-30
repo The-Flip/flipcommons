@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MEDIA_CATEGORIES } from '$lib/api/catalog-meta';
+  import { ENTITY_META } from '$lib/entities/entity-meta';
   import AccordionSection from '$lib/components/AccordionSection.svelte';
   import RichTextOverviewAccordion from '$lib/components/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/RichTextReferencesAccordion.svelte';
@@ -10,7 +10,7 @@
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
 
   let { data } = $props();
-  let person = $derived(data.person);
+  let person = $derived(data.profile);
   let editAction = personEditActionContext.get();
   const richTextState = createRichTextAccordionState();
 
@@ -84,7 +84,7 @@
   <AccordionSection heading={mediaHeading} onEdit={editAction('media')}>
     <MediaGrid
       media={person.uploaded_media}
-      categories={[...MEDIA_CATEGORIES.person]}
+      categories={[...ENTITY_META.person.media_categories]}
       canEdit={false}
     />
   </AccordionSection>
@@ -102,7 +102,7 @@
     >
       {#snippet children(title)}
         <TitleCard
-          slug={title.slug}
+          slug={title.public_id}
           name={title.name}
           year={title.year}
           thumbnailUrl={title.thumbnail_url}

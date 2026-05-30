@@ -433,7 +433,7 @@ class TestParentedDeletePreviewBreadcrumb:
         resp = client.get(f"/api/technology-subgenerations/{sub.slug}/delete-preview/")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["parent"] == {"name": parent.name, "slug": parent.slug}
+        assert body["parent"] == {"name": parent.name, "public_id": parent.public_id}
 
     def test_parentless_preview_has_null_parent(self, client, user, db):
         tag = Tag.objects.create(name="Widebody", slug="widebody", status="active")

@@ -45,7 +45,7 @@ class TestPatchThemeClaims:
         client.force_login(user)
         resp = _patch(client, theme.slug, {"parents": ["competition"]})
         assert resp.status_code == 200
-        assert [p["slug"] for p in resp.json()["parents"]] == ["competition"]
+        assert [p["public_id"] for p in resp.json()["parents"]] == ["competition"]
 
     def test_remove_parent(self, client, user, theme, parent_theme):
         client.force_login(user)

@@ -7,7 +7,7 @@
   import Markdown from '$lib/components/Markdown.svelte';
 
   let { data } = $props();
-  let theme = $derived(data.theme);
+  let theme = $derived(data.profile);
 
   let childHeading = 'Sub-themes';
 </script>
@@ -41,7 +41,7 @@
   <ClientFilteredGrid items={theme.machines} showCount={false}>
     {#snippet children(machine)}
       <MachineCard
-        slug={machine.slug}
+        slug={machine.public_id}
         name={machine.name}
         thumbnailUrl={machine.thumbnail_url}
         manufacturerName={machine.manufacturer?.name}

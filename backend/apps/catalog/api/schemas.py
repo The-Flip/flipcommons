@@ -2,19 +2,63 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from ninja import Schema
 from pydantic import ConfigDict
 
-from apps.provenance.schemas import ChangeSetInputSchema
+from apps.provenance.schemas import ChangeSetInputSchema, RichTextSchema
 
 
 class EntityRef(Schema):
-    """A reference to a named entity with a slug."""
+    """A reference to a named entity by its public id."""
 
     name: str
-    slug: str
+    public_id: str
+
+
+class LinkableDetailSchema(Schema):
+    """Wire twin of ``LinkableModel``: a top-level entity's display name and
+    uniform URL identity. ``public_id`` is ``LinkableModel.public_id`` —
+    ``slug`` for most entities, ``location_path`` for Location. Required (no
+    default) so every serializer is forced to source it.
+    """
+
+    name: str
+    public_id: str
+
+
+class DescribedDetailSchema(Schema):
+    """Wire twin of ``DescribedModel``: the rich-text description."""
+
+    description: RichTextSchema = RichTextSchema()
+
+
+class LastModifiedDetailSchema(Schema):
+    """Wire twin of ``LastUpdatedModel``: the freshness timestamp the sitemap
+    emits as ``<lastmod>`` and JSON-LD emits as ``dateModified``. Sourced from
+    ``LastUpdatedModel.last_modified`` (the ``_last_modified`` annotation), NOT
+    raw ``updated_at`` — so a ``Title`` reflects edits to its child Models.
+    Required (no default) so every serializer is forced to source it.
+    """
+
+    last_modified: datetime
+
+
+class CatalogDetailSchema(
+    LinkableDetailSchema, LastModifiedDetailSchema, DescribedDetailSchema
+):
+    """Wire twin of ``CatalogModel`` (linkable + freshness + describable) and
+    backend counterpart of the frontend's ``EntityBaseFacts`` (name + URL
+    identity + last-modified + description; identity is exposed as
+    ``public_id``). Top-level catalog detail responses inherit this single
+    base and do not relist the mixins. ``last_modified`` rides its own
+    concern base (``LastModifiedDetailSchema``), composed here rather than
+    folded into ``LinkableDetailSchema`` — linkability ("has a canonical URL")
+    and freshness ("when did this last change") are orthogonal, mirroring the
+    ``LinkableModel`` / ``LastUpdatedModel`` split on the model side.
+    """
 
 
 class EntityCreateInputSchema(ChangeSetInputSchema):
@@ -251,7 +295,7 @@ class TitleModelVariantSchema(Schema):
     """A variant of a machine model, shown nested under its parent."""
 
     name: str
-    slug: str
+    public_id: str
     year: int | None = None
     thumbnail_url: str | None = None
 
@@ -260,7 +304,7 @@ class TitleModelSchema(Schema):
     """A machine model shown in a list context (title detail, theme detail, etc.)."""
 
     name: str
-    slug: str
+    public_id: str
     year: int | None = None
     manufacturer: EntityRef | None = None
     technology_generation_name: str | None = None
@@ -272,7 +316,7 @@ class RelatedTitleSchema(Schema):
     """A title shown in a related-entity list context (manufacturer, system, etc.)."""
 
     name: str
-    slug: str
+    public_id: str
     year: int | None = None
     manufacturer_name: str | None = None
     thumbnail_url: str | None = None
@@ -299,22 +343,21 @@ class CreditSchema(Schema):
 
 class CorporateEntityLocationAncestorRef(Schema):
     """Narrowed ancestor row in :class:`CorporateEntityLocationSchema.ancestors`
-    — omits ``slug``/``location_type`` because ancestors render as a
-    breadcrumb, not as links.
+    — omits ``location_type`` because ancestors render as a breadcrumb, not as
+    links. ``public_id`` is the location's ``location_path``.
     """
 
     display_name: str
-    location_path: str
+    public_id: str
 
 
 class CorporateEntityLocationSchema(Schema):
-    """A corporate entity's location plus its ancestor chain. The location
-    itself is linkable (``slug``, ``location_type``); ancestors use the
-    narrower :class:`CorporateEntityLocationAncestorRef`.
+    """A corporate entity's location plus its ancestor chain. ``public_id`` is
+    the location's ``location_path``; ancestors use the narrower
+    :class:`CorporateEntityLocationAncestorRef`.
     """
 
-    location_path: str
+    public_id: str
     location_type: str
     display_name: str
-    slug: str
     ancestors: list[CorporateEntityLocationAncestorRef] = []

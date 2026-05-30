@@ -148,7 +148,10 @@ class TestTitleDetailAggregation:
         )
         resp = client.get(f"/api/pages/title/{title.slug}")
         data = resp.json()
-        assert data["agreed_specs"]["technology_subgeneration"]["slug"] == "wpc-95-sub"
+        assert (
+            data["agreed_specs"]["technology_subgeneration"]["public_id"]
+            == "wpc-95-sub"
+        )
 
     def test_technology_subgeneration_intersection_disagrees(
         self, client, title, solid_state
@@ -182,7 +185,7 @@ class TestTitleDetailAggregation:
         m2.tags.add(common)
         resp = client.get(f"/api/pages/title/{title.slug}")
         data = resp.json()
-        tag_slugs = [t["slug"] for t in data["agreed_specs"]["tags"]]
+        tag_slugs = [t["public_id"] for t in data["agreed_specs"]["tags"]]
         assert tag_slugs == ["classic"]  # only the shared one
 
     def test_related_titles_union_cross_title_only(self, client, db):
@@ -213,8 +216,8 @@ class TestTitleDetailAggregation:
         related = data["related_titles"]
         assert len(related) == 1
         assert related[0]["relation"] == "converted_from"
-        assert related[0]["other_title"]["slug"] == "star-trek"
-        assert related[0]["source_model"]["slug"] == "dark-rider-1"
+        assert related[0]["other_title"]["public_id"] == "star-trek"
+        assert related[0]["source_model"]["public_id"] == "dark-rider-1"
 
     def test_related_titles_union_across_models(self, client, db):
         """Two different models each contribute a cross-title link."""
@@ -236,7 +239,9 @@ class TestTitleDetailAggregation:
         resp = client.get(f"/api/pages/title/{this_title.slug}")
         data = resp.json()
         related = data["related_titles"]
-        relations = sorted((r["relation"], r["other_title"]["slug"]) for r in related)
+        relations = sorted(
+            (r["relation"], r["other_title"]["public_id"]) for r in related
+        )
         assert relations == [
             ("converted_from", "orig-a"),
             ("remake_of", "remake-src"),
@@ -297,7 +302,7 @@ class TestTitleDetailAggregation:
         data = resp.json()
         media = data["media"]
         assert len(media) == 2
-        by_source = {item["source_model"]["slug"]: item for item in media}
+        by_source = {item["source_model"]["public_id"]: item for item in media}
         assert by_source["mm-1"]["category"] == "backglass"
         assert by_source["mm-1"]["is_primary"] is True
         assert by_source["mm-2"]["category"] == "playfield"
@@ -395,6 +400,26 @@ class TestTitleDetailAggregation:
         )
 
 
+@pytest.mark.django_db
+class TestTitleReviewLinks:
+    """A needs-review title's review_links carry the internal related-title
+    link only — the OPDB machine URL was broken (a Title opdb_id is a group
+    id, not a machine id) and was removed."""
+
+    def test_review_links_internal_only_no_opdb(self, client):
+        # OPDB-backed related title sharing the same name.
+        Title.objects.create(name="Whirlwind", slug="whirlwind-opdb", opdb_id="G5pe4")
+        title = Title.objects.create(
+            name="Whirlwind", slug="whirlwind", needs_review=True
+        )
+
+        resp = client.get(f"/api/pages/title/{title.slug}")
+        data = resp.json()
+        urls = [link["url"] for link in data["review_links"]]
+        assert "/titles/whirlwind-opdb" in urls
+        assert not any("opdb.org" in url for url in urls)
+
+
 class TestTitlesAllFacets:
     """Test that /api/titles/all/ returns enriched facet data."""
 
@@ -462,36 +487,36 @@ class TestTitlesAllFacets:
 
         # Basic fields
         assert item["name"] == "Medieval Madness"
-        assert item["manufacturer"]["slug"] == "williams"
+        assert item["manufacturer"]["public_id"] == "williams"
 
         # Tech generations
         assert len(item["tech_generations"]) == 1
-        assert item["tech_generations"][0]["slug"] == "solid-state"
+        assert item["tech_generations"][0]["public_id"] == "solid-state"
 
         # Display types
         assert len(item["display_types"]) == 1
-        assert item["display_types"][0]["slug"] == "dmd"
+        assert item["display_types"][0]["public_id"] == "dmd"
 
         # Player counts
         assert item["player_counts"] == [4]
 
         # Systems
         assert len(item["systems"]) == 1
-        assert item["systems"][0]["slug"] == "wpc-95"
+        assert item["systems"][0]["public_id"] == "wpc-95"
 
         # Themes
         assert len(item["themes"]) == 1
-        assert item["themes"][0]["slug"] == "medieval"
+        assert item["themes"][0]["public_id"] == "medieval"
 
         # Persons
         assert len(item["persons"]) == 1
-        assert item["persons"][0]["slug"] == "pat-lawlor"
+        assert item["persons"][0]["public_id"] == "pat-lawlor"
 
         # Franchise
-        assert item["franchise"]["slug"] == "castle-games"
+        assert item["franchise"]["public_id"] == "castle-games"
 
         # Series
-        assert item["series"]["slug"] == "castle-series"
+        assert item["series"]["public_id"] == "castle-series"
 
         # Year range from two models (1997 and 2015)
         assert item["year_min"] == 1997
@@ -520,7 +545,7 @@ class TestTitlesAllFacets:
         )
         resp = client.get("/api/titles/all/")
         data = resp.json()
-        display_slugs = [d["slug"] for d in data[0]["display_types"]]
+        display_slugs = [d["public_id"] for d in data[0]["display_types"]]
         assert "lcd" not in display_slugs
 
     def test_all_titles_thumbnail_prefers_uploaded_backglass(

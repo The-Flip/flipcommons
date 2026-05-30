@@ -86,7 +86,7 @@ class TestLocationsRoot:
         data = resp.json()
         assert data["name"] == ""
         assert data["slug"] == ""
-        assert data["location_path"] == ""
+        assert data["public_id"] == ""
         assert data["location_type"] is None
         assert data["ancestors"] == []
 
@@ -98,7 +98,7 @@ class TestLocationsRoot:
 
     def test_country_has_manufacturer_count(self, client, manufacturers):
         resp = client.get("/api/pages/locations/")
-        usa = next(c for c in resp.json()["children"] if c["slug"] == "usa")
+        usa = next(c for c in resp.json()["children"] if c["public_id"] == "usa")
         assert usa["manufacturer_count"] == 3
 
     def test_global_manufacturer_count_is_union(self, client, manufacturers):
@@ -227,7 +227,7 @@ class TestLocationsCacheInvalidation:
         _make_mfr_at("Williams", "williams", locations["chicago"])
 
         initial = client.get("/api/pages/locations/")
-        usa = next(c for c in initial.json()["children"] if c["slug"] == "usa")
+        usa = next(c for c in initial.json()["children"] if c["public_id"] == "usa")
         assert usa["manufacturer_count"] == 1
 
         # Add another manufacturer to a new city — cache should invalidate
@@ -238,14 +238,14 @@ class TestLocationsCacheInvalidation:
 
         refreshed = client.get("/api/pages/locations/")
         usa_refreshed = next(
-            c for c in refreshed.json()["children"] if c["slug"] == "usa"
+            c for c in refreshed.json()["children"] if c["public_id"] == "usa"
         )
         assert usa_refreshed["manufacturer_count"] == 2
 
     def test_index_refreshes_when_location_name_changes(self, client, db, locations):
         _make_mfr_at("Williams", "williams", locations["chicago"])
         initial = client.get("/api/pages/locations/")
-        usa = next(c for c in initial.json()["children"] if c["slug"] == "usa")
+        usa = next(c for c in initial.json()["children"] if c["public_id"] == "usa")
         assert usa["name"] == "USA"
 
         # Rename the country — cache should invalidate
@@ -254,7 +254,7 @@ class TestLocationsCacheInvalidation:
 
         refreshed = client.get("/api/pages/locations/")
         usa_refreshed = next(
-            c for c in refreshed.json()["children"] if c["slug"] == "usa"
+            c for c in refreshed.json()["children"] if c["public_id"] == "usa"
         )
         assert usa_refreshed["name"] == "United States"
 

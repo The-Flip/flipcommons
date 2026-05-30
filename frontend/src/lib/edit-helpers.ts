@@ -25,12 +25,12 @@ export function diffScalarFields<T extends Record<string, unknown>>(
 }
 
 /**
- * Compare a current slug array against an original array of {slug} objects.
+ * Compare a current public_id array against an original array of {public_id} objects.
  * Order-independent (both sides sorted before comparison).
  */
-export function slugSetChanged(current: string[], original: { slug: string }[]): boolean {
+export function publicIdSetChanged(current: string[], original: { public_id: string }[]): boolean {
   const a = [...current].sort();
-  const b = original.map((o) => o.slug).sort();
+  const b = original.map((o) => o.public_id).sort();
   return JSON.stringify(a) !== JSON.stringify(b);
 }
 
@@ -51,9 +51,9 @@ export function stringSetChanged(current: string[], original: string[]): boolean
  */
 export function creditsChanged(
   current: { person_slug: string; role: string }[],
-  original: { person: { slug: string }; role: string }[],
+  original: { person: { public_id: string }; role: string }[],
 ): boolean {
-  const orig = original.map((c) => `${c.person.slug}:${c.role}`).sort();
+  const orig = original.map((c) => `${c.person.public_id}:${c.role}`).sort();
   const curr = current
     .filter((c) => c.person_slug && c.role)
     .map((c) => `${c.person_slug}:${c.role}`)

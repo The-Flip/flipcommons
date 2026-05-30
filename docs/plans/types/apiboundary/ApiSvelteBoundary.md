@@ -116,7 +116,7 @@ After PR 0, every consumer uses named imports. Each batched rename PR follows th
 ##### Run order
 
 1. **Python rename** (`backend/scripts/codemod/rename_schemas.py`, scoped to the batch's entries from `rename-table.json` via `--names OldA,OldB,…`).
-2. **`make api-gen`** — regenerates `frontend/src/lib/api/schema.d.ts`.
+2. **`make codegen`** — regenerates `frontend/src/lib/api/schema.d.ts`.
 3. **TS rename** (`frontend/scripts/codemod/rename-import-specifiers.mjs`, same `--names` scope) — rewrites import specifiers and any in-code references.
 4. **Format**: `cd backend && uv run ruff format .` + `cd frontend && pnpm format`. Both libcst (Python) and the string-based TS rewrites can leave noisy whitespace; without this the diffs are polluted and the pre-commit hook would rewrite the files anyway. Whole-tree scope is intentional — both formatters are idempotent on already-formatted files, so they won't sweep unrelated content into the rename diff. (If a future contributor has uncommitted formatting drift in unrelated files, that's a pre-existing issue this step exposes, not creates.)
 5. **Verify** (see _Iterate until tests pass_ below).
@@ -145,7 +145,7 @@ After PR 0, no indexed-access dedupe logic is needed — every relevant referenc
 
 - `git reset --hard` between runs is free **once the working tree is clean**. Stash or commit unrelated in-flight work first — the iteration loop assumes nothing in the tree is worth preserving outside the codemod's output. No human-in-the-loop deciding per-batch whether things look right — just run, check, revert, fix script.
 - Three-part oracle, all binary signals:
-  - `make api-gen` succeeds — the OpenAPI doc is internally consistent after the Python rename.
+  - `make codegen` succeeds — the OpenAPI doc is internally consistent after the Python rename.
   - `pnpm check` passes — every frontend consumer compiles against the new `schema.d.ts`.
   - `make test` passes — runtime catches anything the type checks miss (string references in fixtures, admin field configs, `extra_data` JSON, etc.).
 
@@ -153,7 +153,7 @@ After PR 0, no indexed-access dedupe logic is needed — every relevant referenc
 
 The "keep `Schema` everywhere" decision (see [ApiNamingRationalization.md](ApiNamingRationalization.md)) collapses the original 134-rename plan to ~40 renames concentrated in `core`, `media`, `citation`, `provenance`, and `catalog`. `accounts` has zero renames under the new rules and is skipped entirely.
 
-After PR 0, sequence the remaining rename PRs smallest-first. The original plan split this six ways (one per app) on the theory that the codemod would grow on simple cases before encountering edge cases. In practice the codemod is a JSON map driving plain string substitution — it doesn't grow per app, and the per-PR overhead (api-gen, format, three-oracle verify) dominates the actual rename work. Compress to **three batched PRs** instead, sized so the small batch still exercises both codemods end-to-end on a tiny surface before the bulk of the work:
+After PR 0, sequence the remaining rename PRs smallest-first. The original plan split this six ways (one per app) on the theory that the codemod would grow on simple cases before encountering edge cases. In practice the codemod is a JSON map driving plain string substitution — it doesn't grow per app, and the per-PR overhead (codegen, format, three-oracle verify) dominates the actual rename work. Compress to **three batched PRs** instead, sized so the small batch still exercises both codemods end-to-end on a tiny surface before the bulk of the work:
 
 1. **PR 1 (small batch, 3 renames)** — `config/api.py` + `apps/core/` + the already-shipped pagination touch-up. Renames: `StatsSchema → SiteStatsSchema`, `LinkTargetsResponseSchema → LinkTargetListSchema`, `PaginationParams → PaginationParamsSchema`. Debugs the codemods end-to-end on three modules and three renames.
 2. **PR 2 (medium batch, ~14 renames)** — `media` (4) + `citation` (5) + `provenance` (5). Introduces the `In → Input`, `Out → ∅`, and entity-scoping patterns (`Extract*Schema → CitationExtract*Schema`, `SourceSchema → CitationSourceSchema`, etc.). The provenance `SourceSchema → CitationSourceSchema` collides with `apps.citation.models.CitationSource` already imported in `provenance/api.py`; the `Schema` suffix is what keeps them disambiguated, which is the whole point.
@@ -226,7 +226,7 @@ When picking this up in a fresh session: read this plan top-to-bottom, then `git
    - [backend/apps/catalog/api/people.py:211](../../../../backend/apps/catalog/api/people.py#L211)
    - [backend/apps/catalog/api/titles.py:651](../../../../backend/apps/catalog/api/titles.py#L651)
    - [backend/apps/catalog/api/manufacturers.py:241](../../../../backend/apps/catalog/api/manufacturers.py#L241)
-3. Run `make api-gen`; verify `Input` is gone, `PaginationParams` is present.
+3. Run `make codegen`; verify `Input` is gone, `PaginationParams` is present.
 
 Single small PR. No frontend changes (nothing references the orphan today).
 
@@ -275,18 +275,18 @@ assert.
 
 ## Acceptance checks
 
-Per task: `make lint`, `make test`, `pnpm check` (svelte-check, distinct from `make lint`'s eslint/prettier/ruff), `make api-gen`, and a spot-check of the running app via `make dev` where appropriate.
+Per task: `make lint`, `make test`, `pnpm check` (svelte-check, distinct from `make lint`'s eslint/prettier/ruff), `make codegen`, and a spot-check of the running app via `make dev` where appropriate.
 
 PR 0 (indexed-access sweep):
 
 - `grep -r "components\['schemas'\]" frontend/src --include="*.ts" --include="*.svelte" | grep -v "lib/api/client.ts"` returns zero matches.
 - `pnpm check`, `pnpm lint`, `pnpm test` pass. `pnpm lint` includes the new `no-restricted-syntax` rule banning `components['schemas']` outside `client.ts` — its zero violations are part of the acceptance signal.
 - `pnpm format` has been run; no pending whitespace churn in `git diff`.
-- No backend changes; `make api-gen` is a no-op.
+- No backend changes; `make codegen` is a no-op.
 
 Per batched rename PR (PR 1–3; partial — only the schemas in that PR's scope have been renamed):
 
-- After `make api-gen`, the old names are gone from the OpenAPI doc:
+- After `make codegen`, the old names are gone from the OpenAPI doc:
   `jq -r '.components.schemas | keys[]' backend/openapi.json | grep -E '^(OldName1|OldName2|...)$'`
   returns nothing.
 - `git diff` of `openapi.json` op IDs is empty (verified once on the first PR; spot-check thereafter).

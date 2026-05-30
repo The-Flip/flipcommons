@@ -17,7 +17,7 @@
   ) => Promise<SaveResult>;
 
   type InitialData = {
-    manufacturer?: { slug: string } | null;
+    manufacturer?: { public_id: string } | null;
   };
 
   let {
@@ -30,7 +30,7 @@
   }: SectionEditorProps<InitialData> & { save: SaveFn } = $props();
 
   const original = untrack(() => ({
-    manufacturer: initialData.manufacturer?.slug ?? '',
+    manufacturer: initialData.manufacturer?.public_id ?? '',
   }));
   let fields = $state<ManufacturerFields>({ ...original });
   let fieldErrors = $state<FieldErrors>({});

@@ -6,7 +6,7 @@
     initialData = {
       name: 'Williams Electronics',
       slug: 'williams-electronics',
-      description: { text: '', html: '', citations: [], attribution: null },
+      description: { text: '', plain: '', html: '', citations: [], attribution: null },
       year_start: 1985,
       year_end: 1999,
       aliases: [],

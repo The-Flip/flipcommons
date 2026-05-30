@@ -32,7 +32,6 @@ RANGE_FIELDS = [
     (MachineModel, "ipdb_rating", mm_mod, "RATING_MIN", "RATING_MAX"),
     (MachineModel, "pinside_rating", mm_mod, "RATING_MIN", "RATING_MAX"),
     (MachineModel, "ipdb_id", mm_mod, "EXTERNAL_ID_MIN", None),
-    (MachineModel, "pinside_id", mm_mod, "EXTERNAL_ID_MIN", None),
     (Person, "birth_year", person_mod, "YEAR_MIN", "YEAR_MAX"),
     (Person, "death_year", person_mod, "YEAR_MIN", "YEAR_MAX"),
     (Person, "birth_month", person_mod, "MONTH_MIN", "MONTH_MAX"),

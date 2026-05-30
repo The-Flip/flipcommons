@@ -13,7 +13,7 @@
   import { modelHasTitleOwnedIdentity } from '$lib/catalog-rules';
 
   let { data } = $props();
-  let model = $derived(data.model);
+  let model = $derived(data.profile);
   let slug = $derived(page.params.slug);
   let sectionSegment = $derived(page.params.section);
   let section = $derived(sectionSegment ? findSectionBySegment(sectionSegment) : undefined);
@@ -58,7 +58,7 @@
     editLayout.setDirty(false);
     await invalidateAll();
     // BasicsEditor can change the slug — redirect if needed
-    const updatedSlug = data.model.slug;
+    const updatedSlug = data.profile.slug;
     if (updatedSlug !== slug) {
       await goto(resolve(`/models/${updatedSlug}/edit/${sectionSegment}`), {
         replaceState: true,

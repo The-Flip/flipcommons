@@ -8,8 +8,8 @@ Layout:
 
 - :mod:`render` — markdown→HTML pipeline + wikilink→markdown-link rendering.
 - :mod:`field` — :class:`MarkdownField` and the conversion path that
-  doesn't touch ``RecordReference``. Catalog model files import
-  :class:`MarkdownField` from here.
+  doesn't touch ``RecordReference``. Models import :class:`MarkdownField`
+  from here (notably the ``DescribedModel`` mixin).
 - :mod:`references` — the markdown→\\ ``RecordReference`` bridge
   (``sync_references``, ``save_inline_markdown_field``). Save-path
   callers import directly from there; the bridge is intentionally not
@@ -30,6 +30,7 @@ from apps.core.markdown.render import (
     render_markdown_field,
     render_markdown_fields,
     render_markdown_html,
+    render_markdown_plain,
 )
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "render_markdown_field",
     "render_markdown_fields",
     "render_markdown_html",
+    "render_markdown_plain",
 ]

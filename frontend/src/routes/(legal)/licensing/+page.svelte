@@ -1,12 +1,24 @@
 <script lang="ts">
-  import { SITE_NAME, pageTitle } from '$lib/constants';
+  import { page } from '$app/state';
+  import { SITE_NAME } from '$lib/constants';
   import LastUpdated from '$lib/components/LastUpdated.svelte';
+  import MetaTags from '$lib/components/MetaTags.svelte';
+  import JsonLd from '$lib/components/JsonLd.svelte';
+  import { jsonLdGraph, pageNode, breadcrumbList } from '$lib/components/jsonld';
   import { STATIC_LASTMOD, formatLastUpdated } from '$lib/static-lastmod';
+
+  const title = 'Licensing';
+  const description = `${SITE_NAME} licensing: how content and contributions are licensed for reuse.`;
 </script>
 
-<svelte:head>
-  <title>{pageTitle('Licensing')}</title>
-</svelte:head>
+<MetaTags {title} {description} url={page.url.href} ogType="website" />
+
+<JsonLd
+  data={jsonLdGraph([
+    pageNode('WebPage', page.url, title, description),
+    breadcrumbList(page.url, [{ label: 'Home', href: '/' }], title),
+  ])}
+/>
 
 <h1>Licensing</h1>
 <LastUpdated>Last updated: {formatLastUpdated(STATIC_LASTMOD['/(legal)/licensing'])}</LastUpdated>

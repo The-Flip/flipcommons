@@ -5,9 +5,11 @@ import { load } from './+layout.server';
 
 const MOCK_TITLE = {
   name: 'Medieval Madness',
+  public_id: 'medieval-madness',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'medieval-madness',
   abbreviations: [],
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', plain: '', html: '', citations: [], attribution: null },
   needs_review: false,
   needs_review_notes: '',
   review_links: [],
@@ -16,9 +18,9 @@ const MOCK_TITLE = {
   machines: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
-      manufacturer: { name: 'Williams', slug: 'williams' },
+      manufacturer: { name: 'Williams', public_id: 'williams' },
       technology_generation_name: 'Solid State',
       thumbnail_url: null,
       variants: [],
@@ -50,7 +52,7 @@ describe('title detail SSR route', () => {
       params: { slug: 'medieval-madness' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ title: MOCK_TITLE });
+    expect(result).toEqual(expect.objectContaining({ profile: MOCK_TITLE }));
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/title/medieval-madness');
@@ -71,7 +73,7 @@ describe('title detail SSR route', () => {
   it('renders meaningful title content into initial HTML', () => {
     const { body } = render(Harness, {
       props: {
-        data: { title: MOCK_TITLE },
+        data: { profile: MOCK_TITLE, jsonLd: {} },
       },
     });
 
@@ -95,9 +97,11 @@ describe('title detail SSR route', () => {
       ...MOCK_TITLE,
       model_detail: {
         name: 'Medieval Madness',
+        public_id: 'medieval-madness',
         slug: 'medieval-madness',
         description: {
           text: 'foo [1] bar [2] baz [1]',
+          plain: 'foo bar baz',
           html: '<p>foo bar baz</p>',
           citations: [makeCite(10, 1), makeCite(20, 2), makeCite(30, 1)],
           attribution: null,
@@ -123,7 +127,7 @@ describe('title detail SSR route', () => {
 
     const { body } = render(Harness, {
       props: {
-        data: { title: singleModelTitle },
+        data: { profile: singleModelTitle, jsonLd: {} },
       } as never,
     });
 

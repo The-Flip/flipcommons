@@ -1,6 +1,6 @@
 <script lang="ts">
   import client from '$lib/api/client';
-  import { MEDIA_CATEGORIES } from '$lib/api/catalog-meta';
+  import { ENTITY_META } from '$lib/entities/entity-meta';
   import AccordionSection from '$lib/components/AccordionSection.svelte';
   import AttributionLine from '$lib/components/AttributionLine.svelte';
   import HierarchicalTaxonomyChildrenAccordion from '$lib/components/HierarchicalTaxonomyChildrenAccordion.svelte';
@@ -53,7 +53,7 @@
   <AccordionSection heading={mediaHeading} onEdit={editAction('media')}>
     <MediaGrid
       media={profile.uploaded_media ?? []}
-      categories={[...MEDIA_CATEGORIES['gameplay-feature']]}
+      categories={[...ENTITY_META['gameplay-feature'].media_categories]}
       canEdit={false}
     />
   </AccordionSection>

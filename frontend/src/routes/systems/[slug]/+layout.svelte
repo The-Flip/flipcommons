@@ -2,9 +2,10 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
-  import { SITE_NAME } from '$lib/constants';
+  import { metaDescriptionFor } from '$lib/components/meta-tags';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import JsonLd from '$lib/components/JsonLd.svelte';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
@@ -26,10 +27,10 @@
   import SystemEditorSwitch from './edit/SystemEditorSwitch.svelte';
 
   let { data, children } = $props();
-  let system = $derived(data.system);
+  let system = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
-  let metaDescription = $derived(system.description?.text || `${system.name} — ${SITE_NAME}`);
+  let metaDescription = $derived(metaDescriptionFor(system));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
   let isDetail = $derived(mode === 'detail');
   let isFocusMode = $derived(isFocusModePath(page.url.pathname));
@@ -111,6 +112,10 @@
 
 <MetaTags title={system.name} description={metaDescription} url={page.url.href} />
 
+{#if isDetail && data.jsonLd}
+  <JsonLd data={data.jsonLd} />
+{/if}
+
 {#if isFocusMode}
   {@render children()}
 {:else}
@@ -128,20 +133,18 @@
   {/snippet}
 
   {#snippet sidebar()}
-    {#if system.manufacturer}
-      <SidebarSection heading="Manufacturer">
-        <a href={resolve(`/manufacturers/${system.manufacturer.slug}`)}
-          >{system.manufacturer.name}</a
-        >
-      </SidebarSection>
-    {/if}
+    <SidebarSection heading="Manufacturer">
+      <a href={resolve(`/manufacturers/${system.manufacturer.public_id}`)}
+        >{system.manufacturer.name}</a
+      >
+    </SidebarSection>
 
     {#if system.sibling_systems.length > 0}
       <SidebarSection heading="Other Systems By This Manufacturer">
         <SidebarList>
-          {#each system.sibling_systems as sibling (sibling.slug)}
+          {#each system.sibling_systems as sibling (sibling.public_id)}
             <SidebarListItem>
-              <a href={resolve(`/systems/${sibling.slug}`)}>{sibling.name}</a>
+              <a href={resolve(`/systems/${sibling.public_id}`)}>{sibling.name}</a>
             </SidebarListItem>
           {/each}
         </SidebarList>

@@ -33,15 +33,15 @@ Foundations + the entire backend write surface are committed on this branch. The
 
 Remaining work (next session):
 
-- Frontend write routes per §"Frontend": `/locations/new`, `/locations/[...path]/new`, `/edit`, `/edit/[section]`, `/edit-history`, `/sources`, `/delete`. Editor wiring (`location-edit-sections.ts`, `LocationEditorSwitch.svelte`, `save-location-claims.ts`). Drop `'location'` from `catalog-meta.test.ts` `DEFERRED_KEYS`.
-- Frontend tests per §"Tests" minus the helper tests (already done): `saveLocationClaims` sends `public_id` not `slug`; delete page renders blocked + unblocked states; `catalog-meta.test.ts` parity for Location.
-- `make api-gen && make lint && make test`.
+- Frontend write routes per §"Frontend": `/locations/new`, `/locations/[...path]/new`, `/edit`, `/edit/[section]`, `/edit-history`, `/sources`, `/delete`. Editor wiring (`location-edit-sections.ts`, `LocationEditorSwitch.svelte`, `save-location-claims.ts`). Drop `'location'` from `entity-meta.test.ts` `DEFERRED_KEYS`.
+- Frontend tests per §"Tests" minus the helper tests (already done): `saveLocationClaims` sends `public_id` not `slug`; delete page renders blocked + unblocked states; `entity-meta.test.ts` parity for Location.
+- `make codegen && make lint && make test`.
 
 For reference, the cross-cutting prework was:
 
 1. Backend: extension hooks on `register_entity_create` — see §"Create-factory hooks" below for the API Location uses.
 2. Frontend: `client.ts` preserves slashes in `public_id` path params (decodes `%2F` → `/` in `URL.pathname` via the existing `onRequest` middleware). Invisible to callers; Location's multi-segment `public_id` reaches the server as `/api/locations/usa/il/chicago/…` automatically.
-3. Frontend: `catalog-meta.test.ts` is segment-aware (`ROUTE_DIR_TO_KEY` carries `{ key, segment }`; both `[slug]` and `[...path]` are discovered). `'location'` remains in `DEFERRED_KEYS` and the Location PR drops it.
+3. Frontend: `entity-meta.test.ts` is segment-aware (`ROUTE_DIR_TO_KEY` carries `{ key, segment }`; both `[slug]` and `[...path]` are discovered). `'location'` remains in `DEFERRED_KEYS` and the Location PR drops it.
 4. Shared delete / provenance / DeletePage layer was renamed `slug` → `public_id`. Location's wrappers pass `public_id={path}`.
 
 Foundational work landed earlier in [ModelDrivenLinkability.md](ModelDrivenLinkability.md): generic URL identity and shared CRUD-factory contracts (`public_id_field`, `public_id`, `:path` route params, page-level edit-history / sources lookup by `(entity_type, public_id)`, and factory support for non-`slug` public IDs).
@@ -206,7 +206,7 @@ Delete, delete-preview, and restore:
   - `POST /api/locations/{public_id:path}/restore/` rejecting restore while the parent is deleted (via `parent_field="parent"`).
 - Blocker semantics ride on the model-level class attributes (see §"Model setup").
 - Delete and restore are both row-only and symmetric — same as every other catalog entity. Deleting `usa` requires deleting every state and city under it first; restoring `usa` (after some descendants are independently restored) does not touch descendants.
-- The frontend gets `createDeleteSubmitter('locations')` and the shared `DeletePage.svelte` for free once `make api-gen` regenerates `schema.d.ts`.
+- The frontend gets `createDeleteSubmitter('locations')` and the shared `DeletePage.svelte` for free once `make codegen` regenerates `schema.d.ts`.
 
 ### Read API — DONE
 
@@ -232,7 +232,7 @@ Add the missing write routes under `frontend/src/routes/locations/`.
 - `/locations/[...path]/edit` and `/edit/[section]` reuse the shared taxonomy edit base components.
 - `/locations/[...path]/edit-history` uses the generic edit-history loader with `entity_type="location"` and `public_id=path`.
 - `/locations/[...path]/sources` uses the generic sources loader.
-- `/locations/[...path]/delete` reuses the shared `DeletePage.svelte` component and `createDeleteSubmitter('locations')` (the wire shape matches every other entity once `make api-gen` regenerates `schema.d.ts`), but still needs the standard per-entity wrapper that every existing delete route has — see [`series-delete.ts`](../../../frontend/src/routes/series/[slug]/delete/series-delete.ts) and [`+page@.svelte`](../../../frontend/src/routes/series/[slug]/delete/+page@.svelte) for the canonical shape. Concretely:
+- `/locations/[...path]/delete` reuses the shared `DeletePage.svelte` component and `createDeleteSubmitter('locations')` (the wire shape matches every other entity once `make codegen` regenerates `schema.d.ts`), but still needs the standard per-entity wrapper that every existing delete route has — see [`series-delete.ts`](../../../frontend/src/routes/series/[slug]/delete/series-delete.ts) and [`+page@.svelte`](../../../frontend/src/routes/series/[slug]/delete/+page@.svelte) for the canonical shape. Concretely:
   - `frontend/src/routes/locations/[...path]/delete/location-delete.ts` exporting `submitDelete = createDeleteSubmitter('locations')`.
   - `frontend/src/routes/locations/[...path]/delete/+page.ts` (or `+page.server.ts`) — load `params.path` (a string for `[...path]`), fetch the delete-preview, and pass `{ preview, path }` to the page.
   - `frontend/src/routes/locations/[...path]/delete/+page@.svelte` — builds `BlockedState` from `preview.blocked_by` with a Location-specific lead ("This location can't be deleted because active corporate-entity locations still point at it") and `renderReferrerHref: (r) => r.slug ? '/corporate-entities/' + r.slug : null`. The standard `active_children_count` blocked state (provided by the shared `DeletePage`) covers the "delete child Locations first" path with no Location-specific text needed. Builds `impact` for the row-only delete ("this location only — child locations are unaffected"); wires `cancelHref` and `editHistoryHref` from `path` (not `slug`); and chooses `redirectAfterDelete` per tier — for a country, redirect to `/locations`; for a child, redirect to the parent's detail page (`/locations/{parent_path}`, computed by stripping the last segment of `path`).
@@ -256,7 +256,7 @@ The edit menu does **not** offer `name`, `parent`, `slug`, or `location_type` ed
 
 Updated tests live in `frontend/src/routes/locations/[...path]/location-helpers.test.ts`.
 
-### Un-defer Location in `catalog-meta.test.ts`
+### Un-defer Location in `entity-meta.test.ts`
 
 The test is already segment-aware and `locations: { key: 'location', segment: '[...path]' }` is registered in `ROUTE_DIR_TO_KEY`. Drop `'location'` from `DEFERRED_KEYS` once Location's edit-history and sources subroutes exist so parity is enforced like every other entity.
 
@@ -288,14 +288,14 @@ Frontend tests:
 - **DONE**: Location helper tests in `location-helpers.test.ts` cover existing-child label, server-supplied `expected_child_type`, and `null` suppression.
 - `saveLocationClaims` sends `public_id`, not `slug`.
 - Delete page renders blocked and unblocked states.
-- `catalog-meta.test.ts` passes Location parity: `'location'` is dropped from `DEFERRED_KEYS` and Location's edit-history/sources subroutes are discovered under `[...path]`.
+- `entity-meta.test.ts` passes Location parity: `'location'` is dropped from `DEFERRED_KEYS` and Location's edit-history/sources subroutes are discovered under `[...path]`.
 
 ## Verification
 
 Run the smallest useful set while implementing, then finish with:
 
 ```bash
-make api-gen
+make codegen
 make lint
 make test
 ```
@@ -311,7 +311,7 @@ Manual smoke test against `make dev` with a logged-in superuser:
 - Confirm deleting `/locations/usa` is blocked by active child Locations (states/cities), surfaced as `active_children_count` on the standard delete page.
 - Confirm deleting a leaf Location with active `CorporateEntityLocation` referrers is blocked, surfaced via `blocked_by` on the standard delete page.
 - Confirm existing single-segment entities such as themes and manufacturers still handle edit, edit-history, sources, and delete (regression check that Location's factory hooks haven't disturbed shipped callers).
-- Confirm `catalog-meta.test.ts` discovers Location via the new `[...path]` segment and asserts the same edit-history/sources parity as every other entity (`'location'` absent from `DEFERRED_KEYS`).
+- Confirm `entity-meta.test.ts` discovers Location via the new `[...path]` segment and asserts the same edit-history/sources parity as every other entity (`'location'` absent from `DEFERRED_KEYS`).
 
 ## Follow-ups
 
@@ -383,7 +383,7 @@ The follow-up:
 
 Doing this in the Location PR would mean refactoring every shipped delete page in the same diff. The right shape is clearer once Location is in the pile (8 wrappers) than before (7) — same logic as the PATCH-claims factory follow-up. Touch every wrapper in one focused PR with the same `delete-page.dom.test.ts` running before/after to prove parity.
 
-### Switch `catalog-meta.test.ts` route enumeration from `import.meta.glob` to `node:fs`
+### Switch `entity-meta.test.ts` route enumeration from `import.meta.glob` to `node:fs`
 
 The test currently casts a broad Vite glob (`/src/routes/**/+*`) and re-narrows with a regex because `import.meta.glob` treats `[` / `]` as character classes — useless when the directory names you're hunting for are literally `[slug]` and `[...path]`. The workaround is documented in a comment, but a reader has to reconstruct it every time.
 

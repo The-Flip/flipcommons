@@ -3,7 +3,7 @@
   import CardGrid from '$lib/components/grid/CardGrid.svelte';
 
   type Title = {
-    slug: string;
+    public_id: string;
     name: string;
     thumbnail_url?: string | null;
     manufacturer_name?: string | null;
@@ -25,9 +25,9 @@
     <p class="empty">{emptyMessage}</p>
   {:else}
     <CardGrid>
-      {#each titles as title (title.slug)}
+      {#each titles as title (title.public_id)}
         <TitleCard
-          slug={title.slug}
+          slug={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}
           manufacturerName={title.manufacturer_name}

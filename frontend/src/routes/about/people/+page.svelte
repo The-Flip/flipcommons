@@ -1,11 +1,63 @@
 <script lang="ts">
-  import { pageTitle } from '$lib/constants';
+  import { page } from '$app/state';
+  import { SITE_NAME } from '$lib/constants';
   import Breadcrumb from '$lib/components/Breadcrumb.svelte';
+  import MetaTags from '$lib/components/MetaTags.svelte';
+  import JsonLd from '$lib/components/JsonLd.svelte';
+  import { jsonLdGraph, pageNode, breadcrumbList } from '$lib/components/jsonld';
+  import { absoluteAssetUrl } from '$lib/utils';
+
+  const title = 'People';
+  const description = `The people behind ${SITE_NAME}: two friends building a pinball encyclopedia they wished existed.`;
+
+  // Single source of truth for each team member; bio is hand-trusted HTML
+  // (links only). JSON-LD strips tags for `description`.
+  const team = [
+    {
+      name: 'Dean Moses',
+      homeLocation: 'Berkeley, CA',
+      image: '/about/people/moses.avif',
+      bio: 'Moses has been making software since the web was born. A veteran of the early internet era in 1990s San Francisco, he believes in the decentralized, community-built ideals that prevailed before the rise of giant platforms and feed algorithms.',
+    },
+    {
+      name: 'William Pietri',
+      homeLocation: 'Chicago, IL',
+      image: '/about/people/william.avif',
+      bio: 'William is a software developer and founder of <a href="https://www.theflip.museum/">The Flip</a>: Chicago\'s Playable Pinball Museum. He is a big Wikipedia fan and used to be a Wikipedia administrator. He\'s owned his Addams Family for 30 years, and has only gotten "dirty pool" once.',
+    },
+  ];
+
+  const stripTags = (html: string) => html.replace(/<[^>]+>/g, '');
+
+  // Persons attach via `about` (Thing-typed), not `hasPart` (CreativeWork-typed) —
+  // Person is a Thing but not a CreativeWork.
+  const collection = {
+    ...pageNode('CollectionPage', page.url, title, description),
+    about: team.map((p) => ({
+      '@type': 'Person',
+      name: p.name,
+      description: stripTags(p.bio),
+      image: absoluteAssetUrl(p.image, page.url),
+      homeLocation: { '@type': 'Place', name: p.homeLocation },
+    })),
+  };
 </script>
 
-<svelte:head>
-  <title>{pageTitle('People')}</title>
-</svelte:head>
+<MetaTags {title} {description} url={page.url.href} />
+
+<JsonLd
+  data={jsonLdGraph([
+    collection,
+    breadcrumbList(
+      page.url,
+      [
+        { label: 'Home', href: '/' },
+        { label: 'About', href: '/about' },
+      ],
+      title,
+    ),
+  ])}
+/>
 
 <Breadcrumb crumbs={[{ label: 'About', href: '/about' }]} current="People" />
 
@@ -15,37 +67,19 @@
 </p>
 
 <div class="people">
-  <article class="person-card">
-    <header>
-      <img src="/about/people/moses.avif" alt="" loading="lazy" width="120" height="120" />
-      <div class="ident">
-        <h2>Dean Moses</h2>
-        <p class="location">Berkeley, CA</p>
-      </div>
-    </header>
-    <p>
-      Moses has been making software since the web was born. A veteran of the early internet era in
-      1990s San Francisco, he believes in the decentralized, community-built ideals that prevailed
-      before the rise of giant platforms and feed algorithms.
-    </p>
-  </article>
-
-  <article class="person-card">
-    <header>
-      <img src="/about/people/william.avif" alt="" loading="lazy" width="120" height="120" />
-      <div class="ident">
-        <h2>William Pietri</h2>
-        <p class="location">Chicago, IL</p>
-      </div>
-    </header>
-    <p>
-      William is a software developer and founder of <a href="https://www.theflip.museum/"
-        >The Flip</a
-      >: Chicago's Playable Pinball Museum. He is a big Wikipedia fan and used to be a Wikipedia
-      administrator. He's owned his Addams Family for 30 years, and has only gotten "dirty pool"
-      once.
-    </p>
-  </article>
+  {#each team as p (p.name)}
+    <article class="person-card">
+      <header>
+        <img src={p.image} alt="" loading="lazy" width="120" height="120" />
+        <div class="ident">
+          <h2>{p.name}</h2>
+          <p class="location">{p.homeLocation}</p>
+        </div>
+      </header>
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -- bio is hand-authored static content in this file -->
+      <p>{@html p.bio}</p>
+    </article>
+  {/each}
 </div>
 
 <figure class="both">

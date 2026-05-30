@@ -13,84 +13,107 @@ See [`SearchEngines.md`](SearchEngines.md) for how this fits with `robots.txt` a
 
 The sitemap is a SvelteKit `+server.ts` endpoint that renders `/sitemap.xml` via [`super-sitemap`](https://github.com/jasongitmail/super-sitemap). Per-URL `<lastmod>` comes from two sources:
 
-- **Dynamic catalog pages**: a single Django endpoint derives feeds from `LinkableModel` subclasses, returning per-instance `(slug, lastmod)` plus an optional per-kind set of slugs whose `catalog-detail` URL is non-canonical. The default `lastmod` is the record's own `updated_at` filtered to `.active()`; one override (`Title`) widens lastmod to include its Models' `updated_at`. One canonical-URL override (`MachineModel`) marks single-Model-Title members as non-canonical at the detail route — their `/edit-history` and `/sources` URLs still emit.
+- **Dynamic catalog pages**: a single Django endpoint derives feeds from `SitemappedModel` subclasses, returning per-instance `(slug, lastmod)` plus an optional per-kind set of slugs whose `catalog-detail` URL is non-canonical. The default `lastmod` is the record's own `updated_at` filtered to `.active()`; one override (`Title`) widens lastmod to include its Models' `updated_at`. One canonical-URL override (`MachineModel`) marks single-Model-Title members as non-canonical at the detail route — their `/edit-history` and `/sources` URLs still emit.
 - **Static pages** (`/`, `/about`, `/legal/*`): a small hand-maintained map of route ID → date-only `YYYY-MM-DD` (sitemaps.org accepts plain dates for `<lastmod>` — no need to type a fake time). The legal pages already render a "Last updated: …" line under the `<h1>` via the existing `<LastUpdated />` component; the sitemap reads the same constant so the user-visible date and the crawler-visible `<lastmod>` cannot disagree. When a static page's content changes, the author bumps the date in the same diff — same edit, same reviewer.
 - **Non-catalog dynamic routes** (today only `/manufacturers/[slug]/systems`): a tiny `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE` map names the parent entity whose slugs feed each such route. One entry today, growable.
 
 Appends a `Sitemap:` line to the existing `frontend/src/routes/robots.txt/+server.ts`.
 
-## 1. Backend — derive feeds from `LinkableModel`
+## 1. Backend — derive feeds from `SitemappedModel`
 
-Every catalog detail page is indexable and every listing / new / delete page is not (per [`NoindexMeta.md`](NoindexMeta.md)). That rule applies uniformly to every `LinkableModel` subclass, so the sitemap doesn't need any per-model declaration — it walks the existing `LinkableModel` registry (the same `apps.get_models()` + `issubclass` walk [`apps/core/entity_types.py`](../../../backend/apps/core/entity_types.py) already does) and reads metadata the model already carries.
+Every catalog detail page is indexable and every listing / new / delete page is not (per [`NoindexMeta.md`](NoindexMeta.md)). That rule applies uniformly to every sitemapped entity, so the sitemap doesn't need any per-model declaration — it walks the `SitemappedModel` registry (the same `apps.get_models()` + `issubclass` walk [`apps/core/entity_types.py`](../../../backend/apps/core/entity_types.py) already does) and reads metadata the model already carries.
 
-This is the [`_meta` walk](../model_driven_metadata/ModelDrivenMetadata.md#pattern-_meta-walk) + [base class / mixin](../model_driven_metadata/ModelDrivenMetadata.md#pattern-base-class--mixin) shape from [ModelDrivenMetadata.md](../model_driven_metadata/ModelDrivenMetadata.md). No `apps/catalog/sitemap_feeds.py`, no `register_sitemap_feed()` calls, no `AppConfig.ready()` hook. Adding a new `LinkableModel` catalog subclass lights up automatically.
+`SitemappedModel(LinkableModel, LastUpdatedModel)` is the abstract base for "appears in the sitemap": it composes the two prerequisites — a canonical URL (`LinkableModel`) and a freshness value (`LastUpdatedModel`). A `LinkableModel` that is _not_ a `SitemappedModel` (a future linkable-but-virtual entity) is simply absent from the walk rather than crashing on a missing `sitemap_queryset()`.
+
+This is the [`_meta` walk](../model_driven_metadata/ModelDrivenMetadata.md#pattern-_meta-walk) + [base class / mixin](../model_driven_metadata/ModelDrivenMetadata.md#pattern-base-class--mixin) shape from [ModelDrivenMetadata.md](../model_driven_metadata/ModelDrivenMetadata.md). No `apps/catalog/sitemap_feeds.py`, no `register_sitemap_feed()` calls, no `AppConfig.ready()` hook. Adding a new `SitemappedModel` catalog subclass lights up automatically.
 
 ### What the model already provides
 
-| Feed field              | Source on `LinkableModel`                                           |
-| ----------------------- | ------------------------------------------------------------------- |
-| `kind`                  | `entity_type`                                                       |
-| slug field              | `public_id_field` (defaults to `"slug"`)                            |
-| `lastmod`               | `_sitemap_lastmod` annotation from `sitemap_queryset()` classmethod |
-| `detail_excluded_slugs` | `non_canonical_detail_slugs()` classmethod (default: empty)         |
+| Feed field              | Source                                                      |
+| ----------------------- | ----------------------------------------------------------- |
+| `kind`                  | `entity_type` (`LinkableModel`)                             |
+| slug field              | `public_id_field` (defaults to `"slug"`)                    |
+| `lastmod`               | `_last_modified` annotation from `sitemap_queryset()`       |
+| `detail_excluded_slugs` | `non_canonical_detail_slugs()` classmethod (default: empty) |
+
+The `_last_modified` annotation is sourced from `LastUpdatedModel.lastmod_expression()` (default `F("updated_at")`) — the one freshness definition shared with JSON-LD's `dateModified` (see [JsonLdAndFriends.md](JsonLdAndFriends.md)).
 
 No `route_pattern` is emitted — the frontend already maps `entity_type` → SvelteKit route IDs via `catalogRoutesByEntity()` ([`route-metadata.server.ts`](../../../frontend/src/lib/route-metadata.server.ts)), so emitting SvelteKit-shaped patterns from Python would just duplicate that map.
 
 ### Per-model overrides — two methods, by category
 
-Two classmethods on `LinkableModel`, each covering a distinct concern:
+Two classmethods on `SitemappedModel`, each covering a distinct concern:
 
-- `sitemap_queryset()` — which **active** rows belong in the sitemap, with their `_sitemap_lastmod`. Used uniformly across `catalog-detail`, `catalog-edit-history`, and `catalog-sources` routes.
+- `sitemap_queryset()` — which **active** rows belong in the sitemap, with their `_last_modified` (annotated from `lastmod_expression()`). Used uniformly across `catalog-detail`, `catalog-edit-history`, and `catalog-sources` routes.
 - `non_canonical_detail_slugs()` — within those rows, the subset whose `catalog-detail` URL is non-canonical (the canonical URL lives on a different entity). Applies only to the detail route; `/edit-history` and `/sources` still emit.
+
+Freshness itself is a third, orthogonal concern that lives on `LastUpdatedModel`: `lastmod_expression()` (the queryset expression the sitemap annotates, default `F("updated_at")`) and `last_modified` (the per-instance value). A `lastmod`-widening entity overrides `lastmod_expression()` only — not the whole `sitemap_queryset()`.
 
 The split exists because single-Model-Title MachineModels have a non-canonical detail page (the Title is canonical) but their `/edit-history` and `/sources` are independently canonical per [`SingleModelTitles.md`](../../SingleModelTitles.md). One method that excludes the row entirely would drop those ancillary URLs too. See [Considered alternatives](#considered-alternatives) for the history of this split.
 
-Today every concrete `LinkableModel` subclass also inherits `LifecycleStatusModel` (via [`CatalogModel`](../../../backend/apps/catalog/models/base.py), which combines both) and `TimeStampedModel` (giving it `updated_at`). The defaults below rely on both — `.active()` and `F("updated_at")`. A parity test (see §7) pins the inheritance so a future non-lifecycle `LinkableModel` fails CI rather than crashing at sitemap render.
+Today every concrete `SitemappedModel` subclass also inherits `LifecycleStatusModel` (via [`CatalogModel`](../../../backend/apps/catalog/models/base.py), which combines both) and `TimeStampedModel` (giving it `updated_at`). The defaults below rely on both — `.active()` and `lastmod_expression()`'s `F("updated_at")`. A parity test (see §7) pins the inheritance so a future non-lifecycle `SitemappedModel` fails CI rather than crashing at sitemap render.
 
 ```python
-# apps/core/models/mixins.py — extending LinkableModel
-@classmethod
-def sitemap_queryset(cls) -> QuerySet[Self]:
-    """Active rows to include in the sitemap, annotated with `_sitemap_lastmod`.
+# apps/core/models/mixins.py
 
-    Default: `.active()` rows with `_sitemap_lastmod = updated_at`. Override
-    to widen `lastmod` (e.g. aggregate child timestamps) — not to narrow
-    membership for canonical-URL reasons; use `non_canonical_detail_slugs()`
-    for that.
+class LastUpdatedModel(models.Model):
+    """Freshness concept — the one definition shared by sitemap + dateModified."""
 
-    Return `cls.objects.none()` to opt a `LinkableModel` out of the sitemap
-    entirely — e.g. a future through-table entity with no detail page. A
-    `LinkableModel` subclass that doesn't also inherit `LifecycleStatusModel`
-    + `TimeStampedModel` MUST override this method; the parity test in
-    `apps/core/tests/test_sitemap.py` catches that contract at CI time.
-    """
-    return (
-        cls.objects.active()
-        .annotate(_sitemap_lastmod=F("updated_at"))
-        .only(cls.public_id_field, "updated_at")
-        .order_by(cls.public_id_field)
-    )
+    @classmethod
+    def lastmod_expression(cls) -> Combinable:
+        return F("updated_at")  # Title overrides to aggregate child Models
 
-@classmethod
-def non_canonical_detail_slugs(cls) -> Iterable[str]:
-    """Slugs whose `catalog-detail` URL is non-canonical.
+    @property
+    def last_modified(self) -> datetime:
+        # Reads the `_last_modified` annotation when present, else updated_at.
+        ...
 
-    Default: empty. Override when the detail page collapses to a different
-    entity's page in the UI (canonical URL lives elsewhere) — the row stays
-    in `sitemap_queryset()` so `/edit-history` and `/sources` still emit,
-    but its detail URL is omitted from the sitemap.
+    class Meta:
+        abstract = True
 
-    Returned slugs must already be members of `sitemap_queryset()`; slugs
-    outside that set are ignored (defensive — they wouldn't appear anyway).
-    """
-    return ()
+
+class SitemappedModel(LinkableModel, LastUpdatedModel):
+    @classmethod
+    def sitemap_queryset(cls) -> QuerySet[Self]:
+        """Active rows to include in the sitemap, annotated with `_last_modified`.
+
+        Default: `.active()` rows with `_last_modified` from
+        `lastmod_expression()` (`updated_at` unless a subclass widens it).
+        Override `lastmod_expression()` to widen `lastmod`; override this
+        method only to narrow membership, or return `cls.objects.none()` to
+        opt out (e.g. a future through-table entity with no detail page). A
+        subclass that doesn't also inherit `LifecycleStatusModel` +
+        `TimeStampedModel` MUST override this method; the parity test in
+        `apps/core/tests/test_sitemapped_model_lifecycle_parity.py` catches that
+        contract at CI time.
+        """
+        return (
+            cls.objects.active()
+            .annotate(_last_modified=cls.lastmod_expression())
+            .only(cls.public_id_field, "updated_at")
+            .order_by(cls.public_id_field)
+        )
+
+    @classmethod
+    def non_canonical_detail_slugs(cls) -> Iterable[str]:
+        """Slugs whose `catalog-detail` URL is non-canonical.
+
+        Default: empty. Override when the detail page collapses to a different
+        entity's page in the UI (canonical URL lives elsewhere) — the row stays
+        in `sitemap_queryset()` so `/edit-history` and `/sources` still emit,
+        but its detail URL is omitted from the sitemap.
+
+        Returned slugs must already be members of `sitemap_queryset()`; slugs
+        outside that set are ignored (defensive — they wouldn't appear anyway).
+        """
+        return ()
 ```
 
 The two overrides today:
 
 ```python
 # apps/catalog/models/machine_model.py
-class MachineModel(LinkableModel, ...):
+class MachineModel(CatalogModel, ...):
     @classmethod
     def non_canonical_detail_slugs(cls):
         # Single-Model-Title rule: when a Title has exactly one active Model,
@@ -112,32 +135,23 @@ class MachineModel(LinkableModel, ...):
 
 ```python
 # apps/catalog/models/title.py
-class Title(LinkableModel, ...):
+class Title(CatalogModel, ...):
     @classmethod
-    def sitemap_queryset(cls):
+    def lastmod_expression(cls):
         # Title is the only catalog page whose primary content aggregates other
         # catalog entities (the Model list, plus — for single-Model Titles — the
-        # collapsed Model's content). Bump lastmod when any Model changes.
-        #
-        # Rebuilt from `cls.objects.active()` (rather than calling `super()`)
-        # to avoid Django's re-annotation footgun: a second `.annotate()` on
-        # the same alias (`_sitemap_lastmod`) doesn't reliably win across
-        # Django versions. `Coalesce` defends against `Max(...) = NULL` for
-        # Titles with no Models on non-Postgres backends — Postgres' GREATEST
-        # already ignores NULLs, but the explicit fallback is portable.
-        return (
-            cls.objects.active()
-            .annotate(
-                _sitemap_lastmod=Greatest(
-                    F("updated_at"),
-                    Coalesce(
-                        Max("machine_models__updated_at"),
-                        F("updated_at"),
-                    ),
-                ),
-            )
-            .only(cls.public_id_field, "updated_at")
-            .order_by(cls.public_id_field)
+        # collapsed Model's content). Bump lastmod when any Model changes. This
+        # one expression feeds both the sitemap `<lastmod>` and the detail
+        # response's `last_modified` (both annotate via it), so they can't
+        # diverge. `Coalesce` defends against `Max(...) = NULL` for Titles with
+        # no Models on non-Postgres backends — Postgres' GREATEST already
+        # ignores NULLs, but the explicit fallback is portable.
+        return Greatest(
+            F("updated_at"),
+            Coalesce(
+                Max("machine_models__updated_at"),
+                F("updated_at"),
+            ),
         )
 ```
 
@@ -162,13 +176,13 @@ def all_sitemap_feeds() -> list[SitemapFeed]:
     apps.check_apps_ready()
     feeds: list[SitemapFeed] = []
     for model in apps.get_models():
-        if not issubclass(model, LinkableModel) or model._meta.abstract:
+        if not issubclass(model, SitemappedModel) or model._meta.abstract:
             continue
         slug_field = model.public_id_field
         entries = [
-            SitemapEntry(getattr(o, slug_field), o._sitemap_lastmod)
+            SitemapEntry(getattr(o, slug_field), o._last_modified)
             for o in model.sitemap_queryset().iterator()
-            if o._sitemap_lastmod is not None
+            if o._last_modified is not None
         ]
         if not entries:
             continue
@@ -203,7 +217,7 @@ def get_sitemap(request) -> SitemapResponseSchema:
     return SitemapResponseSchema(feeds=feeds)
 ```
 
-Wired the same way every other Ninja router in the repo is wired: the router lives in `apps/core/api/sitemap.py` and is exposed by `apps/core/api/__init__.py` as `routers = [("", router)]` (create the `api/` package if it doesn't exist yet). `config/api.py` auto-discovers via `apps.get_app_configs()` looking for `<app>.api.routers` — no extra registration. Typed schemas (`SitemapEntrySchema`, `SitemapFeedSchema`, `SitemapResponseSchema`) live in `apps/core/api/sitemap_schemas.py`. Response sets `Cache-Control: public, max-age=3600`. Run `make api-gen` after.
+Wired the same way every other Ninja router in the repo is wired: the router lives in `apps/core/api/sitemap.py` and is exposed by `apps/core/api/__init__.py` as `routers = [("", router)]` (create the `api/` package if it doesn't exist yet). `config/api.py` auto-discovers via `apps.get_app_configs()` looking for `<app>.api.routers` — no extra registration. Typed schemas (`SitemapEntrySchema`, `SitemapFeedSchema`, `SitemapResponseSchema`) live in `apps/core/api/sitemap_schemas.py`. Response sets `Cache-Control: public, max-age=3600`. Run `make codegen` after.
 
 No rate limiter. The SvelteKit `/sitemap[[page=integer]].xml` endpoint calls this server-side via `createServerClient(...)` (per [`Svelte.md`](../../Svelte.md)), so from Django's perspective every public hit on the sitemap arrives from the Node container's single IP. An IP-keyed limiter would bucket all crawler traffic — including post-deploy bursts where multiple bots simultaneously cache-miss — under one key and 429 the whole sitemap render. The shared Django cache (`django.core.cache`, configured as `FileBasedCache` at `BASE_DIR/cache` in [`config/settings.py`](../../../backend/config/settings.py); same pattern as [`apps/catalog/cache.py`](../../../backend/apps/catalog/cache.py)) collapses the workload to one full materialization per hour across all worker processes, which is the actual cost ceiling we care about.
 
@@ -213,9 +227,9 @@ No rate limiter. The SvelteKit `/sitemap[[page=integer]].xml` endpoint calls thi
 
 ### Why this shape
 
-- **One override per wrinkle, no relationship walker.** Catalog pages overwhelmingly render their own record's content. The one lastmod-aggregation exception (Title) gets a one-line `sitemap_queryset()` override; the one canonical-URL exception (MachineModel) gets a `non_canonical_detail_slugs()` override; everything else inherits both defaults. No auto-derivation from Django relationships — walking all FK/M2M relationships over-includes (provenance ChangeSets, audit rows, denormalization caches aren't page content), and walking only `LinkableModel`-targeted relationships under-includes (non-LinkableModel entities like aliases or credit lines often drive page content precisely because they don't have their own page). A "smart" walker would be wrong in both directions; the honest answer is explicit overrides for the entities that actually aggregate or collapse.
+- **One override per wrinkle, no relationship walker.** Catalog pages overwhelmingly render their own record's content. The one lastmod-aggregation exception (Title) gets a one-line `lastmod_expression()` override; the one canonical-URL exception (MachineModel) gets a `non_canonical_detail_slugs()` override; everything else inherits the defaults. No auto-derivation from Django relationships — walking all FK/M2M relationships over-includes (provenance ChangeSets, audit rows, denormalization caches aren't page content), and walking only `LinkableModel`-targeted relationships under-includes (non-LinkableModel entities like aliases or credit lines often drive page content precisely because they don't have their own page). A "smart" walker would be wrong in both directions; the honest answer is explicit overrides for the entities that actually aggregate or collapse.
 - **Two methods, split by category.** Membership-and-lastmod (`sitemap_queryset()`) and canonical-URL-at-detail (`non_canonical_detail_slugs()`) are different questions because `/edit-history` and `/sources` are independently canonical even when the detail page collapses. A single-method shape was the first draft and was reopened (see Considered alternatives) once the sitemap surfaced as the canonical-URL consumer. A future `<link rel="canonical">` tag on the rendered HTML would read `non_canonical_detail_slugs()` too.
-- **Sitemap inclusion is implied by being a `LinkableModel`** that has a SvelteKit route for its `entity_type`. A `LinkableModel` without a matching route (today: none; tomorrow potentially through-tables like `MachineModelTag` or `MachineModelRewardType`) emits a Django feed that the frontend silently drops via `catalogRoutesByEntity().get(kind) === undefined`. To explicitly opt out, override `sitemap_queryset()` to return `cls.objects.none()`.
+- **Sitemap inclusion is implied by being a `SitemappedModel`** that has a SvelteKit route for its `entity_type`. A `SitemappedModel` without a matching route (today: none; tomorrow potentially through-tables like `MachineModelTag` or `MachineModelRewardType`) emits a Django feed that the frontend silently drops via `catalogRoutesByEntity().get(kind) === undefined`. To explicitly opt out, override `sitemap_queryset()` to return `cls.objects.none()`; a `LinkableModel` that should never appear simply isn't a `SitemappedModel` at all.
 - **Soft-deleted rows excluded by default.** `sitemap_queryset()` calls `.active()` directly. Every concrete `LinkableModel` today inherits `LifecycleStatusModel` via `CatalogModel`, so `status='deleted'` rows never appear in the sitemap. `MachineModel.non_canonical_detail_slugs()` filters its sibling count with `active_status_q("title__machine_models")` so single-Model detection counts only active siblings. If `status='draft'` or other lifecycle states are added later, narrow `.active()` at the `LifecycleQuerySet` level — the sitemap inherits the change automatically.
 - **No fan-out.** One HTTP call from SvelteKit → Django. super-sitemap fails the whole render if a `paramValues` callback throws, so eliminating the per-feed fetches eliminates that failure mode.
 - **Public reads, no auth gate.** Non-mutating, contains only data already on the indexable detail pages.
@@ -294,7 +308,7 @@ export const LISTED_INDEXABLE_ENTITY_SLUG_SOURCE = {
 
 The `satisfies` clause forces every key to be a real route ID and every value to be a known `CatalogEntityKey`. One entry today; a parity test (see §7) asserts every key is also in `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS` (so a typo can't silently drop the entry) and that every value has a backend feed. This is the "non-catalog dynamic indexable routes handled through their own mechanism" footnote from invariant #1 — outside the catalog-model automation guarantee, deliberately.
 
-`lastmod` for these routes comes from the parent entity's `_sitemap_lastmod`. That under-reports when the listing's content changes without bumping the parent (e.g. a new System linked to a Manufacturer doesn't bump `Manufacturer.updated_at`) — same accepted tradeoff as the rest of the design. Revisit per-route lastmod widening if/when traffic data shows we're losing re-crawls because of it.
+`lastmod` for these routes comes from the parent entity's `_last_modified`. That under-reports when the listing's content changes without bumping the parent (e.g. a new System linked to a Manufacturer doesn't bump `Manufacturer.updated_at`) — same accepted tradeoff as the rest of the design. Revisit per-route lastmod widening if/when traffic data shows we're losing re-crawls because of it.
 
 ### Wiring
 
@@ -458,9 +472,9 @@ One-line additive change. Update the existing robots vitest to assert the line i
 **In:**
 
 - `/`, `/about`, `/about/people`, `/legal/privacy`, `/legal/terms`, `/legal/licensing` — `lastmod` from the per-route `STATIC_LASTMOD` constant (hand-bumped when the page's content changes; visible to humans on the legal pages via `<LastUpdated />`).
-- All catalog detail pages for active rows, with their `_sitemap_lastmod` as `lastmod`, plus per-entity `/edit-history` and `/sources` URLs (every `catalog-detail` / `catalog-edit-history` / `catalog-sources` route classifies as indexable), except:
+- All catalog detail pages for active rows, with their `_last_modified` as `lastmod`, plus per-entity `/edit-history` and `/sources` URLs (every `catalog-detail` / `catalog-edit-history` / `catalog-sources` route classifies as indexable), except:
   - **Single-Model Title member Models** — `/models/[slug]` (the catalog-detail route) is **excluded** because the canonical URL is the Title's detail page (the UI collapses to the Model page but the Title slug is canonical per `docs/SingleModelTitles.md`). `/models/[slug]/edit-history` and `/models/[slug]/sources` are **still included** with the Model's own `updated_at` — those pages show the Model's history and sources independently, not the Title's. Implemented via `MachineModel.non_canonical_detail_slugs()`. The Title's own `lastmod` aggregates `Max(machine_models.updated_at)` so the collapsed Model's edits bump the Title's detail-page freshness signal.
-- `/manufacturers/[slug]/systems` — the only listed-indexable dynamic route today. Receives manufacturer slugs via `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE` and the manufacturer's own `_sitemap_lastmod`.
+- `/manufacturers/[slug]/systems` — the only listed-indexable dynamic route today. Receives manufacturer slugs via `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE` and the manufacturer's own `_last_modified`.
 
 **Out:**
 
@@ -480,14 +494,13 @@ The fix: build-phase refusal gate when `RAILWAY_GIT_COMMIT_SHA` is set but `SITE
 ## 7. Tests
 
 - **Backend (pytest):**
-  - `apps/core/tests/test_sitemap.py` — `all_sitemap_feeds()` walks every concrete `LinkableModel` subclass, builds one feed per kind, entries match `(slug, lastmod)` shape, ordering is by slug, `max_lastmod` matches the newest entry, `detail_excluded_slugs` is a `frozenset` (default empty). Parameterized over every concrete `LinkableModel` so a new entity type fires the test and gets reviewed intentionally (per [ModelDrivenMetadata.md](../model_driven_metadata/ModelDrivenMetadata.md#rules-of-thumb): "Parity tests pin derived sets"). Also asserts a model overriding `sitemap_queryset()` to return `.none()` produces no feed entry (opt-out path).
-  - `apps/core/tests/test_sitemap_active_filter.py` — the default `sitemap_queryset()` excludes `status='deleted'` rows for every concrete `LinkableModel` subclass. Soft-deleting a row removes it from the feed across all kinds (parameterized over every `LinkableModel`).
-  - `apps/core/tests/test_linkable_model_lifecycle_parity.py` — every concrete `LinkableModel` subclass inherits `LifecycleStatusModel` and `TimeStampedModel`. The default `sitemap_queryset()` calls `.active()` and reads `updated_at` directly; a future non-lifecycle `LinkableModel` must override `sitemap_queryset()`, and this test makes that contract explicit instead of letting the omission crash at sitemap render.
-  - `apps/catalog/tests/test_title_sitemap_lastmod.py` — `Title.sitemap_queryset()` annotates `_sitemap_lastmod = max(Title.updated_at, max(machine_models.updated_at))` across: (a) Title-only edit, (b) MachineModel-only edit, (c) both edited, (d) single-Model Title with Model edit, (e) Title with zero MachineModels (annotation falls back to `Title.updated_at` via `Coalesce`).
+  - `apps/core/tests/test_sitemap.py` — `all_sitemap_feeds()` walks every concrete `SitemappedModel` subclass, builds one feed per kind, entries match `(slug, lastmod)` shape, ordering is by slug, `max_lastmod` matches the newest entry, `detail_excluded_slugs` is a `frozenset` (default empty). Parameterized over every concrete `SitemappedModel` so a new entity type fires the test and gets reviewed intentionally (per [ModelDrivenMetadata.md](../model_driven_metadata/ModelDrivenMetadata.md#rules-of-thumb): "Parity tests pin derived sets"). Also asserts a model overriding `sitemap_queryset()` to return `.none()` produces no feed entry (opt-out path), and — same parameterized class — that the default `sitemap_queryset()` excludes `status='deleted'` rows.
+  - `apps/core/tests/test_sitemapped_model_lifecycle_parity.py` — every concrete `SitemappedModel` subclass inherits `LifecycleStatusModel` and `TimeStampedModel`. The default `sitemap_queryset()` calls `.active()` and annotates `lastmod_expression()` (which reads `updated_at`); a future subclass that doesn't satisfy this must override `sitemap_queryset()`, and this test makes that contract explicit instead of letting the omission crash at sitemap render.
+  - `apps/catalog/tests/test_title_last_modified.py` — `Title.sitemap_queryset()` annotates `_last_modified = max(Title.updated_at, max(machine_models.updated_at))` across: (a) Title-only edit, (b) MachineModel-only edit, (c) both edited, (d) single-Model Title with Model edit, (e) Title with zero MachineModels (annotation falls back to `Title.updated_at` via `Coalesce`).
   - `apps/core/tests/test_sitemap_api.py` — endpoint returns 200 with the expected shape (including `detail_excluded_slugs` per feed); second call within the TTL is served from cache (assert `all_sitemap_feeds` is invoked once across two requests via a spy / mock).
   - `apps/catalog/tests/test_machine_model_non_canonical.py` — `MachineModel.non_canonical_detail_slugs()` returns exactly the slugs of active Models whose parent Title has exactly one active Model. Cases: (a) Title with two active Models → both slugs absent from the result; (b) Title with one active + one deleted Model → the active Model's slug IS present (the deleted sibling shouldn't keep it canonical); (c) Title with one active Model → that slug IS present; (d) the same Model still appears in `sitemap_queryset()` so its `/edit-history` and `/sources` are not dropped from the feed entries.
   - `apps/catalog/tests/test_location_sitemap.py` — Location's `public_id_field = "location_path"` produces multi-segment slugs (e.g. `"a/b/c"`) in the feed without further encoding.
-  - `apps/core/tests/test_entity_type_parity.py` — every concrete `LinkableModel.entity_type` is a member of the frontend's `CatalogEntityKey` set. The sitemap relies on `directRoutesByEntity.get(kind)` matching Python `entity_type` strings against `CatalogEntityKey` exactly; this test pins the cross-language coupling so renaming on either side fails CI rather than silently dropping a kind from the sitemap. Source the frontend set from a checked-in generated file (or a small JSON exported alongside `make api-gen`) — do not duplicate the literal by hand.
+  - `apps/core/tests/test_entity_type_parity.py` — every concrete `LinkableModel.entity_type` is a member of the frontend's `CatalogEntityKey` set. The sitemap relies on `directRoutesByEntity.get(kind)` matching Python `entity_type` strings against `CatalogEntityKey` exactly; this test pins the cross-language coupling so renaming on either side fails CI rather than silently dropping a kind from the sitemap. Source the frontend set from a checked-in generated file (or a small JSON exported alongside `make codegen`) — do not duplicate the literal by hand.
 - **Frontend (vitest):**
   - `sitemap[[page=integer]].xml/+server.ts` builds `paramValues` correctly from a mocked `/api/sitemap/` response: a single backend feed for `kind: "title"` lands under every indexable SvelteKit route ID for `title` (detail + `/edit-history` + `/sources` today) with the same slug list and `lastmod`.
   - **Canonical-URL split** — given a `machine-model` feed where `detail_excluded_slugs = {"sm1"}` and entries are `[{slug:"sm1",lastmod:T1}, {slug:"mm2",lastmod:T2}]`: `paramValues["/models/[slug]"]` includes only `mm2`, but `paramValues["/models/[slug]/edit-history"]` and `paramValues["/models/[slug]/sources"]` include BOTH `sm1` and `mm2` with their own `lastmod`s. This is the load-bearing test for invariant #2.
@@ -516,7 +529,7 @@ The work below ships as **multiple commits in one PR**, each done by a fresh AI 
 
 #### ✅ DONE - Commit B: backend
 
-Backend feeds + backend sitemap API endpoint (Commit B steps). `LinkableModel.sitemap_queryset()` + `non_canonical_detail_slugs()`, the per-model overrides, `all_sitemap_feeds()`, cached `/api/sitemap/` endpoint, `make api-gen`. Reviewable on its own: tests prove the feeds are right, the endpoint returns the right shape; nothing user-visible yet.
+Backend feeds + backend sitemap API endpoint (Commit B steps). `SitemappedModel.sitemap_queryset()` + `non_canonical_detail_slugs()`, the per-model overrides, `all_sitemap_feeds()`, cached `/api/sitemap/` endpoint, `make codegen`. Reviewable on its own: tests prove the feeds are right, the endpoint returns the right shape; nothing user-visible yet.
 
 #### ✅ DONE - Commit C: static page timestamps
 
@@ -530,11 +543,11 @@ Sitemap frontend endpoint + robots line (Commit D steps). `LISTED_INDEXABLE_ENTI
 
 #### Commit B — backend feeds + API endpoint
 
-1. Add `LinkableModel.sitemap_queryset()` and `LinkableModel.non_canonical_detail_slugs()` classmethods with their defaults (`.active()` directly, `_sitemap_lastmod = F("updated_at")`, `.only()`, `.order_by()`; non-canonical default is empty tuple). Add a parity test asserting every concrete `LinkableModel` subclass also inherits `LifecycleStatusModel` and `TimeStampedModel` — the default's contract.
-2. Override `MachineModel.non_canonical_detail_slugs()` for the single-Model-Title rule (active sibling count == 1, via `Count("title__machine_models", filter=active_status_q("title__machine_models"))`) and `Title.sitemap_queryset()` for the `Greatest(updated_at, Coalesce(Max("machine_models__updated_at"), updated_at))` aggregation. Tests per §7, including the zero-Models case.
-3. `apps/core/sitemap.py` — `SitemapEntry`, `SitemapFeed` (with `detail_excluded_slugs: frozenset[str]`), `all_sitemap_feeds()` (filtering None lastmods and skipping empty feeds). Parameterized parity test over every concrete `LinkableModel`, including an opt-out (`sitemap_queryset()` returns `.none()`) assertion and a default-active-filter assertion.
+1. Add the `LastUpdatedModel` freshness mixin (`lastmod_expression()` → `F("updated_at")`, `last_modified` property) and `SitemappedModel(LinkableModel, LastUpdatedModel)` carrying `sitemap_queryset()` (`.active()`, `.annotate(_last_modified=cls.lastmod_expression())`, `.only()`, `.order_by()`) and `non_canonical_detail_slugs()` (default empty). `CatalogModel` inherits `SitemappedModel`. Add a parity test asserting every concrete `SitemappedModel` subclass also inherits `LifecycleStatusModel` and `TimeStampedModel` — the default's contract.
+2. Override `MachineModel.non_canonical_detail_slugs()` for the single-Model-Title rule (active sibling count == 1, via `Count("title__machine_models", filter=active_status_q("title__machine_models"))`) and `Title.lastmod_expression()` for the `Greatest(updated_at, Coalesce(Max("machine_models__updated_at"), updated_at))` aggregation. Tests per §7, including the zero-Models case.
+3. `apps/core/sitemap.py` — `SitemapEntry`, `SitemapFeed` (with `detail_excluded_slugs: frozenset[str]`), `all_sitemap_feeds()` (filtering None lastmods and skipping empty feeds). Parameterized parity test over every concrete `SitemappedModel`, including an opt-out (`sitemap_queryset()` returns `.none()`) assertion and a default-active-filter assertion.
 4. `apps/core/api/sitemap.py` + `apps/core/api/__init__.py` (`routers = [("", router)]`) — single endpoint at `/api/sitemap/`, shared `django.core.cache` (file-based per project settings, 1h TTL), `Cache-Control: public, max-age=3600` response header. Typed schemas in `apps/core/api/sitemap_schemas.py` carry `detail_excluded_slugs` as `frozenset[str]` → JSON array. Tests for the 200 path and the cache-hit path (one materialization across two requests).
-5. `make api-gen`.
+5. `make codegen`.
 
 > 🛑 **Stop — do NOT commit until the user explicitly says to.**
 

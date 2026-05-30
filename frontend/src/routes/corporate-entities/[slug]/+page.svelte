@@ -5,7 +5,7 @@
   import TitleCard from '$lib/components/cards/TitleCard.svelte';
 
   let { data } = $props();
-  let ce = $derived(data.corporateEntity);
+  let ce = $derived(data.profile);
   let titlesHeading = $derived(`Titles by ${ce.name}`);
 </script>
 
@@ -29,7 +29,7 @@
     >
       {#snippet children(title)}
         <TitleCard
-          slug={title.slug}
+          slug={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}
           year={title.year}

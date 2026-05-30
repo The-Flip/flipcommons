@@ -3,10 +3,10 @@
 
   let {
     basePath = '/gameplay-features',
-    parents = [{ name: 'Physical Feature', slug: 'physical-feature' }],
+    parents = [{ name: 'Physical Feature', public_id: 'physical-feature' }],
     children = [
-      { name: 'Slingshot', slug: 'slingshot' },
-      { name: 'Bumper', slug: 'bumper' },
+      { name: 'Slingshot', public_id: 'slingshot' },
+      { name: 'Bumper', public_id: 'bumper' },
     ],
     aliases = ['Pop'],
     parentHeading = 'Type of',
@@ -14,8 +14,8 @@
     aliasHeading = 'Also known as',
   }: {
     basePath?: string;
-    parents?: { name: string; slug: string }[];
-    children?: { name: string; slug: string }[];
+    parents?: { name: string; public_id: string }[];
+    children?: { name: string; public_id: string }[];
     aliases?: string[];
     parentHeading?: string;
     childHeading?: string;

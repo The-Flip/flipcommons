@@ -21,13 +21,12 @@ from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     EDIT_RATE_LIMIT_SPEC,
     rate_limited,
 )
-from apps.provenance.schemas import RichTextSchema
 
 from ..models import MachineModel, Manufacturer, System
 from ._typing import HasModelCount
@@ -46,8 +45,9 @@ from .entity_create import (
 )
 from .entity_crud import register_entity_delete_restore
 from .images import extract_image_urls, fetch_model_media_map
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
+    CatalogDetailSchema,
     ClaimPatchSchema,
     EntityCreateInputSchema,
     EntityRef,
@@ -62,7 +62,7 @@ from .schemas import (
 class SystemListItemSchema(Schema):
     name: str
     slug: str
-    manufacturer: EntityRef | None = None
+    manufacturer: EntityRef
     model_count: int = 0
 
 
@@ -70,11 +70,9 @@ class SystemCreateSchema(EntityCreateInputSchema):
     manufacturer_slug: str
 
 
-class SystemDetailSchema(Schema):
-    name: str
+class SystemDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
-    manufacturer: EntityRef | None = None
+    manufacturer: EntityRef
     technology_subgeneration: EntityRef | None = None
     titles: list[RelatedTitleSchema]
     sibling_systems: list[EntityRef] = []
@@ -105,7 +103,7 @@ def _system_detail_qs() -> QuerySet[System]:
 @dataclass
 class _RelatedTitleAccum:
     name: str
-    slug: str
+    public_id: str
     year: int | None
     manufacturer_name: str | None
     thumbnail_url: str | None
@@ -131,7 +129,7 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
             )
             accum[key] = _RelatedTitleAccum(
                 name=m.title.name,
-                slug=m.title.slug,
+                public_id=m.title.public_id,
                 year=m.year,
                 manufacturer_name=mfr.name if mfr else None,
                 thumbnail_url=thumbnail_url,
@@ -141,7 +139,7 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
     titles = [
         RelatedTitleSchema(
             name=a.name,
-            slug=a.slug,
+            public_id=a.public_id,
             year=a.year,
             manufacturer_name=a.manufacturer_name,
             thumbnail_url=a.thumbnail_url,
@@ -152,7 +150,7 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
     sibling_systems: list[EntityRef] = []
     if system.manufacturer:
         sibling_systems = [
-            EntityRef(name=row["name"], slug=row["slug"])
+            EntityRef(name=row["name"], public_id=row["slug"])
             for row in System.objects.active()
             .filter(manufacturer=system.manufacturer)
             .exclude(pk=system.pk)
@@ -163,17 +161,18 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
 
     return SystemDetailSchema(
         name=system.name,
+        public_id=system.public_id,
+        last_modified=system.last_modified,
         slug=system.slug,
-        description=build_rich_text(system, "description", active_claims(system)),
-        manufacturer=(
-            EntityRef(name=system.manufacturer.name, slug=system.manufacturer.slug)
-            if system.manufacturer
-            else None
+        description=describe(system),
+        manufacturer=EntityRef(
+            name=system.manufacturer.name,
+            public_id=system.manufacturer.public_id,
         ),
         technology_subgeneration=(
             EntityRef(
                 name=system.technology_subgeneration.name,
-                slug=system.technology_subgeneration.slug,
+                public_id=system.technology_subgeneration.public_id,
             )
             if system.technology_subgeneration
             else None
@@ -210,10 +209,8 @@ def list_all_systems(request: HttpRequest) -> list[SystemListItemSchema]:
         SystemListItemSchema(
             name=s.name,
             slug=s.slug,
-            manufacturer=(
-                EntityRef(name=s.manufacturer.name, slug=s.manufacturer.slug)
-                if s.manufacturer
-                else None
+            manufacturer=EntityRef(
+                name=s.manufacturer.name, public_id=s.manufacturer.public_id
             ),
             model_count=cast(HasModelCount, s).model_count,
         )

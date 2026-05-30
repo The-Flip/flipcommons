@@ -5,9 +5,12 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Pat Lawlor',
+  public_id: 'pat-lawlor',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'pat-lawlor',
   description: {
     text: 'Pinball designer.',
+    plain: 'Pinball designer.',
     html: '<p>Pinball designer.</p>',
     citations: [],
     attribution: null,
@@ -24,7 +27,7 @@ const MOCK_DATA = {
   titles: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
       manufacturer_name: 'Williams',
       thumbnail_url: null,
@@ -50,7 +53,7 @@ describe('people detail SSR route', () => {
       params: { slug: 'pat-lawlor' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ person: MOCK_DATA });
+    expect(result).toEqual(expect.objectContaining({ profile: MOCK_DATA }));
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/person/pat-lawlor');
@@ -71,7 +74,7 @@ describe('people detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { person: MOCK_DATA },
+        data: { profile: MOCK_DATA, jsonLd: {} },
       },
     });
 

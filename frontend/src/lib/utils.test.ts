@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatYearRange, normalizeText, pluralize } from './utils';
+import { absoluteAssetUrl, formatYearRange, normalizeText, pluralize } from './utils';
 
 describe('normalizeText', () => {
   it('lowercases text', () => {
@@ -68,5 +68,23 @@ describe('pluralize', () => {
   it('uses explicit plural form when provided', () => {
     expect(pluralize(2, 'child', 'children')).toBe('2 children');
     expect(pluralize(1, 'child', 'children')).toBe('1 child');
+  });
+});
+
+describe('absoluteAssetUrl', () => {
+  // In the test environment, `paths.assets` isn't configured, so `asset()`
+  // returns the path unchanged — exercising the relative-path-resolved-
+  // against-origin branch.
+  const pageUrl = new URL('https://flipcommons.org/about/people');
+
+  it('resolves a relative asset path against the page origin', () => {
+    expect(absoluteAssetUrl('/images/social_default.png', pageUrl)).toBe(
+      'https://flipcommons.org/images/social_default.png',
+    );
+  });
+
+  it('produces an absolute URL regardless of the current page path', () => {
+    const deep = new URL('https://flipcommons.org/some/deep/route?x=1#y');
+    expect(absoluteAssetUrl('/img.png', deep)).toBe('https://flipcommons.org/img.png');
   });
 });

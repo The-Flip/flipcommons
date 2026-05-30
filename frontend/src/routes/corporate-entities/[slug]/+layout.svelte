@@ -3,8 +3,9 @@
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import { formatYearRange } from '$lib/utils';
-  import { SITE_NAME } from '$lib/constants';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/meta-tags';
+  import JsonLd from '$lib/components/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import LocationLink from '$lib/components/LocationLink.svelte';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
@@ -27,11 +28,11 @@
   import CorporateEntityEditorSwitch from './edit/CorporateEntityEditorSwitch.svelte';
 
   let { data, children } = $props();
-  let ce = $derived(data.corporateEntity);
+  let ce = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
   let yearsActive = $derived(formatYearRange(ce.year_start, ce.year_end));
-  let metaDescription = $derived(ce.description?.text || `${ce.name} — ${SITE_NAME}`);
+  let metaDescription = $derived(metaDescriptionFor(ce));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
   let isDetail = $derived(mode === 'detail');
   let isFocusMode = $derived(isFocusModePath(page.url.pathname));
@@ -93,7 +94,7 @@
   let metaItems = $derived(isMobile && yearsActive ? [{ text: yearsActive }] : []);
   let parentLink = $derived({
     text: ce.manufacturer.name,
-    href: resolve(`/manufacturers/${ce.manufacturer.slug}`),
+    href: resolve(`/manufacturers/${ce.manufacturer.public_id}`),
   });
 
   let editSections: EditSectionMenuItem[] = $derived([
@@ -128,6 +129,10 @@
 
 <MetaTags title={ce.name} description={metaDescription} url={page.url.href} />
 
+{#if isDetail && data.jsonLd}
+  <JsonLd data={data.jsonLd} />
+{/if}
+
 {#if isFocusMode}
   {@render children()}
 {:else}
@@ -147,7 +152,7 @@
   {#snippet sidebar()}
     <SidebarSection heading="Manufacturer">
       <p class="sidebar-value">
-        <a href={resolve(`/manufacturers/${ce.manufacturer.slug}`)}>{ce.manufacturer.name}</a>
+        <a href={resolve(`/manufacturers/${ce.manufacturer.public_id}`)}>{ce.manufacturer.name}</a>
       </p>
     </SidebarSection>
 

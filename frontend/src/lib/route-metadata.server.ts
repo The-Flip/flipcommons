@@ -3,7 +3,7 @@
  */
 
 import type { RouteId } from '$app/types';
-import { CATALOG_META, type CatalogEntityKey } from '$lib/api/catalog-meta';
+import { CATALOG_ENTITY_KEYS, ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
 /**
  * Non-catalog routes that should be indexed by search engines.
@@ -60,7 +60,7 @@ export const SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS = [
  * `route-metadata.test.ts` pin both invariants at runtime; the
  * `satisfies` clause pins the key/value types at typecheck.
  *
- * `lastmod` for these routes is the parent entity's `_sitemap_lastmod` — an
+ * `lastmod` for these routes is the parent entity's `_last_modified` — an
  * acknowledged under-report when the listing's content changes without
  * bumping the parent (e.g. a new System linked to a Manufacturer). Revisit
  * per-route lastmod widening if/when traffic data shows lost re-crawls.
@@ -91,12 +91,12 @@ export function isCatalogRoute(cls: RouteClass): cls is CatalogRouteClass {
   return 'entity' in cls;
 }
 
-// Index: entity_type_plural → CATALOG_META key. Built once at module load.
+// Index: entity_type_plural → catalog ENTITY_META key. Built once at module
+// load. Catalog-only: this classifies catalog detail/edit routes, so it must
+// not pick up a future non-catalog entity (e.g. user) — iterate the catalog
+// subset, not all of ENTITY_META.
 const PLURAL_TO_KEY: ReadonlyMap<string, CatalogEntityKey> = new Map(
-  Object.entries(CATALOG_META).map(([key, meta]) => [
-    meta.entity_type_plural,
-    key as CatalogEntityKey,
-  ]),
+  CATALOG_ENTITY_KEYS.map((key) => [ENTITY_META[key].entity_type_plural, key]),
 );
 
 // Matches both /{plural}/[slug]/... and /{plural}/[...path]/... in route-pattern form.

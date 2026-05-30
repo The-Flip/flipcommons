@@ -20,7 +20,7 @@ echo "==> Generating agent docs..."
 python3 scripts/build_agent_docs.py
 
 echo "==> Generating API types and catalog meta..."
-make api-gen
+make codegen
 
 echo "==> Installing pre-commit hooks..."
 uvx pre-commit install

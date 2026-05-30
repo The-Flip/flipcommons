@@ -1,11 +1,12 @@
-"""Derive sitemap feeds by walking the ``LinkableModel`` registry.
+"""Derive sitemap feeds by walking the ``SitemappedModel`` registry.
 
 Mirrors the same ``apps.get_models()`` + ``issubclass`` walk as
-``apps/core/entity_types.py``. Each concrete ``LinkableModel`` subclass
+``apps/core/entity_types.py``. Each concrete ``SitemappedModel`` subclass
 contributes one ``SitemapFeed``; per-model behavior (which rows are
 included, their ``lastmod``, and which detail URLs are non-canonical) is
-driven by ``LinkableModel.sitemap_queryset()`` and
-``LinkableModel.non_canonical_detail_slugs()``.
+driven by ``SitemappedModel.sitemap_queryset()`` and
+``SitemappedModel.non_canonical_detail_slugs()``. A ``LinkableModel`` that
+is not a ``SitemappedModel`` (linkable but not in the sitemap) is excluded.
 
 The endpoint that ships this over the wire lives at
 ``apps/core/api/sitemap.py``; this module is pure derivation so it can be
@@ -19,7 +20,7 @@ from typing import NamedTuple
 
 from django.apps import apps
 
-from apps.core.models import LinkableModel
+from apps.core.models import SitemappedModel
 
 
 class SitemapEntry(NamedTuple):
@@ -55,29 +56,29 @@ class SitemapFeed(NamedTuple):
 
 
 def all_sitemap_feeds() -> list[SitemapFeed]:
-    """Build one ``SitemapFeed`` per concrete ``LinkableModel`` subclass.
+    """Build one ``SitemapFeed`` per concrete ``SitemappedModel`` subclass.
 
     Skips feeds with zero entries (so ``max_lastmod`` is always a real
-    datetime when a feed is returned). Entries whose ``_sitemap_lastmod``
+    datetime when a feed is returned). Entries whose ``_last_modified``
     annotation evaluates to ``None`` are dropped — that's the legitimate
     aggregation case (a future ``Max("…__updated_at")`` over an empty
     relation, etc.). A row missing the annotation entirely is a programmer
-    bug (override forgot to ``.annotate(_sitemap_lastmod=…)``) and raises
+    bug (override forgot to ``.annotate(_last_modified=…)``) and raises
     ``AttributeError`` so it surfaces in CI rather than silently producing
     an empty feed.
     """
     feeds: list[SitemapFeed] = []
     for model in apps.get_models():
-        if not issubclass(model, LinkableModel) or model._meta.abstract:
+        if not issubclass(model, SitemappedModel) or model._meta.abstract:
             continue
         slug_field = model.public_id_field
         entries = [
             SitemapEntry(getattr(o, slug_field), lastmod)
             for o in model.sitemap_queryset().iterator()
-            # ``_sitemap_lastmod`` is a queryset annotation, not a declared
+            # ``_last_modified`` is a queryset annotation, not a declared
             # field — read directly so a missing annotation raises (the
             # override contract is enforced by failure, not silent skip).
-            if (lastmod := o._sitemap_lastmod) is not None  # type: ignore[attr-defined]
+            if (lastmod := o._last_modified) is not None  # type: ignore[attr-defined]
         ]
         if not entries:
             continue

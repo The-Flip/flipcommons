@@ -9,7 +9,7 @@ from django.db.models import Count, F, Prefetch, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
-from ninja import Router, Schema
+from ninja import Router
 from ninja.decorators import decorate_view
 from ninja.security import django_auth
 
@@ -20,7 +20,6 @@ from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import RichTextSchema
 
 from ..models import (
     Cabinet,
@@ -48,6 +47,7 @@ from .images import extract_image_urls, fetch_model_media_map
 from .people import PersonGridItemSchema
 from .rich_text import build_rich_text
 from .schemas import (
+    CatalogDetailSchema,
     ClaimPatchSchema,
     TitleModelSchema,
 )
@@ -57,11 +57,9 @@ from .schemas import (
 # ---------------------------------------------------------------------------
 
 
-class TaxonomySchema(Schema):
-    name: str
+class TaxonomySchema(CatalogDetailSchema):
     slug: str
     display_order: int
-    description: RichTextSchema = RichTextSchema()
     aliases: list[str] = []
 
 
@@ -130,6 +128,8 @@ def _serialize_taxonomy(
     # it would raise on the list path.
     return TaxonomySchema(
         name=obj.name,
+        public_id=obj.public_id,
+        last_modified=obj.last_modified,
         slug=obj.slug,
         display_order=obj.display_order,
         description=build_rich_text(

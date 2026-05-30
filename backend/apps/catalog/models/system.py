@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from django.db import models
 
-from apps.core.markdown import MarkdownField
 from apps.core.models import (
     SluggedModel,
     TimeStampedModel,
@@ -38,7 +37,6 @@ class System(
     entity_type_plural = "systems"
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
-    description = MarkdownField(blank=True)
     manufacturer = models.ForeignKey(
         "Manufacturer",
         on_delete=models.PROTECT,

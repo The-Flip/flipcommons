@@ -30,7 +30,7 @@ or `email_verified` at the call site. Add or use an `Activity` instead.
    `@public_mutation`.
 4. Use frontend capabilities for UI affordances. Do not duplicate policy logic
    in Svelte.
-5. If the API shape changes, run `make api-gen`.
+5. If the API shape changes, run `make codegen`.
 6. Run the relevant tests. At minimum, when markers or rules change, run
    `backend/apps/core/tests/test_route_inventory.py` and
    `backend/apps/core/tests/test_authz_registry_complete.py`. Target-aware

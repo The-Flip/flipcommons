@@ -29,7 +29,7 @@ from apps.core.types import JsonBody
 from apps.media.helpers import all_media, primary_media
 from apps.media.models import EntityMedia
 from apps.media.schemas import UploadedMediaSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
@@ -40,7 +40,6 @@ from apps.provenance.rate_limits import (
 from apps.provenance.schemas import (
     AttributionSchema,
     ChangeSetInputSchema,
-    RichTextSchema,
 )
 
 from ..cache import get_cached_response, models_all_key, set_cached_response
@@ -93,9 +92,10 @@ from .images import (
     media_prefetch,
     serialize_uploaded_media,
 )
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
+    CatalogDetailSchema,
     CreditSchema,
     DeleteResponseSchema,
     EditOptionSchema,
@@ -153,21 +153,20 @@ class ModelListItemSchema(Schema):
 
 class ModelVariantSchema(Schema):
     name: str
-    slug: str
+    public_id: str
     year: int | None = None
     variant_features: list[str] = []
 
 
 class ModelRef(Schema):
-    """A reference to a machine model with name, slug, and optional year."""
+    """A reference to a machine model by its public id, with optional year."""
 
     name: str
-    slug: str
+    public_id: str
     year: int | None = None
 
 
-class ModelDetailSchema(Schema):
-    name: str
+class ModelDetailSchema(CatalogDetailSchema):
     slug: str
     manufacturer: EntityRef | None = None
     corporate_entity: EntityRef | None = None
@@ -183,10 +182,9 @@ class ModelDetailSchema(Schema):
     flipper_count: int | None = None
     ipdb_id: int | None = None
     opdb_id: str | None = None
-    pinside_id: int | None = None
+    pinside_id: str | None = None
     ipdb_rating: float | None = None
     pinside_rating: float | None = None
-    description: RichTextSchema = RichTextSchema()
     abbreviations: list[str] = []
     extra_data: JsonBody
     credits: list[CreditSchema]
@@ -196,7 +194,7 @@ class ModelDetailSchema(Schema):
     uploaded_media: list[UploadedMediaSchema] = []
     variant_features: list[str] = []
     variants: list[ModelVariantSchema] = []
-    title: EntityRef | None = None
+    title: EntityRef
     cabinet: EntityRef | None = None
     game_format: EntityRef | None = None
     display_subtype: EntityRef | None = None
@@ -320,18 +318,18 @@ def _serialize_model_list(
     return ModelListItemSchema(
         name=pm.name,
         slug=pm.slug,
-        manufacturer=EntityRef(name=mfr.name, slug=mfr.slug) if mfr else None,
+        manufacturer=EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None,
         year=pm.year,
         technology_generation=(
             EntityRef(
                 name=pm.technology_generation.name,
-                slug=pm.technology_generation.slug,
+                public_id=pm.technology_generation.public_id,
             )
             if pm.technology_generation
             else None
         ),
         display_type=(
-            EntityRef(name=pm.display_type.name, slug=pm.display_type.slug)
+            EntityRef(name=pm.display_type.name, public_id=pm.display_type.public_id)
             if pm.display_type
             else None
         ),
@@ -340,7 +338,7 @@ def _serialize_model_list(
         pinside_rating=(
             float(pm.pinside_rating) if pm.pinside_rating is not None else None
         ),
-        themes=[EntityRef(name=t.name, slug=t.slug) for t in pm.themes.all()],
+        themes=[EntityRef(name=t.name, public_id=t.public_id) for t in pm.themes.all()],
         thumbnail_url=thumbnail_url,
     )
 
@@ -355,8 +353,6 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
 
     credits = [serialize_credit(c) for c in pm.credits.all()]
 
-    claims = active_claims(pm)
-
     media = all_media(pm)
     primary = [em for em in media if em.is_primary]
     thumbnail_url, hero_image_url = extract_image_urls(
@@ -364,13 +360,12 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
     )
     image_attribution = extract_image_attribution(pm.extra_data or {}, primary or None)
     uploaded_media = serialize_uploaded_media(media)
-    description = build_rich_text(pm, "description", claims)
     variant_features = _extract_variant_features(pm.extra_data or {})
 
     variants = [
         ModelVariantSchema(
             name=v.name,
-            slug=v.slug,
+            public_id=v.public_id,
             year=v.year,
             variant_features=_extract_variant_features(v.extra_data or {}),
         )
@@ -385,7 +380,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         variant_siblings = [
             ModelVariantSchema(
                 name=sib.name,
-                slug=sib.slug,
+                public_id=sib.public_id,
                 year=sib.year,
                 variant_features=_extract_variant_features(sib.extra_data or {}),
             )
@@ -408,11 +403,15 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
 
     return ModelDetailSchema(
         name=pm.name,
+        public_id=pm.public_id,
+        last_modified=pm.last_modified,
         slug=pm.slug,
-        description=description,
-        manufacturer=EntityRef(name=mfr.name, slug=mfr.slug) if mfr else None,
+        description=describe(pm),
+        manufacturer=EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None,
         corporate_entity=(
-            EntityRef(name=pm.corporate_entity.name, slug=pm.corporate_entity.slug)
+            EntityRef(
+                name=pm.corporate_entity.name, public_id=pm.corporate_entity.public_id
+            )
             if pm.corporate_entity
             else None
         ),
@@ -421,24 +420,26 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         technology_generation=(
             EntityRef(
                 name=pm.technology_generation.name,
-                slug=pm.technology_generation.slug,
+                public_id=pm.technology_generation.public_id,
             )
             if pm.technology_generation
             else None
         ),
         technology_subgeneration=(
-            EntityRef(name=subgen.name, slug=subgen.slug) if subgen else None
+            EntityRef(name=subgen.name, public_id=subgen.public_id) if subgen else None
         ),
         display_type=(
-            EntityRef(name=pm.display_type.name, slug=pm.display_type.slug)
+            EntityRef(name=pm.display_type.name, public_id=pm.display_type.public_id)
             if pm.display_type
             else None
         ),
         player_count=pm.player_count,
-        themes=[EntityRef(name=t.name, slug=t.slug) for t in pm.themes.all()],
+        themes=[EntityRef(name=t.name, public_id=t.public_id) for t in pm.themes.all()],
         production_quantity=pm.production_quantity,
         system=(
-            EntityRef(name=pm.system.name, slug=pm.system.slug) if pm.system else None
+            EntityRef(name=pm.system.name, public_id=pm.system.public_id)
+            if pm.system
+            else None
         ),
         flipper_count=pm.flipper_count,
         ipdb_id=pm.ipdb_id,
@@ -460,7 +461,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         variant_of=(
             ModelRef(
                 name=pm.variant_of.name,
-                slug=pm.variant_of.slug,
+                public_id=pm.variant_of.public_id,
                 year=pm.variant_of.year,
             )
             if pm.variant_of
@@ -470,63 +471,69 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         converted_from=(
             ModelRef(
                 name=pm.converted_from.name,
-                slug=pm.converted_from.slug,
+                public_id=pm.converted_from.public_id,
                 year=pm.converted_from.year,
             )
             if pm.converted_from
             else None
         ),
         conversions=[
-            ModelRef(name=c.name, slug=c.slug, year=c.year)
+            ModelRef(name=c.name, public_id=c.public_id, year=c.year)
             for c in pm.conversions.all()
         ],
         remake_of=(
             ModelRef(
                 name=pm.remake_of.name,
-                slug=pm.remake_of.slug,
+                public_id=pm.remake_of.public_id,
                 year=pm.remake_of.year,
             )
             if pm.remake_of
             else None
         ),
         remakes=[
-            ModelRef(name=r.name, slug=r.slug, year=r.year) for r in pm.remakes.all()
+            ModelRef(name=r.name, public_id=r.public_id, year=r.year)
+            for r in pm.remakes.all()
         ],
-        title=(EntityRef(name=pm.title.name, slug=pm.title.slug) if pm.title else None),
+        title=EntityRef(name=pm.title.name, public_id=pm.title.public_id),
         cabinet=(
-            EntityRef(name=pm.cabinet.name, slug=pm.cabinet.slug)
+            EntityRef(name=pm.cabinet.name, public_id=pm.cabinet.public_id)
             if pm.cabinet
             else None
         ),
         game_format=(
-            EntityRef(name=pm.game_format.name, slug=pm.game_format.slug)
+            EntityRef(name=pm.game_format.name, public_id=pm.game_format.public_id)
             if pm.game_format
             else None
         ),
         display_subtype=(
-            EntityRef(name=pm.display_subtype.name, slug=pm.display_subtype.slug)
+            EntityRef(
+                name=pm.display_subtype.name, public_id=pm.display_subtype.public_id
+            )
             if pm.display_subtype
             else None
         ),
         gameplay_features=[
             GameplayFeatureRef(
                 name=t.gameplayfeature.name,
-                slug=t.gameplayfeature.slug,
+                public_id=t.gameplayfeature.public_id,
                 count=t.count,
             )
             for t in pm.machinemodelgameplayfeature_set.all()
         ],
-        tags=[EntityRef(name=t.name, slug=t.slug) for t in pm.tags.all()],
+        tags=[EntityRef(name=t.name, public_id=t.public_id) for t in pm.tags.all()],
         reward_types=[
-            EntityRef(name=rt.name, slug=rt.slug) for rt in pm.reward_types.all()
+            EntityRef(name=rt.name, public_id=rt.public_id)
+            for rt in pm.reward_types.all()
         ],
         franchise=(
-            EntityRef(name=pm.title.franchise.name, slug=pm.title.franchise.slug)
+            EntityRef(
+                name=pm.title.franchise.name, public_id=pm.title.franchise.public_id
+            )
             if pm.title and pm.title.franchise
             else None
         ),
         series=(
-            EntityRef(name=pm.title.series.name, slug=pm.title.series.slug)
+            EntityRef(name=pm.title.series.name, public_id=pm.title.series.public_id)
             if pm.title and pm.title.series
             else None
         ),
@@ -1079,7 +1086,7 @@ def model_delete_preview(
     return ModelDeletePreviewSchema(
         name=pm.name,
         slug=pm.slug,
-        parent=EntityRef(name=pm.title.name, slug=pm.title.slug),
+        parent=EntityRef(name=pm.title.name, public_id=pm.title.public_id),
         changeset_count=changeset_count,
         blocked_by=[serialize_blocking_referrer(b) for b in plan.blockers],
     )

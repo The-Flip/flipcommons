@@ -450,7 +450,7 @@ class TestPatchSeriesResponseShape:
         assert data["titles"] == [
             {
                 "name": title.name,
-                "slug": title.slug,
+                "public_id": title.public_id,
                 "abbreviations": [],
                 "model_count": 1,
                 "manufacturer_name": "Williams",
@@ -460,7 +460,7 @@ class TestPatchSeriesResponseShape:
         ]
         assert data["credits"] == [
             {
-                "person": {"name": person.name, "slug": person.slug},
+                "person": {"name": person.name, "public_id": person.public_id},
                 "role": role.slug,
                 "role_display": role.name,
                 "role_sort_order": role.display_order,
@@ -512,18 +512,20 @@ class TestPatchSystemResponseShape:
         data = resp.json()
         assert data["manufacturer"] == {
             "name": manufacturer.name,
-            "slug": manufacturer.slug,
+            "public_id": manufacturer.public_id,
         }
         assert data["titles"] == [
             {
                 "name": title.name,
-                "slug": title.slug,
+                "public_id": title.public_id,
                 "year": 1997,
                 "manufacturer_name": manufacturer.name,
                 "thumbnail_url": None,
             }
         ]
-        assert data["sibling_systems"] == [{"name": sibling.name, "slug": sibling.slug}]
+        assert data["sibling_systems"] == [
+            {"name": sibling.name, "public_id": sibling.public_id}
+        ]
 
 
 @pytest.mark.django_db
@@ -555,9 +557,9 @@ class TestPatchRewardTypeResponseShape:
         assert data["machines"] == [
             {
                 "name": model.name,
-                "slug": model.slug,
+                "public_id": model.public_id,
                 "year": 1980,
-                "manufacturer": {"name": "Williams", "slug": "williams"},
+                "manufacturer": {"name": "Williams", "public_id": "williams"},
                 "technology_generation_name": "Solid State",
                 "thumbnail_url": None,
                 "variants": [],

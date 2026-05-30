@@ -6,11 +6,9 @@ export type LocationPart = {
 };
 
 export function buildLocationParts(loc: CorporateEntityLocationSchema): LocationPart[] {
-  const parts: LocationPart[] = [
-    { text: loc.display_name, href: `/locations/${loc.location_path}` },
-  ];
+  const parts: LocationPart[] = [{ text: loc.display_name, href: `/locations/${loc.public_id}` }];
   for (const ancestor of loc.ancestors) {
-    parts.push({ text: ancestor.display_name, href: `/locations/${ancestor.location_path}` });
+    parts.push({ text: ancestor.display_name, href: `/locations/${ancestor.public_id}` });
   }
   return parts;
 }

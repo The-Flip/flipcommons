@@ -28,8 +28,8 @@ describe('HierarchicalTaxonomyMobileMetaBar', () => {
     render(HierarchicalTaxonomyMobileMetaBarFixture, {
       props: {
         parents: [
-          { name: 'Physical Feature', slug: 'physical-feature' },
-          { name: 'Defense', slug: 'defense' },
+          { name: 'Physical Feature', public_id: 'physical-feature' },
+          { name: 'Defense', public_id: 'defense' },
         ],
       },
     });
@@ -44,9 +44,9 @@ describe('HierarchicalTaxonomyMobileMetaBar', () => {
     render(HierarchicalTaxonomyMobileMetaBarFixture, {
       props: {
         parents: [
-          { name: 'Blackjack', slug: 'blackjack' },
-          { name: 'Cards', slug: 'cards' },
-          { name: 'Gambling', slug: 'gambling' },
+          { name: 'Blackjack', public_id: 'blackjack' },
+          { name: 'Cards', public_id: 'cards' },
+          { name: 'Gambling', public_id: 'gambling' },
         ],
         aliases: [],
       },
@@ -90,7 +90,7 @@ describe('HierarchicalTaxonomyMobileMetaBar', () => {
     render(HierarchicalTaxonomyMobileMetaBarFixture, {
       props: {
         basePath: '/themes',
-        parents: [{ name: 'Sports', slug: 'sports' }],
+        parents: [{ name: 'Sports', public_id: 'sports' }],
         parentLabel: 'Parent themes',
       },
     });

@@ -3,7 +3,7 @@
   import { defaultTitleSectionSegment } from '$lib/components/editors/title-edit-sections';
 
   let { data } = $props();
-  let isSingleModel = $derived(!!data.title.model_detail);
+  let isSingleModel = $derived(!!data.profile.model_detail);
   let defaultSegment = $derived(defaultTitleSectionSegment(isSingleModel));
 </script>
 

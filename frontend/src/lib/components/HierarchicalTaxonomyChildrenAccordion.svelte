@@ -20,9 +20,9 @@
   <div class="mobile-only" data-testid="hierarchical-taxonomy-children-accordion">
     <AccordionSection {heading} {headingSize}>
       <ul class="children-list">
-        {#each children as child (child.slug)}
+        {#each children as child (child.public_id)}
           <li>
-            <a href={resolveHref(`${basePath}/${child.slug}`)}>{child.name}</a>
+            <a href={resolveHref(`${basePath}/${child.public_id}`)}>{child.name}</a>
           </li>
         {/each}
       </ul>

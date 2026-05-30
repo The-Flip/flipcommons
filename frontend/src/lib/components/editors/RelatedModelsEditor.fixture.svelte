@@ -2,9 +2,9 @@
   import RelatedModelsEditor from './RelatedModelsEditor.svelte';
 
   type RelatedModels = {
-    variant_of?: { slug: string } | null;
-    converted_from?: { slug: string } | null;
-    remake_of?: { slug: string } | null;
+    variant_of?: { public_id: string } | null;
+    converted_from?: { public_id: string } | null;
+    remake_of?: { public_id: string } | null;
   };
 
   let {

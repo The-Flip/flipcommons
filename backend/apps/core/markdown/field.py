@@ -1,15 +1,15 @@
 """``MarkdownField`` and the conversion path that doesn't touch ``RecordReference``.
 
-Catalog model files import :class:`MarkdownField` from here. This module
-intentionally does not import :mod:`apps.core.markdown.references`, so
-including a ``MarkdownField`` on a model never drags in the reference
-graph.
+Models import :class:`MarkdownField` from here (notably the
+``DescribedModel`` mixin). This module intentionally does not import
+:mod:`apps.core.markdown.references`, so including a ``MarkdownField`` on a
+model never drags in the reference graph.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -17,11 +17,9 @@ from django.forms import Textarea
 
 from apps.core.models.fields import _contribute_max_length_check
 from apps.core.validators import validate_no_mojibake as _validate_no_mojibake
-from apps.core.wikilinks import (
-    LinkType,
-    get_enabled_public_id_types,
-    get_patterns,
-)
+
+if TYPE_CHECKING:
+    from apps.core.wikilinks import LinkType
 
 DEFAULT_MARKDOWN_MAX_LENGTH = 10_000
 
@@ -100,6 +98,8 @@ def convert_authoring_to_storage(content: str) -> str:
     if not content:
         return content
 
+    from apps.core.wikilinks import get_enabled_public_id_types, get_patterns
+
     errors: list[str] = []
     for lt in get_enabled_public_id_types():
         pats = get_patterns(lt)
@@ -156,6 +156,8 @@ def convert_storage_to_authoring(content: str) -> str:
     """
     if not content:
         return content
+
+    from apps.core.wikilinks import get_enabled_public_id_types, get_patterns
 
     for lt in get_enabled_public_id_types():
         pats = get_patterns(lt)

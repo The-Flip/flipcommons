@@ -390,7 +390,7 @@ scope) and [accounts/api.py](../../../../backend/apps/accounts/api.py)
 
 ### 4. Regenerate types and simplify the frontend parser
 
-Run `make api-gen` to regenerate
+Run `make codegen` to regenerate
 [frontend/src/lib/api/schema.d.ts](../../../../frontend/src/lib/api/schema.d.ts).
 The generated file gains `ValidationErrorSchema`,
 `ValidationErrorBodySchema`, `RateLimitErrorSchema`, and
@@ -478,7 +478,7 @@ Update [parse-api-error.test.ts](../../../../frontend/src/lib/api/parse-api-erro
 
 ## Verification
 
-- `make api-gen` succeeds; `schema.d.ts` contains the four new
+- `make codegen` succeeds; `schema.d.ts` contains the four new
   schemas under `components.schemas`.
 - `make lint` and `make test` pass.
 - The new unit test for the `ValidationError` override (§2)

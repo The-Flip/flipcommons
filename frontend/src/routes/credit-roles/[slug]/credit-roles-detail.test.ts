@@ -3,9 +3,10 @@ import { load } from './+layout.server';
 
 const MOCK_DATA = {
   name: 'Design',
+  public_id: 'design',
   slug: 'design',
   display_order: 10,
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
   aliases: [],
   people: [],
 };
@@ -25,7 +26,10 @@ describe('credit-roles detail SSR route', () => {
       params: { slug: 'design' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ profile: MOCK_DATA });
+    expect(result).toEqual({
+      profile: MOCK_DATA,
+      jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
+    });
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/credit-role/design');

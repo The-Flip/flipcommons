@@ -13,8 +13,8 @@
   } from './title-edit-options';
 
   type FranchiseTitle = {
-    franchise?: { slug: string } | null;
-    series?: { slug: string } | null;
+    franchise?: { public_id: string } | null;
+    series?: { public_id: string } | null;
   };
 
   let {
@@ -32,8 +32,8 @@
 
   function extractFields(t: FranchiseTitle): FranchiseFormFields {
     return {
-      franchise: t.franchise?.slug ?? '',
-      series: t.series?.slug ?? '',
+      franchise: t.franchise?.public_id ?? '',
+      series: t.series?.public_id ?? '',
     };
   }
 

@@ -47,11 +47,11 @@ const EDIT_OPTIONS = {
 };
 
 const INITIAL_MODEL = {
-  technology_generation: { slug: 'solid-state' },
-  technology_subgeneration: { slug: 'wpc-95' },
-  system: { slug: 'wpc-95' },
-  display_type: { slug: 'dmd' },
-  display_subtype: { slug: 'orange-dmd' },
+  technology_generation: { public_id: 'solid-state' },
+  technology_subgeneration: { public_id: 'wpc-95' },
+  system: { public_id: 'wpc-95' },
+  display_type: { public_id: 'dmd' },
+  display_subtype: { public_id: 'orange-dmd' },
 };
 
 function mockGetResponses() {

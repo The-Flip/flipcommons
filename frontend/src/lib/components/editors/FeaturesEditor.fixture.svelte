@@ -2,15 +2,15 @@
   import FeaturesEditor from './FeaturesEditor.svelte';
 
   type FeaturesModel = {
-    game_format?: { slug: string } | null;
-    cabinet?: { slug: string } | null;
-    reward_types: { slug: string }[];
-    tags: { slug: string }[];
-    themes: { slug: string }[];
+    game_format?: { public_id: string } | null;
+    cabinet?: { public_id: string } | null;
+    reward_types: { public_id: string }[];
+    tags: { public_id: string }[];
+    themes: { public_id: string }[];
     production_quantity: string;
     player_count?: number | null;
     flipper_count?: number | null;
-    gameplay_features: { slug: string; count?: number | null }[];
+    gameplay_features: { public_id: string; count?: number | null }[];
   };
 
   let {

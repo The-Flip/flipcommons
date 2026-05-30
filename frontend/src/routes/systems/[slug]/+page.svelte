@@ -5,7 +5,7 @@
   import TitleCard from '$lib/components/cards/TitleCard.svelte';
 
   let { data } = $props();
-  let system = $derived(data.system);
+  let system = $derived(data.profile);
 </script>
 
 {#if system.description?.html}
@@ -23,7 +23,7 @@
     <ClientFilteredGrid items={system.titles} showCount={false}>
       {#snippet children(title)}
         <TitleCard
-          slug={title.slug}
+          slug={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}
           manufacturerName={title.manufacturer_name}

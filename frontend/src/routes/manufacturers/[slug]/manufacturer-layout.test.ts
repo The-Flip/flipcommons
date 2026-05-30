@@ -23,26 +23,28 @@ vi.mock('$lib/auth.svelte', () => ({
 }));
 
 import Harness from './layout.test-harness.svelte';
+import type { ManufacturerDetailSchema } from '$lib/api/schema';
 
 const MOCK_MANUFACTURER = {
   name: 'Williams',
+  public_id: 'williams',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'williams',
   description: {
     text: 'Historic manufacturer [1].',
     html: '<p>Historic manufacturer.</p>',
+    plain: 'Historic manufacturer.',
     citations: [],
     attribution: null,
   },
   year_start: 1985,
   year_end: 1999,
-  country: null,
-  headquarters: null,
   logo_url: null,
   website: 'https://williams.example',
   entities: [
     {
       name: 'Williams Electronics',
-      slug: 'williams-electronics',
+      public_id: 'williams-electronics',
       year_start: 1985,
       year_end: 1999,
       locations: [],
@@ -52,8 +54,7 @@ const MOCK_MANUFACTURER = {
   systems: [],
   persons: [],
   uploaded_media: [],
-  sources: [],
-};
+} satisfies ManufacturerDetailSchema;
 
 describe('manufacturer layout', () => {
   beforeEach(() => {
@@ -64,7 +65,7 @@ describe('manufacturer layout', () => {
 
   it('renders the action bar without the legacy tab navigation on the detail route', () => {
     const { body } = render(Harness, {
-      props: { data: { manufacturer: MOCK_MANUFACTURER } },
+      props: { data: { profile: MOCK_MANUFACTURER, jsonLd: {} } },
     });
 
     expect(body).toContain('History');
@@ -76,7 +77,7 @@ describe('manufacturer layout', () => {
     pageState.url = new URL('http://localhost:5173/manufacturers/williams/media');
 
     const { body } = render(Harness, {
-      props: { data: { manufacturer: MOCK_MANUFACTURER } },
+      props: { data: { profile: MOCK_MANUFACTURER, jsonLd: {} } },
     });
 
     expect(body).toContain('>Back<');
@@ -87,7 +88,7 @@ describe('manufacturer layout', () => {
     pageState.url = new URL('http://localhost:5173/manufacturers/williams/sources');
 
     const { body } = render(Harness, {
-      props: { data: { manufacturer: MOCK_MANUFACTURER } },
+      props: { data: { profile: MOCK_MANUFACTURER, jsonLd: {} } },
     });
 
     expect(body).toContain('Child content');
@@ -99,7 +100,7 @@ describe('manufacturer layout', () => {
     pageState.url = new URL('http://localhost:5173/manufacturers/williams/edit-history');
 
     const { body } = render(Harness, {
-      props: { data: { manufacturer: MOCK_MANUFACTURER } },
+      props: { data: { profile: MOCK_MANUFACTURER, jsonLd: {} } },
     });
 
     expect(body).toContain('Child content');
@@ -110,7 +111,7 @@ describe('manufacturer layout', () => {
     authState.isAuthenticated = true;
 
     const { body } = render(Harness, {
-      props: { data: { manufacturer: MOCK_MANUFACTURER } },
+      props: { data: { profile: MOCK_MANUFACTURER, jsonLd: {} } },
     });
 
     expect(body).toContain('Links');

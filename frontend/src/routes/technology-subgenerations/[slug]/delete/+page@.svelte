@@ -14,7 +14,7 @@
     preview.parent
       ? {
           text: preview.parent.name,
-          href: `/technology-generations/${preview.parent.slug}`,
+          href: `/technology-generations/${preview.parent.public_id}`,
         }
       : undefined,
   );

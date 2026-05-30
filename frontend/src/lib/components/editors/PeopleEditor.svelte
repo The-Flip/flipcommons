@@ -29,7 +29,7 @@
   function toKeyedCredits(credits: Credit[]): KeyedCredit[] {
     return credits.map((c) => ({
       key: keyCounter++,
-      person_slug: c.person.slug,
+      person_slug: c.person.public_id,
       role: c.role,
     }));
   }
@@ -38,7 +38,7 @@
   const originalCredits = untrack(() => initialData);
   let editCredits = $state<KeyedCredit[]>(untrack(() => toKeyedCredits(initialData)));
   let dirty = $derived.by(() => {
-    const original = originalCredits.map((credit) => `${credit.person.slug}:${credit.role}`);
+    const original = originalCredits.map((credit) => `${credit.person.public_id}:${credit.role}`);
     const current = editCredits.map((credit) => `${credit.person_slug}:${credit.role}`);
     return JSON.stringify(current) !== JSON.stringify(original);
   });

@@ -5,13 +5,12 @@ describe('buildLocationParts', () => {
   it('returns leaf plus ancestors using display_name', () => {
     expect(
       buildLocationParts({
-        location_path: 'usa/il/chicago',
+        public_id: 'usa/il/chicago',
         location_type: 'city',
         display_name: 'Chicago',
-        slug: 'chicago',
         ancestors: [
-          { display_name: 'Illinois', location_path: 'usa/il' },
-          { display_name: 'USA', location_path: 'usa' },
+          { display_name: 'Illinois', public_id: 'usa/il' },
+          { display_name: 'USA', public_id: 'usa' },
         ],
       }),
     ).toEqual([
@@ -24,10 +23,9 @@ describe('buildLocationParts', () => {
   it('returns just the leaf when there are no ancestors', () => {
     expect(
       buildLocationParts({
-        location_path: 'italy',
+        public_id: 'italy',
         location_type: 'country',
         display_name: 'Italy',
-        slug: 'italy',
         ancestors: [],
       }),
     ).toEqual([{ text: 'Italy', href: '/locations/italy' }]);

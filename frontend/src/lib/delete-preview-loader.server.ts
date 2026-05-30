@@ -4,7 +4,7 @@ import { requireCapability } from '$lib/require-capability.server';
 import type { paths } from '$lib/api/schema';
 
 // Entity-segment union derived from the schema's delete-preview routes.
-// New linkable entities pick this up automatically when api-gen runs.
+// New linkable entities pick this up automatically when codegen runs.
 type DeletePreviewEntity =
   Extract<
     keyof paths,

@@ -208,7 +208,7 @@ class TestPatchGameplayFeatureParents:
         client.force_login(user)
         resp = _patch(client, feature.slug, {"parents": ["scoring"]})
         assert resp.status_code == 200
-        assert [p["slug"] for p in resp.json()["parents"]] == ["scoring"]
+        assert [p["public_id"] for p in resp.json()["parents"]] == ["scoring"]
         feature.refresh_from_db()
         assert list(feature.parents.values_list("slug", flat=True)) == ["scoring"]
 
@@ -230,7 +230,7 @@ class TestPatchGameplayFeatureParents:
         _patch(client, feature.slug, {"parents": ["scoring"]})
         resp = _patch(client, feature.slug, {"parents": ["drop-targets"]})
         assert resp.status_code == 200
-        assert [p["slug"] for p in resp.json()["parents"]] == ["drop-targets"]
+        assert [p["public_id"] for p in resp.json()["parents"]] == ["drop-targets"]
 
     def test_invalid_parent_slug_returns_422(self, client, user, feature):
         client.force_login(user)
@@ -274,7 +274,7 @@ class TestPatchGameplayFeatureParents:
         assert resp.status_code == 200
         data = resp.json()
         assert data["description"]["text"] == "Updated"
-        assert [p["slug"] for p in data["parents"]] == ["scoring"]
+        assert [p["public_id"] for p in data["parents"]] == ["scoring"]
         # All claims in one changeset.
         assert ChangeSet.objects.count() == 1
         cs = _only_changeset()
@@ -289,7 +289,7 @@ class TestPatchGameplayFeatureParents:
         # PATCH with only fields, no parents key.
         resp = _patch(client, feature.slug, {"fields": {"description": "Updated"}})
         assert resp.status_code == 200
-        assert [p["slug"] for p in resp.json()["parents"]] == ["scoring"]
+        assert [p["public_id"] for p in resp.json()["parents"]] == ["scoring"]
 
 
 # ---------------------------------------------------------------------------

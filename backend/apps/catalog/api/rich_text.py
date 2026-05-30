@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from apps.catalog.models import CatalogModel
 from apps.core.markdown import convert_storage_to_authoring, render_markdown_field
+from apps.provenance.helpers import active_claims
 from apps.provenance.licensing import (
     build_source_field_license_map,
     resolve_effective_license,
@@ -17,7 +18,7 @@ from apps.provenance.schemas import (
     RichTextSchema,
 )
 
-__all__ = ["build_rich_text"]
+__all__ = ["build_rich_text", "describe"]
 
 
 def _extract_description_attribution(
@@ -59,7 +60,9 @@ def build_rich_text(
 
     The ``text`` value is returned in authoring format (``[[type:slug]]``)
     so edit forms show human-readable link references.  The ``html`` value
-    is rendered from the storage format and is display-ready.
+    is rendered from the storage format and is display-ready.  The ``plain``
+    value is the flattened, token-free projection for meta descriptions and
+    machine-readable consumers.
     """
     raw_text = getattr(obj, field_name, "") or ""
     text = convert_storage_to_authoring(raw_text) if raw_text else raw_text
@@ -73,6 +76,12 @@ def build_rich_text(
     return RichTextSchema(
         text=text,
         html=rendered.html,
+        plain=rendered.plain,
         citations=citations,
         attribution=attribution,
     )
+
+
+def describe(obj: CatalogModel) -> RichTextSchema:
+    """Build the description RichTextSchema for any catalog entity."""
+    return build_rich_text(obj, "description", active_claims(obj))

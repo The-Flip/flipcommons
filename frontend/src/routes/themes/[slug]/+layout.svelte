@@ -10,7 +10,7 @@
   } from '$lib/components/editors/hierarchical-taxonomy-edit-sections';
 
   let { data, children } = $props();
-  let theme = $derived(data.theme);
+  let theme = $derived(data.profile);
 
   const BASE_PATH = '/themes';
 
@@ -35,6 +35,7 @@
 
 <TaxonomyDetailBaseLayout
   profile={theme}
+  jsonLd={data.jsonLd}
   parentLabel="Themes"
   basePath={BASE_PATH}
   {sections}

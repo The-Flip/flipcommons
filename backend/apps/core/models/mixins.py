@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import datetime
 from typing import ClassVar, Self, TypeVar, cast
 
 from django.core.exceptions import ImproperlyConfigured
 from django.db import models
+from django.db.models.expressions import Combinable
 from django.db.models.functions import Now
 from django.utils.text import slugify
+
+from apps.core.markdown import MarkdownField
 
 
 class TimeStampedModel(models.Model):
@@ -19,6 +23,59 @@ class TimeStampedModel(models.Model):
 
     class Meta:
         abstract = True
+
+
+class LastUpdatedModel(models.Model):
+    """Entity freshness — when did this entity last meaningfully change.
+
+    The single definition of "last modified", consumed by both the sitemap's
+    ``<lastmod>`` and JSON-LD's ``dateModified`` so the two can never disagree.
+    Two facets of the same concept:
+
+    - ``lastmod_expression()`` — a queryset expression, for bulk contexts that
+      annotate many rows at once (``SitemappedModel.sitemap_queryset()``, the
+      detail-page annotation in ``register_entity_detail_page``).
+    - ``last_modified`` — the per-instance value, read off the ``_last_modified``
+      annotation those contexts set.
+
+    The default implementation assumes a physical ``updated_at`` column — i.e.
+    a concrete subclass also inherits ``TimeStampedModel``. A future *virtual*
+    entity (no physical ``updated_at``) inherits this concern standalone and
+    overrides both hooks to supply freshness another way. ``Title`` overrides
+    only ``lastmod_expression()`` to widen freshness over its child Models.
+    """
+
+    class Meta:
+        abstract = True
+
+    @classmethod
+    def lastmod_expression(cls) -> Combinable:
+        """Queryset expression yielding the freshness value. Override to widen.
+
+        ``updated_at`` comes from ``TimeStampedModel`` on the concrete subclass;
+        the parity test pins that inheritance contract.
+        """
+        return models.F("updated_at")
+
+    @property
+    def last_modified(self) -> datetime:
+        """Per-instance freshness — the value the sitemap emits as ``<lastmod>``.
+
+        Reads the ``_last_modified`` annotation when present — the sitemap and
+        the detail-page registrar set it via ``lastmod_expression()`` — else
+        falls back to ``updated_at``. For a model that doesn't override
+        ``lastmod_expression()`` the fallback is exactly the annotated value.
+        For one that does (``Title``), the fallback is the un-widened
+        ``updated_at``; that's why every read path the freshness value feeds
+        (sitemap, JSON-LD ``dateModified``) annotates rather than relying on
+        the property's bare attribute. ``_last_modified`` is a queryset
+        annotation, not a declared field, so ``getattr`` with a default is the
+        right read.
+        """
+        annotated = getattr(self, "_last_modified", None)
+        if annotated is not None:
+            return cast("datetime", annotated)
+        return cast("datetime", self.updated_at)  # type: ignore[attr-defined]
 
 
 class SluggedModel(models.Model):
@@ -146,6 +203,23 @@ class LifecycleStatusModel(models.Model):
 
 
 # ---------------------------------------------------------------------------
+# DescribedModel
+# ---------------------------------------------------------------------------
+
+
+class DescribedModel(models.Model):
+    """Adds a long-form markdown ``description`` field.
+
+    Inherit on any model that needs a description.
+    """
+
+    description = MarkdownField(blank=True)
+
+    class Meta:
+        abstract = True
+
+
+# ---------------------------------------------------------------------------
 # LinkableModel (link target registration)
 # ---------------------------------------------------------------------------
 
@@ -173,7 +247,7 @@ class LinkableModel(models.Model):
 
     ``entity_type`` and ``entity_type_plural`` together are the linguistic
     identity of a kind of entity — the single source of truth consumed by
-    ``get_linkable_model`` and ``export_catalog_meta``. All URL shapes and
+    ``get_linkable_model`` and ``export_entity_meta``. All URL shapes and
     UI labels derive from them; they do not drive backend behavior beyond
     URL and UI consistency.
 
@@ -252,42 +326,59 @@ class LinkableModel(models.Model):
         value: str = getattr(self, self.public_id_field)
         return value
 
-    # ---------------------------------------------------------------------
-    # Sitemap hooks
-    # ---------------------------------------------------------------------
-    # Defaults assume the concrete subclass also inherits
-    # ``LifecycleStatusModel`` (for ``.active()``) and ``TimeStampedModel``
-    # (for ``updated_at``). Every shipped concrete ``LinkableModel`` does, via
-    # ``CatalogModel`` + ``TimeStampedModel``. The parity test in
-    # ``apps/core/tests/test_linkable_model_lifecycle_parity.py`` pins that
-    # contract so a future subclass without the mixins fails CI rather than
-    # crashing at sitemap render. A subclass that doesn't / can't satisfy the
-    # contract MUST override ``sitemap_queryset`` (return ``cls.objects.none()``
-    # to opt out, or build the queryset by hand).
+
+# ---------------------------------------------------------------------------
+# SitemappedModel (sitemap membership)
+# ---------------------------------------------------------------------------
+
+
+class SitemappedModel(LinkableModel, LastUpdatedModel):
+    """Abstract base marking a model as a member of the sitemap.
+
+    Composes the two prerequisites for a sitemap entry: a canonical URL
+    (``LinkableModel``) and a freshness value (``LastUpdatedModel``). The
+    sitemap walk (``apps.core.sitemap.all_sitemap_feeds``) keys off this class,
+    so a ``LinkableModel`` that is *not* a ``SitemappedModel`` (a future
+    linkable-but-virtual entity, say) is simply absent from the sitemap rather
+    than crashing on a missing ``sitemap_queryset()``.
+
+    Defaults assume the concrete subclass also inherits ``LifecycleStatusModel``
+    (for ``.active()``) and ``TimeStampedModel`` (for ``updated_at``, via the
+    ``LastUpdatedModel`` default). Every shipped concrete ``SitemappedModel``
+    does, via ``CatalogModel`` + ``TimeStampedModel``. The parity test in
+    ``apps/core/tests/test_sitemapped_model_lifecycle_parity.py`` pins that
+    contract so a future subclass without the mixins fails CI rather than
+    crashing at sitemap render. A subclass that doesn't / can't satisfy the
+    contract MUST override ``sitemap_queryset`` (return ``cls.objects.none()``
+    to opt out, or build the queryset by hand).
+    """
+
+    class Meta:
+        abstract = True
 
     @classmethod
     def sitemap_queryset(cls) -> models.QuerySet[Self]:
-        """Active rows to include in the sitemap, annotated with ``_sitemap_lastmod``.
+        """Active rows to include in the sitemap, annotated with ``_last_modified``.
 
-        Default: ``.active()`` rows with ``_sitemap_lastmod = updated_at``.
-        Override to widen ``lastmod`` (e.g. aggregate child timestamps) — not
-        to narrow membership for canonical-URL reasons; use
-        ``non_canonical_detail_slugs()`` for that.
-
-        Return ``cls.objects.none()`` to opt a ``LinkableModel`` out of the
-        sitemap entirely.
+        Default: ``.active()`` rows with ``_last_modified`` from
+        ``lastmod_expression()`` (``updated_at`` unless a subclass widens it).
+        Override ``lastmod_expression()`` to widen ``lastmod`` (e.g. aggregate
+        child timestamps); override this method only to narrow membership, or
+        return ``cls.objects.none()`` to opt out of the sitemap entirely. Use
+        ``non_canonical_detail_slugs()`` to drop a detail URL for canonical-URL
+        reasons without removing the row.
         """
         # ``LinkableModel`` itself doesn't carry ``status`` or the lifecycle
         # manager; the default depends on the parity-tested mixin contract
-        # above, so cast at the boundary rather than tightening the abstract
-        # base's bases (which would force every ``LinkableModel`` to be a
+        # above, so cast at the boundary rather than tightening this abstract
+        # base's bases (which would force every ``SitemappedModel`` to be a
         # ``LifecycleStatusModel`` — too tight for future non-lifecycle
         # entities that opt out via override).
         objects = cast("LifecycleManager[Self]", cls._default_manager)
         return cast(
             "models.QuerySet[Self]",
             objects.active()
-            .annotate(_sitemap_lastmod=models.F("updated_at"))
+            .annotate(_last_modified=cls.lastmod_expression())
             # ``updated_at`` comes from ``TimeStampedModel``; django-stubs
             # can't see fields from a sibling mixin on the abstract base.
             # Parity test pins the contract.

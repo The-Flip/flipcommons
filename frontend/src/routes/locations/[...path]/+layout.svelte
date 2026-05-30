@@ -28,7 +28,7 @@
 
   let profile = $derived<LocationDetail>(data.profile);
   let isRoot = $derived(profile.location_type === null);
-  let path = $derived(profile.location_path);
+  let path = $derived(profile.public_id);
   let displayName = $derived(profile.name || 'Locations');
 
   let breadcrumbs = $derived<Crumb[] | null>(
@@ -38,7 +38,7 @@
           { label: 'Locations', href: '/locations' },
           ...profile.ancestors.map((a) => ({
             label: a.name,
-            href: `/locations/${a.location_path}`,
+            href: `/locations/${a.public_id}`,
           })),
         ],
   );
@@ -154,9 +154,9 @@
   {#if profile.children.length > 0}
     <SidebarSection heading={childrenHeading(profile.children)}>
       <SidebarList>
-        {#each profile.children as child (child.location_path)}
+        {#each profile.children as child (child.public_id)}
           <SidebarListItem>
-            <a href={resolve(`/locations/${child.location_path}`)}>
+            <a href={resolve(`/locations/${child.public_id}`)}>
               {child.name}
             </a>
             <span class="count">{child.manufacturer_count}</span>
@@ -183,7 +183,7 @@
       <LocationEditorSwitch
         sectionKey={key}
         initialData={profile}
-        publicId={profile.location_path}
+        publicId={profile.public_id}
         bind:editorRef={ref.current}
         {onsaved}
         {onerror}

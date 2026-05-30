@@ -102,7 +102,7 @@ class TestM2MThemes:
         client.force_login(user)
         resp = _patch(client, pm.slug, {"themes": ["medieval", "fantasy"]})
         assert resp.status_code == 200
-        slugs = sorted(t["slug"] for t in resp.json()["themes"])
+        slugs = sorted(t["public_id"] for t in resp.json()["themes"])
         assert slugs == ["fantasy", "medieval"]
 
     def test_remove_themes(self, client, user, pm, themes):
@@ -117,7 +117,7 @@ class TestM2MThemes:
         _patch(client, pm.slug, {"themes": ["medieval"]})
         resp = _patch(client, pm.slug, {"themes": ["fantasy", "horror"]})
         assert resp.status_code == 200
-        slugs = sorted(t["slug"] for t in resp.json()["themes"])
+        slugs = sorted(t["public_id"] for t in resp.json()["themes"])
         assert slugs == ["fantasy", "horror"]
 
     def test_null_leaves_unchanged(self, client, user, pm, themes):
@@ -127,7 +127,7 @@ class TestM2MThemes:
         resp = _patch(client, pm.slug, {"fields": {"year": 1998}})
         assert resp.status_code == 200
         assert len(resp.json()["themes"]) == 1
-        assert resp.json()["themes"][0]["slug"] == "medieval"
+        assert resp.json()["themes"][0]["public_id"] == "medieval"
 
 
 @pytest.mark.django_db
@@ -155,7 +155,7 @@ class TestM2MRewardTypes:
         client.force_login(user)
         resp = _patch(client, pm.slug, {"reward_types": ["multiball", "wizard-mode"]})
         assert resp.status_code == 200
-        slugs = sorted(rt["slug"] for rt in resp.json()["reward_types"])
+        slugs = sorted(rt["public_id"] for rt in resp.json()["reward_types"])
         assert slugs == ["multiball", "wizard-mode"]
 
         resp = _patch(client, pm.slug, {"reward_types": []})
@@ -180,7 +180,7 @@ class TestGameplayFeatures:
         assert resp.status_code == 200
         features = resp.json()["gameplay_features"]
         assert len(features) == 1
-        assert features[0]["slug"] == "ramps"
+        assert features[0]["public_id"] == "ramps"
         assert features[0]["count"] == 3
 
     def test_add_without_count(self, client, user, pm, gameplay_features):
@@ -193,7 +193,7 @@ class TestGameplayFeatures:
         assert resp.status_code == 200
         features = resp.json()["gameplay_features"]
         assert len(features) == 1
-        assert features[0]["slug"] == "loops"
+        assert features[0]["public_id"] == "loops"
         assert features[0]["count"] is None
 
     def test_update_count(self, client, user, pm, gameplay_features):
@@ -230,7 +230,7 @@ class TestGameplayFeatures:
             {"gameplay_features": [{"slug": "ramps", "count": 2}]},
         )
         assert resp.status_code == 200
-        slugs = [f["slug"] for f in resp.json()["gameplay_features"]]
+        slugs = [f["public_id"] for f in resp.json()["gameplay_features"]]
         assert slugs == ["ramps"]
 
 
@@ -373,7 +373,7 @@ class TestCredits:
         assert resp.status_code == 200
         credits = resp.json()["credits"]
         assert len(credits) == 2
-        persons = sorted(c["person"]["slug"] for c in credits)
+        persons = sorted(c["person"]["public_id"] for c in credits)
         assert persons == ["greg-freres", "pat-lawlor"]
 
     def test_remove_credit(self, client, user, pm, people, credit_roles):
@@ -411,7 +411,7 @@ class TestCredits:
         assert resp.status_code == 200
         credits = resp.json()["credits"]
         assert len(credits) == 1
-        assert credits[0]["person"]["slug"] == "john-youssi"
+        assert credits[0]["person"]["public_id"] == "john-youssi"
         assert credits[0]["role"] == "software"
 
     def test_clear_credits(self, client, user, pm, people, credit_roles):
@@ -517,4 +517,4 @@ class TestHierarchyFKValidation:
         client.force_login(user)
         resp = _patch(client, pm.slug, {"fields": {"variant_of": parent.slug}})
         assert resp.status_code == 200
-        assert resp.json()["variant_of"]["slug"] == "star-trek"
+        assert resp.json()["variant_of"]["public_id"] == "star-trek"

@@ -7,6 +7,7 @@
 
 <SimpleTaxonomyDetailLayout
   {profile}
+  jsonLd={data.jsonLd}
   parentLabel="Technology Generations"
   basePath="/technology-subgenerations"
   parentHref="/technology-generations"

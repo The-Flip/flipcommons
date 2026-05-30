@@ -5,6 +5,7 @@
   import RichTextReferencesAccordion from '$lib/components/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/rich-text-accordion-state.svelte';
   import { locationEditActionContext } from '$lib/components/editors/edit-action-context';
+  import JsonLd from '$lib/components/JsonLd.svelte';
   import type { LocationDetailSchema } from '$lib/api/schema';
 
   type LocationDetail = LocationDetailSchema;
@@ -15,6 +16,13 @@
   const richTextState = createRichTextAccordionState();
   let manufacturersHeading = $derived(`Manufacturers (${profile.manufacturer_count})`);
 </script>
+
+<!-- Rendered here (the detail leaf), not the layout: the `[...path]` rest
+     param defeats the shared subroute matcher, and this leaf only renders on
+     the exact detail route. `data.jsonLd` is undefined for the global root. -->
+{#if data.jsonLd}
+  <JsonLd data={data.jsonLd} />
+{/if}
 
 {#if profile.description?.html}
   <RichTextOverviewAccordion

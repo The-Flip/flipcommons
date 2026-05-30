@@ -4,20 +4,21 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import NamedTuple, cast
 
 from django.core.cache import cache
 from django.db.models import Count, F, Prefetch, Q
 from django.http import HttpRequest
+from django.utils import timezone
 from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
 from ninja.decorators import decorate_view
 from ninja.errors import HttpError
-from pydantic import Field
 
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.schemas import RichTextSchema
 
 from ..cache import locations_tree_key
@@ -31,7 +32,8 @@ from ..models import (
 from ..services.location_paths import lookup_child_division
 from ._typing import HasModelCount
 from .images import first_thumbnail
-from .rich_text import build_rich_text
+from .rich_text import describe
+from .schemas import CatalogDetailSchema
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -40,36 +42,31 @@ from .rich_text import build_rich_text
 
 class LocationManufacturerSchema(Schema):
     name: str
-    slug: str
+    public_id: str
     model_count: int = 0
     thumbnail_url: str | None = None
 
 
 class LocationChildRef(Schema):
     name: str
-    slug: str
-    location_path: str
+    public_id: str
     location_type: str
     manufacturer_count: int = 0
 
 
 class LocationAncestorRef(Schema):
     name: str
-    slug: str
-    location_path: str
+    public_id: str
 
 
-class LocationDetailSchema(Schema):
-    name: str
+class LocationDetailSchema(CatalogDetailSchema):
     slug: str
-    location_path: str
     location_type: str | None = None
     # Server-derived label for the next tier of children (e.g. "state",
     # "city"). ``None`` when divisions are missing or exhausted; the
     # frontend uses this to suppress the "+ New …" action rather than
     # show a wrong label.
     expected_child_type: str | None = None
-    description: RichTextSchema = Field(default_factory=RichTextSchema)
     short_name: str | None = None
     code: str | None = None
     divisions: list[str] | None = None
@@ -98,6 +95,10 @@ class _LocationNode:
     short_name: str
     code: str
     aliases: tuple[str, ...]
+    # Freshness for JSON-LD ``dateModified`` / sitemap ``<lastmod>``; sourced
+    # from ``Location.last_modified`` (== ``updated_at``, Location doesn't
+    # widen) at cache-build time so detail reads stay zero-query.
+    last_modified: datetime
     # Pre-rendered at cache-build time so public detail reads stay
     # zero-query. Description rendering has no rank dependency
     # (``build_rich_text`` only consults claims for attribution; rank
@@ -171,8 +172,9 @@ def _get_location_tree() -> _LocationTree:
             short_name=loc.short_name,
             code=loc.code,
             aliases=tuple(a.value for a in loc.aliases.all()),
-            description=build_rich_text(loc, "description", active_claims(loc)),
+            description=describe(loc),
             divisions=tuple(loc.divisions or ()),
+            last_modified=loc.last_modified,
         )
         children_index.setdefault(parent_path, []).append(loc.location_path)
 
@@ -212,8 +214,7 @@ def _ancestors_of(path: str, nodes: dict[str, _LocationNode]) -> list[_LocationN
 def _to_child_ref(node: _LocationNode) -> LocationChildRef:
     return LocationChildRef(
         name=node.name,
-        slug=node.slug,
-        location_path=node.location_path,
+        public_id=node.location_path,
         location_type=node.location_type,
         manufacturer_count=len(node.manufacturer_pks),
     )
@@ -252,7 +253,7 @@ def _get_manufacturers_for_pks(pks: Iterable[int]) -> list[LocationManufacturerS
     return [
         LocationManufacturerSchema(
             name=mfr.name,
-            slug=mfr.slug,
+            public_id=mfr.public_id,
             model_count=cast(HasModelCount, mfr).model_count,
             thumbnail_url=first_thumbnail(mfr.entities.all(), min_rank=min_rank),
         )
@@ -282,8 +283,15 @@ def _get_location_detail(location_path: str) -> LocationDetailSchema:
         )
         return LocationDetailSchema(
             name="",
+            public_id="",
+            # Synthetic root (the /locations listing, not a real entity):
+            # freshness is the newest location in the tree, falling back to
+            # now when the catalog has no locations yet.
+            last_modified=max(
+                (n.last_modified for n in nodes.values()),
+                default=timezone.now(),
+            ),
             slug="",
-            location_path="",
             location_type=None,
             # Top-level "+ New …" creates a country; the form has its
             # own divisions input so no derivation is needed here.
@@ -311,8 +319,9 @@ def _get_location_detail(location_path: str) -> LocationDetailSchema:
 
     return LocationDetailSchema(
         name=node.name,
+        public_id=location_path,
+        last_modified=node.last_modified,
         slug=node.slug,
-        location_path=location_path,
         location_type=node.location_type,
         expected_child_type=expected_child_type,
         description=node.description,
@@ -322,7 +331,7 @@ def _get_location_detail(location_path: str) -> LocationDetailSchema:
         aliases=list(node.aliases),
         manufacturer_count=len(node.manufacturer_pks),
         ancestors=[
-            LocationAncestorRef(name=a.name, slug=a.slug, location_path=a.location_path)
+            LocationAncestorRef(name=a.name, public_id=a.location_path)
             for a in ancestors
         ],
         children=[_to_child_ref(c) for c in children],

@@ -231,7 +231,7 @@ class TestDeletePreview:
         # Regression guard: CE was registered with parent_field="manufacturer",
         # so the preview must surface the parent so the UI can redirect back
         # to the manufacturer after delete (mirroring Model → Title UX).
-        assert body["parent"] == {"name": mfr.name, "slug": mfr.slug}
+        assert body["parent"] == {"name": mfr.name, "public_id": mfr.public_id}
 
     def test_preview_surfaces_blockers(self, client, user, bootstrap_source, ce):
         _make_model(bootstrap_source, ce, "mm-pro")

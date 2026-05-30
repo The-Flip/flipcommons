@@ -2,7 +2,7 @@
   import { resolve } from '$app/paths';
 
   let { data } = $props();
-  let mfr = $derived(data.manufacturer);
+  let mfr = $derived(data.profile);
 </script>
 
 <section class="systems">
@@ -10,9 +10,9 @@
     <p class="empty">No systems for this manufacturer.</p>
   {:else}
     <ul>
-      {#each mfr.systems as system (system.slug)}
+      {#each mfr.systems as system (system.public_id)}
         <li>
-          <a href={resolve(`/systems/${system.slug}`)}>{system.name}</a>
+          <a href={resolve(`/systems/${system.public_id}`)}>{system.name}</a>
         </li>
       {/each}
     </ul>

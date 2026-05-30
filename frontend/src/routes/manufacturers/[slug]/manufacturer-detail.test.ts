@@ -5,9 +5,12 @@ import { load } from './+layout.server';
 
 const MOCK_MANUFACTURER = {
   name: 'Williams',
+  public_id: 'williams',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'williams',
   description: {
     text: 'Historic manufacturer [1].',
+    plain: 'Historic manufacturer.',
     html: '<p>Historic manufacturer.</p>',
     citations: [
       {
@@ -42,7 +45,7 @@ const MOCK_MANUFACTURER = {
   entities: [
     {
       name: 'Williams Electronics',
-      slug: 'williams-electronics',
+      public_id: 'williams-electronics',
       year_start: 1985,
       year_end: 1999,
       locations: [],
@@ -51,13 +54,13 @@ const MOCK_MANUFACTURER = {
   titles: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
       thumbnail_url: null,
     },
   ],
-  systems: [{ name: 'WPC-95', slug: 'wpc-95' }],
-  persons: [{ name: 'Pat Lawlor', slug: 'pat-lawlor', roles: ['Designer'] }],
+  systems: [{ name: 'WPC-95', public_id: 'wpc-95' }],
+  persons: [{ name: 'Pat Lawlor', public_id: 'pat-lawlor', roles: ['Designer'] }],
   uploaded_media: [
     {
       asset_uuid: 'asset-1',
@@ -87,7 +90,10 @@ describe('manufacturer detail SSR route', () => {
       params: { slug: 'williams' },
     } as unknown as Parameters<typeof load>[0]);
 
-    expect(result).toEqual({ manufacturer: MOCK_MANUFACTURER });
+    expect(result).toEqual({
+      profile: MOCK_MANUFACTURER,
+      jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
+    });
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/manufacturer/williams');
@@ -108,7 +114,7 @@ describe('manufacturer detail SSR route', () => {
   it('renders meaningful manufacturer content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { manufacturer: MOCK_MANUFACTURER },
+        data: { profile: MOCK_MANUFACTURER, jsonLd: {} },
       },
     });
 

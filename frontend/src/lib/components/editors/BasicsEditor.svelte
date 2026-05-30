@@ -17,8 +17,8 @@
   type BasicsModel = {
     year?: number | null;
     month?: number | null;
-    title?: { slug: string } | null;
-    corporate_entity?: { slug: string } | null;
+    title?: { public_id: string } | null;
+    corporate_entity?: { public_id: string } | null;
   };
 
   // `slim` hides the Title picker. Used on single-model combined edit, where
@@ -44,8 +44,8 @@
     return {
       year: m.year ?? '',
       month: m.month ?? '',
-      title: m.title?.slug ?? '',
-      corporate_entity: m.corporate_entity?.slug ?? '',
+      title: m.title?.public_id ?? '',
+      corporate_entity: m.corporate_entity?.public_id ?? '',
     };
   }
 

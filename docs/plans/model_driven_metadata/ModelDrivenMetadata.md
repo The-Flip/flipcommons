@@ -37,7 +37,7 @@ The goal is to encode as much of the knowledge that varies as possible **into th
 
 ### Test-shape smells
 
-- the parameterized test suite that walks the entity-type registry has a per-model skip list (e.g. `UNMAPPED_ROUTE_DIRS` in `catalog-meta.test.ts`). Every entry in such a list is an admission of an unfixed gap.
+- the parameterized test suite that walks the entity-type registry has a per-model skip list (e.g. `UNMAPPED_ROUTE_DIRS` in `entity-meta.test.ts`). Every entry in such a list is an admission of an unfixed gap.
 - per-model test files duplicate the same provenance/URL/CRUD assertions across models with only the model import changed. The generic suite should cover those; per-model tests should only cover genuine UI/semantic differences.
 
 ### Process and tooling smells
@@ -123,7 +123,7 @@ There is no single perfect file to copy. The current best examples are best for 
 - **Best discovery-helper cache:** [`_alias_registry.py`](../../backend/apps/catalog/_alias_registry.py) — `catalog_app_subclasses(AliasModel)` walk, `lru_cache(maxsize=1)`, typed `NamedTuple` return, and explicit `alias_claim_field` identity enforced by `AliasModel.__init_subclass__`.
 - **Best runtime schema validator:** [`provenance/validation.py`](../../backend/apps/provenance/validation.py)'s `RelationshipSchema` / `ValueKeySpec` registry — typed frozen schemas, registration-time invariant checks, duplicate-schema rejection, and a small public API. Caveat: it is intentionally hand-registered today, not model-owned metadata; use it for validation shape, not discovery shape.
 
-**Don't copy:** `MEDIA_CATEGORIES` + `MediaSupported` (no discovery helper, no validator); `export_catalog_meta` for runtime metadata (it is a codegen/distribution pattern, not a Python runtime registry).
+**Don't copy:** `MEDIA_CATEGORIES` + `MediaSupported` (no discovery helper, no validator); `export_entity_meta` for runtime metadata (it is a codegen/distribution pattern, not a Python runtime registry).
 
 #### Worked example
 
@@ -154,7 +154,7 @@ Meta-norm: no model carries a spec it doesn't apply to. Absence is default; decl
 
 **When to use it.** Model metadata needs to reach consumers that can't import Python — the SvelteKit frontend, the OpenAPI schema, external tools, any sibling service. The patterns above cover Python runtime consumers; codegen extends any of them to non-Python consumers.
 
-The canonical example already in the codebase: `export_catalog_meta` generates `frontend/src/lib/api/catalog-meta.ts` from Django models. The rules generalize to any upstream shape → any downstream artifact:
+The canonical example already in the codebase: `export_entity_meta` generates `frontend/src/lib/entities/entity-meta.ts` from Django models. The rules generalize to any upstream shape → any downstream artifact:
 
 - Generators read models + specs + `_meta`. They never invert the dependency.
 - Generated artifacts are derived and not hand-edited; checking them into git is fine but they stay clearly downstream.

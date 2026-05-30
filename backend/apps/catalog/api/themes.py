@@ -14,9 +14,8 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import RichTextSchema
 
 from ..models import MachineModel, Theme
 from ._counts import bulk_title_counts_via_models
@@ -30,8 +29,9 @@ from .edit_claims import (
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .helpers import serialize_title_machine
 from .images import fetch_model_media_map
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
+    CatalogDetailSchema,
     EntityRef,
     HierarchyClaimPatchSchema,
     TitleModelSchema,
@@ -50,10 +50,8 @@ class ThemeListItemSchema(Schema):
     parent_slugs: list[str] = []
 
 
-class ThemeDetailSchema(Schema):
-    name: str
+class ThemeDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     aliases: list[str] = []
     parents: list[EntityRef] = []
     children: list[EntityRef] = []
@@ -87,12 +85,17 @@ def _serialize_detail(theme: Theme) -> ThemeDetailSchema:
     media_by_model = fetch_model_media_map(pm.pk for pm in machines_list)
     return ThemeDetailSchema(
         name=theme.name,
+        public_id=theme.public_id,
+        last_modified=theme.last_modified,
         slug=theme.slug,
-        description=build_rich_text(theme, "description", active_claims(theme)),
+        description=describe(theme),
         aliases=[a.value for a in theme.aliases.all()],
-        parents=[EntityRef(name=t.name, slug=t.slug) for t in theme.parents.all()],
+        parents=[
+            EntityRef(name=t.name, public_id=t.public_id) for t in theme.parents.all()
+        ],
         children=[
-            EntityRef(name=t.name, slug=t.slug) for t in theme.children.order_by("name")
+            EntityRef(name=t.name, public_id=t.public_id)
+            for t in theme.children.order_by("name")
         ],
         machines=[
             serialize_title_machine(

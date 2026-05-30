@@ -33,19 +33,19 @@ const williams = makeMfr({
   model_count: 50,
   search_text: 'Williams Electronic Manufacturing | Chicago | Illinois | USA',
   locations: [
-    { slug: 'chicago-illinois-usa', name: 'Chicago, Illinois, USA' },
-    { slug: 'illinois-usa', name: 'Illinois, USA' },
-    { slug: 'usa', name: 'USA' },
+    { public_id: 'chicago-illinois-usa', name: 'Chicago, Illinois, USA' },
+    { public_id: 'illinois-usa', name: 'Illinois, USA' },
+    { public_id: 'usa', name: 'USA' },
   ],
   year_min: 1958,
   year_max: 1999,
   persons: [
-    { slug: 'pat-lawlor', name: 'Pat Lawlor' },
-    { slug: 'steve-ritchie', name: 'Steve Ritchie' },
+    { public_id: 'pat-lawlor', name: 'Pat Lawlor' },
+    { public_id: 'steve-ritchie', name: 'Steve Ritchie' },
   ],
   tech_generations: [
-    { slug: 'electromechanical', name: 'Electromechanical' },
-    { slug: 'solid-state', name: 'Solid State' },
+    { public_id: 'electromechanical', name: 'Electromechanical' },
+    { public_id: 'solid-state', name: 'Solid State' },
   ],
 });
 
@@ -55,14 +55,14 @@ const stern = makeMfr({
   model_count: 80,
   search_text: 'Stern Pinball | Elk Grove Village | Illinois | USA',
   locations: [
-    { slug: 'elk-grove-village-illinois-usa', name: 'Elk Grove Village, Illinois, USA' },
-    { slug: 'illinois-usa', name: 'Illinois, USA' },
-    { slug: 'usa', name: 'USA' },
+    { public_id: 'elk-grove-village-illinois-usa', name: 'Elk Grove Village, Illinois, USA' },
+    { public_id: 'illinois-usa', name: 'Illinois, USA' },
+    { public_id: 'usa', name: 'USA' },
   ],
   year_min: 1999,
   year_max: 2025,
-  persons: [{ slug: 'steve-ritchie', name: 'Steve Ritchie' }],
-  tech_generations: [{ slug: 'solid-state', name: 'Solid State' }],
+  persons: [{ public_id: 'steve-ritchie', name: 'Steve Ritchie' }],
+  tech_generations: [{ public_id: 'solid-state', name: 'Solid State' }],
 });
 
 const zaccaria = makeMfr({
@@ -71,13 +71,13 @@ const zaccaria = makeMfr({
   model_count: 30,
   search_text: 'Zaccaria | Bologna | Italy',
   locations: [
-    { slug: 'bologna-italy', name: 'Bologna, Italy' },
-    { slug: 'italy', name: 'Italy' },
+    { public_id: 'bologna-italy', name: 'Bologna, Italy' },
+    { public_id: 'italy', name: 'Italy' },
   ],
   year_min: 1974,
   year_max: 1987,
   persons: [],
-  tech_generations: [{ slug: 'solid-state', name: 'Solid State' }],
+  tech_generations: [{ public_id: 'solid-state', name: 'Solid State' }],
 });
 
 const allMfrs = [williams, stern, zaccaria];

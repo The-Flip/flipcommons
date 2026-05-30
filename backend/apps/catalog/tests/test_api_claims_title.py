@@ -111,7 +111,7 @@ class TestPatchTitleClaims:
         data = resp.json()
         assert data["name"] == "Medieval Madness Remastered"
         assert data["description"]["text"] == "Updated title copy"
-        assert data["franchise"]["slug"] == franchise.slug
+        assert data["franchise"]["public_id"] == franchise.public_id
 
         title.refresh_from_db()
         assert title.name == "Medieval Madness Remastered"
@@ -149,7 +149,7 @@ class TestPatchTitleClaims:
             {"fields": {"franchise": franchise.slug}},
         )
         assert resp.status_code == 200
-        assert resp.json()["franchise"]["slug"] == franchise.slug
+        assert resp.json()["franchise"]["public_id"] == franchise.public_id
 
         resp = _patch(
             client,
@@ -157,7 +157,7 @@ class TestPatchTitleClaims:
             {"fields": {"franchise": other_franchise.slug}},
         )
         assert resp.status_code == 200
-        assert resp.json()["franchise"]["slug"] == other_franchise.slug
+        assert resp.json()["franchise"]["public_id"] == other_franchise.public_id
 
         resp = _patch(
             client,

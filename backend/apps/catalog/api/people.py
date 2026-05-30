@@ -30,7 +30,7 @@ from apps.core.schemas import (
 )
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
@@ -38,7 +38,7 @@ from apps.provenance.rate_limits import (
     EDIT_RATE_LIMIT_SPEC,
     rate_limited,
 )
-from apps.provenance.schemas import ChangeSetInputSchema, RichTextSchema
+from apps.provenance.schemas import ChangeSetInputSchema
 
 from ..cache import get_cached_response, people_all_key, set_cached_response
 from ..models import Credit, MachineModel, Person
@@ -58,9 +58,10 @@ from .images import (
     media_prefetch,
     serialize_uploaded_media,
 )
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
+    CatalogDetailSchema,
     ClaimPatchSchema,
     DeleteResponseSchema,
     EntityCreateInputSchema,
@@ -100,10 +101,8 @@ class PersonTitleSchema(RelatedTitleSchema):
     roles: list[str] = []
 
 
-class PersonDetailSchema(Schema):
-    name: str
+class PersonDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     birth_year: int | None = None
     birth_month: int | None = None
     birth_day: int | None = None
@@ -113,6 +112,7 @@ class PersonDetailSchema(Schema):
     birth_place: str | None = None
     nationality: str | None = None
     photo_url: str | None = None
+    wikidata_id: str | None = None
     titles: list[PersonTitleSchema]
     uploaded_media: list[UploadedMediaSchema] = []
 
@@ -125,7 +125,7 @@ class PersonDetailSchema(Schema):
 @dataclass
 class _PersonTitleAccum:
     name: str
-    slug: str
+    public_id: str
     year: int | None
     manufacturer_name: str | None
     thumbnail_url: str | None
@@ -158,7 +158,7 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
         if key not in accum:
             accum[key] = _PersonTitleAccum(
                 name=title.name,
-                slug=title.slug,
+                public_id=title.public_id,
                 year=c.model.year,
                 manufacturer_name=(
                     c.model.corporate_entity.manufacturer.name
@@ -176,7 +176,7 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
     titles = [
         PersonTitleSchema(
             name=a.name,
-            slug=a.slug,
+            public_id=a.public_id,
             year=a.year,
             manufacturer_name=a.manufacturer_name,
             thumbnail_url=a.thumbnail_url,
@@ -186,8 +186,10 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
     ]
     return PersonDetailSchema(
         name=person.name,
+        public_id=person.public_id,
+        last_modified=person.last_modified,
         slug=person.slug,
-        description=build_rich_text(person, "description", active_claims(person)),
+        description=describe(person),
         birth_year=person.birth_year,
         birth_month=person.birth_month,
         birth_day=person.birth_day,
@@ -197,6 +199,7 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
         birth_place=person.birth_place,
         nationality=person.nationality,
         photo_url=person.photo_url,
+        wikidata_id=person.wikidata_id,
         titles=titles,
         uploaded_media=serialize_uploaded_media(all_media(person)),
     )

@@ -23,12 +23,15 @@ vi.mock('$lib/auth.svelte', () => ({
 }));
 
 import Harness from './layout.test-harness.svelte';
+import type { TitleDetailSchema } from '$lib/api/schema';
 
 const MOCK_TITLE = {
   name: 'Medieval Madness',
+  public_id: 'medieval-madness',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'medieval-madness',
   abbreviations: [],
-  description: { text: '', html: '', citations: [], attribution: null },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
   needs_review: false,
   needs_review_notes: '',
   review_links: [],
@@ -37,9 +40,9 @@ const MOCK_TITLE = {
   machines: [
     {
       name: 'Medieval Madness',
-      slug: 'medieval-madness',
+      public_id: 'medieval-madness',
       year: 1997,
-      manufacturer: { name: 'Williams', slug: 'williams' },
+      manufacturer: { name: 'Williams', public_id: 'williams' },
       technology_generation_name: 'Solid State',
       thumbnail_url: null,
       variants: [],
@@ -53,8 +56,7 @@ const MOCK_TITLE = {
   opdb_id: null,
   fandom_page_id: null,
   model_detail: null,
-  sources: [],
-};
+} satisfies TitleDetailSchema;
 
 describe('title layout', () => {
   beforeEach(() => {
@@ -65,7 +67,7 @@ describe('title layout', () => {
 
   it('omits the Back link on the detail route', () => {
     const { body } = render(Harness, {
-      props: { data: { title: MOCK_TITLE } },
+      props: { data: { profile: MOCK_TITLE } },
     });
 
     expect(body).toContain('History');
@@ -76,7 +78,7 @@ describe('title layout', () => {
     pageState.url = new URL('http://localhost:5173/titles/medieval-madness/sources');
 
     const { body } = render(Harness, {
-      props: { data: { title: MOCK_TITLE } },
+      props: { data: { profile: MOCK_TITLE } },
     });
 
     // Layout renders only the child in focus mode; chrome is gone.
@@ -90,7 +92,7 @@ describe('title layout', () => {
     pageState.url = new URL('http://localhost:5173/titles/medieval-madness/edit-history');
 
     const { body } = render(Harness, {
-      props: { data: { title: MOCK_TITLE } },
+      props: { data: { profile: MOCK_TITLE } },
     });
 
     expect(body).toContain('Child content');
@@ -111,15 +113,17 @@ describe('title layout', () => {
     const singleModelTitle = {
       ...MOCK_TITLE,
       name: 'Doctor Who',
+      public_id: 'doctor-who',
       slug: 'doctor-who',
       model_detail: {
         name: 'Doctor Who',
+        public_id: 'doctor-who-1992',
+        last_modified: '2026-01-01T00:00:00Z',
         slug: 'doctor-who-1992',
-        description: { text: '', html: '', citations: [], attribution: null },
+        description: { text: '', html: '', plain: '', citations: [], attribution: null },
         abbreviations: [],
         extra_data: {},
         credits: [],
-        sources: [],
         uploaded_media: [],
         variant_features: [],
         variants: [],
@@ -132,11 +136,12 @@ describe('title layout', () => {
         remakes: [],
         title_models: [],
         production_quantity: '',
+        title: { name: 'Doctor Who', public_id: 'doctor-who' },
       },
-    };
+    } satisfies TitleDetailSchema;
 
     const { body } = render(Harness, {
-      props: { data: { title: singleModelTitle } } as never,
+      props: { data: { profile: singleModelTitle } },
     });
 
     // Two ActionMenu triggers: History and Sources. (Multi-Model titles have
@@ -155,10 +160,10 @@ describe('title layout', () => {
     const { body } = render(Harness, {
       props: {
         data: {
-          title: {
+          profile: {
             ...MOCK_TITLE,
-            franchise: { name: 'Williams Classics', slug: 'williams-classics' },
-          },
+            franchise: { name: 'Williams Classics', public_id: 'williams-classics' },
+          } satisfies TitleDetailSchema,
         },
       },
     });

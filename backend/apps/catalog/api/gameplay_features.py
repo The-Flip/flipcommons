@@ -15,9 +15,8 @@ from apps.core.authz.types import Activity
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import RichTextSchema
 
 from ..models import GameplayFeature
 from ._counts import bulk_title_counts_via_models
@@ -30,8 +29,9 @@ from .edit_claims import (
 )
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .images import media_prefetch, serialize_uploaded_media
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
+    CatalogDetailSchema,
     EntityRef,
     HierarchyClaimPatchSchema,
 )
@@ -49,10 +49,8 @@ class GameplayFeatureListItemSchema(Schema):
     parent_slugs: list[str] = []
 
 
-class GameplayFeatureDetailSchema(Schema):
-    name: str
+class GameplayFeatureDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     aliases: list[str] = []
     parents: list[EntityRef] = []
     children: list[EntityRef] = []
@@ -77,12 +75,16 @@ def _detail_qs() -> QuerySet[GameplayFeature]:
 def _serialize_detail(feature: GameplayFeature) -> GameplayFeatureDetailSchema:
     return GameplayFeatureDetailSchema(
         name=feature.name,
+        public_id=feature.public_id,
+        last_modified=feature.last_modified,
         slug=feature.slug,
-        description=build_rich_text(feature, "description", active_claims(feature)),
+        description=describe(feature),
         aliases=[a.value for a in feature.aliases.all()],
-        parents=[EntityRef(name=p.name, slug=p.slug) for p in feature.parents.all()],
+        parents=[
+            EntityRef(name=p.name, public_id=p.public_id) for p in feature.parents.all()
+        ],
         children=[
-            EntityRef(name=c.name, slug=c.slug)
+            EntityRef(name=c.name, public_id=c.public_id)
             for c in feature.children.order_by("name")
         ],
         uploaded_media=serialize_uploaded_media(all_media(feature)),

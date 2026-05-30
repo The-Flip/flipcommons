@@ -24,7 +24,6 @@ vi.mock('$app/navigation', () => ({
 const FIELD_CONSTRAINTS = {
   data: {
     ipdb_id: { min: 1, max: 999999, step: 1 },
-    pinside_id: { min: 1, max: 999999, step: 1 },
     ipdb_rating: { min: 1, max: 10, step: 0.1 },
     pinside_rating: { min: 1, max: 10, step: 0.1 },
   },
@@ -33,7 +32,7 @@ const FIELD_CONSTRAINTS = {
 const INITIAL_MODEL = {
   ipdb_id: 1521,
   opdb_id: 'mm',
-  pinside_id: 1234,
+  pinside_id: 'medieval-madness',
   ipdb_rating: 8.3,
   pinside_rating: 8.7,
 };

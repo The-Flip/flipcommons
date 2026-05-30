@@ -4,7 +4,7 @@
       "Bash(./scripts/test:*)",
       "Bash(detect-secrets scan:*)",
       "Bash(git ls-remote:*)",
-      "Bash(make api-gen:*)",
+      "Bash(make codegen:*)",
       "Bash(make lint:*)",
       "Bash(make quality:*)",
       "Bash(make test:*)",

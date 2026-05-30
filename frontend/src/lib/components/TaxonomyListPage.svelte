@@ -14,10 +14,10 @@
   import { auth } from '$lib/auth.svelte';
   import { normalizeText, resolveHref } from '$lib/utils';
   import { pageTitle } from '$lib/constants';
-  import { CATALOG_META, type CatalogEntityKey } from '$lib/api/catalog-meta';
+  import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
   interface Props {
-    /** Catalog entity key. Title, basePath, singular/plural labels, and endpoint are derived from CATALOG_META. */
+    /** Catalog entity key. Title, basePath, singular/plural labels, and endpoint are derived from ENTITY_META. */
     catalogKey: CatalogEntityKey;
     subtitle?: string;
     items: T[];
@@ -66,7 +66,7 @@
     filterFn,
   }: Props = $props();
 
-  let meta = $derived(CATALOG_META[catalogKey]);
+  let meta = $derived(ENTITY_META[catalogKey]);
   let title = $derived(meta.label_plural);
   let basePath = $derived(`/${meta.entity_type_plural}`);
   let entityLabel = $derived(meta.label_plural.toLowerCase());

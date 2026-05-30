@@ -163,7 +163,7 @@ The backend API remains the source of truth for the contract.
 - OpenAPI is generated from Django
 - TypeScript types are generated from OpenAPI
 
-After changing Django Ninja endpoint response types or schema fields, run `make api-gen` so the frontend contract reflects the backend change.
+After changing Django Ninja endpoint response types or schema fields, run `make codegen` so the frontend contract reflects the backend change.
 
 The goal is not "thin backend, smart page assembly." The goal is a clean contract where the backend exports the data shape the page actually needs.
 

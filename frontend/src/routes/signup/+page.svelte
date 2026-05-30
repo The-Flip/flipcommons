@@ -9,7 +9,7 @@
 
   // The full set of rejection reasons the server can surface (across /check
   // and /submit). Pulled from the generated schema rather than redeclared
-  // locally so it stays in lockstep with the backend across `make api-gen`.
+  // locally so it stays in lockstep with the backend across `make codegen`.
   type ServerReason = NonNullable<SignupCheckResponseSchema['reason']>;
 
   type Status =

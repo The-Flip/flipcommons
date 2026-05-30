@@ -16,9 +16,8 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.provenance.helpers import active_claims, claims_prefetch
+from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import RichTextSchema
 
 from ..models import (
     CatalogModel,
@@ -40,8 +39,9 @@ from .helpers import (
     serialize_locations,
 )
 from .manufacturers import manufacturers_router
-from .rich_text import build_rich_text
+from .rich_text import describe
 from .schemas import (
+    CatalogDetailSchema,
     CorporateEntityClaimPatchSchema,
     CorporateEntityLocationSchema,
     EntityCreateInputSchema,
@@ -64,13 +64,12 @@ class CorporateEntityListItemSchema(Schema):
     locations: list[CorporateEntityLocationSchema] = []
 
 
-class CorporateEntityDetailSchema(Schema):
-    name: str
+class CorporateEntityDetailSchema(CatalogDetailSchema):
     slug: str
-    description: RichTextSchema = RichTextSchema()
     manufacturer: EntityRef
     year_start: int | None = None
     year_end: int | None = None
+    ipdb_manufacturer_id: int | None = None
     aliases: list[str] = []
     locations: list[CorporateEntityLocationSchema] = []
     titles: list[RelatedTitleSchema]
@@ -108,11 +107,16 @@ def _detail_qs() -> QuerySet[CorporateEntity]:
 def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
     return CorporateEntityDetailSchema(
         name=ce.name,
+        public_id=ce.public_id,
+        last_modified=ce.last_modified,
         slug=ce.slug,
-        description=build_rich_text(ce, "description", active_claims(ce)),
-        manufacturer=EntityRef(name=ce.manufacturer.name, slug=ce.manufacturer.slug),
+        description=describe(ce),
+        manufacturer=EntityRef(
+            name=ce.manufacturer.name, public_id=ce.manufacturer.public_id
+        ),
         year_start=ce.year_start,
         year_end=ce.year_end,
+        ipdb_manufacturer_id=ce.ipdb_manufacturer_id,
         aliases=[a.value for a in ce.aliases.all()],
         locations=serialize_locations(ce),
         titles=collect_titles(ce.models.all()),
@@ -155,7 +159,7 @@ def list_corporate_entities(
             name=ce.name,
             slug=ce.slug,
             manufacturer=EntityRef(
-                name=ce.manufacturer.name, slug=ce.manufacturer.slug
+                name=ce.manufacturer.name, public_id=ce.manufacturer.public_id
             ),
             year_start=ce.year_start,
             year_end=ce.year_end,

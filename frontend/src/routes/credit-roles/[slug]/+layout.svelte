@@ -7,6 +7,7 @@
 
 <SimpleTaxonomyDetailLayout
   {profile}
+  jsonLd={data.jsonLd}
   parentLabel="Credit Roles"
   basePath="/credit-roles"
   claimsPath={'/api/credit-roles/{public_id}/claims/'}

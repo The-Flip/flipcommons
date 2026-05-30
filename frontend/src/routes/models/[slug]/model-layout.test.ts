@@ -13,19 +13,22 @@ vi.mock('$app/state', () => ({
 }));
 
 import Harness from './layout.test-harness.svelte';
+import type { ModelDetailSchema } from '$lib/api/schema';
 
 const MOCK_MODEL = {
   name: 'Medieval Madness',
+  public_id: 'medieval-madness',
+  last_modified: '2026-01-01T00:00:00Z',
   slug: 'medieval-madness',
   year: 1997,
   month: null,
-  manufacturer: { name: 'Williams', slug: 'williams' },
+  manufacturer: { name: 'Williams', public_id: 'williams' },
   corporate_entity: {
     name: 'Williams Electronics',
-    slug: 'williams-electronics',
+    public_id: 'williams-electronics',
   },
-  title: { name: 'Medieval Madness', slug: 'medieval-madness' },
-  description: { text: '', html: '', citations: [], attribution: null },
+  title: { name: 'Medieval Madness', public_id: 'medieval-madness' },
+  description: { text: '', html: '', plain: '', citations: [], attribution: null },
   technology_generation: null,
   technology_subgeneration: null,
   display_type: null,
@@ -44,7 +47,6 @@ const MOCK_MODEL = {
   pinside_id: null,
   ipdb_rating: null,
   pinside_rating: null,
-  website: '',
   variant_of: null,
   variants: [],
   variant_siblings: [],
@@ -64,8 +66,7 @@ const MOCK_MODEL = {
   title_models: [],
   credits: [],
   uploaded_media: [],
-  sources: [],
-};
+} satisfies ModelDetailSchema;
 
 describe('model layout', () => {
   beforeEach(() => {
@@ -75,7 +76,7 @@ describe('model layout', () => {
 
   it('omits the Back link on the detail route', () => {
     const { body } = render(Harness, {
-      props: { data: { model: MOCK_MODEL } },
+      props: { data: { profile: MOCK_MODEL } },
     });
 
     expect(body).toContain('History');
@@ -86,7 +87,7 @@ describe('model layout', () => {
     pageState.url = new URL('http://localhost:5173/models/medieval-madness/media');
 
     const { body } = render(Harness, {
-      props: { data: { model: MOCK_MODEL } },
+      props: { data: { profile: MOCK_MODEL } },
     });
 
     expect(body).toContain('>Back<');

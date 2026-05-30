@@ -76,7 +76,7 @@ class TestCreateHappyPath:
         assert resp.status_code == 201, resp.content
         body = resp.json()
         assert body["slug"] == "stern-pinball-inc"
-        assert body["manufacturer"]["slug"] == "stern"
+        assert body["manufacturer"]["public_id"] == "stern"
 
         ce = CorporateEntity.objects.get(slug="stern-pinball-inc")
         assert ce.manufacturer == mfr

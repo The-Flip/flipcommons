@@ -11,11 +11,11 @@
     for (const c of credits) {
       const last = groups[groups.length - 1];
       if (last && last.role === c.role_display) {
-        last.people.push({ name: c.person.name, slug: c.person.slug });
+        last.people.push({ name: c.person.name, slug: c.person.public_id });
       } else {
         groups.push({
           role: c.role_display,
-          people: [{ name: c.person.name, slug: c.person.slug }],
+          people: [{ name: c.person.name, slug: c.person.public_id }],
         });
       }
     }

@@ -1,17 +1,19 @@
-import { error } from '@sveltejs/kit';
-import { createServerClient } from '$lib/api/server';
+import { loadEntityPage } from '$lib/entity-page-loader.server';
+import { model } from '$lib/entities';
+import { buildEntityJsonLd } from '$lib/entities/schema-org';
+import type { Crumb } from '$lib/components/jsonld';
 import type { LayoutServerLoad } from './$types';
 
-export const load: LayoutServerLoad = async ({ fetch, url, request, params }) => {
-  const client = createServerClient(fetch, url, request);
-  const { data, response } = await client.GET('/api/pages/model/{public_id}', {
-    params: { path: { public_id: params.slug } },
-  });
+export const load: LayoutServerLoad = async (event) => {
+  const { profile } = await loadEntityPage(event, '/api/pages/model/{public_id}', 'Machine');
 
-  if (!data) {
-    if (response?.status === 404) throw error(404, 'Machine not found');
-    throw error(response.status || 500, 'Failed to load machine');
-  }
+  // Breadcrumb: Home › Title › Model.
+  // There's no Titles (plural): the /titles listing is CSR (excluded).
+  // There's no Models (plural): there's no /models listing, only titles.
+  const crumbs: Crumb[] = [
+    { label: 'Home', href: '/' },
+    { label: profile.title.name, href: `/titles/${profile.title.public_id}` },
+  ];
 
-  return { model: data };
+  return { profile, jsonLd: buildEntityJsonLd(profile, model, event.url, crumbs) };
 };

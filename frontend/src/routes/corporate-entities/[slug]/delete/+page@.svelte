@@ -43,11 +43,11 @@
   submit={submitDelete}
   cancelHref={`/corporate-entities/${public_id}`}
   redirectAfterDelete={preview.parent
-    ? `/manufacturers/${preview.parent.slug}`
+    ? `/manufacturers/${preview.parent.public_id}`
     : '/corporate-entities'}
   editHistoryHref={`/corporate-entities/${public_id}/edit-history`}
   parentBreadcrumb={preview.parent
-    ? { text: preview.parent.name, href: `/manufacturers/${preview.parent.slug}` }
+    ? { text: preview.parent.name, href: `/manufacturers/${preview.parent.public_id}` }
     : undefined}
   {blocked}
   {impact}

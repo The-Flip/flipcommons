@@ -120,7 +120,7 @@ class TestRead:
         assert body["page_heading"] == "Now Playing"
         assert len(body["items"]) == 1
         assert body["items"][0]["hook"] == "Try this!"
-        assert body["items"][0]["title"]["slug"] == title_a.slug
+        assert body["items"][0]["title"]["public_id"] == title_a.public_id
 
     def test_get_404(self, client, superuser):
         client.force_login(superuser)
@@ -169,7 +169,10 @@ class TestPatch:
         )
         assert resp.status_code == 200
         items = resp.json()["items"]
-        assert [i["title"]["slug"] for i in items] == [title_b.slug, title_a.slug]
+        assert [i["title"]["public_id"] for i in items] == [
+            title_b.public_id,
+            title_a.public_id,
+        ]
         assert [i["position"] for i in items] == [1, 2]
 
     def test_swap_positions_does_not_violate_unique(
