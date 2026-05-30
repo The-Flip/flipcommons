@@ -3,8 +3,8 @@
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import { formatYearRange } from '$lib/utils';
-  import { SITE_NAME } from '$lib/constants';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/meta-tags';
   import JsonLd from '$lib/components/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import LocationLink from '$lib/components/LocationLink.svelte';
@@ -32,7 +32,7 @@
   let slug = $derived(page.params.slug);
 
   let yearsActive = $derived(formatYearRange(ce.year_start, ce.year_end));
-  let metaDescription = $derived(ce.description?.text || `${ce.name} — ${SITE_NAME}`);
+  let metaDescription = $derived(metaDescriptionFor(ce));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
   let isDetail = $derived(mode === 'detail');
   let isFocusMode = $derived(isFocusModePath(page.url.pathname));

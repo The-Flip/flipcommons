@@ -7,7 +7,7 @@ const { authMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$app/paths', () => ({ resolve: (p: string) => p }));
+vi.mock('$app/paths', () => ({ resolve: (p: string) => p, asset: (p: string) => p }));
 vi.mock('$app/state', () => ({
   page: {
     params: { slug: 'wpc-95' },

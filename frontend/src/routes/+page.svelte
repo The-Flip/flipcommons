@@ -3,11 +3,10 @@
   import { resolve } from '$app/paths';
   import client from '$lib/api/client';
   import MachineCard from '$lib/components/cards/MachineCard.svelte';
-  import { SITE_NAME, SITE_TITLE } from '$lib/constants';
+  import { SITE_TITLE } from '$lib/constants';
   import MetaTags from '$lib/components/MetaTags.svelte';
   import JsonLd from '$lib/components/JsonLd.svelte';
   import { jsonLdGraph, webSite } from '$lib/components/jsonld';
-  import { absoluteAssetUrl } from '$lib/utils';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import type { ModelRecentSchema } from '$lib/api/schema';
@@ -46,12 +45,12 @@
   });
 </script>
 
+<!-- No image prop: MetaTags falls back to the branded DEFAULT_SOCIAL_IMAGE,
+     which is exactly the home page's intended share image. -->
 <MetaTags
   title={SITE_TITLE}
   description="The encyclopedia of pinball machines, manufacturers, and the people who make them."
   url={page.url.href}
-  image={absoluteAssetUrl('/og-default.png', page.url)}
-  imageAlt={SITE_NAME}
   ogType="website"
 />
 

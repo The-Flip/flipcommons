@@ -5,6 +5,7 @@
   import { auth } from '$lib/auth.svelte';
   import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/meta-tags';
   import JsonLd from '$lib/components/JsonLd.svelte';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
@@ -29,7 +30,7 @@
   let slug = $derived(page.params.slug);
 
   let metaDescription = $derived(
-    person.description?.text || `${person.name} — pinball industry professional`,
+    metaDescriptionFor(person, `${person.name} — pinball industry professional`),
   );
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
   let isDetail = $derived(mode === 'detail');

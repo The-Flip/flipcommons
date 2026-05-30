@@ -27,12 +27,12 @@ Each layout hand-picks the relevant fields (title, description, hero image, alt 
 
 Open Graph (OG) is the de facto link-preview standard: Facebook, LinkedIn, iMessage, Slack, Discord, Bluesky, Mastodon (and Twitter as a fallback) all read OG. These are `<meta property="og:*">` tags.
 
-We emit the full set of OG tags: `og:site_name`, `og:type`, `og:title`, `og:description`, `og:url`, `og:image` and `og:image:alt`.
+We emit the full set of OG tags: `og:site_name`, `og:type`, `og:title`, `og:description`, `og:url`, `og:image` and `og:image:alt`. Pages with no entity image fall back to a single site-wide branded default (`static/images/social_default.png`, 1200×630) emitted with `og:image:width`/`og:image:height`/`og:image:type` so Facebook/LinkedIn render the card on first scrape. The fallback is wired once in `MetaTags.svelte`, so every call site gets it for free; `static/` assets are absolutized via `absoluteAssetUrl`.
 
 Each layout hand-picks the relevant fields:
 
 - `og:type`: Person layouts emit `profile`, static pages emit `website`, default is `article`. User pages are CSR-only today and still use a hand-written `<title>` rather than `MetaTags`; see [CSR pages: out of scope](#csr-pages-out-of-scope).
-- `og:image:alt` is phrased to match what the image actually is: Model/Title emit `` `${name} pinball machine` ``, Person `` `Photo of ${name}` ``, Manufacturer `` `${name} logo` ``. CorporateEntity and System emit no image, so no alt.
+- `og:image:alt` is phrased to match what the image actually is: Model/Title emit `` `${name} pinball machine` ``, Person `` `Photo of ${name}` ``, Manufacturer `` `${name} logo` ``. CorporateEntity, System and other imageless pages fall through to the branded default image and its generic alt.
 
 **Gaps**:
 
@@ -40,20 +40,11 @@ Each layout hand-picks the relevant fields:
 
 ### Twitter card
 
-Twitter uses `<meta name="twitter:*">` tags to control previews on its site. Twitter cascades from Open Graph when Twitter-specific tags are absent, so the only one worth emitting is `twitter:card`.
+Twitter uses `<meta name="twitter:*">` tags to control previews on its site. Twitter cascades from Open Graph when Twitter-specific tags are absent, so they aren't strictly needed to render — but SEO/preview validators do a literal presence check and dock the missing ones, so we emit the explicit set anyway: `twitter:card`, `twitter:title`, `twitter:description`, `twitter:image` and `twitter:image:alt`. `twitter:title`/`twitter:description` mirror their OG counterparts; `twitter:image` is the entity image when present, else the same 1200×630 default as `og:image`, with alt to match.
 
-The project emits `twitter:card`. Possible values:
+✅ DONE — `twitter:card` is always `summary_large_image`. We deliberately do **not** use the small `summary` card: in practice almost every previewer (Slack, Discord, iMessage, LinkedIn, Facebook, Bluesky and X's own large card) renders `og:image` and ignores Twitter's small-card mode, so a single landscape asset previews cleanly everywhere. An earlier attempt at a dedicated square `summary` thumbnail was dropped — the one surface that still honored it cropped the square badly, and maintaining a second asset bought nothing. One default (`DEFAULT_SOCIAL_IMAGE` in `meta-tags.ts`, asset `static/images/social_default.png`) now feeds both `og:image` and `twitter:image`.
 
-- `summary` — small square thumbnail beside title + description
-- `summary_large_image` — big full-width image above title + description (the rich, eye-catching one)
-- `player` — embedded video/audio player
-- `app` — mobile app install card
-
-We use `summary_large_image` when an image is present, else `summary`.
-
-**Gaps**:
-
-- Default branded OG/Twitter image (logo) for imageless pages, served as a `summary` card — keep `summary_large_image` reserved for real content images.
+**Gap**: `twitter:site`/`twitter:creator` need an X/@handle the project doesn't have yet. Add a site-wide constant and emit `twitter:site` once one exists; some validators flag its absence.
 
 ### JSON-LD
 

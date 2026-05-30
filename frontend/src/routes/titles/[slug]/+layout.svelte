@@ -4,6 +4,7 @@
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/meta-tags';
   import JsonLd from '$lib/components/JsonLd.svelte';
   import ExternalLinksSidebarSection from '$lib/components/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
@@ -71,12 +72,11 @@
   let isMobile = $derived(isMobileFlag.current);
 
   let metaDescription = $derived.by(() => {
-    if (title.description?.text) return title.description.text;
     const parts = [title.name];
     if (md?.year) parts.push(`a ${md.year} pinball machine`);
     else parts.push('pinball title');
     if (md?.manufacturer) parts.push(`by ${md.manufacturer.name}`);
-    return parts.join(' — ');
+    return metaDescriptionFor(title, parts.join(' — '));
   });
   let heroImage = $derived(md ? md.hero_image_url : title.hero_image_url);
 

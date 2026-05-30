@@ -78,8 +78,8 @@ describe('absoluteAssetUrl', () => {
   const pageUrl = new URL('https://flipcommons.org/about/people');
 
   it('resolves a relative asset path against the page origin', () => {
-    expect(absoluteAssetUrl('/og-default.png', pageUrl)).toBe(
-      'https://flipcommons.org/og-default.png',
+    expect(absoluteAssetUrl('/images/social_default.png', pageUrl)).toBe(
+      'https://flipcommons.org/images/social_default.png',
     );
   });
 

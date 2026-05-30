@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
-  import { SITE_NAME } from '$lib/constants';
+  import { metaDescriptionFor } from '$lib/components/meta-tags';
   import { auth } from '$lib/auth.svelte';
   import MetaTags from '$lib/components/MetaTags.svelte';
   import JsonLd from '$lib/components/JsonLd.svelte';
@@ -30,7 +30,7 @@
   let system = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
-  let metaDescription = $derived(system.description?.text || `${system.name} — ${SITE_NAME}`);
+  let metaDescription = $derived(metaDescriptionFor(system));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
   let isDetail = $derived(mode === 'detail');
   let isFocusMode = $derived(isFocusModePath(page.url.pathname));

@@ -4,6 +4,7 @@
   import { resolve } from '$app/paths';
   import { formatYearRange, websiteHostname } from '$lib/utils';
   import MetaTags from '$lib/components/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/meta-tags';
   import JsonLd from '$lib/components/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import ExpandableSidebarList from '$lib/components/ExpandableSidebarList.svelte';
@@ -34,7 +35,7 @@
   let slug = $derived(page.params.slug);
 
   let yearsActive = $derived(formatYearRange(mfr.year_start, mfr.year_end));
-  let metaDescription = $derived(mfr.description?.text || `${mfr.name} — pinball manufacturer`);
+  let metaDescription = $derived(metaDescriptionFor(mfr, `${mfr.name} — pinball manufacturer`));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
   let isDetail = $derived(mode === 'detail');
   let isFocusMode = $derived(isFocusModePath(page.url.pathname));

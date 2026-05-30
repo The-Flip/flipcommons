@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import {
   buildFullTitle,
@@ -5,7 +7,7 @@ import {
   truncateMetaDescription,
   truncateOgDescription,
   buildCanonicalUrl,
-  twitterCardType,
+  DEFAULT_SOCIAL_IMAGE,
 } from './meta-tags';
 import { SITE_NAME, SITE_TITLE } from '$lib/constants';
 
@@ -34,6 +36,18 @@ describe('metaDescriptionFor', () => {
   test('falls back to "{name} — {SITE_NAME}" when .plain is empty', () => {
     const profile = { name: 'Multiball', description: { plain: '' } };
     expect(metaDescriptionFor(profile)).toBe(`Multiball — ${SITE_NAME}`);
+  });
+
+  test('uses a caller-supplied fallback when .plain is empty', () => {
+    const profile = { name: 'Pat Lawlor', description: { plain: '' } };
+    expect(metaDescriptionFor(profile, 'Pat Lawlor — pinball industry professional')).toBe(
+      'Pat Lawlor — pinball industry professional',
+    );
+  });
+
+  test('prefers .plain over the caller-supplied fallback when both exist', () => {
+    const profile = { name: 'Pat Lawlor', description: { plain: 'Designer of many classics.' } };
+    expect(metaDescriptionFor(profile, 'unused fallback')).toBe('Designer of many classics.');
   });
 
   test('returns untruncated prose (MetaTags owns the length budgets)', () => {
@@ -107,20 +121,27 @@ describe('buildCanonicalUrl', () => {
   });
 });
 
-describe('twitterCardType', () => {
-  test('returns summary_large_image when image is present', () => {
-    expect(twitterCardType('https://example.com/img.jpg')).toBe('summary_large_image');
+/** Read a PNG's pixel dimensions from its IHDR chunk (width @ byte 16, height @ 20, big-endian). */
+function pngDimensions(staticPath: string): { width: number; height: number } {
+  const file = fileURLToPath(new URL(`../../../static${staticPath}`, import.meta.url));
+  const buf = readFileSync(file);
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+
+describe('default social image asset', () => {
+  // The declared dimensions are emitted verbatim as og:image:width/height, so
+  // they must agree with the asset on disk — assert the file matches rather
+  // than restating the literals (which would only mirror the source). The
+  // readFileSync also fails loudly if the asset goes missing.
+  test('asset matches the declared 1200×630', () => {
+    expect(DEFAULT_SOCIAL_IMAGE).toMatchObject({ width: 1200, height: 630, type: 'image/png' });
+    expect(pngDimensions(DEFAULT_SOCIAL_IMAGE.path)).toEqual({
+      width: DEFAULT_SOCIAL_IMAGE.width,
+      height: DEFAULT_SOCIAL_IMAGE.height,
+    });
   });
 
-  test('returns summary when image is null', () => {
-    expect(twitterCardType(null)).toBe('summary');
-  });
-
-  test('returns summary when image is undefined', () => {
-    expect(twitterCardType(undefined)).toBe('summary');
-  });
-
-  test('returns summary when image is empty string', () => {
-    expect(twitterCardType('')).toBe('summary');
+  test('carries branded alt text', () => {
+    expect(DEFAULT_SOCIAL_IMAGE.alt).toContain(SITE_NAME);
   });
 });
