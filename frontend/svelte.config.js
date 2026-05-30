@@ -70,7 +70,7 @@ const sentryOrigin = sentry?.origin ?? null;
 // tags, bundled CSS links, %sveltekit.assets% placeholders in app.html,
 // the /_app/version.json poll, and url() refs inside hashed CSS that
 // resolve relative to the CSS file's URL. Hand-written URLs in component
-// markup (e.g. `<img src="/og-default.png">`) are NOT rewritten — they
+// markup (e.g. `<img src="/images/social_default.png">`) are NOT rewritten — they
 // stay on origin unless threaded through the `assets` helper from
 // $app/paths. Local dev and CI leave CDN_URL unset; Vite's dev server
 // would otherwise emit CDN URLs for chunks that only exist locally. See
@@ -225,9 +225,16 @@ const cspReportOnlyDirectives = {
   ...(sentryCspReportUri ? { 'report-uri': [sentryCspReportUri] } : {}),
 };
 
-const cspEnforcedDirectives = {
-  'upgrade-insecure-requests': true,
-};
+// `upgrade-insecure-requests` rewrites every http:// request to https://.
+// In production that's correct — the site is HTTPS-only. But the dev
+// server (and `vite preview`) run plain HTTP on localhost, and browsers
+// that honor the directive (Safari, Chromium) upgrade the top-level
+// navigation to https://localhost:5173, where nothing is listening, and
+// fail with "can't establish a secure connection." Firefox exempts
+// localhost so it slips through. Emit the directive for production builds
+// only; dev gets no enforced CSP (matching pre-CSP behavior locally).
+const isProductionBuild = process.env.NODE_ENV === 'production';
+const cspEnforcedDirectives = isProductionBuild ? { 'upgrade-insecure-requests': true } : {};
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
