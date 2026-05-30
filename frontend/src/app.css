@@ -190,6 +190,9 @@
   --color-header-bg: #ece0ca;
   --color-header-text: #241f19;
   --color-header-text-muted: #665947;
+  /* Brand wordmark color. Deep red on the light paper header; flips to The
+     Flip's cyan on the dark header below. Both clear AA on their bg. */
+  --color-logo: #9e1b1b;
 
   /* ---- Card (polaroid-style listing cards: Card.svelte and friends).
      Distinct from the white `--color-surface` family used by tooltips,
@@ -341,6 +344,7 @@
     --color-header-bg: #181411;
     --color-header-text: #eadfcb;
     --color-header-text-muted: #c7b69d;
+    --color-logo: #00b6e9;
 
     /* ---- Card ---- */
     --color-card-bg: #372c20;
