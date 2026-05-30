@@ -197,7 +197,12 @@ const appHtmlStyleHash = computeAppHtmlStyleHash();
 const cdnEntry = cdnUrl ? [cdnUrl] : [];
 const cspReportOnlyDirectives = {
   'default-src': ['self'],
-  'script-src': ['self', ...cdnEntry],
+  // jsdelivr/@scalar: the /api-docs page loads the @scalar/api-reference
+  // bundle from jsdelivr; it also dynamically imports further chunks, so
+  // the host needs to be in connect-src too. Scoped to the @scalar org
+  // path (trailing slash = prefix match) to cover versioned chunks while
+  // excluding the rest of the CDN.
+  'script-src': ['self', ...cdnEntry, 'https://cdn.jsdelivr.net/npm/@scalar/'],
   'style-src': ['self', appHtmlStyleHash, ...cdnEntry],
   // Svelte's `style:` directive (and any hand-written `style="..."`
   // attribute) compiles to an inline style attribute, which CSP gates
@@ -210,12 +215,16 @@ const cspReportOnlyDirectives = {
   // here is the standard compromise for Svelte/React apps.
   'style-src-attr': ['unsafe-inline'],
   'img-src': ['self', 'https:', 'data:'],
-  'font-src': ['self', ...cdnEntry],
+  // fonts.scalar.com: the @scalar/api-reference widget on /api-docs loads
+  // its own Inter webfonts (incl. inter-greek.woff2) from there, even
+  // though we override --scalar-font. Allow it so the fetch isn't reported.
+  'font-src': ['self', ...cdnEntry, 'https://fonts.scalar.com'],
   'connect-src': [
     'self',
     ...cdnEntry,
     ...(sentryOrigin ? [sentryOrigin] : []),
     'https://us.i.posthog.com',
+    'https://cdn.jsdelivr.net/npm/@scalar/',
   ],
   'frame-ancestors': ['none'],
   'frame-src': ['none'],
