@@ -58,7 +58,7 @@
 - [ ] **Per-entity OG images** — verify Title/Model/Manufacturer pages emit good OG titles, descriptions, and images (not just the default).
 - [x] **JSON-LD structured data** — schema.org `Product` / `CreativeWork` markup on pinball entity pages helps Google rich results.
 - [x] Favicon (`favicon.png`) and theme-color (light + dark variants) in `app.html`.
-- [ ] **iOS home-screen + PWA-install affordances** — missing `apple-touch-icon.png` (and `<link rel="apple-touch-icon">`), `site.webmanifest` (and `<link rel="manifest">`), and an SVG favicon / mask-icon. Decide whether to ship before launch or defer.
+- [x] **iOS home-screen + PWA-install affordances** — Full icon set landed in #476 (`30c61ad`): SVG favicon, 32px PNG fallback, `apple-touch-icon.png`, and `site.webmanifest` with 192/512/maskable app icons; `<link>` tags wired in `app.html`.
 - [x] **Canonical domain** — Apex `flipcommons.org` is canonical. Caddy 301s `www.flipcommons.org` → apex (`Caddyfile:3-5`). `SITE_ORIGIN` for SvelteKit prerender/meta tags is `https://flipcommons.org`. No hardcoded `www.flipcommons.org` anywhere in code; the only `www` reference is the Caddy redirect rule itself.
 
 ## Content & legal
