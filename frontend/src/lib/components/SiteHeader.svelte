@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte';
   import { resolve } from '$app/paths';
   import CoffeeStain from './effects/CoffeeStain.svelte';
-  import { SITE_NAME } from '$lib/constants';
+  import Wordmark from './Wordmark.svelte';
 
   let { children }: { children?: Snippet } = $props();
 
@@ -33,7 +33,7 @@
 
 <header class="site-header">
   <div class="header-inner">
-    <a href={resolve('/')} class="site-title">{SITE_NAME}</a>
+    <a href={resolve('/')} class="site-title"><Wordmark /></a>
     {@render children?.()}
   </div>
 
@@ -135,15 +135,18 @@
     z-index: 4;
   }
 
+  /* Wordmark fills from `currentColor`, so `color` here recolors the mark.
+     --color-logo flips red→cyan between light and dark in app.css. */
   .site-title {
-    font-size: var(--font-size-4);
-    font-weight: 700;
-    color: var(--color-header-text);
+    display: inline-flex;
+    align-items: center;
+    height: clamp(2.25rem, 1.8rem + 1.6vw, 3rem);
+    color: var(--color-logo);
     text-decoration: none;
   }
 
   .site-title:hover {
-    color: var(--color-link);
+    opacity: 0.85;
   }
 
   .header-stains {
