@@ -70,7 +70,7 @@ Only `ui/` (no imports from any sibling components folder) and `pages/` (importa
 - `provenance/` and `markdown/` are nominally display-only; a form component drifting in wouldn't fail CI.
 - `input/` is nominally input-only; same caveat.
 
-We accept the convention-only enforcement for these because policing "what does this file contain" via import rules is awkward and tends to false-positive. Drift here will be caught in code review, not by tooling. Be honest about that — the "Why" framing of "every future component lands in the right place by default" only holds for the two enforced boundaries.
+We accept the convention-only enforcement for these because policing "what does this file contain" via import rules is awkward and tends to false-positive. Drift will be caught in code review, not tooling.
 
 ## Folder READMEs
 
@@ -267,7 +267,7 @@ input/
   MonthSelect.svelte
   TagInput.svelte
   YearRangeInput.svelte                       # moves in from components/ top level
-  SearchableSelect.svelte (+ test)            # moves in — was miscategorized as ui/ primitive
+  SearchableSelect.svelte (+ test)            # moves in from components/ top level
   Fieldset.svelte
   FieldGroup.svelte + tests + fixtures
   link-types-fixtures.ts
