@@ -148,17 +148,17 @@ Naively adding separate override blocks will silently drop the existing vendor-b
 ```markdown
 # ui
 
-True primitives — components with no internal structure of their own
-(Button, Modal, Dialog, FaIcon, ChipGroup, PillSelect, …).
+This folder contains true primitives: components with no internal structure of
+their own, such as Button and Modal.
 
-Rule: `ui/` may not import from any sibling components folder.
-Everything else may import from `ui/`. Enforced by ESLint.
+`ui/` may not import from any sibling components folder. Everything else may
+import from `ui/`.
 
-If a component composes other components or knows about domain
-concepts, it doesn't belong here.
+If a component composes other components or knows about domain concepts, it
+doesn't belong here.
 ```
 
-### `effects/`
+### `effects/` - DONE ✅
 
 Move `WearEffect.svelte` from `cards/` into `effects/` alongside `CoffeeStain.svelte`. Both are decorative SVG/CSS overlays applied to other components; neither is card-specific. `WearEffect` is currently parked under `cards/` because `Card` consumes it, not because it belongs there.
 
@@ -201,7 +201,7 @@ These are page-layout-coupled, not generic primitives — their styling (small f
 
 Add `layout/README.md`: two lines naming the `site/` vs `page/` split — site chrome wraps all content; page primitives compose within one page.
 
-### `provenance/`
+### `provenance/` - DONE ✅
 
 Move the claim/attribution cluster from the top level:
 
@@ -216,7 +216,7 @@ Move the claim/attribution cluster from the top level:
 
 Add `provenance/README.md`: display-side provenance UI for catalog records. Editing of claim values happens via section editors in `pages/record/edit/editors/`, not here.
 
-### `markdown/`
+### `markdown/` - DONE ✅
 
 Create top-level `markdown/` as the display-side rich-text rendering subsystem. Citation display is part of this subsystem — every shared citation rendering component is currently consumed only by the markdown pipeline. (The other place citations are rendered, `EntitySources.svelte`, uses its own inline template and doesn't share components with this folder.)
 
@@ -232,7 +232,7 @@ Move from the top level:
 
 There is no top-level `citation/` folder. Citation editing fields live in `form/citation/` (see the `form/` section). If a scalar-citation renderer ever shows up sharing code with `EntitySources`, that's the cue to extract a citation primitives folder — but today there's nothing to extract.
 
-Add `markdown/README.md`: display-side rich-text rendering — including citation tooltips and references that get layered onto the rendered output. Citation editing fields live in `form/citation/`. Scalar citation rendering (e.g. on `EntitySources`) is done inline by those components and doesn't depend on this folder.
+Add `markdown/README.md`: This folder contains markdown rendering components — including citation tooltips and references that get layered onto the rendered output. Citation editing fields live in `form/citation/`. Scalar citation rendering (e.g. on `EntitySources`) is done inline by those components and doesn't depend on this folder.
 
 ### `form/`
 
@@ -274,13 +274,13 @@ Base field primitives (TextField, NumberField, etc.) stay flat — they're the n
 
 **Principle:** `form/` is for input components, organized by subsystem where one exists. Top-level subsystem folders (`markdown/`, `provenance/`) hold display-side UI for those same subsystems. The form/non-form distinction is real and stays.
 
-Add `form/README.md`: input components. Base fields live at the top level; each input subsystem (`citation/`, `dropdown/`, `markdown/`, `wikilink/`) gets a subfolder. Citation display lives in `markdown/` (citation rendering is currently only consumed by the markdown pipeline). Provenance display lives in `provenance/`.
+Add `form/README.md`: This folder contains input components. Base fields live at the top level; each input subsystem (`citation/`, `dropdown/`, `markdown/`, `wikilink/`) gets a subfolder. Citation display lives in `markdown/` (citation rendering is currently only consumed by the markdown pipeline). Provenance display lives in `provenance/`.
 
 ### `pages/`
 
 Build out `pages/record/{detail,create,edit,edit-history,sources,delete}/`, `pages/listing/`, `pages/error/` and move the page-shell components in. Also move the existing top-level `editors/` folder to `pages/record/edit/editors/`. The "Taxonomy\*" components are catalog page scaffolds despite the name, and route usage determines page-kind.
 
-Add `pages/README.md`: page-kind shells. Each subfolder corresponds to a SvelteKit route pattern (`record/detail/` ↔ `/[entity]/[slug]/`, `record/edit/` ↔ `/[entity]/[slug]/edit/[section]/`, etc.). Adding a new page-kind means adding a subfolder under the matching parent.
+Add `pages/README.md`: This folder contains page-kind shell components. Each subfolder corresponds to a SvelteKit route pattern (`record/detail/` ↔ `/[entity]/[slug]/`, `record/edit/` ↔ `/[entity]/[slug]/edit/[section]/`, etc.). Adding a new page-kind means adding a subfolder under the matching parent.
 
 **`pages/record/detail/`**
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
-  import Markdown from '$lib/components/Markdown.svelte';
+  import Markdown from '$lib/components/markdown/Markdown.svelte';
   import ClientFilteredGrid from '$lib/components/grid/ClientFilteredGrid.svelte';
   import TitleCard from '$lib/components/cards/TitleCard.svelte';
 

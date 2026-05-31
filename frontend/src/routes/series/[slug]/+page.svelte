@@ -1,7 +1,7 @@
 <script lang="ts">
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import CreditsList from '$lib/components/CreditsList.svelte';
-  import Markdown from '$lib/components/Markdown.svelte';
+  import Markdown from '$lib/components/markdown/Markdown.svelte';
   import TitleList from '$lib/components/TitleList.svelte';
 
   let { data } = $props();

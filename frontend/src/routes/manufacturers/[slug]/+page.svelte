@@ -3,9 +3,9 @@
   import { ENTITY_META } from '$lib/entities/entity-meta';
   import AccordionSection from '$lib/components/AccordionSection.svelte';
   import CreateFirstCorporateEntityPrompt from '$lib/components/CreateFirstCorporateEntityPrompt.svelte';
-  import RichTextOverviewAccordion from '$lib/components/RichTextOverviewAccordion.svelte';
-  import RichTextReferencesAccordion from '$lib/components/RichTextReferencesAccordion.svelte';
-  import { createRichTextAccordionState } from '$lib/components/rich-text-accordion-state.svelte';
+  import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
+  import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
+  import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import TitleCard from '$lib/components/cards/TitleCard.svelte';
   import { manufacturerEditActionContext } from '$lib/components/editors/edit-action-context';
   import SearchableGrid from '$lib/components/grid/SearchableGrid.svelte';

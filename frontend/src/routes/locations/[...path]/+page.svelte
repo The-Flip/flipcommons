@@ -1,9 +1,9 @@
 <script lang="ts">
   import AccordionSection from '$lib/components/AccordionSection.svelte';
   import ManufacturerCardGrid from '$lib/components/ManufacturerCardGrid.svelte';
-  import RichTextOverviewAccordion from '$lib/components/RichTextOverviewAccordion.svelte';
-  import RichTextReferencesAccordion from '$lib/components/RichTextReferencesAccordion.svelte';
-  import { createRichTextAccordionState } from '$lib/components/rich-text-accordion-state.svelte';
+  import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
+  import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
+  import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import { locationEditActionContext } from '$lib/components/editors/edit-action-context';
   import JsonLd from '$lib/components/JsonLd.svelte';
   import type { LocationDetailSchema } from '$lib/api/schema';

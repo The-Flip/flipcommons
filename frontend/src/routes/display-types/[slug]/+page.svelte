@@ -1,7 +1,7 @@
 <script lang="ts">
   import client from '$lib/api/client';
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
-  import Markdown from '$lib/components/Markdown.svelte';
+  import Markdown from '$lib/components/markdown/Markdown.svelte';
   import TitleCard from '$lib/components/cards/TitleCard.svelte';
   import PaginatedSection from '$lib/components/grid/PaginatedSection.svelte';
   import { createPaginatedLoader } from '$lib/paginated-loader.svelte';

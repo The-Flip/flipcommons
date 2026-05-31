@@ -6,7 +6,7 @@
   import HierarchicalTaxonomyChildrenAccordion from '$lib/components/HierarchicalTaxonomyChildrenAccordion.svelte';
   import HierarchicalTaxonomyMobileMetaBar from '$lib/components/HierarchicalTaxonomyMobileMetaBar.svelte';
   import MachineCard from '$lib/components/cards/MachineCard.svelte';
-  import Markdown from '$lib/components/Markdown.svelte';
+  import Markdown from '$lib/components/markdown/Markdown.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import PaginatedSection from '$lib/components/grid/PaginatedSection.svelte';
   import { hierarchicalTaxonomyEditActionContext } from '$lib/components/editors/edit-action-context';
