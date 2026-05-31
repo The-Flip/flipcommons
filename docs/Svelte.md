@@ -15,6 +15,10 @@ You MUST use Svelte 5 runes mode. Use modern Svelte 5 patterns, not legacy Svelt
 
 Keep component styles scoped by default. Avoid `:global` unless there is a clear reason. You MUST obtain explicit user approval to get an exception to use `:global`.
 
+### Internal import paths
+
+Import same-folder siblings relatively (`./Sibling.svelte`). Use the `$lib` alias for anything crossing a folder boundary (`$lib/components/effects/WearEffect.svelte`) — never `../` traversal.
+
 ## Choosing A Rendering Strategy
 
 How to choose which rendering mode:

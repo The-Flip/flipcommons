@@ -1,9 +1,9 @@
 <script lang="ts">
   import AccordionSection from '$lib/components/AccordionSection.svelte';
-  import ReferencesSection from '$lib/components/ReferencesSection.svelte';
-  import { deduplicateCitations } from '$lib/components/citation-refs';
-  import type { InlineCitation } from '$lib/components/citation-tooltip';
-  import type { RichTextAccordionState } from '$lib/components/rich-text-accordion-state.svelte';
+  import ReferencesSection from './ReferencesSection.svelte';
+  import { deduplicateCitations } from './citation-refs';
+  import type { InlineCitation } from './citation-tooltip';
+  import type { RichTextAccordionState } from './rich-text-accordion-state.svelte';
 
   type RichTextValue = {
     citations?: InlineCitation[];

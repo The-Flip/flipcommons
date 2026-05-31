@@ -1,9 +1,5 @@
 import { tick } from 'svelte';
-import {
-  findFirstInlineMarker,
-  findRefEntry,
-  scrollToAndHighlight,
-} from '$lib/components/citation-refs';
+import { findFirstInlineMarker, findRefEntry, scrollToAndHighlight } from './citation-refs';
 
 /**
  * Shared state connecting a Rich-Text Overview accordion to its References

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import AttributionLine from '$lib/components/AttributionLine.svelte';
+  import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import ClientFilteredGrid from '$lib/components/grid/ClientFilteredGrid.svelte';
   import HierarchicalTaxonomyChildrenAccordion from '$lib/components/HierarchicalTaxonomyChildrenAccordion.svelte';
   import HierarchicalTaxonomyMobileMetaBar from '$lib/components/HierarchicalTaxonomyMobileMetaBar.svelte';
   import MachineCard from '$lib/components/cards/MachineCard.svelte';
-  import Markdown from '$lib/components/Markdown.svelte';
+  import Markdown from '$lib/components/markdown/Markdown.svelte';
 
   let { data } = $props();
   let theme = $derived(data.profile);

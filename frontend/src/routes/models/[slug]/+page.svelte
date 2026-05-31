@@ -5,10 +5,10 @@
   import CreditsList from '$lib/components/CreditsList.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import { ENTITY_META } from '$lib/entities/entity-meta';
-  import RichTextOverviewAccordion from '$lib/components/RichTextOverviewAccordion.svelte';
-  import RichTextReferencesAccordion from '$lib/components/RichTextReferencesAccordion.svelte';
-  import { createRichTextAccordionState } from '$lib/components/rich-text-accordion-state.svelte';
-  import ModelRelationshipsList from '$lib/components/ModelRelationshipsList.svelte';
+  import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
+  import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
+  import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
+  import ModelRelationshipsList from './_components/ModelRelationshipsList.svelte';
   import { modelEditActionContext } from '$lib/components/editors/edit-action-context';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';

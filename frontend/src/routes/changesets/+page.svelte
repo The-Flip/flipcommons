@@ -4,8 +4,8 @@
   import { CATALOG_ENTITY_KEYS, ENTITY_META } from '$lib/entities/entity-meta';
   import { SITE_TITLE } from '$lib/constants';
   import { resolveHref } from '$lib/utils';
-  import ClaimAttribution from '$lib/components/ClaimAttribution.svelte';
-  import ClaimValue from '$lib/components/ClaimValue.svelte';
+  import ClaimAttribution from '$lib/components/provenance/ClaimAttribution.svelte';
+  import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
   import InlineDiff from '$lib/components/InlineDiff.svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { isDiffable } from '$lib/components/change-display';

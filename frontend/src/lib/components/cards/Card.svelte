@@ -5,8 +5,8 @@
 
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import CoffeeStain from '../effects/CoffeeStain.svelte';
-  import WearEffect from './WearEffect.svelte';
+  import CoffeeStain from '$lib/components/effects/CoffeeStain.svelte';
+  import WearEffect from '$lib/components/effects/WearEffect.svelte';
 
   let {
     href,

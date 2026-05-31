@@ -135,7 +135,7 @@ module.exports = {
     // Components with deliberate :global usage (rendered HTML from
     // external sources). These are exceptions, not cleanup targets.
     {
-      files: ['src/lib/components/Prose.svelte', 'src/lib/components/Markdown.svelte'],
+      files: ['src/lib/components/Prose.svelte', 'src/lib/components/markdown/Markdown.svelte'],
       rules: {
         'selector-pseudo-class-disallowed-list': null,
         'selector-pseudo-class-no-unknown': null,
@@ -155,7 +155,7 @@ module.exports = {
     // colors). Promoting these to tokens would add indirection without
     // enabling retheming. Intentional exception, not a cleanup target.
     {
-      files: ['src/lib/components/cards/WearEffect.svelte'],
+      files: ['src/lib/components/effects/WearEffect.svelte'],
       rules: {
         'function-disallowed-list': null,
       },
