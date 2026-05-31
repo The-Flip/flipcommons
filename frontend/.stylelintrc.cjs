@@ -155,7 +155,7 @@ module.exports = {
     // colors). Promoting these to tokens would add indirection without
     // enabling retheming. Intentional exception, not a cleanup target.
     {
-      files: ['src/lib/components/cards/WearEffect.svelte'],
+      files: ['src/lib/components/effects/WearEffect.svelte'],
       rules: {
         'function-disallowed-list': null,
       },
