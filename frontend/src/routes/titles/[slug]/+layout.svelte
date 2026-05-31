@@ -20,7 +20,7 @@
   import SidebarListItem from '$lib/components/SidebarListItem.svelte';
   import SidebarSection from '$lib/components/SidebarSection.svelte';
   import TaxonomyLinkSidebarSection from '$lib/components/TaxonomyLinkSidebarSection.svelte';
-  import NeedsReviewBanner from '$lib/components/NeedsReviewBanner.svelte';
+  import NeedsReviewBanner from './_components/NeedsReviewBanner.svelte';
   import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';

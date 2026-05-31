@@ -1,20 +1,18 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import Button from './Button.svelte';
+  import Button from '$lib/components/Button.svelte';
 
   interface Props {
-    manufacturerSlug: string;
-    manufacturerName: string;
+    titleSlug: string;
+    titleName: string;
   }
 
-  let { manufacturerSlug, manufacturerName }: Props = $props();
+  let { titleSlug, titleName }: Props = $props();
 </script>
 
 <div class="prompt">
-  <p class="lead">{manufacturerName} has no corporate entities yet.</p>
-  <Button tag="a" href={resolve(`/manufacturers/${manufacturerSlug}/corporate-entities/new`)}>
-    Create first corporate entity
-  </Button>
+  <p class="lead">{titleName} has no models yet.</p>
+  <Button tag="a" href={resolve(`/titles/${titleSlug}/models/new`)}>Create first model</Button>
 </div>
 
 <style>

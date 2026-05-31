@@ -9,8 +9,8 @@
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
-  import RelatedTitlesSection from '$lib/components/RelatedTitlesSection.svelte';
-  import CreateFirstModelPrompt from '$lib/components/CreateFirstModelPrompt.svelte';
+  import RelatedTitlesSection from './_components/RelatedTitlesSection.svelte';
+  import CreateFirstModelPrompt from './_components/CreateFirstModelPrompt.svelte';
   import { titleAreaEditActionContext } from '$lib/components/editors/edit-action-context';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';

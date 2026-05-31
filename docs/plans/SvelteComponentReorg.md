@@ -33,7 +33,7 @@ frontend/src/lib/components/
   layout/               site chrome + page-level layout primitives
     site/               SiteShell, SiteHeader, Footer, Nav, etc.
     page/               Page, PageHeader, TwoColumnLayout, Breadcrumb + sidebar/ cluster
-  form/                 base fields + citation/, dropdown/, markdown/, wikilink/ input subsystems
+  input/                base fields + citation/, dropdown/, markdown/, wikilink/ subsystems
   collections/          collection-display widgets
     cards/              Card + domain cards
     grid/               generic grids
@@ -68,7 +68,7 @@ Only `ui/` (no imports from any sibling components folder) and `pages/` (importa
 
 - `layout/page/` could quietly import from `pages/record/detail/` and nothing would stop it.
 - `provenance/` and `markdown/` are nominally display-only; a form component drifting in wouldn't fail CI.
-- `form/` is nominally input-only; same caveat.
+- `input/` is nominally input-only; same caveat.
 
 We accept the convention-only enforcement for these because policing "what does this file contain" via import rules is awkward and tends to false-positive. Drift here will be caught in code review, not by tooling. Be honest about that — the "Why" framing of "every future component lands in the right place by default" only holds for the two enforced boundaries.
 
@@ -76,14 +76,15 @@ We accept the convention-only enforcement for these because policing "what does 
 
 A select few folders get a short `README.md` explaining what belongs there — flagged in the relevant `### folder` sections under Sequencing. Most don't: the folder name is self-explanatory and a README would just restate it.
 
-**Format:** 4–8 lines max. Purpose, the rule that distinguishes "belongs here" from "doesn't," any boundary constraint, one link to canonical `docs/` if relevant. Never list files (rots immediately). Never restate the folder name.
+**Format:** "This folder contains components that..." and what does NOT go in the folder, if applicable. If that's not enough, say the rule that distinguishes "belongs here" from "doesn't," any boundary constraint.
+
+Do NOT list files, or mention the location of where invalid files DO go (just say elsewhere), or restate the folder name: those cause doc rot. 4 lines max.
 
 ## Out of Scope
 
 - Renaming, splitting, merging, adding components.
 - Any form of behavior change.
 - Storybook or Histoire adoption.
-- Consolidating cross-route test harnesses. `{cabinets,manufacturers,titles}/[slug]/{edit-history,sources,layout}.test-harness.svelte` files import each other across route families — looks like duplicated test setup that wants to live somewhere shared (likely `lib/test/`). Follow-up cleanup, not part of this reorg.
 
 ## Sequencing
 
@@ -172,7 +173,15 @@ Create `collections/` and move existing `cards/` and `grid/` under it. Move the 
 
 `CreateFirstModelPrompt` and `ManufacturerCardGrid` are **not** placed here despite being collection-shaped — both have single consumers, so by the route-private convention they go to `routes/.../_components/`. (See route-private section. The earlier "domain composition, so collections/" reasoning was category-over-usage — the same anti-pattern we rejected for `NeedsReviewBanner`. Promote to `collections/` only when a second consumer appears.)
 
-Add `collections/README.md` explaining when to add to `cards/` vs `grid/` vs `filters/` and what counts as collection display.
+Add `collections/README.md`:
+
+```markdown
+This folder contains components for displaying collections of items.
+
+- `cards/` — display single item as a card
+- `grid/` — display grid of cards
+- `filters/` — UI for narrowing which items show: filter sidebar, chips, drawers.
+```
 
 ### `layout/`
 
@@ -195,7 +204,9 @@ Move site chrome and page-level layout primitives from the top level, split into
 
 **`layout/page/sidebar/`** — content primitives for the sidebar slot of `TwoColumnLayout`:
 
-- SidebarList, SidebarListItem, SidebarSection
+- SidebarSection
+- SidebarList, SidebarListItem
+- ExpandableSidebarList — generic "show first N, then _Show all_" wrapper around `SidebarList`. Currently only used by manufacturer "Notable People", but it's a generic; other long sidebar lists (model credits, etc.) are candidates to adopt it in the future.
 
 These are page-layout-coupled, not generic primitives — their styling (small font, hairline separators, edit-button affordance) assumes a narrow sidebar context.
 
@@ -214,7 +225,11 @@ Move the claim/attribution cluster from the top level:
 
 `EditHistory` and `EntitySources` are the body of their own page-kinds (`pages/record/edit-history/` and `pages/record/sources/`), not cross-cutting provenance widgets. See the `pages/` section.
 
-Add `provenance/README.md`: display-side provenance UI for catalog records. Editing of claim values happens via section editors in `pages/record/edit/editors/`, not here.
+Add `provenance/README.md`:
+
+```markdown
+This folder contains components that display the provenance of catalog records. Editing of claim values happens elsewhere.
+```
 
 ### `markdown/` - DONE ✅
 
@@ -230,16 +245,23 @@ Move from the top level:
 - `RichTextReferencesAccordion.svelte` — catalog detail-page accordion that wraps `ReferencesSection`
 - `rich-text-accordion-state.svelte.ts` — shared state for the two accordions
 
-There is no top-level `citation/` folder. Citation editing fields live in `form/citation/` (see the `form/` section). If a scalar-citation renderer ever shows up sharing code with `EntitySources`, that's the cue to extract a citation primitives folder — but today there's nothing to extract.
+There is no top-level `citation/` folder. Citation editing fields live in `input/citation/` (see the `input/` section). If a scalar-citation renderer ever shows up sharing code with `EntitySources`, that's the cue to extract a citation primitives folder — but today there's nothing to extract.
 
-Add `markdown/README.md`: This folder contains markdown rendering components — including citation tooltips and references that get layered onto the rendered output. Citation editing fields live in `form/citation/`. Scalar citation rendering (e.g. on `EntitySources`) is done inline by those components and doesn't depend on this folder.
+Add `markdown/README.md`:
 
-### `form/`
+```markdown
+This folder contains components that render rich text: markdown output plus the
+citation tooltips and references that get layered onto it.
 
-Apply an internal split that gives each input subsystem its own subfolder.
+These components only do display; editing markdown and citations lives elsewhere.
+```
+
+### `input/`
+
+Input components — anything that captures user input, from a bare `TextField` to a composed `MarkdownTextArea` or `WikilinkAutocomplete`. Named `input/` rather than `form/` because not all of these live in a `<form>` (e.g. `SearchableSelect` in a filter sidebar, `MarkdownTextArea` in a comment box); "input" follows MUI's "Inputs" convention, which spans both bare controls and rich composed widgets (MUI files Autocomplete there too). Apply an internal split that gives each input subsystem its own subfolder.
 
 ```text
-form/
+input/
   TextField.svelte
   NumberField.svelte
   MonthSelect.svelte
@@ -255,7 +277,7 @@ form/
     CitationIdentifyBySearchStage.svelte
     CitationLocatorStage.svelte
     CitationSearchStage.svelte
-    EditCitationField.svelte (+ test)        # moves in from form/ top level
+    EditCitationField.svelte (+ test)        # moves in from input/ top level
     NotesAndCitationsDetails.svelte           # moves in from components/ top level
     citation-fixtures.ts, citation-types.ts (+ test)
   dropdown/
@@ -270,17 +292,27 @@ form/
     wikilink-helpers.ts + test
 ```
 
-Base field primitives (TextField, NumberField, etc.) stay flat — they're the noisy majority and pulling them into a `fields/` subfolder would just add a layer without value. Each subsystem subfolder (`citation/`, `dropdown/`, `markdown/`, `wikilink/`) groups input UI for one well-defined system.
+Base field primitives (TextField, NumberField, etc.) stay flat — they're the noisy majority and pulling them into a `fields/` subfolder would just add a layer without value. `Fieldset` and `FieldGroup` are input-layout primitives (the wrapper you put a control in, used in and out of forms); they stay flat alongside the controls rather than getting their own `form/` folder — two files don't warrant the split, and `FieldGroup` isn't form-specific anyway. Each subsystem subfolder (`citation/`, `dropdown/`, `markdown/`, `wikilink/`) groups input UI for one well-defined system.
 
-**Principle:** `form/` is for input components, organized by subsystem where one exists. Top-level subsystem folders (`markdown/`, `provenance/`) hold display-side UI for those same subsystems. The form/non-form distinction is real and stays.
+**Principle:** `input/` is for input components, organized by subsystem where one exists. Top-level subsystem folders (`markdown/`, `provenance/`) hold display-side UI for those same subsystems. The input/display distinction is real and stays.
 
-Add `form/README.md`: This folder contains input components. Base fields live at the top level; each input subsystem (`citation/`, `dropdown/`, `markdown/`, `wikilink/`) gets a subfolder. Citation display lives in `markdown/` (citation rendering is currently only consumed by the markdown pipeline). Provenance display lives in `provenance/`.
+Add `input/README.md`:
+
+```markdown
+This folder contains input components. Base fields live at the top level; each input subsystem (`citation/`, `dropdown/`, `markdown/`, `wikilink/`) in a subfolder.
+
+Display components (such as for markdown and citations) live elsewhere.
+```
 
 ### `pages/`
 
 Build out `pages/record/{detail,create,edit,edit-history,sources,delete}/`, `pages/listing/`, `pages/error/` and move the page-shell components in. Also move the existing top-level `editors/` folder to `pages/record/edit/editors/`. The "Taxonomy\*" components are catalog page scaffolds despite the name, and route usage determines page-kind.
 
-Add `pages/README.md`: This folder contains page-kind shell components. Each subfolder corresponds to a SvelteKit route pattern (`record/detail/` ↔ `/[entity]/[slug]/`, `record/edit/` ↔ `/[entity]/[slug]/edit/[section]/`, etc.). Adding a new page-kind means adding a subfolder under the matching parent.
+Add `pages/README.md`:
+
+```markdown
+This folder contains page shell components. Each subfolder corresponds to a SvelteKit route pattern (`record/detail/` ↔ `/[entity]/[slug]/`, `record/edit/` ↔ `/[entity]/[slug]/edit/[section]/`, etc.). Adding a new page-kind means adding a subfolder under the matching parent.
+```
 
 **`pages/record/detail/`**
 
@@ -293,11 +325,9 @@ Add `pages/README.md`: This folder contains page-kind shell components. Each sub
 - HierarchicalTaxonomyMobileMetaBar (gameplay-features, themes)
 - TaxonomyLinkSidebarSection (used on Title and Model detail layouts, not just taxonomies)
 - Detail-page sections and sidebars from old `catalog/`:
-  - ModelSpecsSidebar, ModelHierarchy, ModelRelationshipsList
-  - RelatedTitlesSection
+  - ModelSpecsSidebar, ModelHierarchy
   - CreditsList
   - RatingsSidebarSection, ExternalLinksSidebarSection
-  - ExpandableSidebarList (sidebar primitive used by the above)
 
 If `pages/record/detail/` gets crowded, consider a `pages/record/detail/sections/` subfolder. Decide on inspection of the final count.
 
@@ -431,15 +461,16 @@ The script has two known limitations to apply manual judgment for:
 
 **Candidates from the audit:**
 
-- `SearchResults` → `routes/search/_components/` (only `routes/search/+page.svelte`).
 - `ThemeSwitcher` → `routes/style-lab/_components/` (only `routes/style-lab/+page.svelte`).
-- `NeedsReviewBanner` → `routes/titles/[slug]/_components/` (only `routes/titles/[slug]/+layout.svelte`). Architecturally a provenance concept; promote to `provenance/` if a second consumer appears.
-- `CreateFirstCorporateEntityPrompt` → `routes/manufacturers/[slug]/_components/` (only `routes/manufacturers/[slug]/+page.svelte`).
-- `CreateFirstModelPrompt` → `routes/titles/[slug]/_components/` (only `routes/titles/[slug]/+page.svelte`). The earlier "two consumers" claim was a false positive — the second match was a code comment, not an import. Promote to `collections/` if a real second consumer appears.
-- `ManufacturerCardGrid` → `routes/locations/[...path]/_components/` (only `routes/locations/[...path]/+page.svelte`). Promote to `collections/` if a second consumer appears.
-- `LastUpdated` → `routes/(legal)/_components/` (used only by the 3 legal routes — licensing, privacy, terms — in one route family).
 - `TitleFilterSidebar` → `routes/titles/_components/` (only `routes/titles/+page.svelte`). Note: `feat/ssr-titles-faceting` heavily modifies this file — defer this move until after that branch lands.
 - `ManufacturerActiveFilterChips` → `routes/manufacturers/_components/` (only `routes/manufacturers/+page.svelte`).
-- `ExpandableSidebarList` → `routes/manufacturers/[slug]/_components/` (only `routes/manufacturers/[slug]/+layout.svelte`).
-- `ModelRelationshipsList` → `routes/models/[slug]/_components/` (only `routes/models/[slug]/+page.svelte`).
-- `RelatedTitlesSection` → `routes/titles/[slug]/_components/` (only `routes/titles/[slug]/+page.svelte`).
+
+## Potential follow-ups
+
+### Consolidate cross-route test harnesses
+
+`{cabinets,manufacturers,titles}/[slug]/{edit-history,sources,layout}.test-harness.svelte` files import each other across route families — looks like duplicated test setup that wants to live somewhere shared (likely `lib/test/`). Follow-up cleanup, not part of this reorg.
+
+### DRY the manufacturer card grid
+
+`ManufacturerCardGrid` (a `ClientFilteredGrid` + `ManufacturerCard` wrapper) has one importer, but `routes/manufacturers/+page.svelte` hand-rolls the identical block inline instead of using it — a latent second consumer. Blocker: the two call sites expose the manufacturer slug under different field names (`public_id` vs `slug`) from different load shapes, so it's not a clean drop-in. Reconcile the data shape, then promote `ManufacturerCardGrid` to `collections/` and use it on both pages. Behavior-adjacent (touches load shape), so out of scope for the mechanical reorg.

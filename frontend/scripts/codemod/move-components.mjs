@@ -126,6 +126,15 @@ function rewrite(fileAbs, text) {
       const path = [relDir, lastSeg].filter(Boolean).join('/');
       return `${kw}${sep}${quote}$lib/${path}${quote}`;
     }
+    // Cross-folder, target outside src/lib (e.g. a route-private `_components/`
+    // home): not $lib-addressable, so emit a relative path from the importer's
+    // post-move dir. Restricted to moved targets so non-moved outside-lib
+    // imports are left exactly as they were.
+    if (resolveToMoved(base)) {
+      const relDir = posix(relative(fileNewDir, targetNewDir));
+      const rel = relDir.startsWith('.') ? relDir : `./${relDir}`;
+      return `${kw}${sep}${quote}${rel}/${lastSeg}${quote}`;
+    }
     return whole; // cross-folder but outside src/lib — not $lib-addressable
   });
 }
