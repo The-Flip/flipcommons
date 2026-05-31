@@ -87,17 +87,21 @@ A select few folders get a short `README.md` explaining what belongs there — f
 
 ## Sequencing
 
-All work is in a single PR. Each section below is one commit. Each commit is mechanical moves + import updates + (where appropriate) one new ESLint rule. 🛑 STOP for user review before committing.
+All work is in a single PR. Each section below is one commit. Each commit is mechanical moves + import updates + (where appropriate) one new ESLint rule.
 
-**Per-commit verification gate** — mechanical moves at this scale are exactly where stale imports survive. Each commit must pass:
+**Each commit will be reviewed**. 🛑 STOP for user review before committing.
+
+**Normalize imports on touch** — when a move makes you edit a file's imports, bring all of that file's imports into line with the `$lib` rule in [Svelte.md](../Svelte.md) (same-folder → `./`, cross-folder → `$lib`), not just the specifier that changed. Leave files you aren't already editing untouched.
+
+**Codemod** — use `scripts/codemod/move-components.mjs --to <folder> <Stem>...` for every move. It `git mv`s each file (and its co-located tests/fixtures) so rename detection holds, then rewrites imports in every touched file to the project convention (same-folder → `./`, cross-folder → `$lib`). It only opens files that move or import a moved file; others are left untouched. Don't hand-edit import paths.
+
+**Resolve "decide on inspection" punts BEFORE the move commit they belong to**, not during. Doing it during the move puts momentum-pressure on picking "wherever's easiest" rather than the right home. `grep -rc` each ambiguous file's identifier, then commit.
+
+**Per-commit verification gate**. Each commit must pass:
 
 - `pnpm svelte-check` (catches import path errors and type drift)
 - `make test` (runs vitest + pytest)
 - `pnpm build` (production Vite build — circular-import and tree-shaking failures only surface in build, not dev/HMR)
-
-**Mechanism** — use `git mv` for every move so rename detection holds. Let the IDE (or `tsc --noEmit` followed by codemod) drive import rewrites. Don't hand-edit import paths — that's how typos creep in.
-
-**Resolve "decide on inspection" punts BEFORE the move commit they belong to**, not during. Doing it during the move puts momentum-pressure on picking "wherever's easiest" rather than the right home. `grep -rc` each ambiguous file's identifier, then commit.
 
 ### `ui/`
 
