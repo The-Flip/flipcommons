@@ -11,8 +11,8 @@
   import { auth } from '$lib/auth.svelte';
   import FocusContentShell from './FocusContentShell.svelte';
   import InlineDiff from './InlineDiff.svelte';
-  import ClaimAttribution from './ClaimAttribution.svelte';
-  import ClaimValue from './ClaimValue.svelte';
+  import ClaimAttribution from '$lib/components/provenance/ClaimAttribution.svelte';
+  import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { getEntityContext } from '$lib/entity-context';
   import { hasMeaningfulValue, isDeletion, isDiffable, isUnchanged } from './change-display';

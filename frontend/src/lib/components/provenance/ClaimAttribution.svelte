@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ClaimAttributionSchema } from '$lib/api/schema';
   import ClaimAuthor from './ClaimAuthor.svelte';
-  import SmartDate from './SmartDate.svelte';
+  import SmartDate from '$lib/components/SmartDate.svelte';
 
   let { attribution }: { attribution: ClaimAttributionSchema } = $props();
 </script>

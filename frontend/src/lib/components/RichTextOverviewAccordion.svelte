@@ -1,9 +1,9 @@
 <script lang="ts">
-  import AccordionSection from '$lib/components/AccordionSection.svelte';
-  import AttributionLine from '$lib/components/AttributionLine.svelte';
-  import Markdown from '$lib/components/Markdown.svelte';
-  import type { InlineCitation } from '$lib/components/citation-tooltip';
-  import type { RichTextAccordionState } from '$lib/components/rich-text-accordion-state.svelte';
+  import AccordionSection from './AccordionSection.svelte';
+  import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
+  import Markdown from './Markdown.svelte';
+  import type { InlineCitation } from './citation-tooltip';
+  import type { RichTextAccordionState } from './rich-text-accordion-state.svelte';
 
   type RichTextValue = {
     text?: string;

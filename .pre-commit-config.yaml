@@ -30,7 +30,16 @@ repos:
         entry: frontend/node_modules/.bin/prettier --write
         language: system
         types: [markdown]
-        exclude: ^(CLAUDE|AGENTS)\.md$
+        # frontend markdown is handled by prettier-markdown-frontend: its
+        # .prettierrc loads prettier-plugin-svelte, which only resolves with
+        # frontend/ as the working directory.
+        exclude: ^(CLAUDE\.md|AGENTS\.md|frontend/)
+      - id: prettier-markdown-frontend
+        name: prettier (markdown, frontend)
+        entry: bash -c 'cd frontend && exec node_modules/.bin/prettier --write "${@#frontend/}"' --
+        language: system
+        files: ^frontend/.*\.md$
+        types: [markdown]
       - id: markdownlint-cli2
         name: markdownlint-cli2
         entry: frontend/node_modules/.bin/markdownlint-cli2

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AttributionLine from '$lib/components/AttributionLine.svelte';
+  import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import Markdown from '$lib/components/Markdown.svelte';
   import TitleList from '$lib/components/TitleList.svelte';
 

@@ -2,7 +2,7 @@
   import client from '$lib/api/client';
   import { ENTITY_META } from '$lib/entities/entity-meta';
   import AccordionSection from '$lib/components/AccordionSection.svelte';
-  import AttributionLine from '$lib/components/AttributionLine.svelte';
+  import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import HierarchicalTaxonomyChildrenAccordion from '$lib/components/HierarchicalTaxonomyChildrenAccordion.svelte';
   import HierarchicalTaxonomyMobileMetaBar from '$lib/components/HierarchicalTaxonomyMobileMetaBar.svelte';
   import MachineCard from '$lib/components/cards/MachineCard.svelte';

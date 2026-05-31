@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { CitedChangeSetSchema, ClaimSchema } from '$lib/api/schema';
-  import ClaimAttribution from './ClaimAttribution.svelte';
-  import ClaimAuthor from './ClaimAuthor.svelte';
-  import ClaimValue from './ClaimValue.svelte';
+  import ClaimAttribution from '$lib/components/provenance/ClaimAttribution.svelte';
+  import ClaimAuthor from '$lib/components/provenance/ClaimAuthor.svelte';
+  import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
   import FocusContentShell from './FocusContentShell.svelte';
   import { getEntityContext } from '$lib/entity-context';
   import { groupSourcesByField } from './entity-sources';
