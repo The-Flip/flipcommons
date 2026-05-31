@@ -1,81 +1,83 @@
 <script lang="ts">
-  import { replaceState } from '$app/navigation';
+  import { afterNavigate, goto, invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import client from '$lib/api/client';
-  import { createAsyncLoader } from '$lib/async-loader.svelte';
+  import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
   import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
-  import CardGrid from '$lib/components/grid/CardGrid.svelte';
   import FilterDrawer from '$lib/components/FilterDrawer.svelte';
-  import ClientFilteredGrid from '$lib/components/grid/ClientFilteredGrid.svelte';
   import NoResultsCreatePrompt from '$lib/components/NoResultsCreatePrompt.svelte';
   import SearchBox from '$lib/components/SearchBox.svelte';
-  import SkeletonCard from '$lib/components/cards/SkeletonCard.svelte';
-  import TitleCard from '$lib/components/cards/TitleCard.svelte';
+  import SidebarSkeleton from '$lib/components/SidebarSkeleton.svelte';
   import TitleFilterSidebar from '$lib/components/TitleFilterSidebar.svelte';
   import { pageTitle } from '$lib/constants';
-  import {
-    expandTitlesWithAncestorFeatures,
-    expandTitlesWithAncestorThemes,
-    filterTitles,
-    filtersFromParams,
-    filtersToParams,
-    type FacetedTitle,
-    type GameplayFeatureHierarchyEntry,
-  } from '$lib/facet-engine';
+  import { filtersFromParams, filtersToParams, type FilterState } from '$lib/facet-engine';
+  import { titleFilterChips } from './titles-filter-chips';
+  import TitlesGrid from './TitlesGrid.svelte';
   import { decideCreatePrompt } from './titles-create-prompt';
 
-  const SKELETON_INDICES = Array.from({ length: 12 }, (_, i) => i);
+  let { data } = $props();
 
-  // -----------------------------------------------------------------------
-  // Data loading
-  // -----------------------------------------------------------------------
-  const titles = createAsyncLoader(async () => {
-    const [titlesRes, themesRes, featuresRes] = await Promise.all([
-      client.GET('/api/titles/all/'),
-      client.GET('/api/themes/'),
-      client.GET('/api/gameplay-features/'),
-    ]);
-    let data = (titlesRes.data ?? []) as FacetedTitle[];
-    const themeHierarchy = (themesRes.data ?? []) as {
-      slug: string;
-      name: string;
-      parent_slugs: string[];
-    }[];
-    const featureHierarchy = (featuresRes.data ?? []) as GameplayFeatureHierarchyEntry[];
-    data = expandTitlesWithAncestorThemes(data, themeHierarchy);
-    data = expandTitlesWithAncestorFeatures(data, featureHierarchy);
-    return data;
-  }, [] as FacetedTitle[]);
+  // Stable identity of the current filter set (server-canonical field order),
+  // used to remount the grid only when the filters change.
+  let gridKey = $derived(JSON.stringify(data.query));
 
-  // -----------------------------------------------------------------------
-  // Filter state — initialized from URL, synced back on change
-  // -----------------------------------------------------------------------
-  let filters = $state(filtersFromParams(new URLSearchParams(window.location.search)));
+  // ---------------------------------------------------------------------
+  // Filter state lives in the URL. `filters` is the authoritative reactive
+  // copy bound by the sidebar; it's mirrored to the URL via `goto`, which
+  // re-runs +page.server.ts (cards awaited, facets re-streamed). A filter
+  // change is a plain client-side navigation — no client facet engine.
+  // ---------------------------------------------------------------------
+  function canonical(f: FilterState): string {
+    return filtersToParams(f, new URLSearchParams()).toString();
+  }
 
-  let initialRun = true;
-  $effect(() => {
-    const sp = filtersToParams(filters, new URLSearchParams());
-    const search = sp.toString();
-    if (initialRun) {
-      initialRun = false;
-      return;
-    }
-    replaceState(`${resolve('/titles')}${search ? `?${search}` : ''}`, {});
+  // Seed from the request URL so a filtered URL renders the search box and
+  // selected filters in the SSR HTML (page.url is the real URL on the server —
+  // /titles is not prerendered). `filters` is then the authoritative mutable
+  // copy the sidebar binds to.
+  const initial = filtersFromParams(new URLSearchParams(page.url.search));
+  let filters = $state<FilterState>(initial);
+  // SearchBox binds here; debounced into `filters.query` so typing doesn't fire
+  // a server navigation per keystroke. A writable `$derived` so it mirrors the
+  // committed query when that changes from outside the input (the sidebar's
+  // "Clear all", a popstate, the seed) but is still reassignable while typing.
+  let queryInput = $derived(filters.query);
+  let lastSyncedSearch = canonical(initial);
+
+  // Back/forward adopt the URL as the source of truth (does NOT fire on our goto).
+  afterNavigate((nav) => {
+    if (nav.type !== 'popstate') return;
+    const f = filtersFromParams(new URLSearchParams(page.url.search));
+    filters = f;
+    lastSyncedSearch = canonical(f);
   });
 
-  let filteredTitles = $derived(filterTitles(titles.data, filters));
+  // Debounce typing → committed query (one server navigation per pause).
+  let qTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const q = queryInput;
+    if (q === filters.query) return;
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => (filters.query = q), 250);
+    return () => clearTimeout(qTimer);
+  });
 
-  let createPrompt = $derived(
-    decideCreatePrompt({
-      titles: titles.data,
-      query: filters.query,
-      isAuthenticated: auth.isAuthenticated,
-    }),
-  );
+  // filters → URL navigation. Skipped when the URL already matches (the initial
+  // seed, a popstate resync, or the landing of our own goto).
+  $effect(() => {
+    const search = canonical(filters);
+    if (search === lastSyncedSearch) return;
+    lastSyncedSearch = search;
+    void goto(`${resolve('/titles')}${search ? `?${search}` : ''}`, {
+      keepFocus: true,
+      noScroll: true,
+    });
+  });
 
+  // The "create?" prompt keys on the committed query (`data.query.q`, which the
+  // streamed `query_count` was computed for) — not the mid-debounce `queryInput`.
   let createHref = $derived(
-    `${resolve('/titles/new')}?name=${encodeURIComponent(createPrompt.query)}`,
+    `${resolve('/titles/new')}?name=${encodeURIComponent((data.query.q ?? '').trim())}`,
   );
 
   $effect(() => {
@@ -85,45 +87,58 @@
 
 <svelte:head>
   <title>{pageTitle('Titles')}</title>
-  <link rel="preload" as="fetch" href="/api/titles/all/" crossorigin="anonymous" />
 </svelte:head>
 
 <div class="titles-page">
-  <SearchBox bind:value={filters.query} placeholder="Search titles..." />
+  <SearchBox bind:value={queryInput} placeholder="Search titles..." />
 
-  {#if titles.loading}
-    <CardGrid>
-      {#each SKELETON_INDICES as i (i)}
-        <SkeletonCard />
-      {/each}
-    </CardGrid>
-  {:else if titles.error}
-    <p class="error">{titles.error}</p>
-  {:else}
-    <div class="layout">
-      <FilterDrawer label="Filter titles">
-        <TitleFilterSidebar allTitles={titles.data} bind:filters />
-      </FilterDrawer>
-
-      <main class="results">
-        <ActiveFilterChips bind:filters allTitles={titles.data} />
-        <ClientFilteredGrid items={filteredTitles} entityName="title">
-          {#snippet children(title)}
-            <TitleCard
-              slug={title.slug}
-              name={title.name}
-              thumbnailUrl={title.thumbnail_url}
-              manufacturerName={title.manufacturer?.name}
-              year={title.year}
-            />
-          {/snippet}
-        </ClientFilteredGrid>
-        {#if createPrompt.show}
-          <NoResultsCreatePrompt entityLabel="title" query={createPrompt.query} {createHref} />
+  <div class="layout">
+    <FilterDrawer label="Filter titles">
+      {#await data.filter_options}
+        <SidebarSkeleton />
+      {:then filterOptions}
+        {#if filterOptions}
+          <TitleFilterSidebar {filterOptions} bind:filters />
+        {:else}
+          <!-- Resolved to undefined = the facet endpoint failed (the cards, on
+               the critical path, already loaded). Show a real error, not the
+               pulsing skeleton, which would read as "still loading" forever. -->
+          <p class="sidebar-error">
+            Filters couldn’t be loaded.
+            <button type="button" class="retry" onclick={() => invalidateAll()}>Retry</button>
+          </p>
         {/if}
-      </main>
-    </div>
-  {/if}
+      {/await}
+    </FilterDrawer>
+
+    <main class="results">
+      {#await data.filter_options then filterOptions}
+        {#if filterOptions}
+          <ActiveFilterChips chips={titleFilterChips(filters, filterOptions)} />
+        {/if}
+      {/await}
+
+      <p class="count">{data.count.toLocaleString()} {data.count === 1 ? 'title' : 'titles'}</p>
+
+      <!-- Remount (reseed the loader to page 1) only when the filters actually
+           change, not on every load re-run — keying on the whole `data` object
+           would reset infinite scroll on any unrelated invalidation. -->
+      {#key gridKey}
+        <TitlesGrid initial={{ items: data.items, count: data.count }} query={data.query} />
+      {/key}
+
+      {#await data.query_count then queryCount}
+        {@const prompt = decideCreatePrompt({
+          query: data.query.q ?? '',
+          isAuthenticated: auth.isAuthenticated,
+          queryCount,
+        })}
+        {#if prompt.show}
+          <NoResultsCreatePrompt entityLabel="title" query={prompt.query} {createHref} />
+        {/if}
+      {/await}
+    </main>
+  </div>
 </div>
 
 <style>
@@ -142,10 +157,29 @@
     min-width: 0;
   }
 
-  .error {
+  .count {
     text-align: center;
-    color: var(--color-error-text);
-    padding: var(--size-6) 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-1);
+    margin-bottom: var(--size-4);
+  }
+
+  .sidebar-error {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-1);
+  }
+
+  .retry {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--color-link);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .retry:hover {
+    text-decoration: underline;
   }
 
   @media (--breakpoint-narrow) {

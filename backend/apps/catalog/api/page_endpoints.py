@@ -14,7 +14,8 @@ Auto-discovered via the ``routers`` list convention in config/api.py.
 
 from __future__ import annotations
 
-from ninja import Router
+from django.http import HttpRequest, HttpResponse
+from ninja import Query, Router
 
 from apps.catalog.models import (
     Cabinet,
@@ -77,10 +78,25 @@ from .taxonomy import (
 from .themes import ThemeDetailSchema
 from .themes import _detail_qs as _theme_detail_qs
 from .themes import _serialize_detail as _serialize_theme_detail
-from .titles import TitleDetailSchema, _serialize_title_detail
+from .titles import (
+    TitleDetailSchema,
+    TitleFacetsPageSchema,
+    TitleFilterQuerySchema,
+    _serialize_title_detail,
+    title_facets_response,
+)
 from .titles import _detail_qs as _title_detail_qs
 
 pages_router = Router(tags=["private"])
+
+
+@pages_router.get("/titles", response=TitleFacetsPageSchema)
+def titles_page_facets(
+    request: HttpRequest, filters: Query[TitleFilterQuerySchema]
+) -> HttpResponse:
+    """Facet option lists for the /titles SSR page (streamed after the cards;
+    no-filter response cached). Cards come from ``GET /api/titles/``."""
+    return title_facets_response(filters.to_filters())
 
 
 # ---------------------------------------------------------------------------

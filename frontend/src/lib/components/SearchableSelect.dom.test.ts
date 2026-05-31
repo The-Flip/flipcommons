@@ -166,6 +166,39 @@ describe('SearchableSelect', () => {
     expect(screen.queryByRole('button', { name: /clear selection/i })).not.toBeInTheDocument();
   });
 
+  it('shows the empty-options message (not "No matches") when there are no options at all', async () => {
+    const user = userEvent.setup();
+    render(SearchableSelect, {
+      options: [],
+      label: 'Manufacturer',
+      placeholder: 'Search manufacturers...',
+      selected: null,
+      emptyMessage: 'No manufacturers match your other filters',
+    });
+
+    await user.click(getCombobox());
+
+    expect(screen.getByText('No manufacturers match your other filters')).toBeInTheDocument();
+    expect(screen.queryByText('No matches')).not.toBeInTheDocument();
+  });
+
+  it('shows "No matches" (not the empty-options message) when a query filters the list to empty', async () => {
+    const user = userEvent.setup();
+    render(SearchableSelect, {
+      options: OPTIONS,
+      label: 'Manufacturer',
+      placeholder: 'Search manufacturers...',
+      selected: null,
+      emptyMessage: 'No manufacturers match your other filters',
+    });
+
+    await user.click(getCombobox());
+    await user.type(getCombobox(), 'zzz-nothing-matches');
+
+    expect(screen.getByText('No matches')).toBeInTheDocument();
+    expect(screen.queryByText('No manufacturers match your other filters')).not.toBeInTheDocument();
+  });
+
   it('portals the listbox out of clipping ancestors', async () => {
     const user = userEvent.setup();
     render(SearchableSelectClipFixture);

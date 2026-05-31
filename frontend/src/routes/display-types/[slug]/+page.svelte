@@ -11,7 +11,7 @@
 
   const titles = createPaginatedLoader(async (page) => {
     const { data: result } = await client.GET('/api/titles/', {
-      params: { query: { display: profile.slug, page } },
+      params: { query: { display_type: profile.slug, page } },
     });
     return result ?? { items: [], count: 0 };
   });

@@ -1,17 +1,30 @@
 /**
  * Gating logic for the "Create?" prompt on the titles list page.
  *
- * Extracted so we can unit-test the invariant that the prompt is driven by
- * a query-only match set — not the faceted `filteredTitles` — and hidden
- * for anonymous users.
+ * The prompt is driven by the server's **query-only count** — the number of
+ * titles matching `q` alone, ignoring any active facets. That distinction
+ * matters: the filtered card `count` can be zero merely because a facet is
+ * hiding an existing title (filter to Williams, search a Stern title), and
+ * offering to create it there would produce a duplicate. `queryCount === 0`
+ * means the name is genuinely free, so the prompt is correct even under active
+ * facets.
+ *
+ * `queryCount` rides the streamed facets payload, so it is `undefined` until
+ * that resolves (or if it errors) — we never flash a "create" offer on missing
+ * data.
+ *
+ * Extracted so we can unit-test these invariants.
  */
 
-import { emptyFilterState, filterTitles, type FacetedTitle } from '$lib/facet-engine';
-
 export interface CreatePromptInputs {
-  titles: FacetedTitle[];
+  /** The active `q` search term. */
   query: string;
   isAuthenticated: boolean;
+  /**
+   * Titles matching `q` alone, ignoring active facets; `null` when there is no
+   * `q`, `undefined` while the streamed facets payload is still pending.
+   */
+  queryCount: number | null | undefined;
 }
 
 export interface CreatePromptDecision {
@@ -23,10 +36,5 @@ export function decideCreatePrompt(inputs: CreatePromptInputs): CreatePromptDeci
   const q = inputs.query.trim();
   if (!q) return { show: false, query: '' };
   if (!inputs.isAuthenticated) return { show: false, query: q };
-
-  const queryOnlyMatches = filterTitles(inputs.titles, {
-    ...emptyFilterState(),
-    query: q,
-  });
-  return { show: queryOnlyMatches.length === 0, query: q };
+  return { show: inputs.queryCount === 0, query: q };
 }

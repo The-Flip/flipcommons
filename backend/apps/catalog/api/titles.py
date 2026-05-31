@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
@@ -21,9 +22,8 @@ from django.db.models import (
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
-from ninja import Router, Schema
+from ninja import Query, Router, Schema
 from ninja.decorators import decorate_view
-from ninja.pagination import paginate
 from ninja.responses import Status
 from ninja.security import django_auth
 from pydantic import TypeAdapter
@@ -33,7 +33,6 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
-from apps.core.pagination import NamedPageNumberPagination
 from apps.core.schemas import (
     ErrorDetailSchema,
     RateLimitErrorSchema,
@@ -56,13 +55,28 @@ from apps.provenance.schemas import (
     ReviewLinkSchema,
 )
 
-from ..cache import get_cached_response, set_cached_response, titles_all_key
+from ..cache import (
+    get_cached_response,
+    set_cached_response,
+    titles_all_key,
+    titles_facets_key,
+)
 from ..models import (
     Credit,
     MachineModel,
     MachineModelGameplayFeature,
     Title,
     TitleAbbreviation,
+)
+from ._title_facets import (
+    Bounds,
+    FacetOption,
+    FilterOptions,
+    PlayerCountOption,
+    TitleFilters,
+    facet_counts,
+    filtered_titles,
+    ordered_titles,
 )
 from ._typing import CreditKey, GameplayFeatureAgreement, SlugName
 from .constants import DEFAULT_PAGE_SIZE
@@ -144,6 +158,131 @@ class TitleListItemSchema(Schema):
 _ALL_ADAPTER: TypeAdapter[list[TitleListItemSchema]] = TypeAdapter(
     list[TitleListItemSchema]
 )
+
+
+# ---------------------------------------------------------------------------
+# Listing page schemas (SSR /titles)
+# ---------------------------------------------------------------------------
+
+
+class TitleCardSchema(Schema):
+    """Slim card for the /titles grid and every infinite-scroll page.
+
+    Only what `TitleCard` renders — no facet arrays (those live on the page
+    endpoint's `filter_options`, not on every row). Keeping the list path lean is
+    most of the payload win and lets it skip the bulk through-table queries."""
+
+    name: str
+    slug: str
+    year: int | None = None
+    model_count: int = 0
+    manufacturer: EntityRef | None = None
+    thumbnail_url: str | None = None
+
+
+class TitleListPageSchema(Schema):
+    """`{items, count}` page of cards — the wire shape `createPaginatedLoader`
+    expects (it derives has_more from items.length < count)."""
+
+    items: list[TitleCardSchema]
+    count: int
+
+
+class TitleFilterQuerySchema(Schema):
+    """Every /titles filter dimension as query params — one vocabulary end to end
+    (URL ⇄ this schema ⇄ `TitleFilters`). Multi-value params are **repeated**
+    (`theme=a&theme=b`), read natively as `list[str]`."""
+
+    q: str = ""
+    manufacturer: str | None = None
+    person: str | None = None
+    tech_gen: str | None = None
+    display_type: str | None = None
+    system: str | None = None
+    franchise: str | None = None
+    series: str | None = None
+    player_count: int | None = None
+    year_min: int | None = None
+    year_max: int | None = None
+    rating_min: float | None = None
+    theme: list[str] = []
+    feature: list[str] = []
+    reward_type: list[str] = []
+
+    def to_filters(self) -> TitleFilters:
+        return TitleFilters(
+            q=self.q or "",
+            manufacturer=self.manufacturer,
+            person=self.person,
+            tech_gen=self.tech_gen,
+            display_type=self.display_type,
+            system=self.system,
+            franchise=self.franchise,
+            series=self.series,
+            player_count=self.player_count,
+            year_min=self.year_min,
+            year_max=self.year_max,
+            rating_min=self.rating_min,
+            themes=tuple(self.theme),
+            features=tuple(self.feature),
+            reward_types=tuple(self.reward_type),
+        )
+
+
+# --- Facet option lists (GET /api/pages/titles) ---
+
+
+class FacetOptionSchema(Schema):
+    # ``public_id`` (not ``slug``): the option entity's URL identity — a slug for most
+    # facets, a ``location_path`` for location — so the name isn't a lie for path-keyed
+    # facets, matching the ``public_id`` vocabulary used everywhere else.
+    public_id: str
+    name: str
+    count: int
+
+
+class PlayerCountOptionSchema(Schema):
+    value: int
+    count: int
+
+
+class YearBoundsSchema(Schema):
+    min: int | None = None
+    max: int | None = None
+
+
+class RatingBoundsSchema(Schema):
+    min: float | None = None
+    max: float | None = None
+
+
+class FilterOptionsSchema(Schema):
+    manufacturer: list[FacetOptionSchema] = []
+    person: list[FacetOptionSchema] = []
+    tech_gen: list[FacetOptionSchema] = []
+    display_type: list[FacetOptionSchema] = []
+    system: list[FacetOptionSchema] = []
+    reward_type: list[FacetOptionSchema] = []
+    theme: list[FacetOptionSchema] = []
+    feature: list[FacetOptionSchema] = []
+    franchise: list[FacetOptionSchema] = []
+    series: list[FacetOptionSchema] = []
+    player_count: list[PlayerCountOptionSchema] = []
+    year: YearBoundsSchema = YearBoundsSchema()
+    rating: RatingBoundsSchema = RatingBoundsSchema()
+
+
+class TitleFacetsPageSchema(Schema):
+    """The /titles page endpoint payload — facet options plus the query-only
+    count (cards come from `/api/titles/`)."""
+
+    filter_options: FilterOptionsSchema
+    # Titles matching `q` alone, ignoring active facets; null when there is no
+    # `q`. Drives the "create this title?" prompt — see `_query_only_count`.
+    query_count: int | None = None
+
+
+_FACETS_ADAPTER: TypeAdapter[TitleFacetsPageSchema] = TypeAdapter(TitleFacetsPageSchema)
 
 
 class AgreedSpecsSchema(Schema):
@@ -232,25 +371,15 @@ def _assert_title_name_available(name: str, *, exclude_pk: int | None = None) ->
 # ---------------------------------------------------------------------------
 
 
-def _dedup_facet_refs(items: Iterable[SlugName]) -> list[EntityRef]:
-    """Deduplicate {slug, name} pairs preserving insertion order."""
-    seen: set[str] = set()
-    result: list[EntityRef] = []
-    for slug, name in items:
-        if slug and slug not in seen:
-            seen.add(slug)
-            result.append(EntityRef(public_id=slug, name=name))
-    return result
-
-
 def _dedup_facet_dicts(
     items: Iterable[SlugName],
 ) -> list[dict[str, str]]:
-    """Like :func:`_dedup_facet_refs` but emits plain dicts.
+    """Deduplicate {slug, name} pairs (preserving insertion order) into plain
+    ``{public_id, name}`` dicts.
 
-    Used by the cached ``/all/`` endpoints, whose responses are serialized
-    via :func:`set_cached_response`'s ``json.dumps`` fast path — Pydantic
-    Schema instances are not JSON-serializable there.
+    Used by the cached ``/all/`` endpoint, whose response is serialized via
+    :func:`set_cached_response`'s ``json.dumps`` fast path — Pydantic Schema
+    instances are not JSON-serializable there.
     """
     seen: set[str] = set()
     out: list[dict[str, str]] = []
@@ -259,106 +388,6 @@ def _dedup_facet_dicts(
             seen.add(slug)
             out.append({"public_id": slug, "name": name})
     return out
-
-
-def _serialize_title_list(
-    title: Title,
-    *,
-    min_rank: int | None = None,
-    media_by_model: dict[int, list[EntityMedia]] | None = None,
-) -> TitleListItemSchema:
-    thumbnail_url: str | None = None
-    manufacturer: EntityRef | None = None
-    year: int | None = None
-    machines = list(title.machine_models.all())
-
-    # Collect facet data from all non-variant models
-    tech_gen_pairs: list[SlugName] = []
-    display_type_pairs: list[SlugName] = []
-    player_counts_set: set[int] = set()
-    system_pairs: list[SlugName] = []
-    theme_pairs: list[SlugName] = []
-    gameplay_feature_pairs: list[SlugName] = []
-    reward_type_pairs: list[SlugName] = []
-    person_pairs: list[SlugName] = []
-    years: list[int] = []
-    ratings: list[float] = []
-
-    for m in machines:
-        if m.technology_generation:
-            tech_gen_pairs.append(
-                SlugName(m.technology_generation.slug, m.technology_generation.name)
-            )
-        if m.display_type:
-            display_type_pairs.append(
-                SlugName(m.display_type.slug, m.display_type.name)
-            )
-        if m.player_count is not None:
-            player_counts_set.add(m.player_count)
-        if m.system:
-            system_pairs.append(SlugName(m.system.slug, m.system.name))
-        for theme in m.themes.all():
-            theme_pairs.append(SlugName(theme.slug, theme.name))
-        for gf in m.gameplay_features.all():
-            gameplay_feature_pairs.append(SlugName(gf.slug, gf.name))
-        for rt in m.reward_types.all():
-            reward_type_pairs.append(SlugName(rt.slug, rt.name))
-        for credit in m.credits.all():
-            person_pairs.append(SlugName(credit.person.slug, credit.person.name))
-        if m.year is not None:
-            years.append(m.year)
-        if m.ipdb_rating is not None:
-            ratings.append(float(m.ipdb_rating))
-
-    if machines:
-        first = machines[0]
-        media = media_by_model.get(first.pk) if media_by_model else None
-        thumbnail_url, _ = extract_image_urls(
-            first.extra_data or {}, media, min_rank=min_rank
-        )
-        mfr = (
-            first.corporate_entity.manufacturer
-            if first.corporate_entity and first.corporate_entity.manufacturer
-            else None
-        )
-        manufacturer = (
-            EntityRef(public_id=mfr.public_id, name=mfr.name) if mfr else None
-        )
-        year = first.year
-
-    # Franchise and Series (both FKs on Title)
-    franchise: EntityRef | None = None
-    if title.franchise:
-        franchise = EntityRef(
-            public_id=title.franchise.public_id, name=title.franchise.name
-        )
-    series: EntityRef | None = None
-    if title.series:
-        series = EntityRef(public_id=title.series.public_id, name=title.series.name)
-
-    return TitleListItemSchema(
-        name=title.name,
-        slug=title.slug,
-        abbreviations=[a.value for a in title.abbreviations.all()],
-        # model_count is a queryset .annotate() attribute, not on Title itself.
-        model_count=getattr(title, "model_count", 0),
-        manufacturer=manufacturer,
-        year=year,
-        thumbnail_url=thumbnail_url,
-        tech_generations=_dedup_facet_refs(tech_gen_pairs),
-        display_types=_dedup_facet_refs(display_type_pairs),
-        player_counts=sorted(player_counts_set),
-        systems=_dedup_facet_refs(system_pairs),
-        themes=_dedup_facet_refs(theme_pairs),
-        gameplay_features=_dedup_facet_refs(gameplay_feature_pairs),
-        reward_types=_dedup_facet_refs(reward_type_pairs),
-        persons=_dedup_facet_refs(person_pairs),
-        franchise=franchise,
-        series=series,
-        year_min=min(years) if years else None,
-        year_max=max(years) if years else None,
-        ipdb_rating_max=max(ratings) if ratings else None,
-    )
 
 
 def _build_review_links(title: Title) -> list[ReviewLinkSchema]:
@@ -692,44 +721,172 @@ def _detail_qs() -> QuerySet[Title]:
 
 
 # ---------------------------------------------------------------------------
+# Listing page — card path + facet options
+# ---------------------------------------------------------------------------
+
+
+def _card_models_prefetch() -> Prefetch[str, Any, str]:
+    """Prefetch each title's active non-variant models (ordered first-model-first)
+    with manufacturer and **primary-only** media — the exact shape the card needs.
+
+    `_title_models_prefetch()`'s `media_prefetch()` loads *all* ready media (wrong
+    shape for `extract_image_urls`, which wants primary-only); this loads only
+    `is_primary=True` ready media into ``primary_media`` so the card resolver feeds
+    it directly."""
+    primary_media = Prefetch(
+        "entity_media",
+        queryset=EntityMedia.objects.filter(
+            is_primary=True, asset__status="ready"
+        ).select_related("asset"),
+        to_attr="primary_media",
+    )
+    return Prefetch(
+        "machine_models",
+        queryset=MachineModel.objects.active()
+        .filter(variant_of__isnull=True)
+        .select_related("corporate_entity__manufacturer")
+        .prefetch_related(primary_media)
+        .order_by("year", "name"),
+        to_attr="card_models",
+    )
+
+
+def _serialize_card(title: Title, *, min_rank: int) -> TitleCardSchema:
+    """Serialize one title to a slim card from prefetched ``card_models``."""
+    models: list[MachineModel] = getattr(title, "card_models", [])
+    first = models[0] if models else None
+    manufacturer: EntityRef | None = None
+    year: int | None = None
+    thumbnail_url: str | None = None
+    if first is not None:
+        year = first.year
+        mfr = (
+            first.corporate_entity.manufacturer
+            if first.corporate_entity and first.corporate_entity.manufacturer
+            else None
+        )
+        if mfr:
+            manufacturer = EntityRef(public_id=mfr.public_id, name=mfr.name)
+        thumbnail_url, _ = extract_image_urls(
+            first.extra_data or {},
+            getattr(first, "primary_media", None),
+            min_rank=min_rank,
+        )
+    return TitleCardSchema(
+        name=title.name,
+        slug=title.slug,
+        year=year,
+        model_count=len(models),
+        manufacturer=manufacturer,
+        thumbnail_url=thumbnail_url,
+    )
+
+
+def _facet_option_dicts(options: list[FacetOption]) -> list[dict[str, object]]:
+    return [
+        {"public_id": o.public_id, "name": o.name, "count": o.count} for o in options
+    ]
+
+
+def _filter_options_payload(opts: FilterOptions) -> dict[str, object]:
+    """`FilterOptions` → the JSON-able dict the page endpoint returns (and caches).
+
+    Plain dicts (not Schema instances) so the cache's ``json.dumps`` fast path and
+    the live path stay byte-equivalent (see ``set_cached_response``)."""
+
+    def bounds(b: Bounds[int] | Bounds[float]) -> dict[str, object]:
+        return {"min": b.min, "max": b.max}
+
+    players: list[PlayerCountOption] = opts.player_count
+    return {
+        "filter_options": {
+            "manufacturer": _facet_option_dicts(opts.manufacturer),
+            "person": _facet_option_dicts(opts.person),
+            "tech_gen": _facet_option_dicts(opts.tech_gen),
+            "display_type": _facet_option_dicts(opts.display_type),
+            "system": _facet_option_dicts(opts.system),
+            "reward_type": _facet_option_dicts(opts.reward_type),
+            "theme": _facet_option_dicts(opts.theme),
+            "feature": _facet_option_dicts(opts.feature),
+            "franchise": _facet_option_dicts(opts.franchise),
+            "series": _facet_option_dicts(opts.series),
+            "player_count": [{"value": p.value, "count": p.count} for p in players],
+            "year": bounds(opts.year),
+            "rating": bounds(opts.rating),
+        }
+    }
+
+
+def _query_only_count(filters: TitleFilters) -> int | None:
+    """Count titles matching ``q`` **alone**, ignoring every other active facet.
+
+    Drives the "create this title?" prompt: a zero here means the name is
+    genuinely free, whereas the filtered card ``count`` can be zero merely
+    because a facet is hiding an existing title (filter to Williams, search a
+    Stern title). Reuses ``filtered_titles`` over a ``q``-only ``TitleFilters``
+    so it shares the exact ``q`` predicate (first-model manufacturer + the
+    Postgres diacritic fold) and can't drift from search. ``None`` when there is
+    no ``q`` — the prompt never shows without one."""
+    # Trim before testing: a whitespace-only `q` is empty to the (trimmed)
+    # prompt, so skip it rather than run a near-whole-catalog `icontains " "`.
+    if not filters.q.strip():
+        return None
+    return filtered_titles(TitleFilters(q=filters.q)).count()
+
+
+def title_facets_response(filters: TitleFilters) -> HttpResponse:
+    """Build the `/api/pages/titles` response. The no-filter payload is cached
+    (hottest path, static between catalog edits); filtered requests compute live.
+
+    The cache key is audience-scoped and the live branch sets ``Vary: Cookie`` for
+    **consistency/insurance**, not because the payload varies by audience: the facet
+    counts gate on ``active_status_q`` (status only — active/deleted), carrying no
+    ``min_rank``/licensing input, so they are audience-invariant today. Audience
+    scoping is cheap insurance if a licensing-gated input is ever added."""
+    if filters == TitleFilters():
+        cached = get_cached_response(titles_facets_key())
+        if cached is not None:
+            return cached
+        # Compute only on a miss — never recompute when about to serve the cache.
+        # The no-filter path has no `q`, so `query_count` is always null here.
+        payload = _filter_options_payload(facet_counts(filters))
+        payload["query_count"] = None
+        return set_cached_response(titles_facets_key(), _FACETS_ADAPTER, payload)
+    payload = _filter_options_payload(facet_counts(filters))
+    payload["query_count"] = _query_only_count(filters)
+    json_bytes = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    response = HttpResponse(json_bytes, content_type="application/json")
+    response["Vary"] = "Cookie"
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 
 titles_router = Router(tags=["titles"])
 
 
-class TitleListPagination(NamedPageNumberPagination):
-    response_name = "TitleListSchema"
-
-
-@titles_router.get("/", response=list[TitleListItemSchema])
-@paginate(TitleListPagination, page_size=DEFAULT_PAGE_SIZE)
-def list_titles(request: HttpRequest, display: str = "") -> list[TitleListItemSchema]:
-    qs = Title.objects.active().annotate(
-        model_count=Count(
-            "machine_models",
-            filter=Q(machine_models__variant_of__isnull=True)
-            & active_status_q("machine_models"),
-        )
-    )
-    if display:
-        qs = qs.filter(machine_models__display_type__slug=display).distinct()
-    qs = (
-        qs.select_related("franchise", "series")
-        .prefetch_related(_title_models_prefetch(), "abbreviations")
-        .order_by("name")
-    )
+@titles_router.get("/", response=TitleListPageSchema)
+def list_titles(
+    request: HttpRequest,
+    filters: Query[TitleFilterQuerySchema],
+    page: int = 1,
+) -> TitleListPageSchema:
+    """One page of title cards for the SSR grid (page 1) and infinite scroll
+    (2…N). Slices at SQL via ``ordered_titles`` + LIMIT/OFFSET — only the requested
+    page is serialized (never ``list(qs)`` over the whole catalog)."""
+    f = filters.to_filters()
+    rows = ordered_titles(f).prefetch_related(_card_models_prefetch())
+    count = rows.count()
+    size = DEFAULT_PAGE_SIZE
+    start = (max(page, 1) - 1) * size
+    titles = list(rows[start : start + size])
     min_rank = get_minimum_display_rank()
-    titles = list(qs)
-    media_by_model = fetch_model_media_map(
-        first.pk
-        for t in titles
-        if (first := next(iter(t.machine_models.all()), None)) is not None
+    return TitleListPageSchema(
+        items=[_serialize_card(t, min_rank=min_rank) for t in titles],
+        count=count,
     )
-    return [
-        _serialize_title_list(t, min_rank=min_rank, media_by_model=media_by_model)
-        for t in titles
-    ]
 
 
 @titles_router.get("/all/", response=list[TitleListItemSchema])

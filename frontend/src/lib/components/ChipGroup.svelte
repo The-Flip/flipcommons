@@ -22,8 +22,8 @@
         class="chip"
         class:active={selected === opt.slug}
         aria-pressed={selected === opt.slug}
-        aria-disabled={opt.count === 0}
-        disabled={opt.count === 0}
+        aria-disabled={opt.count === 0 && selected !== opt.slug}
+        disabled={opt.count === 0 && selected !== opt.slug}
         onclick={() => {
           const val = selected === opt.slug ? null : opt.slug;
           selected = val;

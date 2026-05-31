@@ -13,6 +13,7 @@
     label = '',
     error = '',
     compact = false,
+    emptyMessage = 'No options available',
   }: {
     options: { slug: string; label: string; count?: number }[];
     selected?: string | string[] | null;
@@ -24,6 +25,13 @@
     error?: string;
     /** Use the de-emphasized filter-sidebar label treatment instead of the form FieldGroup. */
     compact?: boolean;
+    /**
+     * Shown when there are **no options at all** (a distinct cause from a search
+     * that filtered the list to empty, which always shows "No matches"). Lets a
+     * caller explain why the list is empty — e.g. a faceted sidebar pruned every
+     * value under the current filters.
+     */
+    emptyMessage?: string;
   } = $props();
 
   function isDisabled(opt: { count?: number }): boolean {
@@ -277,7 +285,7 @@
           {/if}
         </li>
       {:else}
-        <li class="no-results">No matches</li>
+        <li class="no-results">{options.length === 0 ? emptyMessage : 'No matches'}</li>
       {/each}
     </ul>
   {/if}

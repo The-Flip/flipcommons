@@ -2,65 +2,45 @@
   import ChipGroup from './ChipGroup.svelte';
   import SearchableSelect from './SearchableSelect.svelte';
   import YearRangeInput from './YearRangeInput.svelte';
-  import {
-    buildFacetRefOptions,
-    buildPlayerCountOptions,
-    buildSingleRefOptions,
-    computeFacetCounts,
-    emptyFilterState,
-    type FacetedTitle,
-    type FilterState,
-  } from '$lib/facet-engine';
+  import { emptyFilterState, hasActiveFilters, type FilterState } from '$lib/facet-engine';
+  import type { FacetOptionSchema, FilterOptionsSchema } from '$lib/api/schema';
 
   let {
-    allTitles,
+    filterOptions,
     filters = $bindable(),
   }: {
-    allTitles: FacetedTitle[];
+    /** Server-computed option lists with live N-1 counts (public_id, name, count). */
+    filterOptions: FilterOptionsSchema;
     filters: FilterState;
   } = $props();
 
-  // -----------------------------------------------------------------------
-  // Facet counts (N-1 approach)
-  // -----------------------------------------------------------------------
-  let facetCounts = $derived(computeFacetCounts(allTitles, filters));
+  /** Backend `{public_id, name, count}` → the `{slug, label, count}` the controls take.
+   * The generic controls' opaque id is `slug`; the API's honest `public_id` (a slug
+   * here, a location_path for location) maps onto it — the lie stops at this boundary. */
+  function toOptions(opts: FacetOptionSchema[]): { slug: string; label: string; count: number }[] {
+    return opts.map((o) => ({ slug: o.public_id, label: o.name, count: o.count }));
+  }
 
-  // -----------------------------------------------------------------------
-  // Option lists (unique values enriched with live counts)
-  // -----------------------------------------------------------------------
-  let techGenOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.tech_generations, facetCounts.techGeneration),
-  );
-  let displayTypeOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.display_types, facetCounts.displayType),
-  );
-  let manufacturerOptions = $derived(
-    buildSingleRefOptions(allTitles, (t) => t.manufacturer ?? null, facetCounts.manufacturer),
-  );
-  let personOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.persons, facetCounts.person),
-  );
-  let themeOptions = $derived(buildFacetRefOptions(allTitles, (t) => t.themes, facetCounts.theme));
-  let featureOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.gameplay_features, facetCounts.feature),
-  );
-  let rewardTypeOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.reward_types, facetCounts.rewardType),
-  );
-  let systemOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.systems, facetCounts.system),
-  );
-  let franchiseOptions = $derived(
-    buildSingleRefOptions(allTitles, (t) => t.franchise, facetCounts.franchise),
-  );
-  let seriesOptions = $derived(
-    buildSingleRefOptions(allTitles, (t) => t.series, facetCounts.series),
-  );
-  let playerCountOptions = $derived(buildPlayerCountOptions(facetCounts.playerCount));
+  let manufacturerOptions = $derived(toOptions(filterOptions.manufacturer));
+  let personOptions = $derived(toOptions(filterOptions.person));
+  let themeOptions = $derived(toOptions(filterOptions.theme));
+  let featureOptions = $derived(toOptions(filterOptions.feature));
+  let rewardTypeOptions = $derived(toOptions(filterOptions.reward_type));
+  let techGenOptions = $derived(toOptions(filterOptions.tech_gen));
+  let displayTypeOptions = $derived(toOptions(filterOptions.display_type));
+  let systemOptions = $derived(toOptions(filterOptions.system));
+  let franchiseOptions = $derived(toOptions(filterOptions.franchise));
+  let seriesOptions = $derived(toOptions(filterOptions.series));
 
-  // Player count adaptor: ChipGroup works with string slugs, filters.playerCount is number|null
+  // Player count: server returns {value, count} buckets; ChipGroup wants string
+  // slugs, and `filters.playerCount` is number|null. The "6+" bucket renders
+  // under value 6.
   let playerCountChipOptions = $derived(
-    playerCountOptions.map((o) => ({ slug: String(o.value), label: o.label, count: o.count })),
+    filterOptions.player_count.map((o) => ({
+      slug: String(o.value),
+      label: o.value >= 6 ? '6+' : String(o.value),
+      count: o.count,
+    })),
   );
   let playerCountSlug = $derived(filters.playerCount != null ? String(filters.playerCount) : null);
 
@@ -68,25 +48,7 @@
     filters.playerCount = slug ? Number(slug) : null;
   }
 
-  // -----------------------------------------------------------------------
-  // Active filter detection
-  // -----------------------------------------------------------------------
-  let hasActiveFilters = $derived(
-    filters.techGeneration != null ||
-      filters.yearMin != null ||
-      filters.yearMax != null ||
-      filters.manufacturer != null ||
-      filters.person != null ||
-      filters.themes.length > 0 ||
-      filters.features.length > 0 ||
-      filters.rewardTypes.length > 0 ||
-      filters.displayType != null ||
-      filters.playerCount != null ||
-      filters.system != null ||
-      filters.franchise != null ||
-      filters.series != null ||
-      filters.ratingMin != null,
-  );
+  let anyActive = $derived(hasActiveFilters(filters));
 
   function clearAll() {
     filters = emptyFilterState();
@@ -96,7 +58,7 @@
 <aside class="sidebar">
   <div class="sidebar-header">
     <h2>Filters</h2>
-    {#if hasActiveFilters}
+    {#if anyActive}
       <button class="clear-all" onclick={clearAll}>Clear all</button>
     {/if}
   </div>
@@ -113,6 +75,7 @@
       options={manufacturerOptions}
       bind:selected={filters.manufacturer}
       placeholder="Search manufacturers..."
+      emptyMessage="No manufacturers match your other filters"
     />
   </div>
 
@@ -123,6 +86,7 @@
       options={personOptions}
       bind:selected={filters.person}
       placeholder="Search people..."
+      emptyMessage="No people match your other filters"
     />
   </div>
 
@@ -134,6 +98,7 @@
       bind:selected={filters.themes}
       multi
       placeholder="Search themes..."
+      emptyMessage="No themes match your other filters"
     />
   </div>
 
@@ -145,6 +110,7 @@
       bind:selected={filters.features}
       multi
       placeholder="Search features..."
+      emptyMessage="No features match your other filters"
     />
   </div>
 
@@ -156,6 +122,7 @@
       bind:selected={filters.rewardTypes}
       multi
       placeholder="Search reward types..."
+      emptyMessage="No reward types match your other filters"
     />
   </div>
 
@@ -191,6 +158,7 @@
       options={systemOptions}
       bind:selected={filters.system}
       placeholder="Search systems..."
+      emptyMessage="No systems match your other filters"
     />
   </div>
 
@@ -201,6 +169,7 @@
       options={franchiseOptions}
       bind:selected={filters.franchise}
       placeholder="Search franchises..."
+      emptyMessage="No franchises match your other filters"
     />
   </div>
 
@@ -211,6 +180,7 @@
       options={seriesOptions}
       bind:selected={filters.series}
       placeholder="Search series..."
+      emptyMessage="No series match your other filters"
     />
   </div>
 
@@ -277,7 +247,7 @@
   }
 
   .rating-input {
+    /* width is the only override; padding/border/etc. come from app.css. */
     width: 6rem;
-    padding: var(--size-2);
   }
 </style>

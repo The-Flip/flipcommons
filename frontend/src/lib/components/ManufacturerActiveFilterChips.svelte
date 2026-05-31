@@ -5,6 +5,7 @@
     type MfrActiveFilterLabel,
     type MfrFilterState,
   } from '$lib/manufacturer-facet-engine';
+  import ActiveFilterChips, { type FilterChipSpec } from '$lib/components/ActiveFilterChips.svelte';
 
   let {
     filters = $bindable(),
@@ -14,65 +15,41 @@
     allManufacturers: FacetedManufacturer[];
   } = $props();
 
-  let activeLabels = $derived(getMfrActiveFilterLabels(filters, allManufacturers));
-
   function removeFilter(label: MfrActiveFilterLabel) {
-    if (label.field === 'yearMin') {
-      filters.yearMin = null;
-      filters.yearMax = null;
-    } else {
-      (filters as unknown as Record<string, unknown>)[label.field] = null;
+    switch (label.field) {
+      case 'yearMin':
+      case 'yearMax':
+        filters.yearMin = null;
+        filters.yearMax = null;
+        break;
+      case 'location':
+        filters.location = null;
+        break;
+      case 'person':
+        filters.person = null;
+        break;
+      case 'techGeneration':
+        filters.techGeneration = null;
+        break;
+      case 'query':
+        filters.query = '';
+        break;
+      default:
+        // Compile error if a new MfrFilterState field gains a chip but isn't
+        // handled here, instead of silently no-op-ing at runtime.
+        label.field satisfies never;
     }
   }
+
+  let chips = $derived(
+    getMfrActiveFilterLabels(filters, allManufacturers).map(
+      (label): FilterChipSpec => ({
+        key: label.key,
+        label: label.label,
+        remove: () => removeFilter(label),
+      }),
+    ),
+  );
 </script>
 
-{#if activeLabels.length > 0}
-  <div class="active-filters" role="list" aria-label="Active filters">
-    {#each activeLabels as chip (chip.key)}
-      <span class="filter-chip" role="listitem">
-        {chip.label}
-        <button
-          class="chip-remove"
-          aria-label="Remove filter: {chip.label}"
-          onclick={() => removeFilter(chip)}
-        >
-          &times;
-        </button>
-      </span>
-    {/each}
-  </div>
-{/if}
-
-<style>
-  .active-filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-1);
-    margin-bottom: var(--size-3);
-  }
-
-  .filter-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--size-1);
-    padding: var(--size-1) var(--size-2);
-    font-size: var(--font-size-0);
-    background-color: var(--color-accent);
-    color: var(--color-text-inverse);
-    border-radius: var(--radius-2);
-  }
-
-  .chip-remove {
-    background: none;
-    border: none;
-    color: var(--color-text-inverse-muted);
-    cursor: pointer;
-    padding: 0;
-    font-size: var(--font-size-1);
-    line-height: 1;
-  }
-
-  .chip-remove:hover {
-    color: var(--color-text-inverse);
-  }
-</style>
+<ActiveFilterChips {chips} />

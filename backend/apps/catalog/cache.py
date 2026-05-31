@@ -21,23 +21,22 @@ from pydantic import TypeAdapter
 
 from apps.core.licensing import current_audience
 
-# Bump when a cached /all/ payload's JSON shape changes. FileBasedCache writes
-# with ``timeout=None`` and can survive a deploy (its dir is not always wiped),
-# while ``invalidate_all()`` only runs on data mutation — never on deploy. So a
-# shape change without a version bump can keep serving old-shaped JSON to the
-# new frontend until the next write. Versioning the keys orphans the stale
-# entries instead. (The unversioned keys were the implicit "v1"; v2 = the
-# public_id reference-body migration that reshaped titles/manufacturers refs;
-# v3 = added `last_modified` to the cached location tree's `_LocationNode` —
-# unpickling a stale v2 node post-deploy would miss the new slot. The version
-# is shared across all bases, so this also harmlessly orphans the unchanged
-# `/all/` grid payloads, which rebuild on first read.)
-_CACHE_VERSION = "v3"
+# Bump when a cached payload's JSON shape changes. FileBasedCache writes with
+# ``timeout=None`` and can survive a deploy (its dir is not always wiped), while
+# ``invalidate_all()`` only runs on data mutation — never on deploy. So a shape
+# change without a bump can keep serving old-shaped JSON to the new frontend
+# until the next write; versioning the keys orphans the stale entries instead.
+# The version is shared across all bases, so a bump also harmlessly orphans
+# unchanged payloads, which rebuild on first read. (Per-bump history: git blame.)
+_CACHE_VERSION = "v4"
 
 _MODELS_ALL_BASE = f"catalog:models:all:{_CACHE_VERSION}"
 _MANUFACTURERS_ALL_BASE = f"catalog:manufacturers:all:{_CACHE_VERSION}"
 _PEOPLE_ALL_BASE = f"catalog:people:all:{_CACHE_VERSION}"
 _TITLES_ALL_BASE = f"catalog:titles:all:{_CACHE_VERSION}"
+# No-filter facet option lists for the /titles page (GET /api/pages/titles). Static
+# between catalog edits, so cached and cleared by invalidate_all() like the /all/ slots.
+_TITLES_FACETS_BASE = f"catalog:titles:facets:{_CACHE_VERSION}"
 _LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
 
 _BASES: tuple[str, ...] = (
@@ -45,6 +44,7 @@ _BASES: tuple[str, ...] = (
     _MANUFACTURERS_ALL_BASE,
     _PEOPLE_ALL_BASE,
     _TITLES_ALL_BASE,
+    _TITLES_FACETS_BASE,
     _LOCATIONS_TREE_BASE,
 )
 
@@ -65,6 +65,10 @@ def people_all_key() -> str:
 
 def titles_all_key() -> str:
     return f"{_TITLES_ALL_BASE}:{current_audience()}"
+
+
+def titles_facets_key() -> str:
+    return f"{_TITLES_FACETS_BASE}:{current_audience()}"
 
 
 def locations_tree_key() -> str:
