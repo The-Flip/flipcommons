@@ -13,6 +13,7 @@
     label = '',
     error = '',
     compact = false,
+    disabled = false,
     emptyMessage = 'No options available',
   }: {
     options: { value: string; label: string; count?: number }[];
@@ -25,6 +26,13 @@
     error?: string;
     /** Use the de-emphasized filter-sidebar label treatment instead of the form FieldGroup. */
     compact?: boolean;
+    /**
+     * Render the control inert: the input can't be focused/opened, the clear and
+     * tag-remove buttons are hidden, and the mutation handlers no-op. Used by the
+     * filter sidebar to hold the control while its options stream in (see `streamed`).
+     * Defaults false, so existing consumers are unaffected.
+     */
+    disabled?: boolean;
     /**
      * Shown when there are **no options at all** (a distinct cause from a search
      * that filtered the list to empty, which always shows "No matches"). Lets a
@@ -75,6 +83,7 @@
   }
 
   function toggle(value: string) {
+    if (disabled) return;
     if (multi) {
       const arr = Array.isArray(selected) ? selected : [];
       if (arr.includes(value)) {
@@ -183,9 +192,12 @@
     };
   });
 
-  const inputId = `searchable-select-${Math.random().toString(36).slice(2, 8)}`;
-  const listboxId = `listbox-${Math.random().toString(36).slice(2, 8)}`;
-  const errorId = `${inputId}-error`;
+  // `$props.id()` is stable across SSR and hydration — required now that the filter
+  // sidebar server-renders this control (a `Math.random()` id would mismatch on hydrate).
+  const uid = $props.id();
+  const inputId = `${uid}-input`;
+  const listboxId = `${uid}-listbox`;
+  const errorId = `${uid}-error`;
 </script>
 
 {#snippet body()}
@@ -195,6 +207,7 @@
       bind:this={inputEl}
       type="text"
       role="combobox"
+      {disabled}
       aria-expanded={open}
       aria-controls={listboxId}
       aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
@@ -209,7 +222,7 @@
       onfocus={handleFocus}
       onkeydown={handleKeydown}
     />
-    {#if !multi && selected}
+    {#if !multi && selected && !disabled}
       <button
         class="clear-btn"
         aria-label="Clear selection"
@@ -234,6 +247,7 @@
             <button
               class="tag-remove"
               aria-label={`Remove ${opt.label}`}
+              {disabled}
               onclick={() => toggle(value)}
             >
               ×

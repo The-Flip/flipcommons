@@ -10,7 +10,9 @@ const OPTIONS = [
   { value: 'williams', label: 'Williams', count: 0 },
 ];
 
-function renderSingle(props: Partial<{ selected: string | null; allowZeroCount: boolean }> = {}) {
+function renderSingle(
+  props: Partial<{ selected: string | null; allowZeroCount: boolean; disabled: boolean }> = {},
+) {
   return render(SearchableSelect, {
     options: OPTIONS,
     label: 'Manufacturer',
@@ -20,7 +22,9 @@ function renderSingle(props: Partial<{ selected: string | null; allowZeroCount: 
   });
 }
 
-function renderMulti(props: Partial<{ selected: string[]; allowZeroCount: boolean }> = {}) {
+function renderMulti(
+  props: Partial<{ selected: string[]; allowZeroCount: boolean; disabled: boolean }> = {},
+) {
   return render(SearchableSelect, {
     options: OPTIONS,
     label: 'Manufacturer',
@@ -256,6 +260,33 @@ describe('SearchableSelect', () => {
     fireEvent.pointerDown(document.body);
 
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('is fully inert when disabled: input disabled and the listbox cannot open', async () => {
+    const user = userEvent.setup();
+    renderSingle({ disabled: true });
+
+    expect(getCombobox()).toBeDisabled();
+    // A disabled input takes no focus/click, so the dropdown never opens.
+    await user.click(getCombobox());
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('hides the single-value clear button when disabled', () => {
+    renderSingle({ selected: 'stern', disabled: true });
+
+    // The selected label still shows, but it can't be cleared while disabled.
+    expect(getCombobox()).toHaveValue('Stern Pinball');
+    expect(screen.queryByRole('button', { name: /clear selection/i })).not.toBeInTheDocument();
+  });
+
+  it('disables the multi-select tag remove buttons when disabled', () => {
+    renderMulti({ selected: ['stern', 'bally'], disabled: true });
+
+    // Tags still render, but their remove buttons are inert.
+    expect(screen.getByText('Stern Pinball')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /remove bally/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /remove stern pinball/i })).toBeDisabled();
   });
 
   it('does not leave queued scroll work behind after keyboard navigation unmounts', async () => {

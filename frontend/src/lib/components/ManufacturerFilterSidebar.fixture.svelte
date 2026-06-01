@@ -1,6 +1,6 @@
 <script lang="ts">
   import ManufacturerFilterSidebar from './ManufacturerFilterSidebar.svelte';
-  import { emptyMfrFilterState } from '$lib/manufacturer-facet-engine';
+  import { emptyMfrFilterState, type MfrFilterState } from '$lib/manufacturer-facet-engine';
   import type { ManufacturerFilterOptionsSchema } from '$lib/api/schema';
 
   const FILTER_OPTIONS: ManufacturerFilterOptionsSchema = {
@@ -19,7 +19,31 @@
     year: { min: 1967, max: 2024 },
   };
 
-  let filters = $state(emptyMfrFilterState());
+  // `noOptions` simulates first/cold load (options still streaming) — passing
+  // `filterOptions={undefined}` directly would hit the prop default, so use a flag.
+  let {
+    noOptions = false,
+    disabled = false,
+    busy = false,
+    initialFilters,
+  }: {
+    noOptions?: boolean;
+    disabled?: boolean;
+    busy?: boolean;
+    initialFilters?: MfrFilterState;
+  } = $props();
+
+  // Seed once from the prop via a closure so Svelte doesn't flag the initializer
+  // as a non-reactive capture (state_referenced_locally) — the seed is intentional.
+  function seedFilters(): MfrFilterState {
+    return initialFilters ?? emptyMfrFilterState();
+  }
+  let filters = $state(seedFilters());
 </script>
 
-<ManufacturerFilterSidebar filterOptions={FILTER_OPTIONS} bind:filters />
+<ManufacturerFilterSidebar
+  filterOptions={noOptions ? undefined : FILTER_OPTIONS}
+  {disabled}
+  {busy}
+  bind:filters
+/>

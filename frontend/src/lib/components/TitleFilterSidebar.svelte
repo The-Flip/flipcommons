@@ -7,10 +7,20 @@
 
   let {
     filterOptions,
+    disabled = false,
+    busy = false,
     filters = $bindable(),
   }: {
-    /** Server-computed option lists with live N-1 counts (public_id, name, count). */
-    filterOptions: FilterOptionsSchema;
+    /**
+     * Server-computed option lists with live N-1 counts (public_id, name, count).
+     * `undefined` while the facet stream is in flight on first/cold load — the
+     * controls render disabled and empty until it arrives (see `streamed`).
+     */
+    filterOptions: FilterOptionsSchema | undefined;
+    /** Disable every control (first/cold load, before any options have arrived). */
+    disabled?: boolean;
+    /** A refetch is in flight (sets `aria-busy` for screen readers; not visually disabled). */
+    busy?: boolean;
     filters: FilterState;
   } = $props();
 
@@ -19,26 +29,29 @@
     return opts.map((o) => ({ value: o.public_id, label: o.name, count: o.count }));
   }
 
-  let manufacturerOptions = $derived(toOptions(filterOptions.manufacturer));
-  let personOptions = $derived(toOptions(filterOptions.person));
-  let themeOptions = $derived(toOptions(filterOptions.theme));
-  let featureOptions = $derived(toOptions(filterOptions.feature));
-  let rewardTypeOptions = $derived(toOptions(filterOptions.reward_type));
-  let techGenOptions = $derived(toOptions(filterOptions.tech_gen));
-  let displayTypeOptions = $derived(toOptions(filterOptions.display_type));
-  let systemOptions = $derived(toOptions(filterOptions.system));
-  let franchiseOptions = $derived(toOptions(filterOptions.franchise));
-  let seriesOptions = $derived(toOptions(filterOptions.series));
+  let manufacturerOptions = $derived(filterOptions ? toOptions(filterOptions.manufacturer) : []);
+  let personOptions = $derived(filterOptions ? toOptions(filterOptions.person) : []);
+  let themeOptions = $derived(filterOptions ? toOptions(filterOptions.theme) : []);
+  let featureOptions = $derived(filterOptions ? toOptions(filterOptions.feature) : []);
+  let rewardTypeOptions = $derived(filterOptions ? toOptions(filterOptions.reward_type) : []);
+  let techGenOptions = $derived(filterOptions ? toOptions(filterOptions.tech_gen) : []);
+  let displayTypeOptions = $derived(filterOptions ? toOptions(filterOptions.display_type) : []);
+  let systemOptions = $derived(filterOptions ? toOptions(filterOptions.system) : []);
+  let franchiseOptions = $derived(filterOptions ? toOptions(filterOptions.franchise) : []);
+  let seriesOptions = $derived(filterOptions ? toOptions(filterOptions.series) : []);
 
   // Player count: server returns {value, count} buckets; ChipGroup wants string
   // values, and `filters.playerCount` is number|null. The "6+" bucket renders
-  // under value 6.
+  // under value 6. Guarded for the undefined-options window like the others —
+  // this builds its own buckets (not via `toOptions`), so it needs its own guard.
   let playerCountChipOptions = $derived(
-    filterOptions.player_count.map((o) => ({
-      value: String(o.value),
-      label: o.value >= 6 ? '6+' : String(o.value),
-      count: o.count,
-    })),
+    filterOptions
+      ? filterOptions.player_count.map((o) => ({
+          value: String(o.value),
+          label: o.value >= 6 ? '6+' : String(o.value),
+          count: o.count,
+        }))
+      : [],
   );
   let playerCountValue = $derived(filters.playerCount != null ? String(filters.playerCount) : null);
 
@@ -53,17 +66,17 @@
   }
 </script>
 
-<aside class="sidebar">
+<aside class="sidebar" aria-busy={busy}>
   <div class="sidebar-header">
     <h2>Filters</h2>
     {#if anyActive}
-      <button class="clear-all" onclick={clearAll}>Clear all</button>
+      <button class="clear-all" {disabled} onclick={clearAll}>Clear all</button>
     {/if}
   </div>
 
   <div class="filter-section">
     <span class="filter-label">Year</span>
-    <YearRangeInput bind:min={filters.yearMin} bind:max={filters.yearMax} />
+    <YearRangeInput bind:min={filters.yearMin} bind:max={filters.yearMax} {disabled} />
   </div>
 
   <div class="filter-section">
@@ -72,6 +85,7 @@
       label="Manufacturer"
       options={manufacturerOptions}
       bind:selected={filters.manufacturer}
+      {disabled}
       placeholder="Search manufacturers..."
       emptyMessage="No manufacturers match your other filters"
     />
@@ -83,6 +97,7 @@
       label="Person"
       options={personOptions}
       bind:selected={filters.person}
+      {disabled}
       placeholder="Search people..."
       emptyMessage="No people match your other filters"
     />
@@ -95,6 +110,7 @@
       options={themeOptions}
       bind:selected={filters.themes}
       multi
+      {disabled}
       placeholder="Search themes..."
       emptyMessage="No themes match your other filters"
     />
@@ -107,6 +123,7 @@
       options={featureOptions}
       bind:selected={filters.features}
       multi
+      {disabled}
       placeholder="Search features..."
       emptyMessage="No features match your other filters"
     />
@@ -119,6 +136,7 @@
       options={rewardTypeOptions}
       bind:selected={filters.rewardTypes}
       multi
+      {disabled}
       placeholder="Search reward types..."
       emptyMessage="No reward types match your other filters"
     />
@@ -129,6 +147,7 @@
       label="Tech generation"
       options={techGenOptions}
       bind:selected={filters.techGeneration}
+      {disabled}
     />
   </div>
 
@@ -137,6 +156,7 @@
       label="Display type"
       options={displayTypeOptions}
       bind:selected={filters.displayType}
+      {disabled}
     />
   </div>
 
@@ -145,6 +165,7 @@
       label="Player count"
       options={playerCountChipOptions}
       selected={playerCountValue}
+      {disabled}
       onchange={setPlayerCount}
     />
   </div>
@@ -155,6 +176,7 @@
       label="System"
       options={systemOptions}
       bind:selected={filters.system}
+      {disabled}
       placeholder="Search systems..."
       emptyMessage="No systems match your other filters"
     />
@@ -166,6 +188,7 @@
       label="Franchise"
       options={franchiseOptions}
       bind:selected={filters.franchise}
+      {disabled}
       placeholder="Search franchises..."
       emptyMessage="No franchises match your other filters"
     />
@@ -177,6 +200,7 @@
       label="Series"
       options={seriesOptions}
       bind:selected={filters.series}
+      {disabled}
       placeholder="Search series..."
       emptyMessage="No series match your other filters"
     />
@@ -211,8 +235,13 @@
     padding: 0;
   }
 
-  .clear-all:hover {
+  .clear-all:hover:not(:disabled) {
     text-decoration: underline;
+  }
+
+  .clear-all:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .filter-section {

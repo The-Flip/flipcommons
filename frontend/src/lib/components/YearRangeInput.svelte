@@ -2,9 +2,12 @@
   let {
     min = $bindable<number | null>(null),
     max = $bindable<number | null>(null),
+    disabled = false,
   }: {
     min?: number | null;
     max?: number | null;
+    /** Disable both inputs (e.g. while the filter sidebar's options stream in). */
+    disabled?: boolean;
   } = $props();
 </script>
 
@@ -13,6 +16,7 @@
     type="number"
     placeholder="From"
     aria-label="Year from"
+    {disabled}
     value={min ?? ''}
     onchange={(e) => {
       const v = e.currentTarget.value;
@@ -24,6 +28,7 @@
     type="number"
     placeholder="To"
     aria-label="Year to"
+    {disabled}
     value={max ?? ''}
     onchange={(e) => {
       const v = e.currentTarget.value;

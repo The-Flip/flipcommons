@@ -11,10 +11,20 @@
 
   let {
     filterOptions,
+    disabled = false,
+    busy = false,
     filters = $bindable(),
   }: {
-    /** Server-computed option lists with live N-1 counts (public_id, name, count). */
-    filterOptions: ManufacturerFilterOptionsSchema;
+    /**
+     * Server-computed option lists with live N-1 counts (public_id, name, count).
+     * `undefined` while the facet stream is in flight on first/cold load — the
+     * controls render disabled and empty until it arrives (see `streamed`).
+     */
+    filterOptions: ManufacturerFilterOptionsSchema | undefined;
+    /** Disable every control (first/cold load, before any options have arrived). */
+    disabled?: boolean;
+    /** A refetch is in flight (sets `aria-busy` for screen readers; not visually disabled). */
+    busy?: boolean;
     filters: MfrFilterState;
   } = $props();
 
@@ -23,9 +33,9 @@
     return opts.map((o) => ({ value: o.public_id, label: o.name, count: o.count }));
   }
 
-  let locationOptions = $derived(toOptions(filterOptions.location));
-  let personOptions = $derived(toOptions(filterOptions.person));
-  let techGenOptions = $derived(toOptions(filterOptions.tech_gen));
+  let locationOptions = $derived(filterOptions ? toOptions(filterOptions.location) : []);
+  let personOptions = $derived(filterOptions ? toOptions(filterOptions.person) : []);
+  let techGenOptions = $derived(filterOptions ? toOptions(filterOptions.tech_gen) : []);
 
   let anyActive = $derived(hasActiveMfrFilters(filters));
 
@@ -34,11 +44,11 @@
   }
 </script>
 
-<aside class="sidebar">
+<aside class="sidebar" aria-busy={busy}>
   <div class="sidebar-header">
     <h2>Filters</h2>
     {#if anyActive}
-      <button class="clear-all" onclick={clearAll}>Clear all</button>
+      <button class="clear-all" {disabled} onclick={clearAll}>Clear all</button>
     {/if}
   </div>
 
@@ -48,6 +58,7 @@
       label="Location"
       options={locationOptions}
       bind:selected={filters.location}
+      {disabled}
       placeholder="Search locations..."
       emptyMessage="No locations match your other filters"
     />
@@ -55,7 +66,7 @@
 
   <div class="filter-section">
     <span class="filter-label">Year</span>
-    <YearRangeInput bind:min={filters.yearMin} bind:max={filters.yearMax} />
+    <YearRangeInput bind:min={filters.yearMin} bind:max={filters.yearMax} {disabled} />
   </div>
 
   <div class="filter-section">
@@ -64,6 +75,7 @@
       label="Person"
       options={personOptions}
       bind:selected={filters.person}
+      {disabled}
       placeholder="Search people..."
       emptyMessage="No people match your other filters"
     />
@@ -74,6 +86,7 @@
       label="Tech generation"
       options={techGenOptions}
       bind:selected={filters.techGeneration}
+      {disabled}
     />
   </div>
 </aside>
@@ -106,8 +119,13 @@
     padding: 0;
   }
 
-  .clear-all:hover {
+  .clear-all:hover:not(:disabled) {
     text-decoration: underline;
+  }
+
+  .clear-all:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .filter-section {

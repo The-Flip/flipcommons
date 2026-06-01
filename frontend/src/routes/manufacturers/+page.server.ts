@@ -32,7 +32,8 @@ export const load: PageServerLoad = async ({ fetch, url, request }) => {
     // The query that produced page 1 — the client grid reuses it for load-more.
     query,
     // Unawaited → streamed after the cards. Resolves to undefined (never rejects) on
-    // a facet-endpoint error, so the sidebar simply stays on its skeleton.
+    // a facet-endpoint error; the sidebar renders disabled until it lands and shows an
+    // inline retry on undefined (see `streamed` + the page's facet state).
     filter_options: facets.then((r) => r.data?.filter_options).catch(() => undefined),
     // Query-only manufacturer count (matches `q` alone, ignoring facets) — drives the
     // "create?" prompt. Undefined while pending or on error so it never flashes.

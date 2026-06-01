@@ -3,11 +3,17 @@
     options,
     selected = $bindable(null),
     label = '',
+    disabled = false,
     onchange,
   }: {
     options: { value: string; label: string; count: number }[];
     selected?: string | null;
     label?: string;
+    /**
+     * Disable every chip (e.g. while the filter sidebar's options stream in).
+     * Defaults false, so existing consumers are unaffected.
+     */
+    disabled?: boolean;
     onchange?: (value: string | null) => void;
   } = $props();
 </script>
@@ -22,8 +28,8 @@
         class="chip"
         class:active={selected === opt.value}
         aria-pressed={selected === opt.value}
-        aria-disabled={opt.count === 0 && selected !== opt.value}
-        disabled={opt.count === 0 && selected !== opt.value}
+        aria-disabled={disabled || (opt.count === 0 && selected !== opt.value)}
+        disabled={disabled || (opt.count === 0 && selected !== opt.value)}
         onclick={() => {
           const val = selected === opt.value ? null : opt.value;
           selected = val;

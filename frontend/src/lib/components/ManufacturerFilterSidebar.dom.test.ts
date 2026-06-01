@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import ManufacturerFilterSidebarFixture from './ManufacturerFilterSidebar.fixture.svelte';
+import { emptyMfrFilterState } from '$lib/manufacturer-facet-engine';
 
 async function selectFirstSearchableOption(
   user: ReturnType<typeof userEvent.setup>,
@@ -68,5 +69,40 @@ describe('ManufacturerFilterSidebar', () => {
       'aria-pressed',
       'false',
     );
+  });
+});
+
+describe('ManufacturerFilterSidebar — disabled / cold-load', () => {
+  it('renders without options (cold load) and disables every control', () => {
+    render(ManufacturerFilterSidebarFixture, { noOptions: true, disabled: true });
+
+    // The real filter chrome renders even with no options — labels + control boxes.
+    expect(screen.getByRole('combobox', { name: /location/i })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: /person/i })).toBeDisabled();
+    expect(screen.getByLabelText('Year from')).toBeDisabled();
+    expect(screen.getByLabelText('Year to')).toBeDisabled();
+    // No option-backed pills render while options stream in.
+    expect(screen.queryByRole('button', { name: /solid state/i })).not.toBeInTheDocument();
+  });
+
+  it('marks the sidebar aria-busy during a refetch while keeping controls live', () => {
+    // Refetch state: prior options stay visible and interactive, but a fresh fetch is
+    // in flight — only `aria-busy` signals it (no visual disable, so multi-select stays fast).
+    render(ManufacturerFilterSidebarFixture, { busy: true });
+
+    expect(screen.getByRole('complementary')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('combobox', { name: /location/i })).toBeEnabled();
+  });
+
+  it('disables Clear all when a cold-loaded URL seeds a filter before options arrive', () => {
+    // A deep link like /manufacturers?location=usa: the filter is active (so Clear all
+    // shows) but options haven't streamed in yet, so the whole sidebar is disabled.
+    render(ManufacturerFilterSidebarFixture, {
+      noOptions: true,
+      disabled: true,
+      initialFilters: { ...emptyMfrFilterState(), location: 'usa' },
+    });
+
+    expect(screen.getByRole('button', { name: /clear all/i })).toBeDisabled();
   });
 });

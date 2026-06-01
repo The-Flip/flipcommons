@@ -29,4 +29,17 @@ describe('ChipGroup', () => {
     await user.click(chip);
     expect(onchange).toHaveBeenCalledWith(null);
   });
+
+  it('disables every chip when disabled (options streaming in)', async () => {
+    // Even an otherwise-clickable chip (non-zero count, or the selected one) is inert
+    // while the sidebar holds the control during the first/cold load.
+    const user = userEvent.setup();
+    const onchange = vi.fn();
+    render(ChipGroup, { options: OPTIONS, selected: 'em', disabled: true, onchange });
+
+    const active = screen.getByRole('button', { name: /Electromechanical/ });
+    expect(active).toBeDisabled();
+    await user.click(active);
+    expect(onchange).not.toHaveBeenCalled();
+  });
 });

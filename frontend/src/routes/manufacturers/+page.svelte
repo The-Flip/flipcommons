@@ -7,7 +7,6 @@
   import FilterDrawer from '$lib/components/FilterDrawer.svelte';
   import NoResultsCreatePrompt from '$lib/components/NoResultsCreatePrompt.svelte';
   import SearchBox from '$lib/components/SearchBox.svelte';
-  import SidebarSkeleton from '$lib/components/SidebarSkeleton.svelte';
   import ManufacturerFilterSidebar from '$lib/components/ManufacturerFilterSidebar.svelte';
   import { pageTitle } from '$lib/constants';
   import {
@@ -18,8 +17,15 @@
   import { manufacturerFilterChips } from './manufacturer-filter-chips';
   import ManufacturersGrid from './ManufacturersGrid.svelte';
   import { decideCreatePrompt } from '$lib/create-prompt';
+  import { streamed } from '$lib/streamed.svelte';
 
   let { data } = $props();
+
+  // Resolve the streamed facet options into sticky reactive state. The sidebar mounts
+  // once (disabled+empty on first/cold load), then hydrates options + counts when the
+  // stream lands; on a re-filter the prior options stay visible until new counts settle,
+  // so there's no skeleton flash. `data.filter_options` is a fresh promise per load.
+  const facets = streamed(() => data.filter_options);
 
   // Stable identity of the current filter set (server-canonical field order), used to
   // remount the grid only when the filters change.
@@ -94,29 +100,27 @@
 
   <div class="layout">
     <FilterDrawer label="Filter manufacturers">
-      {#await data.filter_options}
-        <SidebarSkeleton />
-      {:then filterOptions}
-        {#if filterOptions}
-          <ManufacturerFilterSidebar {filterOptions} bind:filters />
-        {:else}
-          <!-- Resolved to undefined = the facet endpoint failed (the cards, on the
-               critical path, already loaded). Show a real error, not the pulsing
-               skeleton, which would read as "still loading" forever. -->
-          <p class="sidebar-error">
-            Filters couldn’t be loaded.
-            <button type="button" class="retry" onclick={() => invalidateAll()}>Retry</button>
-          </p>
-        {/if}
-      {/await}
+      <!-- The sidebar renders once, immediately (disabled+empty until the streamed
+           options arrive). On a facet-endpoint failure the controls stay disabled and
+           this inline error/retry sits alongside them, rather than replacing the pane. -->
+      {#if facets.status === 'error'}
+        <p class="sidebar-error">
+          {facets.value ? 'Filters couldn’t be updated.' : 'Filters couldn’t be loaded.'}
+          <button type="button" class="retry" onclick={() => invalidateAll()}>Retry</button>
+        </p>
+      {/if}
+      <ManufacturerFilterSidebar
+        filterOptions={facets.value}
+        disabled={facets.value === undefined}
+        busy={facets.status === 'loading'}
+        bind:filters
+      />
     </FilterDrawer>
 
     <main class="results">
-      {#await data.filter_options then filterOptions}
-        {#if filterOptions}
-          <ActiveFilterChips chips={manufacturerFilterChips(filters, filterOptions)} />
-        {/if}
-      {/await}
+      {#if facets.value}
+        <ActiveFilterChips chips={manufacturerFilterChips(filters, facets.value)} />
+      {/if}
 
       <p class="count">
         {data.count.toLocaleString()}
