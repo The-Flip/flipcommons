@@ -18,11 +18,9 @@
     filters: MfrFilterState;
   } = $props();
 
-  /** Backend `{public_id, name, count}` → the `{slug, label, count}` the controls take.
-   * The generic controls' opaque id is `slug`; the API's honest `public_id` (a slug for
-   * person/tech_gen, a location_path for location) maps onto it — the lie stops here. */
-  function toOptions(opts: FacetOptionSchema[]): { slug: string; label: string; count: number }[] {
-    return opts.map((o) => ({ slug: o.public_id, label: o.name, count: o.count }));
+  /** Backend `{public_id, name, count}` → the `{value, label, count}` the controls take. */
+  function toOptions(opts: FacetOptionSchema[]): { value: string; label: string; count: number }[] {
+    return opts.map((o) => ({ value: o.public_id, label: o.name, count: o.count }));
   }
 
   let locationOptions = $derived(toOptions(filterOptions.location));

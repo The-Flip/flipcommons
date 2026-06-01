@@ -39,6 +39,10 @@
   const originalParents: ParentRef[] = untrack(() => initialData.parents.map((p) => ({ ...p })));
   let selectedParents = $state<string[]>(originalParents.map((p) => p.public_id));
   let parentOptions = $state<ParentOption[]>([]);
+  // Map the parent's identity `slug` onto the control's opaque `value` at the boundary.
+  let selectOptions = $derived(
+    parentOptions.map((o) => ({ value: o.slug, label: o.label, count: o.count })),
+  );
   let fieldErrors = $state<FieldErrors>({});
   let dirty = $derived(publicIdSetChanged(selectedParents, originalParents));
 
@@ -81,7 +85,7 @@
 <div class="editor-fields">
   <SearchableSelect
     {label}
-    options={parentOptions}
+    options={selectOptions}
     bind:selected={selectedParents}
     multi
     allowZeroCount

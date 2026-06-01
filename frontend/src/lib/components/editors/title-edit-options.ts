@@ -9,7 +9,7 @@
 import client from '$lib/api/client';
 
 export type TitleEditOption = {
-  slug: string;
+  value: string;
   label: string;
   count: number;
 };
@@ -22,7 +22,7 @@ export function fetchFranchiseOptions(): Promise<TitleEditOption[]> {
     cachedFranchises = client
       .GET('/api/franchises/')
       .then(({ data }) =>
-        (data ?? []).map((f) => ({ slug: f.slug, label: f.name, count: f.title_count })),
+        (data ?? []).map((f) => ({ value: f.slug, label: f.name, count: f.title_count })),
       )
       .catch(() => {
         cachedFranchises = null;
@@ -37,7 +37,7 @@ export function fetchSeriesOptions(): Promise<TitleEditOption[]> {
     cachedSeries = client
       .GET('/api/series/')
       .then(({ data }) =>
-        (data ?? []).map((s) => ({ slug: s.slug, label: s.name, count: s.title_count })),
+        (data ?? []).map((s) => ({ value: s.slug, label: s.name, count: s.title_count })),
       )
       .catch(() => {
         cachedSeries = null;

@@ -5,9 +5,9 @@ import SearchableSelect from './SearchableSelect.svelte';
 import SearchableSelectClipFixture from './SearchableSelect.clip.fixture.svelte';
 
 const OPTIONS = [
-  { slug: 'stern', label: 'Stern Pinball', count: 5 },
-  { slug: 'bally', label: 'Bally', count: 3 },
-  { slug: 'williams', label: 'Williams', count: 0 },
+  { value: 'stern', label: 'Stern Pinball', count: 5 },
+  { value: 'bally', label: 'Bally', count: 3 },
+  { value: 'williams', label: 'Williams', count: 0 },
 ];
 
 function renderSingle(props: Partial<{ selected: string | null; allowZeroCount: boolean }> = {}) {

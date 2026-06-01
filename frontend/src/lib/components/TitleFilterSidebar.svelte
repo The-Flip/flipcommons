@@ -14,11 +14,9 @@
     filters: FilterState;
   } = $props();
 
-  /** Backend `{public_id, name, count}` → the `{slug, label, count}` the controls take.
-   * The generic controls' opaque id is `slug`; the API's honest `public_id` (a slug
-   * here, a location_path for location) maps onto it — the lie stops at this boundary. */
-  function toOptions(opts: FacetOptionSchema[]): { slug: string; label: string; count: number }[] {
-    return opts.map((o) => ({ slug: o.public_id, label: o.name, count: o.count }));
+  /** Backend `{public_id, name, count}` → the `{value, label, count}` the controls take. */
+  function toOptions(opts: FacetOptionSchema[]): { value: string; label: string; count: number }[] {
+    return opts.map((o) => ({ value: o.public_id, label: o.name, count: o.count }));
   }
 
   let manufacturerOptions = $derived(toOptions(filterOptions.manufacturer));
@@ -33,19 +31,19 @@
   let seriesOptions = $derived(toOptions(filterOptions.series));
 
   // Player count: server returns {value, count} buckets; ChipGroup wants string
-  // slugs, and `filters.playerCount` is number|null. The "6+" bucket renders
+  // values, and `filters.playerCount` is number|null. The "6+" bucket renders
   // under value 6.
   let playerCountChipOptions = $derived(
     filterOptions.player_count.map((o) => ({
-      slug: String(o.value),
+      value: String(o.value),
       label: o.value >= 6 ? '6+' : String(o.value),
       count: o.count,
     })),
   );
-  let playerCountSlug = $derived(filters.playerCount != null ? String(filters.playerCount) : null);
+  let playerCountValue = $derived(filters.playerCount != null ? String(filters.playerCount) : null);
 
-  function setPlayerCount(slug: string | null) {
-    filters.playerCount = slug ? Number(slug) : null;
+  function setPlayerCount(value: string | null) {
+    filters.playerCount = value ? Number(value) : null;
   }
 
   let anyActive = $derived(hasActiveFilters(filters));
@@ -146,7 +144,7 @@
     <ChipGroup
       label="Player count"
       options={playerCountChipOptions}
-      selected={playerCountSlug}
+      selected={playerCountValue}
       onchange={setPlayerCount}
     />
   </div>

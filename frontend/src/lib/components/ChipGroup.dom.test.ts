@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import ChipGroup from './ChipGroup.svelte';
 
 const OPTIONS = [
-  { slug: 'em', label: 'Electromechanical', count: 3 },
-  { slug: 'ss', label: 'Solid state', count: 0 },
+  { value: 'em', label: 'Electromechanical', count: 3 },
+  { value: 'ss', label: 'Solid state', count: 0 },
 ];
 
 describe('ChipGroup', () => {

@@ -9,6 +9,7 @@
   import {
     EMPTY_EDIT_OPTIONS,
     fetchModelEditOptions,
+    toSelectOptions,
     type ModelEditOptions,
   } from './model-edit-options';
   import type { FieldErrors } from '$lib/api/parse-api-error';
@@ -185,7 +186,7 @@
   <div class="features-grid">
     <SearchableSelect
       label="Game format"
-      options={editOptions.game_formats ?? []}
+      options={toSelectOptions(editOptions.game_formats ?? [])}
       bind:selected={fields.game_format}
       error={fieldErrors.game_format ?? ''}
       allowZeroCount
@@ -194,7 +195,7 @@
     />
     <SearchableSelect
       label="Cabinet"
-      options={editOptions.cabinets ?? []}
+      options={toSelectOptions(editOptions.cabinets ?? [])}
       bind:selected={fields.cabinet}
       error={fieldErrors.cabinet ?? ''}
       allowZeroCount
@@ -203,7 +204,7 @@
     />
     <SearchableSelect
       label="Reward types"
-      options={editOptions.reward_types ?? []}
+      options={toSelectOptions(editOptions.reward_types ?? [])}
       bind:selected={rewardTypes}
       multi
       allowZeroCount
@@ -212,7 +213,7 @@
     />
     <SearchableSelect
       label="Tags"
-      options={editOptions.tags ?? []}
+      options={toSelectOptions(editOptions.tags ?? [])}
       bind:selected={tags}
       multi
       allowZeroCount
@@ -221,7 +222,7 @@
     />
     <SearchableSelect
       label="Themes"
-      options={editOptions.themes ?? []}
+      options={toSelectOptions(editOptions.themes ?? [])}
       bind:selected={themes}
       multi
       allowZeroCount
@@ -256,7 +257,7 @@
           <div class="gf-select">
             <SearchableSelect
               label=""
-              options={editOptions.gameplay_features ?? []}
+              options={toSelectOptions(editOptions.gameplay_features ?? [])}
               bind:selected={features[i].slug}
               allowZeroCount
               showCounts={false}

@@ -5,7 +5,7 @@
     label = '',
     onchange,
   }: {
-    options: { slug: string; label: string; count: number }[];
+    options: { value: string; label: string; count: number }[];
     selected?: string | null;
     label?: string;
     onchange?: (value: string | null) => void;
@@ -17,15 +17,15 @@
     <span class="filter-label">{label}</span>
   {/if}
   <div class="chips">
-    {#each options as opt (opt.slug)}
+    {#each options as opt (opt.value)}
       <button
         class="chip"
-        class:active={selected === opt.slug}
-        aria-pressed={selected === opt.slug}
-        aria-disabled={opt.count === 0 && selected !== opt.slug}
-        disabled={opt.count === 0 && selected !== opt.slug}
+        class:active={selected === opt.value}
+        aria-pressed={selected === opt.value}
+        aria-disabled={opt.count === 0 && selected !== opt.value}
+        disabled={opt.count === 0 && selected !== opt.value}
         onclick={() => {
-          const val = selected === opt.slug ? null : opt.slug;
+          const val = selected === opt.value ? null : opt.value;
           selected = val;
           onchange?.(val);
         }}

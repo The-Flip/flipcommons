@@ -15,7 +15,7 @@
     compact = false,
     emptyMessage = 'No options available',
   }: {
-    options: { slug: string; label: string; count?: number }[];
+    options: { value: string; label: string; count?: number }[];
     selected?: string | string[] | null;
     multi?: boolean;
     allowZeroCount?: boolean;
@@ -67,23 +67,23 @@
     listEl.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
   });
 
-  function isSelected(slug: string): boolean {
+  function isSelected(value: string): boolean {
     if (multi && Array.isArray(selected)) {
-      return selected.includes(slug);
+      return selected.includes(value);
     }
-    return selected === slug;
+    return selected === value;
   }
 
-  function toggle(slug: string) {
+  function toggle(value: string) {
     if (multi) {
       const arr = Array.isArray(selected) ? selected : [];
-      if (arr.includes(slug)) {
-        selected = arr.filter((s) => s !== slug);
+      if (arr.includes(value)) {
+        selected = arr.filter((s) => s !== value);
       } else {
-        selected = [...arr, slug];
+        selected = [...arr, value];
       }
     } else {
-      selected = selected === slug ? null : slug;
+      selected = selected === value ? null : value;
       open = false;
       query = '';
     }
@@ -100,7 +100,7 @@
       return '';
     }
     if (typeof selected === 'string') {
-      const opt = options.find((o) => o.slug === selected);
+      const opt = options.find((o) => o.value === selected);
       return opt?.label ?? '';
     }
     return '';
@@ -129,7 +129,7 @@
         e.preventDefault();
         if (activeIndex >= 0 && activeIndex < filteredOptions.length) {
           const opt = filteredOptions[activeIndex];
-          if (!isDisabled(opt)) toggle(opt.slug);
+          if (!isDisabled(opt)) toggle(opt.value);
         }
         break;
       case 'Escape':
@@ -226,15 +226,15 @@
 
   {#if multi && Array.isArray(selected) && selected.length > 0}
     <div class="selected-tags">
-      {#each selected as slug (slug)}
-        {@const opt = options.find((o) => o.slug === slug)}
+      {#each selected as value (value)}
+        {@const opt = options.find((o) => o.value === value)}
         {#if opt}
           <span class="tag">
             {opt.label}
             <button
               class="tag-remove"
               aria-label={`Remove ${opt.label}`}
-              onclick={() => toggle(slug)}
+              onclick={() => toggle(value)}
             >
               ×
             </button>
@@ -257,15 +257,15 @@
         maxHeight: 'available',
       }}
     >
-      {#each filteredOptions as opt, i (opt.slug)}
+      {#each filteredOptions as opt, i (opt.value)}
         <li
           id={`${listboxId}-${i}`}
           role="option"
-          aria-selected={isSelected(opt.slug)}
+          aria-selected={isSelected(opt.value)}
           aria-disabled={isDisabled(opt)}
           data-active={i === activeIndex}
           class="option"
-          class:selected={isSelected(opt.slug)}
+          class:selected={isSelected(opt.value)}
           class:disabled={isDisabled(opt)}
           class:active={i === activeIndex}
           onpointerenter={() => {
@@ -273,11 +273,11 @@
           }}
           onpointerdown={(e) => {
             e.preventDefault();
-            if (!isDisabled(opt)) toggle(opt.slug);
+            if (!isDisabled(opt)) toggle(opt.value);
           }}
         >
           {#if multi}
-            <span class="check">{isSelected(opt.slug) ? '✓' : ''}</span>
+            <span class="check">{isSelected(opt.value) ? '✓' : ''}</span>
           {/if}
           <span class="option-label">{opt.label}</span>
           {#if showCounts && opt.count != null}
