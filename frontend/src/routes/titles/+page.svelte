@@ -13,7 +13,7 @@
   import { filtersFromParams, filtersToParams, type FilterState } from '$lib/facet-engine';
   import { titleFilterChips } from './titles-filter-chips';
   import TitlesGrid from './TitlesGrid.svelte';
-  import { decideCreatePrompt } from './titles-create-prompt';
+  import { decideCreatePrompt } from '$lib/create-prompt';
 
   let { data } = $props();
 

@@ -1,60 +1,83 @@
 <script lang="ts">
-  import { replaceState } from '$app/navigation';
+  import { afterNavigate, goto, invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import client from '$lib/api/client';
-  import { createAsyncLoader } from '$lib/async-loader.svelte';
+  import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
-  import ManufacturerActiveFilterChips from '$lib/components/ManufacturerActiveFilterChips.svelte';
-  import CardGrid from '$lib/components/grid/CardGrid.svelte';
+  import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
   import FilterDrawer from '$lib/components/FilterDrawer.svelte';
-  import ClientFilteredGrid from '$lib/components/grid/ClientFilteredGrid.svelte';
   import NoResultsCreatePrompt from '$lib/components/NoResultsCreatePrompt.svelte';
   import SearchBox from '$lib/components/SearchBox.svelte';
-  import SkeletonCard from '$lib/components/cards/SkeletonCard.svelte';
-  import ManufacturerCard from '$lib/components/cards/ManufacturerCard.svelte';
+  import SidebarSkeleton from '$lib/components/SidebarSkeleton.svelte';
   import ManufacturerFilterSidebar from '$lib/components/ManufacturerFilterSidebar.svelte';
   import { pageTitle } from '$lib/constants';
   import {
-    filterManufacturers,
-    filterManufacturersByQueryOnly,
     mfrFiltersFromParams,
     mfrFiltersToParams,
-    type FacetedManufacturer,
+    type MfrFilterState,
   } from '$lib/manufacturer-facet-engine';
+  import { manufacturerFilterChips } from './manufacturer-filter-chips';
+  import ManufacturersGrid from './ManufacturersGrid.svelte';
+  import { decideCreatePrompt } from '$lib/create-prompt';
 
-  const SKELETON_INDICES = Array.from({ length: 12 }, (_, i) => i);
+  let { data } = $props();
 
-  // -----------------------------------------------------------------------
-  // Data loading
-  // -----------------------------------------------------------------------
-  const manufacturers = createAsyncLoader(async () => {
-    const { data } = await client.GET('/api/manufacturers/all/');
-    return (data ?? []) as FacetedManufacturer[];
-  }, [] as FacetedManufacturer[]);
+  // Stable identity of the current filter set (server-canonical field order), used to
+  // remount the grid only when the filters change.
+  let gridKey = $derived(JSON.stringify(data.query));
 
-  // -----------------------------------------------------------------------
-  // Filter state — initialized from URL, synced back on change
-  // -----------------------------------------------------------------------
-  let filters = $state(mfrFiltersFromParams(new URLSearchParams(window.location.search)));
+  // ---------------------------------------------------------------------
+  // Filter state lives in the URL. `filters` is the authoritative reactive copy bound
+  // by the sidebar; it's mirrored to the URL via `goto`, which re-runs
+  // +page.server.ts (cards awaited, facets re-streamed). Mirrors /titles.
+  // ---------------------------------------------------------------------
+  function canonical(f: MfrFilterState): string {
+    return mfrFiltersToParams(f, new URLSearchParams()).toString();
+  }
 
-  let initialRun = true;
-  $effect(() => {
-    const sp = mfrFiltersToParams(filters, new URLSearchParams());
-    const search = sp.toString();
-    if (initialRun) {
-      initialRun = false;
-      return;
-    }
-    replaceState(`${resolve('/manufacturers')}${search ? `?${search}` : ''}`, {});
+  // Seed from the request URL so a filtered URL renders the search box and selected
+  // filters in the SSR HTML (page.url is the real URL on the server).
+  const initial = mfrFiltersFromParams(new URLSearchParams(page.url.search));
+  let filters = $state<MfrFilterState>(initial);
+  // SearchBox binds here; debounced into `filters.query` so typing doesn't fire a
+  // server navigation per keystroke. A writable `$derived` so it mirrors the committed
+  // query when that changes from outside the input (Clear all, popstate, the seed).
+  let queryInput = $derived(filters.query);
+  let lastSyncedSearch = canonical(initial);
+
+  // Back/forward adopt the URL as source of truth (does NOT fire on our goto).
+  afterNavigate((nav) => {
+    if (nav.type !== 'popstate') return;
+    const f = mfrFiltersFromParams(new URLSearchParams(page.url.search));
+    filters = f;
+    lastSyncedSearch = canonical(f);
   });
 
-  let filteredManufacturers = $derived(filterManufacturers(manufacturers.data, filters));
+  // Debounce typing → committed query (one server navigation per pause).
+  let qTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const q = queryInput;
+    if (q === filters.query) return;
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => (filters.query = q), 250);
+    return () => clearTimeout(qTimer);
+  });
 
-  // Gate the "no results → create?" prompt on a search-only match set so
-  // active facet filters can't hide an existing brand and trick the UI into
-  // offering a duplicate-create affordance.
-  let searchOnlyMatches = $derived(
-    filterManufacturersByQueryOnly(manufacturers.data, filters.query),
+  // filters → URL navigation. Skipped when the URL already matches (the initial seed,
+  // a popstate resync, or the landing of our own goto).
+  $effect(() => {
+    const search = canonical(filters);
+    if (search === lastSyncedSearch) return;
+    lastSyncedSearch = search;
+    void goto(`${resolve('/manufacturers')}${search ? `?${search}` : ''}`, {
+      keepFocus: true,
+      noScroll: true,
+    });
+  });
+
+  // The "create?" prompt keys on the committed query (`data.query.q`, which the
+  // streamed `query_count` was computed for) — not the mid-debounce `queryInput`.
+  let createHref = $derived(
+    `${resolve('/manufacturers/new')}?name=${encodeURIComponent((data.query.q ?? '').trim())}`,
   );
 
   $effect(() => {
@@ -64,49 +87,59 @@
 
 <svelte:head>
   <title>{pageTitle('Manufacturers')}</title>
-  <link rel="preload" as="fetch" href="/api/manufacturers/all/" crossorigin="anonymous" />
 </svelte:head>
 
 <div class="manufacturers-page">
-  <SearchBox bind:value={filters.query} placeholder="Search manufacturers..." />
+  <SearchBox bind:value={queryInput} placeholder="Search manufacturers..." />
 
-  {#if manufacturers.loading}
-    <CardGrid>
-      {#each SKELETON_INDICES as i (i)}
-        <SkeletonCard />
-      {/each}
-    </CardGrid>
-  {:else if manufacturers.error}
-    <p class="error">{manufacturers.error}</p>
-  {:else}
-    <div class="layout">
-      <FilterDrawer label="Filter manufacturers">
-        <ManufacturerFilterSidebar allManufacturers={manufacturers.data} bind:filters />
-      </FilterDrawer>
-
-      <main class="results">
-        <ManufacturerActiveFilterChips bind:filters allManufacturers={manufacturers.data} />
-        <ClientFilteredGrid items={filteredManufacturers} entityName="manufacturer">
-          {#snippet children(mfr)}
-            <ManufacturerCard
-              slug={mfr.slug}
-              name={mfr.name}
-              thumbnailUrl={mfr.thumbnail_url}
-              modelCount={mfr.model_count}
-            />
-          {/snippet}
-        </ClientFilteredGrid>
-
-        {#if searchOnlyMatches.length === 0 && filters.query.trim() !== '' && auth.isAuthenticated}
-          <NoResultsCreatePrompt
-            entityLabel="manufacturer"
-            query={filters.query.trim()}
-            createHref={`${resolve('/manufacturers/new')}?name=${encodeURIComponent(filters.query.trim())}`}
-          />
+  <div class="layout">
+    <FilterDrawer label="Filter manufacturers">
+      {#await data.filter_options}
+        <SidebarSkeleton />
+      {:then filterOptions}
+        {#if filterOptions}
+          <ManufacturerFilterSidebar {filterOptions} bind:filters />
+        {:else}
+          <!-- Resolved to undefined = the facet endpoint failed (the cards, on the
+               critical path, already loaded). Show a real error, not the pulsing
+               skeleton, which would read as "still loading" forever. -->
+          <p class="sidebar-error">
+            Filters couldn’t be loaded.
+            <button type="button" class="retry" onclick={() => invalidateAll()}>Retry</button>
+          </p>
         {/if}
-      </main>
-    </div>
-  {/if}
+      {/await}
+    </FilterDrawer>
+
+    <main class="results">
+      {#await data.filter_options then filterOptions}
+        {#if filterOptions}
+          <ActiveFilterChips chips={manufacturerFilterChips(filters, filterOptions)} />
+        {/if}
+      {/await}
+
+      <p class="count">
+        {data.count.toLocaleString()}
+        {data.count === 1 ? 'manufacturer' : 'manufacturers'}
+      </p>
+
+      <!-- Remount (reseed the loader to page 1) only when the filters actually change. -->
+      {#key gridKey}
+        <ManufacturersGrid initial={{ items: data.items, count: data.count }} query={data.query} />
+      {/key}
+
+      {#await data.query_count then queryCount}
+        {@const prompt = decideCreatePrompt({
+          query: data.query.q ?? '',
+          isAuthenticated: auth.isAuthenticated,
+          queryCount,
+        })}
+        {#if prompt.show}
+          <NoResultsCreatePrompt entityLabel="manufacturer" query={prompt.query} {createHref} />
+        {/if}
+      {/await}
+    </main>
+  </div>
 </div>
 
 <style>
@@ -125,10 +158,29 @@
     min-width: 0;
   }
 
-  .error {
+  .count {
     text-align: center;
-    color: var(--color-error-text);
-    padding: var(--size-6) 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-size-1);
+    margin-bottom: var(--size-4);
+  }
+
+  .sidebar-error {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-1);
+  }
+
+  .retry {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--color-link);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .retry:hover {
+    text-decoration: underline;
   }
 
   @media (--breakpoint-narrow) {

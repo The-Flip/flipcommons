@@ -2,50 +2,34 @@
   import ChipGroup from './ChipGroup.svelte';
   import SearchableSelect from './SearchableSelect.svelte';
   import YearRangeInput from './YearRangeInput.svelte';
-  import { buildFacetRefOptions } from '$lib/facet-engine';
   import {
-    computeMfrFacetCounts,
     emptyMfrFilterState,
-    type FacetedManufacturer,
+    hasActiveMfrFilters,
     type MfrFilterState,
   } from '$lib/manufacturer-facet-engine';
+  import type { FacetOptionSchema, ManufacturerFilterOptionsSchema } from '$lib/api/schema';
 
   let {
-    allManufacturers,
+    filterOptions,
     filters = $bindable(),
   }: {
-    allManufacturers: FacetedManufacturer[];
+    /** Server-computed option lists with live N-1 counts (public_id, name, count). */
+    filterOptions: ManufacturerFilterOptionsSchema;
     filters: MfrFilterState;
   } = $props();
 
-  // -----------------------------------------------------------------------
-  // Facet counts (N-1 approach)
-  // -----------------------------------------------------------------------
-  let facetCounts = $derived(computeMfrFacetCounts(allManufacturers, filters));
+  /** Backend `{public_id, name, count}` → the `{slug, label, count}` the controls take.
+   * The generic controls' opaque id is `slug`; the API's honest `public_id` (a slug for
+   * person/tech_gen, a location_path for location) maps onto it — the lie stops here. */
+  function toOptions(opts: FacetOptionSchema[]): { slug: string; label: string; count: number }[] {
+    return opts.map((o) => ({ slug: o.public_id, label: o.name, count: o.count }));
+  }
 
-  // -----------------------------------------------------------------------
-  // Option lists (unique values enriched with live counts)
-  // -----------------------------------------------------------------------
-  let locationOptions = $derived(
-    buildFacetRefOptions(allManufacturers, (m) => m.locations, facetCounts.location),
-  );
-  let personOptions = $derived(
-    buildFacetRefOptions(allManufacturers, (m) => m.persons, facetCounts.person),
-  );
-  let techGenOptions = $derived(
-    buildFacetRefOptions(allManufacturers, (m) => m.tech_generations, facetCounts.techGeneration),
-  );
+  let locationOptions = $derived(toOptions(filterOptions.location));
+  let personOptions = $derived(toOptions(filterOptions.person));
+  let techGenOptions = $derived(toOptions(filterOptions.tech_gen));
 
-  // -----------------------------------------------------------------------
-  // Active filter detection
-  // -----------------------------------------------------------------------
-  let hasActiveFilters = $derived(
-    filters.location != null ||
-      filters.yearMin != null ||
-      filters.yearMax != null ||
-      filters.person != null ||
-      filters.techGeneration != null,
-  );
+  let anyActive = $derived(hasActiveMfrFilters(filters));
 
   function clearAll() {
     filters = emptyMfrFilterState();
@@ -55,7 +39,7 @@
 <aside class="sidebar">
   <div class="sidebar-header">
     <h2>Filters</h2>
-    {#if hasActiveFilters}
+    {#if anyActive}
       <button class="clear-all" onclick={clearAll}>Clear all</button>
     {/if}
   </div>
@@ -67,6 +51,7 @@
       options={locationOptions}
       bind:selected={filters.location}
       placeholder="Search locations..."
+      emptyMessage="No locations match your other filters"
     />
   </div>
 
@@ -82,6 +67,7 @@
       options={personOptions}
       bind:selected={filters.person}
       placeholder="Search people..."
+      emptyMessage="No people match your other filters"
     />
   </div>
 

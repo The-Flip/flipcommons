@@ -78,7 +78,7 @@ from ._title_facets import (
     filtered_titles,
     ordered_titles,
 )
-from ._typing import CreditKey, GameplayFeatureAgreement, SlugName
+from ._typing import CreditKey, FacetOptionDict, GameplayFeatureAgreement, SlugName
 from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import (
     ClaimSpec,
@@ -112,11 +112,13 @@ from .schemas import (
     CreditSchema,
     EntityCreateInputSchema,
     EntityRef,
+    FacetOptionSchema,
     GameplayFeatureRef,
     SoftDeleteBlockedSchema,
     TitleClaimPatchSchema,
     TitleDeletePreviewSchema,
     TitleModelSchema,
+    YearBoundsSchema,
 )
 from .soft_delete import (
     SoftDeleteBlockedError,
@@ -230,25 +232,14 @@ class TitleFilterQuerySchema(Schema):
 
 
 # --- Facet option lists (GET /api/pages/titles) ---
-
-
-class FacetOptionSchema(Schema):
-    # ``public_id`` (not ``slug``): the option entity's URL identity — a slug for most
-    # facets, a ``location_path`` for location — so the name isn't a lie for path-keyed
-    # facets, matching the ``public_id`` vocabulary used everywhere else.
-    public_id: str
-    name: str
-    count: int
+# ``FacetOptionSchema`` and ``YearBoundsSchema`` are the entity-agnostic facet wire
+# types, shared from ``schemas.py`` (next to ``EntityRef``, which ``FacetOptionSchema``
+# mirrors) so there is one OpenAPI component per shape across all listing pages.
 
 
 class PlayerCountOptionSchema(Schema):
     value: int
     count: int
-
-
-class YearBoundsSchema(Schema):
-    min: int | None = None
-    max: int | None = None
 
 
 class RatingBoundsSchema(Schema):
@@ -782,7 +773,7 @@ def _serialize_card(title: Title, *, min_rank: int) -> TitleCardSchema:
     )
 
 
-def _facet_option_dicts(options: list[FacetOption]) -> list[dict[str, object]]:
+def _facet_option_dicts(options: list[FacetOption]) -> list[FacetOptionDict]:
     return [
         {"public_id": o.public_id, "name": o.name, "count": o.count} for o in options
     ]

@@ -58,8 +58,11 @@ from .machine_models import (
 )
 from .manufacturers import (
     ManufacturerDetailSchema,
+    ManufacturerFacetsPageSchema,
+    ManufacturerFilterQuerySchema,
     _manufacturer_qs,
     _serialize_manufacturer_detail,
+    manufacturer_facets_response,
 )
 from .people import PersonDetailSchema, _person_qs, _serialize_person_detail
 from .series import SeriesDetailSchema, _serialize_series_detail, _series_detail_qs
@@ -97,6 +100,15 @@ def titles_page_facets(
     """Facet option lists for the /titles SSR page (streamed after the cards;
     no-filter response cached). Cards come from ``GET /api/titles/``."""
     return title_facets_response(filters.to_filters())
+
+
+@pages_router.get("/manufacturers", response=ManufacturerFacetsPageSchema)
+def manufacturers_page_facets(
+    request: HttpRequest, filters: Query[ManufacturerFilterQuerySchema]
+) -> HttpResponse:
+    """Facet option lists for the /manufacturers SSR page (streamed after the cards;
+    no-filter response cached). Cards come from ``GET /api/manufacturers/``."""
+    return manufacturer_facets_response(filters.to_filters())
 
 
 # ---------------------------------------------------------------------------

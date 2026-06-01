@@ -1,10 +1,11 @@
 /**
- * Gating logic for the "Create?" prompt on the titles list page.
+ * Gating logic for the "Create?" prompt on the catalog list pages (titles,
+ * manufacturers — entity-agnostic).
  *
  * The prompt is driven by the server's **query-only count** — the number of
- * titles matching `q` alone, ignoring any active facets. That distinction
+ * entities matching `q` alone, ignoring any active facets. That distinction
  * matters: the filtered card `count` can be zero merely because a facet is
- * hiding an existing title (filter to Williams, search a Stern title), and
+ * hiding an existing entity (filter to Williams, search a Stern title), and
  * offering to create it there would produce a duplicate. `queryCount === 0`
  * means the name is genuinely free, so the prompt is correct even under active
  * facets.
@@ -21,7 +22,7 @@ export interface CreatePromptInputs {
   query: string;
   isAuthenticated: boolean;
   /**
-   * Titles matching `q` alone, ignoring active facets; `null` when there is no
+   * Entities matching `q` alone, ignoring active facets; `null` when there is no
    * `q`, `undefined` while the streamed facets payload is still pending.
    */
   queryCount: number | null | undefined;

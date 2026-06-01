@@ -18,6 +18,32 @@ class EntityRef(Schema):
     public_id: str
 
 
+class FacetOptionSchema(Schema):
+    """One selectable facet value with its live N-1 count — the entity-agnostic wire
+    form of the shared ``_facet_helpers.FacetOption`` leaf (``EntityRef`` + ``count``).
+
+    Shared by every faceted listing page (titles, manufacturers) so there is exactly
+    one OpenAPI component: two identically-named-but-separate classes would silently
+    collide into ``FacetOptionSchema`` + ``FacetOptionSchema2`` the moment one gained a
+    field, and the frontend's named import would bind non-deterministically.
+
+    ``public_id`` (not ``slug``) is the option entity's URL identity — a slug for most
+    facets, a ``location_path`` for location."""
+
+    public_id: str
+    name: str
+    count: int
+
+
+class YearBoundsSchema(Schema):
+    """Inclusive min/max for a year-range facet — the wire form of
+    ``_facet_helpers.Bounds[int]``. Shared by the faceted listing pages (see
+    :class:`FacetOptionSchema` on why these live here rather than per-entity)."""
+
+    min: int | None = None
+    max: int | None = None
+
+
 class LinkableDetailSchema(Schema):
     """Wire twin of ``LinkableModel``: a top-level entity's display name and
     uniform URL identity. ``public_id`` is ``LinkableModel.public_id`` —

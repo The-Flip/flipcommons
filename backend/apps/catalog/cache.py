@@ -37,6 +37,8 @@ _TITLES_ALL_BASE = f"catalog:titles:all:{_CACHE_VERSION}"
 # No-filter facet option lists for the /titles page (GET /api/pages/titles). Static
 # between catalog edits, so cached and cleared by invalidate_all() like the /all/ slots.
 _TITLES_FACETS_BASE = f"catalog:titles:facets:{_CACHE_VERSION}"
+# Same, for the /manufacturers page (GET /api/pages/manufacturers).
+_MANUFACTURERS_FACETS_BASE = f"catalog:manufacturers:facets:{_CACHE_VERSION}"
 _LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
 
 _BASES: tuple[str, ...] = (
@@ -45,6 +47,7 @@ _BASES: tuple[str, ...] = (
     _PEOPLE_ALL_BASE,
     _TITLES_ALL_BASE,
     _TITLES_FACETS_BASE,
+    _MANUFACTURERS_FACETS_BASE,
     _LOCATIONS_TREE_BASE,
 )
 
@@ -69,6 +72,10 @@ def titles_all_key() -> str:
 
 def titles_facets_key() -> str:
     return f"{_TITLES_FACETS_BASE}:{current_audience()}"
+
+
+def manufacturers_facets_key() -> str:
+    return f"{_MANUFACTURERS_FACETS_BASE}:{current_audience()}"
 
 
 def locations_tree_key() -> str:

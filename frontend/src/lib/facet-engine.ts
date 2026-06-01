@@ -1,8 +1,7 @@
 /**
- * Title filter state and its URL serialization, plus the small pure helpers
- * still shared after /titles moved filtering server-side: `matchesQuery` (the
- * kiosk title typeahead) and `buildFacetRefOptions` (the manufacturer sidebar).
- * No Svelte imports — framework-agnostic and testable.
+ * Title filter state and its URL serialization, plus `matchesQuery` — the one pure
+ * helper still shared after /titles moved filtering server-side (the kiosk title
+ * typeahead). No Svelte imports — framework-agnostic and testable.
  */
 
 import { normalizeText } from '$lib/utils';
@@ -10,11 +9,6 @@ import { normalizeText } from '$lib/utils';
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-export interface FacetRef {
-  public_id: string;
-  name: string;
-}
 
 export interface FilterState {
   query: string;
@@ -214,32 +208,4 @@ export function matchesQuery(
     t.abbreviations.some((a) => normalizeText(a).includes(q)) ||
     (t.manufacturer?.name != null && normalizeText(t.manufacturer.name).includes(q))
   );
-}
-
-// ---------------------------------------------------------------------------
-// Option list builders (extract unique {slug, name} from all titles)
-// ---------------------------------------------------------------------------
-
-export interface FacetOption {
-  slug: string;
-  label: string;
-  count: number;
-}
-
-export function buildFacetRefOptions<T>(
-  items: T[],
-  extractor: (t: T) => FacetRef[],
-  counts: Map<string, number>,
-): FacetOption[] {
-  const seen = new Map<string, string>();
-  for (const t of items) {
-    for (const ref of extractor(t)) {
-      if (!seen.has(ref.public_id)) seen.set(ref.public_id, ref.name);
-    }
-  }
-  return Array.from(seen.entries()).map(([publicId, name]) => ({
-    slug: publicId,
-    label: name,
-    count: counts.get(publicId) ?? 0,
-  }));
 }

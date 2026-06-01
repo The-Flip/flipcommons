@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { decideCreatePrompt } from './titles-create-prompt';
+import { decideCreatePrompt } from './create-prompt';
 
 describe('decideCreatePrompt', () => {
   it('hides the prompt for an empty query', () => {

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildFacetRefOptions,
   emptyFilterState,
   filtersFromParams,
   filtersToParams,
@@ -57,33 +56,6 @@ describe('hasActiveFilters', () => {
     expect(hasActiveFilters({ ...emptyFilterState(), themes: ['sci-fi'] })).toBe(true);
     expect(hasActiveFilters({ ...emptyFilterState(), yearMin: 1990 })).toBe(true);
     expect(hasActiveFilters({ ...emptyFilterState(), ratingMin: 7 })).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Option builders
-// ---------------------------------------------------------------------------
-
-describe('buildFacetRefOptions', () => {
-  it('extracts unique refs (first name wins) enriched with counts', () => {
-    const items = [
-      { tags: [{ public_id: 'a', name: 'Alpha' }] },
-      {
-        tags: [
-          { public_id: 'a', name: 'Alpha' },
-          { public_id: 'b', name: 'Beta' },
-        ],
-      },
-    ];
-    const counts = new Map([
-      ['a', 3],
-      ['b', 0],
-    ]);
-    const options = buildFacetRefOptions(items, (t) => t.tags, counts);
-    expect(options).toEqual([
-      { slug: 'a', label: 'Alpha', count: 3 },
-      { slug: 'b', label: 'Beta', count: 0 },
-    ]);
   });
 });
 
