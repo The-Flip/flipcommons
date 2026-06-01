@@ -54,7 +54,6 @@ from ..models import (
     DisplayType,
     GameFormat,
     GameplayFeature,
-    Location,
     MachineModel,
     MachineModelGameplayFeature,
     ModelAbbreviation,
@@ -662,45 +661,6 @@ def list_models(
     )
     min_rank = get_minimum_display_rank()
     return [_serialize_model_list(pm, min_rank=min_rank) for pm in qs]
-
-
-def _build_search_text(pm: MachineModel) -> str:
-    """Build a pipe-separated search text from all related entity names."""
-    parts: list[str] = []
-    if pm.corporate_entity and pm.corporate_entity.manufacturer:
-        mfr = pm.corporate_entity.manufacturer
-        parts.append(mfr.name)
-        for entity in mfr.entities.all():
-            parts.append(entity.name)
-            for cel in entity.locations.all():
-                cur: Location | None = cel.location
-                while cur is not None:
-                    if cur.name:
-                        parts.append(cur.name)
-                    cur = cur.parent
-    if pm.system:
-        parts.append(pm.system.name)
-    if pm.technology_generation:
-        parts.append(pm.technology_generation.name)
-    if pm.display_type:
-        parts.append(pm.display_type.name)
-    if pm.display_subtype:
-        parts.append(pm.display_subtype.name)
-    if pm.cabinet:
-        parts.append(pm.cabinet.name)
-    if pm.game_format:
-        parts.append(pm.game_format.name)
-    for theme in pm.themes.all():
-        parts.append(theme.name)
-    for tag in pm.tags.all():
-        parts.append(tag.name)
-    for gf in pm.gameplay_features.all():
-        parts.append(gf.name)
-    for credit in pm.credits.all():
-        parts.append(credit.person.name)
-    for abbr in pm.abbreviations.all():
-        parts.append(abbr.value)
-    return " | ".join(parts)
 
 
 class ModelRecentSchema(Schema):
