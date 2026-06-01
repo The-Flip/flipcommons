@@ -223,7 +223,11 @@ def apply_dimension(
     tables on each of the ~14 ``filtered_titles`` calls a facet fan-out makes.
     """
     match key:
-        case "q" if f.q:
+        case "q" if f.q.strip():
+            # Trim once at the boundary so search and `query_count` agree on a
+            # whitespace-only `q` (both treat it as no filter) and so surrounding
+            # spaces don't leak (`q=" williams "` must match "Williams").
+            q = f.q.strip()
             # Matches name / abbreviation / FIRST-model manufacturer (the parity
             # trap): _q_mfr_name is the single first-model value, NOT a join across
             # all models — so q=Williams won't match a title whose *second* model is
@@ -238,13 +242,13 @@ def apply_dimension(
                 # below (no diacritic folding; a documented dev/prod difference).
                 # Abbreviation + manufacturer stay plain icontains (ASCII-dominant).
                 qs = qs.annotate(_q_name_fold=Lower(_Unaccent(F("name"))))
-                name_match = Q(_q_name_fold__contains=_fold(f.q))
+                name_match = Q(_q_name_fold__contains=_fold(q))
             else:
-                name_match = Q(name__icontains=f.q)
+                name_match = Q(name__icontains=q)
             return qs.filter(
                 name_match
-                | Q(abbreviations__value__icontains=f.q)
-                | Q(_q_mfr_name__icontains=f.q)
+                | Q(abbreviations__value__icontains=q)
+                | Q(_q_mfr_name__icontains=q)
             )
         case "manufacturer" if f.manufacturer:
             # First-model manufacturer, annotated on demand (see q above).

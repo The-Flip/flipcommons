@@ -257,6 +257,20 @@ class TestPredicates:
         # "williams" only appears as Bar's *second* model → not a manufacturer hit.
         assert _slugs(TitleFilters(q="williams")) == set()
 
+    def test_whitespace_q_is_no_filter(self, db):
+        """A whitespace-only ``q`` is treated as no filter (returns all active) —
+        agreeing with ``_query_only_count`` (which returns ``None``) rather than
+        running a near-whole-catalog ``icontains " "`` (matches manufacturers)."""
+        _model(_title("Medieval Madness", "mm"), "mm-m")
+        _model(_title("Other", "other"), "other-m")
+        assert _slugs(TitleFilters(q="   ")) == {"mm", "other"}
+
+    def test_surrounding_spaces_trimmed(self, db):
+        """Surrounding spaces are trimmed at the boundary so they don't leak into
+        the match (``q=" medieval "`` matches "Medieval Madness")."""
+        _model(_title("Medieval Madness", "mm"), "mm-m")
+        assert _slugs(TitleFilters(q="  medieval  ")) == {"mm"}
+
     def test_person(self, db):
         t = _title("Credited", "credited")
         _model(t, "credited-m", persons=("pat-lawlor",))
