@@ -2,9 +2,9 @@
 
 Coverage:
 
-- **Per-predicate narrowers** — one test per dimension, pinning the four
+- **Per-predicate narrowers** — one test per dimension, pinning the three
   non-obvious predicates (first-model manufacturer + the `q` parity trap, year
-  range-overlap, rating max-across-models, player_count `>=6` bucket), multi-value
+  range-overlap, player_count `>=6` bucket), multi-value
   AND-of-ORs, descendant-theme/feature expansion, variant exclusion and
   ``.distinct()`` dedup.
 - **Facet counts (N-1 rule)** — validated against an *independent naive reference*
@@ -171,7 +171,6 @@ def _model(
     display_type: str | None = None,
     system: str | None = None,
     player_count: int | None = None,
-    rating: float | None = None,
     themes: tuple[str, ...] = (),
     features: tuple[str, ...] = (),
     reward_types: tuple[str, ...] = (),
@@ -188,7 +187,6 @@ def _model(
         display_type=_display(display_type) if display_type else None,
         system=_system(system) if system else None,
         player_count=player_count,
-        ipdb_rating=rating,
         variant_of=variant_of,
     )
     for s in themes:
@@ -335,16 +333,6 @@ class TestPredicates:
         }
         assert _slugs(TitleFilters(year_max=1986)) == {"early"}
 
-    def test_rating_max_across_models(self, db):
-        """rating_min matches "max rating across models >= min" — i.e. exists a
-        model rated >= min."""
-        t = _title("Mixed", "mixed")
-        _model(t, "mixed-low", rating=5.0)
-        _model(t, "mixed-high", rating=9.0)
-        _model(_title("Low", "low"), "low-m", rating=6.0)
-        assert _slugs(TitleFilters(rating_min=8.0)) == {"mixed"}
-        assert _slugs(TitleFilters(rating_min=6.0)) == {"mixed", "low"}
-
     def test_themes_multi_value_and_of_ors(self, db):
         """Each selected theme must match (AND); a theme matches if any model
         carries it (OR across models)."""
@@ -472,7 +460,6 @@ class _Row(TypedDict, total=False):
     tech_gen: str
     player_count: int
     year: int
-    rating: float
     franchise: str
     series: str
     themes: tuple[str, ...]
@@ -497,7 +484,6 @@ _PARITY_ROWS: tuple[_Row, ...] = (
         "tech_gen": "ss",
         "player_count": 4,
         "year": 1995,
-        "rating": 8.0,
         "franchise": "fr-1",
         "series": "sr-1",
         "themes": ("theme-x", "theme-y"),
@@ -514,13 +500,11 @@ _PARITY_ROWS: tuple[_Row, ...] = (
         "tech_gen": "ss",
         "player_count": 2,
         "year": 2001,
-        "rating": 7.5,
         "themes": ("theme-x",),
         "reward_types": ("rt-1",),
         "persons": ("per-2",),
     },
     {
-        # rating 6.0 is below rating_min=7 → drops out of every counted facet.
         "slug": "p-cc",
         "name": "CC",
         "manufacturer": "mfr-2",
@@ -529,7 +513,6 @@ _PARITY_ROWS: tuple[_Row, ...] = (
         "tech_gen": "em",
         "player_count": 4,
         "year": 1980,
-        "rating": 6.0,
         "themes": ("theme-x",),
         "persons": ("per-1",),
     },
@@ -542,7 +525,6 @@ _PARITY_ROWS: tuple[_Row, ...] = (
         "tech_gen": "ss",
         "player_count": 4,
         "year": 1999,
-        "rating": 9.0,
         "themes": ("theme-x", "theme-z"),
         "franchise": "fr-1",
         "persons": ("per-1", "per-2"),
@@ -556,7 +538,6 @@ _PARITY_ROWS: tuple[_Row, ...] = (
         "tech_gen": "ss",
         "player_count": 8,
         "year": 2010,
-        "rating": 7.0,
         "themes": ("theme-y",),
         "reward_types": ("rt-2",),
     },
@@ -569,7 +550,6 @@ _PARITY_ROWS: tuple[_Row, ...] = (
         "tech_gen": "ss",
         "player_count": 4,
         "year": 1990,
-        "rating": 8.5,
         "themes": ("theme-x",),
         "series": "sr-1",
         "persons": ("per-1",),
@@ -583,7 +563,6 @@ _PARITY_ROWS: tuple[_Row, ...] = (
         "tech_gen": "em",
         "player_count": 6,
         "year": 1975,
-        "rating": 5.0,
         "themes": ("theme-w",),
     },
     {
@@ -595,7 +574,6 @@ _PARITY_ROWS: tuple[_Row, ...] = (
         "tech_gen": "ss",
         "player_count": 4,
         "year": 2005,
-        "rating": 8.0,
         "themes": ("theme-x",),
         "reward_types": ("rt-1",),
         "persons": ("per-2",),
@@ -620,11 +598,10 @@ class _Bag:
     series: frozenset[str]
     player_count: frozenset[int]
     year: int | None
-    rating: float | None
 
 
-# Counted facets (the FilterOptions value-list fields). Year/rating are range
-# bounds, not counted options, so they're excluded from the parity comparison.
+# Counted facets (the FilterOptions value-list fields). Year is a range bound,
+# not a counted option, so it's excluded from the parity comparison.
 _COUNTED: tuple[str, ...] = (
     "manufacturer",
     "tech_gen",
@@ -659,7 +636,6 @@ def _bag(row: _Row) -> _Bag:
         series=_one(row.get("series")),
         player_count=frozenset({pc}) if pc is not None else frozenset(),
         year=row.get("year"),
-        rating=row.get("rating"),
     )
 
 
@@ -713,8 +689,6 @@ def _dim_matches(bag: _Bag, dim: str, f: TitleFilters) -> bool:
 def _always_matches(bag: _Bag, f: TitleFilters) -> bool:
     """Range/`q` predicates that gate *every* counted facet (never the excluded
     dim among the eleven). `q` is left inactive in the parity states."""
-    if f.rating_min is not None and (bag.rating is None or bag.rating < f.rating_min):
-        return False
     if f.year_min is not None and (bag.year is None or bag.year < f.year_min):
         return False
     return not (f.year_max is not None and (bag.year is None or bag.year > f.year_max))
@@ -783,7 +757,6 @@ def parity_catalog(db):
             display_type=row.get("display_type"),
             system=row.get("system"),
             player_count=row.get("player_count"),
-            rating=row.get("rating"),
             themes=row.get("themes", ()),
             features=row.get("features", ()),
             reward_types=row.get("reward_types", ()),
@@ -803,7 +776,6 @@ class TestFacetCountParity:
                     themes=("theme-x",),
                     manufacturer="mfr-1",
                     player_count=4,
-                    rating_min=7.0,
                 ),
                 id="multi-dim",
             ),
@@ -831,8 +803,8 @@ class TestFacetCountParity:
     def test_count_zero_values_are_pruned(self, parity_catalog):
         """A facet value with no matching titles isn't returned (value-pruning is
         the same GROUP BY as the count)."""
-        # mfr-3 (GG) is rated 5.0; filtering rating_min=7 prunes it everywhere.
-        opts = facet_counts(TitleFilters(rating_min=7.0))
+        # mfr-3 (GG) is from 1975; filtering year_min=1980 prunes it everywhere.
+        opts = facet_counts(TitleFilters(year_min=1980))
         assert "mfr-3" not in {o.public_id for o in opts.manufacturer}
 
 

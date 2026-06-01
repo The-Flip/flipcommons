@@ -21,16 +21,15 @@ punctuation is not folded either way. Otherwise:
   lists the sidebar renders (``public_id`` is the option entity's URL identity — a slug
   for titles' facets; the name is generic because the shared leaves serve location too).
 
-Four predicates are not the plain ``.filter()`` they look like — see the inline
+Three predicates are not the plain ``.filter()`` they look like — see the inline
 notes on ``q`` (first-model manufacturer, the parity trap), ``year`` (range
-overlap), ``rating`` (max-across-models) and ``player_count`` (the ``>=6``
+overlap) and ``player_count`` (the ``>=6``
 bucket). "Manufacturer of a title" means its *first/original model's*
 manufacturer, uniformly across the card, the manufacturer facet and ``q``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from django.db import connection
@@ -96,7 +95,6 @@ class TitleFilters:
     player_count: int | None = None
     year_min: int | None = None
     year_max: int | None = None
-    rating_min: float | None = None
     themes: tuple[str, ...] = ()
     features: tuple[str, ...] = ()
     reward_types: tuple[str, ...] = ()
@@ -115,7 +113,7 @@ class PlayerCountOption:
 @dataclass(frozen=True)
 class FilterOptions:
     """The full set of option lists for the sidebar — value-pruned and counted.
-    Range dimensions (year, rating) return bounds, not value lists."""
+    The year range dimension returns bounds, not a value list."""
 
     manufacturer: list[FacetOption] = field(default_factory=list)
     person: list[FacetOption] = field(default_factory=list)
@@ -129,7 +127,6 @@ class FilterOptions:
     series: list[FacetOption] = field(default_factory=list)
     player_count: list[PlayerCountOption] = field(default_factory=list)
     year: Bounds[int] = Bounds(None, None)
-    rating: Bounds[float] = Bounds(None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +197,6 @@ DIMENSIONS: tuple[str, ...] = (
     "series",
     "player_count",
     "year",
-    "rating",
     "themes",
     "features",
     "reward_types",
@@ -283,9 +279,6 @@ def apply_dimension(
             if f.year_min is not None:
                 qs = qs.filter(_MODEL, machine_models__year__gte=f.year_min)
             return qs
-        case "rating" if f.rating_min is not None:
-            # "max-across-models >= min" == "exists a model with rating >= min".
-            return qs.filter(_MODEL, machine_models__ipdb_rating__gte=f.rating_min)
         case "themes" if f.themes:
             # AND-of-ORs: every selected slug must match (one .filter each), each
             # pre-expanded to its descendant slugs (expansion.themes) so filtering
@@ -472,19 +465,15 @@ def _count_hierarchical(
     return hierarchy_rollup(pairs.iterator(), ancestors, names)
 
 
-def _bounds[N: (int, float)](
-    ids: QuerySet[Title], lookup: str, cast: Callable[[float], N]
-) -> Bounds[N]:
-    """Min/max of a model-level numeric field over active non-variant models of
-    the filtered set, coerced via *cast* (``int`` for year, ``float`` for
-    rating)."""
+def _year_bounds(ids: QuerySet[Title]) -> Bounds[int]:
+    """Min/max model year over active non-variant models of the filtered set."""
     return bounds(
         MachineModel,
         ids,
         reverse_key="title_id",
-        lookup=lookup,
+        lookup="year",
         guard=_MODEL_COUNT_GUARD,
-        cast=cast,
+        cast=int,
     )
 
 
@@ -580,8 +569,7 @@ def facet_counts(f: TitleFilters) -> FilterOptions:
             Series,
         ),
         player_count=_count_player(_facet_base(f, "player_count", expansion)),
-        year=_bounds(_facet_base(f, "year", expansion), "year", int),
-        rating=_bounds(_facet_base(f, "rating", expansion), "ipdb_rating", float),
+        year=_year_bounds(_facet_base(f, "year", expansion)),
     )
 
 

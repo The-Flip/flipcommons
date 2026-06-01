@@ -22,7 +22,6 @@ export interface TitlesQuery {
   player_count?: number;
   year_min?: number;
   year_max?: number;
-  rating_min?: number;
   theme?: string[];
   feature?: string[];
   reward_type?: string[];
@@ -54,7 +53,6 @@ export function queryFromUrl(url: URL): TitlesQuery {
     player_count: num('player_count'),
     year_min: num('year_min'),
     year_max: num('year_max'),
-    rating_min: num('rating_min'),
     theme: multi('theme'),
     feature: multi('feature'),
     reward_type: multi('reward_type'),

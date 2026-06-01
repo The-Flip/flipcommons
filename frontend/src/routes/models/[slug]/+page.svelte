@@ -78,16 +78,6 @@
   <div class="mobile-only">
     <AccordionSection heading="Features" onEdit={editAction('features')}>
       <ModelSpecsSidebar {model} section="features" />
-      {#if model.ipdb_rating || model.pinside_rating}
-        <div class="mobile-ratings">
-          {#if model.ipdb_rating}
-            <span>IPDB: {model.ipdb_rating.toFixed(1)}</span>
-          {/if}
-          {#if model.pinside_rating}
-            <span>Pinside: {model.pinside_rating.toFixed(1)}</span>
-          {/if}
-        </div>
-      {/if}
     </AccordionSection>
   </div>
 {/if}
@@ -164,16 +154,5 @@
     flex-wrap: wrap;
     gap: var(--size-3);
     font-size: var(--font-size-0);
-  }
-
-  /* Mobile ratings supplement */
-  .mobile-ratings {
-    display: flex;
-    gap: var(--size-4);
-    margin-top: var(--size-3);
-    padding-top: var(--size-3);
-    border-top: 1px solid var(--color-border-soft);
-    font-size: var(--font-size-0);
-    color: var(--color-text-muted);
   }
 </style>

@@ -12,7 +12,7 @@ import type { FilterChipSpec } from '$lib/components/ActiveFilterChips.svelte';
  * Pure and component-free so the chip set — labels, ordering, and what each
  * `remove` clears — can be unit-tested directly. Three shapes: single-select
  * fields (one chip, cleared to null), multi-select fields (one chip per value),
- * and the bespoke scalar filters (player count, year range, rating).
+ * and the bespoke scalar filters (player count, year range).
  */
 export function titleFilterChips(
   filters: FilterState,
@@ -84,13 +84,6 @@ export function titleFilterChips(
         filters.yearMin = null;
         filters.yearMax = null;
       },
-    });
-  }
-  if (filters.ratingMin != null) {
-    chips.push({
-      key: 'ratingMin',
-      label: `Rating ≥ ${filters.ratingMin}`,
-      remove: () => (filters.ratingMin = null),
     });
   }
 

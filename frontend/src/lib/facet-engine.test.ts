@@ -55,7 +55,6 @@ describe('hasActiveFilters', () => {
     expect(hasActiveFilters({ ...emptyFilterState(), manufacturer: 'stern' })).toBe(true);
     expect(hasActiveFilters({ ...emptyFilterState(), themes: ['sci-fi'] })).toBe(true);
     expect(hasActiveFilters({ ...emptyFilterState(), yearMin: 1990 })).toBe(true);
-    expect(hasActiveFilters({ ...emptyFilterState(), ratingMin: 7 })).toBe(true);
   });
 });
 
@@ -71,7 +70,7 @@ describe('filtersFromParams', () => {
 
   it('parses all param types', () => {
     const sp = new URLSearchParams(
-      'q=medieval&tech_gen=solid-state&year_min=1990&year_max=2000&manufacturer=williams&person=pat-lawlor&theme=medieval&theme=sports&display_type=dmd&player_count=4&system=wpc-95&franchise=star-wars&series=castle&rating_min=7.5',
+      'q=medieval&tech_gen=solid-state&year_min=1990&year_max=2000&manufacturer=williams&person=pat-lawlor&theme=medieval&theme=sports&display_type=dmd&player_count=4&system=wpc-95&franchise=star-wars&series=castle',
     );
     const f = filtersFromParams(sp);
     expect(f.query).toBe('medieval');
@@ -86,16 +85,14 @@ describe('filtersFromParams', () => {
     expect(f.system).toBe('wpc-95');
     expect(f.franchise).toBe('star-wars');
     expect(f.series).toBe('castle');
-    expect(f.ratingMin).toBe(7.5);
   });
 
   it('drops non-numeric numeric params instead of seeding NaN', () => {
     // Only reachable via a hand-edited URL, but must stay consistent with
     // queryFromUrl's server-side guard so the two parsers can't diverge.
-    const f = filtersFromParams(new URLSearchParams('year_min=abc&player_count=&rating_min=NaN'));
+    const f = filtersFromParams(new URLSearchParams('year_min=abc&player_count='));
     expect(f.yearMin).toBeNull();
     expect(f.playerCount).toBeNull();
-    expect(f.ratingMin).toBeNull();
   });
 
   it('round-trips multi-value dimensions as repeated params', () => {
@@ -127,7 +124,6 @@ describe('filtersToParams', () => {
       yearMin: 1990,
       themes: ['medieval', 'sports'],
       playerCount: 4,
-      ratingMin: 7.5,
     };
     const sp = filtersToParams(original, new URLSearchParams());
     const restored = filtersFromParams(sp);

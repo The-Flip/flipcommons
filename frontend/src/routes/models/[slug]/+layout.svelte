@@ -12,7 +12,6 @@
   import ModelHierarchy from '$lib/components/ModelHierarchy.svelte';
   import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
-  import RatingsSidebarSection from '$lib/components/RatingsSidebarSection.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
   import SidebarList from '$lib/components/SidebarList.svelte';
@@ -240,8 +239,6 @@
         <ModelSpecsSidebar {model} section="features" showFranchiseSeries={false} />
       </SidebarSection>
     {/if}
-
-    <RatingsSidebarSection ipdbRating={model.ipdb_rating} pinsideRating={model.pinside_rating} />
 
     <TaxonomyLinkSidebarSection heading="Franchise" basePath="/franchises" item={model.franchise} />
     <TaxonomyLinkSidebarSection heading="Series" basePath="/series" item={model.series} />

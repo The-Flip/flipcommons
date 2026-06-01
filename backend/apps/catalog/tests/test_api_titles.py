@@ -493,7 +493,6 @@ class TestTitlesAllFacets:
             display_type=dmd,
             system=wpc,
             player_count=4,
-            ipdb_rating=8.5,
         )
         m1.themes.add(theme)
         Credit.objects.create(model=m1, person=person, role=role)
@@ -553,9 +552,6 @@ class TestTitlesAllFacets:
         # Year range from two models (1997 and 2015)
         assert item["year_min"] == 1997
         assert item["year_max"] == 2015
-
-        # Rating
-        assert item["ipdb_rating_max"] == 8.5
 
     def test_all_titles_deduplicates_tech_generations(self, client, faceted_title):
         """Two models with the same tech gen should yield one entry."""
@@ -719,4 +715,3 @@ class TestTitlesAllFacets:
         assert item["series"] is None
         assert item["year_min"] is None
         assert item["year_max"] is None
-        assert item["ipdb_rating_max"] is None

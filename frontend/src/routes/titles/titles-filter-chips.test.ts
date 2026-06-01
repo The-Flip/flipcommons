@@ -17,7 +17,6 @@ function options(overrides: Partial<FilterOptionsSchema> = {}): FilterOptionsSch
     series: [],
     player_count: [],
     year: { min: null, max: null },
-    rating: { min: null, max: null },
     ...overrides,
   };
 }
@@ -84,18 +83,12 @@ describe('titleFilterChips', () => {
     expect(filters.yearMax).toBeNull();
   });
 
-  it('formats the rating chip', () => {
-    const chips = titleFilterChips({ ...emptyFilterState(), ratingMin: 7.5 }, options());
-    expect(chips[0]).toMatchObject({ key: 'ratingMin', label: 'Rating ≥ 7.5' });
-  });
-
   it('keeps a stable order across mixed dimensions', () => {
     const filters = {
       ...emptyFilterState(),
       manufacturer: 'stern',
       themes: ['sci-fi'],
       playerCount: 4,
-      ratingMin: 8,
     };
     const chips = titleFilterChips(
       filters,
@@ -108,7 +101,6 @@ describe('titleFilterChips', () => {
       'manufacturer:stern',
       'themes:sci-fi',
       'playerCount:4',
-      'ratingMin',
     ]);
   });
 });

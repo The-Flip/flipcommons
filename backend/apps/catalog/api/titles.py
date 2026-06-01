@@ -154,7 +154,6 @@ class TitleListItemSchema(Schema):
     series: EntityRef | None = None
     year_min: int | None = None
     year_max: int | None = None
-    ipdb_rating_max: float | None = None
 
 
 _ALL_ADAPTER: TypeAdapter[list[TitleListItemSchema]] = TypeAdapter(
@@ -206,7 +205,6 @@ class TitleFilterQuerySchema(Schema):
     player_count: int | None = None
     year_min: int | None = None
     year_max: int | None = None
-    rating_min: float | None = None
     theme: list[str] = []
     feature: list[str] = []
     reward_type: list[str] = []
@@ -224,7 +222,6 @@ class TitleFilterQuerySchema(Schema):
             player_count=self.player_count,
             year_min=self.year_min,
             year_max=self.year_max,
-            rating_min=self.rating_min,
             themes=tuple(self.theme),
             features=tuple(self.feature),
             reward_types=tuple(self.reward_type),
@@ -242,11 +239,6 @@ class PlayerCountOptionSchema(Schema):
     count: int
 
 
-class RatingBoundsSchema(Schema):
-    min: float | None = None
-    max: float | None = None
-
-
 class FilterOptionsSchema(Schema):
     manufacturer: list[FacetOptionSchema] = []
     person: list[FacetOptionSchema] = []
@@ -260,7 +252,6 @@ class FilterOptionsSchema(Schema):
     series: list[FacetOptionSchema] = []
     player_count: list[PlayerCountOptionSchema] = []
     year: YearBoundsSchema = YearBoundsSchema()
-    rating: RatingBoundsSchema = RatingBoundsSchema()
 
 
 class TitleFacetsPageSchema(Schema):
@@ -803,7 +794,6 @@ def _filter_options_payload(opts: FilterOptions) -> dict[str, object]:
             "series": _facet_option_dicts(opts.series),
             "player_count": [{"value": p.value, "count": p.count} for p in players],
             "year": bounds(opts.year),
-            "rating": bounds(opts.rating),
         }
     }
 
@@ -939,10 +929,6 @@ def list_all_titles(request: HttpRequest) -> HttpResponse:
                 "machine_models__year",
                 filter=Q(machine_models__variant_of__isnull=True),
             ),
-            ipdb_rating_max=Max(
-                "machine_models__ipdb_rating",
-                filter=Q(machine_models__variant_of__isnull=True),
-            ),
             franchise_slug=F("franchise__slug"),
             franchise_name=F("franchise__name"),
             series_slug=F("series__slug"),
@@ -959,7 +945,6 @@ def list_all_titles(request: HttpRequest) -> HttpResponse:
             "primary_year",
             "primary_model_id",
             "year_min",
-            "ipdb_rating_max",
             "franchise_slug",
             "franchise_name",
             "series_slug",
@@ -1108,9 +1093,6 @@ def list_all_titles(request: HttpRequest) -> HttpResponse:
                 "series": _ref_dict(r.series_slug, r.series_name),
                 "year_min": r.year_min,
                 "year_max": r.latest_year,
-                "ipdb_rating_max": (
-                    float(r.ipdb_rating_max) if r.ipdb_rating_max else None
-                ),
             }
         )
     return set_cached_response(titles_all_key(), _ALL_ADAPTER, result)

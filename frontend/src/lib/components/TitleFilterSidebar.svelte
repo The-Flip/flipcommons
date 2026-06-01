@@ -181,24 +181,6 @@
       emptyMessage="No series match your other filters"
     />
   </div>
-
-  <div class="filter-section">
-    <span class="filter-label">Min IPDB rating</span>
-    <input
-      type="number"
-      step="0.1"
-      min="0"
-      max="10"
-      placeholder="e.g. 7.0"
-      aria-label="Minimum IPDB rating"
-      class="rating-input"
-      value={filters.ratingMin ?? ''}
-      onchange={(e) => {
-        const v = e.currentTarget.value;
-        filters.ratingMin = v ? Number(v) : null;
-      }}
-    />
-  </div>
 </aside>
 
 <style>
@@ -242,10 +224,5 @@
   .filter-label {
     font-size: var(--font-size-0);
     color: var(--color-text-muted);
-  }
-
-  .rating-input {
-    /* width is the only override; padding/border/etc. come from app.css. */
-    width: 6rem;
   }
 </style>

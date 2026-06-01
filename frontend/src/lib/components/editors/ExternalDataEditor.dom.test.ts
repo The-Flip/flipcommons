@@ -24,8 +24,6 @@ vi.mock('$app/navigation', () => ({
 const FIELD_CONSTRAINTS = {
   data: {
     ipdb_id: { min: 1, max: 999999, step: 1 },
-    ipdb_rating: { min: 1, max: 10, step: 0.1 },
-    pinside_rating: { min: 1, max: 10, step: 0.1 },
   },
 };
 
@@ -33,8 +31,6 @@ const INITIAL_MODEL = {
   ipdb_id: 1521,
   opdb_id: 'mm',
   pinside_id: 'medieval-madness',
-  ipdb_rating: 8.3,
-  pinside_rating: 8.7,
 };
 
 describe('ExternalDataEditor dirty-state contract', () => {
@@ -59,9 +55,9 @@ describe('ExternalDataEditor dirty-state contract', () => {
     await user.click(screen.getByRole('button', { name: 'Check dirty' }));
     expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
 
-    const ipdbRatingInput = screen.getByLabelText('IPDB rating');
-    await user.clear(ipdbRatingInput);
-    await user.type(ipdbRatingInput, '9.1');
+    const pinsideIdInput = screen.getByLabelText('Pinside ID');
+    await user.clear(pinsideIdInput);
+    await user.type(pinsideIdInput, 'mm-special');
 
     expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
 

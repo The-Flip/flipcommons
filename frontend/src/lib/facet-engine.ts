@@ -25,7 +25,6 @@ export interface FilterState {
   system: string | null;
   franchise: string | null;
   series: string | null;
-  ratingMin: number | null;
 }
 
 export function emptyFilterState(): FilterState {
@@ -44,7 +43,6 @@ export function emptyFilterState(): FilterState {
     system: null,
     franchise: null,
     series: null,
-    ratingMin: null,
   };
 }
 
@@ -69,8 +67,7 @@ export function hasActiveFilters(f: FilterState): boolean {
     f.playerCount != null ||
     f.system != null ||
     f.franchise != null ||
-    f.series != null ||
-    f.ratingMin != null
+    f.series != null
   );
 }
 
@@ -148,11 +145,6 @@ const PARAM_MAP: (SingleParam | MultiParam)[] = [
   { param: 'system', get: (f) => f.system, set: (f, v) => (f.system = v) },
   { param: 'franchise', get: (f) => f.franchise, set: (f, v) => (f.franchise = v) },
   { param: 'series', get: (f) => f.series, set: (f, v) => (f.series = v) },
-  {
-    param: 'rating_min',
-    get: (f) => (f.ratingMin != null ? String(f.ratingMin) : null),
-    set: (f, v) => (f.ratingMin = toNum(v)),
-  },
 ];
 
 /** Read filter state from URL search params. */

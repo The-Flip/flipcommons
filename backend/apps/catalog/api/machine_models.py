@@ -144,8 +144,6 @@ class ModelListItemSchema(Schema):
     technology_generation: EntityRef | None = None
     display_type: EntityRef | None = None
     ipdb_id: int | None = None
-    ipdb_rating: float | None = None
-    pinside_rating: float | None = None
     themes: list[EntityRef] = []
     thumbnail_url: str | None = None
 
@@ -182,8 +180,6 @@ class ModelDetailSchema(CatalogDetailSchema):
     ipdb_id: int | None = None
     opdb_id: str | None = None
     pinside_id: str | None = None
-    ipdb_rating: float | None = None
-    pinside_rating: float | None = None
     abbreviations: list[str] = []
     extra_data: JsonBody
     credits: list[CreditSchema]
@@ -291,10 +287,6 @@ def _build_model_list_qs(
         "-name": [F("name").desc()],
         "year": [F("year").asc(nulls_last=True)],
         "-year": [F("year").desc(nulls_last=True)],
-        "-ipdb_rating": [F("ipdb_rating").desc(nulls_last=True)],
-        "-pinside_rating": [F("pinside_rating").desc(nulls_last=True)],
-        "ipdb_rating": [F("ipdb_rating").asc(nulls_last=True)],
-        "pinside_rating": [F("pinside_rating").asc(nulls_last=True)],
     }
     order_exprs = ordering_map.get(ordering, ordering_map["-year"])
     qs = qs.order_by(*order_exprs, "name")
@@ -333,10 +325,6 @@ def _serialize_model_list(
             else None
         ),
         ipdb_id=pm.ipdb_id,
-        ipdb_rating=float(pm.ipdb_rating) if pm.ipdb_rating is not None else None,
-        pinside_rating=(
-            float(pm.pinside_rating) if pm.pinside_rating is not None else None
-        ),
         themes=[EntityRef(name=t.name, public_id=t.public_id) for t in pm.themes.all()],
         thumbnail_url=thumbnail_url,
     )
@@ -444,10 +432,6 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         ipdb_id=pm.ipdb_id,
         opdb_id=pm.opdb_id,
         pinside_id=pm.pinside_id,
-        ipdb_rating=float(pm.ipdb_rating) if pm.ipdb_rating is not None else None,
-        pinside_rating=(
-            float(pm.pinside_rating) if pm.pinside_rating is not None else None
-        ),
         abbreviations=[a.value for a in pm.abbreviations.all()],
         extra_data=pm.extra_data or {},
         credits=credits,
