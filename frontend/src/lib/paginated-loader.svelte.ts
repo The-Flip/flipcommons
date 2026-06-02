@@ -1,6 +1,28 @@
 import { onMount } from 'svelte';
 
 /**
+ * Unwrap a paginated list response for a `createPaginatedLoader` fetcher,
+ * throwing on an error response (`data` undefined) instead of degrading to an
+ * empty page.
+ *
+ * Degrading to `{ items: [], count: 0 }` is a trap: the loader reads it as a
+ * real empty page, sets `hasMore` false and **silently, permanently halts
+ * infinite scroll** on a single transient page-N failure (and an unseeded
+ * loader's page-1 failure renders an empty list with no error). Throwing routes
+ * the failure to the loader's `catch`, which records the error and leaves
+ * `hasMore`/`nextPage` intact so the next sentinel hit retries the same page.
+ * Safe because a 2xx always carries a real `{ items, count }` body — `data` is
+ * undefined only on an actual error.
+ */
+export function unwrapPage<T>(data: { items: T[]; count: number } | undefined): {
+  items: T[];
+  count: number;
+} {
+  if (!data) throw new Error('Failed to load page');
+  return data;
+}
+
+/**
  * Reactive paginated data loader for use inside Svelte components.
  *
  * Fetches the first page in `onMount` and exposes a `loadMore()` method

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPaginatedLoader } from './paginated-loader.svelte';
+import { createPaginatedLoader, unwrapPage } from './paginated-loader.svelte';
 
 /**
  * The `initial` seed is what lets the SSR /titles grid render page 1 from the
@@ -39,5 +39,35 @@ describe('createPaginatedLoader — seeded with initial', () => {
     expect(loader.hasMore).toBe(false);
     loader.loadMore();
     expect(fetchPage).not.toHaveBeenCalled();
+  });
+
+  // A failed later page must NOT permanently halt infinite scroll. This is the
+  // contract `unwrapPage` exists to honor: fetchers throw on an error response
+  // rather than degrading to `{ items: [], count: 0 }` (which would set hasMore
+  // false here and dead-stop scrolling on one transient blip).
+  it('preserves hasMore and records the error when a later page fetch throws', async () => {
+    const fetchPage = vi.fn().mockRejectedValueOnce(new Error('boom'));
+    const loader = createPaginatedLoader(fetchPage, { items: [1, 2], count: 5 });
+
+    loader.loadMore();
+    await vi.waitFor(() => expect(loader.error).toBeTruthy());
+
+    // Retryable: items untouched, still more to load, no degraded count.
+    expect(loader.items).toEqual([1, 2]);
+    expect(loader.hasMore).toBe(true);
+    expect(loader.count).toBe(5);
+  });
+});
+
+describe('unwrapPage', () => {
+  it('returns the page when data is present', () => {
+    const page = { items: [1, 2], count: 2 };
+    expect(unwrapPage(page)).toBe(page);
+  });
+
+  it('throws on an error response (undefined data) instead of degrading', () => {
+    // The bug this guards: `data ?? { items: [], count: 0 }` would have returned
+    // a fake empty page, silently halting the loader.
+    expect(() => unwrapPage(undefined)).toThrow();
   });
 });

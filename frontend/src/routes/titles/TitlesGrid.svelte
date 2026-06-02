@@ -2,7 +2,7 @@
   import client from '$lib/api/client';
   import TitleCard from '$lib/components/cards/TitleCard.svelte';
   import ServerPaginatedGrid from '$lib/components/grid/ServerPaginatedGrid.svelte';
-  import { createPaginatedLoader } from '$lib/paginated-loader.svelte';
+  import { createPaginatedLoader, unwrapPage } from '$lib/paginated-loader.svelte';
   import type { TitleCardSchema } from '$lib/api/schema';
   import type { TitlesQuery } from './titles-query';
 
@@ -28,7 +28,7 @@
     const { data } = await client.GET('/api/titles/', {
       params: { query: { ...query, page } },
     });
-    return data ?? { items: [], count: 0 };
+    return unwrapPage(data);
   }, initial);
 </script>
 

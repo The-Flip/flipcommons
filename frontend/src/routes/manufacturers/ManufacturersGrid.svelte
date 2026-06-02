@@ -2,7 +2,7 @@
   import client from '$lib/api/client';
   import ManufacturerCard from '$lib/components/cards/ManufacturerCard.svelte';
   import ServerPaginatedGrid from '$lib/components/grid/ServerPaginatedGrid.svelte';
-  import { createPaginatedLoader } from '$lib/paginated-loader.svelte';
+  import { createPaginatedLoader, unwrapPage } from '$lib/paginated-loader.svelte';
   import type { ManufacturerCardSchema } from '$lib/api/schema';
   import type { ManufacturersQuery } from './manufacturers-query';
 
@@ -25,7 +25,7 @@
     const { data } = await client.GET('/api/manufacturers/', {
       params: { query: { ...query, page } },
     });
-    return data ?? { items: [], count: 0 };
+    return unwrapPage(data);
   }, initial);
 </script>
 
