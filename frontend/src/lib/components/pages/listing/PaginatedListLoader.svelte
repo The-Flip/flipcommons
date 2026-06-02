@@ -5,11 +5,12 @@
   import { createPaginatedLoader } from '$lib/paginated-loader.svelte';
 
   /**
-   * Inner loader host for `PaginatedListPage`, built fresh each time the parent
-   * `{#key}`-remounts it on a search change — so each mount seeds the loader
-   * with that search's fresh SSR page 1 (no double-fetch of page 1). Mirrors
-   * the titles `TitlesGrid` split: the controller chrome (search box, header)
-   * stays mounted while only this loader remounts.
+   * Inner loader host shared by the listing controllers — `PaginatedListPage`
+   * (row lists) and the faceted `FacetedCatalogListing` (card grids) — built
+   * fresh each time the parent `{#key}`-remounts it on a filter/search change,
+   * so each mount seeds the loader with that query's fresh SSR page 1 (no
+   * double-fetch of page 1). The split keeps the controller chrome (search box,
+   * sidebar, header) mounted while only this loader remounts.
    *
    * Hosts both list shapes: `layout="row"` renders the linked `<ul>` rows
    * (`ServerPaginatedList`, which wraps each row in the `${basePath}/${slug}`
