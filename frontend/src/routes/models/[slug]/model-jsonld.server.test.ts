@@ -46,14 +46,6 @@ function event(profile: ModelDetailSchema, slug = profile.slug) {
   } as unknown as Parameters<typeof load>[0];
 }
 
-async function crumbNames(profile: ModelDetailSchema) {
-  const { jsonLd } = (await load(event(profile))) as { jsonLd: Record<string, unknown> };
-  const graph = jsonLd['@graph'] as Record<string, unknown>[];
-  const crumb = graph.find((n) => n['@type'] === 'BreadcrumbList');
-  const items = crumb?.itemListElement as Record<string, unknown>[];
-  return items.map((i) => i.name);
-}
-
 describe('model +layout.server jsonLd', () => {
   it('emits the Game/ProductModel node with releaseDate', async () => {
     const { jsonLd } = (await load(event(BASE_MODEL))) as { jsonLd: Record<string, unknown> };
@@ -63,23 +55,6 @@ describe('model +layout.server jsonLd', () => {
     expect(node.releaseDate).toBe('1997');
   });
 
-  it('breadcrumb is Home › Title › Model when the names differ', async () => {
-    expect(await crumbNames(BASE_MODEL)).toEqual([
-      'Home',
-      'Medieval Madness',
-      'Medieval Madness (Williams)',
-    ]);
-  });
-
-  it('keeps the Title crumb even when Title and Model names match', async () => {
-    // In a multi-model title the base model often carries the title's exact
-    // name. The trail still includes the Title crumb (Home › Godzilla ›
-    // Godzilla), mirroring the unconditional parentLink in the visible UI.
-    const sameName = {
-      ...BASE_MODEL,
-      name: 'Godzilla',
-      title: { name: 'Godzilla', public_id: 'godzilla' },
-    } satisfies ModelDetailSchema;
-    expect(await crumbNames(sameName)).toEqual(['Home', 'Godzilla', 'Godzilla']);
-  });
+  // The breadcrumb chain (Home › Titles › Title › Model) is asserted centrally
+  // in src/lib/breadcrumbs.server.test.ts, alongside every other entity's.
 });

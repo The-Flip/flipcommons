@@ -41,7 +41,7 @@ function event(profile: unknown, path: string) {
 }
 
 describe('location +layout.server jsonLd', () => {
-  it('emits a typed Place node with a Home › ancestors breadcrumb', async () => {
+  it('emits a typed Place node and an ancestor breadcrumb with full-path item URLs', async () => {
     const data = (await load(event(CHICAGO, 'usa/il/chicago'))) as {
       jsonLd?: Record<string, unknown>;
     };
@@ -53,9 +53,11 @@ describe('location +layout.server jsonLd', () => {
     expect(node['@type']).toBe('City');
     expect(node['@id']).toBe(`${ORIGIN}/locations/usa/il/chicago`);
 
+    // The breadcrumb names are asserted centrally in
+    // src/lib/breadcrumbs.server.test.ts; here we pin the location-specific
+    // detail that ancestor crumbs resolve to their full `location_path` URLs.
     const crumb = graph.find((n) => n['@type'] === 'BreadcrumbList');
     const items = crumb?.itemListElement as Record<string, unknown>[];
-    expect(items.map((i) => i.name)).toEqual(['Home', 'United States', 'Illinois', 'Chicago']);
     expect(items[1].item).toBe(`${ORIGIN}/locations/usa`);
     expect(items[2].item).toBe(`${ORIGIN}/locations/usa/il`);
   });

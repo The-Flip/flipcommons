@@ -11,7 +11,6 @@
   import PaginatedListLoader from './PaginatedListLoader.svelte';
   import type { EditSectionMenuItem } from '$lib/components/edit-section-menu';
   import { SEARCH_THRESHOLD } from '$lib/components/grid/search-threshold';
-  import { pageTitle } from '$lib/constants';
   import { resolveHref } from '$lib/utils';
 
   /**
@@ -28,6 +27,10 @@
    * `catalogKey` onto these props; a non-catalog list (e.g. users) supplies
    * them directly. The caller provides a typed `fetchPage` closure (path
    * literal baked in, so `T` stays typed) and a row `children` snippet.
+   *
+   * Emits no `<head>` metadata: the adapter owns title/description/canonical
+   * (`CatalogListing` via `MetaTags` + `JsonLd`), so a non-catalog adapter must
+   * supply its own.
    */
   let {
     title,
@@ -185,10 +188,6 @@
       !extraFilterActive,
   );
 </script>
-
-<svelte:head>
-  <title>{pageTitle(title)}</title>
-</svelte:head>
 
 {#snippet actionsSnippet()}
   <EditSectionMenu items={actionItems} />

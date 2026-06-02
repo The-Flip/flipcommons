@@ -19,7 +19,6 @@
 
 <CatalogListing
   catalogKey="credit-role"
-  subtitle="Roles credited in game development."
   initial={{ items: data.items, count: data.count }}
   {fetchPage}
   q={data.q}

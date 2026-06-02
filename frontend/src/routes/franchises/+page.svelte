@@ -21,7 +21,6 @@
 
 <CatalogListing
   catalogKey="franchise"
-  subtitle="Licensed and original franchises featured in pinball."
   initial={{ items: data.items, count: data.count }}
   {fetchPage}
   q={data.q}

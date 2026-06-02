@@ -1,7 +1,11 @@
-<script lang="ts" generics="T extends { slug: string }">
+<script lang="ts" generics="T extends { slug: string; name: string }">
   import type { Snippet } from 'svelte';
+  import { page } from '$app/state';
   import PaginatedListPage from './PaginatedListPage.svelte';
+  import MetaTags from '$lib/components/MetaTags.svelte';
+  import JsonLd from '$lib/components/JsonLd.svelte';
   import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
+  import { buildListingJsonLd, listingMeta } from '$lib/entities/schema-org';
 
   /**
    * Catalog adapter over `PaginatedListPage`: resolves a `catalogKey` to the
@@ -41,11 +45,26 @@
   } = $props();
 
   let meta = $derived(ENTITY_META[catalogKey]);
+  let listingCopy = $derived(listingMeta(catalogKey));
+  // The listing description is the single source for both the visible subtitle
+  // and the <meta>/JSON-LD description; an explicit `subtitle` prop overrides it.
+  let subtitleText = $derived(subtitle ?? listingCopy.description);
+  let listingJsonLd = $derived(
+    buildListingJsonLd(catalogKey, initial.items, page.url, initial.count),
+  );
 </script>
 
+<MetaTags
+  title={listingCopy.title}
+  description={listingCopy.description}
+  url={page.url.href}
+  ogType="website"
+/>
+<JsonLd data={listingJsonLd} />
+
 <PaginatedListPage
-  title={meta.label_plural}
-  {subtitle}
+  title={listingCopy.heading}
+  subtitle={subtitleText}
   basePath={`/${meta.entity_type_plural}`}
   singularLabel={meta.label.toLowerCase()}
   singularTitle={meta.label}

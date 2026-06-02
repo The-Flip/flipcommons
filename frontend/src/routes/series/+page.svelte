@@ -19,7 +19,6 @@
 
 <CatalogListing
   catalogKey="series"
-  subtitle="Pinball titles sharing an original, non-licensed lineage."
   initial={{ items: data.items, count: data.count }}
   {fetchPage}
   q={data.q}

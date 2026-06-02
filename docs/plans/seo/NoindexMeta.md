@@ -83,7 +83,7 @@ Every route where `isSearchEngineIndexable(routeId) === false`. With current rou
 
 - Auth-gated (anything under a `requireCapability` layout): `/admin/*`, `/kiosk/edit/*`, and all catalog `*/edit` subroutes.
 - Listed non-indexable (entries in `SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS`): `/login`, `/signup`, `/verify-email`, `/auth/error`, `/search`, `/kiosk`, `/style-lab`, `/api-docs`, `/_sentry_test`, `/changesets`, `/review`, `/users/[username]`.
-- Catalog non-indexable kinds (`catalog-listing`, `catalog-new`, `catalog-delete`) for every entity.
+- Catalog non-indexable kinds (`catalog-new`, `catalog-delete`) for every entity, plus edit subroutes through their auth-gated layouts. Catalog listings are indexable now that they are SSR.
 
 The list isn't enumerated in this doc — it's whatever `isSearchEngineIndexable()` returns false for, and the route-walking test (per [`RouteWalking.md`](RouteWalking.md)) already enforces that every route classifies.
 
@@ -99,8 +99,8 @@ No. Both signals are emitted on every deploy regardless of whether indexing is a
 
 `frontend/src/hooks-noindex.server.test.ts` imports `noindexHandle` and parameterizes over anchor routes from each bucket. For each routeId it calls the handle with a stubbed `event` and a `resolve` that captures the `transformPageChunk` invocation and returns a fake HTML response, then asserts:
 
-- Indexable (`/`, `/about`, `/titles/[slug]`) → `resolve` called without options, response has no `X-Robots-Tag`, response body has no `name="robots"` meta tag.
-- Listed non-indexable (`/login`, `/search`, `/users/[username]`), auth-gated (`/admin/dashboard`, `/kiosk/edit`), catalog non-indexable kinds (`/titles`, `/titles/new`, `/titles/[slug]/edit`, `/titles/[slug]/delete`), and `route.id === null` → header set, body contains the meta tag, `resolve` called with a `transformPageChunk` function.
+- Indexable (`/`, `/about`, `/titles`, `/titles/[slug]`) → `resolve` called without options, response has no `X-Robots-Tag`, response body has no `name="robots"` meta tag.
+- Listed non-indexable (`/login`, `/search`, `/users/[username]`), auth-gated (`/admin/dashboard`, `/kiosk/edit`), catalog non-indexable kinds (`/titles/new`, `/titles/[slug]/edit`, `/titles/[slug]/delete`), and `route.id === null` → header set, body contains the meta tag, `resolve` called with a `transformPageChunk` function.
 - Unclassified routes (`/__health`, the only `+server.ts` endpoint today) → header set, no crash. Pins the `try/catch` behavior so a future refactor that "cleans up" the catch surfaces here instead of crashing the liveness probe in production.
 
 ## Implementation order
@@ -111,7 +111,7 @@ No. Both signals are emitted on every deploy regardless of whether indexing is a
    - `curl -sI localhost:5173/login | grep -i x-robots-tag` shows the header.
    - `curl -s localhost:5173/login | grep robots` shows the meta.
    - Both checks against an SSR'd indexable route (e.g. `/titles/medieval-madness`) show nothing.
-   - For an `ssr=false` listing (e.g. `/titles`), the initial page response now has **both** the header AND the meta tag (the hook covers static-shell responses that a layout load wouldn't).
+   - Catalog listings (e.g. `/titles`) are SSR and indexable, so they should show neither the header nor the meta tag.
 
 That's the whole PR. Tiny.
 

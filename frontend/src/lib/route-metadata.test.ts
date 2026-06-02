@@ -159,7 +159,7 @@ describe('route-metadata', () => {
     ['/about/people', 'listed-indexable', true, null],
     ['/(legal)/privacy', 'listed-indexable', true, null],
     ['/manufacturers/[slug]/systems', 'listed-indexable', true, null],
-    ['/titles', 'catalog-listing', false, 'title'],
+    ['/titles', 'catalog-listing', true, 'title'],
     ['/titles/[slug]', 'catalog-detail', true, 'title'],
     ['/titles/[slug]/edit-history', 'catalog-edit-history', true, 'title'],
     ['/titles/[slug]/sources', 'catalog-sources', true, 'title'],

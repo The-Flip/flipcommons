@@ -51,6 +51,7 @@ from .rich_text import build_rich_text
 from .schemas import (
     CatalogDetailSchema,
     ClaimPatchSchema,
+    EntityRef,
     TitleModelSchema,
 )
 
@@ -75,6 +76,17 @@ class DisplayTypeListItemSchema(TaxonomyWithTitleCountSchema):
 
 class TechnologyGenerationListItemSchema(TaxonomyWithTitleCountSchema):
     subgenerations: list[TaxonomyWithTitleCountSchema] = []
+
+
+# The two single-parent subtaxonomies expose their parent as a ref so the
+# detail page can render the `Parent › Child` trail (the flat taxonomies have
+# no parent; the DAG taxonomies — GameplayFeature, Theme — carry `parents`).
+class DisplaySubtypeDetailSchema(TaxonomySchema):
+    display_type: EntityRef
+
+
+class TechnologySubgenerationDetailSchema(TaxonomySchema):
+    technology_generation: EntityRef
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +150,27 @@ def _serialize_taxonomy(
             obj, "description", getattr(obj, "active_claims", None)
         ),
         aliases=aliases,
+    )
+
+
+def _serialize_display_subtype(obj: DisplaySubtype) -> DisplaySubtypeDetailSchema:
+    return DisplaySubtypeDetailSchema(
+        **_serialize_taxonomy(obj).model_dump(),
+        display_type=EntityRef(
+            name=obj.display_type.name, public_id=obj.display_type.public_id
+        ),
+    )
+
+
+def _serialize_technology_subgeneration(
+    obj: TechnologySubgeneration,
+) -> TechnologySubgenerationDetailSchema:
+    return TechnologySubgenerationDetailSchema(
+        **_serialize_taxonomy(obj).model_dump(),
+        technology_generation=EntityRef(
+            name=obj.technology_generation.name,
+            public_id=obj.technology_generation.public_id,
+        ),
     )
 
 

@@ -27,6 +27,29 @@ export type ExternalReference =
     };
 
 /**
+ * Listing-page copy for a catalog entity.
+ *
+ * - `title` — the SEO label: browser `<title>`, `og`/`twitter` title, and the
+ *   JSON-LD `CollectionPage` name. Defaults to the entity's plural label.
+ * - `heading` — the visible `<h1>`. Defaults to `title`; set it only when the
+ *   on-page heading should read differently from the SEO title (e.g. titles
+ *   list: heading "Pinball Machines", title "Pinball Machine Titles").
+ * - `breadcrumb` — the label for this listing in a detail page's breadcrumb
+ *   trail (the JSON-LD `BreadcrumbList`, and the visible trail on taxonomy
+ *   detail pages). Defaults to `heading`, since a crumb should read the way the
+ *   page it links to names itself. Override only for a terser crumb (e.g.
+ *   people: heading "Notable Pinball People", breadcrumb "Notable People").
+ * - `description` — feeds both the visible subtitle and the machine-readable
+ *   `<meta>`/JSON-LD description.
+ */
+export interface ListingInfo {
+  title?: string;
+  heading?: string;
+  breadcrumb?: string;
+  description: string;
+}
+
+/**
  * Per-model schema.org presentation declarations. Lives frontend-side because
  * schema.org type/property names are vocabulary the backend never consumes
  * (see docs/plans/seo/JsonLdAndFriends.md, "Why frontend assembly").
@@ -55,6 +78,13 @@ export interface EntityInfo<TSchema> {
 
   /** The schema.org schemas this entity maps to */
   schemaOrg: SchemaOrgInfo<TSchema>;
+
+  /**
+   * Listing-page copy. The single source for both the visible listing-page
+   * subtitle and its `<meta name="description">` / JSON-LD `CollectionPage`
+   * description, so the two can't drift.
+   */
+  listing?: ListingInfo;
 
   /**
    * External-database references keyed by API field name — the single place

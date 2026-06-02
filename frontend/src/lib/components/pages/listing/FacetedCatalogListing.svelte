@@ -1,4 +1,7 @@
-<script lang="ts" generics="F extends { query: string }, O, T extends { slug: string }">
+<script
+  lang="ts"
+  generics="F extends { query: string }, O, T extends { slug: string; name: string }"
+>
   import type { Component, Snippet } from 'svelte';
   import { afterNavigate, goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
@@ -9,7 +12,9 @@
   import SearchBox from '$lib/components/SearchBox.svelte';
   import PaginatedListLoader from './PaginatedListLoader.svelte';
   import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
-  import { pageTitle } from '$lib/constants';
+  import MetaTags from '$lib/components/MetaTags.svelte';
+  import JsonLd from '$lib/components/JsonLd.svelte';
+  import { buildListingJsonLd, listingMeta } from '$lib/entities/schema-org';
   import { decideCreatePrompt } from '$lib/create-prompt';
   import { streamed } from '$lib/streamed.svelte';
   import { resolveHref } from '$lib/utils';
@@ -151,13 +156,24 @@
   $effect(() => {
     void auth.load();
   });
+
+  let listingCopy = $derived(listingMeta(catalogKey));
+  let listingJsonLd = $derived(
+    buildListingJsonLd(catalogKey, initial.items, page.url, initial.count),
+  );
 </script>
 
-<svelte:head>
-  <title>{pageTitle(meta.label_plural)}</title>
-</svelte:head>
+<MetaTags
+  title={listingCopy.title}
+  description={listingCopy.description}
+  url={page.url.href}
+  ogType="website"
+/>
+<JsonLd data={listingJsonLd} />
 
 <div class="faceted-page">
+  <h1>{listingCopy.heading}</h1>
+
   <SearchBox bind:value={queryInput} placeholder={`Search ${pluralLabel}...`} />
 
   <div class="layout">
@@ -211,6 +227,10 @@
 <style>
   .faceted-page {
     padding: var(--size-5) 0;
+  }
+
+  h1 {
+    margin-bottom: var(--size-4);
   }
 
   .layout {

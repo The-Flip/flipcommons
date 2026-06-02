@@ -19,7 +19,6 @@
 
 <CatalogListing
   catalogKey="tag"
-  subtitle="Descriptive tags applied to pinball machines."
   initial={{ items: data.items, count: data.count }}
   {fetchPage}
   q={data.q}

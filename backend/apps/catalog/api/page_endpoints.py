@@ -69,13 +69,17 @@ from .series import SeriesDetailSchema, _serialize_series_detail, _series_detail
 from .systems import SystemDetailSchema, _serialize_system_detail, _system_detail_qs
 from .taxonomy import (
     CreditRoleDetailSchema,
+    DisplaySubtypeDetailSchema,
     RewardTypeDetailSchema,
     TaxonomySchema,
+    TechnologySubgenerationDetailSchema,
     _credit_role_detail_qs,
     _reward_type_detail_qs,
     _serialize_credit_role_detail,
+    _serialize_display_subtype,
     _serialize_reward_type_detail,
     _serialize_taxonomy,
+    _serialize_technology_subgeneration,
     _taxonomy_detail_qs,
 )
 from .themes import ThemeDetailSchema
@@ -207,11 +211,13 @@ register_entity_detail_page(
 
 
 # ---------------------------------------------------------------------------
-# Taxonomy entities — share queryset builder, serializer, and response
-# schema. Listed explicitly rather than looped so the factory's
-# ``[ModelT, SchemaT]`` type variables stay enforced at each call site;
-# a loop with a union-typed iteration variable widens ``ModelT`` and
-# loses the per-call type binding.
+# Taxonomy entities — the flat ones share the queryset builder, serializer,
+# and ``TaxonomySchema``. The two single-parent subtaxonomies (DisplaySubtype,
+# TechnologySubgeneration) override the serializer + schema to expose their
+# parent ref (for the ``Parent › Child`` breadcrumb). Listed explicitly rather
+# than looped so the factory's ``[ModelT, SchemaT]`` type variables stay
+# enforced at each call site; a loop with a union-typed iteration variable
+# widens ``ModelT`` and loses the per-call type binding.
 # ---------------------------------------------------------------------------
 
 
@@ -239,9 +245,11 @@ register_entity_detail_page(
 register_entity_detail_page(
     pages_router,
     DisplaySubtype,
-    detail_qs=lambda: _taxonomy_detail_qs(DisplaySubtype),
-    serialize_detail=_serialize_taxonomy,
-    response_schema=TaxonomySchema,
+    detail_qs=lambda: _taxonomy_detail_qs(DisplaySubtype).select_related(
+        "display_type"
+    ),
+    serialize_detail=_serialize_display_subtype,
+    response_schema=DisplaySubtypeDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
@@ -260,7 +268,9 @@ register_entity_detail_page(
 register_entity_detail_page(
     pages_router,
     TechnologySubgeneration,
-    detail_qs=lambda: _taxonomy_detail_qs(TechnologySubgeneration),
-    serialize_detail=_serialize_taxonomy,
-    response_schema=TaxonomySchema,
+    detail_qs=lambda: _taxonomy_detail_qs(TechnologySubgeneration).select_related(
+        "technology_generation"
+    ),
+    serialize_detail=_serialize_technology_subgeneration,
+    response_schema=TechnologySubgenerationDetailSchema,
 )

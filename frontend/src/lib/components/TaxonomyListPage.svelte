@@ -8,10 +8,13 @@
   import EditSectionMenu from './EditSectionMenu.svelte';
   import type { EditSectionMenuItem } from './edit-section-menu';
   import { SEARCH_THRESHOLD } from './grid/search-threshold';
+  import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
   import { normalizeText, resolveHref } from '$lib/utils';
-  import { pageTitle } from '$lib/constants';
+  import MetaTags from './MetaTags.svelte';
+  import JsonLd from './JsonLd.svelte';
   import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
+  import { buildListingJsonLd, listingMeta } from '$lib/entities/schema-org';
 
   interface Props {
     /** Catalog entity key. Title, basePath, singular/plural labels, and endpoint are derived from ENTITY_META. */
@@ -51,7 +54,12 @@
   }: Props = $props();
 
   let meta = $derived(ENTITY_META[catalogKey]);
-  let title = $derived(meta.label_plural);
+  let listingCopy = $derived(listingMeta(catalogKey));
+  // Visible heading (may differ from the SEO `title`, which MetaTags uses).
+  let heading = $derived(listingCopy.heading);
+  // Listing description doubles as the subtitle; an explicit prop overrides it.
+  let subtitleText = $derived(subtitle ?? listingCopy.description);
+  let listingJsonLd = $derived(buildListingJsonLd(catalogKey, items, page.url));
   let basePath = $derived(`/${meta.entity_type_plural}`);
   let entityLabel = $derived(meta.label_plural.toLowerCase());
   let singularLabel = $derived(meta.label.toLowerCase());
@@ -93,9 +101,13 @@
   );
 </script>
 
-<svelte:head>
-  <title>{pageTitle(title)}</title>
-</svelte:head>
+<MetaTags
+  title={listingCopy.title}
+  description={listingCopy.description}
+  url={page.url.href}
+  ogType="website"
+/>
+<JsonLd data={listingJsonLd} />
 
 {#snippet actionsSnippet()}
   <EditSectionMenu items={actionItems} />
@@ -103,8 +115,8 @@
 
 <Page>
   <PageHeader
-    {title}
-    subtitle={headerSnippet ? undefined : subtitle}
+    title={heading}
+    subtitle={headerSnippet ? undefined : subtitleText}
     actions={showActionMenu ? actionsSnippet : undefined}
   >
     {#if headerSnippet}

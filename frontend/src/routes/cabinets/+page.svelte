@@ -19,7 +19,6 @@
 
 <CatalogListing
   catalogKey="cabinet"
-  subtitle="Physical cabinet styles used in pinball machines."
   initial={{ items: data.items, count: data.count }}
   {fetchPage}
   q={data.q}

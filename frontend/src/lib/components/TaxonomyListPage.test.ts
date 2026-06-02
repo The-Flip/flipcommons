@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
+
+// The page emits MetaTags + listing JSON-LD, which read `page.url`.
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/tags') } }));
+
 import TaxonomyListPage from './TaxonomyListPage.svelte';
 import ListSnippetFixture from './TaxonomyListPage.list-snippet.fixture.svelte';
 import HeaderSnippetFixture from './TaxonomyListPage.header-snippet.fixture.svelte';

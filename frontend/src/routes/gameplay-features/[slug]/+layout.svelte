@@ -11,6 +11,7 @@
     type HierarchicalTaxonomyEditSectionKey,
   } from '$lib/components/editors/hierarchical-taxonomy-edit-sections';
   import { displayAliasesFor } from '$lib/hierarchy-edit';
+  import { listingMeta } from '$lib/entities/schema-org';
 
   let { data, children } = $props();
   let profile = $derived(data.profile);
@@ -40,7 +41,7 @@
 <TaxonomyDetailBaseLayout
   {profile}
   jsonLd={data.jsonLd}
-  parentLabel="Gameplay Features"
+  parentLabel={listingMeta('gameplay-feature').breadcrumb}
   basePath={BASE_PATH}
   {sections}
   editActionContext={hierarchicalTaxonomyEditActionContext}

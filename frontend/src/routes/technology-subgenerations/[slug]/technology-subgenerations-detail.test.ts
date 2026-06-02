@@ -8,6 +8,7 @@ const MOCK_DATA = {
   display_order: 0,
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
   sources: [],
+  technology_generation: { name: 'Solid State', public_id: 'solid-state' },
 };
 
 describe('technology-subgenerations detail SSR route', () => {

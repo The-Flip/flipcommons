@@ -10,6 +10,8 @@ vi.mock('$lib/auth.svelte', () => ({
 // The fetchPage closure imports the client; it isn't called on initial render,
 // but the import must resolve.
 vi.mock('$lib/api/client', () => ({ default: { GET: vi.fn() } }));
+// The adapter emits MetaTags + listing JSON-LD, which read `page.url`.
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/systems') } }));
 
 import Page from './+page.svelte';
 

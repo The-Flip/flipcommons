@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { buildSchemaOrgNode, buildEntityJsonLd, type EntityBaseFacts } from './schema-org';
+import {
+  buildSchemaOrgNode,
+  buildEntityJsonLd,
+  buildListingJsonLd,
+  listingMeta,
+  type EntityBaseFacts,
+} from './schema-org';
 import type { EntityInfo, SchemaOrgInfo } from './types';
 import {
   corporateEntity,
@@ -155,6 +161,99 @@ describe('buildEntityJsonLd', () => {
     expect(items.map((i) => i.name)).toEqual(['Home', 'Fantasy']);
     expect(items[0].item).toBe(`${ORIGIN}/`);
     expect(items[1].item).toBe(`${ORIGIN}/themes/fantasy`);
+  });
+});
+
+describe('listingMeta', () => {
+  test('defaults title, heading and breadcrumb to the plural label when no overrides are set', () => {
+    expect(listingMeta('franchise')).toEqual({
+      title: 'Franchises',
+      heading: 'Franchises',
+      breadcrumb: 'Franchises',
+      description: franchise.listing?.description,
+    });
+  });
+
+  test('uses listing.title, with heading and breadcrumb defaulting to it when unset', () => {
+    expect(listingMeta('theme')).toEqual({
+      title: 'Pinball Machine Themes',
+      heading: 'Pinball Machine Themes',
+      breadcrumb: 'Pinball Machine Themes',
+      description: theme.listing?.description,
+    });
+  });
+
+  test('heading overrides the visible label independently of the SEO title; breadcrumb follows heading', () => {
+    expect(listingMeta('title')).toEqual({
+      title: 'Pinball Machine Titles',
+      heading: 'Pinball Machines',
+      breadcrumb: 'Pinball Machines',
+      description: title.listing?.description,
+    });
+  });
+
+  test('breadcrumb overrides the crumb independently of title and heading', () => {
+    expect(listingMeta('person')).toEqual({
+      title: 'Notable Pinball People',
+      heading: 'Notable Pinball People',
+      breadcrumb: 'Notable People',
+      description: person.listing?.description,
+    });
+  });
+});
+
+describe('buildListingJsonLd', () => {
+  const items = [
+    { slug: 'fantasy', name: 'Fantasy' },
+    { slug: 'horror', name: 'Horror' },
+  ];
+
+  test('emits a CollectionPage whose mainEntity is a named ItemList, plus a breadcrumb', () => {
+    const graph = buildListingJsonLd('theme', items, new URL(`${ORIGIN}/themes`), 137)[
+      '@graph'
+    ] as Record<string, unknown>[];
+    expect(graph).toHaveLength(3);
+
+    const [collection, itemList, crumb] = graph;
+    expect(collection['@type']).toBe('CollectionPage');
+    expect(collection['@id']).toBe(`${ORIGIN}/themes`);
+    expect(collection.name).toBe('Pinball Machine Themes');
+    expect(collection.description).toBe(theme.listing?.description);
+    // CollectionPage links to the ItemList by @id, so they aren't orphaned.
+    expect(collection.mainEntity).toEqual({ '@id': `${ORIGIN}/themes#items` });
+
+    expect(itemList['@type']).toBe('ItemList');
+    expect(itemList['@id']).toBe(`${ORIGIN}/themes#items`);
+    // numberOfItems is the full collection size, not the page-1 sample length.
+    expect(itemList.numberOfItems).toBe(137);
+    const els = itemList.itemListElement as Record<string, unknown>[];
+    expect(els.map((e) => e.position)).toEqual([1, 2]);
+    expect(els.map((e) => e.item)).toEqual([
+      { '@id': `${ORIGIN}/themes/fantasy`, name: 'Fantasy' },
+      { '@id': `${ORIGIN}/themes/horror`, name: 'Horror' },
+    ]);
+
+    expect(crumb['@type']).toBe('BreadcrumbList');
+    const citems = crumb.itemListElement as Record<string, unknown>[];
+    expect(citems.map((i) => i.name)).toEqual(['Home', 'Pinball Machine Themes']);
+  });
+
+  test('numberOfItems defaults to the listed count when no total is given', () => {
+    const graph = buildListingJsonLd('theme', items, new URL(`${ORIGIN}/themes`))[
+      '@graph'
+    ] as Record<string, unknown>[];
+    expect(graph[1].numberOfItems).toBe(2);
+  });
+
+  test('omits the ItemList on a filtered/paginated URL (canonical to base)', () => {
+    // The filtered subset must not be published under the bare-listing @id.
+    const graph = buildListingJsonLd('theme', items, new URL(`${ORIGIN}/themes?q=foo&page=2`))[
+      '@graph'
+    ] as Record<string, unknown>[];
+    expect(graph).toHaveLength(2);
+    expect(graph.map((n) => n['@type'])).toEqual(['CollectionPage', 'BreadcrumbList']);
+    expect(graph[0]['@id']).toBe(`${ORIGIN}/themes`);
+    expect(graph[0].mainEntity).toBeUndefined();
   });
 });
 

@@ -13,6 +13,9 @@ vi.mock('$app/navigation', () => ({ goto }));
 // and is toggled per test for the unauthenticated case.
 vi.mock('$lib/auth.svelte', () => ({ auth: authMock }));
 
+// The adapter emits MetaTags + listing JSON-LD, which read `page.url`.
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/franchises') } }));
+
 import CatalogListingFixture from './CatalogListing.fixture.svelte';
 
 // Twelve+ rows so the search box renders (SEARCH_THRESHOLD === 12).

@@ -21,7 +21,6 @@
 
 <CatalogListing
   catalogKey="gameplay-feature"
-  subtitle="Mechanical and digital features that define how a game plays."
   initial={{ items: data.items, count: data.count }}
   {fetchPage}
   q={data.q}

@@ -10,6 +10,9 @@ vi.mock('$lib/auth.svelte', () => ({
   },
 }));
 
+// The page emits MetaTags + listing JSON-LD, which read `page.url`.
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/gameplay-features') } }));
+
 import TaxonomyListPage from './TaxonomyListPage.svelte';
 import ListSnippetFixture from './TaxonomyListPage.list-snippet.fixture.svelte';
 

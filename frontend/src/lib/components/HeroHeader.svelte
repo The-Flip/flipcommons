@@ -38,7 +38,7 @@
 
 {#snippet content()}
   {#if breadcrumbs}
-    <Breadcrumb crumbs={breadcrumbs} current={name} />
+    <Breadcrumb crumbs={breadcrumbs} />
   {:else if parentLink}
     <a class="kicker" href={parentLink.href}>{parentLink.text}</a>
   {/if}
@@ -95,9 +95,6 @@
 
   /* Heading */
   h1 {
-    font-size: var(--font-size-7);
-    font-weight: 700;
-    color: var(--color-text);
     margin-bottom: var(--size-2);
   }
 

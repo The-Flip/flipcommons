@@ -5,6 +5,8 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/auth.svelte', () => ({
   auth: { isAuthenticated: true, load: () => Promise.resolve() },
 }));
+// The adapter emits MetaTags + listing JSON-LD, which read `page.url`.
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/people') } }));
 
 import CatalogListingCardFixture from './CatalogListing.card.fixture.svelte';
 

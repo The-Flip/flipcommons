@@ -16,7 +16,7 @@
 </svelte:head>
 
 <Page width="narrow">
-  <h1>Sentry test</h1>
+  <h1>Sentry Test</h1>
   <p>
     Trigger on-demand exceptions to verify SSR-load and browser capture against the
     <code>flipcommons-frontend</code> Sentry project.
