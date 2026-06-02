@@ -22,7 +22,20 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from django.db.models import Count, F, Func, Max, Min, Model, Q, QuerySet, TextField
+from django.db import connection
+from django.db.models import (
+    Count,
+    Exists,
+    F,
+    Func,
+    Max,
+    Min,
+    Model,
+    Q,
+    QuerySet,
+    TextField,
+)
+from django.db.models.functions import Lower
 
 # ---------------------------------------------------------------------------
 # Shared option / bounds value types
@@ -71,6 +84,27 @@ def _fold(text: str) -> str:
     decomposed = unicodedata.normalize("NFD", text)
     stripped = "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
     return stripped.lower()
+
+
+def _fold_exists[M: Model](
+    inner_qs: QuerySet[M], field: str, q: str, folded: str
+) -> Exists:
+    """``Exists`` of *inner_qs* rows whose *field* diacritic-fold-matches *q* — the
+    per-field leaf the SQL-folded ``q`` branches compose.
+
+    Postgres: ``LOWER(UNACCENT(field))`` contains the folded term, so ``q=pokemon``
+    matches ``Pokémon``. SQLite (dev/CI): plain ``icontains`` — no diacritic folding,
+    a documented dev/prod difference (mirrors titles). Returning the ``Exists`` (rather
+    than the queryset) keeps the fold and any active guard already on *inner_qs* in one
+    subquery ``WHERE``, on the same row — the separate-join leak the count leaves
+    avoid."""
+    if connection.vendor == "postgresql":
+        matched = inner_qs.annotate(_fm=Lower(_Unaccent(F(field)))).filter(
+            _fm__contains=folded
+        )
+    else:
+        matched = inner_qs.filter(**{f"{field}__icontains": q})
+    return Exists(matched)
 
 
 # ---------------------------------------------------------------------------

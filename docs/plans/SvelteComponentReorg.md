@@ -165,11 +165,13 @@ Move `WearEffect.svelte` from `cards/` into `effects/` alongside `CoffeeStain.sv
 
 ### `collections/`
 
-Create `collections/` and move existing `cards/` and `grid/` under it. Move the top-level filter files in, and the domain filter sidebars:
+Create `collections/` and move existing `cards/` and `grid/` under it. `grid/` now also holds `InfiniteScroll` and `ServerPaginatedList` (added during the SSR listing work) — they ride the wholesale `grid/` → `collections/grid/` move with the rest of the family. Move the top-level filter files in, and the domain filter sidebars:
 
 - `collections/filters/`: FilterDrawer, FilterChip, ActiveFilterChips, SidebarSkeleton, TitleFilterSidebar, ManufacturerFilterSidebar, ManufacturerActiveFilterChips
 
 `TitleList` (composes `CardGrid` + `TitleCard`) goes at **`collections/` top level**: used by `series/[slug]` and `franchises/[slug]` _detail_ pages — two route families, embedded section, not a page shell, not `pages/listing/`.
+
+`CatalogListRow` (the standard name + count row content for the paginated listing pages) also sits at **`collections/` top level** — already created there during the SSR listing work.
 
 `CreateFirstModelPrompt` and `ManufacturerCardGrid` are **not** placed here despite being collection-shaped — both have single consumers, so by the route-private convention they go to `routes/.../_components/`. (See route-private section. The earlier "domain composition, so collections/" reasoning was category-over-usage — the same anti-pattern we rejected for `NeedsReviewBanner`. Promote to `collections/` only when a second consumer appears.)
 
@@ -429,6 +431,7 @@ The `/[entity]/[slug]/sources/` route across catalog entity types renders only `
 - TaxonomyListPage (8 routes)
 - GroupedTaxonomyList (technology-generations, display-types)
 - NoResultsCreatePrompt — used by TaxonomyListPage + 3 listing routes; reused, so it belongs here. (`CreateFirstModelPrompt` and `CreateFirstCorporateEntityPrompt` are single-route — route-private, see below.)
+- PaginatedListPage, CatalogListing, PaginatedListLoader — the SSR paginated-listing controller, its catalog adapter and the loader host. Already created here during the SSR listing work (not moves).
 
 **`pages/error/`**
 

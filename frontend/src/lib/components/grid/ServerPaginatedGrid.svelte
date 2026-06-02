@@ -1,6 +1,7 @@
 <script lang="ts" generics="T">
   import type { Snippet } from 'svelte';
-  import ScrollableGrid from './ScrollableGrid.svelte';
+  import CardGrid from './CardGrid.svelte';
+  import InfiniteScroll from './InfiniteScroll.svelte';
 
   let {
     items,
@@ -15,8 +16,10 @@
   } = $props();
 </script>
 
-<ScrollableGrid {hasMore} onSentinel={loadMore}>
-  {#each items as item (item)}
-    {@render children(item)}
-  {/each}
-</ScrollableGrid>
+<InfiniteScroll {hasMore} onSentinel={loadMore}>
+  <CardGrid>
+    {#each items as item (item)}
+      {@render children(item)}
+    {/each}
+  </CardGrid>
+</InfiniteScroll>

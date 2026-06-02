@@ -167,11 +167,11 @@ def _resolve_non_machine_model(
     if rel_fields is not None:
         for fn in rel_fields:
             if fn in alias_dispatch and alias_dispatch[fn] is entity_type:
-                _resolve_aliases(alias_dispatch[fn], fn)
+                _resolve_aliases(alias_dispatch[fn])
     else:
-        for fn, parent_model in alias_dispatch.items():
+        for parent_model in alias_dispatch.values():
             if parent_model is entity_type:
-                _resolve_aliases(parent_model, fn)
+                _resolve_aliases(parent_model)
 
     # --- Parent hierarchy resolvers ---
     parent_dispatch = _get_parent_dispatch()

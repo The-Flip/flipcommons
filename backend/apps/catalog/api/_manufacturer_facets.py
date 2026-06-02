@@ -2,8 +2,7 @@
 
 Manufacturers' parallel to ``_title_facets.py`` — its own explicit ``filtered`` /
 ``facet_counts`` assembly calling the shared leaves in ``_facet_helpers.py``,
-free to diverge where manufacturers genuinely differ from titles. See the plan
-``plans/ssr-manufacturers.md`` for the full design.
+free to diverge where manufacturers genuinely differ from titles.
 
 Like titles, it applies one narrower per dimension in an N-1 loop (:func:`filtered`),
 serves the page result via :func:`ordered`, and assembles the sidebar option lists in
@@ -52,7 +51,7 @@ The ``q`` predicate (the subtle part):
   an **inactive** CE's name match while a **different** active CE satisfied the
   guard. The manufacturer-own terms (name, own aliases) are unguarded, so they stay
   as a plain outer annotation / own-alias ``Exists``.
-- **Diacritic fold, two mechanisms, two backend behaviors** (deliberate — see plan):
+- **Diacritic fold, two mechanisms, two backend behaviors**:
   the SQL-folded fields (name, own aliases, CE names/aliases) fold via
   ``LOWER(UNACCENT(...))`` on **Postgres** and fall back to bare ``icontains`` on
   **SQLite** (same dev/prod split as titles). The **location** term can't be a SQL
@@ -72,7 +71,6 @@ from django.db.models import (
     Count,
     Exists,
     F,
-    Model,
     OuterRef,
     Q,
     QuerySet,
@@ -97,6 +95,7 @@ from ._facet_helpers import (
     Bounds,
     FacetOption,
     _fold,
+    _fold_exists,
     _Unaccent,
     ancestor_map,
     bounds,
@@ -197,27 +196,6 @@ _MODEL_COUNT_SQ = Coalesce(
 # ---------------------------------------------------------------------------
 # `q` full-blob search
 # ---------------------------------------------------------------------------
-
-
-def _fold_exists[M: Model](
-    inner_qs: QuerySet[M], field: str, q: str, folded: str
-) -> Exists:
-    """``Exists`` of *inner_qs* rows whose *field* diacritic-fold-matches *q* — the
-    per-field leaf the SQL-folded ``q`` branches compose.
-
-    Postgres: ``LOWER(UNACCENT(field))`` contains the folded term, so ``q=pokemon``
-    matches ``Pokémon``. SQLite (dev/CI): plain ``icontains`` — no diacritic folding,
-    a documented dev/prod difference (mirrors titles). Returning the ``Exists`` (rather
-    than the queryset) keeps the fold and any active guard already on *inner_qs* in one
-    subquery ``WHERE``, on the same row — the separate-join leak the count leaves
-    avoid."""
-    if connection.vendor == "postgresql":
-        matched = inner_qs.annotate(_fm=Lower(_Unaccent(F(field)))).filter(
-            _fm__contains=folded
-        )
-    else:
-        matched = inner_qs.filter(**{f"{field}__icontains": q})
-    return Exists(matched)
 
 
 def _location_match_paths(q: str, folded: str) -> set[str]:

@@ -19,9 +19,8 @@ from apps.provenance.validation import (
     get_relationship_schema,
 )
 
-from .._alias_registry import AliasType, discover_alias_types
+from .._alias_registry import AliasType, alias_type_for, discover_alias_types
 from ..models import (
-    AliasModel,
     CatalogModel,
     CorporateEntity,
     CorporateEntityLocation,
@@ -617,57 +616,40 @@ def resolve_all_model_abbreviations(
 # ------------------------------------------------------------------
 
 
-def _get_alias_rel_info(
-    parent: type[ClaimControlledModel],
-) -> tuple[type[AliasModel], str]:
-    """Return (alias_model, fk_col) for ``parent``'s GenericRelation ``aliases``.
-
-    ``parent.aliases.rel`` — and ``.rel.related_model`` / ``.rel.field.name`` —
-    are attributes of a runtime-generated descriptor that django-stubs can't
-    see.  Confining the ignore to this helper keeps it from leaking into the
-    caller bodies.
-    """
-    rel = parent.aliases.rel  # type: ignore[attr-defined]
-    alias_model: type[AliasModel] = rel.related_model
-    fk_col: str = rel.field.name + "_id"
-    return alias_model, fk_col
-
-
 def _get_parents_through(parent: type[ClaimControlledModel]) -> type[Model]:
     """Return the through model for ``parent``'s self-referential ``parents`` M2M.
 
-    ``parent.parents.through`` is a runtime-generated descriptor (same category
-    as ``_get_alias_rel_info``'s ``.aliases.rel``).  Helper-with-ignore keeps
-    the category-3 ``Any`` leak out of ``_resolve_parents``.
+    ``parent.parents.through`` is a runtime-generated descriptor django-stubs can't
+    see.  Confining the ignore to this helper keeps the category-3 ``Any`` leak out of
+    ``_resolve_parents``.
     """
     through: type[Model] = parent.parents.through  # type: ignore[attr-defined]
     return through
 
 
-def _resolve_aliases(
-    parent_model: type[ClaimControlledModel],
-    claim_field_name: str,
-) -> None:
-    """Bulk-resolve alias claims into alias model rows.
+def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
+    """Bulk-resolve a parent entity's alias claims into its alias model rows.
 
-    Derives the alias model and FK column from ``parent_model.aliases``,
-    so callers only need to supply the parent model and claim field name.
+    Everything about the alias type — claim field, alias model, FK column — comes from
+    the canonical alias registry, so callers supply only the parent model.
 
-    Reads claim_field_name claims on parent_model instances, diffs against
-    current alias rows, creates missing rows, updates display-case changes,
-    and deletes stale rows.
-    Claims store lowercase alias_value (for key stability) and an optional
-    alias_display (original case) for user-facing display.
+    Reads the parent's alias claims, diffs against current alias rows, creates missing
+    rows, updates display-case changes, and deletes stale rows. Claims store lowercase
+    alias_value (for key stability) and an optional alias_display (original case) for
+    user-facing display.
     """
     from django.contrib.contenttypes.models import ContentType
 
-    # Derive alias model and FK column from the GenericRelation / ForeignKey.
-    alias_model, fk_col = _get_alias_rel_info(parent_model)
+    at = alias_type_for(parent_model)
+    assert at is not None, f"{parent_model.__name__} is not a registered alias type"
+    alias_model = at.alias_model
+    fk_col = at.fk_name + "_id"
+    claim_field = at.claim_field
 
     ct = ContentType.objects.get_for_model(parent_model)
 
     claims_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name=claim_field_name)
+        Claim.objects.filter(content_type=ct, field_name=claim_field)
     ).order_by("object_id", "claim_key", "-effective_priority", "-created_at")  # type: ignore[misc]
 
     # Pick winners per (object_id, claim_key).
@@ -682,9 +664,9 @@ def _resolve_aliases(
     # Build desired aliases per parent: {lower_val → display_val}.
     # alias_display (original case) is preferred via the schema's
     # display_key declaration; falls back to alias_value when absent/empty.
-    schema = get_relationship_schema(claim_field_name)
+    schema = get_relationship_schema(claim_field)
     assert schema is not None, (
-        f"alias namespace {claim_field_name!r} has no registered relationship schema"
+        f"alias namespace {claim_field!r} has no registered relationship schema"
     )
     desired_by_parent: dict[int, dict[str, str]] = {}
     for parent_id, claims_list in winners_by_parent.items():
@@ -754,33 +736,33 @@ ALIAS_TYPES: list[AliasType] = list(discover_alias_types())
 
 
 def resolve_theme_aliases() -> None:
-    _resolve_aliases(Theme, "theme_alias")
+    _resolve_aliases(Theme)
 
 
 def resolve_manufacturer_aliases() -> None:
-    _resolve_aliases(Manufacturer, "manufacturer_alias")
+    _resolve_aliases(Manufacturer)
 
 
 def resolve_person_aliases() -> None:
-    _resolve_aliases(Person, "person_alias")
+    _resolve_aliases(Person)
 
 
 def resolve_gameplay_feature_aliases() -> None:
-    _resolve_aliases(GameplayFeature, "gameplay_feature_alias")
+    _resolve_aliases(GameplayFeature)
 
 
 def resolve_reward_type_aliases() -> None:
-    _resolve_aliases(RewardType, "reward_type_alias")
+    _resolve_aliases(RewardType)
 
 
 def resolve_corporate_entity_aliases() -> None:
-    _resolve_aliases(CorporateEntity, "corporate_entity_alias")
+    _resolve_aliases(CorporateEntity)
 
 
 def resolve_all_aliases() -> None:
     """Resolve all alias types from the auto-discovered registry."""
-    for parent_model, claim_field in discover_alias_types():
-        _resolve_aliases(parent_model, claim_field)
+    for at in discover_alias_types():
+        _resolve_aliases(at.parent_model)
 
 
 # ------------------------------------------------------------------
@@ -895,7 +877,7 @@ def resolve_gameplay_feature_parents() -> None:
 
 def resolve_all_location_aliases() -> None:
     """Resolve location_alias claims into LocationAlias rows."""
-    _resolve_aliases(Location, "location_alias")
+    _resolve_aliases(Location)
 
 
 # ------------------------------------------------------------------
