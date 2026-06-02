@@ -1,6 +1,7 @@
 <script lang="ts" generics="T extends { slug: string }">
   import type { Snippet } from 'svelte';
   import ServerPaginatedList from '$lib/components/grid/ServerPaginatedList.svelte';
+  import ServerPaginatedGrid from '$lib/components/grid/ServerPaginatedGrid.svelte';
   import { createPaginatedLoader } from '$lib/paginated-loader.svelte';
 
   /**
@@ -9,16 +10,23 @@
    * with that search's fresh SSR page 1 (no double-fetch of page 1). Mirrors
    * the titles `TitlesGrid` split: the controller chrome (search box, header)
    * stays mounted while only this loader remounts.
+   *
+   * Hosts both list shapes: `layout="row"` renders the linked `<ul>` rows
+   * (`ServerPaginatedList`, which wraps each row in the `${basePath}/${slug}`
+   * link), `layout="card"` renders the `CardGrid` (`ServerPaginatedGrid`) whose
+   * `children` cards supply their own links — so `basePath` is unused there.
    */
   let {
     initial,
     fetchPage,
     basePath,
+    layout = 'row',
     children,
   }: {
     initial: { items: T[]; count: number };
     fetchPage: (page: number) => Promise<{ items: T[]; count: number }>;
     basePath: string;
+    layout?: 'row' | 'card';
     children: Snippet<[T]>;
   } = $props();
 
@@ -29,10 +37,19 @@
   const loader = createPaginatedLoader(fetchPage, initial);
 </script>
 
-<ServerPaginatedList
-  items={loader.items}
-  hasMore={loader.hasMore}
-  loadMore={loader.loadMore}
-  {basePath}
-  {children}
-/>
+{#if layout === 'card'}
+  <ServerPaginatedGrid
+    items={loader.items}
+    hasMore={loader.hasMore}
+    loadMore={loader.loadMore}
+    {children}
+  />
+{:else}
+  <ServerPaginatedList
+    items={loader.items}
+    hasMore={loader.hasMore}
+    loadMore={loader.loadMore}
+    {basePath}
+    {children}
+  />
+{/if}

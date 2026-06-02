@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from itertools import chain
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
-from django.db.models import Count, F, Prefetch, QuerySet
+from django.db.models import Count, F, Prefetch, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
-from ninja import Router
+from ninja import Router, Schema
 from ninja.decorators import decorate_view
 from ninja.security import django_auth
 
@@ -37,14 +37,16 @@ from ..models import (
     TechnologySubgeneration,
 )
 from ._counts import bulk_title_counts_via_models
+from ._typing import HasTitleCount
 from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import (
     register_entity_create,
     register_entity_delete_restore,
 )
+from .entity_list import paginated_list_response
 from .helpers import serialize_title_machine
 from .images import extract_image_urls, fetch_model_media_map
-from .people import PersonGridItemSchema
+from .people import PersonCardSchema
 from .rich_text import build_rich_text
 from .schemas import (
     CatalogDetailSchema,
@@ -139,41 +141,41 @@ def _serialize_taxonomy(
     )
 
 
-def _list_taxonomy_with_counts(  # noqa: UP047
-    model_class: type[_TaxM],
-    mm_relation: str,
-    *,
-    sort_by_display_order: bool = False,
-) -> list[TaxonomyWithTitleCountSchema]:
-    """Standard list response for flat (non-DAG) model-attached taxonomies.
-
-    Default sort is title_count desc (popular first). Pass
-    ``sort_by_display_order=True`` for small, chronologically-meaningful
-    taxonomies (tech generations, game formats) where editorial order is
-    more useful to users than popularity.
-    """
-    items = list(
-        model_class.objects.active().prefetch_related(
-            *(["aliases"] if model_class is RewardType else [])
-        )
+def _flat_taxonomy_title_count() -> Count:
+    """SQL twin of ``bulk_title_counts_via_models(pks, "<rel>")`` for the flat
+    (non-DAG) taxonomies — all of which reverse to ``machine_models``: the count of
+    distinct active Titles reached through active, non-variant models. Rides on the row
+    as a ``title_count`` annotation so the paginated core's order+slice path reads it
+    straight off the row; parity with the Python helper is pinned in
+    ``test_api_catalog_list``."""
+    return Count(
+        "machine_models__title",
+        filter=(
+            Q(machine_models__variant_of__isnull=True)
+            & active_status_q("machine_models")
+            & active_status_q("machine_models__title")
+        ),
+        distinct=True,
     )
-    counts = bulk_title_counts_via_models([t.pk for t in items], mm_relation)
-    if sort_by_display_order:
-        items.sort(key=lambda t: (t.display_order, t.name.lower()))
-    else:
-        items.sort(key=lambda t: (-counts.get(t.pk, 0), t.name.lower()))
-    return [
-        TaxonomyWithTitleCountSchema(
-            **_serialize_taxonomy(t).model_dump(),
-            title_count=counts.get(t.pk, 0),
-        )
-        for t in items
-    ]
+
+
+def _serialize_taxonomy_with_count(
+    obj: Cabinet | GameFormat | RewardType | Tag, thumbnail: str | None = None
+) -> TaxonomyWithTitleCountSchema:
+    """Row serializer for the paginated flat-taxonomy handlers: the shared
+    ``TaxonomySchema`` body plus the ``title_count`` annotation read off the row.
+    ``thumbnail`` is unused (these taxonomies carry no image) but is accepted to satisfy
+    the core's ``RowSerializer`` signature."""
+    return TaxonomyWithTitleCountSchema(
+        **_serialize_taxonomy(obj).model_dump(),
+        title_count=cast(HasTitleCount, obj).title_count,
+    )
 
 
 def _taxonomy_detail_qs(model_class: type[_TaxM]) -> QuerySet[_TaxM]:  # noqa: UP047
-    # This list mixes relation names with heterogeneous Prefetch instances, so
-    # the Prefetch type args are intentionally erased here.
+    # The single claims Prefetch sits alongside relation-name strings ("aliases"),
+    # so the list is widened to the ``str | Prefetch`` union; the Prefetch type args
+    # are erased to match the sibling ``_detail_qs`` helpers.
     prefetches: list[str | Prefetch[Any, Any, Any]] = [claims_prefetch()]
     if model_class is RewardType:
         prefetches.append("aliases")
@@ -466,10 +468,35 @@ def patch_display_subtype(
 cabinets_router = Router(tags=["cabinets"])
 
 
-@cabinets_router.get("/", response=list[TaxonomyWithTitleCountSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_cabinets(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema]:
-    return _list_taxonomy_with_counts(Cabinet, "cabinet")
+class CabinetListSchema(Schema):
+    """``{items, count}`` page of cabinets — the wire shape ``createPaginatedLoader``
+    expects (it derives has_more from items.length < count)."""
+
+    items: list[TaxonomyWithTitleCountSchema]
+    count: int
+
+
+def _cabinet_list_qs() -> QuerySet[Cabinet]:
+    return (
+        Cabinet.objects.active()
+        .annotate(title_count=_flat_taxonomy_title_count())
+        .order_by("-title_count", "name")
+    )
+
+
+@cabinets_router.get("/", response=CabinetListSchema)
+def list_cabinets(
+    request: HttpRequest, q: str = "", page: int = 1
+) -> CabinetListSchema:
+    """One page of cabinets, most-titled first, filtered server-side by ``q``."""
+    result = paginated_list_response(
+        _cabinet_list_qs(),
+        q=q,
+        ordering=("-title_count", "name", "pk"),
+        page=page,
+        serialize_row=_serialize_taxonomy_with_count,
+    )
+    return CabinetListSchema(items=result.items, count=result.total)
 
 
 @cabinets_router.patch(
@@ -497,12 +524,37 @@ def patch_cabinet(
 game_formats_router = Router(tags=["game-formats"])
 
 
-@game_formats_router.get("/", response=list[TaxonomyWithTitleCountSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_game_formats(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema]:
-    return _list_taxonomy_with_counts(
-        GameFormat, "game_format", sort_by_display_order=True
+class GameFormatListSchema(Schema):
+    """``{items, count}`` page of game formats — the wire shape
+    ``createPaginatedLoader`` expects (it derives has_more from items.length < count)."""
+
+    items: list[TaxonomyWithTitleCountSchema]
+    count: int
+
+
+def _game_format_list_qs() -> QuerySet[GameFormat]:
+    # Editorial ``display_order`` sort (chronologically meaningful), unlike the
+    # popularity-sorted cabinets/tags; ``title_count`` is a display-only annotation here.
+    return (
+        GameFormat.objects.active()
+        .annotate(title_count=_flat_taxonomy_title_count())
+        .order_by("display_order", "name")
     )
+
+
+@game_formats_router.get("/", response=GameFormatListSchema)
+def list_game_formats(
+    request: HttpRequest, q: str = "", page: int = 1
+) -> GameFormatListSchema:
+    """One page of game formats in editorial ``display_order``, filtered by ``q``."""
+    result = paginated_list_response(
+        _game_format_list_qs(),
+        q=q,
+        ordering=("display_order", "name", "pk"),
+        page=page,
+        serialize_row=_serialize_taxonomy_with_count,
+    )
+    return GameFormatListSchema(items=result.items, count=result.total)
 
 
 @game_formats_router.patch(
@@ -563,10 +615,38 @@ def _serialize_reward_type_detail(rt: RewardType) -> RewardTypeDetailSchema:
     )
 
 
-@reward_types_router.get("/", response=list[TaxonomyWithTitleCountSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_reward_types(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema]:
-    return _list_taxonomy_with_counts(RewardType, "reward_types")
+class RewardTypeListSchema(Schema):
+    """``{items, count}`` page of reward types — the wire shape
+    ``createPaginatedLoader`` expects (it derives has_more from items.length < count)."""
+
+    items: list[TaxonomyWithTitleCountSchema]
+    count: int
+
+
+def _reward_type_list_qs() -> QuerySet[RewardType]:
+    # RewardType is the one flat taxonomy with an ``aliases`` relation the row
+    # serializer reads — prefetch it to avoid an N+1 over the page.
+    return (
+        RewardType.objects.active()
+        .annotate(title_count=_flat_taxonomy_title_count())
+        .prefetch_related("aliases")
+        .order_by("-title_count", "name")
+    )
+
+
+@reward_types_router.get("/", response=RewardTypeListSchema)
+def list_reward_types(
+    request: HttpRequest, q: str = "", page: int = 1
+) -> RewardTypeListSchema:
+    """One page of reward types, most-titled first, filtered by ``q`` (name or alias)."""
+    result = paginated_list_response(
+        _reward_type_list_qs(),
+        q=q,
+        ordering=("-title_count", "name", "pk"),
+        page=page,
+        serialize_row=_serialize_taxonomy_with_count,
+    )
+    return RewardTypeListSchema(items=result.items, count=result.total)
 
 
 @reward_types_router.patch(
@@ -604,10 +684,33 @@ def patch_reward_type(
 tags_router = Router(tags=["tags"])
 
 
-@tags_router.get("/", response=list[TaxonomyWithTitleCountSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_tags(request: HttpRequest) -> list[TaxonomyWithTitleCountSchema]:
-    return _list_taxonomy_with_counts(Tag, "tags")
+class TagListSchema(Schema):
+    """``{items, count}`` page of tags — the wire shape ``createPaginatedLoader``
+    expects (it derives has_more from items.length < count)."""
+
+    items: list[TaxonomyWithTitleCountSchema]
+    count: int
+
+
+def _tag_list_qs() -> QuerySet[Tag]:
+    return (
+        Tag.objects.active()
+        .annotate(title_count=_flat_taxonomy_title_count())
+        .order_by("-title_count", "name")
+    )
+
+
+@tags_router.get("/", response=TagListSchema)
+def list_tags(request: HttpRequest, q: str = "", page: int = 1) -> TagListSchema:
+    """One page of tags, most-titled first, filtered server-side by ``q``."""
+    result = paginated_list_response(
+        _tag_list_qs(),
+        q=q,
+        ordering=("-title_count", "name", "pk"),
+        page=page,
+        serialize_row=_serialize_taxonomy_with_count,
+    )
+    return TagListSchema(items=result.items, count=result.total)
 
 
 @tags_router.patch(
@@ -634,13 +737,13 @@ def patch_tag(
 
 
 class CreditRoleDetailSchema(TaxonomySchema):
-    people: list[PersonGridItemSchema] = []
+    people: list[PersonCardSchema] = []
 
 
 credit_roles_router = Router(tags=["credit-roles"])
 
 
-def _credit_role_people(cr: CreditRole) -> list[PersonGridItemSchema]:
+def _credit_role_people(cr: CreditRole) -> list[PersonCardSchema]:
     """Rank Persons by distinct active Titles credited in *cr*.
 
     Titles roll up all MachineModels (parent + variants) so a person credited
@@ -703,7 +806,7 @@ def _credit_role_people(cr: CreditRole) -> list[PersonGridItemSchema]:
     thumb_media = fetch_model_media_map(person_thumb_model.values())
 
     min_rank = get_minimum_display_rank()
-    out: list[PersonGridItemSchema] = []
+    out: list[PersonCardSchema] = []
     for pid in person_ids:
         person = people_by_id.get(pid)
         if person is None:
@@ -718,7 +821,7 @@ def _credit_role_people(cr: CreditRole) -> list[PersonGridItemSchema]:
             if t:
                 thumbnail = t
         out.append(
-            PersonGridItemSchema(
+            PersonCardSchema(
                 name=person.name,
                 slug=person.slug,
                 aliases=[a.value for a in person.aliases.all()],
@@ -747,12 +850,38 @@ def _serialize_credit_role_detail_no_people(cr: CreditRole) -> CreditRoleDetailS
     return CreditRoleDetailSchema(**_serialize_taxonomy(cr).model_dump(), people=[])
 
 
-@credit_roles_router.get("/", response=list[TaxonomySchema])
-@decorate_view(cache_control(no_cache=True))
-def list_credit_roles(request: HttpRequest) -> list[TaxonomySchema]:
-    return [
-        _serialize_taxonomy(c) for c in CreditRole.objects.active().order_by("name")
-    ]
+class CreditRoleListSchema(Schema):
+    """``{items, count}`` page of credit roles — the wire shape
+    ``createPaginatedLoader`` expects. The no-per-row-count variant: rows carry no
+    ``title_count`` badge (they're ``TaxonomySchema``), but the page still carries the
+    pagination ``count`` the loader needs for has_more."""
+
+    items: list[TaxonomySchema]
+    count: int
+
+
+def _serialize_credit_role_row(
+    cr: CreditRole, thumbnail: str | None = None
+) -> TaxonomySchema:
+    """Row serializer for the paginated credit-roles handler — the plain
+    ``TaxonomySchema`` body, no count. ``thumbnail`` is unused (credit roles carry no
+    image) but accepted to satisfy the core's ``RowSerializer`` signature."""
+    return _serialize_taxonomy(cr)
+
+
+@credit_roles_router.get("/", response=CreditRoleListSchema)
+def list_credit_roles(
+    request: HttpRequest, q: str = "", page: int = 1
+) -> CreditRoleListSchema:
+    """One page of credit roles, alphabetical, filtered server-side by ``q``."""
+    result = paginated_list_response(
+        CreditRole.objects.active(),
+        q=q,
+        ordering=("name", "pk"),
+        page=page,
+        serialize_row=_serialize_credit_role_row,
+    )
+    return CreditRoleListSchema(items=result.items, count=result.total)
 
 
 @credit_roles_router.patch(

@@ -27,7 +27,7 @@
   let displayAliases = $derived(displayAliasesFor(profile.name, profile.aliases ?? []));
 
   async function loadParentOptions() {
-    const { data: features } = await client.GET('/api/gameplay-features/');
+    const { data: features } = await client.GET('/api/gameplay-features/all/');
     if (!features) return [];
     return features.map((f) => ({
       slug: f.slug,

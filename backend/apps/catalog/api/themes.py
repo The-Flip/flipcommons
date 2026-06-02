@@ -19,6 +19,7 @@ from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..models import MachineModel, Theme
 from ._counts import bulk_title_counts_via_models
+from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import (
     execute_claims,
     plan_alias_claims,
@@ -27,6 +28,7 @@ from .edit_claims import (
     validate_scalar_fields,
 )
 from .entity_crud import register_entity_create, register_entity_delete_restore
+from .entity_list import _apply_list_q
 from .helpers import serialize_title_machine
 from .images import fetch_model_media_map
 from .rich_text import describe
@@ -48,6 +50,14 @@ class ThemeListItemSchema(Schema):
     aliases: list[str] = []
     title_count: int = 0
     parent_slugs: list[str] = []
+
+
+class ThemeListSchema(Schema):
+    """``{items, count}`` page of themes — the wire shape ``createPaginatedLoader``
+    expects (it derives has_more from items.length < count)."""
+
+    items: list[ThemeListItemSchema]
+    count: int
 
 
 class ThemeDetailSchema(CatalogDetailSchema):
@@ -113,35 +123,80 @@ def _serialize_detail(theme: Theme) -> ThemeDetailSchema:
 themes_router = Router(tags=["themes"])
 
 
-@themes_router.get("/", response=list[ThemeListItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_themes(request: HttpRequest) -> list[ThemeListItemSchema]:
-    themes = list(
+def _serialize_theme_row(theme: Theme, title_count: int) -> ThemeListItemSchema:
+    return ThemeListItemSchema(
+        name=theme.name,
+        slug=theme.slug,
+        aliases=[a.value for a in theme.aliases.all()],
+        title_count=title_count,
+        parent_slugs=[p.slug for p in theme.parents.all()],
+    )
+
+
+def _active_themes() -> list[Theme]:
+    return list(
         Theme.objects.active().prefetch_related(
             Prefetch("parents", queryset=Theme.objects.active()),
             Prefetch("children", queryset=Theme.objects.active()),
             "aliases",
         )
     )
+
+
+def _theme_rollup(themes: list[Theme]) -> dict[int, int]:
+    """The hierarchical ``title_count`` rollup over *themes*: each theme's count unions
+    its whole descendant subtree's titles via ``children_map`` (not a SQL column),
+    deduped. Shared by the paginated ``GET /`` and ``/all/``."""
     children_map: dict[int, list[int]] = {
         t.pk: [c.pk for c in t.children.all()] for t in themes
     }
-    counts = bulk_title_counts_via_models(
+    return bulk_title_counts_via_models(
         [t.pk for t in themes],
         "themes",
         children_map=children_map,
     )
-    themes.sort(key=lambda t: (-counts.get(t.pk, 0), t.name.lower()))
-    return [
-        ThemeListItemSchema(
-            name=t.name,
-            slug=t.slug,
-            aliases=[a.value for a in t.aliases.all()],
-            title_count=counts.get(t.pk, 0),
-            parent_slugs=[p.slug for p in t.parents.all()],
+
+
+@themes_router.get("/", response=ThemeListSchema)
+def list_themes(request: HttpRequest, q: str = "", page: int = 1) -> ThemeListSchema:
+    """One page of themes, most-titled first, filtered server-side by ``q`` (name or
+    alias). The ``-title_count`` sort is the hierarchical ``children_map`` rollup, not a
+    SQL column, so this handler does its own compute-sort-slice over the full active set
+    rather than going through ``paginated_list_response``'s SQL slice. The rollup is
+    computed over **all** active themes (a matched theme's count reflects its whole
+    descendant set, not just descendants matching ``q``); ``q`` selects which rows show."""
+    active = _active_themes()
+    counts = _theme_rollup(active)
+
+    if q.strip():
+        matched_pks = set(
+            _apply_list_q(Theme.objects.active(), q).values_list("pk", flat=True)
         )
-        for t in themes
-    ]
+        matched = [t for t in active if t.pk in matched_pks]
+    else:
+        # No search → every active theme shows; skip the extra pk query (the
+        # dominant page-1 SSR path), since ``active`` already holds them all.
+        matched = active
+    # ``pk`` tiebreak after (-count, name) so offset pages are stable.
+    matched.sort(key=lambda t: (-counts.get(t.pk, 0), t.name.lower(), t.pk))
+
+    start = (max(page, 1) - 1) * DEFAULT_PAGE_SIZE
+    rows = matched[start : start + DEFAULT_PAGE_SIZE]
+    return ThemeListSchema(
+        items=[_serialize_theme_row(t, counts.get(t.pk, 0)) for t in rows],
+        count=len(matched),
+    )
+
+
+@themes_router.get("/all/", response=list[ThemeListItemSchema])
+@decorate_view(cache_control(no_cache=True))
+def list_all_themes(request: HttpRequest) -> list[ThemeListItemSchema]:
+    """Every theme with its rollup title count (no pagination) — the full set the editor
+    parent-picker needs, which the paginated ``GET /`` can't serve it."""
+    active = _active_themes()
+    counts = _theme_rollup(active)
+    active.sort(key=lambda t: (-counts.get(t.pk, 0), t.name.lower(), t.pk))
+    return [_serialize_theme_row(t, counts.get(t.pk, 0)) for t in active]
 
 
 @themes_router.patch(

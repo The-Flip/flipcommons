@@ -20,6 +20,7 @@ from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..models import GameplayFeature
 from ._counts import bulk_title_counts_via_models
+from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import (
     execute_claims,
     plan_alias_claims,
@@ -28,6 +29,7 @@ from .edit_claims import (
     validate_scalar_fields,
 )
 from .entity_crud import register_entity_create, register_entity_delete_restore
+from .entity_list import _apply_list_q
 from .images import media_prefetch, serialize_uploaded_media
 from .rich_text import describe
 from .schemas import (
@@ -47,6 +49,14 @@ class GameplayFeatureListItemSchema(Schema):
     aliases: list[str] = []
     title_count: int = 0
     parent_slugs: list[str] = []
+
+
+class GameplayFeatureListSchema(Schema):
+    """``{items, count}`` page of gameplay features — the wire shape
+    ``createPaginatedLoader`` expects (it derives has_more from items.length < count)."""
+
+    items: list[GameplayFeatureListItemSchema]
+    count: int
 
 
 class GameplayFeatureDetailSchema(CatalogDetailSchema):
@@ -98,12 +108,36 @@ def _serialize_detail(feature: GameplayFeature) -> GameplayFeatureDetailSchema:
 gameplay_features_router = Router(tags=["gameplay-features"])
 
 
-@gameplay_features_router.get("/", response=list[GameplayFeatureListItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_gameplay_features(
-    request: HttpRequest,
-) -> list[GameplayFeatureListItemSchema]:
-    features = list(
+def _serialize_gameplay_feature_row(
+    feature: GameplayFeature, title_count: int
+) -> GameplayFeatureListItemSchema:
+    return GameplayFeatureListItemSchema(
+        name=feature.name,
+        slug=feature.slug,
+        aliases=[a.value for a in feature.aliases.all()],
+        title_count=title_count,
+        parent_slugs=[p.slug for p in feature.parents.all()],
+    )
+
+
+def _gameplay_feature_rollup(
+    features: list[GameplayFeature],
+) -> dict[int, int]:
+    """The hierarchical ``title_count`` rollup over *features*: each feature's count
+    unions its whole descendant subtree's titles via ``children_map`` (not a SQL
+    column), deduped. Shared by the paginated ``GET /`` and ``/all/``."""
+    children_map: dict[int, list[int]] = {
+        f.pk: [c.pk for c in f.children.all()] for f in features
+    }
+    return bulk_title_counts_via_models(
+        [f.pk for f in features],
+        "gameplay_features",
+        children_map=children_map,
+    )
+
+
+def _active_gameplay_features() -> list[GameplayFeature]:
+    return list(
         GameplayFeature.objects.active().prefetch_related(
             Prefetch("children", queryset=GameplayFeature.objects.active()),
             Prefetch("parents", queryset=GameplayFeature.objects.active()),
@@ -111,26 +145,55 @@ def list_gameplay_features(
         )
     )
 
-    children_map: dict[int, list[int]] = {
-        f.pk: [c.pk for c in f.children.all()] for f in features
-    }
-    counts = bulk_title_counts_via_models(
-        [f.pk for f in features],
-        "gameplay_features",
-        children_map=children_map,
-    )
-    features.sort(key=lambda f: (-counts.get(f.pk, 0), f.name.lower()))
 
-    return [
-        GameplayFeatureListItemSchema(
-            name=f.name,
-            slug=f.slug,
-            aliases=[a.value for a in f.aliases.all()],
-            title_count=counts.get(f.pk, 0),
-            parent_slugs=[p.slug for p in f.parents.all()],
+@gameplay_features_router.get("/", response=GameplayFeatureListSchema)
+def list_gameplay_features(
+    request: HttpRequest, q: str = "", page: int = 1
+) -> GameplayFeatureListSchema:
+    """One page of gameplay features, most-titled first, filtered server-side by ``q``
+    (name or alias). The ``-title_count`` sort is the hierarchical ``children_map``
+    rollup, not a SQL column, so this handler does its own compute-sort-slice over the
+    full active set rather than going through ``paginated_list_response``'s SQL slice.
+    The rollup is computed over **all** active features (a matched feature's count
+    reflects its whole descendant set, not just descendants matching ``q``); ``q``
+    selects which rows show."""
+    active = _active_gameplay_features()
+    counts = _gameplay_feature_rollup(active)
+
+    if q.strip():
+        matched_pks = set(
+            _apply_list_q(GameplayFeature.objects.active(), q).values_list(
+                "pk", flat=True
+            )
         )
-        for f in features
-    ]
+        matched = [f for f in active if f.pk in matched_pks]
+    else:
+        # No search → every active feature shows; skip the extra pk query (the
+        # dominant page-1 SSR path), since ``active`` already holds them all.
+        matched = active
+    # ``pk`` tiebreak after (-count, name) so offset pages are stable.
+    matched.sort(key=lambda f: (-counts.get(f.pk, 0), f.name.lower(), f.pk))
+
+    start = (max(page, 1) - 1) * DEFAULT_PAGE_SIZE
+    rows = matched[start : start + DEFAULT_PAGE_SIZE]
+    return GameplayFeatureListSchema(
+        items=[_serialize_gameplay_feature_row(f, counts.get(f.pk, 0)) for f in rows],
+        count=len(matched),
+    )
+
+
+@gameplay_features_router.get("/all/", response=list[GameplayFeatureListItemSchema])
+@decorate_view(cache_control(no_cache=True))
+def list_all_gameplay_features(
+    request: HttpRequest,
+) -> list[GameplayFeatureListItemSchema]:
+    """Every gameplay feature with its rollup title count (no pagination) — the full set
+    the editor parent-picker needs (which consumes ``title_count``), and which the
+    paginated ``GET /`` can't serve it."""
+    active = _active_gameplay_features()
+    counts = _gameplay_feature_rollup(active)
+    active.sort(key=lambda f: (-counts.get(f.pk, 0), f.name.lower(), f.pk))
+    return [_serialize_gameplay_feature_row(f, counts.get(f.pk, 0)) for f in active]
 
 
 @gameplay_features_router.patch(

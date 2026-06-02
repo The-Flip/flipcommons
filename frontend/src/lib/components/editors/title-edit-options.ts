@@ -35,7 +35,7 @@ export function fetchFranchiseOptions(): Promise<TitleEditOption[]> {
 export function fetchSeriesOptions(): Promise<TitleEditOption[]> {
   if (!cachedSeries) {
     cachedSeries = client
-      .GET('/api/series/')
+      .GET('/api/series/all/')
       .then(({ data }) =>
         (data ?? []).map((s) => ({ value: s.slug, label: s.name, count: s.title_count })),
       )

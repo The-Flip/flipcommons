@@ -44,6 +44,7 @@ from .entity_create import (
     validate_slug_format,
 )
 from .entity_crud import register_entity_delete_restore
+from .entity_list import paginated_list_response
 from .images import extract_image_urls, fetch_model_media_map
 from .rich_text import describe
 from .schemas import (
@@ -64,6 +65,14 @@ class SystemListItemSchema(Schema):
     slug: str
     manufacturer: EntityRef
     model_count: int = 0
+
+
+class SystemListSchema(Schema):
+    """``{items, count}`` page of systems — the wire shape ``createPaginatedLoader``
+    expects (it derives has_more from items.length < count)."""
+
+    items: list[SystemListItemSchema]
+    count: int
 
 
 class SystemCreateSchema(EntityCreateInputSchema):
@@ -189,11 +198,8 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
 systems_router = Router(tags=["systems"])
 
 
-@systems_router.get("/all/", response=list[SystemListItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_all_systems(request: HttpRequest) -> list[SystemListItemSchema]:
-    """Return every system with machine count (no pagination)."""
-    qs = (
+def _system_list_qs() -> QuerySet[System]:
+    return (
         System.objects.active()
         .select_related("manufacturer")
         .annotate(
@@ -205,17 +211,47 @@ def list_all_systems(request: HttpRequest) -> list[SystemListItemSchema]:
         )
         .order_by("name")
     )
-    return [
-        SystemListItemSchema(
-            name=s.name,
-            slug=s.slug,
-            manufacturer=EntityRef(
-                name=s.manufacturer.name, public_id=s.manufacturer.public_id
-            ),
-            model_count=cast(HasModelCount, s).model_count,
-        )
-        for s in qs
-    ]
+
+
+def _serialize_system_row(
+    system: System, thumbnail: str | None = None
+) -> SystemListItemSchema:
+    return SystemListItemSchema(
+        name=system.name,
+        slug=system.slug,
+        manufacturer=EntityRef(
+            name=system.manufacturer.name, public_id=system.manufacturer.public_id
+        ),
+        model_count=cast(HasModelCount, system).model_count,
+    )
+
+
+@systems_router.get("/", response=SystemListSchema)
+def list_systems(
+    request: HttpRequest, q: str = "", manufacturer: str | None = None, page: int = 1
+) -> SystemListSchema:
+    """One page of systems, alphabetical, filtered server-side by ``q`` and (optionally)
+    a ``manufacturer`` slug — the server-side replacement for the page's old client
+    manufacturer ``<select>``."""
+    qs = _system_list_qs()
+    if manufacturer:
+        qs = qs.filter(manufacturer__slug=manufacturer)
+    result = paginated_list_response(
+        qs,
+        q=q,
+        ordering=("name", "pk"),
+        page=page,
+        serialize_row=_serialize_system_row,
+    )
+    return SystemListSchema(items=result.items, count=result.total)
+
+
+@systems_router.get("/all/", response=list[SystemListItemSchema])
+@decorate_view(cache_control(no_cache=True))
+def list_all_systems(request: HttpRequest) -> list[SystemListItemSchema]:
+    """Every system with machine count (no pagination) — reuses the paginated handler's
+    queryset and row serializer so the two presentations can't drift."""
+    return [_serialize_system_row(s) for s in _system_list_qs()]
 
 
 @systems_router.patch(

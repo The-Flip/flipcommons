@@ -1,36 +1,29 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
   import client from '$lib/api/client';
-  import { createAsyncLoader } from '$lib/async-loader.svelte';
-  import { auth } from '$lib/auth.svelte';
-  import SearchableGrid from '$lib/components/grid/SearchableGrid.svelte';
+  import { unwrapPage } from '$lib/paginated-loader.svelte';
+  import CatalogListing from '$lib/components/pages/listing/CatalogListing.svelte';
   import PersonCard from '$lib/components/cards/PersonCard.svelte';
-  import NoResultsCreatePrompt from '$lib/components/NoResultsCreatePrompt.svelte';
-  import { pageTitle } from '$lib/constants';
 
-  const people = createAsyncLoader(async () => {
-    const { data } = await client.GET('/api/people/all/');
-    return data ?? [];
-  }, []);
+  let { data } = $props();
 
-  $effect(() => {
-    void auth.load();
-  });
+  // Typed page fetcher: the `/api/people/` path literal is baked in here so the
+  // response stays typed (`PersonCardSchema`), then flows generically through
+  // CatalogListing's card layout. Reads the committed `q` at call time.
+  const fetchPage = async (page: number) => {
+    const res = await client.GET('/api/people/', {
+      params: { query: { q: data.q, page } },
+    });
+    return unwrapPage(res.data);
+  };
 </script>
 
-<svelte:head>
-  <title>{pageTitle('People')}</title>
-  <link rel="preload" as="fetch" href="/api/people/all/" crossorigin="anonymous" />
-</svelte:head>
-
-<SearchableGrid
-  items={people.data}
-  loading={people.loading}
-  error={people.error}
-  filterFields={(item) => [item.name, ...(item.aliases ?? [])]}
-  placeholder="Search people..."
-  entityName="person"
-  entityNamePlural="people"
+<CatalogListing
+  catalogKey="person"
+  layout="card"
+  initial={{ items: data.items, count: data.count }}
+  {fetchPage}
+  q={data.q}
+  canCreate
 >
   {#snippet children(person)}
     <PersonCard
@@ -40,14 +33,4 @@
       creditCount={person.credit_count}
     />
   {/snippet}
-
-  {#snippet noResultsPrompt(query)}
-    {#if auth.isAuthenticated}
-      <NoResultsCreatePrompt
-        entityLabel="person"
-        {query}
-        createHref={`${resolve('/people/new')}?name=${encodeURIComponent(query)}`}
-      />
-    {/if}
-  {/snippet}
-</SearchableGrid>
+</CatalogListing>

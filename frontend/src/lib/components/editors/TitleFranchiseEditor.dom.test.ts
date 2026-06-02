@@ -40,7 +40,7 @@ const INITIAL_TITLE = {
 function mockGetResponses() {
   GET.mockImplementation(async (path: string) => {
     if (path === '/api/franchises/all/') return FRANCHISES;
-    if (path === '/api/series/') return SERIES;
+    if (path === '/api/series/all/') return SERIES;
     throw new Error(`Unexpected GET ${path}`);
   });
 }

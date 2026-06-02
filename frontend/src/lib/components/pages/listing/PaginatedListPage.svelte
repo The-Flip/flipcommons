@@ -39,6 +39,9 @@
     fetchPage,
     q,
     canCreate = false,
+    layout = 'row',
+    extraParams = {},
+    extraFilter,
     headerSnippet,
     children,
   }: {
@@ -57,6 +60,25 @@
     /** Committed search term from the SSR load (URL-derived); '' when unfiltered. */
     q: string;
     canCreate?: boolean;
+    /** `'row'` (linked text rows, default) or `'card'` (a card grid, e.g. people). */
+    layout?: 'row' | 'card';
+    /**
+     * Committed extra URL query params beyond `q` (e.g. systems'
+     * `{ manufacturer }`), URL-derived from the SSR load. The controller is the
+     * single navigator: it preserves these in the debounced `q` `goto`, folds
+     * them into the loader remount key (so changing one reseeds to page 1) and
+     * derives `extraFilterActive` from them (a non-empty value suppresses the
+     * create prompt — `count === 0` under a filter doesn't mean the name is free).
+     * Default `{}` keeps every plain list page unaffected.
+     */
+    extraParams?: Record<string, string>;
+    /**
+     * Optional control rendered beside the search box (e.g. systems' manufacturer
+     * `<select>`). Receives `setExtra`, the controller's navigate callback — call
+     * it with the changed params (e.g. `{ manufacturer: slug }`) to commit a new
+     * URL preserving the current `q`. Keeps URL-building solely in the controller.
+     */
+    extraFilter?: Snippet<[(extra: Record<string, string>) => void]>;
     headerSnippet?: Snippet;
     children: Snippet<[T]>;
   } = $props();
@@ -68,31 +90,63 @@
   // landing) yet stays reassignable while typing.
   let queryInput = $derived(q);
 
-  // Remount the loader (reseed to page 1) only when the committed search changes.
-  let gridKey = $derived(q);
+  // Stable string view of the committed extra params, for the remount key.
+  let extraParamsKey = $derived(
+    Object.entries(extraParams)
+      .filter(([, value]) => value)
+      .map(([key, value]) => `${key}=${value}`)
+      .join('&'),
+  );
+
+  // Remount the loader (reseed to page 1) when the committed search *or* an
+  // extra filter (e.g. manufacturer) changes — both narrow the server page.
+  let gridKey = $derived(`${q}|${extraParamsKey}`);
+
+  // Any non-empty extra filter value (e.g. a selected manufacturer). Drives
+  // create-prompt suppression: under an active filter `count === 0` means "none
+  // match the filter", not "the name is free".
+  let extraFilterActive = $derived(Object.values(extraParams).some((value) => value !== ''));
 
   $effect(() => {
     void auth.load();
   });
 
+  // Single navigator: the controller owns all URL-building so `q` and the extra
+  // params never clobber each other. Both the debounced search and the
+  // `extraFilter`'s `setExtra` callback route through here; `goto` re-runs the
+  // page's server load, which feeds fresh `q`/`extraParams` back in via props.
+  function buildHref(nextQ: string, nextExtra: Record<string, string>): string {
+    const pairs: string[] = [];
+    if (nextQ) pairs.push(`q=${encodeURIComponent(nextQ)}`);
+    for (const [key, value] of Object.entries(nextExtra)) {
+      if (value) pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+    }
+    return `${resolveHref(basePath)}${pairs.length ? `?${pairs.join('&')}` : ''}`;
+  }
+  function navigate(nextQ: string, nextExtra: Record<string, string>): void {
+    void goto(buildHref(nextQ, nextExtra), { keepFocus: true, noScroll: true });
+  }
+
+  // Commit an extra-filter change immediately (no debounce — it's a discrete
+  // select, not keystrokes), preserving the current committed `q`.
+  function setExtra(extra: Record<string, string>): void {
+    navigate(q.trim(), { ...extraParams, ...extra });
+  }
+
   // Back/forward re-runs the server load, so `q` (hence `queryInput`/`gridKey`)
   // adopts the URL reactively via the props — no `afterNavigate` resync needed
   // (unlike titles, whose local filter state must be re-read from the URL).
 
-  // Debounce typing → one `goto ?q=` per pause. Skipped when the input already
-  // matches the committed `q` (seed / popstate / our goto's landing, each of
-  // which resets `queryInput` via the `$derived(q)` above), so no echo loop.
+  // Debounce typing → one `goto ?q=` per pause, preserving any active extra
+  // filter. Skipped when the input already matches the committed `q` (seed /
+  // popstate / our goto's landing, each of which resets `queryInput` via the
+  // `$derived(q)` above), so no echo loop.
   let qTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     const next = queryInput.trim();
     if (next === q) return;
     clearTimeout(qTimer);
-    qTimer = setTimeout(() => {
-      void goto(`${resolveHref(basePath)}${next ? `?q=${encodeURIComponent(next)}` : ''}`, {
-        keepFocus: true,
-        noScroll: true,
-      });
-    }, 250);
+    qTimer = setTimeout(() => navigate(next, extraParams), 250);
     return () => clearTimeout(qTimer);
   });
 
@@ -120,9 +174,15 @@
   );
 
   // With no facets, `count === 0 && q` unambiguously means the name is free, so
-  // the create offer is correct without a separate query-only count.
+  // the create offer is correct without a separate query-only count — *unless*
+  // an extra filter is active (e.g. a manufacturer), where `count === 0` means
+  // "none under this filter", not "the name is free", so suppress it.
   let showCreatePrompt = $derived(
-    !!createHref && auth.isAuthenticated && q.trim() !== '' && initial.count === 0,
+    !!createHref &&
+      auth.isAuthenticated &&
+      q.trim() !== '' &&
+      initial.count === 0 &&
+      !extraFilterActive,
   );
 </script>
 
@@ -149,6 +209,13 @@
     <SearchBox bind:value={queryInput} placeholder={`Search ${entityLabel}...`} />
   {/if}
 
+  <!-- Rendered independently of the search box: an extra filter (e.g.
+       manufacturer) is its own control and stays available below the search
+       threshold. The snippet owns its markup and calls `setExtra` to navigate. -->
+  {#if extraFilter}
+    {@render extraFilter(setExtra)}
+  {/if}
+
   {#if initial.count === 0}
     {#if showCreatePrompt}
       <NoResultsCreatePrompt
@@ -163,7 +230,7 @@
     {/if}
   {:else}
     {#key gridKey}
-      <PaginatedListLoader {initial} {fetchPage} {basePath} {children} />
+      <PaginatedListLoader {initial} {fetchPage} {basePath} {layout} {children} />
     {/key}
   {/if}
 </Page>

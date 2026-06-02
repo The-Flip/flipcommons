@@ -18,6 +18,9 @@
     fetchPage,
     q,
     canCreate = false,
+    layout = 'row',
+    extraParams = {},
+    extraFilter,
     headerSnippet,
     children,
   }: {
@@ -27,6 +30,12 @@
     fetchPage: (page: number) => Promise<{ items: T[]; count: number }>;
     q: string;
     canCreate?: boolean;
+    /** `'row'` (default) or `'card'` (a card grid, e.g. people). */
+    layout?: 'row' | 'card';
+    /** Committed extra URL query params beyond `q` (e.g. systems' `{ manufacturer }`). */
+    extraParams?: Record<string, string>;
+    /** Control beside the search box (e.g. a manufacturer `<select>`); receives `setExtra`. */
+    extraFilter?: Snippet<[(extra: Record<string, string>) => void]>;
     headerSnippet?: Snippet;
     children: Snippet<[T]>;
   } = $props();
@@ -44,6 +53,9 @@
   {fetchPage}
   {q}
   {canCreate}
+  {layout}
+  {extraParams}
+  {extraFilter}
   {headerSnippet}
   {children}
 />

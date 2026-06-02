@@ -1,15 +1,17 @@
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { goto } = vi.hoisted(() => ({ goto: vi.fn() }));
+const { goto, authMock } = vi.hoisted(() => ({
+  goto: vi.fn(),
+  authMock: { isAuthenticated: true, load: () => Promise.resolve() },
+}));
 vi.mock('$app/navigation', () => ({ goto }));
 
-// Authenticated so the create-prompt / "+ New" gates are exercised; load() is a
-// no-op so the component's auth.load() $effect doesn't hit fetch in jsdom.
-vi.mock('$lib/auth.svelte', () => ({
-  auth: { isAuthenticated: true, load: () => Promise.resolve() },
-}));
+// `load()` is a no-op so the component's auth.load() $effect doesn't hit fetch
+// in jsdom; `isAuthenticated` defaults true (the create-prompt / "+ New" gates)
+// and is toggled per test for the unauthenticated case.
+vi.mock('$lib/auth.svelte', () => ({ auth: authMock }));
 
 import CatalogListingFixture from './CatalogListing.fixture.svelte';
 
@@ -25,6 +27,11 @@ const ROWS = [
 ];
 
 describe('CatalogListing', () => {
+  beforeEach(() => {
+    goto.mockClear();
+    authMock.isAuthenticated = true;
+  });
+
   it('renders the seeded SSR page 1 without re-fetching it', () => {
     const fetchPage = vi.fn();
     render(CatalogListingFixture, {
@@ -78,5 +85,39 @@ describe('CatalogListing', () => {
 
     expect(screen.getByText(/no franchises found/i)).toBeInTheDocument();
     expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
+  });
+
+  // Below SEARCH_THRESHOLD there's no search box, so creation is offered via a
+  // header "+ New X" menu instead — auth-gated, and suppressed while a search is
+  // active so a `?q=` URL on a small entity never surfaces both affordances.
+  it('shows the "+ New X" action menu below the threshold when authed and unfiltered', async () => {
+    const user = userEvent.setup();
+    render(CatalogListingFixture, {
+      props: { initial: { items: ROWS.slice(0, 3), count: 3 }, q: '', canCreate: true },
+    });
+
+    expect(screen.queryByRole('searchbox')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByRole('menuitem', { name: /\+ New Franchise/ })).toBeInTheDocument();
+  });
+
+  it('hides the action menu while a search is active (no double create affordance)', () => {
+    render(CatalogListingFixture, {
+      props: { initial: { items: ROWS.slice(0, 3), count: 3 }, q: 'star', canCreate: true },
+    });
+
+    // A query is active, so the search box is the create surface; the header
+    // menu must not also appear.
+    expect(screen.getByRole('searchbox')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+  });
+
+  it('hides the action-menu trigger entirely when unauthenticated', () => {
+    authMock.isAuthenticated = false;
+    render(CatalogListingFixture, {
+      props: { initial: { items: ROWS.slice(0, 3), count: 3 }, q: '', canCreate: true },
+    });
+
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
   });
 });
