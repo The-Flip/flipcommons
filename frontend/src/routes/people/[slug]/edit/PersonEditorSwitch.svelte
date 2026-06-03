@@ -1,8 +1,8 @@
 <script lang="ts">
-  import DescriptionEditor from '$lib/components/editors/DescriptionEditor.svelte';
-  import NameEditor from '$lib/components/editors/NameEditor.svelte';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import type { PersonEditSectionKey } from '$lib/components/editors/person-edit-sections';
+  import DescriptionEditor from '$lib/components/pages/record/edit/editors/DescriptionEditor.svelte';
+  import NameEditor from '$lib/components/pages/record/edit/editors/NameEditor.svelte';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type { PersonEditSectionKey } from '$lib/components/pages/record/edit/editors/entity/person/person-edit-sections';
   import PersonDetailsEditor from './PersonDetailsEditor.svelte';
   import { savePersonClaims } from './save-person-claims';
   import type { PersonEditView } from './person-edit-types';

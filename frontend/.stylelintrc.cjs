@@ -135,7 +135,7 @@ module.exports = {
     // Components with deliberate :global usage (rendered HTML from
     // external sources). These are exceptions, not cleanup targets.
     {
-      files: ['src/lib/components/Prose.svelte', 'src/lib/components/markdown/Markdown.svelte'],
+      files: ['src/lib/components/ui/Prose.svelte', 'src/lib/components/markdown/Markdown.svelte'],
       rules: {
         'selector-pseudo-class-disallowed-list': null,
         'selector-pseudo-class-no-unknown': null,
@@ -145,7 +145,7 @@ module.exports = {
     // `style:--prop={value}` directives. The plugin only sees stylesheet
     // declarations, not runtime values, so these refs look "unknown."
     {
-      files: ['src/lib/components/cards/Card.svelte'],
+      files: ['src/lib/components/collections/cards/Card.svelte'],
       rules: {
         'csstools/value-no-unknown-custom-properties': null,
       },

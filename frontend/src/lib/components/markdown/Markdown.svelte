@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import CitationTooltip from './CitationTooltip.svelte';
   import ReferencesSection from './ReferencesSection.svelte';
-  import Prose from '$lib/components/Prose.svelte';
+  import Prose from '$lib/components/ui/Prose.svelte';
   import type { InlineCitation } from './citation-tooltip';
   import { findRefEntry, findFirstInlineMarker, scrollToAndHighlight } from './citation-refs';
 

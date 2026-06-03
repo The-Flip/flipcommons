@@ -1,7 +1,7 @@
 <script lang="ts">
   import FacetedCatalogListing from './FacetedCatalogListing.svelte';
   import Sidebar from './FacetedCatalogListing.fixtureSidebar.svelte';
-  import type { FilterChipSpec } from '$lib/components/ActiveFilterChips.svelte';
+  import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
 
   type F = { query: string; foo: string | null };
   type O = { foo: { public_id: string; name: string; count: number }[] };

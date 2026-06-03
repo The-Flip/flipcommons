@@ -1,15 +1,15 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { ENTITY_META } from '$lib/entities/entity-meta';
-  import AccordionSection from '$lib/components/AccordionSection.svelte';
+  import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import CreateFirstCorporateEntityPrompt from './_components/CreateFirstCorporateEntityPrompt.svelte';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
-  import TitleCard from '$lib/components/cards/TitleCard.svelte';
-  import { manufacturerEditActionContext } from '$lib/components/editors/edit-action-context';
-  import SearchableGrid from '$lib/components/grid/SearchableGrid.svelte';
-  import LocationLink from '$lib/components/LocationLink.svelte';
+  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
+  import { manufacturerEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
+  import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
+  import LocationLink from '$lib/components/entity-links/LocationLink.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import { formatYearRange, websiteHostname } from '$lib/utils';
 

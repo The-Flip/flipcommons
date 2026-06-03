@@ -1,17 +1,19 @@
 <script lang="ts">
-  import ActiveFilterChips, { type FilterChipSpec } from '$lib/components/ActiveFilterChips.svelte';
-  import ActionMenu from '$lib/components/ActionMenu.svelte';
-  import Button from '$lib/components/Button.svelte';
-  import MenuDivider from '$lib/components/MenuDivider.svelte';
-  import MenuItem from '$lib/components/MenuItem.svelte';
-  import MenuSectionHeader from '$lib/components/MenuSectionHeader.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import ThemeSwitcher from '$lib/components/ThemeSwitcher.svelte';
+  import ActiveFilterChips, {
+    type FilterChipSpec,
+  } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
+  import ActionMenu from '$lib/components/ui/menu/ActionMenu.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
+  import MenuDivider from '$lib/components/ui/menu/MenuDivider.svelte';
+  import MenuItem from '$lib/components/ui/menu/MenuItem.svelte';
+  import MenuSectionHeader from '$lib/components/ui/menu/MenuSectionHeader.svelte';
+  import PageHeader from '$lib/components/layout/page/PageHeader.svelte';
+  import ThemeSwitcher from './_components/ThemeSwitcher.svelte';
   import Card, {
     type CardDistressCorner,
     type CardDistressType,
-  } from '$lib/components/cards/Card.svelte';
-  import MachineCard from '$lib/components/cards/MachineCard.svelte';
+  } from '$lib/components/collections/cards/Card.svelte';
+  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
 
   const distressCases: {
     label: string;

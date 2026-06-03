@@ -1,6 +1,6 @@
 <script lang="ts">
-  import GroupedTaxonomyList from '$lib/components/GroupedTaxonomyList.svelte';
-  import TaxonomyListPage from '$lib/components/TaxonomyListPage.svelte';
+  import GroupedTaxonomyList from '$lib/components/pages/listing/GroupedTaxonomyList.svelte';
+  import TaxonomyListPage from '$lib/components/pages/listing/TaxonomyListPage.svelte';
 
   let { data } = $props();
 </script>

@@ -6,14 +6,16 @@
   import { afterNavigate, goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
-  import ActiveFilterChips, { type FilterChipSpec } from '$lib/components/ActiveFilterChips.svelte';
-  import FilterDrawer from '$lib/components/FilterDrawer.svelte';
-  import NoResultsCreatePrompt from '$lib/components/NoResultsCreatePrompt.svelte';
-  import SearchBox from '$lib/components/SearchBox.svelte';
+  import ActiveFilterChips, {
+    type FilterChipSpec,
+  } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
+  import FilterDrawer from '$lib/components/collections/filters/FilterDrawer.svelte';
+  import NoResultsCreatePrompt from './NoResultsCreatePrompt.svelte';
+  import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import PaginatedListLoader from './PaginatedListLoader.svelte';
   import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import JsonLd from '$lib/components/JsonLd.svelte';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import { buildListingJsonLd, listingMeta } from '$lib/entities/schema-org';
   import { decideCreatePrompt } from '$lib/create-prompt';
   import { streamed } from '$lib/streamed.svelte';

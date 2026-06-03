@@ -1,7 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import type { UploadedMediaSchema } from '$lib/api/schema';
-  import Dialog from '../Dialog.svelte';
+  import Dialog from '$lib/components/ui/modal/Dialog.svelte';
 
   type UploadedMedia = UploadedMediaSchema;
 

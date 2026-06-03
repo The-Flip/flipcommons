@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SimpleTaxonomyDetailLayout from '$lib/components/SimpleTaxonomyDetailLayout.svelte';
+  import SimpleTaxonomyDetailLayout from '$lib/components/pages/record/detail/SimpleTaxonomyDetailLayout.svelte';
   import { listingMeta } from '$lib/entities/schema-org';
 
   let { data, children } = $props();

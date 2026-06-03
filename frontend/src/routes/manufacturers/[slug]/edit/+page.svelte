@@ -1,6 +1,6 @@
 <script lang="ts">
-  import EditRedirectFallback from '$lib/components/EditRedirectFallback.svelte';
-  import { defaultManufacturerSectionSegment } from '$lib/components/editors/manufacturer-edit-sections';
+  import EditRedirectFallback from '$lib/components/pages/record/edit/EditRedirectFallback.svelte';
+  import { defaultManufacturerSectionSegment } from '$lib/components/pages/record/edit/editors/entity/manufacturer/manufacturer-edit-sections';
 </script>
 
 <EditRedirectFallback

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ClaimAttributionSchema } from '$lib/api/schema';
-  import UserLink from '$lib/components/UserLink.svelte';
+  import UserLink from '$lib/components/entity-links/UserLink.svelte';
 
   let { attribution }: { attribution: ClaimAttributionSchema } = $props();
   const author = $derived(attribution.author);

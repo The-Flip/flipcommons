@@ -16,7 +16,7 @@ vi.mock('$lib/api/client', () => ({
   default: { POST: mockPost },
 }));
 
-vi.mock('$lib/components/editors/system-edit-options', () => ({
+vi.mock('$lib/components/pages/record/edit/editors/entity/system/system-edit-options', () => ({
   fetchManufacturerOptions: () =>
     Promise.resolve([
       { value: 'stern', label: 'Stern', count: 42 },

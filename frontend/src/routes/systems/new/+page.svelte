@@ -1,12 +1,12 @@
 <script lang="ts">
   import client from '$lib/api/client';
   import type { SystemCreateSchema } from '$lib/api/schema';
-  import CreatePage from '$lib/components/CreatePage.svelte';
-  import SearchableSelect from '$lib/components/SearchableSelect.svelte';
+  import CreatePage from '$lib/components/pages/record/create/CreatePage.svelte';
+  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
   import {
     fetchManufacturerOptions,
     type SystemEditOption,
-  } from '$lib/components/editors/system-edit-options';
+  } from '$lib/components/pages/record/edit/editors/entity/system/system-edit-options';
 
   type CreateBody = SystemCreateSchema;
 

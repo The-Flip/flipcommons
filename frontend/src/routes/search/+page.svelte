@@ -1,7 +1,7 @@
 <script lang="ts">
   import { afterNavigate, replaceState } from '$app/navigation';
   import { onMount } from 'svelte';
-  import SearchBox from '$lib/components/SearchBox.svelte';
+  import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import SearchResults from './_components/SearchResults.svelte';
   import { SITE_TITLE } from '$lib/constants';
   import { resolve } from '$app/paths';

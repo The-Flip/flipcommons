@@ -2,8 +2,8 @@
   import type { Snippet } from 'svelte';
   import { page } from '$app/state';
   import PaginatedListPage from './PaginatedListPage.svelte';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import JsonLd from '$lib/components/JsonLd.svelte';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
   import { buildListingJsonLd, listingMeta } from '$lib/entities/schema-org';
 

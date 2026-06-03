@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SimpleTaxonomyDetailLayout from '$lib/components/SimpleTaxonomyDetailLayout.svelte';
+  import SimpleTaxonomyDetailLayout from '$lib/components/pages/record/detail/SimpleTaxonomyDetailLayout.svelte';
 
   let { data, children } = $props();
   let profile = $derived(data.profile);

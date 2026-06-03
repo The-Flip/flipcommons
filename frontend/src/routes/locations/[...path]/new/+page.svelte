@@ -1,6 +1,6 @@
 <script lang="ts">
   import client from '$lib/api/client';
-  import CreatePage from '$lib/components/CreatePage.svelte';
+  import CreatePage from '$lib/components/pages/record/create/CreatePage.svelte';
   import { childLabelFor } from '../location-helpers';
   import type { LocationDetailSchema } from '$lib/api/schema';
 

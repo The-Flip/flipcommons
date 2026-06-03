@@ -5,7 +5,7 @@
 import type { RouteId } from '$app/types';
 import { CATALOG_ENTITY_KEYS, ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
 import { listingMeta } from '$lib/entities/schema-org';
-import type { Crumb } from '$lib/components/jsonld';
+import type { Crumb } from '$lib/components/layout/page/head/jsonld';
 
 /**
  * Non-catalog routes that should be indexed by search engines.

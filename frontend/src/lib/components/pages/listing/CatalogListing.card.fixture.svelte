@@ -1,6 +1,6 @@
 <script lang="ts">
   import CatalogListing from './CatalogListing.svelte';
-  import PersonCard from '$lib/components/cards/PersonCard.svelte';
+  import PersonCard from '$lib/components/collections/cards/PersonCard.svelte';
 
   type Card = { slug: string; name: string; thumbnail_url: string | null; credit_count: number };
 

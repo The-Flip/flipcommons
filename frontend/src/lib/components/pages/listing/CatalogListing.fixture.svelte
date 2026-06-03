@@ -1,6 +1,6 @@
 <script lang="ts">
   import CatalogListing from './CatalogListing.svelte';
-  import CatalogListRow from '$lib/components/collections/CatalogListRow.svelte';
+  import CatalogListRow from '$lib/components/collections/list/CatalogListRow.svelte';
 
   type Row = { slug: string; name: string; title_count: number };
 

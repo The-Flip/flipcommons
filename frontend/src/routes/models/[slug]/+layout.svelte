@@ -3,31 +3,34 @@
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/meta-tags';
-  import JsonLd from '$lib/components/JsonLd.svelte';
-  import ExternalLinksSidebarSection from '$lib/components/ExternalLinksSidebarSection.svelte';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
+  import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
-  import ModelHierarchy from '$lib/components/ModelHierarchy.svelte';
-  import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
-  import PageActionBar from '$lib/components/PageActionBar.svelte';
-  import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
-  import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
-  import SidebarList from '$lib/components/SidebarList.svelte';
-  import SidebarListItem from '$lib/components/SidebarListItem.svelte';
-  import SidebarSection from '$lib/components/SidebarSection.svelte';
-  import TaxonomyLinkSidebarSection from '$lib/components/TaxonomyLinkSidebarSection.svelte';
-  import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';
+  import ModelHierarchy from '$lib/components/pages/record/detail/ModelHierarchy.svelte';
+  import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
+  import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
+  import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
+  import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';
+  import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
+  import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';
+  import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
+  import TaxonomyLinkSidebarSection from '$lib/components/pages/record/detail/TaxonomyLinkSidebarSection.svelte';
+  import {
+    getMenuItemAction,
+    type EditSectionMenuItem,
+  } from '$lib/components/layout/page/edit-section-menu';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { modelHasTitleOwnedIdentity } from '$lib/catalog-rules';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
   import { isFocusModePath } from '$lib/focus-mode';
   import { setEntityContext } from '$lib/entity-context';
-  import { modelEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { modelEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
-  import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
-  import ModelEditorSwitch from './edit/ModelEditorSwitch.svelte';
+  import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
+  import ModelEditorSwitch from '$lib/components/pages/record/edit/editors/entity/model/ModelEditorSwitch.svelte';
 
   let { data, children } = $props();
   let model = $derived(data.profile);
@@ -95,7 +98,7 @@
     findSectionBySegment,
     modelSectionsFor,
     type ModelEditSectionKey,
-  } from '$lib/components/editors/model-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/model/model-edit-sections';
 
   // The dedicated edit route and this reader-level editor must agree on which
   // sections are writable — otherwise a title-owned model would still expose a

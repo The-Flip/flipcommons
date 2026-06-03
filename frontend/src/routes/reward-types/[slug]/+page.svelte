@@ -1,8 +1,8 @@
 <script lang="ts">
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
-  import ClientFilteredGrid from '$lib/components/grid/ClientFilteredGrid.svelte';
-  import MachineCard from '$lib/components/cards/MachineCard.svelte';
+  import ClientFilteredGrid from '$lib/components/collections/grid/ClientFilteredGrid.svelte';
+  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
 
   let { data } = $props();
   let profile = $derived(data.profile);

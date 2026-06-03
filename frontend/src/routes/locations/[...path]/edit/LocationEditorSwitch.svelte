@@ -1,8 +1,8 @@
 <script lang="ts">
-  import AliasesSectionEditor from '$lib/components/editors/AliasesSectionEditor.svelte';
-  import DescriptionEditor from '$lib/components/editors/DescriptionEditor.svelte';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import type { LocationEditSectionKey } from '$lib/components/editors/location-edit-sections';
+  import AliasesSectionEditor from '$lib/components/pages/record/edit/editors/AliasesSectionEditor.svelte';
+  import DescriptionEditor from '$lib/components/pages/record/edit/editors/DescriptionEditor.svelte';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type { LocationEditSectionKey } from '$lib/components/pages/record/edit/editors/entity/location/location-edit-sections';
   import LocationBasicsEditor from './LocationBasicsEditor.svelte';
   import LocationDivisionsEditor from './LocationDivisionsEditor.svelte';
   import { saveLocationClaims } from './save-location-claims';

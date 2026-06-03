@@ -26,8 +26,8 @@
 
 <script lang="ts">
   import { page } from '$app/state';
-  import Button from '$lib/components/Button.svelte';
-  import ErrorPage from '$lib/components/ErrorPage.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
+  import ErrorPage from '$lib/components/pages/error/ErrorPage.svelte';
 
   const content = $derived(contentForStatus(page.status));
 </script>

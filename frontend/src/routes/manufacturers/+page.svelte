@@ -2,8 +2,8 @@
   import client from '$lib/api/client';
   import { unwrapPage } from '$lib/paginated-loader.svelte';
   import FacetedCatalogListing from '$lib/components/pages/listing/FacetedCatalogListing.svelte';
-  import ManufacturerFilterSidebar from '$lib/components/ManufacturerFilterSidebar.svelte';
-  import ManufacturerCard from '$lib/components/cards/ManufacturerCard.svelte';
+  import ManufacturerFilterSidebar from './_components/ManufacturerFilterSidebar.svelte';
+  import ManufacturerCard from '$lib/components/collections/cards/ManufacturerCard.svelte';
   import { mfrFiltersFromParams, mfrFiltersToParams } from '$lib/manufacturer-facet-engine';
   import { manufacturerFilterChips } from './manufacturer-filter-chips';
 

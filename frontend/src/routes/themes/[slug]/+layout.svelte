@@ -1,13 +1,13 @@
 <script lang="ts">
   import client from '$lib/api/client';
-  import TaxonomyDetailBaseLayout from '$lib/components/TaxonomyDetailBaseLayout.svelte';
-  import HierarchicalTaxonomySidebar from '$lib/components/HierarchicalTaxonomySidebar.svelte';
-  import HierarchicalTaxonomyEditorSwitch from '$lib/components/editors/HierarchicalTaxonomyEditorSwitch.svelte';
-  import { hierarchicalTaxonomyEditActionContext } from '$lib/components/editors/edit-action-context';
+  import TaxonomyDetailBaseLayout from '$lib/components/pages/record/detail/TaxonomyDetailBaseLayout.svelte';
+  import HierarchicalTaxonomySidebar from '$lib/components/pages/record/detail/HierarchicalTaxonomySidebar.svelte';
+  import HierarchicalTaxonomyEditorSwitch from '$lib/components/pages/record/edit/editors/entity/taxonomy/HierarchicalTaxonomyEditorSwitch.svelte';
+  import { hierarchicalTaxonomyEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import {
     HIERARCHICAL_TAXONOMY_EDIT_SECTIONS,
     type HierarchicalTaxonomyEditSectionKey,
-  } from '$lib/components/editors/hierarchical-taxonomy-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/taxonomy/hierarchical-taxonomy-edit-sections';
   import { listingMeta } from '$lib/entities/schema-org';
 
   let { data, children } = $props();

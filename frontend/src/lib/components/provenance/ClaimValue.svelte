@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ClaimValueSchema } from '$lib/api/schema';
   import ClaimDisplay from './ClaimDisplay.svelte';
-  import { formatValue, simplifyClaimValue } from '$lib/components/change-display';
+  import { formatValue, simplifyClaimValue } from './change-display';
 
   let { value }: { value: ClaimValueSchema | null | undefined } = $props();
 

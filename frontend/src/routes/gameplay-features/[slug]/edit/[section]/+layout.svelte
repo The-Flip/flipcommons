@@ -1,11 +1,11 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import TaxonomyEditSectionLayoutBase from '$lib/components/TaxonomyEditSectionLayoutBase.svelte';
+  import TaxonomyEditSectionLayoutBase from '$lib/components/pages/record/edit/TaxonomyEditSectionLayoutBase.svelte';
   import {
     defaultHierarchicalTaxonomySectionSegment,
     HIERARCHICAL_TAXONOMY_EDIT_SECTIONS,
     MEDIA_SECTION,
-  } from '$lib/components/editors/hierarchical-taxonomy-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/taxonomy/hierarchical-taxonomy-edit-sections';
 
   let { children }: { children: Snippet } = $props();
 

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import EditRedirectFallback from '$lib/components/EditRedirectFallback.svelte';
-  import { defaultPersonSectionSegment } from '$lib/components/editors/person-edit-sections';
+  import EditRedirectFallback from '$lib/components/pages/record/edit/EditRedirectFallback.svelte';
+  import { defaultPersonSectionSegment } from '$lib/components/pages/record/edit/editors/entity/person/person-edit-sections';
 </script>
 
 <EditRedirectFallback basePath="/people" defaultSegment={defaultPersonSectionSegment()} />

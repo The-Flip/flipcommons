@@ -2,14 +2,14 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import EditSectionShell from '$lib/components/EditSectionShell.svelte';
-  import type { EditSectionMenuItem } from '$lib/components/edit-section-menu';
+  import EditSectionShell from '$lib/components/pages/record/edit/EditSectionShell.svelte';
+  import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
   import {
     defaultSystemSectionSegment,
     findSystemSectionBySegment,
     SYSTEM_EDIT_SECTIONS,
-  } from '$lib/components/editors/system-edit-sections';
-  import { setEditLayoutContext } from '$lib/components/editors/edit-layout-context';
+  } from '$lib/components/pages/record/edit/editors/entity/system/system-edit-sections';
+  import { setEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
 

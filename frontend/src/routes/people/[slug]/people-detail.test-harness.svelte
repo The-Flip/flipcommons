@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import type { ComponentProps } from 'svelte';
-  import { personEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { personEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import Page from './+page.svelte';
 
   const props: ComponentProps<typeof Page> = $props();

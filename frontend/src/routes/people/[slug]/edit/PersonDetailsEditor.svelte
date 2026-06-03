@@ -1,9 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import TextField from '$lib/components/form/TextField.svelte';
-  import NumberField from '$lib/components/form/NumberField.svelte';
-  import MonthSelect from '$lib/components/form/MonthSelect.svelte';
-  import type { SectionEditorProps } from '$lib/components/editors/editor-contract';
+  import TextField from '$lib/components/input/TextField.svelte';
+  import NumberField from '$lib/components/input/NumberField.svelte';
+  import MonthSelect from '$lib/components/input/MonthSelect.svelte';
+  import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
   import { diffScalarFields } from '$lib/edit-helpers';
   import { fetchFieldConstraints, fc, type FieldConstraints } from '$lib/field-constraints';
   import type { PersonEditView } from './person-edit-types';

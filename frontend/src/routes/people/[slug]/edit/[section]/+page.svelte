@@ -2,16 +2,16 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import Button from '$lib/components/Button.svelte';
-  import SectionEditorForm from '$lib/components/SectionEditorForm.svelte';
-  import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
+  import SectionEditorForm from '$lib/components/pages/record/edit/SectionEditorForm.svelte';
+  import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
   import { WIDE_BREAKPOINT } from '$lib/constants';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import { getEditLayoutContext } from '$lib/components/editors/edit-layout-context';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import { getEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
   import {
     defaultPersonSectionSegment,
     findPersonSectionBySegment,
-  } from '$lib/components/editors/person-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/person/person-edit-sections';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
   import type { SaveMeta } from '../save-person-claims';
   import PersonEditorSwitch from '../PersonEditorSwitch.svelte';

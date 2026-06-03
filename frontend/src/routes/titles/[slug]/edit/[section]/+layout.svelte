@@ -2,13 +2,13 @@
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
-  import EditSectionShell from '$lib/components/EditSectionShell.svelte';
-  import type { EditSectionMenuItem } from '$lib/components/edit-section-menu';
-  import { setEditLayoutContext } from '$lib/components/editors/edit-layout-context';
+  import EditSectionShell from '$lib/components/pages/record/edit/EditSectionShell.svelte';
+  import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
+  import { setEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
   import {
     findTitleSectionBySegment,
     titleSectionsFor,
-  } from '$lib/components/editors/title-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/title/title-edit-sections';
 
   let { children, data } = $props();
   let slug = $derived(page.params.slug);

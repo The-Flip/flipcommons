@@ -1,6 +1,6 @@
 <script lang="ts">
-  import ClientFilteredGrid from '$lib/components/grid/ClientFilteredGrid.svelte';
-  import ManufacturerCard from '$lib/components/cards/ManufacturerCard.svelte';
+  import ClientFilteredGrid from '$lib/components/collections/grid/ClientFilteredGrid.svelte';
+  import ManufacturerCard from '$lib/components/collections/cards/ManufacturerCard.svelte';
 
   let {
     manufacturers,

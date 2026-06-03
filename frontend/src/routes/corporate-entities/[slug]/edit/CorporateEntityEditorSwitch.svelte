@@ -1,9 +1,9 @@
 <script lang="ts">
-  import AliasesSectionEditor from '$lib/components/editors/AliasesSectionEditor.svelte';
-  import DescriptionEditor from '$lib/components/editors/DescriptionEditor.svelte';
-  import NameEditor from '$lib/components/editors/NameEditor.svelte';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import type { CorporateEntityEditSectionKey } from '$lib/components/editors/corporate-entity-edit-sections';
+  import AliasesSectionEditor from '$lib/components/pages/record/edit/editors/AliasesSectionEditor.svelte';
+  import DescriptionEditor from '$lib/components/pages/record/edit/editors/DescriptionEditor.svelte';
+  import NameEditor from '$lib/components/pages/record/edit/editors/NameEditor.svelte';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type { CorporateEntityEditSectionKey } from '$lib/components/pages/record/edit/editors/entity/corporate-entity/corporate-entity-edit-sections';
   import CorporateEntityBasicsEditor from './CorporateEntityBasicsEditor.svelte';
   import { saveCorporateEntityClaims } from './save-corporate-entity-claims';
   import type { CorporateEntityEditView } from './corporate-entity-edit-types';

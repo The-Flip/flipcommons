@@ -19,7 +19,7 @@ vi.mock('$lib/auth.svelte', () => ({ auth: authMock }));
 // The layout mounts SectionEditorHost, which initializes editor machinery
 // we don't need for an action-menu test. Stub it to a no-op so we can
 // focus on the action-bar behavior.
-vi.mock('$lib/components/SectionEditorHost.svelte', async () => {
+vi.mock('$lib/components/pages/record/edit/SectionEditorHost.svelte', async () => {
   const Stub = (await import('./__stubs__/empty-component.svelte')).default;
   return { default: Stub };
 });

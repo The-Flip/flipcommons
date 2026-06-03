@@ -1,12 +1,12 @@
 <script lang="ts">
   import { ENTITY_META } from '$lib/entities/entity-meta';
-  import AccordionSection from '$lib/components/AccordionSection.svelte';
+  import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
-  import { personEditActionContext } from '$lib/components/editors/edit-action-context';
-  import SearchableGrid from '$lib/components/grid/SearchableGrid.svelte';
-  import TitleCard from '$lib/components/cards/TitleCard.svelte';
+  import { personEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
+  import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
+  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
 
   let { data } = $props();

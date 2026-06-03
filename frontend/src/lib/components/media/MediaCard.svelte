@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { UploadedMediaSchema } from '$lib/api/schema';
-  import PillSelect from '$lib/components/PillSelect.svelte';
+  import PillSelect from '$lib/components/ui/PillSelect.svelte';
 
   type UploadedMedia = UploadedMediaSchema;
 

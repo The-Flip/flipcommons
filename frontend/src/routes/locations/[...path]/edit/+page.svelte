@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import EditRedirectFallback from '$lib/components/EditRedirectFallback.svelte';
-  import { defaultLocationSectionSegment } from '$lib/components/editors/location-edit-sections';
+  import EditRedirectFallback from '$lib/components/pages/record/edit/EditRedirectFallback.svelte';
+  import { defaultLocationSectionSegment } from '$lib/components/pages/record/edit/editors/entity/location/location-edit-sections';
 
   let path = $derived(page.params.path);
 </script>

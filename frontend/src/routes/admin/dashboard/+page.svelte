@@ -1,6 +1,6 @@
 <script lang="ts">
   import { invalidate } from '$app/navigation';
-  import Page from '$lib/components/Page.svelte';
+  import Page from '$lib/components/layout/page/Page.svelte';
   import { SITE_TITLE } from '$lib/constants';
   import { smartDate } from '$lib/dates';
   import MetricCard from './MetricCard.svelte';

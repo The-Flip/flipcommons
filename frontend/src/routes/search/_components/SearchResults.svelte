@@ -2,10 +2,10 @@
   import { SvelteSet } from 'svelte/reactivity';
   import client from '$lib/api/client';
   import { createAsyncLoader } from '$lib/async-loader.svelte';
-  import CardGrid from '$lib/components/grid/CardGrid.svelte';
-  import ManufacturerCard from '$lib/components/cards/ManufacturerCard.svelte';
-  import PersonCard from '$lib/components/cards/PersonCard.svelte';
-  import TitleCard from '$lib/components/cards/TitleCard.svelte';
+  import CardGrid from '$lib/components/collections/grid/CardGrid.svelte';
+  import ManufacturerCard from '$lib/components/collections/cards/ManufacturerCard.svelte';
+  import PersonCard from '$lib/components/collections/cards/PersonCard.svelte';
+  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
   import { normalizeText } from '$lib/utils';
 
   const MIN_QUERY_LENGTH = 2;

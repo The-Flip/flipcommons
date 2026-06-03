@@ -2,16 +2,16 @@
   import { page } from '$app/state';
   import { goto, invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import SectionEditorForm from '$lib/components/SectionEditorForm.svelte';
-  import { getEditLayoutContext } from '$lib/components/editors/edit-layout-context';
+  import SectionEditorForm from '$lib/components/pages/record/edit/SectionEditorForm.svelte';
+  import { getEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
   import TitleEditorSwitch from '../TitleEditorSwitch.svelte';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import type { SaveMeta } from '$lib/components/editors/save-claims-shared';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type { SaveMeta } from '$lib/components/pages/record/edit/editors/save-claims-shared';
   import {
     defaultTitleSectionSegment,
     findTitleSectionBySegment,
     titleSectionsFor,
-  } from '$lib/components/editors/title-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/title/title-edit-sections';
 
   let { data } = $props();
   let title = $derived(data.profile);

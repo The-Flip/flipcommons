@@ -1,10 +1,10 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { SITE_NAME } from '$lib/constants';
-  import Breadcrumb from '$lib/components/Breadcrumb.svelte';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import JsonLd from '$lib/components/JsonLd.svelte';
-  import { jsonLdGraph, pageNode, breadcrumbList } from '$lib/components/jsonld';
+  import Breadcrumb from '$lib/components/layout/page/Breadcrumb.svelte';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
+  import { jsonLdGraph, pageNode, breadcrumbList } from '$lib/components/layout/page/head/jsonld';
   import { absoluteAssetUrl } from '$lib/utils';
 
   const title = 'People';

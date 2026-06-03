@@ -1,5 +1,5 @@
 <script lang="ts">
-  import EntitySources from '$lib/components/EntitySources.svelte';
+  import EntitySources from '$lib/components/pages/record/sources/EntitySources.svelte';
 
   let { data } = $props();
 </script>

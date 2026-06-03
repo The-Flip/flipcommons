@@ -2,23 +2,23 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
-  import { metaDescriptionFor } from '$lib/components/meta-tags';
+  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import { auth } from '$lib/auth.svelte';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import JsonLd from '$lib/components/JsonLd.svelte';
-  import PageActionBar from '$lib/components/PageActionBar.svelte';
-  import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
-  import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
-  import SidebarList from '$lib/components/SidebarList.svelte';
-  import SidebarListItem from '$lib/components/SidebarListItem.svelte';
-  import SidebarSection from '$lib/components/SidebarSection.svelte';
-  import { type EditSectionMenuItem } from '$lib/components/edit-section-menu';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
+  import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
+  import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
+  import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';
+  import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
+  import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';
+  import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
+  import { type EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
   import {
     findSystemSectionByKey,
     findSystemSectionBySegment,
     SYSTEM_EDIT_SECTIONS,
     type SystemEditSectionKey,
-  } from '$lib/components/editors/system-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/system/system-edit-sections';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
   import { isFocusModePath } from '$lib/focus-mode';

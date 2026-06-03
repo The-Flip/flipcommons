@@ -3,23 +3,26 @@
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import { formatYearRange } from '$lib/utils';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/meta-tags';
-  import JsonLd from '$lib/components/JsonLd.svelte';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
-  import LocationLink from '$lib/components/LocationLink.svelte';
-  import PageActionBar from '$lib/components/PageActionBar.svelte';
-  import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
-  import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
-  import SidebarSection from '$lib/components/SidebarSection.svelte';
-  import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';
-  import { corporateEntityEditActionContext } from '$lib/components/editors/edit-action-context';
+  import LocationLink from '$lib/components/entity-links/LocationLink.svelte';
+  import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
+  import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
+  import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';
+  import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
+  import {
+    getMenuItemAction,
+    type EditSectionMenuItem,
+  } from '$lib/components/layout/page/edit-section-menu';
+  import { corporateEntityEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import {
     findCorporateEntitySectionByKey,
     findCorporateEntitySectionBySegment,
     CORPORATE_ENTITY_EDIT_SECTIONS,
     type CorporateEntityEditSectionKey,
-  } from '$lib/components/editors/corporate-entity-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/corporate-entity/corporate-entity-edit-sections';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
   import { isFocusModePath } from '$lib/focus-mode';

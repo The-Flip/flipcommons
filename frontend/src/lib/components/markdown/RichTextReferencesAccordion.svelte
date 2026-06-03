@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AccordionSection from '$lib/components/AccordionSection.svelte';
+  import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import ReferencesSection from './ReferencesSection.svelte';
   import { deduplicateCitations } from './citation-refs';
   import type { InlineCitation } from './citation-tooltip';

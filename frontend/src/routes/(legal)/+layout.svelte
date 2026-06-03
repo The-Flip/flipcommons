@@ -1,6 +1,6 @@
 <script lang="ts">
-  import Page from '$lib/components/Page.svelte';
-  import Prose from '$lib/components/Prose.svelte';
+  import Page from '$lib/components/layout/page/Page.svelte';
+  import Prose from '$lib/components/ui/Prose.svelte';
 
   let { children } = $props();
 </script>

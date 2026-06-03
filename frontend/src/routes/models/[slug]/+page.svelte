@@ -1,15 +1,15 @@
 <script lang="ts">
-  import AccordionSection from '$lib/components/AccordionSection.svelte';
-  import ModelHierarchy from '$lib/components/ModelHierarchy.svelte';
-  import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
-  import CreditsList from '$lib/components/CreditsList.svelte';
+  import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
+  import ModelHierarchy from '$lib/components/pages/record/detail/ModelHierarchy.svelte';
+  import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
+  import CreditsList from '$lib/components/pages/record/detail/CreditsList.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import { ENTITY_META } from '$lib/entities/entity-meta';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import ModelRelationshipsList from './_components/ModelRelationshipsList.svelte';
-  import { modelEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { modelEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
 
