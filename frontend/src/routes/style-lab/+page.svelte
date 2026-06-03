@@ -8,7 +8,7 @@
   import MenuItem from '$lib/components/ui/menu/MenuItem.svelte';
   import MenuSectionHeader from '$lib/components/ui/menu/MenuSectionHeader.svelte';
   import PageHeader from '$lib/components/layout/page/PageHeader.svelte';
-  import ThemeSwitcher from '$lib/components/ThemeSwitcher.svelte';
+  import ThemeSwitcher from './_components/ThemeSwitcher.svelte';
   import Card, {
     type CardDistressCorner,
     type CardDistressType,

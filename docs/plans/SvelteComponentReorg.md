@@ -462,7 +462,7 @@ entity-links/
   LocationLink.svelte
 ```
 
-### `routes/.../_components/`
+### `routes/.../_components/` - DONE ✅
 
 Components used by only one route family belong next to that route, not in `$lib`. SvelteKit treats directories starting with `_` as non-routable, so `routes/foo/_components/Bar.svelte` is a route-private home that won't accidentally become `/foo/_components`.
 
