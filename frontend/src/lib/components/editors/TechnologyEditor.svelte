@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import SearchableSelect from '$lib/components/SearchableSelect.svelte';
+  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { SectionEditorProps } from './editor-contract';
   import {

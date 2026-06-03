@@ -2,7 +2,7 @@
   import client from '$lib/api/client';
   import type { LocationTopLevelCreateSchema } from '$lib/api/schema';
   import CreatePage from '$lib/components/CreatePage.svelte';
-  import TagInput from '$lib/components/form/TagInput.svelte';
+  import TagInput from '$lib/components/input/TagInput.svelte';
 
   type CreateBody = LocationTopLevelCreateSchema;
 

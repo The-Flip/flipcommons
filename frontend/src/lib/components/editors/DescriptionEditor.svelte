@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import MarkdownTextArea from '$lib/components/form/MarkdownTextArea.svelte';
+  import MarkdownTextArea from '$lib/components/input/markdown/MarkdownTextArea.svelte';
   import type { SectionEditorProps } from './editor-contract';
   import type { FieldErrors } from '$lib/api/parse-api-error';
   import type { SaveMeta, SaveResult } from './save-claims-shared';

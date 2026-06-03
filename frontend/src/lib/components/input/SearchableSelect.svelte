@@ -1,7 +1,7 @@
 <script lang="ts">
   import { floating } from '$lib/actions/floating';
   import { normalizeText } from '$lib/utils';
-  import FieldGroup from './form/FieldGroup.svelte';
+  import FieldGroup from './FieldGroup.svelte';
 
   let {
     options,

@@ -192,7 +192,7 @@ This folder contains components for displaying collections of items.
 - `filters/` — UI for narrowing which items show: filter sidebar, chips, drawers.
 ```
 
-### `layout/`
+### `layout/` - DONE ✅
 
 Move site chrome and page-level layout primitives from the top level, split into two subfolders.
 
@@ -265,7 +265,7 @@ citation tooltips and references that get layered onto it.
 These components only do display; editing markdown and citations lives elsewhere.
 ```
 
-### `input/`
+### `input/` - DONE ✅
 
 Input components — anything that captures user input, from a bare `TextField` to a composed `MarkdownTextArea` or `WikilinkAutocomplete`. Named `input/` rather than `form/` because not all of these live in a `<form>` (e.g. `SearchableSelect` in a filter sidebar, `MarkdownTextArea` in a comment box); "input" follows MUI's "Inputs" convention, which spans both bare controls and rich composed widgets (MUI files Autocomplete there too). Apply an internal split that gives each input subsystem its own subfolder.
 

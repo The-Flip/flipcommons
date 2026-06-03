@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import FieldGroup from './FieldGroup.svelte';
-  import WikilinkAutocomplete from './WikilinkAutocomplete.svelte';
+  import FieldGroup from '$lib/components/input/FieldGroup.svelte';
+  import WikilinkAutocomplete from '$lib/components/input/wikilink/WikilinkAutocomplete.svelte';
   import { fetchLinkTypes } from '$lib/api/link-types';
-  import { detectTrigger, spliceLink } from './wikilink-helpers';
+  import { detectTrigger, spliceLink } from '$lib/components/input/wikilink/wikilink-helpers';
   import { floating } from '$lib/actions/floating';
   import {
     toggleMarker,

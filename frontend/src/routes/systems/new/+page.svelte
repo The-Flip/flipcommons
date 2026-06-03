@@ -2,7 +2,7 @@
   import client from '$lib/api/client';
   import type { SystemCreateSchema } from '$lib/api/schema';
   import CreatePage from '$lib/components/CreatePage.svelte';
-  import SearchableSelect from '$lib/components/SearchableSelect.svelte';
+  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
   import {
     fetchManufacturerOptions,
     type SystemEditOption,

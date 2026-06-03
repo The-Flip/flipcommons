@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import SearchableSelect from '$lib/components/SearchableSelect.svelte';
+  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
   import type { SectionEditorProps } from './editor-contract';
   import { publicIdSetChanged } from '$lib/edit-helpers';
   import type { FieldErrors } from '$lib/api/parse-api-error';

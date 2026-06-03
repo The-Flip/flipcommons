@@ -1,6 +1,9 @@
 <script lang="ts">
   import client from '$lib/api/client';
-  import { createDebouncedSearch, formatCitationResult } from '../search-helpers';
+  import {
+    createDebouncedSearch,
+    formatCitationResult,
+  } from '$lib/components/input/dropdown/search-helpers';
   import {
     suppressChildResults,
     createChildByIdentifier,
@@ -9,9 +12,9 @@
     type ExtractionDraft,
   } from './citation-types';
   import type { CitationSourceSearchResponseSchema } from '$lib/api/schema';
-  import DropdownHeader from '../DropdownHeader.svelte';
-  import DropdownItem from '../DropdownItem.svelte';
-  import DropdownSearchInput from '../DropdownSearchInput.svelte';
+  import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
+  import DropdownItem from '$lib/components/input/dropdown/DropdownItem.svelte';
+  import DropdownSearchInput from '$lib/components/input/dropdown/DropdownSearchInput.svelte';
 
   let {
     onsourceselected,

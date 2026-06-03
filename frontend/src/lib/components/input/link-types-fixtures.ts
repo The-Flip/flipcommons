@@ -1,5 +1,5 @@
 /**
- * Shared mock data for wikilink autocomplete DOM tests.
+ * Shared mock data for link-type autocomplete DOM tests.
  *
  * Vitest's vi.mock factories are hoisted above imports, so they can't
  * reference normal imports. Test files use an async factory with a dynamic

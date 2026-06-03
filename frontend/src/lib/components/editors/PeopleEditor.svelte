@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import type { CreditSchema } from '$lib/api/schema';
-  import SearchableSelect from '$lib/components/SearchableSelect.svelte';
+  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
   import { creditsChanged } from '$lib/edit-helpers';
   import type { SectionEditorProps } from './editor-contract';
   import {

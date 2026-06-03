@@ -1,8 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import Fieldset from '$lib/components/form/Fieldset.svelte';
-  import NumberField from '$lib/components/form/NumberField.svelte';
-  import TextField from '$lib/components/form/TextField.svelte';
+  import Fieldset from '$lib/components/input/Fieldset.svelte';
+  import NumberField from '$lib/components/input/NumberField.svelte';
+  import TextField from '$lib/components/input/TextField.svelte';
   import { fetchFieldConstraints, fc, type FieldConstraints } from '$lib/field-constraints';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { SectionEditorProps } from './editor-contract';

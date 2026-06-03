@@ -1,7 +1,7 @@
 <script lang="ts">
   import client from '$lib/api/client';
   import type { ParentContext, ExtractionDraft } from './citation-types';
-  import DropdownHeader from '../DropdownHeader.svelte';
+  import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
 
   type SourceType = 'book' | 'magazine' | 'web';
 

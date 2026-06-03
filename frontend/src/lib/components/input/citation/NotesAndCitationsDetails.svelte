@@ -1,6 +1,6 @@
 <script lang="ts">
-  import EditCitationField from '$lib/components/form/EditCitationField.svelte';
-  import TextField from '$lib/components/form/TextField.svelte';
+  import EditCitationField from './EditCitationField.svelte';
+  import TextField from '$lib/components/input/TextField.svelte';
   import type { EditCitationSelection } from '$lib/edit-citation';
 
   interface Props {

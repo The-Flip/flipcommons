@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CitationInstanceDraft } from './citation-types';
-  import DropdownHeader from '../DropdownHeader.svelte';
+  import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
 
   let {
     draft,

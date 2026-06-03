@@ -1,8 +1,8 @@
 <script lang="ts">
   import client from '$lib/api/client';
   import { type EditCitationSelection } from '$lib/edit-citation';
-  import FieldGroup from './FieldGroup.svelte';
-  import CitationAutocomplete from './citation/CitationAutocomplete.svelte';
+  import FieldGroup from '$lib/components/input/FieldGroup.svelte';
+  import CitationAutocomplete from './CitationAutocomplete.svelte';
 
   let {
     citation = $bindable<EditCitationSelection | null>(null),

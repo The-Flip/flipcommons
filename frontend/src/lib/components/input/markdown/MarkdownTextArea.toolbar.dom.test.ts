@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import MarkdownTextArea from './MarkdownTextArea.svelte';
 
 vi.mock('$lib/api/link-types', async () => {
-  const f = await import('./link-types-fixtures');
+  const f = await import('$lib/components/input/link-types-fixtures');
   return {
     fetchLinkTypes: vi.fn().mockResolvedValue(f.LINK_TYPES),
     searchLinkTargets: vi.fn().mockResolvedValue({ results: f.SEARCH_RESULTS }),

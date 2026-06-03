@@ -3,7 +3,7 @@
   import { type EditCitationSelection, buildEditCitationRequest } from '$lib/edit-citation';
   import type { SaveMeta } from '$lib/components/editors/save-model-claims';
   import Button from '$lib/components/ui/Button.svelte';
-  import NotesAndCitationsDetails from './NotesAndCitationsDetails.svelte';
+  import NotesAndCitationsDetails from '$lib/components/input/citation/NotesAndCitationsDetails.svelte';
 
   let {
     error = '',

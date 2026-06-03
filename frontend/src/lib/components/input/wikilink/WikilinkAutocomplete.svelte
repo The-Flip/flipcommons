@@ -3,11 +3,11 @@
   import { fetchLinkTypes, searchLinkTargets } from '$lib/api/link-types';
   import type { LinkType, LinkTarget } from '$lib/api/link-types';
   import { formatLinkText } from './wikilink-helpers';
-  import { createDebouncedSearch } from './search-helpers';
-  import CitationAutocomplete from './citation/CitationAutocomplete.svelte';
-  import DropdownHeader from './DropdownHeader.svelte';
-  import DropdownItem from './DropdownItem.svelte';
-  import DropdownSearchInput from './DropdownSearchInput.svelte';
+  import { createDebouncedSearch } from '$lib/components/input/dropdown/search-helpers';
+  import CitationAutocomplete from '$lib/components/input/citation/CitationAutocomplete.svelte';
+  import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
+  import DropdownItem from '$lib/components/input/dropdown/DropdownItem.svelte';
+  import DropdownSearchInput from '$lib/components/input/dropdown/DropdownSearchInput.svelte';
 
   let {
     oncomplete,

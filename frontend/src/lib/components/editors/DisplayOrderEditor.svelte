@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import NumberField from '$lib/components/form/NumberField.svelte';
+  import NumberField from '$lib/components/input/NumberField.svelte';
   import type { SectionEditorProps } from './editor-contract';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { FieldErrors } from '$lib/api/parse-api-error';

@@ -2,8 +2,8 @@
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import Button from '$lib/components/ui/Button.svelte';
-  import NotesAndCitationsDetails from './NotesAndCitationsDetails.svelte';
-  import TextField from '$lib/components/form/TextField.svelte';
+  import NotesAndCitationsDetails from '$lib/components/input/citation/NotesAndCitationsDetails.svelte';
+  import TextField from '$lib/components/input/TextField.svelte';
   import { buildEditCitationRequest, type EditCitationSelection } from '$lib/edit-citation';
   import { pageTitle } from '$lib/constants';
   import { resolveHref } from '$lib/utils';

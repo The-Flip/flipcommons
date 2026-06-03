@@ -1,8 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import SearchableSelect from '$lib/components/SearchableSelect.svelte';
-  import Fieldset from '$lib/components/form/Fieldset.svelte';
-  import NumberField from '$lib/components/form/NumberField.svelte';
+  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
+  import Fieldset from '$lib/components/input/Fieldset.svelte';
+  import NumberField from '$lib/components/input/NumberField.svelte';
   import { diffScalarFields, publicIdSetChanged } from '$lib/edit-helpers';
   import { fetchFieldConstraints, fc, type FieldConstraints } from '$lib/field-constraints';
   import type { SectionEditorProps } from './editor-contract';

@@ -10,10 +10,10 @@ import {
   IPDB_CHILD,
   BOOK_CHILDREN,
   BOOK_DETAIL_RESPONSE,
-} from './citation/citation-fixtures';
+} from '$lib/components/input/citation/citation-fixtures';
 
 vi.mock('$lib/api/link-types', async () => {
-  const f = await import('./link-types-fixtures');
+  const f = await import('$lib/components/input/link-types-fixtures');
   return {
     fetchLinkTypes: vi.fn().mockResolvedValue(f.LINK_TYPES),
     searchLinkTargets: vi.fn().mockResolvedValue({ results: f.SEARCH_RESULTS }),

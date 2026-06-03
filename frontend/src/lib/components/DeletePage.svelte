@@ -1,7 +1,7 @@
 <script lang="ts" generics="TResponse extends { changeset_id: number }">
   import { goto } from '$app/navigation';
   import Button from '$lib/components/ui/Button.svelte';
-  import NotesAndCitationsDetails from './NotesAndCitationsDetails.svelte';
+  import NotesAndCitationsDetails from '$lib/components/input/citation/NotesAndCitationsDetails.svelte';
   import { pageTitle } from '$lib/constants';
   import type { DeleteOutcome } from '$lib/delete-flow';
   import type { EditCitationSelection } from '$lib/edit-citation';

@@ -2,8 +2,8 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { untrack } from 'svelte';
-  import TextField from '$lib/components/form/TextField.svelte';
-  import TagInput from '$lib/components/form/TagInput.svelte';
+  import TextField from '$lib/components/input/TextField.svelte';
+  import TagInput from '$lib/components/input/TagInput.svelte';
   import type { SectionEditorProps } from './editor-contract';
   import { reconcileSlug, slugifyForCatalog } from '$lib/create-form';
   import { diffScalarFields, stringSetChanged } from '$lib/edit-helpers';

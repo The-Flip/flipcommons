@@ -1,10 +1,10 @@
 <script lang="ts">
   import client from '$lib/api/client';
-  import { createDebouncedSearch } from '../search-helpers';
+  import { createDebouncedSearch } from '$lib/components/input/dropdown/search-helpers';
   import { createChildByIdentifier, type ParentContext, type ChildSource } from './citation-types';
-  import DropdownHeader from '../DropdownHeader.svelte';
-  import DropdownItem from '../DropdownItem.svelte';
-  import DropdownSearchInput from '../DropdownSearchInput.svelte';
+  import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
+  import DropdownItem from '$lib/components/input/dropdown/DropdownItem.svelte';
+  import DropdownSearchInput from '$lib/components/input/dropdown/DropdownSearchInput.svelte';
 
   let {
     parentContext,
