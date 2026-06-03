@@ -7,7 +7,7 @@
   import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
   import EditSectionMenu from '$lib/components/EditSectionMenu.svelte';
-  import NoResultsCreatePrompt from '$lib/components/NoResultsCreatePrompt.svelte';
+  import NoResultsCreatePrompt from './NoResultsCreatePrompt.svelte';
   import PaginatedListLoader from './PaginatedListLoader.svelte';
   import type { EditSectionMenuItem } from '$lib/components/edit-section-menu';
   import { SEARCH_THRESHOLD } from '$lib/components/collections/grid/search-threshold';

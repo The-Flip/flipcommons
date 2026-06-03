@@ -5,8 +5,8 @@
   import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
   import NoResultsCreatePrompt from './NoResultsCreatePrompt.svelte';
-  import EditSectionMenu from './EditSectionMenu.svelte';
-  import type { EditSectionMenuItem } from './edit-section-menu';
+  import EditSectionMenu from '$lib/components/EditSectionMenu.svelte';
+  import type { EditSectionMenuItem } from '$lib/components/edit-section-menu';
   import { SEARCH_THRESHOLD } from '$lib/components/collections/grid/search-threshold';
   import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
