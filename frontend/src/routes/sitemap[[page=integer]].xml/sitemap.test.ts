@@ -97,6 +97,27 @@ describe('GET /sitemap.xml', () => {
     expect(xml).toContain('<lastmod>2026-02-01T00:00:00Z</lastmod>');
   });
 
+  it('includes the catalog listing page with the feed max_lastmod', async () => {
+    setApiResponse({
+      feeds: [
+        {
+          kind: 'title',
+          entries: [
+            { slug: 't1', lastmod: '2026-01-01T00:00:00Z' },
+            { slug: 't2', lastmod: '2026-02-01T00:00:00Z' },
+          ],
+          detail_excluded_slugs: [],
+          max_lastmod: '2026-02-01T00:00:00Z',
+        },
+      ],
+    });
+    const response = await callGet();
+    const xml = await response.text();
+    expect(xml).toMatch(
+      /<loc>https:\/\/flipcommons\.org\/titles<\/loc>\s*<lastmod>2026-02-01T00:00:00Z<\/lastmod>/,
+    );
+  });
+
   // Load-bearing test for the canonical-URL invariant: single-Model Title
   // members are excluded from `/models/[slug]` but kept in /edit-history
   // and /sources.

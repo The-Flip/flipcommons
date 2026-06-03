@@ -57,6 +57,11 @@
 <JsonLd data={jsonLdGraph([webSite(page.url)])} />
 
 <div class="home">
+  <header class="hero">
+    <p class="hero-kicker">Welcome to the</p>
+    <h1 class="hero-title">Flipcommons Pinball Encyclopedia</h1>
+  </header>
+
   <form class="hero-search" onsubmit={handleSubmit}>
     <input
       type="search"
@@ -108,6 +113,21 @@
 </div>
 
 <style>
+  .hero {
+    text-align: center;
+    margin-bottom: var(--size-6);
+  }
+
+  .hero-kicker {
+    font-size: var(--font-size-2);
+    color: var(--color-text-muted);
+    margin: 0 0 var(--size-1);
+  }
+
+  .hero-title {
+    margin: 0;
+  }
+
   .hero-search {
     max-width: 36rem;
     margin: 0 auto var(--size-5);

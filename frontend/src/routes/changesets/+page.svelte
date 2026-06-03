@@ -165,7 +165,7 @@
 
   <div class="filter-bar">
     <label class="filter-field">
-      <span class="filter-label">Entity type</span>
+      <span class="filter-label">Entry type</span>
       <select bind:value={entityType}>
         <option value="">All types</option>
         {#each CATALOG_ENTITY_KEYS.map((k) => ENTITY_META[k]) as et (et.entity_type)}
@@ -307,9 +307,7 @@
   }
 
   .page-header h1 {
-    font-size: var(--font-size-5);
-    font-weight: 700;
-    color: var(--color-text);
+    font-size: var(--font-size-5); /* intentionally smaller — changelog is a power-user surface */
     margin: 0;
   }
 

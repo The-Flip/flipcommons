@@ -1,6 +1,7 @@
 <script lang="ts" generics="T">
   import type { Snippet } from 'svelte';
-  import ScrollableGrid from './ScrollableGrid.svelte';
+  import CardGrid from './CardGrid.svelte';
+  import InfiniteScroll from './InfiniteScroll.svelte';
 
   const BATCH_SIZE = 100;
 
@@ -37,11 +38,13 @@
   <p class="count">{countLabel}</p>
 {/if}
 
-<ScrollableGrid {hasMore} onSentinel={() => (visibleCount += BATCH_SIZE)}>
-  {#each visibleItems as item (item)}
-    {@render children(item)}
-  {/each}
-</ScrollableGrid>
+<InfiniteScroll {hasMore} onSentinel={() => (visibleCount += BATCH_SIZE)}>
+  <CardGrid>
+    {#each visibleItems as item (item)}
+      {@render children(item)}
+    {/each}
+  </CardGrid>
+</InfiniteScroll>
 
 <style>
   .count {

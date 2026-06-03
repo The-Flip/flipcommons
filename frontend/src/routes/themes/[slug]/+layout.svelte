@@ -8,6 +8,7 @@
     HIERARCHICAL_TAXONOMY_EDIT_SECTIONS,
     type HierarchicalTaxonomyEditSectionKey,
   } from '$lib/components/editors/hierarchical-taxonomy-edit-sections';
+  import { listingMeta } from '$lib/entities/schema-org';
 
   let { data, children } = $props();
   let theme = $derived(data.profile);
@@ -24,7 +25,7 @@
   let childHeading = 'Sub-themes';
 
   async function loadParentOptions() {
-    const { data: themes } = await client.GET('/api/themes/');
+    const { data: themes } = await client.GET('/api/themes/all/');
     if (!themes) return [];
     return themes.map((t) => ({
       slug: t.slug,
@@ -36,7 +37,7 @@
 <TaxonomyDetailBaseLayout
   profile={theme}
   jsonLd={data.jsonLd}
-  parentLabel="Themes"
+  parentLabel={listingMeta('theme').breadcrumb}
   basePath={BASE_PATH}
   {sections}
   {aliases}

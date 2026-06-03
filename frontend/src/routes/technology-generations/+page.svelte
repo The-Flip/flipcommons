@@ -1,22 +1,11 @@
 <script lang="ts">
-  import client from '$lib/api/client';
-  import { createAsyncLoader } from '$lib/async-loader.svelte';
   import GroupedTaxonomyList from '$lib/components/GroupedTaxonomyList.svelte';
   import TaxonomyListPage from '$lib/components/TaxonomyListPage.svelte';
 
-  const loader = createAsyncLoader(async () => {
-    const { data } = await client.GET('/api/technology-generations/');
-    return data ?? [];
-  }, []);
+  let { data } = $props();
 </script>
 
-<TaxonomyListPage
-  catalogKey="technology-generation"
-  items={loader.data}
-  loading={loader.loading}
-  error={loader.error}
-  canCreate
->
+<TaxonomyListPage catalogKey="technology-generation" items={data.items} canCreate>
   {#snippet headerSnippet()}
     <p class="overview">
       A <strong>technology generation</strong> is a major era in how pinball machines were built —

@@ -59,17 +59,9 @@ Public routes must render meaningful HTML server-side, not depend on client-side
 
 Detail pages (`/titles/[slug]`, `/models/[slug]`, and the rest of the catalog detail routes) declare `ssr = true` on their `+layout.ts`. Edit subroutes correctly declare `ssr = false` — non-indexable, so it doesn't matter.
 
-#### SSR routes not yet done
+#### Catalog listing pages ✅ DONE
 
-##### Catalog listing pages are CSR-only
-
-[`/titles/+page.ts:2`](frontend/src/routes/titles/+page.ts#L2),[`/manufacturers/+page.ts:2`](frontend/src/routes/manufacturers/+page.ts#L2), [`/corporate-entities/+page.ts:2`](frontend/src/routes/corporate-entities/+page.ts#L2), and the rest of the listings export `ssr = false`.
-
-This was a deliberate performance choice; the listings hydrate a large client-side slug (e.g. all titles) so filtering/sorting is instant — but the cost is that they currently don't render meaningful HTML for crawlers. Fixing isn't just flipping the flag: the page's data-loading and rendering model is built around having the full dataset client-side.
-
-Fixing this isn't urgent; the listing pages are not super important for driving search traffic, unlike detail pages.
-
-**Decision for now:** listings classify as non-indexable. The sitemap of detail pages covers discovery, so the cost of staying out of the index is small. We'll revisit when the listing data-shape problem is solved (a lighter SSR data path, or a page-architecture change) — at that point the classification flips by adding listings to the indexable side of the table in [`RouteWalking.md`](RouteWalking.md), no other changes needed.
+All catalog listing pages (`/titles`, `/manufacturers`, the glossary lists, the grouped taxonomies) are SSR and indexable. `catalog-listing` returns `true` from `isSearchEngineIndexable()`, so listings now appear in the sitemap (with a `<lastmod>` derived from the entity feed's `max_lastmod`), drop the `noindex` tag, and are covered by the indexable-routes-are-SSR enforcement test. Each emits a per-entity `<title>`/description, canonical, OG/Twitter and a `CollectionPage` + `ItemList` + `BreadcrumbList` `@graph` — see [JsonLdAndFriends.md](JsonLdAndFriends.md#entity-listing-pages--done).
 
 ##### No enforcement test
 
@@ -123,7 +115,9 @@ See [JsonLdAndFriends.md](JsonLdAndFriends.md)
 
 ### Faceted and paginated listing URLs
 
-Listing pages like `/titles?manufacturer=stern&era=ss&page=2` can multiply into thousands of low-value URL combinations, wasting crawl budget and creating thin/duplicate content problems. Strategies include: canonicalizing filtered/paginated views back to the base listing, applying `noindex` to filter combinations, or restricting which combinations are linkable.
+Listing pages like `/titles?manufacturer=stern&era=ss&page=2` can multiply into thousands of low-value URL combinations, wasting crawl budget and creating thin/duplicate content problems.
+
+**Resolved:** every query/pagination variant emits a `<link rel="canonical">` to the bare listing — `MetaTags` runs the page URL through `buildCanonicalUrl`, which strips the query string and hash. Filtered/paginated views therefore consolidate onto one indexable URL per listing; no separate `noindex` on filter combinations is needed.
 
 ### Search Console operations
 

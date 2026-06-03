@@ -54,7 +54,6 @@ from ..models import (
     DisplayType,
     GameFormat,
     GameplayFeature,
-    Location,
     MachineModel,
     MachineModelGameplayFeature,
     ModelAbbreviation,
@@ -145,8 +144,6 @@ class ModelListItemSchema(Schema):
     technology_generation: EntityRef | None = None
     display_type: EntityRef | None = None
     ipdb_id: int | None = None
-    ipdb_rating: float | None = None
-    pinside_rating: float | None = None
     themes: list[EntityRef] = []
     thumbnail_url: str | None = None
 
@@ -183,8 +180,6 @@ class ModelDetailSchema(CatalogDetailSchema):
     ipdb_id: int | None = None
     opdb_id: str | None = None
     pinside_id: str | None = None
-    ipdb_rating: float | None = None
-    pinside_rating: float | None = None
     abbreviations: list[str] = []
     extra_data: JsonBody
     credits: list[CreditSchema]
@@ -292,10 +287,6 @@ def _build_model_list_qs(
         "-name": [F("name").desc()],
         "year": [F("year").asc(nulls_last=True)],
         "-year": [F("year").desc(nulls_last=True)],
-        "-ipdb_rating": [F("ipdb_rating").desc(nulls_last=True)],
-        "-pinside_rating": [F("pinside_rating").desc(nulls_last=True)],
-        "ipdb_rating": [F("ipdb_rating").asc(nulls_last=True)],
-        "pinside_rating": [F("pinside_rating").asc(nulls_last=True)],
     }
     order_exprs = ordering_map.get(ordering, ordering_map["-year"])
     qs = qs.order_by(*order_exprs, "name")
@@ -334,10 +325,6 @@ def _serialize_model_list(
             else None
         ),
         ipdb_id=pm.ipdb_id,
-        ipdb_rating=float(pm.ipdb_rating) if pm.ipdb_rating is not None else None,
-        pinside_rating=(
-            float(pm.pinside_rating) if pm.pinside_rating is not None else None
-        ),
         themes=[EntityRef(name=t.name, public_id=t.public_id) for t in pm.themes.all()],
         thumbnail_url=thumbnail_url,
     )
@@ -445,10 +432,6 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         ipdb_id=pm.ipdb_id,
         opdb_id=pm.opdb_id,
         pinside_id=pm.pinside_id,
-        ipdb_rating=float(pm.ipdb_rating) if pm.ipdb_rating is not None else None,
-        pinside_rating=(
-            float(pm.pinside_rating) if pm.pinside_rating is not None else None
-        ),
         abbreviations=[a.value for a in pm.abbreviations.all()],
         extra_data=pm.extra_data or {},
         credits=credits,
@@ -662,45 +645,6 @@ def list_models(
     )
     min_rank = get_minimum_display_rank()
     return [_serialize_model_list(pm, min_rank=min_rank) for pm in qs]
-
-
-def _build_search_text(pm: MachineModel) -> str:
-    """Build a pipe-separated search text from all related entity names."""
-    parts: list[str] = []
-    if pm.corporate_entity and pm.corporate_entity.manufacturer:
-        mfr = pm.corporate_entity.manufacturer
-        parts.append(mfr.name)
-        for entity in mfr.entities.all():
-            parts.append(entity.name)
-            for cel in entity.locations.all():
-                cur: Location | None = cel.location
-                while cur is not None:
-                    if cur.name:
-                        parts.append(cur.name)
-                    cur = cur.parent
-    if pm.system:
-        parts.append(pm.system.name)
-    if pm.technology_generation:
-        parts.append(pm.technology_generation.name)
-    if pm.display_type:
-        parts.append(pm.display_type.name)
-    if pm.display_subtype:
-        parts.append(pm.display_subtype.name)
-    if pm.cabinet:
-        parts.append(pm.cabinet.name)
-    if pm.game_format:
-        parts.append(pm.game_format.name)
-    for theme in pm.themes.all():
-        parts.append(theme.name)
-    for tag in pm.tags.all():
-        parts.append(tag.name)
-    for gf in pm.gameplay_features.all():
-        parts.append(gf.name)
-    for credit in pm.credits.all():
-        parts.append(credit.person.name)
-    for abbr in pm.abbreviations.all():
-        parts.append(abbr.value)
-    return " | ".join(parts)
 
 
 class ModelRecentSchema(Schema):

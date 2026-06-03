@@ -13,7 +13,6 @@
   import ModelHierarchy from '$lib/components/ModelHierarchy.svelte';
   import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
-  import RatingsSidebarSection from '$lib/components/RatingsSidebarSection.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
   import SidebarList from '$lib/components/SidebarList.svelte';
@@ -265,8 +264,6 @@
       <SidebarSection heading="Specifications">
         <ModelSpecsSidebar model={md} />
       </SidebarSection>
-
-      <RatingsSidebarSection ipdbRating={md.ipdb_rating} pinsideRating={md.pinside_rating} />
 
       {#if md.variants.length > 0}
         <SidebarSection heading="Variants">

@@ -7,7 +7,7 @@
 import client from '$lib/api/client';
 
 export type SystemEditOption = {
-  slug: string;
+  value: string;
   label: string;
   count: number;
 };
@@ -20,7 +20,7 @@ export function fetchManufacturerOptions(): Promise<SystemEditOption[]> {
     cachedManufacturers = client
       .GET('/api/manufacturers/all/')
       .then(({ data }) =>
-        (data ?? []).map((m) => ({ slug: m.slug, label: m.name, count: m.model_count })),
+        (data ?? []).map((m) => ({ value: m.slug, label: m.name, count: m.model_count })),
       )
       .catch(() => {
         cachedManufacturers = null;
@@ -36,7 +36,7 @@ export function fetchTechnologySubgenerationOptions(): Promise<SystemEditOption[
       .GET('/api/technology-generations/')
       .then(({ data }) =>
         (data ?? []).flatMap((g) =>
-          g.subgenerations.map((s) => ({ slug: s.slug, label: s.name, count: 0 })),
+          g.subgenerations.map((s) => ({ value: s.slug, label: s.name, count: 0 })),
         ),
       )
       .catch(() => {

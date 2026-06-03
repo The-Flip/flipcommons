@@ -32,8 +32,6 @@ const MOCK_MODEL = {
   ipdb_id: null,
   opdb_id: null,
   pinside_id: null,
-  ipdb_rating: null,
-  pinside_rating: null,
   variant_of: null,
   variants: [],
   variant_siblings: [],

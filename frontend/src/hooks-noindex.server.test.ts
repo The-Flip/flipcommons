@@ -39,6 +39,7 @@ describe('noindexHandle', () => {
     ['/', false],
     ['/about', false],
     ['/titles/[slug]', false],
+    ['/titles', false], // catalog listing — indexable since the SSR conversion
     // Listed non-indexable.
     ['/login', true],
     ['/search', true],
@@ -47,7 +48,6 @@ describe('noindexHandle', () => {
     ['/admin/dashboard', true],
     ['/kiosk/edit', true],
     // Catalog non-indexable kinds.
-    ['/titles', true],
     ['/titles/new', true],
     ['/titles/[slug]/edit', true],
     ['/titles/[slug]/delete', true],

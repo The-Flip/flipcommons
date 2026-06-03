@@ -14,7 +14,8 @@ Auto-discovered via the ``routers`` list convention in config/api.py.
 
 from __future__ import annotations
 
-from ninja import Router
+from django.http import HttpRequest, HttpResponse
+from ninja import Query, Router
 
 from apps.catalog.models import (
     Cabinet,
@@ -57,30 +58,61 @@ from .machine_models import (
 )
 from .manufacturers import (
     ManufacturerDetailSchema,
+    ManufacturerFacetsPageSchema,
+    ManufacturerFilterQuerySchema,
     _manufacturer_qs,
     _serialize_manufacturer_detail,
+    manufacturer_facets_response,
 )
 from .people import PersonDetailSchema, _person_qs, _serialize_person_detail
 from .series import SeriesDetailSchema, _serialize_series_detail, _series_detail_qs
 from .systems import SystemDetailSchema, _serialize_system_detail, _system_detail_qs
 from .taxonomy import (
     CreditRoleDetailSchema,
+    DisplaySubtypeDetailSchema,
     RewardTypeDetailSchema,
     TaxonomySchema,
+    TechnologySubgenerationDetailSchema,
     _credit_role_detail_qs,
     _reward_type_detail_qs,
     _serialize_credit_role_detail,
+    _serialize_display_subtype,
     _serialize_reward_type_detail,
     _serialize_taxonomy,
+    _serialize_technology_subgeneration,
     _taxonomy_detail_qs,
 )
 from .themes import ThemeDetailSchema
 from .themes import _detail_qs as _theme_detail_qs
 from .themes import _serialize_detail as _serialize_theme_detail
-from .titles import TitleDetailSchema, _serialize_title_detail
+from .titles import (
+    TitleDetailSchema,
+    TitleFacetsPageSchema,
+    TitleFilterQuerySchema,
+    _serialize_title_detail,
+    title_facets_response,
+)
 from .titles import _detail_qs as _title_detail_qs
 
 pages_router = Router(tags=["private"])
+
+
+@pages_router.get("/titles", response=TitleFacetsPageSchema)
+def titles_page_facets(
+    request: HttpRequest, filters: Query[TitleFilterQuerySchema]
+) -> HttpResponse:
+    """Facet option lists for the /titles SSR page (streamed after the cards;
+    no-filter response cached). Cards come from ``GET /api/titles/``."""
+    return title_facets_response(filters.to_filters())
+
+
+@pages_router.get("/manufacturers", response=ManufacturerFacetsPageSchema)
+def manufacturers_page_facets(
+    request: HttpRequest, filters: Query[ManufacturerFilterQuerySchema]
+) -> HttpResponse:
+    """Facet option lists for the /manufacturers SSR page (streamed after the cards;
+    no-filter response cached). Cards come from ``GET /api/manufacturers/``."""
+    return manufacturer_facets_response(filters.to_filters())
 
 
 # ---------------------------------------------------------------------------
@@ -179,11 +211,13 @@ register_entity_detail_page(
 
 
 # ---------------------------------------------------------------------------
-# Taxonomy entities — share queryset builder, serializer, and response
-# schema. Listed explicitly rather than looped so the factory's
-# ``[ModelT, SchemaT]`` type variables stay enforced at each call site;
-# a loop with a union-typed iteration variable widens ``ModelT`` and
-# loses the per-call type binding.
+# Taxonomy entities — the flat ones share the queryset builder, serializer,
+# and ``TaxonomySchema``. The two single-parent subtaxonomies (DisplaySubtype,
+# TechnologySubgeneration) override the serializer + schema to expose their
+# parent ref (for the ``Parent › Child`` breadcrumb). Listed explicitly rather
+# than looped so the factory's ``[ModelT, SchemaT]`` type variables stay
+# enforced at each call site; a loop with a union-typed iteration variable
+# widens ``ModelT`` and loses the per-call type binding.
 # ---------------------------------------------------------------------------
 
 
@@ -211,9 +245,11 @@ register_entity_detail_page(
 register_entity_detail_page(
     pages_router,
     DisplaySubtype,
-    detail_qs=lambda: _taxonomy_detail_qs(DisplaySubtype),
-    serialize_detail=_serialize_taxonomy,
-    response_schema=TaxonomySchema,
+    detail_qs=lambda: _taxonomy_detail_qs(DisplaySubtype).select_related(
+        "display_type"
+    ),
+    serialize_detail=_serialize_display_subtype,
+    response_schema=DisplaySubtypeDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
@@ -232,7 +268,9 @@ register_entity_detail_page(
 register_entity_detail_page(
     pages_router,
     TechnologySubgeneration,
-    detail_qs=lambda: _taxonomy_detail_qs(TechnologySubgeneration),
-    serialize_detail=_serialize_taxonomy,
-    response_schema=TaxonomySchema,
+    detail_qs=lambda: _taxonomy_detail_qs(TechnologySubgeneration).select_related(
+        "technology_generation"
+    ),
+    serialize_detail=_serialize_technology_subgeneration,
+    response_schema=TechnologySubgenerationDetailSchema,
 )

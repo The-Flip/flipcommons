@@ -19,8 +19,8 @@ vi.mock('$lib/api/client', () => ({
 vi.mock('$lib/components/editors/system-edit-options', () => ({
   fetchManufacturerOptions: () =>
     Promise.resolve([
-      { slug: 'stern', label: 'Stern', count: 42 },
-      { slug: 'williams', label: 'Williams', count: 9 },
+      { value: 'stern', label: 'Stern', count: 42 },
+      { value: 'williams', label: 'Williams', count: 9 },
     ]),
 }));
 

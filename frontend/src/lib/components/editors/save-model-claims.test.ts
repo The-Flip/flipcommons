@@ -45,16 +45,16 @@ describe('saveModelClaims', () => {
   it('extracts detail string from legacy error', async () => {
     PATCH.mockResolvedValue({
       data: undefined,
-      error: { detail: 'Ensure this value is less than or equal to 10.' },
+      error: { detail: 'Ensure this value is less than or equal to 999999.' },
     });
 
     const result = await saveModelClaims('medieval-madness', {
-      fields: { pinside_rating: 10234 },
+      fields: { ipdb_id: 10234567 },
     });
 
     expect(result).toEqual({
       ok: false,
-      error: 'Ensure this value is less than or equal to 10.',
+      error: 'Ensure this value is less than or equal to 999999.',
       fieldErrors: {},
     });
     expect(invalidateAll).not.toHaveBeenCalled();

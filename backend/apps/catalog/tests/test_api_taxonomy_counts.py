@@ -74,7 +74,7 @@ class TestGameplayFeatureTitleCount:
         GameplayFeature.objects.create(name="Multiball", slug="multiball")
         resp = client.get("/api/gameplay-features/")
         assert resp.status_code == 200
-        body = resp.json()
+        body = resp.json()["items"]
         assert "title_count" in body[0]
         assert "model_count" not in body[0]
 
@@ -88,7 +88,7 @@ class TestGameplayFeatureTitleCount:
         m1.gameplay_features.add(gf)
         m2.gameplay_features.add(gf)
         resp = client.get("/api/gameplay-features/")
-        row = next(r for r in resp.json() if r["slug"] == "multiball")
+        row = next(r for r in resp.json()["items"] if r["slug"] == "multiball")
         assert row["title_count"] == 1
 
     def test_variants_excluded(self, client):
@@ -99,7 +99,7 @@ class TestGameplayFeatureTitleCount:
         # Attach feature only to the variant; primary is not tagged.
         variant.gameplay_features.add(gf)
         resp = client.get("/api/gameplay-features/")
-        row = next(r for r in resp.json() if r["slug"] == "multiball")
+        row = next(r for r in resp.json()["items"] if r["slug"] == "multiball")
         # Variant doesn't count → no titles reach the feature.
         assert row["title_count"] == 0
 
@@ -109,7 +109,7 @@ class TestGameplayFeatureTitleCount:
         m = _model(title, "Funhouse", status=EntityStatus.DELETED)
         m.gameplay_features.add(gf)
         resp = client.get("/api/gameplay-features/")
-        row = next(r for r in resp.json() if r["slug"] == "multiball")
+        row = next(r for r in resp.json()["items"] if r["slug"] == "multiball")
         assert row["title_count"] == 0
 
     def test_inactive_titles_excluded(self, client):
@@ -118,7 +118,7 @@ class TestGameplayFeatureTitleCount:
         m = _model(title, "Funhouse")
         m.gameplay_features.add(gf)
         resp = client.get("/api/gameplay-features/")
-        row = next(r for r in resp.json() if r["slug"] == "multiball")
+        row = next(r for r in resp.json()["items"] if r["slug"] == "multiball")
         assert row["title_count"] == 0
 
     def test_rollup_unions_descendants(self, client):
@@ -136,7 +136,9 @@ class TestGameplayFeatureTitleCount:
         _model(title_a, "Game A").gameplay_features.add(child_a)
         _model(title_b, "Game B").gameplay_features.add(child_b)
 
-        rows = {r["slug"]: r for r in client.get("/api/gameplay-features/").json()}
+        rows = {
+            r["slug"]: r for r in client.get("/api/gameplay-features/").json()["items"]
+        }
         assert rows["two-ball"]["title_count"] == 1
         assert rows["three-ball"]["title_count"] == 1
         assert rows["multiball"]["title_count"] == 2
@@ -156,7 +158,9 @@ class TestGameplayFeatureTitleCount:
         m.gameplay_features.add(child_a)
         m.gameplay_features.add(child_b)
 
-        rows = {r["slug"]: r for r in client.get("/api/gameplay-features/").json()}
+        rows = {
+            r["slug"]: r for r in client.get("/api/gameplay-features/").json()["items"]
+        }
         child_sum = rows["two-ball"]["title_count"] + rows["three-ball"]["title_count"]
         # Parent <= sum (overlap reduces); strict < proves dedup.
         assert rows["multiball"]["title_count"] < child_sum
@@ -178,7 +182,7 @@ class TestThemeTitleCount:
         Theme.objects.create(name="Medieval", slug="medieval")
         resp = client.get("/api/themes/")
         assert resp.status_code == 200
-        assert "title_count" in resp.json()[0]
+        assert "title_count" in resp.json()["items"][0]
 
     def test_rollup_with_overlap(self, client):
         parent = Theme.objects.create(name="Fantasy", slug="fantasy")
@@ -190,7 +194,7 @@ class TestThemeTitleCount:
         m.themes.add(child)
         m.themes.add(parent)  # title is on parent directly too
 
-        rows = {r["slug"]: r for r in client.get("/api/themes/").json()}
+        rows = {r["slug"]: r for r in client.get("/api/themes/").json()["items"]}
         # Parent rollup = union(direct={title}, child's titles={title}) = 1.
         assert rows["fantasy"]["title_count"] == 1
         assert rows["medieval"]["title_count"] == 1
@@ -209,7 +213,7 @@ class TestFlatTaxonomyTitleCount:
         m = _model(title, "Funhouse")
         _assign_and_save(m, cabinet=cab)
 
-        rows = {r["slug"]: r for r in client.get("/api/cabinets/").json()}
+        rows = {r["slug"]: r for r in client.get("/api/cabinets/").json()["items"]}
         assert rows["floor"]["title_count"] == 1
 
     def test_cabinet_excludes_variants_and_inactives(self, client):
@@ -225,7 +229,7 @@ class TestFlatTaxonomyTitleCount:
         m = _model(other, "Other", status=EntityStatus.DELETED)
         _assign_and_save(m, cabinet=cab)
 
-        rows = {r["slug"]: r for r in client.get("/api/cabinets/").json()}
+        rows = {r["slug"]: r for r in client.get("/api/cabinets/").json()["items"]}
         assert rows["floor"]["title_count"] == 1
 
 
@@ -240,7 +244,7 @@ class TestCreditRoleNoCount:
         CreditRole.objects.create(name="Design", slug="design", display_order=10)
         resp = client.get("/api/credit-roles/")
         assert resp.status_code == 200
-        body = resp.json()
+        body = resp.json()["items"]
         assert body, "expected at least one credit role"
         assert "title_count" not in body[0]
 

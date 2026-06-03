@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import TaxonomyDetailBaseLayout from '$lib/components/TaxonomyDetailBaseLayout.svelte';
+  import type { Crumb } from '$lib/components/Breadcrumb.svelte';
   import {
     SIMPLE_TAXONOMY_EDIT_SECTIONS,
     type SimpleTaxonomyEditSectionDef,
@@ -16,6 +17,7 @@
     parentLabel,
     basePath,
     parentHref,
+    breadcrumbs,
     claimsPath,
     deleteHref,
     createChild,
@@ -27,6 +29,8 @@
     parentLabel: string;
     basePath: string;
     parentHref?: string;
+    /** Multi-level trail shown instead of the single `parentLabel` kicker. */
+    breadcrumbs?: Crumb[];
     claimsPath: SimpleTaxonomyClaimsPath;
     deleteHref?: string;
     createChild?: { href: string; label: string };
@@ -47,6 +51,7 @@
   {parentLabel}
   {basePath}
   {parentHref}
+  {breadcrumbs}
   {sections}
   {deleteHref}
   {createChild}

@@ -2,6 +2,7 @@ import { loadEntityPage } from '$lib/entity-page-loader.server';
 import { title, model } from '$lib/entities';
 import { buildSchemaOrgNode } from '$lib/entities/schema-org';
 import { jsonLdGraph, breadcrumbList, absolutize, type JsonLdNode } from '$lib/components/jsonld';
+import { detailCrumbs } from '$lib/route-metadata.server';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async (event) => {
@@ -26,7 +27,7 @@ export const load: LayoutServerLoad = async (event) => {
     graph.push(buildSchemaOrgNode(profile.model_detail, model, event.url));
   }
 
-  graph.push(breadcrumbList(event.url, [{ label: 'Home', href: '/' }], profile.name));
+  graph.push(breadcrumbList(event.url, detailCrumbs('title'), profile.name));
 
   return { profile, jsonLd: jsonLdGraph(graph) };
 };

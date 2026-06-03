@@ -256,7 +256,7 @@
 
 <Page width="extra-wide">
   <div class="header-row">
-    <Breadcrumb crumbs={[{ label: 'Kiosks', href: '/kiosk/edit' }]} current={idLabel} />
+    <Breadcrumb crumbs={[{ label: 'Kiosks', href: '/kiosk/edit' }]} />
     <output class="save-status">
       {#if saveStatus === 'saving'}Saving…{:else if saveStatus === 'saved'}Saved{/if}
     </output>

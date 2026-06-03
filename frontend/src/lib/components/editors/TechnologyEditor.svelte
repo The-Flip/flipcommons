@@ -6,6 +6,7 @@
   import {
     EMPTY_EDIT_OPTIONS,
     fetchModelEditOptions,
+    toSelectOptions,
     type ModelEditOptions,
   } from './model-edit-options';
   import type { FieldErrors } from '$lib/api/parse-api-error';
@@ -112,7 +113,7 @@
   {#each TECHNOLOGY_FIELDS as fk (fk.field)}
     <SearchableSelect
       label={fk.label}
-      options={editOptions[fk.optionsKey] ?? []}
+      options={toSelectOptions(editOptions[fk.optionsKey] ?? [])}
       bind:selected={fields[fk.field]}
       error={fieldErrors[fk.field] ?? ''}
       allowZeroCount

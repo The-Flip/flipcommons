@@ -7,9 +7,7 @@ from typing import cast
 from django.db.models import Count, F, Prefetch, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
-from ninja.decorators import decorate_view
 from ninja.security import django_auth
 
 from apps.core.authz.markers import requires
@@ -34,6 +32,7 @@ from .edit_claims import (
     validate_scalar_fields,
 )
 from .entity_crud import register_entity_create, register_entity_delete_restore
+from .entity_list import paginated_list_response
 from .helpers import (
     collect_titles,
     serialize_locations,
@@ -62,6 +61,14 @@ class CorporateEntityListItemSchema(Schema):
     year_end: int | None = None
     model_count: int = 0
     locations: list[CorporateEntityLocationSchema] = []
+
+
+class CorporateEntityListSchema(Schema):
+    """``{items, count}`` page of corporate entities — the wire shape
+    ``createPaginatedLoader`` expects (it derives has_more from items.length < count)."""
+
+    items: list[CorporateEntityListItemSchema]
+    count: int
 
 
 class CorporateEntityDetailSchema(CatalogDetailSchema):
@@ -130,12 +137,8 @@ def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
 corporate_entities_router = Router(tags=["corporate-entities"])
 
 
-@corporate_entities_router.get("/", response=list[CorporateEntityListItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_corporate_entities(
-    request: HttpRequest,
-) -> list[CorporateEntityListItemSchema]:
-    qs = (
+def _corporate_entity_list_qs() -> QuerySet[CorporateEntity]:
+    return (
         CorporateEntity.objects.active()
         .select_related("manufacturer")
         .annotate(
@@ -154,20 +157,38 @@ def list_corporate_entities(
         )
         .order_by("manufacturer__name", "year_start")
     )
-    return [
-        CorporateEntityListItemSchema(
-            name=ce.name,
-            slug=ce.slug,
-            manufacturer=EntityRef(
-                name=ce.manufacturer.name, public_id=ce.manufacturer.public_id
-            ),
-            year_start=ce.year_start,
-            year_end=ce.year_end,
-            model_count=cast(HasModelCount, ce).model_count,
-            locations=serialize_locations(ce),
-        )
-        for ce in qs
-    ]
+
+
+def _serialize_corporate_entity_row(
+    ce: CorporateEntity, thumbnail: str | None = None
+) -> CorporateEntityListItemSchema:
+    return CorporateEntityListItemSchema(
+        name=ce.name,
+        slug=ce.slug,
+        manufacturer=EntityRef(
+            name=ce.manufacturer.name, public_id=ce.manufacturer.public_id
+        ),
+        year_start=ce.year_start,
+        year_end=ce.year_end,
+        model_count=cast(HasModelCount, ce).model_count,
+        locations=serialize_locations(ce),
+    )
+
+
+@corporate_entities_router.get("/", response=CorporateEntityListSchema)
+def list_corporate_entities(
+    request: HttpRequest, q: str = "", page: int = 1
+) -> CorporateEntityListSchema:
+    """One page of corporate entities, by manufacturer then founding year, filtered
+    server-side by ``q`` (name or alias)."""
+    result = paginated_list_response(
+        _corporate_entity_list_qs(),
+        q=q,
+        ordering=("manufacturer__name", "year_start", "pk"),
+        page=page,
+        serialize_row=_serialize_corporate_entity_row,
+    )
+    return CorporateEntityListSchema(items=result.items, count=result.total)
 
 
 @corporate_entities_router.patch(

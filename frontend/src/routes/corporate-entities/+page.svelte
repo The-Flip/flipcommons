@@ -1,78 +1,49 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
   import client from '$lib/api/client';
-  import { createAsyncLoader } from '$lib/async-loader.svelte';
-  import Page from '$lib/components/Page.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import StatusMessage from '$lib/components/StatusMessage.svelte';
-  import { pageTitle } from '$lib/constants';
+  import { unwrapPage } from '$lib/paginated-loader.svelte';
+  import CatalogListing from '$lib/components/pages/listing/CatalogListing.svelte';
   import { formatYearRange } from '$lib/utils';
 
-  const entities = createAsyncLoader(async () => {
-    const { data } = await client.GET('/api/corporate-entities/');
-    return data ?? [];
-  }, []);
+  let { data } = $props();
+
+  // Typed page fetcher: the `/api/corporate-entities/` path literal is baked in
+  // here so the response stays typed, then flows generically through
+  // CatalogListing. Reads the committed `q` at call time.
+  const fetchPage = async (page: number) => {
+    const res = await client.GET('/api/corporate-entities/', {
+      params: { query: { q: data.q, page } },
+    });
+    return unwrapPage(res.data);
+  };
 </script>
 
-<svelte:head>
-  <title>{pageTitle('Corporate Entities')}</title>
-</svelte:head>
-
-<Page width="wide">
-  <PageHeader title="Corporate Entities" />
-
-  {#if entities.loading}
-    <StatusMessage variant="loading">Loading...</StatusMessage>
-  {:else if entities.error}
-    <StatusMessage variant="error">Failed to load corporate entities.</StatusMessage>
-  {:else if entities.data.length === 0}
-    <StatusMessage variant="empty">No corporate entities found.</StatusMessage>
-  {:else}
-    <ul class="entity-list">
-      {#each entities.data as entity (entity.slug)}
-        <li>
-          <a href={resolve(`/corporate-entities/${entity.slug}`)} class="entity-row">
-            <span class="entity-name">{entity.name}</span>
-            <span class="entity-meta">
-              <span class="manufacturer">{entity.manufacturer.name}</span>
-              {#if formatYearRange(entity.year_start, entity.year_end)}
-                <span class="years">{formatYearRange(entity.year_start, entity.year_end)}</span>
-              {/if}
-              <span class="count">
-                {entity.model_count} model{entity.model_count === 1 ? '' : 's'}
-              </span>
-            </span>
-          </a>
-        </li>
-      {/each}
-    </ul>
-  {/if}
-</Page>
+<CatalogListing
+  catalogKey="corporate-entity"
+  initial={{ items: data.items, count: data.count }}
+  {fetchPage}
+  q={data.q}
+  canCreate
+>
+  {#snippet children(entity)}
+    <span class="entity-name">{entity.name}</span>
+    <span class="entity-meta">
+      <span class="manufacturer">{entity.manufacturer.name}</span>
+      {#if formatYearRange(entity.year_start, entity.year_end)}
+        <span class="years">{formatYearRange(entity.year_start, entity.year_end)}</span>
+      {/if}
+      <span class="count">
+        {entity.model_count} model{entity.model_count === 1 ? '' : 's'}
+      </span>
+    </span>
+  {/snippet}
+</CatalogListing>
 
 <style>
-  .entity-list {
-    list-style: none;
-    padding: 0;
-  }
-
-  .entity-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    padding: var(--size-3) 0;
-    border-bottom: 1px solid var(--color-border-soft);
-    text-decoration: none;
-    color: inherit;
-    gap: var(--size-4);
-  }
-
-  .entity-row:hover .entity-name {
-    color: var(--color-link);
-  }
-
   .entity-name {
     font-size: var(--font-size-2);
-    color: var(--color-text);
+    /* `inherit` so the name picks up the row's link color on hover (the meta
+       spans set their own muted color and stay put), matching the plain rows. */
+    color: inherit;
     font-weight: 500;
   }
 

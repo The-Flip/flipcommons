@@ -21,7 +21,7 @@ Appends a `Sitemap:` line to the existing `frontend/src/routes/robots.txt/+serve
 
 ## 1. Backend — derive feeds from `SitemappedModel`
 
-Every catalog detail page is indexable and every listing / new / delete page is not (per [`NoindexMeta.md`](NoindexMeta.md)). That rule applies uniformly to every sitemapped entity, so the sitemap doesn't need any per-model declaration — it walks the `SitemappedModel` registry (the same `apps.get_models()` + `issubclass` walk [`apps/core/entity_types.py`](../../../backend/apps/core/entity_types.py) already does) and reads metadata the model already carries.
+Every catalog detail page, listing page, edit-history page and sources page is indexable; new/delete/edit pages are not (per [`NoindexMeta.md`](NoindexMeta.md)). That rule applies uniformly to every sitemapped entity, so the sitemap doesn't need any per-model declaration — it walks the `SitemappedModel` registry (the same `apps.get_models()` + `issubclass` walk [`apps/core/entity_types.py`](../../../backend/apps/core/entity_types.py) already does) and reads metadata the model already carries.
 
 `SitemappedModel(LinkableModel, LastUpdatedModel)` is the abstract base for "appears in the sitemap": it composes the two prerequisites — a canonical URL (`LinkableModel`) and a freshness value (`LastUpdatedModel`). A `LinkableModel` that is _not_ a `SitemappedModel` (a future linkable-but-virtual entity) is simply absent from the walk rather than crashing on a missing `sitemap_queryset()`.
 
@@ -479,7 +479,6 @@ One-line additive change. Update the existing robots vitest to assert the line i
 **Out:**
 
 - `/style-lab`, `/api-docs`, `/search`, `/kiosk`, `/_sentry_test`, `/auth/error`
-- Catalog listing pages (`/titles`, `/models`, `/manufacturers`, etc.) — non-indexable today per [`RouteWalking.md`](RouteWalking.md) (low search value + CSR-only); discoverability is covered by the catalog detail entries above. Revisit when listing SSR lands.
 - Catalog `/new` and `/delete` subroutes — non-indexable.
 - Anything auth-gated — recognized by `requireCapability` in the layout chain; non-indexable routes are excluded by `isSearchEngineIndexable(routeId)`; never enumerated by hand.
 - Soft-deleted catalog rows (`status='deleted'`) — excluded by `.active()` at every queryset entry point.

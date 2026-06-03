@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -12,7 +13,6 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
 from ninja.decorators import decorate_view
-from ninja.pagination import paginate
 from ninja.responses import Status
 from ninja.security import django_auth
 from pydantic import TypeAdapter
@@ -22,7 +22,6 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
-from apps.core.pagination import NamedPageNumberPagination
 from apps.core.schemas import (
     ErrorDetailSchema,
     RateLimitErrorSchema,
@@ -43,7 +42,6 @@ from apps.provenance.schemas import ChangeSetInputSchema
 from ..cache import get_cached_response, people_all_key, set_cached_response
 from ..models import Credit, MachineModel, Person
 from ._typing import HasCreditCount
-from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import ClaimSpec, execute_claims, plan_scalar_field_claims
 from .entity_create import (
     assert_name_available,
@@ -52,6 +50,7 @@ from .entity_create import (
     validate_name,
     validate_slug_format,
 )
+from .entity_list import paginated_list_response
 from .images import (
     extract_image_urls,
     fetch_model_media_map,
@@ -78,7 +77,7 @@ from .soft_delete import (
 )
 
 
-class PersonGridItemSchema(Schema):
+class PersonCardSchema(Schema):
     name: str
     slug: str
     aliases: list[str] = []
@@ -86,15 +85,7 @@ class PersonGridItemSchema(Schema):
     thumbnail_url: str | None = None
 
 
-_ALL_ADAPTER: TypeAdapter[list[PersonGridItemSchema]] = TypeAdapter(
-    list[PersonGridItemSchema]
-)
-
-
-class PersonListItemSchema(Schema):
-    name: str
-    slug: str
-    credit_count: int = 0
+_ALL_ADAPTER: TypeAdapter[list[PersonCardSchema]] = TypeAdapter(list[PersonCardSchema])
 
 
 class PersonTitleSchema(RelatedTitleSchema):
@@ -220,59 +211,23 @@ def _person_qs() -> QuerySet[Person]:
     )
 
 
-# ---------------------------------------------------------------------------
-# Router
-# ---------------------------------------------------------------------------
+def _people_thumbnails(person_pks: Sequence[int]) -> dict[int, str | None]:
+    """Newest-credited-model image per person, batched over *person_pks*.
 
-people_router = Router(tags=["people"])
-
-
-class PersonListPagination(NamedPageNumberPagination):
-    response_name = "PersonListSchema"
-
-
-@people_router.get("/", response=list[PersonListItemSchema])
-@paginate(PersonListPagination, page_size=DEFAULT_PAGE_SIZE)
-def list_people(request: HttpRequest) -> list[PersonListItemSchema]:
-    return [
-        PersonListItemSchema(
-            name=row["name"], slug=row["slug"], credit_count=row["credit_count"]
-        )
-        for row in Person.objects.active()
-        .annotate(credit_count=Count("credits"))
-        .order_by("name")
-        .values("name", "slug", "credit_count")
-    ]
-
-
-@people_router.get("/all/", response=list[PersonGridItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_all_people(
-    request: HttpRequest,
-) -> HttpResponse | list[dict[str, Any]]:
-    """Return every person with credit count and thumbnail.
-
-    Uses a bulk query to find the newest credited model per person for
-    thumbnails, instead of prefetching all credits and iterating in Python.
-    See ``list_all_titles`` for the full explanation of this pattern.
+    The single thumbnail source for both the cached ``/all/`` list and the paginated
+    ``GET /`` (the latter via the core's ``ThumbnailProvider`` over one page's pks), so
+    the two presentations can't drift. Picks the newest credited model carrying
+    ``extra_data`` per person, then extracts its display image at the current min rank.
+    Mirrors the original ``list_all_people`` batch — no active-status filter on the
+    credit's model, by design, matching the prior ``/all/`` behavior.
     """
-    response = get_cached_response(people_all_key())
-    if response is not None:
-        return response
-
+    if not person_pks:
+        return {}
     min_rank = get_minimum_display_rank()
-
-    people = list(
-        Person.objects.active()
-        .annotate(credit_count=Count("credits"))
-        .prefetch_related("aliases")
-        .order_by("-credit_count")
-    )
-
-    # Batch thumbnail: newest credited model with extra_data per person
     person_thumb_model: dict[int, int] = {}
     for person_id, model_id in (
         Credit.objects.filter(
+            person_id__in=person_pks,
             model__isnull=False,
             model__extra_data__isnull=False,
         )
@@ -288,30 +243,103 @@ def list_all_people(
         ).only("id", "extra_data")
     }
     thumb_media = fetch_model_media_map(person_thumb_model.values())
-
-    result: list[dict[str, Any]] = []
-    for p in people:
-        thumb = None
-        person_id = p.pk
-        tm_id = person_thumb_model.get(person_id)
+    result: dict[int, str | None] = {}
+    for pid in person_pks:
+        tm_id = person_thumb_model.get(pid)
         tm = thumb_models.get(tm_id) if tm_id else None
-        if tm:
-            t, _ = extract_image_urls(
-                tm.extra_data or {},
-                thumb_media.get(tm.pk),
-                min_rank=min_rank,
-            )
-            if t:
-                thumb = t
-        result.append(
-            {
-                "name": p.name,
-                "slug": p.slug,
-                "aliases": [a.value for a in p.aliases.all()],
-                "credit_count": cast(HasCreditCount, p).credit_count,
-                "thumbnail_url": thumb,
-            }
+        if tm is None:
+            result[pid] = None
+            continue
+        thumb, _ = extract_image_urls(
+            tm.extra_data or {}, thumb_media.get(tm.pk), min_rank=min_rank
         )
+        result[pid] = thumb or None
+    return result
+
+
+def _person_list_qs() -> QuerySet[Person]:
+    """Active people annotated with total credit count, most-credited first — the
+    ``/all/`` presentation the page renders today (``list_people`` ordered by name).
+    The paginated core appends a ``pk`` tiebreak for stable offset pages."""
+    return (
+        Person.objects.active()
+        .annotate(credit_count=Count("credits"))
+        .prefetch_related("aliases")
+        .order_by("-credit_count", "name")
+    )
+
+
+def _serialize_person_row(
+    person: Person, thumbnail: str | None = None
+) -> PersonCardSchema:
+    return PersonCardSchema(
+        name=person.name,
+        slug=person.slug,
+        aliases=[a.value for a in person.aliases.all()],
+        credit_count=cast(HasCreditCount, person).credit_count,
+        thumbnail_url=thumbnail,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Router
+# ---------------------------------------------------------------------------
+
+people_router = Router(tags=["people"])
+
+
+class PersonListSchema(Schema):
+    """``{items, count}`` page of people cards — the wire shape
+    ``createPaginatedLoader`` expects (it derives has_more from items.length < count)."""
+
+    items: list[PersonCardSchema]
+    count: int
+
+
+@people_router.get("/", response=PersonListSchema)
+def list_people(request: HttpRequest, q: str = "", page: int = 1) -> PersonListSchema:
+    """One page of people cards (thumbnail + credit count), most-credited first,
+    filtered server-side by ``q`` (name or alias). Matches the card data the page
+    rendered via ``/all/``, not the old name-ordered ``list_people``."""
+    result = paginated_list_response(
+        _person_list_qs(),
+        q=q,
+        ordering=("-credit_count", "name", "pk"),
+        page=page,
+        serialize_row=_serialize_person_row,
+        thumbnail_provider=_people_thumbnails,
+    )
+    return PersonListSchema(items=result.items, count=result.total)
+
+
+@people_router.get("/all/", response=list[PersonCardSchema])
+@decorate_view(cache_control(no_cache=True))
+def list_all_people(
+    request: HttpRequest,
+) -> HttpResponse | list[dict[str, Any]]:
+    """Return every person with credit count and thumbnail.
+
+    Uses a bulk query to find the newest credited model per person for
+    thumbnails, instead of prefetching all credits and iterating in Python.
+    See ``list_all_titles`` for the full explanation of this pattern.
+    """
+    response = get_cached_response(people_all_key())
+    if response is not None:
+        return response
+
+    people = list(_person_list_qs())
+    thumbnails = _people_thumbnails([p.pk for p in people])
+
+    result: list[dict[str, Any]] = [
+        {
+            "name": p.name,
+            "slug": p.slug,
+            "aliases": [a.value for a in p.aliases.all()],
+            "credit_count": cast(HasCreditCount, p).credit_count,
+            "thumbnail_url": thumbnails.get(p.pk),
+        }
+        for p in people
+    ]
     return set_cached_response(people_all_key(), _ALL_ADAPTER, result)
 
 

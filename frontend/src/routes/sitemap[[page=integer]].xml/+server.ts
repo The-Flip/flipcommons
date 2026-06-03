@@ -28,7 +28,7 @@ import { isDeploymentSearchEngineIndexable } from '$lib/is-deployment-search-eng
 import { STATIC_LASTMOD } from '$lib/static-lastmod';
 import { stripRouteGroups, routeIdToRegex } from '$lib/sitemap-helpers';
 import { createServerClient } from '$lib/api/server';
-import { CATALOG_ENTITY_KEYS, type CatalogEntityKey } from '$lib/entities/entity-meta';
+import { CATALOG_ENTITY_KEYS, ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
 
 /**
  * Type guard for the `feed.kind` wire boundary. Django serializes
@@ -124,8 +124,19 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
     for (const id of routes) paramValues[id] = [];
   }
 
+  // Catalog listing pages (`/titles`, `/manufacturers`, …) are static routes,
+  // so super-sitemap auto-discovers them but can't know their freshness. Key
+  // each listing URL to its entity feed's `max_lastmod` (the newest member's
+  // lastmod) and attach it in `processPaths` below, alongside STATIC_LASTMOD.
+  const listingLastmodByUrl = new Map<string, string>();
+
   for (const feed of data.feeds) {
     if (!isCatalogEntityKey(feed.kind)) continue;
+
+    if (feed.max_lastmod) {
+      listingLastmodByUrl.set(`/${ENTITY_META[feed.kind].entity_type_plural}`, feed.max_lastmod);
+    }
+
     const direct = DIRECT_ROUTES_BY_ENTITY.get(feed.kind) ?? [];
     const listed = LISTED_ROUTES_BY_ENTITY.get(feed.kind) ?? [];
     if (direct.length === 0 && listed.length === 0) continue;
@@ -161,7 +172,7 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
     // `lastmod` from `paramValues`, so they pass through unchanged.
     processPaths: (paths) =>
       paths.map((p) => {
-        const lastmod = STATIC_LASTMOD_BY_URL.get(p.path);
+        const lastmod = listingLastmodByUrl.get(p.path) ?? STATIC_LASTMOD_BY_URL.get(p.path);
         return lastmod ? { ...p, lastmod } : p;
       }),
     // super-sitemap@1.0.12 defaults to `max-age=0, s-maxage=3600`. We

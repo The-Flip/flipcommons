@@ -16,7 +16,7 @@
   );
 
   async function loadParentOptions() {
-    const { data: themes } = await client.GET('/api/themes/');
+    const { data: themes } = await client.GET('/api/themes/all/');
     if (!themes) return [];
     return themes.map((t) => ({
       slug: t.slug,

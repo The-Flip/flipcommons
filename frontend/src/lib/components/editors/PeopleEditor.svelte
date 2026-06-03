@@ -7,6 +7,7 @@
   import {
     EMPTY_EDIT_OPTIONS,
     fetchModelEditOptions,
+    toSelectOptions,
     type ModelEditOptions,
   } from './model-edit-options';
   import type { FieldErrors } from '$lib/api/parse-api-error';
@@ -120,7 +121,7 @@
       <div class="credit-person">
         <SearchableSelect
           label=""
-          options={editOptions.people ?? []}
+          options={toSelectOptions(editOptions.people ?? [])}
           bind:selected={editCredits[i].person_slug}
           allowZeroCount
           showCounts={false}
@@ -130,7 +131,7 @@
       <div class="credit-role">
         <SearchableSelect
           label=""
-          options={editOptions.credit_roles ?? []}
+          options={toSelectOptions(editOptions.credit_roles ?? [])}
           bind:selected={editCredits[i].role}
           allowZeroCount
           showCounts={false}

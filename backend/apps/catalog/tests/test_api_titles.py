@@ -52,8 +52,18 @@ class TestTitlesAPI:
         assert data["count"] == 1
         item = data["items"][0]
         assert item["name"] == "Medieval Madness"
-        assert item["abbreviations"] == []
         assert item["model_count"] == 2
+        # Slim card shape — no facet arrays (those live on /api/pages/titles).
+        assert "abbreviations" not in item
+        assert "themes" not in item
+        assert set(item) == {
+            "name",
+            "slug",
+            "year",
+            "model_count",
+            "manufacturer",
+            "thumbnail_url",
+        }
 
     def test_list_titles_thumbnail(self, client, title_with_machines):
         resp = client.get("/api/titles/")
@@ -65,6 +75,28 @@ class TestTitlesAPI:
         data = resp.json()
         assert data["items"][0]["model_count"] == 0
         assert data["items"][0]["thumbnail_url"] is None
+
+    def test_q_search_matches_name(self, client, title):
+        # title == "Medieval Madness"
+        assert client.get("/api/titles/?q=medieval").json()["count"] == 1
+        assert client.get("/api/titles/?q=Madness").json()["count"] == 1
+        assert client.get("/api/titles/?q=nonexistent").json()["count"] == 0
+
+    def test_q_search_diacritic_is_backend_specific(self, client, db):
+        """Title-name `q` folds diacritics on Postgres only.
+
+        Pins the deliberate dev/prod difference: prod (Postgres) folds via
+        LOWER(UNACCENT(name)) so "pokemon" finds "Pokémon"; dev/CI (SQLite) does
+        plain icontains, so it does not. The exact-diacritic spelling matches on
+        both.
+        """
+        from django.db import connection
+
+        Title.objects.create(name="Pokémon", slug="pokemon-diacritic-test")
+        folded = client.get("/api/titles/?q=pokemon").json()["count"]
+        exact = client.get("/api/titles/?q=Pokémon").json()["count"]
+        assert exact == 1
+        assert folded == (1 if connection.vendor == "postgresql" else 0)
 
     def test_get_title_detail(self, client, title_with_machines):
         resp = client.get(f"/api/pages/title/{title_with_machines.slug}")
@@ -461,7 +493,6 @@ class TestTitlesAllFacets:
             display_type=dmd,
             system=wpc,
             player_count=4,
-            ipdb_rating=8.5,
         )
         m1.themes.add(theme)
         Credit.objects.create(model=m1, person=person, role=role)
@@ -521,9 +552,6 @@ class TestTitlesAllFacets:
         # Year range from two models (1997 and 2015)
         assert item["year_min"] == 1997
         assert item["year_max"] == 2015
-
-        # Rating
-        assert item["ipdb_rating_max"] == 8.5
 
     def test_all_titles_deduplicates_tech_generations(self, client, faceted_title):
         """Two models with the same tech gen should yield one entry."""
@@ -687,4 +715,3 @@ class TestTitlesAllFacets:
         assert item["series"] is None
         assert item["year_min"] is None
         assert item["year_max"] is None
-        assert item["ipdb_rating_max"] is None
