@@ -1,9 +1,9 @@
 <script lang="ts">
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
-  import ClientFilteredGrid from '$lib/components/grid/ClientFilteredGrid.svelte';
+  import ClientFilteredGrid from '$lib/components/collections/grid/ClientFilteredGrid.svelte';
   import HierarchicalTaxonomyChildrenAccordion from '$lib/components/HierarchicalTaxonomyChildrenAccordion.svelte';
   import HierarchicalTaxonomyMobileMetaBar from '$lib/components/HierarchicalTaxonomyMobileMetaBar.svelte';
-  import MachineCard from '$lib/components/cards/MachineCard.svelte';
+  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
 
   let { data } = $props();

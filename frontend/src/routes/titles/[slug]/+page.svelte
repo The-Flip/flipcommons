@@ -1,9 +1,9 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
-  import CardGrid from '$lib/components/grid/CardGrid.svelte';
+  import CardGrid from '$lib/components/collections/grid/CardGrid.svelte';
   import CreditsList from '$lib/components/CreditsList.svelte';
-  import MachineCard from '$lib/components/cards/MachineCard.svelte';
+  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';

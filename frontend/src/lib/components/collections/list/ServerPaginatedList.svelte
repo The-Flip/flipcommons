@@ -1,6 +1,6 @@
 <script lang="ts" generics="T extends { slug: string }">
   import type { Snippet } from 'svelte';
-  import InfiniteScroll from './InfiniteScroll.svelte';
+  import InfiniteScroll from '$lib/components/collections/InfiniteScroll.svelte';
   import { resolveHref } from '$lib/utils';
 
   /**

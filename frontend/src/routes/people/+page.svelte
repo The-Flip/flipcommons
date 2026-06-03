@@ -2,7 +2,7 @@
   import client from '$lib/api/client';
   import { unwrapPage } from '$lib/paginated-loader.svelte';
   import CatalogListing from '$lib/components/pages/listing/CatalogListing.svelte';
-  import PersonCard from '$lib/components/cards/PersonCard.svelte';
+  import PersonCard from '$lib/components/collections/cards/PersonCard.svelte';
 
   let { data } = $props();
 

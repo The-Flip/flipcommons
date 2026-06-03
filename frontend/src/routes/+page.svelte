@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import client from '$lib/api/client';
-  import MachineCard from '$lib/components/cards/MachineCard.svelte';
+  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
   import { SITE_TITLE } from '$lib/constants';
   import MetaTags from '$lib/components/MetaTags.svelte';
   import JsonLd from '$lib/components/JsonLd.svelte';

@@ -86,7 +86,7 @@ Do NOT list files, or mention the location of where invalid files DO go (just sa
 - Any form of behavior change.
 - Storybook or Histoire adoption.
 
-## Sequencing
+## Process
 
 All work is in a single PR. Each section below is one commit. Each commit is mechanical moves + import updates + (where appropriate) one new ESLint rule.
 
@@ -94,7 +94,7 @@ All work is in a single PR. Each section below is one commit. Each commit is mec
 
 **Normalize imports on touch** — when a move makes you edit a file's imports, bring all of that file's imports into line with the `$lib` rule in [Svelte.md](../Svelte.md) (same-folder → `./`, cross-folder → `$lib`), not just the specifier that changed. Leave files you aren't already editing untouched.
 
-**Codemod** — use `frontend/scripts/codemod/move-components.mjs --to <folder> <Stem>...` for every move (run it from the `frontend/` directory). It `git mv`s each file (and its co-located tests/fixtures) so rename detection holds, then rewrites imports in every touched file to the project convention (same-folder → `./`, cross-folder → `$lib`). It only opens files that move or import a moved file; others are left untouched. Don't hand-edit import paths.
+**Codemod** — use `frontend/scripts/codemod/move-components.mjs --to <folder> <Stem>...` for every move (run it from the `frontend/` directory). It `git mv`s each file (and its co-located tests/fixtures) so rename detection holds, then rewrites imports in every touched file to the project convention (same-folder → `./`, cross-folder → `$lib`). It only opens files that move or import a moved file; others are left untouched. Don't hand-edit import paths. Stems resolve at the top level of `lib/components/`; to move files already in a subfolder, pass `--from <subfolder>` (e.g. `--from cards --to collections/cards`) — with `--from` and no stems, the whole subfolder moves. The codemod leaves the now-empty source dir behind; `rmdir` it.
 
 **Update config path references by hand** — the codemod rewrites JS/TS import specifiers only, not file paths in config. `frontend/.stylelintrc.cjs` has per-file `overrides` (e.g. the `:global` exemptions for `Prose.svelte`, `Card.svelte`, `WearEffect.svelte`); when you move one of those files, repoint its override path or the pre-commit stylelint hook fails. Grep `.stylelintrc.cjs` (and `knip.jsonc`) for any moved stem before committing.
 
@@ -106,6 +106,8 @@ All work is in a single PR. Each section below is one commit. Each commit is mec
 - `pnpm lint` (prettier + eslint + stylelint — run before committing; stylelint catches stale per-file `overrides` paths in `.stylelintrc.cjs` when a moved file had a `:global` exemption, which otherwise only fails inside the pre-commit hook)
 - `make test` (runs vitest + pytest)
 - `pnpm build` (production Vite build — circular-import and tree-shaking failures only surface in build, not dev/HMR)
+
+## Sequencing
 
 ### `ui/` - DONE ✅
 
@@ -166,7 +168,7 @@ doesn't belong here.
 
 Move `WearEffect.svelte` from `cards/` into `effects/` alongside `CoffeeStain.svelte`. Both are decorative SVG/CSS overlays applied to other components; neither is card-specific. `WearEffect` is currently parked under `cards/` because `Card` consumes it, not because it belongs there.
 
-### `collections/`
+### `collections/` - DONE ✅
 
 Create `collections/` and move existing `cards/` and `grid/` under it. `grid/` also holds `InfiniteScroll` and `ServerPaginatedList` — they ride the wholesale `grid/` → `collections/grid/` move with the rest of the family. Move the top-level generic filter primitives in:
 
@@ -178,7 +180,7 @@ The domain filter sidebars (`TitleFilterSidebar`, `ManufacturerFilterSidebar`) a
 
 `CatalogListRow` (the standard name + count row content for the paginated listing pages) also sits at **`collections/` top level** — already created there during the SSR listing work.
 
-`CreateFirstModelPrompt` and `ManufacturerCardGrid` are **not** placed here despite being collection-shaped — both have single consumers, so by the route-private convention they go to `routes/.../_components/`. (`CreateFirstModelPrompt` and its sibling `CreateFirstCorporateEntityPrompt` already live route-private under `routes/titles/[slug]/_components/` and `routes/manufacturers/[slug]/_components/`; `ManufacturerCardGrid` is still in `cards/` — see the follow-up below. See route-private section. The earlier "domain composition, so collections/" reasoning was category-over-usage — the same anti-pattern we rejected for `NeedsReviewBanner`. Promote to `collections/` only when a second consumer appears.)
+`CreateFirstModelPrompt` and `ManufacturerCardGrid` are **not** placed here despite being collection-shaped — both have single consumers, so by the route-private convention they go to `routes/.../_components/`. (`CreateFirstModelPrompt` and its sibling `CreateFirstCorporateEntityPrompt` already live route-private under `routes/titles/[slug]/_components/` and `routes/manufacturers/[slug]/_components/`; `ManufacturerCardGrid` already lives route-private under `routes/locations/[...path]/_components/` — see the follow-up below. See route-private section. The earlier "domain composition, so collections/" reasoning was category-over-usage — the same anti-pattern we rejected for `NeedsReviewBanner`. Promote to `collections/` only when a second consumer appears.)
 
 Add `collections/README.md`:
 

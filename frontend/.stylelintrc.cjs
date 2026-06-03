@@ -145,7 +145,7 @@ module.exports = {
     // `style:--prop={value}` directives. The plugin only sees stylesheet
     // declarations, not runtime values, so these refs look "unknown."
     {
-      files: ['src/lib/components/cards/Card.svelte'],
+      files: ['src/lib/components/collections/cards/Card.svelte'],
       rules: {
         'csstools/value-no-unknown-custom-properties': null,
       },

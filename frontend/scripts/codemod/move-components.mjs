@@ -1,12 +1,17 @@
 #!/usr/bin/env node
-// Move top-level component files in frontend/src/lib/components/ into a
-// subfolder and rewrite the affected import specifiers.
+// Move component files in frontend/src/lib/components/ into a subfolder and
+// rewrite the affected import specifiers.
 //
 //   node scripts/codemod/move-components.mjs --to <folder> Name1 Name2 ...
+//   node scripts/codemod/move-components.mjs --from <subfolder> --to <folder> [Name1 ...]
 //
-// Each NAME is a file stem under lib/components/ (no extension). All
-// co-located files sharing that stem move together — e.g. `ClaimValue`
-// pulls ClaimValue.svelte, ClaimValue.dom.test.ts, ClaimValue.fixture.svelte.
+// Each NAME is a file stem (no extension) resolved under lib/components/, or
+// under lib/components/<subfolder> when --from is given. All co-located files
+// sharing that stem move together — e.g. `ClaimValue` pulls ClaimValue.svelte,
+// ClaimValue.dom.test.ts, ClaimValue.fixture.svelte.
+//
+// With --from and no NAMEs, every file in the source subfolder moves — this is
+// how a whole subfolder relocates (e.g. cards/ -> collections/cards/).
 //
 // Touched files only. A file is rewritten iff it is itself moving OR it
 // imports a moved file. Files that reference nothing in the move set are
@@ -38,14 +43,15 @@ const LIB = resolve(SRC, 'lib');
 const COMPONENTS = resolve(LIB, 'components');
 
 const { values, positionals } = parseArgs({
-  options: { to: { type: 'string' } },
+  options: { to: { type: 'string' }, from: { type: 'string' } },
   allowPositionals: true,
 });
 
 const folder = values.to;
-const stems = positionals;
-if (!folder || stems.length === 0) {
-  console.error('usage: move-components.mjs --to <folder> Stem1 Stem2 ...');
+const sourceDir = resolve(COMPONENTS, values.from ?? '');
+const sourceLabel = relative(COMPONENTS, sourceDir).split('\\').join('/') || 'lib/components';
+if (!folder || (positionals.length === 0 && values.from === undefined)) {
+  console.error('usage: move-components.mjs [--from <subfolder>] --to <folder> [Stem1 Stem2 ...]');
   process.exit(1);
 }
 
@@ -53,22 +59,34 @@ const targetDir = resolve(COMPONENTS, folder);
 
 // Resolve each stem to the set of co-located files that share it.
 function filesForStem(stem) {
-  const matches = readdirSync(COMPONENTS, { withFileTypes: true })
+  const matches = readdirSync(sourceDir, { withFileTypes: true })
     .filter((e) => e.isFile())
     .map((e) => e.name)
     .filter((name) => name === stem || name.startsWith(`${stem}.`));
   if (matches.length === 0) {
-    console.error(`no files under lib/components/ for stem "${stem}"`);
+    console.error(`no files for stem "${stem}" under ${sourceLabel}/`);
     process.exit(1);
   }
   return matches;
 }
 
+// With --from and no explicit stems, move every file in the source subfolder.
+const stems =
+  positionals.length > 0
+    ? positionals
+    : [
+        ...new Set(
+          readdirSync(sourceDir, { withFileTypes: true })
+            .filter((e) => e.isFile())
+            .map((e) => e.name.split('.')[0]),
+        ),
+      ];
+
 // oldAbs -> newAbs
 const moveMap = new Map();
 for (const stem of stems) {
   for (const name of filesForStem(stem)) {
-    moveMap.set(resolve(COMPONENTS, name), resolve(targetDir, name));
+    moveMap.set(resolve(sourceDir, name), resolve(targetDir, name));
   }
 }
 const movedOldAbs = new Set(moveMap.keys());

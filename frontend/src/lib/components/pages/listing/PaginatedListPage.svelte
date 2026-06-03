@@ -10,7 +10,7 @@
   import NoResultsCreatePrompt from '$lib/components/NoResultsCreatePrompt.svelte';
   import PaginatedListLoader from './PaginatedListLoader.svelte';
   import type { EditSectionMenuItem } from '$lib/components/edit-section-menu';
-  import { SEARCH_THRESHOLD } from '$lib/components/grid/search-threshold';
+  import { SEARCH_THRESHOLD } from '$lib/components/collections/grid/search-threshold';
   import { resolveHref } from '$lib/utils';
 
   /**

@@ -1,7 +1,7 @@
 <script lang="ts" generics="T">
   import type { Snippet } from 'svelte';
   import CardGrid from './CardGrid.svelte';
-  import InfiniteScroll from './InfiniteScroll.svelte';
+  import InfiniteScroll from '$lib/components/collections/InfiniteScroll.svelte';
 
   let {
     items,

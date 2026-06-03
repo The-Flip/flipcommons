@@ -1,6 +1,6 @@
 import type { FilterState } from '$lib/facet-engine';
 import type { FacetOptionSchema, FilterOptionsSchema } from '$lib/api/schema';
-import type { FilterChipSpec } from '$lib/components/ActiveFilterChips.svelte';
+import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
 
 /**
  * Build the active-filter chips for /titles from the current filter state.

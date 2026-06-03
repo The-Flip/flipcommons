@@ -1,6 +1,6 @@
 <script lang="ts">
-  import TitleCard from '$lib/components/cards/TitleCard.svelte';
-  import CardGrid from '$lib/components/grid/CardGrid.svelte';
+  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
+  import CardGrid from '$lib/components/collections/grid/CardGrid.svelte';
 
   type Title = {
     public_id: string;

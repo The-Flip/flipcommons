@@ -1,7 +1,7 @@
 <script lang="ts" generics="T extends { slug: string }">
   import type { Snippet } from 'svelte';
-  import ServerPaginatedList from '$lib/components/grid/ServerPaginatedList.svelte';
-  import ServerPaginatedGrid from '$lib/components/grid/ServerPaginatedGrid.svelte';
+  import ServerPaginatedList from '$lib/components/collections/list/ServerPaginatedList.svelte';
+  import ServerPaginatedGrid from '$lib/components/collections/grid/ServerPaginatedGrid.svelte';
   import { createPaginatedLoader } from '$lib/paginated-loader.svelte';
 
   /**

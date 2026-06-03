@@ -5,8 +5,8 @@
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import { personEditActionContext } from '$lib/components/editors/edit-action-context';
-  import SearchableGrid from '$lib/components/grid/SearchableGrid.svelte';
-  import TitleCard from '$lib/components/cards/TitleCard.svelte';
+  import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
+  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
 
   let { data } = $props();

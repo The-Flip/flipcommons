@@ -2,7 +2,7 @@
   import client from '$lib/api/client';
   import { unwrapPage } from '$lib/paginated-loader.svelte';
   import CatalogListing from '$lib/components/pages/listing/CatalogListing.svelte';
-  import CatalogListRow from '$lib/components/collections/CatalogListRow.svelte';
+  import CatalogListRow from '$lib/components/collections/list/CatalogListRow.svelte';
 
   let { data } = $props();
 

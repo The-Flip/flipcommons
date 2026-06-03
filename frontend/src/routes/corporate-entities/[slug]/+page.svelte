@@ -1,8 +1,8 @@
 <script lang="ts">
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
-  import SearchableGrid from '$lib/components/grid/SearchableGrid.svelte';
-  import TitleCard from '$lib/components/cards/TitleCard.svelte';
+  import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
+  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
 
   let { data } = $props();
   let ce = $derived(data.profile);

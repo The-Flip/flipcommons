@@ -1,7 +1,7 @@
 <script lang="ts">
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
-  import TitleList from '$lib/components/TitleList.svelte';
+  import TitleList from '$lib/components/collections/TitleList.svelte';
 
   let { data } = $props();
   let franchise = $derived(data.profile);

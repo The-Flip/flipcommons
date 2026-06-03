@@ -6,8 +6,10 @@
   import { afterNavigate, goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
-  import ActiveFilterChips, { type FilterChipSpec } from '$lib/components/ActiveFilterChips.svelte';
-  import FilterDrawer from '$lib/components/FilterDrawer.svelte';
+  import ActiveFilterChips, {
+    type FilterChipSpec,
+  } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
+  import FilterDrawer from '$lib/components/collections/filters/FilterDrawer.svelte';
   import NoResultsCreatePrompt from '$lib/components/NoResultsCreatePrompt.svelte';
   import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import PaginatedListLoader from './PaginatedListLoader.svelte';

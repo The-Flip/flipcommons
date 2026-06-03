@@ -7,7 +7,7 @@
   import NoResultsCreatePrompt from './NoResultsCreatePrompt.svelte';
   import EditSectionMenu from './EditSectionMenu.svelte';
   import type { EditSectionMenuItem } from './edit-section-menu';
-  import { SEARCH_THRESHOLD } from '$lib/components/grid/search-threshold';
+  import { SEARCH_THRESHOLD } from '$lib/components/collections/grid/search-threshold';
   import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
   import { normalizeText, resolveHref } from '$lib/utils';

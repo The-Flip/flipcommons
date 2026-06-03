@@ -1,5 +1,7 @@
 <script lang="ts">
-  import ActiveFilterChips, { type FilterChipSpec } from '$lib/components/ActiveFilterChips.svelte';
+  import ActiveFilterChips, {
+    type FilterChipSpec,
+  } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
   import ActionMenu from '$lib/components/ui/menu/ActionMenu.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import MenuDivider from '$lib/components/ui/menu/MenuDivider.svelte';
@@ -10,8 +12,8 @@
   import Card, {
     type CardDistressCorner,
     type CardDistressType,
-  } from '$lib/components/cards/Card.svelte';
-  import MachineCard from '$lib/components/cards/MachineCard.svelte';
+  } from '$lib/components/collections/cards/Card.svelte';
+  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
 
   const distressCases: {
     label: string;

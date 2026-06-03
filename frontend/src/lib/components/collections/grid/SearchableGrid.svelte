@@ -3,7 +3,7 @@
   import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import CardGrid from './CardGrid.svelte';
   import ClientFilteredGrid from './ClientFilteredGrid.svelte';
-  import SkeletonCard from '$lib/components/cards/SkeletonCard.svelte';
+  import SkeletonCard from '$lib/components/collections/cards/SkeletonCard.svelte';
   import { normalizeText } from '$lib/utils';
   import { SEARCH_THRESHOLD } from './search-threshold';
 
