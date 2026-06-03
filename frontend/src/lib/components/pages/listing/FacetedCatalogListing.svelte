@@ -14,8 +14,8 @@
   import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import PaginatedListLoader from './PaginatedListLoader.svelte';
   import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import JsonLd from '$lib/components/JsonLd.svelte';
+  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
   import { buildListingJsonLd, listingMeta } from '$lib/entities/schema-org';
   import { decideCreatePrompt } from '$lib/create-prompt';
   import { streamed } from '$lib/streamed.svelte';

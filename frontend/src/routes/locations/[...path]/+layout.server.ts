@@ -2,7 +2,7 @@ import { error } from '@sveltejs/kit';
 import { createServerClient } from '$lib/api/server';
 import { location } from '$lib/entities';
 import { buildEntityJsonLd } from '$lib/entities/schema-org';
-import type { Crumb } from '$lib/components/jsonld';
+import type { Crumb } from '$lib/components/layout/site/jsonld';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ fetch, url, request, params }) => {

@@ -1,9 +1,5 @@
 import type { RichTextSchema } from '$lib/api/schema';
-import {
-  ENTITY_META,
-  type CatalogEntityKey,
-  type EntityRelationship,
-} from '$lib/entities/entity-meta';
+import { ENTITY_META, type CatalogEntityKey, type EntityRelationship } from './entity-meta';
 import {
   jsonLdGraph,
   breadcrumbList,
@@ -11,7 +7,7 @@ import {
   absolutize,
   type JsonLdNode,
   type Crumb,
-} from '$lib/components/jsonld';
+} from '$lib/components/layout/site/jsonld';
 import { ENTITY_INFO } from './index';
 import type { EntityInfo, ExternalReference, FieldMapEntry } from './types';
 

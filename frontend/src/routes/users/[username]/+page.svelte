@@ -2,7 +2,7 @@
   import { SITE_TITLE } from '$lib/constants';
   import { resolveHref } from '$lib/utils';
   import SmartDate from '$lib/components/ui/SmartDate.svelte';
-  import TwoColumnLayout from '$lib/components/TwoColumnLayout.svelte';
+  import TwoColumnLayout from '$lib/components/layout/page/TwoColumnLayout.svelte';
 
   let { data } = $props();
   let profile = $derived(data.profile);

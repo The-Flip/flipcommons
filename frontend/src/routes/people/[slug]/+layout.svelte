@@ -4,10 +4,10 @@
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
   import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/meta-tags';
-  import JsonLd from '$lib/components/JsonLd.svelte';
-  import PageActionBar from '$lib/components/PageActionBar.svelte';
+  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/layout/site/meta-tags';
+  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
+  import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
   import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import SidebarList from './SidebarList.svelte';
-  import SidebarSection from './SidebarSection.svelte';
+  import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
+  import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
 
   interface Variant {
     name: string;

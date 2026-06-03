@@ -1,8 +1,8 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
-  import Page from '$lib/components/Page.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
+  import Page from '$lib/components/layout/page/Page.svelte';
+  import PageHeader from '$lib/components/layout/page/PageHeader.svelte';
   import { pageTitle } from '$lib/constants';
   import { resolveHref } from '$lib/utils';
 

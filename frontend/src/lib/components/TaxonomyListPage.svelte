@@ -1,7 +1,7 @@
 <script lang="ts" generics="T extends { slug: string; name: string; aliases?: string[] }">
   import type { Snippet } from 'svelte';
-  import Page from './Page.svelte';
-  import PageHeader from './PageHeader.svelte';
+  import Page from '$lib/components/layout/page/Page.svelte';
+  import PageHeader from '$lib/components/layout/page/PageHeader.svelte';
   import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
   import NoResultsCreatePrompt from './NoResultsCreatePrompt.svelte';
@@ -11,8 +11,8 @@
   import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
   import { normalizeText, resolveHref } from '$lib/utils';
-  import MetaTags from './MetaTags.svelte';
-  import JsonLd from './JsonLd.svelte';
+  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
   import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
   import { buildListingJsonLd, listingMeta } from '$lib/entities/schema-org';
 

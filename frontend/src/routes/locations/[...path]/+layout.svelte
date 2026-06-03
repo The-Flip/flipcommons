@@ -4,13 +4,13 @@
   import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
   import { WIDE_BREAKPOINT, pageTitle } from '$lib/constants';
-  import PageActionBar from '$lib/components/PageActionBar.svelte';
+  import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
-  import SidebarList from '$lib/components/SidebarList.svelte';
-  import SidebarListItem from '$lib/components/SidebarListItem.svelte';
-  import SidebarSection from '$lib/components/SidebarSection.svelte';
-  import type { Crumb } from '$lib/components/Breadcrumb.svelte';
+  import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
+  import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';
+  import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
+  import type { Crumb } from '$lib/components/layout/page/Breadcrumb.svelte';
   import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';
   import { locationEditActionContext } from '$lib/components/editors/edit-action-context';
   import {

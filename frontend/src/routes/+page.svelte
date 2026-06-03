@@ -4,9 +4,9 @@
   import client from '$lib/api/client';
   import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
   import { SITE_TITLE } from '$lib/constants';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import JsonLd from '$lib/components/JsonLd.svelte';
-  import { jsonLdGraph, webSite } from '$lib/components/jsonld';
+  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
+  import { jsonLdGraph, webSite } from '$lib/components/layout/site/jsonld';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import type { ModelRecentSchema } from '$lib/api/schema';

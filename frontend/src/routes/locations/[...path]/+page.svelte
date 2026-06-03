@@ -5,7 +5,7 @@
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import { locationEditActionContext } from '$lib/components/editors/edit-action-context';
-  import JsonLd from '$lib/components/JsonLd.svelte';
+  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
   import type { LocationDetailSchema } from '$lib/api/schema';
 
   type LocationDetail = LocationDetailSchema;

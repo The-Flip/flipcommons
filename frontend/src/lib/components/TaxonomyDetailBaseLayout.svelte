@@ -5,14 +5,14 @@
   import { resolveHref } from '$lib/utils';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { auth } from '$lib/auth.svelte';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import JsonLd from '$lib/components/JsonLd.svelte';
-  import { metaDescriptionFor } from '$lib/components/meta-tags';
-  import PageActionBar from '$lib/components/PageActionBar.svelte';
-  import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
-  import type { Crumb } from '$lib/components/Breadcrumb.svelte';
-  import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
-  import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';
+  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
+  import { metaDescriptionFor } from '$lib/components/layout/site/meta-tags';
+  import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
+  import RecordDetailShell from './RecordDetailShell.svelte';
+  import type { Crumb } from '$lib/components/layout/page/Breadcrumb.svelte';
+  import SectionEditorHost from './SectionEditorHost.svelte';
+  import { getMenuItemAction, type EditSectionMenuItem } from './edit-section-menu';
   import type { EditSectionDef } from '$lib/components/editors/edit-section-def';
   import type {
     EditActionContext,

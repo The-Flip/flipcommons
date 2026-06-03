@@ -2,8 +2,8 @@
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth } from '$lib/auth.svelte';
-  import Page from '$lib/components/Page.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
+  import Page from '$lib/components/layout/page/Page.svelte';
+  import PageHeader from '$lib/components/layout/page/PageHeader.svelte';
   import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
   import EditSectionMenu from '$lib/components/EditSectionMenu.svelte';

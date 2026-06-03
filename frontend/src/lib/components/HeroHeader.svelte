@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Breadcrumb, { type Crumb } from '$lib/components/Breadcrumb.svelte';
+  import Breadcrumb, { type Crumb } from '$lib/components/layout/page/Breadcrumb.svelte';
 
   let {
     name,

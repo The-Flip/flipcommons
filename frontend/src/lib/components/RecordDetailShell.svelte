@@ -1,9 +1,9 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import HeroHeader from '$lib/components/HeroHeader.svelte';
-  import type { Crumb } from '$lib/components/Breadcrumb.svelte';
-  import Page from '$lib/components/Page.svelte';
-  import TwoColumnLayout from '$lib/components/TwoColumnLayout.svelte';
+  import HeroHeader from './HeroHeader.svelte';
+  import type { Crumb } from '$lib/components/layout/page/Breadcrumb.svelte';
+  import Page from '$lib/components/layout/page/Page.svelte';
+  import TwoColumnLayout from '$lib/components/layout/page/TwoColumnLayout.svelte';
 
   type MetaItem = { text: string; href?: string };
   type ParentLink = { text: string; href: string };

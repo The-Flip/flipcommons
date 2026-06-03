@@ -1,8 +1,8 @@
 <script lang="ts">
   import { resolveHref } from '$lib/utils';
-  import SidebarList from '$lib/components/SidebarList.svelte';
-  import SidebarListItem from '$lib/components/SidebarListItem.svelte';
-  import SidebarSection from '$lib/components/SidebarSection.svelte';
+  import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
+  import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';
+  import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
   import type { EntityRef } from '$lib/api/schema';
 
   let {

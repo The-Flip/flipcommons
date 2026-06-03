@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { resolve } from '$app/paths';
-  import CoffeeStain from './effects/CoffeeStain.svelte';
+  import CoffeeStain from '$lib/components/effects/CoffeeStain.svelte';
   import Wordmark from './Wordmark.svelte';
 
   let { children }: { children?: Snippet } = $props();

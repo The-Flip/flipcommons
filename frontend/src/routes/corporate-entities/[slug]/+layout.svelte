@@ -3,15 +3,15 @@
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import { formatYearRange } from '$lib/utils';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/meta-tags';
-  import JsonLd from '$lib/components/JsonLd.svelte';
+  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/layout/site/meta-tags';
+  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import LocationLink from '$lib/components/LocationLink.svelte';
-  import PageActionBar from '$lib/components/PageActionBar.svelte';
+  import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
-  import SidebarSection from '$lib/components/SidebarSection.svelte';
+  import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
   import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';
   import { corporateEntityEditActionContext } from '$lib/components/editors/edit-action-context';
   import {

@@ -2,16 +2,16 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
-  import { metaDescriptionFor } from '$lib/components/meta-tags';
+  import { metaDescriptionFor } from '$lib/components/layout/site/meta-tags';
   import { auth } from '$lib/auth.svelte';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import JsonLd from '$lib/components/JsonLd.svelte';
-  import PageActionBar from '$lib/components/PageActionBar.svelte';
+  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
+  import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
-  import SidebarList from '$lib/components/SidebarList.svelte';
-  import SidebarListItem from '$lib/components/SidebarListItem.svelte';
-  import SidebarSection from '$lib/components/SidebarSection.svelte';
+  import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
+  import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';
+  import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
   import { type EditSectionMenuItem } from '$lib/components/edit-section-menu';
   import {
     findSystemSectionByKey,

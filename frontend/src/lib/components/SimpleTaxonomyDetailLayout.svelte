@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import TaxonomyDetailBaseLayout from '$lib/components/TaxonomyDetailBaseLayout.svelte';
-  import type { Crumb } from '$lib/components/Breadcrumb.svelte';
+  import TaxonomyDetailBaseLayout from './TaxonomyDetailBaseLayout.svelte';
+  import type { Crumb } from '$lib/components/layout/page/Breadcrumb.svelte';
   import {
     SIMPLE_TAXONOMY_EDIT_SECTIONS,
     type SimpleTaxonomyEditSectionDef,

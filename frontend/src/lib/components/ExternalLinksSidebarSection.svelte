@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SidebarSection from './SidebarSection.svelte';
+  import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
   import type { ExternalLink } from '$lib/entities/external-links';
 
   let {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { SITE_TITLE } from '$lib/constants';
-  import Page from './Page.svelte';
+  import Page from '$lib/components/layout/page/Page.svelte';
 
   let {
     heading,

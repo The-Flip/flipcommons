@@ -5,9 +5,9 @@
   import '$lib/analytics';
   import { page, updated } from '$app/state';
   import { beforeNavigate } from '$app/navigation';
-  import SiteShell from '$lib/components/SiteShell.svelte';
-  import FocusSiteShell from '$lib/components/FocusSiteShell.svelte';
-  import MinimalSiteShell from '$lib/components/MinimalSiteShell.svelte';
+  import SiteShell from '$lib/components/layout/site/SiteShell.svelte';
+  import FocusSiteShell from '$lib/components/layout/site/FocusSiteShell.svelte';
+  import MinimalSiteShell from '$lib/components/layout/site/MinimalSiteShell.svelte';
   import ToastHost from '$lib/toast/ToastHost.svelte';
   import { isFocusModePath, isMinimalShellPath } from '$lib/focus-mode';
   import { isKioskCookieSet } from '$lib/kiosk/config';

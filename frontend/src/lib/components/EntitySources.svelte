@@ -3,7 +3,7 @@
   import ClaimAttribution from '$lib/components/provenance/ClaimAttribution.svelte';
   import ClaimAuthor from '$lib/components/provenance/ClaimAuthor.svelte';
   import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
-  import FocusContentShell from './FocusContentShell.svelte';
+  import FocusContentShell from '$lib/components/layout/page/FocusContentShell.svelte';
   import { getEntityContext } from '$lib/entity-context';
   import { groupSourcesByField } from './entity-sources';
 

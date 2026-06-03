@@ -7,7 +7,7 @@
   import MenuDivider from '$lib/components/ui/menu/MenuDivider.svelte';
   import MenuItem from '$lib/components/ui/menu/MenuItem.svelte';
   import MenuSectionHeader from '$lib/components/ui/menu/MenuSectionHeader.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
+  import PageHeader from '$lib/components/layout/page/PageHeader.svelte';
   import ThemeSwitcher from '$lib/components/ThemeSwitcher.svelte';
   import Card, {
     type CardDistressCorner,

@@ -2,9 +2,9 @@
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import { SITE_NAME } from '$lib/constants';
-  import MetaTags from '$lib/components/MetaTags.svelte';
-  import JsonLd from '$lib/components/JsonLd.svelte';
-  import { jsonLdGraph, pageNode, breadcrumbList } from '$lib/components/jsonld';
+  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
+  import { jsonLdGraph, pageNode, breadcrumbList } from '$lib/components/layout/site/jsonld';
   import Prose from '$lib/components/ui/Prose.svelte';
 
   const title = 'About';
