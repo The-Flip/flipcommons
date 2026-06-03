@@ -450,11 +450,11 @@ The `/[entity]/[slug]/sources/` route across catalog entity types renders only `
 
 - ErrorPage
 
-### `entity-links/`
+### `entity-links/` - DONE ✅
 
 `UserLink` (1 consumer: `ClaimAuthor` in `provenance/`) and `LocationLink` (3 files across `corporate-entities/` and `manufacturers/`) are small route-aware entity links. `ui/` is out (they know about routes). Splitting them — UserLink to `provenance/`, LocationLink somewhere — leaves LocationLink in an awkward single-occupant home given its cross-route use.
 
-Create top-level `entity-links/` as a small family folder for the pair, future-proofing for additional entity links.
+Create top-level `entity-links/` as a small family folder for the pair.
 
 ```text
 entity-links/

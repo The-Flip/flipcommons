@@ -9,7 +9,7 @@
   import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
   import { manufacturerEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
-  import LocationLink from '$lib/components/LocationLink.svelte';
+  import LocationLink from '$lib/components/entity-links/LocationLink.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import { formatYearRange, websiteHostname } from '$lib/utils';
 

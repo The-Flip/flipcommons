@@ -8,7 +8,7 @@
   import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import ExpandableSidebarList from '$lib/components/layout/page/sidebar/ExpandableSidebarList.svelte';
-  import LocationLink from '$lib/components/LocationLink.svelte';
+  import LocationLink from '$lib/components/entity-links/LocationLink.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';
