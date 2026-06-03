@@ -4,7 +4,6 @@
 
 - [ ] **HSTS header** — One step remaining: `max-age=31536000` (#463).
 - [ ] **Content Security Policy (CSP)** — report-only block shipped in #465 (`fcc3bb6`); SvelteKit emits via `kit.csp`, violations stream to Sentry. Lora is self-hosted in the same PR so `font-src` stays `'self'`. Enforce mode pending a week of clean reports; known gap: prerendered routes can't carry report-only headers, so they'll need a smoke-test before flipping.
-- [ ] **Verify SSR/prerender coverage of public pages** — `svelte.config.js` has prerender on, but no audit of which routes get prerendered. Run `pnpm build` and check the output, especially dynamic entity routes (`/models/[slug]`, etc.) which won't prerender by default.
 - [ ] **Media backups** — Setup backups of user-uploaded media. iDrive e2's internal replication doesn't cover accidental/malicious deletes, nor ransomware.
 - [ ] **Test DB restore** — Restore the most recent backup into a scratch Postgres, run smoke tests.
 
@@ -55,7 +54,8 @@
 - [x] **`robots.txt`** — SvelteKit `/robots.txt` endpoint landed in #460, gated on `ALLOW_SEARCH_ENGINE_INDEXING` (default deny; deploy check refuses any unset/non-literal value).
 - [x] **Noindex signals on non-indexable routes** — `noindexHandle` in `hooks.server.ts` (#459) emits both `X-Robots-Tag: noindex` header and `<meta name="robots" content="noindex">` (via `transformPageChunk`) for any route where `isSearchEngineIndexable()` is false. Both signals are needed: the header reaches crawlers on non-HTML responses (e.g. `__data.json`), the meta survives header-stripping infrastructure.
 - [x] **`sitemap.xml`** — Backend cached `/api/sitemap/` + per-page lastmod (#473); SvelteKit `/sitemap[[page=integer]].xml` route + `Sitemap:` line in `/robots.txt` (#474).
-- [ ] **Per-entity OG images** — verify Title/Model/Manufacturer pages emit good OG titles, descriptions, and images (not just the default).
+- [x] **SSR + SEO coverage of public pages** — All catalog listing pages converted CSR→SSR (#488 and predecessors); `catalog-listing` flipped to indexable in #488 (`f9ce53d`), which cascades to sitemap, noindex hook, and SSR test.
+- [x] **Per-entity OG images** — MetaTags wired into listing wrappers in `f9ce53d`; `55451d7` added a branded 1200×630 default for imageless pages, the full `twitter:*` tag set, and fixed a wikilink-token leak in meta descriptions across 6 detail layouts.
 - [x] **JSON-LD structured data** — schema.org `Product` / `CreativeWork` markup on pinball entity pages helps Google rich results.
 - [x] Favicon (`favicon.png`) and theme-color (light + dark variants) in `app.html`.
 - [x] **iOS home-screen + PWA-install affordances** — Full icon set landed in #476 (`30c61ad`): SVG favicon, 32px PNG fallback, `apple-touch-icon.png`, and `site.webmanifest` with 192/512/maskable app icons; `<link>` tags wired in `app.html`.
