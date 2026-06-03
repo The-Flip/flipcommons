@@ -1,7 +1,7 @@
 <script lang="ts">
   import client from '$lib/api/client';
-  import TaxonomyDetailBaseLayout from '$lib/components/TaxonomyDetailBaseLayout.svelte';
-  import HierarchicalTaxonomySidebar from '$lib/components/HierarchicalTaxonomySidebar.svelte';
+  import TaxonomyDetailBaseLayout from '$lib/components/pages/record/detail/TaxonomyDetailBaseLayout.svelte';
+  import HierarchicalTaxonomySidebar from '$lib/components/pages/record/detail/HierarchicalTaxonomySidebar.svelte';
   import HierarchicalTaxonomyEditorSwitch from '$lib/components/editors/HierarchicalTaxonomyEditorSwitch.svelte';
   import { hierarchicalTaxonomyEditActionContext } from '$lib/components/editors/edit-action-context';
   import {

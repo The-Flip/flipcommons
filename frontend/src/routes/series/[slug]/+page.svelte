@@ -1,6 +1,6 @@
 <script lang="ts">
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
-  import CreditsList from '$lib/components/CreditsList.svelte';
+  import CreditsList from '$lib/components/pages/record/detail/CreditsList.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
   import TitleList from '$lib/components/collections/TitleList.svelte';
 

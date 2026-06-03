@@ -3,8 +3,8 @@
   import { ENTITY_META } from '$lib/entities/entity-meta';
   import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
-  import HierarchicalTaxonomyChildrenAccordion from '$lib/components/HierarchicalTaxonomyChildrenAccordion.svelte';
-  import HierarchicalTaxonomyMobileMetaBar from '$lib/components/HierarchicalTaxonomyMobileMetaBar.svelte';
+  import HierarchicalTaxonomyChildrenAccordion from '$lib/components/pages/record/detail/HierarchicalTaxonomyChildrenAccordion.svelte';
+  import HierarchicalTaxonomyMobileMetaBar from '$lib/components/pages/record/detail/HierarchicalTaxonomyMobileMetaBar.svelte';
   import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';

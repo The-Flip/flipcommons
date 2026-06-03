@@ -1,8 +1,8 @@
 <script lang="ts">
   import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
-  import ModelHierarchy from '$lib/components/ModelHierarchy.svelte';
-  import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
-  import CreditsList from '$lib/components/CreditsList.svelte';
+  import ModelHierarchy from '$lib/components/pages/record/detail/ModelHierarchy.svelte';
+  import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
+  import CreditsList from '$lib/components/pages/record/detail/CreditsList.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import { ENTITY_META } from '$lib/entities/entity-meta';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';

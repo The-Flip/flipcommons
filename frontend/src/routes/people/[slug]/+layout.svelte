@@ -8,7 +8,7 @@
   import { metaDescriptionFor } from '$lib/components/layout/site/meta-tags';
   import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
-  import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
+  import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
   import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';
   import { personEditActionContext } from '$lib/components/editors/edit-action-context';

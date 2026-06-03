@@ -7,7 +7,7 @@
   import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
   import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
-  import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
+  import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
   import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
   import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';

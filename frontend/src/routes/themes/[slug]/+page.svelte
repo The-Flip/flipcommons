@@ -1,8 +1,8 @@
 <script lang="ts">
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import ClientFilteredGrid from '$lib/components/collections/grid/ClientFilteredGrid.svelte';
-  import HierarchicalTaxonomyChildrenAccordion from '$lib/components/HierarchicalTaxonomyChildrenAccordion.svelte';
-  import HierarchicalTaxonomyMobileMetaBar from '$lib/components/HierarchicalTaxonomyMobileMetaBar.svelte';
+  import HierarchicalTaxonomyChildrenAccordion from '$lib/components/pages/record/detail/HierarchicalTaxonomyChildrenAccordion.svelte';
+  import HierarchicalTaxonomyMobileMetaBar from '$lib/components/pages/record/detail/HierarchicalTaxonomyMobileMetaBar.svelte';
   import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
 
