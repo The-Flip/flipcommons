@@ -4,16 +4,16 @@
   import Markdown from '$lib/components/markdown/Markdown.svelte';
   import TitleCard from '$lib/components/cards/TitleCard.svelte';
   import PaginatedSection from '$lib/components/grid/PaginatedSection.svelte';
-  import { createPaginatedLoader } from '$lib/paginated-loader.svelte';
+  import { createPaginatedLoader, unwrapPage } from '$lib/paginated-loader.svelte';
 
   let { data } = $props();
   let profile = $derived(data.profile);
 
   const titles = createPaginatedLoader(async (page) => {
     const { data: result } = await client.GET('/api/titles/', {
-      params: { query: { display: profile.slug, page } },
+      params: { query: { display_type: profile.slug, page } },
     });
-    return result ?? { items: [], count: 0 };
+    return unwrapPage(result);
   });
 </script>
 

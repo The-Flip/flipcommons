@@ -11,18 +11,20 @@
  * node — i.e. the Svelte mount root — so delegated event handlers
  * (`onclick`, `onkeydown`, etc.) on the portaled subtree continue to fire.
  *
- * `@floating-ui/dom` is dynamically imported so anonymous readers don't pay for
- * code that only editors hit.
+ * `@floating-ui/dom` is imported statically: the filter sidebar on the public
+ * listing pages is a first-class anonymous-reader feature, so the dropdown
+ * positioning is core, not editor-only. Importing it lazily raced the first
+ * open (and needed a preload to paper over it); a plain import is simpler and
+ * SSR-safe (the package touches no DOM at module-eval time).
  */
 
+import { autoUpdate, computePosition, flip, offset, shift, size } from '@floating-ui/dom';
 import type { Action } from 'svelte/action';
 
 type VirtualElement = {
   getBoundingClientRect: () => DOMRect;
   contextElement?: Element;
 };
-
-type FloatingUiModule = typeof import('@floating-ui/dom');
 
 export type FloatingAnchor = Element | VirtualElement;
 
@@ -55,12 +57,6 @@ export type FloatingOptions = {
   maxHeight?: 'available' | number;
 };
 
-let modulePromise: Promise<FloatingUiModule> | undefined;
-function loadFloatingUi(): Promise<FloatingUiModule> {
-  modulePromise ??= import('@floating-ui/dom');
-  return modulePromise;
-}
-
 function findPortalTarget(node: Element): HTMLElement {
   let el: Element = node;
   while (el.parentElement && el.parentElement !== document.body) {
@@ -72,13 +68,12 @@ function findPortalTarget(node: Element): HTMLElement {
 export const floating: Action<HTMLElement, FloatingOptions> = (node, options) => {
   let currentOptions = options;
   let destroyed = false;
-  let fui: FloatingUiModule | undefined;
   let cleanupAutoUpdate: (() => void) | undefined;
   let subscribedAnchor: FloatingAnchor | undefined;
 
-  // Park the element far offscreen until the first computePosition resolves,
-  // to avoid a top-left flash while the dynamic floating-ui import is loading.
-  // We deliberately do NOT use visibility/opacity/pointer-events to hide:
+  // Park the element far offscreen until the first computePosition resolves
+  // (it's async), to avoid a top-left flash on open. We deliberately do NOT use
+  // visibility/opacity/pointer-events to hide:
   //   - visibility:hidden removes the element from the a11y tree (testing-
   //     library's getByRole skips it).
   //   - opacity:0 keeps it in the a11y tree but leaves it clickable at (0,0),
@@ -97,18 +92,13 @@ export const floating: Action<HTMLElement, FloatingOptions> = (node, options) =>
   portalTarget.appendChild(node);
 
   function reposition() {
-    if (!fui) return;
     const opts = currentOptions;
     const padding = opts.padding ?? 8;
-    const middleware = [
-      fui.offset(opts.offset ?? 4),
-      fui.flip({ padding }),
-      fui.shift({ padding }),
-    ];
+    const middleware = [offset(opts.offset ?? 4), flip({ padding }), shift({ padding })];
 
     if (opts.matchAnchorWidth || opts.maxHeight != null) {
       middleware.push(
-        fui.size({
+        size({
           padding,
           apply({ rects, availableHeight }) {
             if (opts.matchAnchorWidth) {
@@ -124,31 +114,24 @@ export const floating: Action<HTMLElement, FloatingOptions> = (node, options) =>
       );
     }
 
-    void fui
-      .computePosition(opts.anchor, node, {
-        placement: opts.placement ?? 'bottom-start',
-        strategy: 'fixed',
-        middleware,
-      })
-      .then(({ x, y }) => {
-        if (destroyed) return;
-        node.style.top = '0';
-        node.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
-      });
+    void computePosition(opts.anchor, node, {
+      placement: opts.placement ?? 'bottom-start',
+      strategy: 'fixed',
+      middleware,
+    }).then(({ x, y }) => {
+      if (destroyed) return;
+      node.style.top = '0';
+      node.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    });
   }
 
   function subscribe() {
-    if (!fui) return;
     cleanupAutoUpdate?.();
     subscribedAnchor = currentOptions.anchor;
-    cleanupAutoUpdate = fui.autoUpdate(subscribedAnchor, node, reposition);
+    cleanupAutoUpdate = autoUpdate(subscribedAnchor, node, reposition);
   }
 
-  void loadFloatingUi().then((mod) => {
-    if (destroyed) return;
-    fui = mod;
-    subscribe();
-  });
+  subscribe();
 
   return {
     update(next: FloatingOptions) {

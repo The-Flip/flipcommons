@@ -11,7 +11,7 @@
   import PaginatedSection from '$lib/components/grid/PaginatedSection.svelte';
   import { hierarchicalTaxonomyEditActionContext } from '$lib/components/editors/edit-action-context';
   import { displayAliasesFor } from '$lib/hierarchy-edit';
-  import { createPaginatedLoader } from '$lib/paginated-loader.svelte';
+  import { createPaginatedLoader, unwrapPage } from '$lib/paginated-loader.svelte';
 
   let { data } = $props();
   let profile = $derived(data.profile);
@@ -25,7 +25,7 @@
     const { data: result } = await client.GET('/api/models/', {
       params: { query: { feature: profile.slug, page } },
     });
-    return result ?? { items: [], count: 0 };
+    return unwrapPage(result);
   });
 </script>
 

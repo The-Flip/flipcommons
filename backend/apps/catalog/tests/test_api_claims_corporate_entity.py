@@ -73,7 +73,7 @@ class TestListCorporateEntities:
     def test_list_returns_entities(self, client, entity, other_entity):
         resp = client.get("/api/corporate-entities/")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 2
         names = [e["name"] for e in data]
         assert "D. Gottlieb & Company" in names
@@ -81,7 +81,7 @@ class TestListCorporateEntities:
 
     def test_list_includes_manufacturer(self, client, entity):
         resp = client.get("/api/corporate-entities/")
-        data = resp.json()
+        data = resp.json()["items"]
         assert data[0]["manufacturer"]["name"] == "Gottlieb"
         assert data[0]["manufacturer"]["public_id"] == "gottlieb"
 
@@ -90,7 +90,7 @@ class TestListCorporateEntities:
             name="Ace High", slug="ace-high", corporate_entity=entity, year=1957
         )
         resp = client.get("/api/corporate-entities/")
-        assert resp.json()[0]["model_count"] == 1
+        assert resp.json()["items"][0]["model_count"] == 1
 
     def test_list_excludes_variants_from_count(self, client, entity):
         base = make_machine_model(
@@ -103,7 +103,7 @@ class TestListCorporateEntities:
             variant_of=base,
         )
         resp = client.get("/api/corporate-entities/")
-        assert resp.json()[0]["model_count"] == 1
+        assert resp.json()["items"][0]["model_count"] == 1
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,10 @@
 
   export type Crumb = { label: string; href: string };
 
-  let { crumbs, current }: { crumbs: Crumb[]; current: string } = $props();
+  // House pattern: the breadcrumb shows only the ancestor trail (all links) and
+  // NOT the current page — that lives in the page's own heading. Callers pass
+  // just the ancestors in `crumbs`.
+  let { crumbs }: { crumbs: Crumb[] } = $props();
 </script>
 
 <nav aria-label="Breadcrumb" class="breadcrumb">
@@ -13,7 +16,6 @@
         <a href={resolveHref(crumb.href)}>{crumb.label}</a>
       </li>
     {/each}
-    <li aria-current="page">{current}</li>
   </ol>
 </nav>
 
@@ -44,9 +46,5 @@
   a:hover {
     color: var(--color-text);
     text-decoration: underline;
-  }
-
-  li[aria-current='page'] {
-    color: var(--color-text);
   }
 </style>

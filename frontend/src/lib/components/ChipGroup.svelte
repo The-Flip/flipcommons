@@ -3,11 +3,17 @@
     options,
     selected = $bindable(null),
     label = '',
+    disabled = false,
     onchange,
   }: {
-    options: { slug: string; label: string; count: number }[];
+    options: { value: string; label: string; count: number }[];
     selected?: string | null;
     label?: string;
+    /**
+     * Disable every chip (e.g. while the filter sidebar's options stream in).
+     * Defaults false, so existing consumers are unaffected.
+     */
+    disabled?: boolean;
     onchange?: (value: string | null) => void;
   } = $props();
 </script>
@@ -17,15 +23,15 @@
     <span class="filter-label">{label}</span>
   {/if}
   <div class="chips">
-    {#each options as opt (opt.slug)}
+    {#each options as opt (opt.value)}
       <button
         class="chip"
-        class:active={selected === opt.slug}
-        aria-pressed={selected === opt.slug}
-        aria-disabled={opt.count === 0}
-        disabled={opt.count === 0}
+        class:active={selected === opt.value}
+        aria-pressed={selected === opt.value}
+        aria-disabled={disabled || (opt.count === 0 && selected !== opt.value)}
+        disabled={disabled || (opt.count === 0 && selected !== opt.value)}
         onclick={() => {
-          const val = selected === opt.slug ? null : opt.slug;
+          const val = selected === opt.value ? null : opt.value;
           selected = val;
           onchange?.(val);
         }}

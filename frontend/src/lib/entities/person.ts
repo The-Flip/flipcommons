@@ -3,6 +3,13 @@ import type { EntityInfo } from './types';
 
 export const person: EntityInfo<PersonDetailSchema> = {
   entityType: 'person',
+  listing: {
+    title: 'Notable Pinball People',
+    // Terser than the SEO title for the breadcrumb crumb.
+    breadcrumb: 'Notable People',
+    description:
+      'Designers, artists, programmers and the other people credited on pinball machines.',
+  },
   schemaOrg: {
     types: ['Person'],
     // Year-only birth/death dates; month/day components are deliberately

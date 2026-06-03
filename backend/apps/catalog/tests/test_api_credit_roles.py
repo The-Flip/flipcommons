@@ -51,7 +51,7 @@ class TestCreditRoleList:
         resp = client.get("/api/credit-roles/")
         assert resp.status_code == 200
         body = resp.json()
-        assert [r["slug"] for r in body] == ["design", "software"]
+        assert [r["slug"] for r in body["items"]] == ["design", "software"]
 
 
 @pytest.mark.django_db

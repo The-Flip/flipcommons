@@ -3,7 +3,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import NamedTuple, Protocol
+from typing import NamedTuple, Protocol, TypedDict
+
+
+class FacetOptionDict(TypedDict):
+    """The JSON-serializable twin of ``schemas.FacetOptionSchema`` — a faceted
+    listing page's ``{public_id, name, count}`` option as a **plain dict**.
+
+    The facet page payload is assembled as plain dicts (not Schema instances) so the
+    cache's ``json.dumps`` fast path and the live path stay byte-equivalent (see
+    ``set_cached_response``). This names that dict's shape so the assembly isn't typed
+    as a faceless ``dict[str, object]``; ``set_cached_response`` still validates the
+    whole payload against the Ninja schema in DEBUG.
+    """
+
+    public_id: str
+    name: str
+    count: int
 
 
 class HasModelCount(Protocol):

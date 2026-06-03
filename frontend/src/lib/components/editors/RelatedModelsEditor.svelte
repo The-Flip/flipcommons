@@ -6,6 +6,7 @@
   import {
     EMPTY_EDIT_OPTIONS,
     fetchModelEditOptions,
+    toSelectOptions,
     type ModelEditOptions,
   } from './model-edit-options';
   import type { FieldErrors } from '$lib/api/parse-api-error';
@@ -47,7 +48,9 @@
   let editOptions = $state<ModelEditOptions>(EMPTY_EDIT_OPTIONS);
 
   // Filter out the current model from the options list
-  let modelOptions = $derived((editOptions.models ?? []).filter((o) => o.slug !== slug));
+  let modelOptions = $derived(
+    toSelectOptions((editOptions.models ?? []).filter((o) => o.slug !== slug)),
+  );
 
   $effect(() => {
     fetchModelEditOptions().then((opts) => {

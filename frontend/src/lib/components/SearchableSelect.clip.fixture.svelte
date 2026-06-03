@@ -2,8 +2,8 @@
   import SearchableSelect from './SearchableSelect.svelte';
 
   const options = [
-    { slug: 'stern', label: 'Stern Pinball', count: 5 },
-    { slug: 'bally', label: 'Bally', count: 3 },
+    { value: 'stern', label: 'Stern Pinball', count: 5 },
+    { value: 'bally', label: 'Bally', count: 3 },
   ];
 </script>
 

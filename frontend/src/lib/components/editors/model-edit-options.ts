@@ -6,9 +6,17 @@
  */
 
 import client from '$lib/api/client';
-import type { ModelEditOptionsSchema } from '$lib/api/schema';
+import type { EditOptionSchema, ModelEditOptionsSchema } from '$lib/api/schema';
 
 export type ModelEditOptions = ModelEditOptionsSchema;
+
+/**
+ * Map backend `{slug, label}` edit options onto the `{value, label}` shape the
+ * generic SearchableSelect takes.
+ */
+export function toSelectOptions(opts: EditOptionSchema[]): { value: string; label: string }[] {
+  return opts.map((o) => ({ value: o.slug, label: o.label }));
+}
 
 export const EMPTY_EDIT_OPTIONS: ModelEditOptions = {
   themes: [],

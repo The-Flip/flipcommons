@@ -63,7 +63,7 @@ class TestDiscoverAliasTypes:
         assert len(result) == 7
 
     def test_known_types_present(self):
-        # Full (parent_model, claim_field) tuples — catches typos AND
+        # Full (parent_model, claim_field) pairs — catches typos AND
         # misdeclarations like the right claim_field on the wrong class.
         expected: set[tuple[type[ClaimControlledModel], str]] = {
             (Theme, "theme_alias"),
@@ -74,7 +74,9 @@ class TestDiscoverAliasTypes:
             (CorporateEntity, "corporate_entity_alias"),
             (Location, "location_alias"),
         }
-        assert set(discover_alias_types()) == expected
+        assert {
+            (at.parent_model, at.claim_field) for at in discover_alias_types()
+        } == expected
 
     def test_subclass_without_alias_claim_field_fails_at_creation(self):
         """AliasModel.__init_subclass__ must fire at class definition, not
@@ -105,8 +107,8 @@ class TestLiteralSchemasAutoPopulated:
         assert schema is not None
 
     def test_contains_all_alias_types(self):
-        for _, field_name in discover_alias_types():
-            schema = get_relationship_schema(field_name)
+        for at in discover_alias_types():
+            schema = get_relationship_schema(at.claim_field)
             assert schema is not None
             # The alias value-key is named "alias_value" and participates in
             # the claim_key under the identity label "alias".

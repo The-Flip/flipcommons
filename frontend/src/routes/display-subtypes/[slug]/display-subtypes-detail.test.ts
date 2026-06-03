@@ -8,6 +8,7 @@ const MOCK_DATA = {
   display_order: 0,
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
   sources: [],
+  display_type: { name: 'Dot Matrix', public_id: 'dot-matrix' },
 };
 
 describe('display-subtypes detail SSR route', () => {

@@ -4,6 +4,8 @@
 
 import type { RouteId } from '$app/types';
 import { CATALOG_ENTITY_KEYS, ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
+import { listingMeta } from '$lib/entities/schema-org';
+import type { Crumb } from '$lib/components/jsonld';
 
 /**
  * Non-catalog routes that should be indexed by search engines.
@@ -224,12 +226,12 @@ export function classifyRoute(id: RouteId): RouteClass {
 export function isSearchEngineIndexable(id: RouteId): boolean {
   const c = classifyRoute(id);
   switch (c.kind) {
+    case 'catalog-listing':
     case 'catalog-detail':
     case 'catalog-edit-history':
     case 'catalog-sources':
     case 'listed-indexable':
       return true;
-    case 'catalog-listing':
     case 'catalog-edit':
     case 'catalog-new':
     case 'catalog-delete':
@@ -284,4 +286,38 @@ export function catalogRoutesByEntity(
     out.set(cls.entity, arr);
   }
   return out;
+}
+
+// Entities that actually have a `/{plural}` catalog-listing route. Derived
+// from the route tree (not hand-listed), so it auto-excludes the two entities
+// with no listing — `model` (only `/titles`) and `location` (detail-only).
+const ENTITIES_WITH_LISTING: ReadonlySet<CatalogEntityKey> = new Set(
+  catalogRoutesByEntity((c) => c.kind === 'catalog-listing').keys(),
+);
+
+/**
+ * The breadcrumb crumb linking to an entity's listing page (`Pinball
+ * Manufacturers` → `/manufacturers`), or `null` when the entity has no listing
+ * route. The label is the listing's resolved `breadcrumb` (see `listingMeta`),
+ * so a detail page's trail names the listing exactly as the listing page does;
+ * the URL comes from the model-driven `ENTITY_META` registry.
+ */
+export function listingCrumb(entity: CatalogEntityKey): Crumb | null {
+  if (!ENTITIES_WITH_LISTING.has(entity)) return null;
+  return {
+    label: listingMeta(entity).breadcrumb,
+    href: `/${ENTITY_META[entity].entity_type_plural}`,
+  };
+}
+
+/**
+ * Build a detail page's breadcrumb trail (leading up to, but excluding, the
+ * page itself): `Home` → the listing crumb for `entity` (if any) → any extra
+ * parent crumbs. Used for the JSON-LD `BreadcrumbList`. For nested details the
+ * `entity` is the parent whose listing anchors the trail — e.g. a Model passes
+ * `'title'` plus the Title crumb, yielding `Home › Titles › ⟨Title⟩`.
+ */
+export function detailCrumbs(entity: CatalogEntityKey, ...parents: Crumb[]): Crumb[] {
+  const listing = listingCrumb(entity);
+  return [{ label: 'Home', href: '/' }, ...(listing ? [listing] : []), ...parents];
 }

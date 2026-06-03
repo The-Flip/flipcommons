@@ -37,19 +37,22 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // Vendor-split heavy third-party SDKs into their own chunks so app
-        // deploys don't invalidate cached SDK bytes. Both Sentry and PostHog
-        // are loaded eagerly from the root layout (Sentry via hooks.client.ts;
-        // PostHog via the side-effect import of $lib/analytics in
-        // +layout.svelte), so without this they'd land in the layout chunk
-        // whose hash changes on every app deploy — re-downloading ~150 KB
-        // gzipped of unchanged SDK code each time. Two separate chunks
-        // (rather than one combined "vendor") because the SDKs version
-        // independently; HTTP/2/3 multiplexing makes the extra request cost
-        // negligible.
+        // Vendor-split third-party libs into their own chunks so app deploys
+        // don't invalidate cached vendor bytes. Sentry and PostHog are loaded
+        // eagerly from the root layout (Sentry via hooks.client.ts; PostHog via
+        // the side-effect import of $lib/analytics in +layout.svelte), so without
+        // this they'd land in the layout chunk whose hash changes on every app
+        // deploy — re-downloading ~150 KB gzipped of unchanged SDK code each time.
+        // @floating-ui/dom is shared by the filter-sidebar/menu components and
+        // Rollup already auto-splits it, but pinning it here keeps that isolation
+        // immune to import-graph shifts (a static import, unlike the old dynamic
+        // one, doesn't force a chunk boundary on its own). Separate chunks (rather
+        // than one combined "vendor") because the libs version independently;
+        // HTTP/2/3 multiplexing makes the extra request cost negligible.
         manualChunks: (id) => {
           if (id.includes('/posthog-js/')) return 'vendor-posthog';
           if (id.includes('/@sentry/')) return 'vendor-sentry';
+          if (id.includes('/@floating-ui/')) return 'vendor-floating-ui';
         },
       },
     },

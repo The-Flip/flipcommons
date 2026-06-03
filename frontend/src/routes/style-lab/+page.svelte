@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ActiveFilterChips from '$lib/components/ActiveFilterChips.svelte';
+  import ActiveFilterChips, { type FilterChipSpec } from '$lib/components/ActiveFilterChips.svelte';
   import ActionMenu from '$lib/components/ActionMenu.svelte';
   import Button from '$lib/components/Button.svelte';
   import MenuDivider from '$lib/components/MenuDivider.svelte';
@@ -12,7 +12,6 @@
     type CardDistressType,
   } from '$lib/components/cards/Card.svelte';
   import MachineCard from '$lib/components/cards/MachineCard.svelte';
-  import { emptyFilterState, type FacetedTitle, type FilterState } from '$lib/facet-engine';
 
   const distressCases: {
     label: string;
@@ -29,38 +28,19 @@
     { label: 'Dog ear bottom right', type: 'dog-ear', corner: 'br' },
   ];
 
-  const filterTitles: FacetedTitle[] = [
-    {
-      name: 'Attack from Mars',
-      slug: 'attack-from-mars',
-      abbreviations: ['AFM'],
-      model_count: 1,
-      manufacturer: { public_id: 'williams', name: 'Williams' },
-      year: 1995,
-      thumbnail_url: null,
-      tech_generations: [{ public_id: 'solid-state', name: 'Solid state' }],
-      display_types: [{ public_id: 'dot-matrix-display', name: 'Dot matrix display' }],
-      player_counts: [4],
-      systems: [{ public_id: 'wpc-95', name: 'WPC-95' }],
-      themes: [{ public_id: 'sci-fi', name: 'Science fiction' }],
-      gameplay_features: [{ public_id: 'multiball', name: 'Multiball' }],
-      reward_types: [],
-      persons: [],
-      franchise: null,
-      series: null,
-      year_min: 1995,
-      year_max: 1995,
-      ipdb_rating_max: 8.4,
-    },
-  ];
-
-  let activeFilters = $state<FilterState>({
-    ...emptyFilterState(),
-    manufacturer: 'williams',
-    themes: ['sci-fi'],
-    yearMin: 1980,
-    yearMax: 1995,
-  });
+  let demoChips = $state([
+    { key: 'manufacturer:williams', label: 'Williams' },
+    { key: 'themes:sci-fi', label: 'Science fiction' },
+    { key: 'year', label: 'Year: 1980–1995' },
+  ]);
+  let filterChips = $derived(
+    demoChips.map(
+      (chip): FilterChipSpec => ({
+        ...chip,
+        remove: () => (demoChips = demoChips.filter((c) => c.key !== chip.key)),
+      }),
+    ),
+  );
 </script>
 
 <div class="lab-header">
@@ -138,7 +118,7 @@
       <div class="status-card error">Slug conflicts with an existing record.</div>
       <div class="filter-state-card">
         <div class="state-label">Active filters</div>
-        <ActiveFilterChips bind:filters={activeFilters} allTitles={filterTitles} />
+        <ActiveFilterChips chips={filterChips} />
       </div>
       <div class="action-cluster">
         <Button variant="secondary">Cancel</Button>

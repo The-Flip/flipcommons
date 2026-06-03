@@ -24,6 +24,7 @@ from ..models import Franchise, MachineModel, Title
 from ._typing import HasTitleCount
 from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
+from .entity_list import paginated_list_response
 from .helpers import serialize_title_ref
 from .images import fetch_title_media_map
 from .rich_text import describe
@@ -40,6 +41,14 @@ class FranchiseListItemSchema(Schema):
     title_count: int = 0
 
 
+class FranchiseListSchema(Schema):
+    """``{items, count}`` page of franchises — the wire shape ``createPaginatedLoader``
+    expects (it derives has_more from items.length < count)."""
+
+    items: list[FranchiseListItemSchema]
+    count: int
+
+
 class FranchiseDetailSchema(CatalogDetailSchema):
     slug: str
     titles: list[TitleRef]
@@ -52,23 +61,49 @@ class FranchiseDetailSchema(CatalogDetailSchema):
 franchises_router = Router(tags=["franchises"])
 
 
-@franchises_router.get("/", response=list[FranchiseListItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_franchises(request: HttpRequest) -> list[FranchiseListItemSchema]:
-    """Return every franchise with title count (no pagination)."""
-    qs = (
+def _franchise_list_qs() -> QuerySet[Franchise]:
+    """Active franchises annotated with their active-title count, ordered most-titled
+    first. The paginated handler re-orders with a ``pk`` tiebreak for stable offset
+    pages; ``/all/`` consumes this order as-is."""
+    return (
         Franchise.objects.active()
         .annotate(title_count=Count("titles", filter=active_status_q("titles")))
         .order_by("-title_count", "name")
     )
-    return [
-        FranchiseListItemSchema(
-            name=f.name,
-            slug=f.slug,
-            title_count=cast(HasTitleCount, f).title_count,
-        )
-        for f in qs
-    ]
+
+
+def _serialize_franchise_row(
+    franchise: Franchise, thumbnail: str | None = None
+) -> FranchiseListItemSchema:
+    return FranchiseListItemSchema(
+        name=franchise.name,
+        slug=franchise.slug,
+        title_count=cast(HasTitleCount, franchise).title_count,
+    )
+
+
+@franchises_router.get("/", response=FranchiseListSchema)
+def list_franchises(
+    request: HttpRequest, q: str = "", page: int = 1
+) -> FranchiseListSchema:
+    """One page of franchises (cards in page 1's SSR HTML, infinite scroll for 2…N),
+    ordered most-titled first, filtered server-side by ``q``."""
+    result = paginated_list_response(
+        _franchise_list_qs(),
+        q=q,
+        ordering=("-title_count", "name", "pk"),
+        page=page,
+        serialize_row=_serialize_franchise_row,
+    )
+    return FranchiseListSchema(items=result.items, count=result.total)
+
+
+@franchises_router.get("/all/", response=list[FranchiseListItemSchema])
+@decorate_view(cache_control(no_cache=True))
+def list_all_franchises(request: HttpRequest) -> list[FranchiseListItemSchema]:
+    """Every franchise with title count (no pagination) — the full set the editor
+    option-pickers need, which the paginated ``GET /`` can't serve them."""
+    return [_serialize_franchise_row(f) for f in _franchise_list_qs()]
 
 
 def _franchise_titles_qs() -> QuerySet[Title]:

@@ -1,107 +1,94 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-const { mockGet, authMock } = vi.hoisted(() => ({
-  mockGet: vi.fn(),
-  authMock: { isAuthenticated: true, load: () => Promise.resolve() },
+const { goto } = vi.hoisted(() => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ goto }));
+vi.mock('$lib/auth.svelte', () => ({
+  auth: { isAuthenticated: true, load: () => Promise.resolve() },
 }));
-
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$app/paths', () => ({ resolve: (p: string) => p }));
-vi.mock('$lib/api/client', () => ({
-  default: { GET: mockGet },
-}));
-vi.mock('$lib/auth.svelte', () => ({ auth: authMock }));
+// The fetchPage closure imports the client; it isn't called on initial render,
+// but the import must resolve.
+vi.mock('$lib/api/client', () => ({ default: { GET: vi.fn() } }));
+// The adapter emits MetaTags + listing JSON-LD, which read `page.url`.
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/systems') } }));
 
 import Page from './+page.svelte';
-import type { SystemListItemSchema } from '$lib/api/schema';
 
-const SYSTEMS = [
-  {
-    name: 'SPIKE',
-    slug: 'spike',
-    manufacturer: { public_id: 'stern', name: 'Stern' },
-    model_count: 42,
-  },
-  {
-    name: 'WPC-95',
-    slug: 'wpc-95',
-    manufacturer: { public_id: 'williams', name: 'Williams' },
-    model_count: 30,
-  },
-  {
-    name: 'Whitestar',
-    slug: 'whitestar',
-    manufacturer: { public_id: 'stern', name: 'Stern' },
-    model_count: 12,
-  },
-] satisfies SystemListItemSchema[];
+const WPC = {
+  name: 'WPC-95',
+  slug: 'wpc-95',
+  manufacturer: { public_id: 'williams', name: 'Williams' },
+  model_count: 30,
+};
+const SPIKE = {
+  name: 'SPIKE',
+  slug: 'spike',
+  manufacturer: { public_id: 'stern', name: 'Stern' },
+  model_count: 42,
+};
 
-async function renderAndWait() {
-  mockGet.mockResolvedValue({ data: SYSTEMS });
-  render(Page);
-  // createAsyncLoader resolves on the next tick; wait for the list to
-  // appear, then scope subsequent queries to it so the overview paragraph
-  // in the page header (which also mentions systems like WPC-95) doesn't
-  // collide with row-level text matches.
-  const list = await screen.findByRole('list');
-  return within(list);
+const OPTIONS = [
+  { value: 'stern', name: 'Stern' },
+  { value: 'williams', name: 'Williams' },
+];
+
+function data(overrides: Record<string, unknown> = {}) {
+  return {
+    data: {
+      items: [WPC, SPIKE],
+      count: 2,
+      q: '',
+      manufacturer: '',
+      manufacturerOptions: OPTIONS,
+      ...overrides,
+    },
+  };
 }
 
-describe('systems list route', () => {
-  beforeEach(() => {
-    mockGet.mockReset();
-    authMock.isAuthenticated = true;
+describe('/systems route — extraFilter axis', () => {
+  it('renders SSR rows with manufacturer + model count', () => {
+    render(Page, { props: data() });
+    const list = screen.getByRole('list');
+    expect(within(list).getByText('WPC-95')).toBeInTheDocument();
+    expect(within(list).getByText('Williams')).toBeInTheDocument();
+    expect(within(list).getByText('30 models')).toBeInTheDocument();
   });
 
-  it('renders all systems with manufacturer and model count', async () => {
-    const list = await renderAndWait();
-    expect(list.getByText('SPIKE')).toBeInTheDocument();
-    expect(list.getByText('WPC-95')).toBeInTheDocument();
-    expect(list.getByText('Whitestar')).toBeInTheDocument();
-    expect(list.getAllByText('Stern').length).toBe(2);
-    expect(list.getByText('42 models')).toBeInTheDocument();
-    expect(list.getByText('30 models')).toBeInTheDocument();
-  });
-
-  it('derives manufacturer options from visible systems', async () => {
-    await renderAndWait();
+  it('renders the server-derived manufacturer options, "All" first', () => {
+    render(Page, { props: data() });
     const select = screen.getByLabelText('Manufacturer') as HTMLSelectElement;
-    const optionLabels = Array.from(select.options).map((o) => o.textContent);
-    // First entry is "All manufacturers"; Stern + Williams follow in
-    // alphabetical order. Stern appears once despite two systems owning it.
-    expect(optionLabels).toEqual(['All manufacturers', 'Stern', 'Williams']);
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual([
+      'All manufacturers',
+      'Stern',
+      'Williams',
+    ]);
   });
 
-  it('manufacturer filter narrows the rendered list', async () => {
+  it('selecting a manufacturer navigates to ?manufacturer=', async () => {
     const user = userEvent.setup();
-    const list = await renderAndWait();
+    render(Page, { props: data() });
 
-    const select = screen.getByLabelText('Manufacturer') as HTMLSelectElement;
-    await user.selectOptions(select, 'williams');
+    await user.selectOptions(screen.getByLabelText('Manufacturer'), 'williams');
 
-    expect(list.getByText('WPC-95')).toBeInTheDocument();
-    expect(list.queryByText('SPIKE')).not.toBeInTheDocument();
-    expect(list.queryByText('Whitestar')).not.toBeInTheDocument();
+    await waitFor(() => expect(goto).toHaveBeenCalledTimes(1));
+    expect(goto.mock.calls[0][0]).toContain('manufacturer=williams');
   });
 
-  it('shows "+ New System" in the action menu when authenticated', async () => {
-    const user = userEvent.setup();
-    await renderAndWait();
-    // The action-menu trigger is labeled "Edit" by EditSectionMenu's default.
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
-    expect(screen.getByRole('menuitem', { name: /\+ New System/ })).toBeInTheDocument();
+  it('offers the create prompt for an empty search when no filter is active', () => {
+    // Positive control for the suppression test below: same empty+query, but
+    // *unfiltered*, so `count === 0` genuinely means the name is free.
+    render(Page, { props: data({ items: [], count: 0, q: 'nonesuch', manufacturer: '' }) });
+    expect(screen.getByText(/does not exist/i)).toBeInTheDocument();
   });
 
-  it('hides the action-menu trigger entirely when unauthenticated', async () => {
-    authMock.isAuthenticated = false;
-    mockGet.mockResolvedValue({ data: SYSTEMS });
-    render(Page);
-    const list = await screen.findByRole('list');
-    expect(within(list).getByText('SPIKE')).toBeInTheDocument();
-    // The trigger itself is gated on auth, so there is no Edit button to
-    // click — and therefore no way to reveal the create item.
-    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+  it('suppresses the create prompt when a manufacturer filter is active and the page is empty', () => {
+    render(Page, {
+      props: data({ items: [], count: 0, q: 'nonesuch', manufacturer: 'williams' }),
+    });
+    // count===0 under an active filter means "none for this manufacturer", not
+    // "the name is free" — so no create offer, just the empty message.
+    expect(screen.queryByText(/does not exist/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/no matching systems/i)).toBeInTheDocument();
   });
 });

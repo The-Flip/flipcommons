@@ -9,6 +9,7 @@
   import {
     EMPTY_EDIT_OPTIONS,
     fetchModelEditOptions,
+    toSelectOptions,
     type ModelEditOptions,
   } from './model-edit-options';
   import type { FieldErrors } from '$lib/api/parse-api-error';
@@ -116,7 +117,7 @@
 		-->
     <SearchableSelect
       label="Title"
-      options={editOptions.titles ?? []}
+      options={toSelectOptions(editOptions.titles ?? [])}
       bind:selected={fields.title}
       error={fieldErrors.title ?? ''}
       showCounts={false}
@@ -125,7 +126,7 @@
   {/if}
   <SearchableSelect
     label="Manufacturer"
-    options={editOptions.corporate_entities ?? []}
+    options={toSelectOptions(editOptions.corporate_entities ?? [])}
     bind:selected={fields.corporate_entity}
     error={fieldErrors.corporate_entity ?? ''}
     allowZeroCount

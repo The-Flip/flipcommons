@@ -1,47 +1,30 @@
 <script lang="ts">
   import client from '$lib/api/client';
-  import { createAsyncLoader } from '$lib/async-loader.svelte';
-  import TaxonomyListPage from '$lib/components/TaxonomyListPage.svelte';
-  import type { SystemListItemSchema } from '$lib/api/schema';
+  import { unwrapPage } from '$lib/paginated-loader.svelte';
+  import CatalogListing from '$lib/components/pages/listing/CatalogListing.svelte';
 
-  type SystemRow = SystemListItemSchema;
+  let { data } = $props();
 
-  const systems = createAsyncLoader(async () => {
-    const { data } = await client.GET('/api/systems/all/');
-    return data ?? [];
-  }, []);
-
-  let manufacturerFilter = $state<string>('');
-
-  let manufacturerOptions = $derived.by(() => {
-    const seen: Record<string, string> = {};
-    for (const s of systems.data) {
-      if (!(s.manufacturer.public_id in seen)) {
-        seen[s.manufacturer.public_id] = s.manufacturer.name;
-      }
-    }
-    return Object.entries(seen)
-      .map(([publicId, name]) => ({ slug: publicId, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  });
-
-  function filterByManufacturer(s: SystemRow): boolean {
-    if (!manufacturerFilter) return true;
-    return s.manufacturer.public_id === manufacturerFilter;
-  }
+  // Typed page fetcher: the `/api/systems/` path literal is baked in here so the
+  // response stays typed (`SystemListItemSchema`), then flows generically
+  // through CatalogListing. Threads the committed `q` and `manufacturer` filter.
+  const fetchPage = async (page: number) => {
+    const res = await client.GET('/api/systems/', {
+      params: {
+        query: { q: data.q, manufacturer: data.manufacturer || undefined, page },
+      },
+    });
+    return unwrapPage(res.data);
+  };
 </script>
 
-<svelte:head>
-  <link rel="preload" as="fetch" href="/api/systems/all/" crossorigin="anonymous" />
-</svelte:head>
-
-<TaxonomyListPage
+<CatalogListing
   catalogKey="system"
-  items={systems.data}
-  loading={systems.loading}
-  error={systems.error}
+  initial={{ items: data.items, count: data.count }}
+  {fetchPage}
+  q={data.q}
+  extraParams={{ manufacturer: data.manufacturer }}
   canCreate
-  filterFn={filterByManufacturer}
 >
   {#snippet headerSnippet()}
     <p class="overview">
@@ -61,32 +44,34 @@
     </p>
   {/snippet}
 
-  {#snippet filters()}
-    {#if manufacturerOptions.length > 1}
+  {#snippet extraFilter(setExtra)}
+    {#if data.manufacturerOptions.length > 1}
       <div class="mfr-filter">
         <label for="mfr-filter-select">Manufacturer</label>
-        <select id="mfr-filter-select" bind:value={manufacturerFilter}>
+        <select
+          id="mfr-filter-select"
+          value={data.manufacturer}
+          onchange={(e) => setExtra({ manufacturer: e.currentTarget.value })}
+        >
           <option value="">All manufacturers</option>
-          {#each manufacturerOptions as opt (opt.slug)}
-            <option value={opt.slug}>{opt.name}</option>
+          {#each data.manufacturerOptions as opt (opt.value)}
+            <option value={opt.value}>{opt.name}</option>
           {/each}
         </select>
       </div>
     {/if}
   {/snippet}
 
-  {#snippet rowSnippet(system)}
+  {#snippet children(system)}
     <span class="system-name">{system.name}</span>
     <span class="system-meta">
-      {#if system.manufacturer}
-        <span class="manufacturer">{system.manufacturer.name}</span>
-      {/if}
+      <span class="manufacturer">{system.manufacturer.name}</span>
       <span class="count">
         {system.model_count} model{system.model_count === 1 ? '' : 's'}
       </span>
     </span>
   {/snippet}
-</TaxonomyListPage>
+</CatalogListing>
 
 <style>
   .overview {
@@ -113,14 +98,11 @@
     color: var(--color-text-muted);
   }
 
-  .mfr-filter select {
-    font: inherit;
-    padding: var(--size-1) var(--size-2);
-  }
-
   .system-name {
     font-size: var(--font-size-2);
-    color: var(--color-text);
+    /* `inherit` so the name picks up the row's link color on hover (the meta
+       spans set their own muted color and stay put), matching the plain rows. */
+    color: inherit;
     font-weight: 500;
   }
 

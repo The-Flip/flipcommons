@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -10,9 +11,8 @@ from django.db.models import Count, F, Max, Min, Prefetch, Q, QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
-from ninja import Router, Schema
+from ninja import Query, Router, Schema
 from ninja.decorators import decorate_view
-from ninja.pagination import paginate
 from ninja.security import django_auth
 from pydantic import TypeAdapter
 
@@ -20,26 +20,37 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
-from apps.core.pagination import NamedPageNumberPagination
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
-from ..cache import get_cached_response, manufacturers_all_key, set_cached_response
+from ..cache import (
+    get_cached_response,
+    manufacturers_all_key,
+    manufacturers_facets_key,
+    set_cached_response,
+)
 from ..models import (
     CorporateEntity,
     CorporateEntityAlias,
     CorporateEntityLocation,
     Credit,
-    Location,
     MachineModel,
     Manufacturer,
     ManufacturerAlias,
     System,
 )
-from ._typing import HasModelCount, HasYearRange, SlugName
+from ._manufacturer_facets import (
+    FacetOption,
+    FilterOptions,
+    MfrFilters,
+    facet_counts,
+    ordered,
+    query_count,
+)
+from ._typing import FacetOptionDict, HasModelCount, HasYearRange, SlugName
 from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
@@ -59,7 +70,9 @@ from .schemas import (
     ClaimPatchSchema,
     CorporateEntityLocationSchema,
     EntityRef,
+    FacetOptionSchema,
     RelatedTitleSchema,
+    YearBoundsSchema,
 )
 from .titles import _dedup_facet_dicts
 
@@ -82,10 +95,80 @@ _ALL_ADAPTER: TypeAdapter[list[ManufacturerGridItemSchema]] = TypeAdapter(
 )
 
 
-class ManufacturerListItemSchema(Schema):
+# ---------------------------------------------------------------------------
+# Listing page schemas (SSR /manufacturers)
+# ---------------------------------------------------------------------------
+
+
+class ManufacturerCardSchema(Schema):
+    """Slim card for the /manufacturers grid and every infinite-scroll page — only
+    what ``ManufacturerCard`` renders. No facet arrays (those live on the page
+    endpoint's ``filter_options``), so the list path skips the bulk facet queries."""
+
     name: str
     slug: str
     model_count: int = 0
+    thumbnail_url: str | None = None
+
+
+class ManufacturerListPageSchema(Schema):
+    """``{items, count}`` page of cards — the wire shape ``createPaginatedLoader``
+    expects (it derives has_more from items.length < count)."""
+
+    items: list[ManufacturerCardSchema]
+    count: int
+
+
+class ManufacturerFilterQuerySchema(Schema):
+    """Every /manufacturers filter dimension as query params — one vocabulary end to
+    end (URL ⇄ this schema ⇄ ``MfrFilters``). All facets are single-value (no
+    titles-style repeated multi-value params)."""
+
+    q: str = ""
+    location: str | None = None
+    person: str | None = None
+    tech_gen: str | None = None
+    year_min: int | None = None
+    year_max: int | None = None
+
+    def to_filters(self) -> MfrFilters:
+        return MfrFilters(
+            q=self.q or "",
+            location=self.location,
+            person=self.person,
+            tech_gen=self.tech_gen,
+            year_min=self.year_min,
+            year_max=self.year_max,
+        )
+
+
+# --- Facet option lists (GET /api/pages/manufacturers) ---
+
+# ``FacetOptionSchema`` (`{public_id, name, count}`) and ``YearBoundsSchema`` are the
+# entity-agnostic facet wire types, shared from ``schemas.py`` (see their docstrings
+# there) so every listing page emits one OpenAPI component per shape.
+
+
+class ManufacturerFilterOptionsSchema(Schema):
+    location: list[FacetOptionSchema] = []
+    person: list[FacetOptionSchema] = []
+    tech_gen: list[FacetOptionSchema] = []
+    year: YearBoundsSchema = YearBoundsSchema()
+
+
+class ManufacturerFacetsPageSchema(Schema):
+    """The /manufacturers page endpoint payload — facet options plus the query-only
+    count (cards come from ``GET /api/manufacturers/``)."""
+
+    filter_options: ManufacturerFilterOptionsSchema
+    # Manufacturers matching ``q`` alone, ignoring active facets; null when there is
+    # no ``q``. Drives the "create this manufacturer?" prompt.
+    query_count: int | None = None
+
+
+_FACETS_ADAPTER: TypeAdapter[ManufacturerFacetsPageSchema] = TypeAdapter(
+    ManufacturerFacetsPageSchema
+)
 
 
 class ManufacturerCorporateEntitySchema(Schema):
@@ -233,25 +316,6 @@ def _manufacturer_qs() -> QuerySet[Manufacturer]:
     )
 
 
-def _build_location_refs(
-    entities: list[CorporateEntity],
-) -> list[dict[str, str]]:
-    """Build location Refs for each location and all its ancestors.
-
-    A Location's ``public_id`` is its ``location_path`` (globally unique and
-    stable), so that's what each ref carries as its ``public_id``.
-    """
-    refs: dict[str, str] = {}  # location_path -> name
-    for entity in entities:
-        for cel in entity.locations.all():
-            cur: Location | None = cel.location
-            while cur is not None:
-                if cur.location_path not in refs:
-                    refs[cur.location_path] = cur.name
-                cur = cur.parent
-    return [{"public_id": path, "name": name} for path, name in refs.items()]
-
-
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
@@ -259,27 +323,131 @@ def _build_location_refs(
 manufacturers_router = Router(tags=["manufacturers"])
 
 
-class ManufacturerListPagination(NamedPageNumberPagination):
-    response_name = "ManufacturerListSchema"
+def _page_thumbnails(
+    manufacturer_ids: list[int], *, min_rank: int
+) -> dict[int, str | None]:
+    """Per-manufacturer thumbnail URL, batched over **just this page's** manufacturers.
 
-
-@manufacturers_router.get("/", response=list[ManufacturerListItemSchema])
-@paginate(ManufacturerListPagination, page_size=DEFAULT_PAGE_SIZE)
-def list_manufacturers(request: HttpRequest) -> list[ManufacturerListItemSchema]:
-    return [
-        ManufacturerListItemSchema(
-            name=row["name"], slug=row["slug"], model_count=row["model_count"]
+    Parity with ``/all/`` ([list_all_manufacturers]): the newest active non-variant
+    model that has ``extra_data`` (``year`` DESC nulls-last, then ``name``, first-wins),
+    then the uploaded-backglass-preferred / ``extra_data`` fallback image at
+    ``min_rank`` (the licensing gate that drops below-rank images — so the card is
+    audience-variant). Scoped to the sliced ids so the batch can't scan every model in
+    the catalog the way ``/all/`` (which has no page to bound) does."""
+    if not manufacturer_ids:
+        return {}
+    thumb_model: dict[int, int] = {}
+    for mfr_id, model_id in (
+        MachineModel.objects.active()
+        .filter(
+            variant_of__isnull=True,
+            extra_data__isnull=False,
+            corporate_entity__manufacturer_id__in=manufacturer_ids,
         )
-        for row in Manufacturer.objects.active()
-        .annotate(
-            model_count=Count(
-                "entities__models",
-                filter=active_status_q("entities__models"),
+        .order_by(F("year").desc(nulls_last=True), "name")
+        .values_list("corporate_entity__manufacturer_id", "id")
+    ):
+        thumb_model.setdefault(mfr_id, model_id)
+    thumb_models = {
+        m.pk: m
+        for m in MachineModel.objects.filter(id__in=thumb_model.values()).only(
+            "id", "extra_data"
+        )
+    }
+    thumb_media = fetch_model_media_map(thumb_model.values())
+
+    thumbnails: dict[int, str | None] = {}
+    for mfr_id, model_id in thumb_model.items():
+        tm = thumb_models.get(model_id)
+        if tm is None:
+            continue
+        url, _ = extract_image_urls(
+            tm.extra_data or {}, thumb_media.get(tm.pk), min_rank=min_rank
+        )
+        thumbnails[mfr_id] = url
+    return thumbnails
+
+
+@manufacturers_router.get("/", response=ManufacturerListPageSchema)
+def list_manufacturers(
+    request: HttpRequest, filters: Query[ManufacturerFilterQuerySchema], page: int = 1
+) -> ManufacturerListPageSchema:
+    """One page of manufacturer cards for the SSR grid (page 1) and infinite scroll
+    (2…N). Slices at SQL via ``ordered`` + LIMIT/OFFSET — only the requested page is
+    serialized (never ``list(qs)`` over the whole catalog)."""
+    f = filters.to_filters()
+    rows = ordered(f)
+    count = rows.count()
+    size = DEFAULT_PAGE_SIZE
+    start = (max(page, 1) - 1) * size
+    manufacturers = list(rows[start : start + size])
+    min_rank = get_minimum_display_rank()
+    thumbnails = _page_thumbnails([m.pk for m in manufacturers], min_rank=min_rank)
+    return ManufacturerListPageSchema(
+        items=[
+            ManufacturerCardSchema(
+                name=m.name,
+                slug=m.slug,
+                model_count=cast(HasModelCount, m).model_count,
+                thumbnail_url=thumbnails.get(m.pk),
             )
-        )
-        .order_by("name")
-        .values("name", "slug", "model_count")
+            for m in manufacturers
+        ],
+        count=count,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Listing page — facet options (GET /api/pages/manufacturers)
+# ---------------------------------------------------------------------------
+
+
+def _facet_option_dicts(options: list[FacetOption]) -> list[FacetOptionDict]:
+    return [
+        {"public_id": o.public_id, "name": o.name, "count": o.count} for o in options
     ]
+
+
+def _filter_options_payload(opts: FilterOptions) -> dict[str, object]:
+    """``FilterOptions`` → the JSON-able dict the page endpoint returns (and caches).
+
+    Plain dicts (not Schema instances) so the cache's ``json.dumps`` fast path and the
+    live path stay byte-equivalent (see ``set_cached_response``)."""
+    return {
+        "filter_options": {
+            "location": _facet_option_dicts(opts.location),
+            "person": _facet_option_dicts(opts.person),
+            "tech_gen": _facet_option_dicts(opts.tech_gen),
+            "year": {"min": opts.year.min, "max": opts.year.max},
+        }
+    }
+
+
+def manufacturer_facets_response(filters: MfrFilters) -> HttpResponse:
+    """Build the ``/api/pages/manufacturers`` response. The no-filter payload is cached
+    (hottest path, static between catalog edits); filtered requests compute live.
+
+    The cache key is audience-scoped and the live branch sets ``Vary: Cookie`` for
+    **consistency/insurance**, not because the payload varies by audience: the facet
+    counts gate on ``active_status_q`` (status only — active/deleted), carrying no
+    ``min_rank``/licensing input, so they are audience-invariant today (only the cards'
+    thumbnails are audience-variant). Audience scoping is cheap insurance if a
+    licensing-gated input is ever added."""
+    if filters == MfrFilters():
+        cached = get_cached_response(manufacturers_facets_key())
+        if cached is not None:
+            return cached
+        # Compute only on a miss. The no-filter path has no `q`, so `query_count` is
+        # always null here.
+        payload = _filter_options_payload(facet_counts(filters))
+        payload["query_count"] = None
+        return set_cached_response(manufacturers_facets_key(), _FACETS_ADAPTER, payload)
+    payload = _filter_options_payload(facet_counts(filters))
+    payload["query_count"] = query_count(filters)
+    json_bytes = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    response = HttpResponse(json_bytes, content_type="application/json")
+    response["Vary"] = "Cookie"
+    return response
 
 
 @manufacturers_router.get("/all/", response=list[ManufacturerGridItemSchema])

@@ -402,6 +402,48 @@ a:hover {
   text-decoration: underline;
 }
 
+/* ========================================
+   HEADINGS
+   Base type scale. Zero-specificity (:where) so it overrides Open
+   Props normalize by source order, and any component or Prose
+   heading style overrides it in turn. Chrome (PageHeader,
+   HeroHeader) and content (Prose) own their own margins; this sets
+   type only.
+   ======================================== */
+:where(h1, h2, h3, h4, h5, h6) {
+  color: var(--color-text);
+  font-weight: var(--font-weight-6); /* 600 — normalize ships 900 */
+  line-height: var(--font-lineheight-1); /* 1.25 */
+}
+
+:where(h1) {
+  font-size: var(--font-size-6); /* 2.5rem */
+  font-weight: var(--font-weight-7); /* 700 */
+  line-height: var(--font-lineheight-0); /* 1.1 — tighter for the big size */
+  max-inline-size: none; /* drop normalize's --size-header-1 clamp */
+}
+
+:where(h2) {
+  font-size: var(--font-size-4); /* 1.5rem */
+}
+
+:where(h3) {
+  font-size: var(--font-size-3); /* 1.25rem */
+}
+
+:where(h4) {
+  font-size: var(--font-size-2); /* 1.1rem */
+}
+
+:where(h5) {
+  font-size: var(--font-size-1); /* 1rem */
+}
+
+:where(h6) {
+  font-size: var(--font-size-1); /* 1rem */
+  color: var(--color-text-muted);
+}
+
 :where(li, dd, figcaption) {
   max-inline-size: none;
 }

@@ -59,7 +59,7 @@
   ])}
 />
 
-<Breadcrumb crumbs={[{ label: 'About', href: '/about' }]} current="People" />
+<Breadcrumb crumbs={[{ label: 'About', href: '/about' }]} />
 
 <p class="lede">
   Flipcommons was started by two friends making something they wished existed, with care, curiosity,

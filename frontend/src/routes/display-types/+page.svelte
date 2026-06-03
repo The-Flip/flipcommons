@@ -1,22 +1,11 @@
 <script lang="ts">
-  import client from '$lib/api/client';
-  import { createAsyncLoader } from '$lib/async-loader.svelte';
   import GroupedTaxonomyList from '$lib/components/GroupedTaxonomyList.svelte';
   import TaxonomyListPage from '$lib/components/TaxonomyListPage.svelte';
 
-  const loader = createAsyncLoader(async () => {
-    const { data } = await client.GET('/api/display-types/');
-    return data ?? [];
-  }, []);
+  let { data } = $props();
 </script>
 
-<TaxonomyListPage
-  catalogKey="display-type"
-  items={loader.data}
-  loading={loader.loading}
-  error={loader.error}
-  canCreate
->
+<TaxonomyListPage catalogKey="display-type" items={data.items} canCreate>
   {#snippet headerSnippet()}
     <p class="overview">
       A <strong>display type</strong> is the technology a game machine uses to show the player's

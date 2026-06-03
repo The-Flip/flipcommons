@@ -3,6 +3,15 @@ import type { EntityInfo } from './types';
 
 export const title: EntityInfo<TitleDetailSchema> = {
   entityType: 'title',
+  listing: {
+    // "Titles" alone is ambiguous out of context (browser tab, social card,
+    // search result); spell it out for those title surfaces. The visible
+    // heading stays the shorter, friendlier "Pinball Machines".
+    title: 'Pinball Machine Titles',
+    heading: 'Pinball Machines',
+    description:
+      'Browse every pinball title in the Flipcommons catalog — the games, their themes, manufacturers and the machines that brought them to life.',
+  },
   schemaOrg: {
     types: ['Game'],
     fieldMap: { hero_image_url: 'image' },

@@ -13,8 +13,6 @@
     ipdb_id?: number | null;
     opdb_id?: string | null;
     pinside_id?: string | null;
-    ipdb_rating?: number | null;
-    pinside_rating?: number | null;
   };
 
   let {
@@ -29,8 +27,6 @@
     ipdb_id: string | number;
     opdb_id: string;
     pinside_id: string;
-    ipdb_rating: string | number;
-    pinside_rating: string | number;
   };
 
   function extractFields(m: ExternalDataModel): ExternalDataFormFields {
@@ -38,8 +34,6 @@
       ipdb_id: m.ipdb_id ?? '',
       opdb_id: m.opdb_id ?? '',
       pinside_id: m.pinside_id ?? '',
-      ipdb_rating: m.ipdb_rating ?? '',
-      pinside_rating: m.pinside_rating ?? '',
     };
   }
 
@@ -104,23 +98,6 @@
         label="Pinside ID"
         bind:value={fields.pinside_id}
         error={fieldErrors.pinside_id ?? ''}
-      />
-    </div>
-  </Fieldset>
-
-  <Fieldset legend="Ratings">
-    <div class="fields-grid">
-      <NumberField
-        label="IPDB rating"
-        bind:value={fields.ipdb_rating}
-        error={fieldErrors.ipdb_rating ?? ''}
-        {...fc(constraints, 'ipdb_rating')}
-      />
-      <NumberField
-        label="Pinside rating"
-        bind:value={fields.pinside_rating}
-        error={fieldErrors.pinside_rating ?? ''}
-        {...fc(constraints, 'pinside_rating')}
       />
     </div>
   </Fieldset>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import SimpleTaxonomyDetailLayout from '$lib/components/SimpleTaxonomyDetailLayout.svelte';
+  import { listingMeta } from '$lib/entities/schema-org';
 
   let { data, children } = $props();
   let profile = $derived(data.profile);
@@ -8,9 +9,15 @@
 <SimpleTaxonomyDetailLayout
   {profile}
   jsonLd={data.jsonLd}
-  parentLabel="Technology Generations"
+  parentLabel={listingMeta('technology-generation').breadcrumb}
   basePath="/technology-subgenerations"
-  parentHref="/technology-generations"
+  breadcrumbs={[
+    { label: listingMeta('technology-generation').breadcrumb, href: '/technology-generations' },
+    {
+      label: profile.technology_generation.name,
+      href: `/technology-generations/${profile.technology_generation.public_id}`,
+    },
+  ]}
   claimsPath={'/api/technology-subgenerations/{public_id}/claims/'}
   deleteHref={`/technology-subgenerations/${profile.slug}/delete`}
 >

@@ -933,20 +933,5 @@ class TestFranchiseRestore:
         assert "titles" in body
 
 
-# ── Franchise list endpoint renamed from /all/ to / ─────────────────
-
-
-@pytest.mark.django_db
-class TestFranchiseList:
-    def test_list_endpoint_at_root(self, client):
-        Franchise.objects.create(
-            name="Indiana Jones", slug="indiana-jones", status="active"
-        )
-        resp = client.get("/api/franchises/")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert any(f["slug"] == "indiana-jones" for f in body)
-
-    def test_old_all_path_gone(self, client):
-        resp = client.get("/api/franchises/all/")
-        assert resp.status_code == 404
+# The franchise list endpoint (paginated ``GET /`` + full ``GET /all/``) is covered by
+# ``test_api_catalog_list.py``.

@@ -29,7 +29,7 @@
 
 <header>
   {#if breadcrumbs}
-    <Breadcrumb crumbs={breadcrumbs} current={title} />
+    <Breadcrumb crumbs={breadcrumbs} />
   {/if}
   {#if actions}
     <div class="head-row">
@@ -51,9 +51,6 @@
   }
 
   h1 {
-    font-size: var(--font-size-7);
-    font-weight: 700;
-    color: var(--color-text);
     margin-bottom: var(--page-header-title-mb, var(--size-4));
   }
 
@@ -75,7 +72,10 @@
     min-width: 0;
   }
 
-  .head-title h1 {
+  /* Only collapse the title margin when the h1 stands alone in the row
+     (h1 + actions button). When a subtitle/description follows, keep the
+     title↔body gap so it matches the plain (logged-out) layout. */
+  .head-title h1:last-child {
     margin-bottom: 0;
   }
 

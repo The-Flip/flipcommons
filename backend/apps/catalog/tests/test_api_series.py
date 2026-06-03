@@ -1,11 +1,8 @@
-"""Query-count regression for the series list endpoint.
+"""Query-count regression for the paginated series list endpoint.
 
-The `list_series` view uses a ``Prefetch("titles__machine_models", ...)``
-whose inner queryset narrows columns via ``.only(...)``. If the FK
-back-pointer (``title_id``) is omitted from ``.only(...)``, Django's
-prefetch machinery does a ``refresh_from_db`` per prefetched row to
-recover the column it needs to wire up the parent association, scaling
-queries linearly with the number of MachineModels in the response.
+``list_series`` resolves thumbnails through the batched ``_series_thumbnails``
+provider (a fixed number of queries over the page's pks) rather than per-row
+work. This pins that invariant: adding rows must not add queries.
 """
 
 from __future__ import annotations
@@ -34,7 +31,7 @@ def test_list_series_query_count_does_not_scale_with_rows(client):
     with CaptureQueriesContext(connection) as small_ctx:
         resp = client.get("/api/series/")
         assert resp.status_code == 200
-        assert len(resp.json()) == 2
+        assert len(resp.json()["items"]) == 2
     small_count = len(small_ctx.captured_queries)
 
     _seed(start=2, count=8)
@@ -42,7 +39,7 @@ def test_list_series_query_count_does_not_scale_with_rows(client):
     with CaptureQueriesContext(connection) as big_ctx:
         resp = client.get("/api/series/")
         assert resp.status_code == 200
-        assert len(resp.json()) == 10
+        assert len(resp.json()["items"]) == 10
     big_count = len(big_ctx.captured_queries)
 
     assert big_count == small_count, (

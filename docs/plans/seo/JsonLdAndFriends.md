@@ -19,7 +19,7 @@ The original SEO primitives: `<title>`, `<meta name="description">` and `<link r
 
 Each layout hand-picks the relevant fields (title, description, hero image, alt text) and passes them in:
 
-- Listing pages emit `<title>` only (no description, no canonical) because they're CSR for now.
+- Listing pages emit all three: a per-entity `<title>` and `<meta name="description">` (from the entity's `listing` copy in `frontend/src/lib/entities/<model>.ts`) plus a canonical URL. `buildCanonicalUrl` strips the query string, so faceted/paginated variants (`?manufacturer=…`, `?page=2`) all canonicalize onto the bare listing.
 - Detail pages emit all three.
   - Taxonomy, Series and Franchise detail layouts source their meta/OG descriptions from `RichTextSchema.plain` via `metaDescriptionFor(profile)`, so markdown syntax and `[[type:slug]]` reference tokens do not leak into machine-readable descriptions.
 
@@ -36,7 +36,7 @@ Each layout hand-picks the relevant fields:
 
 **Gaps**:
 
-- Listing pages. They're currently CSR and therefore emit nothing (see [CSR pages: out of scope](#csr-pages-out-of-scope)).
+- ✅ Listing pages now emit the full OG set via `MetaTags` with `og:type` `website`, using the entity's `listing` description and the branded default image (no per-listing image, same as imageless detail pages).
 
 ### Twitter card
 
@@ -610,7 +610,7 @@ Such as `/titles/[slug]`, `/models/[slug]`, `/people/[slug]` etc.
 Target shape for every SSR entity detail page: each page emits two top-level nodes in `@graph`:
 
 - The entity itself as a typed node (`Game`, `Person`, `Organization`, etc.) with `@id` cross-references to related entities and `sameAs` links to external IDs. No `WebPage` wrapper — the type is the thing, not the medium.
-- A `BreadcrumbList` node carrying the page's hierarchical trail. Google's BreadcrumbList rich result replaces the URL in SERPs with a readable trail, measurably lifting click-through. Example chains: Title page → `Home › Godzilla`; Model page → `Home › Godzilla › Godzilla Pro` (Model's parent is its Title; there's no `/models` listing page, and we skip `/titles` since it's CSR-only and an empty shell to crawlers). The JSON-LD chain is richer than the visible UI breadcrumb — that's allowed by Google's policies as long as every item in the chain is a real, accessible page reflecting the site's genuine hierarchy.
+- A `BreadcrumbList` node carrying the page's hierarchical trail. Google's BreadcrumbList rich result replaces the URL in SERPs with a readable trail, measurably lifting click-through. Example chains: Title page → `Home › Titles › Godzilla`; Model page → `Home › Titles › Godzilla › Godzilla Pro` (Model's parent is its Title; there's no `/models` listing, so the Model borrows the Title's `/titles` listing crumb). Now that catalog listings are SSR and indexable, every detail breadcrumb routes through the entity's listing crumb (`Home › Manufacturers › Stern`, etc.), derived model-driven via `listingCrumb()`/`detailCrumbs()` in `route-metadata.server.ts`. The JSON-LD chain is richer than the visible UI breadcrumb — that's allowed by Google's policies as long as every item in the chain is a real, accessible page reflecting the site's genuine hierarchy.
 
 ✅ DONE for taxonomy detail pages: Theme, GameplayFeature, TechnologyGeneration, TechnologySubgeneration, DisplayType, DisplaySubtype, Cabinet, GameFormat, RewardType, Tag and CreditRole now emit the entity node plus a `Home › {name}` `BreadcrumbList`. Most omit cross-references, images and `sameAs`; `Theme` and `GameplayFeature` additionally emit `parents → isPartOf` cross-references. ✅ DONE for Manufacturer (`Brand`, with `logo`/`url` via `fieldMap`), System (`CreativeWork`, with `manufacturer → producer`) and the 7 richer entities (CorporateEntity, Series, Franchise, Location, MachineModel, Title, Person — see the top-of-section DONE entry for per-entity types and the Model/Location breadcrumb enrichment + Title dual-node composition). `sameAs` and `primary_image`-sourced images await later tranches.
 
@@ -623,6 +623,16 @@ Each will emit a `CollectionPage` typed node with `about` → the entity's `@id`
 For single-Model Titles, the Model's `/models/[slug]/edit-history` and `/models/[slug]/sources` remain accessible even though `/models/[slug]` itself redirects (per SingleModelTitles.md). Each meta-page points `about` at its own entity's `@id`: `/titles/[slug]/edit-history` is about the Title (`@id: /titles/[slug]`), `/models/[slug]/edit-history` is about the Model (`@id: /models/[slug]`). Each entity retains its identity regardless of collapse status (see [Single-Model Titles](#single-model-titles)), so meta-pages have unambiguous about-targets — no collision between Title-side and Model-side history pages.
 
 These pages emit the same `BreadcrumbList` node pattern as entity detail pages, with the trail extended one level (`Home › Godzilla › Godzilla Pro › Edit history`).
+
+### Entity listing pages ✅ DONE
+
+Such as `/titles`, `/manufacturers`, `/people`, the glossary lists and the grouped taxonomies (`/display-types`, `/technology-generations`). SSR and indexable since the listing-SSR conversion. Each emits head/OG/Twitter via `MetaTags` (`og:type` `website`) plus a `@graph` of three nodes built by `buildListingJsonLd()`:
+
+- a `CollectionPage` typed node (`@id` = the bare listing URL, query stripped) whose `mainEntity` points at the `ItemList`;
+- an `ItemList` (`@id` = `⟨listing⟩#items`, `numberOfItems` = the full collection size) of the SSR'd page-1 items as named `@id` references — cheap payload, gives crawlers/LLMs anchor text and a path to every member. Emitted **only on the bare listing URL**: a filtered/paginated variant canonicalizes to the bare path, so its partial subset must not be published under that canonical `@id` (the `CollectionPage` and breadcrumb are URL-only and stay);
+- a `BreadcrumbList` (`Home › ⟨Listing⟩`).
+
+Title and description come from the entity's `listing` bucket in its `frontend/src/lib/entities/<model>.ts` file — the single source for both the visible page subtitle and the machine-readable description. `/models` is the one catalog entity with no listing page.
 
 ### Static pages
 
@@ -657,12 +667,6 @@ Most crawlers don't execute any of the JavaScript on the pages they fetch. Pages
 Because of this, we don't include CSR pages in `sitemap.xml`.
 
 The following page categories are currently CSR and therefore will probably be excluded from the first pass implementation of this doc's design.
-
-#### Entity listing pages
-
-Such as `/titles`, `/models`, `/people`.
-
-Currently CSR and thus not crawlable.
 
 #### User detail pages
 
@@ -780,11 +784,8 @@ Entity hub pages (Manufacturer → list of Models, Theme → list of Models, Ser
 
 If aggregate-query performance turns out to be poor in practice, add an `ItemList` node in the hub page's `@graph` with `itemListElement` references (just `@id` URLs, not inlined nodes) to each related entity. Cheap payload (URLs only); meaningful LLM lift. Skip preemptively in v1 — add when the need is concrete.
 
-### User and listing pages
+### User pages
 
-Already documented under [CSR pages: out of scope](#csr-pages-out-of-scope). Both categories require SSR conversion before metadata work applies. When SSR'd:
+Still CSR (see [CSR pages: out of scope](#csr-pages-out-of-scope)); SSR conversion is the gating concern. When SSR'd: `ProfilePage` typing, Person body node, `sameAs` to external profiles, included in the sitemap (User would need to be a `LinkableModel`).
 
-- User detail pages → `ProfilePage` typing, Person body node, sameAs to external profiles, in the sitemap (User would need to be a `LinkableModel`)
-- Catalog entity listing pages → `CollectionPage` typing, `ItemList` of `@id`-referenced entities
-
-The metadata design for these is sketched in the CSR section; the gating concern is the SSR conversion itself.
+Catalog entity listing pages are no longer a follow-up — they shipped `CollectionPage` + `ItemList` + `BreadcrumbList`; see [Entity listing pages](#entity-listing-pages--done).

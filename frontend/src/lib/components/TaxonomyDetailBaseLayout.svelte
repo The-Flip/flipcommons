@@ -10,6 +10,7 @@
   import { metaDescriptionFor } from '$lib/components/meta-tags';
   import PageActionBar from '$lib/components/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/RecordDetailShell.svelte';
+  import type { Crumb } from '$lib/components/Breadcrumb.svelte';
   import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
   import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';
   import type { EditSectionDef } from '$lib/components/editors/edit-section-def';
@@ -39,6 +40,7 @@
     parentLabel,
     basePath,
     parentHref,
+    breadcrumbs,
     sections,
     editor: editorSnippet,
     immediateEditor,
@@ -64,6 +66,12 @@
      * `/display-subtypes/`.
      */
     parentHref?: string;
+    /**
+     * Optional multi-level trail shown in place of the single `parentLabel`
+     * kicker — for entities nested under a parent (e.g. a display subtype under
+     * its display type). The current entity's name is appended automatically.
+     */
+    breadcrumbs?: Crumb[];
     sections: SectionDef[];
     editor: Snippet<[TKey, EditorCallbacks]>;
     immediateEditor?: Snippet;
@@ -219,7 +227,10 @@
 
   <RecordDetailShell
     name={profile.name}
-    parentLink={{ text: parentLabel, href: resolveHref(parentHref ?? basePath) }}
+    parentLink={breadcrumbs
+      ? null
+      : { text: parentLabel, href: resolveHref(parentHref ?? basePath) }}
+    {breadcrumbs}
     {aliases}
     {actionBar}
     {main}

@@ -11,6 +11,7 @@
     type HierarchicalTaxonomyEditSectionKey,
   } from '$lib/components/editors/hierarchical-taxonomy-edit-sections';
   import { displayAliasesFor } from '$lib/hierarchy-edit';
+  import { listingMeta } from '$lib/entities/schema-org';
 
   let { data, children } = $props();
   let profile = $derived(data.profile);
@@ -27,7 +28,7 @@
   let displayAliases = $derived(displayAliasesFor(profile.name, profile.aliases ?? []));
 
   async function loadParentOptions() {
-    const { data: features } = await client.GET('/api/gameplay-features/');
+    const { data: features } = await client.GET('/api/gameplay-features/all/');
     if (!features) return [];
     return features.map((f) => ({
       slug: f.slug,
@@ -40,7 +41,7 @@
 <TaxonomyDetailBaseLayout
   {profile}
   jsonLd={data.jsonLd}
-  parentLabel="Gameplay Features"
+  parentLabel={listingMeta('gameplay-feature').breadcrumb}
   basePath={BASE_PATH}
   {sections}
   editActionContext={hierarchicalTaxonomyEditActionContext}

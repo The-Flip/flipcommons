@@ -2,108 +2,81 @@
   import ChipGroup from './ChipGroup.svelte';
   import SearchableSelect from './SearchableSelect.svelte';
   import YearRangeInput from './YearRangeInput.svelte';
-  import {
-    buildFacetRefOptions,
-    buildPlayerCountOptions,
-    buildSingleRefOptions,
-    computeFacetCounts,
-    emptyFilterState,
-    type FacetedTitle,
-    type FilterState,
-  } from '$lib/facet-engine';
+  import { emptyFilterState, hasActiveFilters, type FilterState } from '$lib/facet-engine';
+  import type { FacetOptionSchema, FilterOptionsSchema } from '$lib/api/schema';
 
   let {
-    allTitles,
+    filterOptions,
+    disabled = false,
+    busy = false,
     filters = $bindable(),
   }: {
-    allTitles: FacetedTitle[];
+    /**
+     * Server-computed option lists with live N-1 counts (public_id, name, count).
+     * `undefined` while the facet stream is in flight on first/cold load — the
+     * controls render disabled and empty until it arrives (see `streamed`).
+     */
+    filterOptions: FilterOptionsSchema | undefined;
+    /** Disable every control (first/cold load, before any options have arrived). */
+    disabled?: boolean;
+    /** A refetch is in flight (sets `aria-busy` for screen readers; not visually disabled). */
+    busy?: boolean;
     filters: FilterState;
   } = $props();
 
-  // -----------------------------------------------------------------------
-  // Facet counts (N-1 approach)
-  // -----------------------------------------------------------------------
-  let facetCounts = $derived(computeFacetCounts(allTitles, filters));
-
-  // -----------------------------------------------------------------------
-  // Option lists (unique values enriched with live counts)
-  // -----------------------------------------------------------------------
-  let techGenOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.tech_generations, facetCounts.techGeneration),
-  );
-  let displayTypeOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.display_types, facetCounts.displayType),
-  );
-  let manufacturerOptions = $derived(
-    buildSingleRefOptions(allTitles, (t) => t.manufacturer ?? null, facetCounts.manufacturer),
-  );
-  let personOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.persons, facetCounts.person),
-  );
-  let themeOptions = $derived(buildFacetRefOptions(allTitles, (t) => t.themes, facetCounts.theme));
-  let featureOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.gameplay_features, facetCounts.feature),
-  );
-  let rewardTypeOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.reward_types, facetCounts.rewardType),
-  );
-  let systemOptions = $derived(
-    buildFacetRefOptions(allTitles, (t) => t.systems, facetCounts.system),
-  );
-  let franchiseOptions = $derived(
-    buildSingleRefOptions(allTitles, (t) => t.franchise, facetCounts.franchise),
-  );
-  let seriesOptions = $derived(
-    buildSingleRefOptions(allTitles, (t) => t.series, facetCounts.series),
-  );
-  let playerCountOptions = $derived(buildPlayerCountOptions(facetCounts.playerCount));
-
-  // Player count adaptor: ChipGroup works with string slugs, filters.playerCount is number|null
-  let playerCountChipOptions = $derived(
-    playerCountOptions.map((o) => ({ slug: String(o.value), label: o.label, count: o.count })),
-  );
-  let playerCountSlug = $derived(filters.playerCount != null ? String(filters.playerCount) : null);
-
-  function setPlayerCount(slug: string | null) {
-    filters.playerCount = slug ? Number(slug) : null;
+  /** Backend `{public_id, name, count}` → the `{value, label, count}` the controls take. */
+  function toOptions(opts: FacetOptionSchema[]): { value: string; label: string; count: number }[] {
+    return opts.map((o) => ({ value: o.public_id, label: o.name, count: o.count }));
   }
 
-  // -----------------------------------------------------------------------
-  // Active filter detection
-  // -----------------------------------------------------------------------
-  let hasActiveFilters = $derived(
-    filters.techGeneration != null ||
-      filters.yearMin != null ||
-      filters.yearMax != null ||
-      filters.manufacturer != null ||
-      filters.person != null ||
-      filters.themes.length > 0 ||
-      filters.features.length > 0 ||
-      filters.rewardTypes.length > 0 ||
-      filters.displayType != null ||
-      filters.playerCount != null ||
-      filters.system != null ||
-      filters.franchise != null ||
-      filters.series != null ||
-      filters.ratingMin != null,
+  let manufacturerOptions = $derived(filterOptions ? toOptions(filterOptions.manufacturer) : []);
+  let personOptions = $derived(filterOptions ? toOptions(filterOptions.person) : []);
+  let themeOptions = $derived(filterOptions ? toOptions(filterOptions.theme) : []);
+  let featureOptions = $derived(filterOptions ? toOptions(filterOptions.feature) : []);
+  let rewardTypeOptions = $derived(filterOptions ? toOptions(filterOptions.reward_type) : []);
+  let techGenOptions = $derived(filterOptions ? toOptions(filterOptions.tech_gen) : []);
+  let displayTypeOptions = $derived(filterOptions ? toOptions(filterOptions.display_type) : []);
+  let systemOptions = $derived(filterOptions ? toOptions(filterOptions.system) : []);
+  let franchiseOptions = $derived(filterOptions ? toOptions(filterOptions.franchise) : []);
+  let seriesOptions = $derived(filterOptions ? toOptions(filterOptions.series) : []);
+
+  // Player count: server returns {value, count} buckets; ChipGroup wants string
+  // values, and `filters.playerCount` is number|null. The "6+" bucket renders
+  // under value 6. Guarded for the undefined-options window like the others —
+  // this builds its own buckets (not via `toOptions`), so it needs its own guard.
+  let playerCountChipOptions = $derived(
+    filterOptions
+      ? filterOptions.player_count.map((o) => ({
+          value: String(o.value),
+          label: o.value >= 6 ? '6+' : String(o.value),
+          count: o.count,
+        }))
+      : [],
   );
+  let playerCountValue = $derived(filters.playerCount != null ? String(filters.playerCount) : null);
+
+  function setPlayerCount(value: string | null) {
+    filters.playerCount = value ? Number(value) : null;
+  }
+
+  let anyActive = $derived(hasActiveFilters(filters));
 
   function clearAll() {
     filters = emptyFilterState();
   }
 </script>
 
-<aside class="sidebar">
+<aside class="sidebar" aria-busy={busy}>
   <div class="sidebar-header">
     <h2>Filters</h2>
-    {#if hasActiveFilters}
-      <button class="clear-all" onclick={clearAll}>Clear all</button>
+    {#if anyActive}
+      <button class="clear-all" {disabled} onclick={clearAll}>Clear all</button>
     {/if}
   </div>
 
   <div class="filter-section">
     <span class="filter-label">Year</span>
-    <YearRangeInput bind:min={filters.yearMin} bind:max={filters.yearMax} />
+    <YearRangeInput bind:min={filters.yearMin} bind:max={filters.yearMax} {disabled} />
   </div>
 
   <div class="filter-section">
@@ -112,7 +85,9 @@
       label="Manufacturer"
       options={manufacturerOptions}
       bind:selected={filters.manufacturer}
+      {disabled}
       placeholder="Search manufacturers..."
+      emptyMessage="No manufacturers match your other filters"
     />
   </div>
 
@@ -122,7 +97,9 @@
       label="Person"
       options={personOptions}
       bind:selected={filters.person}
+      {disabled}
       placeholder="Search people..."
+      emptyMessage="No people match your other filters"
     />
   </div>
 
@@ -133,7 +110,9 @@
       options={themeOptions}
       bind:selected={filters.themes}
       multi
+      {disabled}
       placeholder="Search themes..."
+      emptyMessage="No themes match your other filters"
     />
   </div>
 
@@ -144,7 +123,9 @@
       options={featureOptions}
       bind:selected={filters.features}
       multi
+      {disabled}
       placeholder="Search features..."
+      emptyMessage="No features match your other filters"
     />
   </div>
 
@@ -155,7 +136,9 @@
       options={rewardTypeOptions}
       bind:selected={filters.rewardTypes}
       multi
+      {disabled}
       placeholder="Search reward types..."
+      emptyMessage="No reward types match your other filters"
     />
   </div>
 
@@ -164,6 +147,7 @@
       label="Tech generation"
       options={techGenOptions}
       bind:selected={filters.techGeneration}
+      {disabled}
     />
   </div>
 
@@ -172,6 +156,7 @@
       label="Display type"
       options={displayTypeOptions}
       bind:selected={filters.displayType}
+      {disabled}
     />
   </div>
 
@@ -179,7 +164,8 @@
     <ChipGroup
       label="Player count"
       options={playerCountChipOptions}
-      selected={playerCountSlug}
+      selected={playerCountValue}
+      {disabled}
       onchange={setPlayerCount}
     />
   </div>
@@ -190,7 +176,9 @@
       label="System"
       options={systemOptions}
       bind:selected={filters.system}
+      {disabled}
       placeholder="Search systems..."
+      emptyMessage="No systems match your other filters"
     />
   </div>
 
@@ -200,7 +188,9 @@
       label="Franchise"
       options={franchiseOptions}
       bind:selected={filters.franchise}
+      {disabled}
       placeholder="Search franchises..."
+      emptyMessage="No franchises match your other filters"
     />
   </div>
 
@@ -210,25 +200,9 @@
       label="Series"
       options={seriesOptions}
       bind:selected={filters.series}
+      {disabled}
       placeholder="Search series..."
-    />
-  </div>
-
-  <div class="filter-section">
-    <span class="filter-label">Min IPDB rating</span>
-    <input
-      type="number"
-      step="0.1"
-      min="0"
-      max="10"
-      placeholder="e.g. 7.0"
-      aria-label="Minimum IPDB rating"
-      class="rating-input"
-      value={filters.ratingMin ?? ''}
-      onchange={(e) => {
-        const v = e.currentTarget.value;
-        filters.ratingMin = v ? Number(v) : null;
-      }}
+      emptyMessage="No series match your other filters"
     />
   </div>
 </aside>
@@ -261,8 +235,13 @@
     padding: 0;
   }
 
-  .clear-all:hover {
+  .clear-all:hover:not(:disabled) {
     text-decoration: underline;
+  }
+
+  .clear-all:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .filter-section {
@@ -274,10 +253,5 @@
   .filter-label {
     font-size: var(--font-size-0);
     color: var(--color-text-muted);
-  }
-
-  .rating-input {
-    width: 6rem;
-    padding: var(--size-2);
   }
 </style>

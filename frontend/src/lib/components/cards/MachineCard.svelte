@@ -8,8 +8,6 @@
     thumbnailUrl = null,
     manufacturerName = null,
     year = null,
-    ipdbRating = null,
-    pinsideRating = null,
     roles = null,
   }: {
     slug: string;
@@ -17,13 +15,10 @@
     thumbnailUrl?: string | null;
     manufacturerName?: string | null;
     year?: number | null;
-    ipdbRating?: number | null;
-    pinsideRating?: number | null;
     roles?: string[] | null;
   } = $props();
 
   let hasMeta = $derived(!!manufacturerName || !!year);
-  let hasRatings = $derived(!!ipdbRating || !!pinsideRating);
 </script>
 
 <Card href={resolve(`/models/${slug}`)} title={name} {thumbnailUrl}>
@@ -39,16 +34,6 @@
   {/if}
   {#if roles && roles.length > 0}
     <div class="card-roles">{roles.join(', ')}</div>
-  {/if}
-  {#if hasRatings}
-    <div class="card-ratings">
-      {#if ipdbRating}
-        <span>IPDB {ipdbRating}</span>
-      {/if}
-      {#if pinsideRating}
-        <span>Pinside {pinsideRating}</span>
-      {/if}
-    </div>
   {/if}
 </Card>
 
@@ -70,14 +55,5 @@
     font-size: var(--font-size-0);
     color: var(--color-text-muted);
     font-style: italic;
-  }
-
-  .card-ratings {
-    display: flex;
-    gap: var(--size-2);
-    margin-top: var(--size-1);
-    font-size: var(--font-size-0);
-    color: var(--color-link);
-    font-weight: 500;
   }
 </style>

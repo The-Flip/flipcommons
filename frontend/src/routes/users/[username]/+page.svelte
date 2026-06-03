@@ -2,18 +2,19 @@
   import { SITE_TITLE } from '$lib/constants';
   import { resolveHref } from '$lib/utils';
   import SmartDate from '$lib/components/SmartDate.svelte';
+  import TwoColumnLayout from '$lib/components/TwoColumnLayout.svelte';
 
   let { data } = $props();
   let profile = $derived(data.profile);
 </script>
 
 <svelte:head>
-  <title>@{profile.username} — {SITE_TITLE}</title>
+  <title>Contributions by {profile.username} — {SITE_TITLE}</title>
 </svelte:head>
 
 <div class="profile-page">
   <header class="profile-header">
-    <h1>@{profile.username}</h1>
+    <h1>Contributions by {profile.username}</h1>
     <p class="meta">
       Member since {new Date(profile.member_since).toLocaleDateString(undefined, {
         month: 'short',
@@ -23,50 +24,56 @@
     </p>
   </header>
 
-  {#if profile.entities_edited.length > 0}
-    <section class="section">
-      <h2>Entities edited</h2>
-      <ul class="entity-list">
-        {#each profile.entities_edited as contribution (contribution.entity.href)}
-          <li class="entity-item">
-            <a href={resolveHref(contribution.entity.href)} class="entity-link">
-              <span class="entity-name">{contribution.entity.name}</span>
-              <span class="entity-type">{contribution.entity.type_label}</span>
-            </a>
-            <span class="entity-meta">
-              {contribution.edit_count}
-              {contribution.edit_count === 1 ? 'edit' : 'edits'} · last
-              <SmartDate iso={contribution.last_edited_at} />
-            </span>
-          </li>
-        {/each}
-      </ul>
-    </section>
-  {/if}
+  {#if profile.recent_edits.length > 0 || profile.entities_edited.length > 0}
+    <TwoColumnLayout>
+      {#snippet main()}
+        {#if profile.recent_edits.length > 0}
+          <section class="section">
+            <h2>Recent edits</h2>
+            <ol class="edit-list">
+              {#each profile.recent_edits as edit (edit.id)}
+                <li class="edit-item">
+                  <div class="edit-header">
+                    <a href={resolveHref(edit.entity.href)} class="entity-link">
+                      <span class="entity-name">{edit.entity.name}</span>
+                      <span class="entity-type">{edit.entity.type_label}</span>
+                    </a>
+                    <span class="timestamp"><SmartDate iso={edit.created_at} /></span>
+                  </div>
+                  {#if edit.note}
+                    <p class="edit-note">{edit.note}</p>
+                  {/if}
+                </li>
+              {/each}
+            </ol>
+          </section>
+        {/if}
+      {/snippet}
 
-  {#if profile.recent_edits.length > 0}
-    <section class="section">
-      <h2>Recent edits</h2>
-      <ol class="edit-list">
-        {#each profile.recent_edits as edit (edit.id)}
-          <li class="edit-item">
-            <div class="edit-header">
-              <a href={resolveHref(edit.entity.href)} class="entity-link">
-                <span class="entity-name">{edit.entity.name}</span>
-                <span class="entity-type">{edit.entity.type_label}</span>
-              </a>
-              <span class="timestamp"><SmartDate iso={edit.created_at} /></span>
-            </div>
-            {#if edit.note}
-              <p class="edit-note">{edit.note}</p>
-            {/if}
-          </li>
-        {/each}
-      </ol>
-    </section>
-  {/if}
-
-  {#if profile.entities_edited.length === 0 && profile.recent_edits.length === 0}
+      {#snippet sidebar()}
+        {#if profile.entities_edited.length > 0}
+          <section class="section">
+            <h2>Entries edited</h2>
+            <ul class="entity-list">
+              {#each profile.entities_edited as contribution (contribution.entity.href)}
+                <li class="entity-item">
+                  <a href={resolveHref(contribution.entity.href)} class="entity-link">
+                    <span class="entity-name">{contribution.entity.name}</span>
+                    <span class="entity-type">{contribution.entity.type_label}</span>
+                  </a>
+                  <span class="entity-meta">
+                    {contribution.edit_count}
+                    {contribution.edit_count === 1 ? 'edit' : 'edits'} · last
+                    <SmartDate iso={contribution.last_edited_at} />
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
+      {/snippet}
+    </TwoColumnLayout>
+  {:else}
     <p class="no-edits">No contributions yet.</p>
   {/if}
 </div>
@@ -127,6 +134,22 @@
   .entity-item:last-child,
   .edit-item:last-child {
     border-bottom: none;
+  }
+
+  /* Sidebar entries stack: name + type on line 1, edit meta on line 2. */
+  .entity-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--size-1);
+  }
+
+  /* Push the type chip to the right edge of the sidebar row. */
+  .entity-item .entity-link {
+    width: 100%;
+  }
+
+  .entity-item .entity-type {
+    margin-left: auto;
   }
 
   .entity-link {

@@ -10,7 +10,11 @@ vi.mock('$lib/auth.svelte', () => ({
   },
 }));
 
+// The page emits MetaTags + listing JSON-LD, which read `page.url`.
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/gameplay-features') } }));
+
 import TaxonomyListPage from './TaxonomyListPage.svelte';
+import ListSnippetFixture from './TaxonomyListPage.list-snippet.fixture.svelte';
 
 // Twelve items so the search input renders (SEARCH_THRESHOLD === 12 in
 // search-threshold.ts). One of them carries an alias that does NOT appear
@@ -28,12 +32,10 @@ const ITEMS = [
 describe('TaxonomyListPage alias-aware search', () => {
   it('matches items by alias, preventing a create-prompt false positive', async () => {
     const user = userEvent.setup();
-    render(TaxonomyListPage, {
+    render(ListSnippetFixture, {
       props: {
         catalogKey: 'gameplay-feature',
         items: ITEMS,
-        loading: false,
-        error: null,
         canCreate: true,
       },
     });
@@ -49,12 +51,10 @@ describe('TaxonomyListPage alias-aware search', () => {
 
   it('falls through to the create prompt when neither name nor alias matches', async () => {
     const user = userEvent.setup();
-    render(TaxonomyListPage, {
+    render(ListSnippetFixture, {
       props: {
         catalogKey: 'gameplay-feature',
         items: ITEMS,
-        loading: false,
-        error: null,
         canCreate: true,
       },
     });
@@ -79,8 +79,6 @@ describe('TaxonomyListPage create-menu label', () => {
       props: {
         catalogKey: 'series',
         items: [{ slug: 'alpha', name: 'Alpha', aliases: [] }],
-        loading: false,
-        error: null,
         canCreate: true,
       },
     });

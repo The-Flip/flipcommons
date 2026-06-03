@@ -1,12 +1,18 @@
 import type { RichTextSchema } from '$lib/api/schema';
-import { ENTITY_META, type EntityRelationship } from '$lib/entities/entity-meta';
+import {
+  ENTITY_META,
+  type CatalogEntityKey,
+  type EntityRelationship,
+} from '$lib/entities/entity-meta';
 import {
   jsonLdGraph,
   breadcrumbList,
+  pageNode,
   absolutize,
   type JsonLdNode,
   type Crumb,
 } from '$lib/components/jsonld';
+import { ENTITY_INFO } from './index';
 import type { EntityInfo, ExternalReference, FieldMapEntry } from './types';
 
 /**
@@ -128,9 +134,9 @@ export function buildSchemaOrgNode<T extends EntityBaseFacts>(
 /**
  * Build the full `@graph` for an entity detail page: the entity node plus a
  * breadcrumb. `crumbs` is the trail leading up to (but not including) this
- * page; it defaults to `[Home]` because most listing pages are
- * CSR/non-crawlable. Entities with an SSR parent chain (Model → its Title,
- * Location → its ancestors) pass a richer trail.
+ * page. The default is `[Home]` for callers that have no richer hierarchy;
+ * catalog detail layouts usually pass `detailCrumbs(...)` so their breadcrumb
+ * routes through the entity's indexable listing page.
  */
 export function buildEntityJsonLd<T extends EntityBaseFacts>(
   entity: T,
@@ -142,4 +148,81 @@ export function buildEntityJsonLd<T extends EntityBaseFacts>(
     buildSchemaOrgNode(entity, info, pageUrl),
     breadcrumbList(pageUrl, crumbs, entity.name),
   ]);
+}
+
+/**
+ * The resolved listing-page copy for a catalog entity: the entity's `listing`
+ * copy, falling back to its plural label / a generic description. `title` is
+ * the SEO/`<meta>` label; `heading` is the visible `<h1>` (defaults to
+ * `title`); `breadcrumb` is the listing's crumb in detail-page breadcrumb
+ * trails (defaults to `heading`). The one place these — and the shared
+ * subtitle / `<meta>` / JSON-LD description — are derived, so they can't drift.
+ */
+export function listingMeta(catalogKey: CatalogEntityKey): {
+  title: string;
+  heading: string;
+  breadcrumb: string;
+  description: string;
+} {
+  const meta = ENTITY_META[catalogKey];
+  const listing = ENTITY_INFO[catalogKey].listing;
+  const title = listing?.title ?? meta.label_plural;
+  const heading = listing?.heading ?? title;
+  return {
+    title,
+    heading,
+    breadcrumb: listing?.breadcrumb ?? heading,
+    description: listing?.description ?? `${meta.label_plural} in the Flipcommons pinball catalog.`,
+  };
+}
+
+/**
+ * Build the `@graph` for a catalog listing page: a `CollectionPage` node whose
+ * `mainEntity` is an `ItemList` of the page's items (named, `@id`-referenced —
+ * cheap payload that lets crawlers/LLMs reach every member with anchor text),
+ * plus a `BreadcrumbList` (`Home › ⟨Listing⟩`).
+ *
+ * The `ItemList` is emitted **only on the bare listing URL** (`pageUrl.search`
+ * empty). Filtered/paginated variants (`?manufacturer=…`, `?page=2`)
+ * canonicalize to the bare path, so publishing their partial/filtered subset
+ * under that canonical `@id` would misrepresent the page; the `CollectionPage`
+ * and breadcrumb (URL-only) still match the canonical and stay.
+ *
+ * Item `@id`s use `item.slug`: valid for every listing entity because the one
+ * entity whose `public_id ≠ slug` (Location) has no listing route.
+ *
+ * @param totalCount the full collection size for `ItemList.numberOfItems`
+ *   (the listed items are page 1); defaults to the number of items passed.
+ */
+export function buildListingJsonLd(
+  catalogKey: CatalogEntityKey,
+  items: readonly { slug: string; name: string }[],
+  pageUrl: URL,
+  totalCount?: number,
+): Record<string, unknown> {
+  const { entity_type_plural } = ENTITY_META[catalogKey];
+  const { title, description } = listingMeta(catalogKey);
+  const collection = pageNode('CollectionPage', pageUrl, title, description);
+  const nodes: JsonLdNode[] = [collection];
+
+  if (pageUrl.search === '') {
+    const itemListId = `${pageUrl.origin + pageUrl.pathname}#items`;
+    collection.mainEntity = { '@id': itemListId };
+    nodes.push({
+      '@type': 'ItemList',
+      '@id': itemListId,
+      numberOfItems: totalCount ?? items.length,
+      itemListElement: items.map((item, i) => ({
+        '@type': 'ListItem',
+        position: i + 1,
+        item: {
+          '@id': absolutize(pageUrl, `/${entity_type_plural}/${item.slug}`),
+          name: item.name,
+        },
+      })),
+    });
+  }
+
+  nodes.push(breadcrumbList(pageUrl, [{ label: 'Home', href: '/' }], title));
+  return jsonLdGraph(nodes);
 }
