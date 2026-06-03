@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import TaxonomyEditSectionLayoutBase from '$lib/components/TaxonomyEditSectionLayoutBase.svelte';
+  import TaxonomyEditSectionLayoutBase from './TaxonomyEditSectionLayoutBase.svelte';
   import {
     defaultSimpleTaxonomySectionSegment,
     SIMPLE_TAXONOMY_EDIT_SECTIONS,

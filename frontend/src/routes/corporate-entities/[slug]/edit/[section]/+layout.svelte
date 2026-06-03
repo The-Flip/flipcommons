@@ -2,8 +2,8 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import EditSectionShell from '$lib/components/EditSectionShell.svelte';
-  import type { EditSectionMenuItem } from '$lib/components/edit-section-menu';
+  import EditSectionShell from '$lib/components/pages/record/edit/EditSectionShell.svelte';
+  import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
   import {
     defaultCorporateEntitySectionSegment,
     findCorporateEntitySectionBySegment,

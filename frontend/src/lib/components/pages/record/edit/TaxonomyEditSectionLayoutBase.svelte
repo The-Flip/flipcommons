@@ -3,8 +3,8 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { resolveHref } from '$lib/utils';
-  import EditSectionShell from '$lib/components/EditSectionShell.svelte';
-  import type { EditSectionMenuItem } from '$lib/components/edit-section-menu';
+  import EditSectionShell from './EditSectionShell.svelte';
+  import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
   import type { EditSectionDef } from '$lib/components/editors/edit-section-def';
   import { setEditLayoutContext } from '$lib/components/editors/edit-layout-context';
   import { WIDE_BREAKPOINT } from '$lib/constants';

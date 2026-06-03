@@ -1,5 +1,5 @@
 <script lang="ts">
-  import TaxonomyEditSectionPageBase from '$lib/components/TaxonomyEditSectionPageBase.svelte';
+  import TaxonomyEditSectionPageBase from './TaxonomyEditSectionPageBase.svelte';
   import {
     defaultSimpleTaxonomySectionSegment,
     SIMPLE_TAXONOMY_EDIT_SECTIONS,

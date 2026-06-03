@@ -11,8 +11,11 @@
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from './RecordDetailShell.svelte';
   import type { Crumb } from '$lib/components/layout/page/Breadcrumb.svelte';
-  import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
-  import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';
+  import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';
+  import {
+    getMenuItemAction,
+    type EditSectionMenuItem,
+  } from '$lib/components/layout/page/edit-section-menu';
   import type { EditSectionDef } from '$lib/components/editors/edit-section-def';
   import type {
     EditActionContext,

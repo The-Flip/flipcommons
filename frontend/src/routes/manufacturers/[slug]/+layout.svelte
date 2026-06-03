@@ -11,11 +11,14 @@
   import LocationLink from '$lib/components/LocationLink.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
-  import SectionEditorHost from '$lib/components/SectionEditorHost.svelte';
+  import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';
   import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
   import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';
   import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
-  import { getMenuItemAction, type EditSectionMenuItem } from '$lib/components/edit-section-menu';
+  import {
+    getMenuItemAction,
+    type EditSectionMenuItem,
+  } from '$lib/components/layout/page/edit-section-menu';
   import { manufacturerEditActionContext } from '$lib/components/editors/edit-action-context';
   import {
     findManufacturerSectionByKey,

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import SimpleTaxonomyEditSectionPage from '$lib/components/SimpleTaxonomyEditSectionPage.svelte';
+  import SimpleTaxonomyEditSectionPage from '$lib/components/pages/record/edit/SimpleTaxonomyEditSectionPage.svelte';
 
   let { data } = $props();
   let profile = $derived(data.profile);

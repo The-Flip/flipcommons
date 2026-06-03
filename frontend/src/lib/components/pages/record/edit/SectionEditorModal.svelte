@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import type { SaveMeta } from '$lib/components/editors/save-model-claims';
-  import EditSectionMenu from './EditSectionMenu.svelte';
-  import type { EditSectionMenuItem } from './edit-section-menu';
+  import EditSectionMenu from '$lib/components/layout/page/EditSectionMenu.svelte';
+  import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
   import Modal from '$lib/components/ui/modal/Modal.svelte';
   import SectionEditorForm from './SectionEditorForm.svelte';
 

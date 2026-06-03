@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import Button from '$lib/components/ui/Button.svelte';
-  import SectionEditorForm from '$lib/components/SectionEditorForm.svelte';
+  import SectionEditorForm from '$lib/components/pages/record/edit/SectionEditorForm.svelte';
   import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';

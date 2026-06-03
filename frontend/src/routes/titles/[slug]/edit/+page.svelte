@@ -1,5 +1,5 @@
 <script lang="ts">
-  import EditRedirectFallback from '$lib/components/EditRedirectFallback.svelte';
+  import EditRedirectFallback from '$lib/components/pages/record/edit/EditRedirectFallback.svelte';
   import { defaultTitleSectionSegment } from '$lib/components/editors/title-edit-sections';
 
   let { data } = $props();

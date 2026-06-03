@@ -1,6 +1,6 @@
 <script lang="ts">
   import client from '$lib/api/client';
-  import TaxonomyEditSectionPageBase from '$lib/components/TaxonomyEditSectionPageBase.svelte';
+  import TaxonomyEditSectionPageBase from '$lib/components/pages/record/edit/TaxonomyEditSectionPageBase.svelte';
   import HierarchicalTaxonomyEditorSwitch from '$lib/components/editors/HierarchicalTaxonomyEditorSwitch.svelte';
   import {
     defaultHierarchicalTaxonomySectionSegment,

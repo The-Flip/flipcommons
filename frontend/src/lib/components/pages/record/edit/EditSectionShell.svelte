@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import EditSectionMenu from './EditSectionMenu.svelte';
+  import EditSectionMenu from '$lib/components/layout/page/EditSectionMenu.svelte';
   import FocusContentShell from '$lib/components/layout/page/FocusContentShell.svelte';
-  import type { EditSectionMenuItem } from './edit-section-menu';
+  import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
   import { getEntityContext } from '$lib/entity-context';
 
   let {

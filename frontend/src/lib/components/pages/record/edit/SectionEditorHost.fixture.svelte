@@ -1,7 +1,7 @@
 <script lang="ts">
   import SectionEditorHost from './SectionEditorHost.svelte';
   import FakeEditor from './SectionEditorHost.fake-editor.svelte';
-  import type { EditSectionMenuItem } from './edit-section-menu';
+  import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
 
   type SectionKey = 'overview' | 'features' | 'media';
 

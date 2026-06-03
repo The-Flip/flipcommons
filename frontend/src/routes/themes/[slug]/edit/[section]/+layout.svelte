@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import TaxonomyEditSectionLayoutBase from '$lib/components/TaxonomyEditSectionLayoutBase.svelte';
+  import TaxonomyEditSectionLayoutBase from '$lib/components/pages/record/edit/TaxonomyEditSectionLayoutBase.svelte';
   import {
     defaultHierarchicalTaxonomySectionSegment,
     HIERARCHICAL_TAXONOMY_EDIT_SECTIONS,

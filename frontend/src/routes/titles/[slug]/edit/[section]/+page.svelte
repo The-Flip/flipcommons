@@ -2,7 +2,7 @@
   import { page } from '$app/state';
   import { goto, invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import SectionEditorForm from '$lib/components/SectionEditorForm.svelte';
+  import SectionEditorForm from '$lib/components/pages/record/edit/SectionEditorForm.svelte';
   import { getEditLayoutContext } from '$lib/components/editors/edit-layout-context';
   import TitleEditorSwitch from '../TitleEditorSwitch.svelte';
   import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';

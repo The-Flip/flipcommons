@@ -2,7 +2,7 @@
   import { page } from '$app/state';
   import { goto, invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import SectionEditorForm from '$lib/components/SectionEditorForm.svelte';
+  import SectionEditorForm from '$lib/components/pages/record/edit/SectionEditorForm.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
   import ModelEditorSwitch from '../ModelEditorSwitch.svelte';

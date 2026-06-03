@@ -3,8 +3,8 @@
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
   import { modelHasTitleOwnedIdentity } from '$lib/catalog-rules';
-  import EditSectionShell from '$lib/components/EditSectionShell.svelte';
-  import type { EditSectionMenuItem } from '$lib/components/edit-section-menu';
+  import EditSectionShell from '$lib/components/pages/record/edit/EditSectionShell.svelte';
+  import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
   import { setEditLayoutContext } from '$lib/components/editors/edit-layout-context';
   import {
     findSectionBySegment,
