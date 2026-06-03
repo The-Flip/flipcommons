@@ -15,7 +15,12 @@
   import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { getEntityContext } from '$lib/entity-context';
-  import { hasMeaningfulValue, isDeletion, isDiffable, isUnchanged } from './change-display';
+  import {
+    hasMeaningfulValue,
+    isDeletion,
+    isDiffable,
+    isUnchanged,
+  } from '$lib/components/provenance/change-display';
 
   type ChangeSet = ChangeSetSchema;
   type FieldChange = FieldChangeSchema;

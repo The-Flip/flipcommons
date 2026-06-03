@@ -1,7 +1,7 @@
 <script lang="ts">
   import client from '$lib/api/client';
   import type { SystemCreateSchema } from '$lib/api/schema';
-  import CreatePage from '$lib/components/CreatePage.svelte';
+  import CreatePage from '$lib/components/pages/record/create/CreatePage.svelte';
   import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
   import {
     fetchManufacturerOptions,

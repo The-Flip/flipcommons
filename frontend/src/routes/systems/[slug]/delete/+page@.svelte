@@ -1,6 +1,6 @@
 <script lang="ts">
-  import DeletePage from '$lib/components/DeletePage.svelte';
-  import type { BlockedState } from '$lib/components/delete-page';
+  import DeletePage from '$lib/components/pages/record/delete/DeletePage.svelte';
+  import type { BlockedState } from '$lib/components/pages/record/delete/delete-page';
   import type { BlockingReferrer } from '$lib/delete-flow';
   import { pluralize } from '$lib/utils';
   import { submitDelete } from './system-delete';
