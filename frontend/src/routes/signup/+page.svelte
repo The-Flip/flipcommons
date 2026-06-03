@@ -4,7 +4,7 @@
   import type { SignupCheckResponseSchema } from '$lib/api/schema';
   import { classifySignupSubmit } from '$lib/signup-flow';
   import { USERNAME_MAX_LEN, USERNAME_MIN_LEN, checkUsernameFormat } from '$lib/username-format';
-  import Button from '$lib/components/Button.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
   import Page from '$lib/components/Page.svelte';
 
   // The full set of rejection reasons the server can surface (across /check

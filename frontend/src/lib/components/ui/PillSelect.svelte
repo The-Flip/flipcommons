@@ -1,6 +1,6 @@
 <script lang="ts" generics="T extends string">
-  import ActionMenu from './ActionMenu.svelte';
-  import MenuItem from './MenuItem.svelte';
+  import ActionMenu from '$lib/components/ui/menu/ActionMenu.svelte';
+  import MenuItem from '$lib/components/ui/menu/MenuItem.svelte';
 
   type Option = { value: T; label: string };
 

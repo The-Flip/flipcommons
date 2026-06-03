@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import FaIcon from '$lib/components/FaIcon.svelte';
+  import FaIcon from '$lib/components/ui/FaIcon.svelte';
   import { faSliders, faXmark } from '@fortawesome/free-solid-svg-icons';
 
   let {

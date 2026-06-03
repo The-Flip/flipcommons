@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import AccordionSection from '$lib/components/AccordionSection.svelte';
+  import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import CardGrid from '$lib/components/grid/CardGrid.svelte';
   import CreditsList from '$lib/components/CreditsList.svelte';
   import MachineCard from '$lib/components/cards/MachineCard.svelte';

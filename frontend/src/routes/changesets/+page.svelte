@@ -6,7 +6,7 @@
   import { resolveHref } from '$lib/utils';
   import ClaimAttribution from '$lib/components/provenance/ClaimAttribution.svelte';
   import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
-  import InlineDiff from '$lib/components/InlineDiff.svelte';
+  import InlineDiff from '$lib/components/ui/InlineDiff.svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { isDiffable } from '$lib/components/change-display';
   import { changesLabel } from './changes';

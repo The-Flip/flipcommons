@@ -2,7 +2,7 @@
   import { ENTITY_META, type MediaSupportedEntityKey } from '$lib/entities/entity-meta';
   import { IMAGE_ACCEPT } from '$lib/api/media-api';
   import { createUploadManager } from '$lib/media-upload.svelte';
-  import Button from '$lib/components/Button.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
 
   type MediaEntityKey = MediaSupportedEntityKey;
 

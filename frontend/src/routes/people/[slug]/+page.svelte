@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ENTITY_META } from '$lib/entities/entity-meta';
-  import AccordionSection from '$lib/components/AccordionSection.svelte';
+  import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';

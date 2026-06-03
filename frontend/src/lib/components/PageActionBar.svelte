@@ -1,7 +1,7 @@
 <script lang="ts">
-  import EditSectionMenu from '$lib/components/EditSectionMenu.svelte';
-  import type { EditSectionDropdown, EditSectionMenuItem } from '$lib/components/edit-section-menu';
-  import ActionMenu from '$lib/components/ActionMenu.svelte';
+  import EditSectionMenu from './EditSectionMenu.svelte';
+  import type { EditSectionDropdown, EditSectionMenuItem } from './edit-section-menu';
+  import ActionMenu from '$lib/components/ui/menu/ActionMenu.svelte';
 
   type Props = {
     detailHref?: string;

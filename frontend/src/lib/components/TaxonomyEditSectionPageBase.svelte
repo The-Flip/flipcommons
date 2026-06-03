@@ -3,8 +3,8 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { resolveHref } from '$lib/utils';
-  import Button from '$lib/components/Button.svelte';
-  import SectionEditorForm from '$lib/components/SectionEditorForm.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
+  import SectionEditorForm from './SectionEditorForm.svelte';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
   import type { EditSectionDef } from '$lib/components/editors/edit-section-def';

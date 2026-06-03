@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
-  import Button from '$lib/components/Button.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
   import Page from '$lib/components/Page.svelte';
   import { SITE_TITLE } from '$lib/constants';
 

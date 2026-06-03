@@ -2,8 +2,8 @@
   import type { Snippet } from 'svelte';
   import { type EditCitationSelection, buildEditCitationRequest } from '$lib/edit-citation';
   import type { SaveMeta } from '$lib/components/editors/save-model-claims';
-  import Button from '$lib/components/Button.svelte';
-  import NotesAndCitationsDetails from '$lib/components/NotesAndCitationsDetails.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
+  import NotesAndCitationsDetails from './NotesAndCitationsDetails.svelte';
 
   let {
     error = '',

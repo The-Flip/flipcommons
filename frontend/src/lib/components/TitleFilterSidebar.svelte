@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ChipGroup from './ChipGroup.svelte';
+  import ChipGroup from '$lib/components/ui/ChipGroup.svelte';
   import SearchableSelect from './SearchableSelect.svelte';
   import YearRangeInput from './YearRangeInput.svelte';
   import { emptyFilterState, hasActiveFilters, type FilterState } from '$lib/facet-engine';

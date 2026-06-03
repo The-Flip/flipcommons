@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { SITE_NAME } from '$lib/constants';
-  import LastUpdated from '$lib/components/LastUpdated.svelte';
+  import LastUpdated from '$lib/components/ui/LastUpdated.svelte';
   import MetaTags from '$lib/components/MetaTags.svelte';
   import JsonLd from '$lib/components/JsonLd.svelte';
   import { jsonLdGraph, pageNode, breadcrumbList } from '$lib/components/jsonld';

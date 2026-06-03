@@ -2,12 +2,12 @@
   import type { Snippet } from 'svelte';
   import Page from './Page.svelte';
   import PageHeader from './PageHeader.svelte';
-  import SearchBox from './SearchBox.svelte';
-  import StatusMessage from './StatusMessage.svelte';
+  import SearchBox from '$lib/components/ui/SearchBox.svelte';
+  import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
   import NoResultsCreatePrompt from './NoResultsCreatePrompt.svelte';
   import EditSectionMenu from './EditSectionMenu.svelte';
   import type { EditSectionMenuItem } from './edit-section-menu';
-  import { SEARCH_THRESHOLD } from './grid/search-threshold';
+  import { SEARCH_THRESHOLD } from '$lib/components/grid/search-threshold';
   import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
   import { normalizeText, resolveHref } from '$lib/utils';

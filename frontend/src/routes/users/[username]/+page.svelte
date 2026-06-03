@@ -1,7 +1,7 @@
 <script lang="ts">
   import { SITE_TITLE } from '$lib/constants';
   import { resolveHref } from '$lib/utils';
-  import SmartDate from '$lib/components/SmartDate.svelte';
+  import SmartDate from '$lib/components/ui/SmartDate.svelte';
   import TwoColumnLayout from '$lib/components/TwoColumnLayout.svelte';
 
   let { data } = $props();

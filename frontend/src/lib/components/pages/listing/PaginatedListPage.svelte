@@ -4,8 +4,8 @@
   import { auth } from '$lib/auth.svelte';
   import Page from '$lib/components/Page.svelte';
   import PageHeader from '$lib/components/PageHeader.svelte';
-  import SearchBox from '$lib/components/SearchBox.svelte';
-  import StatusMessage from '$lib/components/StatusMessage.svelte';
+  import SearchBox from '$lib/components/ui/SearchBox.svelte';
+  import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
   import EditSectionMenu from '$lib/components/EditSectionMenu.svelte';
   import NoResultsCreatePrompt from '$lib/components/NoResultsCreatePrompt.svelte';
   import PaginatedListLoader from './PaginatedListLoader.svelte';

@@ -2,7 +2,7 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import Button from '$lib/components/Button.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
   import SectionEditorForm from '$lib/components/SectionEditorForm.svelte';
   import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
   import { WIDE_BREAKPOINT } from '$lib/constants';

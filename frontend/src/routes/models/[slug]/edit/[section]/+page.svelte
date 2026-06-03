@@ -3,7 +3,7 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
   import SectionEditorForm from '$lib/components/SectionEditorForm.svelte';
-  import Button from '$lib/components/Button.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
   import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
   import ModelEditorSwitch from '../ModelEditorSwitch.svelte';
   import { getEditLayoutContext } from '$lib/components/editors/edit-layout-context';

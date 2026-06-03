@@ -3,7 +3,7 @@
   import { detachMedia, setCategory, setPrimary } from '$lib/api/media-api';
   import { ENTITY_META, type MediaSupportedEntityKey } from '$lib/entities/entity-meta';
   import type { UploadedMediaSchema } from '$lib/api/schema';
-  import Button from '$lib/components/Button.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
   import MediaUploadZone from '$lib/components/media/MediaUploadZone.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import { toast } from '$lib/toast/toast.svelte';

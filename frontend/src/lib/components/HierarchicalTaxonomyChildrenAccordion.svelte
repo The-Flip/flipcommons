@@ -1,6 +1,6 @@
 <script lang="ts">
   import { resolveHref } from '$lib/utils';
-  import AccordionSection from '$lib/components/AccordionSection.svelte';
+  import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import type { EntityRef } from '$lib/api/schema';
 
   let {

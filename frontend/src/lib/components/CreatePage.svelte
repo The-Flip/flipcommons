@@ -1,8 +1,8 @@
 <script lang="ts" generics="T extends { slug: string; name: string }">
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
-  import Button from '$lib/components/Button.svelte';
-  import NotesAndCitationsDetails from '$lib/components/NotesAndCitationsDetails.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
+  import NotesAndCitationsDetails from './NotesAndCitationsDetails.svelte';
   import TextField from '$lib/components/form/TextField.svelte';
   import { buildEditCitationRequest, type EditCitationSelection } from '$lib/edit-citation';
   import { pageTitle } from '$lib/constants';

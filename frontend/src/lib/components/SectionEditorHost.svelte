@@ -1,10 +1,10 @@
 <script lang="ts" generics="TSectionKey extends string">
   import type { Snippet } from 'svelte';
-  import Button from '$lib/components/Button.svelte';
-  import EditSectionMenu from '$lib/components/EditSectionMenu.svelte';
-  import Modal from '$lib/components/Modal.svelte';
-  import SectionEditorModal from '$lib/components/SectionEditorModal.svelte';
-  import type { EditSectionMenuItem } from '$lib/components/edit-section-menu';
+  import Button from '$lib/components/ui/Button.svelte';
+  import EditSectionMenu from './EditSectionMenu.svelte';
+  import Modal from '$lib/components/ui/modal/Modal.svelte';
+  import SectionEditorModal from './SectionEditorModal.svelte';
+  import type { EditSectionMenuItem } from './edit-section-menu';
   import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
   import type { SaveMeta } from '$lib/components/editors/save-claims-shared';
   import { toast } from '$lib/toast/toast.svelte';

@@ -15,10 +15,10 @@
   import PageHeader from '$lib/components/PageHeader.svelte';
   import TwoColumnLayout from '$lib/components/TwoColumnLayout.svelte';
   import SidebarSection from '$lib/components/SidebarSection.svelte';
-  import StatusMessage from '$lib/components/StatusMessage.svelte';
-  import List from '$lib/components/List.svelte';
-  import ListItem from '$lib/components/ListItem.svelte';
-  import Button from '$lib/components/Button.svelte';
+  import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
+  import List from '$lib/components/ui/list/List.svelte';
+  import ListItem from '$lib/components/ui/list/ListItem.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
 
   let { data } = $props();
   let configs = $derived(data.configs);

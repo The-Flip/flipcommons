@@ -9,7 +9,7 @@
   import ActiveFilterChips, { type FilterChipSpec } from '$lib/components/ActiveFilterChips.svelte';
   import FilterDrawer from '$lib/components/FilterDrawer.svelte';
   import NoResultsCreatePrompt from '$lib/components/NoResultsCreatePrompt.svelte';
-  import SearchBox from '$lib/components/SearchBox.svelte';
+  import SearchBox from '$lib/components/ui/SearchBox.svelte';
   import PaginatedListLoader from './PaginatedListLoader.svelte';
   import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
   import MetaTags from '$lib/components/MetaTags.svelte';

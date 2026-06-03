@@ -1,6 +1,6 @@
 <script lang="ts">
   import KioskHome from '$lib/kiosk/KioskHome.svelte';
-  import StatusMessage from '$lib/components/StatusMessage.svelte';
+  import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
   import { resolve } from '$app/paths';
 
   let { data } = $props();

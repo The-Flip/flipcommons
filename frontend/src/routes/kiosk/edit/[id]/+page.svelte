@@ -24,11 +24,11 @@
     setKioskCookies,
   } from '$lib/kiosk/config';
   import Breadcrumb from '$lib/components/Breadcrumb.svelte';
-  import Button from '$lib/components/Button.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
   import Page from '$lib/components/Page.svelte';
   import TwoColumnLayout from '$lib/components/TwoColumnLayout.svelte';
   import SidebarSection from '$lib/components/SidebarSection.svelte';
-  import StatusMessage from '$lib/components/StatusMessage.svelte';
+  import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
   import type { TitleListItemSchema } from '$lib/api/schema';
 
   let { data } = $props();

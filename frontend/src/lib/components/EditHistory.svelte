@@ -10,7 +10,7 @@
   } from '$lib/api/schema';
   import { auth } from '$lib/auth.svelte';
   import FocusContentShell from './FocusContentShell.svelte';
-  import InlineDiff from './InlineDiff.svelte';
+  import InlineDiff from '$lib/components/ui/InlineDiff.svelte';
   import ClaimAttribution from '$lib/components/provenance/ClaimAttribution.svelte';
   import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';

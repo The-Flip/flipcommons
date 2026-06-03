@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AccordionSection from '$lib/components/AccordionSection.svelte';
+  import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import ManufacturerCardGrid from './_components/ManufacturerCardGrid.svelte';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';

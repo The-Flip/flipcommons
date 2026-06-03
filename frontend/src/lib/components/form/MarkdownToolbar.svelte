@@ -1,5 +1,5 @@
 <script lang="ts">
-  import FaIcon from '$lib/components/FaIcon.svelte';
+  import FaIcon from '$lib/components/ui/FaIcon.svelte';
   import {
     faBold,
     faItalic,

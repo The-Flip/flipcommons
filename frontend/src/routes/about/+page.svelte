@@ -5,7 +5,7 @@
   import MetaTags from '$lib/components/MetaTags.svelte';
   import JsonLd from '$lib/components/JsonLd.svelte';
   import { jsonLdGraph, pageNode, breadcrumbList } from '$lib/components/jsonld';
-  import Prose from '$lib/components/Prose.svelte';
+  import Prose from '$lib/components/ui/Prose.svelte';
 
   const title = 'About';
   const description = `About ${SITE_NAME} — a collaborative encyclopedia for pinball knowledge: the machines, the people, the manufacturers, the history.`;

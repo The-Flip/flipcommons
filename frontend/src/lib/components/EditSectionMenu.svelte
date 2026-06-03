@@ -1,6 +1,6 @@
 <script lang="ts">
-  import ActionMenu from '$lib/components/ActionMenu.svelte';
-  import MenuItem from '$lib/components/MenuItem.svelte';
+  import ActionMenu from '$lib/components/ui/menu/ActionMenu.svelte';
+  import MenuItem from '$lib/components/ui/menu/MenuItem.svelte';
   import type { EditSectionMenuItem } from './edit-section-menu';
 
   let {

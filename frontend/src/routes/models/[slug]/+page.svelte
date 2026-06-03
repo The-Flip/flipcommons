@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AccordionSection from '$lib/components/AccordionSection.svelte';
+  import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import ModelHierarchy from '$lib/components/ModelHierarchy.svelte';
   import ModelSpecsSidebar from '$lib/components/ModelSpecsSidebar.svelte';
   import CreditsList from '$lib/components/CreditsList.svelte';
