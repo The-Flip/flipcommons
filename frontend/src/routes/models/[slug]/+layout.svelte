@@ -3,9 +3,9 @@
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
-  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/site/meta-tags';
-  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';

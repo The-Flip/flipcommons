@@ -11,8 +11,8 @@
   import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
   import { normalizeText, resolveHref } from '$lib/utils';
-  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
-  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
   import { buildListingJsonLd, listingMeta } from '$lib/entities/schema-org';
 

@@ -2,9 +2,9 @@
   import { page } from '$app/state';
   import { SITE_NAME } from '$lib/constants';
   import LastUpdated from '$lib/components/ui/LastUpdated.svelte';
-  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
-  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
-  import { jsonLdGraph, pageNode, breadcrumbList } from '$lib/components/layout/site/jsonld';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
+  import { jsonLdGraph, pageNode, breadcrumbList } from '$lib/components/layout/page/head/jsonld';
   import { STATIC_LASTMOD, formatLastUpdated } from '$lib/static-lastmod';
 
   const title = 'Privacy';

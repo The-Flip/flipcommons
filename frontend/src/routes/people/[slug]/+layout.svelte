@@ -4,9 +4,9 @@
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
   import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
-  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/site/meta-tags';
-  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';

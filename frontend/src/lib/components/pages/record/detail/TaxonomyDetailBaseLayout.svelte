@@ -5,9 +5,9 @@
   import { resolveHref } from '$lib/utils';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { auth } from '$lib/auth.svelte';
-  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
-  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/site/meta-tags';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
+  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from './RecordDetailShell.svelte';
   import type { Crumb } from '$lib/components/layout/page/Breadcrumb.svelte';

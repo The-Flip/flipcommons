@@ -3,9 +3,9 @@
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import { formatYearRange } from '$lib/utils';
-  import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
-  import { metaDescriptionFor } from '$lib/components/layout/site/meta-tags';
-  import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
+  import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import { auth } from '$lib/auth.svelte';
   import LocationLink from '$lib/components/entity-links/LocationLink.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';

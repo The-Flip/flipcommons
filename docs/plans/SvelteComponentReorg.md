@@ -1,8 +1,10 @@
 # Svelte Component Reorg
 
-## Goal
-
 Reorganize `frontend/src/lib/components/` from a near-flat directory of ~180 files into role-based subfolders so a file's location communicates its purpose and dependency tier.
+
+## Status: ✅ Implemented
+
+This plan has been implemented.
 
 ## Why
 
@@ -62,15 +64,23 @@ frontend/src/lib/components/
 2. **One folder, one concept.** If a file plausibly belongs in two folders, the boundary is wrong — rename or merge before adding the file.
 3. **No barrel `index.ts`** re-exports. Direct imports keep Vite tree-shaking honest and avoid circular-import traps. Cost: deep import paths (e.g. `$lib/components/pages/record/edit/editors/specs/title-edit-sections`). If this proves painful in practice, scoped path aliases (`$editors` → `$lib/components/pages/record/edit/editors`) via `kit.alias` are the escape hatch — don't reintroduce barrels.
 
-## What's Enforced vs Convention
+## Enforcement
 
-Only `ui/` (no imports from any sibling components folder) and `pages/` (importable only from `routes/` and within `pages/`) are ESLint-enforced. Everything else in this plan is convention — readable in the tree, explained in folder READMEs, but not policed:
+Four boundaries are ESLint-enforced via `no-restricted-imports` (see [the config](../../frontend/eslint.config.js)):
 
-- `layout/page/` could quietly import from `pages/record/detail/` and nothing would stop it.
+- **`ui/`** — primitives-only: may not import from any sibling components folder.
+- **`pages/`** — page bodies: importable only from `routes/` and within `pages/`.
+- **`layout/site/`** — site-chrome shells (`SiteShell` etc.): importable only from `routes/`, which wire them into the root layout. (Page-level head/SEO components — `MetaTags`, `JsonLd` — are deliberately **not** here; they live in `layout/page/head/` so page shells can set their own head tags. That split is what makes `layout/site/` cleanly routes-only.)
+- **`$lib` → `routes/`** — `$lib` may not import from `routes/`. This is the boundary the route-private convention and the switch-promotion decisions rely on: shared code goes in `$lib`, single-route code stays route-private. Test files are exempt (route-loader tests legitimately import `+layout.server`).
+
+The `pages/` rule already covers the `layout/page/` → `pages/` direction — a `layout/` file importing a page shell fails CI today.
+
+Everything else is convention — readable in the tree, explained in folder READMEs, but not policed:
+
 - `provenance/` and `markdown/` are nominally display-only; a form component drifting in wouldn't fail CI.
 - `input/` is nominally input-only; same caveat.
 
-We accept the convention-only enforcement for these because policing "what does this file contain" via import rules is awkward and tends to false-positive. Drift will be caught in code review, not tooling.
+We accept the convention-only enforcement for these because policing "what does this file contain" via import rules is awkward and tends to false-positive. The four rules above all police "who may import this folder" (a structural fact ESLint matches reliably), not file contents. Content drift is caught in code review, not tooling.
 
 ## Folder READMEs
 
@@ -201,8 +211,8 @@ Move site chrome and page-level layout primitives from the top level, split into
 - SiteShell, MinimalSiteShell, FocusSiteShell
 - SiteHeader, Footer, Nav
 - Wordmark
-- MetaTags + meta-tags.ts
-- JsonLd + jsonld.ts
+
+ESLint-enforced routes-only (see Enforcement): only `routes/` imports these — the shells are wired into the app by the root layout. The folder is flat, so within-folder composition (`SiteShell` → `SiteHeader`) uses same-folder `./` and isn't caught by the rule. Head/SEO components (`MetaTags`, `JsonLd`) are **not** here — they're set per page, so they live in `layout/page/head/` where page shells can import them.
 
 **`layout/page/`** — composition primitives used inside a page:
 
@@ -210,6 +220,11 @@ Move site chrome and page-level layout primitives from the top level, split into
 - TwoColumnLayout
 - FocusContentShell
 - Breadcrumb
+
+**`layout/page/head/`** — document-`<head>` emitters, set per page (not site chrome):
+
+- MetaTags + meta-tags.ts
+- JsonLd + jsonld.ts
 
 **`layout/page/sidebar/`** — content primitives for the sidebar slot of `TwoColumnLayout`:
 

@@ -123,7 +123,7 @@ describe('buildCanonicalUrl', () => {
 
 /** Read a PNG's pixel dimensions from its IHDR chunk (width @ byte 16, height @ 20, big-endian). */
 function pngDimensions(staticPath: string): { width: number; height: number } {
-  const file = fileURLToPath(new URL(`../../../../../static${staticPath}`, import.meta.url));
+  const file = fileURLToPath(new URL(`../../../../../../static${staticPath}`, import.meta.url));
   const buf = readFileSync(file);
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }

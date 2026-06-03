@@ -7,7 +7,7 @@ import {
   absolutize,
   type JsonLdNode,
   type Crumb,
-} from '$lib/components/layout/site/jsonld';
+} from '$lib/components/layout/page/head/jsonld';
 import { ENTITY_INFO } from './index';
 import type { EntityInfo, ExternalReference, FieldMapEntry } from './types';
 

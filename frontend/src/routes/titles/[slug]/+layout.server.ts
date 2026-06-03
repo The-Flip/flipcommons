@@ -6,7 +6,7 @@ import {
   breadcrumbList,
   absolutize,
   type JsonLdNode,
-} from '$lib/components/layout/site/jsonld';
+} from '$lib/components/layout/page/head/jsonld';
 import { detailCrumbs } from '$lib/route-metadata.server';
 import type { LayoutServerLoad } from './$types';
 
