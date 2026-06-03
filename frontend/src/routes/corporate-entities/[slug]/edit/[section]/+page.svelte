@@ -4,14 +4,14 @@
   import { resolve } from '$app/paths';
   import SectionEditorForm from '$lib/components/pages/record/edit/SectionEditorForm.svelte';
   import { WIDE_BREAKPOINT } from '$lib/constants';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import { getEditLayoutContext } from '$lib/components/editors/edit-layout-context';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import { getEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
   import {
     defaultCorporateEntitySectionSegment,
     findCorporateEntitySectionBySegment,
-  } from '$lib/components/editors/corporate-entity-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/corporate-entity/corporate-entity-edit-sections';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
-  import type { SaveMeta } from '$lib/components/editors/save-claims-shared';
+  import type { SaveMeta } from '$lib/components/pages/record/edit/editors/save-claims-shared';
   import CorporateEntityEditorSwitch from '../CorporateEntityEditorSwitch.svelte';
 
   let { data } = $props();

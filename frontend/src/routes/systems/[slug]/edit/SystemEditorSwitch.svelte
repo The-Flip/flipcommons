@@ -1,11 +1,11 @@
 <script lang="ts">
-  import DescriptionEditor from '$lib/components/editors/DescriptionEditor.svelte';
-  import NameEditor from '$lib/components/editors/NameEditor.svelte';
-  import SystemManufacturerEditor from '$lib/components/editors/SystemManufacturerEditor.svelte';
-  import SystemTechnologyEditor from '$lib/components/editors/SystemTechnologyEditor.svelte';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import type { SystemEditSectionKey } from '$lib/components/editors/system-edit-sections';
-  import { saveSystemClaims } from './save-system-claims';
+  import DescriptionEditor from '$lib/components/pages/record/edit/editors/DescriptionEditor.svelte';
+  import NameEditor from '$lib/components/pages/record/edit/editors/NameEditor.svelte';
+  import SystemManufacturerEditor from '$lib/components/pages/record/edit/editors/entity/system/SystemManufacturerEditor.svelte';
+  import SystemTechnologyEditor from '$lib/components/pages/record/edit/editors/entity/system/SystemTechnologyEditor.svelte';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type { SystemEditSectionKey } from '$lib/components/pages/record/edit/editors/entity/system/system-edit-sections';
+  import { saveSystemClaims } from '$lib/components/pages/record/edit/editors/entity/system/save-system-claims';
   import type { SystemEditView } from './system-edit-types';
 
   let {

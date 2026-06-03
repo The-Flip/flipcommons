@@ -1,12 +1,12 @@
 <script lang="ts">
   import type { TitleDetailSchema } from '$lib/api/schema';
-  import DescriptionEditor from '$lib/components/editors/DescriptionEditor.svelte';
-  import NameEditor from '$lib/components/editors/NameEditor.svelte';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import { saveTitleClaims } from '$lib/components/editors/save-title-claims';
-  import type { TitleEditSectionKey } from '$lib/components/editors/title-edit-sections';
-  import TitleFranchiseEditor from '$lib/components/editors/TitleFranchiseEditor.svelte';
-  import TitleExternalDataEditor from '$lib/components/editors/TitleExternalDataEditor.svelte';
+  import DescriptionEditor from '$lib/components/pages/record/edit/editors/DescriptionEditor.svelte';
+  import NameEditor from '$lib/components/pages/record/edit/editors/NameEditor.svelte';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import { saveTitleClaims } from '$lib/components/pages/record/edit/editors/entity/title/save-title-claims';
+  import type { TitleEditSectionKey } from '$lib/components/pages/record/edit/editors/entity/title/title-edit-sections';
+  import TitleFranchiseEditor from '$lib/components/pages/record/edit/editors/entity/title/TitleFranchiseEditor.svelte';
+  import TitleExternalDataEditor from '$lib/components/pages/record/edit/editors/entity/title/TitleExternalDataEditor.svelte';
 
   type TitleDetail = TitleDetailSchema;
 

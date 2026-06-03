@@ -16,12 +16,12 @@
     getMenuItemAction,
     type EditSectionMenuItem,
   } from '$lib/components/layout/page/edit-section-menu';
-  import type { EditSectionDef } from '$lib/components/editors/edit-section-def';
+  import type { EditSectionDef } from '$lib/components/pages/record/edit/editors/edit-section-def';
   import type {
     EditActionContext,
     EditActionFn,
-  } from '$lib/components/editors/edit-action-context';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
+  } from '$lib/components/pages/record/edit/editors/edit-action-context';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
   import { isFocusModePath } from '$lib/focus-mode';
   import { setEntityContext } from '$lib/entity-context';

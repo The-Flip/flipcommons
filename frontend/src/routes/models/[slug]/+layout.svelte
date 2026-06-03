@@ -27,10 +27,10 @@
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
   import { isFocusModePath } from '$lib/focus-mode';
   import { setEntityContext } from '$lib/entity-context';
-  import { modelEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { modelEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
-  import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
-  import ModelEditorSwitch from './edit/ModelEditorSwitch.svelte';
+  import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
+  import ModelEditorSwitch from '$lib/components/pages/record/edit/editors/entity/model/ModelEditorSwitch.svelte';
 
   let { data, children } = $props();
   let model = $derived(data.profile);
@@ -98,7 +98,7 @@
     findSectionBySegment,
     modelSectionsFor,
     type ModelEditSectionKey,
-  } from '$lib/components/editors/model-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/model/model-edit-sections';
 
   // The dedicated edit route and this reader-level editor must agree on which
   // sections are writable — otherwise a title-owned model would still expose a

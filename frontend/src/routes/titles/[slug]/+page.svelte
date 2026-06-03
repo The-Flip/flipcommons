@@ -11,7 +11,7 @@
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import RelatedTitlesSection from './_components/RelatedTitlesSection.svelte';
   import CreateFirstModelPrompt from './_components/CreateFirstModelPrompt.svelte';
-  import { titleAreaEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { titleAreaEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
   import { title as titleInfo } from '$lib/entities/title';

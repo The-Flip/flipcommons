@@ -5,7 +5,7 @@
     defaultSimpleTaxonomySectionSegment,
     SIMPLE_TAXONOMY_EDIT_SECTIONS,
     type SimpleTaxonomyEditSectionDef,
-  } from '$lib/components/editors/simple-taxonomy-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/taxonomy/simple-taxonomy-edit-sections';
 
   let {
     basePath,

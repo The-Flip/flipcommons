@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import TagInput from '$lib/components/input/TagInput.svelte';
-  import type { SectionEditorProps } from '$lib/components/editors/editor-contract';
+  import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
   import type { FieldErrors } from '$lib/api/parse-api-error';
   import type { LocationEditView } from './location-edit-types';
   import { saveLocationClaims, type SaveMeta, type SaveResult } from './save-location-claims';

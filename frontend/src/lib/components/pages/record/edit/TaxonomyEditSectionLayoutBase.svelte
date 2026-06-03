@@ -5,8 +5,8 @@
   import { resolveHref } from '$lib/utils';
   import EditSectionShell from './EditSectionShell.svelte';
   import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
-  import type { EditSectionDef } from '$lib/components/editors/edit-section-def';
-  import { setEditLayoutContext } from '$lib/components/editors/edit-layout-context';
+  import type { EditSectionDef } from '$lib/components/pages/record/edit/editors/edit-section-def';
+  import { setEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
 

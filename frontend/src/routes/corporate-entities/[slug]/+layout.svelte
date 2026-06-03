@@ -16,13 +16,13 @@
     getMenuItemAction,
     type EditSectionMenuItem,
   } from '$lib/components/layout/page/edit-section-menu';
-  import { corporateEntityEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { corporateEntityEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import {
     findCorporateEntitySectionByKey,
     findCorporateEntitySectionBySegment,
     CORPORATE_ENTITY_EDIT_SECTIONS,
     type CorporateEntityEditSectionKey,
-  } from '$lib/components/editors/corporate-entity-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/corporate-entity/corporate-entity-edit-sections';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
   import { isFocusModePath } from '$lib/focus-mode';

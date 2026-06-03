@@ -18,7 +18,7 @@
     findSystemSectionBySegment,
     SYSTEM_EDIT_SECTIONS,
     type SystemEditSectionKey,
-  } from '$lib/components/editors/system-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/system/system-edit-sections';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
   import { isFocusModePath } from '$lib/focus-mode';

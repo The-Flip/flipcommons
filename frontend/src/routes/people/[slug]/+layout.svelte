@@ -3,7 +3,7 @@
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
   import { auth } from '$lib/auth.svelte';
-  import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
+  import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
   import MetaTags from '$lib/components/layout/site/MetaTags.svelte';
   import { metaDescriptionFor } from '$lib/components/layout/site/meta-tags';
   import JsonLd from '$lib/components/layout/site/JsonLd.svelte';
@@ -14,13 +14,13 @@
     getMenuItemAction,
     type EditSectionMenuItem,
   } from '$lib/components/layout/page/edit-section-menu';
-  import { personEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { personEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import {
     findPersonSectionByKey,
     findPersonSectionBySegment,
     PERSON_EDIT_SECTIONS,
     type PersonEditSectionKey,
-  } from '$lib/components/editors/person-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/person/person-edit-sections';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
   import { isFocusModePath } from '$lib/focus-mode';

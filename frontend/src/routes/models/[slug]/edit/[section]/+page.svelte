@@ -4,12 +4,12 @@
   import { resolve } from '$app/paths';
   import SectionEditorForm from '$lib/components/pages/record/edit/SectionEditorForm.svelte';
   import Button from '$lib/components/ui/Button.svelte';
-  import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
-  import ModelEditorSwitch from '../ModelEditorSwitch.svelte';
-  import { getEditLayoutContext } from '$lib/components/editors/edit-layout-context';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import type { SaveMeta } from '$lib/components/editors/save-model-claims';
-  import { findSectionBySegment } from '$lib/components/editors/model-edit-sections';
+  import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
+  import ModelEditorSwitch from '$lib/components/pages/record/edit/editors/entity/model/ModelEditorSwitch.svelte';
+  import { getEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type { SaveMeta } from '$lib/components/pages/record/edit/editors/entity/model/save-model-claims';
+  import { findSectionBySegment } from '$lib/components/pages/record/edit/editors/entity/model/model-edit-sections';
   import { modelHasTitleOwnedIdentity } from '$lib/catalog-rules';
 
   let { data } = $props();

@@ -5,11 +5,11 @@
   import { modelHasTitleOwnedIdentity } from '$lib/catalog-rules';
   import EditSectionShell from '$lib/components/pages/record/edit/EditSectionShell.svelte';
   import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
-  import { setEditLayoutContext } from '$lib/components/editors/edit-layout-context';
+  import { setEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
   import {
     findSectionBySegment,
     modelSectionsFor,
-  } from '$lib/components/editors/model-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/model/model-edit-sections';
 
   let { children, data } = $props();
   let slug = $derived(page.params.slug);

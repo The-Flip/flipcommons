@@ -1,14 +1,14 @@
 <script lang="ts">
   import client from '$lib/api/client';
   import TaxonomyEditSectionPageBase from '$lib/components/pages/record/edit/TaxonomyEditSectionPageBase.svelte';
-  import HierarchicalTaxonomyEditorSwitch from '$lib/components/editors/HierarchicalTaxonomyEditorSwitch.svelte';
-  import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
+  import HierarchicalTaxonomyEditorSwitch from '$lib/components/pages/record/edit/editors/entity/taxonomy/HierarchicalTaxonomyEditorSwitch.svelte';
+  import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
   import {
     defaultHierarchicalTaxonomySectionSegment,
     HIERARCHICAL_TAXONOMY_EDIT_SECTIONS,
     MEDIA_SECTION,
     type HierarchicalTaxonomyEditSectionKey,
-  } from '$lib/components/editors/hierarchical-taxonomy-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/taxonomy/hierarchical-taxonomy-edit-sections';
 
   let { data } = $props();
   let profile = $derived(data.profile);

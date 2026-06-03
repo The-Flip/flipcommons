@@ -19,13 +19,13 @@
     getMenuItemAction,
     type EditSectionMenuItem,
   } from '$lib/components/layout/page/edit-section-menu';
-  import { manufacturerEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { manufacturerEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import {
     findManufacturerSectionByKey,
     findManufacturerSectionBySegment,
     MANUFACTURER_EDIT_SECTIONS,
     type ManufacturerEditSectionKey,
-  } from '$lib/components/editors/manufacturer-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/manufacturer/manufacturer-edit-sections';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
   import { isFocusModePath } from '$lib/focus-mode';

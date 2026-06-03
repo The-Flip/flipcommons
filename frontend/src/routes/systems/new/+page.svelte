@@ -6,7 +6,7 @@
   import {
     fetchManufacturerOptions,
     type SystemEditOption,
-  } from '$lib/components/editors/system-edit-options';
+  } from '$lib/components/pages/record/edit/editors/entity/system/system-edit-options';
 
   type CreateBody = SystemCreateSchema;
 

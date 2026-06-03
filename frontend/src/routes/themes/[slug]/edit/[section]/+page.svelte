@@ -1,12 +1,12 @@
 <script lang="ts">
   import client from '$lib/api/client';
   import TaxonomyEditSectionPageBase from '$lib/components/pages/record/edit/TaxonomyEditSectionPageBase.svelte';
-  import HierarchicalTaxonomyEditorSwitch from '$lib/components/editors/HierarchicalTaxonomyEditorSwitch.svelte';
+  import HierarchicalTaxonomyEditorSwitch from '$lib/components/pages/record/edit/editors/entity/taxonomy/HierarchicalTaxonomyEditorSwitch.svelte';
   import {
     defaultHierarchicalTaxonomySectionSegment,
     HIERARCHICAL_TAXONOMY_EDIT_SECTIONS,
     type HierarchicalTaxonomyEditSectionKey,
-  } from '$lib/components/editors/hierarchical-taxonomy-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/taxonomy/hierarchical-taxonomy-edit-sections';
 
   let { data } = $props();
   let theme = $derived(data.profile);

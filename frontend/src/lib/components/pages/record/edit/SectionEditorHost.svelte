@@ -5,8 +5,8 @@
   import Modal from '$lib/components/ui/modal/Modal.svelte';
   import SectionEditorModal from './SectionEditorModal.svelte';
   import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import type { SaveMeta } from '$lib/components/editors/save-claims-shared';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type { SaveMeta } from '$lib/components/pages/record/edit/editors/save-claims-shared';
   import { toast } from '$lib/toast/toast.svelte';
 
   type SectionDef = {

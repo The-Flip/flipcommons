@@ -8,8 +8,8 @@
     defaultManufacturerSectionSegment,
     findManufacturerSectionBySegment,
     MANUFACTURER_EDIT_SECTIONS,
-  } from '$lib/components/editors/manufacturer-edit-sections';
-  import { setEditLayoutContext } from '$lib/components/editors/edit-layout-context';
+  } from '$lib/components/pages/record/edit/editors/entity/manufacturer/manufacturer-edit-sections';
+  import { setEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
 

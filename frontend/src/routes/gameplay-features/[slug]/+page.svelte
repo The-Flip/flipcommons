@@ -9,7 +9,7 @@
   import Markdown from '$lib/components/markdown/Markdown.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import PaginatedSection from '$lib/components/collections/grid/PaginatedSection.svelte';
-  import { hierarchicalTaxonomyEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { hierarchicalTaxonomyEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { displayAliasesFor } from '$lib/hierarchy-edit';
   import { createPaginatedLoader, unwrapPage } from '$lib/paginated-loader.svelte';
 

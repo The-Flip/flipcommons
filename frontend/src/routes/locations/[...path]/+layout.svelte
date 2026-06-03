@@ -15,14 +15,14 @@
     getMenuItemAction,
     type EditSectionMenuItem,
   } from '$lib/components/layout/page/edit-section-menu';
-  import { locationEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { locationEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import {
     findLocationSectionByKey,
     findLocationSectionBySegment,
     locationEditSectionsFor,
     type LocationEditSectionDef,
     type LocationEditSectionKey,
-  } from '$lib/components/editors/location-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/location/location-edit-sections';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
   import { childrenHeading, newChildLabel, type LocationDetail } from './location-helpers';
   import LocationEditorSwitch from './edit/LocationEditorSwitch.svelte';

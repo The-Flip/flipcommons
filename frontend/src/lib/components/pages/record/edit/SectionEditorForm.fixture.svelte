@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { SaveMeta } from '$lib/components/editors/save-model-claims';
+  import type { SaveMeta } from '$lib/components/pages/record/edit/editors/entity/model/save-model-claims';
   import SectionEditorForm from './SectionEditorForm.svelte';
 
   let {

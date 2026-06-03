@@ -31,14 +31,14 @@
   import {
     combinedSectionsFor,
     type CombinedSectionKey,
-  } from '$lib/components/editors/combined-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/combined-edit-sections';
   import { modelHasTitleOwnedIdentity } from '$lib/catalog-rules';
-  import { titleAreaEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { titleAreaEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
-  import type { ModelEditSectionKey } from '$lib/components/editors/model-edit-sections';
-  import type { TitleEditSectionKey } from '$lib/components/editors/title-edit-sections';
-  import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
-  import ModelEditorSwitch from '../../models/[slug]/edit/ModelEditorSwitch.svelte';
+  import type { ModelEditSectionKey } from '$lib/components/pages/record/edit/editors/entity/model/model-edit-sections';
+  import type { TitleEditSectionKey } from '$lib/components/pages/record/edit/editors/entity/title/title-edit-sections';
+  import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
+  import ModelEditorSwitch from '$lib/components/pages/record/edit/editors/entity/model/ModelEditorSwitch.svelte';
   import TitleEditorSwitch from './edit/TitleEditorSwitch.svelte';
 
   let { data, children } = $props();

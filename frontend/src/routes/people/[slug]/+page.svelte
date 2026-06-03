@@ -4,7 +4,7 @@
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
-  import { personEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { personEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
   import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';

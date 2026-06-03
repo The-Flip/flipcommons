@@ -2,14 +2,14 @@
   import client from '$lib/api/client';
   import TaxonomyDetailBaseLayout from '$lib/components/pages/record/detail/TaxonomyDetailBaseLayout.svelte';
   import HierarchicalTaxonomySidebar from '$lib/components/pages/record/detail/HierarchicalTaxonomySidebar.svelte';
-  import MediaEditor from '$lib/components/editors/MediaEditor.svelte';
-  import HierarchicalTaxonomyEditorSwitch from '$lib/components/editors/HierarchicalTaxonomyEditorSwitch.svelte';
-  import { hierarchicalTaxonomyEditActionContext } from '$lib/components/editors/edit-action-context';
+  import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
+  import HierarchicalTaxonomyEditorSwitch from '$lib/components/pages/record/edit/editors/entity/taxonomy/HierarchicalTaxonomyEditorSwitch.svelte';
+  import { hierarchicalTaxonomyEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import {
     HIERARCHICAL_TAXONOMY_EDIT_SECTIONS,
     MEDIA_SECTION,
     type HierarchicalTaxonomyEditSectionKey,
-  } from '$lib/components/editors/hierarchical-taxonomy-edit-sections';
+  } from '$lib/components/pages/record/edit/editors/entity/taxonomy/hierarchical-taxonomy-edit-sections';
   import { displayAliasesFor } from '$lib/hierarchy-edit';
   import { listingMeta } from '$lib/entities/schema-org';
 

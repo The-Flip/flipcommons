@@ -313,7 +313,7 @@ This folder contains input components. Base fields live at the top level; each i
 Display components (such as for markdown and citations) live elsewhere.
 ```
 
-### `pages/`
+### `pages/` - DONE ✅
 
 Build out `pages/record/{detail,create,edit,edit-history,sources,delete}/`, `pages/listing/`, `pages/error/` and move the page-shell components in. Also move the existing top-level `editors/` folder to `pages/record/edit/editors/`. The "Taxonomy\*" components are catalog page scaffolds despite the name, and route usage determines page-kind.
 
@@ -347,18 +347,19 @@ If `pages/record/detail/` gets crowded, consider a `pages/record/detail/sections
 **`pages/record/edit/`**
 
 - EditSectionShell
-- EditSectionMenu + edit-section-menu.ts
 - SectionEditorHost, SectionEditorForm, SectionEditorModal
 - EditRedirectFallback
 - TaxonomyEditSectionPageBase, TaxonomyEditSectionLayoutBase
 - SimpleTaxonomyEditSectionLayout, SimpleTaxonomyEditSectionPage
+
+`EditSectionMenu` + `edit-section-menu.ts` are **not** edit-page-body — they're the dropdown rendered by `layout/page/PageActionBar.svelte` (the edit/history/sources action menus in the page action bar). Moving them into `pages/` would make a `layout/` primitive import from `pages/`, violating the boundary. They move to `layout/page/` alongside their host; the edit shells here import them from there.
 
 **`pages/record/edit/editors/`**
 
 The existing top-level `editors/` folder (76 files) moves here, with an internal split that pulls the `.ts` plumbing out of the components. Two files currently parked under `routes/` also join — they're cross-route or depended on by lib, so they belong in $lib:
 
 - `routes/models/[slug]/edit/ModelEditorSwitch.svelte` → `pages/record/edit/editors/` (also imported by `routes/titles/[slug]/+layout.svelte` via an awkward `../../models/...` relative path)
-- `routes/systems/[slug]/edit/save-system-claims.ts` → `pages/record/edit/editors/save/` (imported by `lib/components/editors/SystemManufacturerEditor.fixture.svelte` and `SystemTechnologyEditor.fixture.svelte` — `$lib` shouldn't depend on `routes/`)
+- `routes/systems/[slug]/edit/save-system-claims.ts` → `pages/record/edit/editors/entity/system/` (imported by `lib/components/editors/SystemManufacturerEditor.fixture.svelte` and `SystemTechnologyEditor.fixture.svelte` — `$lib` shouldn't depend on `routes/`)
 
 ```text
 editors/
@@ -376,18 +377,16 @@ editors/
       model-edit-sections.ts (+ test)
       model-edit-options.ts
       save-model-claims.ts (+ test)
-    title/
-      TitleEditorSwitch.svelte             # promoted from routes/titles/[slug]/edit/
+    title/                                 # TitleEditorSwitch stays route-private (single-route)
       TitleExternalDataEditor, TitleFranchiseEditor (+ tests + fixtures)
       title-edit-sections.ts
       title-edit-options.ts
       save-title-claims.ts (+ test)
-    system/
-      SystemEditorSwitch.svelte            # promoted from routes/systems/[slug]/edit/
+    system/                                 # SystemEditorSwitch stays route-private (single-route)
       SystemManufacturerEditor, SystemTechnologyEditor (+ tests + fixtures)
       system-edit-sections.ts
       system-edit-options.ts
-      save-system-claims.ts                # promoted from routes/systems/[slug]/edit/
+      save-system-claims.ts                # promoted from routes/systems/[slug]/edit/ (lib fixtures depend on it)
     taxonomy/
       HierarchicalTaxonomyEditorSwitch.svelte
       SimpleTaxonomyEditorSwitch.svelte
@@ -397,23 +396,28 @@ editors/
       hierarchical-taxonomy-edit-types.ts
       simple-taxonomy-edit-sections.ts
       simple-taxonomy-edit-types.ts
+    # person/manufacturer/corporate-entity/location: only the edit-sections spec lives
+    # in lib (already there); their switch + per-entity section editor + save-claims +
+    # edit-types stay route-private (each is single-route — see "Switch promotions" below).
     person/
-      PersonEditorSwitch.svelte            # promoted from routes/people/[slug]/edit/
       person-edit-sections.ts
     manufacturer/
-      ManufacturerEditorSwitch.svelte      # promoted from routes/manufacturers/[slug]/edit/
       manufacturer-edit-sections.ts (+ test)
     corporate-entity/
-      CorporateEntityEditorSwitch.svelte   # promoted from routes/corporate-entities/[slug]/edit/
       corporate-entity-edit-sections.ts
     location/
-      LocationEditorSwitch.svelte          # promoted from routes/locations/[...path]/edit/
       location-edit-sections.ts
 ```
 
 **Why per-entity bucketing:** the entity/ split makes "what does Model edit?" one folder-listing away — switch + per-section editors + spec + save are all together. Shared editors live at the root as a small, deliberate set. Cross-checked usage confirms no straddlers — every editor is either used by 2+ entity switches (shared) or by exactly one (per-entity).
 
-**Switch promotions:** all 7 currently-route-private switches (Model, Title, System, Person, Manufacturer, CorporateEntity, Location) move into `editors/entity/X/` alongside the taxonomy switches that were already in `lib`. The previous 2/7 split was incidental, not principled. After the move, every EditorSwitch lives in `editors/`; routes just import them. The cross-route smell that originally promoted ModelEditorSwitch (`titles/[slug]/+layout.svelte` reaching into `../../models/...`) disappears as a side effect.
+**Switch promotions — only what crosses the `$lib` boundary moves.** A switch earns a `$lib` home only when something outside its own route family consumes it. Audited reality:
+
+- **`ModelEditorSwitch`** is consumed cross-route — `routes/titles/[slug]/+layout.svelte` reaches into `../../models/[slug]/edit/ModelEditorSwitch.svelte` (single-model titles embed the model editor). Promote it to `editors/entity/model/`; that awkward relative path becomes a `$lib` import.
+- **`save-system-claims.ts`** is consumed by two `$lib` fixtures (`SystemManufacturerEditor.fixture.svelte`, `SystemTechnologyEditor.fixture.svelte`). Promote it to `editors/entity/system/` so `$lib` no longer reaches into `routes/`.
+- **The other 6 switches (Title, System, Person, Manufacturer, CorporateEntity, Location) stay route-private.** Each is imported only within its own route family (`+layout.svelte` + `edit/[section]/+page.svelte`), and each owns a route-local cluster the switch imports via `./` — a per-entity section editor (`ManufacturerBasicsEditor`, `LocationBasicsEditor`/`LocationDivisionsEditor`, `PersonDetailsEditor`, `CorporateEntityBasicsEditor`), its `save-*-claims.ts`, and its `*-edit-types.ts`. Promoting the switch would drag that single-route cluster into shared `$lib` and recreate the `$lib`→`routes` smell. They are textbook route-private and stay put.
+
+The Model/Title split in `$lib` is **not** incidental: Model/Title editing is already fully `$lib`-ized (zero route-local edit deps), while the other entities each retain a route-local edit cluster. Only the per-entity `*-edit-sections.ts` spec — already in `$lib` and consumed by the generic edit framework — lives under `editors/entity/X/` for those entities; the rest of their cluster stays beside the route.
 
 Add `pages/record/edit/editors/README.md` explaining what makes a file a section editor — the spec / save-claims contract isn't obvious from filenames.
 
@@ -421,7 +425,9 @@ Add `pages/record/edit/editors/README.md` explaining what makes a file a section
 
 The `/[entity]/[slug]/edit-history/` route across catalog entity types renders only `<EditHistory />`. The component is the page.
 
-- EditHistory + change-display.ts
+- EditHistory
+
+`change-display.ts` is **not** edit-history-private — it's a shared change/claim-value display helper also consumed by `provenance/ClaimValue.svelte` and `routes/changesets/`. It moves to `provenance/` (its functions render the provenance of changes); `EditHistory`, a page, imports it from there.
 
 **`pages/record/sources/`**
 
@@ -435,7 +441,7 @@ The `/[entity]/[slug]/sources/` route across catalog entity types renders only `
 
 **`pages/listing/`**
 
-- TaxonomyListPage (8 routes)
+- TaxonomyListPage (display-types, technology-generations — the SSR listing work migrated the other taxonomy routes to `CatalogListing`)
 - GroupedTaxonomyList (technology-generations, display-types)
 - NoResultsCreatePrompt — used by TaxonomyListPage + 3 listing routes; reused, so it belongs here. (`CreateFirstModelPrompt` and `CreateFirstCorporateEntityPrompt` are single-route — route-private, see below.)
 - PaginatedListPage, CatalogListing, FacetedCatalogListing, PaginatedListLoader — the SSR listing controllers and their shared host: `PaginatedListPage` (row-list controller), `CatalogListing` (catalog adapter over `PaginatedListPage`, resolving a `catalogKey` via `ENTITY_META`), `FacetedCatalogListing` (filter-sidebar card-grid controller, used by the titles and manufacturers listing pages) and `PaginatedListLoader` (loader host shared by both controllers). Already created here during the SSR listing work (not moves).

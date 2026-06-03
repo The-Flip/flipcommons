@@ -6,10 +6,10 @@
   import Button from '$lib/components/ui/Button.svelte';
   import SectionEditorForm from './SectionEditorForm.svelte';
   import { WIDE_BREAKPOINT } from '$lib/constants';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import type { EditSectionDef } from '$lib/components/editors/edit-section-def';
-  import { getEditLayoutContext } from '$lib/components/editors/edit-layout-context';
-  import type { SaveMeta } from '$lib/components/editors/save-claims-shared';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type { EditSectionDef } from '$lib/components/pages/record/edit/editors/edit-section-def';
+  import { getEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
+  import type { SaveMeta } from '$lib/components/pages/record/edit/editors/save-claims-shared';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
 
   type SectionDef = EditSectionDef<TKey> & { usesSectionEditorForm: boolean };

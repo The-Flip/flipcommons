@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import TextField from '$lib/components/input/TextField.svelte';
-  import type { SectionEditorProps } from '$lib/components/editors/editor-contract';
+  import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { ManufacturerEditView } from './manufacturer-edit-types';
   import type { FieldErrors } from '$lib/api/parse-api-error';

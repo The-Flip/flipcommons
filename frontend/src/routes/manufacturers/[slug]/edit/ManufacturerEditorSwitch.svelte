@@ -1,8 +1,8 @@
 <script lang="ts">
-  import DescriptionEditor from '$lib/components/editors/DescriptionEditor.svelte';
-  import NameEditor from '$lib/components/editors/NameEditor.svelte';
-  import type { SectionEditorHandle } from '$lib/components/editors/editor-contract';
-  import type { ManufacturerEditSectionKey } from '$lib/components/editors/manufacturer-edit-sections';
+  import DescriptionEditor from '$lib/components/pages/record/edit/editors/DescriptionEditor.svelte';
+  import NameEditor from '$lib/components/pages/record/edit/editors/NameEditor.svelte';
+  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type { ManufacturerEditSectionKey } from '$lib/components/pages/record/edit/editors/entity/manufacturer/manufacturer-edit-sections';
   import ManufacturerBasicsEditor from './ManufacturerBasicsEditor.svelte';
   import { saveManufacturerClaims } from './save-manufacturer-claims';
   import type { ManufacturerEditView } from './manufacturer-edit-types';

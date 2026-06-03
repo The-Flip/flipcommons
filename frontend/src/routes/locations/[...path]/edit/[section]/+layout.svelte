@@ -8,8 +8,8 @@
     defaultLocationSectionSegment,
     findLocationSectionBySegment,
     locationEditSectionsFor,
-  } from '$lib/components/editors/location-edit-sections';
-  import { setEditLayoutContext } from '$lib/components/editors/edit-layout-context';
+  } from '$lib/components/pages/record/edit/editors/entity/location/location-edit-sections';
+  import { setEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
   import { WIDE_BREAKPOINT } from '$lib/constants';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
   import type { LocationDetailSchema } from '$lib/api/schema';

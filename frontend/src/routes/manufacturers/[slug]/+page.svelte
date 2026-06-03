@@ -7,7 +7,7 @@
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
-  import { manufacturerEditActionContext } from '$lib/components/editors/edit-action-context';
+  import { manufacturerEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
   import LocationLink from '$lib/components/LocationLink.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';

@@ -6,10 +6,10 @@
     SIMPLE_TAXONOMY_EDIT_SECTIONS,
     type SimpleTaxonomyEditSectionDef,
     type SimpleTaxonomyEditSectionKey,
-  } from '$lib/components/editors/simple-taxonomy-edit-sections';
-  import SimpleTaxonomyEditorSwitch from '$lib/components/editors/SimpleTaxonomyEditorSwitch.svelte';
-  import type { SimpleTaxonomyClaimsPath } from '$lib/components/editors/save-claims-shared';
-  import type { SimpleTaxonomyEditView } from '$lib/components/editors/simple-taxonomy-edit-types';
+  } from '$lib/components/pages/record/edit/editors/entity/taxonomy/simple-taxonomy-edit-sections';
+  import SimpleTaxonomyEditorSwitch from '$lib/components/pages/record/edit/editors/entity/taxonomy/SimpleTaxonomyEditorSwitch.svelte';
+  import type { SimpleTaxonomyClaimsPath } from '$lib/components/pages/record/edit/editors/save-claims-shared';
+  import type { SimpleTaxonomyEditView } from '$lib/components/pages/record/edit/editors/entity/taxonomy/simple-taxonomy-edit-types';
 
   let {
     profile,
