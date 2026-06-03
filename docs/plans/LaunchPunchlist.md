@@ -3,7 +3,7 @@
 ## Blockers — do before announcing
 
 - [ ] **HSTS header** — One step remaining: `max-age=31536000` (#463).
-- [ ] **Content Security Policy (CSP)** — report-only block shipped in #465 (`fcc3bb6`); SvelteKit emits via `kit.csp`, violations stream to Sentry. Lora is self-hosted in the same PR so `font-src` stays `'self'`. Enforce mode pending a week of clean reports; known gap: prerendered routes can't carry report-only headers, so they'll need a smoke-test before flipping.
+- [ ] **Content Security Policy (CSP)** — report-only block shipped in #465 (`fcc3bb6`); SvelteKit emits via `kit.csp`, violations stream to Sentry. Enforce mode pending a week of clean reports; known gap: prerendered routes can't carry report-only headers, so they'll need a smoke-test before flipping.
 - [ ] **Media backups** — Setup backups of user-uploaded media. iDrive e2's internal replication doesn't cover accidental/malicious deletes, nor ransomware.
 - [ ] **Test DB restore** — Restore the most recent backup into a scratch Postgres, run smoke tests.
 
