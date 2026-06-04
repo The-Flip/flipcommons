@@ -18,16 +18,17 @@ from ninja.errors import HttpError
 from ninja.responses import Status
 from ninja.security import django_auth
 
-from apps.catalog.api.schemas import EntityRef
 from apps.catalog.models import Title
 from apps.core.api_helpers import authed_user
 from apps.core.authz.markers import requires
 from apps.core.authz.schemas import PolicyDeniedSchema
 from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
+from apps.kiosk.api._titles import first_model_prefetch, first_model_summary
 from apps.kiosk.api.schemas import (
     KioskConfigDetailSchema,
     KioskConfigItemDetailSchema,
+    KioskConfigItemTitleSchema,
     KioskConfigListItemSchema,
     KioskConfigPatchSchema,
 )
@@ -40,16 +41,26 @@ kiosk_configs_router = Router(tags=["kiosk", "private"])
 
 
 def _serialize_item(item: KioskConfigItem) -> KioskConfigItemDetailSchema:
+    summary = first_model_summary(item.title)
     return KioskConfigItemDetailSchema(
         id=item.pk,
         position=item.position,
         hook=item.hook,
-        title=EntityRef(name=item.title.name, public_id=item.title.public_id),
+        title=KioskConfigItemTitleSchema(
+            public_id=item.title.public_id,
+            name=item.title.name,
+            manufacturer=summary.manufacturer,
+            year=summary.year,
+        ),
     )
 
 
 def _serialize_detail(config: KioskConfig) -> KioskConfigDetailSchema:
-    items = list(config.items.select_related("title"))
+    items = list(
+        config.items.select_related("title").prefetch_related(
+            first_model_prefetch("title__machine_models")
+        )
+    )
     return KioskConfigDetailSchema(
         id=config.pk,
         page_heading=config.page_heading,

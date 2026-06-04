@@ -1,10 +1,7 @@
 /**
- * Title filter state and its URL serialization, plus `matchesQuery` — the one pure
- * helper still shared after /titles moved filtering server-side (the kiosk title
- * typeahead). No Svelte imports — framework-agnostic and testable.
+ * Title filter state and its URL serialization. No Svelte imports —
+ * framework-agnostic and testable.
  */
-
-import { normalizeText } from '$lib/utils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -174,30 +171,4 @@ export function filtersToParams(f: FilterState, sp: URLSearchParams): URLSearchP
     }
   }
   return sp;
-}
-
-// ---------------------------------------------------------------------------
-// Query matching
-// ---------------------------------------------------------------------------
-
-/**
- * Match a record against a normalized query string. Checks name, abbreviations,
- * and manufacturer name. The parameter type is intentionally structural so
- * callers can pass any schema with these fields (e.g. TitleListItemSchema).
- * Used by /kiosk/edit's title typeahead.
- */
-export function matchesQuery(
-  t: {
-    name: string;
-    abbreviations: string[];
-    manufacturer?: { name: string } | null;
-  },
-  q: string,
-): boolean {
-  if (!q) return true;
-  return (
-    normalizeText(t.name).includes(q) ||
-    t.abbreviations.some((a) => normalizeText(a).includes(q)) ||
-    (t.manufacturer?.name != null && normalizeText(t.manufacturer.name).includes(q))
-  );
 }

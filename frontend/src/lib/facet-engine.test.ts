@@ -4,42 +4,8 @@ import {
   filtersFromParams,
   filtersToParams,
   hasActiveFilters,
-  matchesQuery,
   type FilterState,
 } from './facet-engine';
-
-// ---------------------------------------------------------------------------
-// matchesQuery — the one predicate still shipped (kiosk title typeahead). The
-// query is expected pre-normalized by the caller; only the record's fields are
-// folded here.
-// ---------------------------------------------------------------------------
-
-describe('matchesQuery', () => {
-  const title = {
-    name: 'Medieval Madness',
-    abbreviations: ['MM'],
-    manufacturer: { name: 'Williams' },
-  };
-
-  it('matches everything on an empty query', () => {
-    expect(matchesQuery(title, '')).toBe(true);
-  });
-
-  it('matches on the name, an abbreviation, or the manufacturer', () => {
-    expect(matchesQuery(title, 'medieval')).toBe(true);
-    expect(matchesQuery(title, 'mm')).toBe(true);
-    expect(matchesQuery(title, 'williams')).toBe(true);
-  });
-
-  it('does not match unrelated text', () => {
-    expect(matchesQuery(title, 'godzilla')).toBe(false);
-  });
-
-  it('tolerates a missing manufacturer', () => {
-    expect(matchesQuery({ name: 'Xenon', abbreviations: [] }, 'xenon')).toBe(true);
-    expect(matchesQuery({ name: 'Xenon', abbreviations: [] }, 'godzilla')).toBe(false);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // hasActiveFilters — any structured filter except the free-text query

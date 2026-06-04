@@ -122,6 +122,48 @@ class TestRead:
         assert body["items"][0]["hook"] == "Try this!"
         assert body["items"][0]["title"]["public_id"] == title_a.public_id
 
+    def test_detail_title_carries_no_manufacturer_year_without_models(
+        self, client, superuser, title_a
+    ):
+        """A title with no models resolves to null manufacturer/year (the editor
+        renders the bare name)."""
+        cfg = KioskConfig.objects.create()
+        KioskConfigItem.objects.create(config=cfg, title=title_a, position=1)
+        client.force_login(superuser)
+        title = client.get(detail_url(cfg.pk)).json()["items"][0]["title"]
+        assert title["manufacturer"] is None
+        assert title["year"] is None
+
+    def test_detail_title_derives_manufacturer_year_from_first_model(
+        self, client, superuser
+    ):
+        """The editor config derives the disambiguating manufacturer + year
+        live from the title's first model, mirroring the display page."""
+        from apps.catalog.models import CorporateEntity, MachineModel, Manufacturer
+
+        mfr = Manufacturer.objects.create(name="Williams", slug="williams")
+        ce = CorporateEntity.objects.create(
+            name="Williams", slug="williams-ce", manufacturer=mfr
+        )
+        title = Title.objects.create(name="Medieval Madness", slug="mm-title")
+        MachineModel.objects.create(
+            title=title,
+            name="Medieval Madness",
+            slug="mm-model",
+            corporate_entity=ce,
+            year=1997,
+        )
+        cfg = KioskConfig.objects.create()
+        KioskConfigItem.objects.create(config=cfg, title=title, position=1)
+        client.force_login(superuser)
+        body_title = client.get(detail_url(cfg.pk)).json()["items"][0]["title"]
+        assert body_title["public_id"] == title.public_id
+        assert body_title["manufacturer"] == {
+            "name": "Williams",
+            "public_id": "williams",
+        }
+        assert body_title["year"] == 1997
+
     def test_get_404(self, client, superuser):
         client.force_login(superuser)
         assert client.get(detail_url(999_999)).status_code == 404
