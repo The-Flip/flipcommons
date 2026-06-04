@@ -12,15 +12,12 @@
     type HierarchicalTaxonomySectionPatchBody,
   } from '$lib/components/pages/record/edit/editors/save-claims-shared';
 
-  type ParentOption = { slug: string; label: string; count?: number };
-  type ParentOptionsLoader = () => Promise<ParentOption[]>;
-
   let {
     sectionKey,
     initialData,
     slug,
     claimsPath,
-    parentOptionsLoader,
+    parentType,
     parentsLabel,
     editorRef = $bindable<SectionEditorHandle | undefined>(undefined),
     onsaved,
@@ -31,7 +28,8 @@
     initialData: HierarchicalTaxonomyEditView;
     slug: string;
     claimsPath: HierarchicalTaxonomyClaimsPath;
-    parentOptionsLoader: ParentOptionsLoader;
+    /** Autocomplete registry key for the parents picker (`theme`, `gameplay-feature`). */
+    parentType: string;
     /** Field label for the parents picker (e.g. "This feature is a type of..."). Defaults to ParentsSectionEditor's default. */
     parentsLabel?: string;
     editorRef?: SectionEditorHandle | undefined;
@@ -80,7 +78,7 @@
     initialData={{ parents: initialData.parents }}
     {slug}
     save={saveClaims}
-    optionsLoader={parentOptionsLoader}
+    type={parentType}
     label={parentsLabel}
     {onsaved}
     {onerror}

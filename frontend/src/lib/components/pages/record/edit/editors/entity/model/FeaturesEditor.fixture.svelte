@@ -6,11 +6,11 @@
     cabinet?: { public_id: string } | null;
     reward_types: { public_id: string }[];
     tags: { public_id: string }[];
-    themes: { public_id: string }[];
+    themes: { public_id: string; name: string }[];
     production_quantity: string;
     player_count?: number | null;
     flipper_count?: number | null;
-    gameplay_features: { public_id: string; count?: number | null }[];
+    gameplay_features: { public_id: string; name?: string; count?: number | null }[];
   };
 
   let {

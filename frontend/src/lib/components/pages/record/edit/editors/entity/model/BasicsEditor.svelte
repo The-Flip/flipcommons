@@ -1,25 +1,24 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
+  import EntitySelect from '$lib/components/input/entity-select/EntitySelect.svelte';
+  import type { EntityOption } from '$lib/api/entity-autocomplete';
   import NumberField from '$lib/components/input/NumberField.svelte';
   import MonthSelect from '$lib/components/input/MonthSelect.svelte';
   import { fetchFieldConstraints, fc, type FieldConstraints } from '$lib/field-constraints';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
-  import {
-    EMPTY_EDIT_OPTIONS,
-    fetchModelEditOptions,
-    toSelectOptions,
-    type ModelEditOptions,
-  } from './model-edit-options';
   import type { FieldErrors } from '$lib/api/parse-api-error';
   import { saveModelClaims, type SaveResult, type SaveMeta } from './save-model-claims';
+
+  // title/corporate_entity ship as `EntityRef` ({ name, public_id }); `name`
+  // seeds the typeahead's label. title is required (NOT NULL on MachineModel).
+  type EntityRefData = { public_id: string; name: string } | null | undefined;
 
   type BasicsModel = {
     year?: number | null;
     month?: number | null;
-    title?: { public_id: string } | null;
-    corporate_entity?: { public_id: string } | null;
+    title?: EntityRefData;
+    corporate_entity?: EntityRefData;
   };
 
   // `slim` hides the Title picker. Used on single-model combined edit, where
@@ -38,7 +37,6 @@
     year: string | number;
     month: string | number;
     title: string;
-    corporate_entity: string;
   };
 
   function extractFields(m: BasicsModel): BasicsFormFields {
@@ -46,30 +44,32 @@
       year: m.year ?? '',
       month: m.month ?? '',
       title: m.title?.public_id ?? '',
-      corporate_entity: m.corporate_entity?.public_id ?? '',
     };
   }
 
   // untrack: intentional one-time capture; component re-mounts when modal reopens
-  const original = untrack(() => extractFields(initialData));
-  let fields = $state<BasicsFormFields>({ ...original });
+  const initialFields = untrack(() => extractFields(initialData));
+  const initialCorporateEntity = untrack(() => initialData.corporate_entity?.public_id ?? '');
+  const original = { ...initialFields, corporate_entity: initialCorporateEntity };
+  let fields = $state<BasicsFormFields>({ ...initialFields });
+  // corporate_entity is optional: bind `string | null`, normalize null → '' at
+  // the diff boundary so clearing it diffs as '' → null. title is required.
+  let corporateEntity = $state<string | null>(initialCorporateEntity || null);
+  let current = $derived({ ...fields, corporate_entity: corporateEntity ?? '' });
   // Hidden fields (slim mode) never mutate because they have no UI, so
   // diffScalarFields naturally ignores them — no explicit strip needed.
-  let dirty = $derived(Object.keys(diffScalarFields(fields, original)).length > 0);
+  let dirty = $derived(Object.keys(diffScalarFields(current, original)).length > 0);
 
   let fieldErrors = $state<FieldErrors>({});
-  let editOptions = $state<ModelEditOptions>(EMPTY_EDIT_OPTIONS);
   let constraints = $state<FieldConstraints>({});
+
+  function initialSelection(ref: EntityRefData): EntityOption | null {
+    return ref ? { value: ref.public_id, label: ref.name } : null;
+  }
 
   $effect(() => {
     fetchFieldConstraints('model').then((c) => {
       constraints = c;
-    });
-  });
-
-  $effect(() => {
-    fetchModelEditOptions().then((opts) => {
-      editOptions = opts;
     });
   });
 
@@ -83,7 +83,7 @@
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};
-    const changed = diffScalarFields(fields, original);
+    const changed = diffScalarFields(current, original);
 
     if (!dirty) {
       onsaved();
@@ -108,29 +108,22 @@
 
 <div class="basics-grid">
   {#if !slim}
-    <!--
-			TODO: title is required (NOT NULL on MachineModel), but SearchableSelect's
-			built-in ✕ button still lets users clear it locally. Saving triggers a
-			backend 422 that renders inline, so the invariant holds — but the UX is
-			"click clear, try to save, see error" instead of "can't clear at all".
-			Follow-up: add a `required` prop to SearchableSelect that hides the ✕.
-		-->
-    <SearchableSelect
+    <EntitySelect
+      type="title"
       label="Title"
-      options={toSelectOptions(editOptions.titles ?? [])}
       bind:selected={fields.title}
+      initialSelection={initialSelection(initialData.title)}
       error={fieldErrors.title ?? ''}
-      showCounts={false}
       placeholder="Search titles..."
+      required
     />
   {/if}
-  <SearchableSelect
+  <EntitySelect
+    type="corporate-entity"
     label="Manufacturer"
-    options={toSelectOptions(editOptions.corporate_entities ?? [])}
-    bind:selected={fields.corporate_entity}
+    bind:selected={corporateEntity}
+    initialSelection={initialSelection(initialData.corporate_entity)}
     error={fieldErrors.corporate_entity ?? ''}
-    allowZeroCount
-    showCounts={false}
     placeholder="Search manufacturers..."
   />
   <NumberField

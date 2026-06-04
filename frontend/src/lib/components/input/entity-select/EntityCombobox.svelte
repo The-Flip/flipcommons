@@ -22,6 +22,7 @@ wrapped for single- vs multi-selection.
     multi = false,
     selectedValues,
     initialOptions = [],
+    exclude = [],
     label = '',
     placeholder = 'Search...',
     error = '',
@@ -38,6 +39,8 @@ wrapped for single- vs multi-selection.
     selectedValues: string[];
     /** Rows to pre-seed the label cache so saved values render with no search. */
     initialOptions?: EntityOption[];
+    /** Values to drop from the listbox (e.g. the current record, to forbid self-reference). */
+    exclude?: string[];
     label?: string;
     placeholder?: string;
     error?: string;
@@ -80,9 +83,11 @@ wrapped for single- vs multi-selection.
   let inputWrapEl: HTMLDivElement | undefined = $state();
   let listEl: HTMLUListElement | undefined = $state();
 
-  // A full page of rows means the endpoint capped the set and more likely
-  // exist — hint the user to type rather than scroll for them.
-  const capped = $derived(rows.length >= AUTOCOMPLETE_RESULT_LIMIT);
+  // A full page from the endpoint means the set was capped and more likely
+  // exist — hint the user to type rather than scroll for them. Tracked from the
+  // raw response count (before `exclude` trims a row), so dropping the self-row
+  // from a full page doesn't read as "not capped".
+  let capped = $state(false);
 
   const search = createDebouncedSearch(
     async (q: string) => {
@@ -97,7 +102,10 @@ wrapped for single- vs multi-selection.
     },
     (results) => {
       remember(results);
-      rows = results;
+      capped = results.length >= AUTOCOMPLETE_RESULT_LIMIT;
+      // Cache every row (label lookups), but never show an excluded value —
+      // e.g. the current record, which can't reference itself.
+      rows = exclude.length ? results.filter((r) => !exclude.includes(r.value)) : results;
       loading = false;
     },
   );

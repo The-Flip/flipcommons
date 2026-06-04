@@ -21,18 +21,15 @@ vi.mock('$app/navigation', () => ({
   invalidateAll,
 }));
 
-const EDIT_OPTIONS = {
-  data: {
-    corporate_entities: [
-      { slug: 'williams-electronics', label: 'Williams Electronics' },
-      { slug: 'stern-pinball-inc', label: 'Stern Pinball, Inc.' },
-    ],
-    titles: [
-      { slug: 'medieval-madness', label: 'Medieval Madness' },
-      { slug: 'attack-from-mars', label: 'Attack from Mars' },
-    ],
-  },
-};
+// Rows the autocomplete endpoint returns per type, filtered by the typed query.
+const TITLE_ROWS = [
+  { value: 'medieval-madness', label: 'Medieval Madness', sublabel: null },
+  { value: 'attack-from-mars', label: 'Attack from Mars', sublabel: null },
+];
+const CE_ROWS = [
+  { value: 'williams-electronics', label: 'Williams Electronics', sublabel: null },
+  { value: 'stern-pinball-inc', label: 'Stern Pinball, Inc.', sublabel: null },
+];
 
 const FIELD_CONSTRAINTS = {
   data: {
@@ -43,16 +40,25 @@ const FIELD_CONSTRAINTS = {
 const INITIAL_MODEL = {
   year: 1997,
   month: 6,
-  title: { public_id: 'medieval-madness' },
-  corporate_entity: { public_id: 'williams-electronics' },
+  title: { public_id: 'medieval-madness', name: 'Medieval Madness' },
+  corporate_entity: { public_id: 'williams-electronics', name: 'Williams Electronics' },
 };
 
 function mockGetResponses() {
-  GET.mockImplementation(async (path: string) => {
-    if (path === '/api/models/edit-options/') return EDIT_OPTIONS;
-    if (path === '/api/field-constraints/{entity_type}') return FIELD_CONSTRAINTS;
-    throw new Error(`Unexpected GET ${path}`);
-  });
+  GET.mockImplementation(
+    async (path: string, opts?: { params?: { query?: { type?: string; q?: string } } }) => {
+      if (path === '/api/entity-autocomplete/') {
+        const type = opts?.params?.query?.type;
+        const q = (opts?.params?.query?.q ?? '').toLowerCase();
+        const rows = type === 'title' ? TITLE_ROWS : CE_ROWS;
+        const results = rows.filter((r) => r.label.toLowerCase().includes(q));
+        return { data: { results }, error: undefined, response: { status: 200 } };
+      }
+      if (path === '/api/field-constraints/{entity_type}') return FIELD_CONSTRAINTS;
+      // The retired /api/models/edit-options/ big-entity lists must not be hit.
+      throw new Error(`Unexpected GET ${path}`);
+    },
+  );
 }
 
 describe('BasicsEditor dirty-state contract', () => {

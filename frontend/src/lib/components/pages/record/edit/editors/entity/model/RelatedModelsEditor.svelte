@@ -1,14 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
+  import EntitySelect from '$lib/components/input/entity-select/EntitySelect.svelte';
+  import type { EntityOption } from '$lib/api/entity-autocomplete';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
-  import {
-    EMPTY_EDIT_OPTIONS,
-    fetchModelEditOptions,
-    toSelectOptions,
-    type ModelEditOptions,
-  } from './model-edit-options';
   import type { FieldErrors } from '$lib/api/parse-api-error';
   import { saveModelClaims, type SaveResult, type SaveMeta } from './save-model-claims';
 
@@ -18,6 +13,7 @@
     { field: 'remake_of', label: 'Remake of' },
   ] as const;
 
+  type HierarchyField = (typeof HIERARCHY_FIELDS)[number]['field'];
   type HierarchyRef = { public_id: string; name?: string } | null | undefined;
 
   type RelatedModelsModel = {
@@ -34,7 +30,7 @@
     ondirtychange = () => {},
   }: SectionEditorProps<RelatedModelsModel> = $props();
 
-  // Flatten nested FK objects to slug strings for form state
+  // Flatten nested FK objects to slug strings for form state ('' = none).
   const original = untrack(() => ({
     variant_of: initialData.variant_of?.public_id ?? '',
     converted_from: initialData.converted_from?.public_id ?? '',
@@ -42,21 +38,19 @@
   }));
 
   let fieldErrors = $state<FieldErrors>({});
-  let fields = $state({ ...original });
-  let dirty = $derived.by(() => Object.keys(diffScalarFields(fields, original)).length > 0);
-
-  let editOptions = $state<ModelEditOptions>(EMPTY_EDIT_OPTIONS);
-
-  // Filter out the current model from the options list
-  let modelOptions = $derived(
-    toSelectOptions((editOptions.models ?? []).filter((o) => o.slug !== slug)),
-  );
-
-  $effect(() => {
-    fetchModelEditOptions().then((opts) => {
-      editOptions = opts;
-    });
+  // Bound as `string | null` (the widget clears to null); normalize null → ''
+  // at the diff boundary so a cleared FK diffs as '' → null.
+  let fields = $state<Record<HierarchyField, string | null>>({ ...original });
+  let current = $derived({
+    variant_of: fields.variant_of ?? '',
+    converted_from: fields.converted_from ?? '',
+    remake_of: fields.remake_of ?? '',
   });
+  let dirty = $derived.by(() => Object.keys(diffScalarFields(current, original)).length > 0);
+
+  function initialSelection(ref: HierarchyRef): EntityOption | null {
+    return ref ? { value: ref.public_id, label: ref.name ?? ref.public_id } : null;
+  }
 
   $effect(() => {
     ondirtychange(dirty);
@@ -68,7 +62,7 @@
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};
-    const changed = diffScalarFields(fields, original);
+    const changed = diffScalarFields(current, original);
 
     if (!dirty) {
       onsaved();
@@ -93,13 +87,13 @@
 
 <div class="related-models-editor">
   {#each HIERARCHY_FIELDS as { field, label } (field)}
-    <SearchableSelect
+    <EntitySelect
+      type="model"
       {label}
-      options={modelOptions}
       bind:selected={fields[field]}
+      initialSelection={initialSelection(initialData[field])}
+      exclude={[slug]}
       error={fieldErrors[field] ?? ''}
-      allowZeroCount
-      showCounts={false}
       placeholder="Search models..."
     />
   {/each}

@@ -13,6 +13,7 @@ search.
     type,
     selected = $bindable([]),
     initialSelections = [],
+    exclude = [],
     label = '',
     placeholder = 'Search...',
     error = '',
@@ -24,6 +25,8 @@ search.
     selected?: string[];
     /** Saved rows, pre-seeded so existing chips render on mount with no search. */
     initialSelections?: EntityOption[];
+    /** Values to drop from results (e.g. the current record, to forbid self-reference). */
+    exclude?: string[];
     label?: string;
     placeholder?: string;
     error?: string;
@@ -42,6 +45,7 @@ search.
   multi
   selectedValues={selected}
   initialOptions={initialSelections}
+  {exclude}
   {label}
   {placeholder}
   {error}

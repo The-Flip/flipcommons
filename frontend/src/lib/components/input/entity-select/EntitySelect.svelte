@@ -12,6 +12,7 @@ so the current value renders on mount without a search.
     type,
     selected = $bindable(null),
     initialSelection = null,
+    exclude = [],
     label = '',
     placeholder = 'Search...',
     error = '',
@@ -24,6 +25,8 @@ so the current value renders on mount without a search.
     selected?: string | null;
     /** Saved row, pre-seeded so the current value renders on mount with no search. */
     initialSelection?: EntityOption | null;
+    /** Values to drop from results (e.g. the current record, to forbid self-reference). */
+    exclude?: string[];
     label?: string;
     placeholder?: string;
     error?: string;
@@ -40,6 +43,7 @@ so the current value renders on mount without a search.
   {type}
   {selectedValues}
   {initialOptions}
+  {exclude}
   {label}
   {placeholder}
   {error}

@@ -145,6 +145,38 @@ describe('PeopleEditor', () => {
     expect(PATCH).not.toHaveBeenCalled();
   });
 
+  it('selecting a different person shows the new label, not the stale one', async () => {
+    const user = userEvent.setup();
+    GET.mockImplementation(async (path: string, opts?: { params?: { query?: { q?: string } } }) => {
+      if (path === '/api/models/edit-options/') return EDIT_OPTIONS;
+      if (path === '/api/entity-autocomplete/') {
+        const q = (opts?.params?.query?.q ?? '').toLowerCase();
+        const rows = [
+          { value: 'pat-lawlor', label: 'Pat Lawlor', sublabel: null },
+          { value: 'john-youssi', label: 'John Youssi', sublabel: null },
+        ].filter((r) => r.label.toLowerCase().includes(q));
+        return { data: { results: rows }, error: undefined, response: { status: 200 } };
+      }
+      throw new Error(`Unexpected GET ${path}`);
+    });
+    render(PeopleEditorFixture, {
+      props: {
+        initialData: [makeCredit('pat-lawlor', 'Pat Lawlor', 'game-design', 'Game Design')],
+        slug: 'medieval-madness',
+      },
+    });
+
+    const personInput = screen.getByPlaceholderText('Search people...');
+    expect(personInput).toHaveValue('Pat Lawlor');
+
+    await user.click(personInput);
+    await user.click(await screen.findByRole('option', { name: 'John Youssi' }));
+
+    // The row's frozen `initial` must not re-seed the stale 'Pat Lawlor' label
+    // over the freshly-selected one.
+    expect(personInput).toHaveValue('John Youssi');
+  });
+
   it('save() with changes calls PATCH with cleaned credits', async () => {
     const user = userEvent.setup();
     PATCH.mockResolvedValue({ data: {}, error: undefined });

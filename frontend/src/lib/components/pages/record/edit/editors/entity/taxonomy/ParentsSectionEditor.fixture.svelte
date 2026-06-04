@@ -9,16 +9,12 @@
     initialData = { parents: [{ public_id: 'physical-feature', name: 'Physical Feature' }] },
     slug = 'pop-bumper',
     saveResult = { ok: true } as SaveResult,
-    options = [
-      { slug: 'pop-bumper', label: 'Pop Bumper', count: 50 },
-      { slug: 'physical-feature', label: 'Physical Feature', count: 100 },
-      { slug: 'spinner', label: 'Spinner', count: 25 },
-    ],
+    type = 'gameplay-feature',
   }: {
     initialData?: { parents: { public_id: string; name?: string }[] };
     slug?: string;
     saveResult?: SaveResult;
-    options?: { slug: string; label: string; count?: number }[];
+    type?: string;
   } = $props();
 
   let dirtyFromCallback = $state(false);
@@ -38,10 +34,6 @@
     lastSaveBody = body;
     return saveResult;
   }
-
-  async function optionsLoader() {
-    return options;
-  }
 </script>
 
 <ParentsSectionEditor
@@ -49,7 +41,7 @@
   {initialData}
   {slug}
   {save}
-  {optionsLoader}
+  {type}
   onsaved={() => savedCount++}
   onerror={(message) => (lastError = message)}
   ondirtychange={(dirty) => (dirtyFromCallback = dirty)}

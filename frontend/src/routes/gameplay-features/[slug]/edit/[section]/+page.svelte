@@ -1,5 +1,4 @@
 <script lang="ts">
-  import client from '$lib/api/client';
   import TaxonomyEditSectionPageBase from '$lib/components/pages/record/edit/TaxonomyEditSectionPageBase.svelte';
   import HierarchicalTaxonomyEditorSwitch from '$lib/components/pages/record/edit/editors/entity/taxonomy/HierarchicalTaxonomyEditorSwitch.svelte';
   import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
@@ -19,16 +18,6 @@
     ),
     MEDIA_SECTION,
   ];
-
-  async function loadParentOptions() {
-    const { data: features } = await client.GET('/api/gameplay-features/all/');
-    if (!features) return [];
-    return features.map((f) => ({
-      slug: f.slug,
-      label: f.name,
-      count: f.title_count,
-    }));
-  }
 </script>
 
 <TaxonomyEditSectionPageBase
@@ -45,7 +34,7 @@
       initialData={profile}
       slug={profile.slug}
       claimsPath={'/api/gameplay-features/{public_id}/claims/'}
-      parentOptionsLoader={loadParentOptions}
+      parentType="gameplay-feature"
       parentsLabel="This feature is a type of..."
       bind:editorRef={ref.current}
       {onsaved}
