@@ -15,6 +15,29 @@ You MUST use Svelte 5 runes mode. Use modern Svelte 5 patterns, not legacy Svelt
 
 Keep component styles scoped by default. Avoid `:global` unless there is a clear reason. You MUST obtain explicit user approval to get an exception to use `:global`.
 
+### Documenting components
+
+Use Svelte's built-in doc mechanisms so the docs surface on hover in consumers' editors, not just in the source:
+
+- **Component-level**: a top-level `<!-- @component -->` HTML comment (outside `<script>`). The Svelte Language Server shows it when hovering the component tag in another file. Markdown and fenced code blocks are supported.
+- **Per-prop**: a `/** */` JSDoc comment on each `$props()` field (or on the `Props` interface members). Shows on hover at the prop.
+
+```svelte
+<!--
+@component
+Presentational listbox shared by the combobox selects. Owns the shell
+(portaled `role="listbox"`, option chrome); behavior stays in the parent.
+-->
+<script lang="ts">
+  let {
+    /** Rows to render; each must carry a `value`. */
+    rows,
+    /** Chosen value (the `public_id` to save). */
+    selected = $bindable(null),
+  }: Props = $props();
+</script>
+```
+
 ### Internal import paths
 
 Import same-folder siblings relatively (`./Sibling.svelte`). Use the `$lib` alias for anything crossing a folder boundary (`$lib/components/effects/WearEffect.svelte`) — never `../` traversal.

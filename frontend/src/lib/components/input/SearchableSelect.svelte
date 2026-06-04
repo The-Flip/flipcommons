@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { floating } from '$lib/actions/floating';
   import { normalizeText } from '$lib/utils';
+  import ComboboxListbox from './dropdown/ComboboxListbox.svelte';
   import FieldGroup from './FieldGroup.svelte';
 
   let {
@@ -258,50 +258,31 @@
     </div>
   {/if}
 
+  {#snippet optionRow(opt: { value: string; label: string; count?: number })}
+    <span class="option-label">{opt.label}</span>
+    {#if showCounts && opt.count != null}
+      <span class="option-count">({opt.count})</span>
+    {/if}
+  {/snippet}
+
   {#if open && inputWrapEl}
-    <ul
-      bind:this={listEl}
-      id={listboxId}
-      role="listbox"
-      class="dropdown"
-      use:floating={{
-        anchor: inputWrapEl,
-        placement: 'bottom-start',
-        matchAnchorWidth: true,
-        maxHeight: 'available',
-      }}
+    <ComboboxListbox
+      rows={filteredOptions}
+      {activeIndex}
+      {listboxId}
+      {multi}
+      anchor={inputWrapEl}
+      bind:listElement={listEl}
+      isSelected={(opt) => isSelected(opt.value)}
+      isDisabled={(opt) => isDisabled(opt)}
+      onhover={(i) => (activeIndex = i)}
+      onselect={(opt) => toggle(opt.value)}
+      row={optionRow}
     >
-      {#each filteredOptions as opt, i (opt.value)}
-        <li
-          id={`${listboxId}-${i}`}
-          role="option"
-          aria-selected={isSelected(opt.value)}
-          aria-disabled={isDisabled(opt)}
-          data-active={i === activeIndex}
-          class="option"
-          class:selected={isSelected(opt.value)}
-          class:disabled={isDisabled(opt)}
-          class:active={i === activeIndex}
-          onpointerenter={() => {
-            if (!isDisabled(opt)) activeIndex = i;
-          }}
-          onpointerdown={(e) => {
-            e.preventDefault();
-            if (!isDisabled(opt)) toggle(opt.value);
-          }}
-        >
-          {#if multi}
-            <span class="check">{isSelected(opt.value) ? '✓' : ''}</span>
-          {/if}
-          <span class="option-label">{opt.label}</span>
-          {#if showCounts && opt.count != null}
-            <span class="option-count">({opt.count})</span>
-          {/if}
-        </li>
-      {:else}
-        <li class="no-results">{options.length === 0 ? emptyMessage : 'No matches'}</li>
-      {/each}
-    </ul>
+      {#snippet empty()}
+        {options.length === 0 ? emptyMessage : 'No matches'}
+      {/snippet}
+    </ComboboxListbox>
   {/if}
 {/snippet}
 
@@ -393,47 +374,8 @@
     color: var(--color-error-text);
   }
 
-  .dropdown {
-    z-index: var(--z-dropdown);
-    overflow-y: auto;
-    background-color: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-2);
-    box-shadow: var(--shadow-popover);
-    list-style: none;
-    padding: var(--size-1) 0;
-    margin: 0;
-  }
-
-  .option {
-    display: flex;
-    align-items: center;
-    gap: var(--size-2);
-    padding: var(--size-2) var(--size-3);
-    cursor: pointer;
-    font-size: var(--font-size-1);
-  }
-
-  .option.active {
-    background-color: var(--color-input-focus-ring);
-  }
-
-  .option.selected {
-    font-weight: 600;
-  }
-
-  .option.disabled {
-    color: var(--color-text-muted);
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  .check {
-    width: 1rem;
-    text-align: center;
-    flex-shrink: 0;
-  }
-
+  /* The listbox shell (.dropdown/.option/.check/.no-results) lives in
+     ComboboxListbox; only the per-row content below is styled here. */
   .option-label {
     flex: 1;
     min-width: 0;
@@ -446,13 +388,6 @@
     color: var(--color-text-muted);
     font-size: var(--font-size-0);
     flex-shrink: 0;
-  }
-
-  .no-results {
-    padding: var(--size-3);
-    color: var(--color-text-muted);
-    text-align: center;
-    font-size: var(--font-size-1);
   }
 
   .field-error {

@@ -1,0 +1,50 @@
+<!--
+@component
+Single-FK typeahead over the entity-autocomplete endpoint, keyed by entity
+`type`; binds the chosen `public_id`. Pass `initialSelection` (the saved row)
+so the current value renders on mount without a search.
+-->
+<script lang="ts">
+  import type { EntityOption } from '$lib/api/entity-autocomplete';
+  import EntityCombobox from './EntityCombobox.svelte';
+
+  let {
+    type,
+    selected = $bindable(null),
+    initialSelection = null,
+    label = '',
+    placeholder = 'Search...',
+    error = '',
+    disabled = false,
+    required = false,
+  }: {
+    /** Registry key the endpoint searches (`manufacturer`, `title`, …). */
+    type: string;
+    /** Bound: the chosen `public_id`, or `null` when nothing is selected. */
+    selected?: string | null;
+    /** Saved row, pre-seeded so the current value renders on mount with no search. */
+    initialSelection?: EntityOption | null;
+    label?: string;
+    placeholder?: string;
+    error?: string;
+    disabled?: boolean;
+    /** Hide the clear (×) so the field can't be emptied once set. */
+    required?: boolean;
+  } = $props();
+
+  const selectedValues = $derived(selected ? [selected] : []);
+  const initialOptions = $derived(initialSelection ? [initialSelection] : []);
+</script>
+
+<EntityCombobox
+  {type}
+  {selectedValues}
+  {initialOptions}
+  {label}
+  {placeholder}
+  {error}
+  {disabled}
+  {required}
+  onToggle={(row) => (selected = row.value)}
+  onClear={() => (selected = null)}
+/>
