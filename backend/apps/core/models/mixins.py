@@ -220,17 +220,12 @@ class DescribedModel(models.Model):
 
 
 # ---------------------------------------------------------------------------
-# LinkableModel (link target registration)
+# Identity + label foundation
 # ---------------------------------------------------------------------------
 
 
-class LinkableModel(models.Model):
-    """Abstract base marking a model as a publicly addressable entity with a canonical identifier.
-
-    Subclasses must define:
-    - name: CharField
-    - entity_type: str — hyphenated canonical public identifier (e.g. 'corporate-entity')
-    - entity_type_plural: str — hyphenated canonical plural form (e.g. 'corporate-entities')
+class IdentifiableModel(models.Model):
+    """Abstract base for an entity with a canonical URL-identity value (``public_id``).
 
     Subclasses may override:
     - public_id_field: str — name of the field carrying URL identity. Defaults
@@ -244,6 +239,84 @@ class LinkableModel(models.Model):
       ``location_path`` is built from the user's ``slug`` input plus the
       parent's path. Used by collision pre-checks to surface the error
       keyed under the form field the user can actually fix.
+
+    Identity is the foundation under both linking (``LinkableModel``) and
+    autocomplete (``AutocompletableModel``); both reach it via
+    ``LabeledIdentityModel``.
+    """
+
+    public_id_field: ClassVar[str] = "slug"
+    # Empty default means "use ``public_id_field`` itself". Resolve with
+    # ``cls.public_id_form_field or cls.public_id_field`` at the call site.
+    public_id_form_field: ClassVar[str] = ""
+
+    class Meta:
+        abstract = True
+
+    @property
+    def public_id(self) -> str:
+        """Return this entity's URL-identity value (``self.<public_id_field>``)."""
+        value: str = getattr(self, self.public_id_field)
+        return value
+
+
+class LabeledModel(models.Model):
+    """Abstract base for an entity with a human-readable display ``label``.
+
+    ``label_field`` names the field the label reads (default ``"name"``). The
+    ``name`` field itself is declared per-concrete-subclass (different
+    max_length / validators per entity), so it cannot be hoisted here.
+    """
+
+    label_field: ClassVar[str] = "name"
+    # ``name`` is declared per-concrete-subclass (different max_length /
+    # validators per entity); the instance-level annotation lets
+    # ``type[CatalogModel]`` introspection code read ``.name`` without
+    # casting. Django field registration still happens on the concrete
+    # subclasses (where ``= models.CharField(...)`` lives), so ``_meta`` is
+    # unaffected — but django-stubs's plugin can't see a field here at the
+    # abstract level, so ``_meta.get_field("name")`` on ``type[CatalogModel]``
+    # needs ``# type: ignore[misc]`` at the one site that calls it.
+    name: str
+
+    class Meta:
+        abstract = True
+
+    @property
+    def label(self) -> str:
+        """Return this entity's display label (``self.<label_field>``)."""
+        value: str = getattr(self, self.label_field)
+        return value
+
+
+class LabeledIdentityModel(IdentifiableModel, LabeledModel):
+    """Identity (``public_id``) + display ``label`` — the shared foundation.
+
+    Supplies the ``{value: public_id, label}`` shape an autocomplete row needs
+    and is the base under both ``LinkableModel`` (linking) and
+    ``AutocompletableModel`` (dropdowns).
+    """
+
+    class Meta:
+        abstract = True
+
+
+# ---------------------------------------------------------------------------
+# LinkableModel (link target registration)
+# ---------------------------------------------------------------------------
+
+
+class LinkableModel(LabeledIdentityModel):
+    """Abstract base marking a model as a publicly addressable entity with a canonical identifier.
+
+    Subclasses must define:
+    - name: CharField
+    - entity_type: str — hyphenated canonical public identifier (e.g. 'corporate-entity')
+    - entity_type_plural: str — hyphenated canonical plural form (e.g. 'corporate-entities')
+
+    Identity (``public_id`` / ``public_id_field`` / ``public_id_form_field``)
+    comes from ``IdentifiableModel``; the display ``label`` (over ``name``)
+    from ``LabeledModel`` — both via ``LabeledIdentityModel``.
 
     ``entity_type`` and ``entity_type_plural`` together are the linguistic
     identity of a kind of entity — the single source of truth consumed by
@@ -262,19 +335,6 @@ class LinkableModel(models.Model):
 
     entity_type: ClassVar[str]  # required on concrete subclasses
     entity_type_plural: ClassVar[str]  # required on concrete subclasses
-    public_id_field: ClassVar[str] = "slug"
-    # Empty default means "use ``public_id_field`` itself". Resolve with
-    # ``cls.public_id_form_field or cls.public_id_field`` at the call site.
-    public_id_form_field: ClassVar[str] = ""
-    # ``name`` is declared per-concrete-subclass (different max_length /
-    # validators per entity); the instance-level annotation lets
-    # ``type[LinkableModel]`` introspection code read ``.name`` without
-    # casting. Django field registration still happens on the concrete
-    # subclasses (where ``= models.CharField(...)`` lives), so ``_meta`` is
-    # unaffected — but django-stubs's plugin can't see a field here at the
-    # abstract level, so ``_meta.get_field("name")`` on ``type[CatalogModel]``
-    # needs ``# type: ignore[misc]`` at the one site that calls it.
-    name: str
     link_url_pattern: ClassVar[str]
 
     class Meta:
@@ -319,12 +379,6 @@ class LinkableModel(models.Model):
     def get_absolute_url(self) -> str:
         """Format ``link_url_pattern`` with this entity's ``public_id``."""
         return self.link_url_pattern.format(public_id=self.public_id)
-
-    @property
-    def public_id(self) -> str:
-        """Return this entity's URL-identity value (``self.<public_id_field>``)."""
-        value: str = getattr(self, self.public_id_field)
-        return value
 
 
 # ---------------------------------------------------------------------------
