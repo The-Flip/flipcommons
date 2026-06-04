@@ -16,6 +16,7 @@ class CatalogConfig(AppConfig):
         signals.connect()
         register_catalog_relationship_schemas()
         self._register_link_types()
+        self._register_autocomplete_types()
         self._register_picker_types()
         self._register_reference_cleanup()
 
@@ -61,13 +62,42 @@ class CatalogConfig(AppConfig):
             )
 
     @staticmethod
+    def _register_autocomplete_types() -> None:
+        """Register one ``AutocompleteType`` per autocompletable catalog model.
+
+        Walks ``AutocompletableModel`` and reads each model's autocomplete
+        search contract. The ``name`` key is the model's ``entity_type`` — every
+        catalog autocompletable model is also a ``LinkableModel`` (they all
+        descend from ``CatalogModel``), the ``issubclass`` assert both documents
+        that invariant and narrows the type so ``entity_type`` reads cleanly.
+        """
+        from apps.core.autocomplete import AutocompleteType, register_autocomplete
+        from apps.core.models import LinkableModel
+
+        from ._walks import autocompletable_models
+
+        for model in autocompletable_models():
+            assert issubclass(model, LinkableModel)
+            register_autocomplete(
+                AutocompleteType(
+                    name=model.entity_type,
+                    model_path=f"catalog.{model.__name__}",
+                    search_fields=model.autocomplete_search_fields,
+                    ordering=model.autocomplete_ordering,
+                    select_related=model.autocomplete_select_related,
+                )
+            )
+
+    @staticmethod
     def _register_picker_types() -> None:
         """Register one ``PickerType`` per catalog model that opts into the picker.
 
         Walks ``WikilinkableModel`` (a strict subset of ``LinkableModel``).
         Models that are URL-addressable but absent from the picker — Location
         is the live case — inherit ``LinkableModel`` only and so register a
-        ``LinkType`` (renderer) but no ``PickerType``.
+        ``LinkType`` (renderer) but no ``PickerType``. Picker entries carry only
+        menu presentation; their search comes from the ``AutocompleteType``
+        registered under the same ``entity_type``.
         """
         from apps.core.wikilinks import PickerType, register_picker
 
@@ -84,11 +114,5 @@ class CatalogConfig(AppConfig):
                     label=label,
                     description=description,
                     sort_order=model.link_sort_order,
-                    model_path=f"catalog.{model.__name__}",
-                    public_id_field=model.public_id_field,
-                    autocomplete_search_fields=model.link_autocomplete_search_fields,
-                    autocomplete_ordering=model.link_autocomplete_ordering,
-                    autocomplete_select_related=model.link_autocomplete_select_related,
-                    autocomplete_serialize=model.link_autocomplete_serialize,
                 )
             )

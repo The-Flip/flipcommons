@@ -50,6 +50,11 @@ class Title(
     entity_type = "title"
     entity_type_plural = "titles"
     link_sort_order = 10
+    # Match on the title name and its abbreviations (Title has no alias
+    # relation — ``abbreviations`` are its only alternate names). A title
+    # typeahead matches title text, not its maker, so manufacturer is not a
+    # search field.
+    autocomplete_search_fields = ("name", "abbreviations__value")
     abbreviations: models.Manager[TitleAbbreviation]
     franchise_id: int | None
     machine_models: models.Manager[MachineModel]

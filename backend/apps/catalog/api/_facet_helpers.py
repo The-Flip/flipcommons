@@ -10,14 +10,15 @@ predicates, and the ``facet_counts`` assembly that wires these leaves together. 
 ``_title_facets.py`` for titles' assembly; manufacturers gets its own.
 
 Deliberately **not** extracted yet: the composite diacritic-fold *match* (the
-``q``-branch Q-assembly). Only the primitives :class:`_Unaccent` and :func:`_fold`
-live here; the match itself requires an annotation step and its real shape is driven
-by manufacturers' multi-branch OR, which doesn't exist until that page is built.
+``q``-branch Q-assembly). Only the primitive :class:`_Unaccent` lives here (the
+Python accent-strip ``fold`` now lives in ``apps.core.search``, which the
+``q``-branch callers import directly); the match itself requires an annotation
+step and its real shape is driven by manufacturers' multi-branch OR, which
+doesn't exist until that page is built.
 """
 
 from __future__ import annotations
 
-import unicodedata
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import NamedTuple
@@ -76,14 +77,6 @@ class _Unaccent(Func):
 
     function = "UNACCENT"
     output_field = TextField()
-
-
-def _fold(text: str) -> str:
-    """Diacritic-fold + lowercase a query term to match ``LOWER(UNACCENT(field))`` on
-    Postgres. NFD + strip combining marks ≈ ``unaccent`` for Latin scripts."""
-    decomposed = unicodedata.normalize("NFD", text)
-    stripped = "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
-    return stripped.lower()
 
 
 def _fold_exists[M: Model](

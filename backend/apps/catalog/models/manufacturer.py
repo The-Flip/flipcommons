@@ -54,6 +54,11 @@ class Manufacturer(
     entities: models.Manager[CorporateEntity]
 
     link_sort_order = 30
+    # Match on the brand name and its direct aliases. Matching CorporateEntity
+    # names is deliberately dropped — the listing's active-entity guard can't be
+    # expressed as a flat field path; that nuance stays on the /manufacturers
+    # listing.
+    autocomplete_search_fields = ("name", "aliases__value")
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     opdb_manufacturer_id = models.PositiveIntegerField(

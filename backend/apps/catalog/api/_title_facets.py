@@ -46,6 +46,7 @@ from django.db.models import (
 from django.db.models.functions import Lower
 
 from apps.core.models import EntityStatus, active_status_q
+from apps.core.search import fold as _fold
 
 from ..models import (
     DisplayType,
@@ -64,7 +65,6 @@ from ..models import (
 from ._facet_helpers import (
     Bounds,
     FacetOption,
-    _fold,
     _Unaccent,
     ancestor_map,
     bounds,

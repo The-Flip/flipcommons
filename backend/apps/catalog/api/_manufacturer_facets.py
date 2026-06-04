@@ -79,6 +79,7 @@ from django.db.models import (
 from django.db.models.functions import Coalesce, Lower
 
 from apps.core.models import EntityStatus, active_status_q
+from apps.core.search import fold as _fold
 
 from ..models import (
     CorporateEntity,
@@ -94,7 +95,6 @@ from ..models import (
 from ._facet_helpers import (
     Bounds,
     FacetOption,
-    _fold,
     _fold_exists,
     _Unaccent,
     ancestor_map,

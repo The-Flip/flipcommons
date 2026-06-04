@@ -25,8 +25,10 @@ from django.db.models import F, Model, OuterRef, Q, QuerySet
 from django.db.models.expressions import BaseExpression
 from django.db.models.functions import Lower
 
+from apps.core.search import fold as _fold
+
 from .._alias_registry import alias_type_for
-from ._facet_helpers import _fold, _fold_exists, _Unaccent
+from ._facet_helpers import _fold_exists, _Unaccent
 from .constants import DEFAULT_PAGE_SIZE
 
 # Maps one page's primary keys → their thumbnail URLs, batched (run once per page, never

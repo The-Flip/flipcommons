@@ -3,26 +3,28 @@ appear in the wikilink autocomplete picker.
 
 Inheriting opts a model into the ``[[<entity-type>:<public-id>]]`` autocomplete picker
 surfaced by the markdown editor. Models that are URL-addressable but
-must not appear in the picker (e.g. Location) inherit
+should not appear in the picker (e.g. Location) inherit
 :class:`apps.core.models.LinkableModel` only, not this base.
+
+The class carries only the picker's *menu* presentation
+(label / description / sort order). The *search* behavior comes from
+:class:`apps.core.autocomplete.AutocompletableModel` (its second base) and the
+:func:`apps.core.autocomplete.run_autocomplete` engine.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import ClassVar
 
+from apps.core.autocomplete import AutocompletableModel
 from apps.core.models import LinkableModel
-from apps.core.schemas import LinkTargetSchema
 
 
-def _default_link_serialize(linkable: LinkableModel) -> LinkTargetSchema:
-    """Default serializer for autocomplete results."""
-    return LinkTargetSchema(ref=linkable.public_id, label=linkable.name)
-
-
-class WikilinkableModel(LinkableModel):
+class WikilinkableModel(LinkableModel, AutocompletableModel):
     """A :class:`LinkableModel` that opts into the wikilink picker.
+
+    Composes link addressability (``LinkableModel``) with autocomplete
+    searchability (:class:`AutocompletableModel`).
 
     ``link_label`` / ``link_description`` carry the empty-string sentinel as
     their declared default; the registration loop in
@@ -35,12 +37,6 @@ class WikilinkableModel(LinkableModel):
     link_sort_order: ClassVar[int] = 100
     link_label: ClassVar[str] = ""
     link_description: ClassVar[str] = ""
-    link_autocomplete_search_fields: ClassVar[tuple[str, ...]] = ("name__icontains",)
-    link_autocomplete_ordering: ClassVar[tuple[str, ...]] = ("name",)
-    link_autocomplete_select_related: ClassVar[tuple[str, ...]] = ()
-    link_autocomplete_serialize: ClassVar[
-        Callable[[LinkableModel], LinkTargetSchema]
-    ] = staticmethod(_default_link_serialize)
 
     class Meta:
         abstract = True
