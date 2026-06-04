@@ -19,6 +19,35 @@ Keep component styles scoped by default. Avoid `:global` unless there is a clear
 
 Import same-folder siblings relatively (`./Sibling.svelte`). Use the `$lib` alias for anything crossing a folder boundary (`$lib/components/effects/WearEffect.svelte`) — never `../` traversal.
 
+### Component organization
+
+#### Route-private components
+
+Keep components used by one route family route-private under `routes/<family>/_components/` (SvelteKit treats `_`-prefixed dirs as non-routable). A collection-shaped or provenance-shaped component with a single consumer still goes route-private — usage wins over category.
+
+Promote a route-private component into `$lib/components/` when a second route family consumes it.
+
+#### `$lib/components/`
+
+- `ui/` — domain-free primitives (Button, Modal, menus, lists)
+- `input/` — anything that captures user input
+- `collections/` — displaying collections of items
+- `layout/` — site chrome (`site/`) and within-page composition primitives (`page/`)
+- `pages/` — page-shell bodies, one subfolder per route pattern
+- `provenance/` — display of claim values, attribution and qualifiers
+- `markdown/` — rich-text rendering plus the citation tooltips and references layered onto it
+- `media/` — media cards and grids
+- `effects/` — decorative overlays (CoffeeStain, WearEffect)
+- `entity-links/` — route-aware entity links (UserLink, LocationLink)
+
+#### Co-locate test files
+
+Co-locate `*.test.ts`, `*.dom.test.ts`, `*.fixture.svelte` and `*.test-harness.svelte` with the component they exercise.
+
+#### No barrel `index.ts` re-exports
+
+Import components directly, even when paths get deep. Barrels defeat tree-shaking and invite circular imports.
+
 ## Choosing A Rendering Strategy
 
 How to choose which rendering mode:
