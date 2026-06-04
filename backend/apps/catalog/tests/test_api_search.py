@@ -1,0 +1,186 @@
+"""Tests for the global search page endpoint ``GET /api/pages/search``.
+
+The endpoint stacks three entity sections (Titles → Manufacturers → People), each
+reusing its listing-page ``q`` + card serializer, capped at 10 with a ``has_more``
+flag. These tests pin: the ``<3``-char no-work guard, per-section matching + card
+shape, the 10-cap, the diacritic dev/prod split, fixed section order, that a section
+preserves its listing sort, the all-empty case, and a constant-query N+1 guard.
+"""
+
+import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+
+from apps.catalog.models import Credit, CreditRole, Manufacturer, Person, Title
+from apps.catalog.tests.conftest import SAMPLE_IMAGES, make_machine_model
+from apps.provenance.models import Claim, Source
+
+CARD_KEYS = {
+    "titles": {"name", "slug", "year", "model_count", "manufacturer", "thumbnail_url"},
+    "manufacturers": {"name", "slug", "model_count", "thumbnail_url"},
+    "people": {"name", "slug", "aliases", "credit_count", "thumbnail_url"},
+}
+
+
+def _make_manufacturer(name: str, slug: str, source: Source) -> Manufacturer:
+    mfr = Manufacturer.objects.create(name=name, slug=slug)
+    Claim.objects.assert_claim(mfr, "name", name, source=source)
+    return mfr
+
+
+def _make_person(name: str, slug: str, source: Source) -> Person:
+    p = Person.objects.create(name=name, slug=slug)
+    Claim.objects.assert_claim(p, "name", name, source=source)
+    return p
+
+
+@pytest.fixture
+def nova_in_each_section(_bootstrap_source):
+    """One matching row per section for the term ``nova``."""
+    Title.objects.create(name="Nova Madness", slug="nova-madness")
+    _make_manufacturer("Nova Games", "nova-games", _bootstrap_source)
+    _make_person("Nova Lawlor", "nova-lawlor", _bootstrap_source)
+
+
+def test_short_q_returns_empty_sections_and_does_no_db_work(
+    client, db, django_assert_num_queries
+):
+    """Trimmed ``q`` shorter than 3 chars → all sections empty, no queries run."""
+    with django_assert_num_queries(0):
+        resp = client.get("/api/pages/search?q=no")
+    assert resp.status_code == 200
+    data = resp.json()
+    for section in ("titles", "manufacturers", "people"):
+        assert data[section] == {"items": [], "has_more": False}
+
+
+def test_whitespace_q_is_trimmed_below_threshold(client, db):
+    """A two-char term padded with spaces is still below the 3-char floor."""
+    resp = client.get("/api/pages/search?q=%20%20ab%20%20")
+    data = resp.json()
+    assert all(not data[s]["items"] for s in ("titles", "manufacturers", "people"))
+
+
+def test_basic_q_matches_each_section_with_card_shape(client, nova_in_each_section):
+    resp = client.get("/api/pages/search?q=nova")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["titles"]["items"][0]["name"] == "Nova Madness"
+    assert data["manufacturers"]["items"][0]["name"] == "Nova Games"
+    assert data["people"]["items"][0]["name"] == "Nova Lawlor"
+    for section, keys in CARD_KEYS.items():
+        assert set(data[section]["items"][0]) == keys
+        assert data[section]["has_more"] is False
+
+
+def test_section_caps_at_ten_and_sets_has_more(client, db, _bootstrap_source):
+    """11 matches → 10 cards + ``has_more``; the other sections stay empty."""
+    for i in range(11):
+        _make_manufacturer(f"Capco {i:02d}", f"capco-{i:02d}", _bootstrap_source)
+    data = client.get("/api/pages/search?q=capco").json()
+    assert len(data["manufacturers"]["items"]) == 10
+    assert data["manufacturers"]["has_more"] is True
+    assert data["titles"] == {"items": [], "has_more": False}
+    assert data["people"] == {"items": [], "has_more": False}
+
+
+def test_exactly_ten_matches_does_not_set_has_more(client, db, _bootstrap_source):
+    for i in range(10):
+        _make_manufacturer(f"Tenco {i:02d}", f"tenco-{i:02d}", _bootstrap_source)
+    data = client.get("/api/pages/search?q=tenco").json()
+    assert len(data["manufacturers"]["items"]) == 10
+    assert data["manufacturers"]["has_more"] is False
+
+
+def test_q_diacritic_is_backend_specific(client, db):
+    """Folds diacritics on Postgres only (prod), plain ``icontains`` on SQLite (dev/CI)
+    — the same documented gap the listing endpoints carry. Exact spelling matches on
+    both backends."""
+    Title.objects.create(name="Pokémon Pinball", slug="pokemon-pinball-search")
+    folded = client.get("/api/pages/search?q=pokemon").json()["titles"]
+    exact = client.get("/api/pages/search?q=Pok%C3%A9mon").json()["titles"]
+    assert len(exact["items"]) == 1
+    expected = 1 if connection.vendor == "postgresql" else 0
+    assert len(folded["items"]) == expected
+
+
+def test_section_order_is_titles_manufacturers_people(client, nova_in_each_section):
+    """The wire payload renders sections in fixed declaration order."""
+    data = client.get("/api/pages/search?q=nova").json()
+    assert list(data.keys()) == ["titles", "manufacturers", "people"]
+
+
+def test_no_match_returns_all_empty_sections(client, nova_in_each_section):
+    data = client.get("/api/pages/search?q=zzzznomatch").json()
+    for section in ("titles", "manufacturers", "people"):
+        assert data[section] == {"items": [], "has_more": False}
+
+
+def test_people_section_preserves_listing_order(
+    client, db, _bootstrap_source, credit_roles, williams_entity
+):
+    """A section's rows are a prefix of its listing — so the People section must keep
+    the ``-credit_count, name, pk`` order. This guards the explicit ``order_by`` the
+    search builder re-applies (``_person_list_qs`` drops the ``pk`` tiebreak); the
+    chosen names sort the opposite way alphabetically, so a result ordered by name
+    instead of credit count would fail.
+    """
+    mm = make_machine_model(
+        name="Order Game", slug="order-game", corporate_entity=williams_entity
+    )
+    design = CreditRole.objects.get(slug="design")
+    art = CreditRole.objects.get(slug="art")
+
+    # Names sort the OPPOSITE way to credit count, so a by-name regression fails.
+    two = _make_person("Order Zzz", "order-zzz", _bootstrap_source)  # 2 credits
+    one = _make_person("Order Mmm", "order-mmm", _bootstrap_source)  # 1 credit
+    _make_person("Order Aaa", "order-aaa", _bootstrap_source)  # 0 credits
+    Credit.objects.create(model=mm, person=two, role=design)
+    Credit.objects.create(model=mm, person=two, role=art)
+    Credit.objects.create(model=mm, person=one, role=design)
+
+    names = [
+        p["name"]
+        for p in client.get("/api/pages/search?q=order").json()["people"]["items"]
+    ]
+    assert names == ["Order Zzz", "Order Mmm", "Order Aaa"]
+
+
+def test_query_count_is_constant_across_result_size(
+    client, db, _bootstrap_source, credit_roles, williams_entity
+):
+    """N+1 guard: each section batches its rows, related cards and thumbnails, so the
+    query count must not grow with the number of matching rows. Rows carry real models,
+    manufacturers, credits and media so the card serializers exercise their
+    select_related / prefetch / thumbnail paths — a dropped prefetch would surface here
+    as a per-row query.
+    """
+    design = CreditRole.objects.get(slug="design")
+
+    def add_matching_row(i: int) -> None:
+        model = make_machine_model(
+            name=f"Scale Title {i}",
+            slug=f"scale-title-{i}",
+            corporate_entity=williams_entity,
+            year=1990 + i,
+            extra_data={"opdb.images": SAMPLE_IMAGES},
+        )
+        _make_manufacturer(f"Scale Mfr {i}", f"scale-mfr-{i}", _bootstrap_source)
+        person = _make_person(
+            f"Scale Person {i}", f"scale-person-{i}", _bootstrap_source
+        )
+        Credit.objects.create(model=model, person=person, role=design)
+
+    def query_count() -> int:
+        with CaptureQueriesContext(connection) as ctx:
+            client.get("/api/pages/search?q=scale")
+        return len(ctx)
+
+    add_matching_row(1)
+    small = query_count()
+
+    for i in range(2, 9):
+        add_matching_row(i)
+    large = query_count()
+
+    assert small == large

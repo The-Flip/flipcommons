@@ -50,7 +50,7 @@ from .entity_create import (
     validate_name,
     validate_slug_format,
 )
-from .entity_list import paginated_list_response
+from .entity_list import _apply_list_q, paginated_list_response
 from .images import (
     extract_image_urls,
     fetch_model_media_map,
@@ -310,6 +310,35 @@ def list_people(request: HttpRequest, q: str = "", page: int = 1) -> PersonListS
         thumbnail_provider=_people_thumbnails,
     )
     return PersonListSchema(items=result.items, count=result.total)
+
+
+class PersonSearchSectionSchema(Schema):
+    """The People section of the global ``/search`` page: up to 10 cards plus a
+    ``has_more`` flag (the section caps at 10; the frontend links to ``/people?q=``
+    for the rest). ``items`` reuses the listing card so a section row matches the
+    ``/people`` grid exactly."""
+
+    items: list[PersonCardSchema]
+    has_more: bool
+
+
+def person_search_section(q: str) -> PersonSearchSectionSchema:
+    """Top ≤10 person cards matching ``q``, composing the listing queryset + card
+    serializer so results match ``/people?q=`` exactly. Re-applies the explicit
+    ``("-credit_count", "name", "pk")`` total order (``_person_list_qs`` omits the
+    ``pk`` tiebreak, so the slice would be nondeterministic on credit-count ties).
+    Slices ``[:11]`` to detect ">10" without a second ``count()``."""
+    # Splat a tuple (not literal args) so django-stubs doesn't field-check
+    # ``credit_count`` — it's a real annotation from ``_person_list_qs`` that the stub
+    # can't see across the ``_apply_list_q`` boundary (same shape ``list_people`` uses).
+    ordering = ("-credit_count", "name", "pk")
+    rows = list(_apply_list_q(_person_list_qs(), q).order_by(*ordering)[:11])
+    items = rows[:10]
+    thumbnails = _people_thumbnails([p.pk for p in items])
+    return PersonSearchSectionSchema(
+        items=[_serialize_person_row(p, thumbnails.get(p.pk)) for p in items],
+        has_more=len(rows) > 10,
+    )
 
 
 @people_router.get("/all/", response=list[PersonCardSchema])
