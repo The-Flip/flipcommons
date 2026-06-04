@@ -129,19 +129,29 @@ def run_autocomplete(
     """Search a registered type for *q*, returning at most *limit* rows.
 
     Resolves the type → its model's ``autocomplete_queryset()`` (default
-    ``.active()``) → diacritic-folded OR over ``search_fields`` (``.distinct()``
-    to absorb relation-join multiplication) → ``ordering`` → ``[:limit]`` →
-    serialize. An empty *q* skips the filter, yielding the ordered top-N so a
-    freshly-focused control isn't blank.
+    ``.active()``) → ``autocomplete_annotations()`` (sublabel expressions) →
+    diacritic-folded OR over ``search_fields`` (``.distinct()`` to absorb
+    relation-join multiplication) → ``ordering`` → ``[:limit]`` → serialize. An
+    empty *q* (or one that's blank after stripping surrounding whitespace) skips
+    the filter, yielding the ordered top-N so a freshly-focused control isn't
+    blank.
 
     Raises ``KeyError`` if *name* isn't registered — callers that accept
     untrusted input (the endpoint, the ``[[`` picker) gate on
     :func:`get_autocomplete_type` first and surface a 400.
     """
+    # Surrounding whitespace never disambiguates a typeahead match (only
+    # internal spacing does, which strip preserves); a whitespace-only term
+    # collapses to "" and so falls through to the ordered top-N below.
+    q = q.strip()
+
     autocomplete_type = _registry[name]
     model = autocomplete_type.get_model()
 
     qs = model.autocomplete_queryset()
+    annotations = model.autocomplete_annotations()
+    if annotations:
+        qs = qs.annotate(**annotations)
     if autocomplete_type.select_related:
         qs = qs.select_related(*autocomplete_type.select_related)
     if q and autocomplete_type.search_fields:

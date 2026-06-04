@@ -11,9 +11,11 @@ controls." It carries the per-model search configuration the engine
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import ClassVar, Self
 
 from django.db import models
+from django.db.models.expressions import Combinable
 
 from apps.core.models import LabeledIdentityModel, LifecycleStatusModel
 
@@ -32,7 +34,9 @@ class AutocompletableModel(LabeledIdentityModel):
     - ``autocomplete_select_related`` — joins to avoid per-row queries in the
       serializer.
     - :meth:`autocomplete_queryset` — the base queryset (default ``.active()``);
-      override to add annotations a :meth:`autocomplete_sublabel` reads.
+      override for a different base filter.
+    - :meth:`autocomplete_annotations` — expressions the engine annotates on,
+      feeding a derived :meth:`autocomplete_sublabel` without an N+1.
     - :meth:`autocomplete_sublabel` — optional disambiguating second line.
     """
 
@@ -51,19 +55,32 @@ class AutocompletableModel(LabeledIdentityModel):
         soft-deleted entities), else every row. Autocomplete *integrates* with
         the lifecycle concern but doesn't *require* it: this base stays off
         ``LifecycleStatusModel`` so a non-lifecycle entity (e.g. ``user``) can
-        still be autocompletable. Override to add the annotations a derived
-        :meth:`autocomplete_sublabel` reads — the hook that keeps sublabels out
-        of an N+1.
+        still be autocompletable. Override only for a different base filter;
+        annotations go through :meth:`autocomplete_annotations`.
         """
         if issubclass(cls, LifecycleStatusModel):
             return cls.objects.active()
         return cls._default_manager.all()
 
+    @classmethod
+    def autocomplete_annotations(cls) -> Mapping[str, Combinable]:
+        """Expressions the engine ``annotate()``\\ s onto the queryset before
+        serializing, keyed by the attribute name :meth:`autocomplete_sublabel`
+        reads off each row.
+
+        Default: none. Override to feed a derived sublabel from the DB in one
+        query (e.g. a title's first-model manufacturer/year via correlated
+        subqueries) rather than a per-row fetch. Applied uniformly by the engine
+        — the model declares the expressions, it doesn't splice them into its
+        own queryset, so no annotated-row cast leaks into the model layer.
+        """
+        return {}
+
     def autocomplete_sublabel(self) -> str | None:
         """Optional second line disambiguating same-labeled rows.
 
         Default ``None`` (no sublabel). Override to return a string — e.g. a
-        title's "manufacturer · year" — typically reading an annotation set by
-        :meth:`autocomplete_queryset`.
+        title's "manufacturer · year" — typically reading an annotation declared
+        by :meth:`autocomplete_annotations`.
         """
         return None

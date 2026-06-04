@@ -102,6 +102,20 @@ class TestAutocompleteEngine:
         values = {r.value for r in run_autocomplete("manufacturer", "midway")}
         assert "bally" in values
 
+    def test_run_autocomplete_strips_surrounding_whitespace(self, db):
+        """The engine strips surrounding whitespace before matching: a padded
+        term still matches, and a whitespace-only term collapses to the ordered
+        top-N rather than searching for the literal spaces."""
+        from apps.catalog.models import Manufacturer
+
+        Manufacturer.objects.create(name="Williams", slug="williams")
+
+        padded = {r.value for r in run_autocomplete("manufacturer", "  wil  ")}
+        assert "williams" in padded
+
+        whitespace_only = {r.value for r in run_autocomplete("manufacturer", "   ")}
+        assert "williams" in whitespace_only  # top-N, not a search for "   "
+
     def test_run_autocomplete_diacritic_folds_both_directions(self, db):
         """The engine folds both sides on Postgres: an accent-free query finds
         an accented name *and* an accented query finds it too. SQLite has no
