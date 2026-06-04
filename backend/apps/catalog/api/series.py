@@ -221,7 +221,7 @@ def list_all_series(request: HttpRequest) -> HttpResponse | list[dict[str, Any]]
     editor option-pickers need, which the paginated ``GET /`` can't serve them.
 
     Cached (audience-keyed, busted on any catalog mutation) because it does full-set
-    thumbnail batching + per-row rich text, structurally like ``/api/people/all/``.
+    thumbnail batching + per-row rich text, structurally like ``/api/titles/all/``.
     Emits plain dicts (not Schema instances) so ``set_cached_response`` can serialize
     them; the paginated ``GET /`` uses the Schema-returning ``_serialize_series_row``.
     """
