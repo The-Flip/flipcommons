@@ -13,7 +13,9 @@ const autocompleteEntities = vi.fn((_type: string, q: string) =>
   Promise.resolve(DATA.filter((d) => d.label.toLowerCase().includes(q.toLowerCase()))),
 );
 
-vi.mock('$lib/api/entity-autocomplete', () => ({
+// Partial mock: stub only the network call; keep the real AUTOCOMPLETE_RESULT_LIMIT.
+vi.mock('$lib/api/entity-autocomplete', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/api/entity-autocomplete')>()),
   autocompleteEntities: (type: string, q: string) => autocompleteEntities(type, q),
 }));
 

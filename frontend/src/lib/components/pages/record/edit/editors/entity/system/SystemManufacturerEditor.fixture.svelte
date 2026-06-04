@@ -3,7 +3,7 @@
   import { saveSystemClaims } from './save-system-claims';
 
   type InitialData = {
-    manufacturer?: { public_id: string } | null;
+    manufacturer?: { public_id: string; name: string } | null;
   };
 
   let {

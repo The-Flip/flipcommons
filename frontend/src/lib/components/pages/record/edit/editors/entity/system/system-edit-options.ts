@@ -1,7 +1,10 @@
 /**
- * Cached fetchers for system edit dropdowns (manufacturer, technology subgeneration).
+ * Cached fetchers for system dropdowns (manufacturer, technology subgeneration).
  *
- * Parallel to title-edit-options.ts. Each list is cached per-session.
+ * The system *edit* manufacturer field moved to the `/api/entity-autocomplete/`
+ * typeahead (`EntitySelect`), but the *create* flow (`/systems/new`) still uses
+ * `fetchManufacturerOptions`, so it stays until that consumer migrates. Each
+ * list is cached per-session.
  */
 
 import client from '$lib/api/client';

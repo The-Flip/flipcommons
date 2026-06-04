@@ -21,6 +21,7 @@ styled by the parent's scoped CSS) stay with the parent.
     onselect,
     row,
     empty,
+    footer,
     listElement = $bindable(),
   }: {
     rows: Row[];
@@ -40,6 +41,8 @@ styled by the parent's scoped CSS) stay with the parent.
     row: Snippet<[Row]>;
     /** Content of the single no-results row when `rows` is empty. */
     empty: Snippet;
+    /** Optional muted footer (e.g. a "results capped, type to narrow" hint), shown after the options. Not an option: inert and `aria-hidden`. */
+    footer?: Snippet;
     /** The `<ul>` node, exposed so the parent can scroll the active row and detect outside clicks. */
     listElement?: HTMLUListElement;
   } = $props();
@@ -85,6 +88,9 @@ styled by the parent's scoped CSS) stay with the parent.
   {:else}
     <li class="no-results">{@render empty()}</li>
   {/each}
+  {#if footer && rows.length > 0}
+    <li class="list-footer" aria-hidden="true">{@render footer()}</li>
+  {/if}
 </ul>
 
 <style>
@@ -134,5 +140,14 @@ styled by the parent's scoped CSS) stay with the parent.
     color: var(--color-text-muted);
     text-align: center;
     font-size: var(--font-size-1);
+  }
+
+  .list-footer {
+    padding: var(--size-2) var(--size-3);
+    margin-top: var(--size-1);
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+    text-align: center;
+    font-size: var(--font-size-0);
   }
 </style>

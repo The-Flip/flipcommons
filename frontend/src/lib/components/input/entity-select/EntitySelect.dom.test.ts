@@ -13,7 +13,9 @@ const autocompleteEntities = vi.fn((_type: string, q: string) =>
   Promise.resolve(DATA.filter((d) => d.label.toLowerCase().includes(q.toLowerCase()))),
 );
 
-vi.mock('$lib/api/entity-autocomplete', () => ({
+// Partial mock: stub only the network call; keep the real AUTOCOMPLETE_RESULT_LIMIT.
+vi.mock('$lib/api/entity-autocomplete', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/api/entity-autocomplete')>()),
   autocompleteEntities: (type: string, q: string) => autocompleteEntities(type, q),
 }));
 
@@ -71,6 +73,29 @@ describe('EntitySelect', () => {
     expect(screen.getByRole('option', { name: /stern pinball/i })).toBeInTheDocument();
     expect(screen.getByText('USA')).toBeInTheDocument();
     expect(autocompleteEntities).toHaveBeenLastCalledWith('manufacturer', 'stern');
+  });
+
+  it('shows a "type to search" hint only when the result set is capped', async () => {
+    const user = userEvent.setup();
+    const full = Array.from({ length: 20 }, (_, i) => ({
+      value: `m-${i}`,
+      label: `Maker ${i}`,
+      sublabel: null,
+    }));
+    autocompleteEntities.mockResolvedValueOnce(full);
+    renderSelect();
+
+    await user.click(getCombobox());
+    expect(await screen.findByText(/showing first 20/i)).toBeInTheDocument();
+  });
+
+  it('shows no cap hint when fewer than a full page come back', async () => {
+    const user = userEvent.setup();
+    renderSelect();
+
+    await user.click(getCombobox());
+    await screen.findByRole('option', { name: /stern pinball/i });
+    expect(screen.queryByText(/type to search/i)).not.toBeInTheDocument();
   });
 
   it('selects with keyboard, binding the value and showing its label', async () => {

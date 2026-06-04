@@ -8,10 +8,14 @@ wrapped for single- vs multi-selection.
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';
-  import { autocompleteEntities, type EntityOption } from '$lib/api/entity-autocomplete';
-  import ComboboxListbox from './dropdown/ComboboxListbox.svelte';
-  import { createDebouncedSearch } from './dropdown/search-helpers';
-  import FieldGroup from './FieldGroup.svelte';
+  import {
+    autocompleteEntities,
+    AUTOCOMPLETE_RESULT_LIMIT,
+    type EntityOption,
+  } from '$lib/api/entity-autocomplete';
+  import ComboboxListbox from '$lib/components/input/dropdown/ComboboxListbox.svelte';
+  import { createDebouncedSearch } from '$lib/components/input/dropdown/search-helpers';
+  import FieldGroup from '$lib/components/input/FieldGroup.svelte';
 
   let {
     type,
@@ -75,6 +79,10 @@ wrapped for single- vs multi-selection.
   let inputEl: HTMLInputElement | undefined = $state();
   let inputWrapEl: HTMLDivElement | undefined = $state();
   let listEl: HTMLUListElement | undefined = $state();
+
+  // A full page of rows means the endpoint capped the set and more likely
+  // exist — hint the user to type rather than scroll for them.
+  const capped = $derived(rows.length >= AUTOCOMPLETE_RESULT_LIMIT);
 
   const search = createDebouncedSearch(
     async (q: string) => {
@@ -289,6 +297,10 @@ wrapped for single- vs multi-selection.
         </span>
       {/snippet}
 
+      {#snippet cappedHint()}
+        Showing first {rows.length} — type to search
+      {/snippet}
+
       {#if open && inputWrapEl}
         <ComboboxListbox
           {rows}
@@ -301,6 +313,7 @@ wrapped for single- vs multi-selection.
           onhover={(i) => (activeIndex = i)}
           onselect={(r) => selectRow(r)}
           row={optionRow}
+          footer={capped ? cappedHint : undefined}
         >
           {#snippet empty()}
             {loading ? 'Searching…' : 'No matches'}
