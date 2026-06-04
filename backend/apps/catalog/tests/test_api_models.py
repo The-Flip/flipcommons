@@ -84,17 +84,6 @@ class TestModelsAPI:
         assert data["count"] == 1
         assert data["items"][0]["name"] == "Medieval Madness"
 
-    def test_all_models_includes_variants(self, client, machine_model):
-        make_machine_model(
-            name="Medieval Madness (LE)",
-            slug="medieval-madness-le",
-            variant_of=machine_model,
-        )
-        resp = client.get("/api/models/all/")
-        names = [m["name"] for m in resp.json()]
-        assert "Medieval Madness" in names
-        assert "Medieval Madness (LE)" in names
-
     def test_list_models_thumbnail(self, client, db):
         make_machine_model(
             name="With Image",

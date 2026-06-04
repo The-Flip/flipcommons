@@ -15,7 +15,7 @@ Auto-discovered via the ``routers`` list convention in config/api.py.
 from __future__ import annotations
 
 from django.http import HttpRequest, HttpResponse
-from ninja import Query, Router
+from ninja import Query, Router, Schema
 
 from apps.catalog.models import (
     Cabinet,
@@ -38,6 +38,7 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
+from apps.core.licensing import get_minimum_display_rank
 
 from .corporate_entities import CorporateEntityDetailSchema
 from .corporate_entities import _detail_qs as _corp_entity_detail_qs
@@ -60,11 +61,19 @@ from .manufacturers import (
     ManufacturerDetailSchema,
     ManufacturerFacetsPageSchema,
     ManufacturerFilterQuerySchema,
+    ManufacturerSearchSectionSchema,
     _manufacturer_qs,
     _serialize_manufacturer_detail,
     manufacturer_facets_response,
+    manufacturer_search_section,
 )
-from .people import PersonDetailSchema, _person_qs, _serialize_person_detail
+from .people import (
+    PersonDetailSchema,
+    PersonSearchSectionSchema,
+    _person_qs,
+    _serialize_person_detail,
+    person_search_section,
+)
 from .series import SeriesDetailSchema, _serialize_series_detail, _series_detail_qs
 from .systems import SystemDetailSchema, _serialize_system_detail, _system_detail_qs
 from .taxonomy import (
@@ -89,12 +98,59 @@ from .titles import (
     TitleDetailSchema,
     TitleFacetsPageSchema,
     TitleFilterQuerySchema,
+    TitleSearchSectionSchema,
     _serialize_title_detail,
     title_facets_response,
+    title_search_section,
 )
 from .titles import _detail_qs as _title_detail_qs
 
 pages_router = Router(tags=["private"])
+
+# Minimum trimmed ``q`` length the global search acts on. Below this the endpoint
+# returns empty sections without touching the DB, and the SvelteKit page shows a
+# "type at least N characters" hint instead of calling the endpoint.
+_MIN_SEARCH_CHARS = 3
+
+
+class SearchResultsSchema(Schema):
+    """Global ``/search`` payload: three stacked entity sections in fixed render
+    order (Titles → Manufacturers → People). The frontend renders them in this
+    declaration order; there is no Models section (models only roll up into titles
+    elsewhere, and search doesn't surface them)."""
+
+    titles: TitleSearchSectionSchema
+    manufacturers: ManufacturerSearchSectionSchema
+    people: PersonSearchSectionSchema
+
+
+def _empty_search_results() -> SearchResultsSchema:
+    """All three sections empty — the ``q`` too short / no-work response."""
+    return SearchResultsSchema(
+        titles=TitleSearchSectionSchema(items=[], has_more=False),
+        manufacturers=ManufacturerSearchSectionSchema(items=[], has_more=False),
+        people=PersonSearchSectionSchema(items=[], has_more=False),
+    )
+
+
+@pages_router.get("/search", response=SearchResultsSchema)
+def search_page(request: HttpRequest, q: str = "") -> SearchResultsSchema:
+    """Global search across Titles, Manufacturers and People for the ``/search`` SSR
+    page. Each section composes that entity's ordered listing queryset + card
+    serializer (so a section's top rows match its ``/…?q=`` listing) and caps at 10
+    with a ``has_more`` flag. Trimmed ``q`` shorter than ``_MIN_SEARCH_CHARS`` returns
+    empty sections without querying. Uncached — free-text ``q`` has a poor cache hit
+    rate, and each query is narrow + ``[:11]`` + index-friendly."""
+    q = q.strip()
+    if len(q) < _MIN_SEARCH_CHARS:
+        return _empty_search_results()
+    # One Constance lookup shared by the title + manufacturer thumbnail resolvers.
+    min_rank = get_minimum_display_rank()
+    return SearchResultsSchema(
+        titles=title_search_section(q, min_rank=min_rank),
+        manufacturers=manufacturer_search_section(q, min_rank=min_rank),
+        people=person_search_section(q),
+    )
 
 
 @pages_router.get("/titles", response=TitleFacetsPageSchema)

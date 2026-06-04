@@ -4,18 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import cast
 
 from django.db import models
 from django.db.models import Count, F, Prefetch, Q, QuerySet
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
-from ninja.decorators import decorate_view
 from ninja.responses import Status
 from ninja.security import django_auth
-from pydantic import TypeAdapter
 
 from apps.catalog.naming import normalize_catalog_name
 from apps.core.authz.markers import requires
@@ -39,7 +36,6 @@ from apps.provenance.rate_limits import (
 )
 from apps.provenance.schemas import ChangeSetInputSchema
 
-from ..cache import get_cached_response, people_all_key, set_cached_response
 from ..models import Credit, MachineModel, Person
 from ._typing import HasCreditCount
 from .edit_claims import ClaimSpec, execute_claims, plan_scalar_field_claims
@@ -50,7 +46,7 @@ from .entity_create import (
     validate_name,
     validate_slug_format,
 )
-from .entity_list import paginated_list_response
+from .entity_list import _apply_list_q, paginated_list_response
 from .images import (
     extract_image_urls,
     fetch_model_media_map,
@@ -83,9 +79,6 @@ class PersonCardSchema(Schema):
     aliases: list[str] = []
     credit_count: int = 0
     thumbnail_url: str | None = None
-
-
-_ALL_ADAPTER: TypeAdapter[list[PersonCardSchema]] = TypeAdapter(list[PersonCardSchema])
 
 
 class PersonTitleSchema(RelatedTitleSchema):
@@ -214,12 +207,11 @@ def _person_qs() -> QuerySet[Person]:
 def _people_thumbnails(person_pks: Sequence[int]) -> dict[int, str | None]:
     """Newest-credited-model image per person, batched over *person_pks*.
 
-    The single thumbnail source for both the cached ``/all/`` list and the paginated
-    ``GET /`` (the latter via the core's ``ThumbnailProvider`` over one page's pks), so
-    the two presentations can't drift. Picks the newest credited model carrying
-    ``extra_data`` per person, then extracts its display image at the current min rank.
-    Mirrors the original ``list_all_people`` batch — no active-status filter on the
-    credit's model, by design, matching the prior ``/all/`` behavior.
+    The single thumbnail source for the paginated ``GET /`` list (via the core's
+    ``ThumbnailProvider`` over one page's pks) and the global search section, so the two
+    presentations can't drift. Picks the newest credited model carrying ``extra_data``
+    per person, then extracts its display image at the current min rank. No
+    active-status filter on the credit's model, by design.
     """
     if not person_pks:
         return {}
@@ -258,9 +250,9 @@ def _people_thumbnails(person_pks: Sequence[int]) -> dict[int, str | None]:
 
 
 def _person_list_qs() -> QuerySet[Person]:
-    """Active people annotated with total credit count, most-credited first — the
-    ``/all/`` presentation the page renders today (``list_people`` ordered by name).
-    The paginated core appends a ``pk`` tiebreak for stable offset pages."""
+    """Active people annotated with total credit count, most-credited first — the base
+    queryset shared by the paginated ``GET /`` list and the search section. Callers
+    append a ``pk`` tiebreak for a stable total order before slicing."""
     return (
         Person.objects.active()
         .annotate(credit_count=Count("credits"))
@@ -312,35 +304,33 @@ def list_people(request: HttpRequest, q: str = "", page: int = 1) -> PersonListS
     return PersonListSchema(items=result.items, count=result.total)
 
 
-@people_router.get("/all/", response=list[PersonCardSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_all_people(
-    request: HttpRequest,
-) -> HttpResponse | list[dict[str, Any]]:
-    """Return every person with credit count and thumbnail.
+class PersonSearchSectionSchema(Schema):
+    """The People section of the global ``/search`` page: up to 10 cards plus a
+    ``has_more`` flag (the section caps at 10; the frontend links to ``/people?q=``
+    for the rest). ``items`` reuses the listing card so a section row matches the
+    ``/people`` grid exactly."""
 
-    Uses a bulk query to find the newest credited model per person for
-    thumbnails, instead of prefetching all credits and iterating in Python.
-    See ``list_all_titles`` for the full explanation of this pattern.
-    """
-    response = get_cached_response(people_all_key())
-    if response is not None:
-        return response
+    items: list[PersonCardSchema]
+    has_more: bool
 
-    people = list(_person_list_qs())
-    thumbnails = _people_thumbnails([p.pk for p in people])
 
-    result: list[dict[str, Any]] = [
-        {
-            "name": p.name,
-            "slug": p.slug,
-            "aliases": [a.value for a in p.aliases.all()],
-            "credit_count": cast(HasCreditCount, p).credit_count,
-            "thumbnail_url": thumbnails.get(p.pk),
-        }
-        for p in people
-    ]
-    return set_cached_response(people_all_key(), _ALL_ADAPTER, result)
+def person_search_section(q: str) -> PersonSearchSectionSchema:
+    """Top ≤10 person cards matching ``q``, composing the listing queryset + card
+    serializer so results match ``/people?q=`` exactly. Re-applies the explicit
+    ``("-credit_count", "name", "pk")`` total order (``_person_list_qs`` omits the
+    ``pk`` tiebreak, so the slice would be nondeterministic on credit-count ties).
+    Slices ``[:11]`` to detect ">10" without a second ``count()``."""
+    # Splat a tuple (not literal args) so django-stubs doesn't field-check
+    # ``credit_count`` — it's a real annotation from ``_person_list_qs`` that the stub
+    # can't see across the ``_apply_list_q`` boundary (same shape ``list_people`` uses).
+    ordering = ("-credit_count", "name", "pk")
+    rows = list(_apply_list_q(_person_list_qs(), q).order_by(*ordering)[:11])
+    items = rows[:10]
+    thumbnails = _people_thumbnails([p.pk for p in items])
+    return PersonSearchSectionSchema(
+        items=[_serialize_person_row(p, thumbnails.get(p.pk)) for p in items],
+        has_more=len(rows) > 10,
+    )
 
 
 @people_router.patch(

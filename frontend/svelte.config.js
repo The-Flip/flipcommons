@@ -275,9 +275,11 @@ const config = {
     // into a <meta http-equiv> tag — and the CSP spec disallows the
     // Report-Only variant in meta. So routes with `export const
     // prerender = true` (currently /systems, /series, /reward-types,
-    // /gameplay-features, /people, /search, /api-docs, /(legal)/terms,
+    // /gameplay-features, /people, /api-docs, /(legal)/terms,
     // /(legal)/privacy, /(legal)/licensing) will produce zero reports
-    // regardless of violations. Before flipping to enforce, build with
+    // regardless of violations. (/search was here but is now SSR, so it
+    // gets report-only CSP coverage like the other SSR routes.) Before
+    // flipping to enforce, build with
     // the report-only directives moved to `directives` and smoke-test
     // those prerendered routes locally. The week-of-clean-reports gate
     // applies to SSR'd routes only.

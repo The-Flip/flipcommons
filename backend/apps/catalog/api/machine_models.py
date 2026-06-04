@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Any
 
 from django.db.models import F, Prefetch, Q, QuerySet
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
@@ -14,7 +13,6 @@ from ninja.decorators import decorate_view
 from ninja.pagination import paginate
 from ninja.responses import Status
 from ninja.security import django_auth
-from pydantic import TypeAdapter
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -42,12 +40,9 @@ from apps.provenance.schemas import (
     ChangeSetInputSchema,
 )
 
-from ..cache import get_cached_response, models_all_key, set_cached_response
 from ..models import (
     Cabinet,
     CorporateEntity,
-    CorporateEntityAlias,
-    CorporateEntityLocation,
     Credit,
     CreditRole,
     DisplaySubtype,
@@ -56,7 +51,6 @@ from ..models import (
     GameplayFeature,
     MachineModel,
     MachineModelGameplayFeature,
-    ModelAbbreviation,
     Person,
     RewardType,
     System,
@@ -117,23 +111,6 @@ from .soft_delete import (
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
-
-
-class ModelGridItemSchema(Schema):
-    name: str
-    slug: str
-    year: int | None = None
-    manufacturer_name: str | None = None
-    technology_generation_name: str | None = None
-    thumbnail_url: str | None = None
-    abbreviations: list[str] = []
-    search_text: str | None = None
-    title_slug: str | None = None
-
-
-_ALL_ADAPTER: TypeAdapter[list[ModelGridItemSchema]] = TypeAdapter(
-    list[ModelGridItemSchema]
-)
 
 
 class ModelListItemSchema(Schema):
@@ -698,171 +675,6 @@ def list_recent_models(request: HttpRequest) -> list[ModelRecentSchema]:
         if len(results) == 3:
             break
     return results
-
-
-@models_router.get("/all/", response=list[ModelGridItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_all_models(
-    request: HttpRequest,
-) -> HttpResponse | list[dict[str, Any]]:
-    """Return every model (including variants) for client-side search/grid.
-
-    Performance-critical: serializes ~7k models with search_text built from
-    M2M relations.  Uses ``values_list`` to avoid ORM object hydration and
-    bulk through-table queries for M2M data.  See ``list_all_titles`` for
-    the full explanation of this pattern.
-    """
-    response = get_cached_response(models_all_key())
-    if response is not None:
-        return response
-
-    min_rank = get_minimum_display_rank()
-
-    rows = list(
-        MachineModel.objects.active()
-        .annotate(
-            mfr_id=F("corporate_entity__manufacturer__id"),
-            mfr_name=F("corporate_entity__manufacturer__name"),
-            tech_gen_name=F("technology_generation__name"),
-            display_type_name=F("display_type__name"),
-            display_subtype_name=F("display_subtype__name"),
-            title_slug=F("title__slug"),
-            system_name=F("system__name"),
-            cabinet_name=F("cabinet__name"),
-            game_format_name=F("game_format__name"),
-        )
-        .values_list(
-            "id",
-            "name",
-            "slug",
-            "year",
-            "extra_data",
-            "mfr_id",
-            "mfr_name",
-            "tech_gen_name",
-            "display_type_name",
-            "display_subtype_name",
-            "title_slug",
-            "system_name",
-            "cabinet_name",
-            "game_format_name",
-            named=True,
-        )
-        .order_by("name")
-    )
-    model_ids = {r.id for r in rows}
-    media_by_model = fetch_model_media_map(model_ids)
-
-    # --- Bulk M2M queries for search_text ---
-    model_themes: dict[int, list[str]] = defaultdict(list)
-    for mid, name in MachineModel.themes.through.objects.filter(
-        machinemodel_id__in=model_ids
-    ).values_list("machinemodel_id", "theme__name"):
-        model_themes[mid].append(name)
-
-    model_tags: dict[int, list[str]] = defaultdict(list)
-    for mid, name in MachineModel.tags.through.objects.filter(
-        machinemodel_id__in=model_ids
-    ).values_list("machinemodel_id", "tag__name"):
-        model_tags[mid].append(name)
-
-    model_gf: dict[int, list[str]] = defaultdict(list)
-    for mid, name in MachineModel.gameplay_features.through.objects.filter(
-        machinemodel_id__in=model_ids
-    ).values_list("machinemodel_id", "gameplayfeature__name"):
-        model_gf[mid].append(name)
-
-    model_credits: dict[int, list[str]] = defaultdict(list)
-    for mid, name in Credit.objects.filter(model_id__in=model_ids).values_list(
-        "model_id", "person__name"
-    ):
-        model_credits[mid].append(name)
-
-    model_abbrevs: dict[int, list[str]] = defaultdict(list)
-    for mid, value in ModelAbbreviation.objects.filter(
-        machine_model_id__in=model_ids
-    ).values_list("machine_model_id", "value"):
-        model_abbrevs[mid].append(value)
-
-    # --- Bulk manufacturer search text (entity names, aliases, locations) ---
-    # Build manufacturer_id → search parts map
-    mfr_search_parts: dict[int, list[str]] = defaultdict(list)
-
-    # Entity names
-    for mfr_id, ename in CorporateEntity.objects.active().values_list(
-        "manufacturer_id", "name"
-    ):
-        if mfr_id:
-            mfr_search_parts[mfr_id].append(ename)
-
-    # Entity aliases
-    for mfr_id, aval in CorporateEntityAlias.objects.filter(
-        corporate_entity__manufacturer__isnull=False
-    ).values_list("corporate_entity__manufacturer_id", "value"):
-        mfr_search_parts[mfr_id].append(aval)
-
-    # Location names (walk hierarchy via pre-fetched chain)
-    for mfr_id, loc_name, p1, p2, p3, p4 in (
-        CorporateEntityLocation.objects.filter(
-            corporate_entity__manufacturer__isnull=False
-        )
-        .select_related("location__parent__parent__parent__parent")
-        .values_list(
-            "corporate_entity__manufacturer_id",
-            "location__name",
-            "location__parent__name",
-            "location__parent__parent__name",
-            "location__parent__parent__parent__name",
-            "location__parent__parent__parent__parent__name",
-        )
-    ):
-        for n in (loc_name, p1, p2, p3, p4):
-            if n:
-                mfr_search_parts[mfr_id].append(n)
-
-    # --- Assembly ---
-    result: list[dict[str, Any]] = []
-    for r in rows:
-        mid = r.id
-        thumbnail_url, _ = extract_image_urls(
-            r.extra_data or {}, media_by_model.get(mid), min_rank=min_rank
-        )
-
-        # Build search_text from bulk maps
-        parts: list[str] = []
-        if r.mfr_name:
-            parts.append(r.mfr_name)
-            parts.extend(mfr_search_parts.get(r.mfr_id, []))
-        for name in (
-            r.system_name,
-            r.tech_gen_name,
-            r.display_type_name,
-            r.display_subtype_name,
-            r.cabinet_name,
-            r.game_format_name,
-        ):
-            if name:
-                parts.append(name)
-        parts.extend(model_themes.get(mid, []))
-        parts.extend(model_tags.get(mid, []))
-        parts.extend(model_gf.get(mid, []))
-        parts.extend(model_credits.get(mid, []))
-        parts.extend(model_abbrevs.get(mid, []))
-
-        result.append(
-            {
-                "name": r.name,
-                "slug": r.slug,
-                "year": r.year,
-                "manufacturer_name": r.mfr_name,
-                "technology_generation_name": r.tech_gen_name,
-                "thumbnail_url": thumbnail_url,
-                "abbreviations": model_abbrevs.get(mid, []),
-                "search_text": " | ".join(parts) if parts else None,
-                "title_slug": r.title_slug,
-            }
-        )
-    return set_cached_response(models_all_key(), _ALL_ADAPTER, result)
 
 
 @models_router.get("/edit-options/", response=ModelEditOptionsSchema)

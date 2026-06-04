@@ -30,9 +30,7 @@ from apps.core.licensing import current_audience
 # unchanged payloads, which rebuild on first read. (Per-bump history: git blame.)
 _CACHE_VERSION = "v4"
 
-_MODELS_ALL_BASE = f"catalog:models:all:{_CACHE_VERSION}"
 _MANUFACTURERS_ALL_BASE = f"catalog:manufacturers:all:{_CACHE_VERSION}"
-_PEOPLE_ALL_BASE = f"catalog:people:all:{_CACHE_VERSION}"
 _SERIES_ALL_BASE = f"catalog:series:all:{_CACHE_VERSION}"
 _TITLES_ALL_BASE = f"catalog:titles:all:{_CACHE_VERSION}"
 # No-filter facet option lists for the /titles page (GET /api/pages/titles). Static
@@ -43,9 +41,7 @@ _MANUFACTURERS_FACETS_BASE = f"catalog:manufacturers:facets:{_CACHE_VERSION}"
 _LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
 
 _BASES: tuple[str, ...] = (
-    _MODELS_ALL_BASE,
     _MANUFACTURERS_ALL_BASE,
-    _PEOPLE_ALL_BASE,
     _SERIES_ALL_BASE,
     _TITLES_ALL_BASE,
     _TITLES_FACETS_BASE,
@@ -56,16 +52,8 @@ _BASES: tuple[str, ...] = (
 _AUDIENCES: tuple[str, ...] = ("default", "kiosk")
 
 
-def models_all_key() -> str:
-    return f"{_MODELS_ALL_BASE}:{current_audience()}"
-
-
 def manufacturers_all_key() -> str:
     return f"{_MANUFACTURERS_ALL_BASE}:{current_audience()}"
-
-
-def people_all_key() -> str:
-    return f"{_PEOPLE_ALL_BASE}:{current_audience()}"
 
 
 def series_all_key() -> str:

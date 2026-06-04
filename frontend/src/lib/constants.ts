@@ -18,3 +18,11 @@ export { NARROW_BREAKPOINT, WIDE_BREAKPOINT } from './breakpoints.js';
 
 /** Build a browser tab title like "Manufacturers — Flipcommons Pinball Encyclopedia". */
 export const pageTitle = (name: string) => `${name} — ${SITE_TITLE}`;
+
+/**
+ * Minimum trimmed query length the global `/search` page acts on. Below this the
+ * page shows a "type at least N characters" hint and skips the request. Mirrors
+ * the backend's own floor (`_MIN_SEARCH_CHARS`), which stays the source of truth
+ * and returns empty sections below it regardless.
+ */
+export const MIN_SEARCH_QUERY_LENGTH = 3;

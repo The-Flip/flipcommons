@@ -870,6 +870,35 @@ def list_titles(
     )
 
 
+# ---------------------------------------------------------------------------
+# Global search — the Titles section of GET /api/pages/search
+# ---------------------------------------------------------------------------
+
+
+class TitleSearchSectionSchema(Schema):
+    """The Titles section of the global ``/search`` page: up to 10 cards plus a
+    ``has_more`` flag (the section caps at 10; the frontend links to ``/titles?q=``
+    for the rest). ``items`` reuses the listing card so a section row matches the
+    ``/titles`` grid exactly."""
+
+    items: list[TitleCardSchema]
+    has_more: bool
+
+
+def title_search_section(q: str, *, min_rank: int) -> TitleSearchSectionSchema:
+    """Top ≤10 title cards matching ``q``, composing the **ordered** listing
+    queryset + card serializer so results match ``/titles?q=`` exactly. Slices
+    ``[:11]`` to detect ">10" without a second ``count()``."""
+    rows = list(
+        ordered_titles(TitleFilters(q=q)).prefetch_related(_card_models_prefetch())[:11]
+    )
+    items = rows[:10]
+    return TitleSearchSectionSchema(
+        items=[_serialize_card(t, min_rank=min_rank) for t in items],
+        has_more=len(rows) > 10,
+    )
+
+
 @titles_router.get("/all/", response=list[TitleListItemSchema])
 @decorate_view(cache_control(no_cache=True))
 def list_all_titles(request: HttpRequest) -> HttpResponse:

@@ -7,7 +7,7 @@ from apps.catalog.models import (
     PersonAlias,
     Title,
 )
-from apps.catalog.tests.conftest import SAMPLE_IMAGES, make_machine_model
+from apps.catalog.tests.conftest import make_machine_model
 
 
 class TestPeopleAPI:
@@ -65,62 +65,14 @@ class TestPeopleAPI:
 
 
 @pytest.mark.django_db
-class TestPeopleListParityWithAll:
-    """The paginated ``GET /`` must serve the same card data the page rendered via
-    ``/all/`` (its source today) — same people, credit_counts, aliases and thumbnails,
-    differing only by pagination. Asserted as set-equality + monotonic ``-credit_count``,
-    not positional: ``/all/`` carries no ``pk`` tiebreak, so tied counts are unordered
-    and a positional diff would be flaky."""
-
-    def _card_keys(self, cards):
-        return {
-            (c["slug"], c["credit_count"], tuple(c["aliases"]), c["thumbnail_url"])
-            for c in cards
-        }
-
-    def test_paginated_matches_all_card_data(self, client, credit_roles):
-        role = CreditRole.objects.get(slug="design")
-        title = Title.objects.create(name="Funhouse", slug="funhouse")
-        m_img = make_machine_model(
-            name="Funhouse",
-            slug="funhouse",
-            title=title,
-            extra_data={"opdb.images": SAMPLE_IMAGES},
-        )
-        m_plain = make_machine_model(name="Taxi", slug="taxi", title=title)
-
-        top = Person.objects.create(name="Top", slug="top", status="active")
-        mid_a = Person.objects.create(name="Mid A", slug="mid-a", status="active")
-        mid_b = Person.objects.create(name="Mid B", slug="mid-b", status="active")
-        Person.objects.create(name="Zero", slug="zero", status="active")
-        PersonAlias.objects.create(person=mid_a, value="Alias A")
-
-        # top: 2 credits (newest model carries an image → thumbnail);
-        # mid_a / mid_b: 1 credit each (a tie); zero: none.
-        Credit.objects.create(model=m_img, person=top, role=role)
-        Credit.objects.create(model=m_plain, person=top, role=role)
-        Credit.objects.create(model=m_img, person=mid_a, role=role)
-        Credit.objects.create(model=m_plain, person=mid_b, role=role)
-
-        all_cards = client.get("/api/people/all/").json()
-        paginated = client.get("/api/people/").json()
-        items = paginated["items"]
-
-        assert paginated["count"] == 4
-        # Same card data, regardless of order or pagination.
-        assert self._card_keys(items) == self._card_keys(all_cards)
-        # Monotonic non-increasing by credit_count (the popularity sort).
-        counts = [c["credit_count"] for c in items]
-        assert counts == sorted(counts, reverse=True)
-        assert items[0]["slug"] == "top"
-        # The thumbnail provider actually ran (top + mid_a credited on the imaged model).
-        assert any(c["thumbnail_url"] for c in items)
+class TestPeopleListAliasFold:
+    """The paginated ``GET /`` list and the search section both pair a
+    ``Count("credits")`` GROUP-BY sort key with alias matching, so the alias fold must
+    stay an ``Exists`` subquery (not a join) — a join would multiply the grouped rows and
+    inflate ``credit_count``."""
 
     def test_q_alias_match_preserves_credit_count(self, client, credit_roles):
-        """People uniquely combine a ``Count("credits")`` GROUP-BY sort key with alias
-        matching. The alias fold must stay an ``Exists`` subquery, not a join — a join
-        would multiply the grouped rows and inflate ``credit_count``. Match by alias on a
-        person with multiple credits and assert the count is exact."""
+        """Match by alias on a person with multiple credits; the count stays exact."""
         role = CreditRole.objects.get(slug="design")
         title = Title.objects.create(name="Funhouse", slug="funhouse")
         m1 = make_machine_model(name="A", slug="a", title=title)

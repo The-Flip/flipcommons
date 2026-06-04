@@ -398,6 +398,44 @@ def list_manufacturers(
 
 
 # ---------------------------------------------------------------------------
+# Global search — the Manufacturers section of GET /api/pages/search
+# ---------------------------------------------------------------------------
+
+
+class ManufacturerSearchSectionSchema(Schema):
+    """The Manufacturers section of the global ``/search`` page: up to 10 cards plus
+    a ``has_more`` flag (the section caps at 10; the frontend links to
+    ``/manufacturers?q=`` for the rest). ``items`` reuses the listing card so a section
+    row matches the ``/manufacturers`` grid exactly."""
+
+    items: list[ManufacturerCardSchema]
+    has_more: bool
+
+
+def manufacturer_search_section(
+    q: str, *, min_rank: int
+) -> ManufacturerSearchSectionSchema:
+    """Top ≤10 manufacturer cards matching ``q``, composing the **ordered** listing
+    queryset + card serializer so results match ``/manufacturers?q=`` exactly. Slices
+    ``[:11]`` to detect ">10" without a second ``count()``."""
+    rows = list(ordered(MfrFilters(q=q))[:11])
+    items = rows[:10]
+    thumbnails = _page_thumbnails([m.pk for m in items], min_rank=min_rank)
+    return ManufacturerSearchSectionSchema(
+        items=[
+            ManufacturerCardSchema(
+                name=m.name,
+                slug=m.slug,
+                model_count=cast(HasModelCount, m).model_count,
+                thumbnail_url=thumbnails.get(m.pk),
+            )
+            for m in items
+        ],
+        has_more=len(rows) > 10,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Listing page — facet options (GET /api/pages/manufacturers)
 # ---------------------------------------------------------------------------
 
