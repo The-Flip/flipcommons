@@ -14,6 +14,7 @@ wrapped for single- vs multi-selection.
     type EntityOption,
   } from '$lib/api/entity-autocomplete';
   import ComboboxListbox from '$lib/components/input/dropdown/ComboboxListbox.svelte';
+  import SelectedChips from '$lib/components/input/dropdown/SelectedChips.svelte';
   import { createDebouncedSearch } from '$lib/components/input/dropdown/search-helpers';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
 
@@ -134,6 +135,9 @@ wrapped for single- vs multi-selection.
   function labelOf(value: string): string {
     return labelCache.get(value)?.label ?? value;
   }
+
+  // Multi-select chips, resolving each selected value to its cached label.
+  let selectedChips = $derived(selectedValues.map((value) => ({ value, label: labelOf(value) })));
 
   function selectRow(row: EntityOption) {
     if (disabled) return;
@@ -278,22 +282,8 @@ wrapped for single- vs multi-selection.
         {/if}
       </div>
 
-      {#if multi && selectedValues.length > 0}
-        <div class="selected-tags">
-          {#each selectedValues as value (value)}
-            <span class="tag">
-              {labelOf(value)}
-              <button
-                class="tag-remove"
-                aria-label={`Remove ${labelOf(value)}`}
-                {disabled}
-                onclick={() => !disabled && onRemove?.(value)}
-              >
-                ×
-              </button>
-            </span>
-          {/each}
-        </div>
+      {#if multi}
+        <SelectedChips chips={selectedChips} {disabled} onremove={(value) => onRemove?.(value)} />
       {/if}
 
       {#snippet optionRow(r: EntityOption)}
@@ -361,40 +351,9 @@ wrapped for single- vs multi-selection.
     color: var(--color-text);
   }
 
-  .selected-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-1);
-    margin-top: var(--size-1);
-  }
-
-  .tag {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--size-1);
-    padding: var(--size-1) var(--size-2);
-    font-size: var(--font-size-0);
-    background-color: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-2);
-  }
-
-  .tag-remove {
-    background: none;
-    border: none;
-    color: var(--color-text-muted);
-    cursor: pointer;
-    padding: 0;
-    font-size: var(--font-size-1);
-    line-height: 1;
-  }
-
-  .tag-remove:hover {
-    color: var(--color-error-text);
-  }
-
   /* The listbox shell (.dropdown/.option/.check/.no-results) lives in
-     ComboboxListbox; only the per-row content below is styled here. */
+     ComboboxListbox; the M2M chip row in SelectedChips; only the per-row
+     content below is styled here. */
   .option-text {
     flex: 1;
     min-width: 0;

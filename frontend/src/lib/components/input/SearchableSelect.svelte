@@ -1,6 +1,7 @@
 <script lang="ts">
   import { normalizeText } from '$lib/utils';
   import ComboboxListbox from './dropdown/ComboboxListbox.svelte';
+  import SelectedChips from './dropdown/SelectedChips.svelte';
   import FieldGroup from './FieldGroup.svelte';
 
   let {
@@ -45,6 +46,16 @@
   function isDisabled(opt: { count?: number }): boolean {
     return !allowZeroCount && opt.count === 0;
   }
+
+  // Multi-select chips, resolving each selected value to its option label and
+  // dropping any value with no matching option.
+  let selectedChips = $derived.by(() => {
+    if (!multi || !Array.isArray(selected)) return [];
+    return selected.flatMap((value) => {
+      const opt = options.find((o) => o.value === value);
+      return opt ? [{ value, label: opt.label }] : [];
+    });
+  });
 
   let query = $state('');
   let open = $state(false);
@@ -237,25 +248,8 @@
     {/if}
   </div>
 
-  {#if multi && Array.isArray(selected) && selected.length > 0}
-    <div class="selected-tags">
-      {#each selected as value (value)}
-        {@const opt = options.find((o) => o.value === value)}
-        {#if opt}
-          <span class="tag">
-            {opt.label}
-            <button
-              class="tag-remove"
-              aria-label={`Remove ${opt.label}`}
-              {disabled}
-              onclick={() => toggle(value)}
-            >
-              ×
-            </button>
-          </span>
-        {/if}
-      {/each}
-    </div>
+  {#if multi}
+    <SelectedChips chips={selectedChips} {disabled} onremove={toggle} />
   {/if}
 
   {#snippet optionRow(opt: { value: string; label: string; count?: number })}
@@ -342,40 +336,9 @@
     color: var(--color-text);
   }
 
-  .selected-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-1);
-    margin-top: var(--size-1);
-  }
-
-  .tag {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--size-1);
-    padding: var(--size-1) var(--size-2);
-    font-size: var(--font-size-0);
-    background-color: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-2);
-  }
-
-  .tag-remove {
-    background: none;
-    border: none;
-    color: var(--color-text-muted);
-    cursor: pointer;
-    padding: 0;
-    font-size: var(--font-size-1);
-    line-height: 1;
-  }
-
-  .tag-remove:hover {
-    color: var(--color-error-text);
-  }
-
   /* The listbox shell (.dropdown/.option/.check/.no-results) lives in
-     ComboboxListbox; only the per-row content below is styled here. */
+     ComboboxListbox; the M2M chip row in SelectedChips; only the per-row
+     content below is styled here. */
   .option-label {
     flex: 1;
     min-width: 0;
