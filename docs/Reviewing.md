@@ -92,7 +92,7 @@ The fix is usually a NamedTuple, dataclass, or TypedDict — not a type alias, w
 
 ### Deployment/runtime assumptions
 
-When a change affects routing, SSR, startup, or runtime ports, check [Hosting.md](Hosting.md) and [WebArchitecture.md](WebArchitecture.md).
+When a change affects routing, SSR, startup, or runtime ports, check [Hosting.md](Hosting.md) and [Architecture.md](Architecture.md).
 
 In particular:
 

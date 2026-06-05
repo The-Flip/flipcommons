@@ -52,7 +52,7 @@ Confirmed via the Railway dashboard on 2026-05-14:
   - Railway's CDN is Cloudflare-backed (museum has vetoed Cloudflare per existing media-hosting decision, so this is a non-trivial policy question, not just a perf toggle).
   - `trusted_proxies private_ranges` would no longer be sufficient — CDN POPs are public IPs and need explicit ranges or a trust mechanism.
   - 429 responses would need `Cache-Control: no-store` to prevent the CDN from serving cached rate-limit rejections to other callers.
-- **`pinbase-production.up.railway.app` is Railway's auto-assigned "primary service domain"** and must not be deleted — Railway uses it for healthchecks, dashboard links, and possibly preview environments. Its attack surface is identical to `flipcommons.org` (same edge, same proxy, same headers), so keeping it does not add risk.
+- **`flipcommons-production.up.railway.app` is Railway's auto-assigned "primary service domain"** and must not be deleted — Railway uses it for healthchecks, dashboard links, and possibly preview environments. Its attack surface is identical to `flipcommons.org` (same edge, same proxy, same headers), so keeping it does not add risk.
 - **TCP Proxy** is a separate, currently-unused feature for exposing raw TCP. Not relevant here. If added in the future, it would create a second listener that bypasses Railway's HTTP edge — but it would not be used for the rate-limited HTTP endpoints, so it does not affect this plan.
 
 ## Verified facts

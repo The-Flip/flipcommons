@@ -4,6 +4,7 @@ import type { Handle } from '@sveltejs/kit';
 import type { RouteId } from '$app/types';
 import { handleServerError } from '$lib/sentry/handle-error';
 import { isSearchEngineIndexable } from '$lib/route-metadata.server';
+import { cacheControlHandle } from '$lib/cache-control.server';
 
 /**
  * Emits noindex on every non-indexable route via both `X-Robots-Tag:
@@ -49,7 +50,7 @@ function shouldIndex(id: RouteId | null): boolean {
  * events — required even though we're not tracing. (`Sentry.init` itself
  * lives in `instrumentation.server.ts`, a load-order-safe site.)
  */
-export const handle = sequence(Sentry.sentryHandle(), noindexHandle);
+export const handle = sequence(Sentry.sentryHandle(), cacheControlHandle, noindexHandle);
 
 /**
  * We pass `handleServerError` explicitly rather than letting Sentry's

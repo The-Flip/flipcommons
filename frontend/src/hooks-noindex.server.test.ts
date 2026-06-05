@@ -16,6 +16,7 @@ vi.mock('@sveltejs/kit/hooks', () => ({ sequence: vi.fn(() => vi.fn()) }));
 
 const { sequence } = await import('@sveltejs/kit/hooks');
 const { noindexHandle } = await import('./hooks.server');
+const { cacheControlHandle } = await import('$lib/cache-control.server');
 
 function runHandle(
   routeId: RouteId | null,
@@ -124,5 +125,12 @@ describe('exported handle sequence', () => {
     // canonical-URL hook from CanonicalUrl.md) doesn't break this assertion.
     const [args] = vi.mocked(sequence).mock.calls;
     expect(args).toContain(noindexHandle);
+  });
+
+  it('passes cacheControlHandle to sequence()', () => {
+    // Pin membership so a future edit can't silently drop the SSR
+    // Cache-Control stamping (which the Bunny edge cache depends on).
+    const [args] = vi.mocked(sequence).mock.calls;
+    expect(args).toContain(cacheControlHandle);
   });
 });

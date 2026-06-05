@@ -35,7 +35,7 @@ frontend/src/lib/components/
   layout/               site chrome + page-level layout primitives
     site/               SiteShell, SiteHeader, Footer, Nav, etc.
     page/               Page, PageHeader, TwoColumnLayout, Breadcrumb + sidebar/ cluster
-  input/                base fields + citation/, dropdown/, markdown/, wikilink/ subsystems
+  input/                basic controls + picker/, citation/, markdown/ role folders + internal/
   collections/          collection-display widgets
     cards/              Card + domain cards
     grid/               generic grids
@@ -280,53 +280,63 @@ citation tooltips and references that get layered onto it.
 These components only do display; editing markdown and citations lives elsewhere.
 ```
 
-### `input/` - DONE ✅
+### `input/`
 
-Input components — anything that captures user input, from a bare `TextField` to a composed `MarkdownTextArea` or `WikilinkAutocomplete`. Named `input/` rather than `form/` because not all of these live in a `<form>` (e.g. `SearchableSelect` in a filter sidebar, `MarkdownTextArea` in a comment box); "input" follows MUI's "Inputs" convention, which spans both bare controls and rich composed widgets (MUI files Autocomplete there too). Apply an internal split that gives each input subsystem its own subfolder.
+Input components — anything that captures user input, from a bare `TextField` to a composed `MarkdownTextArea` or `WikilinkAutocomplete`. Named `input/` rather than `form/` because not all of these live in a `<form>` (e.g. `SearchableSelect` in a filter sidebar, `MarkdownTextArea` in a comment box).
 
 ```text
 input/
+  # basic controls — type a value
   TextField.svelte
   NumberField.svelte
-  MonthSelect.svelte
-  TagInput.svelte
-  YearRangeInput.svelte                       # moves in from components/ top level
-  SearchableSelect.svelte (+ test)            # moves in from components/ top level
+  YearRangeInput.svelte
+  TagInput.svelte                    # enter free-form tags (you type values — there's no list to pick from)
   Fieldset.svelte
-  FieldGroup.svelte + tests + fixtures
+  FieldGroup.svelte
   link-types-fixtures.ts
-  citation/
-    CitationAutocomplete.svelte (+ test)
-    CitationCreateStage.svelte
-    CitationIdentifyBySearchStage.svelte
-    CitationLocatorStage.svelte
+
+  picker/                            # the user picks from a list of options
+    MonthSelect.svelte               #   a month
+    SearchableSelect.svelte          #   one or many from a fixed set shown in-page
+    entity-select/                   #   one or many catalog entities, searched as you type
+      EntitySelect.svelte
+      EntityMultiSelect.svelte
+      EntityCombobox.svelte
+    internal/
+      ComboboxListbox.svelte         #   shared listbox shell for the pickers above
+
+  citation/                          # add & edit citations
+    CitationAutocomplete.svelte      #   the source-picker flow (opened from a field OR from markdown)
     CitationSearchStage.svelte
-    EditCitationField.svelte (+ test)        # moves in from input/ top level
-    NotesAndCitationsDetails.svelte           # moves in from components/ top level
-    citation-fixtures.ts, citation-types.ts (+ test)
-  dropdown/
-    DropdownHeader.svelte, DropdownItem.svelte, DropdownSearchInput.svelte
-    search-helpers.ts + test
-  markdown/
-    MarkdownTextArea.svelte + tests
-    MarkdownToolbar.svelte + test
-    markdown-shortcuts.ts + test
-  wikilink/
-    WikilinkAutocomplete.svelte + test
-    wikilink-helpers.ts + test
+    CitationIdentifyBySearchStage.svelte
+    CitationCreateStage.svelte
+    CitationLocatorStage.svelte
+    EditCitationField.svelte         #   the flow as a standalone form field
+    NotesAndCitationsDetails.svelte  #   notes + citations form section (record create/edit/delete pages)
+    citation-fixtures.ts, citation-types.ts
+
+  markdown/                          # write rich text
+    MarkdownTextArea.svelte
+    MarkdownToolbar.svelte
+    markdown-shortcuts.ts
+    wikilink/                        # insert [[wikilinks]] while writing (a markdown-only feature)
+      WikilinkAutocomplete.svelte
+      wikilink-helpers.ts
+
+  internal/                          # shared plumbing — no user-facing role of its own
+    DropdownHeader.svelte            #   dropdown chrome shared by the citation stages & wikilink
+    DropdownItem.svelte
+    DropdownSearchInput.svelte
+    search-helpers.ts                #   createDebouncedSearch — used by citation, wikilink & entity-select
 ```
 
-Base field primitives (TextField, NumberField, etc.) stay flat — they're the noisy majority and pulling them into a `fields/` subfolder would just add a layer without value. `Fieldset` and `FieldGroup` are input-layout primitives (the wrapper you put a control in, used in and out of forms); they stay flat alongside the controls rather than getting their own `form/` folder — two files don't warrant the split, and `FieldGroup` isn't form-specific anyway. Each subsystem subfolder (`citation/`, `dropdown/`, `markdown/`, `wikilink/`) groups input UI for one well-defined system.
+Basic controls (TextField, NumberField, etc.) stay flat — they're the noisy majority and a `fields/` subfolder would just add a layer without value. `Fieldset` and `FieldGroup` are layout primitives (the wrapper you put a control in, used in and out of forms); they stay flat too.
 
-**Principle:** `input/` is for input components, organized by subsystem where one exists. Top-level subsystem folders (`markdown/`, `provenance/`) hold display-side UI for those same subsystems. The input/display distinction is real and stays.
+Everything else is grouped by **what the user is doing** — the role a control plays, not its implementation. `MonthSelect` (native `<select>`) and `SearchableSelect` (filtered combobox) are both pickers; `TagInput` looks adjacent but isn't — you type values, there's no list — so it stays with the basic controls. Grouping by role keeps controls findable and sits related ones together before they share code, surfacing convergence candidates the flat layout hid.
 
-Add `input/README.md`:
+`internal/` holds shared plumbing and lives at the lowest common ancestor of its consumers. `ComboboxListbox` is used only by the pickers → `picker/internal/`. The dropdown chrome and `createDebouncedSearch` span citation, wikilink and entity-select → `input/internal/`. Consumers never reach into a sibling's `internal/`. (`formatCitationResult` moves out of `search-helpers.ts` into `citation/` — it's citation-specific, not plumbing.)
 
-```markdown
-This folder contains input components. Base fields live at the top level; each input subsystem (`citation/`, `dropdown/`, `markdown/`, `wikilink/`) in a subfolder.
-
-Display components (such as for markdown and citations) live elsewhere.
-```
+`citation/` is a peer folder rather than nested under `markdown/` because its flow is launched from **both** a standalone form field (`EditCitationField`) and the wikilink overlay (`[[cite:` redirect); `wikilink/` nests under `markdown/` because inserting `[[wikilinks]]` is purely a markdown-editing feature with no other consumer.
 
 ### `pages/` - DONE ✅
 
