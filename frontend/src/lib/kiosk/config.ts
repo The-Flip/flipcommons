@@ -1,6 +1,9 @@
 /**
- * Kiosk cookie helpers. Browser-only; do not import from server load
- * functions (which read cookies via SvelteKit's `cookies` event helper).
+ * Kiosk cookie helpers. The write/read *helpers* are browser-only (they
+ * touch `document.cookie`); do not call them from server load functions
+ * (which read cookies via SvelteKit's `cookies` event helper). The
+ * `MODE_COOKIE_*` name/value string constants carry no DOM access and are
+ * safe to import server-side (e.g. the SSR `cacheControlHandle` hook).
  *
  * Three cookies coordinate kiosk mode:
  * - `mode=kiosk` — gates kiosk-mode behavior site-wide.
@@ -18,8 +21,8 @@
  *   device fixes it.
  */
 
-const MODE_COOKIE_NAME = 'mode';
-const MODE_COOKIE_VALUE = 'kiosk';
+export const MODE_COOKIE_NAME = 'mode';
+export const MODE_COOKIE_VALUE = 'kiosk';
 const CONFIG_ID_COOKIE_NAME = 'kioskConfigId';
 const IDLE_SECONDS_COOKIE_NAME = 'kioskIdleSeconds';
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365; // 1 year

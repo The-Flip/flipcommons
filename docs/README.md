@@ -22,8 +22,7 @@ For setup and common commands, start with the repository [README](../README.md).
 
 ## Architecture
 
-- [Architecture.md](Architecture.md) overall Django + SvelteKit system.
-- [WebArchitecture.md](WebArchitecture.md) the web split, same-origin model, API layer, development proxy.
+- [Architecture.md](Architecture.md) overall Django + SvelteKit system, request topology, same-origin model, API layer, and SSR/CSR split.
 - [AppBoundaries.md](AppBoundaries.md) Django app responsibilities and dependency rules.
 - [ApiDesign.md](ApiDesign.md) endpoint design and schema design heuristics.
 - [Authz.md](Authz.md) authorization activities, policy gates, and capability surfaces.
@@ -48,7 +47,6 @@ For setup and common commands, start with the repository [README](../README.md).
 
 - [Typescript.md](Typescript.md) frontend TypeScript conventions.
 - [Svelte.md](Svelte.md) Svelte 5 authoring conventions and rendering strategy.
-- [SSRConversion.md](SSRConversion.md) workflow for converting routes from CSR to SSR.
 - [DetailLayoutPatterns.md](DetailLayoutPatterns.md) detail-page layout patterns.
 - [TestingFrontend.md](TestingFrontend.md) frontend test tiers and DOM test patterns.
 

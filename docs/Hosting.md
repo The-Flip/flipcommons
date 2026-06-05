@@ -1,44 +1,47 @@
-# Deployment on Railway
+# Deployment & Hosting
 
-This site runs as a **single [Railway](https://railway.com/) service**: one Docker container running Caddy, SvelteKit Node SSR, and Django/Gunicorn.
+This document is the reference for how production is hosted, configured and deployed.
 
-This document is the operator-facing reference for production deployment, runtime processes, ports, and troubleshooting.
+For the request-routing diagram and the rest of the runtime picture, see [Architecture.md](Architecture.md#topology).
 
-For browser request flow and the SSR/CSR split, see [WebArchitecture.md](WebArchitecture.md).
+## Services
 
-## Runtime Topology
+### Overview
 
-```text
-Browser ──→ Railway (single Caddy service)
-              │
-              ├─ frontend routes        → SvelteKit Node SSR
-              ├─ /_app/*                → SvelteKit Node SSR
-              ├─ /api/*                 → Django Ninja API
-              ├─ /djadmin/*             → Django Admin
-              └─ /static/*              → Django staticfiles / WhiteNoise
+- [Railway](#railway): hosting web & db
+- [Bunny.net](#bunny-cdn): CDN edge caching
+- [iDrive e2](#idrive-e2): media storage
+- [WorkOS](#workos): authentication
+- [Sentry](#sentry): error monitoring
+- [PostHog](#posthog): analytics
 
-Browser ──→ media.flipcommons.org       → Bunny CDN → iDrive e2 private bucket
-```
+### Railway
 
-### Runtime flow
+Railway hosts the project as two services:
+
+- **Web** — one container running Caddy, SvelteKit Node SSR and Django/Gunicorn (see [Process model](#process-model)). Region: US East (Virginia); see [Geography](#geography).
+- **Postgres** — managed database; Railway injects `DATABASE_URL`.
+  - Point-in-time recovery (PITR) is attached to the Postgres service; it restores the database to any timestamp.
+
+#### Process model
+
+The web container runs three long-lived processes:
+
+- **Caddy** on Railway's public `PORT`
+- **Django/Gunicorn** on `127.0.0.1:8000`
+- **SvelteKit Node SSR** on `127.0.0.1:3000`
+
+The entrypoint is [`scripts/start-production`](../scripts/start-production); it starts all three and keeps the container alive while they are all healthy. Supervision is intentionally simple: there is no in-container restart policy, so if a child process exits the container exits shortly after and Railway restarts it. A deliberate bootstrap-phase choice — simple and fails closed, but not a full supervisor. Stronger hardening later would mean a dedicated supervision layer such as `s6-overlay`.
+
+#### Build & deploy lifecycle
+
+Every push to `main` triggers a build and deploy:
 
 1. **Docker multi-stage build**: Stage 1 installs frontend dependencies and
    builds the SvelteKit Node server. The final image contains the built
    Svelte runtime, Django, and Caddy in one container.
 
-2. **Caddy reverse proxy**: Caddy listens on Railway's public `PORT` and
-   routes `/api/`, `/djadmin/`, and `/static/` to Django on `127.0.0.1:8000`.
-   All other requests are forwarded to SvelteKit SSR on `127.0.0.1:3000`.
-
-3. **WhiteNoise static files**: Django still serves collected static files
-   for admin assets through `/static/`.
-
-4. **Uploaded media serving**: Django writes uploaded media to the configured
-   S3-compatible storage backend. In production, public media URLs point at
-   Bunny CDN on `media.flipcommons.org`, which pulls from the private iDrive e2
-   bucket. Django is not in the production media-serving path.
-
-5. **Pre-deploy checks and migrations**: Railway's `preDeployCommand`
+2. **Pre-deploy checks and migrations**: Railway's `preDeployCommand`
    runs `manage.py check --deploy && manage.py migrate` before the new
    container accepts traffic. `check --deploy` surfaces production-only
    system checks (SSL redirect, `core.W001` for missing
@@ -55,55 +58,127 @@ Browser ──→ media.flipcommons.org       → Bunny CDN → iDrive e2 privat
    [DeployChecks.md](DeployChecks.md) for the preDeploy phase (Django
    system checks).
 
+The contributor-facing deploy workflow (branch → PR → merge → live) and rollback are in [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+#### Deploy version stamping
+
+The SvelteKit build reads `RAILWAY_GIT_COMMIT_SHA` and writes it into `version.json`; the SPA polls that file hourly and, on a detected change, swaps the next client-side navigation for a full page reload. That's how an open browser tab picks up new JS (and drops in-memory caches) after a deploy without disrupting the user mid-task.
+
+Railway auto-injects `RAILWAY_GIT_COMMIT_SHA` as a Docker build arg for any deploy triggered from GitHub — no service-side configuration required, just the `ARG RAILWAY_GIT_COMMIT_SHA` declaration in the [Dockerfile](../Dockerfile). Outside Railway (local `docker build`), the arg falls back to `dev` and version polling is disabled. The `version.json` in the built image (`/app/frontend_runtime/build/client/_app/version.json`) is the ground truth for which SHA was stamped.
+
+#### Provisioning a new Railway environment
+
+The site already runs as a single Railway service; you only need this to stand up a fresh environment (staging, disaster recovery):
+
+1. Create a new evironment in Railway
+2. Add a **Postgres** plugin; Railway sets `DATABASE_URL` automatically.
+3. Set the environment variables above.
+4. Connect a branch of the GitHub repo — Railway auto-detects the `Dockerfile` via `railway.toml`.
+5. The environment should automatically deploy when you connect the branch.
+6. Grant the first admin: sign in through WorkOS to create your user, then run `uv run python manage.py grant_admin you@example.com` in the Railway shell (or via `railway run`). `createsuperuser` can't help — the admin password form is disabled, so it only produces a row that can never sign in.
+
+### Bunny CDN
+
+Bunny runs three pull zones in front of the site:
+
+#### Apex edge cache
+
+Bunny fronts `flipcommons.org` for anonymous SSR HTML caching. Configured to:
+
+- respect origin `Cache-Control`
+- bypass `/api/` and `/djadmin/`
+- bypass any request carrying `sessionid`
+- bypass any request carrying `mode=kiosk`
+
+The origin-side cache contract is described in [Architecture.md](Architecture.md#edge-caching-of-ssr-html). The client-IP and origin-locking prerequisites for fronting the apex are under [Client IP trust](#client-ip-trust).
+
+The apex DNS CNAMEs to the Bunny pull zone rather than Railway, but the domain stays registered on the Railway service so it still routes by `Host`.
+
+#### Static & media CDN
+
+`static.flipcommons.org` fronts Railway's hashed `/_app/immutable/*` assets, fonts and `version.json`; `media.flipcommons.org` fronts the iDrive e2 media bucket. Both respect origin cache headers.
+
+### iDrive e2
+
+S3-compatible object store for uploaded media, in Chicago (see [Geography](#geography)). Django reads and writes it via the `MEDIA_STORAGE_*` env vars; public traffic reaches it through `media.flipcommons.org` (Bunny → iDrive). See [Media.md](Media.md).
+
+### WorkOS
+
+The only login surface — the Django admin password form is disabled. Configured via the `WORKOS_*` env vars. Authentication flow, session model and the authorization contract are in [Authz.md](Authz.md).
+
+### Sentry
+
+We use [Sentry.io](https://sentry.io) for production error monitoring. See [Observability.md](Observability.md) for the contract (what we capture, privacy posture, code wiring).
+
+#### Projects
+
+In Sentry, we have two projects:
+
+- `flipcommons-backend`: Python/Django
+- `flipcommons-frontend`: JavaScript/SvelteKit — both SSR and browser report here
+
+#### Sentry env vars
+
+Local, CI, and test environments leave these unset. The empty-DSN guard at SDK init is the master switch.
+
+- `SENTRY_DSN` — backend runtime. Backend project DSN. Empty = Sentry off (master switch).
+- `PUBLIC_SENTRY_DSN` — frontend SSR + browser runtime. Frontend project DSN. Empty = Sentry off (master switch).
+- `SENTRY_AUTH_TOKEN` — frontend build (Docker `ARG` → `ENV`). Org-scoped, secret. The only Sentry value that's actually secret; DSNs are public-by-design write-only keys. Required for sourcemap upload.
+- `SENTRY_ORG` — frontend build. Org slug. Required for sourcemap upload.
+- `SENTRY_PROJECT` — frontend build. `flipcommons-frontend`. Required for sourcemap upload.
+
+All three `SENTRY_*` build-time vars are declared as `ARG`s in the frontend build stage of the [Dockerfile](../Dockerfile) and `ENV`-promoted before `pnpm build` — multi-stage Docker doesn't inherit host env vars into build stages, and forgetting one silently produces a build with no sourcemaps uploaded.
+
+#### Privacy scrubbing (dashboard)
+
+This part of our [Privacy.md](Privacy.md) contract is manually configured on the Sentry website:
+
+**Advanced Data Scrubbing** (Project Settings → Security & Privacy → Advanced Data Scrubbing). These are part of the privacy contract — without them, emails or IPs interpolated into log messages, or query strings carrying user input, would be stored.
+
+- `[Mask] [@email] from [$string]`
+- `[Mask] [@ip] from [$string]`
+- `[Remove] [$request.query_string]`
+
+#### Alert rules (dashboard)
+
+Mirrored across both projects:
+
+- **New issue** → alert all maintainers
+- **Regression of a resolved issue** → alert all maintainers
+  Default issue assignment: **unassigned**. Either founder may grab an issue.
+
+#### Per-maintainer routing
+
+Each maintainer is an org member with their own destination (email or chat). Adding or removing a maintainer is a single membership change. Production alerts go to all maintainers as co-responders.
+
+#### Sourcemaps
+
+`@sentry/vite-plugin` (wrapped by `sentrySvelteKit`) uploads at build time, tagged with `RAILWAY_GIT_COMMIT_SHA`. The plugin's `sourcemaps.filesToDeleteAfterUpload` is configured explicitly so maps don't ship to browsers (the plugin doesn't delete by default).
+
+### PostHog
+
+Product analytics — pageviews only. Enabled in prod by setting `PUBLIC_POSTHOG_KEY`; an empty key is off (same master-switch pattern as Sentry). Surface area and privacy posture are in [Analytics.md](Analytics.md).
+
 ## Geography
 
 The Flip pinball museum and many editors and end users are in Chicago. Hosting reflects that:
 
-- The Railway-hosted website in Virginia. Railway does not have a Chicago presence.
+- The Railway-hosted website is in Virginia. Railway does not have a Chicago presence.
 - The iDrive e2 media storage is in Chicago to optimize for cold reads through the Bunny.net CDN.
 
-## Process Model
+## Networking
 
-The production container runs three long-lived processes:
+The edge proxy chain is `Browser →(HTTPS)→ Railway edge →(HTTP)→ Caddy →(HTTP loopback)→ Django`, with Bunny outermost in front of the apex. TLS terminates at the edge, so **Caddy is the trust boundary**: it strips attacker-controlled headers, reconstructs the real client IP, and emits edge-only response policy. Django sees plaintext loopback and trusts only what Caddy hands it. The two policies that follow from this:
 
-- **Caddy** on Railway's public `PORT`
-- **Django/Gunicorn** on `127.0.0.1:8000`
-- **SvelteKit Node SSR** on `127.0.0.1:3000`
-
-The entrypoint is [`scripts/start-production`](../scripts/start-production).
-It starts all three processes and keeps the container alive while they are all healthy.
-
-### Current supervision behavior
-
-The supervision model is intentionally simple for now:
-
-- there is no in-container restart policy for Node or Gunicorn
-- if one of the child processes exits, the container exits shortly after
-- Railway is responsible for restarting the container
-
-This is acceptable for the current bootstrap phase because it is simple and fails closed, but it is not a full process supervisor. If the container needs stronger production hardening later, a dedicated supervision layer such as `s6-overlay` would be the next step.
-
-### Route handling examples
-
-| Request                        | Handled by                           |
-| ------------------------------ | ------------------------------------ |
-| `GET /api/models/`             | Django Ninja                         |
-| `GET /djadmin/`                | Django Admin                         |
-| `GET /__health`                | Caddy → SvelteKit readiness endpoint |
-| `GET /titles/medieval-madness` | Caddy → SvelteKit SSR                |
-| `GET /_app/immutable/app.js`   | Caddy → SvelteKit SSR                |
-| `GET /manufacturers/williams`  | Caddy → SvelteKit SSR                |
-| `GET /`                        | Caddy → SvelteKit SSR                |
-
-## Client IP trust
+### Client IP trust
 
 Pre-auth rate limiters (signup flow, etc.) key off the caller's IP. Because Django sits behind two layers of proxy (Railway's edge, then Caddy), `REMOTE_ADDR` is always `127.0.0.1` — the real client IP has to come from a forwarded-header. Getting this right is security-relevant: a wrong choice silently makes IP-keyed rate limits either non-functional (every request shares one bucket) or bypassable (an attacker varies the header to spray buckets).
 
-### Header chain
+#### Header chain
 
 **Railway edge** (before Caddy sees the request):
 
-- Sets `X-Real-IP` to the real client public IP. Client-supplied values are overwritten; not spoofable. Verified empirically by the Client-IP-Trust probe.
+- Sets `X-Real-IP` to the real client public IP. Client-supplied values are overwritten; not spoofable.
 - Sets `X-Forwarded-For` to Railway's rotating internal IP (a `100.64.0.X` CGNAT address whose last octet rotates per request across Railway's internal proxy fabric). Reading this directly would bucket each request from one client into a different bucket.
 - Passes `Forwarded` (RFC 7239) through verbatim — **attacker-controlled** until Caddy strips it.
 
@@ -116,7 +191,7 @@ Pre-auth rate limiters (signup flow, etc.) key off the caller's IP. Because Djan
 
 - Reads `X-Real-IP`. Never reads `X-Forwarded-For` — XFF parsing (left-most vs. right-most, trusted-hop counting) has no failure mode that's safe under upstream drift; `X-Real-IP` fails closed if absent.
 
-### Trust gate (`RATE_LIMIT_TRUST_PROXY_HEADERS`)
+#### Trust gate (`RATE_LIMIT_TRUST_PROXY_HEADERS`)
 
 Django's `_client_ip` only reads proxy headers when `RATE_LIMIT_TRUST_PROXY_HEADERS=true`. The setting defaults to `false`, so dev, tests, and any container without a sanitizing proxy in front key off `REMOTE_ADDR=127.0.0.1` and degrade to "everyone shares one bucket" — observable, fixable, not a security bug.
 
@@ -124,170 +199,115 @@ Django's `_client_ip` only reads proxy headers when `RATE_LIMIT_TRUST_PROXY_HEAD
 
 This is the second fail-closed layer behind the X-Real-IP-only header choice. Both layers protect against the same drift: if the env var rolls back, or a future upstream stops setting `X-Real-IP`, the system degrades to one-shared-bucket rather than silently trusting attacker input.
 
-### When to revisit
+#### Client IP behind the Bunny apex edge cache
 
-- **Moving off Railway, or adding a CDN.** The current scheme relies on Railway's edge to populate `X-Real-IP` and strip client-supplied versions of it. Any infra change to the proxy chain — different host, Cloudflare/Bunny in front, enabling Railway's CDN — invalidates that assumption and likely needs a Caddy `trusted_proxies` block plus a re-verification probe.
+Fronting `flipcommons.org` with the Bunny edge cache adds a **third** proxy hop and makes Bunny the outermost one. Railway's edge then sees Bunny as the immediate client and rebuilds `X-Real-IP` and `X-Forwarded-For` from _its_ view — so both standard headers carry **Bunny's** IP, and the visitor's real IP is absent from them. (Confirmed empirically: through Bunny, `X-Real-IP` is a Bunny edge IP.)
+
+The real client IP is recovered through two Bunny **Edge Rules** that set _request_ headers — custom headers, which Railway forwards to the origin verbatim (unlike the `X-Forwarded-*` headers it rewrites):
+
+- `X-Client-IP` = `%{User.IP}` — the true client IP.
+- `X-Origin-Auth` = `<shared secret>` — proves the request came through Bunny.
+
+Caddy ([Caddyfile](../Caddyfile)) then promotes `X-Client-IP` into `X-Real-IP` **only** when `X-Origin-Auth` matches `ORIGIN_SHARED_SECRET`. So `_client_ip` keeps reading `X-Real-IP`, unchanged — it just receives the true client IP behind Bunny. A direct `*.railway.app` hit carries no valid secret, so its forged `X-Client-IP` is ignored and it's rate-limited on its own (direct) IP — no spoof, no bypass. Verified end-to-end on the pull zone (including spoof attempts) before cutover.
+
+Required config for this path:
+
+- **Bunny:** the two request-header Edge Rules above; **Forward Host Header OFF**, so Bunny forwards the Railway _origin_ host and Railway routes its own permanent `*.up.railway.app` domain — `flipcommons.org` never has to stay a Railway custom domain (Railway routes by `Host`, and a custom domain can de-validate once DNS points at Bunny).
+- **Railway:** `ORIGIN_SHARED_SECRET` set (matching the `X-Origin-Auth` rule); the Railway origin host in `ALLOWED_HOSTS` (Bunny forwards it as the `Host`); `RATE_LIMIT_TRUST_PROXY_HEADERS=true`.
+
+`RATE_LIMIT_TRUST_PROXY_HEADERS` stays the master switch here too: if the secret or the Edge Rules drift, Caddy stops promoting `X-Client-IP` and the system degrades to the one-shared-bucket failure above (now keyed on Bunny's IP).
+
+#### When to revisit
+
+- **Moving off Railway, or adding another CDN hop.** The current scheme relies on Railway's edge to populate `X-Real-IP` and strip client-supplied versions of it (and, behind the apex cache, on the Bunny `X-Client-IP`/`X-Origin-Auth` derivation above). Any further change to the proxy chain — different host, Cloudflare in front, enabling Railway's CDN — invalidates those assumptions and needs a fresh re-derivation plus a re-verification probe.
 - **A new code path reads `X-Forwarded-For`.** Don't. The function in `apps/core/rate_limits.py` is the single sanctioned reader of forwarded client IP. Adding analytics, geoip, or logging that reads XFF reintroduces the parsing-bug class this design deliberately deleted.
 
-## Search-engine indexing
+### HSTS
+
+HTTP Strict Transport Security is sticky: once a browser sees `Strict-Transport-Security: max-age=N`, it refuses plain HTTP to that host for `N` seconds — even if the header later disappears or shortens. A wrong `max-age` locks users out for the duration, so we ratchet it up deliberately.
+
+#### Emitted by Caddy, not Django
+
+The header lives in the `header { ... }` block in [`Caddyfile`](../Caddyfile), not in Django settings.
+
+Django can't emit it usefully in this topology: it sees plaintext loopback HTTP, so `SecurityMiddleware` only adds HSTS when `request.is_secure()` returns `True`, which it doesn't here. Bridging that gap would require setting `SECURE_PROXY_SSL_HEADER` — but enabling that without `SECURE_SSL_REDIRECT` is a footgun, and turning on `SECURE_SSL_REDIRECT` would loop on internal callers (SSR, health checks) that legitimately reach Django over plain loopback HTTP. Caddy fronts the HTTPS edge and has no such gate, so it's the right place.
+
+The Django deploy warnings `security.W004`, `W005` and `W021` are silenced via `SILENCED_SYSTEM_CHECKS` in `config/settings.py` because Caddy owns this policy. A pytest test (`backend/tests/test_caddyfile_hsts.py`) guards against accidental deletion or weakening of the directive.
+
+#### Apex policy only — subdomains opt in individually
+
+`includeSubDomains` is intentionally **not** set. The apex policy covers `flipcommons.org` itself; each subdomain owns its own HSTS via its own server. This preserves the option of adding a future subdomain (a SaaS-hosted status page, a LAN-local device, anything we can't foresee) that's HTTPS-capable but for whatever reason can't or shouldn't emit HSTS on day 1.
+
+In practice, modern providers cover their own subdomains: `media.flipcommons.org` already gets `Strict-Transport-Security: max-age=31536000; includeSubDomains` from iDrive (through Bunny), and any future SaaS-hosted subdomain will do the same. So the cost of omitting `includeSubDomains` is narrow — it only matters for an HTTPS-capable subdomain that emits no HSTS of its own.
+
+#### Rollout sequence
+
+Three steps, not four — the conventional 1-week intermediate buys ceremony, not signal:
+
+1. **`max-age=60`** — header-emission check. Too short to be a soak; just confirms the header is emitted (`curl -sI https://flipcommons.org | grep -i strict-transport`, and the same for `www`).
+2. **`max-age=86400`** (1 day) — current. The real soak: a day of sticky HSTS under real traffic. Anything that breaks (an HTTP-only apex resource, a redirect loop) surfaces here, with lockout bounded at 24h.
+3. **`max-age=31536000`** (1 year) — destination. Edit the `Strict-Transport-Security` line in `Caddyfile`, commit, deploy.
+
+Verify after each step: response includes `Strict-Transport-Security: max-age=N` (no `includeSubDomains`, by design).
+
+#### Preload list — intentionally never enabled
+
+Submission to [hstspreload.org](https://hstspreload.org/) is irreversible regardless of `max-age` (browsers ship the domain hardcoded; removal takes months) and requires `includeSubDomains`, which we've ruled out for the same flexibility reason above. The two are inseparable: if we're not committing to "every subdomain HTTPS-only forever," preload is unreachable.
+
+## Configuration
+
+Set these in the Railway web service dashboard. `DATABASE_URL`, `PORT`, and the `RAILWAY_*` build/runtime vars are injected by Railway automatically (Caddy listens on `PORT`).
+
+### Environment variables
+
+#### Core
+
+- `SECRET_KEY` — random string: `python -c "import secrets; print(secrets.token_urlsafe(50))"`
+- `DEBUG` — `false`
+- `ALLOWED_HOSTS` — comma-separated hosts, e.g. `flipcommons.org,www.flipcommons.org`. Also include the Railway origin host Bunny forwards (`<service>.up.railway.app`).
+- `CSRF_TRUSTED_ORIGINS` — full origins, e.g. `https://flipcommons.org,https://www.flipcommons.org`.
+- `SITE_ORIGIN` — public origin, no trailing slash, e.g. `https://flipcommons.org`. Baked into prerendered canonical URLs and OG tags; consumed by `/sitemap.xml` and `robots.txt`.
+- `INTERNAL_API_BASE_URL` — base URL SvelteKit SSR uses to reach Django. The image defaults it to `http://127.0.0.1:8000` (Gunicorn loopback); keep that unless the internal address changes.
+
+#### Auth
+
+WorkOS is the only login surface.
+
+- `WORKOS_API_KEY` — WorkOS secret API key.
+- `WORKOS_CLIENT_ID` — WorkOS client ID.
+- `WORKOS_REDIRECT_URI` — OAuth callback URL, e.g. `https://flipcommons.org/api/auth/callback/`.
+
+#### Media storage
+
+Set `MEDIA_STORAGE_BUCKET` to serve media from object storage (iDrive e2 behind the Bunny media CDN); omit it to fall back to local `/media/`. See [Media.md](Media.md).
+
+- `MEDIA_STORAGE_BUCKET` — bucket name. Its presence switches storage from local to S3-compatible.
+- `MEDIA_STORAGE_ENDPOINT` — S3-compatible endpoint URL (iDrive e2).
+- `MEDIA_STORAGE_ACCESS_KEY` — access key.
+- `MEDIA_STORAGE_SECRET_KEY` — secret key.
+- `MEDIA_STORAGE_REGION` — optional; defaults to `auto`.
+- `MEDIA_PUBLIC_BASE_URL` — public media base URL, trailing slash required, e.g. `https://media.flipcommons.org/`. Defaults to `/media/`.
+
+#### Edge & rate limiting
+
+- `RATE_LIMIT_TRUST_PROXY_HEADERS` — `true`, required in production. See [Client IP trust](#client-ip-trust).
+- `ORIGIN_SHARED_SECRET` — secret matching the Bunny `X-Origin-Auth` Edge Rule; lets Caddy trust the Bunny-forwarded `X-Client-IP`. See [Client IP trust](#client-ip-trust).
+
+#### SEO
+
+- `ALLOW_SEARCH_ENGINE_INDEXING` — `true` on prod, `false` elsewhere. See [Search-engine indexing](#search-engine-indexing).
+
+Sentry and PostHog vars live in their service sections: [Sentry](#sentry) and [PostHog](#posthog).
+
+### Server-side cache
+
+Per-user rate limits ([backend/apps/provenance/rate_limits.py](../backend/apps/provenance/rate_limits.py)) use `django.core.cache` as a shared store for sliding-window timestamps (bucket semantics in [Rate Limits](RecordLifecycle.md#rate-limits)). The backend is **file-based** (`FileBasedCache` under `BASE_DIR/cache`), so every Gunicorn worker and management command shares one store through the filesystem — no external cache service required. A per-process backend like `LocMemCache` would break this: each worker would keep its own window, letting a user send `N × limit` requests before any single worker decided to 429.
+
+### Search-engine indexing
 
 `ALLOW_SEARCH_ENGINE_INDEXING` gates SvelteKit's `robots.txt` body. Set `"true"` on prod, `"false"` on every other deployed service. Only the literal `"true"` enables indexing; anything else is off.
 
 `check --deploy` refuses any deploy where the var is unset (`core.E301`) or not exactly `"true"`/`"false"` (`core.E302`) — so a new Railway service needs the var set before its first deploy.
-
-## Setup
-
-### 1. Create Railway project
-
-In your Railway workspace, create a new project and connect the GitHub repo.
-Railway auto-detects the `Dockerfile` via `railway.toml`.
-
-Add a **Postgres** plugin to the project. Railway sets `DATABASE_URL`
-automatically via a reference variable.
-
-### 2. Set environment variables
-
-In the Railway service dashboard:
-
-| Variable                         | Value                                                                                                                                                                                      |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SECRET_KEY`                     | Random string: `python -c "import secrets; print(secrets.token_urlsafe(50))"`                                                                                                              |
-| `DEBUG`                          | `false`                                                                                                                                                                                    |
-| `ALLOWED_HOSTS`                  | Comma-separated hosts, e.g. `flipcommons.org,www.flipcommons.org`                                                                                                                          |
-| `CSRF_TRUSTED_ORIGINS`           | Full origins, e.g. `https://flipcommons.org,https://www.flipcommons.org`                                                                                                                   |
-| `INTERNAL_API_BASE_URL`          | `http://127.0.0.1:8000`                                                                                                                                                                    |
-| `RATE_LIMIT_TRUST_PROXY_HEADERS` | `true` — required in production. See [Client IP trust](#client-ip-trust).                                                                                                                  |
-| `ALLOW_SEARCH_ENGINE_INDEXING`   | `true` on prod, `false` elsewhere. See [Search-engine indexing](#search-engine-indexing).                                                                                                  |
-| `SITE_ORIGIN`                    | Public origin, no trailing slash, e.g. `https://flipcommons.org`. Build arg + runtime var; baked into prerendered canonical URLs and OG tags, consumed by `/sitemap.xml` and `robots.txt`. |
-
-`DATABASE_URL` and `PORT` are set automatically by Railway.
-
-### Runtime environment notes
-
-- `PORT` is the public port Railway assigns to the container. Caddy listens on this port.
-- `INTERNAL_API_BASE_URL` is the base URL SvelteKit SSR uses to call Django from server-side routes. In the current production topology it should point directly at Gunicorn on `http://127.0.0.1:8000` so SSR does not bounce back through the public Caddy origin.
-- The Docker image sets `INTERNAL_API_BASE_URL=http://127.0.0.1:8000` by default. You should keep that value unless the internal Django address changes.
-
-### Cache backend — required for shared state across workers
-
-Per-user rate limits ([backend/apps/provenance/rate_limits.py](../backend/apps/provenance/rate_limits.py)) use `django.core.cache` as the shared store for sliding-window timestamps. Lifecycle buckets and action semantics are described in [Rate Limits](RecordLifecycle.md#rate-limits). In a multi-worker deployment (Gunicorn with more than one worker), the default `LocMemCache` backend is **per-process** — each worker keeps its own window, and a user can effectively send `N × limit` requests before any one worker decides to 429. Any other feature that starts using the cache for cross-request state has the same failure mode.
-
-Use a shared backend in production. On Railway, the simplest options are:
-
-- Redis (`django-redis`), added as a Railway plugin and wired up via `CACHES` in `config/settings.py`.
-- Postgres-backed cache (`django.core.cache.backends.db.DatabaseCache`) — slower but requires no new infra since we already have Postgres.
-
-Dev + tests run fine with `LocMemCache` because there's only one process. Document the limit-per-worker behavior if you ever ship multi-worker without a shared backend.
-
-### Stamping the deploy version
-
-The SvelteKit build reads `RAILWAY_GIT_COMMIT_SHA` and writes it into `version.json`; the SPA polls that file hourly and, on a detected change, swaps the next client-side navigation for a full page reload. That's how an open browser tab picks up new JS (and drops in-memory caches) after a deploy without disrupting the user mid-task.
-
-Railway auto-injects `RAILWAY_GIT_COMMIT_SHA` as a Docker build arg for any deploy triggered from GitHub — no service-side configuration required, just the `ARG RAILWAY_GIT_COMMIT_SHA` declaration in the [Dockerfile](../Dockerfile). Outside Railway (local `docker build`), the arg falls back to `dev` and version polling is disabled. The `version.json` in the built image (`/app/frontend_runtime/build/client/_app/version.json`) is the ground truth for which SHA was stamped.
-
-### 3. Deploy
-
-Push to `main`. Railway builds the Docker image and deploys. The
-`preDeployCommand` in `railway.toml` runs `manage.py check --deploy`
-followed by `manage.py migrate` before the new container starts
-accepting traffic.
-
-### 4. Grant admin access (one-time)
-
-The Django admin password form is disabled — WorkOS is the only login surface — so `createsuperuser` produces a row that can never sign in. Instead, open the deployed site and sign in via WorkOS to create your user, then promote it in the Railway service shell (or via `railway run`):
-
-```bash
-uv run python manage.py grant_admin you@example.com
-```
-
-## Custom domain
-
-1. Add a custom domain in Railway project settings
-2. Update `ALLOWED_HOSTS` to include the domain
-3. Update `CSRF_TRUSTED_ORIGINS` to include `https://yourdomain.com`
-
-## HSTS
-
-HTTP Strict Transport Security is sticky: once a browser sees `Strict-Transport-Security: max-age=N`, it refuses plain HTTP to that host for `N` seconds — even if the header later disappears or shortens. A wrong `max-age` locks users out for the duration, so we ratchet it up deliberately.
-
-### Emitted by Caddy, not Django
-
-The header lives in the `header { ... }` block in [`Caddyfile`](../Caddyfile), not in Django settings.
-
-Django can't emit it usefully in this topology. The request path is `Browser →(HTTPS)→ Railway edge →(HTTP)→ Caddy →(HTTP loopback)→ Django`. Django sees plaintext HTTP; `SecurityMiddleware` only adds HSTS when `request.is_secure()` returns `True`, which it doesn't here. Bridging that gap would require setting `SECURE_PROXY_SSL_HEADER` — but enabling that without `SECURE_SSL_REDIRECT` is a footgun, and turning on `SECURE_SSL_REDIRECT` would loop on internal callers (SSR, health checks) that legitimately reach Django over plain loopback HTTP. Caddy fronts the HTTPS edge and has no such gate, so it's the right place.
-
-The Django deploy warnings `security.W004`, `W005` and `W021` are silenced via `SILENCED_SYSTEM_CHECKS` in `config/settings.py` because Caddy owns this policy. A pytest test (`backend/tests/test_caddyfile_hsts.py`) guards against accidental deletion or weakening of the directive.
-
-### Apex policy only — subdomains opt in individually
-
-`includeSubDomains` is intentionally **not** set. The apex policy covers `flipcommons.org` itself; each subdomain owns its own HSTS via its own server. This preserves the option of adding a future subdomain (a SaaS-hosted status page, a LAN-local device, anything we can't foresee) that's HTTPS-capable but for whatever reason can't or shouldn't emit HSTS on day 1.
-
-In practice, modern providers cover their own subdomains. `media.flipcommons.org` already gets `Strict-Transport-Security: max-age=31536000; includeSubDomains` from iDrive (verified 2026-05 via `curl -sI https://media.flipcommons.org/robots.txt`), passed through Bunny. Any future SaaS-hosted subdomain (Statuspage, ReadMe, etc.) will do the same via its provider. So the "loss" from not setting `includeSubDomains` on the apex is narrow: it only matters for subdomains that are HTTPS-capable but emit no HSTS of their own, which is increasingly rare.
-
-### Rollout sequence
-
-Three steps, not four — the conventional 1-week intermediate buys ceremony, not signal:
-
-1. **`max-age=60`** — header-emission check. The 60s window is too short to be a real soak; this step just verifies the header is emitted correctly (`curl -sI https://flipcommons.org | grep -i strict-transport` and the same for `https://www.flipcommons.org`). No need to wait long.
-2. **`max-age=86400`** (1 day) — current. The actual soak: a day of real user traffic with sticky HSTS. If anything is going to break (an HTTP-only resource on the apex, a redirect loop) it surfaces here. Recovery cost is bounded at 24h of lockout for affected users.
-3. **`max-age=31536000`** (1 year) — destination value. Edit the `Strict-Transport-Security` line in `Caddyfile`, commit, deploy.
-
-Verify after each step: response includes `Strict-Transport-Security: max-age=N` (no `includeSubDomains`, by design).
-
-### Preload list — intentionally never enabled
-
-Submission to [hstspreload.org](https://hstspreload.org/) is irreversible regardless of `max-age` (browsers ship the domain hardcoded; removal takes months) and requires `includeSubDomains`, which we've ruled out for the same flexibility reason above. The two are inseparable: if we're not committing to "every subdomain HTTPS-only forever," preload is unreachable.
-
-## Sentry
-
-We use [Sentry.io](https://sentry.io) for production error monitoring. See [Observability.md](Observability.md) for the contract (what we capture, privacy posture, code wiring).
-
-### Sentry Projects
-
-In Sentry, we have two projects:
-
-- `flipcommons-backend`: Python/Django
-- `flipcommons-frontend`: JavaScript/SvelteKit — both SSR and browser report here
-
-### Sentry env vars on Railway
-
-Local, CI, and test environments leave these unset. The empty-DSN guard at SDK init is the master switch.
-
-- `SENTRY_DSN` — backend runtime. Backend project DSN. Empty = Sentry off (master switch).
-- `PUBLIC_SENTRY_DSN` — frontend SSR + browser runtime. Frontend project DSN. Empty = Sentry off (master switch).
-- `SENTRY_AUTH_TOKEN` — frontend build (Docker `ARG` → `ENV`). Org-scoped, secret. The only Sentry value that's actually secret; DSNs are public-by-design write-only keys. Required for sourcemap upload.
-- `SENTRY_ORG` — frontend build. Org slug. Required for sourcemap upload.
-- `SENTRY_PROJECT` — frontend build. `flipcommons-frontend`. Required for sourcemap upload.
-
-All three `SENTRY_*` build-time vars are declared as `ARG`s in the frontend build stage of the [Dockerfile](../Dockerfile) and `ENV`-promoted before `pnpm build` — multi-stage Docker doesn't inherit host env vars into build stages, and forgetting one silently produces a build with no sourcemaps uploaded.
-
-### Sentry dashboard config
-
-#### Privacy config
-
-This part of our [Privacy.md](Privacy.md) contract is manually configured on the Sentry website:
-
-**Advanced Data Scrubbing** (Project Settings → Security & Privacy → Advanced Data Scrubbing). These are part of the privacy contract — without them, emails or IPs interpolated into log messages, or query strings carrying user input, would be stored.
-
-- `[Mask] [@email] from [$string]`
-- `[Mask] [@ip] from [$string]`
-- `[Remove] [$request.query_string]`
-
-#### Alert rules\*\*
-
-Mirrored across both projects:
-
-- **New issue** → alert all maintainers
-- **Regression of a resolved issue** → alert all maintainers
-  Default issue assignment: **unassigned**. Either founder may grab an issue.
-
-### Per-maintainer routing
-
-Each maintainer is an org member with their own destination (email or chat). Adding or removing a maintainer is a single membership change. Production alerts go to all maintainers as co-responders.
-
-### Sourcemaps
-
-`@sentry/vite-plugin` (wrapped by `sentrySvelteKit`) uploads at build time, tagged with `RAILWAY_GIT_COMMIT_SHA`. The plugin's `sourcemaps.filesToDeleteAfterUpload` is configured explicitly so maps don't ship to browsers (the plugin doesn't delete by default).
 
 ## Troubleshooting
 

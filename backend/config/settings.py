@@ -31,6 +31,15 @@ for _host in ("localhost", "127.0.0.1"):
     if _host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(_host)
 
+# Railway injects RAILWAY_PUBLIC_DOMAIN as the service's `*.up.railway.app`
+# host. Allow it: once the apex is fronted by the Bunny edge cache, the pull
+# zone forwards the *origin* host (not the client host), so requests reaching
+# Django through Bunny arrive with this Host. Unset off-Railway, so dev/CI are
+# unaffected.
+_railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
+if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_railway_domain)
+
 INSTALLED_APPS = [
     "apps.core.admin_apps.FlipAdminConfig",  # replaces "django.contrib.admin" — disables admin password login
     "django.contrib.auth",
@@ -59,6 +68,9 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
+    # Must follow CsrfViewMiddleware: that middleware's process_request
+    # populates CSRF_COOKIE, which NinjaCsrfMiddleware then validates against
+    # the submitted token for unsafe-method /api/ requests.
     "apps.core.middleware.NinjaCsrfMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "apps.core.middleware.SentryScopeMiddleware",

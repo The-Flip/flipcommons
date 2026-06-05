@@ -9,6 +9,21 @@ handle @www {
 # values through verbatim, so it's attacker-controlled.
 request_header -Forwarded
 
+# Real client IP behind the Bunny apex edge cache. When Bunny fronts the
+# apex, Railway's edge rebuilds X-Forwarded-For and X-Real-IP from its
+# immediate peer (Bunny), so the true client IP is lost from the standard
+# headers. The Bunny pull zone re-injects it via an Edge Rule
+# (X-Client-IP=%{User.IP}), paired with a shared-secret X-Origin-Auth header —
+# both custom headers, which Railway forwards verbatim. We promote
+# X-Client-IP to X-Real-IP (the rate limiter's single sanctioned reader) ONLY
+# when X-Origin-Auth matches the secret, so a direct *.railway.app hit can't
+# spoof it. Pre-cutover direct traffic carries no X-Origin-Auth, so nothing
+# changes for it. ORIGIN_SHARED_SECRET is a deployment contract (like
+# RATE_LIMIT_TRUST_PROXY_HEADERS); the sentinel default never matches real
+# traffic when the env is unset.
+@trusted_cdn header X-Origin-Auth {$ORIGIN_SHARED_SECRET:__origin_secret_unset__}
+request_header @trusted_cdn X-Real-IP {http.request.header.X-Client-IP}
+
 # Response-side security headers. CSP is owned by SvelteKit
 # (svelte.config.js `kit.csp`) because it needs a per-page hash/nonce
 # for the inline hydration script — Caddy can't synthesize that. Django
