@@ -31,15 +31,12 @@ class FirstModelSummary(NamedTuple):
 
 
 def first_model_queryset() -> QuerySet[MachineModel]:
-    """The "first model" rule as a queryset: earliest active non-variant model
-    by ``(year, name)``, with its manufacturer joined. Wrap in a ``Prefetch``
+    """:meth:`MachineModel.first_model_candidates` (catalog's single source for the
+    "first model" rule) with its manufacturer joined. Wrap in a ``Prefetch``
     against ``…title__machine_models`` so :func:`first_model_summary` can read
     ``title.machine_models.all()`` without an N+1."""
-    return (
-        MachineModel.objects.active()
-        .filter(variant_of__isnull=True)
-        .select_related("corporate_entity__manufacturer")
-        .order_by("year", "name")
+    return MachineModel.first_model_candidates().select_related(
+        "corporate_entity__manufacturer"
     )
 
 

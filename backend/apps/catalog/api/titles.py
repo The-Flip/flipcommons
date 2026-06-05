@@ -595,8 +595,7 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
 def _title_models_prefetch() -> Prefetch[str, Any, str]:
     return Prefetch(
         "machine_models",
-        queryset=MachineModel.objects.active()
-        .filter(variant_of__isnull=True)
+        queryset=MachineModel.first_model_candidates()
         .select_related(
             "corporate_entity__manufacturer",
             "technology_generation",
@@ -624,8 +623,7 @@ def _title_models_prefetch() -> Prefetch[str, Any, str]:
             "credits__role",
             "variants",
             media_prefetch(),
-        )
-        .order_by("year", "name"),
+        ),
     )
 
 
@@ -664,11 +662,9 @@ def _card_models_prefetch() -> Prefetch[str, Any, str]:
     )
     return Prefetch(
         "machine_models",
-        queryset=MachineModel.objects.active()
-        .filter(variant_of__isnull=True)
+        queryset=MachineModel.first_model_candidates()
         .select_related("corporate_entity__manufacturer")
-        .prefetch_related(primary_media)
-        .order_by("year", "name"),
+        .prefetch_related(primary_media),
         to_attr="card_models",
     )
 

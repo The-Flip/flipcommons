@@ -168,20 +168,12 @@ class Title(
         ``Subquery`` / ``annotate()`` over a ``Title`` queryset; the autocomplete
         sublabel and ``_title_facets`` both read from it.
 
-        Canonical for the *subquery/annotation* uses only. The same
-        ``variant_of__isnull=True`` + ``order_by("year", "name")`` rule is also
-        expressed by the card/detail read paths (``_title_models_prefetch`` /
-        ``_card_models_prefetch`` in ``api/titles.py``) via ``Prefetch``, which
-        can't correlate and so restate it inline — a change to the rule must
-        touch those too.
+        The identity/order rule itself is single-sourced in
+        :meth:`MachineModel.first_model_candidates`; this just correlates it.
         """
         from .machine_model import MachineModel
 
-        return (
-            MachineModel.objects.filter(title=OuterRef("pk"), variant_of__isnull=True)
-            .active()
-            .order_by("year", "name")
-        )
+        return MachineModel.first_model_candidates().filter(title=OuterRef("pk"))
 
     @classmethod
     def autocomplete_annotations(cls) -> Mapping[str, Combinable]:

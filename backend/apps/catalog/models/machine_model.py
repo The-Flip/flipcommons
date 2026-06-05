@@ -385,6 +385,23 @@ class MachineModel(
         ]
 
     @classmethod
+    def first_model_candidates(cls) -> models.QuerySet[MachineModel]:
+        """The "first model" rule, uncorrelated: a title's active, non-variant
+        models, earliest-first by ``(year, name)``.
+
+        Single source for that identity/order rule. Callers layer their own
+        ``select_related`` / ``prefetch_related`` for their read shape, and
+        :meth:`Title.first_model_subquery` correlates it with
+        ``title=OuterRef("pk")``. Keeping it in one place stops the subquery, the
+        title/card prefetches and the kiosk typeahead from drifting apart.
+        """
+        return (
+            cls.objects.active()
+            .filter(variant_of__isnull=True)
+            .order_by("year", "name")
+        )
+
+    @classmethod
     def non_canonical_detail_slugs(cls) -> Iterable[str]:
         # Single-Model-Title rule (docs/SingleModelTitles.md): when a Title
         # has exactly one active MachineModel, the UI collapses to the Model
