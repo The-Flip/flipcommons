@@ -7,6 +7,7 @@ from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
 from ninja.security import django_auth
+from pydantic import Field
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -42,11 +43,20 @@ from .schemas import (
 
 
 class GameplayFeatureListItemSchema(Schema):
-    name: str
-    slug: str
-    aliases: list[str] = []
-    title_count: int = 0
-    parent_slugs: list[str] = []
+    """A gameplay feature in list results."""
+
+    name: str = Field(description="The feature's display name.")
+    slug: str = Field(description="The feature's URL slug.")
+    aliases: list[str] = Field(
+        [], description="Alternative names this feature is also known by."
+    )
+    title_count: int = Field(
+        0,
+        description="Number of titles with this feature, including its sub-features.",
+    )
+    parent_slugs: list[str] = Field(
+        [], description="Slugs of this feature's parent features in the hierarchy."
+    )
 
 
 class GameplayFeatureListSchema(Schema):

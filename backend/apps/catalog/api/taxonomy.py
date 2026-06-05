@@ -13,6 +13,7 @@ from ninja import Router, Schema
 from ninja.decorators import decorate_view
 from ninja.params.functions import Path as PathParam
 from ninja.security import django_auth
+from pydantic import Field
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -63,21 +64,35 @@ from .schemas import (
 
 
 class TaxonomySchema(CatalogDetailSchema):
-    slug: str
-    display_order: int
-    aliases: list[str] = []
+    """A catalog taxonomy entity (cabinet style, tag, reward type, …)."""
+
+    slug: str = Field(description="The entity's URL slug.")
+    display_order: int = Field(
+        description="Editorial sort weight; lower values sort first."
+    )
+    aliases: list[str] = Field(
+        [], description="Alternative names this entity is also known by."
+    )
 
 
 class TaxonomyWithTitleCountSchema(TaxonomySchema):
-    title_count: int = 0
+    """A taxonomy entity plus the number of titles associated with it."""
+
+    title_count: int = Field(
+        0, description="Number of titles associated with this entity."
+    )
 
 
 class DisplayTypeListItemSchema(TaxonomyWithTitleCountSchema):
-    subtypes: list[TaxonomyWithTitleCountSchema] = []
+    subtypes: list[TaxonomyWithTitleCountSchema] = Field(
+        [], description="This display type's subtypes."
+    )
 
 
 class TechnologyGenerationListItemSchema(TaxonomyWithTitleCountSchema):
-    subgenerations: list[TaxonomyWithTitleCountSchema] = []
+    subgenerations: list[TaxonomyWithTitleCountSchema] = Field(
+        [], description="This technology generation's subgenerations."
+    )
 
 
 # The two single-parent subtaxonomies expose their parent as a ref so the
@@ -779,7 +794,11 @@ def patch_tag(
 
 
 class CreditRoleDetailSchema(TaxonomySchema):
-    people: list[PersonCardSchema] = []
+    """A credit role plus the people credited in it."""
+
+    people: list[PersonCardSchema] = Field(
+        [], description="People credited in this role."
+    )
 
 
 credit_roles_router = Router(tags=["credit-roles"])

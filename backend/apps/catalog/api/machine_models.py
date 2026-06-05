@@ -109,15 +109,17 @@ from .soft_delete import (
 
 
 class ModelListItemSchema(Schema):
-    name: str
-    slug: str
-    manufacturer: EntityRef | None = None
-    year: int | None = None
-    technology_generation: EntityRef | None = None
-    display_type: EntityRef | None = None
-    ipdb_id: int | None = None
-    themes: list[EntityRef] = []
-    thumbnail_url: str | None = None
+    """A machine model in list results."""
+
+    name: str = Field(description="The model's display name.")
+    slug: str = Field(description="The model's URL slug.")
+    manufacturer: EntityRef | None = Field(
+        None, description="The model's manufacturer."
+    )
+    year: int | None = Field(None, description="Release year, if known.")
+    thumbnail_url: str | None = Field(
+        None, description="URL of a thumbnail image, if available."
+    )
 
 
 class ModelVariantSchema(Schema):
@@ -204,12 +206,9 @@ def _build_model_list_qs(
         MachineModel.objects.active()
         .select_related(
             "corporate_entity__manufacturer",
-            "technology_generation",
-            "display_type",
             "title",
         )
         .prefetch_related(
-            "themes",
             Prefetch(
                 "entity_media",
                 queryset=EntityMedia.objects.filter(
@@ -277,27 +276,11 @@ def _serialize_model_list(
         if pm.corporate_entity and pm.corporate_entity.manufacturer
         else None
     )
-    # Note: technology_subgeneration not included in list view
     return ModelListItemSchema(
         name=pm.name,
         slug=pm.slug,
         manufacturer=EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None,
         year=pm.year,
-        technology_generation=(
-            EntityRef(
-                name=pm.technology_generation.name,
-                public_id=pm.technology_generation.public_id,
-            )
-            if pm.technology_generation
-            else None
-        ),
-        display_type=(
-            EntityRef(name=pm.display_type.name, public_id=pm.display_type.public_id)
-            if pm.display_type
-            else None
-        ),
-        ipdb_id=pm.ipdb_id,
-        themes=[EntityRef(name=t.name, public_id=t.public_id) for t in pm.themes.all()],
         thumbnail_url=thumbnail_url,
     )
 

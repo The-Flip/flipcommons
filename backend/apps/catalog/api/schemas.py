@@ -3,88 +3,94 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
 from ninja import Schema
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from apps.provenance.schemas import ChangeSetInputSchema, RichTextSchema
 
 
 class EntityRef(Schema):
-    """A reference to a named entity by its public id."""
+    """A reference to an entity."""
 
-    name: str
-    public_id: str
+    name: str = Field(description="The entity's human-readable display name.")
+    public_id: str = Field(
+        description="The entity's public identifier, usually its slug."
+    )
 
 
 class FacetOptionSchema(Schema):
-    """One selectable facet value with its live N-1 count — the entity-agnostic wire
-    form of the shared ``_facet_helpers.FacetOption`` leaf (``EntityRef`` + ``count``).
+    """One selectable facet value with its live result count."""
 
-    Shared by every faceted listing page (titles, manufacturers) so there is exactly
-    one OpenAPI component: two identically-named-but-separate classes would silently
-    collide into ``FacetOptionSchema`` + ``FacetOptionSchema2`` the moment one gained a
-    field, and the frontend's named import would bind non-deterministically.
-
-    ``public_id`` (not ``slug``) is the option entity's URL identity — a slug for most
-    facets, a ``location_path`` for location."""
-
-    public_id: str
-    name: str
-    count: int
+    # Shared by every faceted listing page (titles, manufacturers) so there is
+    # exactly one OpenAPI component: two identically-named-but-separate classes
+    # would collide into ``FacetOptionSchema`` + ``FacetOptionSchema2`` the moment
+    # one gained a field, and the frontend's named import would bind
+    # non-deterministically.
+    public_id: str = Field(
+        description="The facet value's identifier (the entity's slug)."
+    )
+    name: str = Field(description="The facet value's display name.")
+    count: int = Field(description="Number of matching results with this value.")
 
 
 class YearBoundsSchema(Schema):
-    """Inclusive min/max for a year-range facet — the wire form of
-    ``_facet_helpers.Bounds[int]``. Shared by the faceted listing pages (see
-    :class:`FacetOptionSchema` on why these live here rather than per-entity)."""
+    """Inclusive min/max for a year-range facet."""
 
-    min: int | None = None
-    max: int | None = None
+    # Lives here (not per-entity) for the same single-component reason as
+    # ``FacetOptionSchema``.
+    min: Annotated[int | None, Field(description="Earliest year, inclusive.")] = None
+    max: Annotated[int | None, Field(description="Latest year, inclusive.")] = None
 
 
 class LinkableDetailSchema(Schema):
-    """Wire twin of ``LinkableModel``: a top-level entity's display name and
-    uniform URL identity. ``public_id`` is ``LinkableModel.public_id`` —
-    ``slug`` for most entities, ``location_path`` for Location. Required (no
-    default) so every serializer is forced to source it.
-    """
+    """A top-level entity's display name and URL identity."""
 
-    name: str
-    public_id: str
+    name: str = Field(description="The entity's human-readable display name.")
+    # ``public_id`` is the model's ``LinkableModel.public_id`` — a slug for most
+    # entities, a ``location_path`` for Location. Required (no default) so every
+    # serializer sources it.
+    public_id: str = Field(
+        description="The entity's public identifier, usually its slug."
+    )
 
 
 class DescribedDetailSchema(Schema):
-    """Wire twin of ``DescribedModel``: the rich-text description."""
+    """An entity's rich-text description."""
 
-    description: RichTextSchema = RichTextSchema()
+    description: RichTextSchema = Field(
+        default_factory=RichTextSchema,
+        description="The entity's description as rich text.",
+    )
 
 
 class LastModifiedDetailSchema(Schema):
-    """Wire twin of ``LastUpdatedModel``: the freshness timestamp the sitemap
-    emits as ``<lastmod>`` and JSON-LD emits as ``dateModified``. Sourced from
-    ``LastUpdatedModel.last_modified`` (the ``_last_modified`` annotation), NOT
-    raw ``updated_at`` — so a ``Title`` reflects edits to its child Models.
-    Required (no default) so every serializer is forced to source it.
-    """
+    """An entity's last-modified timestamp."""
 
-    last_modified: datetime
+    # Sourced from ``LastUpdatedModel.last_modified`` (the ``_last_modified``
+    # annotation), NOT raw ``updated_at`` — so a ``Title`` reflects edits to its
+    # child Models. Drives the sitemap ``<lastmod>`` and JSON-LD ``dateModified``.
+    # Required (no default) so every serializer sources it.
+    last_modified: datetime = Field(
+        description=(
+            "When the entity was last modified. For entities with children, "
+            "reflects the most recent change to any child."
+        )
+    )
 
 
 class CatalogDetailSchema(
     LinkableDetailSchema, LastModifiedDetailSchema, DescribedDetailSchema
 ):
-    """Wire twin of ``CatalogModel`` (linkable + freshness + describable) and
-    backend counterpart of the frontend's ``EntityBaseFacts`` (name + URL
-    identity + last-modified + description; identity is exposed as
-    ``public_id``). Top-level catalog detail responses inherit this single
-    base and do not relist the mixins. ``last_modified`` rides its own
-    concern base (``LastModifiedDetailSchema``), composed here rather than
-    folded into ``LinkableDetailSchema`` — linkability ("has a canonical URL")
-    and freshness ("when did this last change") are orthogonal, mirroring the
-    ``LinkableModel`` / ``LastUpdatedModel`` split on the model side.
-    """
+    """Base for catalog detail responses: name, URL identity, last-modified and
+    description."""
+
+    # Backend counterpart of the frontend's ``EntityBaseFacts``. Composes three
+    # orthogonal concern mixins — linkability ("has a canonical URL"), freshness
+    # ("when did this last change") and describability — mirroring the
+    # ``LinkableModel`` / ``LastUpdatedModel`` / ``DescribedModel`` split on the
+    # model side. Top-level catalog detail responses inherit this single base.
 
 
 class EntityCreateInputSchema(ChangeSetInputSchema):
@@ -367,15 +373,19 @@ class CorporateEntityLocationAncestorRef(Schema):
 
     # Slimmer than ``CorporateEntityLocationSchema`` — ancestors render as a
     # breadcrumb, so ``location_type`` is omitted.
-    display_name: str
-    public_id: str
+    display_name: str = Field(description="The ancestor location's display name.")
+    public_id: str = Field(description="The ancestor location's full path.")
 
 
 class CorporateEntityLocationSchema(Schema):
     """A corporate entity's location plus its ancestor chain. ``public_id`` is the
     location's full path."""
 
-    public_id: str
-    location_type: str
-    display_name: str
-    ancestors: list[CorporateEntityLocationAncestorRef] = []
+    public_id: str = Field(description="The location's full path.")
+    location_type: str = Field(
+        description="The kind of location (e.g. country, region, city)."
+    )
+    display_name: str = Field(description="The location's display name.")
+    ancestors: list[CorporateEntityLocationAncestorRef] = Field(
+        [], description="The location's ancestor chain, as a breadcrumb."
+    )

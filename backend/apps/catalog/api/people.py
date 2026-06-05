@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
 from ninja.responses import Status
 from ninja.security import django_auth
+from pydantic import Field
 
 from apps.catalog.naming import normalize_catalog_name
 from apps.core.authz.markers import requires
@@ -75,11 +76,19 @@ from .soft_delete import (
 
 
 class PersonCardSchema(Schema):
-    name: str
-    slug: str
-    aliases: list[str] = []
-    credit_count: int = 0
-    thumbnail_url: str | None = None
+    """A person in list results."""
+
+    name: str = Field(description="The person's display name.")
+    slug: str = Field(description="The person's URL slug.")
+    aliases: list[str] = Field(
+        [], description="Alternative names this person is also known by."
+    )
+    credit_count: int = Field(
+        0, description="Number of catalog credits attributed to this person."
+    )
+    thumbnail_url: str | None = Field(
+        None, description="URL of a thumbnail image, if available."
+    )
 
 
 class PersonTitleSchema(RelatedTitleSchema):

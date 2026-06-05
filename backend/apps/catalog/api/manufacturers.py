@@ -78,10 +78,14 @@ class ManufacturerCardSchema(Schema):
     # Slim by design — only the fields list rows render. Facet arrays live on the
     # page endpoint's ``filter_options``, so the list path skips the bulk facet
     # queries.
-    name: str
-    slug: str
-    model_count: int = 0
-    thumbnail_url: str | None = None
+    name: str = Field(description="The manufacturer's display name.")
+    slug: str = Field(description="The manufacturer's URL slug.")
+    model_count: int = Field(
+        0, description="Number of machine models from this manufacturer."
+    )
+    thumbnail_url: str | None = Field(
+        None, description="URL of a thumbnail image, if available."
+    )
 
 
 class ManufacturerListPageSchema(Schema):

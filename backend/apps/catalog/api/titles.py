@@ -132,12 +132,20 @@ class TitleCardSchema(Schema):
     # Slim by design — only the fields list rows render. Facet arrays live on the
     # page endpoint's ``filter_options``, not on every row, so the list path skips
     # the bulk through-table queries.
-    name: str
-    slug: str
-    year: int | None = None
-    model_count: int = 0
-    manufacturer: EntityRef | None = None
-    thumbnail_url: str | None = None
+    name: str = Field(description="The title's display name.")
+    slug: str = Field(description="The title's URL slug.")
+    year: int | None = Field(
+        None, description="Release year of the title's earliest model, if known."
+    )
+    model_count: int = Field(
+        0, description="Number of machine models under this title."
+    )
+    manufacturer: EntityRef | None = Field(
+        None, description="The title's primary manufacturer."
+    )
+    thumbnail_url: str | None = Field(
+        None, description="URL of a thumbnail image, if available."
+    )
 
 
 class TitleListPageSchema(Schema):
