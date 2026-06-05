@@ -1,10 +1,36 @@
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ParentsSectionEditorFixture from './ParentsSectionEditor.fixture.svelte';
 
+const { GET } = vi.hoisted(() => ({ GET: vi.fn() }));
+
+vi.mock('$lib/api/client', () => ({
+  default: { GET },
+}));
+
+// The parent picker is a typeahead over /api/entity-autocomplete/; the current
+// entity (`pop-bumper`) is filtered client-side via the widget's `exclude` prop.
+const PARENT_ROWS = [
+  { value: 'pop-bumper', label: 'Pop Bumper', sublabel: null },
+  { value: 'physical-feature', label: 'Physical Feature', sublabel: null },
+  { value: 'spinner', label: 'Spinner', sublabel: null },
+];
+
 describe('ParentsSectionEditor', () => {
+  beforeEach(() => {
+    GET.mockReset();
+    GET.mockImplementation(async (path: string, opts?: { params?: { query?: { q?: string } } }) => {
+      if (path === '/api/entity-autocomplete/') {
+        const q = (opts?.params?.query?.q ?? '').toLowerCase();
+        const results = PARENT_ROWS.filter((r) => r.label.toLowerCase().includes(q));
+        return { data: { results }, error: undefined, response: { status: 200 } };
+      }
+      throw new Error(`Unexpected GET ${path}`);
+    });
+  });
+
   it('reports clean state initially', async () => {
     const user = userEvent.setup();
     render(ParentsSectionEditorFixture);

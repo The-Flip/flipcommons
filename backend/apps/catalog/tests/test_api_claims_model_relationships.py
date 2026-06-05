@@ -462,37 +462,15 @@ class TestCredits:
 
 @pytest.mark.django_db
 class TestEditOptions:
-    def test_includes_people_and_credit_roles(self, client, people, credit_roles):
+    def test_includes_credit_roles(self, client, credit_roles):
         resp = client.get("/api/models/edit-options/")
         assert resp.status_code == 200
         data = resp.json()
-        assert "people" in data
         assert "credit_roles" in data
         # Verify shape: each item has slug + label
-        assert all("slug" in p and "label" in p for p in data["people"])
         assert all("slug" in r and "label" in r for r in data["credit_roles"])
-        # Verify content
-        people_slugs = {p["slug"] for p in data["people"]}
-        assert "pat-lawlor" in people_slugs
         role_slugs = {r["slug"] for r in data["credit_roles"]}
         assert "design" in role_slugs
-
-    def test_includes_models_with_year_in_label(self, client, pm):
-        resp = client.get("/api/models/edit-options/")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "models" in data
-        models = data["models"]
-        assert len(models) >= 1
-        match = next(m for m in models if m["slug"] == pm.slug)
-        assert match["label"] == "Medieval Madness (1997)"
-
-    def test_models_label_without_year(self, client, db):
-        make_machine_model(name="Unknown Game", slug="unknown-game")
-        resp = client.get("/api/models/edit-options/")
-        data = resp.json()
-        match = next(m for m in data["models"] if m["slug"] == "unknown-game")
-        assert match["label"] == "Unknown Game"
 
 
 @pytest.mark.django_db

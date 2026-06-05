@@ -1,10 +1,10 @@
 """Tests for the wikilinks renderer/picker registries.
 
-Covers the four invariants the WikilinkableModel hoist locks in:
+Covers four invariants of the renderer/picker split:
 - non-Wikilinkable LinkableModels render but are absent from the picker;
-- the picker's exact membership matches the explicit post-hoist target list;
-- the default ``link_autocomplete_serialize`` produces the standard
-  ``(public_id, name)`` shape;
+- the picker's exact membership matches the explicit target list;
+- the picker delegates to the shared autocomplete engine, which yields the
+  standard ``(value=public_id, label=name)`` shape mapped to the ``[[`` token;
 - the renderer's ``LinkType`` registry and the ingest validator's
   catalog-model lookup agree on type-key → model resolution.
 
@@ -17,7 +17,7 @@ import pytest
 from django.apps import apps as django_apps
 
 from apps.catalog._walks import catalog_models
-from apps.core.schemas import LinkTargetSchema
+from apps.core.autocomplete import run_autocomplete
 from apps.core.wikilinks import (
     get_enabled_link_types,
     get_link_type,
@@ -25,7 +25,7 @@ from apps.core.wikilinks import (
     get_picker_types,
 )
 
-# Explicit post-hoist target — every model that should appear in the
+# Explicit target — every model that should appear in the
 # wikilink picker, by ``entity_type`` (kebab-case singular). Hard-coded so a
 # missed ``WikilinkableModel`` inheritance fails this test rather than
 # silently dropping an entity from the picker.
@@ -70,29 +70,69 @@ class TestPickerMembership:
     def test_location_renders_but_is_absent_from_picker(self):
         """Negative: ``Location`` is a ``LinkableModel`` (CatalogModel) but
         not a ``WikilinkableModel``. It registers a ``LinkType`` (so
-        ``[[location:...]]`` markdown still resolves) but has no
-        ``PickerType``. This is the live structural-suppression case the
-        hoist replaces the ``link_autocomplete_serialize = None`` sentinel
-        with.
+        ``[[location:...]]`` markdown still resolves) but has no ``PickerType``
+        — picker membership is opt-in via ``WikilinkableModel``, not inferred
+        from addressability.
         """
         assert get_link_type("location") is not None
         assert get_picker_type("location") is None
 
 
-class TestDefaultLinkSerialize:
-    def test_default_serializer_produces_public_id_and_name(self, db):
-        """An entity without an explicit ``link_autocomplete_serialize``
-        override produces ``LinkTargetSchema(ref=public_id, label=name)``.
+class TestAutocompleteEngine:
+    def test_run_autocomplete_yields_value_and_label(self, db):
+        """The shared engine serializes a row via the ``AutocompletableModel``
+        interface: ``value = public_id`` (the slug), ``label = name``,
+        ``sublabel = None`` for a type without a sublabel override.
         """
         from apps.catalog.models import Manufacturer
 
-        manufacturer = Manufacturer.objects.create(name="Williams", slug="williams")
-        # ``link_autocomplete_serialize`` is the inherited
-        # ``WikilinkableModel`` default for Manufacturer (no override).
-        result = Manufacturer.link_autocomplete_serialize(manufacturer)
-        assert isinstance(result, LinkTargetSchema)
-        assert result.ref == "williams"
-        assert result.label == "Williams"
+        Manufacturer.objects.create(name="Williams", slug="williams")
+        rows = run_autocomplete("manufacturer", "wil")
+        assert [(r.value, r.label, r.sublabel) for r in rows] == [
+            ("williams", "Williams", None)
+        ]
+
+    def test_run_autocomplete_matches_aliases(self, db):
+        """Manufacturer autocomplete matches on the alias relation, not just
+        ``name`` — the shared engine makes the picker alias-aware."""
+        from apps.catalog.models import Manufacturer, ManufacturerAlias
+
+        bally = Manufacturer.objects.create(name="Bally", slug="bally")
+        ManufacturerAlias.objects.create(manufacturer=bally, value="midway")
+        values = {r.value for r in run_autocomplete("manufacturer", "midway")}
+        assert "bally" in values
+
+    def test_run_autocomplete_strips_surrounding_whitespace(self, db):
+        """The engine strips surrounding whitespace before matching: a padded
+        term still matches, and a whitespace-only term collapses to the ordered
+        top-N rather than searching for the literal spaces."""
+        from apps.catalog.models import Manufacturer
+
+        Manufacturer.objects.create(name="Williams", slug="williams")
+
+        padded = {r.value for r in run_autocomplete("manufacturer", "  wil  ")}
+        assert "williams" in padded
+
+        whitespace_only = {r.value for r in run_autocomplete("manufacturer", "   ")}
+        assert "williams" in whitespace_only  # top-N, not a search for "   "
+
+    def test_run_autocomplete_diacritic_folds_both_directions(self, db):
+        """The engine folds both sides on Postgres: an accent-free query finds
+        an accented name *and* an accented query finds it too. SQLite has no
+        ``unaccent`` and falls back to plain ``icontains`` — only the
+        exact-diacritic spelling matches there (a known dev/prod gap)."""
+        from django.db import connection
+
+        from apps.catalog.models import Title
+
+        Title.objects.create(name="Pokémon", slug="pokemon-fold-test")
+        is_postgres = connection.vendor == "postgresql"
+
+        folded = {r.value for r in run_autocomplete("title", "pokemon")}
+        accented = {r.value for r in run_autocomplete("title", "pokémon")}
+
+        assert ("pokemon-fold-test" in accented) is True
+        assert ("pokemon-fold-test" in folded) is is_postgres
 
 
 class TestRendererValidatorParity:

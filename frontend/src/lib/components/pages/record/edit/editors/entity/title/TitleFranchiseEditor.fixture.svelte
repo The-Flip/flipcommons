@@ -2,8 +2,8 @@
   import TitleFranchiseEditor from './TitleFranchiseEditor.svelte';
 
   type FranchiseTitle = {
-    franchise?: { public_id: string } | null;
-    series?: { public_id: string } | null;
+    franchise?: { public_id: string; name: string } | null;
+    series?: { public_id: string; name: string } | null;
   };
 
   let {

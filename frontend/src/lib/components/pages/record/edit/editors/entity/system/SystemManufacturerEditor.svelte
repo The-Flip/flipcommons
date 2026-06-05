@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
+  import EntitySelect from '$lib/components/input/entity-select/EntitySelect.svelte';
+  import type { EntityOption } from '$lib/api/entity-autocomplete';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
   import type { FieldErrors } from '$lib/api/parse-api-error';
@@ -8,7 +9,6 @@
     SaveMeta,
     SaveResult,
   } from '$lib/components/pages/record/edit/editors/save-claims-shared';
-  import { fetchManufacturerOptions, type SystemEditOption } from './system-edit-options';
 
   type ManufacturerFields = {
     manufacturer: string;
@@ -19,8 +19,10 @@
     body: { fields: Partial<ManufacturerFields> } & SaveMeta,
   ) => Promise<SaveResult>;
 
+  // `manufacturer` is a required FK; the detail schema ships it as an
+  // `EntityRef` ({ name, public_id }), so `name` seeds the typeahead's label.
   type InitialData = {
-    manufacturer?: { public_id: string } | null;
+    manufacturer?: { public_id: string; name: string } | null;
   };
 
   let {
@@ -37,12 +39,14 @@
   }));
   let fields = $state<ManufacturerFields>({ ...original });
   let fieldErrors = $state<FieldErrors>({});
-  let options = $state<SystemEditOption[]>([]);
   let dirty = $derived(Object.keys(diffScalarFields(fields, original)).length > 0);
 
-  $effect(() => {
-    fetchManufacturerOptions().then((opts) => (options = opts));
-  });
+  // Seed the typeahead so the saved manufacturer renders on mount with no search.
+  const initialSelection: EntityOption | null = untrack(() =>
+    initialData.manufacturer
+      ? { value: initialData.manufacturer.public_id, label: initialData.manufacturer.name }
+      : null,
+  );
 
   $effect(() => {
     ondirtychange(dirty);
@@ -73,12 +77,12 @@
   }
 </script>
 
-<SearchableSelect
+<EntitySelect
+  type="manufacturer"
   label="Manufacturer"
-  {options}
   bind:selected={fields.manufacturer}
+  {initialSelection}
   error={fieldErrors.manufacturer ?? ''}
-  allowZeroCount
-  showCounts={false}
   placeholder="Search manufacturers..."
+  required
 />

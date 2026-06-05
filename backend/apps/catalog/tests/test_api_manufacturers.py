@@ -1,14 +1,8 @@
 from apps.catalog.models import (
     CorporateEntity,
-    CorporateEntityAlias,
-    Credit,
-    CreditRole,
-    ManufacturerAlias,
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
-
-from .conftest import SAMPLE_IMAGES
 
 
 class TestManufacturersAPI:
@@ -77,38 +71,6 @@ class TestManufacturersAPI:
             "Williams Latest",
         ]
 
-    def test_list_all_manufacturers_thumbnail_prefers_year(
-        self, client, williams_entity, db
-    ):
-        make_machine_model(
-            name="No Year Game",
-            slug="no-year-game",
-            corporate_entity=williams_entity,
-            extra_data={"opdb.images": SAMPLE_IMAGES},
-        )
-        make_machine_model(
-            name="Has Year Game",
-            slug="has-year-game",
-            corporate_entity=williams_entity,
-            year=2020,
-            extra_data={
-                "opdb.images": [
-                    {
-                        "primary": True,
-                        "type": "backglass",
-                        "urls": {
-                            "small": "https://img.opdb.org/year-sm.jpg",
-                            "medium": "https://img.opdb.org/year-md.jpg",
-                            "large": "https://img.opdb.org/year-lg.jpg",
-                        },
-                    }
-                ]
-            },
-        )
-        resp = client.get("/api/manufacturers/all/")
-        data = resp.json()
-        assert data[0]["thumbnail_url"] == "https://img.opdb.org/year-md.jpg"
-
     def test_get_manufacturer_detail_titles_sorted_year_desc(
         self, client, manufacturer, williams_entity, db
     ):
@@ -143,65 +105,6 @@ class TestManufacturersAPI:
         resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
         years = [t["year"] for t in resp.json()["titles"]]
         assert years == [2020, 1995, 1960]
-
-    def test_list_all_manufacturers_serializes_persons_and_tech_gens(
-        self, client, manufacturer, williams_entity, person, solid_state, db
-    ):
-        """Persons and tech generations must serialize as plain ``{public_id, name}``
-        dicts in the cached response. Other tests don't exercise these fields,
-        so without this case the cache write path could ship Schema instances
-        that fail JSON serialization."""
-        role = CreditRole.objects.create(slug="design", name="Design")
-        model = make_machine_model(
-            name="Test Game",
-            slug="test-game",
-            corporate_entity=williams_entity,
-            technology_generation=solid_state,
-        )
-        Credit.objects.create(model=model, person=person, role=role)
-        resp = client.get("/api/manufacturers/all/")
-        assert resp.status_code == 200
-        mfr = resp.json()[0]
-        assert mfr["persons"] == [{"public_id": "pat-lawlor", "name": "Pat Lawlor"}]
-        assert mfr["tech_generations"] == [
-            {"public_id": "solid-state", "name": "Solid State"}
-        ]
-
-    def test_list_all_manufacturers_search_text_includes_ce_aliases(
-        self, client, williams_entity, db
-    ):
-        """CE aliases should appear in search_text so the frontend can match them."""
-        CorporateEntityAlias.objects.create(
-            corporate_entity=williams_entity, value="Williams Elektronik"
-        )
-        make_machine_model(
-            name="Test Game", slug="test-game", corporate_entity=williams_entity
-        )
-        resp = client.get("/api/manufacturers/all/")
-        data = resp.json()
-        mfr = data[0]
-        assert "Williams Elektronik" in mfr["search_text"]
-
-    def test_list_all_manufacturers_search_text_includes_manufacturer_aliases(
-        self, client, manufacturer, williams_entity, db
-    ):
-        """ManufacturerAlias values must appear in search_text so the frontend's
-        "no results → create?" prompt doesn't misfire when a user searches by
-        a brand's known alias. The server-side create path already rejects
-        alias collisions via ``assert_name_available``; the list endpoint must
-        stay aligned so the UI gate doesn't mislead users into attempting a
-        duplicate create in the first place."""
-        ManufacturerAlias.objects.create(
-            manufacturer=manufacturer, value="WMS Industries"
-        )
-        make_machine_model(
-            name="Test Game", slug="test-game", corporate_entity=williams_entity
-        )
-        resp = client.get("/api/manufacturers/all/")
-        data = resp.json()
-        mfr = data[0]
-        assert mfr["search_text"] is not None
-        assert "WMS Industries" in mfr["search_text"]
 
     def test_get_manufacturer_detail_nulls_last(
         self, client, manufacturer, williams_entity, db

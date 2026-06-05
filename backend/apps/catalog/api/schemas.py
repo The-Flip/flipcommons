@@ -299,10 +299,8 @@ class EditOptionSchema(Schema):
 
 
 class ModelEditOptionsSchema(Schema):
-    themes: list[EditOptionSchema]
     tags: list[EditOptionSchema]
     reward_types: list[EditOptionSchema]
-    gameplay_features: list[EditOptionSchema]
     technology_generations: list[EditOptionSchema]
     technology_subgenerations: list[EditOptionSchema]
     display_types: list[EditOptionSchema]
@@ -310,11 +308,7 @@ class ModelEditOptionsSchema(Schema):
     cabinets: list[EditOptionSchema]
     game_formats: list[EditOptionSchema]
     systems: list[EditOptionSchema]
-    corporate_entities: list[EditOptionSchema]
-    people: list[EditOptionSchema]
     credit_roles: list[EditOptionSchema]
-    titles: list[EditOptionSchema]
-    models: list[EditOptionSchema]
 
 
 class TitleModelVariantSchema(Schema):

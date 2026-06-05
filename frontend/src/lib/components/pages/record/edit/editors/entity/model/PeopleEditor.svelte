@@ -2,6 +2,8 @@
   import { untrack } from 'svelte';
   import type { CreditSchema } from '$lib/api/schema';
   import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
+  import EntitySelect from '$lib/components/input/entity-select/EntitySelect.svelte';
+  import type { EntityOption } from '$lib/api/entity-autocomplete';
   import { creditsChanged } from '$lib/edit-helpers';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
   import {
@@ -23,7 +25,20 @@
     ondirtychange = () => {},
   }: SectionEditorProps<Credit[]> = $props();
 
-  type KeyedCredit = { key: number; person_slug: string; role: string };
+  // `initial` is the row's saved person, frozen at creation, so the typeahead
+  // renders it on mount without a search. It must NOT track the live
+  // `person_slug` — re-seeding the widget with a stale label would overwrite
+  // the correct label a (re)selection just cached.
+  type KeyedCredit = {
+    key: number;
+    // The widget can clear this to null at runtime, but it's typed `string`
+    // because it *is* the save-payload field (`credits[].person_slug: string`);
+    // the truthy filter in save() drops cleared rows. (Single top-level FKs use
+    // `string | null` — per-row payload fields stay `string`.)
+    person_slug: string;
+    role: string;
+    initial: EntityOption | null;
+  };
 
   let keyCounter = 0;
 
@@ -32,6 +47,7 @@
       key: keyCounter++,
       person_slug: c.person.public_id,
       role: c.role,
+      initial: { value: c.person.public_id, label: c.person.name },
     }));
   }
 
@@ -62,7 +78,7 @@
   }
 
   function addCredit() {
-    editCredits = [...editCredits, { key: keyCounter++, person_slug: '', role: '' }];
+    editCredits = [...editCredits, { key: keyCounter++, person_slug: '', role: '', initial: null }];
   }
 
   function removeCredit(index: number) {
@@ -119,12 +135,11 @@
     {@const rowError = pairError || personError || roleError}
     <div class="credit-row" class:has-error={!!rowError}>
       <div class="credit-person">
-        <SearchableSelect
+        <EntitySelect
+          type="person"
           label=""
-          options={toSelectOptions(editOptions.people ?? [])}
           bind:selected={editCredits[i].person_slug}
-          allowZeroCount
-          showCounts={false}
+          initialSelection={credit.initial}
           placeholder="Search people..."
         />
       </div>

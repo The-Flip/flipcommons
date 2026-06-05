@@ -1,31 +1,44 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { validationErrorBody } from '$lib/api/error-fixtures';
 
-const { goto, resolve, mockPost } = vi.hoisted(() => ({
+const { goto, resolve, mockPost, mockGet } = vi.hoisted(() => ({
   goto: vi.fn(),
   resolve: vi.fn((url: string) => url),
   mockPost: vi.fn(),
+  mockGet: vi.fn(),
 }));
 
 vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$app/paths', () => ({ resolve }));
 vi.mock('$lib/api/client', () => ({
-  default: { POST: mockPost },
-}));
-
-vi.mock('$lib/components/pages/record/edit/editors/entity/system/system-edit-options', () => ({
-  fetchManufacturerOptions: () =>
-    Promise.resolve([
-      { value: 'stern', label: 'Stern', count: 42 },
-      { value: 'williams', label: 'Williams', count: 9 },
-    ]),
+  default: { POST: mockPost, GET: mockGet },
 }));
 
 import Page from './+page.svelte';
 import { toast } from '$lib/toast/toast.svelte';
+
+// Rows the autocomplete endpoint returns, filtered by the typed query below.
+const AUTOCOMPLETE_ROWS = [
+  { value: 'stern', label: 'Stern', sublabel: null },
+  { value: 'williams', label: 'Williams', sublabel: null },
+];
+
+function mockAutocomplete() {
+  mockGet.mockImplementation(
+    async (path: string, opts?: { params?: { query?: { q?: string } } }) => {
+      if (path === '/api/entity-autocomplete/') {
+        const q = (opts?.params?.query?.q ?? '').toLowerCase();
+        const results = AUTOCOMPLETE_ROWS.filter((r) => r.label.toLowerCase().includes(q));
+        return { data: { results }, error: undefined, response: { status: 200 } };
+      }
+      // Any load-all call (e.g. the retired /api/manufacturers/all/) is a regression.
+      throw new Error(`Unexpected GET ${path}`);
+    },
+  );
+}
 
 function renderPage(initialName = '') {
   render(Page, { data: { initialName } });
@@ -37,6 +50,8 @@ describe('systems/new route', () => {
     goto.mockResolvedValue(undefined);
     resolve.mockClear();
     mockPost.mockReset();
+    mockGet.mockReset();
+    mockAutocomplete();
     toast._resetForTest();
   });
 
@@ -69,10 +84,16 @@ describe('systems/new route', () => {
 
     renderPage('SPIKE');
 
-    // Select Stern via the SearchableSelect input.
-    const search = screen.getByPlaceholderText('Search manufacturers...');
-    await user.click(search);
-    await user.click(await screen.findByRole('option', { name: /Stern/ }));
+    // Select Stern via the entity-autocomplete typeahead: focus → type → pick.
+    const combobox = screen.getByRole('combobox', { name: /manufacturer/i });
+    await user.click(combobox);
+    await user.type(combobox, 'stern');
+    await waitFor(() =>
+      expect(mockGet).toHaveBeenLastCalledWith('/api/entity-autocomplete/', {
+        params: { query: { type: 'manufacturer', q: 'stern' } },
+      }),
+    );
+    await fireEvent.pointerDown(await screen.findByRole('option', { name: /Stern/ }));
 
     await user.click(screen.getByRole('button', { name: 'Create System' }));
 
@@ -95,5 +116,9 @@ describe('systems/new route', () => {
     expect(await screen.findByText('Manufacturer not found.')).toBeInTheDocument();
     expect(document.querySelector('.save-error')).toBeNull();
     expect(goto).not.toHaveBeenCalled();
+
+    // The retired load-all feeder is never touched (any arg shape).
+    const calledPaths = mockGet.mock.calls.map((call) => call[0]);
+    expect(calledPaths).not.toContain('/api/manufacturers/all/');
   });
 });

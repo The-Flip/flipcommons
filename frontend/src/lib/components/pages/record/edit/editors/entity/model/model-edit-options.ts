@@ -19,10 +19,8 @@ export function toSelectOptions(opts: EditOptionSchema[]): { value: string; labe
 }
 
 export const EMPTY_EDIT_OPTIONS: ModelEditOptions = {
-  themes: [],
   tags: [],
   reward_types: [],
-  gameplay_features: [],
   technology_generations: [],
   technology_subgenerations: [],
   display_types: [],
@@ -30,11 +28,7 @@ export const EMPTY_EDIT_OPTIONS: ModelEditOptions = {
   cabinets: [],
   game_formats: [],
   systems: [],
-  corporate_entities: [],
-  people: [],
   credit_roles: [],
-  titles: [],
-  models: [],
 };
 
 let cached: Promise<ModelEditOptions> | null = null;

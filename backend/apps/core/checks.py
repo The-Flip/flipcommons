@@ -68,7 +68,7 @@ def check_linkable_models(
     # subclass so a future linkable-but-not-catalog model can't bypass the
     # ``entity_type`` / ``public_id_field`` rules. ``apps/core`` also can't
     # depend on ``apps/catalog`` per AppBoundaries. Catalog-local code (the
-    # /all/ cache walker, the AI source registry, the wikilink validator)
+    # cache-invalidation walker, the AI source registry, the wikilink validator)
     # walks ``CatalogModel`` instead — different role, different root.
     #
     # ``LinkableModel`` is abstract; mypy's ``type-abstract`` check flags

@@ -26,6 +26,7 @@ from django.apps import apps
 from django.db.models import Model
 
 from apps.catalog.models.base import AliasModel, CatalogModel
+from apps.core.autocomplete import AutocompletableModel
 from apps.core.models import LinkableModel
 from apps.core.wikilinks import WikilinkableModel
 
@@ -57,6 +58,11 @@ def linkable_models() -> list[type[LinkableModel]]:
 def wikilinkable_models() -> list[type[WikilinkableModel]]:
     """Concrete ``WikilinkableModel`` descendants in the catalog app."""
     return _catalog_app_subclasses(WikilinkableModel)  # type: ignore[type-abstract]
+
+
+def autocompletable_models() -> list[type[AutocompletableModel]]:
+    """Concrete ``AutocompletableModel`` descendants in the catalog app."""
+    return _catalog_app_subclasses(AutocompletableModel)  # type: ignore[type-abstract]
 
 
 def alias_models() -> list[type[AliasModel]]:

@@ -4,26 +4,17 @@ from __future__ import annotations
 
 import json
 import re
-from collections import defaultdict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from django.db.models import (
-    Count,
-    F,
-    Max,
-    Min,
-    OuterRef,
     Prefetch,
     Q,
     QuerySet,
-    Subquery,
 )
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
-from django.views.decorators.cache import cache_control
 from ninja import Query, Router, Schema
-from ninja.decorators import decorate_view
 from ninja.responses import Status
 from ninja.security import django_auth
 from pydantic import TypeAdapter
@@ -32,7 +23,6 @@ from apps.catalog.naming import MAX_CATALOG_NAME_LENGTH, normalize_catalog_name
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
-from apps.core.models import active_status_q
 from apps.core.schemas import (
     ErrorDetailSchema,
     RateLimitErrorSchema,
@@ -58,15 +48,12 @@ from apps.provenance.schemas import (
 from ..cache import (
     get_cached_response,
     set_cached_response,
-    titles_all_key,
     titles_facets_key,
 )
 from ..models import (
-    Credit,
     MachineModel,
     MachineModelGameplayFeature,
     Title,
-    TitleAbbreviation,
 )
 from ._title_facets import (
     Bounds,
@@ -78,7 +65,7 @@ from ._title_facets import (
     filtered_titles,
     ordered_titles,
 )
-from ._typing import CreditKey, FacetOptionDict, GameplayFeatureAgreement, SlugName
+from ._typing import CreditKey, FacetOptionDict, GameplayFeatureAgreement
 from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import (
     ClaimSpec,
@@ -131,34 +118,6 @@ from .soft_delete import (
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
-
-
-class TitleListItemSchema(Schema):
-    name: str
-    slug: str
-    abbreviations: list[str] = []
-    model_count: int = 0
-    manufacturer: EntityRef | None = None
-    year: int | None = None
-    thumbnail_url: str | None = None
-    # Facet data — aggregated from non-variant models
-    tech_generations: list[EntityRef] = []
-    display_types: list[EntityRef] = []
-    player_counts: list[int] = []
-    systems: list[EntityRef] = []
-    themes: list[EntityRef] = []
-    gameplay_features: list[EntityRef] = []
-    reward_types: list[EntityRef] = []
-    persons: list[EntityRef] = []
-    franchise: EntityRef | None = None
-    series: EntityRef | None = None
-    year_min: int | None = None
-    year_max: int | None = None
-
-
-_ALL_ADAPTER: TypeAdapter[list[TitleListItemSchema]] = TypeAdapter(
-    list[TitleListItemSchema]
-)
 
 
 # ---------------------------------------------------------------------------
@@ -351,25 +310,6 @@ def _assert_title_name_available(name: str, *, exclude_pk: int | None = None) ->
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _dedup_facet_dicts(
-    items: Iterable[SlugName],
-) -> list[dict[str, str]]:
-    """Deduplicate {slug, name} pairs (preserving insertion order) into plain
-    ``{public_id, name}`` dicts.
-
-    Used by the cached ``/all/`` endpoint, whose response is serialized via
-    :func:`set_cached_response`'s ``json.dumps`` fast path — Pydantic Schema
-    instances are not JSON-serializable there.
-    """
-    seen: set[str] = set()
-    out: list[dict[str, str]] = []
-    for slug, name in items:
-        if slug and slug not in seen:
-            seen.add(slug)
-            out.append({"public_id": slug, "name": name})
-    return out
 
 
 def _build_review_links(title: Title) -> list[ReviewLinkSchema]:
@@ -655,8 +595,7 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
 def _title_models_prefetch() -> Prefetch[str, Any, str]:
     return Prefetch(
         "machine_models",
-        queryset=MachineModel.objects.active()
-        .filter(variant_of__isnull=True)
+        queryset=MachineModel.first_model_candidates()
         .select_related(
             "corporate_entity__manufacturer",
             "technology_generation",
@@ -684,8 +623,7 @@ def _title_models_prefetch() -> Prefetch[str, Any, str]:
             "credits__role",
             "variants",
             media_prefetch(),
-        )
-        .order_by("year", "name"),
+        ),
     )
 
 
@@ -724,11 +662,9 @@ def _card_models_prefetch() -> Prefetch[str, Any, str]:
     )
     return Prefetch(
         "machine_models",
-        queryset=MachineModel.objects.active()
-        .filter(variant_of__isnull=True)
+        queryset=MachineModel.first_model_candidates()
         .select_related("corporate_entity__manufacturer")
-        .prefetch_related(primary_media)
-        .order_by("year", "name"),
+        .prefetch_related(primary_media),
         to_attr="card_models",
     )
 
@@ -897,234 +833,6 @@ def title_search_section(q: str, *, min_rank: int) -> TitleSearchSectionSchema:
         items=[_serialize_card(t, min_rank=min_rank) for t in items],
         has_more=len(rows) > 10,
     )
-
-
-@titles_router.get("/all/", response=list[TitleListItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_all_titles(request: HttpRequest) -> HttpResponse:
-    """Return every title with facet data for client-side filtering.
-
-    Performance-critical: this serializes ~6k titles with facet arrays
-    aggregated from ~7k machine models.  The result is cached indefinitely
-    and invalidated on data changes, so cold-cache rebuild speed matters.
-
-    Strategy (instead of prefetch + ORM iteration):
-    1. Annotate scalar card fields (manufacturer, year) via correlated
-       subqueries so the DB does the work in one SQL statement.
-    2. Use ``values_list`` instead of full ORM object instantiation to
-       avoid Python-side hydration overhead for thousands of rows.
-    3. Fetch M2M facet data (themes, features, credits, etc.) via bulk
-       queries on through tables into ``dict`` lookup maps.
-    4. Assemble the response dicts from the lookup maps.
-
-    This reduces cold-cache rebuild from ~3.5s to ~0.5s locally
-    (~30s to ~5s on production hardware).
-    """
-    response = get_cached_response(titles_all_key())
-    if response is not None:
-        return response
-
-    # Cached once for the entire rebuild — avoids ~6k Constance DB lookups.
-    min_rank = get_minimum_display_rank()
-
-    # "First model" = earliest non-variant model by (year, name), used to
-    # derive the title's display manufacturer, year, and thumbnail.
-    first_model = (
-        MachineModel.objects.filter(title=OuterRef("pk"), variant_of__isnull=True)
-        .active()
-        .order_by("year", "name")
-    )
-    title_rows = list(
-        Title.objects.active()
-        .annotate(
-            model_count=Count(
-                "machine_models",
-                filter=Q(machine_models__variant_of__isnull=True)
-                & active_status_q("machine_models"),
-            ),
-            latest_year=Max(
-                "machine_models__year",
-                filter=Q(machine_models__variant_of__isnull=True),
-            ),
-            primary_mfr_slug=Subquery(
-                first_model.values("corporate_entity__manufacturer__slug")[:1]
-            ),
-            primary_mfr_name=Subquery(
-                first_model.values("corporate_entity__manufacturer__name")[:1]
-            ),
-            primary_year=Subquery(first_model.values("year")[:1]),
-            primary_model_id=Subquery(first_model.values("pk")[:1]),
-            year_min=Min(
-                "machine_models__year",
-                filter=Q(machine_models__variant_of__isnull=True),
-            ),
-            franchise_slug=F("franchise__slug"),
-            franchise_name=F("franchise__name"),
-            series_slug=F("series__slug"),
-            series_name=F("series__name"),
-        )
-        .values_list(
-            "id",
-            "name",
-            "slug",
-            "model_count",
-            "latest_year",
-            "primary_mfr_slug",
-            "primary_mfr_name",
-            "primary_year",
-            "primary_model_id",
-            "year_min",
-            "franchise_slug",
-            "franchise_name",
-            "series_slug",
-            "series_name",
-            named=True,
-        )
-        .order_by(F("latest_year").desc(nulls_last=True), "name")
-    )
-
-    # --- Batch thumbnail fetch ---
-    primary_model_ids = [r.primary_model_id for r in title_rows if r.primary_model_id]
-    media_by_model = fetch_model_media_map(primary_model_ids)
-    thumb_data: dict[int, str | None] = {}
-    for mid, extra_data in MachineModel.objects.filter(
-        id__in=primary_model_ids
-    ).values_list("id", "extra_data"):
-        thumb, _ = extract_image_urls(
-            extra_data or {}, media_by_model.get(mid), min_rank=min_rank
-        )
-        thumb_data[mid] = thumb
-
-    # --- Bulk abbreviations and series ---
-    title_ids = [r.id for r in title_rows]
-
-    title_abbrevs: dict[int, list[str]] = defaultdict(list)
-    for tid, value in TitleAbbreviation.objects.filter(
-        title_id__in=title_ids
-    ).values_list("title_id", "value"):
-        title_abbrevs[tid].append(value)
-
-    # --- Bulk facet queries via through tables ---
-    model_qs = MachineModel.objects.filter(
-        title__isnull=False, variant_of__isnull=True
-    ).active()
-
-    title_model_map: dict[int, list[int]] = defaultdict(list)
-    model_ids: set[int] = set()
-    for title_id, model_id in model_qs.values_list("title_id", "id"):
-        title_model_map[title_id].append(model_id)
-        model_ids.add(model_id)
-
-    model_tech_gen: dict[int, SlugName] = {}
-    for mid, slug, name in model_qs.filter(
-        technology_generation__isnull=False
-    ).values_list("id", "technology_generation__slug", "technology_generation__name"):
-        model_tech_gen[mid] = SlugName(slug, name)
-
-    model_display: dict[int, SlugName] = {}
-    for mid, slug, name in model_qs.filter(display_type__isnull=False).values_list(
-        "id", "display_type__slug", "display_type__name"
-    ):
-        model_display[mid] = SlugName(slug, name)
-
-    model_system: dict[int, SlugName] = {}
-    for mid, slug, name in model_qs.filter(system__isnull=False).values_list(
-        "id", "system__slug", "system__name"
-    ):
-        model_system[mid] = SlugName(slug, name)
-
-    model_player_count: dict[int, int | None] = {}
-    for mid, pc in model_qs.values_list("id", "player_count"):
-        model_player_count[mid] = pc
-
-    model_themes: dict[int, list[SlugName]] = defaultdict(list)
-    for mid, slug, name in MachineModel.themes.through.objects.filter(
-        machinemodel_id__in=model_ids
-    ).values_list("machinemodel_id", "theme__slug", "theme__name"):
-        model_themes[mid].append(SlugName(slug, name))
-
-    model_gf: dict[int, list[SlugName]] = defaultdict(list)
-    for mid, slug, name in MachineModel.gameplay_features.through.objects.filter(
-        machinemodel_id__in=model_ids
-    ).values_list(
-        "machinemodel_id",
-        "gameplayfeature__slug",
-        "gameplayfeature__name",
-    ):
-        model_gf[mid].append(SlugName(slug, name))
-
-    model_rt: dict[int, list[SlugName]] = defaultdict(list)
-    for mid, slug, name in MachineModel.reward_types.through.objects.filter(
-        machinemodel_id__in=model_ids
-    ).values_list("machinemodel_id", "rewardtype__slug", "rewardtype__name"):
-        model_rt[mid].append(SlugName(slug, name))
-
-    model_persons: dict[int, list[SlugName]] = defaultdict(list)
-    for mid, slug, name in Credit.objects.filter(model_id__in=model_ids).values_list(
-        "model_id", "person__slug", "person__name"
-    ):
-        model_persons[mid].append(SlugName(slug, name))
-
-    # --- Assembly ---
-    # Build dicts directly (not TitleListItemSchema instances). The cache
-    # stores JSON bytes, so handing Schemas to ``json.dumps`` would force a
-    # round-trip via ``model_dump`` — exactly what the cache exists to avoid.
-    # ``set_cached_response`` validates this dict shape against the response
-    # Schema in DEBUG mode to catch drift; the prod path is raw ``json.dumps``.
-    def _ref_dict(
-        public_id: str | None, name: str | None
-    ) -> dict[str, str | None] | None:
-        return {"public_id": public_id, "name": name} if public_id else None
-
-    result: list[dict[str, Any]] = []
-    for r in title_rows:
-        tid = r.id
-        mids = title_model_map.get(tid, [])
-
-        result.append(
-            {
-                "name": r.name,
-                "slug": r.slug,
-                "abbreviations": title_abbrevs.get(tid, []),
-                "model_count": r.model_count,
-                "manufacturer": _ref_dict(r.primary_mfr_slug, r.primary_mfr_name),
-                "year": r.primary_year,
-                "thumbnail_url": thumb_data.get(r.primary_model_id),
-                "tech_generations": _dedup_facet_dicts(
-                    model_tech_gen[mid] for mid in mids if mid in model_tech_gen
-                ),
-                "display_types": _dedup_facet_dicts(
-                    model_display[mid] for mid in mids if mid in model_display
-                ),
-                "player_counts": sorted(
-                    {
-                        count
-                        for mid in mids
-                        if (count := model_player_count.get(mid)) is not None
-                    }
-                ),
-                "systems": _dedup_facet_dicts(
-                    model_system[mid] for mid in mids if mid in model_system
-                ),
-                "themes": _dedup_facet_dicts(
-                    p for mid in mids for p in model_themes.get(mid, [])
-                ),
-                "gameplay_features": _dedup_facet_dicts(
-                    p for mid in mids for p in model_gf.get(mid, [])
-                ),
-                "reward_types": _dedup_facet_dicts(
-                    p for mid in mids for p in model_rt.get(mid, [])
-                ),
-                "persons": _dedup_facet_dicts(
-                    p for mid in mids for p in model_persons.get(mid, [])
-                ),
-                "franchise": _ref_dict(r.franchise_slug, r.franchise_name),
-                "series": _ref_dict(r.series_slug, r.series_name),
-                "year_min": r.year_min,
-                "year_max": r.latest_year,
-            }
-        )
-    return set_cached_response(titles_all_key(), _ALL_ADAPTER, result)
 
 
 @titles_router.patch(

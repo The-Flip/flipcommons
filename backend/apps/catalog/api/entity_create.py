@@ -166,7 +166,7 @@ def assert_name_available(
         qs = qs.filter(scope_filter)
     # ``name`` is declared on each concrete subclass; the django-stubs
     # plugin can't see it on abstract ``CatalogModel`` (see
-    # ``LinkableModel`` docstring for the rationale).
+    # ``LabeledModel`` for the rationale).
     for pk, other_name in qs.values_list("pk", "name"):  # type: ignore[misc]
         if exclude_pk is not None and pk == exclude_pk:
             continue
@@ -265,7 +265,7 @@ def validate_create_input(
     """
     # ``name`` is registered as a Django field on each concrete subclass;
     # the django-stubs plugin can't see it on abstract ``CatalogModel``
-    # (see ``LinkableModel`` docstring for the rationale).
+    # (see ``LabeledModel`` for the rationale).
     name_field = model_cls._meta.get_field("name")  # type: ignore[misc]
     assert isinstance(name_field, db_models.Field)
     name_max = name_field.max_length

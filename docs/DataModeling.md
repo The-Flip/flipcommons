@@ -32,7 +32,7 @@ When adding an app-enforced uniqueness rule:
 
 ## Abstract base classes
 
-We use abstract base classes (mixins) to isolate each separate system concern. For example, the wiki linking system only knows about WikilinkableModels; it doesn't have to know about any model info other than that.
+We use abstract base classes (you may know them as mixins) to isolate each separate system concern. For example, the wiki linking system only knows about WikilinkableModels; it doesn't have to know about any model info other than that.
 
 ```mermaid
 flowchart TD
@@ -41,20 +41,41 @@ flowchart TD
   CatalogModel --> ClaimControlledModel
 
   MediaSupportedModel --> ClaimControlledModel
+
   WikilinkableModel --> LinkableModel
+  WikilinkableModel --> AutocompletableModel
+
+  SitemappedModel --> LinkableModel
+  SitemappedModel --> LastUpdatedModel
+
+  LinkableModel --> LabeledIdentityModel
+  AutocompletableModel --> LabeledIdentityModel
+  LabeledIdentityModel --> IdentifiableModel
+  LabeledIdentityModel --> LabeledModel
 
   AliasModel
+  DescribedModel
   TimeStampedModel
   SluggedModel
 ```
 
-- `CatalogModel`: the basic contract for a catalog entity: URL-addressability, claims control, and soft-delete support.
-- `MediaSupportedModel`: opt-in for entity media attachments; requires the model to be claim-controlled because media attachments are claims.
-- `WikilinkableModel`: opt-in for markdown wikilink autocomplete; requires the model to also be URL-addressable.
-- `AliasModel`: shared behavior for alias rows; aliases are claim values on the parent entity, not claim-controlled entities themselves.
-- `SluggedModel`: globally unique slug field for entities whose slug is their public identity.
-- `LinkableModel`, `LifecycleStatusModel`, and `ClaimControlledModel`: narrower capability bases used directly by higher-level catalog mixins and other concrete models.
-- `TimeStampedModel`: created/updated bookkeeping timestamps.
+- `CatalogModel`(`LinkableModel`, `LifecycleStatusModel`, `ClaimControlledModel`): the minimum contract for a catalog entity.
+- `MediaSupportedModel`(`ClaimControlledModel`): supports media attachments.
+- `ClaimControlledModel`: subject to the provenance system.
+- `LifecycleStatusModel`: soft-deletability.
+- `SitemappedModel`(`LinkableModel`, `LastUpdatedModel`): member of the XML sitemap; the sitemap walk keys off this class.
+- `WikilinkableModel`(`LinkableModel`, `AutocompletableModel`): appears in the markdown `[[` autocomplete.
+- `LinkableModel`(`LabeledIdentityModel`): URL-addressability and `[[type:id]]` rendering.
+- `AutocompletableModel`(`LabeledIdentityModel`): showable in autocomplete dropdowns.
+- `LabeledIdentityModel`(`IdentifiableModel`, `LabeledModel`): has both `public_id` and `label`.
+- `LabeledModel`: `label` property (over `label_field`, default `name`).
+- `IdentifiableModel`: `public_id` property (over `public_id_field`, default `slug`).
+- `SluggedModel`: unique `slug` field; does not include `Location.slug`, which isn't unique.
+- `DescribedModel`: `description` field.
+- `LastUpdatedModel`: `last_modified` property.
+- `TimeStampedModel`: `created_at` and `updated_at` fields.
+
+Aliases live in separate per-entity tables (`ThemeAlias`, `ManufacturerAlias`, …), all inheriting `AliasModel` — a lowercase, case-insensitively-unique `value` and a FK to the parent. They're satellites of an entity, not a capability mixed into one, and aren't claim-controlled: the alias values are a claim on the parent (named by `alias_claim_field`), and the rows are the materialized lookup.
 
 ## Conventions
 

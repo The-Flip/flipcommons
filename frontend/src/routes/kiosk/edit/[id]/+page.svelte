@@ -9,14 +9,13 @@
   no admin label.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import client from '$lib/api/client';
   import { parseApiError } from '$lib/api/parse-api-error';
   import { resolve } from '$app/paths';
-  import { normalizeText } from '$lib/utils';
   import { toast } from '$lib/toast/toast.svelte';
-  import { matchesQuery } from '$lib/facet-engine';
+  import { autocompleteEntities, type EntityOption } from '$lib/api/entity-autocomplete';
+  import { createDebouncedSearch } from '$lib/components/input/dropdown/search-helpers';
   import {
     clearKioskCookies,
     getKioskConfigIdFromCookie,
@@ -29,7 +28,6 @@
   import TwoColumnLayout from '$lib/components/layout/page/TwoColumnLayout.svelte';
   import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
   import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
-  import type { TitleListItemSchema } from '$lib/api/schema';
 
   let { data } = $props();
   // The editor seeds its mutable working state from data.config once on
@@ -45,7 +43,20 @@
   let activeId = $state<number | null>(data.activeId);
   let isActive = $derived(activeId === config.id);
 
-  type EditorItem = { titleSlug: string; titleName: string; hook: string };
+  // sublabel is the disambiguating "manufacturer · year" line, formatted the
+  // same way the autocomplete endpoint formats it (see titleSublabel) so an
+  // already-configured row and a freshly-searched one read identically.
+  type EditorItem = { titleSlug: string; titleName: string; sublabel: string; hook: string };
+
+  /** Join manufacturer + year into "manufacturer · year", dropping missing
+   * parts — mirrors the backend `manufacturer_year_sublabel` so configured rows
+   * match autocomplete rows. */
+  function titleSublabel(
+    manufacturer: string | null | undefined,
+    year: number | null | undefined,
+  ): string {
+    return [manufacturer, year != null ? String(year) : null].filter(Boolean).join(' · ');
+  }
 
   let pageHeading = $state(config.page_heading);
   let idleSeconds = $state(config.idle_seconds);
@@ -53,14 +64,15 @@
     config.items.map((i) => ({
       titleSlug: i.title.public_id,
       titleName: i.title.name,
+      sublabel: titleSublabel(i.title.manufacturer?.name, i.title.year),
       hook: i.hook,
     })),
   );
 
   let initialIdleSeconds = config.idle_seconds;
 
-  let allTitles = $state<TitleListItemSchema[]>([]);
   let search = $state('');
+  let searchResults = $state<EntityOption[]>([]);
   let saving = $state(false);
   let deleting = $state(false);
   let errorMessage = $state<string | null>(null);
@@ -96,25 +108,36 @@
   let lastSavedPayload = JSON.stringify(buildBody());
 
   let configuredSlugs = $derived(new Set(items.map((i) => i.titleSlug)));
-  let titleBySlug = $derived(new Map(allTitles.map((t) => [t.slug, t])));
+  // Drop already-configured titles from the live results.
+  let visibleResults = $derived(searchResults.filter((r) => !configuredSlugs.has(r.value)));
 
-  let searchResults = $derived.by(() => {
-    const q = normalizeText(search);
-    if (!q) return [];
-    return allTitles
-      .filter((t) => !configuredSlugs.has(t.slug))
-      .filter((t) => matchesQuery(t, q))
-      .slice(0, 12);
-  });
+  // Debounced server-side typeahead; stale responses are dropped.
+  const titleSearch = createDebouncedSearch(
+    (q: string) => autocompleteEntities('title', q),
+    (results) => {
+      searchResults = results;
+    },
+  );
 
-  onMount(async () => {
-    const res = await client.GET('/api/titles/all/');
-    if (res.data) allTitles = res.data;
-  });
+  function onSearchInput(value: string) {
+    search = value;
+    if (!value.trim()) {
+      // Empty box shows nothing (rather than the top-N); cancel any pending
+      // fetch so a late response can't repopulate the cleared list.
+      titleSearch.cancel();
+      searchResults = [];
+      return;
+    }
+    titleSearch.search(value);
+  }
 
-  function addTitle(t: TitleListItemSchema) {
-    items = [...items, { titleSlug: t.slug, titleName: t.name, hook: '' }];
+  function addTitle(r: EntityOption) {
+    items = [
+      ...items,
+      { titleSlug: r.value, titleName: r.label, sublabel: r.sublabel ?? '', hook: '' },
+    ];
     search = '';
+    searchResults = [];
     void save();
   }
 
@@ -295,21 +318,19 @@
           <input
             type="search"
             placeholder="Search by name…"
-            bind:value={search}
+            value={search}
+            oninput={(e) => onSearchInput(e.currentTarget.value)}
             autocomplete="off"
           />
         </label>
 
-        {#if searchResults.length > 0}
+        {#if visibleResults.length > 0}
           <ul class="results">
-            {#each searchResults as t (t.slug)}
+            {#each visibleResults as r (r.value)}
               <li>
-                <button type="button" onclick={() => addTitle(t)}>
-                  <strong>{t.name}</strong>
-                  <span class="result-meta">
-                    {#if t.manufacturer}{t.manufacturer.name}{/if}
-                    {#if t.year}· {t.year}{/if}
-                  </span>
+                <button type="button" onclick={() => addTitle(r)}>
+                  <strong>{r.label}</strong>
+                  {#if r.sublabel}<span class="result-meta">{r.sublabel}</span>{/if}
                 </button>
               </li>
             {/each}
@@ -323,13 +344,11 @@
         {:else}
           <ol class="items">
             {#each items as item, i (item.titleSlug)}
-              {@const t = titleBySlug.get(item.titleSlug)}
               <li class="item">
                 <div class="item-header">
                   <span class="item-name">
-                    {t?.name ?? item.titleName}
-                    {#if t?.year}<span class="dim"> · {t.year}</span>{/if}
-                    {#if t?.manufacturer}<span class="dim"> · {t.manufacturer.name}</span>{/if}
+                    {item.titleName}
+                    {#if item.sublabel}<span class="dim"> · {item.sublabel}</span>{/if}
                   </span>
                   <div class="item-actions">
                     <button

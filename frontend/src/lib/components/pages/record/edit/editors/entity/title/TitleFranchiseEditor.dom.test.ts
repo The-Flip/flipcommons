@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,28 +21,33 @@ vi.mock('$app/navigation', () => ({
   invalidateAll,
 }));
 
-const FRANCHISES = {
-  data: [
-    { slug: 'addams-family', name: 'Addams Family', title_count: 2 },
-    { slug: 'star-wars', name: 'Star Wars', title_count: 5 },
-  ],
-};
-
-const SERIES = {
-  data: [{ slug: 'addams-series', name: 'Addams Series', title_count: 2 }],
-};
+// Rows the autocomplete endpoint returns per type, filtered by the typed query.
+const FRANCHISE_ROWS = [
+  { value: 'addams-family', label: 'Addams Family', sublabel: null },
+  { value: 'star-wars', label: 'Star Wars', sublabel: null },
+];
+const SERIES_ROWS = [{ value: 'addams-series', label: 'Addams Series', sublabel: null }];
 
 const INITIAL_TITLE = {
-  franchise: { public_id: 'addams-family' },
+  franchise: { public_id: 'addams-family', name: 'Addams Family' },
   series: null,
 };
 
-function mockGetResponses() {
-  GET.mockImplementation(async (path: string) => {
-    if (path === '/api/franchises/all/') return FRANCHISES;
-    if (path === '/api/series/all/') return SERIES;
-    throw new Error(`Unexpected GET ${path}`);
-  });
+function mockResponses() {
+  GET.mockImplementation(
+    async (path: string, opts?: { params?: { query?: { type?: string; q?: string } } }) => {
+      if (path === '/api/entity-autocomplete/') {
+        const type = opts?.params?.query?.type;
+        const q = (opts?.params?.query?.q ?? '').toLowerCase();
+        const rows = type === 'series' ? SERIES_ROWS : FRANCHISE_ROWS;
+        const results = rows.filter((r) => r.label.toLowerCase().includes(q));
+        return { data: { results }, error: undefined, response: { status: 200 } };
+      }
+      // The retired /api/franchises/all/ + /api/series/all/ feeders must not be hit.
+      throw new Error(`Unexpected GET ${path}`);
+    },
+  );
+  PATCH.mockResolvedValue({ data: {}, error: undefined });
 }
 
 describe('TitleFranchiseEditor', () => {
@@ -50,15 +55,17 @@ describe('TitleFranchiseEditor', () => {
     GET.mockReset();
     PATCH.mockReset();
     invalidateAll.mockReset();
-    mockGetResponses();
+    mockResponses();
   });
 
-  it('reports clean state initially', async () => {
+  it('reports clean state initially with the saved franchise rendered (no network)', async () => {
     const user = userEvent.setup();
     render(TitleFranchiseEditorFixture, {
       props: { initialData: INITIAL_TITLE },
     });
 
+    expect(screen.getByRole('combobox', { name: 'Franchise' })).toHaveValue('Addams Family');
+    expect(GET).not.toHaveBeenCalled();
     expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
 
     await user.click(screen.getByRole('button', { name: 'Check dirty' }));
@@ -75,5 +82,50 @@ describe('TitleFranchiseEditor', () => {
 
     expect(PATCH).not.toHaveBeenCalled();
     expect(screen.getByTestId('saved-count')).toHaveTextContent('1');
+  });
+
+  it('clearing the franchise marks dirty and PATCHes franchise: null (the optional null path)', async () => {
+    const user = userEvent.setup();
+    render(TitleFranchiseEditorFixture, {
+      props: { initialData: INITIAL_TITLE },
+    });
+
+    // The franchise is optional, so its clear (×) is present; clearing empties it.
+    await user.click(screen.getByRole('button', { name: 'Clear selection' }));
+
+    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1));
+    expect(PATCH).toHaveBeenCalledWith(
+      '/api/titles/{public_id}/claims/',
+      expect.objectContaining({
+        body: expect.objectContaining({ fields: { franchise: null } }),
+      }),
+    );
+  });
+
+  it('selecting a new franchise via the typeahead PATCHes the chosen slug', async () => {
+    const user = userEvent.setup();
+    render(TitleFranchiseEditorFixture, {
+      props: { initialData: INITIAL_TITLE },
+    });
+
+    await user.click(screen.getByRole('combobox', { name: 'Franchise' }));
+    expect(GET).toHaveBeenCalledWith('/api/entity-autocomplete/', {
+      params: { query: { type: 'franchise', q: '' } },
+    });
+
+    await user.click(await screen.findByRole('option', { name: 'Star Wars' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1));
+    expect(PATCH).toHaveBeenCalledWith(
+      '/api/titles/{public_id}/claims/',
+      expect.objectContaining({
+        body: expect.objectContaining({ fields: { franchise: 'star-wars' } }),
+      }),
+    );
   });
 });

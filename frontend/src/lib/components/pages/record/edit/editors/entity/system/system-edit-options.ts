@@ -1,7 +1,9 @@
 /**
- * Cached fetchers for system edit dropdowns (manufacturer, technology subgeneration).
+ * Cached fetcher for the system technology-subgeneration dropdown.
  *
- * Parallel to title-edit-options.ts. Each list is cached per-session.
+ * The manufacturer field (both edit and create flows) moved to the
+ * `/api/entity-autocomplete/` typeahead (`EntitySelect`); only the
+ * technology-subgeneration list still loads here, cached per-session.
  */
 
 import client from '$lib/api/client';
@@ -9,26 +11,9 @@ import client from '$lib/api/client';
 export type SystemEditOption = {
   value: string;
   label: string;
-  count: number;
 };
 
-let cachedManufacturers: Promise<SystemEditOption[]> | null = null;
 let cachedTechSubgens: Promise<SystemEditOption[]> | null = null;
-
-export function fetchManufacturerOptions(): Promise<SystemEditOption[]> {
-  if (!cachedManufacturers) {
-    cachedManufacturers = client
-      .GET('/api/manufacturers/all/')
-      .then(({ data }) =>
-        (data ?? []).map((m) => ({ value: m.slug, label: m.name, count: m.model_count })),
-      )
-      .catch(() => {
-        cachedManufacturers = null;
-        return [];
-      });
-  }
-  return cachedManufacturers;
-}
 
 export function fetchTechnologySubgenerationOptions(): Promise<SystemEditOption[]> {
   if (!cachedTechSubgens) {
@@ -36,7 +21,7 @@ export function fetchTechnologySubgenerationOptions(): Promise<SystemEditOption[
       .GET('/api/technology-generations/')
       .then(({ data }) =>
         (data ?? []).flatMap((g) =>
-          g.subgenerations.map((s) => ({ value: s.slug, label: s.name, count: 0 })),
+          g.subgenerations.map((s) => ({ value: s.slug, label: s.name })),
         ),
       )
       .catch(() => {

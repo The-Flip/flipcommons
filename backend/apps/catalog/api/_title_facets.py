@@ -38,7 +38,6 @@ from django.db.models import (
     F,
     Max,
     Model,
-    OuterRef,
     Q,
     QuerySet,
     Subquery,
@@ -46,6 +45,7 @@ from django.db.models import (
 from django.db.models.functions import Lower
 
 from apps.core.models import EntityStatus, active_status_q
+from apps.core.search import fold as _fold
 
 from ..models import (
     DisplayType,
@@ -64,7 +64,6 @@ from ..models import (
 from ._facet_helpers import (
     Bounds,
     FacetOption,
-    _fold,
     _Unaccent,
     ancestor_map,
     bounds,
@@ -147,13 +146,10 @@ _MODEL_COUNT_GUARD = Q(variant_of__isnull=True) & (
     Q(status=EntityStatus.ACTIVE) | Q(status__isnull=True)
 )
 
-# Earliest non-variant active model by (year, name) — the title's "first model",
-# whose manufacturer is the title's canonical manufacturer (mirrors /all/).
-_FIRST_MODEL = (
-    MachineModel.objects.filter(title=OuterRef("pk"), variant_of__isnull=True)
-    .active()
-    .order_by("year", "name")
-)
+# The title's "first model" — see ``Title.first_model_subquery`` for the rule.
+# Its manufacturer is the title's canonical manufacturer (mirrors the card and
+# the autocomplete sublabel, which read the same subquery).
+_FIRST_MODEL = Title.first_model_subquery()
 
 # Correlated "first model's manufacturer" lookups. Used ONLY on demand — by the
 # `q` and `manufacturer` *filters* (see apply_dimension). They are NOT in

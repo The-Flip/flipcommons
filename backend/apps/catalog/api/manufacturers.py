@@ -3,23 +3,19 @@
 from __future__ import annotations
 
 import json
-from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import cast
 
-from django.db.models import Count, F, Max, Min, Prefetch, Q, QuerySet
+from django.db.models import F, Prefetch, QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
-from django.views.decorators.cache import cache_control
 from ninja import Query, Router, Schema
-from ninja.decorators import decorate_view
 from ninja.security import django_auth
 from pydantic import TypeAdapter
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
-from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
@@ -28,18 +24,14 @@ from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..cache import (
     get_cached_response,
-    manufacturers_all_key,
     manufacturers_facets_key,
     set_cached_response,
 )
 from ..models import (
     CorporateEntity,
-    CorporateEntityAlias,
     CorporateEntityLocation,
-    Credit,
     MachineModel,
     Manufacturer,
-    ManufacturerAlias,
     System,
 )
 from ._manufacturer_facets import (
@@ -50,7 +42,7 @@ from ._manufacturer_facets import (
     ordered,
     query_count,
 )
-from ._typing import FacetOptionDict, HasModelCount, HasYearRange, SlugName
+from ._typing import FacetOptionDict, HasModelCount
 from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
@@ -69,31 +61,10 @@ from .schemas import (
     CatalogDetailSchema,
     ClaimPatchSchema,
     CorporateEntityLocationSchema,
-    EntityRef,
     FacetOptionSchema,
     RelatedTitleSchema,
     YearBoundsSchema,
 )
-from .titles import _dedup_facet_dicts
-
-
-class ManufacturerGridItemSchema(Schema):
-    name: str
-    slug: str
-    model_count: int = 0
-    thumbnail_url: str | None = None
-    search_text: str | None = None
-    locations: list[EntityRef] = []
-    year_min: int | None = None
-    year_max: int | None = None
-    persons: list[EntityRef] = []
-    tech_generations: list[EntityRef] = []
-
-
-_ALL_ADAPTER: TypeAdapter[list[ManufacturerGridItemSchema]] = TypeAdapter(
-    list[ManufacturerGridItemSchema]
-)
-
 
 # ---------------------------------------------------------------------------
 # Listing page schemas (SSR /manufacturers)
@@ -326,14 +297,13 @@ manufacturers_router = Router(tags=["manufacturers"])
 def _page_thumbnails(
     manufacturer_ids: list[int], *, min_rank: int
 ) -> dict[int, str | None]:
-    """Per-manufacturer thumbnail URL, batched over **just this page's** manufacturers.
+    """Per-manufacturer thumbnail URL, batched over *manufacturer_ids*.
 
-    Parity with ``/all/`` ([list_all_manufacturers]): the newest active non-variant
-    model that has ``extra_data`` (``year`` DESC nulls-last, then ``name``, first-wins),
-    then the uploaded-backglass-preferred / ``extra_data`` fallback image at
-    ``min_rank`` (the licensing gate that drops below-rank images — so the card is
-    audience-variant). Scoped to the sliced ids so the batch can't scan every model in
-    the catalog the way ``/all/`` (which has no page to bound) does."""
+    Picks the newest active non-variant model that has ``extra_data`` (``year`` DESC
+    nulls-last, then ``name``, first-wins), then the uploaded-backglass-preferred /
+    ``extra_data`` fallback image at ``min_rank`` (the licensing gate that drops
+    below-rank images — so the card is audience-variant). Scoped to the given ids so
+    the batch can't scan every model in the catalog."""
     if not manufacturer_ids:
         return {}
     thumb_model: dict[int, int] = {}
@@ -486,221 +456,6 @@ def manufacturer_facets_response(filters: MfrFilters) -> HttpResponse:
     response = HttpResponse(json_bytes, content_type="application/json")
     response["Vary"] = "Cookie"
     return response
-
-
-@manufacturers_router.get("/all/", response=list[ManufacturerGridItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_all_manufacturers(
-    request: HttpRequest,
-) -> HttpResponse | list[dict[str, Any]]:
-    """Return every manufacturer with facet data for client-side filtering.
-
-    Performance-critical: uses bulk queries and lookup maps instead of
-    deep prefetch + Python iteration.  See ``list_all_titles`` for the
-    full explanation of this pattern.
-    """
-    response = get_cached_response(manufacturers_all_key())
-    if response is not None:
-        return response
-
-    min_rank = get_minimum_display_rank()
-
-    # --- Main query with annotations ---
-    manufacturers = list(
-        Manufacturer.objects.active()
-        .annotate(
-            model_count=Count(
-                "entities__models",
-                filter=Q(entities__models__variant_of__isnull=True)
-                & active_status_q("entities__models"),
-            ),
-            year_min=Min(
-                "entities__models__year",
-                filter=Q(entities__models__variant_of__isnull=True)
-                & active_status_q("entities__models"),
-            ),
-            year_max=Max(
-                "entities__models__year",
-                filter=Q(entities__models__variant_of__isnull=True)
-                & active_status_q("entities__models"),
-            ),
-        )
-        .order_by("-model_count")
-    )
-
-    # --- Batch thumbnail: newest model with extra_data per manufacturer ---
-    mfr_thumb_model: dict[int, int] = {}
-    for mfr_id, model_id in (
-        MachineModel.objects.active()
-        .filter(
-            variant_of__isnull=True,
-            extra_data__isnull=False,
-            corporate_entity__manufacturer__isnull=False,
-        )
-        .order_by(F("year").desc(nulls_last=True), "name")
-        .values_list("corporate_entity__manufacturer_id", "id")
-    ):
-        if mfr_id not in mfr_thumb_model:
-            mfr_thumb_model[mfr_id] = model_id
-    thumb_models = {
-        m.pk: m
-        for m in MachineModel.objects.filter(id__in=mfr_thumb_model.values()).only(
-            "id", "extra_data"
-        )
-    }
-    thumb_media = fetch_model_media_map(mfr_thumb_model.values())
-
-    # --- Bulk search text + facet data per manufacturer ---
-    mfr_ids = {m.pk for m in manufacturers}
-
-    # Entity names per manufacturer
-    mfr_entity_names: dict[int, list[str]] = defaultdict(list)
-    mfr_entity_ids: dict[int, list[int]] = defaultdict(list)
-    for eid, mfr_id, ename in CorporateEntity.objects.active().values_list(
-        "id", "manufacturer_id", "name"
-    ):
-        if mfr_id in mfr_ids:
-            mfr_entity_names[mfr_id].append(ename)
-            mfr_entity_ids[mfr_id].append(eid)
-
-    all_entity_ids = {eid for eids in mfr_entity_ids.values() for eid in eids}
-
-    # Aliases per entity → grouped by manufacturer
-    entity_to_mfr: dict[int, int] = {}
-    for mfr_id, eids in mfr_entity_ids.items():
-        for eid in eids:
-            entity_to_mfr[eid] = mfr_id
-
-    mfr_ce_alias_names: dict[int, list[str]] = defaultdict(list)
-    for eid, aval in CorporateEntityAlias.objects.filter(
-        corporate_entity_id__in=all_entity_ids
-    ).values_list("corporate_entity_id", "value"):
-        mid = entity_to_mfr.get(eid)
-        if mid:
-            mfr_ce_alias_names[mid].append(aval)
-
-    # Manufacturer's own aliases — must contribute to search_text so the UI's
-    # "no results → create?" gate stays aligned with ``assert_name_available``,
-    # which walks the ``aliases`` reverse relation and blocks alias-collision
-    # creates at the API layer.
-    mfr_brand_alias_names: dict[int, list[str]] = defaultdict(list)
-    for mid, aval in ManufacturerAlias.objects.filter(
-        manufacturer_id__in=mfr_ids
-    ).values_list("manufacturer_id", "value"):
-        mfr_brand_alias_names[mid].append(aval)
-
-    # Locations per manufacturer (with hierarchy)
-    mfr_location_names: dict[int, list[str]] = defaultdict(list)
-    mfr_location_refs: dict[int, dict[str, str]] = defaultdict(dict)
-    for eid, loc_path, loc_name, p1n, p1p, p2n, p2p, p3n, p3p, p4n, p4p in (
-        CorporateEntityLocation.objects.filter(corporate_entity_id__in=all_entity_ids)
-        .select_related("location__parent__parent__parent__parent")
-        .values_list(
-            "corporate_entity_id",
-            "location__location_path",
-            "location__name",
-            "location__parent__name",
-            "location__parent__location_path",
-            "location__parent__parent__name",
-            "location__parent__parent__location_path",
-            "location__parent__parent__parent__name",
-            "location__parent__parent__parent__location_path",
-            "location__parent__parent__parent__parent__name",
-            "location__parent__parent__parent__parent__location_path",
-        )
-    ):
-        mid = entity_to_mfr.get(eid)
-        if not mid:
-            continue
-        for name, path in (
-            (loc_name, loc_path),
-            (p1n, p1p),
-            (p2n, p2p),
-            (p3n, p3p),
-            (p4n, p4p),
-        ):
-            if name:
-                mfr_location_names[mid].append(name)
-            if path and name and path not in mfr_location_refs[mid]:
-                mfr_location_refs[mid][path] = name
-
-    # Tech generations per manufacturer (via models)
-    mfr_tech_gens: dict[int, list[SlugName]] = defaultdict(list)
-    for mfr_id, tg_slug, tg_name in (
-        MachineModel.objects.active()
-        .filter(
-            variant_of__isnull=True,
-            technology_generation__isnull=False,
-            corporate_entity__manufacturer_id__in=mfr_ids,
-        )
-        .values_list(
-            "corporate_entity__manufacturer_id",
-            "technology_generation__slug",
-            "technology_generation__name",
-        )
-        .distinct()
-    ):
-        mfr_tech_gens[mfr_id].append(SlugName(tg_slug, tg_name))
-
-    # Persons per manufacturer (via model credits)
-    mfr_persons: dict[int, list[SlugName]] = defaultdict(list)
-    for mfr_id, p_slug, p_name in (
-        Credit.objects.filter(
-            model__variant_of__isnull=True,
-            model__corporate_entity__manufacturer_id__in=mfr_ids,
-        )
-        .values_list(
-            "model__corporate_entity__manufacturer_id",
-            "person__slug",
-            "person__name",
-        )
-        .distinct()
-    ):
-        mfr_persons[mfr_id].append(SlugName(p_slug, p_name))
-
-    # --- Assembly ---
-    result = []
-    for mfr in manufacturers:
-        mfr_id = mfr.pk
-        model_count = cast(HasModelCount, mfr).model_count
-        year_min = cast(HasYearRange, mfr).year_min
-        year_max = cast(HasYearRange, mfr).year_max
-        search_parts: list[str] = []
-        search_parts.extend(mfr_brand_alias_names.get(mfr_id, []))
-        search_parts.extend(mfr_entity_names.get(mfr_id, []))
-        search_parts.extend(mfr_ce_alias_names.get(mfr_id, []))
-        search_parts.extend(mfr_location_names.get(mfr_id, []))
-
-        thumb = None
-        tm_id = mfr_thumb_model.get(mfr_id)
-        tm = thumb_models.get(tm_id) if tm_id else None
-        if tm:
-            thumb, _ = extract_image_urls(
-                tm.extra_data or {},
-                thumb_media.get(tm.pk),
-                min_rank=min_rank,
-            )
-
-        loc_refs_map = mfr_location_refs.get(mfr_id, {})
-        locations = [
-            {"public_id": path, "name": name} for path, name in loc_refs_map.items()
-        ]
-
-        result.append(
-            {
-                "name": mfr.name,
-                "slug": mfr.slug,
-                "model_count": model_count,
-                "thumbnail_url": thumb,
-                "search_text": (" | ".join(search_parts) if search_parts else None),
-                "locations": locations,
-                "year_min": year_min,
-                "year_max": year_max,
-                "persons": _dedup_facet_dicts(mfr_persons.get(mfr_id, [])),
-                "tech_generations": _dedup_facet_dicts(mfr_tech_gens.get(mfr_id, [])),
-            }
-        )
-    return set_cached_response(manufacturers_all_key(), _ALL_ADAPTER, result)
 
 
 @manufacturers_router.patch(

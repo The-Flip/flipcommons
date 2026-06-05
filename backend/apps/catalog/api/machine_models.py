@@ -42,23 +42,19 @@ from apps.provenance.schemas import (
 
 from ..models import (
     Cabinet,
-    CorporateEntity,
     Credit,
     CreditRole,
     DisplaySubtype,
     DisplayType,
     GameFormat,
-    GameplayFeature,
     MachineModel,
     MachineModelGameplayFeature,
-    Person,
     RewardType,
     System,
     Tag,
     TechnologyGeneration,
     TechnologySubgeneration,
     Theme,
-    Title,
 )
 from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import (
@@ -686,12 +682,10 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
         return [EditOptionSchema(slug=obj.slug, label=obj.name) for obj in qs]
 
     return ModelEditOptionsSchema(
-        themes=_opts(Theme.objects.active().order_by("name")),
         tags=_opts(Tag.objects.active().order_by("name")),
         reward_types=_opts(
             RewardType.objects.active().order_by("display_order", "name")
         ),
-        gameplay_features=_opts(GameplayFeature.objects.active().order_by("name")),
         technology_generations=_opts(
             TechnologyGeneration.objects.active().order_by("display_order", "name")
         ),
@@ -709,19 +703,9 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
             GameFormat.objects.active().order_by("display_order", "name")
         ),
         systems=_opts(System.objects.active().order_by("name")),
-        corporate_entities=_opts(CorporateEntity.objects.active().order_by("name")),
-        people=_opts(Person.objects.active().order_by("name")),
         credit_roles=_opts(
             CreditRole.objects.active().order_by("display_order", "name")
         ),
-        titles=_opts(Title.objects.active().order_by("name")),
-        models=[
-            EditOptionSchema(
-                slug=obj.slug,
-                label=f"{obj.name} ({obj.year})" if obj.year else obj.name,
-            )
-            for obj in MachineModel.objects.active().order_by("name")
-        ],
     )
 
 

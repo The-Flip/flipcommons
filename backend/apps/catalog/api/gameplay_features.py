@@ -5,9 +5,7 @@ from __future__ import annotations
 from django.db.models import Prefetch, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
-from ninja.decorators import decorate_view
 from ninja.security import django_auth
 
 from apps.core.authz.markers import requires
@@ -125,7 +123,7 @@ def _gameplay_feature_rollup(
 ) -> dict[int, int]:
     """The hierarchical ``title_count`` rollup over *features*: each feature's count
     unions its whole descendant subtree's titles via ``children_map`` (not a SQL
-    column), deduped. Shared by the paginated ``GET /`` and ``/all/``."""
+    column), deduped."""
     children_map: dict[int, list[int]] = {
         f.pk: [c.pk for c in f.children.all()] for f in features
     }
@@ -180,20 +178,6 @@ def list_gameplay_features(
         items=[_serialize_gameplay_feature_row(f, counts.get(f.pk, 0)) for f in rows],
         count=len(matched),
     )
-
-
-@gameplay_features_router.get("/all/", response=list[GameplayFeatureListItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_all_gameplay_features(
-    request: HttpRequest,
-) -> list[GameplayFeatureListItemSchema]:
-    """Every gameplay feature with its rollup title count (no pagination) — the full set
-    the editor parent-picker needs (which consumes ``title_count``), and which the
-    paginated ``GET /`` can't serve it."""
-    active = _active_gameplay_features()
-    counts = _gameplay_feature_rollup(active)
-    active.sort(key=lambda f: (-counts.get(f.pk, 0), f.name.lower(), f.pk))
-    return [_serialize_gameplay_feature_row(f, counts.get(f.pk, 0)) for f in active]
 
 
 @gameplay_features_router.patch(

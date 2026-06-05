@@ -1,5 +1,4 @@
 <script lang="ts">
-  import client from '$lib/api/client';
   import TaxonomyDetailBaseLayout from '$lib/components/pages/record/detail/TaxonomyDetailBaseLayout.svelte';
   import HierarchicalTaxonomySidebar from '$lib/components/pages/record/detail/HierarchicalTaxonomySidebar.svelte';
   import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
@@ -26,16 +25,6 @@
   ];
 
   let displayAliases = $derived(displayAliasesFor(profile.name, profile.aliases ?? []));
-
-  async function loadParentOptions() {
-    const { data: features } = await client.GET('/api/gameplay-features/all/');
-    if (!features) return [];
-    return features.map((f) => ({
-      slug: f.slug,
-      label: f.name,
-      count: f.title_count,
-    }));
-  }
 </script>
 
 <TaxonomyDetailBaseLayout
@@ -67,7 +56,7 @@
       initialData={profile}
       slug={profile.slug}
       claimsPath={'/api/gameplay-features/{public_id}/claims/'}
-      parentOptionsLoader={loadParentOptions}
+      parentType="gameplay-feature"
       parentsLabel="This feature is a type of..."
       bind:editorRef={ref.current}
       {onsaved}

@@ -187,8 +187,8 @@ class TestQBranches:
         assert _slugs(MfrFilters(q="nope")) == set()
 
     def test_matches_own_alias_unconditionally(self, db):
-        """The manufacturer's own aliases contribute with no active-CE requirement
-        (matches ``/all/``'s blob) — here the manufacturer has no CE at all."""
+        """The manufacturer's own aliases contribute with no active-CE requirement —
+        here the manufacturer has no CE at all."""
         _mfr("wms", name="WMS Industries", aliases=("Williams",))
         assert _slugs(MfrFilters(q="williams")) == {"wms"}
 
@@ -304,9 +304,8 @@ class TestQLocation:
         assert _slugs(MfrFilters(q="illinois")) == set()
 
     def test_matches_ancestor_beyond_four_levels(self, db):
-        """Location ancestor match is **depth-unlimited** (drops ``/all/``'s 4-parent
-        cap, matching the location facet). A CE nested 6 deep still matches a
-        top-country ``q``."""
+        """Location ancestor match is **depth-unlimited** (matching the location
+        facet). A CE nested 6 deep still matches a top-country ``q``."""
         a = _loc("a", "Alpha")
         b = _loc("a/b", "Bravo", parent=a)
         c = _loc("a/b/c", "Charlie", parent=b)
@@ -315,7 +314,7 @@ class TestQLocation:
         deep = _loc("a/b/c/d/e/f", "Foxtrot", parent=e)
         mfr = _mfr("acme", name="Acme")
         _ce(mfr, "acme-ce", location=deep)
-        # "Alpha" is the 6th ancestor — past /all/'s 4-level cap, still matched here.
+        # "Alpha" is the 6th ancestor — depth-unlimited, so it still matches here.
         assert _slugs(MfrFilters(q="alpha")) == {"acme"}
 
 
@@ -466,9 +465,8 @@ class TestPersonAndTechGenFilters:
         assert _slugs(MfrFilters(person="pat-lawlor")) == {"acme"}
 
     def test_person_credit_only_on_deleted_model_excluded(self, db):
-        """The deliberate divergence from ``/all/`` (which builds persons from Credit
-        with no model-active filter): a person whose only credit is on a deleted model
-        must not match the filter."""
+        """Persons use the active-non-variant model guard: a person whose only credit
+        is on a deleted model must not match the filter."""
         pat = _person("pat-lawlor", "Pat Lawlor")
         mfr = _mfr("acme", name="Acme")
         _model(_ce(mfr, "acme-ce"), person=pat, status=EntityStatus.DELETED)
@@ -547,7 +545,7 @@ class TestFacetCounts:
 
     def test_person_count_excludes_deleted_model_credit(self, db):
         """Counts use the active-non-variant model guard, so a person credited only on
-        a deleted model doesn't surface (the deliberate ``/all/`` divergence)."""
+        a deleted model doesn't surface."""
         pat = _person("pat-lawlor", "Pat Lawlor")
         mfr = _mfr("acme", name="Acme")
         _model(_ce(mfr, "acme-ce"), person=pat, status=EntityStatus.DELETED)
@@ -753,9 +751,8 @@ class TestCardsEndpoint:
 
     def test_thumbnail_is_newest_model_with_extra_data(self, client, db):
         """The card thumbnail is the manufacturer's **newest active non-variant model
-        that has extra_data** (year DESC, first-wins) — the batched ``_page_thumbnails``
-        pick, parity with ``/all/``. The newer model's backglass medium URL wins over
-        an older model's image."""
+        that has extra_data** (year DESC, first-wins). The newer model's backglass
+        medium URL wins over an older model's image."""
         ce = _ce(_mfr("acme", name="Acme"), "acme-ce")
         _model(
             ce,

@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-from django.db.models import Q
 from django.http import HttpRequest
 from ninja import Router
 from ninja.errors import HttpError
 
+from apps.core.autocomplete import get_autocomplete_type, run_autocomplete
 from apps.core.schemas import (
     LinkTargetListSchema,
+    LinkTargetSchema,
     LinkTypeSchema,
 )
 from apps.core.wikilinks import get_picker_type, get_picker_types
-
-AUTOCOMPLETE_RESULT_LIMIT = 20
-
 
 # ---------------------------------------------------------------------------
 # Router
@@ -38,38 +36,21 @@ def search_link_targets(
     """Search within a picker type for autocomplete results.
 
     Standard-flow types only — custom-flow picker types (citations) drive
-    their own frontend flow and never hit this endpoint.
+    their own frontend flow and never hit this endpoint. Delegates to the
+    shared autocomplete engine registered under the same ``name``, mapping each
+    ``{value, label}`` row onto the wikilink token shape ``{ref, label}`` the
+    ``[[`` frontend expects (so the picker gains the engine's abbreviation /
+    alias matching and diacritic folding for free, backend-only).
     """
     pt = get_picker_type(type)
     if (
         pt is None
         or not pt.is_enabled()
         or pt.flow != "standard"
-        or pt.autocomplete_serialize is None
+        or get_autocomplete_type(type) is None
     ):
         raise HttpError(400, f"Invalid or unsupported link type: {type!r}")
 
-    model = pt.get_model()
-
-    # Use .active() when available (LifecycleStatusModel models) to exclude
-    # soft-deleted entities; fall back to .all() for models without it.
-    qs = (
-        model.objects.active()
-        if hasattr(model.objects, "active")
-        else model.objects.all()
-    )
-
-    if pt.autocomplete_select_related:
-        qs = qs.select_related(*pt.autocomplete_select_related)
-
-    if pt.autocomplete_ordering:
-        qs = qs.order_by(*pt.autocomplete_ordering)
-
-    if q and pt.autocomplete_search_fields:
-        q_filter = Q()
-        for field in pt.autocomplete_search_fields:
-            q_filter |= Q(**{field: q})
-        qs = qs.filter(q_filter)
-
-    results = [pt.autocomplete_serialize(obj) for obj in qs[:AUTOCOMPLETE_RESULT_LIMIT]]
+    rows = run_autocomplete(type, q)
+    results = [LinkTargetSchema(ref=row.value, label=row.label) for row in rows]
     return LinkTargetListSchema(results=results)

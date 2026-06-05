@@ -933,5 +933,5 @@ class TestFranchiseRestore:
         assert "titles" in body
 
 
-# The franchise list endpoint (paginated ``GET /`` + full ``GET /all/``) is covered by
+# The franchise list endpoint (paginated ``GET /``) is covered by
 # ``test_api_catalog_list.py``.

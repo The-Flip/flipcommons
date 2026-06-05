@@ -21,12 +21,9 @@ vi.mock('$app/navigation', () => ({
   invalidateAll,
 }));
 
+// Closed enumerations still come from /api/models/edit-options/ (SearchableSelect).
 const EDIT_OPTIONS = {
   data: {
-    themes: [
-      { slug: 'medieval', label: 'Medieval' },
-      { slug: 'fantasy', label: 'Fantasy' },
-    ],
     tags: [
       { slug: 'classic', label: 'Classic' },
       { slug: 'widebody', label: 'Widebody' },
@@ -34,10 +31,6 @@ const EDIT_OPTIONS = {
     reward_types: [
       { slug: 'replay', label: 'Replay' },
       { slug: 'extra-ball', label: 'Extra Ball' },
-    ],
-    gameplay_features: [
-      { slug: 'multiball', label: 'Multiball' },
-      { slug: 'ramps', label: 'Ramps' },
     ],
     cabinets: [
       { slug: 'standard', label: 'Standard' },
@@ -50,6 +43,16 @@ const EDIT_OPTIONS = {
   },
 };
 
+// themes + gameplay_features are now typeaheads over /api/entity-autocomplete/.
+const THEME_ROWS = [
+  { value: 'medieval', label: 'Medieval', sublabel: null },
+  { value: 'fantasy', label: 'Fantasy', sublabel: null },
+];
+const GF_ROWS = [
+  { value: 'multiball', label: 'Multiball', sublabel: null },
+  { value: 'ramps', label: 'Ramps', sublabel: null },
+];
+
 const FIELD_CONSTRAINTS = {
   data: {
     player_count: { min: 1, max: 6, step: 1 },
@@ -58,10 +61,10 @@ const FIELD_CONSTRAINTS = {
 };
 
 const INITIAL_MODEL = {
-  themes: [{ public_id: 'medieval' }],
+  themes: [{ public_id: 'medieval', name: 'Medieval' }],
   tags: [{ public_id: 'classic' }],
   reward_types: [{ public_id: 'replay' }],
-  gameplay_features: [{ public_id: 'multiball', count: 3 }],
+  gameplay_features: [{ public_id: 'multiball', name: 'Multiball', count: 3 }],
   game_format: { public_id: 'pinball-machine' },
   cabinet: { public_id: 'standard' },
   player_count: 4,
@@ -74,11 +77,20 @@ describe('FeaturesEditor dirty-state contract', () => {
     GET.mockReset();
     PATCH.mockReset();
     invalidateAll.mockReset();
-    GET.mockImplementation(async (path: string) => {
-      if (path === '/api/models/edit-options/') return EDIT_OPTIONS;
-      if (path === '/api/field-constraints/{entity_type}') return FIELD_CONSTRAINTS;
-      throw new Error(`Unexpected GET ${path}`);
-    });
+    GET.mockImplementation(
+      async (path: string, opts?: { params?: { query?: { type?: string; q?: string } } }) => {
+        if (path === '/api/models/edit-options/') return EDIT_OPTIONS;
+        if (path === '/api/field-constraints/{entity_type}') return FIELD_CONSTRAINTS;
+        if (path === '/api/entity-autocomplete/') {
+          const type = opts?.params?.query?.type;
+          const q = (opts?.params?.query?.q ?? '').toLowerCase();
+          const rows = type === 'theme' ? THEME_ROWS : GF_ROWS;
+          const results = rows.filter((r) => r.label.toLowerCase().includes(q));
+          return { data: { results }, error: undefined, response: { status: 200 } };
+        }
+        throw new Error(`Unexpected GET ${path}`);
+      },
+    );
   });
 
   it('rejects save when a feature has a count but no slug', async () => {

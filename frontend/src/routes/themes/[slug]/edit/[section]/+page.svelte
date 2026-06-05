@@ -1,5 +1,4 @@
 <script lang="ts">
-  import client from '$lib/api/client';
   import TaxonomyEditSectionPageBase from '$lib/components/pages/record/edit/TaxonomyEditSectionPageBase.svelte';
   import HierarchicalTaxonomyEditorSwitch from '$lib/components/pages/record/edit/editors/entity/taxonomy/HierarchicalTaxonomyEditorSwitch.svelte';
   import {
@@ -14,15 +13,6 @@
   const sections = HIERARCHICAL_TAXONOMY_EDIT_SECTIONS.map((section) =>
     section.key === 'parents' ? { ...section, label: 'Parent Themes' } : section,
   );
-
-  async function loadParentOptions() {
-    const { data: themes } = await client.GET('/api/themes/all/');
-    if (!themes) return [];
-    return themes.map((t) => ({
-      slug: t.slug,
-      label: t.name,
-    }));
-  }
 </script>
 
 <TaxonomyEditSectionPageBase
@@ -39,7 +29,7 @@
       initialData={theme}
       slug={theme.slug}
       claimsPath={'/api/themes/{public_id}/claims/'}
-      parentOptionsLoader={loadParentOptions}
+      parentType="theme"
       bind:editorRef={ref.current}
       {onsaved}
       {onerror}

@@ -16,7 +16,6 @@ from django.db.models import Q
 
 from apps.catalog.api._facet_helpers import (
     FacetOption,
-    _fold,
     ancestor_map,
     bounds,
     count_distinct,
@@ -33,19 +32,6 @@ from .conftest import make_machine_model
 _MODEL_GUARD = Q(variant_of__isnull=True) & (
     Q(status=EntityStatus.ACTIVE) | Q(status__isnull=True)
 )
-
-
-# ---------------------------------------------------------------------------
-# _fold — diacritic primitive (pure)
-# ---------------------------------------------------------------------------
-
-
-def test_fold_strips_diacritics_and_lowercases() -> None:
-    assert _fold("Pokémon") == "pokemon"
-    assert _fold("MONTRÉAL") == "montreal"
-    assert _fold("São Paulo") == "sao paulo"
-    # Punctuation is intentionally NOT folded (matches titles' contract).
-    assert _fold("AC/DC") == "ac/dc"
 
 
 # ---------------------------------------------------------------------------

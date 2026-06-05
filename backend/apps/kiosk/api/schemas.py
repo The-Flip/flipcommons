@@ -25,13 +25,25 @@ class KioskConfigPatchSchema(Schema):
     items: list[KioskConfigItemInputSchema] | None = None
 
 
+class KioskConfigItemTitleSchema(Schema):
+    """Title shape for the editor — identity plus the manufacturer + year the
+    editor renders beside each configured row. ``manufacturer``/``year`` are
+    derived live from the title's first model (not stored on the item), exactly
+    as the display page derives them; see ``apps.kiosk.api._titles``."""
+
+    public_id: str
+    name: str
+    manufacturer: EntityRef | None = None
+    year: int | None = None
+
+
 class KioskConfigItemDetailSchema(Schema):
     """One item in the detail response — title carries enough to render the editor."""
 
     id: int
     position: int
     hook: str
-    title: EntityRef
+    title: KioskConfigItemTitleSchema
 
 
 class KioskConfigDetailSchema(Schema):
@@ -56,7 +68,7 @@ class KioskConfigListItemSchema(Schema):
 
 
 class KioskItemTitleSchema(Schema):
-    """Subset of TitleListItemSchema needed by the kiosk display."""
+    """The title fields the kiosk display needs."""
 
     slug: str
     name: str

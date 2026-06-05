@@ -291,8 +291,7 @@ class PersonListSchema(Schema):
 @people_router.get("/", response=PersonListSchema)
 def list_people(request: HttpRequest, q: str = "", page: int = 1) -> PersonListSchema:
     """One page of people cards (thumbnail + credit count), most-credited first,
-    filtered server-side by ``q`` (name or alias). Matches the card data the page
-    rendered via ``/all/``, not the old name-ordered ``list_people``."""
+    filtered server-side by ``q`` (name or alias)."""
     result = paginated_list_response(
         _person_list_qs(),
         q=q,

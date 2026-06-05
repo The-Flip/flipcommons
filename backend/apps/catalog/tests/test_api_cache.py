@@ -3,9 +3,9 @@ from constance.signals import config_updated
 from django.core.cache import cache
 
 from apps.catalog.cache import (
-    _TITLES_ALL_BASE,
-    manufacturers_all_key,
-    titles_all_key,
+    _TITLES_FACETS_BASE,
+    manufacturers_facets_key,
+    titles_facets_key,
 )
 from apps.catalog.models import (
     Cabinet,
@@ -34,39 +34,29 @@ from apps.catalog.models import (
 from apps.catalog.signals import _cache_invalidating_models
 
 
-class TestAllEndpointCache:
+class TestModelSaveInvalidation:
+    """A model ``.save()`` busts the cached facet payload through the ``post_save``
+    signal. The facet-endpoint test files exercise hit/miss and call
+    ``invalidate_all()`` directly; only this case proves the signal is actually
+    wired and fires end-to-end (``TestCacheInvalidatingModelsParity`` checks the
+    model *set*, not that a save triggers invalidation)."""
+
     @pytest.fixture(autouse=True)
     def _clear_cache(self):
         cache.clear()
         yield
         cache.clear()
 
-    def test_titles_all_caches_on_second_request(self, client, machine_model):
-        resp1 = client.get("/api/titles/all/")
-        assert resp1.status_code == 200
-        assert cache.get(titles_all_key()) is not None
-
-        resp2 = client.get("/api/titles/all/")
-        assert resp2.json() == resp1.json()
-
     def test_title_save_invalidates_cache(self, client, db):
         title = Title.objects.create(
             name="Cactus Canyon", slug="cactus-canyon", opdb_id="CC1"
         )
-        client.get("/api/titles/all/")
-        assert cache.get(titles_all_key()) is not None
+        client.get("/api/pages/titles")
+        assert cache.get(titles_facets_key()) is not None
 
         title.name = "Cactus Canyon Continued"
         title.save()
-        assert cache.get(titles_all_key()) is None
-
-    def test_new_title_appears_after_invalidation(self, client, machine_model):
-        resp1 = client.get("/api/titles/all/")
-        count_before = len(resp1.json())
-
-        Title.objects.create(name="Godzilla", slug="godzilla", opdb_id="GZ1")
-        resp2 = client.get("/api/titles/all/")
-        assert len(resp2.json()) == count_before + 1
+        assert cache.get(titles_facets_key()) is None
 
 
 class TestCacheInvalidatingModelsParity:
@@ -105,7 +95,7 @@ class TestCacheInvalidatingModelsParity:
 
 
 class TestPolicyChangeInvalidation:
-    """Changing CONTENT_DISPLAY_POLICY busts cached /all/ payloads, since the
+    """Changing CONTENT_DISPLAY_POLICY busts cached facet payloads, since the
     rendered content depends on the active display threshold."""
 
     @pytest.fixture(autouse=True)
@@ -118,10 +108,10 @@ class TestPolicyChangeInvalidation:
         # Populate both audience slots — default via a vanilla request, kiosk
         # via a request carrying the mode=kiosk cookie. The policy-change
         # signal must clear both.
-        client.get("/api/titles/all/")
-        client.get("/api/titles/all/", HTTP_COOKIE="mode=kiosk")
-        assert cache.get(f"{_TITLES_ALL_BASE}:default") is not None
-        assert cache.get(f"{_TITLES_ALL_BASE}:kiosk") is not None
+        client.get("/api/pages/titles")
+        client.get("/api/pages/titles", HTTP_COOKIE="mode=kiosk")
+        assert cache.get(f"{_TITLES_FACETS_BASE}:default") is not None
+        assert cache.get(f"{_TITLES_FACETS_BASE}:kiosk") is not None
 
         config_updated.send(
             sender=None,
@@ -129,12 +119,12 @@ class TestPolicyChangeInvalidation:
             old_value="licensed-only",
             new_value="show-all",
         )
-        assert cache.get(f"{_TITLES_ALL_BASE}:default") is None
-        assert cache.get(f"{_TITLES_ALL_BASE}:kiosk") is None
+        assert cache.get(f"{_TITLES_FACETS_BASE}:default") is None
+        assert cache.get(f"{_TITLES_FACETS_BASE}:kiosk") is None
 
     def test_unrelated_key_change_does_not_invalidate(self, client, machine_model):
-        client.get("/api/titles/all/")
-        assert cache.get(titles_all_key()) is not None
+        client.get("/api/pages/titles")
+        assert cache.get(titles_facets_key()) is not None
 
         config_updated.send(
             sender=None,
@@ -142,7 +132,7 @@ class TestPolicyChangeInvalidation:
             old_value="a",
             new_value="b",
         )
-        assert cache.get(titles_all_key()) is not None
+        assert cache.get(titles_facets_key()) is not None
 
 
 class TestKioskAudienceCacheIsolation:
@@ -150,8 +140,8 @@ class TestKioskAudienceCacheIsolation:
 
     The middleware reads ``mode=kiosk`` from request cookies and flips a
     contextvar that ``current_audience()`` reads, which is what
-    ``titles_all_key()`` / ``manufacturers_all_key()`` / etc. fold into the
-    cache key.
+    ``titles_facets_key()`` / ``manufacturers_facets_key()`` / etc. fold into
+    the cache key.
     """
 
     @pytest.fixture(autouse=True)
@@ -161,39 +151,26 @@ class TestKioskAudienceCacheIsolation:
         cache.clear()
 
     def test_kiosk_request_populates_kiosk_slot_only(self, client, machine_model):
-        client.get("/api/titles/all/", HTTP_COOKIE="mode=kiosk")
-        assert cache.get(f"{_TITLES_ALL_BASE}:kiosk") is not None
-        assert cache.get(f"{_TITLES_ALL_BASE}:default") is None
+        client.get("/api/pages/titles", HTTP_COOKIE="mode=kiosk")
+        assert cache.get(f"{_TITLES_FACETS_BASE}:kiosk") is not None
+        assert cache.get(f"{_TITLES_FACETS_BASE}:default") is None
 
     def test_default_request_populates_default_slot_only(self, client, machine_model):
-        client.get("/api/titles/all/")
-        assert cache.get(f"{_TITLES_ALL_BASE}:default") is not None
-        assert cache.get(f"{_TITLES_ALL_BASE}:kiosk") is None
-
-    def test_invalidate_all_clears_both_audience_slots(self, client, machine_model):
-        from apps.catalog.cache import invalidate_all
-
-        client.get("/api/titles/all/")
-        client.get("/api/titles/all/", HTTP_COOKIE="mode=kiosk")
-        assert cache.get(f"{_TITLES_ALL_BASE}:default") is not None
-        assert cache.get(f"{_TITLES_ALL_BASE}:kiosk") is not None
-
-        invalidate_all()
-
-        assert cache.get(f"{_TITLES_ALL_BASE}:default") is None
-        assert cache.get(f"{_TITLES_ALL_BASE}:kiosk") is None
+        client.get("/api/pages/titles")
+        assert cache.get(f"{_TITLES_FACETS_BASE}:default") is not None
+        assert cache.get(f"{_TITLES_FACETS_BASE}:kiosk") is None
 
     def test_kiosk_payload_not_served_to_default_request(self, client, machine_model):
         # Warm only the kiosk slot.
-        client.get("/api/titles/all/", HTTP_COOKIE="mode=kiosk")
-        assert cache.get(f"{_TITLES_ALL_BASE}:kiosk") is not None
-        assert cache.get(f"{_TITLES_ALL_BASE}:default") is None
+        client.get("/api/pages/titles", HTTP_COOKIE="mode=kiosk")
+        assert cache.get(f"{_TITLES_FACETS_BASE}:kiosk") is not None
+        assert cache.get(f"{_TITLES_FACETS_BASE}:default") is None
 
         # A subsequent default-audience request must not reuse the kiosk
         # slot — it populates its own slot fresh.
-        resp = client.get("/api/titles/all/")
+        resp = client.get("/api/pages/titles")
         assert resp.status_code == 200
-        assert cache.get(f"{_TITLES_ALL_BASE}:default") is not None
+        assert cache.get(f"{_TITLES_FACETS_BASE}:default") is not None
 
 
 class TestConditionalGet:
@@ -206,7 +183,7 @@ class TestConditionalGet:
         yield
         cache.clear()
 
-    @pytest.mark.parametrize("path", ["/api/titles/all/", "/api/manufacturers/all/"])
+    @pytest.mark.parametrize("path", ["/api/pages/titles", "/api/pages/manufacturers"])
     def test_304_on_matching_etag(self, client, machine_model, path):
         resp = client.get(path)
         assert resp.status_code == 200
@@ -216,7 +193,7 @@ class TestConditionalGet:
         resp2 = client.get(path, headers={"If-None-Match": etag})
         assert resp2.status_code == 304
 
-    @pytest.mark.parametrize("path", ["/api/titles/all/", "/api/manufacturers/all/"])
+    @pytest.mark.parametrize("path", ["/api/pages/titles", "/api/pages/manufacturers"])
     def test_200_on_stale_etag(self, client, machine_model, path):
         client.get(path)  # populate cache
 
@@ -227,8 +204,8 @@ class TestConditionalGet:
     @pytest.mark.parametrize(
         ("path", "cache_key"),
         [
-            ("/api/titles/all/", titles_all_key()),
-            ("/api/manufacturers/all/", manufacturers_all_key()),
+            ("/api/pages/titles", titles_facets_key()),
+            ("/api/pages/manufacturers", manufacturers_facets_key()),
         ],
     )
     def test_cache_stores_bytes_and_etag(self, client, machine_model, path, cache_key):

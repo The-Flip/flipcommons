@@ -94,3 +94,27 @@ class LinkTargetListSchema(Schema):
     """Response body for ``/link-types/targets/``."""
 
     results: list[LinkTargetSchema]
+
+
+class EntityAutocompleteResultSchema(Schema):
+    """One autocomplete result from ``/entity-autocomplete/``.
+
+    ``value`` is the identity string the consumer **saves** — a ``public_id``
+    (slug) for catalog entities, a ``username`` for ``user`` later. ``label`` is
+    the display text; ``sublabel`` is an optional second line disambiguating
+    same-labeled rows (e.g. a title's "manufacturer · year").
+
+    Distinct from :class:`LinkTargetSchema` despite the similar shape: ``value``
+    is an FK to persist, whereas ``ref`` there is a wikilink token to insert.
+    Same-ish wire shape, different semantics — kept separate per ApiDesign.md.
+    """
+
+    value: str
+    label: str
+    sublabel: str | None = None
+
+
+class EntityAutocompleteListSchema(Schema):
+    """Response body for ``/entity-autocomplete/``."""
+
+    results: list[EntityAutocompleteResultSchema]

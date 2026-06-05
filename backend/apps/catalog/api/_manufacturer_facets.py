@@ -21,28 +21,23 @@ serves the page result via :func:`ordered`, and assembles the sidebar option lis
 - **Year is span-overlap**, not "a model inside the range": two separate
   ``.filter()`` calls (``__lte=year_max`` AND ``__gte=year_min``) so different models
   can satisfy the two bounds.
-- **Person uses the active-non-variant model guard** — a deliberate divergence from
-  ``/all/``, which builds persons from ``Credit`` with no model-active filter and so
-  surfaces people whose only credit is on a retired model. Here those are excluded.
+- **Person uses the active-non-variant model guard** — a person whose only credit is
+  on a retired or variant model is excluded.
 - **``model_count`` is a filter-independent ``Subquery``** (the card's total
   active-non-variant model count, and the "most prolific first" sort key) —
   ``Coalesce``-d to 0 so a manufacturer with no such models reads 0 and sorts last.
 
 The ``q`` predicate (the subtle part):
 
-- It matches the same **fields** ``/all/`` builds its blob from: the **manufacturer
-  name + its own aliases unconditionally**, and **CE names, CE aliases and location
-  names (+ ancestors) only via active CEs**. The active-CE guard is therefore
-  **per-term, inside the CE-reached branches**, never a global ``AND`` — a global
-  guard would drop a manufacturer with no active CE from a pure *name* match (the
-  manufacturers analogue of titles' first-model ``q`` parity trap). **One deliberate
-  divergence from ``/all/``: location ancestor depth.** ``/all/`` walks only the
-  nearest **four** parents ([manufacturers.py] ``list_all_manufacturers``); the
-  location term here is **depth-unlimited** (the shared ``ancestor_map``), matching the
-  same improvement the location *facet* makes so search and facet counts agree. A CE
-  nested 5+ deep therefore matches a top-country ``q`` here where ``/all/`` would miss
-  it — the correct behavior (a country search should find all its manufacturers), and
-  pinned by a test.
+- It matches the **manufacturer name + its own aliases unconditionally**, and **CE
+  names, CE aliases and location names (+ ancestors) only via active CEs**. The
+  active-CE guard is therefore **per-term, inside the CE-reached branches**, never a
+  global ``AND`` — a global guard would drop a manufacturer with no active CE from a
+  pure *name* match (the manufacturers analogue of titles' first-model ``q`` parity
+  trap). **Location matching is depth-unlimited** (the shared ``ancestor_map``), so it
+  agrees with the location *facet* counts: a CE nested 5+ deep still matches a
+  top-country ``q`` — the correct behavior (a country search should find all its
+  manufacturers), and pinned by a test.
 - **Each guarded CE branch is an ``Exists`` subquery rooted at the CE-side model**,
   not an outer ``.annotate(Lower(Unaccent(F("entities__name"))))`` + a separate
   ``entities__status`` guard. Rooting the match and the active guard in one
@@ -79,6 +74,7 @@ from django.db.models import (
 from django.db.models.functions import Coalesce, Lower
 
 from apps.core.models import EntityStatus, active_status_q
+from apps.core.search import fold as _fold
 
 from ..models import (
     CorporateEntity,
@@ -94,7 +90,6 @@ from ..models import (
 from ._facet_helpers import (
     Bounds,
     FacetOption,
-    _fold,
     _fold_exists,
     _Unaccent,
     ancestor_map,
@@ -142,9 +137,9 @@ class FilterOptions:
 
 def base() -> QuerySet[Manufacturer]:
     """Active manufacturers — the unfiltered base for the page query and every facet
-    count. ``.active()`` is the only audience rule ``/all/`` applies to the
-    manufacturer set itself (audience otherwise only affects thumbnails via
-    ``min_rank``, which lives on the card path, not here)."""
+    count. ``.active()`` is the only audience rule that applies to the manufacturer
+    set itself (audience otherwise only affects thumbnails via ``min_rank``, which
+    lives on the card path, not here)."""
     return Manufacturer.objects.active()
 
 
@@ -420,7 +415,7 @@ def _count_location(ids: QuerySet[Manufacturer]) -> list[FacetOption]:
     then summing would double-count a manufacturer with active CEs in two sibling
     locations, so :func:`hierarchy_rollup` unions a distinct manufacturer-id set per
     ancestor ``location_path`` and takes ``len(set)``. The ancestor walk is
-    depth-unlimited (drops ``/all/``'s 4-parent cap)."""
+    depth-unlimited."""
     ancestors = ancestor_map(Location, "location_path", "parent__location_path")
     names = dict(Location.objects.values_list("location_path", "name"))
     # `location` is a non-null FK, so every CEL row carries a path — no null group to

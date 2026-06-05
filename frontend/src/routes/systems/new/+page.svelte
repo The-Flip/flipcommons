@@ -2,22 +2,13 @@
   import client from '$lib/api/client';
   import type { SystemCreateSchema } from '$lib/api/schema';
   import CreatePage from '$lib/components/pages/record/create/CreatePage.svelte';
-  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
-  import {
-    fetchManufacturerOptions,
-    type SystemEditOption,
-  } from '$lib/components/pages/record/edit/editors/entity/system/system-edit-options';
+  import EntitySelect from '$lib/components/input/entity-select/EntitySelect.svelte';
 
   type CreateBody = SystemCreateSchema;
 
   let { data } = $props();
 
-  let manufacturerOptions = $state<SystemEditOption[]>([]);
   let manufacturerSlug = $state<string | null>(null);
-
-  $effect(() => {
-    fetchManufacturerOptions().then((opts) => (manufacturerOptions = opts));
-  });
 
   function buildExtraBody() {
     if (!manufacturerSlug) {
@@ -37,14 +28,13 @@
   extraBody={buildExtraBody}
 >
   {#snippet extraFields({ errors })}
-    <SearchableSelect
+    <EntitySelect
+      type="manufacturer"
       label="Manufacturer"
-      options={manufacturerOptions}
       bind:selected={manufacturerSlug}
       error={errors.manufacturer_slug ?? ''}
-      allowZeroCount
-      showCounts={false}
       placeholder="Search manufacturers..."
+      required
     />
   {/snippet}
 </CreatePage>

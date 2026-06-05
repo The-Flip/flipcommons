@@ -23,6 +23,7 @@ from apps.core.validators import validate_no_mojibake
 from apps.core.wikilinks import WikilinkableModel
 from apps.media.models import MediaSupportedModel
 
+from ._autocomplete import manufacturer_year_sublabel
 from .base import CatalogModel
 
 __all__ = ["MachineModel", "ModelAbbreviation"]
@@ -74,6 +75,9 @@ class MachineModel(
     technology_generation_id: int | None
 
     link_sort_order = 20
+    # Reach the manufacturer for the autocomplete sublabel in one join (year is
+    # a direct field). No queryset override needed — the engine applies this.
+    autocomplete_select_related = ("corporate_entity__manufacturer",)
 
     # Identity
     name = models.CharField(max_length=300, validators=[validate_no_mojibake])
@@ -381,6 +385,23 @@ class MachineModel(
         ]
 
     @classmethod
+    def first_model_candidates(cls) -> models.QuerySet[MachineModel]:
+        """The "first model" rule, uncorrelated: a title's active, non-variant
+        models, earliest-first by ``(year, name)``.
+
+        Single source for that identity/order rule. Callers layer their own
+        ``select_related`` / ``prefetch_related`` for their read shape, and
+        :meth:`Title.first_model_subquery` correlates it with
+        ``title=OuterRef("pk")``. Keeping it in one place stops the subquery, the
+        title/card prefetches and the kiosk typeahead from drifting apart.
+        """
+        return (
+            cls.objects.active()
+            .filter(variant_of__isnull=True)
+            .order_by("year", "name")
+        )
+
+    @classmethod
     def non_canonical_detail_slugs(cls) -> Iterable[str]:
         # Single-Model-Title rule (docs/SingleModelTitles.md): when a Title
         # has exactly one active MachineModel, the UI collapses to the Model
@@ -400,6 +421,17 @@ class MachineModel(
             .filter(_sibling_count=1)
             .values_list(cls.public_id_field, flat=True)
         )
+
+    def autocomplete_sublabel(self) -> str | None:
+        """Disambiguate same-named models with a "manufacturer · year" line.
+
+        Reads the manufacturer through ``corporate_entity`` (pre-joined via
+        ``autocomplete_select_related``) and the model's own ``year`` field.
+        """
+        manufacturer = (
+            self.corporate_entity.manufacturer.name if self.corporate_entity else None
+        )
+        return manufacturer_year_sublabel(manufacturer, self.year)
 
     def __str__(self) -> str:
         parts = [self.name]

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
+  import EntityMultiSelect from '$lib/components/input/entity-select/EntityMultiSelect.svelte';
+  import type { EntityOption } from '$lib/api/entity-autocomplete';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
   import { publicIdSetChanged } from '$lib/edit-helpers';
   import type { FieldErrors } from '$lib/api/parse-api-error';
@@ -10,7 +11,6 @@
   } from '$lib/components/pages/record/edit/editors/save-claims-shared';
 
   type ParentRef = { public_id: string; name?: string };
-  type ParentOption = { slug: string; label: string; count?: number };
 
   type ParentsData = { parents: ParentRef[] };
 
@@ -20,8 +20,6 @@
 
   type SaveFn = (slug: string, body: SaveBody) => Promise<SaveResult>;
 
-  type OptionsLoader = () => Promise<ParentOption[]>;
-
   let {
     initialData,
     slug,
@@ -29,32 +27,25 @@
     onsaved,
     onerror,
     ondirtychange = () => {},
-    optionsLoader,
+    type,
     label = 'Parents',
     placeholder = 'Search...',
   }: SectionEditorProps<ParentsData> & {
     save: SaveFn;
-    optionsLoader: OptionsLoader;
+    /** Autocomplete registry key for the parent entity (`theme`, `gameplay-feature`). */
+    type: string;
     label?: string;
     placeholder?: string;
   } = $props();
 
   const originalParents: ParentRef[] = untrack(() => initialData.parents.map((p) => ({ ...p })));
   let selectedParents = $state<string[]>(originalParents.map((p) => p.public_id));
-  let parentOptions = $state<ParentOption[]>([]);
-  // Map the parent's identity `slug` onto the control's opaque `value` at the boundary.
-  let selectOptions = $derived(
-    parentOptions.map((o) => ({ value: o.slug, label: o.label, count: o.count })),
+  // Seed chips so saved parents render on mount with no search.
+  const initialSelections: EntityOption[] = untrack(() =>
+    originalParents.map((p) => ({ value: p.public_id, label: p.name ?? p.public_id })),
   );
   let fieldErrors = $state<FieldErrors>({});
   let dirty = $derived(publicIdSetChanged(selectedParents, originalParents));
-
-  $effect(() => {
-    const currentSlug = untrack(() => slug);
-    optionsLoader().then((opts) => {
-      parentOptions = opts.filter((opt) => opt.slug !== currentSlug);
-    });
-  });
 
   $effect(() => {
     ondirtychange(dirty);
@@ -86,12 +77,12 @@
 </script>
 
 <div class="editor-fields">
-  <SearchableSelect
+  <EntityMultiSelect
+    {type}
     {label}
-    options={selectOptions}
     bind:selected={selectedParents}
-    multi
-    allowZeroCount
+    {initialSelections}
+    exclude={[slug]}
     {placeholder}
     error={fieldErrors.parents ?? ''}
   />

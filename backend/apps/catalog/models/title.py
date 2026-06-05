@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, ClassVar
 
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models import OuterRef, Subquery
 from django.db.models.expressions import Combinable
 from django.db.models.functions import Coalesce, Greatest
 
@@ -22,6 +24,7 @@ from apps.core.models import (
 from apps.core.validators import validate_no_mojibake
 from apps.core.wikilinks import WikilinkableModel
 
+from ._autocomplete import manufacturer_year_sublabel
 from .base import CatalogModel
 
 __all__ = ["Title", "TitleAbbreviation"]
@@ -50,6 +53,15 @@ class Title(
     entity_type = "title"
     entity_type_plural = "titles"
     link_sort_order = 10
+    # Match on the title name and its abbreviations (Title has no alias
+    # relation — ``abbreviations`` are its only alternate names). A title
+    # typeahead matches title text, not its maker, so manufacturer is not a
+    # search field.
+    autocomplete_search_fields = ("name", "abbreviations__value")
+    # Set by ``autocomplete_annotations`` (Subquery annotations); read by
+    # ``autocomplete_sublabel``. Absent on instances fetched any other way.
+    autocomplete_mfr_name: str | None
+    autocomplete_year: int | None
     abbreviations: models.Manager[TitleAbbreviation]
     franchise_id: int | None
     machine_models: models.Manager[MachineModel]
@@ -144,6 +156,45 @@ class Title(
                 models.Max("machine_models__updated_at"),
                 models.F("updated_at"),
             ),
+        )
+
+    @classmethod
+    def first_model_subquery(cls) -> models.QuerySet[MachineModel]:
+        """The title's "first model" as a correlated subquery for annotations.
+
+        The earliest non-variant active :class:`MachineModel` by ``(year,
+        name)`` — the model whose manufacturer and year stand in for the title's
+        own. Correlates on ``OuterRef("pk")``, so it's only valid inside a
+        ``Subquery`` / ``annotate()`` over a ``Title`` queryset; the autocomplete
+        sublabel and ``_title_facets`` both read from it.
+
+        The identity/order rule itself is single-sourced in
+        :meth:`MachineModel.first_model_candidates`; this just correlates it.
+        """
+        from .machine_model import MachineModel
+
+        return MachineModel.first_model_candidates().filter(title=OuterRef("pk"))
+
+    @classmethod
+    def autocomplete_annotations(cls) -> Mapping[str, Combinable]:
+        """First-model manufacturer + year, so :meth:`autocomplete_sublabel`
+        reads them without an N+1 (see :meth:`first_model_subquery` for the
+        "first model" rule). The engine annotates these onto the queryset."""
+        first_model = cls.first_model_subquery()
+        return {
+            "autocomplete_mfr_name": Subquery(
+                first_model.values("corporate_entity__manufacturer__name")[:1]
+            ),
+            "autocomplete_year": Subquery(first_model.values("year")[:1]),
+        }
+
+    def autocomplete_sublabel(self) -> str | None:
+        """Disambiguate same-named titles with a "manufacturer · year" line,
+        read from the annotations :meth:`autocomplete_annotations` adds. Raises if
+        called on an instance fetched any other way — that's a wiring error
+        (the engine is the only intended caller), not a None to swallow."""
+        return manufacturer_year_sublabel(
+            self.autocomplete_mfr_name, self.autocomplete_year
         )
 
     def __str__(self) -> str:
