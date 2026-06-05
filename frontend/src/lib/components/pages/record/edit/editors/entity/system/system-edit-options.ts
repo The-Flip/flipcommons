@@ -11,7 +11,6 @@ import client from '$lib/api/client';
 export type SystemEditOption = {
   value: string;
   label: string;
-  count: number;
 };
 
 let cachedTechSubgens: Promise<SystemEditOption[]> | null = null;
@@ -22,7 +21,7 @@ export function fetchTechnologySubgenerationOptions(): Promise<SystemEditOption[
       .GET('/api/technology-generations/')
       .then(({ data }) =>
         (data ?? []).flatMap((g) =>
-          g.subgenerations.map((s) => ({ value: s.slug, label: s.name, count: 0 })),
+          g.subgenerations.map((s) => ({ value: s.slug, label: s.name })),
         ),
       )
       .catch(() => {

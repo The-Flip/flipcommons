@@ -7,9 +7,7 @@ from typing import cast
 from django.db.models import Count, Prefetch, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
-from ninja.decorators import decorate_view
 from ninja.security import django_auth
 
 from apps.core.authz.markers import requires
@@ -63,8 +61,7 @@ franchises_router = Router(tags=["franchises"])
 
 def _franchise_list_qs() -> QuerySet[Franchise]:
     """Active franchises annotated with their active-title count, ordered most-titled
-    first. The paginated handler re-orders with a ``pk`` tiebreak for stable offset
-    pages; ``/all/`` consumes this order as-is."""
+    first, then by name."""
     return (
         Franchise.objects.active()
         .annotate(title_count=Count("titles", filter=active_status_q("titles")))
@@ -96,14 +93,6 @@ def list_franchises(
         serialize_row=_serialize_franchise_row,
     )
     return FranchiseListSchema(items=result.items, count=result.total)
-
-
-@franchises_router.get("/all/", response=list[FranchiseListItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_all_franchises(request: HttpRequest) -> list[FranchiseListItemSchema]:
-    """Every franchise with title count (no pagination) — the full set the editor
-    option-pickers need, which the paginated ``GET /`` can't serve them."""
-    return [_serialize_franchise_row(f) for f in _franchise_list_qs()]
 
 
 def _franchise_titles_qs() -> QuerySet[Title]:

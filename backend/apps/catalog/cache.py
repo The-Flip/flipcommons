@@ -30,38 +30,20 @@ from apps.core.licensing import current_audience
 # unchanged payloads, which rebuild on first read. (Per-bump history: git blame.)
 _CACHE_VERSION = "v4"
 
-_MANUFACTURERS_ALL_BASE = f"catalog:manufacturers:all:{_CACHE_VERSION}"
-_SERIES_ALL_BASE = f"catalog:series:all:{_CACHE_VERSION}"
-_TITLES_ALL_BASE = f"catalog:titles:all:{_CACHE_VERSION}"
 # No-filter facet option lists for the /titles page (GET /api/pages/titles). Static
-# between catalog edits, so cached and cleared by invalidate_all() like the /all/ slots.
+# between catalog edits, so cached and cleared by invalidate_all().
 _TITLES_FACETS_BASE = f"catalog:titles:facets:{_CACHE_VERSION}"
 # Same, for the /manufacturers page (GET /api/pages/manufacturers).
 _MANUFACTURERS_FACETS_BASE = f"catalog:manufacturers:facets:{_CACHE_VERSION}"
 _LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
 
 _BASES: tuple[str, ...] = (
-    _MANUFACTURERS_ALL_BASE,
-    _SERIES_ALL_BASE,
-    _TITLES_ALL_BASE,
     _TITLES_FACETS_BASE,
     _MANUFACTURERS_FACETS_BASE,
     _LOCATIONS_TREE_BASE,
 )
 
 _AUDIENCES: tuple[str, ...] = ("default", "kiosk")
-
-
-def manufacturers_all_key() -> str:
-    return f"{_MANUFACTURERS_ALL_BASE}:{current_audience()}"
-
-
-def series_all_key() -> str:
-    return f"{_SERIES_ALL_BASE}:{current_audience()}"
-
-
-def titles_all_key() -> str:
-    return f"{_TITLES_ALL_BASE}:{current_audience()}"
 
 
 def titles_facets_key() -> str:
@@ -119,7 +101,7 @@ def set_cached_response(
 
 
 def invalidate_all() -> None:
-    """Delete all cached /all/ endpoint data, across every audience slot."""
+    """Delete all cached catalog endpoint data, across every audience slot."""
     for base in _BASES:
         for audience in _AUDIENCES:
             cache.delete(f"{base}:{audience}")

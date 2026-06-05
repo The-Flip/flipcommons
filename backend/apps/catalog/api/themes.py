@@ -5,9 +5,7 @@ from __future__ import annotations
 from django.db.models import F, Prefetch, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
-from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
-from ninja.decorators import decorate_view
 from ninja.security import django_auth
 
 from apps.core.authz.markers import requires
@@ -146,7 +144,7 @@ def _active_themes() -> list[Theme]:
 def _theme_rollup(themes: list[Theme]) -> dict[int, int]:
     """The hierarchical ``title_count`` rollup over *themes*: each theme's count unions
     its whole descendant subtree's titles via ``children_map`` (not a SQL column),
-    deduped. Shared by the paginated ``GET /`` and ``/all/``."""
+    deduped."""
     children_map: dict[int, list[int]] = {
         t.pk: [c.pk for c in t.children.all()] for t in themes
     }
@@ -186,17 +184,6 @@ def list_themes(request: HttpRequest, q: str = "", page: int = 1) -> ThemeListSc
         items=[_serialize_theme_row(t, counts.get(t.pk, 0)) for t in rows],
         count=len(matched),
     )
-
-
-@themes_router.get("/all/", response=list[ThemeListItemSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_all_themes(request: HttpRequest) -> list[ThemeListItemSchema]:
-    """Every theme with its rollup title count (no pagination) — the full set the editor
-    parent-picker needs, which the paginated ``GET /`` can't serve it."""
-    active = _active_themes()
-    counts = _theme_rollup(active)
-    active.sort(key=lambda t: (-counts.get(t.pk, 0), t.name.lower(), t.pk))
-    return [_serialize_theme_row(t, counts.get(t.pk, 0)) for t in active]
 
 
 @themes_router.patch(

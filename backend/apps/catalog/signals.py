@@ -1,4 +1,4 @@
-"""Signal handlers to invalidate cached /all/ endpoint data on model changes."""
+"""Signal handlers to invalidate cached catalog endpoint data on model changes."""
 
 from __future__ import annotations
 
@@ -33,11 +33,11 @@ def _invalidate_cache_on_policy_change(
 
 
 def _cache_invalidating_models() -> list[type[models.Model]]:
-    """Derive the set of models whose saves/deletes should bust the /all/ cache.
+    """Derive the set of models whose saves/deletes should bust the catalog cache.
 
     Walks the catalog app registry for concrete ``CatalogModel`` subclasses,
     then appends the two through-rows (``CorporateEntityLocation``, ``Credit``)
-    that surface in cached ``/all/`` payloads but aren't top-level entities.
+    that surface in cached facet payloads but aren't top-level entities.
     """
     from ._walks import catalog_models
     from .models import CorporateEntityLocation, Credit

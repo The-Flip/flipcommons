@@ -68,7 +68,7 @@ class KioskConfigListItemSchema(Schema):
 
 
 class KioskItemTitleSchema(Schema):
-    """Subset of TitleListItemSchema needed by the kiosk display."""
+    """The title fields the kiosk display needs."""
 
     slug: str
     name: str

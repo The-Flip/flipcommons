@@ -1,6 +1,5 @@
 """Tests for the shared paginated-listing core (``entity_list.py``) and the franchises
-list endpoints: the ``_apply_list_q`` fold contract and the franchises ``GET /`` /
-``GET /all/`` endpoints.
+list endpoint: the ``_apply_list_q`` fold contract and the franchises ``GET /`` endpoint.
 """
 
 from typing import cast
@@ -313,22 +312,6 @@ class TestThemeListEndpoint:
         # Only the parent matches "saga"; its count still rolls up the child's title.
         assert [t["slug"] for t in body["items"]] == ["space-saga"]
         assert body["items"][0]["title_count"] == 1
-
-
-@pytest.mark.django_db
-class TestFranchiseAllEndpoint:
-    """``GET /all/`` — the full (unpaginated) list the editor option-pickers consume."""
-
-    def test_returns_bare_list_of_all_franchises(self, client):
-        Franchise.objects.bulk_create(
-            Franchise(name=f"F{i:02d}", slug=f"f{i:02d}", status="active")
-            for i in range(60)
-        )
-        resp = client.get("/api/franchises/all/")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert isinstance(body, list)
-        assert len(body) == 60
 
 
 # The 12 catalog entities whose listing pages are SSR'd with a paginated ``GET /``
