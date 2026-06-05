@@ -40,8 +40,12 @@ class NamedPaginatedResponseSchema(Schema):
 
 class NamedPageNumberPagination(PageNumberPagination):
     class PaginationParamsSchema(Schema):
-        page: int = Field(1, ge=1)
-        page_size: int | None = Field(None, ge=1)
+        page: int = Field(1, ge=1, description="Page number, 1-based.")
+        page_size: int | None = Field(
+            None,
+            ge=1,
+            description="Items per page. Defaults to the server's page size.",
+        )
 
     Input = PaginationParamsSchema  # type: ignore[assignment]
     Output = NamedPaginatedResponseSchema  # type: ignore[assignment]

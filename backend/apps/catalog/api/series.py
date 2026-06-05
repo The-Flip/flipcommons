@@ -22,6 +22,7 @@ from apps.provenance.schemas import RichTextSchema
 
 from ..models import Credit, MachineModel, Series, Title
 from ._typing import HasTitleCount
+from .constants import NameQuery, PageParam
 from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .entity_list import paginated_list_response
@@ -52,8 +53,8 @@ class SeriesListItemSchema(Schema):
 
 
 class SeriesListSchema(Schema):
-    """``{items, count}`` page of series — the wire shape ``createPaginatedLoader``
-    expects (it derives has_more from items.length < count)."""
+    """A page of series: ``items`` holds this page's rows; ``count`` is the total
+    number of matching series across all pages."""
 
     items: list[SeriesListItemSchema]
     count: int
@@ -188,9 +189,11 @@ def _serialize_series_row(
 
 
 @series_router.get("/", response=SeriesListSchema)
-def list_series(request: HttpRequest, q: str = "", page: int = 1) -> SeriesListSchema:
-    """One page of series (title count + thumbnail), most-titled first, filtered
-    server-side by ``q``."""
+def list_series(
+    request: HttpRequest, q: NameQuery = "", page: PageParam = 1
+) -> SeriesListSchema:
+    """Series, paginated. Search with ``q``. Ordered by title count, then
+    alphabetically."""
     result = paginated_list_response(
         _series_list_qs(),
         q=q,

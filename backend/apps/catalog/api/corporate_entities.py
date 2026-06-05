@@ -25,6 +25,7 @@ from ..models import (
     Manufacturer,
 )
 from ._typing import HasModelCount
+from .constants import NameAliasQuery, PageParam
 from .edit_claims import (
     execute_claims,
     plan_alias_claims,
@@ -64,8 +65,8 @@ class CorporateEntityListItemSchema(Schema):
 
 
 class CorporateEntityListSchema(Schema):
-    """``{items, count}`` page of corporate entities — the wire shape
-    ``createPaginatedLoader`` expects (it derives has_more from items.length < count)."""
+    """A page of corporate entities: ``items`` holds this page's rows; ``count`` is
+    the total number of matching corporate entities across all pages."""
 
     items: list[CorporateEntityListItemSchema]
     count: int
@@ -177,10 +178,10 @@ def _serialize_corporate_entity_row(
 
 @corporate_entities_router.get("/", response=CorporateEntityListSchema)
 def list_corporate_entities(
-    request: HttpRequest, q: str = "", page: int = 1
+    request: HttpRequest, q: NameAliasQuery = "", page: PageParam = 1
 ) -> CorporateEntityListSchema:
-    """One page of corporate entities, by manufacturer then founding year, filtered
-    server-side by ``q`` (name or alias)."""
+    """Corporate entities, paginated. Search with ``q``. Ordered by manufacturer,
+    then founding year."""
     result = paginated_list_response(
         _corporate_entity_list_qs(),
         q=q,

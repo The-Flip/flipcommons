@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
+from typing import Annotated, cast
 
 from django.db import models
 from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
 from ninja.decorators import decorate_view
+from ninja.params.functions import Query as QueryParam
 from ninja.responses import Status
 from ninja.security import django_auth
 
@@ -30,6 +31,7 @@ from apps.provenance.rate_limits import (
 
 from ..models import MachineModel, Manufacturer, System
 from ._typing import HasModelCount
+from .constants import NameQuery, PageParam
 from .edit_claims import (
     ClaimSpec,
     StructuredValidationError,
@@ -68,8 +70,8 @@ class SystemListItemSchema(Schema):
 
 
 class SystemListSchema(Schema):
-    """``{items, count}`` page of systems — the wire shape ``createPaginatedLoader``
-    expects (it derives has_more from items.length < count)."""
+    """A page of systems: ``items`` holds this page's rows; ``count`` is the total
+    number of matching systems across all pages."""
 
     items: list[SystemListItemSchema]
     count: int
@@ -228,11 +230,22 @@ def _serialize_system_row(
 
 @systems_router.get("/", response=SystemListSchema)
 def list_systems(
-    request: HttpRequest, q: str = "", manufacturer: str | None = None, page: int = 1
+    request: HttpRequest,
+    q: NameQuery = "",
+    manufacturer: Annotated[
+        str | None,
+        QueryParam(
+            None,
+            description=(
+                "Manufacturer slug (see `GET /api/manufacturers/`). Narrows to "
+                "systems from this manufacturer."
+            ),
+        ),
+    ] = None,
+    page: PageParam = 1,
 ) -> SystemListSchema:
-    """One page of systems, alphabetical, filtered server-side by ``q`` and (optionally)
-    a ``manufacturer`` slug — the server-side replacement for the page's old client
-    manufacturer ``<select>``."""
+    """Systems, paginated. Filter by manufacturer or search with ``q``. Ordered
+    alphabetically."""
     qs = _system_list_qs()
     if manufacturer:
         qs = qs.filter(manufacturer__slug=manufacturer)
@@ -249,8 +262,9 @@ def list_systems(
 @systems_router.get("/all/", response=list[SystemListItemSchema])
 @decorate_view(cache_control(no_cache=True))
 def list_all_systems(request: HttpRequest) -> list[SystemListItemSchema]:
-    """Every system with machine count (no pagination) — reuses the paginated handler's
-    queryset and row serializer so the two presentations can't drift."""
+    """Every system with its machine count, alphabetical and unpaginated."""
+    # Reuses the paginated handler's queryset and row serializer so the two
+    # presentations can't drift.
     return [_serialize_system_row(s) for s in _system_list_qs()]
 
 

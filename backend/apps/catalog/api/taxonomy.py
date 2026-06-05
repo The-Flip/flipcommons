@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from itertools import chain
-from typing import Any, TypeVar, cast
+from typing import Annotated, Any, TypeVar, cast
 
 from django.db.models import Count, F, Prefetch, Q, QuerySet
 from django.http import HttpRequest
@@ -11,6 +11,7 @@ from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
 from ninja import Router, Schema
 from ninja.decorators import decorate_view
+from ninja.params.functions import Path as PathParam
 from ninja.security import django_auth
 
 from apps.core.authz.markers import requires
@@ -38,6 +39,7 @@ from ..models import (
 )
 from ._counts import bulk_title_counts_via_models
 from ._typing import HasTitleCount
+from .constants import NameAliasQuery, NameQuery, PageParam
 from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import (
     register_entity_create,
@@ -300,6 +302,7 @@ technology_generations_router = Router(tags=["technology-generations"])
 def list_technology_generations(
     request: HttpRequest,
 ) -> list[TechnologyGenerationListItemSchema]:
+    """Every technology generation with its subgenerations, in curated order."""
     gens = list(TechnologyGeneration.objects.active())
     subgens = list(TechnologySubgeneration.objects.active())
 
@@ -394,6 +397,7 @@ display_types_router = Router(tags=["display-types"])
 @display_types_router.get("/", response=list[DisplayTypeListItemSchema])
 @decorate_view(cache_control(no_cache=True))
 def list_display_types(request: HttpRequest) -> list[DisplayTypeListItemSchema]:
+    """Every display type with its subtypes, in curated order."""
     types = list(DisplayType.objects.active())
     subtypes = list(DisplaySubtype.objects.active())
 
@@ -502,8 +506,8 @@ cabinets_router = Router(tags=["cabinets"])
 
 
 class CabinetListSchema(Schema):
-    """``{items, count}`` page of cabinets — the wire shape ``createPaginatedLoader``
-    expects (it derives has_more from items.length < count)."""
+    """A page of cabinets: ``items`` holds this page's rows; ``count`` is the total
+    number of matching cabinets across all pages."""
 
     items: list[TaxonomyWithTitleCountSchema]
     count: int
@@ -519,9 +523,10 @@ def _cabinet_list_qs() -> QuerySet[Cabinet]:
 
 @cabinets_router.get("/", response=CabinetListSchema)
 def list_cabinets(
-    request: HttpRequest, q: str = "", page: int = 1
+    request: HttpRequest, q: NameQuery = "", page: PageParam = 1
 ) -> CabinetListSchema:
-    """One page of cabinets, most-titled first, filtered server-side by ``q``."""
+    """Cabinet styles, paginated. Search with ``q``. Ordered by title count, then
+    alphabetically."""
     result = paginated_list_response(
         _cabinet_list_qs(),
         q=q,
@@ -558,8 +563,8 @@ game_formats_router = Router(tags=["game-formats"])
 
 
 class GameFormatListSchema(Schema):
-    """``{items, count}`` page of game formats — the wire shape
-    ``createPaginatedLoader`` expects (it derives has_more from items.length < count)."""
+    """A page of game formats: ``items`` holds this page's rows; ``count`` is the
+    total number of matching game formats across all pages."""
 
     items: list[TaxonomyWithTitleCountSchema]
     count: int
@@ -577,9 +582,9 @@ def _game_format_list_qs() -> QuerySet[GameFormat]:
 
 @game_formats_router.get("/", response=GameFormatListSchema)
 def list_game_formats(
-    request: HttpRequest, q: str = "", page: int = 1
+    request: HttpRequest, q: NameQuery = "", page: PageParam = 1
 ) -> GameFormatListSchema:
-    """One page of game formats in editorial ``display_order``, filtered by ``q``."""
+    """Game formats, paginated. Search with ``q``. In curated order."""
     result = paginated_list_response(
         _game_format_list_qs(),
         q=q,
@@ -649,8 +654,8 @@ def _serialize_reward_type_detail(rt: RewardType) -> RewardTypeDetailSchema:
 
 
 class RewardTypeListSchema(Schema):
-    """``{items, count}`` page of reward types — the wire shape
-    ``createPaginatedLoader`` expects (it derives has_more from items.length < count)."""
+    """A page of reward types: ``items`` holds this page's rows; ``count`` is the
+    total number of matching reward types across all pages."""
 
     items: list[TaxonomyWithTitleCountSchema]
     count: int
@@ -669,9 +674,10 @@ def _reward_type_list_qs() -> QuerySet[RewardType]:
 
 @reward_types_router.get("/", response=RewardTypeListSchema)
 def list_reward_types(
-    request: HttpRequest, q: str = "", page: int = 1
+    request: HttpRequest, q: NameAliasQuery = "", page: PageParam = 1
 ) -> RewardTypeListSchema:
-    """One page of reward types, most-titled first, filtered by ``q`` (name or alias)."""
+    """Reward types, paginated. Search with ``q``. Ordered by title count, then
+    alphabetically."""
     result = paginated_list_response(
         _reward_type_list_qs(),
         q=q,
@@ -718,8 +724,8 @@ tags_router = Router(tags=["tags"])
 
 
 class TagListSchema(Schema):
-    """``{items, count}`` page of tags — the wire shape ``createPaginatedLoader``
-    expects (it derives has_more from items.length < count)."""
+    """A page of tags: ``items`` holds this page's rows; ``count`` is the total
+    number of matching tags across all pages."""
 
     items: list[TaxonomyWithTitleCountSchema]
     count: int
@@ -734,8 +740,11 @@ def _tag_list_qs() -> QuerySet[Tag]:
 
 
 @tags_router.get("/", response=TagListSchema)
-def list_tags(request: HttpRequest, q: str = "", page: int = 1) -> TagListSchema:
-    """One page of tags, most-titled first, filtered server-side by ``q``."""
+def list_tags(
+    request: HttpRequest, q: NameQuery = "", page: PageParam = 1
+) -> TagListSchema:
+    """Tags, paginated. Search with ``q``. Ordered by title count, then
+    alphabetically."""
     result = paginated_list_response(
         _tag_list_qs(),
         q=q,
@@ -884,11 +893,11 @@ def _serialize_credit_role_detail_no_people(cr: CreditRole) -> CreditRoleDetailS
 
 
 class CreditRoleListSchema(Schema):
-    """``{items, count}`` page of credit roles — the wire shape
-    ``createPaginatedLoader`` expects. The no-per-row-count variant: rows carry no
-    ``title_count`` badge (they're ``TaxonomySchema``), but the page still carries the
-    pagination ``count`` the loader needs for has_more."""
+    """A page of credit roles: ``items`` holds this page's rows; ``count`` is the
+    total number of matching credit roles across all pages."""
 
+    # No-per-row-count variant: rows are plain ``TaxonomySchema`` (no
+    # ``title_count``), but the page still carries the pagination ``count``.
     items: list[TaxonomySchema]
     count: int
 
@@ -904,9 +913,9 @@ def _serialize_credit_role_row(
 
 @credit_roles_router.get("/", response=CreditRoleListSchema)
 def list_credit_roles(
-    request: HttpRequest, q: str = "", page: int = 1
+    request: HttpRequest, q: NameQuery = "", page: PageParam = 1
 ) -> CreditRoleListSchema:
-    """One page of credit roles, alphabetical, filtered server-side by ``q``."""
+    """Credit roles, paginated. Search with ``q``. Ordered alphabetically."""
     result = paginated_list_response(
         CreditRole.objects.active(),
         q=q,
@@ -989,7 +998,13 @@ register_entity_delete_restore(
 # the first matching pattern, so the more-specific routes have to come first.
 @credit_roles_router.get("/{path:public_id}", response=CreditRoleDetailSchema)
 @decorate_view(cache_control(no_cache=True))
-def get_credit_role(request: HttpRequest, public_id: str) -> CreditRoleDetailSchema:
+def get_credit_role(
+    request: HttpRequest,
+    public_id: Annotated[
+        str, PathParam(description="Credit-role slug (see `GET /api/credit-roles/`).")
+    ],
+) -> CreditRoleDetailSchema:
+    """A single credit role by its slug."""
     return _serialize_credit_role_detail(
         get_object_or_404(
             _credit_role_detail_qs(), **{CreditRole.public_id_field: public_id}

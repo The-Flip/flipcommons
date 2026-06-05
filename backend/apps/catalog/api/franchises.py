@@ -20,6 +20,7 @@ from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..models import Franchise, MachineModel, Title
 from ._typing import HasTitleCount
+from .constants import NameQuery, PageParam
 from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .entity_list import paginated_list_response
@@ -40,8 +41,8 @@ class FranchiseListItemSchema(Schema):
 
 
 class FranchiseListSchema(Schema):
-    """``{items, count}`` page of franchises — the wire shape ``createPaginatedLoader``
-    expects (it derives has_more from items.length < count)."""
+    """A page of franchises: ``items`` holds this page's rows; ``count`` is the total
+    number of matching franchises across all pages."""
 
     items: list[FranchiseListItemSchema]
     count: int
@@ -81,10 +82,10 @@ def _serialize_franchise_row(
 
 @franchises_router.get("/", response=FranchiseListSchema)
 def list_franchises(
-    request: HttpRequest, q: str = "", page: int = 1
+    request: HttpRequest, q: NameQuery = "", page: PageParam = 1
 ) -> FranchiseListSchema:
-    """One page of franchises (cards in page 1's SSR HTML, infinite scroll for 2…N),
-    ordered most-titled first, filtered server-side by ``q``."""
+    """Franchises, paginated. Search with ``q``. Ordered by title count, then
+    alphabetically."""
     result = paginated_list_response(
         _franchise_list_qs(),
         q=q,

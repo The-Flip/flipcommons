@@ -38,6 +38,7 @@ from apps.provenance.schemas import ChangeSetInputSchema
 
 from ..models import Credit, MachineModel, Person
 from ._typing import HasCreditCount
+from .constants import NameAliasQuery, PageParam
 from .edit_claims import ClaimSpec, execute_claims, plan_scalar_field_claims
 from .entity_create import (
     assert_name_available,
@@ -281,17 +282,19 @@ people_router = Router(tags=["people"])
 
 
 class PersonListSchema(Schema):
-    """``{items, count}`` page of people cards — the wire shape
-    ``createPaginatedLoader`` expects (it derives has_more from items.length < count)."""
+    """A page of people: ``items`` holds this page's rows; ``count`` is the total
+    number of matching people across all pages."""
 
     items: list[PersonCardSchema]
     count: int
 
 
 @people_router.get("/", response=PersonListSchema)
-def list_people(request: HttpRequest, q: str = "", page: int = 1) -> PersonListSchema:
-    """One page of people cards (thumbnail + credit count), most-credited first,
-    filtered server-side by ``q`` (name or alias)."""
+def list_people(
+    request: HttpRequest, q: NameAliasQuery = "", page: PageParam = 1
+) -> PersonListSchema:
+    """People, paginated. Search with ``q``. Ordered by credit count, then
+    alphabetically."""
     result = paginated_list_response(
         _person_list_qs(),
         q=q,
