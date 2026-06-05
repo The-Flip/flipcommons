@@ -60,7 +60,7 @@ class DescribedDetailSchema(Schema):
     """An entity's rich-text description."""
 
     description: RichTextSchema = Field(
-        default_factory=RichTextSchema,
+        default=RichTextSchema(),
         description="The entity's description as rich text.",
     )
 

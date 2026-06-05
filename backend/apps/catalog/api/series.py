@@ -51,7 +51,7 @@ class SeriesListItemSchema(Schema):
     name: str = Field(description="The series' display name.")
     slug: str = Field(description="The series' URL slug.")
     description: RichTextSchema = Field(
-        default_factory=RichTextSchema,
+        default=RichTextSchema(),
         description="The series' description as rich text.",
     )
     title_count: int = Field(0, description="Number of titles in this series.")
