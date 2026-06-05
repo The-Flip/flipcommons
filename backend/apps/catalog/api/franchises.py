@@ -9,6 +9,7 @@ from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
 from ninja.security import django_auth
+from pydantic import Field
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -35,9 +36,11 @@ from .schemas import CatalogDetailSchema, ClaimPatchSchema, TitleRef
 
 
 class FranchiseListItemSchema(Schema):
-    name: str
-    slug: str
-    title_count: int = 0
+    """A franchise in list results."""
+
+    name: str = Field(description="The franchise's display name.")
+    slug: str = Field(description="The franchise's URL slug.")
+    title_count: int = Field(0, description="Number of titles in this franchise.")
 
 
 class FranchiseListSchema(Schema):

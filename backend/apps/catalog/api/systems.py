@@ -15,6 +15,7 @@ from ninja.decorators import decorate_view
 from ninja.params.functions import Query as QueryParam
 from ninja.responses import Status
 from ninja.security import django_auth
+from pydantic import Field
 
 from apps.catalog.naming import normalize_catalog_name
 from apps.core.authz.markers import requires
@@ -63,10 +64,12 @@ from .schemas import (
 
 
 class SystemListItemSchema(Schema):
-    name: str
-    slug: str
-    manufacturer: EntityRef
-    model_count: int = 0
+    """A system in list results."""
+
+    name: str = Field(description="The system's display name.")
+    slug: str = Field(description="The system's URL slug.")
+    manufacturer: EntityRef = Field(description="The manufacturer of this system.")
+    model_count: int = Field(0, description="Number of machine models on this system.")
 
 
 class SystemListSchema(Schema):

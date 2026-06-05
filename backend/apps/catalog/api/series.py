@@ -10,6 +10,7 @@ from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
 from ninja.security import django_auth
+from pydantic import Field
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -45,11 +46,18 @@ from .schemas import (
 
 
 class SeriesListItemSchema(Schema):
-    name: str
-    slug: str
-    description: RichTextSchema = RichTextSchema()
-    title_count: int = 0
-    thumbnail_url: str | None = None
+    """A series in list results."""
+
+    name: str = Field(description="The series' display name.")
+    slug: str = Field(description="The series' URL slug.")
+    description: RichTextSchema = Field(
+        default=RichTextSchema(),
+        description="The series' description as rich text.",
+    )
+    title_count: int = Field(0, description="Number of titles in this series.")
+    thumbnail_url: str | None = Field(
+        None, description="URL of a thumbnail image, if available."
+    )
 
 
 class SeriesListSchema(Schema):

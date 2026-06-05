@@ -9,6 +9,7 @@ from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
 from ninja.security import django_auth
+from pydantic import Field
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -55,13 +56,23 @@ from .schemas import (
 
 
 class CorporateEntityListItemSchema(Schema):
-    name: str
-    slug: str
-    manufacturer: EntityRef
-    year_start: int | None = None
-    year_end: int | None = None
-    model_count: int = 0
-    locations: list[CorporateEntityLocationSchema] = []
+    """A corporate entity in list results."""
+
+    name: str = Field(description="The corporate entity's display name.")
+    slug: str = Field(description="The corporate entity's URL slug.")
+    manufacturer: EntityRef = Field(
+        description="The manufacturer this corporate entity belongs to."
+    )
+    year_start: int | None = Field(
+        None, description="First year of operation, if known."
+    )
+    year_end: int | None = Field(None, description="Last year of operation, if known.")
+    model_count: int = Field(
+        0, description="Number of machine models from this corporate entity."
+    )
+    locations: list[CorporateEntityLocationSchema] = Field(
+        [], description="Locations associated with this corporate entity."
+    )
 
 
 class CorporateEntityListSchema(Schema):

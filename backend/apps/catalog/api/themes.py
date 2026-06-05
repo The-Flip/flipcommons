@@ -7,6 +7,7 @@ from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
 from ninja.security import django_auth
+from pydantic import Field
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -43,11 +44,19 @@ from .schemas import (
 
 
 class ThemeListItemSchema(Schema):
-    name: str
-    slug: str
-    aliases: list[str] = []
-    title_count: int = 0
-    parent_slugs: list[str] = []
+    """A theme in list results."""
+
+    name: str = Field(description="The theme's display name.")
+    slug: str = Field(description="The theme's URL slug.")
+    aliases: list[str] = Field(
+        [], description="Alternative names this theme is also known by."
+    )
+    title_count: int = Field(
+        0, description="Number of titles with this theme, including its sub-themes."
+    )
+    parent_slugs: list[str] = Field(
+        [], description="Slugs of this theme's parent themes in the hierarchy."
+    )
 
 
 class ThemeListSchema(Schema):

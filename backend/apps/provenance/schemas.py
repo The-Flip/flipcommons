@@ -239,14 +239,38 @@ class ChangeSetInputSchema(Schema):
 class AttributionSchema(Schema):
     """License and source attribution for rendered content."""
 
-    license_slug: str | None = None
-    license_name: str | None = None
-    license_url: str | None = None
-    permissiveness_rank: int | None = None
-    requires_attribution: bool = False
-    source_name: str | None = None
-    source_url: str | None = None
-    attribution_text: str | None = None
+    license_slug: Annotated[
+        str | None, Field(description="Identifier of the content's license, if any.")
+    ] = None
+    license_name: Annotated[
+        str | None, Field(description="Short display name of the license.")
+    ] = None
+    license_url: Annotated[
+        str | None, Field(description="URL of the license text.")
+    ] = None
+    permissiveness_rank: Annotated[
+        int | None,
+        Field(
+            description="Relative permissiveness of the license; higher is more permissive."
+        ),
+    ] = None
+    requires_attribution: Annotated[
+        bool,
+        Field(
+            description="Whether the license requires attribution when this content is reused."
+        ),
+    ] = False
+    source_name: Annotated[
+        str | None,
+        Field(description="Name of the source this content was derived from."),
+    ] = None
+    source_url: Annotated[str | None, Field(description="URL of that source.")] = None
+    attribution_text: Annotated[
+        str | None,
+        Field(
+            description="Ready-to-use attribution string for this content, when provided."
+        ),
+    ] = None
 
 
 class ReviewLinkSchema(Schema):
@@ -259,31 +283,72 @@ class ReviewLinkSchema(Schema):
 class CitationLinkSchema(Schema):
     """A link attached to a citation source."""
 
-    url: str
-    label: str
+    url: str = Field(description="The link's URL.")
+    label: str = Field(description="Human-readable link text.")
 
 
 class InlineCitationSchema(Schema):
     """Metadata for an inline citation in rendered markdown."""
 
-    id: int
-    index: int
-    source_name: str
-    source_type: str
-    author: str
-    year: int | None = None
-    locator: str
-    links: list[CitationLinkSchema] = []
+    id: int = Field(
+        description="The citation instance's identifier (matches ``data-cite-id`` in the rendered HTML)."
+    )
+    index: int = Field(
+        description="The citation's sequential number in the text, shown as ``[1]``, ``[2]``, …"
+    )
+    source_name: str = Field(description="Name of the cited source.")
+    source_type: str = Field(
+        description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
+    )
+    author: str = Field(description="Author of the cited source, if recorded.")
+    year: Annotated[
+        int | None, Field(description="Publication year of the source, if known.")
+    ] = None
+    locator: str = Field(
+        description="Specific location within the source, such as a page or section."
+    )
+    links: Annotated[
+        list[CitationLinkSchema],
+        Field(description="External links for the cited source."),
+    ] = []
 
 
 class RichTextSchema(Schema):
     """A text field bundled with rendered HTML plus provenance metadata."""
 
-    text: str = ""
-    html: str = ""
-    plain: str = ""
-    citations: list[InlineCitationSchema] = []
-    attribution: AttributionSchema | None = None
+    text: Annotated[
+        str,
+        Field(
+            description=(
+                "The source text in authoring format — Markdown with "
+                "``[[type:slug]]`` tokens for entity links. Mainly for edit forms; "
+                "prefer ``html`` or ``plain`` for display."
+            )
+        ),
+    ] = ""
+    html: Annotated[str, Field(description="Display-ready rendered HTML.")] = ""
+    plain: Annotated[
+        str,
+        Field(
+            description=(
+                "Plain-text projection with markup and link tokens stripped — for "
+                "previews, meta descriptions and machine-readable use."
+            )
+        ),
+    ] = ""
+    citations: Annotated[
+        list[InlineCitationSchema],
+        Field(description="Inline citations referenced in the rendered content."),
+    ] = []
+    attribution: Annotated[
+        AttributionSchema | None,
+        Field(
+            description=(
+                "License and source attribution for this content, when it derives "
+                "from an attributed source."
+            )
+        ),
+    ] = None
 
 
 class CitationSourceSchema(Schema):
