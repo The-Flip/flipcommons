@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Annotated, cast
 
 from django.db.models import F, Prefetch, QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from ninja import Query, Router, Schema
+from ninja.params.functions import Query as QueryParam
 from ninja.security import django_auth
-from pydantic import TypeAdapter
+from pydantic import Field, TypeAdapter
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -72,10 +73,11 @@ from .schemas import (
 
 
 class ManufacturerCardSchema(Schema):
-    """Slim card for the /manufacturers grid and every infinite-scroll page — only
-    what ``ManufacturerCard`` renders. No facet arrays (those live on the page
-    endpoint's ``filter_options``), so the list path skips the bulk facet queries."""
+    """A manufacturer in list results: name, slug, model count and a thumbnail."""
 
+    # Slim by design — only the fields list rows render. Facet arrays live on the
+    # page endpoint's ``filter_options``, so the list path skips the bulk facet
+    # queries.
     name: str
     slug: str
     model_count: int = 0
@@ -83,8 +85,8 @@ class ManufacturerCardSchema(Schema):
 
 
 class ManufacturerListPageSchema(Schema):
-    """``{items, count}`` page of cards — the wire shape ``createPaginatedLoader``
-    expects (it derives has_more from items.length < count)."""
+    """A page of manufacturers: ``items`` holds this page's rows; ``count`` is the
+    total number of matching manufacturers across all pages."""
 
     items: list[ManufacturerCardSchema]
     count: int
@@ -95,12 +97,39 @@ class ManufacturerFilterQuerySchema(Schema):
     end (URL ⇄ this schema ⇄ ``MfrFilters``). All facets are single-value (no
     titles-style repeated multi-value params)."""
 
-    q: str = ""
-    location: str | None = None
-    person: str | None = None
-    tech_gen: str | None = None
-    year_min: int | None = None
-    year_max: int | None = None
+    q: str = Field(
+        "",
+        description=(
+            "Free-text search. Accent- and case-insensitive substring match against "
+            "the manufacturer's name and aliases, plus the names and aliases of its "
+            "corporate entities and their locations."
+        ),
+    )
+    location: str | None = Field(
+        None,
+        description=(
+            "Location path. Also matches manufacturers located anywhere beneath it."
+        ),
+    )
+    person: str | None = Field(
+        None,
+        description=(
+            "Person slug (see `GET /api/people/`). Matches manufacturers whose "
+            "machines this person is credited on."
+        ),
+    )
+    tech_gen: str | None = Field(
+        None,
+        description=(
+            "Technology-generation slug (see `GET /api/technology-generations/`)."
+        ),
+    )
+    year_min: int | None = Field(
+        None, description="Earliest machine production year, inclusive."
+    )
+    year_max: int | None = Field(
+        None, description="Latest machine production year, inclusive."
+    )
 
     def to_filters(self) -> MfrFilters:
         return MfrFilters(
@@ -340,11 +369,16 @@ def _page_thumbnails(
 
 @manufacturers_router.get("/", response=ManufacturerListPageSchema)
 def list_manufacturers(
-    request: HttpRequest, filters: Query[ManufacturerFilterQuerySchema], page: int = 1
+    request: HttpRequest,
+    filters: Query[ManufacturerFilterQuerySchema],
+    page: Annotated[int, QueryParam(1, description="Page number, 1-based.")] = 1,
 ) -> ManufacturerListPageSchema:
-    """One page of manufacturer cards for the SSR grid (page 1) and infinite scroll
-    (2…N). Slices at SQL via ``ordered`` + LIMIT/OFFSET — only the requested page is
-    serialized (never ``list(qs)`` over the whole catalog)."""
+    """Manufacturers, paginated. Narrow with the filters and the search (``q``).
+    Ordered by model count, then alphabetically.
+
+    All filters combine with AND."""
+    # Sliced at SQL via ``ordered`` + LIMIT/OFFSET so only the requested page is
+    # serialized — never ``list(qs)`` over the whole catalog.
     f = filters.to_filters()
     rows = ordered(f)
     count = rows.count()

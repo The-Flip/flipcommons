@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Annotated, Any
 
 from django.db.models import (
     Prefetch,
@@ -15,9 +15,10 @@ from django.db.models import (
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from ninja import Query, Router, Schema
+from ninja.params.functions import Query as QueryParam
 from ninja.responses import Status
 from ninja.security import django_auth
-from pydantic import TypeAdapter
+from pydantic import Field, TypeAdapter
 
 from apps.catalog.naming import MAX_CATALOG_NAME_LENGTH, normalize_catalog_name
 from apps.core.authz.markers import requires
@@ -126,12 +127,11 @@ from .soft_delete import (
 
 
 class TitleCardSchema(Schema):
-    """Slim card for the /titles grid and every infinite-scroll page.
+    """A pinball title in list results: identity plus a thumbnail and model count."""
 
-    Only what `TitleCard` renders — no facet arrays (those live on the page
-    endpoint's `filter_options`, not on every row). Keeping the list path lean is
-    most of the payload win and lets it skip the bulk through-table queries."""
-
+    # Slim by design — only the fields list rows render. Facet arrays live on the
+    # page endpoint's ``filter_options``, not on every row, so the list path skips
+    # the bulk through-table queries.
     name: str
     slug: str
     year: int | None = None
@@ -141,8 +141,8 @@ class TitleCardSchema(Schema):
 
 
 class TitleListPageSchema(Schema):
-    """`{items, count}` page of cards — the wire shape `createPaginatedLoader`
-    expects (it derives has_more from items.length < count)."""
+    """A page of titles: ``items`` holds this page's rows; ``count`` is the total
+    number of matching titles across all pages."""
 
     items: list[TitleCardSchema]
     count: int
@@ -153,20 +153,74 @@ class TitleFilterQuerySchema(Schema):
     (URL ⇄ this schema ⇄ `TitleFilters`). Multi-value params are **repeated**
     (`theme=a&theme=b`), read natively as `list[str]`."""
 
-    q: str = ""
-    manufacturer: str | None = None
-    person: str | None = None
-    tech_gen: str | None = None
-    display_type: str | None = None
-    system: str | None = None
-    franchise: str | None = None
-    series: str | None = None
-    player_count: int | None = None
-    year_min: int | None = None
-    year_max: int | None = None
-    theme: list[str] = []
-    feature: list[str] = []
-    reward_type: list[str] = []
+    q: str = Field(
+        "",
+        description=(
+            "Free-text search. Accent- and case-insensitive substring match "
+            "against the title's name, abbreviations and primary manufacturer."
+        ),
+    )
+    manufacturer: str | None = Field(
+        None,
+        description=(
+            "Manufacturer slug (see `GET /api/manufacturers/`). Matches the "
+            "title's primary manufacturer."
+        ),
+    )
+    person: str | None = Field(
+        None,
+        description=(
+            "Person slug (see `GET /api/people/`). Matches titles this person "
+            "is credited on."
+        ),
+    )
+    tech_gen: str | None = Field(
+        None,
+        description="Technology-generation slug (see `GET /api/technology-generations/`).",
+    )
+    display_type: str | None = Field(
+        None,
+        description="Display-type slug (see `GET /api/display-types/`).",
+    )
+    system: str | None = Field(
+        None,
+        description="System slug (see `GET /api/systems/`).",
+    )
+    franchise: str | None = Field(
+        None,
+        description="Franchise slug (see `GET /api/franchises/`).",
+    )
+    series: str | None = Field(
+        None,
+        description="Series slug (see `GET /api/series/`).",
+    )
+    player_count: int | None = Field(
+        None,
+        description="Number of players a machine supports. `6` matches 6 or more.",
+    )
+    year_min: int | None = Field(None, description="Earliest release year, inclusive.")
+    year_max: int | None = Field(None, description="Latest release year, inclusive.")
+    theme: list[str] = Field(
+        [],
+        description=(
+            "Theme slug (see `GET /api/themes/`). Repeat to require several "
+            "(`theme=a&theme=b`); a parent theme also matches its sub-themes."
+        ),
+    )
+    feature: list[str] = Field(
+        [],
+        description=(
+            "Gameplay-feature slug (see `GET /api/gameplay-features/`). Repeatable; "
+            "a parent feature also matches its sub-features."
+        ),
+    )
+    reward_type: list[str] = Field(
+        [],
+        description=(
+            "Reward-type slug (see `GET /api/reward-types/`). Repeatable; all "
+            "supplied slugs must match."
+        ),
+    )
 
     def to_filters(self) -> TitleFilters:
         return TitleFilters(
@@ -788,11 +842,14 @@ titles_router = Router(tags=["titles"])
 def list_titles(
     request: HttpRequest,
     filters: Query[TitleFilterQuerySchema],
-    page: int = 1,
+    page: Annotated[int, QueryParam(1, description="Page number, 1-based.")] = 1,
 ) -> TitleListPageSchema:
-    """One page of title cards for the SSR grid (page 1) and infinite scroll
-    (2…N). Slices at SQL via ``ordered_titles`` + LIMIT/OFFSET — only the requested
-    page is serialized (never ``list(qs)`` over the whole catalog)."""
+    """Pinball titles, paginated. Narrow with the filters and the search (``q``).
+    Ordered by release year (newest first), then alphabetically.
+
+    All filters combine with AND."""
+    # Sliced at SQL via ``ordered_titles`` + LIMIT/OFFSET so only the requested
+    # page is serialized — never ``list(qs)`` over the whole catalog.
     f = filters.to_filters()
     rows = ordered_titles(f).prefetch_related(_card_models_prefetch())
     count = rows.count()

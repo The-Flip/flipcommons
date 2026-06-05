@@ -1,8 +1,16 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import { pageTitle } from '$lib/constants';
 
   let scalarLoaded = $state(false);
   let scalarError = $state('');
+
+  // page.url.origin resolves to SITE_ORIGIN at prerender time (see
+  // svelte.config.js prerender.origin), the same source the canonical
+  // href and OG tags use, so this stays correct without hardcoding.
+  let typesCommand = $derived(
+    `npx openapi-typescript ${page.url.origin}/api/openapi.json -o schema.d.ts`,
+  );
 
   const scalarCustomCss = `
 		.scalar-api-reference {
@@ -102,8 +110,7 @@
   <div class="resource-card">
     <h3>TypeScript Types</h3>
     <p>Generate fully-typed API bindings in one command:</p>
-    <pre><code>npx openapi-typescript https://flipdb.org/api/openapi.json -o schema.d.ts</code
-      ></pre>
+    <pre><code>{typesCommand}</code></pre>
   </div>
 </section>
 

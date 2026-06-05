@@ -18,7 +18,7 @@ from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..models import GameplayFeature
 from ._counts import bulk_title_counts_via_models
-from .constants import DEFAULT_PAGE_SIZE
+from .constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PageParam
 from .edit_claims import (
     execute_claims,
     plan_alias_claims,
@@ -50,8 +50,8 @@ class GameplayFeatureListItemSchema(Schema):
 
 
 class GameplayFeatureListSchema(Schema):
-    """``{items, count}`` page of gameplay features — the wire shape
-    ``createPaginatedLoader`` expects (it derives has_more from items.length < count)."""
+    """A page of gameplay features: ``items`` holds this page's rows; ``count`` is the
+    total number of matching gameplay features across all pages."""
 
     items: list[GameplayFeatureListItemSchema]
     count: int
@@ -146,15 +146,17 @@ def _active_gameplay_features() -> list[GameplayFeature]:
 
 @gameplay_features_router.get("/", response=GameplayFeatureListSchema)
 def list_gameplay_features(
-    request: HttpRequest, q: str = "", page: int = 1
+    request: HttpRequest, q: NameAliasQuery = "", page: PageParam = 1
 ) -> GameplayFeatureListSchema:
-    """One page of gameplay features, most-titled first, filtered server-side by ``q``
-    (name or alias). The ``-title_count`` sort is the hierarchical ``children_map``
-    rollup, not a SQL column, so this handler does its own compute-sort-slice over the
-    full active set rather than going through ``paginated_list_response``'s SQL slice.
-    The rollup is computed over **all** active features (a matched feature's count
-    reflects its whole descendant set, not just descendants matching ``q``); ``q``
-    selects which rows show."""
+    """Gameplay features, paginated. Search with ``q``. Ordered by title count, then
+    alphabetically.
+
+    Title counts roll up the feature hierarchy: a feature's count reflects its whole
+    descendant set, not just itself. ``q`` selects which rows show, but does not
+    narrow the counts."""
+    # The ``-title_count`` sort is the hierarchical ``children_map`` rollup, not a
+    # SQL column, so this handler does its own compute-sort-slice over the full
+    # active set rather than going through ``paginated_list_response``'s SQL slice.
     active = _active_gameplay_features()
     counts = _gameplay_feature_rollup(active)
 

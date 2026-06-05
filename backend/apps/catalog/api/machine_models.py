@@ -1,18 +1,17 @@
 """Models (machine models) router — list, detail, and claim-patch endpoints."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from django.db.models import F, Prefetch, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
-from ninja import Router, Schema
+from ninja import Query, Router, Schema
 from ninja.decorators import decorate_view
 from ninja.pagination import paginate
 from ninja.responses import Status
 from ninja.security import django_auth
+from pydantic import Field
 
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -581,40 +580,84 @@ class ModelListPagination(NamedPageNumberPagination):
     response_name = "ModelListSchema"
 
 
+class ModelFilterQuerySchema(Schema):
+    """Every /models filter dimension as query params. All filters combine with AND."""
+
+    manufacturer: str = Field(
+        "", description="Manufacturer slug (see `GET /api/manufacturers/`)."
+    )
+    type: str = Field(
+        "",
+        description="Technology-generation slug (see `GET /api/technology-generations/`).",
+    )
+    subgeneration: str = Field(
+        "",
+        description=(
+            "Technology-subgeneration slug. Matches the model's own subgeneration "
+            "or its system's."
+        ),
+    )
+    display: str = Field(
+        "", description="Display-type slug (see `GET /api/display-types/`)."
+    )
+    display_subtype: str = Field("", description="Display-subtype slug.")
+    feature: str = Field(
+        "",
+        description=(
+            "Gameplay-feature slug (see `GET /api/gameplay-features/`). Also matches "
+            "its sub-features."
+        ),
+    )
+    reward_type: str = Field(
+        "", description="Reward-type slug (see `GET /api/reward-types/`)."
+    )
+    game_format: str = Field(
+        "", description="Game-format slug (see `GET /api/game-formats/`)."
+    )
+    cabinet: str = Field("", description="Cabinet slug (see `GET /api/cabinets/`).")
+    tag: str = Field("", description="Tag slug (see `GET /api/tags/`).")
+    year_min: int | None = Field(None, description="Earliest release year, inclusive.")
+    year_max: int | None = Field(None, description="Latest release year, inclusive.")
+    person: str = Field(
+        "",
+        description=(
+            "Person slug (see `GET /api/people/`). Matches models this person is "
+            "credited on."
+        ),
+    )
+    ordering: str = Field(
+        "-year",
+        description=(
+            "Sort order: `name`, `-name`, `year` or `-year`. Defaults to `-year` "
+            "(newest first)."
+        ),
+    )
+
+
 @models_router.get("/", response=list[ModelListItemSchema])
 @paginate(ModelListPagination, page_size=DEFAULT_PAGE_SIZE)
 def list_models(
-    request: HttpRequest,
-    manufacturer: str = "",
-    type: str = "",
-    subgeneration: str = "",
-    display: str = "",
-    display_subtype: str = "",
-    feature: str = "",
-    reward_type: str = "",
-    game_format: str = "",
-    cabinet: str = "",
-    tag: str = "",
-    year_min: int | None = None,
-    year_max: int | None = None,
-    person: str = "",
-    ordering: str = "-year",
+    request: HttpRequest, filters: Query[ModelFilterQuerySchema]
 ) -> list[ModelListItemSchema]:
+    """Machine models, paginated. Narrow with the filters. Ordered by the ``ordering``
+    param (newest first by default).
+
+    All filters combine with AND."""
     qs = _build_model_list_qs(
-        manufacturer=manufacturer,
-        type=type,
-        subgeneration=subgeneration,
-        display=display,
-        display_subtype=display_subtype,
-        feature=feature,
-        reward_type=reward_type,
-        game_format=game_format,
-        cabinet=cabinet,
-        tag=tag,
-        year_min=year_min,
-        year_max=year_max,
-        person=person,
-        ordering=ordering,
+        manufacturer=filters.manufacturer,
+        type=filters.type,
+        subgeneration=filters.subgeneration,
+        display=filters.display,
+        display_subtype=filters.display_subtype,
+        feature=filters.feature,
+        reward_type=filters.reward_type,
+        game_format=filters.game_format,
+        cabinet=filters.cabinet,
+        tag=filters.tag,
+        year_min=filters.year_min,
+        year_max=filters.year_max,
+        person=filters.person,
+        ordering=filters.ordering,
     )
     min_rank = get_minimum_display_rank()
     return [_serialize_model_list(pm, min_rank=min_rank) for pm in qs]
@@ -628,7 +671,9 @@ class ModelRecentSchema(Schema):
     thumbnail_url: str | None = None
 
 
-@models_router.get("/recent/", response=list[ModelRecentSchema])
+# Website-only (homepage widget), not external catalog data — kept out of the
+# public API docs via tags=["private"].
+@models_router.get("/recent/", response=list[ModelRecentSchema], tags=["private"])
 @decorate_view(cache_control(no_cache=True))
 def list_recent_models(request: HttpRequest) -> list[ModelRecentSchema]:
     """Return the 3 newest non-variant models, one per title."""
@@ -673,7 +718,9 @@ def list_recent_models(request: HttpRequest) -> list[ModelRecentSchema]:
     return results
 
 
-@models_router.get("/edit-options/", response=ModelEditOptionsSchema)
+# Serves the in-app edit form, not external consumers — kept out of the public
+# API docs via tags=["private"].
+@models_router.get("/edit-options/", response=ModelEditOptionsSchema, tags=["private"])
 @decorate_view(cache_control(no_cache=True))
 def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
     """Return all dropdown options for the MachineModel edit form."""

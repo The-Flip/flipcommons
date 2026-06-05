@@ -17,7 +17,7 @@ from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..models import MachineModel, Theme
 from ._counts import bulk_title_counts_via_models
-from .constants import DEFAULT_PAGE_SIZE
+from .constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PageParam
 from .edit_claims import (
     execute_claims,
     plan_alias_claims,
@@ -51,8 +51,8 @@ class ThemeListItemSchema(Schema):
 
 
 class ThemeListSchema(Schema):
-    """``{items, count}`` page of themes — the wire shape ``createPaginatedLoader``
-    expects (it derives has_more from items.length < count)."""
+    """A page of themes: ``items`` holds this page's rows; ``count`` is the total
+    number of matching themes across all pages."""
 
     items: list[ThemeListItemSchema]
     count: int
@@ -156,13 +156,18 @@ def _theme_rollup(themes: list[Theme]) -> dict[int, int]:
 
 
 @themes_router.get("/", response=ThemeListSchema)
-def list_themes(request: HttpRequest, q: str = "", page: int = 1) -> ThemeListSchema:
-    """One page of themes, most-titled first, filtered server-side by ``q`` (name or
-    alias). The ``-title_count`` sort is the hierarchical ``children_map`` rollup, not a
-    SQL column, so this handler does its own compute-sort-slice over the full active set
-    rather than going through ``paginated_list_response``'s SQL slice. The rollup is
-    computed over **all** active themes (a matched theme's count reflects its whole
-    descendant set, not just descendants matching ``q``); ``q`` selects which rows show."""
+def list_themes(
+    request: HttpRequest, q: NameAliasQuery = "", page: PageParam = 1
+) -> ThemeListSchema:
+    """Themes, paginated. Search with ``q``. Ordered by title count, then
+    alphabetically.
+
+    Title counts roll up the theme hierarchy: a theme's count reflects its whole
+    descendant set, not just itself. ``q`` selects which rows show, but does not
+    narrow the counts."""
+    # The ``-title_count`` sort is the hierarchical ``children_map`` rollup, not a
+    # SQL column, so this handler does its own compute-sort-slice over the full
+    # active set rather than going through ``paginated_list_response``'s SQL slice.
     active = _active_themes()
     counts = _theme_rollup(active)
 
