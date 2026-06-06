@@ -55,7 +55,7 @@ class RateLimitErrorBodySchema(StructuredErrorBodySchema):
         description='Discriminator; always "rate_limit".'
     )
     bucket: str = Field(
-        description="The rate-limit bucket that was exceeded (e.g. create, edit, delete)."
+        description="The rate-limit bucket that was exceeded (create, edit, delete, export etc)."
     )
     retry_after: int = Field(description="Seconds to wait before retrying the request.")
 

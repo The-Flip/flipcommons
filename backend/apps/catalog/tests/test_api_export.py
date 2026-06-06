@@ -247,3 +247,40 @@ class TestExportCompleteness:
             for row in resp.json():
                 leaked = HIDDEN & row.keys()
                 assert not leaked, f"{spec.model.__name__} leaked {leaked}"
+
+
+class TestExportRateLimit:
+    @staticmethod
+    def _limit_one(settings):
+        # Squeeze the per-IP budget to 1 so the second request trips it (rather
+        # than issuing 120). Overriding the setting exercises the real per-request
+        # spec path; counters reset per test via the locmem-cache fixture.
+        settings.EXPORT_RATELIMIT_IP = (1, 3600)
+
+    def test_export_is_rate_limited_with_structured_429(
+        self, client, machine_model, settings
+    ):
+        self._limit_one(settings)
+        assert client.get("/api/export/models/").status_code == 200
+        resp = client.get("/api/export/models/")
+        assert resp.status_code == 429
+        # Same wire shape as the rest of the app: Retry-After + structured body.
+        assert resp["Retry-After"]
+        assert resp.json()["detail"]["kind"] == "rate_limit"
+
+    def test_spoofed_xff_cannot_rotate_the_bucket(
+        self, client, machine_model, settings
+    ):
+        # The limit keys on the sanctioned IP (REMOTE_ADDR in tests, X-Real-IP via
+        # Caddy in prod), never X-Forwarded-For — so rotating XFF can't dodge it.
+        self._limit_one(settings)
+        first = client.get("/api/export/models/", HTTP_X_FORWARDED_FOR="1.1.1.1")
+        second = client.get("/api/export/models/", HTTP_X_FORWARDED_FOR="9.9.9.9")
+        assert first.status_code == 200
+        assert second.status_code == 429  # different XFF, same bucket
+
+    def test_internal_api_is_not_rate_limited(self, client, machine_model):
+        # The limiter lives in the export views only; internal routes are unmetered.
+        # No squeeze needed — internal routes never read EXPORT_RATELIMIT_IP.
+        assert client.get("/api/models/").status_code == 200
+        assert client.get("/api/models/").status_code == 200

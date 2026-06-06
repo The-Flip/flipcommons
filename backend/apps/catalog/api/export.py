@@ -24,6 +24,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, NamedTuple
 
+from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.db.models import Count, Max, Min, Q, QuerySet, Subquery
@@ -36,6 +37,8 @@ from apps.catalog.models import CatalogModel
 from apps.core.entity_types import all_linkable_models, get_linkable_model
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
+from apps.core.rate_limits import RateLimitSpec, check_and_record_ip
+from apps.core.schemas import RateLimitErrorSchema
 from apps.media.models import MediaSupportedModel
 from apps.provenance.helpers import active_claims as _active_claims
 from apps.provenance.helpers import claims_prefetch
@@ -66,6 +69,31 @@ _BASE_HANDLED = frozenset({"name", "slug", "description", "status"})
 # Per-entity System-internal / API-suppressed claim fields kept OUT of the dump.
 _MODERATION = frozenset({"needs_review", "needs_review_notes"})  # internal review notes
 _RATINGS = frozenset({"ipdb_rating", "pinside_rating"})  # already cut from the API
+
+
+# Per-IP rate limit for the public export, via the project's sanctioned IP limiter
+# (X-Real-IP, trust-flag-gated, fail-closed; structured 429 + Retry-After). One
+# shared bucket across all export endpoints, so the limit is a per-IP full-sync
+# budget (rationale + numbers: settings.EXPORT_RATELIMIT_IP). Built per-request
+# from settings (like the signup limiters) so the cap is tunable at runtime
+# without a deploy — see apps.accounts.api.signup._spec for the same pattern.
+def _export_rate_limit_spec() -> RateLimitSpec:
+    limit, window = settings.EXPORT_RATELIMIT_IP
+    return RateLimitSpec(bucket="export", limit=limit, window_seconds=window)
+
+
+def export_rate_limit_summary() -> str:
+    """Human-readable budget for the public API description, e.g. "roughly 6
+    full exports per hour".
+
+    Derived from the configured spec and the endpoint count (one request per
+    entity = one full dump), so the published description tracks
+    ``EXPORT_RATELIMIT_IP`` instead of carrying a hand-typed number that drifts.
+    """
+    limit, window = settings.EXPORT_RATELIMIT_IP
+    requests_per_full_export = len(EXPORT_ENTITY_TYPES)
+    full_exports_per_hour = round(limit / requests_per_full_export * 3600 / window)
+    return f"roughly {full_exports_per_hour} full exports per hour"
 
 
 # ---------------------------------------------------------------------------
@@ -685,7 +713,7 @@ def _register(spec: ExportSpec) -> None:
     cache_base = model.entity_type
 
     def _view(request: HttpRequest) -> HttpResponse:
-        _ = request
+        check_and_record_ip(request, _export_rate_limit_spec())
         key = export_key(cache_base)
         cached = get_cached_response(key)
         if cached is not None:
@@ -712,7 +740,9 @@ def _register(spec: ExportSpec) -> None:
     _view.__name__ = f"export_{entity_type_plural.replace('-', '_')}"
     export_router.get(
         f"/{entity_type_plural}/",
-        response=list[schema],  # type: ignore[valid-type]
+        # 429 documented so the public OpenAPI advertises the per-IP limit and
+        # its Retry-After body (the export API is the sole documented surface).
+        response={200: list[schema], 429: RateLimitErrorSchema},  # type: ignore[valid-type]
         summary=label_plural,
         description=f"Bulk export all {label_plural}.",
     )(_view)

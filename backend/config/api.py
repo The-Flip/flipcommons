@@ -12,7 +12,7 @@ from apps.catalog.api.edit_claims import (
     FieldConstraintSchema,
     StructuredValidationError,
 )
-from apps.catalog.api.export import export_router
+from apps.catalog.api.export import export_rate_limit_summary, export_router
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.exceptions import StructuredApiError
@@ -33,15 +33,20 @@ api = NinjaAPI(
 # Public API: the bulk export — the sole documented, externally-consumed surface.
 # A SEPARATE NinjaAPI so its OpenAPI document *is* exactly the export (no tag
 # filtering, and internal endpoints cannot leak into it). Mounted at /api/export/
-# (config/urls.py). Read-only GET, so it needs none of the internal API's
-# structured-error / rate-limit / exception handlers below.
+# (config/urls.py). Abuse is capped per-IP by the export views (the project's
+# sanctioned IP limiter, settings.EXPORT_RATELIMIT_IP), which raises
+# StructuredApiError — so export_api registers the shared structured-error handler
+# below.
 export_api = NinjaAPI(
     title="Flipcommons Export API",
     version="1.0.0",
     description=(
-        "Bulk export records from Flipcommons. Please be gentle on the system: "
-        "save the exported data and do the rest of your operations locally on "
-        "your exported copy."
+        "Bulk export records from Flipcommons.\n\n"
+        "Please be gentle on the system: save the exported data and do the rest "
+        "of your operations locally on your exported copy. Requests are "
+        # Limit derived from the live config so the published number never goes stale.
+        f"rate-limited to {export_rate_limit_summary()} per IP; a 429 with a "
+        "Retry-After header means you've exceeded it."
     ),
     urls_namespace="export",
 )
@@ -146,7 +151,13 @@ def _structured_error_response(exc: StructuredApiError) -> JsonResponse:
     return response
 
 
+# Registered on both APIs: the internal API for its full structured-error
+# taxonomy, and the export API whose only structured error is the rate-limit 429
+# (RateLimitExceededError → {kind, retry_after} + Retry-After). Same wire shape on
+# both. The decorator returns the function unchanged, so stacking just adds a
+# second registration.
 @api.exception_handler(StructuredApiError)
+@export_api.exception_handler(StructuredApiError)
 def _handle_structured_api_error(
     request: HttpRequest, exc: StructuredApiError
 ) -> JsonResponse:
