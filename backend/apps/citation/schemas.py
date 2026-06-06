@@ -1,4 +1,29 @@
-"""API schemas for the citation app."""
+"""API schemas for the citation app — the "Sources" UI for cited evidence.
+
+A :class:`~apps.citation.models.CitationSource` is a work or evidence object
+that can be cited: a book, magazine or web page. Sources form a one-level
+hierarchy through a self FK — a *root* source (e.g. the IPDB website, or a
+magazine title) groups *child* sources (e.g. one IPDB machine page, or a
+single issue/article). ``source_type`` is one of ``book`` / ``magazine`` /
+``web``.
+
+Two derived notions recur across these schemas:
+
+- **abstract** — a source that is a container rather than a directly-citable
+  work: any source that has children, or a root ``web`` / ``magazine`` source.
+  The UI offers such a source's children for citation instead of the source
+  itself.
+- **skip_locator** — a web *child* needs no locator (page/section/fragment)
+  because its URL already pins the exact evidence; every other source needs a
+  locator when cited.
+
+Sources are NOT claims-controlled: unlike catalog entities they are edited
+directly through admin / the Sources UI. Citation *search* additionally
+recognizes a pasted URL or ISBN as belonging to a known root source (see
+:class:`CitationRecognitionSchema`), and the *extract* endpoint fetches
+metadata for a pasted URL/ISBN from an external API to prefill a create form
+(see :class:`CitationExtractResultSchema`).
+"""
 
 from __future__ import annotations
 
@@ -19,6 +44,9 @@ from .models import (
     CITATION_SOURCE_PUBLISHER_MAX_LENGTH,
 )
 
+# String fields that are non-nullable CharFields on the model: an update that
+# sends ``null`` for one of these is coerced to ``""`` (see
+# ``CitationSourceUpdateSchema.coerce_null_to_empty``).
 NONNULLABLE_STR_FIELDS = (
     "name",
     "source_type",
@@ -28,6 +56,9 @@ NONNULLABLE_STR_FIELDS = (
     "description",
 )
 
+# Length-bounded string aliases, one per model CharField, so input schemas
+# reject over-long values at the API boundary with the same limits the DB
+# enforces.
 NameStr = Annotated[str, Field(max_length=CITATION_SOURCE_NAME_MAX_LENGTH)]
 AuthorStr = Annotated[str, Field(max_length=CITATION_SOURCE_AUTHOR_MAX_LENGTH)]
 PublisherStr = Annotated[str, Field(max_length=CITATION_SOURCE_PUBLISHER_MAX_LENGTH)]
@@ -42,65 +73,141 @@ LinkLabelStr = Annotated[str, Field(max_length=CITATION_SOURCE_LINK_LABEL_MAX_LE
 
 
 class CitationSourceSearchSchema(Schema):
-    id: int
-    name: str
-    source_type: str
-    author: str
-    publisher: str
-    year: int | None = None
-    isbn: str | None = None
-    parent_id: int | None = None
-    has_children: bool = False
-    is_abstract: bool = False
-    skip_locator: bool = False
-    identifier_key: str = ""
+    """One source row in citation typeahead search results."""
+
+    id: int = Field(description="The source's identifier.")
+    name: str = Field(description="The source's display name.")
+    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    author: str = Field(description="Author or creator, or an empty string.")
+    publisher: str = Field(description="Publisher, or an empty string.")
+    year: int | None = Field(None, description="Publication year, if known.")
+    isbn: str | None = Field(None, description="ISBN, if known.")
+    parent_id: int | None = Field(
+        None,
+        description="Identifier of the root source this is a child of, or null if it is itself a root.",
+    )
+    has_children: bool = Field(
+        False,
+        description="Whether other sources are grouped under this one as children.",
+    )
+    is_abstract: bool = Field(
+        False,
+        description=(
+            "Whether this source is a container rather than a directly-citable "
+            "work (it has children, or is a root web/magazine source); the UI "
+            "cites its children instead."
+        ),
+    )
+    skip_locator: bool = Field(
+        False,
+        description="Whether citing this source needs no locator — true for a web child, whose URL is the locator.",
+    )
+    identifier_key: str = Field(
+        "",
+        description=(
+            "For a root web source, the identifier scheme its children use "
+            '("ipdb" or "opdb"); an empty string otherwise.'
+        ),
+    )
 
 
 class CitationSourceMatchSchema(Schema):
-    id: int
-    name: str
-    skip_locator: bool = False
+    """A minimal reference to an existing source the user can re-cite.
+
+    Returned when search recognition or metadata extraction finds a source
+    that already exists, so the UI can offer it instead of creating a duplicate.
+    """
+
+    id: int = Field(description="The matched source's identifier.")
+    name: str = Field(description="The matched source's display name.")
+    skip_locator: bool = Field(
+        False,
+        description="Whether citing the matched source needs no locator (true for a web child).",
+    )
 
 
 class CitationSourceParentSchema(Schema):
-    id: int
-    name: str
+    """A minimal reference to a source's root/parent."""
+
+    id: int = Field(description="The parent source's identifier.")
+    name: str = Field(description="The parent source's display name.")
 
 
 class CitationRecognitionSchema(Schema):
-    """A URL or ISBN typed into citation search was recognized as belonging
-    to a known parent source. ``child`` is set when a record with the
-    extracted ``identifier`` already exists; otherwise the UI has enough to
-    prefill a create form.
-    """
+    """Recognition of a URL or ISBN typed into search as a known root source."""
 
-    parent: CitationSourceParentSchema
-    child: CitationSourceMatchSchema | None = None
-    identifier: str | None = None
+    # Built by walking the registered extractors: an extractor matches the input
+    # by URL pattern (or ISBN) to a known ``parent`` root source and, when
+    # present, the extracted ``identifier``; ``child`` is filled when a source
+    # with that identifier already exists. A bare domain match yields ``parent``
+    # only (no ``identifier``, no ``child``).
+    parent: CitationSourceParentSchema = Field(
+        description="The known root source the input belongs to."
+    )
+    child: CitationSourceMatchSchema | None = Field(
+        None,
+        description=(
+            "The existing child source for the input, when one already exists; "
+            "null when the input is new (the UI prefills a create form)."
+        ),
+    )
+    identifier: str | None = Field(
+        None,
+        description=(
+            "The structured identifier extracted from the input (e.g. an IPDB "
+            "machine id), or null when only the source's domain matched."
+        ),
+    )
 
 
 class CitationSourceSearchResponseSchema(Schema):
-    results: list[CitationSourceSearchSchema]
-    recognition: CitationRecognitionSchema | None = None
+    """Response body for the citation search typeahead."""
+
+    results: list[CitationSourceSearchSchema] = Field(
+        description="Matching source rows."
+    )
+    recognition: CitationRecognitionSchema | None = Field(
+        None,
+        description="Set when the query was recognized as a known URL or ISBN; null for plain-text queries.",
+    )
 
 
 class CitationSourceCreateSchema(Schema):
-    name: NameStr
-    source_type: str
-    author: AuthorStr = ""
-    publisher: PublisherStr = ""
-    year: int | None = None
-    month: int | None = None
-    day: int | None = None
-    date_note: DateNoteStr = ""
-    isbn: IsbnStr | None = None
-    description: DescriptionStr = ""
-    parent_id: int | None = None
-    identifier: IdentifierStr = ""
+    """Input to create a new citation source."""
+
+    name: NameStr = Field(description="The source's display name.")
+    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    author: AuthorStr = Field("", description="Author or creator.")
+    publisher: PublisherStr = Field("", description="Publisher.")
+    year: int | None = Field(None, description="Publication year.")
+    month: int | None = Field(None, description="Publication month; requires year.")
+    day: int | None = Field(None, description="Publication day; requires month.")
+    date_note: DateNoteStr = Field(
+        "",
+        description="Free-text note about the date (e.g. a season or approximate date).",
+    )
+    isbn: IsbnStr | None = Field(
+        None,
+        description="ISBN; must be unique across sources. Empty input is stored as null.",
+    )
+    description: DescriptionStr = Field("", description="Free-text description.")
+    parent_id: int | None = Field(
+        None,
+        description="Identifier of the root source to nest this under, or null to create a root.",
+    )
+    identifier: IdentifierStr = Field(
+        "",
+        description="Structured identifier for this child within its parent's scheme (e.g. an IPDB machine id).",
+    )
     # Optional: atomically create a CitationSourceLink alongside the source.
-    url: LinkUrlStr | None = None
-    link_label: LinkLabelStr = ""
-    link_type: str = "homepage"
+    url: LinkUrlStr | None = Field(
+        None, description="If set, a URL to attach to the new source as a link."
+    )
+    link_label: LinkLabelStr = Field("", description="Label for the attached link.")
+    link_type: str = Field(
+        "homepage",
+        description='Type of the attached link: "homepage", "catalog", "publisher", "reference" or "archive".',
+    )
 
     @field_validator("isbn", mode="before")
     @classmethod
@@ -110,16 +217,31 @@ class CitationSourceCreateSchema(Schema):
 
 
 class CitationSourceUpdateSchema(Schema):
-    name: NameStr | None = None
-    source_type: str | None = None
-    author: AuthorStr | None = None
-    publisher: PublisherStr | None = None
-    year: int | None = None
-    month: int | None = None
-    day: int | None = None
-    date_note: DateNoteStr | None = None
-    isbn: IsbnStr | None = None
-    description: DescriptionStr | None = None
+    """Input to update a citation source; a partial update.
+
+    Omitted fields are left unchanged (the endpoint applies only the keys the
+    client sends). Sending ``null`` for a non-nullable string field clears it to
+    an empty string; sending ``null`` (or empty) for ``isbn`` clears it to null.
+    """
+
+    name: NameStr | None = Field(None, description="New display name.")
+    source_type: str | None = Field(
+        None, description='New source type: "book", "magazine" or "web".'
+    )
+    author: AuthorStr | None = Field(None, description="New author or creator.")
+    publisher: PublisherStr | None = Field(None, description="New publisher.")
+    year: int | None = Field(None, description="New publication year.")
+    month: int | None = Field(None, description="New publication month; requires year.")
+    day: int | None = Field(None, description="New publication day; requires month.")
+    date_note: DateNoteStr | None = Field(
+        None, description="New free-text note about the date."
+    )
+    isbn: IsbnStr | None = Field(
+        None, description="New ISBN; must be unique across sources."
+    )
+    description: DescriptionStr | None = Field(
+        None, description="New free-text description."
+    )
 
     @field_validator(*NONNULLABLE_STR_FIELDS, mode="before")
     @classmethod
@@ -135,53 +257,94 @@ class CitationSourceUpdateSchema(Schema):
 
 
 class CitationSourceChildSchema(Schema):
-    id: int
-    name: str
-    source_type: str
-    year: int | None = None
-    isbn: str | None = None
-    skip_locator: bool = False
-    urls: list[str] = []
+    """A child source as nested under its parent in the detail view."""
+
+    id: int = Field(description="The child source's identifier.")
+    name: str = Field(description="The child source's display name.")
+    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    year: int | None = Field(None, description="Publication year, if known.")
+    isbn: str | None = Field(None, description="ISBN, if known.")
+    skip_locator: bool = Field(
+        False,
+        description="Whether citing this child needs no locator — true for a web child, whose URL is the locator.",
+    )
+    urls: list[str] = Field(
+        [],
+        description="URLs of every link attached to this child, regardless of link type.",
+    )
 
 
 class CitationSourceLinkSchema(Schema):
-    id: int
-    link_type: str
-    url: str
-    label: str
+    """A link attached to a citation source."""
+
+    id: int = Field(description="The link's identifier.")
+    link_type: str = Field(
+        description='Kind of link: "homepage", "catalog", "publisher", "reference" or "archive".'
+    )
+    url: str = Field(description="The link's URL.")
+    label: str = Field(description="Human-readable label, or an empty string.")
 
 
 class CitationSourceDetailSchema(Schema):
-    id: int
-    name: str
-    source_type: str
-    author: str
-    publisher: str
-    year: int | None = None
-    month: int | None = None
-    day: int | None = None
-    date_note: str
-    isbn: str | None = None
-    description: str
-    identifier_key: str = ""
-    skip_locator: bool = False
-    parent: CitationSourceParentSchema | None = None
-    links: list[CitationSourceLinkSchema] = []
-    children: list[CitationSourceChildSchema] = []
-    created_at: str
-    updated_at: str
+    """Full detail for a single citation source, with its links and children."""
+
+    id: int = Field(description="The source's identifier.")
+    name: str = Field(description="The source's display name.")
+    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    author: str = Field(description="Author or creator, or an empty string.")
+    publisher: str = Field(description="Publisher, or an empty string.")
+    year: int | None = Field(None, description="Publication year, if known.")
+    month: int | None = Field(None, description="Publication month, if known.")
+    day: int | None = Field(None, description="Publication day, if known.")
+    date_note: str = Field(
+        description="Free-text note about the date, or an empty string."
+    )
+    isbn: str | None = Field(None, description="ISBN, if known.")
+    description: str = Field(description="Free-text description, or an empty string.")
+    identifier_key: str = Field(
+        "",
+        description='For a root web source, the identifier scheme its children use ("ipdb" or "opdb"); an empty string otherwise.',
+    )
+    skip_locator: bool = Field(
+        False,
+        description="Whether citing this source needs no locator (true for a web child).",
+    )
+    parent: CitationSourceParentSchema | None = Field(
+        None, description="The root source this is a child of, or null if it is a root."
+    )
+    links: list[CitationSourceLinkSchema] = Field(
+        [], description="Links where a reader can inspect this source."
+    )
+    children: list[CitationSourceChildSchema] = Field(
+        [], description="Sources grouped under this one as children."
+    )
+    created_at: str = Field(
+        description="When the source was created, as an ISO 8601 timestamp."
+    )
+    updated_at: str = Field(
+        description="When the source was last updated, as an ISO 8601 timestamp."
+    )
 
 
 class CitationSourceLinkCreateSchema(Schema):
-    link_type: str
-    url: LinkUrlStr
-    label: LinkLabelStr = ""
+    """Input to attach a new link to a citation source."""
+
+    link_type: str = Field(
+        description='Kind of link: "homepage", "catalog", "publisher", "reference" or "archive".'
+    )
+    url: LinkUrlStr = Field(description="The link's URL; must be unique on the source.")
+    label: LinkLabelStr = Field("", description="Human-readable label for the link.")
 
 
 class CitationSourceLinkUpdateSchema(Schema):
-    link_type: str | None = None
-    url: LinkUrlStr | None = None
-    label: LinkLabelStr | None = None
+    """Input to update a link; a partial update (omitted fields unchanged)."""
+
+    link_type: str | None = Field(
+        None,
+        description='New link type: "homepage", "catalog", "publisher", "reference" or "archive".',
+    )
+    url: LinkUrlStr | None = Field(None, description="New URL for the link.")
+    label: LinkLabelStr | None = Field(None, description="New label for the link.")
 
     @field_validator("label", mode="before")
     @classmethod
@@ -190,27 +353,71 @@ class CitationSourceLinkUpdateSchema(Schema):
 
 
 class CitationExtractInputSchema(Schema):
-    input: str
+    """Input to the metadata-extraction endpoint."""
+
+    input: str = Field(
+        description=(
+            "A pasted URL (with an http(s):// scheme) or an ISBN-10/ISBN-13. The "
+            "endpoint classifies it automatically; an ISBN takes priority."
+        )
+    )
 
 
 class CitationExtractDraftSchema(Schema):
-    name: str
-    source_type: str
-    author: str
-    publisher: str
-    year: int | None = None
-    isbn: str | None = None
-    url: str | None = None
+    """Metadata scraped from an external lookup, to prefill the create form."""
+
+    name: str = Field(description="The extracted title.")
+    source_type: str = Field(
+        description='Inferred source type: "book" for an ISBN, "web" for a URL.'
+    )
+    author: str = Field(description="Extracted author, or an empty string.")
+    publisher: str = Field(
+        description="Extracted publisher or site name, or an empty string."
+    )
+    year: int | None = Field(None, description="Extracted publication year, if found.")
+    isbn: str | None = Field(
+        None, description="The ISBN, for a book draft; null for a web draft."
+    )
+    url: str | None = Field(
+        None, description="The URL, for a web draft; null for a book draft."
+    )
 
 
 class CitationExtractResultSchema(Schema):
     """Result of looking up a pasted URL/ISBN via an external API.
-    ``match`` points at an existing source if one was found; ``draft`` is a
-    prefill for the create form; ``error`` is a user-facing failure reason.
+
+    Exactly one of ``match``, ``draft`` or ``error`` is the meaningful outcome:
+    ``match`` when a source already exists (re-cite it), ``draft`` when metadata
+    was fetched for a new source (prefill the create form), ``error`` when the
+    lookup failed.
     """
 
-    draft: CitationExtractDraftSchema | None = None
-    match: CitationSourceMatchSchema | None = None
-    error: str | None = None
-    confidence: str = ""
-    source_api: str = ""
+    draft: CitationExtractDraftSchema | None = Field(
+        None,
+        description="Prefill metadata for the create form, when extraction succeeded.",
+    )
+    match: CitationSourceMatchSchema | None = Field(
+        None,
+        description="An existing source with the same ISBN or identifier, when one was found.",
+    )
+    error: str | None = Field(
+        None,
+        description=(
+            "Failure reason, when the lookup failed: one of ``not_found``, "
+            "``timeout``, ``api_error``, ``parse_error`` or ``blocked``."
+        ),
+    )
+    confidence: str = Field(
+        "",
+        description=(
+            'How reliable the draft is: "high" for an ISBN lookup, "low" for URL '
+            "meta-tag scraping; empty when there is no draft."
+        ),
+    )
+    source_api: str = Field(
+        "",
+        description=(
+            'Which external source produced the draft: "openlibrary" for an ISBN, '
+            '"og_meta" for URL Open Graph tags; empty when there is no draft.'
+        ),
+    )

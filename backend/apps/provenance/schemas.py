@@ -28,131 +28,161 @@ from .models import (
 ClaimDisplayIdentityState = Literal["resolved", "deleted", "missing"]
 """Discriminant for :class:`ClaimDisplayIdentityPartSchema`.
 
-See that schema for what each value implies about the surrounding fields.
+See that schema's ``state`` field for what each value implies.
 """
 
 
 class ClaimDisplayIdentityPartSchema(Schema):
-    """One identity slot of a relationship claim's user-facing rendering.
+    """One identity slot of a relationship claim's user-facing rendering."""
 
-    ``key`` names the identity ``ValueKeySpec`` (e.g. ``"person"``,
-    ``"alias_value"``).
-
-    ``state`` (see :data:`ClaimDisplayIdentityState`) discriminates three cases that
-    frontends typically want to render differently:
-
-    - ``"resolved"``: the backend produced a real label; ``label`` is the
-      non-empty user-facing string.
-    - ``"deleted"``: the claim references an FK target row that no longer
-      exists in the catalog (e.g. a Person was removed after the claim
-      was made). Legitimate runtime condition; ``label`` is null.
-    - ``"missing"``: the claim dict didn't carry this identity key at
-      all — an invariant violation that validation should have prevented.
-      Backend logs loudly when this happens; ``label`` is null.
-
-    No default on ``state``: every construction must pick one. Defaulting
-    to ``"resolved"`` would let ``ClaimDisplayIdentityPartSchema(key=..., label=None)``
-    construct silently with an incoherent ``(resolved, null)`` pair.
-    """
-
-    key: str
-    label: str | None
-    state: ClaimDisplayIdentityState
+    key: str = Field(
+        description='Names the identity this slot fills (e.g. "person", "alias_value").'
+    )
+    label: str | None = Field(
+        description=(
+            "The user-facing label for the referenced entity, or null when no "
+            "label could be produced (see ``state``)."
+        )
+    )
+    state: ClaimDisplayIdentityState = Field(
+        description=(
+            'Whether a label could be produced. "resolved": a real label is '
+            'present. "deleted": the referenced catalog row no longer exists, so '
+            '``label`` is null. "missing": the claim did not carry this identity '
+            "key, so ``label`` is null."
+        )
+    )
+    # No default on ``state``: every construction must pick one. Defaulting to
+    # ``"resolved"`` would let ``ClaimDisplayIdentityPartSchema(key=..., label=None)``
+    # construct silently with an incoherent ``(resolved, null)`` pair. The
+    # ``"missing"`` case is an invariant violation validation should have
+    # prevented; the backend logs loudly when it happens.
 
 
 class ClaimDisplayQualifierPartSchema(Schema):
-    """One qualifier on a relationship claim's user-facing rendering.
+    """One qualifier on a relationship claim's user-facing rendering."""
 
-    ``key`` names a non-identity ``ValueKeySpec`` (e.g. ``"count"``,
-    ``"category"``, ``"is_primary"``); ``value`` is the raw scalar so the
-    frontend can apply per-key rendering rules (``count > 1``, ``is_primary
-    === true``, etc.).
-
-    Union ordering is **most specific first**: ``bool`` before ``int``
-    because ``bool`` is an ``int`` subclass and Pydantic v2's default union
-    resolution would otherwise coerce ``True`` into ``1``, silently breaking
-    frontend ``v === true`` checks.
-    """
-
-    key: str
-    value: bool | int | str | None = None
+    key: str = Field(
+        description='Names the non-identity qualifier (e.g. "count", "category", "is_primary").'
+    )
+    value: bool | int | str | None = Field(
+        None,
+        description="The qualifier's raw scalar value, for per-key frontend rendering.",
+    )
+    # Union ordering is most specific first: ``bool`` before ``int`` because
+    # ``bool`` is an ``int`` subclass and Pydantic v2's default union resolution
+    # would otherwise coerce ``True`` into ``1``, silently breaking frontend
+    # ``v === true`` checks.
 
 
 class ClaimDisplayValueSchema(Schema):
-    """Structured user-facing rendering of a relationship-claim value.
+    """Structured user-facing rendering of a relationship-claim value."""
 
-    ``identity`` and ``qualifiers`` are lists (not dicts) so declaration
-    order is part of the wire format, not an implicit dict-insertion-order
-    contract. Direct-field scalar claims and non-relationship namespaces
-    have no ``ClaimDisplayValueSchema`` — the frontend falls back to the raw
-    ``old_value`` / ``new_value`` in that case.
-    """
-
-    identity: list[ClaimDisplayIdentityPartSchema]
-    qualifiers: list[ClaimDisplayQualifierPartSchema]
+    identity: list[ClaimDisplayIdentityPartSchema] = Field(
+        description="The claim's identity slots, in display order."
+    )
+    qualifiers: list[ClaimDisplayQualifierPartSchema] = Field(
+        description="The claim's qualifiers, in display order."
+    )
+    # Lists (not dicts) so declaration order is part of the wire format, not an
+    # implicit dict-insertion-order contract. Direct-field scalar claims and
+    # non-relationship namespaces have no ``ClaimDisplayValueSchema`` — the
+    # frontend falls back to the raw ``old_value`` / ``new_value`` there.
 
 
 class ClaimValueSchema(Schema):
-    """A claim value paired with its structured user-facing rendering.
+    """A claim value paired with its structured user-facing rendering."""
 
-    ``raw`` is the JSONField payload (scalar/dict/list/null). ``display`` is
-    the structured rendering for relationship claims (see
-    :class:`ClaimDisplayValueSchema`) or ``None`` when there's no
-    structured rendering — direct-field scalars, unknown namespaces,
-    non-dict values. Clients fall back to ``raw`` when ``display`` is null.
-    """
-
-    raw: object
-    display: ClaimDisplayValueSchema | None = None
+    raw: object = Field(
+        description=(
+            "The claim's raw JSON payload — a scalar, dict, list or null "
+            "depending on the claim kind."
+        )
+    )
+    display: ClaimDisplayValueSchema | None = Field(
+        None,
+        description=(
+            "Structured rendering for relationship claims, or null when there is "
+            "none (direct-field scalars, unknown namespaces, non-dict values); "
+            "clients fall back to ``raw``."
+        ),
+    )
 
 
 class FieldChangeSchema(Schema):
-    """A single field change within a ChangeSet (old -> new).
+    """A single field change within a ChangeSet (old → new)."""
 
-    ``old_value`` / ``new_value`` are :class:`ClaimValueSchema` — each
-    bundles the raw JSON payload with its structured display rendering.
-
-    ``old_value`` is null in two cases that this wire format does not
-    distinguish: (1) no prior claim exists in the chain, or (2) a prior
-    claim exists but its value is JSON null.
-    """
-
-    field_name: str
-    claim_key: str
-    old_value: ClaimValueSchema | None = None
-    new_value: ClaimValueSchema
-    claim_id: int | None = None
-    claim_user_id: int | None = None
-    is_active: bool | None = None
-    is_winning: bool | None = None
-    is_retracted: bool | None = None
+    field_name: str = Field(description="The entity field that changed.")
+    claim_key: str = Field(
+        description=(
+            "Identity of the claim within the field — equal to ``field_name`` for "
+            "scalar fields, or a composite key identifying one element of a "
+            "relationship."
+        )
+    )
+    # ``old_value`` is null in two cases this wire format does not distinguish:
+    # (1) no prior claim exists in the chain, or (2) a prior claim exists but its
+    # value is JSON null.
+    old_value: ClaimValueSchema | None = Field(
+        None,
+        description="The previous value, or null when there was no prior value.",
+    )
+    new_value: ClaimValueSchema = Field(
+        description="The new value asserted by this change."
+    )
+    claim_id: int | None = Field(
+        None, description="Identifier of the underlying claim, when available."
+    )
+    claim_user_id: int | None = Field(
+        None,
+        description="Identifier of the user who authored the claim, or null when it was authored by an ingest source.",
+    )
+    is_active: bool | None = Field(
+        None,
+        description="Whether the claim is currently active (not superseded or retracted).",
+    )
+    is_winning: bool | None = Field(
+        None,
+        description="Whether the claim currently wins resolution for its field; null when not computed for this response.",
+    )
+    is_retracted: bool | None = Field(
+        None, description="Whether the claim has been retracted."
+    )
 
 
 class RetractionSchema(Schema):
     """A claim that was retracted (not superseded) within a ChangeSet.
 
-    Distinct from :class:`FieldChangeSchema`: a retraction removes a prior
-    claim without replacing it, so there is no ``new_value``.
+    A retraction removes a prior claim without replacing it, so it has no
+    ``new_value`` — unlike :class:`FieldChangeSchema`.
     """
 
-    claim_id: int
-    field_name: str
-    claim_key: str
-    old_value: ClaimValueSchema
+    claim_id: int = Field(description="Identifier of the retracted claim.")
+    field_name: str = Field(
+        description="The entity field the retracted claim applied to."
+    )
+    claim_key: str = Field(
+        description="Identity of the retracted claim within the field."
+    )
+    old_value: ClaimValueSchema = Field(description="The value that was removed.")
 
 
 class ClaimUserAuthorSchema(Schema):
     """A Claim/ChangeSet authored by a user."""
 
-    kind: Literal["user"] = "user"
-    username: str
+    kind: Annotated[
+        Literal["user"], Field(description='Discriminator; always "user".')
+    ] = "user"
+    username: str = Field(description="The authoring user's username.")
 
 
 class ClaimSourceAuthorSchema(Schema):
     """A Claim/ChangeSet attributed to an ingest source."""
 
-    kind: Literal["source"] = "source"
-    name: str
+    kind: Annotated[
+        Literal["source"], Field(description='Discriminator; always "source".')
+    ] = "source"
+    name: str = Field(description="The ingest source's name.")
 
 
 ClaimAuthorSchema = Annotated[
@@ -168,46 +198,54 @@ an ingest source. Mirrors the DB-level XOR CHECK constraints
 class ClaimAttributionSchema(Schema):
     """Who asserted a Claim and when."""
 
-    author: ClaimAuthorSchema
-    created_at: str
+    author: ClaimAuthorSchema = Field(
+        description="The user or ingest source that made the assertion."
+    )
+    created_at: str = Field(
+        description="When the assertion was made, as an ISO 8601 timestamp."
+    )
 
 
 class ChangeSetBaseSchema(Schema):
     """Common fields for any read-side ChangeSet representation."""
 
-    id: int
-    attribution: ClaimAttributionSchema
-    note: str
+    id: int = Field(description="The ChangeSet's identifier.")
+    attribution: ClaimAttributionSchema = Field(
+        description="Who created the ChangeSet and when."
+    )
+    note: str = Field(
+        description="The author's note explaining the edit, or an empty string."
+    )
 
 
 class ChangeSetSchema(ChangeSetBaseSchema):
-    """A grouped edit session with per-field diffs.
+    """A grouped edit session with per-field diffs."""
 
-    ``capabilities`` is the wire contract for every ChangeSet row variant
-    in the codebase — see also ``ChangeSetSummarySchema``,
-    ``ChangeSetDetailSchema``, ``CitedChangeSetSchema``, and
-    ``UserChangeSetSchema``. The contract:
-
-    Each entry answers "is the caller authorized to *attempt* this
-    activity on this row" — it is **not** a guarantee the action will
-    succeed. ``capabilities['changeset.undo'] is True`` only means the
-    policy lets this caller call the undo endpoint with this changeset;
-    the endpoint additionally enforces operational invariants
-    (``action == DELETE``, claims not superseded) that aren't expressible
-    as pure-attribute policy predicates and so don't reflect on the wire.
-
-    A future per-row Undo UI MUST AND the embedded verdict with operational
-    eligibility before rendering an affordance, or design a separate
-    operational-eligibility wire field at that time.
-    """
-
-    changes: list[FieldChangeSchema]
-    retractions: list[RetractionSchema] = []
-    capabilities: dict[Activity, bool] = Field(default_factory=dict)
+    changes: list[FieldChangeSchema] = Field(
+        description="The field changes in this ChangeSet, one per modified field."
+    )
+    retractions: list[RetractionSchema] = Field(
+        [], description="Claims removed without replacement in this ChangeSet."
+    )
+    capabilities: dict[Activity, bool] = Field(
+        default_factory=dict,
+        description=(
+            "Per-activity authorization for the calling user: whether policy "
+            "permits attempting each action (e.g. ``changeset.undo``) on this row."
+        ),
+    )
+    # Each capability answers only "is the caller authorized to *attempt* this
+    # activity" — not a guarantee it will succeed. ``capabilities['changeset.undo']
+    # is True`` only means policy lets this caller call the undo endpoint; the
+    # endpoint additionally enforces operational invariants (``action == DELETE``,
+    # claims not superseded) that aren't expressible as pure-attribute policy
+    # predicates and so don't reflect on the wire. A future per-row Undo UI MUST
+    # AND the embedded verdict with operational eligibility before rendering an
+    # affordance, or design a separate operational-eligibility wire field then.
 
     # Declared on each concrete row variant (not on the base) — the
-    # ``authz.E101–E106`` system check reads these from ``__dict__``,
-    # so inherited declarations don't trigger the structural check.
+    # ``authz.E101–E106`` system check reads these from ``__dict__``, so
+    # inherited declarations don't trigger the structural check.
     policy_activities: ClassVar[tuple[Activity, ...]] = (Activity.CHANGESET_UNDO,)
     policy_target_model: ClassVar[type[Model]] = ChangeSet
 
@@ -215,25 +253,46 @@ class ChangeSetSchema(ChangeSetBaseSchema):
 class ClaimSchema(Schema):
     """A single per-field claim as surfaced to the Sources UI."""
 
-    attribution: ClaimAttributionSchema
-    field_name: str
-    value: ClaimValueSchema
-    citation: str
-    is_winner: bool
-    changeset_note: str | None = None
+    attribution: ClaimAttributionSchema = Field(
+        description="Who asserted the claim and when."
+    )
+    field_name: str = Field(description="The entity field the claim applies to.")
+    value: ClaimValueSchema = Field(description="The claim's asserted value.")
+    citation: str = Field(
+        description="The citation backing the claim, or an empty string when none."
+    )
+    is_winner: bool = Field(
+        description="Whether this claim currently wins resolution for its field."
+    )
+    changeset_note: str | None = Field(
+        None, description="The note from the ChangeSet that grouped this claim, if any."
+    )
 
 
 class CitationReferenceInputSchema(Schema):
     """Reference an existing CitationInstance to clone onto a user edit."""
 
-    citation_instance_id: int
+    citation_instance_id: int = Field(
+        description="Identifier of the existing citation instance to reuse."
+    )
 
 
 class ChangeSetInputSchema(Schema):
     """Base shape for any user-attributed mutation that produces a ChangeSet."""
 
-    note: Annotated[str, Field(max_length=CHANGESET_NOTE_MAX_LENGTH)] = ""
-    citation: CitationReferenceInputSchema | None = None
+    note: Annotated[
+        str,
+        Field(
+            max_length=CHANGESET_NOTE_MAX_LENGTH,
+            description="Optional note explaining the edit.",
+        ),
+    ] = ""
+    citation: Annotated[
+        CitationReferenceInputSchema | None,
+        Field(
+            description="An existing citation instance to attach to the edit, if any."
+        ),
+    ] = None
 
 
 class AttributionSchema(Schema):
@@ -276,8 +335,8 @@ class AttributionSchema(Schema):
 class ReviewLinkSchema(Schema):
     """A link out to an external page relevant to a needs-review item."""
 
-    label: str
-    url: str
+    label: str = Field(description="Human-readable link text.")
+    url: str = Field(description="The link's URL.")
 
 
 class CitationLinkSchema(Schema):
@@ -352,63 +411,93 @@ class RichTextSchema(Schema):
 
 
 class CitationSourceSchema(Schema):
-    """A reusable citation source (a book, website, person, etc.).
+    """A reusable citation source — a database, wiki, book, editorial team, etc."""
 
-    The source itself — not an individual reference *to* it. Distinct from
-    :class:`CitationInstanceSchema`, which is one use of a source on a
-    specific claim.
-    """
-
-    name: str
-    slug: str
-    source_type: str
-    priority: int
-    url: str
-    description: str
+    # The source itself — not an individual reference *to* it. Distinct from
+    # :class:`CitationInstanceSchema`, which is one use of a source on a claim.
+    name: str = Field(description="The source's display name.")
+    slug: str = Field(description="The source's URL slug.")
+    source_type: str = Field(
+        description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
+    )
+    priority: int = Field(
+        description="Resolution weight; when claims conflict, the higher-priority source wins."
+    )
+    url: str = Field(
+        description="URL where the source can be found, or an empty string."
+    )
+    description: str = Field(
+        description="Free-text description of the source, or an empty string."
+    )
 
 
 class ReviewClaimSchema(Schema):
-    """A flagged claim as surfaced in the global review queue.
+    """A flagged claim as surfaced in the global review queue."""
 
-    Self-contains subject context (``subject_*``, ``title_slug``,
-    ``review_links``) because the review UI displays claims *outside* any
-    entity page. Distinct from :class:`ClaimSchema`, which assumes the
-    entity context is already known (Sources page) and instead carries
-    priority/citation metadata (``citation``, ``is_winner``).
-    """
-
-    id: int
-    source_name: str
-    field_name: str
-    value: ClaimValueSchema
-    needs_review_notes: str
-    created_at: str
-    # Context about the subject (the entity this claim targets).
+    # Self-contains subject context (``subject_*``, ``title_slug``,
+    # ``review_links``) because the review UI displays claims *outside* any
+    # entity page. Distinct from :class:`ClaimSchema`, which assumes the entity
+    # context is already known (Sources page).
+    id: int = Field(description="The claim's identifier.")
+    source_name: str = Field(
+        description="Name of the source or user that authored the claim."
+    )
+    field_name: str = Field(description="The entity field the claim applies to.")
+    value: ClaimValueSchema = Field(description="The claim's asserted value.")
+    needs_review_notes: str = Field(
+        description="Explanation of why the claim needs review."
+    )
+    created_at: str = Field(
+        description="When the claim was created, as an ISO 8601 timestamp."
+    )
     # Canonical hyphenated CatalogModel.entity_type, e.g. "manufacturer".
-    subject_type: str
-    subject_name: str
-    subject_slug: str | None = None
-    # Title that this claim created (for group claims).
-    title_slug: str | None = None
-    review_links: list[ReviewLinkSchema] = []
+    subject_type: str = Field(
+        description='Entity type of the claim\'s subject (e.g. "manufacturer").'
+    )
+    subject_name: str = Field(description="Display name of the subject entity.")
+    subject_slug: str | None = Field(
+        None,
+        description="URL slug of the subject entity, or null if it no longer exists.",
+    )
+    title_slug: str | None = Field(
+        None,
+        description="For group claims that created a Title, the Title's slug; null otherwise.",
+    )
+    review_links: list[ReviewLinkSchema] = Field(
+        [], description="External links relevant to reviewing the claim."
+    )
 
 
 class RevertNoteSchema(Schema):
-    """Input for reverting a single claim to a prior value. ``note`` is required."""
+    """Input for reverting a single claim to a prior value."""
 
-    note: Annotated[str, Field(max_length=CHANGESET_NOTE_MAX_LENGTH)]
+    note: Annotated[
+        str,
+        Field(
+            max_length=CHANGESET_NOTE_MAX_LENGTH,
+            description="Required note explaining the revert.",
+        ),
+    ]
 
 
 class UndoChangeSetSchema(Schema):
     """Input for undoing an entire ChangeSet (a create/edit/delete grouping)."""
 
-    note: Annotated[str, Field(max_length=CHANGESET_NOTE_MAX_LENGTH)] = ""
+    note: Annotated[
+        str,
+        Field(
+            max_length=CHANGESET_NOTE_MAX_LENGTH,
+            description="Optional note explaining the undo.",
+        ),
+    ] = ""
 
 
 class UndoResultSchema(Schema):
     """Result of an undo: the id of the new compensating ChangeSet."""
 
-    changeset_id: int
+    changeset_id: int = Field(
+        description="Identifier of the compensating ChangeSet created by the undo."
+    )
 
 
 class CitationInstanceSchema(Schema):
@@ -419,33 +508,54 @@ class CitationInstanceSchema(Schema):
     page number, URL fragment, or other locator.
     """
 
-    id: int
-    citation_source_id: int
-    citation_source_name: str
-    claim_id: int | None = None
-    locator: str
-    created_at: str
+    id: int = Field(description="The citation instance's identifier.")
+    citation_source_id: int = Field(description="Identifier of the cited source.")
+    citation_source_name: str = Field(description="Display name of the cited source.")
+    claim_id: int | None = Field(
+        None,
+        description="Identifier of the claim this instance cites, or null when unattached.",
+    )
+    locator: str = Field(
+        description="Specific location within the source, such as a page or section, or an empty string."
+    )
+    created_at: str = Field(
+        description="When the instance was created, as an ISO 8601 timestamp."
+    )
 
 
 class CitationInstanceBatchSchema(Schema):
     """A CitationInstance flattened with its source fields for batch rendering.
 
-    Used where the UI needs source metadata (name, type, author, year)
-    alongside the instance without a separate source lookup — typically
-    when rendering many citations at once.
+    Carries source metadata (name, type, author, year) alongside the
+    instance so callers rendering many citations at once avoid a separate
+    source lookup.
     """
 
-    id: int
-    source_name: str
-    source_type: str
-    author: str
-    year: int | None = None
-    locator: str
-    links: list[CitationLinkSchema] = []
+    id: int = Field(description="The citation instance's identifier.")
+    source_name: str = Field(description="Name of the cited source.")
+    source_type: str = Field(
+        description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
+    )
+    author: str = Field(description="Author of the cited source, or an empty string.")
+    year: int | None = Field(
+        None, description="Publication year of the source, if known."
+    )
+    locator: str = Field(
+        description="Specific location within the source, or an empty string."
+    )
+    links: list[CitationLinkSchema] = Field(
+        [], description="External links for the cited source."
+    )
 
 
 class CitationInstanceCreateSchema(Schema):
     """Input for creating a new CitationInstance against an existing source."""
 
-    citation_source_id: int
-    locator: Annotated[str, Field(max_length=CITATION_INSTANCE_LOCATOR_MAX_LENGTH)] = ""
+    citation_source_id: int = Field(description="Identifier of the source to cite.")
+    locator: Annotated[
+        str,
+        Field(
+            max_length=CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
+            description="Specific location within the source, such as a page or section.",
+        ),
+    ] = ""
