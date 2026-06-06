@@ -9,7 +9,7 @@
   // svelte.config.js prerender.origin), the same source the canonical
   // href and OG tags use, so this stays correct without hardcoding.
   let typesCommand = $derived(
-    `npx openapi-typescript ${page.url.origin}/api/openapi.json -o schema.d.ts`,
+    `npx openapi-typescript ${page.url.origin}/api/export/openapi.json -o schema.d.ts`,
   );
 
   const scalarCustomCss = `
@@ -26,33 +26,16 @@
 		}
 	`;
 
-  /** Remove endpoints tagged "private" from the OpenAPI spec before display. */
-  function filterSchema(schema: Record<string, unknown>): Record<string, unknown> {
-    const paths = schema.paths as Record<string, Record<string, Record<string, unknown>>>;
-    const filtered: typeof paths = {};
-    for (const [path, methods] of Object.entries(paths)) {
-      const kept: Record<string, Record<string, unknown>> = {};
-      for (const [method, details] of Object.entries(methods)) {
-        const tags = (details.tags as string[]) ?? [];
-        if (!tags.includes('private')) {
-          kept[method] = details;
-        }
-      }
-      if (Object.keys(kept).length > 0) {
-        filtered[path] = kept;
-      }
-    }
-    return { ...schema, paths: filtered };
-  }
-
+  // The export API is a dedicated NinjaAPI whose OpenAPI document is exactly the
+  // published surface (the bulk export) — no internal endpoints to filter out.
   $effect(() => {
     const controller = new AbortController();
 
     (async () => {
-      let spec: Record<string, unknown>;
+      let spec: unknown;
       try {
-        const res = await fetch('/api/openapi.json', { signal: controller.signal });
-        spec = filterSchema(await res.json());
+        const res = await fetch('/api/export/openapi.json', { signal: controller.signal });
+        spec = await res.json();
       } catch {
         if (!controller.signal.aborted) {
           scalarError = 'Failed to load API reference. Please try refreshing the page.';
@@ -102,8 +85,8 @@
   <div class="resource-card">
     <h3>OpenAPI Spec</h3>
     <p>
-      <a href="/api/openapi.json" target="_blank" rel="noopener external">Download</a> the raw OpenAPI
-      3.1 specification to use with any compatible tooling.
+      <a href="/api/export/openapi.json" target="_blank" rel="noopener external">Download</a> the raw
+      OpenAPI 3.1 specification to use with any compatible tooling.
     </p>
   </div>
 

@@ -204,6 +204,8 @@ def extract_image_urls(
 def extract_image_attribution(
     extra_data: JsonData,
     primary_media: Sequence[EntityMedia] | None,
+    *,
+    min_rank: int | None = None,
 ) -> AttributionSchema | None:
     """Return AttributionSchema for the displayed image, or None.
 
@@ -211,12 +213,16 @@ def extract_image_attribution(
     ``None`` — no third-party license to cite.  Otherwise checks each external
     image source in priority order and returns info for the first source that
     passes the display threshold.
+
+    Pass *min_rank* to avoid repeated Constance DB lookups in tight loops
+    (mirrors :func:`extract_image_urls`).
     """
     # Uploaded media has no third-party attribution.
     if primary_media:
         return None
 
-    min_rank = get_minimum_display_rank()
+    if min_rank is None:
+        min_rank = get_minimum_display_rank()
 
     for key in ("opdb.images", "ipdb.image_urls", "image_urls"):
         data = extra_data.get(key)

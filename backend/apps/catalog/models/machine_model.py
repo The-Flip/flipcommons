@@ -90,6 +90,7 @@ class MachineModel(
         blank=True,
         verbose_name="IPDB ID",
         validators=[MinValueValidator(EXTERNAL_ID_MIN)],
+        help_text="Internet Pinball Database numeric id for this machine.",
     )
     opdb_id = models.CharField(
         max_length=50,
@@ -98,6 +99,7 @@ class MachineModel(
         blank=True,
         verbose_name="OPDB ID",
         validators=[validate_no_mojibake],
+        help_text="Open Pinball Database id (e.g. 'GRBE5-MQK7e').",
     )
     pinside_id = models.CharField(
         max_length=120,
@@ -106,6 +108,7 @@ class MachineModel(
         blank=True,
         verbose_name="Pinside ID",
         validators=[validate_no_mojibake],
+        help_text="Pinside.com game id slug for this machine.",
     )
 
     # Hierarchy
@@ -129,7 +132,7 @@ class MachineModel(
         related_name="conversions",
         null=True,
         blank=True,
-        help_text="Source machine if this is a conversion/retheme (resolved from claims).",
+        help_text="Source machine if this is a conversion/retheme.",
     )
     remake_of = models.ForeignKey(
         "self",
@@ -137,7 +140,7 @@ class MachineModel(
         related_name="remakes",
         null=True,
         blank=True,
-        help_text="Original model if this is a remake (resolved from claims).",
+        help_text="Original model if this is a remake.",
     )
 
     # Core filterable fields
@@ -147,7 +150,7 @@ class MachineModel(
         related_name="models",
         null=True,
         blank=True,
-        help_text="Specific corporate incarnation that produced this model (resolved from claims).",
+        help_text="Specific corporate incarnation that produced this model.",
     )
     year = models.PositiveSmallIntegerField(
         null=True,
@@ -165,7 +168,7 @@ class MachineModel(
         related_name="machine_models",
         null=True,
         blank=True,
-        help_text="Technology generation (resolved from claims).",
+        help_text="Technology generation.",
     )
     technology_subgeneration = models.ForeignKey(
         "TechnologySubgeneration",
@@ -173,7 +176,7 @@ class MachineModel(
         related_name="machine_models",
         null=True,
         blank=True,
-        help_text="Technology subgeneration (resolved from claims).",
+        help_text="Technology subgeneration.",
     )
     display_type = models.ForeignKey(
         "DisplayType",
@@ -181,7 +184,7 @@ class MachineModel(
         related_name="machine_models",
         null=True,
         blank=True,
-        help_text="Display type (resolved from claims).",
+        help_text="Display type.",
     )
     display_subtype = models.ForeignKey(
         "DisplaySubtype",
@@ -189,7 +192,7 @@ class MachineModel(
         related_name="machine_models",
         null=True,
         blank=True,
-        help_text="Display subtype (resolved from claims).",
+        help_text="Display subtype.",
     )
     cabinet = models.ForeignKey(
         "Cabinet",
@@ -197,7 +200,7 @@ class MachineModel(
         related_name="machine_models",
         null=True,
         blank=True,
-        help_text="Cabinet form factor (resolved from claims).",
+        help_text="Cabinet form factor.",
     )
     game_format = models.ForeignKey(
         "GameFormat",
@@ -205,7 +208,7 @@ class MachineModel(
         related_name="machine_models",
         null=True,
         blank=True,
-        help_text="Game format (resolved from claims).",
+        help_text="Game format.",
     )
     player_count = models.PositiveSmallIntegerField(
         null=True,
@@ -248,7 +251,10 @@ class MachineModel(
         help_text="Classification tags (materialized from relationship claims).",
     )
     production_quantity = models.CharField(
-        max_length=100, blank=True, validators=[validate_no_mojibake]
+        max_length=100,
+        blank=True,
+        validators=[validate_no_mojibake],
+        help_text="Number of units produced, as free text (e.g. '6,000' or 'unknown').",
     )
     system = models.ForeignKey(
         "System",
@@ -256,7 +262,7 @@ class MachineModel(
         related_name="machine_models",
         null=True,
         blank=True,
-        help_text="Hardware system (resolved from system claims).",
+        help_text="Hardware system.",
     )
     flipper_count = models.PositiveSmallIntegerField(
         null=True,

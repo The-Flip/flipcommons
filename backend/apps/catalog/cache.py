@@ -28,7 +28,7 @@ from apps.core.licensing import current_audience
 # until the next write; versioning the keys orphans the stale entries instead.
 # The version is shared across all bases, so a bump also harmlessly orphans
 # unchanged payloads, which rebuild on first read. (Per-bump history: git blame.)
-_CACHE_VERSION = "v4"
+_CACHE_VERSION = "v5"
 
 # No-filter facet option lists for the /titles page (GET /api/pages/titles). Static
 # between catalog edits, so cached and cleared by invalidate_all().
@@ -36,6 +36,11 @@ _TITLES_FACETS_BASE = f"catalog:titles:facets:{_CACHE_VERSION}"
 # Same, for the /manufacturers page (GET /api/pages/manufacturers).
 _MANUFACTURERS_FACETS_BASE = f"catalog:manufacturers:facets:{_CACHE_VERSION}"
 _LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
+# Per-entity bulk-export blobs (GET /api/export/<entity>/). One slot per
+# entity_type × audience; cleared wholesale by invalidate_all() because a single
+# catalog edit can ripple across entities (e.g. a Model edit shifts a
+# Manufacturer's model_count).
+_EXPORT_BASE = f"catalog:export:{_CACHE_VERSION}"
 
 _BASES: tuple[str, ...] = (
     _TITLES_FACETS_BASE,
@@ -56,6 +61,10 @@ def manufacturers_facets_key() -> str:
 
 def locations_tree_key() -> str:
     return f"{_LOCATIONS_TREE_BASE}:{current_audience()}"
+
+
+def export_key(entity_type: str) -> str:
+    return f"{_EXPORT_BASE}:{entity_type}:{current_audience()}"
 
 
 def get_cached_response(cache_key: str) -> HttpResponse | None:
@@ -105,3 +114,10 @@ def invalidate_all() -> None:
     for base in _BASES:
         for audience in _AUDIENCES:
             cache.delete(f"{base}:{audience}")
+    # Per-entity export blobs. Lazy import avoids an import cycle (export.py
+    # imports this module's get/set_cached_response + export_key).
+    from apps.catalog.api.export import EXPORT_ENTITY_TYPES
+
+    for entity_type in EXPORT_ENTITY_TYPES:
+        for audience in _AUDIENCES:
+            cache.delete(f"{_EXPORT_BASE}:{entity_type}:{audience}")

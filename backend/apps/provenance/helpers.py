@@ -37,11 +37,17 @@ def changeset_author(cs: ChangeSet) -> ClaimAuthorSchema:
 
 def claims_prefetch(
     to_attr: str = "active_claims",
+    *,
+    field_names: Iterable[str] | None = None,
 ) -> Prefetch[str, QuerySet[Claim], str]:
-    """Return a Prefetch for active claims with priority annotation."""
-    return Prefetch(
-        "claims",
-        queryset=Claim.objects.filter(is_active=True)
+    """Return a Prefetch for active claims with priority annotation.
+
+    Pass *field_names* to restrict the prefetch to specific claim fields (e.g.
+    ``("description",)`` for a bulk dump that only needs description attribution),
+    so it doesn't drag the whole claim table.
+    """
+    queryset = (
+        Claim.objects.filter(is_active=True)
         .exclude(source__is_enabled=False)
         .select_related("source", "user", "changeset__user")
         .prefetch_related(
@@ -61,9 +67,11 @@ def claims_prefetch(
                 output_field=IntegerField(),
             )
         )
-        .order_by("claim_key", "-effective_priority", "-created_at"),
-        to_attr=to_attr,
+        .order_by("claim_key", "-effective_priority", "-created_at")
     )
+    if field_names is not None:
+        queryset = queryset.filter(field_name__in=list(field_names))
+    return Prefetch("claims", queryset=queryset, to_attr=to_attr)
 
 
 def active_claims(entity: models.Model) -> list[Claim]:

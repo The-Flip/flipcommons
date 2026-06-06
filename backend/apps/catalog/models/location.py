@@ -71,7 +71,10 @@ class Location(CatalogModel, TimeStampedModel):
         max_length=20, blank=True, validators=[validate_no_mojibake]
     )  # claim-controlled
     short_name = models.CharField(
-        max_length=100, blank=True, validators=[validate_no_mojibake]
+        max_length=100,
+        blank=True,
+        validators=[validate_no_mojibake],
+        help_text="Compact display form of the name, e.g. 'USA' for 'United States of America'.",
     )  # claim-controlled; e.g. "USA", "UK"
     # claim-controlled; list of level-type labels for countries only
     # e.g. ["state", "city"] or ["region", "department", "city"]
