@@ -12,19 +12,40 @@ from apps.catalog.api.edit_claims import (
     FieldConstraintSchema,
     StructuredValidationError,
 )
+from apps.catalog.api.export import export_router
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.exceptions import StructuredApiError
 
+# Internal API: every listing/read/write endpoint that powers this site's own UI.
+# Its OpenAPI + docs endpoints are DISABLED, so the internal surface is never
+# served publicly — external systems get no real-time-integration target. Frontend
+# types are still generated from the file written by ``manage.py
+# export_openapi_schema`` (it calls ``api.get_openapi_schema()`` directly, which is
+# unaffected by ``openapi_url=None``), and the boundary tests do the same.
 api = NinjaAPI(
     title="API",
     urls_namespace="api",
+    openapi_url=None,
+    docs_url=None,
 )
 
-
-# Endpoints tagged "private" are excluded from the public API docs page.
-# The API docs expose catalog data endpoints; internal/website endpoints
-# (health checks, stats for the homepage, etc.) use tags=["private"].
+# Public API: the bulk export — the sole documented, externally-consumed surface.
+# A SEPARATE NinjaAPI so its OpenAPI document *is* exactly the export (no tag
+# filtering, and internal endpoints cannot leak into it). Mounted at /api/export/
+# (config/urls.py). Read-only GET, so it needs none of the internal API's
+# structured-error / rate-limit / exception handlers below.
+export_api = NinjaAPI(
+    title="Flipcommons Export API",
+    version="1.0.0",
+    description=(
+        "Bulk export records from Flipcommons. Please be gentle on the system: "
+        "save the exported data and do the rest of your operations locally on "
+        "your exported copy."
+    ),
+    urls_namespace="export",
+)
+export_api.add_router("/", export_router)
 
 
 class SiteStatsSchema(Schema):
