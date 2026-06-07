@@ -38,8 +38,10 @@ class TestSourcesAPI:
         resp = client.get("/api/sources/")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "IPDB"
+        slugs = {s["slug"] for s in data}
+        # The IPDB fixture plus the seeded patch-attribution source.
+        assert "ipdb" in slugs
+        assert "flip-museum" in slugs
 
 
 class TestSystemsAPI:

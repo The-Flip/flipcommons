@@ -36,18 +36,19 @@ The admin password form is disabled — WorkOS is the only login surface — so 
 
 ## Commands
 
-| Command            | What it does                                               |
-| ------------------ | ---------------------------------------------------------- |
-| `make bootstrap`   | Install all deps, run migrations, generate API types       |
-| `make dev`         | Start Django + SvelteKit dev servers                       |
-| `make test`        | Run pytest (backend) + vitest (frontend)                   |
-| `make lint`        | Run ruff (backend) + eslint/prettier (frontend)            |
-| `make mypy`        | Run backend type checks                                    |
-| `make quality`     | Lint + regenerate API types + svelte-check                 |
-| `make codegen`     | Regenerate frontend API types from the backend schema      |
-| `make pull-ingest` | Download catalog data from R2                              |
-| `make ingest`      | Run full ingestion pipeline                                |
-| `make agent-docs`  | Regenerate CLAUDE.md and AGENTS.md from docs/AGENTS.src.md |
+| Command               | What it does                                               |
+| --------------------- | ---------------------------------------------------------- |
+| `make bootstrap`      | Install all deps, run migrations, generate API types       |
+| `make dev`            | Start Django + SvelteKit dev servers                       |
+| `make test`           | Run pytest (backend) + vitest (frontend)                   |
+| `make lint`           | Run ruff (backend) + eslint/prettier (frontend)            |
+| `make mypy`           | Run backend type checks                                    |
+| `make quality`        | Lint + regenerate API types + svelte-check                 |
+| `make codegen`        | Regenerate frontend API types from the backend schema      |
+| `make pull-ingest`    | Download catalog data from R2                              |
+| `make ingest-all`     | Fresh-DB bootstrap: full seed ingest, then all patches     |
+| `make ingest-patches` | Apply pending data patches (the post-seed correction path) |
+| `make agent-docs`     | Regenerate CLAUDE.md and AGENTS.md from docs/AGENTS.src.md |
 
 ## Project Structure
 

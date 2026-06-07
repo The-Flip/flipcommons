@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Protocol, cast
 
 from django.contrib.contenttypes.models import ContentType
-from django.core.exceptions import ValidationError
+from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -150,6 +150,11 @@ class IngestPlan:
     records_matched: int = 0
     resolve_hooks: dict[int, list[ResolveHook]] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    # Patch runs only: the NNNN-slug filename stem (the applied-ledger key)
+    # and the patch's description (copied to ``IngestRun.note``). Null/empty
+    # for normal ingests.
+    patch_id: str | None = None
+    note: str = ""
 
 
 @dataclass
@@ -185,9 +190,17 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
         return _apply_dry_run(plan, report)
 
     # ── Create IngestRun outside transaction ──────────────────────
+    # Created outside so a FAILED run survives rollback — that's exactly
+    # when the audit record matters most. The SUCCESS flip, by contrast,
+    # commits *inside* the transaction (below): "applied" must be atomic
+    # with the claims, or a torn write leaves a half-applied patch that a
+    # retry can't safely re-run (creates re-hit existing rows, expect
+    # guards re-evaluate against mutated state).
     run = IngestRun.objects.create(
         source=plan.source,
         input_fingerprint=plan.input_fingerprint,
+        patch_id=plan.patch_id,
+        note=plan.note,
     )
 
     try:
@@ -214,6 +227,31 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             _persist(run, to_create, superseded_ids, retract_entries)
             _resolve(to_create, retract_entries, plan.resolve_hooks)
 
+            # SUCCESS flip inside the transaction — see note above. The
+            # partial unique index on (patch_id) WHERE status='success'
+            # is enforced here; a racing second application raises
+            # IntegrityError, which the caller treats as "already applied".
+            run.status = IngestRun.Status.SUCCESS
+            run.records_parsed = plan.records_parsed
+            run.records_matched = plan.records_matched
+            run.records_created = report.records_created
+            run.claims_asserted = report.asserted
+            run.claims_retracted = report.retracted
+            run.warnings = report.warnings
+            run.finished_at = timezone.now()
+            run.save(
+                update_fields=[
+                    "status",
+                    "records_parsed",
+                    "records_matched",
+                    "records_created",
+                    "claims_asserted",
+                    "claims_retracted",
+                    "warnings",
+                    "finished_at",
+                ],
+            )
+
     except Exception as exc:
         run.status = IngestRun.Status.FAILED
         run.claims_rejected = report.rejected
@@ -224,26 +262,6 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
         )
         raise
 
-    run.status = IngestRun.Status.SUCCESS
-    run.records_parsed = plan.records_parsed
-    run.records_matched = plan.records_matched
-    run.records_created = report.records_created
-    run.claims_asserted = report.asserted
-    run.claims_retracted = report.retracted
-    run.warnings = report.warnings
-    run.finished_at = timezone.now()
-    run.save(
-        update_fields=[
-            "status",
-            "records_parsed",
-            "records_matched",
-            "records_created",
-            "claims_asserted",
-            "claims_retracted",
-            "warnings",
-            "finished_at",
-        ],
-    )
     return report
 
 
@@ -401,6 +419,52 @@ def _validate_assertion_targets(plan: IngestPlan) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _planned_public_ids(
+    entities: list[PlannedEntityCreate],
+) -> dict[type[ClaimControlledModel], set[str]]:
+    """Map each planned model class to the public_ids it will create.
+
+    A planned entity's public_id is the value of its ``public_id_field``
+    kwarg (``slug`` for most models, ``location_path`` for Location).
+    """
+    result: dict[type[ClaimControlledModel], set[str]] = defaultdict(set)
+    for entity in entities:
+        pid_field = getattr(entity.model_class, "public_id_field", "slug")
+        pid = entity.kwargs.get(pid_field)
+        if isinstance(pid, str):
+            result[entity.model_class].add(pid)
+    return result
+
+
+def _fk_value_is_planned(
+    pca: PlannedClaimAssert,
+    planned: dict[type[ClaimControlledModel], set[str]],
+) -> bool:
+    """True if *pca* is an FK claim whose value names a same-plan-created entity.
+
+    *planned* is the precomputed ``_planned_public_ids`` map. Used only by the
+    dry-run path to skip DB existence validation for FK targets that don't
+    exist yet because they're created in this same plan.
+    """
+    if pca.content_type_id is None or not isinstance(pca.value, str):
+        return False
+    model_class = ContentType.objects.get_for_id(pca.content_type_id).model_class()
+    if model_class is None:
+        return False
+    try:
+        django_field = model_class._meta.get_field(pca.field_name)
+    except FieldDoesNotExist:
+        return False
+    if not isinstance(django_field, models.ForeignKey):
+        return False
+    target_model = django_field.related_model
+    if not isinstance(target_model, type) or not issubclass(
+        target_model, ClaimControlledModel
+    ):
+        return False
+    return pca.value.strip() in planned.get(target_model, set())
+
+
 def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
     """Read-only path: validate and diff without writing anything."""
     report.records_created = len(plan.entities)
@@ -416,8 +480,23 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
 
     report.asserted += len(deferred)
 
+    # FK claims on existing entities whose value points at an entity created
+    # *in this same plan* cannot be validated in dry-run — the FK existence
+    # check queries the DB, but the target is only planned (the live path
+    # avoids this because creates run first, in the same transaction).  Same
+    # carve-out as deferred relationship claims above: count them asserted,
+    # skip validation.  (Structural correctness is already covered.)
+    planned = _planned_public_ids(plan.entities)
+    fk_to_planned = [
+        p for p in concrete if p.handle is None and _fk_value_is_planned(p, planned)
+    ]
+    report.asserted += len(fk_to_planned)
+    fk_to_planned_ids = {id(p) for p in fk_to_planned}
+
     # Claims targeting existing entities: validate + diff.
-    existing_assertions = [p for p in concrete if p.handle is None]
+    existing_assertions = [
+        p for p in concrete if p.handle is None and id(p) not in fk_to_planned_ids
+    ]
     if existing_assertions:
         claims = _build_claims(existing_assertions, plan.source)
         valid = _validate_and_collect_errors(claims, report)

@@ -52,6 +52,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pillow-heif" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pyyaml" },
     { name = "sentry-sdk", extra = ["django"] },
     { name = "whitenoise" },
     { name = "workos" },
@@ -69,6 +70,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "requests" },
     { name = "ruff" },
+    { name = "types-pyyaml" },
     { name = "types-requests" },
 ]
 
@@ -85,6 +87,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=11.0" },
     { name = "pillow-heif", specifier = ">=1.2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "sentry-sdk", extras = ["django"], specifier = ">=2.0" },
     { name = "whitenoise", specifier = ">=6.8" },
     { name = "workos", specifier = ">=5.0" },
@@ -102,6 +105,7 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "requests", specifier = ">=2.32" },
     { name = "ruff", specifier = ">=0.8" },
+    { name = "types-pyyaml", specifier = ">=6.0" },
     { name = "types-requests", specifier = ">=2.32" },
 ]
 

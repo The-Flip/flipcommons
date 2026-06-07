@@ -115,10 +115,10 @@ replay without network calls.
 
 ```bash
 make pull-ingest   # download data from R2
-make ingest        # run the full pipeline
+make ingest-all    # fresh-DB bootstrap: full seed pipeline, then data patches
 ```
 
-Or as a single command:
+Or as a single command (fresh-DB bootstrap: seed pipeline + data patches):
 
 ```bash
 cd backend
@@ -132,7 +132,7 @@ uv run python manage.py pull_and_ingest --dest ../data/ingest_sources
 - Railway CLI installed and logged in (`railway login`)
 - Project linked (`railway link`)
 
-### 1. Pull data and run ingest
+### 1. Pull data and run ingest (fresh / reset DB only)
 
 ```bash
 railway ssh --service flip-commons
@@ -140,8 +140,29 @@ railway ssh --service flip-commons
 ```
 
 This pulls ingest sources from R2 (with SHA-256 verification, skipping
-unchanged files), then runs the full `ingest_all` pipeline. Add `--dry-run`
-to verify without committing changes.
+unchanged files), runs the full `ingest_all` seed pipeline, then replays the
+data-patch log so the DB matches production. Add `--dry-run` to verify the seed
+without committing (patches are skipped in dry-run — they need a committed seed).
+
+> **Only on a fresh or just-reset database.** An already-seeded production DB is
+> never re-ingested: re-running the seed re-asserts the original source claims
+> and clobbers same-source patch corrections, and the patch ledger then skips
+> re-applying them. To apply new corrections to a live DB, use the patch path
+> below.
+
+### Applying data patches to a live (already-seeded) database
+
+This is the everyday correction path once production is seeded — pull the latest
+patch files, then apply only the pending ones (the ledger skips the rest):
+
+```bash
+railway ssh --service flip-commons
+.venv/bin/python manage.py pull_ingest_sources --dest /tmp/ingest_sources
+.venv/bin/python manage.py ingest_patches --patches-dir /tmp/ingest_sources/pindata/patches
+```
+
+Add `--dry-run` to `ingest_patches` to preview the claims without writing. See
+[DataPatches.md](DataPatches.md) for the patch model.
 
 ### 2. Run optional enrichment (if needed)
 
