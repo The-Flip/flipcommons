@@ -26,6 +26,7 @@ from django.db import models
 
 from apps.catalog.claims import build_relationship_claim, get_relationship_namespaces
 from apps.catalog.ingestion.apply import (
+    CitationRef,
     IngestPlan,
     PlannedClaimAssert,
     PlannedClaimRetract,
@@ -33,15 +34,18 @@ from apps.catalog.ingestion.apply import (
 )
 from apps.catalog.models import CatalogModel
 from apps.catalog.resolve import resolve_after_mutation
+from apps.citation.extractors import EXTRACTORS
+from apps.citation.models import CITATION_SOURCE_IDENTIFIER_MAX_LENGTH
 from apps.core.entity_types import get_linkable_model
 from apps.core.types import JsonBody
 from apps.provenance.models import Source, get_claim_fields
+from apps.provenance.models.changeset import CHANGESET_NOTE_MAX_LENGTH
 from apps.provenance.validation import get_relationship_schema
 
 PATCH_ID_RE = re.compile(r"^\d{4}-[a-z0-9-]+$")
 
 # Keys in a claim entry's value mapping that are directives, not claim fields.
-RESERVED_FIELD_KEYS = frozenset({"create", "expect", "retract"})
+RESERVED_FIELD_KEYS = frozenset({"create", "expect", "retract", "note", "cite"})
 
 
 class PatchError(Exception):
@@ -182,6 +186,11 @@ class PatchClaim:
     expect: JsonBody
     retract: list[str]
     fields: JsonBody
+    # Per-entry provenance. ``note`` becomes the entity's ChangeSet note;
+    # ``cite`` is a raw ``scheme:identifier`` string, parsed + validated into a
+    # CitationRef in build_plan. Empty string when the entry sets neither.
+    note: str = ""
+    cite: str = ""
 
     @property
     def ref(self) -> str:
@@ -241,6 +250,12 @@ def load_patch(text: str) -> PatchDoc:
             isinstance(f, str) for f in raw_retract
         ):
             raise PatchError(f"{ref}: 'retract' must be a list of field names")
+        raw_note = raw_fields.get("note", "")
+        if not isinstance(raw_note, str):
+            raise PatchError(f"{ref}: 'note' must be a string")
+        raw_cite = raw_fields.get("cite", "")
+        if not isinstance(raw_cite, str):
+            raise PatchError(f"{ref}: 'cite' must be a 'scheme:identifier' string")
 
         fields = {k: v for k, v in raw_fields.items() if k not in RESERVED_FIELD_KEYS}
         claims.append(
@@ -251,6 +266,8 @@ def load_patch(text: str) -> PatchDoc:
                 expect=raw_expect,
                 retract=raw_retract,
                 fields=fields,
+                note=raw_note,
+                cite=raw_cite,
             )
         )
 
@@ -275,6 +292,43 @@ class _Target(NamedTuple):
     handle: str | None = None
 
 
+def _parse_provenance(pc: PatchClaim) -> tuple[str, CitationRef | None]:
+    """Validate an entry's ``note``/``cite`` and parse ``cite`` into a CitationRef.
+
+    Length-checks each value against the DB column it lands in so an overlong
+    value fails as a clear :class:`PatchError` here rather than deep in
+    persistence. ``cite`` is a ``scheme:identifier`` string whose scheme must
+    be a known extractor and whose identifier must normalize.
+    """
+    note = pc.note
+    if len(note) > CHANGESET_NOTE_MAX_LENGTH:
+        raise PatchError(
+            f"{pc.ref}: note exceeds {CHANGESET_NOTE_MAX_LENGTH} characters"
+        )
+    if not pc.cite:
+        return note, None
+    scheme, sep, raw_id = pc.cite.partition(":")
+    if not sep or not scheme or not raw_id:
+        raise PatchError(
+            f"{pc.ref}: cite {pc.cite!r} must be 'scheme:identifier' (e.g. 'ipdb:4443')"
+        )
+    extractor = EXTRACTORS.get(scheme)
+    if extractor is None:
+        raise PatchError(
+            f"{pc.ref}: unknown cite scheme {scheme!r} "
+            f"(known: {', '.join(sorted(EXTRACTORS))})"
+        )
+    normalized = extractor.normalize(raw_id)
+    if normalized is None:
+        raise PatchError(f"{pc.ref}: invalid {scheme} identifier {raw_id!r}")
+    if len(normalized) > CITATION_SOURCE_IDENTIFIER_MAX_LENGTH:
+        raise PatchError(
+            f"{pc.ref}: cite identifier exceeds "
+            f"{CITATION_SOURCE_IDENTIFIER_MAX_LENGTH} characters"
+        )
+    return note, CitationRef(scheme=scheme, identifier=normalized)
+
+
 def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     """Compile a parsed patch into an :class:`IngestPlan`.
 
@@ -297,9 +351,19 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     retracted_fields: dict[tuple[int, int], set[str]] = defaultdict(set)
     asserted_fields: dict[tuple[int, int], set[str]] = defaultdict(set)
     target_ref: dict[tuple[int, int], str] = {}
+    # Provenance guard: an entity's claims all collapse into one ChangeSet, so
+    # two entries resolving to the same existing entity can't carry independent
+    # notes/cites. Track entry count and whether any carried provenance.
+    entity_entry_count: dict[tuple[int, int], int] = defaultdict(int)
+    entity_has_provenance: dict[tuple[int, int], bool] = defaultdict(bool)
+    # Refs already created in this patch. A second create for the same ref would
+    # mint a duplicate handle and blow up as a ValueError deep in the apply layer
+    # (which the command doesn't catch); reject it cleanly here.
+    created_refs: set[str] = set()
     matched = 0
 
     for pc in doc.claims:
+        note, citation_ref = _parse_provenance(pc)
         model_class = _resolve_model_class(pc)
         ct_id = ContentType.objects.get_for_model(model_class).pk
         existing = _lookup_entity(model_class, pc.public_id)
@@ -311,12 +375,15 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
                     f"{pc.ref}: create:true but a {pc.entity_type} with this "
                     f"public_id already exists"
                 )
+            if pc.ref in created_refs:
+                raise PatchError(f"{pc.ref}: duplicate create entry in this patch")
+            created_refs.add(pc.ref)
             if pc.expect:
                 raise PatchError(f"{pc.ref}: 'expect' is meaningless on a create")
             if pc.retract:
                 raise PatchError(f"{pc.ref}: 'retract' is meaningless on a create")
             handle = pc.ref
-            _add_create(plan, model_class, pc, handle)
+            _add_create(plan, model_class, pc, handle, note=note)
             target = _Target(handle=handle)
         else:
             if existing is None:
@@ -325,25 +392,73 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
                 )
             matched += 1
             _check_expect(model_class, existing, pc)
-            _add_retractions(plan, model_class, existing, pc, ct_id, rel_namespaces)
+            _add_retractions(
+                plan, model_class, existing, pc, ct_id, rel_namespaces, note=note
+            )
             target = _Target(content_type_id=ct_id, object_id=existing.pk)
             tkey = (ct_id, existing.pk)
             target_ref[tkey] = pc.ref
             retracted_fields[tkey].update(pc.retract)
+            entity_entry_count[tkey] += 1
+            if note or citation_ref is not None:
+                entity_has_provenance[tkey] = True
 
         claim_fields = get_claim_fields(model_class)
+        # Count authored-field assertions actually emitted below, so provenance
+        # can be validated against real carriers — a field *key* isn't enough
+        # (``tag: []`` emits zero member claims).
+        assertions_before = len(plan.assertions)
         for key, value in pc.fields.items():
             if key in claim_fields:
-                _emit_direct(plan, key, value, target)
+                _emit_direct(
+                    plan, key, value, target, note=note, citation_ref=citation_ref
+                )
                 if target.object_id is not None:
                     asserted_fields[(ct_id, target.object_id)].add(key)
             elif key in rel_namespaces:
-                _emit_relationship(plan, model_class, key, value, target, pc)
+                _emit_relationship(
+                    plan,
+                    model_class,
+                    key,
+                    value,
+                    target,
+                    pc,
+                    note=note,
+                    citation_ref=citation_ref,
+                )
                 rel_fields_by_model[model_class].add(key)
             else:
                 raise PatchError(f"{pc.ref}: unknown field {key!r}")
 
+        # Provenance needs an emitted carrier, or it would silently vanish.
+        # ``cite`` rides an authored field assertion; ``note`` also rides a
+        # create's scaffolding claims or a retraction.
+        authored_emitted = len(plan.assertions) > assertions_before
+        if citation_ref is not None and not authored_emitted:
+            raise PatchError(
+                f"{pc.ref}: cite has no field to attach to — cite a field you're "
+                f"also asserting (a retraction, a field-less create, or an empty "
+                f"relationship like 'tag: []' can't carry one)"
+            )
+        if note and not (authored_emitted or pc.create or pc.retract):
+            raise PatchError(
+                f"{pc.ref}: note has nothing to attach to — the entry must assert "
+                f"a field, retract, or create something"
+            )
+
     plan.records_matched = matched
+
+    # Provenance guard: reject when two entries land on one existing entity and
+    # either carries note/cite — their notes would collide in the shared
+    # ChangeSet and their cites would be ambiguous. One provenance-bearing entry
+    # per entity (combine retract + assert + note + cite into a single entry).
+    for tkey, count in entity_entry_count.items():
+        if count > 1 and entity_has_provenance[tkey]:
+            raise PatchError(
+                f"{target_ref[tkey]}: multiple entries target this entity and at "
+                f"least one carries note/cite — combine them into one entry "
+                f"(an entity's claims share a single changeset)"
+            )
 
     # Plan-wide guard: the same source must not both retract and assert a field
     # on one entity, even across separate entries. The retract only deactivates
@@ -404,12 +519,16 @@ def _emit_assert(
     field_name: str,
     value: object = None,
     claim_key: str = "",
+    note: str = "",
+    citation_ref: CitationRef | None = None,
 ) -> None:
     plan.assertions.append(
         PlannedClaimAssert(
             field_name=field_name,
             value=value,
             claim_key=claim_key,
+            note=note,
+            citation_ref=citation_ref,
             content_type_id=target.content_type_id,
             object_id=target.object_id,
             handle=target.handle,
@@ -422,9 +541,19 @@ def _emit_direct(
     field_name: str,
     value: object,
     target: _Target,
+    *,
+    note: str = "",
+    citation_ref: CitationRef | None = None,
 ) -> None:
     """Emit a scalar or FK claim assertion (FK value is the target public_id)."""
-    _emit_assert(plan, target, field_name=field_name, value=value)
+    _emit_assert(
+        plan,
+        target,
+        field_name=field_name,
+        value=value,
+        note=note,
+        citation_ref=citation_ref,
+    )
 
 
 def _emit_relationship(
@@ -434,6 +563,9 @@ def _emit_relationship(
     value: object,
     target: _Target,
     pc: PatchClaim,
+    *,
+    note: str = "",
+    citation_ref: CitationRef | None = None,
 ) -> None:
     schema = get_relationship_schema(namespace)
     if schema is None:
@@ -477,6 +609,8 @@ def _emit_relationship(
             field_name=namespace,
             value=claim_value,
             claim_key=claim_key,
+            note=note,
+            citation_ref=citation_ref,
         )
 
 
@@ -485,6 +619,8 @@ def _add_create(
     model_class: type[CatalogModel],
     pc: PatchClaim,
     handle: str,
+    *,
+    note: str = "",
 ) -> None:
     """Emit a ``PlannedEntityCreate`` plus its required slug/status claims.
 
@@ -493,6 +629,11 @@ def _add_create(
     claim-controlled kwarg into both the create kwargs *and* a matching
     assertion (the engine's create contract). Authored field assertions are
     emitted by the caller's field loop.
+
+    ``note`` rides the adapter-owned slug/status assertions so a create-only
+    entry's note still reaches its ChangeSet. A ``cite:`` deliberately does
+    *not* — the derived slug and the record-lifecycle status aren't sourced
+    facts; the citation rides the authored field claims (the field loop) only.
     """
     pid_field = model_class.public_id_field
     claim_fields = get_claim_fields(model_class)
@@ -544,10 +685,14 @@ def _add_create(
     )
     # slug + status are not in pc.fields, so emit their assertions here.
     plan.assertions.append(
-        PlannedClaimAssert(field_name=pid_field, value=pc.public_id, handle=handle)
+        PlannedClaimAssert(
+            field_name=pid_field, value=pc.public_id, handle=handle, note=note
+        )
     )
     plan.assertions.append(
-        PlannedClaimAssert(field_name="status", value="active", handle=handle)
+        PlannedClaimAssert(
+            field_name="status", value="active", handle=handle, note=note
+        )
     )
 
 
@@ -595,6 +740,8 @@ def _add_retractions(
     pc: PatchClaim,
     ct_id: int,
     rel_namespaces: frozenset[str],
+    *,
+    note: str = "",
 ) -> None:
     """Emit a ``PlannedClaimRetract`` per ``retract:`` field.
 
@@ -626,6 +773,7 @@ def _add_retractions(
                 content_type_id=ct_id,
                 object_id=entity.pk,
                 claim_key=field_name,
+                note=note,
             )
         )
 

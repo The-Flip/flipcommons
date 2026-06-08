@@ -12,14 +12,35 @@ from django.db.models import Case, F, IntegerField, Model, Prefetch, Q, Value, W
 from apps.core.authz import PolicyUser, compute_row_capabilities
 
 from .display import FieldValue, LabelLookup, claim_value, resolve_labels
-from .helpers import changeset_author
+from .helpers import changeset_author, citation_instances, citation_instances_prefetch
 from .models import ChangeSet, Claim
 from .schemas import (
     ChangeSetSchema,
     ClaimAttributionSchema,
+    FieldChangeCitationSchema,
     FieldChangeSchema,
     RetractionSchema,
 )
+
+
+def _field_change_citations(claim: Claim) -> list[FieldChangeCitationSchema]:
+    """Build the compact citation list for a field change's claim.
+
+    Requires the claim to have been loaded with citation instances prefetched
+    (``prefetched_citation_instances`` — see ``claims_prefetch`` and the
+    edit-history / changeset-detail querysets). Uses the source's first link
+    as the citation URL.
+    """
+    result: list[FieldChangeCitationSchema] = []
+    for inst in citation_instances(claim):
+        links = list(inst.citation_source.links.all())
+        result.append(
+            FieldChangeCitationSchema(
+                source_name=inst.citation_source.name,
+                url=links[0].url if links else None,
+            )
+        )
+    return result
 
 
 def _prior_value(claim: Claim, chain: Sequence[Claim]) -> object | None:
@@ -85,6 +106,7 @@ def build_changes(
                     (claim.pk in winning_ids) if winning_ids is not None else None
                 ),
                 is_retracted=claim.retracted_by_changeset_id is not None,
+                citations=_field_change_citations(claim),
             )
         )
 
@@ -162,9 +184,9 @@ def build_edit_history(entity: Model, user: PolicyUser) -> list[ChangeSetSchema]
         .prefetch_related(
             Prefetch(
                 "claims",
-                queryset=Claim.objects.filter(
-                    content_type=ct, object_id=entity.pk
-                ).order_by("field_name"),
+                queryset=Claim.objects.filter(content_type=ct, object_id=entity.pk)
+                .order_by("field_name")
+                .prefetch_related(citation_instances_prefetch()),
             ),
             Prefetch(
                 "retracted_claims",

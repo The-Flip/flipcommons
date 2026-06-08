@@ -35,6 +35,22 @@ def changeset_author(cs: ChangeSet) -> ClaimAuthorSchema:
     return ClaimSourceAuthorSchema(name=cs.ingest_run.source.name)
 
 
+def citation_instances_prefetch() -> Prefetch[str, QuerySet[CitationInstance], str]:
+    """Prefetch citation instances (+ source links) onto each claim.
+
+    Lands them on ``prefetched_citation_instances`` — the attribute
+    :func:`citation_instances` reads — so callers that build field-change
+    citations (edit history, changeset detail) avoid a per-claim query.
+    """
+    return Prefetch(
+        "citation_instances",
+        queryset=CitationInstance.objects.select_related(
+            "citation_source"
+        ).prefetch_related("citation_source__links"),
+        to_attr="prefetched_citation_instances",
+    )
+
+
 def claims_prefetch(
     to_attr: str = "active_claims",
     *,
@@ -50,15 +66,7 @@ def claims_prefetch(
         Claim.objects.filter(is_active=True)
         .exclude(source__is_enabled=False)
         .select_related("source", "user", "changeset__user")
-        .prefetch_related(
-            Prefetch(
-                "citation_instances",
-                queryset=CitationInstance.objects.select_related(
-                    "citation_source"
-                ).prefetch_related("citation_source__links"),
-                to_attr="prefetched_citation_instances",
-            )
-        )
+        .prefetch_related(citation_instances_prefetch())
         .annotate(
             effective_priority=Case(
                 When(source__isnull=False, then=F("source__priority")),

@@ -1,38 +1,35 @@
 # Data Patches
 
-A **data patch** is a small, source-attributed set of catalog claims authored as YAML, applied to a running database without a full re-ingest. Patches are the way to make a targeted, reproducible correction to live catalog data: author it, run it on localhost to see the change, then run the identical patch on production.
-
-A patch is just _a small set of source-attributed claim operations_ — it rides the existing claims + ingest machinery, not a parallel engine.
+A **data patch** is a small set of catalog claims authored as YAML and applied to a running database, without triggering a full re-ingest of the entire catalog's seed data. It's how you make a targeted, reproducible correction: author it, run it on localhost to check the effect, then run the identical file on production.
 
 ## The model: seed baseline, patches replayed on top
 
-This is the schema-migration model, for data. The seed ingest is an **immutable baseline**; we never edit it to fix data. Corrections and ongoing source updates are **append-only, numbered patches replayed on top of the seed in every environment**. A fresh database reaches production's state by replaying: **full ingest = seed ingest, then `ingest_patches`** (seed → `0001` → `0002` → …). Production is seeded once, then patches arrive over time.
+It's the schema-migration model, but for catalog data. The seed ingest is an **immutable baseline** we never edit to fix data. Corrections and ongoing source updates are **append-only, numbered patches replayed on top of the seed in every environment**: a fresh database reaches production's state by replaying seed → `0001` → `0002` → …. Production is seeded once, then patches arrive over time.
 
-A patch is **attributed to the source the fact came from** and performs one of three operations against _that source's_ claims:
+A patch is **attributed to the source the fact came from** and does one of three things to _that source's_ claims:
 
-- **assert / supersede** — re-assert a claim under the source; the engine deactivates the source's prior claim for that `(entity, claim_key)` and writes the new one. Corrects a wrong value (`flipcommons-catalog` now says X) or carries a source's updated value (OPDB changed Y).
-- **create** — make a new entity and its claims under the source.
-- **retract** — remove the source's claim entirely (the fact no longer exists or never did).
-
-There is **no "override tier."** We don't outrank a wrong claim with a higher-priority editorial claim — we correct the erring source directly (supersede or retract). Priority still resolves _genuine_ cross-source disagreement.
+- **assert / supersede** — (re-)assert a claim; the engine deactivates the source's prior claim for that `(entity, claim_key)` and writes the new one. Corrects a wrong value or carries a source's updated one.
+- **create** — make a new entity and its claims.
+- **retract** — remove the source's claim (the fact never existed or no longer does).
 
 ## File format
 
-Patches are numbered files named `NNNN-slug.yaml`. The numeric prefix orders application; the filename stem (`0001-prototype-tags`) is the **patch id**. They live in the [pindata](https://github.com/deanmoses/pindata) repo under `patches/` and ride the existing R2 export → `make pull-ingest` path, landing at `data/ingest_sources/pindata/patches/`.
-
-One patch carries **one attribution** (→ one `IngestRun`). An edit patch:
+Numbered files `NNNN-slug.yaml` like `0001-prototype-tags`. They live in the [pindata](https://github.com/deanmoses/pindata) repo under `patches/` and ride the R2 export → `make pull-ingest` path to `data/ingest_sources/pindata/patches/`. One patch carries **one attribution** (→ one `IngestRun`).
 
 ```yaml
 attribution: flip-museum # a Source slug; must already exist
-description: > # optional; copied to the IngestRun note
-  Why this change is being made.
+description: > # optional; the whole-patch "why" → IngestRun note
+  Tag known unreleased prototypes.
 claims: # ordered list of single-key entries
   - model.mazatron: # entity ref: <entity_type>.<public_id>
-      expect: { year: 1990 } # optional drift guard (scalar + FK)
-      tag: [prototype] # relationship: namespace → list of public_ids
+      expect: { year: 1990 } # drift guard (scalar + FK)
+      note: 'IPDB says "exists only as a prototype machine".' # per-entity reason
+      cite: ipdb:4443 # external evidence → citation on the claims below
+      production_status: unreleased # FK → target public_id
+      tag: [prototype] # relationship: namespace → member public_ids
 ```
 
-A create + supersede patch, attributed to the source whose value it corrects:
+Create + supersede, attributed to the source whose value it corrects:
 
 ```yaml
 attribution: flipcommons-catalog
@@ -41,85 +38,85 @@ claims:
       name: Western Products
       create: true # opt-in to create a missing entity
   - corporate-entity.western-products-incorporated:
-      manufacturer:
-        western-products # FK → target public_id; supersedes this
-        # source's prior manufacturer claim
+      manufacturer: western-products # FK → public_id; supersedes this source's prior claim
 ```
 
-A retract patch, attributed to the source whose fabricated claim it removes:
+Retract, attributed to the source whose claim it removes:
 
 ```yaml
 attribution: ipdb
 claims:
   - corporate-entity.western-products-incorporated:
-      retract: [manufacturer] # drop ipdb's manufacturer claim entirely
+      retract: [manufacturer] # drop ipdb's manufacturer claim
 ```
 
-**Entity reference key** is `type.public_id`: the canonical `entity_type` (`model`, `manufacturer`, `corporate-entity`, …) and the entity's public identifier (slug for most, `location_path` for Location), split on the first `.`.
+**Entity reference** is `type.public_id` — the canonical `entity_type` (`model`, `manufacturer`, `corporate-entity`, …) and the public id (slug for most, `location_path` for Location), split on the first `.`.
 
-**Field keys** are classified by introspection:
+**Field keys** are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's public_id; **relationship** (`tag`, `theme`) — key is the namespace, value a list of member public_ids.
 
-- **scalar** (`year`, `production_quantity`) — value used as-is.
-- **FK** (`manufacturer`, `title`) — value is the target's public_id.
-- **relationship** — the key is the **namespace** (`tag`, `theme`), value is a list of member public_ids.
+**Reserved keys** (directives, not claim fields):
 
-**Reserved keys** (not claim fields):
+- `create: true` — opt-in to create. Unresolved ref without it → error; resolved ref with it → error (duplicate).
+- `expect:` — drift guard: a map of currently-resolved values the target must already have, checked before any write (mismatch → error). Covers scalar + FK. Stops a hand-authored id from writing to a drifted or same-named row.
+- `retract:` — scalar/FK field names whose claim (from this patch's source) to deactivate, on an existing entity. A no-op with a warning if already gone, so re-runs are safe. Not valid with `create`, nor alongside asserting the same field. Retracting the sole claim of a non-nullable FK doesn't clear it (NOT NULL forbids it) — the last value freezes in place, provenance-orphaned; to _change_ a required FK, assert the new value instead.
+- `note:` — a per-entity free-text reason (≤1000 chars) → the entity's ChangeSet note, shown on its edit-history page. (`description:` explains the whole patch; `note:` explains one entry.) All of an entity's claims in a patch collapse into one changeset, so the note is per-entity.
+- `cite:` — external evidence as `scheme:identifier` (`ipdb:4443`, `opdb:GRhX5`). Get-or-creates the source under that scheme's root and attaches a citation to each of the entry's authored claims, shown beside the field on the edit-history page.
 
-- `create: true` — explicit opt-in to create. Reference doesn't resolve and `create` absent → hard error. Reference already resolves + `create: true` → hard error (duplicate).
-- `expect:` — drift guard. A map of currently-resolved values the target must already have, checked before any write; a mismatch is a hard error. Stops a hand-authored public_id from hitting a drifted or same-named row. v1 covers scalar + FK.
-- `retract:` — a list of scalar/FK field names whose claim (from **this patch's source**) should be removed, on an existing entity. The engine deactivates the source's active claim for that key, then re-resolves; if no such claim exists it warns rather than errors, so a re-run is a no-op. Not valid together with `create`. You also can't both retract and assert the same field on one entity in the same patch (the assert would just re-add it) — that's rejected.
+Two rules tie note/cite to the single changeset an entry produces:
 
-  **Required FKs don't go away.** Retracting the _sole_ claim of a non-nullable FK (e.g. `manufacturer`) does **not** clear the field — it can't, NOT NULL forbids it. The resolver freezes the last-resolved value in place, now backed by **no active claim** (provenance-orphaned). This avoids an `IntegrityError`, but it's rarely what you want: if you mean to **change** the value, just assert the corrected value — that supersedes this source's claim, no retract needed (and retracting plus asserting the same field is rejected). Retract a required FK only when **another source** still claims it and should take over.
+- **One provenance-bearing entry per entity.** Two entries resolving to the same entity that both set `note`/`cite` is an error — combine them into one.
+- **Provenance rides only an actual write (v1).** note/cite attach to what the patch writes. An entry with nothing to attach to (retraction-only, field-less create, empty `tag: []`) is a hard error. And re-asserting a value the entity already has from the same source diffs as unchanged — no claim, no changeset — so its `note`/`cite` are **silently dropped though the patch reports success**. To record provenance, the entry must change a value or create the entity.
 
-**Strict parsing:** duplicate mapping keys are an error, and values must be JSON-shaped — YAML implicit coercion is disabled, so a bare `1996-01-01` stays a string and `no` stays `"no"` (no need to quote, but no surprises either).
+**Strict parsing:** duplicate keys error, and values must be JSON-shaped — YAML coercion is off, so a bare `1996-01-01` stays a string and `no` stays `"no"`. A `note:` containing `"` needs YAML quoting (single-quote the value, as above).
 
-## Applying
+## Authoring a good patch
 
-Manual and infrequent — no deploy or startup hook. Applying patches on their own is the everyday correction path once a database is seeded (production is never re-ingested); `make pull-ingest` first to fetch new patch files:
+- **Attribute to the source the fact came from.** Museum-curated facts no one else claims → `flip-museum`. Corrections → the erring source itself (`flipcommons-catalog`, `ipdb`, `opdb`), so you supersede or retract _its_ claim.
+- **One entity per entry**, carrying all its fields and its single `note`/`cite`.
+- **Guard every entry with `expect:`** against a current resolved value — `year`, or another stable field like `corporate_entity` when year is null — so a typo'd or drifted public_id fails loudly instead of writing to the wrong row.
+- **Explain every change with `note:`**, written as `<source> says "<verbatim quote>"`. Quote the source _verbatim_, mark your own omissions with `[...]`, and keep it _plain ASCII_ (no smart quotes or `…`).
+- **Cite external evidence with `cite:`** (IPDB/OPDB records). Skip the citation when the evidence is in the entity's own data and instead write it in the note such as "It's name contains the word 'prototype'".
+- **Only assert what a source supports.** If you can't point to evidence, leave the field unset rather than guess: an unset value reads as "unknown", a wrong claim reads as fact.
+- **Dry-run, then localhost, then prod** — see below.
+
+## Applying patches
+
+Patches don't auto-apply; there's no deploy or startup hook — you run the command manually. Applying patches is the everyday correction path once a database is seeded (production never re-ingests the seed data).
+
+Run `make pull-ingest` first to fetch new patch files:
 
 ```bash
-make ingest-patches                              # apply pending patches
+# Everyday path — applies pending patches from the default dir
+# (data/ingest_sources/pindata/patches/):
+make ingest-patches
 
+# That just wraps the management command. Run the mgt cmd directly to preview or
+# point at another directory:
 cd backend
-uv run python manage.py ingest_patches --dry-run  # report intended claims, no writes
-uv run python manage.py ingest_patches --patches-dir DIR
+uv run python manage.py ingest_patches --dry-run          # preview; no writes
+uv run python manage.py ingest_patches --patches-dir DIR  # override the default dir
 ```
 
-Patches apply in numeric order. The command **pre-flights the whole batch** (filename format, unique numeric prefixes) before applying anything, then **stops at the first failure** — patches before it stay committed, the failing one and all after it are left unapplied. A missing or empty patches directory is a no-op.
+Patches apply in numeric order. The command **pre-flights the whole batch** (filename format, unique numeric prefixes), then **stops at the first failure** — patches before it stay committed, the failing one and everything after are left unapplied. A missing or empty directory is a no-op. It is idempotent — the ledger skips already-applied patches.
 
-`ingest_patches` also runs as the **tail of a fresh-DB bootstrap** (`make ingest-all` runs `ingest_all --write` then `ingest_patches`), so a brand-new database lands in the same state as production: seed, then the replayed patch log. It is idempotent — the ledger skips already-applied patches — so re-running is safe.
+### Full ingest also applies patches
 
-### Attribution and resolution priority
-
-A patch must name an existing `Source`. A patch attributes to the source the fact came from and corrects _that source's_ own claim, so the only **new** source seeded for patches is:
-
-- `flip-museum` (priority 10000, user tier) — museum-curated facts (e.g. the prototype list). It asserts new facts no other source claims, and at the user tier it resolves as a peer edit (newest wins, re-breakable).
-
-Corrections attribute to the existing seed sources — `flipcommons-catalog` (priority 300), `ipdb`, `opdb` — and supersede or retract that source's claim directly. There is no editorial override source. Priority continues to resolve genuine cross-source disagreement.
-
-Durability does **not** come from a patch surviving a re-ingest — it wouldn't. Because a correction is a same-source claim, re-running the seed re-asserts the original value and supersedes the patch (and the ledger then skips re-applying it). Durability comes instead from the operating model: live databases are seeded once and **never re-ingested** (they only run `ingest_patches`), and a fresh database replays **seed, then patches**, so the patch lands last and wins. See [Ingest.md](Ingest.md) for the prod ingestion vs. patch paths.
+`make ingest-all`, the fresh-DB data bootstrap, also runs `ingest_patches`, to get the DB into
+something approximating production: seed, then the replayed patch log.
 
 ## The ledger: applied once, immutably
 
-A patch application **is** an ingest run. Each `IngestRun` carries:
-
-- `patch_id` — the filename stem (the applied-ledger key).
-- `input_fingerprint` — a sha256 of the patch's **normalized parsed content** (canonical JSON; comments / whitespace / key order ignored).
-
-The applied set is the `SUCCESS` runs with a `patch_id`, tracked **per database** — which is what makes "run locally, then run on prod" work. On re-run:
-
-- **applied + fingerprint matches** → skip (a cosmetic reformat still skips).
-- **applied + fingerprint differs** → hard error. An applied patch is **immutable**; a semantic change means you changed history — add a new numbered patch instead.
-
-The "applied once" invariant is enforced in the database (a partial unique index on `patch_id` where `status='success'`), and the `SUCCESS` flip commits in the same transaction as the claims, so a torn write is never seen as applied.
+A patch application **is** an ingest run. Each `IngestRun` carries the `patch_id` (filename stem) and an `input_fingerprint` (sha256 of the normalized parsed content — comments, whitespace and key order ignored). The applied set is the `SUCCESS` runs with a `patch_id`, tracked **per database** (what makes "run locally, then on prod" work). On re-run: fingerprint matches → skip (a cosmetic reformat still skips); fingerprint differs → **hard error**, since an applied patch is immutable — a semantic change means you changed history, so add a new numbered patch instead. The invariant is enforced by a partial unique index on `patch_id` where `status='success'`, flipped in the same transaction as the claims.
 
 ## Undoing a patch
 
-There is no automatic revert — source-attributed claims aren't user-revertible. Undo a patch with a **compensating patch** (a later claim supersedes the earlier one).
+No automatic revert — source-attributed claims aren't user-revertible. Undo a patch with a **compensating patch** (a later claim supersedes the earlier one).
 
-## Limits (v1)
+## Limitations
 
-- Create, edit (assert / supersede) and retract; **no entity delete** (the `status=deleted` lifecycle is distinct from a claim retract and is out of scope).
-- Create requires a **claim-based public id** (`slug`). Entities whose public id is system-generated — e.g. `Location`, whose `location_path` is derived from its parent path plus its leaf `slug` — can't be created via a patch and are rejected with a clear error.
-- `expect:` and `retract:` cover scalar + FK, not relationships.
-- Same-patch references resolve for **FK fields only**: an edit can point an FK at an entity created earlier in the same patch (FK claims resolve by public_id after the creates run). **Relationship** members (e.g. `tag:`) are resolved against the DB eagerly, so a member created in the same patch is rejected — relationship targets must already exist. (Creating an FK target as part of a `create` entry is also unsupported.)
+We've been building the patch system on an as-needed basis. These haven't been needed yet.
+
+- **No entity delete** — distinct from a claim retract; the status=deleted lifecycle.
+- **Location isn't a supported entity**. Create requires a **claim-based public id** (`slug`). Entities with a system-generated id — e.g. `Location`, whose `location_path` is derived — can't be created via a patch.
+- `expect:` and `retract:` only cover scalar + FK, not relationships.
+- Same-patch references resolve for **FK fields only**: an FK can point at an entity created earlier in the same patch, but a relationship member (e.g. `tag:`) must already exist in the DB.

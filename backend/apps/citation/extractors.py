@@ -16,6 +16,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from apps.citation.models import CitationSource, CitationSourceLink
+
 
 @dataclass(frozen=True)
 class Extractor:
@@ -105,9 +107,6 @@ def recognize_url(url: str) -> Recognition | None:
     Domain matching normalises away ``www.`` but compares full
     subdomains (``twip.kineticist.com`` ≠ ``kineticist.com``).
     """
-    # Lazy import to avoid circular import at module level.
-    from apps.citation.models import CitationSource, CitationSourceLink
-
     # --- Step 1: Extractor match -------------------------------------------
     for key, extractor in EXTRACTORS.items():
         extracted_id = extractor.extract(url)
@@ -188,3 +187,53 @@ def recognize_url(url: str) -> Recognition | None:
             return Recognition(parent_id=source_id, parent_name=source_name)
 
     return None
+
+
+def get_or_create_external_source(scheme: str, identifier: str) -> CitationSource:
+    """Get-or-create the child ``CitationSource`` for ``scheme:identifier``.
+
+    Looks up the root source for ``scheme`` (e.g. the IPDB root), then
+    get-or-creates the ``(parent=root, identifier)`` child, attaching a
+    homepage link with the canonical URL on first creation.
+
+    Idempotent by design — re-citing the same id reuses the existing child.
+    This differs from ``api.create_citation_source``, which plain-creates and
+    422s on a duplicate: a re-applied data patch must not error, so the
+    new-idempotency semantics live here rather than in that endpoint.
+
+    Raises ``CitationSource.DoesNotExist`` if the root for ``scheme`` isn't
+    seeded, and ``ValueError`` if the scheme/identifier is invalid.
+    """
+    extractor = EXTRACTORS.get(scheme)
+    if extractor is None:
+        raise ValueError(f"Unknown citation scheme {scheme!r}")
+    normalized = extractor.normalize(identifier)
+    if normalized is None:
+        raise ValueError(f"Invalid {scheme} identifier {identifier!r}")
+
+    root = (
+        CitationSource.objects.filter(identifier_key=scheme, parent__isnull=True)
+        .only("id", "name")
+        .first()
+    )
+    if root is None:
+        raise CitationSource.DoesNotExist(
+            f"No root CitationSource seeded for scheme {scheme!r}; "
+            f"seed citation sources before applying a patch that cites it."
+        )
+
+    source, created = CitationSource.objects.get_or_create(
+        parent=root,
+        identifier=normalized,
+        defaults={
+            "name": f"{root.name} #{normalized}",
+            "source_type": CitationSource.SourceType.WEB,
+        },
+    )
+    if created:
+        CitationSourceLink.objects.create(
+            citation_source=source,
+            link_type=CitationSourceLink.LinkType.HOMEPAGE,
+            url=extractor.build_url(normalized),
+        )
+    return source

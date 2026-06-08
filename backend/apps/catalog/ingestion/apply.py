@@ -65,6 +65,33 @@ class RetractEntry(NamedTuple):
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class CitationRef:
+    """A parsed, normalized reference to an external citation source.
+
+    ``scheme`` is an ``apps.citation.extractors.EXTRACTORS`` key (e.g.
+    ``"ipdb"``); ``identifier`` is the normalized in-scheme id (e.g.
+    ``"4443"``). Resolved to a ``CitationSource`` at apply time via
+    ``get_or_create_external_source`` — no DB access to construct one.
+
+    Defined here, beside the plan dataclasses, rather than in any source
+    adapter: the source-agnostic apply layer must not import an adapter, and
+    adapters (e.g. ``ingestion.patches``) already import the plan carriers
+    from this module.
+    """
+
+    scheme: str
+    identifier: str
+
+
+# Per-claim provenance maps produced by ``_collect_plan_provenance`` and
+# consumed by ``_persist`` / ``_attach_plan_citations``. Named so the opaque
+# ``str`` (a ChangeSet note) and the per-claim citation mapping read clearly
+# wherever they recur.
+type EntityNotes = dict[EntityKey, str]
+type ClaimCitations = dict[ClaimIdentity, CitationRef]
+
+
 @dataclass
 class PlannedEntityCreate:
     """A new catalog entity to be created inside the apply transaction.
@@ -113,7 +140,16 @@ class PlannedClaimAssert:
     # genuinely arbitrary, so the type stays open.
     value: Any = None
     claim_key: str = ""
+    # Legacy free-text citation string written to ``Claim.citation`` (used by
+    # some ingest paths). Distinct from ``citation_ref`` below, which is the
+    # structured CitationInstance reference — don't conflate them.
     citation: str = ""
+    # Per-entry patch provenance. ``note`` flows to the entity's ChangeSet
+    # note; ``citation_ref`` (set only on explicit-field assertions, never the
+    # create-owned slug/status scaffolding) is materialized as a
+    # CitationInstance on the resulting claim at apply time.
+    note: str = ""
+    citation_ref: CitationRef | None = None
     content_type_id: int | None = None
     object_id: int | None = None
     handle: str | None = None
@@ -135,6 +171,9 @@ class PlannedClaimRetract:
     content_type_id: int
     object_id: int
     claim_key: str
+    # Per-entry patch note → the entity's ChangeSet note. A retraction has no
+    # new claim, so it carries no ``citation_ref``.
+    note: str = ""
 
 
 @dataclass
@@ -209,6 +248,11 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             report.records_created = len(plan.entities)
 
             _patch_handles(plan.assertions, handle_map)
+            # Per-claim provenance (note/citation) carried by the plan, collected
+            # once now that handles are resolved (so every assertion carries its
+            # real ct/obj). Kept out of _build_claims so that helper's signature —
+            # and its dry-run call site — stay untouched.
+            entity_notes, claim_citations = _collect_plan_provenance(plan)
             all_claims = _build_claims(plan.assertions, plan.source)
             valid_claims = _validate_fail_fast(all_claims, report)
 
@@ -224,7 +268,8 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             )
             report.retracted = len(retract_entries)
 
-            _persist(run, to_create, superseded_ids, retract_entries)
+            _persist(run, to_create, superseded_ids, retract_entries, entity_notes)
+            _attach_plan_citations(to_create, claim_citations)
             _resolve(to_create, retract_entries, plan.resolve_hooks)
 
             # SUCCESS flip inside the transaction — see note above. The
@@ -822,11 +867,84 @@ def _process_retractions(
     return retract_entries
 
 
+def _collect_plan_provenance(
+    plan: IngestPlan,
+) -> tuple[EntityNotes, ClaimCitations]:
+    """Gather per-claim ``note``/``citation_ref`` carried by the plan into maps.
+
+    Source-agnostic — any plan may set these; today only the patch adapter does
+    (from a patch entry's ``note:``/``cite:``). Runs after ``_patch_handles``,
+    so every assertion's ct/obj is resolved. ``entity_notes`` (keyed by entity)
+    feeds the per-entity ChangeSet note; ``claim_citations`` (keyed by the exact
+    claim identity) drives per-claim citation attachment in
+    ``_attach_plan_citations``. Citations are keyed per claim — never per
+    entity — so a citation never bleeds onto unrelated claims (or the
+    create-owned scaffolding) that merely share the entity.
+
+    The patch adapter's same-entity guard ensures no two entries put conflicting
+    notes on one entity, so last-write-wins here is never reached in practice.
+    """
+    entity_notes: EntityNotes = {}
+    claim_citations: ClaimCitations = {}
+    for pca in plan.assertions:
+        if not pca.note and pca.citation_ref is None:
+            continue  # the common case (all normal-ingest assertions)
+        ct_id = pca.content_type_id
+        obj_id = pca.object_id
+        # post _patch_handles: handles are resolved to real ct/obj.
+        assert ct_id is not None
+        assert obj_id is not None
+        if pca.note:
+            entity_notes[EntityKey(ct_id, obj_id)] = pca.note
+        if pca.citation_ref is not None:
+            claim_citations[
+                ClaimIdentity(ct_id, obj_id, pca.claim_key or pca.field_name)
+            ] = pca.citation_ref
+    for pcr in plan.retractions:
+        if pcr.note:
+            entity_notes[EntityKey(pcr.content_type_id, pcr.object_id)] = pcr.note
+    return entity_notes, claim_citations
+
+
+def _attach_plan_citations(
+    to_create: list[Claim],
+    claim_citations: ClaimCitations,
+) -> None:
+    """Materialize per-claim ``CitationRef``s as ``CitationInstance`` rows.
+
+    Runs after ``_persist`` so created claims have PKs. A citation only rides
+    a *newly written* claim: a value that diffs as unchanged produces no
+    ``to_create`` entry, so re-asserting an already-correct value purely to
+    add a ``cite:`` is a documented no-op (see docs/DataPatches.md).
+    """
+    if not claim_citations:
+        return
+    from apps.citation.extractors import get_or_create_external_source
+    from apps.provenance.models import CitationInstance
+
+    source_cache: dict[CitationRef, int] = {}
+    instances: list[CitationInstance] = []
+    for claim in to_create:
+        ref = claim_citations.get(
+            ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)
+        )
+        if ref is None:
+            continue
+        source_id = source_cache.get(ref)
+        if source_id is None:
+            source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
+            source_cache[ref] = source_id
+        instances.append(CitationInstance(citation_source_id=source_id, claim=claim))
+    if instances:
+        CitationInstance.objects.bulk_create(instances)
+
+
 def _persist(
     run: IngestRun,
     to_create: list[Claim],
     superseded_ids: list[int],
     retract_entries: list[RetractEntry],
+    entity_notes: EntityNotes,
 ) -> None:
     """Bulk-create ChangeSets and Claims, deactivate superseded/retracted.
 
@@ -834,6 +952,9 @@ def _persist(
     to satisfy the unique constraint on
     ``(content_type, object_id, source, claim_key)`` where
     ``is_active=True``.
+
+    ``entity_notes`` carries each affected entity's patch ``note:`` onto its
+    ChangeSet (empty string when the entry set none).
     """
     # superseded_ids is always a subset of the entities in to_create (a
     # superseded claim has a replacement in to_create), so checking
@@ -849,7 +970,9 @@ def _persist(
         affected.add(EntityKey(entry.content_type_id, entry.object_id))
 
     entity_list = sorted(affected)
-    changesets = [ChangeSet(ingest_run=run) for _ in entity_list]
+    changesets = [
+        ChangeSet(ingest_run=run, note=entity_notes.get(ek, "")) for ek in entity_list
+    ]
     ChangeSet.objects.bulk_create(changesets)
     entity_to_cs: dict[EntityKey, ChangeSet] = dict(
         zip(entity_list, changesets, strict=True),
