@@ -1,56 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+layout.server';
-import type { TitleDetailSchema, ModelDetailSchema } from '$lib/api/schema';
+import type { TitleDetailSchema } from '$lib/api/schema';
+import { makeModelDetail, makeTitleDetail } from '$lib/api/detail-fixtures';
 
 const ORIGIN = 'http://localhost:5173';
 
-const BASE_TITLE = {
-  name: 'Medieval Madness',
-  public_id: 'medieval-madness',
-  last_modified: '2026-01-01T00:00:00Z',
-  slug: 'medieval-madness',
-  abbreviations: [],
-  description: { text: '', html: '', plain: '', citations: [], attribution: null },
-  needs_review: false,
-  needs_review_notes: '',
-  review_links: [],
-  hero_image_url: null,
-  franchise: null,
-  series: null,
-  credits: [],
-  agreed_specs: { themes: [], gameplay_features: [], reward_types: [], tags: [] },
-  related_titles: [],
-  media: [],
-  opdb_id: null,
-  fandom_page_id: null,
-  model_detail: null,
-  machines: [],
-} satisfies TitleDetailSchema;
+const BASE_TITLE = makeTitleDetail();
 
-const MODEL_DETAIL = {
+const MODEL_DETAIL = makeModelDetail({
   name: 'Doctor Who',
   public_id: 'doctor-who-1992',
-  last_modified: '2026-01-01T00:00:00Z',
   slug: 'doctor-who-1992',
-  description: { text: '', html: '', plain: '', citations: [], attribution: null },
-  abbreviations: [],
-  extra_data: {},
-  credits: [],
-  uploaded_media: [],
-  variant_features: [],
-  variants: [],
-  themes: [],
-  gameplay_features: [],
-  tags: [],
-  reward_types: [],
-  variant_siblings: [],
-  conversions: [],
-  remakes: [],
-  title_models: [],
-  production_quantity: '',
   year: 1992,
   title: { name: 'Doctor Who', public_id: 'doctor-who' },
-} satisfies ModelDetailSchema;
+});
 
 function machine(name: string, public_id: string) {
   return {

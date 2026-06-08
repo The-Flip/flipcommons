@@ -24,19 +24,9 @@ vi.mock('$lib/auth.svelte', () => ({
 
 import Harness from './layout.test-harness.svelte';
 import type { TitleDetailSchema } from '$lib/api/schema';
+import { makeModelDetail, makeTitleDetail } from '$lib/api/detail-fixtures';
 
-const MOCK_TITLE = {
-  name: 'Medieval Madness',
-  public_id: 'medieval-madness',
-  last_modified: '2026-01-01T00:00:00Z',
-  slug: 'medieval-madness',
-  abbreviations: [],
-  description: { text: '', html: '', plain: '', citations: [], attribution: null },
-  needs_review: false,
-  needs_review_notes: '',
-  review_links: [],
-  hero_image_url: null,
-  franchise: null,
+const MOCK_TITLE = makeTitleDetail({
   machines: [
     {
       name: 'Medieval Madness',
@@ -48,15 +38,7 @@ const MOCK_TITLE = {
       variants: [],
     },
   ],
-  series: null,
-  credits: [],
-  agreed_specs: { themes: [], gameplay_features: [], reward_types: [], tags: [] },
-  related_titles: [],
-  media: [],
-  opdb_id: null,
-  fandom_page_id: null,
-  model_detail: null,
-} satisfies TitleDetailSchema;
+});
 
 describe('title layout', () => {
   beforeEach(() => {
@@ -132,29 +114,12 @@ describe('title layout', () => {
       name: 'Doctor Who',
       public_id: 'doctor-who',
       slug: 'doctor-who',
-      model_detail: {
+      model_detail: makeModelDetail({
         name: 'Doctor Who',
         public_id: 'doctor-who-1992',
-        last_modified: '2026-01-01T00:00:00Z',
         slug: 'doctor-who-1992',
-        description: { text: '', html: '', plain: '', citations: [], attribution: null },
-        abbreviations: [],
-        extra_data: {},
-        credits: [],
-        uploaded_media: [],
-        variant_features: [],
-        variants: [],
-        themes: [],
-        gameplay_features: [],
-        tags: [],
-        reward_types: [],
-        variant_siblings: [],
-        conversions: [],
-        remakes: [],
-        title_models: [],
-        production_quantity: '',
         title: { name: 'Doctor Who', public_id: 'doctor-who' },
-      },
+      }),
     } satisfies TitleDetailSchema;
 
     const { body } = render(Harness, {
