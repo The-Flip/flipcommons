@@ -2,7 +2,6 @@
   import FeaturesEditor from './FeaturesEditor.svelte';
 
   type FeaturesModel = {
-    game_format?: { public_id: string } | null;
     cabinet?: { public_id: string } | null;
     reward_types: { public_id: string }[];
     tags: { public_id: string }[];

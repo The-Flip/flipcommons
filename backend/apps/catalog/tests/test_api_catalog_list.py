@@ -13,7 +13,7 @@ from apps.catalog.api._counts import bulk_title_counts_via_models
 from apps.catalog.api._typing import HasTitleCount
 from apps.catalog.api.constants import DEFAULT_PAGE_SIZE
 from apps.catalog.api.entity_list import _apply_list_q
-from apps.catalog.api.taxonomy import _cabinet_list_qs, _tag_list_qs
+from apps.catalog.api.taxonomy import _flat_taxonomy_list_qs
 from apps.catalog.models import (
     Cabinet,
     CorporateEntity,
@@ -91,7 +91,7 @@ class TestApplyListQ:
 @pytest.mark.django_db
 class TestFlatTaxonomyCountAnnotationParity:
     """The flat-taxonomy ``title_count`` SQL annotation (``_flat_taxonomy_title_count``,
-    via ``_cabinet_list_qs``) must equal the Python ``bulk_title_counts_via_models`` map
+    via ``_flat_taxonomy_list_qs``) must equal the Python ``bulk_title_counts_via_models`` map
     it replaces — distinct active titles through active, non-variant models. Pins the
     conversion the 5 flat taxonomies copy, so a filter drift fails here, not in prod."""
 
@@ -136,7 +136,8 @@ class TestFlatTaxonomyCountAnnotationParity:
         pks = [floor.pk, bartop.pk, empty.pk]
         expected = bulk_title_counts_via_models(pks, "cabinet")
         annotated = {
-            c.pk: cast(HasTitleCount, c).title_count for c in _cabinet_list_qs()
+            c.pk: cast(HasTitleCount, c).title_count
+            for c in _flat_taxonomy_list_qs(Cabinet)
         }
 
         assert annotated[floor.pk] == expected[floor.pk] == 2
@@ -176,7 +177,10 @@ class TestFlatTaxonomyCountAnnotationParity:
 
         pks = [action.pk, empty.pk]
         expected = bulk_title_counts_via_models(pks, "tags")
-        annotated = {t.pk: cast(HasTitleCount, t).title_count for t in _tag_list_qs()}
+        annotated = {
+            t.pk: cast(HasTitleCount, t).title_count
+            for t in _flat_taxonomy_list_qs(Tag)
+        }
 
         assert annotated[action.pk] == expected[action.pk] == 2
         assert annotated[empty.pk] == 0
@@ -325,6 +329,7 @@ IN_SCOPE_PAGINATED = frozenset(
         "game-formats",
         "gameplay-features",
         "people",
+        "production-statuses",
         "reward-types",
         "series",
         "systems",

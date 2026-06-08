@@ -17,6 +17,7 @@ dependencies = [
     "django-storages[s3]>=1.14",
     "workos>=5.0",
     "sentry-sdk[django]>=2.0",
+    "pyyaml>=6.0",
 ]
 
 [dependency-groups]
@@ -32,6 +33,7 @@ dev = [
     "requests>=2.32",
     "ruff>=0.8",
     "types-requests>=2.32",
+    "types-pyyaml>=6.0",
 ]
 
 [tool.ruff]

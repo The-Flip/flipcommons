@@ -1,35 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+layout.server';
 import type { ModelDetailSchema } from '$lib/api/schema';
+import { makeModelDetail } from '$lib/api/detail-fixtures';
 
 const ORIGIN = 'http://localhost:5173';
 
-const BASE_MODEL = {
+const BASE_MODEL = makeModelDetail({
   name: 'Medieval Madness (Williams)',
   public_id: 'medieval-madness-1997',
-  last_modified: '2026-01-01T00:00:00Z',
   slug: 'medieval-madness-1997',
-  description: { text: '', html: '', plain: '', citations: [], attribution: null },
-  abbreviations: [],
-  extra_data: {},
-  credits: [],
-  uploaded_media: [],
-  variant_features: [],
-  variants: [],
-  themes: [],
-  gameplay_features: [],
-  tags: [],
-  reward_types: [],
-  variant_siblings: [],
-  conversions: [],
-  remakes: [],
-  title_models: [],
-  production_quantity: '',
   year: 1997,
-  hero_image_url: null,
-  corporate_entity: null,
-  title: { name: 'Medieval Madness', public_id: 'medieval-madness' },
-} satisfies ModelDetailSchema;
+});
 
 function event(profile: ModelDetailSchema, slug = profile.slug) {
   const fetch = vi.fn().mockResolvedValue(

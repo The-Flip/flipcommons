@@ -12,6 +12,7 @@
   import { modelEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
+  import { showsProductionStatus } from '$lib/entities/production-status';
 
   let { data } = $props();
   let model = $derived(data.profile);
@@ -39,7 +40,8 @@
       !!model.system,
   );
   let hasFeatures = $derived(
-    !!model.game_format ||
+    showsProductionStatus(model.production_status) ||
+      !!model.game_format ||
       !!model.cabinet ||
       (model.reward_types?.length ?? 0) > 0 ||
       model.themes.length > 0 ||

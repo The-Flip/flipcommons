@@ -70,6 +70,7 @@
 
   let hasFeatures = $derived(
     !!(
+      specs.production_status ||
       specs.game_format ||
       specs.cabinet ||
       specs.player_count ||
@@ -255,6 +256,14 @@
           <dt>Cabinet</dt>
           <dd>
             <a href={resolve(`/cabinets/${specs.cabinet.public_id}`)}>{specs.cabinet.name}</a>
+          </dd>
+        {/if}
+        {#if specs.production_status}
+          <dt>Production status</dt>
+          <dd>
+            <a href={resolve(`/production-statuses/${specs.production_status.public_id}`)}
+              >{specs.production_status.name}</a
+            >
           </dd>
         {/if}
         {#if specs.player_count}

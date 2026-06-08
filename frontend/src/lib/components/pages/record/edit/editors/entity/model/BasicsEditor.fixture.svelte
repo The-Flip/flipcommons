@@ -6,6 +6,8 @@
     month?: number | null;
     title?: { public_id: string; name: string } | null;
     corporate_entity?: { public_id: string; name: string } | null;
+    game_format?: { public_id: string } | null;
+    production_status?: { public_id: string } | null;
   };
 
   let {

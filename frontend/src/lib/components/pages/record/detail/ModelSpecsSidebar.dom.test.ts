@@ -1,0 +1,34 @@
+import { render, screen } from '@testing-library/svelte';
+import { describe, expect, it } from 'vitest';
+
+import type { EntityRef } from '$lib/api/schema';
+import { makeModelDetail } from '$lib/api/detail-fixtures';
+import ModelSpecsSidebar from './ModelSpecsSidebar.svelte';
+
+function renderWith(production_status: EntityRef | null) {
+  render(ModelSpecsSidebar, { props: { model: makeModelDetail({ production_status }) } });
+}
+
+describe('ModelSpecsSidebar production status', () => {
+  it('shows a non-produced status as a link to its page', () => {
+    renderWith({ name: 'Unreleased', public_id: 'unreleased' });
+
+    expect(screen.getByText('Production status')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Unreleased' })).toHaveAttribute(
+      'href',
+      '/production-statuses/unreleased',
+    );
+  });
+
+  it('hides the produced status', () => {
+    renderWith({ name: 'Produced', public_id: 'produced' });
+
+    expect(screen.queryByText('Production status')).toBeNull();
+  });
+
+  it('hides a null status', () => {
+    renderWith(null);
+
+    expect(screen.queryByText('Production status')).toBeNull();
+  });
+});

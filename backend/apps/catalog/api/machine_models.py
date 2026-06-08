@@ -48,6 +48,7 @@ from ..models import (
     GameFormat,
     MachineModel,
     MachineModelGameplayFeature,
+    ProductionStatus,
     RewardType,
     System,
     Tag,
@@ -166,6 +167,7 @@ class ModelDetailSchema(CatalogDetailSchema):
     title: EntityRef
     cabinet: EntityRef | None = None
     game_format: EntityRef | None = None
+    production_status: EntityRef | None = None
     display_subtype: EntityRef | None = None
     gameplay_features: list[GameplayFeatureRef] = []
     tags: list[EntityRef] = []
@@ -196,10 +198,12 @@ def _build_model_list_qs(
     reward_type: str = "",
     game_format: str = "",
     cabinet: str = "",
+    production_status: str = "",
     tag: str = "",
     year_min: int | None = None,
     year_max: int | None = None,
     person: str = "",
+    include_variants: bool = False,
     ordering: str = "-year",
 ) -> QuerySet[MachineModel]:
     qs = (
@@ -218,8 +222,15 @@ def _build_model_list_qs(
                 to_attr="primary_media",
             ),
         )
-        .filter(Q(variant_of__isnull=True) | Q(converted_from__isnull=False))
     )
+    # The catalog lists at the granularity of distinct machines: cosmetic
+    # variants are collapsed into their parent model (conversions, being
+    # genuinely different machines, are re-admitted). ``include_variants`` opts
+    # out of the collapse for surfaces where a variant's own value is the point
+    # — e.g. the production-status browse, where an announced Limited Edition of
+    # a shipped Premium must appear.
+    if not include_variants:
+        qs = qs.filter(Q(variant_of__isnull=True) | Q(converted_from__isnull=False))
 
     if manufacturer:
         qs = qs.filter(corporate_entity__manufacturer__slug=manufacturer)
@@ -244,6 +255,8 @@ def _build_model_list_qs(
         qs = qs.filter(game_format__slug=game_format)
     if cabinet:
         qs = qs.filter(cabinet__slug=cabinet)
+    if production_status:
+        qs = qs.filter(production_status__slug=production_status)
     if tag:
         qs = qs.filter(tags__slug=tag)
     if year_min is not None:
@@ -443,6 +456,18 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
             if pm.game_format
             else None
         ),
+        # Always serialize the real value (incl. ``produced``): the Model editor
+        # consumes this serializer as ``data.profile`` → ``initialData``, so
+        # suppressing here would blank the picker over a real claim. The
+        # produced/null hide lives in the frontend (ModelSpecsSidebar).
+        production_status=(
+            EntityRef(
+                name=pm.production_status.name,
+                public_id=pm.production_status.public_id,
+            )
+            if pm.production_status
+            else None
+        ),
         display_subtype=(
             EntityRef(
                 name=pm.display_subtype.name, public_id=pm.display_subtype.public_id
@@ -511,6 +536,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             "display_subtype",
             "cabinet",
             "game_format",
+            "production_status",
             "variant_of",
             "converted_from",
             "remake_of",
@@ -598,6 +624,10 @@ class ModelFilterQuerySchema(Schema):
         "", description="Game-format slug (see `GET /api/game-formats/`)."
     )
     cabinet: str = Field("", description="Cabinet slug (see `GET /api/cabinets/`).")
+    production_status: str = Field(
+        "",
+        description="Production-status slug (see `GET /api/production-statuses/`).",
+    )
     tag: str = Field("", description="Tag slug (see `GET /api/tags/`).")
     year_min: int | None = Field(None, description="Earliest release year, inclusive.")
     year_max: int | None = Field(None, description="Latest release year, inclusive.")
@@ -606,6 +636,13 @@ class ModelFilterQuerySchema(Schema):
         description=(
             "Person slug (see `GET /api/people/`). Matches models this person is "
             "credited on."
+        ),
+    )
+    include_variants: bool = Field(
+        False,
+        description=(
+            "Include cosmetic variants, which are otherwise collapsed into their "
+            "parent model. Default false."
         ),
     )
     ordering: str = Field(
@@ -636,10 +673,12 @@ def list_models(
         reward_type=filters.reward_type,
         game_format=filters.game_format,
         cabinet=filters.cabinet,
+        production_status=filters.production_status,
         tag=filters.tag,
         year_min=filters.year_min,
         year_max=filters.year_max,
         person=filters.person,
+        include_variants=filters.include_variants,
         ordering=filters.ordering,
     )
     min_rank = get_minimum_display_rank()
@@ -731,6 +770,9 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
         cabinets=_opts(Cabinet.objects.active().order_by("display_order", "name")),
         game_formats=_opts(
             GameFormat.objects.active().order_by("display_order", "name")
+        ),
+        production_statuses=_opts(
+            ProductionStatus.objects.active().order_by("display_order", "name")
         ),
         systems=_opts(System.objects.active().order_by("name")),
         credit_roles=_opts(

@@ -1,12 +1,19 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import EntitySelect from '$lib/components/input/entity-select/EntitySelect.svelte';
+  import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
   import type { EntityOption } from '$lib/api/entity-autocomplete';
   import NumberField from '$lib/components/input/NumberField.svelte';
   import MonthSelect from '$lib/components/input/MonthSelect.svelte';
   import { fetchFieldConstraints, fc, type FieldConstraints } from '$lib/field-constraints';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import {
+    EMPTY_EDIT_OPTIONS,
+    fetchModelEditOptions,
+    toSelectOptions,
+    type ModelEditOptions,
+  } from './model-edit-options';
   import type { FieldErrors } from '$lib/api/parse-api-error';
   import { saveModelClaims, type SaveResult, type SaveMeta } from './save-model-claims';
 
@@ -19,6 +26,8 @@
     month?: number | null;
     title?: EntityRefData;
     corporate_entity?: EntityRefData;
+    game_format?: { public_id: string } | null;
+    production_status?: { public_id: string } | null;
   };
 
   // `slim` hides the Title picker. Used on single-model combined edit, where
@@ -37,6 +46,8 @@
     year: string | number;
     month: string | number;
     title: string;
+    game_format: string;
+    production_status: string;
   };
 
   function extractFields(m: BasicsModel): BasicsFormFields {
@@ -44,6 +55,8 @@
       year: m.year ?? '',
       month: m.month ?? '',
       title: m.title?.public_id ?? '',
+      game_format: m.game_format?.public_id ?? '',
+      production_status: m.production_status?.public_id ?? '',
     };
   }
 
@@ -62,6 +75,7 @@
 
   let fieldErrors = $state<FieldErrors>({});
   let constraints = $state<FieldConstraints>({});
+  let editOptions = $state<ModelEditOptions>(EMPTY_EDIT_OPTIONS);
 
   function initialSelection(ref: EntityRefData): EntityOption | null {
     return ref ? { value: ref.public_id, label: ref.name } : null;
@@ -70,6 +84,12 @@
   $effect(() => {
     fetchFieldConstraints('model').then((c) => {
       constraints = c;
+    });
+  });
+
+  $effect(() => {
+    fetchModelEditOptions().then((opts) => {
+      editOptions = opts;
     });
   });
 
@@ -133,6 +153,24 @@
     {...fc(constraints, 'year')}
   />
   <MonthSelect label="Month" bind:value={fields.month} error={fieldErrors.month ?? ''} />
+  <SearchableSelect
+    label="Game format"
+    options={toSelectOptions(editOptions.game_formats ?? [])}
+    bind:selected={fields.game_format}
+    error={fieldErrors.game_format ?? ''}
+    allowZeroCount
+    showCounts={false}
+    placeholder="Search game formats..."
+  />
+  <SearchableSelect
+    label="Production status"
+    options={toSelectOptions(editOptions.production_statuses ?? [])}
+    bind:selected={fields.production_status}
+    error={fieldErrors.production_status ?? ''}
+    allowZeroCount
+    showCounts={false}
+    placeholder="Search production statuses..."
+  />
 </div>
 
 <style>

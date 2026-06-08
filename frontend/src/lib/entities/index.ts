@@ -13,6 +13,7 @@ import { location } from './location';
 import { manufacturer } from './manufacturer';
 import { model } from './model';
 import { person } from './person';
+import { productionStatus } from './production-status';
 import { rewardType } from './reward-type';
 import { series } from './series';
 import { system } from './system';
@@ -35,6 +36,7 @@ export {
   manufacturer,
   model,
   person,
+  productionStatus,
   rewardType,
   series,
   system,
@@ -68,6 +70,7 @@ export const ENTITY_INFO = {
   manufacturer,
   model,
   person,
+  'production-status': productionStatus,
   'reward-type': rewardType,
   series,
   system,

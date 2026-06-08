@@ -36,10 +36,6 @@ const EDIT_OPTIONS = {
       { slug: 'standard', label: 'Standard' },
       { slug: 'widebody', label: 'Widebody' },
     ],
-    game_formats: [
-      { slug: 'pinball-machine', label: 'Pinball Machine' },
-      { slug: 'arcade-video', label: 'Arcade Video' },
-    ],
   },
 };
 
@@ -65,7 +61,6 @@ const INITIAL_MODEL = {
   tags: [{ public_id: 'classic' }],
   reward_types: [{ public_id: 'replay' }],
   gameplay_features: [{ public_id: 'multiball', name: 'Multiball', count: 3 }],
-  game_format: { public_id: 'pinball-machine' },
   cabinet: { public_id: 'standard' },
   player_count: 4,
   flipper_count: 2,
@@ -91,6 +86,15 @@ describe('FeaturesEditor dirty-state contract', () => {
         throw new Error(`Unexpected GET ${path}`);
       },
     );
+  });
+
+  it('shows Production quantity but not Game format (moved to Basics)', () => {
+    render(FeaturesEditorFixture, {
+      props: { initialData: INITIAL_MODEL },
+    });
+
+    expect(screen.getByLabelText('Production quantity')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Game format' })).toBeNull();
   });
 
   it('rejects save when a feature has a count but no slug', async () => {

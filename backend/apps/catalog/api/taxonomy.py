@@ -33,6 +33,7 @@ from ..models import (
     GameFormat,
     MachineModel,
     Person,
+    ProductionStatus,
     RewardType,
     Tag,
     TechnologyGeneration,
@@ -83,6 +84,17 @@ class TaxonomyWithTitleCountSchema(TaxonomySchema):
     )
 
 
+class _TaxonomyListPage(Schema):
+    """Base for the per-entity flat-taxonomy page wrappers consumed by
+    ``register_taxonomy_router``: ``items`` is this page's title-count rows;
+    ``count`` is the total matching across all pages. Each entity subclasses
+    this so it keeps its own named OpenAPI component (``CabinetListSchema``,
+    …); pydantic inlines the inherited fields, so the wire schema is unchanged."""
+
+    items: list[TaxonomyWithTitleCountSchema]
+    count: int
+
+
 class DisplayTypeListItemSchema(TaxonomyWithTitleCountSchema):
     subtypes: list[TaxonomyWithTitleCountSchema] = Field(
         [], description="This display type's subtypes."
@@ -111,12 +123,12 @@ class TechnologySubgenerationDetailSchema(TaxonomySchema):
 # ---------------------------------------------------------------------------
 
 
-# Constrained TypeVar over the nine concrete taxonomy model classes that
+# Constrained TypeVar over the concrete taxonomy model classes that
 # share ``TaxonomySchema`` as their public shape. Constraints (not a bound)
 # are required so each call site binds ``_TaxM`` to the specific concrete
 # class — otherwise `type[_TaxM]` collapses to the common base
 # ``CatalogModel`` and ``.objects.active()`` / attribute access are lost.
-# Written with ``typing.TypeVar`` rather than PEP 695 syntax so the nine
+# Written with ``typing.TypeVar`` rather than PEP 695 syntax so the
 # constraints aren't repeated on every generic function; the per-def
 # UP047 suppression below covers the associated ruff rule.
 _TaxM = TypeVar(
@@ -126,6 +138,7 @@ _TaxM = TypeVar(
     DisplaySubtype,
     DisplayType,
     GameFormat,
+    ProductionStatus,
     RewardType,
     Tag,
     TechnologyGeneration,
@@ -140,6 +153,7 @@ def _serialize_taxonomy(
         | DisplaySubtype
         | DisplayType
         | GameFormat
+        | ProductionStatus
         | RewardType
         | Tag
         | TechnologyGeneration
@@ -210,7 +224,8 @@ def _flat_taxonomy_title_count() -> Count:
 
 
 def _serialize_taxonomy_with_count(
-    obj: Cabinet | GameFormat | RewardType | Tag, thumbnail: str | None = None
+    obj: Cabinet | GameFormat | ProductionStatus | RewardType | Tag,
+    thumbnail: str | None = None,
 ) -> TaxonomyWithTitleCountSchema:
     """Row serializer for the paginated flat-taxonomy handlers: the shared
     ``TaxonomySchema`` body plus the ``title_count`` annotation read off the row.
@@ -220,6 +235,26 @@ def _serialize_taxonomy_with_count(
         **_serialize_taxonomy(obj).model_dump(),
         title_count=cast(HasTitleCount, obj).title_count,
     )
+
+
+# Constrained TypeVar over the flat title-count taxonomies that route through
+# ``register_taxonomy_router`` / ``_flat_taxonomy_list_qs``. RewardType is a flat
+# title-count taxonomy too but is deliberately absent: its list is alias-aware and
+# its detail schema is bespoke, so it keeps a hand-written router — excluding it
+# makes passing it to the factory a type error. (``_serialize_taxonomy_with_count``
+# still accepts RewardType for that bespoke list; a serializer over the wider union
+# is assignable to the factory's narrower row-serializer slot.)
+_FlatTaxM = TypeVar("_FlatTaxM", Cabinet, GameFormat, ProductionStatus, Tag)
+
+
+def _flat_taxonomy_list_qs(model_cls: type[_FlatTaxM]) -> QuerySet[_FlatTaxM]:  # noqa: UP047
+    """Active rows of *model_cls* carrying the shared ``title_count`` annotation.
+
+    No ``.order_by`` — ``paginated_list_response`` applies the total ordering itself,
+    so the per-entity sort lives in the ``list_ordering`` passed to
+    ``register_taxonomy_router``. Parity of the annotation against the Python
+    ``bulk_title_counts_via_models`` helper is pinned in ``test_api_catalog_list``."""
+    return model_cls.objects.active().annotate(title_count=_flat_taxonomy_title_count())
 
 
 def _taxonomy_detail_qs(model_class: type[_TaxM]) -> QuerySet[_TaxM]:  # noqa: UP047
@@ -301,6 +336,82 @@ def _register_create(  # noqa: UP047
         parent_model=parent_model,
         route_suffix=route_suffix,
     )
+
+
+def register_taxonomy_router(  # noqa: UP047
+    router: Router,
+    model_cls: type[_FlatTaxM],
+    *,
+    list_ordering: tuple[str, ...],
+    list_schema: type[_TaxonomyListPage],
+) -> None:
+    """Wire a flat title-count taxonomy's whole router surface in one call.
+
+    Collapses the per-entity boilerplate that cabinets / tags / game-formats
+    used to repeat: the paginated ``GET /`` list, the ``PATCH
+    /{public_id}/claims/`` edit, plus create and delete/restore (delegated to
+    the shared ``_register_create`` / ``_register_delete_restore`` registrars).
+
+    The one real per-entity variation is *list_ordering* — a **total** order
+    (append ``pk``): popularity ``("-title_count", "name", "pk")`` for
+    cabinets / tags vs editorial ``("display_order", "name", "pk")`` for
+    game-formats. *list_schema* is the entity's own ``{items, count}`` page
+    wrapper, passed so each keeps its named OpenAPI component.
+
+    Inner handlers are annotated with module-global types only: this module
+    uses ``from __future__ import annotations``, so Ninja's ``get_type_hints``
+    would fail to resolve a function-scoped TypeVar in a view annotation.
+    """
+    ordering_note = (
+        "Ordered by title count, then alphabetically."
+        if list_ordering[0] == "-title_count"
+        else "In curated order."
+    )
+
+    def _list(
+        request: HttpRequest, q: NameQuery = "", page: PageParam = 1
+    ) -> _TaxonomyListPage:
+        result = paginated_list_response(
+            _flat_taxonomy_list_qs(model_cls),
+            q=q,
+            ordering=list_ordering,
+            page=page,
+            serialize_row=_serialize_taxonomy_with_count,
+        )
+        return list_schema(items=result.items, count=result.total)
+
+    # ``__name__`` is the view-function name Ninja derives the OpenAPI operationId
+    # and summary from, and ``__doc__`` becomes the operation description.
+    # Reproduce the entities' hand-written ``list_<plural>`` / ``patch_<entity>``
+    # names and descriptions so converted entities keep byte-identical operation
+    # metadata — and stay consistent with the not-yet-converted ones.
+    _list.__name__ = f"list_{model_cls.entity_type_plural.replace('-', '_')}"
+    _list.__doc__ = (
+        f"{model_cls.entity_type_plural.replace('-', ' ').capitalize()}, paginated. "
+        f"Search with ``q``. {ordering_note}"
+    )
+    router.get("/", response=list_schema)(_list)
+
+    def _patch(
+        request: HttpRequest, public_id: str, data: ClaimPatchSchema
+    ) -> TaxonomySchema:
+        return _patch_taxonomy(request, model_cls, public_id, data)
+
+    _patch.__name__ = f"patch_{model_cls.entity_type.replace('-', '_')}"
+    _patch = requires(Activity.CATALOG_EDIT)(rate_limited(EDIT_RATE_LIMIT_SPEC)(_patch))
+    router.patch(
+        "/{path:public_id}/claims/",
+        auth=django_auth,
+        response={
+            200: TaxonomySchema,
+            422: ValidationErrorSchema,
+            429: RateLimitErrorSchema,
+        },
+        tags=["private"],
+    )(_patch)
+
+    _register_create(router, model_cls)
+    _register_delete_restore(router, model_cls)
 
 
 # ---------------------------------------------------------------------------
@@ -520,54 +631,19 @@ def patch_display_subtype(
 cabinets_router = Router(tags=["cabinets"])
 
 
-class CabinetListSchema(Schema):
+class CabinetListSchema(_TaxonomyListPage):
     """A page of cabinets: ``items`` holds this page's rows; ``count`` is the total
     number of matching cabinets across all pages."""
 
-    items: list[TaxonomyWithTitleCountSchema]
-    count: int
 
-
-def _cabinet_list_qs() -> QuerySet[Cabinet]:
-    return (
-        Cabinet.objects.active()
-        .annotate(title_count=_flat_taxonomy_title_count())
-        .order_by("-title_count", "name")
-    )
-
-
-@cabinets_router.get("/", response=CabinetListSchema)
-def list_cabinets(
-    request: HttpRequest, q: NameQuery = "", page: PageParam = 1
-) -> CabinetListSchema:
-    """Cabinet styles, paginated. Search with ``q``. Ordered by title count, then
-    alphabetically."""
-    result = paginated_list_response(
-        _cabinet_list_qs(),
-        q=q,
-        ordering=("-title_count", "name", "pk"),
-        page=page,
-        serialize_row=_serialize_taxonomy_with_count,
-    )
-    return CabinetListSchema(items=result.items, count=result.total)
-
-
-@cabinets_router.patch(
-    "/{path:public_id}/claims/",
-    auth=django_auth,
-    response={
-        200: TaxonomySchema,
-        422: ValidationErrorSchema,
-        429: RateLimitErrorSchema,
-    },
-    tags=["private"],
+# Cabinets — popularity-ordered. The factory wires list + patch + create +
+# delete/restore; see ``register_taxonomy_router``.
+register_taxonomy_router(
+    cabinets_router,
+    Cabinet,
+    list_ordering=("-title_count", "name", "pk"),
+    list_schema=CabinetListSchema,
 )
-@requires(Activity.CATALOG_EDIT)
-@rate_limited(EDIT_RATE_LIMIT_SPEC)
-def patch_cabinet(
-    request: HttpRequest, public_id: str, data: ClaimPatchSchema
-) -> TaxonomySchema:
-    return _patch_taxonomy(request, Cabinet, public_id, data)
 
 
 # ---------------------------------------------------------------------------
@@ -577,55 +653,41 @@ def patch_cabinet(
 game_formats_router = Router(tags=["game-formats"])
 
 
-class GameFormatListSchema(Schema):
+class GameFormatListSchema(_TaxonomyListPage):
     """A page of game formats: ``items`` holds this page's rows; ``count`` is the
     total number of matching game formats across all pages."""
 
-    items: list[TaxonomyWithTitleCountSchema]
-    count: int
 
-
-def _game_format_list_qs() -> QuerySet[GameFormat]:
-    # Editorial ``display_order`` sort (chronologically meaningful), unlike the
-    # popularity-sorted cabinets/tags; ``title_count`` is a display-only annotation here.
-    return (
-        GameFormat.objects.active()
-        .annotate(title_count=_flat_taxonomy_title_count())
-        .order_by("display_order", "name")
-    )
-
-
-@game_formats_router.get("/", response=GameFormatListSchema)
-def list_game_formats(
-    request: HttpRequest, q: NameQuery = "", page: PageParam = 1
-) -> GameFormatListSchema:
-    """Game formats, paginated. Search with ``q``. In curated order."""
-    result = paginated_list_response(
-        _game_format_list_qs(),
-        q=q,
-        ordering=("display_order", "name", "pk"),
-        page=page,
-        serialize_row=_serialize_taxonomy_with_count,
-    )
-    return GameFormatListSchema(items=result.items, count=result.total)
-
-
-@game_formats_router.patch(
-    "/{path:public_id}/claims/",
-    auth=django_auth,
-    response={
-        200: TaxonomySchema,
-        422: ValidationErrorSchema,
-        429: RateLimitErrorSchema,
-    },
-    tags=["private"],
+# Game formats — editorial ``display_order`` sort (chronologically meaningful),
+# unlike the popularity-sorted cabinets/tags.
+register_taxonomy_router(
+    game_formats_router,
+    GameFormat,
+    list_ordering=("display_order", "name", "pk"),
+    list_schema=GameFormatListSchema,
 )
-@requires(Activity.CATALOG_EDIT)
-@rate_limited(EDIT_RATE_LIMIT_SPEC)
-def patch_game_format(
-    request: HttpRequest, public_id: str, data: ClaimPatchSchema
-) -> TaxonomySchema:
-    return _patch_taxonomy(request, GameFormat, public_id, data)
+
+
+# ---------------------------------------------------------------------------
+# Production Statuses router
+# ---------------------------------------------------------------------------
+
+production_statuses_router = Router(tags=["production-statuses"])
+
+
+class ProductionStatusListSchema(_TaxonomyListPage):
+    """A page of production statuses: ``items`` holds this page's rows; ``count``
+    is the total number of matching production statuses across all pages."""
+
+
+# Production statuses — editorial ``display_order`` sort (announced → produced →
+# unreleased → one-off), like game formats.
+register_taxonomy_router(
+    production_statuses_router,
+    ProductionStatus,
+    list_ordering=("display_order", "name", "pk"),
+    list_schema=ProductionStatusListSchema,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -738,54 +800,18 @@ def patch_reward_type(
 tags_router = Router(tags=["tags"])
 
 
-class TagListSchema(Schema):
+class TagListSchema(_TaxonomyListPage):
     """A page of tags: ``items`` holds this page's rows; ``count`` is the total
     number of matching tags across all pages."""
 
-    items: list[TaxonomyWithTitleCountSchema]
-    count: int
 
-
-def _tag_list_qs() -> QuerySet[Tag]:
-    return (
-        Tag.objects.active()
-        .annotate(title_count=_flat_taxonomy_title_count())
-        .order_by("-title_count", "name")
-    )
-
-
-@tags_router.get("/", response=TagListSchema)
-def list_tags(
-    request: HttpRequest, q: NameQuery = "", page: PageParam = 1
-) -> TagListSchema:
-    """Tags, paginated. Search with ``q``. Ordered by title count, then
-    alphabetically."""
-    result = paginated_list_response(
-        _tag_list_qs(),
-        q=q,
-        ordering=("-title_count", "name", "pk"),
-        page=page,
-        serialize_row=_serialize_taxonomy_with_count,
-    )
-    return TagListSchema(items=result.items, count=result.total)
-
-
-@tags_router.patch(
-    "/{path:public_id}/claims/",
-    auth=django_auth,
-    response={
-        200: TaxonomySchema,
-        422: ValidationErrorSchema,
-        429: RateLimitErrorSchema,
-    },
-    tags=["private"],
+# Tags — popularity-ordered.
+register_taxonomy_router(
+    tags_router,
+    Tag,
+    list_ordering=("-title_count", "name", "pk"),
+    list_schema=TagListSchema,
 )
-@requires(Activity.CATALOG_EDIT)
-@rate_limited(EDIT_RATE_LIMIT_SPEC)
-def patch_tag(
-    request: HttpRequest, public_id: str, data: ClaimPatchSchema
-) -> TaxonomySchema:
-    return _patch_taxonomy(request, Tag, public_id, data)
 
 
 # ---------------------------------------------------------------------------
@@ -974,8 +1000,23 @@ def patch_credit_role(
 
 
 # ---------------------------------------------------------------------------
-# Create / delete / restore wiring
+# Create / delete / restore wiring — bespoke taxonomies only
 # ---------------------------------------------------------------------------
+#
+# The flat title-count taxonomies (cabinets, game-formats, tags) self-wire
+# their whole surface — list + patch + create + delete/restore — via
+# ``register_taxonomy_router`` in their own sections above. What remains here
+# is the population that *can't* ride that factory:
+#
+# * TechnologyGeneration / DisplayType — Python-side nested-hierarchy list
+#   (rolls subgenerations / subtypes into the parent row), not a flat ``GET /``.
+# * TechnologySubgeneration / DisplaySubtype — patch-only, no list endpoint.
+# * RewardType — alias-aware list search + a bespoke detail schema (its
+#   referencing machines), so its list and patch can't share the flat path.
+# * CreditRole — no ``title_count``; a custom people-aggregation detail.
+#
+# These keep their hand-written handlers above and register their
+# create + delete/restore explicitly below.
 
 # Delete / restore / preview — every target entity on its own router.
 _register_delete_restore(
@@ -998,9 +1039,6 @@ _register_delete_restore(
     DisplaySubtype,
     parent_field="display_type",
 )
-_register_delete_restore(cabinets_router, Cabinet)
-_register_delete_restore(game_formats_router, GameFormat)
-_register_delete_restore(tags_router, Tag)
 _register_delete_restore(reward_types_router, RewardType)
 register_entity_delete_restore(
     credit_roles_router,
@@ -1034,9 +1072,6 @@ def get_credit_role(
 # Create — parentless entities on their own router.
 _register_create(technology_generations_router, TechnologyGeneration)
 _register_create(display_types_router, DisplayType)
-_register_create(cabinets_router, Cabinet)
-_register_create(game_formats_router, GameFormat)
-_register_create(tags_router, Tag)
 _register_create(reward_types_router, RewardType)
 register_entity_create(
     credit_roles_router,

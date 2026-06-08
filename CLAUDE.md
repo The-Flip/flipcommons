@@ -45,9 +45,10 @@ make lint         # Run ruff (backend) + eslint/prettier (frontend)
 make mypy         # Run backend type checks
 make quality      # Lint + regenerate API types + svelte-check
 make codegen      # Regenerate frontend API types from the backend schema
-make pull-ingest  # Download catalog data from R2
-make ingest       # Run full ingestion pipeline
-make agent-docs   # Regenerate CLAUDE.md and AGENTS.md
+make pull-ingest    # Download catalog data from R2
+make ingest-all     # Fresh-DB bootstrap: full seed pipeline, then data patches
+make ingest-patches # Apply pending data patches (the post-seed correction path)
+make agent-docs     # Regenerate CLAUDE.md and AGENTS.md
 ```
 
 ## Project Structure
@@ -245,7 +246,7 @@ GitHub access:
 
 ## Data Ingestion
 
-The catalog app has management commands for importing from external data sources (IPDB, OPDB, Fandom wiki, etc.). Run `make pull-ingest` to download data from R2, then `make ingest` to run the pipeline. See [docs/Ingest.md](Ingest.md) for sources, file formats, and production ingestion steps.
+The catalog app has management commands for importing from external data sources (IPDB, OPDB, Fandom wiki, etc.). Run `make pull-ingest` to download data from R2, then `make ingest-all` to run the full pipeline on a fresh DB. An already-seeded system (prod, dev) is never re-ingested — it only runs `make ingest-patches` to apply pending data patches. See [docs/Ingest.md](Ingest.md) for sources, file formats, and production ingestion steps, and [docs/DataPatches.md](DataPatches.md) for the patch model.
 
 ## Pre-commit Hooks
 

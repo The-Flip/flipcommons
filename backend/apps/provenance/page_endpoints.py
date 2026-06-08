@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import ClassVar
 
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Model, Q
+from django.db.models import Model, Prefetch, Q
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
@@ -30,7 +30,13 @@ from apps.core.types import EntityKey
 
 from .entity_resolution import batch_resolve_entities
 from .evidence import build_cited_changesets
-from .helpers import active_claims, build_sources, changeset_author, claims_prefetch
+from .helpers import (
+    active_claims,
+    build_sources,
+    changeset_author,
+    citation_instances_prefetch,
+    claims_prefetch,
+)
 from .history import build_changes, build_edit_history
 from .models.changeset import ChangeSet
 from .schemas import (
@@ -345,7 +351,11 @@ def change_detail(
     caller = policy_user(request.user)
     cs = get_object_or_404(
         ChangeSet.objects.select_related("user", "ingest_run__source").prefetch_related(
-            "claims", "retracted_claims"
+            Prefetch(
+                "claims",
+                queryset=Claim.objects.prefetch_related(citation_instances_prefetch()),
+            ),
+            "retracted_claims",
         ),
         pk=changeset_id,
     )
