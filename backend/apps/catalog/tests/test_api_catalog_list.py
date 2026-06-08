@@ -13,7 +13,7 @@ from apps.catalog.api._counts import bulk_title_counts_via_models
 from apps.catalog.api._typing import HasTitleCount
 from apps.catalog.api.constants import DEFAULT_PAGE_SIZE
 from apps.catalog.api.entity_list import _apply_list_q
-from apps.catalog.api.taxonomy import _flat_taxonomy_list_qs, _tag_list_qs
+from apps.catalog.api.taxonomy import _flat_taxonomy_list_qs
 from apps.catalog.models import (
     Cabinet,
     CorporateEntity,
@@ -177,7 +177,10 @@ class TestFlatTaxonomyCountAnnotationParity:
 
         pks = [action.pk, empty.pk]
         expected = bulk_title_counts_via_models(pks, "tags")
-        annotated = {t.pk: cast(HasTitleCount, t).title_count for t in _tag_list_qs()}
+        annotated = {
+            t.pk: cast(HasTitleCount, t).title_count
+            for t in _flat_taxonomy_list_qs(Tag)
+        }
 
         assert annotated[action.pk] == expected[action.pk] == 2
         assert annotated[empty.pk] == 0
