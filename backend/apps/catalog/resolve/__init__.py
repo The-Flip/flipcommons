@@ -26,7 +26,7 @@ from ..models import (
     MachineModel,
     Title,
 )
-from ._dispatch import resolve_after_mutation
+from ._dispatch import resolve_after_mutation, resolve_relationships_bulk
 from ._entities import (
     _resolve_bulk,
     _resolve_single,

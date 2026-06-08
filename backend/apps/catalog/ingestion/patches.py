@@ -33,7 +33,7 @@ from apps.catalog.ingestion.apply import (
     PlannedEntityCreate,
 )
 from apps.catalog.models import CatalogModel
-from apps.catalog.resolve import resolve_after_mutation
+from apps.catalog.resolve import resolve_relationships_bulk
 from apps.citation.extractors import EXTRACTORS
 from apps.citation.models import CITATION_SOURCE_IDENTIFIER_MAX_LENGTH
 from apps.core.entity_types import get_linkable_model
@@ -782,12 +782,19 @@ def _make_resolve_hook(
     model_class: type[CatalogModel],
     field_names: list[str],
 ) -> Callable[..., None]:
-    """Build a resolve hook delegating to the canonical post-mutation dispatch."""
+    """Build a resolve hook that bulk-resolves the given relationship namespaces.
+
+    Registered on the plan per content type and invoked by the apply engine with
+    the affected ``subject_ids``. Resolves the whole set in a single pass per
+    namespace (see ``resolve_relationships_bulk``) rather than re-resolving each
+    entity individually — the per-object path re-loads FK lookup tables and
+    re-runs every resolver once per object, which is O(N) full re-resolutions
+    and dominates patch runtime on large patches.
+    """
 
     def hook(*, subject_ids: set[int] | None = None) -> None:
         if not subject_ids:
             return
-        for obj in model_class._default_manager.filter(pk__in=subject_ids):
-            resolve_after_mutation(obj, field_names=field_names)
+        resolve_relationships_bulk(model_class, field_names, set(subject_ids))
 
     return hook
