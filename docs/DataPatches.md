@@ -18,13 +18,14 @@ Numbered files `NNNN-slug.yaml` like `0001-prototype-tags`. They live in the [pi
 
 ```yaml
 attribution: flip-museum # a Source slug; must already exist
-description: > # optional; the whole-patch "why" → IngestRun note
+description:
+  > # optional; the whole-patch "why" → IngestRun.note (only viewable in Django admin and git for now)
   Tag known unreleased prototypes.
 claims: # ordered list of single-key entries
   - model.mazatron: # entity ref: <entity_type>.<public_id>
       expect: { year: 1990 } # drift guard (scalar + FK)
-      note: 'IPDB says "exists only as a prototype machine".' # per-entity reason
-      cite: ipdb:4443 # external evidence → citation on the claims below
+      note: 'IPDB says "exists only as a prototype machine".' # reason / evidence for the claims
+      cite: ipdb:4443 # external evidence → citation on the claims
       production_status: unreleased # FK → target public_id
       tag: [prototype] # relationship: namespace → member public_ids
 ```
@@ -59,7 +60,7 @@ claims:
 - `create: true` — opt-in to create. Unresolved ref without it → error; resolved ref with it → error (duplicate).
 - `expect:` — drift guard: a map of currently-resolved values the target must already have, checked before any write (mismatch → error). Covers scalar + FK. Stops a hand-authored id from writing to a drifted or same-named row.
 - `retract:` — scalar/FK field names whose claim (from this patch's source) to deactivate, on an existing entity. A no-op with a warning if already gone, so re-runs are safe. Not valid with `create`, nor alongside asserting the same field. Retracting the sole claim of a non-nullable FK doesn't clear it (NOT NULL forbids it) — the last value freezes in place, provenance-orphaned; to _change_ a required FK, assert the new value instead.
-- `note:` — a per-entity free-text reason (≤1000 chars) → the entity's ChangeSet note, shown on its edit-history page. (`description:` explains the whole patch; `note:` explains one entry.) All of an entity's claims in a patch collapse into one changeset, so the note is per-entity.
+- `note:` — a per-entity free-text reason (≤1000 chars) → the entity's ChangeSet note, shown on its edit-history page. (`description:` explains the whole patch; `note:` explains one entry.) All of an entity's claims in a patch collapse into one changeset, so the note is per-entity. The per-entity `note:` is the user-facing one; the whole-patch `description:` (→ `IngestRun.note`) is, as of this writing, surfaced only in Django admin — so put anything readers should see in `note:`, not `description:`.
 - `cite:` — external evidence as `scheme:identifier` (`ipdb:4443`, `opdb:GRhX5`). Get-or-creates the source under that scheme's root and attaches a citation to each of the entry's authored claims, shown beside the field on the edit-history page.
 
 Two rules tie note/cite to the single changeset an entry produces:

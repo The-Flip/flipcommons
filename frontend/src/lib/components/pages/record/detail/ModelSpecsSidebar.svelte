@@ -104,6 +104,15 @@
         {/each}
       </dd>
     {/if}
+    {#if model.tags.length > 0}
+      <dt>Tags</dt>
+      <dd>
+        {#each model.tags as tag, i (tag.public_id)}
+          {#if i > 0},{/if}
+          <a href={resolve(`/tags/${tag.public_id}`)}>{tag.name}</a>
+        {/each}
+      </dd>
+    {/if}
     {#if model.production_quantity}
       <dt>Units Made</dt>
       <dd>{model.production_quantity}</dd>
