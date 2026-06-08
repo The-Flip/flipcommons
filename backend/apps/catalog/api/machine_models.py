@@ -48,6 +48,7 @@ from ..models import (
     GameFormat,
     MachineModel,
     MachineModelGameplayFeature,
+    ProductionStatus,
     RewardType,
     System,
     Tag,
@@ -166,6 +167,7 @@ class ModelDetailSchema(CatalogDetailSchema):
     title: EntityRef
     cabinet: EntityRef | None = None
     game_format: EntityRef | None = None
+    production_status: EntityRef | None = None
     display_subtype: EntityRef | None = None
     gameplay_features: list[GameplayFeatureRef] = []
     tags: list[EntityRef] = []
@@ -446,6 +448,18 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
             if pm.game_format
             else None
         ),
+        # Always serialize the real value (incl. ``produced``): the Model editor
+        # consumes this serializer as ``data.profile`` → ``initialData``, so
+        # suppressing here would blank the picker over a real claim. The
+        # produced/null hide lives in the frontend (ModelSpecsSidebar).
+        production_status=(
+            EntityRef(
+                name=pm.production_status.name,
+                public_id=pm.production_status.public_id,
+            )
+            if pm.production_status
+            else None
+        ),
         display_subtype=(
             EntityRef(
                 name=pm.display_subtype.name, public_id=pm.display_subtype.public_id
@@ -514,6 +528,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             "display_subtype",
             "cabinet",
             "game_format",
+            "production_status",
             "variant_of",
             "converted_from",
             "remake_of",
@@ -739,6 +754,9 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
         cabinets=_opts(Cabinet.objects.active().order_by("display_order", "name")),
         game_formats=_opts(
             GameFormat.objects.active().order_by("display_order", "name")
+        ),
+        production_statuses=_opts(
+            ProductionStatus.objects.active().order_by("display_order", "name")
         ),
         systems=_opts(System.objects.active().order_by("name")),
         credit_roles=_opts(

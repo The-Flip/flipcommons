@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from .series import Series
 
 __all__ = [
+    "PRODUCED_SLUG",
     "Cabinet",
     "CreditRole",
     "DisplaySubtype",
@@ -261,6 +262,18 @@ class ProductionStatus(
 
     def __str__(self) -> str:
         return self.name
+
+
+# The one ProductionStatus value that carries code-level meaning: it is
+# suppressed on detail pages (a "produced" machine shows no status row). Used
+# only as a *best-effort* comparison (never a ``.get``) — if the row is
+# renamed, deleted or never created, the comparison simply stops matching and
+# "produced" becomes visible: a cosmetic, recoverable degradation, never a
+# crash. No value-guard machinery guards it.
+#
+# A frontend twin of this string lives in
+# ``frontend/src/lib/entities/production-status.ts``; a rename must update both.
+PRODUCED_SLUG = "produced"
 
 
 class RewardType(

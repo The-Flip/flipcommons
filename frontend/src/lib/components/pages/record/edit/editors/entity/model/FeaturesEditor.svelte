@@ -23,7 +23,6 @@
   type ThemeRef = { public_id: string; name: string };
 
   type FeaturesModel = {
-    game_format?: { public_id: string } | null;
     cabinet?: { public_id: string } | null;
     reward_types: { public_id: string }[];
     tags: { public_id: string }[];
@@ -43,7 +42,6 @@
   }: SectionEditorProps<FeaturesModel> = $props();
 
   type FeaturesFormFields = {
-    game_format: string;
     cabinet: string;
     production_quantity: string | number;
     player_count: string | number;
@@ -52,7 +50,6 @@
 
   function extractFields(m: FeaturesModel): FeaturesFormFields {
     return {
-      game_format: m.game_format?.public_id ?? '',
       cabinet: m.cabinet?.public_id ?? '',
       production_quantity: m.production_quantity ?? '',
       player_count: m.player_count ?? '',
@@ -209,15 +206,6 @@
 <div class="features-editor">
   <div class="features-grid">
     <SearchableSelect
-      label="Game format"
-      options={toSelectOptions(editOptions.game_formats ?? [])}
-      bind:selected={fields.game_format}
-      error={fieldErrors.game_format ?? ''}
-      allowZeroCount
-      showCounts={false}
-      placeholder="Search game formats..."
-    />
-    <SearchableSelect
       label="Cabinet"
       options={toSelectOptions(editOptions.cabinets ?? [])}
       bind:selected={fields.cabinet}
@@ -252,12 +240,6 @@
       placeholder="Search themes..."
     />
     <NumberField
-      label="Production quantity"
-      bind:value={fields.production_quantity}
-      error={fieldErrors.production_quantity ?? ''}
-      min={0}
-    />
-    <NumberField
       label="Players"
       bind:value={fields.player_count}
       error={fieldErrors.player_count ?? ''}
@@ -268,6 +250,12 @@
       bind:value={fields.flipper_count}
       error={fieldErrors.flipper_count ?? ''}
       {...fc(constraints, 'flipper_count')}
+    />
+    <NumberField
+      label="Production quantity"
+      bind:value={fields.production_quantity}
+      error={fieldErrors.production_quantity ?? ''}
+      min={0}
     />
   </div>
 

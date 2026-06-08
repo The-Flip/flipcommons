@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import type { ModelDetailSchema } from '$lib/api/schema';
+  import { showsProductionStatus } from '$lib/entities/production-status';
 
   type Model = ModelDetailSchema;
 
@@ -14,6 +15,11 @@
     /** When false, omits Franchise and Series rows — used when those surface as their own sidebar sections. */
     showFranchiseSeries?: boolean;
   } = $props();
+
+  // null unless a non-produced status should display (see showsProductionStatus).
+  let productionStatus = $derived(
+    showsProductionStatus(model.production_status) ? model.production_status : null,
+  );
 </script>
 
 <dl>
@@ -70,6 +76,14 @@
       <dt>Cabinet</dt>
       <dd>
         <a href={resolve(`/cabinets/${model.cabinet.public_id}`)}>{model.cabinet.name}</a>
+      </dd>
+    {/if}
+    {#if productionStatus}
+      <dt>Production status</dt>
+      <dd>
+        <a href={resolve(`/production-statuses/${productionStatus.public_id}`)}
+          >{productionStatus.name}</a
+        >
       </dd>
     {/if}
     {#if model.reward_types && model.reward_types.length > 0}

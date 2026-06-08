@@ -27,6 +27,7 @@ export const EMPTY_EDIT_OPTIONS: ModelEditOptions = {
   display_subtypes: [],
   cabinets: [],
   game_formats: [],
+  production_statuses: [],
   systems: [],
   credit_roles: [],
 };

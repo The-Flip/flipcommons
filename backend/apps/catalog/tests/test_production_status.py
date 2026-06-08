@@ -16,7 +16,7 @@ import json
 import pytest
 from django.db import IntegrityError
 
-from apps.catalog.models import ProductionStatus
+from apps.catalog.models import ProductionStatus, Title
 from apps.catalog.resolve import resolve_machine_models
 from apps.catalog.tests.conftest import make_machine_model
 from apps.core.types import JsonBody
@@ -144,3 +144,75 @@ class TestProductionStatusExport:
         assert resp.status_code == 200
         row = next(r for r in resp.json() if r["public_id"] == model.slug)
         assert row["production_status"] == "produced"
+
+
+@pytest.mark.django_db
+class TestProductionStatusModelDetail:
+    """The Model detail serializer returns the *real* value — including
+    ``produced`` — because the Model editor consumes it as ``initialData``.
+    The produced/null hide lives in the frontend (commit 4)."""
+
+    def test_detail_emits_unreleased(self, client):
+        status = ProductionStatus.objects.create(name="Unreleased", slug="unreleased")
+        model = make_machine_model(name="Cancelled", production_status=status)
+        data = client.get(f"/api/pages/model/{model.slug}").json()
+        assert data["production_status"]["public_id"] == "unreleased"
+        assert data["production_status"]["name"] == "Unreleased"
+
+    def test_detail_emits_produced_unsuppressed(self, client):
+        produced = ProductionStatus.objects.create(name="Produced", slug="produced")
+        model = make_machine_model(name="Shipped", production_status=produced)
+        data = client.get(f"/api/pages/model/{model.slug}").json()
+        assert data["production_status"]["public_id"] == "produced"
+
+    def test_detail_null_is_none(self, client):
+        model = make_machine_model(name="Unknown")
+        data = client.get(f"/api/pages/model/{model.slug}").json()
+        assert data["production_status"] is None
+
+
+@pytest.mark.django_db
+class TestProductionStatusTitleRollup:
+    """Multi-model Title rollup: agree over models that *have* a status (drop
+    nulls), then best-effort suppress ``produced``."""
+
+    @pytest.fixture
+    def title(self):
+        return Title.objects.create(name="Multi", slug="multi")
+
+    def _agreed(self, client, title):
+        return client.get(f"/api/pages/title/{title.slug}").json()["agreed_specs"]
+
+    def test_agrees_when_all_same(self, client, title):
+        status = ProductionStatus.objects.create(name="Unreleased", slug="unreleased")
+        make_machine_model(name="A", slug="a", title=title, production_status=status)
+        make_machine_model(name="B", slug="b", title=title, production_status=status)
+        assert self._agreed(client, title)["production_status"]["public_id"] == (
+            "unreleased"
+        )
+
+    def test_disagreement_shows_nothing(self, client, title):
+        s1 = ProductionStatus.objects.create(name="Unreleased", slug="unreleased")
+        s2 = ProductionStatus.objects.create(name="One-off", slug="one-off")
+        make_machine_model(name="A", slug="a", title=title, production_status=s1)
+        make_machine_model(name="B", slug="b", title=title, production_status=s2)
+        assert self._agreed(client, title).get("production_status") is None
+
+    def test_nulls_dropped_before_agreement(self, client, title):
+        status = ProductionStatus.objects.create(name="Unreleased", slug="unreleased")
+        make_machine_model(name="A", slug="a", title=title, production_status=status)
+        make_machine_model(name="B", slug="b", title=title)  # no status
+        assert self._agreed(client, title)["production_status"]["public_id"] == (
+            "unreleased"
+        )
+
+    def test_all_null_is_none_no_raise(self, client, title):
+        make_machine_model(name="A", slug="a", title=title)
+        make_machine_model(name="B", slug="b", title=title)
+        assert self._agreed(client, title).get("production_status") is None
+
+    def test_produced_suppressed_when_agreed(self, client, title):
+        produced = ProductionStatus.objects.create(name="Produced", slug="produced")
+        make_machine_model(name="A", slug="a", title=title, production_status=produced)
+        make_machine_model(name="B", slug="b", title=title, production_status=produced)
+        assert self._agreed(client, title).get("production_status") is None

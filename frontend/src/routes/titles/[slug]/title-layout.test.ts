@@ -74,6 +74,23 @@ describe('title layout', () => {
     expect(body).not.toContain('>Back<');
   });
 
+  it('renders the agreed production status row (backend pre-suppresses produced)', () => {
+    const withStatus = {
+      ...MOCK_TITLE,
+      agreed_specs: {
+        ...MOCK_TITLE.agreed_specs,
+        production_status: { name: 'Unreleased', public_id: 'unreleased' },
+      },
+    } satisfies TitleDetailSchema;
+
+    const { body } = render(Harness, {
+      props: { data: { profile: withStatus } },
+    });
+
+    expect(body).toContain('Production status');
+    expect(body).toContain('/production-statuses/unreleased');
+  });
+
   it('strips the detail shell on sources subroutes (focus mode)', () => {
     pageState.url = new URL('http://localhost:5173/titles/medieval-madness/sources');
 

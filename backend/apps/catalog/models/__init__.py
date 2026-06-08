@@ -22,6 +22,7 @@ from .person import Credit, Person, PersonAlias
 from .series import Franchise, Series
 from .system import System, SystemMpuString
 from .taxonomy import (
+    PRODUCED_SLUG,
     Cabinet,
     CreditRole,
     DisplaySubtype,
