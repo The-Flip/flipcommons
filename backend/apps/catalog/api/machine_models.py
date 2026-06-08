@@ -203,6 +203,7 @@ def _build_model_list_qs(
     year_min: int | None = None,
     year_max: int | None = None,
     person: str = "",
+    include_variants: bool = False,
     ordering: str = "-year",
 ) -> QuerySet[MachineModel]:
     qs = (
@@ -221,8 +222,15 @@ def _build_model_list_qs(
                 to_attr="primary_media",
             ),
         )
-        .filter(Q(variant_of__isnull=True) | Q(converted_from__isnull=False))
     )
+    # The catalog lists at the granularity of distinct machines: cosmetic
+    # variants are collapsed into their parent model (conversions, being
+    # genuinely different machines, are re-admitted). ``include_variants`` opts
+    # out of the collapse for surfaces where a variant's own value is the point
+    # — e.g. the production-status browse, where an announced Limited Edition of
+    # a shipped Premium must appear.
+    if not include_variants:
+        qs = qs.filter(Q(variant_of__isnull=True) | Q(converted_from__isnull=False))
 
     if manufacturer:
         qs = qs.filter(corporate_entity__manufacturer__slug=manufacturer)
@@ -630,6 +638,13 @@ class ModelFilterQuerySchema(Schema):
             "credited on."
         ),
     )
+    include_variants: bool = Field(
+        False,
+        description=(
+            "Include cosmetic variants, which are otherwise collapsed into their "
+            "parent model. Default false."
+        ),
+    )
     ordering: str = Field(
         "-year",
         description=(
@@ -663,6 +678,7 @@ def list_models(
         year_min=filters.year_min,
         year_max=filters.year_max,
         person=filters.person,
+        include_variants=filters.include_variants,
         ordering=filters.ordering,
     )
     min_rank = get_minimum_display_rank()

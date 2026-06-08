@@ -114,6 +114,32 @@ class TestProductionStatusFacet:
             client.get("/api/models/?production_status=announced").json()["count"] == 0
         )
 
+    def test_browse_includes_variants_only_with_flag(self, client):
+        """The status browse lists at variant granularity: a variant carrying a
+        status (e.g. an announced Limited Edition of a shipped Premium) is hidden
+        by the default variant-collapse but surfaces with ``include_variants``."""
+        announced = ProductionStatus.objects.create(name="Announced", slug="announced")
+        parent = make_machine_model(name="Premium", slug="premium")
+        make_machine_model(
+            name="Limited Edition",
+            slug="limited-edition",
+            title=parent.title,
+            variant_of=parent,
+            production_status=announced,
+        )
+
+        # Default (collapsed): the announced variant is hidden.
+        assert (
+            client.get("/api/models/?production_status=announced").json()["count"] == 0
+        )
+
+        # include_variants surfaces it.
+        body = client.get(
+            "/api/models/?production_status=announced&include_variants=true"
+        ).json()
+        assert body["count"] == 1
+        assert body["items"][0]["name"] == "Limited Edition"
+
 
 @pytest.mark.django_db
 class TestProductionStatusClaimResolution:

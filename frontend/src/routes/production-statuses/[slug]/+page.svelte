@@ -11,7 +11,10 @@
 
   const machines = createPaginatedLoader(async (page) => {
     const { data: result } = await client.GET('/api/models/', {
-      params: { query: { production_status: profile.slug, page } },
+      // Production status is a per-machine attribute that varies between a model
+      // and its variants (an announced Limited Edition of a shipped Premium), so
+      // this browse lists at variant granularity rather than collapsing them.
+      params: { query: { production_status: profile.slug, include_variants: true, page } },
     });
     return unwrapPage(result);
   });
