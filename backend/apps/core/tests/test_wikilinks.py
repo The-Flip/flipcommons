@@ -44,6 +44,7 @@ EXPECTED_PICKER_TYPES: frozenset[str] = frozenset(
         "display-subtype",
         "cabinet",
         "game-format",
+        "production-status",
         "reward-type",
         "tag",
         "credit-role",

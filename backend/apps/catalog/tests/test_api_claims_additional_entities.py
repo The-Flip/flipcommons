@@ -18,6 +18,7 @@ from apps.catalog.models import (
     GameFormat,
     Manufacturer,
     Person,
+    ProductionStatus,
     RewardType,
     Series,
     System,
@@ -145,6 +146,10 @@ def _create_tag():
     return Tag.objects.create(name="Prototype", slug="prototype")
 
 
+def _create_production_status():
+    return ProductionStatus.objects.create(name="Unreleased", slug="unreleased")
+
+
 def _create_credit_role():
     # Use a non-canonical name/slug so the test doesn't collide with the
     # credit-roles fixture that autouses canonical roles in conftest.
@@ -243,6 +248,14 @@ PATCH_CASES = [
         "Updated tag copy",
         "tags",
         id="tag",
+    ),
+    pytest.param(
+        "/api/production-statuses/{slug}/claims/",
+        _create_production_status,
+        "description",
+        "Updated production status copy",
+        "production-statuses",
+        id="production-status",
     ),
     pytest.param(
         "/api/credit-roles/{slug}/claims/",

@@ -33,6 +33,7 @@ from ..models import (
     GameFormat,
     MachineModel,
     Person,
+    ProductionStatus,
     RewardType,
     Tag,
     TechnologyGeneration,
@@ -122,12 +123,12 @@ class TechnologySubgenerationDetailSchema(TaxonomySchema):
 # ---------------------------------------------------------------------------
 
 
-# Constrained TypeVar over the nine concrete taxonomy model classes that
+# Constrained TypeVar over the concrete taxonomy model classes that
 # share ``TaxonomySchema`` as their public shape. Constraints (not a bound)
 # are required so each call site binds ``_TaxM`` to the specific concrete
 # class — otherwise `type[_TaxM]` collapses to the common base
 # ``CatalogModel`` and ``.objects.active()`` / attribute access are lost.
-# Written with ``typing.TypeVar`` rather than PEP 695 syntax so the nine
+# Written with ``typing.TypeVar`` rather than PEP 695 syntax so the
 # constraints aren't repeated on every generic function; the per-def
 # UP047 suppression below covers the associated ruff rule.
 _TaxM = TypeVar(
@@ -137,6 +138,7 @@ _TaxM = TypeVar(
     DisplaySubtype,
     DisplayType,
     GameFormat,
+    ProductionStatus,
     RewardType,
     Tag,
     TechnologyGeneration,
@@ -151,6 +153,7 @@ def _serialize_taxonomy(
         | DisplaySubtype
         | DisplayType
         | GameFormat
+        | ProductionStatus
         | RewardType
         | Tag
         | TechnologyGeneration
@@ -221,7 +224,8 @@ def _flat_taxonomy_title_count() -> Count:
 
 
 def _serialize_taxonomy_with_count(
-    obj: Cabinet | GameFormat | RewardType | Tag, thumbnail: str | None = None
+    obj: Cabinet | GameFormat | ProductionStatus | RewardType | Tag,
+    thumbnail: str | None = None,
 ) -> TaxonomyWithTitleCountSchema:
     """Row serializer for the paginated flat-taxonomy handlers: the shared
     ``TaxonomySchema`` body plus the ``title_count`` annotation read off the row.
@@ -240,7 +244,7 @@ def _serialize_taxonomy_with_count(
 # makes passing it to the factory a type error. (``_serialize_taxonomy_with_count``
 # still accepts RewardType for that bespoke list; a serializer over the wider union
 # is assignable to the factory's narrower row-serializer slot.)
-_FlatTaxM = TypeVar("_FlatTaxM", Cabinet, GameFormat, Tag)
+_FlatTaxM = TypeVar("_FlatTaxM", Cabinet, GameFormat, ProductionStatus, Tag)
 
 
 def _flat_taxonomy_list_qs(model_cls: type[_FlatTaxM]) -> QuerySet[_FlatTaxM]:  # noqa: UP047
@@ -661,6 +665,28 @@ register_taxonomy_router(
     GameFormat,
     list_ordering=("display_order", "name", "pk"),
     list_schema=GameFormatListSchema,
+)
+
+
+# ---------------------------------------------------------------------------
+# Production Statuses router
+# ---------------------------------------------------------------------------
+
+production_statuses_router = Router(tags=["production-statuses"])
+
+
+class ProductionStatusListSchema(_TaxonomyListPage):
+    """A page of production statuses: ``items`` holds this page's rows; ``count``
+    is the total number of matching production statuses across all pages."""
+
+
+# Production statuses — editorial ``display_order`` sort (announced → produced →
+# unreleased → one-off), like game formats.
+register_taxonomy_router(
+    production_statuses_router,
+    ProductionStatus,
+    list_ordering=("display_order", "name", "pk"),
+    list_schema=ProductionStatusListSchema,
 )
 
 

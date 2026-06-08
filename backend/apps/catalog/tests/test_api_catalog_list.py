@@ -329,6 +329,7 @@ IN_SCOPE_PAGINATED = frozenset(
         "game-formats",
         "gameplay-features",
         "people",
+        "production-statuses",
         "reward-types",
         "series",
         "systems",

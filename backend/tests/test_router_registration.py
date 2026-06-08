@@ -21,6 +21,7 @@ EXPECTED_PREFIXES = {
     "/display-subtypes/",
     "/game-formats/",
     "/gameplay-features/",
+    "/production-statuses/",
     "/pages/locations/",
     "/reward-types/",
     "/tags/",

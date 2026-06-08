@@ -196,6 +196,7 @@ def _build_model_list_qs(
     reward_type: str = "",
     game_format: str = "",
     cabinet: str = "",
+    production_status: str = "",
     tag: str = "",
     year_min: int | None = None,
     year_max: int | None = None,
@@ -244,6 +245,8 @@ def _build_model_list_qs(
         qs = qs.filter(game_format__slug=game_format)
     if cabinet:
         qs = qs.filter(cabinet__slug=cabinet)
+    if production_status:
+        qs = qs.filter(production_status__slug=production_status)
     if tag:
         qs = qs.filter(tags__slug=tag)
     if year_min is not None:
@@ -598,6 +601,10 @@ class ModelFilterQuerySchema(Schema):
         "", description="Game-format slug (see `GET /api/game-formats/`)."
     )
     cabinet: str = Field("", description="Cabinet slug (see `GET /api/cabinets/`).")
+    production_status: str = Field(
+        "",
+        description="Production-status slug (see `GET /api/production-statuses/`).",
+    )
     tag: str = Field("", description="Tag slug (see `GET /api/tags/`).")
     year_min: int | None = Field(None, description="Earliest release year, inclusive.")
     year_max: int | None = Field(None, description="Latest release year, inclusive.")
@@ -636,6 +643,7 @@ def list_models(
         reward_type=filters.reward_type,
         game_format=filters.game_format,
         cabinet=filters.cabinet,
+        production_status=filters.production_status,
         tag=filters.tag,
         year_min=filters.year_min,
         year_max=filters.year_max,

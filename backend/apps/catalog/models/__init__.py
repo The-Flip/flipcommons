@@ -29,6 +29,7 @@ from .taxonomy import (
     GameFormat,
     MachineModelRewardType,
     MachineModelTag,
+    ProductionStatus,
     RewardType,
     RewardTypeAlias,
     Tag,

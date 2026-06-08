@@ -13,6 +13,7 @@ import { load as location } from '../routes/locations/[...path]/+layout.server';
 import { load as manufacturer } from '../routes/manufacturers/[slug]/+layout.server';
 import { load as model } from '../routes/models/[slug]/+layout.server';
 import { load as person } from '../routes/people/[slug]/+layout.server';
+import { load as productionStatus } from '../routes/production-statuses/[slug]/+layout.server';
 import { load as rewardType } from '../routes/reward-types/[slug]/+layout.server';
 import { load as series } from '../routes/series/[slug]/+layout.server';
 import { load as system } from '../routes/systems/[slug]/+layout.server';
@@ -53,6 +54,7 @@ const CRUMBS = {
   theme: ['Home', 'Pinball Machine Themes', 'Fantasy'],
   'gameplay-feature': ['Home', 'Pinball Machine Gameplay Features', 'Multiball'],
   'game-format': ['Home', 'Game Formats', 'Pinball'],
+  'production-status': ['Home', 'Production Statuses', 'Unreleased'],
   'reward-type': ['Home', 'Reward Types', 'Replay'],
   'credit-role': ['Home', 'Credit Roles', 'Designer'],
   tag: ['Home', 'Tags', 'Prototype'],
@@ -104,6 +106,7 @@ const LOADS = {
   theme,
   'gameplay-feature': gameplayFeature,
   'game-format': gameFormat,
+  'production-status': productionStatus,
   'reward-type': rewardType,
   'credit-role': creditRole,
   tag,
