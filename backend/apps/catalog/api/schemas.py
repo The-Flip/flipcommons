@@ -313,6 +313,7 @@ class ModelEditOptionsSchema(Schema):
     display_subtypes: list[EditOptionSchema]
     cabinets: list[EditOptionSchema]
     game_formats: list[EditOptionSchema]
+    production_statuses: list[EditOptionSchema]
     systems: list[EditOptionSchema]
     credit_roles: list[EditOptionSchema]
 

@@ -37,11 +37,28 @@ const FIELD_CONSTRAINTS = {
   },
 };
 
+// Basics now consumes the closed enumerations (game format, production status)
+// from /api/models/edit-options/ via SearchableSelect.
+const EDIT_OPTIONS = {
+  data: {
+    game_formats: [
+      { slug: 'pinball-machine', label: 'Pinball Machine' },
+      { slug: 'arcade-video', label: 'Arcade Video' },
+    ],
+    production_statuses: [
+      { slug: 'produced', label: 'Produced' },
+      { slug: 'unreleased', label: 'Unreleased' },
+    ],
+  },
+};
+
 const INITIAL_MODEL = {
   year: 1997,
   month: 6,
   title: { public_id: 'medieval-madness', name: 'Medieval Madness' },
   corporate_entity: { public_id: 'williams-electronics', name: 'Williams Electronics' },
+  game_format: { public_id: 'pinball-machine' },
+  production_status: { public_id: 'produced' },
 };
 
 function mockGetResponses() {
@@ -55,7 +72,7 @@ function mockGetResponses() {
         return { data: { results }, error: undefined, response: { status: 200 } };
       }
       if (path === '/api/field-constraints/{entity_type}') return FIELD_CONSTRAINTS;
-      // The retired /api/models/edit-options/ big-entity lists must not be hit.
+      if (path === '/api/models/edit-options/') return EDIT_OPTIONS;
       throw new Error(`Unexpected GET ${path}`);
     },
   );
@@ -112,6 +129,28 @@ describe('BasicsEditor dirty-state contract', () => {
     });
   });
 
+  it('changing Production status PATCHes only that FK slug', async () => {
+    const user = userEvent.setup();
+    PATCH.mockResolvedValue({ data: {}, error: undefined });
+    invalidateAll.mockResolvedValue(undefined);
+    render(BasicsEditorFixture, {
+      props: { initialData: INITIAL_MODEL },
+    });
+
+    await user.click(screen.getByRole('combobox', { name: 'Production status' }));
+    await user.click(await screen.findByRole('option', { name: 'Unreleased' }));
+
+    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(PATCH).toHaveBeenCalledOnce();
+    expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
+      params: { path: { public_id: 'medieval-madness' } },
+      body: { fields: { production_status: 'unreleased' }, note: '' },
+    });
+  });
+
   it('PATCHes only the changed year', async () => {
     const user = userEvent.setup();
     PATCH.mockResolvedValue({ data: {}, error: undefined });
@@ -153,5 +192,7 @@ describe('BasicsEditor slim mode', () => {
     expect(screen.getByRole('combobox', { name: 'Manufacturer' })).toBeInTheDocument();
     expect(screen.getByLabelText('Year')).toBeInTheDocument();
     expect(screen.getByLabelText('Month')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Game format' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Production status' })).toBeInTheDocument();
   });
 });

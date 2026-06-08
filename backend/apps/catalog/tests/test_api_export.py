@@ -146,6 +146,7 @@ class TestExportDriftGuard:
             "display_subtype",
             "cabinet",
             "game_format",
+            "production_status",
             # media
             "thumbnail_url",
             "hero_image_url",

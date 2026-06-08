@@ -52,6 +52,7 @@ from ..cache import (
     titles_facets_key,
 )
 from ..models import (
+    PRODUCED_SLUG,
     MachineModel,
     MachineModelGameplayFeature,
     Title,
@@ -299,6 +300,7 @@ class AgreedSpecsSchema(Schema):
     system: EntityRef | None = None
     cabinet: EntityRef | None = None
     game_format: EntityRef | None = None
+    production_status: EntityRef | None = None
     display_subtype: EntityRef | None = None
     themes: list[EntityRef] = []
     gameplay_features: list[GameplayFeatureRef] = []
@@ -417,11 +419,13 @@ def _compute_agreed_specs(models: Sequence[MachineModel]) -> AgreedSpecsSchema:
         obj = getattr(m, attr, None)
         return (obj.name, obj.public_id) if obj else None
 
-    def _ref_for(attr: str) -> EntityRef | None:
+    def _ref_for(
+        attr: str, candidates: Sequence[MachineModel] = models
+    ) -> EntityRef | None:
         def accessor(m: MachineModel) -> tuple[str, str] | None:
             return _fk_pair(m, attr)
 
-        val = _agreed_value(models, accessor)
+        val = _agreed_value(candidates, accessor)
         return EntityRef(name=val[0], public_id=val[1]) if val else None
 
     # Themes: only roll up when every model has the same set.
@@ -462,6 +466,14 @@ def _compute_agreed_specs(models: Sequence[MachineModel]) -> AgreedSpecsSchema:
 
     pq = _agreed_value(models, lambda m: m.production_quantity or None)
 
+    # Agree over models that *have* a status (drop nulls; all-null → None via
+    # the helper), then best-effort suppress ``produced``. Backend suppression
+    # is safe here — this schema is read-only/derived, not editor-consumed.
+    ps_models = [m for m in models if m.production_status is not None]
+    production_status = _ref_for("production_status", ps_models)
+    if production_status is not None and production_status.public_id == PRODUCED_SLUG:
+        production_status = None
+
     return AgreedSpecsSchema(
         technology_generation=_ref_for("technology_generation"),
         technology_subgeneration=_ref_for("technology_subgeneration"),
@@ -469,6 +481,7 @@ def _compute_agreed_specs(models: Sequence[MachineModel]) -> AgreedSpecsSchema:
         system=_ref_for("system"),
         cabinet=_ref_for("cabinet"),
         game_format=_ref_for("game_format"),
+        production_status=production_status,
         display_subtype=_ref_for("display_subtype"),
         player_count=_agreed_value(models, lambda m: m.player_count),
         flipper_count=_agreed_value(models, lambda m: m.flipper_count),
@@ -667,6 +680,7 @@ def _title_models_prefetch() -> Prefetch[str, Any, str]:
             "system",
             "cabinet",
             "game_format",
+            "production_status",
             "converted_from__title",
             "remake_of__title",
         )

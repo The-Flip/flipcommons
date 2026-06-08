@@ -9,6 +9,7 @@
   import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
+  import { showsProductionStatus } from '$lib/entities/production-status';
   import ModelHierarchy from '$lib/components/pages/record/detail/ModelHierarchy.svelte';
   import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
@@ -183,7 +184,8 @@
   // Desktop sidebar shows Franchise/Series as their own sections, so the Features
   // sidebar should hide when *only* franchise/series would appear.
   let hasFeaturesExcludingFranchiseSeries = $derived(
-    !!model.game_format ||
+    showsProductionStatus(model.production_status) ||
+      !!model.game_format ||
       !!model.cabinet ||
       (model.reward_types?.length ?? 0) > 0 ||
       model.themes.length > 0 ||

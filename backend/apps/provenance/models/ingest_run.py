@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from django.db import models
-from django.db.models.functions import Now
+from django.db.models.functions import Lower, Now
 
 from .source import Source
 
@@ -32,6 +32,26 @@ class IngestRun(models.Model):
     input_fingerprint = models.CharField(
         max_length=255,
         help_text="Hash of the source data file.",
+    )
+    patch_id = models.CharField(
+        max_length=200,
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "Identity of a data patch (the NNNN-slug filename stem). "
+            "Null for normal ingests; set for patch applications. The "
+            "applied-ledger keys on this: a success run with a patch_id "
+            "means that patch has been applied to this database."
+        ),
+    )
+    note = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "Free-text note about the run. For patch runs, holds the "
+            "patch's description."
+        ),
     )
     status = models.CharField(
         max_length=10,
@@ -87,6 +107,31 @@ class IngestRun(models.Model):
                     "success/failed requires finished_at to be set."
                 ),
                 violation_error_code="cross_field",
+            ),
+            # patch_id is a non-empty lowercase identifier. The exact
+            # NNNN-slug *format* is enforced in the clean path (ingest_patches'
+            # pre-flight); the DB check stays portable. Regex CHECKs are
+            # avoided repo-wide — they compile to REGEXP, which fails or
+            # silently no-ops on a SQLite DB opened outside Django (issue
+            # #357; see test_lowercase_constraint). Defense-in-depth behind
+            # the command, catching direct writes that bypass it.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(patch_id__isnull=True)
+                    | (~models.Q(patch_id="") & models.Q(patch_id=Lower("patch_id")))
+                ),
+                name="provenance_ingestrun_patch_id_lowercase",
+                violation_error_message=(
+                    "patch_id must be a non-empty lowercase string."
+                ),
+            ),
+            # At most one successful application per patch. Multiple
+            # running/failed attempts and unlimited null-patch_id ingests
+            # remain allowed. This is the DB-level "applied once" invariant.
+            models.UniqueConstraint(
+                fields=["patch_id"],
+                condition=models.Q(status="success"),
+                name="provenance_ingestrun_patch_applied_once",
             ),
         ]
 

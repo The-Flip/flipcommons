@@ -9,6 +9,7 @@ the claim field names that changed, then invalidates cached endpoint data.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import NamedTuple, cast
 
 from django.db import transaction
@@ -223,3 +224,137 @@ def _call_custom_resolver(spec: CustomDispatchSpec, entity_pk: int) -> None:
 
     func = getattr(_relationships, spec.resolver_function_name)
     func(subject_ids={entity_pk})
+
+
+# ---------------------------------------------------------------------------
+# Bulk relationship resolution (for ingest/patch resolve hooks)
+# ---------------------------------------------------------------------------
+
+
+_mm_relationship_resolvers: dict[str, Callable[..., None]] | None = None
+
+
+def _get_mm_relationship_resolvers() -> dict[str, Callable[..., None]]:
+    """namespace → bulk resolver for MachineModel relationship claims.
+
+    Mirrors the relationship resolvers in ``resolve.resolve_model()``; each
+    takes ``subject_ids`` so an entire affected set resolves in a single pass.
+    Keyed explicitly (not introspected) because the resolver per namespace is
+    inherently bespoke — same rationale as the dispatch tables above. (Media
+    is handled separately; it is keyed by content type, not a per-model M2M.)
+    """
+    global _mm_relationship_resolvers
+    if _mm_relationship_resolvers is None:
+        from ._relationships import (
+            resolve_all_credits,
+            resolve_all_gameplay_features,
+            resolve_all_model_abbreviations,
+            resolve_all_reward_types,
+            resolve_all_tags,
+            resolve_all_themes,
+        )
+
+        _mm_relationship_resolvers = {
+            "credit": resolve_all_credits,
+            "theme": resolve_all_themes,
+            "gameplay_feature": resolve_all_gameplay_features,
+            "reward_type": resolve_all_reward_types,
+            "tag": resolve_all_tags,
+            "abbreviation": resolve_all_model_abbreviations,
+        }
+    return _mm_relationship_resolvers
+
+
+def resolve_relationships_bulk(
+    model_class: type[ClaimControlledModel],
+    field_names: list[str],
+    subject_ids: set[int],
+) -> None:
+    """Bulk re-resolve relationship namespaces for many subjects in one pass.
+
+    The batched equivalent of calling :func:`resolve_after_mutation` once per
+    object for relationship fields. The ingest apply engine already
+    bulk-resolves scalar/FK fields (``resolve_all_entities``); this covers only
+    the relationship namespaces, which is all a data patch's resolve hook needs.
+
+    Unlike :func:`resolve_after_mutation`, this does NOT register an
+    ``on_commit`` cache invalidation — the caller invalidates once after the run
+    (the ``ingest_patches`` command does, as does the apply engine's caller).
+
+    Raises ``ValueError`` for a namespace with no bulk resolver on
+    *model_class*, so an unhandled relationship fails loudly instead of leaving
+    its claims silently unresolved.
+    """
+    if not subject_ids or not field_names:
+        return
+    from ..models import MachineModel
+
+    if issubclass(model_class, MachineModel):
+        resolvers = _get_mm_relationship_resolvers()
+        for fn in field_names:
+            if fn == "media_attachment":
+                _resolve_media_bulk(model_class, subject_ids)
+            elif fn in resolvers:
+                resolvers[fn](subject_ids=subject_ids)
+            else:
+                raise ValueError(
+                    f"No bulk resolver for relationship {fn!r} on "
+                    f"{model_class.__name__}"
+                )
+        return
+
+    _resolve_non_machine_relationships_bulk(model_class, field_names, subject_ids)
+
+
+def _resolve_non_machine_relationships_bulk(
+    model_class: type[ClaimControlledModel],
+    field_names: list[str],
+    subject_ids: set[int],
+) -> None:
+    """Bulk relationship resolution for non-MachineModel entities.
+
+    Reuses the same dispatch tables as :func:`_resolve_non_machine_model`, but
+    invokes each resolver once for the whole subject set instead of per object
+    (alias/parent resolvers resolve their whole type; custom resolvers take the
+    full ``subject_ids``).
+    """
+    from . import _relationships
+    from ._relationships import _resolve_aliases, _resolve_parents
+
+    alias_dispatch = _get_alias_dispatch()
+    parent_dispatch = _get_parent_dispatch()
+    custom_dispatch = _get_custom_dispatch()
+
+    for fn in field_names:
+        if fn == "media_attachment":
+            _resolve_media_bulk(model_class, subject_ids)
+        elif fn in alias_dispatch and alias_dispatch[fn] is model_class:
+            _resolve_aliases(model_class)
+        elif fn in parent_dispatch and parent_dispatch[fn].model is model_class:
+            spec = parent_dispatch[fn]
+            _resolve_parents(spec.model, claim_field_prefix=spec.claim_field_prefix)
+        elif fn in custom_dispatch and custom_dispatch[fn].entity_model is model_class:
+            resolver = getattr(
+                _relationships, custom_dispatch[fn].resolver_function_name
+            )
+            resolver(subject_ids=subject_ids)
+        else:
+            raise ValueError(
+                f"No bulk resolver for relationship {fn!r} on {model_class.__name__}"
+            )
+
+
+def _resolve_media_bulk(
+    model_class: type[ClaimControlledModel], subject_ids: set[int]
+) -> None:
+    """Bulk-resolve media attachments for a media-supported entity type."""
+    from apps.media.models import MediaSupportedModel
+
+    if not issubclass(model_class, MediaSupportedModel):
+        return
+    from django.contrib.contenttypes.models import ContentType
+
+    from ._media import resolve_media_attachments
+
+    ct = ContentType.objects.get_for_model(model_class)
+    resolve_media_attachments(content_type_id=ct.id, subject_ids=subject_ids)

@@ -200,7 +200,7 @@ class MachineModel(
         related_name="machine_models",
         null=True,
         blank=True,
-        help_text="Cabinet form factor.",
+        help_text="Form factor of the physical cabinet.",
     )
     game_format = models.ForeignKey(
         "GameFormat",
@@ -209,6 +209,14 @@ class MachineModel(
         null=True,
         blank=True,
         help_text="Game format.",
+    )
+    production_status = models.ForeignKey(
+        "ProductionStatus",
+        on_delete=models.PROTECT,
+        related_name="machine_models",
+        null=True,
+        blank=True,
+        help_text="Commercial production status.",
     )
     player_count = models.PositiveSmallIntegerField(
         null=True,

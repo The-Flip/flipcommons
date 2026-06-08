@@ -289,7 +289,7 @@
         onEdit={editAction('model:external-data')}
       />
     {:else}
-      {#if specs.technology_generation || specs.display_type || specs.player_count || specs.system || specs.cabinet || specs.game_format || specs.display_subtype || specs.production_quantity || (specs.themes && specs.themes.length > 0) || title.abbreviations.length > 0}
+      {#if specs.technology_generation || specs.display_type || specs.player_count || specs.system || specs.cabinet || specs.game_format || specs.production_status || specs.display_subtype || specs.production_quantity || (specs.themes && specs.themes.length > 0) || title.abbreviations.length > 0}
         <SidebarSection heading="Specifications">
           <dl>
             {#if specs.technology_generation}
@@ -370,6 +370,14 @@
               <dd>
                 <a href={resolve(`/game-formats/${specs.game_format.public_id}`)}
                   >{specs.game_format.name}</a
+                >
+              </dd>
+            {/if}
+            {#if specs.production_status}
+              <dt>Production status</dt>
+              <dd>
+                <a href={resolve(`/production-statuses/${specs.production_status.public_id}`)}
+                  >{specs.production_status.name}</a
                 >
               </dd>
             {/if}

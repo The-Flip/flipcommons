@@ -29,6 +29,7 @@ from apps.catalog.models import (
     MachineModel,
     Manufacturer,
     Person,
+    ProductionStatus,
     RewardType,
     Series,
     System,
@@ -311,6 +312,13 @@ register_entity_detail_page(
     pages_router,
     GameFormat,
     detail_qs=lambda: _taxonomy_detail_qs(GameFormat),
+    serialize_detail=_serialize_taxonomy,
+    response_schema=TaxonomySchema,
+)
+register_entity_detail_page(
+    pages_router,
+    ProductionStatus,
+    detail_qs=lambda: _taxonomy_detail_qs(ProductionStatus),
     serialize_detail=_serialize_taxonomy,
     response_schema=TaxonomySchema,
 )

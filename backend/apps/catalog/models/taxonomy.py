@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from .series import Series
 
 __all__ = [
+    "PRODUCED_SLUG",
     "Cabinet",
     "CreditRole",
     "DisplaySubtype",
@@ -34,6 +35,7 @@ __all__ = [
     "GameFormat",
     "MachineModelRewardType",
     "MachineModelTag",
+    "ProductionStatus",
     "RewardType",
     "RewardTypeAlias",
     "Tag",
@@ -48,10 +50,7 @@ class TechnologyGeneration(
     TimeStampedModel,
     WikilinkableModel,
 ):
-    """A major technological era: Pure Mechanical, Electromechanical, Solid State.
-
-    Name and display_order are claim-controlled; description is direct editorial.
-    """
+    """A major technological era: Pure Mechanical, Electromechanical, Solid State."""
 
     entity_type = "technology-generation"
     entity_type_plural = "technology-generations"
@@ -116,10 +115,7 @@ class DisplayType(
     TimeStampedModel,
     WikilinkableModel,
 ):
-    """A display technology category: Score Reels, DMD, LCD, etc.
-
-    Replaces the old DisplayType enum.
-    """
+    """A display technology category: Score Reels, DMD, LCD etc."""
 
     entity_type = "display-type"
     entity_type_plural = "display-types"
@@ -184,7 +180,8 @@ class Cabinet(
     TimeStampedModel,
     WikilinkableModel,
 ):
-    """Physical cabinet form factor: Floor, Tabletop, Countertop, Cocktail."""
+    """The form factor of the physical cabinet of the game, such as
+    floor-standing, tabletop, cocktail etc."""
 
     entity_type = "cabinet"
     entity_type_plural = "cabinets"
@@ -212,7 +209,7 @@ class GameFormat(
     TimeStampedModel,
     WikilinkableModel,
 ):
-    """Game format: Pinball, Bagatelle, Shuffle Alley, Pitch-and-Bat."""
+    """The format of the game, such as pinball, bagatelle, pitch-and-bat etc"""
 
     entity_type = "game-format"
     entity_type_plural = "game-formats"
@@ -232,6 +229,51 @@ class GameFormat(
 
     def __str__(self) -> str:
         return self.name
+
+
+class ProductionStatus(
+    CatalogModel,
+    SluggedModel,
+    TimeStampedModel,
+    WikilinkableModel,
+):
+    """Status in regards to commercial production, such as whether it has been
+    commercially produced, announced, or is a one-off never intended to be produced."""
+
+    entity_type = "production-status"
+    entity_type_plural = "production-statuses"
+    soft_delete_usage_blockers: ClassVar[frozenset[str]] = frozenset({"machine_models"})
+
+    name = models.CharField(max_length=200, validators=[validate_no_mojibake])
+    display_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        # Django's default pluralizer would yield "production statuss"; pin the
+        # plural so the generated ``label_plural`` reads "Production Statuses".
+        verbose_name_plural = "production statuses"
+        ordering = ["display_order"]
+        constraints = [
+            slug_not_blank(),
+            slug_lowercase(),
+            status_valid(),
+            field_not_blank("name"),
+            unique_ci("name"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+# The one ProductionStatus value that carries code-level meaning: it is
+# suppressed on detail pages (a "produced" machine shows no status row). Used
+# only as a *best-effort* comparison (never a ``.get``) — if the row is
+# renamed, deleted or never created, the comparison simply stops matching and
+# "produced" becomes visible: a cosmetic, recoverable degradation, never a
+# crash. No value-guard machinery guards it.
+#
+# A frontend twin of this string lives in
+# ``frontend/src/lib/entities/production-status.ts``; a rename must update both.
+PRODUCED_SLUG = "produced"
 
 
 class RewardType(
@@ -311,7 +353,7 @@ class Tag(
     TimeStampedModel,
     WikilinkableModel,
 ):
-    """A classification tag: Home Use, Prototype, Widebody, Remake, etc.
+    """A classification tag, such as Home Use, Prototype, Widebody etc.
 
     Linked to MachineModel via M2M relationship claims.
     """

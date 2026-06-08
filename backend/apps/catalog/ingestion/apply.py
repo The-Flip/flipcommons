@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Protocol, cast
 
 from django.contrib.contenttypes.models import ContentType
-from django.core.exceptions import ValidationError
+from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -63,6 +63,33 @@ class RetractEntry(NamedTuple):
 # ---------------------------------------------------------------------------
 # Plan data types
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CitationRef:
+    """A parsed, normalized reference to an external citation source.
+
+    ``scheme`` is an ``apps.citation.extractors.EXTRACTORS`` key (e.g.
+    ``"ipdb"``); ``identifier`` is the normalized in-scheme id (e.g.
+    ``"4443"``). Resolved to a ``CitationSource`` at apply time via
+    ``get_or_create_external_source`` — no DB access to construct one.
+
+    Defined here, beside the plan dataclasses, rather than in any source
+    adapter: the source-agnostic apply layer must not import an adapter, and
+    adapters (e.g. ``ingestion.patches``) already import the plan carriers
+    from this module.
+    """
+
+    scheme: str
+    identifier: str
+
+
+# Per-claim provenance maps produced by ``_collect_plan_provenance`` and
+# consumed by ``_persist`` / ``_attach_plan_citations``. Named so the opaque
+# ``str`` (a ChangeSet note) and the per-claim citation mapping read clearly
+# wherever they recur.
+type EntityNotes = dict[EntityKey, str]
+type ClaimCitations = dict[ClaimIdentity, CitationRef]
 
 
 @dataclass
@@ -113,7 +140,16 @@ class PlannedClaimAssert:
     # genuinely arbitrary, so the type stays open.
     value: Any = None
     claim_key: str = ""
+    # Legacy free-text citation string written to ``Claim.citation`` (used by
+    # some ingest paths). Distinct from ``citation_ref`` below, which is the
+    # structured CitationInstance reference — don't conflate them.
     citation: str = ""
+    # Per-entry patch provenance. ``note`` flows to the entity's ChangeSet
+    # note; ``citation_ref`` (set only on explicit-field assertions, never the
+    # create-owned slug/status scaffolding) is materialized as a
+    # CitationInstance on the resulting claim at apply time.
+    note: str = ""
+    citation_ref: CitationRef | None = None
     content_type_id: int | None = None
     object_id: int | None = None
     handle: str | None = None
@@ -135,6 +171,9 @@ class PlannedClaimRetract:
     content_type_id: int
     object_id: int
     claim_key: str
+    # Per-entry patch note → the entity's ChangeSet note. A retraction has no
+    # new claim, so it carries no ``citation_ref``.
+    note: str = ""
 
 
 @dataclass
@@ -150,6 +189,11 @@ class IngestPlan:
     records_matched: int = 0
     resolve_hooks: dict[int, list[ResolveHook]] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    # Patch runs only: the NNNN-slug filename stem (the applied-ledger key)
+    # and the patch's description (copied to ``IngestRun.note``). Null/empty
+    # for normal ingests.
+    patch_id: str | None = None
+    note: str = ""
 
 
 @dataclass
@@ -185,9 +229,17 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
         return _apply_dry_run(plan, report)
 
     # ── Create IngestRun outside transaction ──────────────────────
+    # Created outside so a FAILED run survives rollback — that's exactly
+    # when the audit record matters most. The SUCCESS flip, by contrast,
+    # commits *inside* the transaction (below): "applied" must be atomic
+    # with the claims, or a torn write leaves a half-applied patch that a
+    # retry can't safely re-run (creates re-hit existing rows, expect
+    # guards re-evaluate against mutated state).
     run = IngestRun.objects.create(
         source=plan.source,
         input_fingerprint=plan.input_fingerprint,
+        patch_id=plan.patch_id,
+        note=plan.note,
     )
 
     try:
@@ -196,6 +248,11 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             report.records_created = len(plan.entities)
 
             _patch_handles(plan.assertions, handle_map)
+            # Per-claim provenance (note/citation) carried by the plan, collected
+            # once now that handles are resolved (so every assertion carries its
+            # real ct/obj). Kept out of _build_claims so that helper's signature —
+            # and its dry-run call site — stay untouched.
+            entity_notes, claim_citations = _collect_plan_provenance(plan)
             all_claims = _build_claims(plan.assertions, plan.source)
             valid_claims = _validate_fail_fast(all_claims, report)
 
@@ -211,8 +268,34 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             )
             report.retracted = len(retract_entries)
 
-            _persist(run, to_create, superseded_ids, retract_entries)
+            _persist(run, to_create, superseded_ids, retract_entries, entity_notes)
+            _attach_plan_citations(to_create, claim_citations)
             _resolve(to_create, retract_entries, plan.resolve_hooks)
+
+            # SUCCESS flip inside the transaction — see note above. The
+            # partial unique index on (patch_id) WHERE status='success'
+            # is enforced here; a racing second application raises
+            # IntegrityError, which the caller treats as "already applied".
+            run.status = IngestRun.Status.SUCCESS
+            run.records_parsed = plan.records_parsed
+            run.records_matched = plan.records_matched
+            run.records_created = report.records_created
+            run.claims_asserted = report.asserted
+            run.claims_retracted = report.retracted
+            run.warnings = report.warnings
+            run.finished_at = timezone.now()
+            run.save(
+                update_fields=[
+                    "status",
+                    "records_parsed",
+                    "records_matched",
+                    "records_created",
+                    "claims_asserted",
+                    "claims_retracted",
+                    "warnings",
+                    "finished_at",
+                ],
+            )
 
     except Exception as exc:
         run.status = IngestRun.Status.FAILED
@@ -224,26 +307,6 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
         )
         raise
 
-    run.status = IngestRun.Status.SUCCESS
-    run.records_parsed = plan.records_parsed
-    run.records_matched = plan.records_matched
-    run.records_created = report.records_created
-    run.claims_asserted = report.asserted
-    run.claims_retracted = report.retracted
-    run.warnings = report.warnings
-    run.finished_at = timezone.now()
-    run.save(
-        update_fields=[
-            "status",
-            "records_parsed",
-            "records_matched",
-            "records_created",
-            "claims_asserted",
-            "claims_retracted",
-            "warnings",
-            "finished_at",
-        ],
-    )
     return report
 
 
@@ -401,6 +464,52 @@ def _validate_assertion_targets(plan: IngestPlan) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _planned_public_ids(
+    entities: list[PlannedEntityCreate],
+) -> dict[type[ClaimControlledModel], set[str]]:
+    """Map each planned model class to the public_ids it will create.
+
+    A planned entity's public_id is the value of its ``public_id_field``
+    kwarg (``slug`` for most models, ``location_path`` for Location).
+    """
+    result: dict[type[ClaimControlledModel], set[str]] = defaultdict(set)
+    for entity in entities:
+        pid_field = getattr(entity.model_class, "public_id_field", "slug")
+        pid = entity.kwargs.get(pid_field)
+        if isinstance(pid, str):
+            result[entity.model_class].add(pid)
+    return result
+
+
+def _fk_value_is_planned(
+    pca: PlannedClaimAssert,
+    planned: dict[type[ClaimControlledModel], set[str]],
+) -> bool:
+    """True if *pca* is an FK claim whose value names a same-plan-created entity.
+
+    *planned* is the precomputed ``_planned_public_ids`` map. Used only by the
+    dry-run path to skip DB existence validation for FK targets that don't
+    exist yet because they're created in this same plan.
+    """
+    if pca.content_type_id is None or not isinstance(pca.value, str):
+        return False
+    model_class = ContentType.objects.get_for_id(pca.content_type_id).model_class()
+    if model_class is None:
+        return False
+    try:
+        django_field = model_class._meta.get_field(pca.field_name)
+    except FieldDoesNotExist:
+        return False
+    if not isinstance(django_field, models.ForeignKey):
+        return False
+    target_model = django_field.related_model
+    if not isinstance(target_model, type) or not issubclass(
+        target_model, ClaimControlledModel
+    ):
+        return False
+    return pca.value.strip() in planned.get(target_model, set())
+
+
 def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
     """Read-only path: validate and diff without writing anything."""
     report.records_created = len(plan.entities)
@@ -416,8 +525,23 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
 
     report.asserted += len(deferred)
 
+    # FK claims on existing entities whose value points at an entity created
+    # *in this same plan* cannot be validated in dry-run — the FK existence
+    # check queries the DB, but the target is only planned (the live path
+    # avoids this because creates run first, in the same transaction).  Same
+    # carve-out as deferred relationship claims above: count them asserted,
+    # skip validation.  (Structural correctness is already covered.)
+    planned = _planned_public_ids(plan.entities)
+    fk_to_planned = [
+        p for p in concrete if p.handle is None and _fk_value_is_planned(p, planned)
+    ]
+    report.asserted += len(fk_to_planned)
+    fk_to_planned_ids = {id(p) for p in fk_to_planned}
+
     # Claims targeting existing entities: validate + diff.
-    existing_assertions = [p for p in concrete if p.handle is None]
+    existing_assertions = [
+        p for p in concrete if p.handle is None and id(p) not in fk_to_planned_ids
+    ]
     if existing_assertions:
         claims = _build_claims(existing_assertions, plan.source)
         valid = _validate_and_collect_errors(claims, report)
@@ -743,11 +867,84 @@ def _process_retractions(
     return retract_entries
 
 
+def _collect_plan_provenance(
+    plan: IngestPlan,
+) -> tuple[EntityNotes, ClaimCitations]:
+    """Gather per-claim ``note``/``citation_ref`` carried by the plan into maps.
+
+    Source-agnostic — any plan may set these; today only the patch adapter does
+    (from a patch entry's ``note:``/``cite:``). Runs after ``_patch_handles``,
+    so every assertion's ct/obj is resolved. ``entity_notes`` (keyed by entity)
+    feeds the per-entity ChangeSet note; ``claim_citations`` (keyed by the exact
+    claim identity) drives per-claim citation attachment in
+    ``_attach_plan_citations``. Citations are keyed per claim — never per
+    entity — so a citation never bleeds onto unrelated claims (or the
+    create-owned scaffolding) that merely share the entity.
+
+    The patch adapter's same-entity guard ensures no two entries put conflicting
+    notes on one entity, so last-write-wins here is never reached in practice.
+    """
+    entity_notes: EntityNotes = {}
+    claim_citations: ClaimCitations = {}
+    for pca in plan.assertions:
+        if not pca.note and pca.citation_ref is None:
+            continue  # the common case (all normal-ingest assertions)
+        ct_id = pca.content_type_id
+        obj_id = pca.object_id
+        # post _patch_handles: handles are resolved to real ct/obj.
+        assert ct_id is not None
+        assert obj_id is not None
+        if pca.note:
+            entity_notes[EntityKey(ct_id, obj_id)] = pca.note
+        if pca.citation_ref is not None:
+            claim_citations[
+                ClaimIdentity(ct_id, obj_id, pca.claim_key or pca.field_name)
+            ] = pca.citation_ref
+    for pcr in plan.retractions:
+        if pcr.note:
+            entity_notes[EntityKey(pcr.content_type_id, pcr.object_id)] = pcr.note
+    return entity_notes, claim_citations
+
+
+def _attach_plan_citations(
+    to_create: list[Claim],
+    claim_citations: ClaimCitations,
+) -> None:
+    """Materialize per-claim ``CitationRef``s as ``CitationInstance`` rows.
+
+    Runs after ``_persist`` so created claims have PKs. A citation only rides
+    a *newly written* claim: a value that diffs as unchanged produces no
+    ``to_create`` entry, so re-asserting an already-correct value purely to
+    add a ``cite:`` is a documented no-op (see docs/DataPatches.md).
+    """
+    if not claim_citations:
+        return
+    from apps.citation.extractors import get_or_create_external_source
+    from apps.provenance.models import CitationInstance
+
+    source_cache: dict[CitationRef, int] = {}
+    instances: list[CitationInstance] = []
+    for claim in to_create:
+        ref = claim_citations.get(
+            ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)
+        )
+        if ref is None:
+            continue
+        source_id = source_cache.get(ref)
+        if source_id is None:
+            source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
+            source_cache[ref] = source_id
+        instances.append(CitationInstance(citation_source_id=source_id, claim=claim))
+    if instances:
+        CitationInstance.objects.bulk_create(instances)
+
+
 def _persist(
     run: IngestRun,
     to_create: list[Claim],
     superseded_ids: list[int],
     retract_entries: list[RetractEntry],
+    entity_notes: EntityNotes,
 ) -> None:
     """Bulk-create ChangeSets and Claims, deactivate superseded/retracted.
 
@@ -755,6 +952,9 @@ def _persist(
     to satisfy the unique constraint on
     ``(content_type, object_id, source, claim_key)`` where
     ``is_active=True``.
+
+    ``entity_notes`` carries each affected entity's patch ``note:`` onto its
+    ChangeSet (empty string when the entry set none).
     """
     # superseded_ids is always a subset of the entities in to_create (a
     # superseded claim has a replacement in to_create), so checking
@@ -770,7 +970,9 @@ def _persist(
         affected.add(EntityKey(entry.content_type_id, entry.object_id))
 
     entity_list = sorted(affected)
-    changesets = [ChangeSet(ingest_run=run) for _ in entity_list]
+    changesets = [
+        ChangeSet(ingest_run=run, note=entity_notes.get(ek, "")) for ek in entity_list
+    ]
     ChangeSet.objects.bulk_create(changesets)
     entity_to_cs: dict[EntityKey, ChangeSet] = dict(
         zip(entity_list, changesets, strict=True),

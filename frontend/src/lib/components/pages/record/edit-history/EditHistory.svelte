@@ -137,6 +137,21 @@
   <span class="new-value"><ClaimValue {value} /></span>
 {/snippet}
 
+{#snippet fieldCitations(change: FieldChange)}
+  {#if change.citations && change.citations.length > 0}
+    <dd class="field-citations">
+      <span class="cite-label">Source:</span>
+      {#each change.citations as cite (cite.source_name)}
+        {#if cite.url}
+          <a class="cite-link" href={cite.url} target="_blank">{cite.source_name}</a>
+        {:else}
+          <span class="cite-link">{cite.source_name}</span>
+        {/if}
+      {/each}
+    </dd>
+  {/if}
+{/snippet}
+
 {#snippet revertControls(change: FieldChange)}
   {#if canRevert(change)}
     <div class="revert-cell">
@@ -244,6 +259,7 @@
                       <dt>{change.field_name}</dt>
                       <dd>{@render newValue(change.new_value)}</dd>
                       {@render revertControls(change)}
+                      {@render fieldCitations(change)}
                     </div>
                   {:else if isDeletion(change)}
                     <div class="field-row">
@@ -253,6 +269,7 @@
                         <span class="deleted-marker" aria-label="removed">&#x2715;</span>
                       </dd>
                       {@render revertControls(change)}
+                      {@render fieldCitations(change)}
                     </div>
                   {:else if isDiffable(change)}
                     <div class="field-row field-row-diff">
@@ -264,6 +281,7 @@
                         />
                       </dd>
                       {@render revertControls(change)}
+                      {@render fieldCitations(change)}
                     </div>
                   {:else}
                     <div class="field-row">
@@ -276,6 +294,7 @@
                         {@render newValue(change.new_value)}
                       </dd>
                       {@render revertControls(change)}
+                      {@render fieldCitations(change)}
                     </div>
                   {/if}
                 {/each}
@@ -386,6 +405,29 @@
   .field-row-diff dd {
     flex-basis: 100%;
     display: block;
+  }
+
+  .field-citations {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-1);
+    align-items: baseline;
+    font-size: var(--font-size-00, 0.75rem);
+    color: var(--color-text-muted);
+  }
+
+  .cite-label {
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .cite-link {
+    color: var(--color-text-muted);
+  }
+
+  a.cite-link {
+    color: var(--color-link);
   }
 
   .old-value {

@@ -289,6 +289,54 @@ describe('SearchableSelect', () => {
     expect(screen.getByRole('button', { name: /remove stern pinball/i })).toBeDisabled();
   });
 
+  it('preserves the caller order when showCounts is false (editorial display_order)', async () => {
+    const user = userEvent.setup();
+    // Provided in editorial display_order, deliberately NOT alphabetical.
+    const editorial = [
+      { value: 'produced', label: 'Produced' },
+      { value: 'announced', label: 'Announced' },
+      { value: 'unreleased', label: 'Unreleased' },
+      { value: 'one-off', label: 'One-off' },
+    ];
+    render(SearchableSelect, {
+      options: editorial,
+      label: 'Production status',
+      placeholder: 'Search...',
+      selected: null,
+      showCounts: false,
+      allowZeroCount: true,
+    });
+
+    await user.click(screen.getByRole('combobox', { name: /production status/i }));
+
+    const labels = screen.getAllByRole('option').map((o) => o.textContent?.trim());
+    expect(labels).toEqual(['Produced', 'Announced', 'Unreleased', 'One-off']);
+  });
+
+  it('ranks by count descending (zeros last) when counts are shown', async () => {
+    const user = userEvent.setup();
+    // Shuffled so the result can only be count-desc if the sort ran.
+    const shuffled = [
+      { value: 'bally', label: 'Bally', count: 3 },
+      { value: 'williams', label: 'Williams', count: 0 },
+      { value: 'stern', label: 'Stern Pinball', count: 5 },
+    ];
+    render(SearchableSelect, {
+      options: shuffled,
+      label: 'Manufacturer',
+      placeholder: 'Search...',
+      selected: null,
+      allowZeroCount: true,
+    });
+
+    await user.click(getCombobox());
+
+    const labels = screen.getAllByRole('option').map((o) => o.textContent ?? '');
+    expect(labels[0]).toMatch(/stern/i);
+    expect(labels[1]).toMatch(/bally/i);
+    expect(labels[2]).toMatch(/williams/i);
+  });
+
   it('does not leave queued scroll work behind after keyboard navigation unmounts', async () => {
     vi.useFakeTimers();
     try {

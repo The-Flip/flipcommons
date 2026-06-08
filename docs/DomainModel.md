@@ -24,6 +24,7 @@ erDiagram
     Model }o--|| DisplayType : display
     Model }o--|| System : runs_on
     Model }o--|| Cabinet : form_factor
+    Model }o--|| ProductionStatus : status
     Model }o--o{ Theme : tagged
     Model }o--o{ GameplayFeature : has
 ```
@@ -140,15 +141,24 @@ The original _Medieval Madness_ (1997) runs on Williams WPC-95. The Chicago Gami
 
 ## Taxonomy & Classification
 
-### Technology
+### Technology Generation
 
 - **TechnologyGeneration**: the major technological era — Pure Mechanical, Electromechanical, Solid State.
 - **TechnologySubgeneration**: subdivision within a generation — e.g., Solid State breaks down into Discrete, Integrated, and PC-Based.
 
-### Display
+### Display Type
 
 - **DisplayType**: the display technology — Score Reels, Backglass Lights, Alpha-Numeric, CGA Monitor, Dot Matrix Display, LCD Screen.
 - **DisplaySubtype**: subdivision within a type — e.g., Alpha-Numeric includes Nixie Tube, Seven-Segment, and Sixteen-Segment.
+
+### Production Status
+
+Whether or not a Model reached commercial production. Values:
+
+- _announced_: officially announced but not yet shipped
+- _produced_: commercially produced and sold, even if only in small quantities
+- _unreleased_: a project intended for commercial production, but cancelled. It may have resulted in prototypes or sample runs.
+- _one-off_: one-of-a-kind, never intended for mass production. Created either by a manufacturer or an individual.
 
 ### Other Classifications
 
@@ -161,14 +171,14 @@ The original _Medieval Madness_ (1997) runs on Williams WPC-95. The Chicago Gami
 
 ## Location
 
-**Location** represents geographic places in a self-referential hierarchy with path-based uniqueness. Each Location has a `location_path` encoding its full ancestry (e.g., `usa/il/chicago` for Chicago, Illinois).
+**Location** represents geographic places. Used primarily to track where CorporateEntities were based.
 
-Used primarily to track where CorporateEntities were based.
+Modeled as a nested hierarchy: `usa/il/chicago`.
 
-## Fields Common to All Entities
+## Fields Common to All Catalog Entities
 
 - `name`: human-friendly name
-- `slug`: URL-friendly identifier
+- `public_id`: URL-friendly identifier. Usually maps to a `slug` field, but for Location maps to `location_path` (`usa/il/chicago`).
 - `description`: markdown text
 - `created_at` / `updated_at`: bookkeeping timestamps
 
@@ -179,8 +189,6 @@ Many entities support aliases — alternate names used for matching and search. 
 ### Claims & Provenance
 
 Nearly all fields on catalog entities are claims-controlled — their values are resolved from the provenance system rather than set directly. See [Provenance.md](Provenance.md) for architecture details.
-
----
 
 ## Mapping from External Sources
 

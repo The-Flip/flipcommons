@@ -109,6 +109,16 @@ class ClaimValueSchema(Schema):
     )
 
 
+class FieldChangeCitationSchema(Schema):
+    """A citation attached to a single field change's claim."""
+
+    source_name: str = Field(description="The cited source's display name.")
+    url: str | None = Field(
+        None,
+        description="A link to the cited source, or null when it has no link.",
+    )
+
+
 class FieldChangeSchema(Schema):
     """A single field change within a ChangeSet (old → new)."""
 
@@ -147,6 +157,10 @@ class FieldChangeSchema(Schema):
     )
     is_retracted: bool | None = Field(
         None, description="Whether the claim has been retracted."
+    )
+    citations: list[FieldChangeCitationSchema] = Field(
+        default_factory=list,
+        description="Citations attached to this change's claim (e.g. an IPDB page).",
     )
 
 

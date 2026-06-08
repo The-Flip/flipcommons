@@ -70,7 +70,13 @@
     if (q) {
       opts = opts.filter((o) => normalizeText(o.label).includes(q));
     }
-    // Sort: non-zero counts first (desc), then zero-count; within each group alphabetical
+    // When counts aren't shown, the list carries no popularity signal and the
+    // caller's order is meaningful (e.g. a taxonomy's editorial `display_order`
+    // from the backend) — preserve it. Re-sorting here would silently
+    // alphabetize every editor dropdown.
+    if (!showCounts) return opts;
+    // Count-ranked: non-zero counts first (desc), then zero-count; within each
+    // group alphabetical.
     return opts.slice().sort((a, b) => {
       const ac = a.count ?? 0;
       const bc = b.count ?? 0;
