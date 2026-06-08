@@ -20,6 +20,7 @@ from typing import Any
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import IntegrityError
+from django.utils.termcolors import make_style
 
 from apps.catalog.ingestion.apply import apply_plan
 from apps.catalog.ingestion.patches import (
@@ -35,6 +36,10 @@ from apps.provenance.models import IngestRun, Source
 DEFAULT_PATCHES_DIR = (
     Path(__file__).parents[5] / "data" / "ingest_sources" / "pindata" / "patches"
 )
+
+# Bold black == bright black == gray on most terminals; used to mute the
+# already-applied "skipped" lines so applied (green) patches stand out.
+_MUTED = make_style(fg="black", opts=("bold",))
 
 
 class Command(BaseCommand):
@@ -83,14 +88,17 @@ class Command(BaseCommand):
                 did_apply = self._apply_one(path, patch_id, dry_run=dry_run)
             except (PatchError, IntegrityError) as exc:
                 failed = (patch_id, str(exc))
+                self.stdout.write(self.style.ERROR(f"❌ failed {patch_id}"))
                 break
             if did_apply:
                 applied.append(patch_id)
                 verb = "would apply" if dry_run else "applied"
-                self.stdout.write(self.style.SUCCESS(f"  {verb} {patch_id}"))
+                self.stdout.write(self.style.SUCCESS(f"✓ {verb} {patch_id}"))
             else:
                 skipped.append(patch_id)
-                self.stdout.write(f"  skipped {patch_id} (already applied)")
+                self.stdout.write(
+                    self._muted(f"∅ skipped {patch_id} (already applied)")
+                )
 
         # Invalidate cached endpoint data once, at the command level — the
         # same pattern ingest_all / resolve_claims use (apply_plan does not
@@ -103,6 +111,18 @@ class Command(BaseCommand):
         self._report(applied, skipped, dry_run=dry_run)
         if failed is not None:
             raise CommandError(f"Patch {failed[0]} failed: {failed[1]}")
+
+    def _muted(self, text: str) -> str:
+        """Gray styling for skipped lines; identity when color is disabled.
+
+        ``self.style`` is ``no_style()`` (every role an identity function) when
+        Django turns color off — ``--no-color``, ``DJANGO_COLORS=nocolor`` or a
+        non-TTY stdout. We piggyback on that detection so muted text degrades to
+        plain text in the same cases the built-in styles do.
+        """
+        if self.style.SUCCESS("x") == "x":
+            return text
+        return _MUTED(text)
 
     # ── discovery + pre-flight ────────────────────────────────────────
 
