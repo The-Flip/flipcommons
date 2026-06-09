@@ -582,6 +582,19 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
                     "credits", "credits", "credits__person", "credits__role"
                 ),
             },
+            derived={
+                # corporate_entity is the granular incarnation; this is the
+                # consolidated brand slug (the manufacturer name on the cabinet),
+                # so consumers can key models on the brand without a second hop
+                # through /export/corporate-entities/.
+                "manufacturer": DerivedField(
+                    str | None,
+                    "_export_mfr",
+                    "Consolidated manufacturer slug for this model's "
+                    "corporate entity (the brand on the cabinet).",
+                ),
+            },
+            annotate=_annotate_machine_model,
         ),
         ExportSpec(
             model=Title,
@@ -671,6 +684,15 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
                 relations={**spec.relations, "aliases": _rel("aliases", "strings")},
             )
     return by_model
+
+
+def _annotate_machine_model(qs: QuerySet[Any]) -> QuerySet[Any]:
+    # corporate_entity -> manufacturer -> slug is a plain to-one chain, so a
+    # direct F reference suffices (null when the model has no corporate entity).
+    annotated: QuerySet[Any] = qs.annotate(
+        _export_mfr=models.F("corporate_entity__manufacturer__slug")
+    )
+    return annotated
 
 
 def _annotate_title(qs: QuerySet[Any]) -> QuerySet[Any]:

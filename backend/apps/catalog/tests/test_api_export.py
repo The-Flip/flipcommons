@@ -58,6 +58,14 @@ class TestExportShape:
         assert isinstance(row["themes"], list)
         assert isinstance(row["tags"], list)
 
+    def test_consolidated_manufacturer_slug_on_row(self, client, machine_model):
+        # The model links to the granular corporate entity, but the row also
+        # carries the consolidated brand slug so consumers can key on it without
+        # a second hop through /export/corporate-entities/.
+        row = _row(client, "models", machine_model.slug)
+        assert row["corporate_entity"] == "williams-electronics"
+        assert row["manufacturer"] == "williams"
+
     def test_hidden_fields_never_exported(self, client, machine_model):
         row = _row(client, "models", machine_model.slug)
         for hidden in HIDDEN:
@@ -147,6 +155,8 @@ class TestExportDriftGuard:
             "cabinet",
             "game_format",
             "production_status",
+            # derived: consolidated brand slug (corporate_entity -> manufacturer)
+            "manufacturer",
             # media
             "thumbnail_url",
             "hero_image_url",
