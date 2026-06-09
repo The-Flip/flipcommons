@@ -155,19 +155,65 @@ The original _Medieval Madness_ (1997) runs on Williams WPC-95. The Chicago Gami
 
 Whether or not a Model reached commercial production. Values:
 
-- _announced_: officially announced but not yet shipped
-- _produced_: commercially produced and sold, even if only in small quantities
-- _unreleased_: a project intended for commercial production, but cancelled. It may have resulted in prototypes or sample runs.
-- _one-off_: one-of-a-kind, never intended for mass production. Created either by a manufacturer or an individual.
+- `announced`: officially announced but not yet shipped
+- `produced`: commercially produced and sold, even if only in small quantities
+- `unreleased`: a project intended for commercial production, but cancelled. It may have resulted in prototypes or sample runs.
+- `one-off`: one-of-a-kind or few-of-a-kind, built by a manufacturer but never intended for commercial production — e.g. gifts, movie props and test pieces.
+- `aftermarket`: a machine modified by someone other than the original manufacturer (fan re-themes, operators, modders); not an official commercial release. Usually paired with the `unofficial-retheme` tag.
 
-### Other Classifications
+### Tag
 
-- **Cabinet**: physical form factor — Floor, Tabletop, Countertop, Cocktail.
-- **GameFormat**: the type of game — Pinball, Bagatelle, Shuffle, Pitch and Bat.
-- **RewardType**: reward mechanism — Replay, Add-a-Ball, Novelty, Cash Payout, Ticket Payout, Free Play.
-- **Tag**: classification labels — Home Use, Prototype, Widebody, Remake, Conversion Kit, Export.
-- **Theme**: thematic tags organized in a DAG hierarchy (e.g., "Burlesque" under parent "Adult"). Models can have multiple themes.
-- **GameplayFeature**: gameplay mechanisms organized in a DAG hierarchy (e.g., "2-Ball Multiball" under parent "Multiball", "3-Bank Drop Targets" under "Bank Drop Targets"). The Model-to-GameplayFeature relationship carries an optional count (e.g., Flippers × 2).
+Classification labels that don't fit elsewhere. As related clusters of tags emerge, we may shift the cluster to more structured data, such as creating an entity for an exclusive set of tags:
+
+- `home-use`: designed or marketed for home use rather than commercial coin-op routes.
+- `prototype`: an engineering sample, design proof or pre-production test unit.
+- `widebody`: a wider-than-standard cabinet and playfield.
+- `remake`: a newly manufactured recreation of an earlier title (not a restored original). See [Remakes](#remakes); the `remake_of` link records the lineage.
+- `conversion-kit`: sold as a kit of parts to install into an existing machine, not a complete machine. See [Conversions](#conversions); the `converted_from` link records the source machine.
+- `export`: manufactured for markets outside the United States.
+- `unofficial-retheme`: a re-skin by a non-manufacturer (fan/operator/modder). Paired with the `aftermarket` production status.
+- `manufacturer-retheme`: an official re-theme a manufacturer applied to one of its own designs.
+
+### Cabinet
+
+Form factor of the physical cabinet:
+
+- `floor`: the standard full-sized, free-standing unit with a vertical backbox — what people mean by "pinball machine" without qualification.
+- `tabletop`: a miniaturized unit with reduced backbox and no legs, designed to sit on a table or counter.
+- `countertop`: the smallest coin-op format, light enough for one person to move and designed to sit on a bar or counter.
+- `cocktail`: a horizontal, table-height unit with a flat glass top; players look down onto the playfield while seated.
+
+### GameFormat
+
+The type of game:
+
+- `pinball`: a steel ball launched onto a tilted playfield, scored by hitting targets and — on flipper-era machines — kept alive with player-controlled [flippers](#gameplayfeature).
+- `bagatelle`: balls launched up an inclined surface that fall by gravity into scoring holes and pockets; the direct ancestor of pinball.
+- `shuffle`: a puck or ball slid down a long polished surface toward scoring zones.
+- `pitch-and-bat`: a coin-op baseball game with a mechanical pitch and a player-swung bat.
+- `slot-machine`: a coin-op gambling machine paying out by chance rather than skill.
+- `video-game`: played on a video screen rather than a physical playfield.
+- `gun-game`: a shooting game aiming a mechanical gun or rifle at targets.
+- `miscellaneous`: a catch-all for machines that fit no more specific format.
+
+### RewardType
+
+Reward mechanisms:
+
+- `replay`: a free game awarded for a high score, objective or end-of-game match.
+- `add-a-ball`: an extra ball rather than a free game.
+- `novelty`: no reward; the game is offered purely for amusement.
+- `cash-payout`: coins dispensed directly based on scoring.
+- `ticket-payout`: redeemable paper tickets dispensed based on score.
+- `free-play`: no coin required to start — the absence of the coin-op transaction rather than a reward.
+
+### Theme
+
+Thematic tags organized in a DAG hierarchy (e.g., "Burlesque" under parent "Adult"). Models can have multiple themes.
+
+### GameplayFeature
+
+Gameplay mechanisms organized in a DAG hierarchy (e.g., "2-Ball Multiball" under parent "Multiball", "3-Bank Drop Targets" under "Bank Drop Targets"). The Model-to-GameplayFeature relationship carries an optional count (e.g., Flippers × 2).
 
 ## Location
 

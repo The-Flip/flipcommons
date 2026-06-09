@@ -28,7 +28,6 @@ For setup and common commands, start with the repository [README](../README.md).
 - [Authz.md](Authz.md) authorization activities, policy gates, and capability surfaces.
 - [Provenance.md](Provenance.md) claims, resolution, audit history, provenance invariants.
 - [Media.md](Media.md) media storage, uploads, claims, attachment resolution.
-- [Ingest.md](Ingest.md) external data sources and the ingest pipeline.
 - [Hosting.md](Hosting.md) Railway deployment topology.
 - [Observability.md](Observability.md) Error monitoring and alerting.
 - [Analytics.md](Analytics.md) Analytics setup and privacy posture.
@@ -49,6 +48,13 @@ For setup and common commands, start with the repository [README](../README.md).
 - [Svelte.md](Svelte.md) Svelte 5 authoring conventions and rendering strategy.
 - [DetailLayoutPatterns.md](DetailLayoutPatterns.md) detail-page layout patterns.
 - [TestingFrontend.md](TestingFrontend.md) frontend test tiers and DOM test patterns.
+
+## Working With Data
+
+- [Data.md](Data.md) index for working with catalog data: seed vs patches, where to explore via DuckDB vs correct via YAML patches.
+  - [DataPatches.md](DataPatches.md) numbered, replayable data patches for post-seed catalog corrections.
+    - [DataPatchAuthoring.md](DataPatchAuthoring.md) workflow and `patchkit` helper for large curated patch sets.
+  - [Ingest.md](Ingest.md) external data sources and the ingest pipeline.
 
 ## Testing And Review
 
