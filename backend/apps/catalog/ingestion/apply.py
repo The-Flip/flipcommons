@@ -52,6 +52,19 @@ class ResolveHook(Protocol):
     def __call__(self, *, subject_ids: set[int] | None = None) -> None: ...
 
 
+class PreWriteHook(Protocol):
+    """A side write run first inside the apply transaction, before any claim.
+
+    Registered in ``IngestPlan.pre_write_hooks`` and handed the run's
+    ``RunReport`` so it can append warnings and bump audit counters. Today only
+    the data-patch adapter uses it (to additively get-or-create citation sources
+    a patch's ``sources:`` block declares); the apply layer stays source-agnostic
+    by treating the hook as opaque.
+    """
+
+    def __call__(self, report: RunReport) -> None: ...
+
+
 class RetractEntry(NamedTuple):
     """An active claim targeted for retraction."""
 
@@ -193,6 +206,9 @@ class IngestPlan:
     records_parsed: int = 0
     records_matched: int = 0
     resolve_hooks: dict[int, list[ResolveHook]] = field(default_factory=dict)
+    # Side writes run first inside the apply transaction (before any entity
+    # create), each handed the RunReport. Patch-only: citation source upserts.
+    pre_write_hooks: list[PreWriteHook] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     # Patch runs only: the NNNN-slug filename stem (the applied-ledger key)
     # and the patch's description (copied to ``IngestRun.note``). Null/empty
@@ -211,6 +227,12 @@ class RunReport:
     superseded: int = 0
     retracted: int = 0
     rejected: int = 0
+    # Citation-source side writes from a patch's ``sources:`` block (pre-write
+    # hook). Tracked apart from ``records_created`` (catalog entities) so a
+    # sources-only or link-only patch isn't audited as having done nothing.
+    sources_created: int = 0
+    sources_skipped: int = 0
+    source_links_created: int = 0
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -249,6 +271,13 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
 
     try:
         with transaction.atomic():
+            # Pre-write hooks run first so anything they create (e.g. a citation
+            # source root) is visible to the rest of the transaction — notably to
+            # _attach_plan_citations resolving a same-patch cite: URL. They bump
+            # report counters / warnings directly.
+            for hook in plan.pre_write_hooks:
+                hook(report)
+
             handle_map = _create_entities(plan.entities)
             report.records_created = len(plan.entities)
 
@@ -287,6 +316,8 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             run.records_created = report.records_created
             run.claims_asserted = report.asserted
             run.claims_retracted = report.retracted
+            run.citation_sources_created = report.sources_created
+            run.citation_source_links_created = report.source_links_created
             run.warnings = report.warnings
             run.finished_at = timezone.now()
             run.save(
@@ -297,6 +328,8 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
                     "records_created",
                     "claims_asserted",
                     "claims_retracted",
+                    "citation_sources_created",
+                    "citation_source_links_created",
                     "warnings",
                     "finished_at",
                 ],

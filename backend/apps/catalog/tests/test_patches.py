@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,8 @@ from apps.catalog.ingestion.patches import (
     parse_patch_text,
 )
 from apps.catalog.models import CorporateEntity, Location, Manufacturer, Tag
-from apps.provenance.models import ChangeSet, Claim, IngestRun, Source
+from apps.citation.models import CitationSource, CitationSourceLink
+from apps.provenance.models import ChangeSet, CitationInstance, Claim, IngestRun, Source
 
 pytestmark = pytest.mark.django_db
 
@@ -884,3 +886,307 @@ def test_command_invalid_claim_value_reported(tmp_path, stern_entity):
     assert not IngestRun.objects.filter(
         patch_id="0001-bad", status=IngestRun.Status.SUCCESS
     ).exists()
+
+
+# ── Citation sources (the `sources:` block) ────────────────────────
+
+
+_WIKIPEDIA = """
+attribution: flip-museum
+sources:
+  - name: Wikipedia
+    source_type: web
+    description: Free collaborative encyclopedia.
+    links:
+      - { url: "https://en.wikipedia.org/", label: Wikipedia, link_type: homepage }
+"""
+
+
+# -- Parsing / shape --
+
+
+def test_sources_block_parsed():
+    doc = load_patch(_WIKIPEDIA)
+    assert len(doc.sources) == 1
+    assert doc.sources[0]["name"] == "Wikipedia"
+    assert doc.claims == []
+
+
+def test_sources_only_patch_is_valid_and_applies():
+    report = _apply(_WIKIPEDIA, patch_id="0001-wiki")
+    assert report.sources_created == 1
+    assert report.source_links_created == 1
+    src = CitationSource.objects.get(name="Wikipedia", source_type="web")
+    assert src.parent_id is None
+    assert CitationSourceLink.objects.filter(
+        citation_source=src, url="https://en.wikipedia.org/", link_type="homepage"
+    ).exists()
+
+
+def test_empty_patch_rejected():
+    with pytest.raises(PatchError, match="non-empty"):
+        load_patch("attribution: flip-museum\nclaims: []\n")
+
+
+def test_sources_missing_name_rejected():
+    with pytest.raises(PatchError, match="'name' is required"):
+        load_patch("attribution: flip-museum\nsources:\n  - source_type: web\n")
+
+
+def test_sources_unknown_key_rejected():
+    text = (
+        "attribution: flip-museum\n"
+        "sources:\n"
+        "  - name: X\n"
+        "    source_type: web\n"
+        "    descriptoin: typo\n"
+    )
+    with pytest.raises(PatchError, match="unknown key"):
+        load_patch(text)
+
+
+def test_sources_children_rejected():
+    text = (
+        "attribution: flip-museum\n"
+        "sources:\n"
+        "  - name: X\n"
+        "    source_type: web\n"
+        "    children: []\n"
+    )
+    with pytest.raises(PatchError, match="children"):
+        load_patch(text)
+
+
+def test_sources_link_missing_url_rejected():
+    text = (
+        "attribution: flip-museum\n"
+        "sources:\n"
+        "  - name: X\n"
+        "    source_type: web\n"
+        "    links:\n"
+        "      - { link_type: homepage }\n"
+    )
+    with pytest.raises(PatchError, match="'url' is required"):
+        load_patch(text)
+
+
+# -- Read-phase semantic validation (caught at build/dry-run) --
+
+
+def _bad_source(node_body: str) -> str:
+    return f"attribution: flip-museum\nsources:\n  - {node_body}\n"
+
+
+@pytest.mark.parametrize(
+    ("node_body", "match"),
+    [
+        ("name: X\n    source_type: blog", "source_type"),
+        ("name: X\n    source_type: web\n    year: 9999", "year"),
+        (
+            "name: X\n    source_type: web\n"
+            "    links:\n      - { url: not-a-url, link_type: homepage }",
+            "url",
+        ),
+        (
+            "name: X\n    source_type: web\n"
+            "    links:\n      - { url: 'https://a.test/', link_type: bogus }",
+            "link_type",
+        ),
+    ],
+)
+def test_sources_semantic_invalidity_rejected(node_body, match):
+    with pytest.raises(PatchError, match=match):
+        _apply(_bad_source(node_body), patch_id="0001-bad-src")
+
+
+def test_sources_duplicate_declared_link_url_rejected():
+    text = (
+        "attribution: flip-museum\n"
+        "sources:\n"
+        "  - name: X\n"
+        "    source_type: web\n"
+        "    links:\n"
+        "      - { url: 'https://a.test/', link_type: homepage }\n"
+        "      - { url: 'https://a.test/', link_type: reference }\n"
+    )
+    with pytest.raises(PatchError, match="duplicate declared link"):
+        _apply(text, patch_id="0001-dup-link")
+
+
+def test_sources_semantic_invalidity_caught_at_dry_run():
+    # The whole point of read-phase validation: a bad value fails before any
+    # write, so --dry-run surfaces it on localhost before shipping.
+    with pytest.raises(PatchError, match="source_type"):
+        _apply(_bad_source("name: X\n    source_type: blog"), dry_run=True)
+
+
+# -- Apply behaviour: additive get-or-create --
+
+
+_MULTI_LINK = """
+attribution: flip-museum
+sources:
+  - name: Wikipedia
+    source_type: web
+    links:
+      - { url: "https://en.wikipedia.org/", label: Wikipedia, link_type: homepage }
+      - { url: "https://de.wikipedia.org/", label: "Wikipedia (Deutsch)", link_type: homepage }
+"""
+
+
+def test_sources_multi_link_node_creates_all_links():
+    report = _apply(_MULTI_LINK, patch_id="0001-multi")
+    assert report.sources_created == 1
+    assert report.source_links_created == 2
+    src = CitationSource.objects.get(name="Wikipedia", source_type="web")
+    urls = set(src.links.values_list("url", flat=True))
+    assert urls == {"https://en.wikipedia.org/", "https://de.wikipedia.org/"}
+
+
+def test_sources_reapply_identical_is_noop():
+    _apply(_WIKIPEDIA, patch_id="0001-a")
+    report = _apply(_WIKIPEDIA, patch_id="0001-b")
+    assert report.sources_created == 0
+    assert report.sources_skipped == 1
+    assert report.source_links_created == 0
+    assert CitationSource.objects.filter(name="Wikipedia").count() == 1
+
+
+def test_sources_preexisting_user_source_left_untouched():
+    # A user-created collision must never fail or be overwritten.
+    user = CitationSource.objects.create(
+        name="Wikipedia", source_type="web", description="user wrote this"
+    )
+    CitationSourceLink.objects.create(
+        citation_source=user,
+        url="https://en.wikipedia.org/",
+        label="Wikipedia",
+        link_type="homepage",
+    )
+    report = _apply(_WIKIPEDIA, patch_id="0001-collide")
+    assert report.sources_created == 0
+    assert report.sources_skipped == 1
+    user.refresh_from_db()
+    assert user.description == "user wrote this"  # patch did not overwrite
+    assert any("differ" in w for w in report.warnings)
+
+
+def test_sources_missing_link_backfilled_additively():
+    # A bare existing root gets its declared homepage link added (additive).
+    CitationSource.objects.create(name="Wikipedia", source_type="web")
+    report = _apply(_WIKIPEDIA, patch_id="0001-backfill")
+    assert report.sources_created == 0
+    assert report.source_links_created == 1
+    src = CitationSource.objects.get(name="Wikipedia")
+    assert src.links.filter(url="https://en.wikipedia.org/").exists()
+
+
+def test_sources_divergent_existing_link_left_and_warned():
+    src = CitationSource.objects.create(name="Wikipedia", source_type="web")
+    CitationSourceLink.objects.create(
+        citation_source=src,
+        url="https://en.wikipedia.org/",
+        label="Different label",
+        link_type="reference",
+    )
+    report = _apply(_WIKIPEDIA, patch_id="0001-link-diff")
+    assert report.source_links_created == 0
+    link = src.links.get(url="https://en.wikipedia.org/")
+    assert link.label == "Different label"  # left as-is
+    assert link.link_type == "reference"
+    assert any("different type/label" in w for w in report.warnings)
+
+
+def test_sources_ambiguous_match_uses_first_and_warns():
+    CitationSource.objects.create(name="Wikipedia", source_type="web")
+    CitationSource.objects.create(name="Wikipedia", source_type="web")
+    report = _apply(_WIKIPEDIA, patch_id="0001-ambig")
+    assert report.sources_created == 0
+    assert any("matched 2 rows" in w for w in report.warnings)
+    assert CitationSource.objects.filter(name="Wikipedia").count() == 2  # no new row
+
+
+def test_sources_same_named_child_does_not_shadow_root():
+    # A child sharing (name, source_type) with the declared root must NOT be
+    # adopted: the patch creates the parentless root so later cites can nest
+    # (recognize_url only sees homepage links on parentless sources).
+    farm = CitationSource.objects.create(name="Wiki Farm", source_type="web")
+    child = CitationSource.objects.create(
+        name="Wikipedia", source_type="web", parent=farm
+    )
+    report = _apply(_WIKIPEDIA, patch_id="0001-no-shadow")
+    assert report.sources_created == 1
+    root = CitationSource.objects.get(
+        name="Wikipedia", source_type="web", parent__isnull=True
+    )
+    assert root.pk != child.pk
+    assert root.links.filter(url="https://en.wikipedia.org/").exists()
+    assert not child.links.exists()  # child left untouched
+
+
+def test_sources_existing_row_passes_read_phase_validation():
+    # Guards the validate_unique=False / exclude=citation_source exclusions:
+    # a node matching an existing row + an in-memory link must NOT false-reject.
+    src = CitationSource.objects.create(name="Wikipedia", source_type="web")
+    CitationSourceLink.objects.create(
+        citation_source=src,
+        url="https://en.wikipedia.org/",
+        label="Wikipedia",
+        link_type="homepage",
+    )
+    report = _apply(_WIKIPEDIA, patch_id="0001-revalidate")
+    assert report.sources_skipped == 1  # validated + no-op, no PatchError
+
+
+# -- Anti-wedge: a sources root makes a later cite resolve --
+
+
+def test_sources_root_then_cite_nests_no_wedge(machine_model):
+    # The headline scenario: create the Wikipedia root, then cite a wikipedia.org
+    # page in the same patch. The hook runs first, so the cite recognizes the
+    # domain and nests under the root instead of raising.
+    text = f"""
+attribution: flip-museum
+sources:
+  - name: Wikipedia
+    source_type: web
+    links:
+      - {{ url: "https://en.wikipedia.org/", label: Wikipedia, link_type: homepage }}
+claims:
+  - model.{machine_model.slug}:
+      year: 1990
+      cite: https://en.wikipedia.org/wiki/Pinball
+"""
+    report = _apply(text, patch_id="0001-root-cite")
+    assert report.rejected == 0
+    root = CitationSource.objects.get(name="Wikipedia", source_type="web")
+    inst = CitationInstance.objects.get()
+    assert inst.citation_source.parent_id == root.pk
+
+
+# -- Audit counters --
+
+
+def test_sources_only_run_audit_not_zero():
+    _apply(_WIKIPEDIA, patch_id="0001-audit")
+    run = IngestRun.objects.get(patch_id="0001-audit")
+    assert run.status == IngestRun.Status.SUCCESS
+    assert run.citation_sources_created == 1
+    assert run.citation_source_links_created == 1
+
+
+def test_link_only_backfill_audit_not_zero():
+    CitationSource.objects.create(name="Wikipedia", source_type="web")
+    _apply(_WIKIPEDIA, patch_id="0001-link-audit")
+    run = IngestRun.objects.get(patch_id="0001-link-audit")
+    assert run.status == IngestRun.Status.SUCCESS
+    assert run.citation_sources_created == 0
+    assert run.citation_source_links_created == 1
+
+
+def test_command_reports_citation_sources(tmp_path):
+    _write(tmp_path, "0001-wiki.yaml", _WIKIPEDIA)
+    out = StringIO()
+    call_command("ingest_patches", "--patches-dir", str(tmp_path), stdout=out)
+    assert "citation sources: 1 created, 1 links added" in out.getvalue()
+    assert CitationSource.objects.filter(name="Wikipedia").exists()

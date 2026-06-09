@@ -72,6 +72,11 @@ class IngestRun(models.Model):
     claims_asserted = models.PositiveIntegerField(db_default=0)
     claims_retracted = models.PositiveIntegerField(db_default=0)
     claims_rejected = models.PositiveIntegerField(db_default=0)
+    # Citation-source side writes from a data patch's ``sources:`` block. Counted
+    # apart from records_created (catalog entities) so a sources-only or link-only
+    # patch isn't audited as 0/0. Always 0 for normal ingests and claim patches.
+    citation_sources_created = models.PositiveIntegerField(db_default=0)
+    citation_source_links_created = models.PositiveIntegerField(db_default=0)
 
     warnings = models.JSONField(
         default=list,

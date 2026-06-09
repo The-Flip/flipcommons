@@ -17,12 +17,13 @@ import math
 import re
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import NamedTuple
+from dataclasses import dataclass, field
+from typing import NamedTuple, cast
 from urllib.parse import urlparse
 
 import yaml
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.catalog.claims import build_relationship_claim, get_relationship_namespaces
@@ -32,6 +33,8 @@ from apps.catalog.ingestion.apply import (
     PlannedClaimAssert,
     PlannedClaimRetract,
     PlannedEntityCreate,
+    PreWriteHook,
+    RunReport,
 )
 from apps.catalog.models import CatalogModel
 from apps.catalog.resolve import resolve_relationships_bulk
@@ -40,6 +43,8 @@ from apps.citation.models import (
     CITATION_SOURCE_IDENTIFIER_MAX_LENGTH,
     CITATION_SOURCE_LINK_URL_MAX_LENGTH,
 )
+from apps.citation.seed_data.types import SeedLink, SeedSource
+from apps.citation.seeding import ensure_root_source, validate_root_source
 from apps.core.entity_types import get_linkable_model
 from apps.core.types import JsonBody
 from apps.provenance.models import Source, get_claim_fields
@@ -50,6 +55,11 @@ PATCH_ID_RE = re.compile(r"^\d{4}-[a-z0-9-]+$")
 
 # Keys in a claim entry's value mapping that are directives, not claim fields.
 RESERVED_FIELD_KEYS = frozenset({"create", "expect", "retract", "note", "cite"})
+
+# Allowed keys in a `sources:` node / its links, derived from the seed TypedDicts
+# (the single source of truth). `children` is excluded — v1 sources are flat.
+ALLOWED_SOURCE_KEYS = frozenset(SeedSource.__annotations__) - {"children"}
+ALLOWED_LINK_KEYS = frozenset(SeedLink.__annotations__)
 
 
 class PatchError(Exception):
@@ -209,6 +219,54 @@ class PatchDoc:
     description: str
     claims: list[PatchClaim]
     fingerprint: str
+    # Non-claim citation-source upserts (the `sources:` block). Empty for a
+    # claims-only patch. Shape-validated here; field-validated in build_plan.
+    sources: list[SeedSource] = field(default_factory=list)
+
+
+def _parse_link_shape(link: object, where: str) -> None:
+    """Validate one `sources:` link mapping's shape (not its field values)."""
+    if not isinstance(link, dict):
+        raise PatchError(f"{where} must be a mapping")
+    unknown = set(link) - ALLOWED_LINK_KEYS
+    if unknown:
+        raise PatchError(f"{where}: unknown key(s) {sorted(unknown)}")
+    for key in ("url", "link_type"):
+        value = link.get(key)
+        if not isinstance(value, str) or not value:
+            raise PatchError(f"{where}: {key!r} is required and must be a string")
+    if not isinstance(link.get("label", ""), str):
+        raise PatchError(f"{where}: 'label' must be a string")
+
+
+def _parse_source_node(entry: object, where: str) -> SeedSource:
+    """Validate one `sources:` node's shape and return it as a SeedSource.
+
+    Shape only — required keys, no unknown keys, `children` rejected (v1 is
+    flat), link mappings well-formed. Field *values* (enum, ranges, URL format)
+    are validated against the model in build_plan's read phase.
+    """
+    if not isinstance(entry, dict):
+        raise PatchError(f"{where} must be a mapping")
+    if "children" in entry:
+        raise PatchError(
+            f"{where}: nested 'children' is unsupported — v1 `sources:` is flat "
+            f"(create child sources via 'cite:' instead)"
+        )
+    unknown = set(entry) - ALLOWED_SOURCE_KEYS
+    if unknown:
+        raise PatchError(f"{where}: unknown key(s) {sorted(unknown)}")
+    for key in ("name", "source_type"):
+        value = entry.get(key)
+        if not isinstance(value, str) or not value:
+            raise PatchError(f"{where}: {key!r} is required and must be a string")
+    raw_links = entry.get("links", [])
+    if not isinstance(raw_links, list):
+        raise PatchError(f"{where}: 'links' must be a list")
+    for j, link in enumerate(raw_links):
+        _parse_link_shape(link, f"{where}.links[{j}]")
+    # Shape-validated above; narrow the JSON dict to the seed TypedDict.
+    return cast(SeedSource, entry)
 
 
 def load_patch(text: str) -> PatchDoc:
@@ -224,9 +282,19 @@ def load_patch(text: str) -> PatchDoc:
     if not isinstance(description, str):
         raise PatchError("'description' must be a string")
 
-    raw_claims = data.get("claims")
-    if not isinstance(raw_claims, list) or not raw_claims:
-        raise PatchError("'claims' is required and must be a non-empty list")
+    raw_claims = data.get("claims", [])
+    if not isinstance(raw_claims, list):
+        raise PatchError("'claims' must be a list")
+    raw_sources = data.get("sources", [])
+    if not isinstance(raw_sources, list):
+        raise PatchError("'sources' must be a list")
+    if not raw_claims and not raw_sources:
+        raise PatchError("a patch must carry a non-empty 'claims' or 'sources'")
+
+    sources = [
+        _parse_source_node(entry, f"sources[{i}]")
+        for i, entry in enumerate(raw_sources)
+    ]
 
     claims: list[PatchClaim] = []
     for i, entry in enumerate(raw_claims):
@@ -282,6 +350,7 @@ def load_patch(text: str) -> PatchDoc:
         description=description,
         claims=claims,
         fingerprint=fp,
+        sources=sources,
     )
 
 
@@ -521,7 +590,62 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
             _make_resolve_hook(rel_model, sorted(field_names))
         )
 
+    _plan_citation_sources(plan, doc.sources)
+
     return plan
+
+
+def _plan_citation_sources(plan: IngestPlan, sources: list[SeedSource]) -> None:
+    """Validate `sources:` nodes (read phase) and register the upsert hook.
+
+    Field-validates each node now — so a bad ``source_type``/date/URL fails as a
+    clean :class:`PatchError` at ``--dry-run`` rather than mid-transaction — then
+    appends a pre-write hook that additively get-or-creates the sources when the
+    plan is applied. The upsert itself never errors on a collision (see
+    ``ensure_root_source``); only author-controllable shape/value errors raise.
+    """
+    if not sources:
+        return
+    for i, node in enumerate(sources):
+        try:
+            validate_root_source(node)
+        except ValidationError as exc:
+            raise PatchError(
+                f"sources[{i}] ({node['name']!r}): {_format_validation_error(exc)}"
+            ) from exc
+    plan.pre_write_hooks.append(_make_sources_hook(sources))
+
+
+def _format_validation_error(exc: ValidationError) -> str:
+    """Render a model ``ValidationError`` field-first (so the bad field is named)."""
+    try:
+        message_dict = exc.message_dict
+    except AttributeError:
+        return "; ".join(exc.messages)
+    return "; ".join(
+        f"{field}: {' '.join(messages)}" for field, messages in message_dict.items()
+    )
+
+
+def _make_sources_hook(sources: list[SeedSource]) -> PreWriteHook:
+    """Build the pre-write hook that upserts a patch's citation sources.
+
+    The closure owns the catalog-side accounting: ``ensure_root_source`` is
+    source-agnostic (plain ``list[str]`` sink + a result tuple), and the hook
+    folds its result into the ``RunReport`` — keeping the catalog ``RunReport``
+    type out of the citation app.
+    """
+
+    def hook(report: RunReport) -> None:
+        for node in sources:
+            result = ensure_root_source(node, warnings=report.warnings)
+            if result.source_created:
+                report.sources_created += 1
+            else:
+                report.sources_skipped += 1
+            report.source_links_created += result.links_created
+
+    return hook
 
 
 def _resolve_model_class(pc: PatchClaim) -> type[CatalogModel]:
