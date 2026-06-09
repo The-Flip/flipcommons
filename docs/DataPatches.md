@@ -42,6 +42,19 @@ claims:
       manufacturer: western-products # FK → public_id; supersedes this source's prior claim
 ```
 
+Creating a **Location** is the one create whose public id is _derived_ rather than authored: `location_path` is built from `parent` + `slug`. Write `slug` and `parent` as ordinary claims; the adapter takes the path from the entity reference, never claims it, and verifies it composes from `parent + slug` (a mismatch is an error). The `parent` must already exist (an earlier patch or the seed) — a parent created in the same patch isn't resolvable yet. Omit `parent` for a root (country).
+
+```yaml
+attribution: flip-museum
+claims:
+  - location.usa/tx/paris: # location_path = parent + slug
+      create: true
+      name: Paris
+      slug: paris # the claim-based form input
+      parent: usa/tx # FK by location_path; must already exist
+      location_type: city
+```
+
 Retract, attributed to the source whose claim it removes:
 
 ```yaml
@@ -139,6 +152,5 @@ On localhost, the simplest undo is restoring a pre-apply snapshot (see [Iteratin
 We've been building the patch system on an as-needed basis. These haven't been needed yet.
 
 - **No entity delete** — distinct from a claim retract; the status=deleted lifecycle.
-- **Location isn't a supported entity**. Create requires a **claim-based public id** (`slug`). Entities with a system-generated id — e.g. `Location`, whose `location_path` is derived — can't be created via a patch.
 - `expect:` and `retract:` only cover scalar + FK, not relationships.
 - Same-patch references resolve for **FK fields only**: an FK can point at an entity created earlier in the same patch, but a relationship member (e.g. `tag:`) must already exist in the DB.

@@ -622,7 +622,7 @@ def _add_create(
     *,
     note: str = "",
 ) -> None:
-    """Emit a ``PlannedEntityCreate`` plus its required slug/status claims.
+    """Emit a ``PlannedEntityCreate`` plus its required identity/status claims.
 
     The author writes only the authored fields; the adapter supplies the
     public_id (from the entry key) and ``status='active'``, and feeds every
@@ -630,34 +630,56 @@ def _add_create(
     assertion (the engine's create contract). Authored field assertions are
     emitted by the caller's field loop.
 
-    ``note`` rides the adapter-owned slug/status assertions so a create-only
-    entry's note still reaches its ChangeSet. A ``cite:`` deliberately does
-    *not* — the derived slug and the record-lifecycle status aren't sourced
-    facts; the citation rides the authored field claims (the field loop) only.
+    Two identity shapes, distinguished model-drivenly by whether the public id
+    *is* the form field:
+
+    * **public id is the form field** (``slug`` for most entities) — the
+      author never writes it; the adapter takes it from the entity reference
+      and emits its claim here.
+    * **public id is derived** (Location: ``location_path`` from parent +
+      slug) — the author writes the form field (``slug``) and parent as normal
+      claims; the adapter takes the derived public id from the reference, never
+      claims it (it isn't claim-controlled), and verifies it composes from the
+      authored claims via ``model_class.compose_public_id``.
+
+    ``note`` rides the adapter-owned identity/status assertions so a
+    create-only entry's note still reaches its ChangeSet. A ``cite:``
+    deliberately does *not* ride the adapter-owned ones — the slug and the
+    record-lifecycle status aren't sourced facts; the citation rides the
+    authored field claims (the field loop) only.
     """
     pid_field = model_class.public_id_field
+    form_field = model_class.public_id_form_field or pid_field
     claim_fields = get_claim_fields(model_class)
-    # Can't create an entity whose public identity is system-generated rather
-    # than claim-based (e.g. Location.location_path, derived from parent +
-    # slug): there's no claim to assert it and its value can't come from the
-    # entity reference. Reject here rather than fail deep in claim validation.
-    # Model-driven: the test is "is public_id_field claim-controlled?", not a
-    # hardcoded entity check.
-    if pid_field not in claim_fields:
+    derived_id = form_field != pid_field
+    # The author's claim-based identity is the *form field*. For most entities
+    # it *is* the public id (slug); for a derived public id it differs
+    # (Location: slug → location_path). Either way it must be claim-controlled,
+    # or the entity has no claimable identity and can't be created via a patch.
+    if form_field not in claim_fields:
         raise PatchError(
             f"{pc.ref}: creating a {pc.entity_type} is not supported — its "
             f"public id ({pid_field}) is system-generated, not claim-based"
         )
-    # These are adapter-owned on a create: the public_id comes from the entity
+    # Adapter-owned on a create: the public_id_field comes from the entity
     # reference and status is always 'active'. Authoring them would either
-    # spawn an entity that doesn't match its reference (a different slug) or
-    # trip the engine's create contract (status must be 'active'), so reject.
+    # spawn an entity that doesn't match its reference or trip the engine's
+    # create contract (status must be 'active'), so reject. The form field
+    # itself (slug) stays author-writable on a derived create — only the
+    # derived public id field is off-limits.
     adapter_owned = {pid_field, "status"} & pc.fields.keys()
     if adapter_owned:
         raise PatchError(
             f"{pc.ref}: do not set {', '.join(sorted(adapter_owned))} on a create "
             f"— the public_id comes from the entity reference and status is "
             f"always 'active'"
+        )
+    # A derived public id is composed from the form field, so the author must
+    # supply it (the reference can't stand in for it the way it does for slug).
+    if derived_id and form_field not in pc.fields:
+        raise PatchError(
+            f"{pc.ref}: creating a {pc.entity_type} requires {form_field!r} "
+            f"(its public id {pid_field!r} is derived from it)"
         )
     kwargs: dict[str, object] = {pid_field: pc.public_id, "status": "active"}
 
@@ -680,15 +702,30 @@ def _add_create(
         else:
             kwargs[key] = value
 
+    # Derived public id: the reference must equal what the authored claims
+    # compose to, so a path that disagrees with its parent + slug fails loudly
+    # instead of creating an internally inconsistent row.
+    if derived_id:
+        composed = model_class.compose_public_id(pc.fields)
+        if composed != pc.public_id:
+            raise PatchError(
+                f"{pc.ref}: reference public id {pc.public_id!r} does not match "
+                f"the {pid_field} composed from the claims ({composed!r})"
+            )
+
     plan.entities.append(
         PlannedEntityCreate(model_class=model_class, kwargs=kwargs, handle=handle)
     )
-    # slug + status are not in pc.fields, so emit their assertions here.
-    plan.assertions.append(
-        PlannedClaimAssert(
-            field_name=pid_field, value=pc.public_id, handle=handle, note=note
+    # The public-id claim is adapter-owned only when the public id *is* a claim
+    # field (slug, absent from pc.fields) — emit it here. For a derived public
+    # id the form field (slug) is a normal authored claim emitted by the
+    # caller's field loop, and the derived field itself carries no claim.
+    if pid_field in claim_fields:
+        plan.assertions.append(
+            PlannedClaimAssert(
+                field_name=pid_field, value=pc.public_id, handle=handle, note=note
+            )
         )
-    )
     plan.assertions.append(
         PlannedClaimAssert(
             field_name="status", value="active", handle=handle, note=note

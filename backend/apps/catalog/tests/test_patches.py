@@ -18,7 +18,7 @@ from apps.catalog.ingestion.patches import (
     load_patch,
     parse_patch_text,
 )
-from apps.catalog.models import CorporateEntity, Manufacturer, Tag
+from apps.catalog.models import CorporateEntity, Location, Manufacturer, Tag
 from apps.provenance.models import ChangeSet, Claim, IngestRun, Source
 
 pytestmark = pytest.mark.django_db
@@ -190,18 +190,111 @@ claims:
         _apply(text)
 
 
-def test_create_rejected_for_system_generated_public_id():
-    # Location.location_path is derived (parent path + leaf slug), not a claim,
-    # so a Location can't be created via a patch — clear error, not a confusing
-    # validation failure deep in apply_plan.
+def _country(path: str, name: str) -> Location:
+    return Location.objects.create(
+        location_path=path, slug=path, name=name, location_type="country"
+    )
+
+
+def test_create_location():
+    # Location.location_path is derived from parent + slug; the author writes
+    # the slug + parent claims and the adapter composes the path from them,
+    # verifying it against the entity reference.
+    usa = _country("usa", "USA")
+    Location.objects.create(
+        location_path="usa/tx",
+        slug="tx",
+        name="Texas",
+        location_type="state",
+        parent=usa,
+    )
     text = """
 attribution: flip-museum
 claims:
-  - location.usa/tx/nowhere:
+  - location.usa/tx/paris:
       create: true
-      name: Nowhere
+      name: Paris
+      slug: paris
+      parent: usa/tx
+      location_type: city
 """
-    with pytest.raises(PatchError, match="system-generated"):
+    report = _apply(text, patch_id="0001-paris")
+    assert report.records_created == 1
+
+    loc = Location.objects.get(location_path="usa/tx/paris")
+    assert loc.slug == "paris"
+    assert loc.name == "Paris"
+    assert loc.location_type == "city"
+    assert loc.parent is not None
+    assert loc.parent.location_path == "usa/tx"
+    # Claims back the author-written fields; location_path is system-derived,
+    # so it carries no claim.
+    keys = set(loc.claims.filter(is_active=True).values_list("field_name", flat=True))
+    assert {"slug", "name", "parent", "status"} <= keys
+    assert "location_path" not in keys
+
+
+def test_create_location_at_root():
+    text = """
+attribution: flip-museum
+claims:
+  - location.france:
+      create: true
+      name: France
+      slug: france
+      location_type: country
+"""
+    report = _apply(text, patch_id="0001-france")
+    assert report.records_created == 1
+    loc = Location.objects.get(location_path="france")
+    assert loc.parent_id is None
+    assert loc.slug == "france"
+
+
+def test_create_location_path_mismatch_rejected():
+    # Reference says usa/tx/paris but parent=usa + slug=paris composes to
+    # usa/paris — a disagreement that would create an inconsistent row.
+    _country("usa", "USA")
+    text = """
+attribution: flip-museum
+claims:
+  - location.usa/tx/paris:
+      create: true
+      name: Paris
+      slug: paris
+      parent: usa
+"""
+    with pytest.raises(PatchError, match="does not match"):
+        _apply(text)
+
+
+def test_create_location_requires_slug():
+    _country("usa", "USA")
+    text = """
+attribution: flip-museum
+claims:
+  - location.usa/paris:
+      create: true
+      name: Paris
+      parent: usa
+"""
+    with pytest.raises(PatchError, match="requires 'slug'"):
+        _apply(text)
+
+
+def test_create_location_rejects_authored_location_path():
+    _country("usa", "USA")
+    text = """
+attribution: flip-museum
+claims:
+  - location.usa/paris:
+      create: true
+      name: Paris
+      slug: paris
+      parent: usa
+      location_path: usa/paris
+"""
+    with pytest.raises(PatchError, match="do not set"):
         _apply(text)
 
 

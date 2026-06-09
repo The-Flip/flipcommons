@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import ClassVar
 
 from django.db import models
@@ -141,6 +142,19 @@ class Location(CatalogModel, TimeStampedModel):
 
     def __str__(self) -> str:
         return self.name or self.location_path
+
+    @classmethod
+    def compose_public_id(cls, authored_fields: Mapping[str, object]) -> str:
+        """Compose ``location_path`` from a create's authored ``slug`` + ``parent``.
+
+        The single home of the ``parent_path + "/" + slug`` formula: the patch
+        create path calls this to verify the entity reference, and the write
+        API reaches it through :func:`compute_location_path`. Top-level
+        countries have no parent, so the path is just the slug.
+        """
+        slug = str(authored_fields["slug"])
+        parent_path = authored_fields.get("parent")
+        return slug if not parent_path else f"{parent_path}/{slug}"
 
 
 class LocationAlias(AliasModel, TimeStampedModel):
