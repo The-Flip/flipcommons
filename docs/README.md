@@ -27,6 +27,7 @@ For setup and common commands, start with the repository [README](../README.md).
 - [ApiDesign.md](ApiDesign.md) endpoint design and schema design heuristics.
 - [Authz.md](Authz.md) authorization activities, policy gates, and capability surfaces.
 - [Provenance.md](Provenance.md) claims, resolution, audit history, provenance invariants.
+- [Citations.md](Citations.md) backing up claims with evidence.
 - [Media.md](Media.md) media storage, uploads, claims, attachment resolution.
 - [Hosting.md](Hosting.md) Railway deployment topology.
 - [Observability.md](Observability.md) Error monitoring and alerting.

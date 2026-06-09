@@ -85,6 +85,44 @@ Two rules tie note/cite to the single changeset an entry produces:
 
 **Strict parsing:** duplicate keys error, and values must be JSON-shaped — YAML coercion is off, so a bare `1996-01-01` stays a string and `no` stays `"no"`. A `note:` containing `"` needs YAML quoting (single-quote the value, as above).
 
+## Citation sources
+
+A patch can also create **citation sources** — the reference works (`ipdb`, `pinside`, a manufacturer's site) that `cite:` points at — via a top-level `sources:` block. Use it to add a new web/book/magazine root without editing the seed file. Unlike claims, a source is _not attributed_ and carries no provenance; `attribution:` still names the source that owns the run's ledger entry, not the citation sources.
+
+```yaml
+attribution: flipcommons-catalog # owns the IngestRun; does NOT attribute the sources
+sources: # processed before claims, so a cite: below can nest under a root created here
+  - name: Wikipedia
+    source_type: web # book | magazine | web
+    description: Free collaborative encyclopedia.
+    links: # a source may carry several
+      - {
+          url: "https://en.wikipedia.org/",
+          label: Wikipedia,
+          link_type: homepage,
+        }
+      - {
+          url: "https://de.wikipedia.org/",
+          label: Wikipedia (Deutsch),
+          link_type: homepage,
+        }
+claims: [] # optional — a sources-only patch is valid
+```
+
+A `sources:` node is the seed-data source shape (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, and `links`). **v1 is flat** — nested `children` is rejected; a child source under a root is created on demand when you `cite:` a URL on its domain.
+
+**Identity and the get-or-create policy.** A source has no slug; identity is `isbn` if present, else `(name, source_type)`. The block is **additive get-or-create**, never an overwrite:
+
+- not found → create the source and its declared links.
+- found → leave the existing row untouched (a divergent declared field is a **warning**, not an error), and **additively backfill** any declared link the row is missing. An existing link with the same URL but a different `link_type`/`label` is left as-is and warned.
+- two-plus rows match `(name, source_type)` → operate on the first, warn.
+
+This is deliberate: a user can create a source through the app, so a same-identity collision is invisible when you author the patch. A strict "differs → error" policy would let one such collision **fail the patch and dam every later patch on prod** (patches stop at the first failure). Get-or-create never wedges and never clobbers user data — at the cost that, on a collision, the patch's description/links don't win (correctable only in Django admin). Because it's additive, re-applying is a clean no-op.
+
+**What still hard-errors** (all author-controllable, and all surface at `--dry-run` on localhost before you ship): an unknown key, a nested `children`, a missing `name`/`source_type`, and any value the model rejects — a bad `source_type`, an out-of-range `year`/`month`/`day`, an invalid `identifier_key` or `link_type`, a malformed URL, or a duplicate declared link URL.
+
+**Backfill enables nesting.** A web root is only recognized by a later `cite:` URL if it has a `homepage` link on that domain. The additive backfill is what makes a found-but-linkless root usable. (Edge: if the row already has that URL typed `reference`, the `homepage` duplicate can't be added — recognition won't match, and a cite on that domain can still fail. Rare; fix the link in admin.)
+
 ## Authoring a good patch
 
 - **Attribute to whoever makes the claim.** A value the source itself states → that source (`ipdb`, `opdb`); correcting it → still that source, so you supersede or retract _its_ claim. A structured value _we derive_ by classifying a source's free text (the source has no such field — e.g. parsing IPDB notes into a `game_format`) → `flipcommons-catalog`, with `cite:` to the source text as evidence; there's no source claim to supersede. Museum-curated facts no one else claims → `flip-museum`.
