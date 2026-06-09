@@ -112,7 +112,8 @@ COPY --from=frontend-build /frontend/package.json /app/frontend_runtime/package.
 # Reverse-proxy and startup config
 COPY Caddyfile /app/Caddyfile
 COPY scripts/start-production /app/scripts/start-production
-RUN chmod +x /app/scripts/start-production
+COPY scripts/predeploy /app/scripts/predeploy
+RUN chmod +x /app/scripts/start-production /app/scripts/predeploy
 
 # Collect static files (Django admin CSS, etc.)
 RUN DJANGO_SETTINGS_MODULE=config.settings \

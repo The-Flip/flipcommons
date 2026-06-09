@@ -1,0 +1,36 @@
+#!/usr/bin/env sh
+# Railway pre-deploy step. Runs inside the freshly-built image before traffic
+# switches to it.
+#
+# WHY A SCRIPT (not an inline command in railway.toml):
+# railway.toml's preDeployCommand is a single command string, not a reliable
+# shell line. A `cmd1 && cmd2` chain there silently ran only the first command:
+# for ~3.5 weeks every deploy ran `check --deploy`, exited 0, promoted the new
+# image, and NEVER ran `migrate` — so the schema froze ~14 migrations behind the
+# code until a column the new code required finally 500'd in prod. Both steps in
+# one executable run in a real /bin/sh, where `&&` and `set -e` behave normally.
+# Keep multi-step pre-deploy logic HERE, never as an && chain in the toml.
+#
+# ORDER: check --deploy FIRST (hard gate), THEN migrate. If the production
+# config check fails, the deploy is rejected — and we must NOT have already
+# mutated the schema, because this project ships in-place migrations
+# (RenameField, column drops, NOT NULL adds) that the still-running OLD code
+# cannot read. Checking before migrating leaves a rejected deploy on the old
+# code + old schema, which stays up. (This relies on Railway blocking promotion
+# when a pre-deploy command exits non-zero, which its docs state.)
+set -eu
+cd "$(dirname "$0")/.."
+
+# Unbuffered so check/migrate progress streams to the Railway deploy logs line
+# by line, instead of flushing only on process exit (or vanishing if the
+# process is killed mid-run) — the invisibility that made the silent skip so
+# hard to diagnose.
+export PYTHONUNBUFFERED=1
+
+echo "[predeploy] running production system checks (check --deploy)…"
+.venv/bin/python manage.py check --deploy
+
+echo "[predeploy] applying database migrations…"
+.venv/bin/python manage.py migrate --noinput
+
+echo "[predeploy] done"
