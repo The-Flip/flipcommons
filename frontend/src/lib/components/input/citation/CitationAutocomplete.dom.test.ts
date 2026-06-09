@@ -464,10 +464,13 @@ describe('CitationAutocomplete (component-level)', () => {
         expect(oncomplete).toHaveBeenCalledWith(`[[cite:${CREATED_INSTANCE.id}]]`);
       });
 
+      // The minted child is a specific article page, not the source's
+      // homepage — type it 'reference' so it can't masquerade as a domain root.
       expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
         body: expect.objectContaining({
           parent_id: JJP_SOURCE.id,
           url: recognizedUrl,
+          link_type: 'reference',
         }),
       });
     });
@@ -551,6 +554,8 @@ describe('CitationAutocomplete (component-level)', () => {
         body: expect.objectContaining({
           parent_id: IPDB_SOURCE.id,
           identifier: '4443',
+          // A record page is a child → reference, not homepage.
+          link_type: 'reference',
         }),
       });
     });

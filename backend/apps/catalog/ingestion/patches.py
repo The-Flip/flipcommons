@@ -19,6 +19,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import NamedTuple
+from urllib.parse import urlparse
 
 import yaml
 from django.contrib.contenttypes.models import ContentType
@@ -35,7 +36,10 @@ from apps.catalog.ingestion.apply import (
 from apps.catalog.models import CatalogModel
 from apps.catalog.resolve import resolve_relationships_bulk
 from apps.citation.extractors import EXTRACTORS
-from apps.citation.models import CITATION_SOURCE_IDENTIFIER_MAX_LENGTH
+from apps.citation.models import (
+    CITATION_SOURCE_IDENTIFIER_MAX_LENGTH,
+    CITATION_SOURCE_LINK_URL_MAX_LENGTH,
+)
 from apps.core.entity_types import get_linkable_model
 from apps.core.types import JsonBody
 from apps.provenance.models import Source, get_claim_fields
@@ -187,8 +191,8 @@ class PatchClaim:
     retract: list[str]
     fields: JsonBody
     # Per-entry provenance. ``note`` becomes the entity's ChangeSet note;
-    # ``cite`` is a raw ``scheme:identifier`` string, parsed + validated into a
-    # CitationRef in build_plan. Empty string when the entry sets neither.
+    # ``cite`` is a raw ``scheme:identifier`` string or a ``http(s)://`` URL,
+    # parsed + validated into a CitationRef in build_plan. Empty when neither.
     note: str = ""
     cite: str = ""
 
@@ -255,7 +259,9 @@ def load_patch(text: str) -> PatchDoc:
             raise PatchError(f"{ref}: 'note' must be a string")
         raw_cite = raw_fields.get("cite", "")
         if not isinstance(raw_cite, str):
-            raise PatchError(f"{ref}: 'cite' must be a 'scheme:identifier' string")
+            raise PatchError(
+                f"{ref}: 'cite' must be a 'scheme:identifier' or URL string"
+            )
 
         fields = {k: v for k, v in raw_fields.items() if k not in RESERVED_FIELD_KEYS}
         claims.append(
@@ -297,8 +303,13 @@ def _parse_provenance(pc: PatchClaim) -> tuple[str, CitationRef | None]:
 
     Length-checks each value against the DB column it lands in so an overlong
     value fails as a clear :class:`PatchError` here rather than deep in
-    persistence. ``cite`` is a ``scheme:identifier`` string whose scheme must
-    be a known extractor and whose identifier must normalize.
+    persistence. ``cite`` is one of two forms:
+
+    * ``scheme:identifier`` — the scheme must be a known extractor and the
+      identifier must normalize (``ipdb:4443``).
+    * a ``http(s)://`` URL — a standalone web source. A URL that matches a
+      known scheme's record pattern is rejected: cite it as ``scheme:identifier``
+      so it dedups through the scheme path.
     """
     note = pc.note
     if len(note) > CHANGESET_NOTE_MAX_LENGTH:
@@ -307,6 +318,8 @@ def _parse_provenance(pc: PatchClaim) -> tuple[str, CitationRef | None]:
         )
     if not pc.cite:
         return note, None
+    if pc.cite.startswith(("http://", "https://")):
+        return note, _parse_cite_url(pc)
     scheme, sep, raw_id = pc.cite.partition(":")
     if not sep or not scheme or not raw_id:
         raise PatchError(
@@ -327,6 +340,33 @@ def _parse_provenance(pc: PatchClaim) -> tuple[str, CitationRef | None]:
             f"{CITATION_SOURCE_IDENTIFIER_MAX_LENGTH} characters"
         )
     return note, CitationRef(scheme=scheme, identifier=normalized)
+
+
+def _parse_cite_url(pc: PatchClaim) -> CitationRef:
+    """Validate a ``http(s)://`` ``cite`` URL into a standalone-web CitationRef.
+
+    Rejects a URL that matches a known scheme's record pattern (it has a
+    canonical ``scheme:identifier`` form that dedups correctly), a malformed
+    URL, and one too long for the link column.
+    """
+    url = pc.cite
+    for scheme, extractor in EXTRACTORS.items():
+        identifier = extractor.extract(url)
+        if identifier is not None:
+            raise PatchError(
+                f"{pc.ref}: cite URL matches the {scheme} scheme — "
+                f"cite it as {scheme}:{identifier} instead"
+            )
+    # The caller guarantees an http(s):// scheme, so a host is all that's left
+    # to validate (``https://`` alone has none).
+    if not urlparse(url).hostname:
+        raise PatchError(f"{pc.ref}: cite {url!r} is not a valid URL")
+    if len(url) > CITATION_SOURCE_LINK_URL_MAX_LENGTH:
+        raise PatchError(
+            f"{pc.ref}: cite URL exceeds {CITATION_SOURCE_LINK_URL_MAX_LENGTH} "
+            f"characters"
+        )
+    return CitationRef(url=url)
 
 
 def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:

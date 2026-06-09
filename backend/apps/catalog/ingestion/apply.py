@@ -67,12 +67,16 @@ class RetractEntry(NamedTuple):
 
 @dataclass(frozen=True)
 class CitationRef:
-    """A parsed, normalized reference to an external citation source.
+    """A parsed, normalized reference to a citation source.
 
-    ``scheme`` is an ``apps.citation.extractors.EXTRACTORS`` key (e.g.
-    ``"ipdb"``); ``identifier`` is the normalized in-scheme id (e.g.
-    ``"4443"``). Resolved to a ``CitationSource`` at apply time via
-    ``get_or_create_external_source`` — no DB access to construct one.
+    Two mutually-exclusive forms, resolved to a ``CitationSource`` at apply
+    time (no DB access to construct one):
+
+    * **scheme** — ``scheme`` is an ``apps.citation.extractors.EXTRACTORS`` key
+      (e.g. ``"ipdb"``) and ``identifier`` is the normalized in-scheme id (e.g.
+      ``"4443"``); resolved via ``get_or_create_external_source``.
+    * **url** — a raw web-page URL for a standalone web source, resolved via
+      ``get_or_create_web_source``.
 
     Defined here, beside the plan dataclasses, rather than in any source
     adapter: the source-agnostic apply layer must not import an adapter, and
@@ -80,8 +84,9 @@ class CitationRef:
     from this module.
     """
 
-    scheme: str
-    identifier: str
+    scheme: str = ""
+    identifier: str = ""
+    url: str = ""
 
 
 # Per-claim provenance maps produced by ``_collect_plan_provenance`` and
@@ -919,7 +924,10 @@ def _attach_plan_citations(
     """
     if not claim_citations:
         return
-    from apps.citation.extractors import get_or_create_external_source
+    from apps.citation.extractors import (
+        get_or_create_external_source,
+        get_or_create_web_source,
+    )
     from apps.provenance.models import CitationInstance
 
     source_cache: dict[CitationRef, int] = {}
@@ -932,7 +940,10 @@ def _attach_plan_citations(
             continue
         source_id = source_cache.get(ref)
         if source_id is None:
-            source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
+            if ref.url:
+                source_id = get_or_create_web_source(ref.url).pk
+            else:
+                source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
             source_cache[ref] = source_id
         instances.append(CitationInstance(citation_source_id=source_id, claim=claim))
     if instances:

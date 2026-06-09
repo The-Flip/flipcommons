@@ -16,7 +16,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.models import (
+    CITATION_SOURCE_NAME_MAX_LENGTH,
+    CitationSource,
+    CitationSourceLink,
+)
 
 
 @dataclass(frozen=True)
@@ -231,9 +235,84 @@ def get_or_create_external_source(scheme: str, identifier: str) -> CitationSourc
         },
     )
     if created:
+        # A record page is a child under the scheme root, so its link is
+        # ``reference`` — ``homepage`` is reserved for roots (it's the domain
+        # signal recognition keys off, which only applies to parentless roots).
         CitationSourceLink.objects.create(
             citation_source=source,
-            link_type=CitationSourceLink.LinkType.HOMEPAGE,
+            link_type=CitationSourceLink.LinkType.REFERENCE,
             url=extractor.build_url(normalized),
         )
+    return source
+
+
+def get_or_create_web_source(url: str) -> CitationSource:
+    """Get-or-create the web ``CitationSource`` a raw ``url`` cites.
+
+    For citing a web page (forum post, archive scan, manufacturer page) that no
+    extractor scheme covers. Routes through ``recognize_url`` — the same
+    recognition the interactive editor uses — so the URL resolves to a *known*
+    source:
+
+    * an existing child that already covers the URL (exact link or scheme
+      identifier) is reused;
+    * a domain match to a seeded root (e.g. the "Kineticist" source) becomes a
+      new child *under that root*.
+
+    A URL whose domain matches no seeded root raises
+    ``CitationSource.DoesNotExist`` (mirroring the scheme path's missing-root
+    error). We deliberately do *not* mint a parentless web source: a root web
+    source is *abstract* — a container, not directly-citable evidence (see
+    ``apps.citation.schemas`` / ``api._is_abstract``) — so a parentless page
+    would be concrete in intent but root-like in citation search/UI. Seed the
+    website root in an earlier patch, then cite pages under it.
+
+    A newly minted child's link is typed ``reference`` — it's an evidence page,
+    never a domain homepage. ``homepage`` is reserved for the seeded root;
+    typing a one-off page that way would let recognize_url's domain step treat
+    it as a root for later cites.
+
+    Idempotent by exact URL — re-citing the same URL (or citing one a curator
+    already linked) reuses the existing source, so a re-applied patch never
+    duplicates.
+
+    The caller is responsible for rejecting URLs that match a known scheme;
+    those must be cited as ``scheme:identifier`` so they dedup through the
+    scheme path.
+    """
+    existing = (
+        CitationSourceLink.objects.filter(url=url)
+        .select_related("citation_source")
+        .first()
+    )
+    if existing is not None:
+        return existing.citation_source
+
+    recognition = recognize_url(url)
+    if recognition is None:
+        raise CitationSource.DoesNotExist(
+            f"No website CitationSource root matches {url!r}; seed the website "
+            f"root (a parentless source whose homepage link shares the domain) "
+            f"before citing a page under it."
+        )
+    if recognition.child is not None:
+        return CitationSource.objects.get(pk=recognition.child.id)
+
+    # Domain match: a new child under the recognized root. Name defaults to the
+    # URL; the link column allows more than the name column, so fall back to the
+    # hostname for an over-long URL.
+    name = url
+    if len(name) > CITATION_SOURCE_NAME_MAX_LENGTH:
+        name = urlparse(url).hostname or url[:CITATION_SOURCE_NAME_MAX_LENGTH]
+
+    source = CitationSource.objects.create(
+        name=name,
+        source_type=CitationSource.SourceType.WEB,
+        parent_id=recognition.parent_id,
+    )
+    CitationSourceLink.objects.create(
+        citation_source=source,
+        link_type=CitationSourceLink.LinkType.REFERENCE,
+        url=url,
+    )
     return source

@@ -115,7 +115,8 @@ export async function createChildByIdentifier(
       parent_id: parentId,
       identifier,
       link_label: '',
-      link_type: 'homepage',
+      // A record page is a child → reference; homepage is reserved for roots.
+      link_type: 'reference',
     },
   });
   if (error) {

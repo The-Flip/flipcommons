@@ -89,7 +89,14 @@ export const floating: Action<HTMLElement, FloatingOptions> = (node, options) =>
   node.style.left = '0';
 
   const portalTarget = findPortalTarget(node);
+  // Re-inserting a node blurs any focused descendant (the browser drops focus
+  // on move). A dropdown that autofocuses an input as it opens — e.g. the
+  // citation flow launched from the markdown toolbar — would otherwise lose
+  // that focus, fire `focusout`, and close itself (a flash-open-then-close).
+  // The focused descendant moves with the node, so restore its focus after.
+  const focused = document.activeElement;
   portalTarget.appendChild(node);
+  if (focused instanceof HTMLElement && node.contains(focused)) focused.focus();
 
   function reposition() {
     const opts = currentOptions;
