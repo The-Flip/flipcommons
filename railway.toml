@@ -19,8 +19,13 @@ watchPatterns = [
 ]
 
 [deploy]
-# check --deploy surfaces Django's production-only system checks (HSTS,
-# SSL redirect, RATE_LIMIT_TRUST_PROXY_HEADERS, etc.) in deploy logs and
-# fails the deploy on Error-level findings. Warnings (core.W001 et al.)
-# are visible but non-blocking. See docs/Hosting.md § "Client IP trust".
-preDeployCommand = ".venv/bin/python manage.py check --deploy && .venv/bin/python manage.py migrate --noinput"
+# scripts/predeploy runs check --deploy then migrate, in that order. Do NOT
+# inline `check --deploy && migrate` here again: an && chain in this config
+# string is unreliable — only the first command ran, so migrations were
+# silently skipped for ~3.5 weeks (the schema froze ~14 migrations behind the
+# code). The script runs both in a real shell under set -e, streams unbuffered
+# output to the deploy logs and documents the ordering rationale. check --deploy
+# still fails the deploy on Error-level findings (HSTS, SSL,
+# RATE_LIMIT_TRUST_PROXY_HEADERS); warnings stay non-blocking.
+# See docs/Hosting.md § "Client IP trust".
+preDeployCommand = "/app/scripts/predeploy"
