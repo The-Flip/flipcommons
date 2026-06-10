@@ -1177,6 +1177,68 @@ sources:
     assert CitationInstance.objects.filter(claim=status_claim).exists()
 
 
+# ── Empty directives on an incompatible kind (strict parse) ────────
+# An empty no-op directive (expect: {}, retract: [], remove: {}) on a kind that
+# structurally can't carry it is rejected at *parse* time, not silently ignored.
+# This is a deliberate tightening over the old truthiness check (`if pc.expect:`
+# was falsy on an empty value, so empties slipped through). It's pinned as a
+# contract because load_patch runs on every file on every ingest — a parse rule
+# is part of the format, and a future relaxation would be a real semantic change.
+
+
+@pytest.mark.parametrize(
+    ("directive", "match"),
+    [
+        ("expect: {}", "meaningless on a create"),
+        ("retract: []", "meaningless on a create"),
+        ("remove: {}", "meaningless on a create"),
+    ],
+)
+def test_empty_directive_on_create_rejected(directive, match):
+    text = f"""
+attribution: flip-museum
+claims:
+  - manufacturer.acme:
+      create: true
+      name: Acme
+      {directive}
+"""
+    with pytest.raises(PatchError, match=match):
+        load_patch(text)
+
+
+@pytest.mark.parametrize("directive", ["retract: []", "remove: {}"])
+def test_empty_directive_on_delete_rejected(directive):
+    text = f"""
+attribution: flip-museum
+claims:
+  - corporate-entity.acme:
+      delete: true
+      {directive}
+"""
+    with pytest.raises(PatchError, match="mutually exclusive"):
+        load_patch(text)
+
+
+def test_empty_directives_on_edit_are_accepted(machine_model):
+    # The strict rejection is scoped to create/delete. An edit may still carry
+    # empty no-op directives (they resolve to no-ops), so the tightening didn't
+    # over-reach — guard against a future over-correction.
+    text = f"""
+attribution: flip-museum
+claims:
+  - model.{machine_model.slug}:
+      year: 1990
+      expect: {{}}
+      retract: []
+      remove: {{}}
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+    machine_model.refresh_from_db()
+    assert machine_model.year == 1990
+
+
 # ── Idempotency (engine-level no-op) ───────────────────────────────
 
 

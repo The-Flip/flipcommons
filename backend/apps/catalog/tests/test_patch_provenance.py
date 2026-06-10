@@ -17,7 +17,12 @@ from apps.catalog.ingestion.apply import (
     PlannedClaimAssert,
     apply_plan,
 )
-from apps.catalog.ingestion.patches import PatchError, build_plan, load_patch
+from apps.catalog.ingestion.patches import (
+    EditEntry,
+    PatchError,
+    build_plan,
+    load_patch,
+)
 from apps.catalog.models import MachineModel, Manufacturer, Tag
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationSource
@@ -89,10 +94,11 @@ def test_note_and_cite_parsed_and_excluded_from_fields():
         "      cite: ipdb:4443\n"
         "      year: 1990\n"
     )
-    (pc,) = doc.claims
-    assert pc.note == "tagged because the name says so"
-    assert pc.cite == "ipdb:4443"
-    assert pc.fields == {"year": 1990}  # note/cite are not field assertions
+    (entry,) = doc.claims
+    assert isinstance(entry, EditEntry)  # no create/delete → an edit
+    assert entry.note == "tagged because the name says so"
+    assert entry.cite == "ipdb:4443"
+    assert entry.fields == {"year": 1990}  # note/cite are not field assertions
 
 
 def test_note_must_be_string():
