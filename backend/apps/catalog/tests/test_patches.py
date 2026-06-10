@@ -11,6 +11,7 @@ from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from apps.catalog.claims import build_relationship_claim
 from apps.catalog.ingestion.apply import RunReport, apply_plan
 from apps.catalog.ingestion.patches import (
     PatchError,
@@ -19,7 +20,14 @@ from apps.catalog.ingestion.patches import (
     load_patch,
     parse_patch_text,
 )
-from apps.catalog.models import CorporateEntity, Location, Manufacturer, Tag
+from apps.catalog.models import (
+    CorporateEntity,
+    CorporateEntityLocation,
+    Location,
+    Manufacturer,
+    Tag,
+)
+from apps.catalog.resolve import resolve_all_corporate_entity_locations
 from apps.citation.models import CitationSource, CitationSourceLink
 from apps.provenance.models import ChangeSet, CitationInstance, Claim, IngestRun, Source
 
@@ -661,6 +669,259 @@ claims:
       manufacturer: stern
 """
     with pytest.raises(PatchError, match="cannot both retract and assert"):
+        _apply(text)
+
+
+# ── Remove relationship member (exists=false supersede) ────────────
+
+
+@pytest.fixture
+def bally_wulff(db):
+    """A CorporateEntity whose sole location is Germany, claimed by flip-museum.
+
+    Mirrors the real case: a coarse pindata-derived location we refine to a more
+    specific child (Berlin). The membership claim is attributed to flip-museum so
+    a patch from the same source supersedes it; Berlin is seeded as a child of
+    Germany, ready to assert.
+    """
+    museum = Source.objects.get(slug="flip-museum")
+    germany = Location.objects.create(
+        location_path="germany",
+        slug="germany",
+        name="Germany",
+        location_type="country",
+    )
+    Location.objects.create(
+        location_path="germany/berlin",
+        slug="berlin",
+        name="Berlin",
+        location_type="city",
+        parent=germany,
+    )
+    mfr = Manufacturer.objects.create(name="Bally Wulff", slug="bally-wulff-mfr")
+    ce = CorporateEntity.objects.create(
+        name="Bally Wulff", slug="bally-wulff", manufacturer=mfr
+    )
+    Claim.objects.assert_claim(ce, "name", "Bally Wulff", source=museum)
+    claim_key, value = build_relationship_claim("location", {"location": germany.pk})
+    Claim.objects.assert_claim(
+        ce, "location", value, source=museum, claim_key=claim_key
+    )
+    resolve_all_corporate_entity_locations(subject_ids={ce.pk})
+    return ce
+
+
+def _location_claim(slug: str) -> Claim:
+    """The active 'location' claim for the member Location with *slug*."""
+    loc = Location.objects.get(slug=slug)
+    claim_key, _ = build_relationship_claim("location", {"location": loc.pk})
+    return Claim.objects.get(claim_key=claim_key, field_name="location", is_active=True)
+
+
+def _ce_location_paths(ce: CorporateEntity) -> set[str]:
+    return set(
+        CorporateEntityLocation.objects.filter(corporate_entity=ce).values_list(
+            "location__location_path", flat=True
+        )
+    )
+
+
+def test_remove_member_and_assert_more_specific(bally_wulff):
+    # The Germany→Berlin refinement: supersede the Germany membership with an
+    # exists=false tombstone and assert Berlin. The resolved set ends as Berlin.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      location: [germany/berlin]
+      remove: { location: [germany] }
+      note: 'Bally Wulff is headquartered in Berlin; Germany was the coarser value.'
+"""
+    report = _apply(text, patch_id="0001-berlin")
+    assert report.rejected == 0
+
+    assert _ce_location_paths(bally_wulff) == {"germany/berlin"}
+    # Germany's membership is superseded by an *active* exists=false claim (not
+    # deactivated): the claim stays, resolving to absent.
+    assert _location_claim("germany").value["exists"] is False
+    assert _location_claim("berlin").value["exists"] is True
+    # One entry → one shared changeset carrying the note.
+    berlin_changeset = _location_claim("berlin").changeset
+    assert berlin_changeset is not None
+    assert berlin_changeset.note.startswith("Bally Wulff")
+
+
+def test_remove_only_member_empties_relationship(bally_wulff):
+    # A remove with no accompanying assert is a valid, provenance-bearing entry:
+    # the exists=false tombstone is the carrier.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      remove: { location: [germany] }
+      note: 'Location unknown; the Germany value was unsupported.'
+"""
+    report = _apply(text, patch_id="0001-drop")
+    assert report.rejected == 0
+    assert _ce_location_paths(bally_wulff) == set()
+    assert _location_claim("germany").value["exists"] is False
+
+
+def test_remove_cite_and_note_ride_the_tombstone(bally_wulff):
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      remove: { location: [germany] }
+      note: 'flip-museum says "headquartered in Berlin".'
+      cite: https://example.org/bally-wulff
+sources:
+  - name: Example
+    source_type: web
+    links:
+      - { url: "https://example.org/", label: Example, link_type: homepage }
+"""
+    _apply(text, patch_id="0001-cite")
+    tombstone = _location_claim("germany")
+    assert tombstone.value["exists"] is False
+    assert tombstone.changeset is not None
+    assert tombstone.changeset.note == 'flip-museum says "headquartered in Berlin".'
+    assert CitationInstance.objects.filter(claim=tombstone).exists()
+
+
+def test_remove_must_be_a_mapping():
+    text = (
+        "attribution: flip-museum\nclaims:\n"
+        "  - corporate-entity.a:\n      remove: [location]\n"
+    )
+    with pytest.raises(PatchError, match="'remove' must be a mapping"):
+        load_patch(text)
+
+
+def test_remove_scalar_field_rejected(bally_wulff):
+    # A scalar/FK field isn't a relationship namespace — point the author at
+    # retract: instead.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      remove: { manufacturer: [williams] }
+"""
+    with pytest.raises(PatchError, match="not a relationship namespace"):
+        _apply(text)
+
+
+def test_remove_relationship_not_valid_on_subject(bally_wulff):
+    # 'theme' is a relationship namespace, but not on CorporateEntity.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      remove: { theme: [medieval] }
+"""
+    with pytest.raises(PatchError, match="is not valid on"):
+        _apply(text)
+
+
+def test_remove_unknown_member_rejected(bally_wulff):
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      remove: { location: [atlantis] }
+"""
+    with pytest.raises(PatchError, match="does not resolve"):
+        _apply(text)
+
+
+def test_remove_noop_when_source_lacks_claim(bally_wulff):
+    # flip-museum never claimed Berlin membership, so removing it writes no
+    # tombstone — a warning, not an error, so re-running a patch stays safe.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      remove: { location: [germany/berlin] }
+"""
+    report = _apply(text, patch_id="0001-noop")
+    assert report.rejected == 0
+    assert any("no-op" in w for w in report.warnings)
+    # Germany membership untouched; no exists=false claim for Berlin.
+    assert _ce_location_paths(bally_wulff) == {"germany"}
+    berlin = Location.objects.get(slug="berlin")
+    bk, _ = build_relationship_claim("location", {"location": berlin.pk})
+    assert not Claim.objects.filter(claim_key=bk).exists()
+
+
+def test_remove_noop_with_note_rejected(bally_wulff):
+    # A no-op removal emits no tombstone, so a note: on a remove-only entry would
+    # have nothing to attach to and would silently vanish — reject it loudly
+    # instead (same rule cite: already follows).
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      remove: { location: [germany/berlin] }
+      note: 'flip-museum says "not in Berlin".'
+"""
+    with pytest.raises(PatchError, match="note has nothing to attach to"):
+        _apply(text, patch_id="0001-noop-note")
+
+
+def test_remove_and_assert_same_member_rejected(bally_wulff):
+    # Asserting a member present and removing it in one patch would write the
+    # same claim_key twice with opposite exists — reject the contradiction.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      location: [germany]
+      remove: { location: [germany] }
+"""
+    with pytest.raises(PatchError, match="cannot both assert and remove"):
+        _apply(text)
+
+
+def test_remove_and_assert_same_member_rejected_when_unclaimed(bally_wulff):
+    # The contradiction is an authoring error knowable from the patch text, so it
+    # must be rejected regardless of DB state — even when the source does NOT
+    # currently claim the member (so the removal is a no-op). flip-museum claims
+    # germany, not germany/berlin, so the remove here is a no-op.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      location: [germany/berlin]
+      remove: { location: [germany/berlin] }
+"""
+    with pytest.raises(PatchError, match="cannot both assert and remove"):
+        _apply(text)
+
+
+def test_remove_plus_create_rejected():
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.new-firm:
+      name: New Firm
+      create: true
+      remove: { location: [germany] }
+"""
+    with pytest.raises(PatchError, match="'remove' is meaningless on a create"):
+        _apply(text)
+
+
+def test_remove_plus_delete_rejected(bally_wulff):
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      delete: true
+      remove: { location: [germany] }
+"""
+    with pytest.raises(
+        PatchError, match="'remove' and 'delete' are mutually exclusive"
+    ):
         _apply(text)
 
 

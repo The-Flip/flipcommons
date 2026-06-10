@@ -74,16 +74,16 @@ import patchkit as pk
 
 Import from the authoring dir (`gen.py` does `sys.path.insert(0, <authoring>)`).
 
-| function                                                                                            | purpose                                                                                      |
-| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `guard(row, prefer=("ipdb_id","year","corporate_entity"))`                                          | most specific `expect:` dict from a live-values row; `{}` if none                            |
-| `check_resolved(requested, found)`                                                                  | raise if any ref didn't resolve (typo/drift)                                                 |
-| `sentences(text)` / `sentence_with(blob, needle)`                                                   | split source free text; pull the sentence containing a needle                                |
-| `clean_ipdb_quote(text, limit=240)`                                                                 | ASCII-clean a quote, strip the IPD header and `…: "<passage>` framing, truncate with `[...]` |
-| `source_note(source, verbatim, tail="")`                                                            | build `IPDB says "<verbatim>"` (ASCII; mark omissions `[...]`)                               |
-| `entry(ref, *, create, expect, note, cite, fields, description, tags, retract, commented, comment)` | one correctly-escaped `claims:` block                                                        |
-| `write_patch(path, *, attribution, description, entries)`                                           | a complete patch file                                                                        |
-| `yamlq` / `ascii_clean`                                                                             | the escapers, if you need them directly                                                      |
+| function                                                                                            | purpose                                                                                                 |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `guard(row, prefer=("ipdb_id","year","corporate_entity"))`                                          | most specific `expect:` dict from a live-values row; `{}` if none                                       |
+| `check_resolved(requested, found)`                                                                  | raise if any ref didn't resolve (typo/drift)                                                            |
+| `sentences(text)` / `sentence_with(blob, needle)`                                                   | split source free text; pull the sentence containing a needle                                           |
+| `clean_ipdb_quote(text, limit=240)`                                                                 | normalize a quote's typography, strip the IPD header and `…: "<passage>` framing, truncate with `[...]` |
+| `source_note(source, verbatim, tail="")`                                                            | build `IPDB says "<verbatim>"` (normalizes typography, preserves non-ASCII; mark omissions `[...]`)     |
+| `entry(ref, *, create, expect, note, cite, fields, description, tags, retract, commented, comment)` | one correctly-escaped `claims:` block                                                                   |
+| `write_patch(path, *, attribution, description, entries)`                                           | a complete patch file                                                                                   |
+| `yamlq` / `clean_text`                                                                              | the escaper / the typography normalizer, if you need them directly                                      |
 
 **Escaping is solved — use it.** Notes go through `yamlq` (single-quoted YAML:
 literal except `'`, which doubles). This carries both the double quotes in
