@@ -493,6 +493,49 @@ class _Target(NamedTuple):
     handle: str | None = None
 
 
+class _TargetContribution(NamedTuple):
+    """One entry's contribution to the plan-wide guards for one existing entity.
+
+    A create contributes nothing (it targets a handle, not an existing entity);
+    a delete contributes one of these per soft-deleted entity (root + cascade)
+    with empty field sets; an edit contributes one carrying its retract / assert
+    / remove sets. ``_validate_plan_wide`` merges these across entries.
+    """
+
+    ref: str
+    has_provenance: bool
+    retracted_fields: frozenset[str]
+    asserted_fields: frozenset[str]
+    asserted_members: frozenset[str]
+    # claim_key → "namespace public_id" label, for the assert/remove clash error.
+    removed_members: dict[str, str]
+
+
+class _EntryResult(NamedTuple):
+    """What ``_process_entry`` hands back for the cross-entry validation passes.
+
+    The plan mutations (entities, assertions, retractions, warnings) have already
+    happened inside ``_process_entry``; this carries only what the plan-wide
+    guards need. ``matched`` counts toward ``records_matched`` (edit/delete yes,
+    create no).
+    """
+
+    matched: bool
+    contributions: dict[EntityKey, _TargetContribution]
+
+
+class _RemovalResult(NamedTuple):
+    """Outcome of ``_add_removals`` for one entry.
+
+    ``removed_members`` is every *intended* removal (claim_key → label), recorded
+    for the clash guard regardless of DB state; ``carrier_written`` is whether at
+    least one tombstone was actually emitted (a no-op removal writes nothing).
+    """
+
+    removed_members: dict[str, str]
+    carrier_written: bool
+
+
 def _parse_provenance(entry: PatchEntry) -> tuple[str, CitationRef | None]:
     """Validate an entry's ``note``/``cite`` and parse ``cite`` into a CitationRef.
 
@@ -567,10 +610,11 @@ def _parse_cite_url(entry: PatchEntry) -> CitationRef:
 def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     """Compile a parsed patch into an :class:`IngestPlan`.
 
-    Resolves entity references, runs the ``expect:`` drift guard (scalar +
-    FK), emits ``retract:`` directives, classifies each field as scalar / FK /
-    relationship by introspection and emits creates + claim assertions. All DB
-    reads happen here, before any write; ``apply_plan(plan)`` does the writing.
+    Drives the two-phase compile: ``_process_entry`` resolves, validates and
+    emits each entry (all DB reads + plan mutations happen there, in order),
+    returning an :class:`_EntryResult`; ``_validate_plan_wide`` then runs the
+    cross-entry guards over the collected results. ``apply_plan(plan)`` does the
+    writing.
     """
     plan = IngestPlan(
         source=source,
@@ -581,224 +625,24 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     )
     rel_namespaces = get_relationship_namespaces()
     rel_fields_by_model: dict[type[CatalogModel], set[str]] = defaultdict(set)
-    # Per-target (existing entity) accumulators for the plan-wide retract/assert
-    # conflict check below, keyed by the target's ``EntityKey``.
-    retracted_fields: dict[EntityKey, set[str]] = defaultdict(set)
-    asserted_fields: dict[EntityKey, set[str]] = defaultdict(set)
-    # Relationship-member accumulators for the assert/remove conflict check:
-    # the claim_keys asserted present (exists=true) and removed (exists=false)
-    # per entity. ``member_labels`` maps a removed member's claim_key to a human
-    # label (``namespace public_id``) for the error message — flat because a
-    # relationship claim_key is globally unique to its (namespace, member).
-    asserted_members: dict[EntityKey, set[str]] = defaultdict(set)
-    removed_members: dict[EntityKey, set[str]] = defaultdict(set)
-    member_labels: dict[str, str] = {}
-    target_ref: dict[EntityKey, str] = {}
-    # Provenance guard: an entity's claims all collapse into one ChangeSet, so
-    # two entries resolving to the same existing entity can't carry independent
-    # notes/cites. Track entry count and whether any carried provenance.
-    entity_entry_count: dict[EntityKey, int] = defaultdict(int)
-    entity_has_provenance: dict[EntityKey, bool] = defaultdict(bool)
     # Refs already created in this patch. A second create for the same ref would
     # mint a duplicate handle and blow up as a ValueError deep in the apply layer
-    # (which the command doesn't catch); reject it cleanly here.
+    # (which the command doesn't catch); reject it cleanly in _process_entry.
     created_refs: set[str] = set()
-    matched = 0
 
-    for entry in doc.claims:
-        note, citation_ref = _parse_provenance(entry)
-        model_class = _resolve_model_class(entry)
-        ct_id = ContentType.objects.get_for_model(model_class).pk
-        existing = _lookup_entity(model_class, entry.public_id)
-
-        # The entry kind is its parsed type — the illegal directive combinations
-        # (create+delete, retract-on-delete, fields-on-delete, expect-on-create,
-        # …) were already rejected in ``_parse_entry``, so each branch here only
-        # does its own DB-dependent work. A delete carries no field assertions
-        # and no relationship work, so it finishes in its own branch and skips
-        # the shared field-loop tail below.
-        if isinstance(entry, DeleteEntry):
-            if existing is None:
-                raise PatchError(f"{entry.ref}: no such {entry.entity_type} to delete")
-            matched += 1
-            _check_expect(model_class, existing, entry)
-            affected = _add_delete(
-                plan, existing, entry, note=note, citation_ref=citation_ref
-            )
-            # Register every soft-deleted entity (root + cascade) with the
-            # same-entity guard: each carries the entry's note/cite on its
-            # status=deleted claim, so a separate entry on any of them that also
-            # carries provenance is a genuine collision.
-            has_provenance = bool(note) or citation_ref is not None
-            for tkey in affected:
-                target_ref[tkey] = entry.ref
-                entity_entry_count[tkey] += 1
-                if has_provenance:
-                    entity_has_provenance[tkey] = True
-            continue
-
-        target: _Target
-        if isinstance(entry, CreateEntry):
-            if existing is not None:
-                raise PatchError(
-                    f"{entry.ref}: create:true but a {entry.entity_type} with this "
-                    f"public_id already exists"
-                )
-            if entry.ref in created_refs:
-                raise PatchError(f"{entry.ref}: duplicate create entry in this patch")
-            created_refs.add(entry.ref)
-            handle = entry.ref
-            _add_create(plan, model_class, entry, handle, note=note)
-            target = _Target(handle=handle)
-        else:
-            if existing is None:
-                raise PatchError(
-                    f"{entry.ref}: no such {entry.entity_type} (add create:true to create it)"
-                )
-            matched += 1
-            _check_expect(model_class, existing, entry)
-            _add_retractions(
-                plan, model_class, existing, entry, ct_id, rel_namespaces, note=note
-            )
-            target = _Target(content_type_id=ct_id, object_id=existing.pk)
-            tkey = EntityKey(ct_id, existing.pk)
-            target_ref[tkey] = entry.ref
-            retracted_fields[tkey].update(entry.retract)
-            entity_entry_count[tkey] += 1
-            if note or citation_ref is not None:
-                entity_has_provenance[tkey] = True
-
-        claim_fields = get_claim_fields(model_class)
-        # Count authored-field assertions actually emitted below, so provenance
-        # can be validated against real carriers — a field *key* isn't enough
-        # (``tag: []`` emits zero member claims).
-        assertions_before = len(plan.assertions)
-        for key, value in entry.fields.items():
-            if key == LIFECYCLE_STATUS_FIELD:
-                # ``status`` is lifecycle state, not a free-form claim. Writing
-                # it directly would bypass the delete planner's blocker check
-                # and cascade — route lifecycle changes through the directive.
-                raise PatchError(
-                    f"{entry.ref}: {LIFECYCLE_STATUS_FIELD!r} is lifecycle state — "
-                    f"soft-delete with 'delete: true', not a direct claim"
-                )
-            if key in claim_fields:
-                _emit_direct(
-                    plan, key, value, target, note=note, citation_ref=citation_ref
-                )
-                if target.object_id is not None:
-                    asserted_fields[EntityKey(ct_id, target.object_id)].add(key)
-            elif key in rel_namespaces:
-                emitted_keys = _emit_relationship(
-                    plan,
-                    model_class,
-                    key,
-                    value,
-                    target,
-                    entry,
-                    note=note,
-                    citation_ref=citation_ref,
-                )
-                rel_fields_by_model[model_class].add(key)
-                if target.object_id is not None:
-                    asserted_members[EntityKey(ct_id, target.object_id)].update(
-                        emitted_keys
-                    )
-            else:
-                raise PatchError(f"{entry.ref}: unknown field {key!r}")
-
-        # Relationship-member removals (exists=false supersede). Emitted here,
-        # within the assertions_before window, so a removal counts as a real
-        # provenance carrier (it writes a tombstone claim). Only an EditEntry
-        # carries ``remove`` (create/delete reject it at parse time).
-        if isinstance(entry, EditEntry) and entry.remove:
-            assert existing is not None  # an EditEntry always matched above
-            _add_removals(
-                plan,
-                model_class,
-                existing,
-                entry,
-                ct_id,
-                source,
-                rel_namespaces,
-                rel_fields_by_model,
-                removed_members,
-                member_labels,
-                note=note,
-                citation_ref=citation_ref,
-            )
-
-        # Provenance needs an emitted carrier, or it would silently vanish.
-        # ``cite`` rides an authored field assertion; ``note`` also rides a
-        # create's scaffolding claims or a retraction. (A DeleteEntry carries
-        # its own ``status=deleted`` carrier and already ``continue``d above, so
-        # it never reaches these checks.)
-        authored_emitted = len(plan.assertions) > assertions_before
-        if citation_ref is not None and not authored_emitted:
-            raise PatchError(
-                f"{entry.ref}: cite has no field to attach to — cite a field you're "
-                f"also asserting (a retraction, a no-op removal, a field-less "
-                f"create, or an empty relationship like 'tag: []' can't carry one)"
-            )
-        # ``remove`` is deliberately *not* a note carrier: a removal that
-        # supersedes a member emits an assertion (so ``authored_emitted`` already
-        # covers it), while a no-op removal emits nothing — its note would vanish
-        # in ``_persist`` (no claim/retraction ⇒ no ChangeSet). ``retract`` stays
-        # because a retraction carries its note on the PlannedClaimRetract and its
-        # no-op is only knowable at apply, not here. This keeps note in step with
-        # cite, which already requires ``authored_emitted``.
-        # TODO: a no-op retract: + note: still drops the note silently (the
-        # retraction finds no target at apply, so _persist makes no ChangeSet).
-        # Tighten with a build-time claim-presence check, as remove: already does.
-        note_has_carrier = (
-            authored_emitted
-            or isinstance(entry, CreateEntry)
-            or (isinstance(entry, EditEntry) and bool(entry.retract))
+    results = [
+        _process_entry(
+            plan,
+            entry,
+            source=source,
+            rel_namespaces=rel_namespaces,
+            rel_fields_by_model=rel_fields_by_model,
+            created_refs=created_refs,
         )
-        if note and not note_has_carrier:
-            raise PatchError(
-                f"{entry.ref}: note has nothing to attach to — assert a field, "
-                f"retract, create, or remove a currently-present member (a no-op "
-                f"removal carries nothing)"
-            )
-
-    plan.records_matched = matched
-
-    # Provenance guard: reject when two entries land on one existing entity and
-    # either carries note/cite — their notes would collide in the shared
-    # ChangeSet and their cites would be ambiguous. One provenance-bearing entry
-    # per entity (combine retract + assert + note + cite into a single entry).
-    for tkey, count in entity_entry_count.items():
-        if count > 1 and entity_has_provenance[tkey]:
-            raise PatchError(
-                f"{target_ref[tkey]}: multiple entries target this entity and at "
-                f"least one carries note/cite — combine them into one entry "
-                f"(an entity's claims share a single changeset)"
-            )
-
-    # Plan-wide guard: the same source must not both retract and assert a field
-    # on one entity, even across separate entries. The retract only deactivates
-    # the pre-existing claim while the assert writes a new one, so the assert
-    # silently wins and the retract is a no-op — reject the contradiction.
-    for tkey, r_fields in retracted_fields.items():
-        both = sorted(r_fields & asserted_fields.get(tkey, set()))
-        if both:
-            raise PatchError(
-                f"{target_ref[tkey]}: cannot both retract and assert "
-                f"{', '.join(both)} for this entity"
-            )
-
-    # Plan-wide guard: the same relationship member must not be both asserted
-    # present (exists=true) and removed (exists=false) on one entity. Both write
-    # the same claim_key, so one would silently clobber the other — reject it.
-    for tkey, removed in removed_members.items():
-        clashing = removed & asserted_members.get(tkey, set())
-        if clashing:
-            labels = sorted(member_labels[claim_key] for claim_key in clashing)
-            raise PatchError(
-                f"{target_ref[tkey]}: cannot both assert and remove "
-                f"{', '.join(labels)} for this entity"
-            )
+        for entry in doc.claims
+    ]
+    plan.records_matched = sum(r.matched for r in results)
+    _validate_plan_wide(results)
 
     # Relationship resolution: delegate to the canonical post-mutation
     # dispatch (model-driven; no hand-maintained namespace→resolver map). The
@@ -812,6 +656,261 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     _plan_citation_sources(plan, doc.sources)
 
     return plan
+
+
+def _process_entry(
+    plan: IngestPlan,
+    entry: PatchEntry,
+    *,
+    source: Source,
+    rel_namespaces: frozenset[str],
+    rel_fields_by_model: dict[type[CatalogModel], set[str]],
+    created_refs: set[str],
+) -> _EntryResult:
+    """Resolve, validate and emit one claim entry; return its cross-entry contribution.
+
+    All DB reads and plan mutations for the entry happen here. The entry kind is
+    its parsed type — the illegal directive combinations were already rejected in
+    ``_parse_entry``, so each branch only does its own DB-dependent work. The
+    per-entry provenance-carrier check is enforced inline; the returned
+    :class:`_EntryResult` carries only what ``_validate_plan_wide`` needs.
+    """
+    note, citation_ref = _parse_provenance(entry)
+    model_class = _resolve_model_class(entry)
+    ct_id = ContentType.objects.get_for_model(model_class).pk
+    existing = _lookup_entity(model_class, entry.public_id)
+    has_provenance = bool(note) or citation_ref is not None
+
+    # A delete carries no field assertions and no relationship work, so it
+    # finishes here, registering every soft-deleted entity (root + cascade) with
+    # the same-entity guard: each carries the entry's note/cite on its
+    # status=deleted claim, so a separate entry on any of them that also carries
+    # provenance is a genuine collision.
+    if isinstance(entry, DeleteEntry):
+        if existing is None:
+            raise PatchError(f"{entry.ref}: no such {entry.entity_type} to delete")
+        _check_expect(model_class, existing, entry)
+        affected = _add_delete(
+            plan, existing, entry, note=note, citation_ref=citation_ref
+        )
+        contributions = {
+            tkey: _TargetContribution(
+                ref=entry.ref,
+                has_provenance=has_provenance,
+                retracted_fields=frozenset(),
+                asserted_fields=frozenset(),
+                asserted_members=frozenset(),
+                removed_members={},
+            )
+            for tkey in affected
+        }
+        return _EntryResult(matched=True, contributions=contributions)
+
+    target: _Target
+    if isinstance(entry, CreateEntry):
+        if existing is not None:
+            raise PatchError(
+                f"{entry.ref}: create:true but a {entry.entity_type} with this "
+                f"public_id already exists"
+            )
+        if entry.ref in created_refs:
+            raise PatchError(f"{entry.ref}: duplicate create entry in this patch")
+        created_refs.add(entry.ref)
+        _add_create(plan, model_class, entry, entry.ref, note=note)
+        target = _Target(handle=entry.ref)
+    else:
+        if existing is None:
+            raise PatchError(
+                f"{entry.ref}: no such {entry.entity_type} (add create:true to create it)"
+            )
+        _check_expect(model_class, existing, entry)
+        _add_retractions(
+            plan, model_class, existing, entry, ct_id, rel_namespaces, note=note
+        )
+        target = _Target(content_type_id=ct_id, object_id=existing.pk)
+
+    # Shared field loop (create + edit). Track which scalar/FK fields and which
+    # relationship members were asserted on an *existing* entity — creates target
+    # a handle, so object_id is None and they contribute nothing to the guards —
+    # and whether any real claim carrier was written (for the provenance check).
+    asserted_fields: set[str] = set()
+    asserted_members: set[str] = set()
+    carrier_written = False
+    claim_fields = get_claim_fields(model_class)
+    for key, value in entry.fields.items():
+        if key == LIFECYCLE_STATUS_FIELD:
+            # ``status`` is lifecycle state, not a free-form claim. Writing it
+            # directly would bypass the delete planner's blocker check and
+            # cascade — route lifecycle changes through the directive.
+            raise PatchError(
+                f"{entry.ref}: {LIFECYCLE_STATUS_FIELD!r} is lifecycle state — "
+                f"soft-delete with 'delete: true', not a direct claim"
+            )
+        if key in claim_fields:
+            _emit_direct(plan, key, value, target, note=note, citation_ref=citation_ref)
+            carrier_written = True
+            if target.object_id is not None:
+                asserted_fields.add(key)
+        elif key in rel_namespaces:
+            emitted_keys = _emit_relationship(
+                plan,
+                model_class,
+                key,
+                value,
+                target,
+                entry,
+                note=note,
+                citation_ref=citation_ref,
+            )
+            rel_fields_by_model[model_class].add(key)
+            if emitted_keys:
+                carrier_written = True
+            if target.object_id is not None:
+                asserted_members.update(emitted_keys)
+        else:
+            raise PatchError(f"{entry.ref}: unknown field {key!r}")
+
+    # Relationship-member removals (exists=false supersede). Only an EditEntry
+    # carries ``remove`` (create/delete reject it at parse time).
+    removed_members: dict[str, str] = {}
+    if isinstance(entry, EditEntry) and entry.remove:
+        assert existing is not None  # an EditEntry always matched above
+        removal = _add_removals(
+            plan,
+            model_class,
+            existing,
+            entry,
+            ct_id,
+            source,
+            rel_namespaces,
+            rel_fields_by_model,
+            note=note,
+            citation_ref=citation_ref,
+        )
+        removed_members = removal.removed_members
+        carrier_written = carrier_written or removal.carrier_written
+
+    _check_provenance_carrier(
+        entry, note=note, citation_ref=citation_ref, carrier_written=carrier_written
+    )
+
+    if isinstance(entry, CreateEntry):
+        # A create targets a handle, not an existing entity, so it contributes
+        # nothing to the plan-wide guards and doesn't count toward records_matched.
+        return _EntryResult(matched=False, contributions={})
+
+    assert existing is not None  # an EditEntry always matched above
+    contribution = _TargetContribution(
+        ref=entry.ref,
+        has_provenance=has_provenance,
+        retracted_fields=frozenset(entry.retract),
+        asserted_fields=frozenset(asserted_fields),
+        asserted_members=frozenset(asserted_members),
+        removed_members=removed_members,
+    )
+    return _EntryResult(
+        matched=True, contributions={EntityKey(ct_id, existing.pk): contribution}
+    )
+
+
+def _check_provenance_carrier(
+    entry: CreateEntry | EditEntry,
+    *,
+    note: str,
+    citation_ref: CitationRef | None,
+    carrier_written: bool,
+) -> None:
+    """Reject a note/cite with no emitted claim to attach to (it would vanish).
+
+    ``cite`` must ride an authored field assertion; ``note`` also rides a create's
+    scaffolding claims or a retraction. (A DeleteEntry carries its own
+    ``status=deleted`` carrier and never reaches here.)
+
+    ``remove`` is deliberately *not* a note carrier: a removal that supersedes a
+    member emits an assertion (so ``carrier_written`` already covers it), while a
+    no-op removal emits nothing — its note would vanish in ``_persist`` (no
+    claim/retraction ⇒ no ChangeSet). ``retract`` stays because a retraction
+    carries its note on the PlannedClaimRetract and its no-op is only knowable at
+    apply, not here. This keeps note in step with cite, which requires a carrier.
+
+    TODO: a no-op retract: + note: still drops the note silently (the retraction
+    finds no target at apply, so _persist makes no ChangeSet). Tighten with a
+    build-time claim-presence check, as remove: already does.
+    """
+    if citation_ref is not None and not carrier_written:
+        raise PatchError(
+            f"{entry.ref}: cite has no field to attach to — cite a field you're "
+            f"also asserting (a retraction, a no-op removal, a field-less "
+            f"create, or an empty relationship like 'tag: []' can't carry one)"
+        )
+    note_has_carrier = (
+        carrier_written
+        or isinstance(entry, CreateEntry)
+        or (isinstance(entry, EditEntry) and bool(entry.retract))
+    )
+    if note and not note_has_carrier:
+        raise PatchError(
+            f"{entry.ref}: note has nothing to attach to — assert a field, "
+            f"retract, create, or remove a currently-present member (a no-op "
+            f"removal carries nothing)"
+        )
+
+
+def _validate_plan_wide(results: list[_EntryResult]) -> None:
+    """Run the cross-entry guards over all processed entries.
+
+    Merges each entry's per-entity contributions into accumulators — kept local
+    here, so the per-entry pass stays free of cross-entry state — then enforces:
+
+    1. one provenance-bearing entry per existing entity (their notes would
+       collide in the shared ChangeSet and their cites would be ambiguous),
+    2. no field both retracted and asserted on one entity by this source (the
+       assert silently wins and the retract is a no-op),
+    3. no relationship member both asserted present and removed on one entity
+       (both write the same claim_key, so one would silently clobber the other).
+    """
+    entry_count: dict[EntityKey, int] = defaultdict(int)
+    has_provenance: dict[EntityKey, bool] = defaultdict(bool)
+    target_ref: dict[EntityKey, str] = {}
+    retracted_fields: dict[EntityKey, set[str]] = defaultdict(set)
+    asserted_fields: dict[EntityKey, set[str]] = defaultdict(set)
+    asserted_members: dict[EntityKey, set[str]] = defaultdict(set)
+    removed_members: dict[EntityKey, dict[str, str]] = defaultdict(dict)
+    for result in results:
+        for tkey, c in result.contributions.items():
+            entry_count[tkey] += 1
+            target_ref[tkey] = c.ref
+            if c.has_provenance:
+                has_provenance[tkey] = True
+            retracted_fields[tkey] |= c.retracted_fields
+            asserted_fields[tkey] |= c.asserted_fields
+            asserted_members[tkey] |= c.asserted_members
+            removed_members[tkey].update(c.removed_members)
+
+    for tkey, count in entry_count.items():
+        if count > 1 and has_provenance[tkey]:
+            raise PatchError(
+                f"{target_ref[tkey]}: multiple entries target this entity and at "
+                f"least one carries note/cite — combine them into one entry "
+                f"(an entity's claims share a single changeset)"
+            )
+
+    for tkey, r_fields in retracted_fields.items():
+        both = sorted(r_fields & asserted_fields.get(tkey, set()))
+        if both:
+            raise PatchError(
+                f"{target_ref[tkey]}: cannot both retract and assert "
+                f"{', '.join(both)} for this entity"
+            )
+
+    for tkey, removed in removed_members.items():
+        clashing = set(removed) & asserted_members.get(tkey, set())
+        if clashing:
+            labels = sorted(removed[claim_key] for claim_key in clashing)
+            raise PatchError(
+                f"{target_ref[tkey]}: cannot both assert and remove "
+                f"{', '.join(labels)} for this entity"
+            )
 
 
 def _plan_citation_sources(plan: IngestPlan, sources: list[SeedSource]) -> None:
@@ -1050,12 +1149,10 @@ def _add_removals(
     source: Source,
     rel_namespaces: frozenset[str],
     rel_fields_by_model: dict[type[CatalogModel], set[str]],
-    removed_members: dict[EntityKey, set[str]],
-    member_labels: dict[str, str],
     *,
     note: str = "",
     citation_ref: CitationRef | None = None,
-) -> None:
+) -> _RemovalResult:
     """Emit ``exists=false`` member supersedes for each ``remove:`` member.
 
     Removing a relationship member is *not* a claim retraction (deactivation):
@@ -1071,7 +1168,13 @@ def _add_removals(
     stay safe) any member this source does not currently claim present, rather
     than writing an inert tombstone. The skip mirrors ``retract:``'s no-op
     behaviour for an already-absent scalar/FK claim.
+
+    Returns a :class:`_RemovalResult`: every *intended* removal (for the clash
+    guard, recorded regardless of the no-op skip) and whether any tombstone was
+    actually emitted (a carrier, for the provenance check).
     """
+    removed: dict[str, str] = {}
+    carrier_written = False
     for namespace, members in entry.remove.items():
         if namespace not in rel_namespaces:
             raise PatchError(
@@ -1091,8 +1194,7 @@ def _add_removals(
             # claims the member — otherwise the same nonsensical patch is caught
             # or silently applied depending on DB state. The skip only suppresses
             # the tombstone write, not the contradiction check.
-            removed_members[EntityKey(ct_id, existing.pk)].add(claim_key)
-            member_labels[claim_key] = f"{namespace} {member}"
+            removed[claim_key] = f"{namespace} {member}"
             if not _source_claims_member_present(source, ct_id, existing.pk, claim_key):
                 plan.warnings.append(
                     f"{entry.ref}: remove {namespace} member {member!r} is a no-op — "
@@ -1109,6 +1211,8 @@ def _add_removals(
                 citation_ref=citation_ref,
             )
             rel_fields_by_model[model_class].add(namespace)
+            carrier_written = True
+    return _RemovalResult(removed_members=removed, carrier_written=carrier_written)
 
 
 def _source_claims_member_present(
