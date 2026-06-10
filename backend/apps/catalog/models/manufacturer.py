@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from django.contrib.contenttypes.fields import GenericRelation
 from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
@@ -50,6 +52,22 @@ class OperatingStatus(models.TextChoices):
     ONGOING = "ongoing", "Ongoing"
     ENDED = "ended", "Ended"
     UNKNOWN = "unknown", "Unknown"
+
+    @classmethod
+    def rollup(cls, statuses: Iterable[str]) -> OperatingStatus:
+        """Aggregate operating status for a parent over its corporate entities.
+
+        Precedence ONGOING > UNKNOWN > ENDED: a brand is ongoing if any
+        incarnation is, ended only when every incarnation is known-ended, and
+        unknown otherwise — including when it has no entities. Accepts wire
+        strings or enum members (both normalize to the wire value).
+        """
+        values = {str(s) for s in statuses}
+        if cls.ONGOING.value in values:
+            return cls.ONGOING
+        if values and values <= {cls.ENDED.value}:
+            return cls.ENDED
+        return cls.UNKNOWN
 
 
 class Manufacturer(

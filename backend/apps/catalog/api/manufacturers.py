@@ -33,6 +33,7 @@ from ..models import (
     CorporateEntityLocation,
     MachineModel,
     Manufacturer,
+    OperatingStatus,
     System,
 )
 from ._manufacturer_facets import (
@@ -49,6 +50,7 @@ from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .helpers import (
     collect_titles,
+    model_year_bounds,
     serialize_locations,
 )
 from .images import (
@@ -180,6 +182,9 @@ class ManufacturerCorporateEntitySchema(Schema):
     public_id: str
     year_start: int | None
     year_end: int | None
+    year_of_first_model: int | None
+    year_of_last_model: int | None
+    operating_status: OperatingStatus
     locations: list[CorporateEntityLocationSchema]
 
 
@@ -198,6 +203,9 @@ class ManufacturerDetailSchema(CatalogDetailSchema):
     slug: str
     year_start: int | None = None
     year_end: int | None = None
+    year_of_first_model: int | None = None
+    year_of_last_model: int | None = None
+    operating_status: OperatingStatus = OperatingStatus.UNKNOWN
     logo_url: str | None = None
     website: str = ""
     opdb_manufacturer_id: int | None = None
@@ -220,6 +228,24 @@ class _PersonAccum:
 
     name: str
     roles: set[str] = field(default_factory=set)
+
+
+def _serialize_mfr_entity(e: CorporateEntity) -> ManufacturerCorporateEntitySchema:
+    """One corporate entity in the manufacturer detail's ``entities`` list.
+
+    Expects ``e.models`` prefetched to non-variant active models (see
+    ``_manufacturer_qs``)."""
+    bounds = model_year_bounds(e.models.all())
+    return ManufacturerCorporateEntitySchema(
+        name=e.name,
+        public_id=e.public_id,
+        year_start=e.year_start,
+        year_end=e.year_end,
+        year_of_first_model=bounds.first,
+        year_of_last_model=bounds.last,
+        operating_status=OperatingStatus(e.operating_status),
+        locations=serialize_locations(e),
+    )
 
 
 def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchema:
@@ -258,6 +284,7 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
 
     all_models = [m for e in mfr.entities.all() for m in e.models.all()]
     media_by_model = fetch_model_media_map(m.pk for m in all_models)
+    mfr_bounds = model_year_bounds(all_models)
 
     return ManufacturerDetailSchema(
         name=mfr.name,
@@ -267,20 +294,16 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
         description=describe(mfr),
         year_start=min(year_starts) if year_starts else None,
         year_end=max(year_ends) if year_ends else None,
+        year_of_first_model=mfr_bounds.first,
+        year_of_last_model=mfr_bounds.last,
+        operating_status=OperatingStatus.rollup(
+            e.operating_status for e in mfr.entities.all()
+        ),
         logo_url=mfr.logo_url,
         website=mfr.website,
         opdb_manufacturer_id=mfr.opdb_manufacturer_id,
         wikidata_id=mfr.wikidata_id,
-        entities=[
-            ManufacturerCorporateEntitySchema(
-                name=e.name,
-                public_id=e.public_id,
-                year_start=e.year_start,
-                year_end=e.year_end,
-                locations=serialize_locations(e),
-            )
-            for e in mfr.entities.all()
-        ],
+        entities=[_serialize_mfr_entity(e) for e in mfr.entities.all()],
         titles=collect_titles(all_models, media_by_model=media_by_model),
         systems=[
             ManufacturerSystemSchema(name=s.name, public_id=s.public_id)

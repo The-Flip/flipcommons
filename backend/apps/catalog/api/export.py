@@ -22,12 +22,25 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
-from django.db.models import Count, Max, Min, Q, QuerySet, Subquery
+from django.db.models import (
+    Case,
+    Count,
+    IntegerField,
+    Max,
+    Min,
+    OuterRef,
+    Q,
+    QuerySet,
+    Subquery,
+    Value,
+    When,
+)
+from django.db.models.functions import Coalesce
 from django.http import HttpRequest, HttpResponse
 from ninja import Router, Schema
 from pydantic import Field as PydanticField
@@ -196,12 +209,27 @@ class EntityExportSchema(Schema):
 # ---------------------------------------------------------------------------
 
 
+def _choices_literal(values: tuple[Any, ...], *, null: bool = False) -> Any:  # noqa: ANN401 — returns a dynamic pydantic field type
+    """A ``Literal[...]`` union over a choices field's wire values.
+
+    Model-driven enum typing: a choices-backed field emits its allowed values
+    as a Literal (so the OpenAPI/TS shape is a union, not a bare ``string``)
+    instead of being flattened to ``str``. Derived from the field's own
+    choices, so it never drifts from the model.
+    """
+    lit: Any = Literal[values]
+    return lit | None if null else lit
+
+
 def _scalar_py_type(f: models.Field[Any, Any]) -> Any:  # noqa: ANN401 — returns a dynamic pydantic field type
     if isinstance(f, ArrayField):
         inner = _scalar_py_type(f.base_field)
         return list[inner] | None if f.null else list[inner]  # type: ignore[valid-type]
     if isinstance(f, models.JSONField):
         return Any  # arbitrary structured JSON (e.g. Location.divisions)
+    if f.choices:
+        # Choices field → a Literal of its wire values, not a bare str/int.
+        return _choices_literal(tuple(v for v, _ in f.flatchoices), null=f.null)
     if isinstance(f, models.ForeignKey):
         base: Any = str
     elif isinstance(f, models.BooleanField):
@@ -563,6 +591,7 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
         GameplayFeature,
         MachineModel,
         Manufacturer,
+        OperatingStatus,
         Series,
         Theme,
         Title,
@@ -622,26 +651,51 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
                     "_export_model_count",
                     "Number of non-variant machine models by this manufacturer.",
                 ),
-                "year_min": DerivedField(
+                "year_of_first_model": DerivedField(
                     int | None,
-                    "_export_year_min",
+                    "_export_year_of_first_model",
                     "Earliest model year for this manufacturer.",
                 ),
-                "year_max": DerivedField(
+                "year_of_last_model": DerivedField(
                     int | None,
-                    "_export_year_max",
+                    "_export_year_of_last_model",
                     "Latest model year for this manufacturer.",
+                ),
+                "operating_status": DerivedField(
+                    # Same Literal the CorporateEntity column auto-exports, so
+                    # both surfaces type operating_status identically.
+                    _choices_literal(tuple(OperatingStatus.values)),
+                    "_export_operating_status",
+                    "Whether this manufacturer is still producing pinball "
+                    "(`ongoing`/`ended`/`unknown`), rolled up across its "
+                    "corporate entities.",
                 ),
             },
             annotate=_annotate_manufacturer,
         ),
         ExportSpec(
             model=CorporateEntity,
+            # Legacy corporate-lifespan columns are retired from the read APIs;
+            # the production-span fields below replace them.
+            export_exempt=frozenset({"year_start", "year_end"}),
             relations={
                 "locations": _rel(
                     "locations", "slugs", "locations__location", via="location"
                 ),
             },
+            derived={
+                "year_of_first_model": DerivedField(
+                    int | None,
+                    "_export_year_of_first_model",
+                    "Earliest model year for this corporate entity.",
+                ),
+                "year_of_last_model": DerivedField(
+                    int | None,
+                    "_export_year_of_last_model",
+                    "Latest model year for this corporate entity.",
+                ),
+            },
+            annotate=_annotate_corporate_entity,
         ),
         ExportSpec(
             model=Theme,
@@ -708,16 +762,52 @@ def _annotate_title(qs: QuerySet[Any]) -> QuerySet[Any]:
 
 
 def _annotate_manufacturer(qs: QuerySet[Any]) -> QuerySet[Any]:
+    from apps.catalog.models import CorporateEntity, OperatingStatus
+
     # active_status_q matches LifecycleManager.active() (status active OR null) —
     # a plain status="active" would undercount legacy null-status ingest rows that
     # DO appear in the /export/models/ dump.
     nonvariant = Q(entities__models__variant_of__isnull=True) & active_status_q(
         "entities__models"
     )
+    # Brand operating status rolls up over its active corporate entities by
+    # precedence ONGOING > UNKNOWN > ENDED — the SQL mirror of
+    # OperatingStatus.rollup. The correlated subquery takes the highest-priority
+    # entity's status; a brand with no active entity yields null → UNKNOWN
+    # (never ENDED).
+    status_rollup = (
+        CorporateEntity.objects.active()
+        .filter(manufacturer=OuterRef("pk"))
+        .annotate(
+            _prio=Case(
+                When(operating_status=OperatingStatus.ONGOING, then=Value(1)),
+                When(operating_status=OperatingStatus.UNKNOWN, then=Value(2)),
+                default=Value(3),  # ENDED — the only remaining value (null=False)
+                output_field=IntegerField(),
+            )
+        )
+        .order_by("_prio")
+        .values("operating_status")[:1]
+    )
     annotated: QuerySet[Any] = qs.annotate(
         _export_model_count=Count("entities__models", filter=nonvariant, distinct=True),
-        _export_year_min=Min("entities__models__year", filter=nonvariant),
-        _export_year_max=Max("entities__models__year", filter=nonvariant),
+        _export_year_of_first_model=Min("entities__models__year", filter=nonvariant),
+        _export_year_of_last_model=Max("entities__models__year", filter=nonvariant),
+        _export_operating_status=Coalesce(
+            Subquery(status_rollup), Value(OperatingStatus.UNKNOWN.value)
+        ),
+    )
+    return annotated
+
+
+def _annotate_corporate_entity(qs: QuerySet[Any]) -> QuerySet[Any]:
+    # One-hop production span (this entity's own models), null-skipping Min/Max
+    # over non-variant active models — mirrors the manufacturer rule scoped to a
+    # single corporate entity.
+    nonvariant = Q(models__variant_of__isnull=True) & active_status_q("models")
+    annotated: QuerySet[Any] = qs.annotate(
+        _export_year_of_first_model=Min("models__year", filter=nonvariant),
+        _export_year_of_last_model=Max("models__year", filter=nonvariant),
     )
     return annotated
 

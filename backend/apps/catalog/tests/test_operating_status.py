@@ -52,6 +52,33 @@ def test_default_is_unknown(entity):
     assert entity.operating_status == "unknown"
 
 
+# ── Precedence rollup ────────────────────────────────────────────
+
+
+class TestRollup:
+    def test_empty_is_unknown(self):
+        assert OperatingStatus.rollup([]) == OperatingStatus.UNKNOWN
+
+    def test_any_ongoing_wins(self):
+        assert (
+            OperatingStatus.rollup(["ended", "ongoing", "unknown"])
+            == OperatingStatus.ONGOING
+        )
+
+    def test_all_ended_is_ended(self):
+        assert OperatingStatus.rollup(["ended", "ended"]) == OperatingStatus.ENDED
+
+    def test_unknown_beats_ended(self):
+        # ENDED only when *every* entity is known-ended; a mix is UNKNOWN.
+        assert OperatingStatus.rollup(["ended", "unknown"]) == OperatingStatus.UNKNOWN
+
+    def test_accepts_enum_members(self):
+        assert (
+            OperatingStatus.rollup([OperatingStatus.ENDED, OperatingStatus.ONGOING])
+            == OperatingStatus.ONGOING
+        )
+
+
 # ── Choices validation at claim boundary ─────────────────────────
 
 

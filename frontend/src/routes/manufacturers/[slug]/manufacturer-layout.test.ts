@@ -23,38 +23,7 @@ vi.mock('$lib/auth.svelte', () => ({
 }));
 
 import Harness from './layout.test-harness.svelte';
-import type { ManufacturerDetailSchema } from '$lib/api/schema';
-
-const MOCK_MANUFACTURER = {
-  name: 'Williams',
-  public_id: 'williams',
-  last_modified: '2026-01-01T00:00:00Z',
-  slug: 'williams',
-  description: {
-    text: 'Historic manufacturer [1].',
-    html: '<p>Historic manufacturer.</p>',
-    plain: 'Historic manufacturer.',
-    citations: [],
-    attribution: null,
-  },
-  year_start: 1985,
-  year_end: 1999,
-  logo_url: null,
-  website: 'https://williams.example',
-  entities: [
-    {
-      name: 'Williams Electronics',
-      public_id: 'williams-electronics',
-      year_start: 1985,
-      year_end: 1999,
-      locations: [],
-    },
-  ],
-  titles: [],
-  systems: [],
-  persons: [],
-  uploaded_media: [],
-} satisfies ManufacturerDetailSchema;
+import { MOCK_MANUFACTURER } from './manufacturer.fixtures';
 
 describe('manufacturer layout', () => {
   beforeEach(() => {

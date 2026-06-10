@@ -132,3 +132,62 @@ class TestManufacturersAPI:
         data = resp.json()
         names = [t["name"] for t in data["titles"]]
         assert names[-1] == "No Year Title"
+
+    def test_get_manufacturer_production_span(
+        self, client, manufacturer, williams_entity
+    ):
+        make_machine_model(
+            name="Early", slug="early", corporate_entity=williams_entity, year=1985
+        )
+        make_machine_model(
+            name="Late", slug="late", corporate_entity=williams_entity, year=2003
+        )
+        resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
+        data = resp.json()
+        # Top-level production span across all entities' models.
+        assert data["year_of_first_model"] == 1985
+        assert data["year_of_last_model"] == 2003
+        # No operating_status claim anywhere → defaults to "unknown".
+        assert data["operating_status"] == "unknown"
+        # Same fields mirrored on each nested corporate entity.
+        entity = data["entities"][0]
+        assert entity["year_of_first_model"] == 1985
+        assert entity["year_of_last_model"] == 2003
+        assert entity["operating_status"] == "unknown"
+
+    def test_manufacturer_operating_status_rolls_up(
+        self, client, manufacturer, williams_entity, source
+    ):
+        from apps.catalog.resolve import resolve_entity
+        from apps.provenance.models import Claim
+
+        Claim.objects.assert_claim(
+            williams_entity, "operating_status", "ongoing", source=source
+        )
+        resolve_entity(williams_entity)
+        resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
+        data = resp.json()
+        assert data["operating_status"] == "ongoing"
+        assert data["entities"][0]["operating_status"] == "ongoing"
+
+    def test_manufacturer_production_span_null_when_no_years(
+        self, client, manufacturer, williams_entity
+    ):
+        # A maker whose only model lacks a year → null bounds, no crash.
+        make_machine_model(
+            name="Undated", slug="undated", corporate_entity=williams_entity
+        )
+        resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
+        data = resp.json()
+        assert data["year_of_first_model"] is None
+        assert data["year_of_last_model"] is None
+        assert data["entities"][0]["year_of_first_model"] is None
+
+    def test_manufacturer_with_no_entities(self, client, manufacturer):
+        # No corporate entities at all → empty span, unknown status (not ended).
+        resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
+        data = resp.json()
+        assert data["entities"] == []
+        assert data["year_of_first_model"] is None
+        assert data["year_of_last_model"] is None
+        assert data["operating_status"] == "unknown"

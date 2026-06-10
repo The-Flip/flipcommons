@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from django.db.models import Count, F, Prefetch, Q, QuerySet
+from django.db.models import Count, F, Max, Min, Prefetch, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
@@ -24,8 +24,9 @@ from ..models import (
     CorporateEntityLocation,
     MachineModel,
     Manufacturer,
+    OperatingStatus,
 )
-from ._typing import HasModelCount
+from ._typing import CorporateEntityListAnnotations
 from .constants import NameAliasQuery, PageParam
 from .edit_claims import (
     execute_claims,
@@ -37,6 +38,7 @@ from .entity_crud import register_entity_create, register_entity_delete_restore
 from .entity_list import paginated_list_response
 from .helpers import (
     collect_titles,
+    model_year_bounds,
     serialize_locations,
 )
 from .manufacturers import manufacturers_router
@@ -67,6 +69,16 @@ class CorporateEntityListItemSchema(Schema):
         None, description="First year of operation, if known."
     )
     year_end: int | None = Field(None, description="Last year of operation, if known.")
+    year_of_first_model: int | None = Field(
+        None, description="Earliest model year for this corporate entity."
+    )
+    year_of_last_model: int | None = Field(
+        None, description="Latest model year for this corporate entity."
+    )
+    operating_status: OperatingStatus = Field(
+        OperatingStatus.UNKNOWN,
+        description="Whether this corporate entity is still producing pinball.",
+    )
     model_count: int = Field(
         0, description="Number of machine models from this corporate entity."
     )
@@ -88,6 +100,9 @@ class CorporateEntityDetailSchema(CatalogDetailSchema):
     manufacturer: EntityRef
     year_start: int | None = None
     year_end: int | None = None
+    year_of_first_model: int | None = None
+    year_of_last_model: int | None = None
+    operating_status: OperatingStatus = OperatingStatus.UNKNOWN
     ipdb_manufacturer_id: int | None = None
     aliases: list[str] = []
     locations: list[CorporateEntityLocationSchema] = []
@@ -124,6 +139,7 @@ def _detail_qs() -> QuerySet[CorporateEntity]:
 
 
 def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
+    bounds = model_year_bounds(ce.models.all())
     return CorporateEntityDetailSchema(
         name=ce.name,
         public_id=ce.public_id,
@@ -135,6 +151,9 @@ def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
         ),
         year_start=ce.year_start,
         year_end=ce.year_end,
+        year_of_first_model=bounds.first,
+        year_of_last_model=bounds.last,
+        operating_status=OperatingStatus(ce.operating_status),
         ipdb_manufacturer_id=ce.ipdb_manufacturer_id,
         aliases=[a.value for a in ce.aliases.all()],
         locations=serialize_locations(ce),
@@ -150,14 +169,14 @@ corporate_entities_router = Router(tags=["corporate-entities"])
 
 
 def _corporate_entity_list_qs() -> QuerySet[CorporateEntity]:
+    nonvariant = Q(models__variant_of__isnull=True) & active_status_q("models")
     return (
         CorporateEntity.objects.active()
         .select_related("manufacturer")
         .annotate(
-            model_count=Count(
-                "models",
-                filter=Q(models__variant_of__isnull=True) & active_status_q("models"),
-            )
+            model_count=Count("models", filter=nonvariant),
+            year_of_first_model=Min("models__year", filter=nonvariant),
+            year_of_last_model=Max("models__year", filter=nonvariant),
         )
         .prefetch_related(
             Prefetch(
@@ -174,6 +193,7 @@ def _corporate_entity_list_qs() -> QuerySet[CorporateEntity]:
 def _serialize_corporate_entity_row(
     ce: CorporateEntity, thumbnail: str | None = None
 ) -> CorporateEntityListItemSchema:
+    row = cast(CorporateEntityListAnnotations, ce)
     return CorporateEntityListItemSchema(
         name=ce.name,
         slug=ce.slug,
@@ -182,7 +202,10 @@ def _serialize_corporate_entity_row(
         ),
         year_start=ce.year_start,
         year_end=ce.year_end,
-        model_count=cast(HasModelCount, ce).model_count,
+        year_of_first_model=row.year_of_first_model,
+        year_of_last_model=row.year_of_last_model,
+        operating_status=OperatingStatus(ce.operating_status),
+        model_count=row.model_count,
         locations=serialize_locations(ce),
     )
 

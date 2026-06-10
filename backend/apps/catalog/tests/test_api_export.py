@@ -204,8 +204,64 @@ class TestExportDerivedFields:
     def test_manufacturer_aggregates(self, client, machine_model):
         row = _row(client, "manufacturers", "williams")
         assert row["model_count"] == 1
-        assert row["year_min"] == 1997
-        assert row["year_max"] == 1997
+        assert row["year_of_first_model"] == 1997
+        assert row["year_of_last_model"] == 1997
+        # No operating_status claim on the entity → defaults to "unknown".
+        assert row["operating_status"] == "unknown"
+        # The renamed fields fully replace the old lifespan-derived names.
+        assert "year_min" not in row
+        assert "year_max" not in row
+
+    def test_manufacturer_operating_status_rolls_up(
+        self, client, machine_model, williams_entity, source
+    ):
+        from apps.catalog.resolve import resolve_entity
+        from apps.provenance.models import Claim
+
+        Claim.objects.assert_claim(
+            williams_entity, "operating_status", "ongoing", source=source
+        )
+        resolve_entity(williams_entity)
+        invalidate_all()
+        row = _row(client, "manufacturers", "williams")
+        assert row["operating_status"] == "ongoing"
+
+    def test_manufacturer_operating_status_precedence(
+        self, client, manufacturer, williams_entity
+    ):
+        # The export rolls up in SQL (a Case/When subquery), independently of the
+        # Python OperatingStatus.rollup; pin its precedence on the discriminating
+        # multi-entity cases.
+        from apps.catalog.models import CorporateEntity
+
+        second = CorporateEntity.objects.create(
+            name="Williams Later", slug="williams-later", manufacturer=manufacturer
+        )
+
+        def rollup(first: str, other: str) -> str:
+            CorporateEntity.objects.filter(pk=williams_entity.pk).update(
+                operating_status=first
+            )
+            CorporateEntity.objects.filter(pk=second.pk).update(operating_status=other)
+            invalidate_all()
+            return str(_row(client, "manufacturers", "williams")["operating_status"])
+
+        # ENDED only when every entity is known-ended; UNKNOWN outranks it.
+        assert rollup("ended", "unknown") == "unknown"
+        # ONGOING wins over everything, regardless of entity order.
+        assert rollup("ended", "ongoing") == "ongoing"
+        # All known-ended → ENDED.
+        assert rollup("ended", "ended") == "ended"
+
+    def test_corporate_entity_production_span(self, client, machine_model):
+        row = _row(client, "corporate-entities", "williams-electronics")
+        assert row["year_of_first_model"] == 1997
+        assert row["year_of_last_model"] == 1997
+        # operating_status is a real column → auto-exported as its wire value.
+        assert row["operating_status"] == "unknown"
+        # Legacy corporate-lifespan columns are dropped from the export.
+        assert "year_start" not in row
+        assert "year_end" not in row
 
 
 class TestExportMediaGate:

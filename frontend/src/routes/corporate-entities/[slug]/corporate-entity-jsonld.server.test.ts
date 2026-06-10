@@ -1,20 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+layout.server';
 import type { CorporateEntityDetailSchema } from '$lib/api/schema';
+import { MOCK_CORPORATE_ENTITY } from './corporate-entity.fixtures';
 
 const ORIGIN = 'http://localhost:5173';
 
+// Bally-specific founding/dissolution years and brand ref drive this test's
+// jsonLd assertions, so override them on the shared fixture.
 const CE = {
+  ...MOCK_CORPORATE_ENTITY,
   name: 'Bally',
   public_id: 'bally',
-  last_modified: '2026-01-01T00:00:00Z',
   slug: 'bally',
-  description: { text: '', html: '', plain: '', citations: [], attribution: null },
   manufacturer: { name: 'Bally', public_id: 'bally-mfr' },
   year_start: 1931,
   year_end: 1998,
-  aliases: [],
-  locations: [],
   titles: [],
 } satisfies CorporateEntityDetailSchema;
 

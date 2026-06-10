@@ -35,7 +35,11 @@ FORBIDDEN_GENERIC_NAMES = frozenset(
 # pydantic emits the enum as a top-level component because the same enum is
 # used as a `dict[Activity, bool]` key. Bare-name allowlist rather than a
 # rename — `ActivitySchema` would lie about what the type is.
-ALLOWED_BARE_NAMES = frozenset({"JsonBody", "Activity"})
+# `OperatingStatus` is the catalog `TextChoices` enum typed onto the
+# manufacturer/corporate-entity schemas; pydantic emits it as a shared
+# component for the same reason, and `OperatingStatusSchema` would likewise
+# misname an enum.
+ALLOWED_BARE_NAMES = frozenset({"JsonBody", "Activity", "OperatingStatus"})
 
 MUTATING_METHODS = frozenset({"post", "patch", "delete"})
 
