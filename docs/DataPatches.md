@@ -11,6 +11,7 @@ A patch is **attributed to the source making the claim** (which may be `flipcomm
 - **assert / supersede** — (re-)assert a claim; the engine deactivates the source's prior claim for that `(entity, claim_key)` and writes the new one. Corrects a wrong value or carries a source's updated one.
 - **create** — make a new entity and its claims.
 - **retract** — remove the source's claim (the fact never existed or no longer does).
+- **delete** — soft-delete an entity (the `status=deleted` lifecycle), distinct from a claim retract.
 
 ## File format
 
@@ -64,13 +65,35 @@ claims:
       retract: [manufacturer] # drop ipdb's manufacturer claim
 ```
 
+Delete, after reassigning the firm's one machine to another corporate entity. The reassignment must land in an **earlier** patch: the delete's referrer check reads live DB state, so a same-patch reassignment isn't yet visible and the delete would still see the machine as a blocker.
+
+```yaml
+# 0007-reassign-machine.yaml — reassign first, on its own
+attribution: flip-museum
+claims:
+  - model.some-machine:
+      expect: { corporate_entity: chicago-coin-machinery-company }
+      corporate_entity: chicago-coin # the surviving firm
+```
+
+```yaml
+# 0008-delete-firm.yaml — now the firm has no active referrer
+attribution: flip-museum
+claims:
+  - corporate-entity.chicago-coin-machinery-company:
+      expect: { manufacturer: chicago-coin } # guard the row you're deleting
+      delete: true
+      note: "flip-museum: duplicate of chicago-coin; its sole machine reassigned."
+```
+
 **Entity reference** is `type.public_id` — the canonical `entity_type` (`model`, `manufacturer`, `corporate-entity`, …) and the public id (slug for most, `location_path` for Location), split on the first `.`.
 
-**Field keys** are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's public_id; **relationship** (`tag`, `theme`) — key is the namespace, value a list of member public_ids.
+**Field keys** are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's public_id; **relationship** (`tag`, `theme`) — key is the namespace, value a list of member public_ids. The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
 
 **Reserved keys** (directives, not claim fields):
 
 - `create: true` — opt-in to create. Unresolved ref without it → error; resolved ref with it → error (duplicate).
+- `delete: true` — soft-delete an existing entity: writes a `status=deleted` claim (no row removal), exactly like an in-app delete. Reuses the app's soft-delete planner, so it obeys the same record-lifecycle rules — it **refuses** when an active PROTECT referrer would be left dangling, and **cascades** `status=deleted` to owned lifecycle children (a warning lists them). A delete entry takes only `expect:`/`note:`/`cite:` — no field assertions (reassign references in a separate, earlier patch first; see below), no `create`, no `retract`. `note`/`cite` ride the `status=deleted` claim. Idempotent: re-deleting an already-deleted entity diffs as unchanged. Takes effect only if the `status=deleted` claim wins resolution, so attribute it to a source that outranks any existing `status` claim.
 - `expect:` — drift guard: a map of currently-resolved values the target must already have, checked before any write (mismatch → error). Covers scalar + FK. Stops a hand-authored id from writing to a drifted or same-named row.
 - `retract:` — scalar/FK field names whose claim (from this patch's source) to deactivate, on an existing entity. A no-op with a warning if already gone, so re-runs are safe. Not valid with `create`, nor alongside asserting the same field. Retracting the sole claim of a non-nullable FK doesn't clear it (NOT NULL forbids it) — the last value freezes in place, provenance-orphaned; to _change_ a required FK, assert the new value instead. Because it is scoped to this patch's source, attributing the retract to a source that never claimed the field silently does nothing — confirm which source holds the active claim first.
 - `note:` — a per-entity free-text reason (≤1000 chars) → the entity's ChangeSet note, shown on its edit-history page. (`description:` explains the whole patch; `note:` explains one entry.) All of an entity's claims in a patch collapse into one changeset, so the note is per-entity. The per-entity `note:` is the user-facing one; the whole-patch `description:` (→ `IngestRun.note`) is, as of this writing, surfaced only in Django admin — so put anything readers should see in `note:`, not `description:`.
@@ -191,6 +214,6 @@ On localhost, the simplest undo is restoring a pre-apply snapshot (see [Iteratin
 
 We've been building the patch system on an as-needed basis. These haven't been needed yet.
 
-- **No entity delete** — distinct from a claim retract; the status=deleted lifecycle.
+- **No same-patch reassign-then-delete** — a `delete:`'s referrer check reads live DB state, so a reference reassigned earlier in the _same_ patch isn't yet visible; reassign in an earlier numbered patch, then delete.
 - `expect:` and `retract:` only cover scalar + FK, not relationships.
 - Same-patch references resolve for **FK fields only**: an FK can point at an entity created earlier in the same patch, but a relationship member (e.g. `tag:`) must already exist in the DB.

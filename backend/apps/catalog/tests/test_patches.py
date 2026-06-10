@@ -664,6 +664,258 @@ claims:
         _apply(text)
 
 
+# ── Delete ─────────────────────────────────────────────────────────
+
+
+def test_delete_marks_status_deleted(stern_entity):
+    # stern_entity has no active referrer, so the delete proceeds and resolves
+    # status=deleted onto the entity.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+"""
+    report = _apply(text, patch_id="0001-del")
+    assert report.rejected == 0
+    assert report.asserted == 1
+    stern_entity.refresh_from_db()
+    assert stern_entity.status == "deleted"
+    # The entity drops out of the active manager.
+    assert not CorporateEntity.objects.active().filter(pk=stern_entity.pk).exists()
+
+
+def test_delete_blocked_by_active_referrer(machine_model):
+    # machine_model.corporate_entity → williams_entity (a PROTECT FK). The
+    # active machine blocks the CE delete; the blocker is reported before any
+    # write, naming the referrer and the relation.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.williams-electronics:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="cannot delete.*still referenced"):
+        _apply(text, patch_id="0001-del")
+    assert not Claim.objects.filter(
+        source__slug="flip-museum", field_name="status"
+    ).exists()
+
+
+def test_delete_blocked_caught_in_dry_run(machine_model):
+    # The blocker check is a build-phase DB read, so --dry-run surfaces it too.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.williams-electronics:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="cannot delete"):
+        _apply(text, patch_id="0001-del", dry_run=True)
+
+
+def test_reassign_in_earlier_patch_then_delete(machine_model, stern_entity):
+    # The real workflow: the referrer is reassigned away first (its own patch,
+    # applied and resolved), which clears the blocker for a later delete patch.
+    reassign = f"""
+attribution: flip-museum
+claims:
+  - model.{machine_model.slug}:
+      expect: {{ corporate_entity: williams-electronics }}
+      corporate_entity: stern-pinball-inc
+"""
+    _apply(reassign, patch_id="0001-reassign")
+    machine_model.refresh_from_db()
+    assert machine_model.corporate_entity_id == stern_entity.pk
+
+    delete = """
+attribution: flip-museum
+claims:
+  - corporate-entity.williams-electronics:
+      delete: true
+"""
+    report = _apply(delete, patch_id="0002-delete")
+    assert report.rejected == 0
+    williams = CorporateEntity.objects.get(slug="williams-electronics")
+    assert williams.status == "deleted"
+
+
+def test_delete_is_idempotent(stern_entity):
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+"""
+    r1 = _apply(text, patch_id="0001-del")
+    assert r1.asserted == 1
+    # Re-running the same delete (different patch_id) is a clean no-op — the
+    # status=deleted claim already exists and diffs as unchanged.
+    r2 = _apply(text, patch_id="0002-del")
+    assert r2.asserted == 0
+    assert r2.unchanged == 1
+    stern_entity.refresh_from_db()
+    assert stern_entity.status == "deleted"
+
+
+def test_delete_with_expect_guard(stern_entity):
+    # A mismatched expect: fails loudly before the delete writes anything.
+    bad = """
+attribution: flip-museum
+claims:
+  - corporate-entity.stern-pinball-inc:
+      expect: { manufacturer: williams }
+      delete: true
+"""
+    with pytest.raises(PatchError, match="expect manufacturer"):
+        _apply(bad, patch_id="0001-bad")
+    stern_entity.refresh_from_db()
+    assert stern_entity.status != "deleted"
+
+    ok = """
+attribution: flip-museum
+claims:
+  - corporate-entity.stern-pinball-inc:
+      expect: { manufacturer: stern }
+      delete: true
+"""
+    _apply(ok, patch_id="0002-ok")
+    stern_entity.refresh_from_db()
+    assert stern_entity.status == "deleted"
+
+
+def test_delete_nonexistent_rejected():
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.no-such-entity:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="no such corporate-entity to delete"):
+        _apply(text)
+
+
+def test_delete_with_create_rejected():
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.acme:
+      create: true
+      delete: true
+"""
+    with pytest.raises(PatchError, match="mutually exclusive"):
+        _apply(text)
+
+
+def test_delete_with_retract_rejected(stern_entity):
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+      retract: [year_start]
+"""
+    with pytest.raises(PatchError, match="mutually exclusive"):
+        _apply(text)
+
+
+def test_delete_with_field_assertion_rejected(stern_entity):
+    # A delete entry carries no field assertions — reassign references in a
+    # separate entry/patch, before the delete.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+      year_start: 1999
+"""
+    with pytest.raises(PatchError, match="takes no field assertions"):
+        _apply(text)
+
+
+def test_assert_status_field_rejected(stern_entity):
+    # 'status' is lifecycle state. Asserting it as a raw claim field would
+    # bypass the delete planner (no blocker check, no cascade) — reject it and
+    # point the author at the directive.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.stern-pinball-inc:
+      status: deleted
+"""
+    with pytest.raises(PatchError, match="'status' is lifecycle"):
+        _apply(text)
+    stern_entity.refresh_from_db()
+    assert stern_entity.status != "deleted"
+
+
+def test_assert_status_field_does_not_bypass_blocker(machine_model):
+    # The back door must not let a raw status=deleted slip past the active
+    # PROTECT referrer that delete: true correctly rejects.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.williams-electronics:
+      status: deleted
+"""
+    with pytest.raises(PatchError, match="'status' is lifecycle"):
+        _apply(text)
+    assert not Claim.objects.filter(
+        source__slug="flip-museum", field_name="status"
+    ).exists()
+
+
+def test_delete_cascade_child_same_entity_provenance_guard(machine_model):
+    # Deleting a Title cascades status=deleted onto its MachineModels. A
+    # separate entry that puts note/cite on a cascaded child collides in that
+    # child's single ChangeSet — the same-entity guard must catch it even
+    # though the child was only reached via the cascade.
+    text = """
+attribution: flip-museum
+claims:
+  - title.medieval-madness-title:
+      delete: true
+  - model.medieval-madness:
+      note: 'edit on a machine that the cascade is deleting'
+      year: 1998
+"""
+    with pytest.raises(PatchError, match="multiple entries target this entity"):
+        _apply(text)
+
+
+def test_delete_must_be_boolean():
+    with pytest.raises(PatchError, match="'delete' must be a boolean"):
+        load_patch(
+            "attribution: flip-museum\nclaims:\n"
+            "  - corporate-entity.x:\n      delete: yes\n"
+        )
+
+
+def test_delete_note_and_cite_attach_to_status_claim(stern_entity):
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+      note: 'flip-museum says "this firm never existed".'
+      cite: https://example.org/proof
+sources:
+  - name: Example
+    source_type: web
+    links:
+      - { url: "https://example.org/", label: Example, link_type: homepage }
+"""
+    _apply(text, patch_id="0001-del")
+    status_claim = Claim.objects.get(
+        source__slug="flip-museum", field_name="status", is_active=True
+    )
+    assert status_claim.value == "deleted"
+    changeset = status_claim.changeset
+    assert changeset is not None
+    assert changeset.note == 'flip-museum says "this firm never existed".'
+    assert CitationInstance.objects.filter(claim=status_claim).exists()
+
+
 # ── Idempotency (engine-level no-op) ───────────────────────────────
 
 

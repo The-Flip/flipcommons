@@ -26,6 +26,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.catalog.api.soft_delete import plan_soft_delete
 from apps.catalog.claims import build_relationship_claim, get_relationship_namespaces
 from apps.catalog.ingestion.apply import (
     CitationRef,
@@ -54,7 +55,15 @@ from apps.provenance.validation import get_relationship_schema
 PATCH_ID_RE = re.compile(r"^\d{4}-[a-z0-9-]+$")
 
 # Keys in a claim entry's value mapping that are directives, not claim fields.
-RESERVED_FIELD_KEYS = frozenset({"create", "expect", "retract", "note", "cite"})
+RESERVED_FIELD_KEYS = frozenset(
+    {"create", "delete", "expect", "retract", "note", "cite"}
+)
+
+# The claim-controlled lifecycle field (``LifecycleStatusModel.status``).
+# Patches never write it directly — it's created as ``active`` and soft-deleted
+# to ``deleted`` via the ``delete:`` directive, which routes through the
+# soft-delete planner. A raw claim would skip that planner's safety checks.
+LIFECYCLE_STATUS_FIELD = "status"
 
 # Allowed keys in a `sources:` node / its links, derived from the seed TypedDicts
 # (the single source of truth). `children` is excluded — v1 sources are flat.
@@ -197,6 +206,7 @@ class PatchClaim:
     entity_type: str
     public_id: str
     create: bool
+    delete: bool
     expect: JsonBody
     retract: list[str]
     fields: JsonBody
@@ -314,6 +324,9 @@ def load_patch(text: str) -> PatchDoc:
         raw_create = raw_fields.get("create", False)
         if not isinstance(raw_create, bool):
             raise PatchError(f"{ref}: 'create' must be a boolean")
+        raw_delete = raw_fields.get("delete", False)
+        if not isinstance(raw_delete, bool):
+            raise PatchError(f"{ref}: 'delete' must be a boolean")
         raw_expect = raw_fields.get("expect", {})
         if not isinstance(raw_expect, dict):
             raise PatchError(f"{ref}: 'expect' must be a mapping")
@@ -337,6 +350,7 @@ def load_patch(text: str) -> PatchDoc:
                 entity_type=entity_type,
                 public_id=public_id,
                 create=raw_create,
+                delete=raw_delete,
                 expect=raw_expect,
                 retract=raw_retract,
                 fields=fields,
@@ -478,7 +492,40 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
         existing = _lookup_entity(model_class, pc.public_id)
 
         target: _Target
-        if pc.create:
+        if pc.delete:
+            if pc.create:
+                raise PatchError(
+                    f"{pc.ref}: 'create' and 'delete' are mutually exclusive"
+                )
+            if pc.retract:
+                raise PatchError(
+                    f"{pc.ref}: 'retract' and 'delete' are mutually exclusive"
+                )
+            if pc.fields:
+                raise PatchError(
+                    f"{pc.ref}: a delete entry takes no field assertions "
+                    f"({', '.join(sorted(pc.fields))}) — reassign references in a "
+                    f"separate entry, in an earlier patch, before the delete"
+                )
+            if existing is None:
+                raise PatchError(f"{pc.ref}: no such {pc.entity_type} to delete")
+            matched += 1
+            _check_expect(model_class, existing, pc)
+            affected = _add_delete(
+                plan, existing, pc, note=note, citation_ref=citation_ref
+            )
+            target = _Target(content_type_id=ct_id, object_id=existing.pk)
+            # Register every soft-deleted entity (root + cascade) with the
+            # same-entity guard: each carries the entry's note/cite on its
+            # status=deleted claim, so a separate entry on any of them that also
+            # carries provenance is a genuine collision.
+            has_provenance = bool(note) or citation_ref is not None
+            for tkey in affected:
+                target_ref[tkey] = pc.ref
+                entity_entry_count[tkey] += 1
+                if has_provenance:
+                    entity_has_provenance[tkey] = True
+        elif pc.create:
             if existing is not None:
                 raise PatchError(
                     f"{pc.ref}: create:true but a {pc.entity_type} with this "
@@ -518,6 +565,14 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
         # (``tag: []`` emits zero member claims).
         assertions_before = len(plan.assertions)
         for key, value in pc.fields.items():
+            if key == LIFECYCLE_STATUS_FIELD:
+                # ``status`` is lifecycle state, not a free-form claim. Writing
+                # it directly would bypass the delete planner's blocker check
+                # and cascade — route lifecycle changes through the directive.
+                raise PatchError(
+                    f"{pc.ref}: {LIFECYCLE_STATUS_FIELD!r} is lifecycle state — "
+                    f"soft-delete with 'delete: true', not a direct claim"
+                )
             if key in claim_fields:
                 _emit_direct(
                     plan, key, value, target, note=note, citation_ref=citation_ref
@@ -541,15 +596,18 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
 
         # Provenance needs an emitted carrier, or it would silently vanish.
         # ``cite`` rides an authored field assertion; ``note`` also rides a
-        # create's scaffolding claims or a retraction.
+        # create's scaffolding claims or a retraction. A delete carries its own
+        # carrier — the ``status=deleted`` claim(s) emitted by ``_add_delete``
+        # (before ``assertions_before`` above), which take the note + cite
+        # directly — so it's exempt from both checks.
         authored_emitted = len(plan.assertions) > assertions_before
-        if citation_ref is not None and not authored_emitted:
+        if citation_ref is not None and not authored_emitted and not pc.delete:
             raise PatchError(
                 f"{pc.ref}: cite has no field to attach to — cite a field you're "
                 f"also asserting (a retraction, a field-less create, or an empty "
                 f"relationship like 'tag: []' can't carry one)"
             )
-        if note and not (authored_emitted or pc.create or pc.retract):
+        if note and not (authored_emitted or pc.create or pc.retract or pc.delete):
             raise PatchError(
                 f"{pc.ref}: note has nothing to attach to — the entry must assert "
                 f"a field, retract, or create something"
@@ -831,7 +889,7 @@ def _add_create(
     # create contract (status must be 'active'), so reject. The form field
     # itself (slug) stays author-writable on a derived create — only the
     # derived public id field is off-limits.
-    adapter_owned = {pid_field, "status"} & pc.fields.keys()
+    adapter_owned = {pid_field, LIFECYCLE_STATUS_FIELD} & pc.fields.keys()
     if adapter_owned:
         raise PatchError(
             f"{pc.ref}: do not set {', '.join(sorted(adapter_owned))} on a create "
@@ -845,7 +903,10 @@ def _add_create(
             f"{pc.ref}: creating a {pc.entity_type} requires {form_field!r} "
             f"(its public id {pid_field!r} is derived from it)"
         )
-    kwargs: dict[str, object] = {pid_field: pc.public_id, "status": "active"}
+    kwargs: dict[str, object] = {
+        pid_field: pc.public_id,
+        LIFECYCLE_STATUS_FIELD: "active",
+    }
 
     for key, value in pc.fields.items():
         if key not in claim_fields:
@@ -892,9 +953,72 @@ def _add_create(
         )
     plan.assertions.append(
         PlannedClaimAssert(
-            field_name="status", value="active", handle=handle, note=note
+            field_name=LIFECYCLE_STATUS_FIELD,
+            value="active",
+            handle=handle,
+            note=note,
         )
     )
+
+
+def _add_delete(
+    plan: IngestPlan,
+    entity: CatalogModel,
+    pc: PatchClaim,
+    *,
+    note: str = "",
+    citation_ref: CitationRef | None = None,
+) -> list[tuple[int, int]]:
+    """Emit ``status=deleted`` assertions to soft-delete *entity* and its cascade.
+
+    A patch delete is a ``status=deleted`` claim, exactly like the in-app
+    delete — no row removal. It reuses the app's :func:`plan_soft_delete` so it
+    obeys the same record-lifecycle rules: it **refuses** when an active PROTECT
+    referrer would be left dangling (reassign or delete the referrer first, in
+    an earlier patch — the blocker check reads live DB state, so a same-patch
+    reassignment isn't yet visible) and **cascades** ``status=deleted`` to owned
+    lifecycle children.
+
+    ``note``/``cite`` ride the emitted status claims (the entry's own carrier),
+    so a delete entry needs no separate field assertion to anchor provenance.
+    Idempotent: re-asserting ``status=deleted`` on an already-deleted entity
+    diffs as unchanged, so a re-run is a clean no-op.
+
+    Returns the ``(content_type_id, object_id)`` key of every entity this entry
+    soft-deletes — root *and* cascade children — so the caller can register
+    them all in the same-entity provenance guard (a cascaded child is otherwise
+    invisible to it, and a separate entry on that child would collide unseen).
+    """
+    sd_plan = plan_soft_delete(entity)
+    if sd_plan.is_blocked:
+        blockers = "; ".join(
+            f"{b.entity_type} {b.slug or b.name!r} (via {b.relation})"
+            for b in sd_plan.blockers
+        )
+        raise PatchError(
+            f"{pc.ref}: cannot delete — still referenced by "
+            f"{len(sd_plan.blockers)} active entity(ies): {blockers}. Reassign or "
+            f"delete the referrer first (in an earlier patch)."
+        )
+    affected: list[tuple[int, int]] = []
+    for target_entity in sd_plan.entities_to_delete:
+        ct_id = ContentType.objects.get_for_model(type(target_entity)).pk
+        _emit_assert(
+            plan,
+            _Target(content_type_id=ct_id, object_id=target_entity.pk),
+            field_name=LIFECYCLE_STATUS_FIELD,
+            value="deleted",
+            note=note,
+            citation_ref=citation_ref,
+        )
+        affected.append((ct_id, target_entity.pk))
+    cascaded = [e for e in sd_plan.entities_to_delete if e.pk != entity.pk]
+    if cascaded:
+        members = ", ".join(f"{e.entity_type}.{e.public_id}" for e in cascaded)
+        plan.warnings.append(
+            f"{pc.ref}: delete cascades to {len(cascaded)} child entity(ies): {members}"
+        )
+    return affected
 
 
 def _check_expect(
