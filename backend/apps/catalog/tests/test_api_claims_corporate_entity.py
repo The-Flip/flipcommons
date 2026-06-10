@@ -210,6 +210,21 @@ class TestPatchCorporateEntityScalars:
         assert data["year_start"] == 1930
         assert data["year_end"] == 1985
 
+    def test_edit_operating_status(self, client, user, entity):
+        # operating_status is claimable in Commit 1 but not yet exposed in the
+        # detail response schema (added in Commit 2), so assert the DB value.
+        client.force_login(user)
+        resp = _patch(client, entity.slug, {"fields": {"operating_status": "ongoing"}})
+        assert resp.status_code == 200
+        entity.refresh_from_db()
+        assert entity.operating_status == "ongoing"
+
+    def test_invalid_operating_status_returns_422(self, client, user, entity):
+        client.force_login(user)
+        resp = _patch(client, entity.slug, {"fields": {"operating_status": "bogus"}})
+        assert resp.status_code == 422
+        assert "valid choice" in resp.json()["detail"]["message"].lower()
+
     def test_no_changes_returns_422(self, client, user, entity):
         client.force_login(user)
         resp = _patch(client, entity.slug, {"fields": {}})
