@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { CreditRoleDetailSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_DATA = {
@@ -9,7 +10,8 @@ const MOCK_DATA = {
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
   aliases: [],
   people: [],
-};
+  last_modified: '2024-01-01T00:00:00Z',
+} satisfies CreditRoleDetailSchema;
 
 describe('credit-roles detail SSR route', () => {
   it('loads from the page endpoint', async () => {

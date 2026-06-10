@@ -1,6 +1,9 @@
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
+import type { LocationDetailSchema } from '$lib/api/schema';
 import Page from './location-detail.test-harness.svelte';
+
+const EMPTY_DESCRIPTION = { text: '', plain: '', html: '', citations: [], attribution: null };
 
 const BASE_LOCATION = {
   name: 'USA',
@@ -20,15 +23,14 @@ const BASE_LOCATION = {
     { public_id: 'williams', name: 'Williams', model_count: 12, thumbnail_url: null },
     { public_id: 'stern', name: 'Stern', model_count: 8, thumbnail_url: null },
   ],
-};
-
-const EMPTY_DESCRIPTION = { text: '', plain: '', html: '', citations: [], attribution: null };
+  description: EMPTY_DESCRIPTION,
+} satisfies LocationDetailSchema;
 
 describe('location detail SSR route', () => {
   it('renders the manufacturers heading with count when no description is present', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: { ...BASE_LOCATION, description: EMPTY_DESCRIPTION } },
+        data: { profile: BASE_LOCATION },
       },
     });
 

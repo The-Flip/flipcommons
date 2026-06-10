@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 import Page from './people-detail.test-harness.svelte';
 import { load } from './+layout.server';
+import type { PersonDetailSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Pat Lawlor',
@@ -35,8 +36,7 @@ const MOCK_DATA = {
     },
   ],
   uploaded_media: [],
-  sources: [],
-};
+} satisfies PersonDetailSchema;
 
 describe('people detail SSR route', () => {
   it('loads from the page endpoint', async () => {

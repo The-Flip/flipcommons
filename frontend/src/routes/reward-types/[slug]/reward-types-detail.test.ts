@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { RewardTypeDetailSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_DATA = {
@@ -7,9 +8,10 @@ const MOCK_DATA = {
   slug: 'extra-ball',
   display_order: 0,
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
+  last_modified: '2024-01-01T00:00:00Z',
+  aliases: [],
   machines: [],
-  sources: [],
-};
+} satisfies RewardTypeDetailSchema;
 
 describe('reward-types detail SSR route', () => {
   it('loads from the page endpoint', async () => {

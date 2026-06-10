@@ -2,6 +2,7 @@ import { render } from 'svelte/server';
 import { describe, expect, it, vi } from 'vitest';
 import Harness from './title-detail.test-harness.svelte';
 import { load } from './+layout.server';
+import type { TitleDetailSchema } from '$lib/api/schema';
 
 const MOCK_TITLE = {
   name: 'Medieval Madness',
@@ -34,8 +35,7 @@ const MOCK_TITLE = {
   opdb_id: null,
   fandom_page_id: null,
   model_detail: null,
-  sources: [],
-};
+} satisfies TitleDetailSchema;
 
 describe('title detail SSR route', () => {
   it('loads the title from the page endpoint', async () => {

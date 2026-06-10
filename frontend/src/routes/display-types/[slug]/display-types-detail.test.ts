@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+layout.server';
+import type { TaxonomySchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Dot Matrix',
@@ -7,8 +8,9 @@ const MOCK_DATA = {
   slug: 'dot-matrix',
   display_order: 0,
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
-  sources: [],
-};
+  last_modified: '2024-01-01T00:00:00Z',
+  aliases: [],
+} satisfies TaxonomySchema;
 
 describe('display-types detail SSR route', () => {
   it('loads from the page endpoint', async () => {

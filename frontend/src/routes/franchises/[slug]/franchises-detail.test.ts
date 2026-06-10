@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
+import type { FranchiseDetailSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Star Trek',
@@ -20,8 +21,7 @@ const MOCK_DATA = {
       thumbnail_url: null,
     },
   ],
-  sources: [],
-};
+} satisfies FranchiseDetailSchema;
 
 describe('franchises detail SSR route', () => {
   it('loads from the page endpoint', async () => {
