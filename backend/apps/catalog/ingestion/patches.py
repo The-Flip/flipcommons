@@ -707,6 +707,7 @@ def _process_entry(
         return _EntryResult(matched=True, contributions=contributions)
 
     target: _Target
+    retracted_any = False  # set by the edit branch; a real retraction carries a note
     if isinstance(entry, CreateEntry):
         if existing is not None:
             raise PatchError(
@@ -724,8 +725,8 @@ def _process_entry(
                 f"{entry.ref}: no such {entry.entity_type} (add create:true to create it)"
             )
         _check_expect(model_class, existing, entry)
-        _add_retractions(
-            plan, model_class, existing, entry, ct_id, rel_namespaces, note=note
+        retracted_any = _add_retractions(
+            plan, model_class, existing, entry, ct_id, source, rel_namespaces, note=note
         )
         target = _Target(content_type_id=ct_id, object_id=existing.pk)
 
@@ -791,7 +792,11 @@ def _process_entry(
         carrier_written = carrier_written or removal.carrier_written
 
     _check_provenance_carrier(
-        entry, note=note, citation_ref=citation_ref, carrier_written=carrier_written
+        entry,
+        note=note,
+        citation_ref=citation_ref,
+        carrier_written=carrier_written,
+        retracted_any=retracted_any,
     )
 
     if isinstance(entry, CreateEntry):
@@ -819,23 +824,20 @@ def _check_provenance_carrier(
     note: str,
     citation_ref: CitationRef | None,
     carrier_written: bool,
+    retracted_any: bool,
 ) -> None:
     """Reject a note/cite with no emitted claim to attach to (it would vanish).
 
     ``cite`` must ride an authored field assertion; ``note`` also rides a create's
-    scaffolding claims or a retraction. (A DeleteEntry carries its own
+    scaffolding claims or a real retraction. (A DeleteEntry carries its own
     ``status=deleted`` carrier and never reaches here.)
 
-    ``remove`` is deliberately *not* a note carrier: a removal that supersedes a
-    member emits an assertion (so ``carrier_written`` already covers it), while a
-    no-op removal emits nothing — its note would vanish in ``_persist`` (no
-    claim/retraction ⇒ no ChangeSet). ``retract`` stays because a retraction
-    carries its note on the PlannedClaimRetract and its no-op is only knowable at
-    apply, not here. This keeps note in step with cite, which requires a carrier.
-
-    TODO: a no-op retract: + note: still drops the note silently (the retraction
-    finds no target at apply, so _persist makes no ChangeSet). Tighten with a
-    build-time claim-presence check, as remove: already does.
+    Neither ``remove`` nor ``retract`` counts as a note carrier on its own — only
+    when it actually writes something. A removal that supersedes a member emits
+    an assertion (so ``carrier_written`` already covers it) and a retraction that
+    deactivates a claim is reported via ``retracted_any``; a *no-op* of either
+    emits nothing, so ``_persist`` makes no ChangeSet and the note would vanish.
+    This keeps note in step with cite, which likewise requires a real carrier.
     """
     if citation_ref is not None and not carrier_written:
         raise PatchError(
@@ -844,15 +846,13 @@ def _check_provenance_carrier(
             f"create, or an empty relationship like 'tag: []' can't carry one)"
         )
     note_has_carrier = (
-        carrier_written
-        or isinstance(entry, CreateEntry)
-        or (isinstance(entry, EditEntry) and bool(entry.retract))
+        carrier_written or isinstance(entry, CreateEntry) or retracted_any
     )
     if note and not note_has_carrier:
         raise PatchError(
             f"{entry.ref}: note has nothing to attach to — assert a field, "
-            f"retract, create, or remove a currently-present member (a no-op "
-            f"removal carries nothing)"
+            f"retract a currently-claimed field, create, or remove a "
+            f"currently-present member (a no-op carries nothing)"
         )
 
 
@@ -1469,24 +1469,33 @@ def _add_retractions(
     existing: CatalogModel,
     entry: EditEntry,
     ct_id: int,
+    source: Source,
     rel_namespaces: frozenset[str],
     *,
     note: str = "",
-) -> None:
-    """Emit a ``PlannedClaimRetract`` per ``retract:`` field.
+) -> bool:
+    """Emit a ``PlannedClaimRetract`` per ``retract:`` field; return whether any fired.
 
     v1 covers scalar/FK fields only, where the claim key equals the field
     name (so the engine's identity match finds the active claim). Relationship
     retract is deferred. Each field must be a scalar/FK claim field on the
-    (existing) entity; the engine deactivates *this source's* active claim for
-    that key, warning (not erroring) if none is present — so a re-run is a
-    no-op.
+    (existing) entity.
+
+    A retract only deactivates *this source's* active claim, so a field the
+    source doesn't currently claim is an inert no-op: it's skipped with a warning
+    (never erroring — re-runs stay safe), exactly as ``remove:`` skips a member
+    the source doesn't hold. The build-time check matters for provenance — a
+    no-op retraction writes no ChangeSet, so a ``note`` riding only no-op
+    retractions has no carrier and must not be silently dropped. The return value
+    reports whether at least one real retraction was emitted, so the caller's
+    provenance-carrier check can reject such a note.
     """
     if not entry.retract:
-        return
+        return False
     # Note: retract/assert conflicts (same field retracted and asserted on this
     # entity, in this or another entry) are caught plan-wide in build_plan.
     claim_fields = get_claim_fields(model_class)
+    retracted_any = False
     for field_name in entry.retract:
         if field_name in rel_namespaces:
             raise PatchError(
@@ -1498,6 +1507,12 @@ def _add_retractions(
                 f"{entry.ref}: cannot retract {field_name!r} — not a scalar/FK claim "
                 f"field on {model_class.__name__}"
             )
+        if not _source_claims_field(source, ct_id, existing.pk, field_name):
+            plan.warnings.append(
+                f"{entry.ref}: retract {field_name!r} is a no-op — "
+                f"{source.slug} has no active claim for it"
+            )
+            continue
         plan.retractions.append(
             PlannedClaimRetract(
                 content_type_id=ct_id,
@@ -1506,6 +1521,29 @@ def _add_retractions(
                 note=note,
             )
         )
+        retracted_any = True
+    return retracted_any
+
+
+def _source_claims_field(
+    source: Source,
+    ct_id: int,
+    object_id: int,
+    claim_key: str,
+) -> bool:
+    """Does *source* hold an active scalar/FK claim for this field?
+
+    The scalar/FK analogue of :func:`_source_claims_member_present` (no
+    ``exists`` flag — a scalar/FK claim is present iff an active row exists).
+    Used to detect a no-op ``retract:`` at build time.
+    """
+    return Claim.objects.filter(
+        source=source,
+        is_active=True,
+        content_type_id=ct_id,
+        object_id=object_id,
+        claim_key=claim_key,
+    ).exists()
 
 
 def _make_resolve_hook(

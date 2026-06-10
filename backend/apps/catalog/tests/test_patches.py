@@ -547,7 +547,68 @@ claims:
 """
     report = _apply(text, patch_id="0001-noop")
     assert report.retracted == 0
-    assert any("Retract target not found" in w for w in report.warnings)
+    assert any("no-op" in w for w in report.warnings)
+
+
+def test_retract_noop_with_note_rejected(stern):
+    # A note on a retract that finds no active claim from THIS source has no
+    # carrier: the retraction is a no-op, so _persist writes no ChangeSet and the
+    # note would vanish silently on a reported success. Reject it — symmetric
+    # with remove:'s no-op-with-note behavior — rather than drop provenance.
+    ipdb = Source.objects.create(
+        name="IPDB", slug="ipdb", source_type="database", priority=100
+    )
+    ce = CorporateEntity.objects.create(
+        name="Western Products, Inc.",
+        slug="western-products-incorporated",
+        manufacturer=stern,
+    )
+    # ipdb claims `name` but not `manufacturer`, so retracting manufacturer is a
+    # no-op for this source.
+    Claim.objects.assert_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+
+    text = """
+attribution: ipdb
+claims:
+  - corporate-entity.western-products-incorporated:
+      retract: [manufacturer]
+      note: 'ipdb no longer lists a manufacturer.'
+"""
+    with pytest.raises(PatchError, match="note has nothing to attach to"):
+        _apply(text, patch_id="0001-noop-note")
+
+
+def test_retract_real_with_note_records_changeset(stern):
+    # The complement: a retract that DOES deactivate a claim carries its note
+    # onto the resulting ChangeSet (the fix must not break the happy path).
+    ipdb = Source.objects.create(
+        name="IPDB", slug="ipdb", source_type="database", priority=100
+    )
+    ce = CorporateEntity.objects.create(
+        name="Western Products, Inc.",
+        slug="western-products-incorporated",
+        manufacturer=stern,
+    )
+    Claim.objects.assert_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    Claim.objects.assert_claim(ce, "manufacturer", "stern", source=ipdb)
+
+    text = """
+attribution: ipdb
+claims:
+  - corporate-entity.western-products-incorporated:
+      retract: [manufacturer]
+      note: 'ipdb dropped the manufacturer attribution.'
+"""
+    report = _apply(text, patch_id="0001-retract-note")
+    assert report.retracted == 1
+    retraction = Claim.objects.get(
+        source=ipdb, field_name="manufacturer", is_active=False
+    )
+    assert retraction.retracted_by_changeset is not None
+    assert (
+        retraction.retracted_by_changeset.note
+        == "ipdb dropped the manufacturer attribution."
+    )
 
 
 def test_retract_plus_create_rejected():
