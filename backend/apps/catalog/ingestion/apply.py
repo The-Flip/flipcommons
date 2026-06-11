@@ -89,7 +89,10 @@ class CitationRef:
       (e.g. ``"ipdb"``) and ``identifier`` is the normalized in-scheme id (e.g.
       ``"4443"``); resolved via ``get_or_create_external_source``.
     * **url** — a raw web-page URL for a standalone web source, resolved via
-      ``get_or_create_web_source``.
+      ``get_or_create_web_source``. An optional ``archive_url`` (e.g. a Wayback
+      permalink) rides along as a second ``archive``-typed link on the same
+      child source, so one citation carries both the live page and its durable
+      snapshot. Only meaningful for the url form.
 
     Defined here, beside the plan dataclasses, rather than in any source
     adapter: the source-agnostic apply layer must not import an adapter, and
@@ -100,6 +103,7 @@ class CitationRef:
     scheme: str = ""
     identifier: str = ""
     url: str = ""
+    archive_url: str = ""
 
 
 # Per-claim provenance maps produced by ``_collect_plan_provenance`` and
@@ -974,7 +978,7 @@ def _attach_plan_citations(
         source_id = source_cache.get(ref)
         if source_id is None:
             if ref.url:
-                source_id = get_or_create_web_source(ref.url).pk
+                source_id = get_or_create_web_source(ref.url, ref.archive_url).pk
             else:
                 source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
             source_cache[ref] = source_id

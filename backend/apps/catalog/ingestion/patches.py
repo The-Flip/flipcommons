@@ -205,6 +205,13 @@ def fingerprint(data: JsonBody) -> str:
 # structure without pretending to enforce them.)
 type RelationshipMembers = dict[str, list[str]]
 
+# The composite key identifying one claim — a scalar/FK field name or a
+# relationship member key from ``build_relationship_claim`` (e.g.
+# ``"location:germany"``). A transparent alias of ``str``: it documents the
+# concept where it recurs in this module without changing any interop with the
+# ``str``-typed claim machinery (``apps.catalog.claims``, apply's ClaimIdentity).
+type ClaimKey = str
+
 
 @dataclass(frozen=True, kw_only=True)
 class _PatchEntry:
@@ -225,9 +232,12 @@ class _PatchEntry:
     # Per-entry provenance, common to all kinds. ``note`` becomes the entity's
     # ChangeSet note; ``cite`` is a raw ``scheme:identifier`` string or a
     # ``http(s)://`` URL, parsed + validated into a CitationRef in build_plan.
+    # ``cite_archive`` is an optional durable-snapshot (Wayback) URL that rides
+    # the same citation; only valid alongside a ``http(s)://`` ``cite``.
     # Empty when unset.
     note: str = ""
     cite: str = ""
+    cite_archive: str = ""
 
     @property
     def ref(self) -> str:
@@ -400,16 +410,15 @@ def _parse_entry(raw_entry: object, index: int) -> PatchEntry:
     create = _require_bool(raw_fields, "create", ref)
     delete = _require_bool(raw_fields, "delete", ref)
     note = _require_str(raw_fields, "note", ref)
-    raw_cite = raw_fields.get("cite", "")
-    if not isinstance(raw_cite, str):
-        raise PatchError(f"{ref}: 'cite' must be a 'scheme:identifier' or URL string")
+    cite, cite_archive = _normalize_raw_cite(raw_fields.get("cite", ""), ref)
     # Authored claim fields: everything that isn't a reserved directive key.
     fields = {k: v for k, v in raw_fields.items() if k not in RESERVED_FIELD_KEYS}
     common = {
         "entity_type": entity_type,
         "public_id": public_id,
         "note": note,
-        "cite": raw_cite,
+        "cite": cite,
+        "cite_archive": cite_archive,
     }
 
     if create and delete:
@@ -506,9 +515,9 @@ class _TargetContribution(NamedTuple):
     has_provenance: bool
     retracted_fields: frozenset[str]
     asserted_fields: frozenset[str]
-    asserted_members: frozenset[str]
+    asserted_members: frozenset[ClaimKey]
     # claim_key → "namespace public_id" label, for the assert/remove clash error.
-    removed_members: dict[str, str]
+    removed_members: dict[ClaimKey, str]
 
 
 class _EntryResult(NamedTuple):
@@ -532,8 +541,52 @@ class _RemovalResult(NamedTuple):
     least one tombstone was actually emitted (a no-op removal writes nothing).
     """
 
-    removed_members: dict[str, str]
+    removed_members: dict[ClaimKey, str]
     carrier_written: bool
+
+
+class _RawCite(NamedTuple):
+    """A ``cite:`` value split into its primary and durable-snapshot parts.
+
+    ``cite`` is the raw ``scheme:identifier``/URL string; ``archive`` is the
+    optional Wayback (or other) snapshot URL. Both ``""`` when unset.
+    """
+
+    cite: str
+    archive: str
+
+
+def _normalize_raw_cite(raw_cite: object, ref: str) -> _RawCite:
+    """Split a raw ``cite:`` value into its ``cite`` and ``archive`` parts.
+
+    Two authoring forms:
+
+    * a bare ``scheme:identifier``/URL **string** → ``(cite, "")``;
+    * a ``{url, archive}`` **mapping** → ``(url, archive)``, carrying a durable
+      snapshot (Wayback) alongside the live page.
+
+    Shape-only here; the URL/archive validity checks live in ``_parse_cite_url``.
+    """
+    if isinstance(raw_cite, str):
+        return _RawCite(raw_cite, "")
+    if isinstance(raw_cite, dict):
+        extra = set(raw_cite) - {"url", "archive"}
+        if extra:
+            raise PatchError(
+                f"{ref}: 'cite' mapping has unknown key(s) {sorted(extra)}; "
+                f"allowed keys are 'url' and 'archive'"
+            )
+        url = raw_cite.get("url", "")
+        archive = raw_cite.get("archive", "")
+        if not isinstance(url, str) or not url:
+            raise PatchError(f"{ref}: 'cite.url' must be a non-empty string")
+        if not isinstance(archive, str):
+            raise PatchError(f"{ref}: 'cite.archive' must be a string")
+        return _RawCite(url, archive)
+    raise PatchError(
+        f"{ref}: 'cite' must be a 'scheme:identifier'/URL string or a "
+        f"{{url, archive}} mapping"
+    )
 
 
 def _parse_provenance(entry: PatchEntry) -> tuple[str, CitationRef | None]:
@@ -553,6 +606,11 @@ def _parse_provenance(entry: PatchEntry) -> tuple[str, CitationRef | None]:
     if len(note) > CHANGESET_NOTE_MAX_LENGTH:
         raise PatchError(
             f"{entry.ref}: note exceeds {CHANGESET_NOTE_MAX_LENGTH} characters"
+        )
+    if entry.cite_archive and not entry.cite.startswith(("http://", "https://")):
+        raise PatchError(
+            f"{entry.ref}: 'cite.archive' is only valid alongside a http(s):// "
+            f"URL cite, not a scheme cite or an empty cite"
         )
     if not entry.cite:
         return note, None
@@ -604,7 +662,25 @@ def _parse_cite_url(entry: PatchEntry) -> CitationRef:
             f"{entry.ref}: cite URL exceeds {CITATION_SOURCE_LINK_URL_MAX_LENGTH} "
             f"characters"
         )
-    return CitationRef(url=url)
+    archive_url = entry.cite_archive
+    if archive_url:
+        # Deliberately NOT scheme-checked: a Wayback URL embeds the original
+        # page URL as a path segment, so an ipdb/opdb page would false-match.
+        # It rides as a plain ``archive`` link, never domain-resolved to a root.
+        if (
+            not archive_url.startswith(("http://", "https://"))
+            or not urlparse(archive_url).hostname
+        ):
+            raise PatchError(
+                f"{entry.ref}: cite archive {archive_url!r} is not a valid "
+                f"http(s):// URL"
+            )
+        if len(archive_url) > CITATION_SOURCE_LINK_URL_MAX_LENGTH:
+            raise PatchError(
+                f"{entry.ref}: cite archive URL exceeds "
+                f"{CITATION_SOURCE_LINK_URL_MAX_LENGTH} characters"
+            )
+    return CitationRef(url=url, archive_url=archive_url)
 
 
 def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
@@ -735,7 +811,7 @@ def _process_entry(
     # a handle, so object_id is None and they contribute nothing to the guards —
     # and whether any real claim carrier was written (for the provenance check).
     asserted_fields: set[str] = set()
-    asserted_members: set[str] = set()
+    asserted_members: set[ClaimKey] = set()
     carrier_written = False
     claim_fields = get_claim_fields(model_class)
     for key, value in entry.fields.items():
@@ -773,7 +849,7 @@ def _process_entry(
 
     # Relationship-member removals (exists=false supersede). Only an EditEntry
     # carries ``remove`` (create/delete reject it at parse time).
-    removed_members: dict[str, str] = {}
+    removed_members: dict[ClaimKey, str] = {}
     if isinstance(entry, EditEntry) and entry.remove:
         assert existing is not None  # an EditEntry always matched above
         removal = _add_removals(
@@ -874,8 +950,8 @@ def _validate_plan_wide(results: list[_EntryResult]) -> None:
     target_ref: dict[EntityKey, str] = {}
     retracted_fields: dict[EntityKey, set[str]] = defaultdict(set)
     asserted_fields: dict[EntityKey, set[str]] = defaultdict(set)
-    asserted_members: dict[EntityKey, set[str]] = defaultdict(set)
-    removed_members: dict[EntityKey, dict[str, str]] = defaultdict(dict)
+    asserted_members: dict[EntityKey, set[ClaimKey]] = defaultdict(set)
+    removed_members: dict[EntityKey, dict[ClaimKey, str]] = defaultdict(dict)
     for result in results:
         for tkey, c in result.contributions.items():
             entry_count[tkey] += 1
@@ -1000,7 +1076,7 @@ def _emit_assert(
     *,
     field_name: str,
     value: object = None,
-    claim_key: str = "",
+    claim_key: ClaimKey = "",
     note: str = "",
     citation_ref: CitationRef | None = None,
 ) -> None:
@@ -1109,7 +1185,7 @@ def _emit_relationship(
     *,
     note: str = "",
     citation_ref: CitationRef | None = None,
-) -> list[str]:
+) -> list[ClaimKey]:
     """Emit ``exists=true`` member assertions; return their claim_keys.
 
     The caller records the returned claim_keys against the target entity so the
@@ -1121,7 +1197,7 @@ def _emit_relationship(
         raise PatchError(
             f"{entry.ref}: relationship {namespace!r} value must be a list of public_ids"
         )
-    emitted_keys: list[str] = []
+    emitted_keys: list[ClaimKey] = []
     for member in value:
         member_pk = _resolve_member_pk(member, namespace, rel_spec, entry)
         claim_key, claim_value = build_relationship_claim(
@@ -1173,7 +1249,7 @@ def _add_removals(
     guard, recorded regardless of the no-op skip) and whether any tombstone was
     actually emitted (a carrier, for the provenance check).
     """
-    removed: dict[str, str] = {}
+    removed: dict[ClaimKey, str] = {}
     carrier_written = False
     for namespace, members in entry.remove.items():
         if namespace not in rel_namespaces:
@@ -1219,7 +1295,7 @@ def _source_claims_member_present(
     source: Source,
     ct_id: int,
     object_id: int,
-    claim_key: str,
+    claim_key: ClaimKey,
 ) -> bool:
     """Does *source* hold an active ``exists=true`` claim for this member?
 
@@ -1529,7 +1605,7 @@ def _source_claims_field(
     source: Source,
     ct_id: int,
     object_id: int,
-    claim_key: str,
+    claim_key: ClaimKey,
 ) -> bool:
     """Does *source* hold an active scalar/FK claim for this field?
 

@@ -438,6 +438,119 @@ def test_url_cite_under_root_dedups_and_separates(flip_museum, kineticist_root, 
     assert CitationSource.objects.filter(parent=kineticist_root).count() == 2
 
 
+def test_url_cite_with_archive_attaches_both_links(flip_museum, kineticist_root, pm):
+    # cite: {url, archive} → the child carries BOTH a 'reference' link (the live
+    # page) and an 'archive' link (the Wayback snapshot): one citation, two links.
+    url = "https://kineticist.com/reviews/medieval-madness"
+    archive = "https://web.archive.org/web/20240101000000/" + url
+    text = (
+        "attribution: flip-museum\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        f"        url: {url}\n"
+        f"        archive: {archive}\n"
+        "      year: 1998\n"
+    )
+    _apply(text)
+
+    child = CitationSource.objects.get(parent=kineticist_root)
+    links = {link.link_type: link.url for link in child.links.all()}
+    assert links == {"reference": url, "archive": archive}
+
+    year_claim = pm.claims.get(field_name="year", is_active=True)
+    assert year_claim.citation_instances.get().citation_source_id == child.pk
+
+
+def test_url_cite_archive_idempotent(flip_museum, kineticist_root, pm):
+    # Re-applying the same {url, archive} cite never duplicates the archive link.
+    url = "https://kineticist.com/x"
+    archive = "https://web.archive.org/web/20240101000000/" + url
+    base = (
+        "attribution: flip-museum\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        f"        url: {url}\n"
+        f"        archive: {archive}\n"
+        "      year: {year}\n"
+    )
+    _apply(base.format(year=1998), patch_id="0001-a")
+    _apply(base.format(year=1999), patch_id="0002-b")
+
+    child = CitationSource.objects.get(parent=kineticist_root)
+    assert child.links.filter(link_type="archive").count() == 1
+    assert CitationSource.objects.filter(parent=kineticist_root).count() == 1
+
+
+def test_archive_added_to_preexisting_child(flip_museum, kineticist_root, pm):
+    # A first patch cites the live URL (no archive); a later patch re-cites it
+    # with an archive → the archive link is added to the existing child source,
+    # exercising the `existing is not None` branch + the archive backfill.
+    url = "https://kineticist.com/x"
+    archive = "https://web.archive.org/web/20240101000000/" + url
+    _apply(
+        "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n"
+        f"      cite: {url}\n      year: 1998\n",
+        patch_id="0001-a",
+    )
+    _apply(
+        "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n"
+        "      cite:\n"
+        f"        url: {url}\n        archive: {archive}\n"
+        "      year: 1999\n",
+        patch_id="0002-b",
+    )
+
+    child = CitationSource.objects.get(parent=kineticist_root)
+    links = {link.link_type: link.url for link in child.links.all()}
+    assert links == {"reference": url, "archive": archive}
+    assert CitationSource.objects.filter(parent=kineticist_root).count() == 1
+
+
+def test_cite_archive_with_scheme_cite_rejected(flip_museum, pm):
+    # An archive snapshot only makes sense for a live web page, not a scheme cite.
+    text = (
+        "attribution: flip-museum\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        url: ipdb:4443\n"
+        "        archive: https://web.archive.org/web/2024/x\n"
+        "      year: 1998\n"
+    )
+    with pytest.raises(PatchError, match="only valid alongside"):
+        _apply(text)
+
+
+def test_cite_mapping_unknown_key_rejected(flip_museum, pm):
+    text = (
+        "attribution: flip-museum\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        url: https://kineticist.com/x\n"
+        "        wayback: https://web.archive.org/x\n"
+        "      year: 1998\n"
+    )
+    with pytest.raises(PatchError, match="unknown key"):
+        _apply(text)
+
+
+def test_invalid_archive_url_rejected(flip_museum, kineticist_root, pm):
+    text = (
+        "attribution: flip-museum\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        url: https://kineticist.com/x\n"
+        "        archive: not-a-url\n"
+        "      year: 1998\n"
+    )
+    with pytest.raises(PatchError, match="not a valid"):
+        _apply(text)
+
+
 def test_ipdb_url_cite_rejected(flip_museum, pm):
     # A known-scheme record URL must be cited via scheme:identifier so it dedups.
     text = (
@@ -524,6 +637,32 @@ def test_url_cite_surfaced_in_edit_history(client, flip_museum, kineticist_root,
     (citation,) = year_change["citations"]
     assert citation["source_name"] == url
     assert citation["url"] == url
+
+
+def test_url_cite_with_archive_surfaces_live_link_in_edit_history(
+    client, flip_museum, kineticist_root, pm
+):
+    # Compact field history shows the live page, NOT its Wayback snapshot — even
+    # though "archive" sorts before "reference" in the default link ordering.
+    url = "https://kineticist.com/reviews/mm"
+    archive = "https://web.archive.org/web/20240101000000/" + url
+    text = (
+        "attribution: flip-museum\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        f"        url: {url}\n"
+        f"        archive: {archive}\n"
+        "      year: 1998\n"
+    )
+    _apply(text)
+
+    resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+    assert resp.status_code == 200
+    (cs,) = resp.json()
+    year_change = next(c for c in cs["changes"] if c["field_name"] == "year")
+    (citation,) = year_change["citations"]
+    assert citation["url"] == url  # the live page, not the archive snapshot
 
 
 # ── edit-history surfacing ─────────────────────────────────────────

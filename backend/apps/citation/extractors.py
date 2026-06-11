@@ -246,8 +246,15 @@ def get_or_create_external_source(scheme: str, identifier: str) -> CitationSourc
     return source
 
 
-def get_or_create_web_source(url: str) -> CitationSource:
+def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
     """Get-or-create the web ``CitationSource`` a raw ``url`` cites.
+
+    When ``archive_url`` is given (e.g. a Wayback permalink), it is additively
+    attached as a second ``archive``-typed link on the resolved source, so one
+    citation carries both the live page and its durable snapshot. The
+    attachment is idempotent (get-or-create by ``(source, url)``), so a
+    re-applied patch never duplicates it, and a no-op when ``archive_url`` is
+    empty or equal to ``url``.
 
     For citing a web page (forum post, archive scan, manufacturer page) that no
     extractor scheme covers. Routes through ``recognize_url`` — the same
@@ -286,33 +293,43 @@ def get_or_create_web_source(url: str) -> CitationSource:
         .first()
     )
     if existing is not None:
-        return existing.citation_source
+        source = existing.citation_source
+    else:
+        recognition = recognize_url(url)
+        if recognition is None:
+            raise CitationSource.DoesNotExist(
+                f"No website CitationSource root matches {url!r}; seed the website "
+                f"root (a parentless source whose homepage link shares the domain) "
+                f"before citing a page under it."
+            )
+        if recognition.child is not None:
+            source = CitationSource.objects.get(pk=recognition.child.id)
+        else:
+            # Domain match: a new child under the recognized root. Name defaults
+            # to the URL; the link column allows more than the name column, so
+            # fall back to the hostname for an over-long URL.
+            name = url
+            if len(name) > CITATION_SOURCE_NAME_MAX_LENGTH:
+                name = urlparse(url).hostname or url[:CITATION_SOURCE_NAME_MAX_LENGTH]
 
-    recognition = recognize_url(url)
-    if recognition is None:
-        raise CitationSource.DoesNotExist(
-            f"No website CitationSource root matches {url!r}; seed the website "
-            f"root (a parentless source whose homepage link shares the domain) "
-            f"before citing a page under it."
+            source = CitationSource.objects.create(
+                name=name,
+                source_type=CitationSource.SourceType.WEB,
+                parent_id=recognition.parent_id,
+            )
+            CitationSourceLink.objects.create(
+                citation_source=source,
+                link_type=CitationSourceLink.LinkType.REFERENCE,
+                url=url,
+            )
+
+    if archive_url and archive_url != url:
+        # The durable snapshot (Wayback/archive.today) rides as a second link on
+        # the same source. Not domain-matched to a root — it intentionally lives
+        # on a different host than the page it preserves.
+        CitationSourceLink.objects.get_or_create(
+            citation_source=source,
+            url=archive_url,
+            defaults={"link_type": CitationSourceLink.LinkType.ARCHIVE},
         )
-    if recognition.child is not None:
-        return CitationSource.objects.get(pk=recognition.child.id)
-
-    # Domain match: a new child under the recognized root. Name defaults to the
-    # URL; the link column allows more than the name column, so fall back to the
-    # hostname for an over-long URL.
-    name = url
-    if len(name) > CITATION_SOURCE_NAME_MAX_LENGTH:
-        name = urlparse(url).hostname or url[:CITATION_SOURCE_NAME_MAX_LENGTH]
-
-    source = CitationSource.objects.create(
-        name=name,
-        source_type=CitationSource.SourceType.WEB,
-        parent_id=recognition.parent_id,
-    )
-    CitationSourceLink.objects.create(
-        citation_source=source,
-        link_type=CitationSourceLink.LinkType.REFERENCE,
-        url=url,
-    )
     return source
