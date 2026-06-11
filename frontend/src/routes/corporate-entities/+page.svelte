@@ -2,7 +2,7 @@
   import client from '$lib/api/client';
   import { unwrapPage } from '$lib/paginated-loader.svelte';
   import CatalogListing from '$lib/components/pages/listing/CatalogListing.svelte';
-  import { formatYearRange } from '$lib/utils';
+  import { formatActiveRange } from '$lib/utils';
 
   let { data } = $props();
 
@@ -25,11 +25,16 @@
   canCreate
 >
   {#snippet children(entity)}
+    {@const activeRange = formatActiveRange(
+      entity.year_of_first_model,
+      entity.year_of_last_model,
+      entity.operating_status,
+    )}
     <span class="entity-name">{entity.name}</span>
     <span class="entity-meta">
       <span class="manufacturer">{entity.manufacturer.name}</span>
-      {#if formatYearRange(entity.year_start, entity.year_end)}
-        <span class="years">{formatYearRange(entity.year_start, entity.year_end)}</span>
+      {#if activeRange}
+        <span class="years">{activeRange}</span>
       {/if}
       <span class="count">
         {entity.model_count} model{entity.model_count === 1 ? '' : 's'}

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { GameplayFeatureDetailSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_DATA = {
@@ -6,12 +7,12 @@ const MOCK_DATA = {
   public_id: 'multiball',
   slug: 'multiball',
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
-  display_order: 0,
+  last_modified: '2024-01-01T00:00:00Z',
+  aliases: [],
   parents: [],
-  machines: [],
+  children: [],
   uploaded_media: [],
-  sources: [],
-};
+} satisfies GameplayFeatureDetailSchema;
 
 describe('gameplay-features detail SSR route', () => {
   it('loads from the page endpoint', async () => {

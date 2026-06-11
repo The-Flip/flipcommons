@@ -1,6 +1,6 @@
 import type { EditSectionDef } from '$lib/components/pages/record/edit/editors/edit-section-def';
 
-export type CorporateEntityEditSectionKey = 'name' | 'description' | 'basics' | 'aliases';
+export type CorporateEntityEditSectionKey = 'name' | 'description' | 'aliases';
 
 export type CorporateEntityEditSectionDef = EditSectionDef<CorporateEntityEditSectionKey> & {
   usesSectionEditorForm: boolean;
@@ -21,14 +21,6 @@ export const CORPORATE_ENTITY_EDIT_SECTIONS: CorporateEntityEditSectionDef[] = [
     label: 'Description',
     showCitation: false,
     showMixedEditWarning: false,
-    usesSectionEditorForm: true,
-  },
-  {
-    key: 'basics',
-    segment: 'basics',
-    label: 'Basics',
-    showCitation: true,
-    showMixedEditWarning: true,
     usesSectionEditorForm: true,
   },
   {

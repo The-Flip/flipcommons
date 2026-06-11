@@ -172,6 +172,26 @@ describe('MarkdownToolbar', () => {
     });
   });
 
+  it('keeps the citation flow open after clicking Citation (no flash-close)', async () => {
+    // Regression: the dropdown portals to <body> on open, which blurs the
+    // search input the citation stage autofocuses. That focusout used to close
+    // the just-opened dropdown after the blur timeout — a flash-open-then-close.
+    renderTextArea();
+    const user = userEvent.setup();
+    const textarea = getTextarea();
+
+    textarea.focus();
+    await user.click(getToolbarButton('Citation'));
+
+    await vi.waitFor(() => {
+      expect(screen.getByPlaceholderText(/search.*source/i)).toBeInTheDocument();
+    });
+
+    // Past the 150ms blur timeout — the dropdown must still be open.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(screen.queryByPlaceholderText(/search.*source/i)).toBeInTheDocument();
+  });
+
   it('switches an open type-picker dropdown into the citation flow when Citation is clicked', async () => {
     renderTextArea();
     const user = userEvent.setup();

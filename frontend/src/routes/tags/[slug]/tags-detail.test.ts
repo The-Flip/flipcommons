@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { TaxonomySchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_DATA = {
@@ -7,8 +8,9 @@ const MOCK_DATA = {
   slug: 'classic',
   display_order: 0,
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
-  sources: [],
-};
+  last_modified: '2026-01-01T00:00:00Z',
+  aliases: [],
+} satisfies TaxonomySchema;
 
 describe('tags detail SSR route', () => {
   it('loads from the page endpoint', async () => {

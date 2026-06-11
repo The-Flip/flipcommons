@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
-  import { formatYearRange, websiteHostname } from '$lib/utils';
+  import { formatActiveRange, websiteHostname } from '$lib/utils';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
   import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
@@ -37,7 +37,9 @@
   let mfr = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
-  let yearsActive = $derived(formatYearRange(mfr.year_start, mfr.year_end));
+  let yearsActive = $derived(
+    formatActiveRange(mfr.year_of_first_model, mfr.year_of_last_model, mfr.operating_status),
+  );
   let metaDescription = $derived(metaDescriptionFor(mfr, `${mfr.name} — pinball manufacturer`));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
   let isDetail = $derived(mode === 'detail');
@@ -175,15 +177,18 @@
       <SidebarSection heading="Companies">
         <SidebarList>
           {#each mfr.entities as entity (entity.public_id)}
+            {@const activeRange = formatActiveRange(
+              entity.year_of_first_model,
+              entity.year_of_last_model,
+              entity.operating_status,
+            )}
             <SidebarListItem>
               <div class="entity">
                 <a href={resolve(`/corporate-entities/${entity.public_id}`)} class="entity-name"
                   >{entity.name}</a
                 >
-                {#if formatYearRange(entity.year_start, entity.year_end)}
-                  <span class="muted">
-                    {formatYearRange(entity.year_start, entity.year_end)}
-                  </span>
+                {#if activeRange}
+                  <span class="muted">{activeRange}</span>
                 {/if}
                 {#each entity.locations as loc, i (i)}
                   <LocationLink {loc} />

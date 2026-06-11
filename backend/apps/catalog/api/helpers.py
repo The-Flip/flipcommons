@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import NamedTuple
 
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.types import JsonData
@@ -31,6 +32,29 @@ from .schemas import (
 # ---------------------------------------------------------------------------
 # Generic serialization helpers
 # ---------------------------------------------------------------------------
+
+
+class ModelYearBounds(NamedTuple):
+    """Production span across a set of models — first/last non-null ``year``,
+    each ``None`` when no model in the set carries a year."""
+
+    first: int | None
+    last: int | None
+
+
+def model_year_bounds(models: Iterable[MachineModel]) -> ModelYearBounds:
+    """Earliest/latest non-null ``year`` across *models*.
+
+    ``MachineModel.year`` is nullable, so null years are dropped before min/max
+    (``min``/``max`` over a ``None`` would crash); an empty or all-null set
+    yields ``(None, None)``. Callers pass an already lifecycle/variant-filtered
+    iterable — typically a prefetched ``models`` manager — so no filtering of
+    deleted or variant models happens here.
+    """
+    years = [m.year for m in models if m.year is not None]
+    if not years:
+        return ModelYearBounds(None, None)
+    return ModelYearBounds(min(years), max(years))
 
 
 def serialize_credit(credit: Credit) -> CreditSchema:

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
+import type { SystemDetailSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'WPC-95',
@@ -21,8 +22,7 @@ const MOCK_DATA = {
     },
   ],
   sibling_systems: [],
-  sources: [],
-};
+} satisfies SystemDetailSchema;
 
 describe('systems detail SSR route', () => {
   it('loads from the page endpoint', async () => {

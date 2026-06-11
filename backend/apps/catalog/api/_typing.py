@@ -26,9 +26,13 @@ class HasModelCount(Protocol):
     model_count: int
 
 
-class HasYearRange(Protocol):
-    year_min: int | None
-    year_max: int | None
+class CorporateEntityListAnnotations(Protocol):
+    """Annotations the corporate-entity list queryset adds to each row:
+    the model count and the production-span year bounds."""
+
+    model_count: int
+    year_of_first_model: int | None
+    year_of_last_model: int | None
 
 
 class HasTitleCount(Protocol):

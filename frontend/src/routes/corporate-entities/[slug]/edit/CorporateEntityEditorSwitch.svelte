@@ -4,7 +4,6 @@
   import NameEditor from '$lib/components/pages/record/edit/editors/NameEditor.svelte';
   import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
   import type { CorporateEntityEditSectionKey } from '$lib/components/pages/record/edit/editors/entity/corporate-entity/corporate-entity-edit-sections';
-  import CorporateEntityBasicsEditor from './CorporateEntityBasicsEditor.svelte';
   import { saveCorporateEntityClaims } from './save-corporate-entity-claims';
   import type { CorporateEntityEditView } from './corporate-entity-edit-types';
 
@@ -43,15 +42,6 @@
     initialData={initialData.description?.text ?? ''}
     {slug}
     save={saveCorporateEntityClaims}
-    {onsaved}
-    {onerror}
-    {ondirtychange}
-  />
-{:else if sectionKey === 'basics'}
-  <CorporateEntityBasicsEditor
-    bind:this={editorRef}
-    {initialData}
-    {slug}
     {onsaved}
     {onerror}
     {ondirtychange}

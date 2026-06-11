@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from django.contrib.contenttypes.fields import GenericRelation
 from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
@@ -28,10 +30,44 @@ __all__ = [
     "CorporateEntityAlias",
     "Manufacturer",
     "ManufacturerAlias",
+    "OperatingStatus",
 ]
 
 YEAR_MIN, YEAR_MAX = 1800, 2100
 EXTERNAL_ID_MIN = 1
+
+
+class OperatingStatus(models.TextChoices):
+    """Whether a corporate entity is still producing pinball.
+
+    An explicit editorial signal that ``max(model.year)`` can't express — it
+    distinguishes a defunct maker whose last title was recent from an active
+    maker currently on a multi-year gap (the MusicBrainz "ended" pattern).
+
+    Member names are UPPERCASE, wire/DB/JSON values lowercase, matching the
+    ``EntityStatus`` precedent. Every wire/claim/frontend value is the
+    lowercase string; Python references the enum member.
+    """
+
+    ONGOING = "ongoing", "Ongoing"
+    ENDED = "ended", "Ended"
+    UNKNOWN = "unknown", "Unknown"
+
+    @classmethod
+    def rollup(cls, statuses: Iterable[str]) -> OperatingStatus:
+        """Aggregate operating status for a parent over its corporate entities.
+
+        Precedence ONGOING > UNKNOWN > ENDED: a brand is ongoing if any
+        incarnation is, ended only when every incarnation is known-ended, and
+        unknown otherwise — including when it has no entities. Accepts wire
+        strings or enum members (both normalize to the wire value).
+        """
+        values = {str(s) for s in statuses}
+        if cls.ONGOING.value in values:
+            return cls.ONGOING
+        if values and values <= {cls.ENDED.value}:
+            return cls.ENDED
+        return cls.UNKNOWN
 
 
 class Manufacturer(
@@ -177,6 +213,12 @@ class CorporateEntity(
         help_text="Year this corporate entity ceased operations.",
         validators=[MinValueValidator(YEAR_MIN), MaxValueValidator(YEAR_MAX)],
     )
+    operating_status = models.CharField(
+        max_length=10,
+        choices=OperatingStatus.choices,
+        default=OperatingStatus.UNKNOWN,
+        help_text="Whether this corporate entity is still producing pinball.",
+    )
 
     class Meta:
         ordering = ["manufacturer", "year_start"]
@@ -201,6 +243,13 @@ class CorporateEntity(
                 condition=models.Q(ipdb_manufacturer_id__isnull=True)
                 | models.Q(ipdb_manufacturer_id__gte=EXTERNAL_ID_MIN),
                 name="catalog_corporateentity_ipdb_manufacturer_id_min",
+            ),
+            # No ``OR IS NULL`` clause: operating_status is null=False, so every
+            # row holds one of the choices (tighter than EntityStatus's nullable
+            # status_valid() pattern).
+            models.CheckConstraint(
+                condition=models.Q(operating_status__in=OperatingStatus.values),
+                name="catalog_corporateentity_operating_status_valid",
             ),
             models.CheckConstraint(
                 condition=(

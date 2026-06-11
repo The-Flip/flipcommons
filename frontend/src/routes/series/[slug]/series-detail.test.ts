@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
+import type { SeriesDetailSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Eight Ball',
@@ -21,8 +22,7 @@ const MOCK_DATA = {
     },
   ],
   credits: [],
-  sources: [],
-};
+} satisfies SeriesDetailSchema;
 
 describe('series detail SSR route', () => {
   it('loads from the page endpoint', async () => {

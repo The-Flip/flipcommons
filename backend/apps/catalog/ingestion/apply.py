@@ -52,6 +52,19 @@ class ResolveHook(Protocol):
     def __call__(self, *, subject_ids: set[int] | None = None) -> None: ...
 
 
+class PreWriteHook(Protocol):
+    """A side write run first inside the apply transaction, before any claim.
+
+    Registered in ``IngestPlan.pre_write_hooks`` and handed the run's
+    ``RunReport`` so it can append warnings and bump audit counters. Today only
+    the data-patch adapter uses it (to additively get-or-create citation sources
+    a patch's ``sources:`` block declares); the apply layer stays source-agnostic
+    by treating the hook as opaque.
+    """
+
+    def __call__(self, report: RunReport) -> None: ...
+
+
 class RetractEntry(NamedTuple):
     """An active claim targeted for retraction."""
 
@@ -67,12 +80,19 @@ class RetractEntry(NamedTuple):
 
 @dataclass(frozen=True)
 class CitationRef:
-    """A parsed, normalized reference to an external citation source.
+    """A parsed, normalized reference to a citation source.
 
-    ``scheme`` is an ``apps.citation.extractors.EXTRACTORS`` key (e.g.
-    ``"ipdb"``); ``identifier`` is the normalized in-scheme id (e.g.
-    ``"4443"``). Resolved to a ``CitationSource`` at apply time via
-    ``get_or_create_external_source`` — no DB access to construct one.
+    Two mutually-exclusive forms, resolved to a ``CitationSource`` at apply
+    time (no DB access to construct one):
+
+    * **scheme** — ``scheme`` is an ``apps.citation.extractors.EXTRACTORS`` key
+      (e.g. ``"ipdb"``) and ``identifier`` is the normalized in-scheme id (e.g.
+      ``"4443"``); resolved via ``get_or_create_external_source``.
+    * **url** — a raw web-page URL for a standalone web source, resolved via
+      ``get_or_create_web_source``. An optional ``archive_url`` (e.g. a Wayback
+      permalink) rides along as a second ``archive``-typed link on the same
+      child source, so one citation carries both the live page and its durable
+      snapshot. Only meaningful for the url form.
 
     Defined here, beside the plan dataclasses, rather than in any source
     adapter: the source-agnostic apply layer must not import an adapter, and
@@ -80,8 +100,10 @@ class CitationRef:
     from this module.
     """
 
-    scheme: str
-    identifier: str
+    scheme: str = ""
+    identifier: str = ""
+    url: str = ""
+    archive_url: str = ""
 
 
 # Per-claim provenance maps produced by ``_collect_plan_provenance`` and
@@ -188,6 +210,9 @@ class IngestPlan:
     records_parsed: int = 0
     records_matched: int = 0
     resolve_hooks: dict[int, list[ResolveHook]] = field(default_factory=dict)
+    # Side writes run first inside the apply transaction (before any entity
+    # create), each handed the RunReport. Patch-only: citation source upserts.
+    pre_write_hooks: list[PreWriteHook] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     # Patch runs only: the NNNN-slug filename stem (the applied-ledger key)
     # and the patch's description (copied to ``IngestRun.note``). Null/empty
@@ -206,6 +231,12 @@ class RunReport:
     superseded: int = 0
     retracted: int = 0
     rejected: int = 0
+    # Citation-source side writes from a patch's ``sources:`` block (pre-write
+    # hook). Tracked apart from ``records_created`` (catalog entities) so a
+    # sources-only or link-only patch isn't audited as having done nothing.
+    sources_created: int = 0
+    sources_skipped: int = 0
+    source_links_created: int = 0
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -244,6 +275,13 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
 
     try:
         with transaction.atomic():
+            # Pre-write hooks run first so anything they create (e.g. a citation
+            # source root) is visible to the rest of the transaction — notably to
+            # _attach_plan_citations resolving a same-patch cite: URL. They bump
+            # report counters / warnings directly.
+            for hook in plan.pre_write_hooks:
+                hook(report)
+
             handle_map = _create_entities(plan.entities)
             report.records_created = len(plan.entities)
 
@@ -282,6 +320,8 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             run.records_created = report.records_created
             run.claims_asserted = report.asserted
             run.claims_retracted = report.retracted
+            run.citation_sources_created = report.sources_created
+            run.citation_source_links_created = report.source_links_created
             run.warnings = report.warnings
             run.finished_at = timezone.now()
             run.save(
@@ -292,6 +332,8 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
                     "records_created",
                     "claims_asserted",
                     "claims_retracted",
+                    "citation_sources_created",
+                    "citation_source_links_created",
                     "warnings",
                     "finished_at",
                 ],
@@ -919,7 +961,10 @@ def _attach_plan_citations(
     """
     if not claim_citations:
         return
-    from apps.citation.extractors import get_or_create_external_source
+    from apps.citation.extractors import (
+        get_or_create_external_source,
+        get_or_create_web_source,
+    )
     from apps.provenance.models import CitationInstance
 
     source_cache: dict[CitationRef, int] = {}
@@ -932,7 +977,10 @@ def _attach_plan_citations(
             continue
         source_id = source_cache.get(ref)
         if source_id is None:
-            source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
+            if ref.url:
+                source_id = get_or_create_web_source(ref.url, ref.archive_url).pk
+            else:
+                source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
             source_cache[ref] = source_id
         instances.append(CitationInstance(citation_source_id=source_id, claim=claim))
     if instances:

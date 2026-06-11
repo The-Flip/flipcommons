@@ -95,7 +95,10 @@
         identifier: '',
         url: showUrlField && url.trim() ? url : null,
         link_label: '',
-        link_type: 'homepage',
+        // A child is a specific page (reference); only a root holds its own
+        // homepage. 'homepage' on a child page would let it pose as a domain
+        // root in later URL recognition.
+        link_type: parentContext ? 'reference' : 'homepage',
       },
     });
     submitting = false;

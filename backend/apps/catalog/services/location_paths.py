@@ -41,10 +41,13 @@ def lookup_child_division(
 def compute_location_path(parent: Location | None, slug: str) -> str:
     """Return the new row's ``location_path`` from *parent* and *slug*.
 
-    Top-level countries have no parent, so the path is just the slug.
-    All other tiers concatenate parent's path with a ``/`` separator.
+    Instance-based wrapper over :meth:`Location.compose_public_id` (the single
+    home of the ``parent_path + "/" + slug`` formula) for the write API, which
+    holds a parent row rather than its path. Top-level countries have no
+    parent, so the path is just the slug.
     """
-    return slug if parent is None else f"{parent.location_path}/{slug}"
+    parent_path = parent.location_path if parent is not None else None
+    return Location.compose_public_id({"slug": slug, "parent": parent_path})
 
 
 def _country_ancestor(location: Location) -> Location:

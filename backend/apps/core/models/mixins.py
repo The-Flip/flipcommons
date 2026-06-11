@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from typing import ClassVar, Self, TypeVar, cast
 
@@ -258,6 +258,23 @@ class IdentifiableModel(models.Model):
         """Return this entity's URL-identity value (``self.<public_id_field>``)."""
         value: str = getattr(self, self.public_id_field)
         return value
+
+    @classmethod
+    def compose_public_id(cls, authored_fields: Mapping[str, object]) -> str:
+        """Compose this entity's ``public_id`` from a create's authored claim fields.
+
+        The patch create path uses this to verify that an entity reference
+        (e.g. ``location.usa/tx/paris``) agrees with the claims the author
+        wrote, so a reference that disagrees with its inputs fails loudly
+        instead of creating an internally inconsistent row.
+
+        Most entities' public id *is* the form field, so the default returns
+        ``authored_fields[public_id_form_field]``. Entities whose public id is
+        server-derived (Location: ``location_path`` from parent + slug)
+        override.
+        """
+        form_field = cls.public_id_form_field or cls.public_id_field
+        return str(authored_fields[form_field])
 
 
 class LabeledModel(models.Model):

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
+import type { ThemeDetailSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Medieval',
@@ -9,7 +10,6 @@ const MOCK_DATA = {
   last_modified: '2026-01-01T00:00:00Z',
   slug: 'medieval',
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
-  display_order: 0,
   aliases: [],
   parents: [],
   children: [],
@@ -23,8 +23,7 @@ const MOCK_DATA = {
       variants: [],
     },
   ],
-  sources: [],
-};
+} satisfies ThemeDetailSchema;
 
 describe('themes detail SSR route', () => {
   it('loads from the page endpoint', async () => {

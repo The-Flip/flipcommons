@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Annotated, cast
 
-from django.db.models import F, Prefetch, QuerySet
+from django.db.models import F, Min, Prefetch, Q, QuerySet
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404
 from ninja import Query, Router, Schema
@@ -17,6 +17,7 @@ from pydantic import Field, TypeAdapter
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
+from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.media.helpers import all_media
 from apps.media.schemas import UploadedMediaSchema
@@ -33,6 +34,7 @@ from ..models import (
     CorporateEntityLocation,
     MachineModel,
     Manufacturer,
+    OperatingStatus,
     System,
 )
 from ._manufacturer_facets import (
@@ -49,6 +51,7 @@ from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .helpers import (
     collect_titles,
+    model_year_bounds,
     serialize_locations,
 )
 from .images import (
@@ -178,8 +181,9 @@ _FACETS_ADAPTER: TypeAdapter[ManufacturerFacetsPageSchema] = TypeAdapter(
 class ManufacturerCorporateEntitySchema(Schema):
     name: str
     public_id: str
-    year_start: int | None
-    year_end: int | None
+    year_of_first_model: int | None
+    year_of_last_model: int | None
+    operating_status: OperatingStatus
     locations: list[CorporateEntityLocationSchema]
 
 
@@ -196,8 +200,9 @@ class ManufacturerPersonSchema(Schema):
 
 class ManufacturerDetailSchema(CatalogDetailSchema):
     slug: str
-    year_start: int | None = None
-    year_end: int | None = None
+    year_of_first_model: int | None = None
+    year_of_last_model: int | None = None
+    operating_status: OperatingStatus = OperatingStatus.UNKNOWN
     logo_url: str | None = None
     website: str = ""
     opdb_manufacturer_id: int | None = None
@@ -222,22 +227,32 @@ class _PersonAccum:
     roles: set[str] = field(default_factory=set)
 
 
+def _serialize_mfr_entity(e: CorporateEntity) -> ManufacturerCorporateEntitySchema:
+    """One corporate entity in the manufacturer detail's ``entities`` list.
+
+    Expects ``e.models`` prefetched to non-variant active models (see
+    ``_manufacturer_qs``)."""
+    bounds = model_year_bounds(e.models.all())
+    return ManufacturerCorporateEntitySchema(
+        name=e.name,
+        public_id=e.public_id,
+        year_of_first_model=bounds.first,
+        year_of_last_model=bounds.last,
+        operating_status=OperatingStatus(e.operating_status),
+        locations=serialize_locations(e),
+    )
+
+
 def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchema:
     """Serialize a Manufacturer into the detail response schema.
 
     Expects *mfr* to have been fetched with prefetch_related for entities,
     non_variant_models, credits, and claims (to_attr="active_claims").
     """
-    # Collect persons with roles and compute year range across entities.
+    # Collect persons with roles across all entities' model credits.
     person_roles: dict[str, _PersonAccum] = {}
-    year_starts: list[int] = []
-    year_ends: list[int] = []
 
     for e in mfr.entities.all():
-        if e.year_start is not None:
-            year_starts.append(e.year_start)
-        if e.year_end is not None:
-            year_ends.append(e.year_end)
         for m in e.models.all():
             for credit in m.credits.all():
                 p = credit.person
@@ -258,6 +273,7 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
 
     all_models = [m for e in mfr.entities.all() for m in e.models.all()]
     media_by_model = fetch_model_media_map(m.pk for m in all_models)
+    mfr_bounds = model_year_bounds(all_models)
 
     return ManufacturerDetailSchema(
         name=mfr.name,
@@ -265,22 +281,16 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
         last_modified=mfr.last_modified,
         slug=mfr.slug,
         description=describe(mfr),
-        year_start=min(year_starts) if year_starts else None,
-        year_end=max(year_ends) if year_ends else None,
+        year_of_first_model=mfr_bounds.first,
+        year_of_last_model=mfr_bounds.last,
+        operating_status=OperatingStatus.rollup(
+            e.operating_status for e in mfr.entities.all()
+        ),
         logo_url=mfr.logo_url,
         website=mfr.website,
         opdb_manufacturer_id=mfr.opdb_manufacturer_id,
         wikidata_id=mfr.wikidata_id,
-        entities=[
-            ManufacturerCorporateEntitySchema(
-                name=e.name,
-                public_id=e.public_id,
-                year_start=e.year_start,
-                year_end=e.year_end,
-                locations=serialize_locations(e),
-            )
-            for e in mfr.entities.all()
-        ],
+        entities=[_serialize_mfr_entity(e) for e in mfr.entities.all()],
         titles=collect_titles(all_models, media_by_model=media_by_model),
         systems=[
             ManufacturerSystemSchema(name=s.name, public_id=s.public_id)
@@ -295,7 +305,19 @@ def _manufacturer_qs() -> QuerySet[Manufacturer]:
     return Manufacturer.objects.active().prefetch_related(
         Prefetch(
             "entities",
+            # Order companies by when they began producing (earliest active,
+            # non-variant model year), undated makers last — mirroring the
+            # production-derived range now shown for each. The Min filter matches
+            # the prefetched ``models`` scope so the sort key equals the displayed
+            # ``year_of_first_model``.
             queryset=CorporateEntity.objects.active()
+            .annotate(
+                _first_model_year=Min(
+                    "models__year",
+                    filter=Q(models__variant_of__isnull=True)
+                    & active_status_q("models"),
+                )
+            )
             .prefetch_related(
                 Prefetch(
                     "locations",
@@ -312,7 +334,7 @@ def _manufacturer_qs() -> QuerySet[Manufacturer]:
                     .order_by(F("year").desc(nulls_last=True), "name"),
                 ),
             )
-            .order_by("year_start"),
+            .order_by(F("_first_model_year").asc(nulls_last=True), "name"),
         ),
         Prefetch("systems", queryset=System.objects.active().order_by("name")),
         claims_prefetch(),

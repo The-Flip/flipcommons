@@ -1,4 +1,11 @@
 import { asset, resolve } from '$app/paths';
+import type { CorporateEntityDetailSchema } from '$lib/api/schema';
+
+/** Years within which a maker of unknown status is presumed still producing. */
+const UNKNOWN_RECENCY_YEARS = 6;
+
+/** The three production-status values, derived from the generated schema. */
+type OperatingStatus = NonNullable<CorporateEntityDetailSchema['operating_status']>;
 
 /** Normalize text for search: strip diacritics, punctuation, and collapse whitespace. */
 export function normalizeText(s: string): string {
@@ -20,12 +27,32 @@ export function pluralize(n: number, one: string, many?: string): string {
   return `${n} ${n === 1 ? one : (many ?? `${one}s`)}`;
 }
 
-/** Format a year_start / year_end pair as a human-readable range. */
-export function formatYearRange(yearStart?: number | null, yearEnd?: number | null): string | null {
-  if (yearStart && yearEnd) return `${yearStart}\u2013${yearEnd}`;
-  if (yearStart) return `${yearStart}\u2013present`;
-  if (yearEnd) return `\u2013${yearEnd}`;
-  return null;
+/**
+ * Format a maker's production-year span for display, resolving the open-ended
+ * "present" marker from `operatingStatus`:
+ *
+ * - `ongoing` → `"{first}–present"`
+ * - `ended` → closed `"{first}–{last}"`
+ * - `unknown` → closed when the last model predates `UNKNOWN_RECENCY_YEARS`,
+ *   else `"{first}–present"` (a recent maker is presumed still producing).
+ *
+ * Equal first/last years collapse to a single year in the closed cases
+ * (`"1985"`, not `"1985–1985"`). Returns null when the span has no anchoring
+ * year — `firstYear`/`lastYear` are a coupled min/max, so both are null
+ * together when the maker has no dated models.
+ */
+export function formatActiveRange(
+  firstYear: number | null | undefined,
+  lastYear: number | null | undefined,
+  operatingStatus: OperatingStatus,
+): string | null {
+  if (firstYear == null || lastYear == null) return null;
+  const openEnded =
+    operatingStatus === 'ongoing' ||
+    (operatingStatus === 'unknown' && lastYear > new Date().getFullYear() - UNKNOWN_RECENCY_YEARS);
+  if (openEnded) return `${firstYear}–present`;
+  if (firstYear === lastYear) return `${firstYear}`;
+  return `${firstYear}–${lastYear}`;
 }
 
 /**

@@ -239,7 +239,9 @@
       return;
     }
 
-    // create_by_url: create a child under the domain-matched parent
+    // create_by_url: mint a child under the domain-matched parent. Its link is
+    // 'reference' (not 'homepage') — an article page is evidence, and a homepage
+    // link would let it pose as a domain root in later URL recognition.
     const { data, error } = await client.POST('/api/citation-sources/', {
       body: {
         name: recognitionItem.label,
@@ -252,7 +254,7 @@
         identifier: '',
         url: recognitionItem.label,
         link_label: '',
-        link_type: 'homepage',
+        link_type: 'reference',
       },
     });
     if (error) {

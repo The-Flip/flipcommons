@@ -10,7 +10,9 @@ A patch is **attributed to the source making the claim** (which may be `flipcomm
 
 - **assert / supersede** — (re-)assert a claim; the engine deactivates the source's prior claim for that `(entity, claim_key)` and writes the new one. Corrects a wrong value or carries a source's updated one.
 - **create** — make a new entity and its claims.
-- **retract** — remove the source's claim (the fact never existed or no longer does).
+- **retract** — deactivate the source's scalar/FK claim (the fact never existed or no longer does).
+- **remove** — drop a relationship _member_ (a tag, a location) by superseding it with an `exists=false` tombstone. Distinct from retract: the claim stays active, resolving to "absent" — the same mechanism the in-app editor uses.
+- **delete** — soft-delete an entity (the `status=deleted` lifecycle), distinct from a claim retract.
 
 ## File format
 
@@ -42,6 +44,19 @@ claims:
       manufacturer: western-products # FK → public_id; supersedes this source's prior claim
 ```
 
+Creating a **Location** is the one create whose public id is _derived_ rather than authored: `location_path` is built from `parent` + `slug`. Write `slug` and `parent` as ordinary claims; the adapter takes the path from the entity reference, never claims it, and verifies it composes from `parent + slug` (a mismatch is an error). The `parent` must already exist (an earlier patch or the seed) — a parent created in the same patch isn't resolvable yet. Omit `parent` for a root (country).
+
+```yaml
+attribution: flip-museum
+claims:
+  - location.usa/tx/paris: # location_path = parent + slug
+      create: true
+      name: Paris
+      slug: paris # the claim-based form input
+      parent: usa/tx # FK by location_path; must already exist
+      location_type: city
+```
+
 Retract, attributed to the source whose claim it removes:
 
 ```yaml
@@ -51,17 +66,53 @@ claims:
       retract: [manufacturer] # drop ipdb's manufacturer claim
 ```
 
+Remove a relationship member and refine to a more specific one — here, replacing a coarse `germany` location with `germany/berlin`. Attributed to the source holding the membership claim, so its `exists=false` supersedes its own `exists=true`:
+
+```yaml
+attribution: flip-museum
+claims:
+  - corporate-entity.bally-wulff:
+      location: [germany/berlin] # assert the more-specific member (exists=true)
+      remove: { location: [germany] } # supersede the coarse member (exists=false)
+      note: 'flip-museum says "headquartered in Berlin".'
+```
+
+Delete, after reassigning the firm's one machine to another corporate entity. The reassignment must land in an **earlier** patch: the delete's referrer check reads live DB state, so a same-patch reassignment isn't yet visible and the delete would still see the machine as a blocker.
+
+```yaml
+# 0007-reassign-machine.yaml — reassign first, on its own
+attribution: flip-museum
+claims:
+  - model.some-machine:
+      expect: { corporate_entity: chicago-coin-machinery-company }
+      corporate_entity: chicago-coin # the surviving firm
+```
+
+```yaml
+# 0008-delete-firm.yaml — now the firm has no active referrer
+attribution: flip-museum
+claims:
+  - corporate-entity.chicago-coin-machinery-company:
+      expect: { manufacturer: chicago-coin } # guard the row you're deleting
+      delete: true
+      note: "flip-museum: duplicate of chicago-coin; its sole machine reassigned."
+```
+
 **Entity reference** is `type.public_id` — the canonical `entity_type` (`model`, `manufacturer`, `corporate-entity`, …) and the public id (slug for most, `location_path` for Location), split on the first `.`.
 
-**Field keys** are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's public_id; **relationship** (`tag`, `theme`) — key is the namespace, value a list of member public_ids.
+**Field keys** are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's public_id; **relationship** (`tag`, `theme`) — key is the namespace, value a list of member public_ids. The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
 
 **Reserved keys** (directives, not claim fields):
 
 - `create: true` — opt-in to create. Unresolved ref without it → error; resolved ref with it → error (duplicate).
+- `delete: true` — soft-delete an existing entity: writes a `status=deleted` claim (no row removal), exactly like an in-app delete. Reuses the app's soft-delete planner, so it obeys the same record-lifecycle rules — it **refuses** when an active PROTECT referrer would be left dangling, and **cascades** `status=deleted` to owned lifecycle children (a warning lists them). A delete entry takes only `expect:`/`note:`/`cite:` — no field assertions (reassign references in a separate, earlier patch first; see below), no `create`, no `retract`. `note`/`cite` ride the `status=deleted` claim. Idempotent: re-deleting an already-deleted entity diffs as unchanged. Takes effect only if the `status=deleted` claim wins resolution, so attribute it to a source that outranks any existing `status` claim.
 - `expect:` — drift guard: a map of currently-resolved values the target must already have, checked before any write (mismatch → error). Covers scalar + FK. Stops a hand-authored id from writing to a drifted or same-named row.
 - `retract:` — scalar/FK field names whose claim (from this patch's source) to deactivate, on an existing entity. A no-op with a warning if already gone, so re-runs are safe. Not valid with `create`, nor alongside asserting the same field. Retracting the sole claim of a non-nullable FK doesn't clear it (NOT NULL forbids it) — the last value freezes in place, provenance-orphaned; to _change_ a required FK, assert the new value instead. Because it is scoped to this patch's source, attributing the retract to a source that never claimed the field silently does nothing — confirm which source holds the active claim first.
+- `remove:` — a map of **relationship** namespace → member public*ids to drop from an existing entity (the relationship counterpart of `retract:`, which is scalar/FK only). It is **not** a retraction: it supersedes this source's `exists=true` membership claim with an `exists=false` tombstone — the same write the in-app editor makes to drop a member — so the claim stays active and provenance (`note:`/`cite:`) rides it. Because the resolver unions `exists=true` across sources, attribute it to the source holding the active membership claim; a member this source doesn't currently claim present is a no-op with a warning (so re-runs are safe), not an error — but because a no-op emits no tombstone, an entry whose \_only* effect is a no-op removal can't anchor a `note:`/`cite:` and is rejected (the provenance would silently vanish). Not valid with `create`/`delete`, nor removing a member the same entry also asserts present. Relationship `remove:` is the only relationship retraction path — plain `retract:` rejects a relationship namespace.
 - `note:` — a per-entity free-text reason (≤1000 chars) → the entity's ChangeSet note, shown on its edit-history page. (`description:` explains the whole patch; `note:` explains one entry.) All of an entity's claims in a patch collapse into one changeset, so the note is per-entity. The per-entity `note:` is the user-facing one; the whole-patch `description:` (→ `IngestRun.note`) is, as of this writing, surfaced only in Django admin — so put anything readers should see in `note:`, not `description:`.
-- `cite:` — external evidence as `scheme:identifier` (`ipdb:4443`, `opdb:GRhX5`). Get-or-creates the source under that scheme's root and attaches a citation to each of the entry's authored claims, shown beside the field on the edit-history page.
+- `cite:` — external evidence, in one of these forms, attached to each of the entry's authored claims and shown beside the field on the edit-history page:
+  - **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
+  - **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's domain must match a **seeded website root** (a parentless web source whose homepage link shares the domain); the cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no root matches, the patch errors — seed the website root in an earlier patch first. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
 
 Two rules tie note/cite to the single changeset an entry produces:
 
@@ -70,14 +121,52 @@ Two rules tie note/cite to the single changeset an entry produces:
 
 **Strict parsing:** duplicate keys error, and values must be JSON-shaped — YAML coercion is off, so a bare `1996-01-01` stays a string and `no` stays `"no"`. A `note:` containing `"` needs YAML quoting (single-quote the value, as above).
 
+## Citation sources
+
+A patch can also create **citation sources** — the reference works (`ipdb`, `pinside`, a manufacturer's site) that `cite:` points at — via a top-level `sources:` block. Use it to add a new web/book/magazine root without editing the seed file. Unlike claims, a source is _not attributed_ and carries no provenance; `attribution:` still names the source that owns the run's ledger entry, not the citation sources.
+
+```yaml
+attribution: flipcommons-catalog # owns the IngestRun; does NOT attribute the sources
+sources: # processed before claims, so a cite: below can nest under a root created here
+  - name: Wikipedia
+    source_type: web # book | magazine | web
+    description: Free collaborative encyclopedia.
+    links: # a source may carry several
+      - {
+          url: "https://en.wikipedia.org/",
+          label: Wikipedia,
+          link_type: homepage,
+        }
+      - {
+          url: "https://de.wikipedia.org/",
+          label: Wikipedia (Deutsch),
+          link_type: homepage,
+        }
+claims: [] # optional — a sources-only patch is valid
+```
+
+A `sources:` node is the seed-data source shape (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, and `links`). **v1 is flat** — nested `children` is rejected; a child source under a root is created on demand when you `cite:` a URL on its domain.
+
+**Identity and the get-or-create policy.** A source has no slug; identity is `isbn` if present, else `(name, source_type)`. The block is **additive get-or-create**, never an overwrite:
+
+- not found → create the source and its declared links.
+- found → leave the existing row untouched (a divergent declared field is a **warning**, not an error), and **additively backfill** any declared link the row is missing. An existing link with the same URL but a different `link_type`/`label` is left as-is and warned.
+- two-plus rows match `(name, source_type)` → operate on the first, warn.
+
+This is deliberate: a user can create a source through the app, so a same-identity collision is invisible when you author the patch. A strict "differs → error" policy would let one such collision **fail the patch and dam every later patch on prod** (patches stop at the first failure). Get-or-create never wedges and never clobbers user data — at the cost that, on a collision, the patch's description/links don't win (correctable only in Django admin). Because it's additive, re-applying is a clean no-op.
+
+**What still hard-errors** (all author-controllable, and all surface at `--dry-run` on localhost before you ship): an unknown key, a nested `children`, a missing `name`/`source_type`, and any value the model rejects — a bad `source_type`, an out-of-range `year`/`month`/`day`, an invalid `identifier_key` or `link_type`, a malformed URL, or a duplicate declared link URL.
+
+**Backfill enables nesting.** A web root is only recognized by a later `cite:` URL if it has a `homepage` link on that domain. The additive backfill is what makes a found-but-linkless root usable. (Edge: if the row already has that URL typed `reference`, the `homepage` duplicate can't be added — recognition won't match, and a cite on that domain can still fail. Rare; fix the link in admin.)
+
 ## Authoring a good patch
 
 - **Attribute to whoever makes the claim.** A value the source itself states → that source (`ipdb`, `opdb`); correcting it → still that source, so you supersede or retract _its_ claim. A structured value _we derive_ by classifying a source's free text (the source has no such field — e.g. parsing IPDB notes into a `game_format`) → `flipcommons-catalog`, with `cite:` to the source text as evidence; there's no source claim to supersede. Museum-curated facts no one else claims → `flip-museum`.
 - **One entity per entry**, carrying all its fields and its single `note`/`cite`.
 - **Create vocabulary in an earlier patch.** A `tag:` member or FK target must already exist when the entry runs, and same-patch resolution works for FK fields only. Put new tags/statuses in an earlier numbered patch, then reference them — e.g. one patch creates the `aftermarket` status and re-theme tags, the next assigns them.
 - **Guard every entry with `expect:`** against a current resolved value — `year`, or another stable field like `corporate_entity` when year is null — so a typo'd or drifted public_id fails loudly instead of writing to the wrong row. When claims are keyed off an external record (IPDB/OPDB), guard on that id — `expect: { ipdb_id: 4965 }`: it's the most specific guard, it's the same record your `cite:` points at, and it's present even when `year` and `corporate_entity` are both null.
-- **Explain every change with `note:`**, written as `<source> says "<verbatim quote>"`. Quote the source _verbatim_, mark your own omissions with `[...]`, and keep it _plain ASCII_ (no smart quotes or `…`).
-- **Cite external evidence with `cite:`** (IPDB/OPDB records). Skip the citation when the evidence is in the entity's own data and instead write it in the note such as "Its name contains the word 'prototype'". The cite can also differ from the `expect:` guard: when the evidence lives in a _different_ record's note (a cross-reference — "‹other game› is not a pinball"), guard on the model's own id but `cite:` the record that contains the statement.
+- **Explain every change with `note:`**, written as `<source> says "<verbatim quote>"`. Quote the source _verbatim_ and mark your own omissions with `[...]`. **Preserve the source's own characters**, including non-ASCII letters in foreign-language quotes (e.g. `Günter`, `gegründet`) — notes are stored as UTF-8, so don't strip or transliterate them. Only normalize stray _typography_ that's a copy-paste artifact rather than part of the quote: straighten smart quotes (`“ ”` → `"`) and spell out an ellipsis `…` as `[...]`.
+- **Cite external evidence with `cite:`** — `scheme:identifier` for IPDB/OPDB records, or a raw `http(s)://` URL for any other web page (a forum thread, an archive scan, a manufacturer's page). Reach for the scheme form whenever one exists; the URL form is the escape hatch for sources without a scheme. A URL cite needs its **website root seeded first** (a parentless web source whose homepage link shares the domain) — seed it in an earlier patch, the same vocab-first pattern, then cite pages under it. Skip the citation when the evidence is in the entity's own data and instead write it in the note such as "Its name contains the word 'prototype'". The cite can also differ from the `expect:` guard: when the evidence lives in a _different_ record's note (a cross-reference — "‹other game› is not a pinball"), guard on the model's own id but `cite:` the record that contains the statement.
 - **Only assert what a source supports.** If you can't point to evidence, leave the field unset rather than guess: an unset value reads as "unknown", a wrong claim reads as fact.
 - **Large curated patches: keep a worksheet, emit from a script.** For a patch spanning dozens of curated rows, record every search you ran (including the ones that found nothing) and the verbatim source text behind each call in a review worksheet, then generate the YAML from a script that reads live field values for the `expect:` guards. Hand-copying guards drifts from the DB; a generator keeps them true and the worksheet keeps the editorial judgment auditable. The dead-end searches matter too — proving a term is absent from the sources is what justifies relying on the signal you did find. **Don't reinvent the generator** — follow [DataPatchAuthoring.md](DataPatchAuthoring.md) and use the shared `patchkit` helper (escaping, `expect:` guards, source-text extraction).
 - **Dry-run, then localhost, then prod** — see below.
@@ -138,7 +227,7 @@ On localhost, the simplest undo is restoring a pre-apply snapshot (see [Iteratin
 
 We've been building the patch system on an as-needed basis. These haven't been needed yet.
 
-- **No entity delete** — distinct from a claim retract; the status=deleted lifecycle.
-- **Location isn't a supported entity**. Create requires a **claim-based public id** (`slug`). Entities with a system-generated id — e.g. `Location`, whose `location_path` is derived — can't be created via a patch.
-- `expect:` and `retract:` only cover scalar + FK, not relationships.
+- **No same-patch reassign-then-delete** — a `delete:`'s referrer check reads live DB state, so a reference reassigned earlier in the _same_ patch isn't yet visible; reassign in an earlier numbered patch, then delete.
+- `expect:` covers scalar + FK only, not relationships. (`retract:` is scalar/FK; relationship members are dropped with `remove:`.)
+- Relationship `remove:` covers **single-FK** relationships (`tag`, `location`, `theme`). Multi-key relationships (e.g. credits) aren't yet removable via patch.
 - Same-patch references resolve for **FK fields only**: an FK can point at an entity created earlier in the same patch, but a relationship member (e.g. `tag:`) must already exist in the DB.

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { DisplaySubtypeDetailSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_DATA = {
@@ -7,9 +8,10 @@ const MOCK_DATA = {
   slug: '128x32',
   display_order: 0,
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
-  sources: [],
+  aliases: [],
+  last_modified: '2024-01-01T00:00:00Z',
   display_type: { name: 'Dot Matrix', public_id: 'dot-matrix' },
-};
+} satisfies DisplaySubtypeDetailSchema;
 
 describe('display-subtypes detail SSR route', () => {
   it('loads from the page endpoint', async () => {

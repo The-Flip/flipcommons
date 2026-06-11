@@ -92,6 +92,17 @@ class TestListCorporateEntities:
         resp = client.get("/api/corporate-entities/")
         assert resp.json()["items"][0]["model_count"] == 1
 
+    def test_list_includes_production_span(self, client, entity):
+        make_machine_model(
+            name="Early", slug="early", corporate_entity=entity, year=1960
+        )
+        make_machine_model(name="Late", slug="late", corporate_entity=entity, year=1975)
+        resp = client.get("/api/corporate-entities/")
+        row = next(r for r in resp.json()["items"] if r["slug"] == entity.slug)
+        assert row["year_of_first_model"] == 1960
+        assert row["year_of_last_model"] == 1975
+        assert row["operating_status"] == "unknown"
+
     def test_list_excludes_variants_from_count(self, client, entity):
         base = make_machine_model(
             name="Ace High", slug="ace-high", corporate_entity=entity
@@ -118,8 +129,6 @@ class TestGetCorporateEntity:
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "D. Gottlieb & Company"
-        assert data["year_start"] == 1927
-        assert data["year_end"] == 1983
         assert data["manufacturer"]["name"] == "Gottlieb"
 
     def test_detail_includes_ipdb_manufacturer_id(self, client, entity):
@@ -147,6 +156,31 @@ class TestGetCorporateEntity:
         titles = resp.json()["titles"]
         assert len(titles) == 1
         assert titles[0]["name"] == "Ace High"
+
+    def test_detail_production_span(self, client, entity):
+        make_machine_model(
+            name="Early", slug="early", corporate_entity=entity, year=1960
+        )
+        make_machine_model(name="Late", slug="late", corporate_entity=entity, year=1975)
+        resp = client.get(f"/api/pages/corporate-entity/{entity.slug}")
+        data = resp.json()
+        assert data["year_of_first_model"] == 1960
+        assert data["year_of_last_model"] == 1975
+        # No operating_status claim → resolved column default "unknown".
+        assert data["operating_status"] == "unknown"
+
+    def test_detail_production_span_null_when_no_years(self, client, entity):
+        make_machine_model(name="Undated", slug="undated", corporate_entity=entity)
+        resp = client.get(f"/api/pages/corporate-entity/{entity.slug}")
+        data = resp.json()
+        assert data["year_of_first_model"] is None
+        assert data["year_of_last_model"] is None
+
+    def test_detail_operating_status(self, client, entity):
+        entity.operating_status = "ongoing"
+        entity.save()
+        resp = client.get(f"/api/pages/corporate-entity/{entity.slug}")
+        assert resp.json()["operating_status"] == "ongoing"
 
     def test_404_for_unknown_slug(self, client, db):
         resp = client.get("/api/pages/corporate-entity/nonexistent")
@@ -201,14 +235,29 @@ class TestPatchCorporateEntityScalars:
         assert "unique" in resp.json()["detail"]["message"].lower()
 
     def test_edit_years(self, client, user, entity):
+        # year_start/year_end remain claimable (DB columns + claims are kept) even
+        # though they're no longer surfaced in the read response, so assert the
+        # resolved DB values rather than the response body.
         client.force_login(user)
         resp = _patch(
             client, entity.slug, {"fields": {"year_start": 1930, "year_end": 1985}}
         )
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["year_start"] == 1930
-        assert data["year_end"] == 1985
+        entity.refresh_from_db()
+        assert entity.year_start == 1930
+        assert entity.year_end == 1985
+
+    def test_edit_operating_status(self, client, user, entity):
+        client.force_login(user)
+        resp = _patch(client, entity.slug, {"fields": {"operating_status": "ongoing"}})
+        assert resp.status_code == 200
+        assert resp.json()["operating_status"] == "ongoing"
+
+    def test_invalid_operating_status_returns_422(self, client, user, entity):
+        client.force_login(user)
+        resp = _patch(client, entity.slug, {"fields": {"operating_status": "bogus"}})
+        assert resp.status_code == 422
+        assert "valid choice" in resp.json()["detail"]["message"].lower()
 
     def test_no_changes_returns_422(self, client, user, entity):
         client.force_login(user)

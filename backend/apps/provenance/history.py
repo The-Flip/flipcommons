@@ -9,6 +9,7 @@ from itertools import chain
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Case, F, IntegerField, Model, Prefetch, Q, Value, When
 
+from apps.citation.models import CitationSourceLink
 from apps.core.authz import PolicyUser, compute_row_capabilities
 
 from .display import FieldValue, LabelLookup, claim_value, resolve_labels
@@ -28,16 +29,29 @@ def _field_change_citations(claim: Claim) -> list[FieldChangeCitationSchema]:
 
     Requires the claim to have been loaded with citation instances prefetched
     (``prefetched_citation_instances`` — see ``claims_prefetch`` and the
-    edit-history / changeset-detail querysets). Uses the source's first link
-    as the citation URL.
+    edit-history / changeset-detail querysets). Uses the source's live link as
+    the compact citation URL; the full set of links (incl. an ``archive``
+    snapshot) is exposed by the citation-source detail surface, not here.
     """
     result: list[FieldChangeCitationSchema] = []
     for inst in citation_instances(claim):
+        # Prefer the live page over its durable ``archive`` snapshot. The
+        # snapshot is a backup, not the canonical link — and the default link
+        # ordering sorts "archive" before "reference", so ``links[0]`` alone
+        # would surface the Wayback URL. Pick on the prefetched list (no requery).
         links = list(inst.citation_source.links.all())
+        live = next(
+            (
+                link
+                for link in links
+                if link.link_type != CitationSourceLink.LinkType.ARCHIVE
+            ),
+            links[0] if links else None,
+        )
         result.append(
             FieldChangeCitationSchema(
                 source_name=inst.citation_source.name,
-                url=links[0].url if links else None,
+                url=live.url if live else None,
             )
         )
     return result
