@@ -65,10 +65,6 @@ class CorporateEntityListItemSchema(Schema):
     manufacturer: EntityRef = Field(
         description="The manufacturer this corporate entity belongs to."
     )
-    year_start: int | None = Field(
-        None, description="First year of operation, if known."
-    )
-    year_end: int | None = Field(None, description="Last year of operation, if known.")
     year_of_first_model: int | None = Field(
         None, description="Earliest model year for this corporate entity."
     )
@@ -98,8 +94,6 @@ class CorporateEntityListSchema(Schema):
 class CorporateEntityDetailSchema(CatalogDetailSchema):
     slug: str
     manufacturer: EntityRef
-    year_start: int | None = None
-    year_end: int | None = None
     year_of_first_model: int | None = None
     year_of_last_model: int | None = None
     operating_status: OperatingStatus = OperatingStatus.UNKNOWN
@@ -149,8 +143,6 @@ def _serialize_detail(ce: CorporateEntity) -> CorporateEntityDetailSchema:
         manufacturer=EntityRef(
             name=ce.manufacturer.name, public_id=ce.manufacturer.public_id
         ),
-        year_start=ce.year_start,
-        year_end=ce.year_end,
         year_of_first_model=bounds.first,
         year_of_last_model=bounds.last,
         operating_status=OperatingStatus(ce.operating_status),
@@ -186,7 +178,7 @@ def _corporate_entity_list_qs() -> QuerySet[CorporateEntity]:
                 ),
             ),
         )
-        .order_by("manufacturer__name", "year_start")
+        .order_by("manufacturer__name", "year_of_first_model")
     )
 
 
@@ -200,8 +192,6 @@ def _serialize_corporate_entity_row(
         manufacturer=EntityRef(
             name=ce.manufacturer.name, public_id=ce.manufacturer.public_id
         ),
-        year_start=ce.year_start,
-        year_end=ce.year_end,
         year_of_first_model=row.year_of_first_model,
         year_of_last_model=row.year_of_last_model,
         operating_status=OperatingStatus(ce.operating_status),
@@ -215,11 +205,11 @@ def list_corporate_entities(
     request: HttpRequest, q: NameAliasQuery = "", page: PageParam = 1
 ) -> CorporateEntityListSchema:
     """Corporate entities, paginated. Search with ``q``. Ordered by manufacturer,
-    then founding year."""
+    then earliest model year."""
     result = paginated_list_response(
         _corporate_entity_list_qs(),
         q=q,
-        ordering=("manufacturer__name", "year_start", "pk"),
+        ordering=("manufacturer__name", "year_of_first_model", "pk"),
         page=page,
         serialize_row=_serialize_corporate_entity_row,
     )

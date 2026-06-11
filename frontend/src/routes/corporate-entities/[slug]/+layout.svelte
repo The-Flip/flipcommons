@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { resolve } from '$app/paths';
-  import { formatYearRange } from '$lib/utils';
+  import { formatActiveRange } from '$lib/utils';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
   import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
@@ -34,7 +34,9 @@
   let ce = $derived(data.profile);
   let slug = $derived(page.params.slug);
 
-  let yearsActive = $derived(formatYearRange(ce.year_start, ce.year_end));
+  let yearsActive = $derived(
+    formatActiveRange(ce.year_of_first_model, ce.year_of_last_model, ce.operating_status),
+  );
   let metaDescription = $derived(metaDescriptionFor(ce));
   let mode = $derived(resolveDetailSubrouteMode(page.url.pathname));
   let isDetail = $derived(mode === 'detail');
@@ -160,7 +162,7 @@
     </SidebarSection>
 
     {#if yearsActive}
-      <SidebarSection heading="Years Active" onEdit={editAction('basics')}>
+      <SidebarSection heading="Years Active">
         <p class="sidebar-value">{yearsActive}</p>
       </SidebarSection>
     {/if}

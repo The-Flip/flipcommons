@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { absoluteAssetUrl, formatYearRange, normalizeText, pluralize } from './utils';
+import { absoluteAssetUrl, formatActiveRange, normalizeText, pluralize } from './utils';
 
 describe('normalizeText', () => {
   it('lowercases text', () => {
@@ -36,22 +36,36 @@ describe('normalizeText', () => {
   });
 });
 
-describe('formatYearRange', () => {
-  it('returns range when both years present', () => {
-    expect(formatYearRange(1927, 1983)).toBe('1927\u20131983');
+describe('formatActiveRange', () => {
+  const thisYear = new Date().getFullYear();
+  const recent = thisYear - 2; // within the 6-year recency window
+  const old = thisYear - 20; // well outside it
+
+  it('renders ongoing makers as open-ended, regardless of last model age', () => {
+    expect(formatActiveRange(1971, old, 'ongoing')).toBe(`1971–present`);
   });
 
-  it('returns open-ended range when only start', () => {
-    expect(formatYearRange(1999, null)).toBe('1999\u2013present');
+  it('renders ended makers as a closed range', () => {
+    expect(formatActiveRange(1931, 1998, 'ended')).toBe('1931–1998');
   });
 
-  it('returns leading dash when only end', () => {
-    expect(formatYearRange(null, 1950)).toBe('\u20131950');
+  it('collapses a single-year closed range to one year', () => {
+    expect(formatActiveRange(1985, 1985, 'ended')).toBe('1985');
+    expect(formatActiveRange(old, old, 'unknown')).toBe(`${old}`);
   });
 
-  it('returns null when neither year present', () => {
-    expect(formatYearRange(null, null)).toBeNull();
-    expect(formatYearRange(undefined, undefined)).toBeNull();
+  it('treats a recent unknown maker as still producing', () => {
+    expect(formatActiveRange(1990, recent, 'unknown')).toBe(`1990–present`);
+  });
+
+  it('closes an unknown maker whose last model is older than the window', () => {
+    expect(formatActiveRange(1990, old, 'unknown')).toBe(`1990–${old}`);
+  });
+
+  it('returns null when the span has no anchoring year', () => {
+    expect(formatActiveRange(null, null, 'ended')).toBeNull();
+    expect(formatActiveRange(1990, null, 'ongoing')).toBeNull();
+    expect(formatActiveRange(undefined, undefined, 'unknown')).toBeNull();
   });
 });
 

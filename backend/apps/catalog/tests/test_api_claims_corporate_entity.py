@@ -129,8 +129,6 @@ class TestGetCorporateEntity:
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "D. Gottlieb & Company"
-        assert data["year_start"] == 1927
-        assert data["year_end"] == 1983
         assert data["manufacturer"]["name"] == "Gottlieb"
 
     def test_detail_includes_ipdb_manufacturer_id(self, client, entity):
@@ -237,23 +235,23 @@ class TestPatchCorporateEntityScalars:
         assert "unique" in resp.json()["detail"]["message"].lower()
 
     def test_edit_years(self, client, user, entity):
+        # year_start/year_end remain claimable (DB columns + claims are kept) even
+        # though they're no longer surfaced in the read response, so assert the
+        # resolved DB values rather than the response body.
         client.force_login(user)
         resp = _patch(
             client, entity.slug, {"fields": {"year_start": 1930, "year_end": 1985}}
         )
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["year_start"] == 1930
-        assert data["year_end"] == 1985
+        entity.refresh_from_db()
+        assert entity.year_start == 1930
+        assert entity.year_end == 1985
 
     def test_edit_operating_status(self, client, user, entity):
-        # operating_status is claimable in Commit 1 but not yet exposed in the
-        # detail response schema (added in Commit 2), so assert the DB value.
         client.force_login(user)
         resp = _patch(client, entity.slug, {"fields": {"operating_status": "ongoing"}})
         assert resp.status_code == 200
-        entity.refresh_from_db()
-        assert entity.operating_status == "ongoing"
+        assert resp.json()["operating_status"] == "ongoing"
 
     def test_invalid_operating_status_returns_422(self, client, user, entity):
         client.force_login(user)

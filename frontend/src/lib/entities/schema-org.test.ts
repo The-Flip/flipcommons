@@ -398,12 +398,9 @@ describe('per-model declarations', () => {
     expect(theme.schemaOrg.relationshipMap).toEqual({ parents: 'isPartOf' });
   });
 
-  test('corporate-entity maps year_start/year_end to founding/dissolution dates', () => {
+  test('corporate-entity is an Organization mapping manufacturer → brand', () => {
     expect(corporateEntity.schemaOrg.types).toEqual(['Organization']);
-    expect(corporateEntity.schemaOrg.fieldMap).toEqual({
-      year_start: { property: 'foundingDate', transform: 'year' },
-      year_end: { property: 'dissolutionDate', transform: 'year' },
-    });
+    expect(corporateEntity.schemaOrg.fieldMap).toBeUndefined();
     expect(corporateEntity.schemaOrg.relationshipMap).toEqual({ manufacturer: 'brand' });
   });
 

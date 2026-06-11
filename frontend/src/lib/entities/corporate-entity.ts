@@ -9,10 +9,6 @@ export const corporateEntity: EntityInfo<CorporateEntityDetailSchema> = {
   },
   schemaOrg: {
     types: ['Organization'],
-    fieldMap: {
-      year_start: { property: 'foundingDate', transform: 'year' },
-      year_end: { property: 'dissolutionDate', transform: 'year' },
-    },
     relationshipMap: { manufacturer: 'brand' },
   },
   externalRefs: {

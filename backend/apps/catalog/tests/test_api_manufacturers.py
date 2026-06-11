@@ -41,28 +41,22 @@ class TestManufacturersAPI:
         assert data["opdb_manufacturer_id"] == 42
         assert data["wikidata_id"] == "Q12345"
 
-    def test_get_manufacturer_entities_ordered_by_years(self, client, manufacturer):
-        CorporateEntity.objects.create(
-            manufacturer=manufacturer,
-            name="Williams Latest",
-            slug="williams-latest",
-            year_start=1999,
-            year_end=2010,
+    def test_get_manufacturer_entities_ordered_by_first_model_year(
+        self, client, manufacturer
+    ):
+        """Companies sort by when they began producing (earliest model year)."""
+        latest = CorporateEntity.objects.create(
+            manufacturer=manufacturer, name="Williams Latest", slug="williams-latest"
         )
-        CorporateEntity.objects.create(
-            manufacturer=manufacturer,
-            name="Williams Early",
-            slug="williams-mfg",
-            year_start=1943,
-            year_end=1985,
+        early = CorporateEntity.objects.create(
+            manufacturer=manufacturer, name="Williams Early", slug="williams-mfg"
         )
-        CorporateEntity.objects.create(
-            manufacturer=manufacturer,
-            name="Williams Middle",
-            slug="williams-middle",
-            year_start=1985,
-            year_end=1999,
+        middle = CorporateEntity.objects.create(
+            manufacturer=manufacturer, name="Williams Middle", slug="williams-middle"
         )
+        make_machine_model(name="L", slug="l", corporate_entity=latest, year=1999)
+        make_machine_model(name="E", slug="e", corporate_entity=early, year=1943)
+        make_machine_model(name="M", slug="m", corporate_entity=middle, year=1985)
         resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
         entities = resp.json()["entities"]
         assert [e["name"] for e in entities] == [

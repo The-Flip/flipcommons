@@ -11,14 +11,16 @@
   import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
   import LocationLink from '$lib/components/entity-links/LocationLink.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
-  import { formatYearRange, websiteHostname } from '$lib/utils';
+  import { formatActiveRange, websiteHostname } from '$lib/utils';
 
   let { data } = $props();
   let mfr = $derived(data.profile);
   let editAction = manufacturerEditActionContext.get();
   const richTextState = createRichTextAccordionState();
 
-  let yearsActive = $derived(formatYearRange(mfr.year_start, mfr.year_end));
+  let yearsActive = $derived(
+    formatActiveRange(mfr.year_of_first_model, mfr.year_of_last_model, mfr.operating_status),
+  );
   let hasCompanyDetails = $derived(!!(yearsActive || mfr.entities.length > 0 || mfr.website));
   let titlesHeading = $derived(`Titles (${mfr.titles.length})`);
   let systemsHeading = $derived(`Systems (${mfr.systems.length})`);
@@ -57,15 +59,18 @@
           <h3>Companies</h3>
           <ul class="stack-list">
             {#each mfr.entities as entity (entity.public_id)}
+              {@const activeRange = formatActiveRange(
+                entity.year_of_first_model,
+                entity.year_of_last_model,
+                entity.operating_status,
+              )}
               <li>
                 <div class="entity">
                   <a href={resolve(`/corporate-entities/${entity.public_id}`)} class="entity-name"
                     >{entity.name}</a
                   >
-                  {#if formatYearRange(entity.year_start, entity.year_end)}
-                    <span class="muted">
-                      {formatYearRange(entity.year_start, entity.year_end)}
-                    </span>
+                  {#if activeRange}
+                    <span class="muted">{activeRange}</span>
                   {/if}
                   {#each entity.locations as loc, i (i)}
                     <LocationLink {loc} />

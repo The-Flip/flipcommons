@@ -13,8 +13,6 @@ export const MOCK_CORPORATE_ENTITY = {
   slug: 'williams-electronics',
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
   manufacturer: { name: 'Williams', public_id: 'williams' },
-  year_start: 1985,
-  year_end: 1999,
   year_of_first_model: 1985,
   year_of_last_model: 1999,
   operating_status: 'unknown',
