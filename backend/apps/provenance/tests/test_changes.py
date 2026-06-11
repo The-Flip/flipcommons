@@ -128,7 +128,7 @@ class TestChangesList:
         assert item["entity"]["type_label"] == "Model"
         assert item["changes_count"] >= 1
 
-    def test_excludes_ingest_by_default(self, client, source, pm):
+    def test_includes_ingest(self, client, source, pm):
         run = IngestRun.objects.create(
             source=source,
             status="success",
@@ -139,20 +139,6 @@ class TestChangesList:
         Claim.objects.assert_claim(pm, "year", 1999, source=source, changeset=cs)
 
         resp = client.get("/api/pages/changesets/")
-        assert resp.status_code == 200
-        assert len(resp.json()["items"]) == 0
-
-    def test_includes_ingest_when_requested(self, client, source, pm):
-        run = IngestRun.objects.create(
-            source=source,
-            status="success",
-            input_fingerprint="test",
-            finished_at=timezone.now(),
-        )
-        cs = ingest_changeset(run)
-        Claim.objects.assert_claim(pm, "year", 1999, source=source, changeset=cs)
-
-        resp = client.get("/api/pages/changesets/?include_ingest=true")
         assert resp.status_code == 200
         items = resp.json()["items"]
         assert len(items) == 1

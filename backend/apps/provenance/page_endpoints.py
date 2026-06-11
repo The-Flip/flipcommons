@@ -224,11 +224,10 @@ def list_changes(
     entity_type: str = "",
     after: str = "",
     before: str = "",
-    include_ingest: bool = False,
     cursor: str = "",
     limit: int = 50,
 ) -> ChangeSetListSchema:
-    """Global feed of edits across all entities."""
+    """Global feed of all changes across all entities."""
     from django.db.models import Prefetch
 
     from .models import Claim
@@ -262,9 +261,6 @@ def list_changes(
             ),
         ),
     )
-
-    if not include_ingest:
-        qs = qs.filter(user__isnull=False)
 
     if entity_type:
         try:
