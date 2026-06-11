@@ -113,13 +113,6 @@ claims:
 - `cite:` — external evidence, in one of these forms, attached to each of the entry's authored claims and shown beside the field on the edit-history page:
   - **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
   - **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's domain must match a **seeded website root** (a parentless web source whose homepage link shares the domain); the cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no root matches, the patch errors — seed the website root in an earlier patch first. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
-  - **a `{url, archive}` mapping** — the URL form plus a durable snapshot (e.g. a Wayback permalink), for a page that may rot. `url` behaves exactly as the URL form above (it must be a `http(s)://` URL and domain-match a seeded root — a scheme cite is rejected here, use the bare-string form for those). `archive` is attached as a second `archive`-typed link on the **same** child source, so one citation carries both the live page and its snapshot. The `archive` URL is **not** domain-matched to a root (a Wayback URL lives on `web.archive.org` and embeds the original as a path segment), only validated as a `http(s)://` URL; it is dropped from a scheme/empty cite. Re-citing is idempotent — the archive link is added once. Compact edit-history shows the **live** `url`; the archive surfaces on the citation-source detail view.
-
-    ```yaml
-    cite:
-      url: https://www.pinballnews.com/site/2025/07/01/steelbound-announced/
-      archive: https://web.archive.org/web/20250702.../https://www.pinballnews.com/...
-    ```
 
 Two rules tie note/cite to the single changeset an entry produces:
 
