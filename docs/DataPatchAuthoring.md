@@ -91,7 +91,7 @@ claims:
 - **No duplicates within one list.** Two members that fold to the same identity (`[Stern, stern]`, `[MM, MM]`) are rejected — list each distinct value once.
 - **Length.** Members are length-checked at build time against the model's column bound (alias 200, abbreviation 50); an over-long member is rejected on `--dry-run`, not silently truncated.
 - **Remove** drops a member exactly like an FK member: `remove: { manufacturer_alias: [Stern Inc] }`, attributed to the source holding the membership claim.
-- **No `note:` or `cite:` needed.** Unlike other claims, aliases and abbreviations don't require provenance — they're self-evident names, not asserted facts. Still attribute the patch to the curating source (e.g. `flip-museum`); a `note:`/`cite:` is optional, for the rare name whose origin isn't obvious.
+- **No `note:` or `cite:` needed.** Aliases and abbreviations don't require `note:`/`cite:`. It fine for them to ride in a Change Set whose `note:`/`cite:` supports other things.
 
 ## Validate behind a snapshot
 

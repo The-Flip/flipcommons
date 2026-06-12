@@ -143,13 +143,41 @@ The original _Medieval Madness_ (1997) runs on Williams WPC-95. The Chicago Gami
 
 ### Technology Generation
 
-- **TechnologyGeneration**: the major technological era — Pure Mechanical, Electromechanical, Solid State.
-- **TechnologySubgeneration**: subdivision within a generation — e.g., Solid State breaks down into Discrete, Integrated, and PC-Based.
+**TechnologyGeneration** — the major technological era:
+
+- `pure-mechanical`: gravity, springs and pins; no electricity.
+- `electromechanical`: relays, solenoids and stepping motors; the flipper era.
+- `solid-state`: microprocessor-controlled, from 1977 onward.
+
+**TechnologySubgeneration** — subdivision within a generation. `solid-state` breaks down into:
+
+- `ss-discrete`: custom CPU boards built from off-the-shelf microprocessors (1977–1990).
+- `ss-integrated`: purpose-built unified pinball platforms like Williams WPC (1986 onward).
+- `ss-pc`: commodity PC/ARM hardware running general-purpose operating systems (2013 onward).
 
 ### Display Type
 
-- **DisplayType**: the display technology — Score Reels, Backglass Lights, Alpha-Numeric, CGA Monitor, Dot Matrix Display, LCD Screen.
-- **DisplaySubtype**: subdivision within a type — e.g., Alpha-Numeric includes Nixie Tube, Seven-Segment, and Sixteen-Segment.
+**DisplayType** — the display technology:
+
+- `score-reels`: mechanical rotating drums, one digit each.
+- `backglass-lights`: fixed-value bulbs lit behind the backglass.
+- `alphanumeric`: segmented LED panels showing numbers and text.
+- `cga`: color CRT monitor for integrated video sequences.
+- `dot-matrix`: a 128×32 addressable dot grid (DMD).
+- `lcd`: a full-resolution HD video screen.
+
+**DisplaySubtype** — subdivision within a type.
+
+`alphanumeric`:
+
+- `nixie-tube`: cold-cathode gas-discharge numerals.
+- `7-segment`: seven-bar LED digits; numbers and a few letters.
+- `16-segment`: sixteen-bar LED digits; the full alphabet.
+
+`dot-matrix`:
+
+- `plasma-dmd`: the original orange gas-discharge panel.
+- `color-led-dmd`: an RGB LED replacement at the same resolution.
 
 ### Production Status
 
