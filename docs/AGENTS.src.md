@@ -240,6 +240,7 @@ Prefer the factories over `ChangeSet.objects.create` in new code:
 - Don't silence linter warnings — fix the underlying issue
 - Never hardcode secrets — use environment variables via `.env`
 - Describe your approach before implementing non-trivial changes
+- When writing or editing Markdown, never hard-wrap prose. Write each paragraph and list item as a single long line and let the viewer soft-wrap it. Hard line breaks inserted to fit ~80 columns produce choppy short lines in a narrow viewport. (Tables, code blocks and the existing line structure of generated files are exempt.)
 
 START_CLAUDE
 

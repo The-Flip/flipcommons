@@ -14,9 +14,15 @@ A patch is **attributed to the source making the claim** (which may be `flipcomm
 - **remove** — drop a relationship _member_ (a tag, a location) by superseding it with an `exists=false` tombstone. Distinct from retract: the claim stays active, resolving to "absent" — the same mechanism the in-app editor uses.
 - **delete** — soft-delete an entity (the `status=deleted` lifecycle), distinct from a claim retract.
 
+## Where data patches live
+
+All data patches live in the [pindata](https://github.com/deanmoses/pindata) repo under `patches/` and ride the R2 export → `make pull-ingest` path to `data/ingest_sources/pindata/patches/`.
+
+They are numbered files `NNNN-slug.yaml`, like `0001-prototype-tags`.
+
 ## File format
 
-Numbered files `NNNN-slug.yaml` like `0001-prototype-tags`. They live in the [pindata](https://github.com/deanmoses/pindata) repo under `patches/` and ride the R2 export → `make pull-ingest` path to `data/ingest_sources/pindata/patches/`. One patch carries **one attribution** (→ one `IngestRun`).
+One patch carries **one attribution** (→ one `IngestRun`).
 
 ```yaml
 attribution: flip-museum # a Source slug; must already exist
@@ -32,14 +38,21 @@ claims: # ordered list of single-key entries
       tag: [prototype] # relationship: namespace → member public_ids
 ```
 
-Create + supersede, attributed to the source whose value it corrects:
+Create + supersede, attributed to the source whose value it corrects. An FK target must already exist in the DB (the seed or an _earlier_ patch), so the new manufacturer is created in an earlier-numbered patch than the corporate entity that points at it — a target created earlier in the _same_ patch isn't yet resolvable (see [Limitations](#limitations)):
 
 ```yaml
+# 0010-create-western.yaml — create the FK target first, on its own
 attribution: flipcommons-catalog
 claims:
   - manufacturer.western-products:
       name: Western Products
       create: true # opt-in to create a missing entity
+```
+
+```yaml
+# 0011-western-corporate-entity.yaml — now the manufacturer exists to point at
+attribution: flipcommons-catalog
+claims:
   - corporate-entity.western-products-incorporated:
       manufacturer: western-products # FK → public_id; supersedes this source's prior claim
 ```
@@ -163,12 +176,12 @@ This is deliberate: a user can create a source through the app, so a same-identi
 
 - **Attribute to whoever makes the claim.** A value the source itself states → that source (`ipdb`, `opdb`); correcting it → still that source, so you supersede or retract _its_ claim. A structured value _we derive_ by classifying a source's free text (the source has no such field — e.g. parsing IPDB notes into a `game_format`) → `flipcommons-catalog`, with `cite:` to the source text as evidence; there's no source claim to supersede. Museum-curated facts no one else claims → `flip-museum`.
 - **One entity per entry**, carrying all its fields and its single `note`/`cite`.
-- **Create vocabulary in an earlier patch.** A `tag:` member or FK target must already exist when the entry runs, and same-patch resolution works for FK fields only. Put new tags/statuses in an earlier numbered patch, then reference them — e.g. one patch creates the `aftermarket` status and re-theme tags, the next assigns them.
+- **Create vocabulary, and any FK target, in an earlier patch.** A `tag:` member, an FK target, or a `title` a model points at must already exist in the DB when the entry runs — in the seed or an _earlier_ numbered patch, **not the same one**. An FK is resolved by a live DB lookup, so a target created earlier in the same patch isn't yet visible (see [Limitations](#limitations)). Put new tags/statuses/titles in an earlier patch, then reference them — e.g. one patch creates the `aftermarket` status and re-theme tags, the next assigns them; one patch creates the titles, the next creates the models.
 - **Guard every entry with `expect:`** against a current resolved value — `year`, or another stable field like `corporate_entity` when year is null — so a typo'd or drifted public_id fails loudly instead of writing to the wrong row. When claims are keyed off an external record (IPDB/OPDB), guard on that id — `expect: { ipdb_id: 4965 }`: it's the most specific guard, it's the same record your `cite:` points at, and it's present even when `year` and `corporate_entity` are both null.
 - **Explain every change with `note:`**, written as `<source> says "<verbatim quote>"`. Quote the source _verbatim_ and mark your own omissions with `[...]`. **Preserve the source's own characters**, including non-ASCII letters in foreign-language quotes (e.g. `Günter`, `gegründet`) — notes are stored as UTF-8, so don't strip or transliterate them. Only normalize stray _typography_ that's a copy-paste artifact rather than part of the quote: straighten smart quotes (`“ ”` → `"`) and spell out an ellipsis `…` as `[...]`.
 - **Cite external evidence with `cite:`** — `scheme:identifier` for IPDB/OPDB records, or a raw `http(s)://` URL for any other web page (a forum thread, an archive scan, a manufacturer's page). Reach for the scheme form whenever one exists; the URL form is the escape hatch for sources without a scheme. A URL cite needs its **website root seeded first** (a parentless web source whose homepage link shares the domain) — seed it in an earlier patch, the same vocab-first pattern, then cite pages under it. Skip the citation when the evidence is in the entity's own data and instead write it in the note such as "Its name contains the word 'prototype'". The cite can also differ from the `expect:` guard: when the evidence lives in a _different_ record's note (a cross-reference — "‹other game› is not a pinball"), guard on the model's own id but `cite:` the record that contains the statement.
 - **Only assert what a source supports.** If you can't point to evidence, leave the field unset rather than guess: an unset value reads as "unknown", a wrong claim reads as fact.
-- **Large curated patches: keep a worksheet, emit from a script.** For a patch spanning dozens of curated rows, record every search you ran (including the ones that found nothing) and the verbatim source text behind each call in a review worksheet, then generate the YAML from a script that reads live field values for the `expect:` guards. Hand-copying guards drifts from the DB; a generator keeps them true and the worksheet keeps the editorial judgment auditable. The dead-end searches matter too — proving a term is absent from the sources is what justifies relying on the signal you did find. **Don't reinvent the generator** — follow [DataPatchAuthoring.md](DataPatchAuthoring.md) and use the shared `patchkit` helper (escaping, `expect:` guards, source-text extraction).
+- **Large curated patches: keep a worksheet, emit from a script.** For a patch spanning dozens of curated rows, record every search you ran (including the ones that found nothing) and the verbatim source text behind each call in a review worksheet, then generate the YAML from a script that reads live field values for the `expect:` guards. Hand-copying guards drifts from the DB; a generator keeps them true and the worksheet keeps the editorial judgment auditable. The dead-end searches matter too — proving a term is absent from the sources is what justifies relying on the signal you did find. **Don't reinvent the generator** — follow [DataPatchKit.md](DataPatchKit.md) and use the shared `patchkit` helper (escaping, `expect:` guards, source-text extraction).
 - **Dry-run, then localhost, then prod** — see below.
 
 ## Applying patches
@@ -208,8 +221,7 @@ cp db.pre-0009.sqlite3 db.sqlite3
 
 ### Full ingest also applies patches
 
-`make ingest-all`, the fresh-DB data bootstrap, also runs `ingest_patches`, to get the DB into
-something approximating production: seed, then the replayed patch log.
+`make ingest-all`, the fresh-DB data bootstrap, also runs `ingest_patches`, to get the DB into something approximating production: seed, then the replayed patch log.
 
 ## The ledger: applied once, immutably
 
@@ -230,4 +242,5 @@ We've been building the patch system on an as-needed basis. These haven't been n
 - **No same-patch reassign-then-delete** — a `delete:`'s referrer check reads live DB state, so a reference reassigned earlier in the _same_ patch isn't yet visible; reassign in an earlier numbered patch, then delete.
 - `expect:` covers scalar + FK only, not relationships. (`retract:` is scalar/FK; relationship members are dropped with `remove:`.)
 - Relationship `remove:` covers **single-FK** relationships (`tag`, `location`, `theme`). Multi-key relationships (e.g. credits) aren't yet removable via patch.
-- Same-patch references resolve for **FK fields only**: an FK can point at an entity created earlier in the same patch, but a relationship member (e.g. `tag:`) must already exist in the DB.
+- **Only single-FK relationships are writable** — `tag`, `location`, `theme`, and the like, whose member is an FK to another entity. **Alias relationships are not patch-writable**: `manufacturer_alias`, `corporate_entity_alias` and the other alias namespaces carry a bare string value rather than an FK, so asserting one is rejected (`not a single-FK relationship`). Add aliases through the in-app editor or Django admin for now.
+- **No same-patch FK target creation.** An FK value (on a `create` _or_ an edit) is resolved by a live DB lookup against entities already committed, so its target must exist in the seed or an **earlier** numbered patch — a target created earlier in the _same_ patch isn't yet visible. This is the same rule as a location's `parent` and a relationship member: create the target (manufacturer, title, tag, parent location, …) in an earlier patch, then reference it.

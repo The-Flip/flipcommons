@@ -54,7 +54,9 @@ For setup and common commands, start with the repository [README](../README.md).
 
 - [Data.md](Data.md) index for working with catalog data: seed vs patches, where to explore via DuckDB vs correct via YAML patches.
   - [DataPatches.md](DataPatches.md) numbered, replayable data patches for post-seed catalog corrections.
-    - [DataPatchAuthoring.md](DataPatchAuthoring.md) workflow and `patchkit` helper for large curated patch sets.
+    - [DataPatchAuthoring.md](DataPatchAuthoring.md) authoring guidance: hand-authored vs generated, descriptions, vocab sequencing, validation.
+      - [DataPatchKit.md](DataPatchKit.md) the `patchkit` generator workflow for large curated patch sets.
+    - [DataPatchReviewing.md](DataPatchReviewing.md) how to editorially review a data patch.
   - [Ingest.md](Ingest.md) external data sources and the ingest pipeline.
 
 ## Testing And Review
