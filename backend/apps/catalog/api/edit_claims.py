@@ -18,7 +18,11 @@ from django.db import models as db_models
 from ninja import Schema
 
 from apps.accounts.models import User
-from apps.catalog.claims import build_relationship_claim
+from apps.catalog.claims import (
+    build_relationship_claim,
+    normalize_abbreviation_value,
+    normalize_alias_identity,
+)
 from apps.catalog.models import (
     CorporateEntity,
     CreditRole,
@@ -41,7 +45,7 @@ from apps.provenance.models import (
     get_claim_fields,
 )
 from apps.provenance.schemas import CitationReferenceInputSchema
-from apps.provenance.validation import validate_claim_value
+from apps.provenance.validation import get_relationship_schema, validate_claim_value
 
 from ..resolve import resolve_after_mutation
 from ._typing import CreditKey, CreditPkKey
@@ -369,11 +373,13 @@ def plan_alias_claims(
     """
     # Normalise: strip, deduplicate by lowercase key, drop blanks.
     # Last-write-wins for display case when duplicates differ only in case.
+    # The strip/lower fold is shared with the data-patch adapter via
+    # ``normalize_alias_identity`` so the two paths produce identical bytes.
     desired: dict[str, str] = {}  # lowercase → display string
     for raw in desired_aliases:
-        val = raw.strip()
-        if val:
-            desired[val.lower()] = val
+        ident = normalize_alias_identity(raw)
+        if ident.value:
+            desired[ident.value] = ident.display
 
     current: dict[str, str] = {}  # lowercase → stored display string
     for a in entity.aliases.all():
@@ -741,16 +747,37 @@ def build_credit_claim_specs(
     return specs
 
 
+def _abbreviation_max_length() -> int:
+    """The abbreviation length bound, read from the registered schema.
+
+    Model-derived (populated from the through-model ``CharField`` at
+    registration), so the editor and the data-patch adapter enforce the same
+    limit from one source instead of a hardcoded constant.
+    """
+    schema = get_relationship_schema("abbreviation")
+    assert schema is not None, "abbreviation schema must be registered"
+    (spec,) = [s for s in schema.value_keys if s.identity is not None]
+    assert spec.max_length is not None, "abbreviation identity must declare max_length"
+    return spec.max_length
+
+
 def _normalize_abbreviations(values: list[str]) -> list[str]:
-    """Strip, deduplicate, drop blanks, enforce max length."""
+    """Strip, deduplicate, drop blanks, enforce max length.
+
+    The strip fold is shared with the data-patch adapter via
+    ``normalize_abbreviation_value`` and the length bound comes from the
+    registered schema (``_abbreviation_max_length``), so both write paths
+    normalize and bound identically.
+    """
+    max_length = _abbreviation_max_length()
     normalized: list[str] = []
     seen: set[str] = set()
     for raw_value in values:
-        value = raw_value.strip()
+        value = normalize_abbreviation_value(raw_value)
         if not value:
             continue
-        if len(value) > 50:
-            raise_form_error("Abbreviations must be 50 characters or fewer.")
+        if len(value) > max_length:
+            raise_form_error(f"Abbreviations must be {max_length} characters or fewer.")
         if value in seen:
             continue
         seen.add(value)

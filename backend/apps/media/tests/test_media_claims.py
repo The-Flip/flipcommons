@@ -110,10 +110,14 @@ class TestBuildMediaAttachmentClaim:
             )
 
     def test_retraction(self, machine_model, asset):
+        # Tombstone invariant (build_relationship_claim step 8): an exists=False
+        # detach claim carries identity (media_asset) + exists only — the inert
+        # category/is_primary are dropped. The resolver skips an exists=False
+        # claim before it would read them, so this is resolver-inert.
         _claim_key, value = build_media_attachment_claim(
             machine_model, asset.pk, exists=False
         )
-        assert value["exists"] is False
+        assert value == {"media_asset": asset.pk, "exists": False}
 
 
 # ---------------------------------------------------------------------------

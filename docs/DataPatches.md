@@ -90,6 +90,19 @@ claims:
       note: 'flip-museum says "headquartered in Berlin".'
 ```
 
+Set string-valued relationship members — aliases and abbreviations. The field key is the **literal registered namespace** (`manufacturer_alias`, `abbreviation`); members are bare strings, not public_ids. Alias values case-fold for identity (original case preserved for display); abbreviations are stored verbatim. `remove:` drops a member the same way it drops an FK member:
+
+```yaml
+attribution: flip-museum
+claims:
+  - manufacturer.stern:
+      manufacturer_alias: [Stern Pinball, Stern Inc, Stern Electronics] # known trade names
+      note: "flip-museum: trade names across the company history."
+  - model.medieval-madness:
+      abbreviation: [MM, MedMad] # shared Title/MachineModel namespace
+      remove: { abbreviation: [MedievalMadness] } # drop a bad earlier abbreviation
+```
+
 Delete, after reassigning the firm's one machine to another corporate entity. The reassignment must land in an **earlier** patch: the delete's referrer check reads live DB state, so a same-patch reassignment isn't yet visible and the delete would still see the machine as a blocker.
 
 ```yaml
@@ -113,7 +126,7 @@ claims:
 
 **Entity reference** is `type.public_id` — the canonical `entity_type` (`model`, `manufacturer`, `corporate-entity`, …) and the public id (slug for most, `location_path` for Location), split on the first `.`.
 
-**Field keys** are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's public_id; **relationship** (`tag`, `theme`) — key is the namespace, value a list of member public_ids. The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
+**Field keys** are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's public_id; **relationship** (`tag`, `theme`, `manufacturer_alias`, `abbreviation`) — key is the namespace, value a list of members (FK public_ids, or bare strings for aliases/abbreviations). The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
 
 **Reserved keys** (directives, not claim fields):
 
@@ -121,7 +134,7 @@ claims:
 - `delete: true` — soft-delete an existing entity: writes a `status=deleted` claim (no row removal), exactly like an in-app delete. Reuses the app's soft-delete planner, so it obeys the same record-lifecycle rules — it **refuses** when an active PROTECT referrer would be left dangling, and **cascades** `status=deleted` to owned lifecycle children (a warning lists them). A delete entry takes only `expect:`/`note:`/`cite:` — no field assertions (reassign references in a separate, earlier patch first; see below), no `create`, no `retract`. `note`/`cite` ride the `status=deleted` claim. Idempotent: re-deleting an already-deleted entity diffs as unchanged. Takes effect only if the `status=deleted` claim wins resolution, so attribute it to a source that outranks any existing `status` claim.
 - `expect:` — drift guard: a map of currently-resolved values the target must already have, checked before any write (mismatch → error). Covers scalar + FK. Stops a hand-authored id from writing to a drifted or same-named row.
 - `retract:` — scalar/FK field names whose claim (from this patch's source) to deactivate, on an existing entity. A no-op with a warning if already gone, so re-runs are safe. Not valid with `create`, nor alongside asserting the same field. Retracting the sole claim of a non-nullable FK doesn't clear it (NOT NULL forbids it) — the last value freezes in place, provenance-orphaned; to _change_ a required FK, assert the new value instead. Because it is scoped to this patch's source, attributing the retract to a source that never claimed the field silently does nothing — confirm which source holds the active claim first.
-- `remove:` — a map of **relationship** namespace → member public*ids to drop from an existing entity (the relationship counterpart of `retract:`, which is scalar/FK only). It is **not** a retraction: it supersedes this source's `exists=true` membership claim with an `exists=false` tombstone — the same write the in-app editor makes to drop a member — so the claim stays active and provenance (`note:`/`cite:`) rides it. Because the resolver unions `exists=true` across sources, attribute it to the source holding the active membership claim; a member this source doesn't currently claim present is a no-op with a warning (so re-runs are safe), not an error — but because a no-op emits no tombstone, an entry whose \_only* effect is a no-op removal can't anchor a `note:`/`cite:` and is rejected (the provenance would silently vanish). Not valid with `create`/`delete`, nor removing a member the same entry also asserts present. Relationship `remove:` is the only relationship retraction path — plain `retract:` rejects a relationship namespace.
+- `remove:` — a map of **relationship** namespace → member values (FK public_ids, or bare strings for aliases/abbreviations) to drop from an existing entity (the relationship counterpart of `retract:`, which is scalar/FK only). It is **not** a retraction: it supersedes this source's `exists=true` membership claim with an `exists=false` tombstone — the same write the in-app editor makes to drop a member — so the claim stays active and provenance (`note:`/`cite:`) rides it. Because the resolver unions `exists=true` across sources, attribute it to the source holding the active membership claim; a member this source doesn't currently claim present is a no-op with a warning (so re-runs are safe), not an error — but because a no-op emits no tombstone, an entry whose \_only\* effect is a no-op removal can't anchor a `note:`/`cite:` and is rejected (the provenance would silently vanish). Not valid with `create`/`delete`, nor removing a member the same entry also asserts present. Relationship `remove:` is the only relationship retraction path — plain `retract:` rejects a relationship namespace.
 - `note:` — a per-entity free-text reason (≤1000 chars) → the entity's ChangeSet note, shown on its edit-history page. (`description:` explains the whole patch; `note:` explains one entry.) All of an entity's claims in a patch collapse into one changeset, so the note is per-entity. The per-entity `note:` is the user-facing one; the whole-patch `description:` (→ `IngestRun.note`) is, as of this writing, surfaced only in Django admin — so put anything readers should see in `note:`, not `description:`.
 - `cite:` — external evidence, in one of these forms, attached to each of the entry's authored claims and shown beside the field on the edit-history page:
   - **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
@@ -231,7 +244,7 @@ On localhost, snapshot the DB before applying (see [Iterating on localhost](#ite
 
 ## Undoing a patch
 
-No automatic revert — source-attributed claims aren't user-revertible. Undo a patch with a **compensating patch** (a later claim supersedes the earlier one).
+There's no automatic revert; source-attributed claims aren't user-revertible. Undo a patch with a **compensating patch** (a later claim supersedes the earlier one).
 
 On localhost, the simplest undo is restoring a pre-apply snapshot (see [Iterating on localhost](#iterating-on-localhost-snapshot-first)) — the compensating-patch rule is for seeded/shared databases whose history can't be rewound.
 
@@ -241,6 +254,6 @@ We've been building the patch system on an as-needed basis. These haven't been n
 
 - **No same-patch reassign-then-delete** — a `delete:`'s referrer check reads live DB state, so a reference reassigned earlier in the _same_ patch isn't yet visible; reassign in an earlier numbered patch, then delete.
 - `expect:` covers scalar + FK only, not relationships. (`retract:` is scalar/FK; relationship members are dropped with `remove:`.)
-- Relationship `remove:` covers **single-FK** relationships (`tag`, `location`, `theme`). Multi-key relationships (e.g. credits) aren't yet removable via patch.
-- **Only single-FK relationships are writable** — `tag`, `location`, `theme`, and the like, whose member is an FK to another entity. **Alias relationships are not patch-writable**: `manufacturer_alias`, `corporate_entity_alias` and the other alias namespaces carry a bare string value rather than an FK, so asserting one is rejected (`not a single-FK relationship`). Add aliases through the in-app editor or Django admin for now.
+- Relationship `remove:` covers **single-identity** relationships — single-FK members (`tag`, `location`, `theme`) and single string members (aliases, `abbreviation`). Multi-key relationships (e.g. credits) aren't yet removable via patch.
+- **Single-identity relationships are writable** — both single-FK members (`tag`, `location`, `theme`, …, whose member is an FK to another entity) and single **string** members (`manufacturer_alias` and the other alias namespaces, `abbreviation`), whose member is a bare string. Alias values **case-fold** for identity (the original case is preserved for display); abbreviations are stored verbatim. **Multi-key** relationships (e.g. credits, person + role) remain unsupported.
 - **No same-patch FK target creation.** An FK value (on a `create` _or_ an edit) is resolved by a live DB lookup against entities already committed, so its target must exist in the seed or an **earlier** numbered patch — a target created earlier in the _same_ patch isn't yet visible. This is the same rule as a location's `parent` and a relationship member: create the target (manufacturer, title, tag, parent location, …) in an earlier patch, then reference it.

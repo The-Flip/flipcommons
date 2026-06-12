@@ -11,10 +11,17 @@ from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.catalog.claims import build_relationship_claim
+from apps.catalog.claims import (
+    build_relationship_claim,
+    normalize_abbreviation_value,
+    normalize_alias_identity,
+)
 from apps.catalog.ingestion.apply import RunReport, apply_plan
 from apps.catalog.ingestion.patches import (
+    EditEntry,
     PatchError,
+    _member_identity,
+    _relationship_member_spec,
     build_plan,
     fingerprint,
     load_patch,
@@ -24,12 +31,18 @@ from apps.catalog.models import (
     CorporateEntity,
     CorporateEntityLocation,
     Location,
+    MachineModel,
     Manufacturer,
     Tag,
 )
 from apps.catalog.resolve import resolve_all_corporate_entity_locations
 from apps.citation.models import CitationSource, CitationSourceLink
 from apps.provenance.models import ChangeSet, CitationInstance, Claim, IngestRun, Source
+from apps.provenance.validation import (
+    RelationshipSchema,
+    ValueKeySpec,
+    get_relationship_schema,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -1826,3 +1839,311 @@ def test_command_reports_citation_sources(tmp_path):
     call_command("ingest_patches", "--patches-dir", str(tmp_path), stdout=out)
     assert "citation sources: 1 created, 1 links added" in out.getvalue()
     assert CitationSource.objects.filter(name="Wikipedia").exists()
+
+
+# ── Alias & abbreviation relationship members (string identity) ────
+
+
+def _alias_values(mfr: Manufacturer) -> set[str]:
+    return set(mfr.aliases.values_list("value", flat=True))
+
+
+def _alias_claim(value_lower: str) -> Claim:
+    """The active 'manufacturer_alias' claim for the lowercased identity."""
+    claim_key, _ = build_relationship_claim(
+        "manufacturer_alias", {"alias_value": value_lower}
+    )
+    return Claim.objects.get(
+        claim_key=claim_key, field_name="manufacturer_alias", is_active=True
+    )
+
+
+def test_assert_manufacturer_alias(stern):
+    text = """
+attribution: flip-museum
+claims:
+  - manufacturer.stern:
+      manufacturer_alias: [Stern Pinball]
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+
+    stern.refresh_from_db()
+    assert _alias_values(stern) == {"Stern Pinball"}
+
+    claim = _alias_claim("stern pinball")
+    assert claim.value == {
+        "alias_value": "stern pinball",
+        "alias_display": "Stern Pinball",
+        "exists": True,
+    }
+    # Parity: the emitted claim_key is byte-identical to what the editor's
+    # build_relationship_claim produces from the same identity — the heart of
+    # the feature.
+    expected_key, _ = build_relationship_claim(
+        "manufacturer_alias",
+        {"alias_value": "stern pinball", "alias_display": "Stern Pinball"},
+    )
+    assert claim.claim_key == expected_key
+
+
+def test_assert_abbreviation(machine_model):
+    text = f"""
+attribution: flip-museum
+claims:
+  - model.{machine_model.slug}:
+      abbreviation: [MM]
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+
+    assert set(machine_model.abbreviations.values_list("value", flat=True)) == {"MM"}
+    claim_key, _ = build_relationship_claim("abbreviation", {"value": "MM"})
+    claim = Claim.objects.get(
+        claim_key=claim_key, field_name="abbreviation", is_active=True
+    )
+    # No case-folding: abbreviations are stored verbatim.
+    assert claim.value == {"value": "MM", "exists": True}
+
+
+def test_remove_alias_tombstone_parity(stern):
+    # An earlier patch asserts two aliases; a later one removes one. The dropped
+    # member's tombstone must be lowercased and carry NO alias_display.
+    assert_text = """
+attribution: flip-museum
+claims:
+  - manufacturer.stern:
+      manufacturer_alias: [Stern Pinball, Stern Inc]
+"""
+    _apply(assert_text, patch_id="0001-aliases")
+    stern.refresh_from_db()
+    assert _alias_values(stern) == {"Stern Pinball", "Stern Inc"}
+
+    remove_text = """
+attribution: flip-museum
+claims:
+  - manufacturer.stern:
+      remove: { manufacturer_alias: [Stern Inc] }
+"""
+    report = _apply(remove_text, patch_id="0002-drop-alias")
+    assert report.rejected == 0
+
+    stern.refresh_from_db()
+    assert _alias_values(stern) == {"Stern Pinball"}
+
+    tombstone = _alias_claim("stern inc")
+    # Exact tombstone shape — lowercased, no alias_display (step 8 invariant).
+    assert tombstone.value == {"alias_value": "stern inc", "exists": False}
+    expected_key, _ = build_relationship_claim(
+        "manufacturer_alias", {"alias_value": "stern inc"}, exists=False
+    )
+    assert tombstone.claim_key == expected_key
+
+
+def test_remove_alias_noop_when_source_lacks_claim(stern):
+    # flip-museum never claimed this alias, so removing it warns (no-op) and
+    # writes no tombstone — re-running a patch stays safe.
+    text = """
+attribution: flip-museum
+claims:
+  - manufacturer.stern:
+      remove: { manufacturer_alias: [Never Claimed] }
+"""
+    report = _apply(text, patch_id="0001-noop-alias")
+    assert report.rejected == 0
+    assert any("no-op" in w for w in report.warnings)
+    claim_key, _ = build_relationship_claim(
+        "manufacturer_alias", {"alias_value": "never claimed"}
+    )
+    assert not Claim.objects.filter(claim_key=claim_key).exists()
+
+
+def test_reassert_alias_is_unchanged(stern):
+    # Re-asserting the same alias from the same source diffs as unchanged.
+    text = """
+attribution: flip-museum
+claims:
+  - manufacturer.stern:
+      manufacturer_alias: [Stern Pinball]
+"""
+    _apply(text, patch_id="0001-first")
+    first = _alias_claim("stern pinball")
+    report = _apply(text, patch_id="0002-again")
+    assert report.rejected == 0
+    second = _alias_claim("stern pinball")
+    # Same active claim row — no new claim written for an unchanged re-assert.
+    assert second.pk == first.pk
+
+
+def test_multi_key_relationship_member_rejected(machine_model):
+    # 'credit' is a registered multi-key relationship (person + role); the gate
+    # rejects at classification — before any member resolution — so no person /
+    # role fixtures are needed. Confirms we narrowed the gate, not removed it.
+    text = f"""
+attribution: flip-museum
+claims:
+  - model.{machine_model.slug}:
+      credit: [pat-lawlor]
+"""
+    with pytest.raises(PatchError, match="single-key relationship"):
+        _apply(text)
+
+
+def test_non_string_identity_rejected(monkeypatch):
+    # The gate keys on scalar_type, not just fk_target. No prod schema has a
+    # single non-FK, non-str identity, so craft one and monkeypatch the lookup —
+    # no global registry mutation (a successful register would persist).
+    crafted = RelationshipSchema(
+        namespace="fake_int_identity",
+        value_keys=(
+            ValueKeySpec(
+                name="amount",
+                scalar_type=int,
+                required=True,
+                identity="amount",
+            ),
+        ),
+        valid_subjects=frozenset({Manufacturer}),
+    )
+    monkeypatch.setattr(
+        "apps.catalog.ingestion.patches.get_relationship_schema",
+        lambda namespace: crafted if namespace == "fake_int_identity" else None,
+    )
+    entry = EditEntry(
+        entity_type="manufacturer",
+        public_id="stern",
+        expect={},
+        retract=[],
+        remove={},
+        fields={},
+    )
+    with pytest.raises(PatchError, match="non-FK, non-string identity"):
+        _relationship_member_spec(Manufacturer, "fake_int_identity", entry)
+
+
+def test_alias_over_length_rejected(stern):
+    long_alias = "x" * 201  # alias_value bound is 200
+    text = f"""
+attribution: flip-museum
+claims:
+  - manufacturer.stern:
+      manufacturer_alias: ["{long_alias}"]
+"""
+    with pytest.raises(PatchError, match="exceeds the 200-character limit"):
+        _apply(text, dry_run=True)
+
+
+def test_abbreviation_over_length_rejected(machine_model):
+    long_abbr = "y" * 51  # abbreviation value bound is 50
+    text = f"""
+attribution: flip-museum
+claims:
+  - model.{machine_model.slug}:
+      abbreviation: ["{long_abbr}"]
+"""
+    with pytest.raises(PatchError, match="exceeds the 50-character limit"):
+        _apply(text, dry_run=True)
+
+
+def test_schema_carries_max_length():
+    # A future refactor that drops the registration-time population must fail
+    # loudly here, not silently re-open the over-length trap.
+    abbr = get_relationship_schema("abbreviation")
+    assert abbr is not None
+    (abbr_id,) = [s for s in abbr.value_keys if s.identity is not None]
+    assert abbr_id.max_length == 50
+
+    alias = get_relationship_schema("manufacturer_alias")
+    assert alias is not None
+    (alias_id,) = [s for s in alias.value_keys if s.identity is not None]
+    assert alias_id.max_length == 200
+
+
+def test_intra_list_duplicate_alias_rejected(stern):
+    # Stern and stern fold to the same identity → same claim_key twice.
+    text = """
+attribution: flip-museum
+claims:
+  - manufacturer.stern:
+      manufacturer_alias: [Stern, stern]
+"""
+    with pytest.raises(PatchError, match="duplicate member"):
+        _apply(text)
+
+
+def test_intra_list_duplicate_abbreviation_rejected(machine_model):
+    text = f"""
+attribution: flip-museum
+claims:
+  - model.{machine_model.slug}:
+      abbreviation: [MM, MM]
+"""
+    with pytest.raises(PatchError, match="duplicate member"):
+        _apply(text)
+
+
+def test_intra_list_duplicate_in_remove_rejected(stern):
+    # The remove path dedups by the same fold → claim_key as the assert path.
+    text = """
+attribution: flip-museum
+claims:
+  - manufacturer.stern:
+      remove: { manufacturer_alias: [Stern Inc, stern inc] }
+"""
+    with pytest.raises(PatchError, match="duplicate member"):
+        _apply(text)
+
+
+def test_blank_alias_member_rejected(stern):
+    text = """
+attribution: flip-museum
+claims:
+  - manufacturer.stern:
+      manufacturer_alias: ["   "]
+"""
+    with pytest.raises(PatchError, match="blank member"):
+        _apply(text)
+
+
+def test_blank_abbreviation_member_rejected(machine_model):
+    text = f"""
+attribution: flip-museum
+claims:
+  - model.{machine_model.slug}:
+      abbreviation: ["   "]
+"""
+    with pytest.raises(PatchError, match="blank member"):
+        _apply(text)
+
+
+def test_member_identity_shares_canonical_fold():
+    # The patch path and the shared fold helpers produce identical bytes — the
+    # structural guard that editor and patch consume one fold. Pure registry +
+    # fold; no DB rows needed.
+    entry = EditEntry(
+        entity_type="manufacturer",
+        public_id="stern",
+        expect={},
+        retract=[],
+        remove={},
+        fields={},
+    )
+    alias_spec = _relationship_member_spec(Manufacturer, "manufacturer_alias", entry)
+    ident = _member_identity("Stern Pinball", "manufacturer_alias", alias_spec, entry)
+    folded = normalize_alias_identity("Stern Pinball")
+    assert ident == {
+        "alias_value": folded.value,
+        "alias_display": folded.display,
+    }
+
+    abbr_entry = EditEntry(
+        entity_type="model",
+        public_id="medieval-madness",
+        expect={},
+        retract=[],
+        remove={},
+        fields={},
+    )
+    abbr_spec = _relationship_member_spec(MachineModel, "abbreviation", abbr_entry)
+    abbr_ident = _member_identity("MedMad", "abbreviation", abbr_spec, abbr_entry)
+    assert abbr_ident == {"value": normalize_abbreviation_value("MedMad")}

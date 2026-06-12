@@ -121,6 +121,33 @@ class TestDetachEndpoint:
         assert not MediaAsset.objects.filter(pk=asset.pk).exists()
         assert not MediaRendition.objects.filter(asset_id=asset.pk).exists()
 
+    def test_detach_tombstone_is_identity_only(
+        self, auth_client, machine_model, asset, renditions, attached
+    ):
+        """The detach tombstone carries identity (media_asset) + exists only.
+
+        Step 8 regression: build_media_attachment_claim drops the inert
+        category/is_primary on exists=False, so the stored tombstone bytes are
+        canonical. Asserted here because the endpoint deletes the asset but
+        leaves the exists=false claim active.
+        """
+        claim_key, _ = build_media_attachment_claim(
+            machine_model, asset.pk, exists=False
+        )
+        resp = auth_client.post(
+            "/api/media/detach/",
+            data={
+                "entity_type": "model",
+                "public_id": machine_model.public_id,
+                "asset_uuid": str(asset.uuid),
+            },
+            content_type="application/json",
+        )
+        assert resp.status_code == 204
+
+        tombstone = Claim.objects.get(claim_key=claim_key, is_active=True)
+        assert tombstone.value == {"media_asset": asset.pk, "exists": False}
+
     def test_detach_deletes_storage_files(
         self,
         auth_client,

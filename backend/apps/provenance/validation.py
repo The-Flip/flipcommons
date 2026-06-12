@@ -65,6 +65,14 @@ class ValueKeySpec:
     ``display_key="alias_display"`` so resolvers and display engines both
     read the override from one declaration. See
     ``register_relationship_schema`` for the full set of invariants.
+
+    ``max_length`` (optional, string-identity specs only) carries the target
+    ``CharField`` length bound, derived from the model at registration. It is
+    consumed by the data-patch adapter, which must reject an over-long member
+    at plan-build time: SQLite (the patch author's local DB) silently ignores
+    ``CharField(max_length=...)``, so an over-long string would pass every
+    local check and only fail as an ``IntegrityError`` on Postgres in prod.
+    ``None`` for FK and non-length-bounded keys.
     """
 
     name: str
@@ -74,6 +82,7 @@ class ValueKeySpec:
     identity: str | None = None
     fk_target: FkTarget | None = None
     display_key: str | None = None
+    max_length: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
