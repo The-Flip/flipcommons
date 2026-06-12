@@ -217,6 +217,14 @@ type RelationshipMembers = dict[str, list[str]]
 # ``str``-typed claim machinery (``apps.catalog.claims``, apply's ClaimIdentity).
 type ClaimKey = str
 
+# A catalog entity's public_id — the URL-identity value of its ``public_id_field``
+# (``slug`` for most entities, ``location_path`` for Location), and what an FK or
+# relationship member names its target by. A transparent alias of ``str`` like
+# ``ClaimKey``: it distinguishes a public_id from the other ``str``s in this module
+# (a handle/entry ``ref``, a relationship ``namespace``) at the points where the
+# distinction is otherwise invisible — e.g. a ``dict[str, set[str]]`` adjacency map.
+type PublicId = str
+
 
 @dataclass(frozen=True, kw_only=True)
 class _PatchEntry:
@@ -551,6 +559,56 @@ class _RemovalResult(NamedTuple):
     carrier_written: bool
 
 
+class _CreatedKey(NamedTuple):
+    """Identity of an entity created earlier in the same patch.
+
+    Keyed by the *resolved concrete model class* (never the ``entity_type``
+    label), so a later reference looks it up by the FK/relationship target's
+    ``related_model`` — the same class ``_lookup_pk`` queries — with no
+    ``"corporate-entity"`` vs ``corporate_entity`` or base-vs-concrete drift.
+
+    Typed ``type[models.Model]`` (not ``type[CatalogModel]``) because lookups key
+    by an FK target's ``related_model``, which Django only types as ``Model``; at
+    runtime every catalog FK target *is* a ``CatalogModel``. The key is pure
+    identity, so the wider annotation costs nothing.
+    """
+
+    model_class: type[models.Model]
+    public_id: PublicId
+
+
+class _MemberEmitResult(NamedTuple):
+    """Outcome of ``_emit_relationship`` for one entry's namespace.
+
+    ``clash_keys`` are the *concrete* claim_keys the assert/remove clash guard
+    and ``asserted_members`` consume; a deferred (same-patch-created) member has
+    no concrete claim_key at plan time and contributes none. ``carrier_written``
+    is whether any assertion — concrete or deferred — was emitted, so a
+    ``note:``/``cite:`` on an entry whose members are *all* same-patch creates is
+    not wrongly rejected by the provenance-carrier check.
+    """
+
+    clash_keys: list[ClaimKey]
+    carrier_written: bool
+
+
+class _HierarchyEdge(NamedTuple):
+    """A child→parent edge asserted into a self-referential hierarchy.
+
+    Self-referential relationship namespaces (``theme_parent``,
+    ``gameplay_feature_parent`` — structurally: a single FK identity whose
+    target *is* the subject model) form a DAG. Each ``exists=true`` member is a
+    child→parent edge, identified by public_id so same-patch creates (no PK yet)
+    and existing rows share one namespace. Collected for the plan-wide acyclicity
+    guard that the API enforces but the patch path otherwise bypasses.
+    """
+
+    namespace: str
+    child: PublicId
+    parent: PublicId
+    ref: str  # the entry-ref/handle that asserted the edge, for the error message
+
+
 class _RawCite(NamedTuple):
     """A ``cite:`` value split into its primary and durable-snapshot parts.
 
@@ -711,6 +769,17 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     # mint a duplicate handle and blow up as a ValueError deep in the apply layer
     # (which the command doesn't catch); reject it cleanly in _process_entry.
     created_refs: set[str] = set()
+    # Registry of same-patch creates → handle, keyed by concrete model class +
+    # public_id, so a *later* entry can reference an entity an *earlier* entry
+    # creates (backward references). A miss falls through to the seed/earlier-
+    # patch DB lookup; only neither-found errors. (Kept separate from
+    # ``created_refs``: that dedups by the entry-ref label; this resolves by
+    # concrete class + public_id — different keys, different jobs.)
+    created: dict[_CreatedKey, str] = {}
+    # child→parent edges asserted into self-referential hierarchies, for the
+    # plan-wide acyclicity guard (the patch path's equivalent of the API's
+    # plan_parent_claims self-link/cycle check).
+    hierarchy_added: dict[type[CatalogModel], list[_HierarchyEdge]] = defaultdict(list)
 
     results = [
         _process_entry(
@@ -720,11 +789,14 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
             rel_namespaces=rel_namespaces,
             rel_fields_by_model=rel_fields_by_model,
             created_refs=created_refs,
+            created=created,
+            hierarchy_added=hierarchy_added,
         )
         for entry in doc.claims
     ]
     plan.records_matched = sum(r.matched for r in results)
     _validate_plan_wide(results)
+    _validate_hierarchy_acyclic(hierarchy_added)
 
     # Relationship resolution: delegate to the canonical post-mutation
     # dispatch (model-driven; no hand-maintained namespace→resolver map). The
@@ -748,6 +820,8 @@ def _process_entry(
     rel_namespaces: frozenset[str],
     rel_fields_by_model: dict[type[CatalogModel], set[str]],
     created_refs: set[str],
+    created: dict[_CreatedKey, str],
+    hierarchy_added: dict[type[CatalogModel], list[_HierarchyEdge]],
 ) -> _EntryResult:
     """Resolve, validate and emit one claim entry; return its cross-entry contribution.
 
@@ -799,7 +873,15 @@ def _process_entry(
         if entry.ref in created_refs:
             raise PatchError(f"{entry.ref}: duplicate create entry in this patch")
         created_refs.add(entry.ref)
-        _add_create(plan, model_class, entry, entry.ref, note=note)
+        _add_create(plan, model_class, entry, entry.ref, created=created, note=note)
+        # Register after _add_create, so a create's own *FK fields* (resolved
+        # inside _add_create against earlier creates) can't point at itself. NB
+        # this entry's *relationship* fields are emitted below, after this line,
+        # so a same-entry self-referential member (theme_parent/
+        # gameplay_feature_parent) IS resolvable here — self-link and cycle
+        # safety for those is enforced separately by the plan-wide hierarchy
+        # guard, not by registration timing.
+        created[_CreatedKey(model_class, entry.public_id)] = entry.ref
         target = _Target(handle=entry.ref)
     else:
         if existing is None:
@@ -835,21 +917,25 @@ def _process_entry(
             if target.object_id is not None:
                 asserted_fields.add(key)
         elif key in rel_namespaces:
-            emitted_keys = _emit_relationship(
+            emit = _emit_relationship(
                 plan,
                 model_class,
                 key,
                 value,
                 target,
                 entry,
+                created=created,
+                hierarchy_added=hierarchy_added,
                 note=note,
                 citation_ref=citation_ref,
             )
             rel_fields_by_model[model_class].add(key)
-            if emitted_keys:
+            if emit.carrier_written:
                 carrier_written = True
             if target.object_id is not None:
-                asserted_members.update(emitted_keys)
+                # Only concrete claim_keys feed the clash guard; a deferred
+                # (same-patch) member has none yet — see _MemberEmitResult.
+                asserted_members.update(emit.clash_keys)
         else:
             raise PatchError(f"{entry.ref}: unknown field {key!r}")
 
@@ -936,6 +1022,80 @@ def _check_provenance_carrier(
             f"retract a currently-claimed field, create, or remove a "
             f"currently-present member (a no-op carries nothing)"
         )
+
+
+def _existing_parent_edges(
+    model_class: type[CatalogModel],
+) -> dict[PublicId, set[PublicId]]:
+    """Current resolved child→parent public_id edges for a hierarchy model.
+
+    ``parents`` is a runtime-generated self-M2M descriptor django-stubs can't
+    see; the two ignores are confined to this boundary helper (same rationale as
+    ``resolve._get_parents_through``). Only called for models that actually have
+    the hierarchy ``parents`` M2M (those with a self-referential FK relationship).
+    """
+    edges: dict[PublicId, set[PublicId]] = {}
+    queryset = model_class._default_manager.prefetch_related("parents")  # type: ignore[misc]
+    for inst in queryset:
+        parents: models.Manager[CatalogModel] = inst.parents  # type: ignore[attr-defined]
+        edges[inst.public_id] = {p.public_id for p in parents.all()}
+    return edges
+
+
+def _reaches_via_parents(
+    parent_map: dict[PublicId, set[PublicId]], start: PublicId, target: PublicId
+) -> bool:
+    """Walking parent edges up from *start*, is *target* reachable?
+
+    ``start == target`` reaches trivially (used for the self-link case). Tolerant
+    of pre-existing cycles in the graph via the ``seen`` guard.
+    """
+    stack = [start]
+    seen: set[str] = set()
+    while stack:
+        node = stack.pop()
+        if node == target:
+            return True
+        if node in seen:
+            continue
+        seen.add(node)
+        stack.extend(parent_map.get(node, ()))
+    return False
+
+
+def _validate_hierarchy_acyclic(
+    hierarchy_added: dict[type[CatalogModel], list[_HierarchyEdge]],
+) -> None:
+    """Reject self-parent links and cycles in self-referential hierarchies.
+
+    The patch path otherwise bypasses the API's ``plan_parent_claims`` guard, so
+    a patch could assert ``gameplay_feature_parent: [self]`` or two mutually-
+    referencing parents and silently corrupt the DAG (the resolver materializes
+    whatever wins, with no self/cycle check).
+
+    Conservative by design: the post-patch parent graph is the current resolved
+    edges *plus* this patch's added edges, ignoring removals — so it never misses
+    a cycle (a removal can only break one, and a removal that's a no-op for this
+    source leaves the edge in place via another). A patch that both removes and
+    re-adds around an edge may be over-rejected; split it across patches.
+    """
+    for model_class, edges in hierarchy_added.items():
+        # Post-patch graph: current resolved edges + this patch's added edges.
+        parent_map = _existing_parent_edges(model_class)
+        for edge in edges:
+            if edge.child == edge.parent:
+                raise PatchError(
+                    f"{edge.ref}: a {model_class.entity_type} cannot be its own "
+                    f"parent ({edge.namespace})"
+                )
+            parent_map.setdefault(edge.child, set()).add(edge.parent)
+        for edge in edges:
+            # Adding child→parent closes a cycle iff parent already reaches child.
+            if _reaches_via_parents(parent_map, edge.parent, edge.child):
+                raise PatchError(
+                    f"{edge.ref}: {edge.namespace} would create a cycle "
+                    f"({edge.child} → {edge.parent} → … → {edge.child})"
+                )
 
 
 def _validate_plan_wide(results: list[_EntryResult]) -> None:
@@ -1263,23 +1423,72 @@ def _emit_relationship(
     target: _Target,
     entry: PatchEntry,
     *,
+    created: dict[_CreatedKey, str],
+    hierarchy_added: dict[type[CatalogModel], list[_HierarchyEdge]],
     note: str = "",
     citation_ref: CitationRef | None = None,
-) -> list[ClaimKey]:
-    """Emit ``exists=true`` member assertions; return their claim_keys.
+) -> _MemberEmitResult:
+    """Emit ``exists=true`` member assertions; return their clash keys + carrier flag.
 
-    The caller records the returned claim_keys against the target entity so the
-    plan-wide assert/remove conflict guard can detect a member that is both
-    asserted present and removed.
+    A member that resolves against the DB is emitted concretely (its ``claim_key``
+    is recorded for the plan-wide assert/remove conflict guard). An FK member that
+    instead names a *same-patch* create is emitted **deferred**
+    (``relationship_namespace`` + ``identity_refs``), resolved post-creation in
+    ``_patch_handles`` — it has no concrete claim_key yet, so it stays out of the
+    clash list (the remove path can't reference a same-patch create at all, so
+    there is nothing to clash with). Either way a carrier is written.
     """
     rel_spec = _relationship_member_spec(model_class, namespace, entry)
     if not isinstance(value, list):
         raise PatchError(
             f"{entry.ref}: relationship {namespace!r} value must be a list of members"
         )
-    emitted_keys: list[ClaimKey] = []
+    clash_keys: list[ClaimKey] = []
     seen_keys: set[ClaimKey] = set()
+    # Deferred members lack a concrete claim_key, so dedup them on the target
+    # handle (the namespace is fixed for this call) to keep the same "duplicate
+    # member" strictness as the concrete path's seen_keys.
+    seen_deferred: set[str] = set()
+    carrier_written = False
+    # A relationship whose FK identity targets its own subject model is a
+    # self-referential hierarchy (theme_parent/gameplay_feature_parent); record
+    # each asserted edge for the plan-wide acyclicity guard, whether the parent
+    # is an existing row or a same-patch create.
+    is_self_hierarchy = (
+        isinstance(rel_spec, _FkMemberSpec) and rel_spec.target_model is model_class
+    )
     for member in value:
+        if is_self_hierarchy and isinstance(member, str):
+            hierarchy_added[model_class].append(
+                _HierarchyEdge(
+                    namespace=namespace,
+                    child=entry.public_id,
+                    parent=member,
+                    ref=entry.ref,
+                )
+            )
+        if isinstance(rel_spec, _FkMemberSpec) and isinstance(member, str):
+            handle = created.get(_CreatedKey(rel_spec.target_model, member))
+            if handle is not None:
+                if handle in seen_deferred:
+                    raise PatchError(
+                        f"{entry.ref}: duplicate member {member!r} in {namespace!r}"
+                    )
+                seen_deferred.add(handle)
+                plan.assertions.append(
+                    PlannedClaimAssert(
+                        field_name=namespace,
+                        relationship_namespace=namespace,
+                        identity_refs={rel_spec.value_key: handle},
+                        note=note,
+                        citation_ref=citation_ref,
+                        content_type_id=target.content_type_id,
+                        object_id=target.object_id,
+                        handle=target.handle,
+                    )
+                )
+                carrier_written = True
+                continue
         identity = _member_identity(member, namespace, rel_spec, entry)
         claim_key, claim_value = build_relationship_claim(namespace, identity)
         # Reject a post-fold duplicate within one entry (e.g. [Stern, stern] →
@@ -1301,8 +1510,9 @@ def _emit_relationship(
             note=note,
             citation_ref=citation_ref,
         )
-        emitted_keys.append(claim_key)
-    return emitted_keys
+        clash_keys.append(claim_key)
+        carrier_written = True
+    return _MemberEmitResult(clash_keys=clash_keys, carrier_written=carrier_written)
 
 
 def _add_removals(
@@ -1420,6 +1630,7 @@ def _add_create(
     entry: CreateEntry,
     handle: str,
     *,
+    created: dict[_CreatedKey, str],
     note: str = "",
 ) -> None:
     """Emit a ``PlannedEntityCreate`` plus its required identity/status claims.
@@ -1485,6 +1696,11 @@ def _add_create(
         pid_field: entry.public_id,
         LIFECYCLE_STATUS_FIELD: "active",
     }
+    # FK columns whose target is created earlier in this same patch: deferred to
+    # the target handle's PK by the apply layer (resolved after the bulk-create).
+    # The field loop still emits the concrete provenance claim, which
+    # _validate_entity_claim_consistency pairs with this handle_ref.
+    handle_refs: dict[str, str] = {}
 
     for key, value in entry.fields.items():
         if key not in claim_fields:
@@ -1496,12 +1712,16 @@ def _add_create(
             if not isinstance(value, str):
                 raise PatchError(f"{entry.ref}: FK {key!r} value must be a public_id")
             target_pk = _lookup_pk(target_model, value)
-            if target_pk is None:
-                raise PatchError(
-                    f"{entry.ref}: FK {key!r} target {value!r} does not exist "
-                    f"(creating an FK target in the same patch is unsupported)"
-                )
-            kwargs[django_field.attname] = target_pk
+            if target_pk is not None:
+                kwargs[django_field.attname] = target_pk
+            else:
+                ref_handle = created.get(_CreatedKey(target_model, value))
+                if ref_handle is None:
+                    raise PatchError(
+                        f"{entry.ref}: FK {key!r} target {value!r} is not in the "
+                        f"seed, an earlier patch, or this patch"
+                    )
+                handle_refs[django_field.attname] = ref_handle
         else:
             kwargs[key] = value
 
@@ -1517,7 +1737,12 @@ def _add_create(
             )
 
     plan.entities.append(
-        PlannedEntityCreate(model_class=model_class, kwargs=kwargs, handle=handle)
+        PlannedEntityCreate(
+            model_class=model_class,
+            kwargs=kwargs,
+            handle=handle,
+            handle_refs=handle_refs,
+        )
     )
     # The public-id claim is adapter-owned only when the public id *is* a claim
     # field (slug, absent from entry.fields) — emit it here. For a derived public

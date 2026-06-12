@@ -91,32 +91,21 @@ entries = [
     )
     for r in rows
 ]
-pk.write_patch("../../0010-game-formats.yaml", attribution="ipdb", description="...", entries=entries)
+pk.write_patch("../../0010-game-formats.yaml", attribution="flipcommons-catalog", description="...", entries=entries)
 ```
 
 ## Provenance in generated patches
 
-The attribution, cite-vs-guard and verbatim-note rules are canonical in [DataPatches.md → Authoring a good patch](DataPatches.md#authoring-a-good-patch) and summarized in [DataPatchAuthoring.md → Provenance](DataPatchAuthoring.md#provenance). Two consequences specific to generated patches:
+The attribution, cite-vs-guard and verbatim-note rules are canonical in [DataPatchAuthoring.md → Authoring a good patch](DataPatchAuthoring.md#authoring-a-good-patch). Two consequences specific to generated patches:
 
-- The carry-a-value-vs-derive-structured-data split usually forces vocab and assignments into **separate files** (different attributions). The 0010/0011 `game_format` patches are the derive case: `flipcommons-catalog` + `cite: ipdb:<id>`. Because vocab must exist before the assignment references it (see [DataPatchAuthoring.md → Create vocabulary](DataPatchAuthoring.md#create-vocabulary-and-fk-targets-in-an-earlier-patch)), the vocab lands in an earlier file: `0009-game-format-vocab.yaml` → `0010-game-formats.yaml`.
+- Vocab and its assignment can share one file now — the derive case attributes both to `flipcommons-catalog` (the assignment carries `cite: ipdb:<id>`), and same-patch backward refs let the vocab entries sit above the assignments that reference them. Split vocab into an earlier file only when the two genuinely need different attributions. The historical 0009→0010/0011 `game_format` patches predate same-patch refs and split anyway (`0009-game-format-vocab.yaml` → `0010-game-formats.yaml`; see [DataPatchAuthoring.md → Create new vocabulary in a patch](DataPatchAuthoring.md#create-new-vocabulary-in-a-patch-not-the-seed)).
 - `source_note` / `clean_text` enforce the verbatim-note shape for you — use them rather than hand-formatting `<Source> says "<quote>"`.
 
 ## Validate
 
-Iterate behind a localhost snapshot — see [DataPatchAuthoring.md → Validate behind a snapshot](DataPatchAuthoring.md#validate-behind-a-snapshot) for the isolated-dir snapshot/rollback loop and the misleading-dry-run trap that bites vocab+assignment pairs.
+Iterate behind a localhost snapshot, then verify and hand off — the full loop (snapshot/rollback, the per-row spot-check, the misleading-dry-run trap on references that span patch files, and the hand-off) is in [DataPatchAuthoring.md → Validation process](DataPatchAuthoring.md#validation-process).
 
-After applying, verify the population landed — distribution looks right, and a spot-checked row carries the source, value, cite and note (`citation_instances` carries the cite, `changeset.note` the note):
-
-```python
-from apps.catalog.models import MachineModel
-from apps.provenance.models import Claim
-from django.contrib.contenttypes.models import ContentType
-ct = ContentType.objects.get_for_model(MachineModel)
-c = Claim.objects.filter(content_type=ct, object_id=MachineModel.objects.get(slug="hyperball").id,
-                         field_name="game_format", is_active=True).first()
-print(c.source.slug, c.value, [ci.citation_source.identifier for ci in c.citation_instances.all()])
-print(c.changeset.note)
-```
+Generator-specific addition: a curated patch classifies a whole **population**, so after applying confirm the population landed — the distribution across buckets looks right and the row counts match your worksheet — not just that one spot-checked entity resolved.
 
 ## Gotchas (learned the hard way)
 

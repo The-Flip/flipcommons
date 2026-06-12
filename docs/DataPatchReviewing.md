@@ -22,10 +22,10 @@ When you need to read deeper:
 
 ## Checklist — confirm the Authoring rules hold
 
-Check each against [DataPatchAuthoring.md](DataPatchAuthoring.md) and [DataPatches.md → Authoring a good patch](DataPatches.md#authoring-a-good-patch):
+Check each against [DataPatchAuthoring.md](DataPatchAuthoring.md):
 
 - **Attribution** — the right source owns each claim; a retraction sits with whoever made the original claim; a narrative description uses its `flipcommons-ai-desc-<entity-type>` source.
 - **Values accurate** — each asserted value matches the cited evidence.
 - **Notes verbatim** — `note:` quotes the source faithfully (omissions marked `[...]`, non-ASCII preserved).
 - **Citations support the claim** — the `cite:` record actually states the asserted fact.
-- **Descriptions** — follow [Writing record descriptions](DataPatchAuthoring.md#writing-record-descriptions): factual, supported, not a title dump, no phrasing that will date.
+- **Descriptions** — follow [Record descriptions](DataPatchAuthoring.md#record-descriptions): factual, supported, not a title dump, no phrasing that will date.

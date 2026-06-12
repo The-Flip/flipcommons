@@ -29,6 +29,43 @@ uv run python manage.py shell -c "from apps.catalog.models.taxonomy import GameF
 # taxonomy examples: GameFormat -> 'game-format', ProductionStatus -> 'production-status', Tag -> 'tag'
 ```
 
+## Authoring a good patch
+
+These principles apply whether you hand-author or generate. Each is elaborated in a section below or in [DataPatches.md](DataPatches.md).
+
+### Data patch attribution
+
+**Attribute to `flipcommons-catalog` by default.** It's Flipcommons' own attribution for values we research, scrape and classify ourselves, and it owns the overwhelming majority of patches. Anything web-scraped where we apply editorial judgment is `flipcommons-catalog`; scraping a fact off IPDB or Kineticist does **not** mean attributing the patch to them. Deriving a structured value by classifying a source's free text (parsing IPDB notes into a `game_format`, say) is this same default case, not an exception: `flipcommons-catalog`, with `cite:` to the source text as evidence and `note:` quoting it — there's no source claim to supersede, because the source never had that field.
+
+Reach for a different attribution only in these cases:
+
+- **Retracting or superseding another source's seed-ingest claim** → attribute to _that_ source (`ipdb`, `opdb`, …), so you act on its own claim. This is the only time `ipdb`/`opdb` attribute a patch — never a fresh first-party assertion.
+- **Wholesale import of structured data from an external site or API** → create or reuse a source for that site and attribute to it: the site supplies the field directly, so there's no judgment of ours to own.
+- **A first-party curatorial source states the fact directly** → that source — `flip-museum` for museum-curated facts no one else claims.
+- **AI-generated record descriptions** → the per-entity-type description source `flipcommons-ai-desc-<entity-type>` (see [Record descriptions](#record-descriptions)).
+
+### One entity per entry
+
+**One entity per entry**, carrying all its fields and its single `note`/`cite`.
+
+### Guard every entry
+
+**Guard every entry with `expect:`** against a current resolved value — `year`, or another stable field like `corporate_entity` when year is null — so a typo'd or drifted public_id fails loudly instead of writing to the wrong row. When claims are keyed off an external record (IPDB/OPDB), guard on that id — `expect: { ipdb_id: 4965 }`: it's the most specific guard, it's the same record your `cite:` points at, and it's present even when `year` and `corporate_entity` are both null.
+
+### Note every entry
+
+**Explain every change with `note:`**, written as `<source> says "<verbatim quote>"`. Quote the source _verbatim_ and mark your own omissions with `[...]`. **Preserve the source's own characters**, including non-ASCII letters in foreign-language quotes (e.g. `Günter`, `gegründet`) — notes are stored as UTF-8, so don't strip or transliterate them. Only normalize stray _typography_ that's a copy-paste artifact rather than part of the quote: straighten smart quotes (`“ ”` → `"`) and spell out an ellipsis `…` as `[...]`.
+
+### Cite most entries
+
+**Cite external evidence with `cite:`** — `scheme:identifier` for IPDB/OPDB records, or a raw `http(s)://` URL for any other web page (a forum thread, an archive scan, a manufacturer's page). Reach for the scheme form whenever one exists; the URL form is the escape hatch for sources without a scheme. A URL cite needs its **website root seeded first** (a parentless web source whose homepage link shares the domain) — seed it in an earlier patch, the same vocab-first pattern, then cite pages under it (see [Citation sources](#citation-sources)). Skip the citation when the evidence is in the entity's own data and instead write it in the note such as "Its name contains the word 'prototype'". The cite can also differ from the `expect:` guard: when the evidence lives in a _different_ record's note (a cross-reference — "‹other game› is not a pinball"), guard on the model's own id but `cite:` the record that contains the statement.
+
+**Only assert what a source supports.** If you can't point to evidence, leave the field unset rather than guess: an unset value reads as "unknown", a wrong claim reads as fact.
+
+### Script large patches
+
+**Large curated patches: keep a worksheet, emit from a script.** For a patch spanning dozens of curated rows, record every search you ran (including the ones that found nothing) and the verbatim source text behind each call in a review worksheet, then generate the YAML from a script that reads live field values for the `expect:` guards. Hand-copying guards drifts from the DB; a generator keeps them true and the worksheet keeps the editorial judgment auditable. The dead-end searches matter too — proving a term is absent from the sources is what justifies relying on the signal you did find. **Don't reinvent the generator** — follow [DataPatchKit.md](DataPatchKit.md) and use the shared `patchkit` helper (escaping, `expect:` guards, source-text extraction).
+
 ## Patch description
 
 Every patch should contain a top-level description. Don't restate the details of each changeset. Don't reference other patches by number. Examples:
@@ -36,17 +73,17 @@ Every patch should contain a top-level description. Don't restate the details of
 - ❌ NO: Models for the new active makers, one per game. Each model's title (0053) and corporate entity (0051) already exist. Production status reflects each game's real state: Alice Goes to Wonderland is shipping (produced); the rest are announced (a pre-order, an intended launch, a trademark filing). Corporate inception years stay off the entities; these model years carry the makers' timeline. The Wonderland and Pawlowski home machines carry the home-use tag; the already-catalogued Ramp's Road Trip is tagged widebody.
 - ✅ YES: Models for the new active makers created in a previous patch.
 
-## Create vocabulary and FK targets in an earlier patch
+## Create new vocabulary in a patch, not the seed
 
-**Vocabulary must be created by a patch, not added to the seed.** Production is seeded **once** and never re-ingested — it only replays patches. A new taxonomy value (a `GameFormat`, `ProductionStatus`, `Tag`) added only to the pindata seed would never reach prod, and an assignment patch referencing it would fail there. So: create new vocab in an **earlier** patch (its own file, since vocab is usually `flip-museum` while assignments are source-attributed), then reference it.
+**New vocabulary must be created by a patch**, never added to the pindata seed. Production is seeded **once** and never re-ingested — it only replays patches — so a new taxonomy value (`GameFormat`, `ProductionStatus`, `Tag`) added only to the seed would never reach prod, and a patch referencing it would fail there. Create the vocab in a patch, then reference it. The same holds for any new FK target — a manufacturer, a title, a parent location.
 
-The same rule covers **any FK target** — a manufacturer, a title, a parent location — because a target is resolved by a live DB lookup and one created earlier in the _same_ patch isn't yet visible (see [DataPatches.md → Limitations](DataPatches.md#limitations)). Create the target in an earlier numbered patch, then point at it.
+Within a file, declare a target **above** the entry that references it (same-patch backward refs resolve). Only a _forward_ reference — pointing at an entry below — still needs an earlier patch (see [DataPatches.md → Limitations](DataPatches.md#limitations)).
 
-Those target-creation patches can be **scaffolding-only**: for example, creating Titles before Models, a Franchise before title-franchise links, or Locations before corporate-entity location claims. A scaffolding-only patch may omit per-entry `note:`/`cite:` when it only creates obvious target records and the patch `description:` says why the targets are needed. The later patch that makes the substantive assignment still needs normal evidence.
+Target-creating entries can be **scaffolding** — obvious records like Titles before Models or Locations before corporate-entity claims — and may omit per-entry `note:`/`cite:` when the patch `description:` says why they're needed. The substantive assignment that uses them still needs normal evidence.
 
 ## Citation sources
 
-A `cite:` to a web URL needs its **website root** seeded first — created in an earlier patch via a top-level `sources:` block (mechanics and the get-or-create policy are in [DataPatches.md → Citation sources](DataPatches.md#citation-sources)). It's another create-in-an-earlier-patch prerequisite, like vocab and FK targets.
+A `cite:` to a web URL needs its **website root** — declared via a top-level `sources:` block (mechanics and the get-or-create policy are in [DataPatches.md → Citation sources](DataPatches.md#citation-sources)). The `sources:` block is processed before claims, so a root declared in the **same** patch is citable in that patch (order-independent), or it can come from an earlier patch.
 
 Write a root's `description:` to only describe **the source itself** — what it is; do NOT include why this patch cites it:
 
@@ -55,11 +92,7 @@ Write a root's `description:` to only describe **the source itself** — what it
 
 This is because a root is reusable, so a reason-specific description goes stale the moment the next patch cites the same root for an unrelated fact. Leave per-fact reasoning to the citing entry's `note:`.
 
-## Provenance
-
-The attribution, cite-vs-guard, scaffolding-only exception, and verbatim-note rules are canonical in [DataPatches.md → Authoring a good patch](DataPatches.md#authoring-a-good-patch). Don't restate them — follow them whether you hand-author or generate.
-
-## Writing record descriptions
+## Record descriptions
 
 Some patches set narrative record descriptions (Manufacturer, Model, …) — prose, not classified values. The rules:
 
@@ -93,9 +126,23 @@ claims:
 - **Remove** drops a member exactly like an FK member: `remove: { manufacturer_alias: [Stern Inc] }`, attributed to the source holding the membership claim.
 - **No `note:` or `cite:` needed.** Aliases and abbreviations don't require `note:`/`cite:`. It fine for them to ride in a Change Set whose `note:`/`cite:` supports other things.
 
-## Validate behind a snapshot
+## Validation process
 
-Patches are immutable once applied (per-DB fingerprint), so iterate behind a snapshot — see [DataPatches.md → Iterating on localhost](DataPatches.md#iterating-on-localhost-snapshot-first) for the snapshot/rollback loop and naming. Apply your new, uncommitted patches **from an isolated dir** so the already-applied 0001–N stay untouched:
+How to validate your changes:
+
+1. [`--dry-run`](#dry-run) is the cheap first pass: it parses the patch and runs every structural check without writing.
+2. [Validate via snapshot](#validate-via-snapshot) is the real check: it commits to localhost, so you see the resolved effect in the running app and can validate cross-file dependencies, then roll back.
+3. [Hand off to user](#hand-off-to-user) only after those. Committing is the user's call.
+
+### Dry run
+
+`--dry-run` parses the patch and runs every structural check (schema, escaping, `expect:` guards, citation roots) without writing. This catches most single-file mistakes in seconds. However, what it cannot do is show the resolved result or validate a dependency that spans patch files, because it commits nothing.
+
+**`--dry-run` can't validate a reference to an entity from another patch file.** Dry-run commits nothing, so if a later patch references something an earlier patch file creates — a title before its model, a manufacturer, a parent location, a vocab value — the later patch reports "FK target does not exist" for it. When you are testing multiple patch files together where one depends on a previous, validate with the snapshot+apply above instead of dry-run.
+
+### Validate via snapshot
+
+Because a patch is immutable once applied (see [DataPatches.md → The ledger](DataPatches.md#the-ledger-applied-once-immutably)), you can't tweak it and re-run against a DB that already has it. Instead, iterate behind a DB snapshot: copy the SQLite file before applying and restore it to roll back. Name the snapshot after the patch (`db.pre-NNNN.sqlite3`) so it's clear which state it captures; the `.sqlite3` suffix keeps it under the gitignored `*.sqlite3` rule. Apply your new, uncommitted patches **from an isolated dir** so the already-applied 0001–N stay untouched:
 
 ```bash
 cd backend
@@ -106,6 +153,26 @@ uv run python manage.py ingest_patches --patches-dir /tmp/p
 cp db.pre-00NN.sqlite3 db.sqlite3                      # roll back
 ```
 
-**`--dry-run` is misleading for vocab+assignment pairs.** Dry-run doesn't commit the vocab-creating patch, so the assignment patch reports "FK target does not exist" for every new vocab value. That's an artifact, not a failure — a real apply commits the vocab patch first. Validate with the snapshot+apply above, not dry-run, when one patch creates vocab the next uses.
+#### Verify snapshot
 
-Then ship: commit + push pindata, publish to R2, and on prod `make pull-ingest && make ingest-patches`.
+After applying, spot-check that the change resolved the way you intended — pull a representative entity and confirm its winning claim carries the right source, value, `cite:` and `note:` (`citation_instances` carries the cite, `changeset.note` the note):
+
+```python
+from apps.catalog.models import MachineModel
+from apps.provenance.models import Claim
+from django.contrib.contenttypes.models import ContentType
+
+ct = ContentType.objects.get_for_model(MachineModel)
+c = Claim.objects.filter(
+    content_type=ct,
+    object_id=MachineModel.objects.get(slug="hyperball").id,
+    field_name="game_format",
+    is_active=True,
+).first()
+print(c.source.slug, c.value, [ci.citation_source.identifier for ci in c.citation_instances.all()])
+print(c.changeset.note)
+```
+
+### Hand off to user
+
+Committing and `make push` in pindata are the user's call — never do either yourself.

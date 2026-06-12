@@ -523,23 +523,22 @@ def _planned_public_ids(
     return result
 
 
-def _fk_value_is_planned(
+def _fk_target_is_planned(
+    subject_model: type[models.Model],
     pca: PlannedClaimAssert,
     planned: dict[type[ClaimControlledModel], set[str]],
 ) -> bool:
-    """True if *pca* is an FK claim whose value names a same-plan-created entity.
+    """True if *pca* is an FK claim on *subject_model* naming a same-plan create.
 
-    *planned* is the precomputed ``_planned_public_ids`` map. Used only by the
-    dry-run path to skip DB existence validation for FK targets that don't
-    exist yet because they're created in this same plan.
+    The shared core: given the subject model the claim lives on, decide whether
+    the claim's value points at an entity this plan will create. Callers supply
+    the subject from whatever they have — ``content_type_id`` for an
+    existing-entity claim, the create handle for a planned-entity claim.
     """
-    if pca.content_type_id is None or not isinstance(pca.value, str):
-        return False
-    model_class = ContentType.objects.get_for_id(pca.content_type_id).model_class()
-    if model_class is None:
+    if not isinstance(pca.value, str):
         return False
     try:
-        django_field = model_class._meta.get_field(pca.field_name)
+        django_field = subject_model._meta.get_field(pca.field_name)
     except FieldDoesNotExist:
         return False
     if not isinstance(django_field, models.ForeignKey):
@@ -550,6 +549,25 @@ def _fk_value_is_planned(
     ):
         return False
     return pca.value.strip() in planned.get(target_model, set())
+
+
+def _fk_value_is_planned(
+    pca: PlannedClaimAssert,
+    planned: dict[type[ClaimControlledModel], set[str]],
+) -> bool:
+    """True if *pca* is an existing-entity FK claim naming a same-plan create.
+
+    Subject model derived from ``content_type_id`` (the claim targets an existing
+    row). *planned* is the precomputed ``_planned_public_ids`` map. Used only by
+    the dry-run path to skip DB existence validation for FK targets that don't
+    exist yet because they're created in this same plan.
+    """
+    if pca.content_type_id is None:
+        return False
+    model_class = ContentType.objects.get_for_id(pca.content_type_id).model_class()
+    if model_class is None:
+        return False
+    return _fk_target_is_planned(model_class, pca, planned)
 
 
 def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
@@ -595,7 +613,27 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
 
     # Claims targeting planned entities: validate only (all are new by
     # definition).  Build sentinel claims without mutating the plan.
-    planned_assertions = [p for p in concrete if p.handle is not None]
+    handle_to_model: dict[str, type[ClaimControlledModel]] = {
+        e.handle: e.model_class for e in plan.entities
+    }
+    # A create whose FK points at *another* same-plan create carries a concrete,
+    # handle-targeted provenance claim whose value names the planned target. Its
+    # DB existence check would spuriously fail (target only planned), so carve it
+    # out exactly like the existing-entity case above. The live path is immune —
+    # creates run first in the same transaction, so the target exists by then.
+    fk_on_create_planned = [
+        p
+        for p in concrete
+        if p.handle is not None
+        and p.handle in handle_to_model
+        and _fk_target_is_planned(handle_to_model[p.handle], p, planned)
+    ]
+    report.asserted += len(fk_on_create_planned)
+    fk_on_create_ids = {id(p) for p in fk_on_create_planned}
+
+    planned_assertions = [
+        p for p in concrete if p.handle is not None and id(p) not in fk_on_create_ids
+    ]
     if planned_assertions:
         handle_to_ct: dict[str, int] = {
             e.handle: ContentType.objects.get_for_model(e.model_class).pk
