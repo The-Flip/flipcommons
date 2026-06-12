@@ -27,7 +27,12 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.catalog.api.soft_delete import plan_soft_delete
-from apps.catalog.claims import build_relationship_claim, get_relationship_namespaces
+from apps.catalog.claims import (
+    build_relationship_claim,
+    get_relationship_namespaces,
+    normalize_abbreviation_value,
+    normalize_alias_identity,
+)
 from apps.catalog.ingestion.apply import (
     CitationRef,
     IngestPlan,
@@ -48,7 +53,7 @@ from apps.citation.seed_data.types import SeedLink, SeedSource
 from apps.citation.seeding import ensure_root_source, validate_root_source
 from apps.core.entity_types import get_linkable_model
 from apps.core.types import EntityKey, JsonBody
-from apps.provenance.models import Claim, Source, get_claim_fields
+from apps.provenance.models import Claim, IdentityPart, Source, get_claim_fields
 from apps.provenance.models.changeset import CHANGESET_NOTE_MAX_LENGTH
 from apps.provenance.validation import get_relationship_schema
 
@@ -199,10 +204,10 @@ def fingerprint(data: JsonBody) -> str:
 # ---------------------------------------------------------------------------
 
 
-# A ``remove:`` directive's shape: relationship namespace → member public_ids
-# to drop. (Both keys and members are bare ``str`` — namespace and public_id
-# are uniformly untyped strings across the catalog; this alias names the
-# structure without pretending to enforce them.)
+# A ``remove:`` directive's shape: relationship namespace → member values to
+# drop. (Both keys and members are bare ``str`` — a member is an FK public_id
+# (tag, location) or a bare string (alias, abbreviation); the catalog keeps both
+# uniformly untyped, so this alias names the structure without enforcing them.)
 type RelationshipMembers = dict[str, list[str]]
 
 # The composite key identifying one claim — a scalar/FK field name or a
@@ -262,9 +267,10 @@ class EditEntry(_PatchEntry):
     # Scalar/FK field names whose claim from this source to deactivate.
     retract: list[str]
     # The relationship analogue of ``retract``, by a *different* mechanism: a map
-    # of relationship namespace → member public_ids to drop by superseding each
-    # with an ``exists=false`` tombstone (the claim stays active, resolving to
-    # "absent") — exactly how the in-app editor drops a member.
+    # of relationship namespace → members to drop by superseding each with an
+    # ``exists=false`` tombstone (the claim stays active, resolving to "absent")
+    # — exactly how the in-app editor drops a member. A member is an FK public_id
+    # or a bare string (alias, abbreviation).
     remove: RelationshipMembers
     fields: JsonBody
 
@@ -381,7 +387,7 @@ def _parse_remove(raw_fields: JsonBody, ref: str) -> RelationshipMembers:
     ):
         raise PatchError(
             f"{ref}: 'remove' must be a mapping of relationship namespace to a "
-            f"list of member public_ids (e.g. {{location: [germany]}})"
+            f"list of member values (e.g. {{location: [germany]}})"
         )
     return cast(RelationshipMembers, raw)
 
@@ -1114,11 +1120,30 @@ def _emit_direct(
     )
 
 
-class _RelationshipMemberSpec(NamedTuple):
-    """The single-FK shape of a relationship namespace, for member resolution."""
+class _FkMemberSpec(NamedTuple):
+    """Member is a public_id resolving to an FK on another entity (tag, theme, location)."""
 
     value_key: str  # the value-dict key carrying the member FK (``spec.name``)
     target_model: type[models.Model]  # what a member public_id resolves to
+
+
+class _StringMemberSpec(NamedTuple):
+    """Member is a bare string (alias, abbreviation)."""
+
+    value_key: str  # the value-dict key carrying the member string (``spec.name``)
+    max_length: int  # the target CharField bound; over-length members are rejected
+    # ``display_key`` is the either/or *within* string members: a sibling
+    # value-key name (alias ⇒ case-fold via ``.lower()`` and carry display) or
+    # ``None`` (abbreviation ⇒ stored verbatim). It is also the proxy for "this
+    # identity case-folds" — a future string identity needing a different fold
+    # must extend ``_member_identity``, not ride the ``.lower()`` default.
+    display_key: str | None
+
+
+# Closed discriminated union: an FK member never has a display key, a string
+# member never has a target model — modelled so the illegal combinations are
+# unrepresentable rather than guarded by nullable sentinels.
+type _RelationshipMemberSpec = _FkMemberSpec | _StringMemberSpec
 
 
 def _relationship_member_spec(
@@ -1126,12 +1151,17 @@ def _relationship_member_spec(
     namespace: str,
     entry: PatchEntry,
 ) -> _RelationshipMemberSpec:
-    """Validate *namespace* as a single-FK relationship on *model_class*.
+    """Classify *namespace* as a single-identity relationship on *model_class*.
 
     Shared by the assert (``_emit_relationship``) and remove (``_add_removals``)
-    paths so both reject the same unsupported shapes with the same messages: an
-    unknown namespace, one not valid on the subject model, or a non-single-FK
-    relationship (multi-key relationships are unsupported in v1).
+    paths so both reject the same unsupported shapes with the same messages.
+    Rejects an unknown namespace, one not valid on the subject model, a
+    genuinely multi-key relationship (e.g. credit — still unsupported), and a
+    single-identity relationship whose identity is neither an FK nor a string.
+
+    Classification keys off declared schema properties (``fk_target``,
+    ``scalar_type``, ``max_length``), never a model name or ``isinstance`` —
+    so every FK-identity and string-identity relationship lights up uniformly.
     """
     schema = get_relationship_schema(namespace)
     if schema is None:
@@ -1142,37 +1172,87 @@ def _relationship_member_spec(
             f"{model_class.__name__}"
         )
     identity_specs = [s for s in schema.value_keys if s.identity is not None]
-    if len(identity_specs) != 1 or identity_specs[0].fk_target is None:
+    if len(identity_specs) != 1:
         raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} is not a single-FK "
-            f"relationship (unsupported in v1)"
+            f"{entry.ref}: relationship {namespace!r} is not a single-key "
+            f"relationship (multi-key relationships are unsupported)"
         )
     spec = identity_specs[0]
-    assert spec.fk_target is not None  # guarded above
-    return _RelationshipMemberSpec(
-        value_key=spec.name, target_model=spec.fk_target.model
+    if spec.fk_target is not None:
+        return _FkMemberSpec(value_key=spec.name, target_model=spec.fk_target.model)
+    if spec.scalar_type is str:
+        if spec.max_length is None:
+            raise PatchError(
+                f"{entry.ref}: string relationship {namespace!r} has no declared "
+                f"length bound (unsupported)"
+            )
+        return _StringMemberSpec(
+            value_key=spec.name,
+            max_length=spec.max_length,
+            display_key=spec.display_key,
+        )
+    raise PatchError(
+        f"{entry.ref}: relationship {namespace!r} has a non-FK, non-string "
+        f"identity ({spec.scalar_type.__name__}) — unsupported"
     )
 
 
-def _resolve_member_pk(
+def _member_identity(
     member: object,
     namespace: str,
     rel_spec: _RelationshipMemberSpec,
     entry: PatchEntry,
-) -> int:
-    """Resolve one relationship member public_id to its target PK, or raise."""
-    if not isinstance(member, str):
-        raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} member {member!r} "
-            f"must be a public_id string"
-        )
-    member_pk = _lookup_pk(rel_spec.target_model, member)
-    if member_pk is None:
-        raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} member {member!r} "
-            f"does not resolve to a {rel_spec.target_model.__name__}"
-        )
-    return member_pk
+) -> dict[str, IdentityPart]:
+    """Build the value-dict identity for one relationship member, or raise.
+
+    Returns the **same** dict for assert and remove — the removal caller passes
+    it to ``build_relationship_claim(..., exists=False)``, which strips any
+    non-identity key (e.g. ``alias_display``) to produce the canonical
+    tombstone — so this stays the one authoritative identity builder.
+
+    ``member`` is untyped parsed YAML, so each branch re-checks it is a ``str``
+    at this boundary (a parse-edge guard, not a model-type branch).
+    """
+    match rel_spec:
+        case _FkMemberSpec(value_key, target_model):
+            if not isinstance(member, str):
+                raise PatchError(
+                    f"{entry.ref}: relationship {namespace!r} member {member!r} "
+                    f"must be a public_id string"
+                )
+            member_pk = _lookup_pk(target_model, member)
+            if member_pk is None:
+                raise PatchError(
+                    f"{entry.ref}: relationship {namespace!r} member {member!r} "
+                    f"does not resolve to a {target_model.__name__}"
+                )
+            return {value_key: member_pk}
+        case _StringMemberSpec(value_key, max_length, display_key):
+            if not isinstance(member, str):
+                raise PatchError(
+                    f"{entry.ref}: relationship {namespace!r} member {member!r} "
+                    f"must be a string"
+                )
+            stripped = member.strip()
+            # Reject empty-after-strip loudly: the editor silently drops blanks,
+            # so a "   " member here must error rather than become value="".
+            if not stripped:
+                raise PatchError(
+                    f"{entry.ref}: relationship {namespace!r} has a blank member "
+                    f"({member!r})"
+                )
+            if len(stripped) > max_length:
+                raise PatchError(
+                    f"{entry.ref}: relationship {namespace!r} member {member!r} "
+                    f"exceeds the {max_length}-character limit"
+                )
+            # display_key present ⇒ alias (case-fold + carry display);
+            # absent ⇒ abbreviation (verbatim). Shared fold keeps the algorithm
+            # in one declarative place, byte-identical to the editor.
+            if display_key is not None:
+                ident = normalize_alias_identity(member)
+                return {value_key: ident.value, display_key: ident.display}
+            return {value_key: normalize_abbreviation_value(member)}
 
 
 def _emit_relationship(
@@ -1195,14 +1275,23 @@ def _emit_relationship(
     rel_spec = _relationship_member_spec(model_class, namespace, entry)
     if not isinstance(value, list):
         raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} value must be a list of public_ids"
+            f"{entry.ref}: relationship {namespace!r} value must be a list of members"
         )
     emitted_keys: list[ClaimKey] = []
+    seen_keys: set[ClaimKey] = set()
     for member in value:
-        member_pk = _resolve_member_pk(member, namespace, rel_spec, entry)
-        claim_key, claim_value = build_relationship_claim(
-            namespace, {rel_spec.value_key: member_pk}
-        )
+        identity = _member_identity(member, namespace, rel_spec, entry)
+        claim_key, claim_value = build_relationship_claim(namespace, identity)
+        # Reject a post-fold duplicate within one entry (e.g. [Stern, stern] →
+        # same alias identity): emitting the same claim_key twice into one plan
+        # is an authoring error, clearer rejected than silently collapsed. Keyed
+        # on claim_key (the schema identity), not the full dict — alias_display
+        # differs between "Stern"/"stern" but the identity collides.
+        if claim_key in seen_keys:
+            raise PatchError(
+                f"{entry.ref}: duplicate member {member!r} in {namespace!r}"
+            )
+        seen_keys.add(claim_key)
         _emit_assert(
             plan,
             target,
@@ -1258,11 +1347,19 @@ def _add_removals(
                 f"namespace on {model_class.__name__} (use 'retract:' for scalar/FK)"
             )
         rel_spec = _relationship_member_spec(model_class, namespace, entry)
+        seen_keys: set[ClaimKey] = set()
         for member in members:
-            member_pk = _resolve_member_pk(member, namespace, rel_spec, entry)
+            identity = _member_identity(member, namespace, rel_spec, entry)
             claim_key, claim_value = build_relationship_claim(
-                namespace, {rel_spec.value_key: member_pk}, exists=False
+                namespace, identity, exists=False
             )
+            # Reject an intra-list duplicate member (same fold → same claim_key),
+            # mirroring the assert path's strictness.
+            if claim_key in seen_keys:
+                raise PatchError(
+                    f"{entry.ref}: duplicate member {member!r} in {namespace!r}"
+                )
+            seen_keys.add(claim_key)
             # Record the removal *intent* for the assert/remove conflict guard
             # before the no-op skip below. Asserting and removing the same member
             # is an authoring contradiction knowable from the patch text alone, so

@@ -3,9 +3,12 @@
 import pytest
 
 from apps.catalog.claims import (
+    AliasIdentity,
     build_relationship_claim,
     get_relationship_namespaces,
     make_authoritative_scope,
+    normalize_abbreviation_value,
+    normalize_alias_identity,
 )
 from apps.catalog.models import MachineModel, Manufacturer
 from apps.catalog.tests.conftest import make_machine_model
@@ -68,6 +71,28 @@ class TestBuildRelationshipClaim:
         )
         assert val["exists"] is False
 
+    def test_tombstone_strips_non_identity_keys(self):
+        # Step 8 invariant: an exists=False claim carries only schema-identity
+        # keys + exists — alias_display (non-identity) is dropped, so every
+        # write path produces a byte-identical tombstone.
+        _, val = build_relationship_claim(
+            "manufacturer_alias",
+            {"alias_value": "stern inc", "alias_display": "Stern Inc"},
+            exists=False,
+        )
+        assert val == {"alias_value": "stern inc", "exists": False}
+
+    def test_assert_keeps_non_identity_keys(self):
+        _, val = build_relationship_claim(
+            "manufacturer_alias",
+            {"alias_value": "stern inc", "alias_display": "Stern Inc"},
+        )
+        assert val == {
+            "alias_value": "stern inc",
+            "alias_display": "Stern Inc",
+            "exists": True,
+        }
+
     def test_unknown_namespace_raises(self):
         with pytest.raises(ValueError, match="Unknown relationship namespace"):
             build_relationship_claim("bogus", {"person": 1, "role": 2})
@@ -75,6 +100,23 @@ class TestBuildRelationshipClaim:
     def test_missing_required_key_raises(self):
         with pytest.raises(ValueError, match="Missing required key"):
             build_relationship_claim("credit", {"person": 1})
+
+
+class TestCanonicalFold:
+    """The string folds shared by the editor and the data-patch adapter."""
+
+    def test_alias_strips_and_lowercases(self):
+        assert normalize_alias_identity("  Stern Pinball  ") == AliasIdentity(
+            value="stern pinball", display="Stern Pinball"
+        )
+
+    def test_alias_value_drives_identity_display_preserves_case(self):
+        ident = normalize_alias_identity("MedMad")
+        assert ident.value == "medmad"
+        assert ident.display == "MedMad"
+
+    def test_abbreviation_strips_only_no_casefold(self):
+        assert normalize_abbreviation_value("  MM  ") == "MM"
 
 
 # ---------------------------------------------------------------------------

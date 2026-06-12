@@ -77,6 +77,22 @@ Some patches set narrative record descriptions (Manufacturer, Model, …) — pr
 
 Corporate entity locations should be a city. Not a country, not a state, not a region. Even if it's hard to find the city, find it. If you can't find a conclusive citation, don't include a citation. We'd rather have an uncited city than no city at all.
 
+## Aliases and abbreviations
+
+Aliases (`manufacturer_alias` and the other `<entity>_alias` namespaces) and `abbreviation` (Title + Model) are relationship members carrying a **bare string**, not a public_id. Author them with the literal registered namespace as the field key and a list of strings:
+
+```yaml
+claims:
+  - manufacturer.stern:
+      manufacturer_alias: [Stern Pinball, Stern Inc, Stern Electronics]
+```
+
+- **Case.** Alias values **case-fold** for identity — `Stern` and `stern` are the same alias — but the original case you write is preserved as the display form. Abbreviations are stored **verbatim** (`MM` ≠ `mm`), so write them exactly as they should render.
+- **No duplicates within one list.** Two members that fold to the same identity (`[Stern, stern]`, `[MM, MM]`) are rejected — list each distinct value once.
+- **Length.** Members are length-checked at build time against the model's column bound (alias 200, abbreviation 50); an over-long member is rejected on `--dry-run`, not silently truncated.
+- **Remove** drops a member exactly like an FK member: `remove: { manufacturer_alias: [Stern Inc] }`, attributed to the source holding the membership claim.
+- **No `note:` or `cite:` needed.** Unlike other claims, aliases and abbreviations don't require provenance — they're self-evident names, not asserted facts. Still attribute the patch to the curating source (e.g. `flip-museum`); a `note:`/`cite:` is optional, for the rare name whose origin isn't obvious.
+
 ## Validate behind a snapshot
 
 Patches are immutable once applied (per-DB fingerprint), so iterate behind a snapshot — see [DataPatches.md → Iterating on localhost](DataPatches.md#iterating-on-localhost-snapshot-first) for the snapshot/rollback loop and naming. Apply your new, uncommitted patches **from an isolated dir** so the already-applied 0001–N stay untouched:

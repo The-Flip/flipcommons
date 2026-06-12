@@ -11,6 +11,7 @@ ingest commands and the resolution layer use.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from typing import NamedTuple
 
 from django.contrib.contenttypes.models import ContentType
 
@@ -52,12 +53,14 @@ def register_catalog_relationship_schemas() -> None:
         GameplayFeature,
         Location,
         MachineModel,
+        ModelAbbreviation,
         Person,
         RewardType,
         Series,
         Tag,
         Theme,
         Title,
+        TitleAbbreviation,
     )
     from apps.media.models import MediaAsset
 
@@ -147,7 +150,17 @@ def register_catalog_relationship_schemas() -> None:
         valid_subjects={MachineModel},
     )
 
-    # Abbreviation (literal) on Title + MachineModel.
+    # Abbreviation (literal) on Title + MachineModel. The stored value lives on
+    # two separate through-models; read the bound from both and require they
+    # agree so a future divergence fails registration instead of silently
+    # picking one. Drives the data-patch over-length guard (see ValueKeySpec).
+    model_abbr_len = ModelAbbreviation._meta.get_field("value").max_length
+    title_abbr_len = TitleAbbreviation._meta.get_field("value").max_length
+    assert model_abbr_len is not None, "ModelAbbreviation.value must declare max_length"
+    assert model_abbr_len == title_abbr_len, (
+        "ModelAbbreviation.value and TitleAbbreviation.value must declare the "
+        f"same max_length (got {model_abbr_len!r} / {title_abbr_len!r})"
+    )
     register_relationship_schema(
         namespace="abbreviation",
         value_keys=(
@@ -156,6 +169,7 @@ def register_catalog_relationship_schemas() -> None:
                 scalar_type=str,
                 required=True,
                 identity="value",
+                max_length=model_abbr_len,
             ),
         ),
         valid_subjects={Title, MachineModel},
@@ -206,6 +220,10 @@ def register_catalog_relationship_schemas() -> None:
 
     # Alias namespaces — one schema per AliasModel subclass.
     for alias_type in discover_alias_types():
+        alias_value_len = alias_type.alias_model._meta.get_field("value").max_length
+        assert alias_value_len is not None, (
+            f"{alias_type.alias_model.__name__}.value must declare a max_length"
+        )
         register_relationship_schema(
             namespace=alias_type.claim_field,
             value_keys=(
@@ -215,6 +233,7 @@ def register_catalog_relationship_schemas() -> None:
                     required=True,
                     identity="alias",
                     display_key="alias_display",
+                    max_length=alias_value_len,
                 ),
                 ValueKeySpec(
                     name="alias_display",
@@ -287,6 +306,32 @@ def get_all_namespace_keys() -> dict[str, list[str]]:
     return result
 
 
+class AliasIdentity(NamedTuple):
+    """The canonical fold of one raw alias string.
+
+    ``value`` is the lowercased identity (drives the claim_key); ``display``
+    is the original-case rendering stored in ``alias_display``. Both the
+    in-app editor (``plan_alias_claims``) and the data-patch adapter build
+    alias claims through this one fold so their bytes are identical by
+    construction — a patch alias and an editor alias supersede/dedup against
+    each other only if the (value, display) pair matches exactly.
+    """
+
+    value: str
+    display: str
+
+
+def normalize_alias_identity(raw: str) -> AliasIdentity:
+    """Canonical alias fold: strip, lowercase for identity, keep original case."""
+    s = raw.strip()
+    return AliasIdentity(value=s.lower(), display=s)
+
+
+def normalize_abbreviation_value(raw: str) -> str:
+    """Canonical abbreviation fold: strip only — abbreviations are case-sensitive."""
+    return raw.strip()
+
+
 def build_relationship_claim(
     field_name: str,
     identity: Mapping[str, IdentityPart],
@@ -297,24 +342,40 @@ def build_relationship_claim(
     ``identity`` contains the identity fields for this relationship, e.g.,
     ``{"person": 42, "role": 5}`` or ``{"alias_value": "foo"}``. Keys are
     value-dict names (``alias_value``), not identity labels (``alias``) —
-    the mapping is resolved via ``ValueKeySpec.identity``.
+    the mapping is resolved via ``ValueKeySpec.identity``. The mapping may
+    also carry non-identity keys (e.g. ``alias_display``) for an assert.
 
     The claim_key is derived from identity using the registered schema for
-    *field_name*. The value dict includes all identity fields plus ``exists``.
+    *field_name*.
+
+    Tombstone invariant: when ``exists=False`` the value carries **only** the
+    schema-identity keys plus ``exists`` — any non-identity payload in
+    *identity* is dropped. No resolver reads a non-identity key off an absent
+    member (they short-circuit on ``exists=False`` first), so dropping it keeps
+    tombstone bytes canonical and lets every write path supersede/dedup
+    byte-identically. This is a no-op for callers that already pass
+    identity-only dicts on removal (all of them, today).
     """
     schema = get_relationship_schema(field_name)
     if schema is None:
         raise ValueError(f"Unknown relationship namespace: {field_name!r}")
 
     identity_parts: dict[str, IdentityPart] = {}
+    identity_key_names: list[str] = []
     for spec in schema.value_keys:
         if spec.identity is None:
             continue
         if spec.name not in identity:
             raise ValueError(f"Missing required key {spec.name!r} for {field_name!r}")
         identity_parts[spec.identity] = identity[spec.name]
+        identity_key_names.append(spec.name)
     claim_key = make_claim_key(field_name, **identity_parts)
-    value: JsonBody = {**identity, "exists": exists}
+    value: JsonBody
+    if exists:
+        value = {**identity, "exists": True}
+    else:
+        value = {name: identity[name] for name in identity_key_names}
+        value["exists"] = False
     return claim_key, value
 
 
@@ -349,8 +410,13 @@ def build_media_attachment_claim(
         {"media_asset": asset_pk},
         exists=exists,
     )
-    value["category"] = category
-    value["is_primary"] = is_primary
+    # Non-identity payload only on an assert. A detach tombstone carries the
+    # identity (media_asset) + exists only — honoring build_relationship_claim's
+    # tombstone invariant; the resolver skips an exists=False claim before it
+    # would read category/is_primary anyway.
+    if exists:
+        value["category"] = category
+        value["is_primary"] = is_primary
     return claim_key, value
 
 
@@ -371,6 +437,7 @@ def make_authoritative_scope(
 # because this module instantiates them; downstream code should import from
 # whichever module they already use.
 __all__ = [
+    "AliasIdentity",
     "RelationshipClaim",
     "RelationshipSchema",
     "ValueKeySpec",
@@ -379,5 +446,7 @@ __all__ = [
     "get_all_namespace_keys",
     "get_relationship_namespaces",
     "make_authoritative_scope",
+    "normalize_alias_identity",
+    "normalize_abbreviation_value",
     "register_catalog_relationship_schemas",
 ]
