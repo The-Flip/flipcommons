@@ -49,6 +49,13 @@ from apps.provenance.validation import (
 pytestmark = pytest.mark.django_db
 
 
+@pytest.fixture(autouse=True)
+def _seed_flipcommons_catalog(flipcommons_catalog):
+    """Patches here attribute to ``flipcommons-catalog`` by default, so seed it for
+    every test. Unlike ``flip-museum`` (migration-seeded), the catalog source is
+    created by the pindata ingest in prod, not a migration."""
+
+
 def _apply(
     text: str, *, patch_id: str = "0001-test", dry_run: bool = False
 ) -> RunReport:
@@ -106,7 +113,7 @@ def test_fingerprint_changes_with_value():
 def test_edit_scalar_and_tag(machine_model):
     Tag.objects.create(name="Prototype", slug="prototype")
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 description: tag a prototype
 claims:
   - model.{machine_model.slug}:
@@ -124,12 +131,12 @@ claims:
     # Namespace key 'tag' resolves directly (no plural→singular bridge).
     assert tag_claim.claim_key.startswith("tag")
     assert tag_claim.source is not None
-    assert tag_claim.source.slug == "flip-museum"
+    assert tag_claim.source.slug == "flipcommons-catalog"
 
 
 def test_unknown_field_rejected(machine_model):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       not_a_field: 5
@@ -140,7 +147,7 @@ claims:
 
 def test_unknown_entity_type_rejected():
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - frobnicator.foo:
       year: 1
@@ -154,7 +161,7 @@ claims:
 
 def test_create_manufacturer():
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 description: new brand
 claims:
   - manufacturer.acme-pinball:
@@ -168,16 +175,16 @@ claims:
     assert mfr.name == "Acme Pinball"
     # Matching claims for the create contract (slug + name + status).
     keys = set(
-        Claim.objects.filter(source__slug="flip-museum", is_active=True).values_list(
-            "field_name", flat=True
-        )
+        Claim.objects.filter(
+            source__slug="flipcommons-catalog", is_active=True
+        ).values_list("field_name", flat=True)
     )
     assert {"slug", "name", "status"} <= keys
 
 
 def test_create_when_already_exists_errors(manufacturer):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.{manufacturer.slug}:
       name: Dup
@@ -191,7 +198,7 @@ def test_create_rejects_authored_public_id_field():
     # slug comes from the entity reference; authoring it (even a mismatch that
     # would silently create the wrong entity) is rejected.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.acme:
       create: true
@@ -204,7 +211,7 @@ claims:
 
 def test_create_rejects_authored_status():
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.acme:
       create: true
@@ -234,7 +241,7 @@ def test_create_location():
         parent=usa,
     )
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - location.usa/tx/paris:
       create: true
@@ -261,7 +268,7 @@ claims:
 
 def test_create_location_at_root():
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - location.france:
       create: true
@@ -281,7 +288,7 @@ def test_create_location_path_mismatch_rejected():
     # usa/paris — a disagreement that would create an inconsistent row.
     _country("usa", "USA")
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - location.usa/tx/paris:
       create: true
@@ -296,7 +303,7 @@ claims:
 def test_create_location_requires_slug():
     _country("usa", "USA")
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - location.usa/paris:
       create: true
@@ -310,7 +317,7 @@ claims:
 def test_create_location_rejects_authored_location_path():
     _country("usa", "USA")
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - location.usa/paris:
       create: true
@@ -325,7 +332,7 @@ claims:
 
 def test_missing_reference_without_create_errors():
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.does-not-exist:
       name: Nope
@@ -339,7 +346,7 @@ claims:
 
 def test_create_and_fk_reassignment(stern_entity, stern):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 description: split a firm out
 claims:
   - manufacturer.western-products:
@@ -361,7 +368,7 @@ claims:
 
 def test_dry_run_stern_shape_no_spurious_rejection(stern_entity):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.western-products:
       name: Western Products
@@ -382,7 +389,7 @@ def test_relationship_member_created_earlier_same_patch(machine_model):
     # A relationship member created by an *earlier* entry in the same patch
     # resolves via the deferred (identity_refs) path — no longer rejected.
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - tag.brand-new-tag:
       name: Brand New Tag
@@ -405,7 +412,7 @@ def test_backward_fk_on_create(_bootstrap_source):
     # Create a manufacturer, then create a corporate-entity whose `manufacturer`
     # FK points at it — both in one patch, the dependency declared first.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.western:
       create: true
@@ -429,7 +436,7 @@ def test_backward_fk_on_create_dry_run(_bootstrap_source):
     # Dry-run must not reject the FK-to-planned-target just because the target
     # doesn't exist yet, and must write nothing (guards the apply.py P1 carve-out).
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.western:
       create: true
@@ -450,7 +457,7 @@ def test_backward_parent_location():
     # Create a parent location, then a child whose `parent` FK names it.
     _country("usa", "USA")
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - location.usa/tx:
       create: true
@@ -476,7 +483,7 @@ claims:
 def test_backward_parent_location_dry_run():
     _country("usa", "USA")
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - location.usa/tx:
       create: true
@@ -499,7 +506,7 @@ claims:
 def test_backward_title_then_model(williams_entity):
     # Create a Title, then a MachineModel whose `title` FK names it.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - title.foo:
       create: true
@@ -521,7 +528,7 @@ def test_backward_member_on_existing_entity(bally_wulff):
     # Create a Location, then assert it as a `location` relationship member on an
     # existing corporate-entity — the deferred (identity_refs) path.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - location.germany/munich:
       create: true
@@ -546,7 +553,7 @@ def test_backward_member_on_created_subject(_bootstrap_source):
     # *handle*, not an existing row, plus a backward FK to a created manufacturer.
     _country("germany", "Germany")
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.acme-co:
       create: true
@@ -576,7 +583,7 @@ def test_backward_member_carries_note_and_cite(bally_wulff):
     # note: and cite:. The carrier must register (no spurious rejection) and the
     # note/citation must land on the resolved member claim.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - location.germany/munich:
       create: true
@@ -586,7 +593,7 @@ claims:
       location_type: city
   - corporate-entity.bally-wulff:
       location: [germany/munich]
-      note: 'flip-museum places it in Munich.'
+      note: 'flipcommons-catalog places it in Munich.'
       cite: https://example.org/bally-wulff
 sources:
   - name: Example
@@ -599,7 +606,7 @@ sources:
 
     claim = _location_claim("munich")
     assert claim.changeset is not None
-    assert claim.changeset.note == "flip-museum places it in Munich."
+    assert claim.changeset.note == "flipcommons-catalog places it in Munich."
     assert CitationInstance.objects.filter(claim=claim).exists()
 
 
@@ -607,7 +614,7 @@ def test_backward_duplicate_deferred_member_rejected(bally_wulff):
     # [munich, munich] with a same-patch-created munich → the same "duplicate
     # member" rejection the concrete path raises (parity for deferred members).
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - location.germany/munich:
       create: true
@@ -626,7 +633,7 @@ def test_self_parent_on_create_rejected():
     # A create that names itself as its own parent must be rejected — the patch
     # path enforces the same self-link guard as the API's plan_parent_claims.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - gameplay-feature.multiball:
       create: true
@@ -642,7 +649,7 @@ def test_cycle_via_edit_referencing_same_patch_create_rejected():
     # root, then point the root at the child — a 2-cycle through a created node.
     GameplayFeature.objects.create(name="Root", slug="root")
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - gameplay-feature.child:
       create: true
@@ -661,7 +668,7 @@ def test_cycle_between_existing_nodes_rejected():
     GameplayFeature.objects.create(name="A", slug="a")
     GameplayFeature.objects.create(name="B", slug="b")
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - gameplay-feature.a:
       gameplay_feature_parent: [b]
@@ -675,7 +682,7 @@ claims:
 def test_valid_hierarchy_in_one_patch():
     # A genuine parent→child DAG built in one patch must NOT trip the guard.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - gameplay-feature.ramps:
       create: true
@@ -694,7 +701,7 @@ claims:
 def test_backward_unresolvable_ref_errors(_bootstrap_source):
     # A reference in neither the DB nor this patch → PatchError, updated message.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.western-inc:
       create: true
@@ -710,7 +717,7 @@ claims:
 
 def test_expect_scalar_match_applies(machine_model):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       expect: {{ year: {machine_model.year} }}
@@ -723,7 +730,7 @@ claims:
 
 def test_expect_scalar_mismatch_errors_before_write(machine_model):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       expect: {{ year: 1234 }}
@@ -731,12 +738,12 @@ claims:
 """
     with pytest.raises(PatchError, match="expect year"):
         _apply(text)
-    assert not Claim.objects.filter(source__slug="flip-museum").exists()
+    assert not Claim.objects.filter(source__slug="flipcommons-catalog").exists()
 
 
 def test_expect_fk_match_and_mismatch(stern_entity):
     ok = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       expect: { manufacturer: stern }
@@ -747,7 +754,7 @@ claims:
     assert stern_entity.year_start == 1986
 
     bad = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       expect: { manufacturer: williams }
@@ -759,7 +766,7 @@ claims:
 
 def test_expect_on_create_errors():
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.acme-pinball:
       name: Acme
@@ -776,19 +783,16 @@ claims:
 def test_retract_must_be_a_list():
     with pytest.raises(PatchError, match="'retract' must be a list"):
         load_patch(
-            "attribution: flip-museum\nclaims:\n  - model.a:\n      retract: name\n"
+            "attribution: flipcommons-catalog\nclaims:\n  - model.a:\n      retract: name\n"
         )
 
 
-def test_retract_fk_falls_through_to_remaining_source(stern, manufacturer):
+def test_retract_fk_falls_through_to_remaining_source(
+    stern, manufacturer, flipcommons_catalog
+):
     # Two sources claim the manufacturer FK; retracting the winning source's
     # claim makes resolution fall through to the remaining source's value.
-    catalog = Source.objects.create(
-        name="Flipcommons Catalog",
-        slug="flipcommons-catalog",
-        source_type="editorial",
-        priority=300,
-    )
+    catalog = flipcommons_catalog
     ipdb = Source.objects.create(
         name="IPDB", slug="ipdb", source_type="database", priority=100
     )
@@ -938,7 +942,7 @@ claims:
 
 def test_retract_plus_create_rejected():
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.acme:
       create: true
@@ -951,7 +955,7 @@ claims:
 
 def test_retract_unknown_field_rejected(machine_model):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       retract: [not_a_field]
@@ -964,7 +968,7 @@ def test_retract_relationship_namespace_rejected(machine_model):
     # Relationship retract is deferred; a namespace key (`tag`) is rejected
     # with a relationship-specific message (distinct from an unknown field).
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       retract: [tag]
@@ -973,14 +977,9 @@ claims:
         _apply(text)
 
 
-def test_retract_one_field_assert_another_in_same_entry(stern):
+def test_retract_one_field_assert_another_in_same_entry(stern, flipcommons_catalog):
     # An entry may retract one field and assert a different one.
-    catalog = Source.objects.create(
-        name="Flipcommons Catalog",
-        slug="flipcommons-catalog",
-        source_type="editorial",
-        priority=300,
-    )
+    catalog = flipcommons_catalog
     ipdb = Source.objects.create(
         name="IPDB", slug="ipdb", source_type="database", priority=100
     )
@@ -1062,15 +1061,15 @@ claims:
 
 
 @pytest.fixture
-def bally_wulff(db):
-    """A CorporateEntity whose sole location is Germany, claimed by flip-museum.
+def bally_wulff(db, flipcommons_catalog):
+    """A CorporateEntity whose sole location is Germany, claimed by flipcommons-catalog.
 
     Mirrors the real case: a coarse pindata-derived location we refine to a more
-    specific child (Berlin). The membership claim is attributed to flip-museum so
-    a patch from the same source supersedes it; Berlin is seeded as a child of
-    Germany, ready to assert.
+    specific child (Berlin). The membership claim is attributed to
+    flipcommons-catalog so a patch from the same source supersedes it; Berlin is
+    seeded as a child of Germany, ready to assert.
     """
-    museum = Source.objects.get(slug="flip-museum")
+    catalog = flipcommons_catalog
     germany = Location.objects.create(
         location_path="germany",
         slug="germany",
@@ -1088,10 +1087,10 @@ def bally_wulff(db):
     ce = CorporateEntity.objects.create(
         name="Bally Wulff", slug="bally-wulff", manufacturer=mfr
     )
-    Claim.objects.assert_claim(ce, "name", "Bally Wulff", source=museum)
+    Claim.objects.assert_claim(ce, "name", "Bally Wulff", source=catalog)
     claim_key, value = build_relationship_claim("location", {"location": germany.pk})
     Claim.objects.assert_claim(
-        ce, "location", value, source=museum, claim_key=claim_key
+        ce, "location", value, source=catalog, claim_key=claim_key
     )
     resolve_all_corporate_entity_locations(subject_ids={ce.pk})
     return ce
@@ -1116,7 +1115,7 @@ def test_remove_member_and_assert_more_specific(bally_wulff):
     # The Germany→Berlin refinement: supersede the Germany membership with an
     # exists=false tombstone and assert Berlin. The resolved set ends as Berlin.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       location: [germany/berlin]
@@ -1141,7 +1140,7 @@ def test_remove_only_member_empties_relationship(bally_wulff):
     # A remove with no accompanying assert is a valid, provenance-bearing entry:
     # the exists=false tombstone is the carrier.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       remove: { location: [germany] }
@@ -1155,11 +1154,11 @@ claims:
 
 def test_remove_cite_and_note_ride_the_tombstone(bally_wulff):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       remove: { location: [germany] }
-      note: 'flip-museum says "headquartered in Berlin".'
+      note: 'flipcommons-catalog says "headquartered in Berlin".'
       cite: https://example.org/bally-wulff
 sources:
   - name: Example
@@ -1171,13 +1170,16 @@ sources:
     tombstone = _location_claim("germany")
     assert tombstone.value["exists"] is False
     assert tombstone.changeset is not None
-    assert tombstone.changeset.note == 'flip-museum says "headquartered in Berlin".'
+    assert (
+        tombstone.changeset.note
+        == 'flipcommons-catalog says "headquartered in Berlin".'
+    )
     assert CitationInstance.objects.filter(claim=tombstone).exists()
 
 
 def test_remove_must_be_a_mapping():
     text = (
-        "attribution: flip-museum\nclaims:\n"
+        "attribution: flipcommons-catalog\nclaims:\n"
         "  - corporate-entity.a:\n      remove: [location]\n"
     )
     with pytest.raises(PatchError, match="'remove' must be a mapping"):
@@ -1188,7 +1190,7 @@ def test_remove_scalar_field_rejected(bally_wulff):
     # A scalar/FK field isn't a relationship namespace — point the author at
     # retract: instead.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       remove: { manufacturer: [williams] }
@@ -1200,7 +1202,7 @@ claims:
 def test_remove_relationship_not_valid_on_subject(bally_wulff):
     # 'theme' is a relationship namespace, but not on CorporateEntity.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       remove: { theme: [medieval] }
@@ -1211,7 +1213,7 @@ claims:
 
 def test_remove_unknown_member_rejected(bally_wulff):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       remove: { location: [atlantis] }
@@ -1221,10 +1223,10 @@ claims:
 
 
 def test_remove_noop_when_source_lacks_claim(bally_wulff):
-    # flip-museum never claimed Berlin membership, so removing it writes no
+    # flipcommons-catalog never claimed Berlin membership, so removing it writes no
     # tombstone — a warning, not an error, so re-running a patch stays safe.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       remove: { location: [germany/berlin] }
@@ -1244,11 +1246,11 @@ def test_remove_noop_with_note_rejected(bally_wulff):
     # have nothing to attach to and would silently vanish — reject it loudly
     # instead (same rule cite: already follows).
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       remove: { location: [germany/berlin] }
-      note: 'flip-museum says "not in Berlin".'
+      note: 'flipcommons-catalog says "not in Berlin".'
 """
     with pytest.raises(PatchError, match="note has nothing to attach to"):
         _apply(text, patch_id="0001-noop-note")
@@ -1258,7 +1260,7 @@ def test_remove_and_assert_same_member_rejected(bally_wulff):
     # Asserting a member present and removing it in one patch would write the
     # same claim_key twice with opposite exists — reject the contradiction.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       location: [germany]
@@ -1271,10 +1273,10 @@ claims:
 def test_remove_and_assert_same_member_rejected_when_unclaimed(bally_wulff):
     # The contradiction is an authoring error knowable from the patch text, so it
     # must be rejected regardless of DB state — even when the source does NOT
-    # currently claim the member (so the removal is a no-op). flip-museum claims
+    # currently claim the member (so the removal is a no-op). flipcommons-catalog claims
     # germany, not germany/berlin, so the remove here is a no-op.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       location: [germany/berlin]
@@ -1286,7 +1288,7 @@ claims:
 
 def test_remove_plus_create_rejected():
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.new-firm:
       name: New Firm
@@ -1299,7 +1301,7 @@ claims:
 
 def test_remove_plus_delete_rejected(bally_wulff):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.bally-wulff:
       delete: true
@@ -1318,7 +1320,7 @@ def test_delete_marks_status_deleted(stern_entity):
     # stern_entity has no active referrer, so the delete proceeds and resolves
     # status=deleted onto the entity.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       delete: true
@@ -1337,7 +1339,7 @@ def test_delete_blocked_by_active_referrer(machine_model):
     # active machine blocks the CE delete; the blocker is reported before any
     # write, naming the referrer and the relation.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.williams-electronics:
       delete: true
@@ -1345,14 +1347,14 @@ claims:
     with pytest.raises(PatchError, match="cannot delete.*still referenced"):
         _apply(text, patch_id="0001-del")
     assert not Claim.objects.filter(
-        source__slug="flip-museum", field_name="status"
+        source__slug="flipcommons-catalog", field_name="status"
     ).exists()
 
 
 def test_delete_blocked_caught_in_dry_run(machine_model):
     # The blocker check is a build-phase DB read, so --dry-run surfaces it too.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.williams-electronics:
       delete: true
@@ -1365,7 +1367,7 @@ def test_reassign_in_earlier_patch_then_delete(machine_model, stern_entity):
     # The real workflow: the referrer is reassigned away first (its own patch,
     # applied and resolved), which clears the blocker for a later delete patch.
     reassign = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       expect: {{ corporate_entity: williams-electronics }}
@@ -1376,7 +1378,7 @@ claims:
     assert machine_model.corporate_entity_id == stern_entity.pk
 
     delete = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.williams-electronics:
       delete: true
@@ -1389,7 +1391,7 @@ claims:
 
 def test_delete_is_idempotent(stern_entity):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       delete: true
@@ -1408,7 +1410,7 @@ claims:
 def test_delete_with_expect_guard(stern_entity):
     # A mismatched expect: fails loudly before the delete writes anything.
     bad = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       expect: { manufacturer: williams }
@@ -1420,7 +1422,7 @@ claims:
     assert stern_entity.status != "deleted"
 
     ok = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       expect: { manufacturer: stern }
@@ -1433,7 +1435,7 @@ claims:
 
 def test_delete_nonexistent_rejected():
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.no-such-entity:
       delete: true
@@ -1444,7 +1446,7 @@ claims:
 
 def test_delete_with_create_rejected():
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.acme:
       create: true
@@ -1456,7 +1458,7 @@ claims:
 
 def test_delete_with_retract_rejected(stern_entity):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       delete: true
@@ -1470,7 +1472,7 @@ def test_delete_with_field_assertion_rejected(stern_entity):
     # A delete entry carries no field assertions — reassign references in a
     # separate entry/patch, before the delete.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       delete: true
@@ -1485,7 +1487,7 @@ def test_assert_status_field_rejected(stern_entity):
     # bypass the delete planner (no blocker check, no cascade) — reject it and
     # point the author at the directive.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       status: deleted
@@ -1500,7 +1502,7 @@ def test_assert_status_field_does_not_bypass_blocker(machine_model):
     # The back door must not let a raw status=deleted slip past the active
     # PROTECT referrer that delete: true correctly rejects.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.williams-electronics:
       status: deleted
@@ -1508,7 +1510,7 @@ claims:
     with pytest.raises(PatchError, match="'status' is lifecycle"):
         _apply(text)
     assert not Claim.objects.filter(
-        source__slug="flip-museum", field_name="status"
+        source__slug="flipcommons-catalog", field_name="status"
     ).exists()
 
 
@@ -1518,7 +1520,7 @@ def test_delete_cascade_child_same_entity_provenance_guard(machine_model):
     # child's single ChangeSet — the same-entity guard must catch it even
     # though the child was only reached via the cascade.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - title.medieval-madness-title:
       delete: true
@@ -1533,18 +1535,18 @@ claims:
 def test_delete_must_be_boolean():
     with pytest.raises(PatchError, match="'delete' must be a boolean"):
         load_patch(
-            "attribution: flip-museum\nclaims:\n"
+            "attribution: flipcommons-catalog\nclaims:\n"
             "  - corporate-entity.x:\n      delete: yes\n"
         )
 
 
 def test_delete_note_and_cite_attach_to_status_claim(stern_entity):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       delete: true
-      note: 'flip-museum says "this firm never existed".'
+      note: 'flipcommons-catalog says "this firm never existed".'
       cite: https://example.org/proof
 sources:
   - name: Example
@@ -1554,12 +1556,12 @@ sources:
 """
     _apply(text, patch_id="0001-del")
     status_claim = Claim.objects.get(
-        source__slug="flip-museum", field_name="status", is_active=True
+        source__slug="flipcommons-catalog", field_name="status", is_active=True
     )
     assert status_claim.value == "deleted"
     changeset = status_claim.changeset
     assert changeset is not None
-    assert changeset.note == 'flip-museum says "this firm never existed".'
+    assert changeset.note == 'flipcommons-catalog says "this firm never existed".'
     assert CitationInstance.objects.filter(claim=status_claim).exists()
 
 
@@ -1582,7 +1584,7 @@ sources:
 )
 def test_empty_directive_on_create_rejected(directive, match):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.acme:
       create: true
@@ -1596,7 +1598,7 @@ claims:
 @pytest.mark.parametrize("directive", ["retract: []", "remove: {}"])
 def test_empty_directive_on_delete_rejected(directive):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - corporate-entity.acme:
       delete: true
@@ -1611,7 +1613,7 @@ def test_empty_directives_on_edit_are_accepted(machine_model):
     # empty no-op directives (they resolve to no-ops), so the tightening didn't
     # over-reach — guard against a future over-correction.
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       year: 1990
@@ -1630,7 +1632,7 @@ claims:
 
 def test_reassert_same_claim_is_noop(machine_model):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       year: 1990
@@ -1647,7 +1649,7 @@ claims:
 
 def test_one_ingestrun_one_changeset(machine_model):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       year: 1990
@@ -1663,7 +1665,7 @@ claims:
 
 
 def _src() -> Source:
-    return Source.objects.get(slug="flip-museum")
+    return Source.objects.get(slug="flipcommons-catalog")
 
 
 def test_uppercase_patch_id_rejected():
@@ -1714,7 +1716,7 @@ def _write(dir_path: Path, name: str, text: str) -> None:
 
 def test_command_applies_and_skips_on_rerun(tmp_path, machine_model):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 description: tag it
 claims:
   - model.{machine_model.slug}:
@@ -1743,14 +1745,14 @@ claims:
 def test_command_immutability_semantic_change(tmp_path, machine_model):
     p = tmp_path / "0001-year.yaml"
     p.write_text(
-        f"attribution: flip-museum\nclaims:\n  - model.{machine_model.slug}:\n      year: 1990\n",
+        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      year: 1990\n",
         encoding="utf-8",
     )
     call_command("ingest_patches", "--patches-dir", str(tmp_path))
 
     # Semantic change to an applied patch → hard error.
     p.write_text(
-        f"attribution: flip-museum\nclaims:\n  - model.{machine_model.slug}:\n      year: 1991\n",
+        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      year: 1991\n",
         encoding="utf-8",
     )
     with pytest.raises(CommandError, match="immutable"):
@@ -1760,14 +1762,14 @@ def test_command_immutability_semantic_change(tmp_path, machine_model):
 def test_command_immutability_cosmetic_reformat_skips(tmp_path, machine_model):
     p = tmp_path / "0001-year.yaml"
     p.write_text(
-        f"attribution: flip-museum\nclaims:\n  - model.{machine_model.slug}:\n      year: 1990\n",
+        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      year: 1990\n",
         encoding="utf-8",
     )
     call_command("ingest_patches", "--patches-dir", str(tmp_path))
 
     # Cosmetic reformat (added comment + blank lines + spacing) → still skips.
     p.write_text(
-        f"# a comment\nattribution:   flip-museum\n\nclaims:\n\n  - model.{machine_model.slug}:\n      year: 1990\n",
+        f"# a comment\nattribution:   flipcommons-catalog\n\nclaims:\n\n  - model.{machine_model.slug}:\n      year: 1990\n",
         encoding="utf-8",
     )
     call_command("ingest_patches", "--patches-dir", str(tmp_path))
@@ -1780,14 +1782,16 @@ def test_command_immutability_cosmetic_reformat_skips(tmp_path, machine_model):
 
 
 def test_command_preflight_bad_filename(tmp_path):
-    _write(tmp_path, "not-numbered.yaml", "attribution: flip-museum\nclaims: []\n")
+    _write(
+        tmp_path, "not-numbered.yaml", "attribution: flipcommons-catalog\nclaims: []\n"
+    )
     with pytest.raises(CommandError, match="NNNN-slug"):
         call_command("ingest_patches", "--patches-dir", str(tmp_path))
 
 
 def test_command_preflight_duplicate_prefix(tmp_path):
-    _write(tmp_path, "0001-a.yaml", "attribution: flip-museum\nclaims: []\n")
-    _write(tmp_path, "0001-b.yaml", "attribution: flip-museum\nclaims: []\n")
+    _write(tmp_path, "0001-a.yaml", "attribution: flipcommons-catalog\nclaims: []\n")
+    _write(tmp_path, "0001-b.yaml", "attribution: flipcommons-catalog\nclaims: []\n")
     with pytest.raises(CommandError, match="Duplicate patch number"):
         call_command("ingest_patches", "--patches-dir", str(tmp_path))
 
@@ -1807,17 +1811,17 @@ def test_command_stops_at_first_failure(tmp_path, machine_model):
     _write(
         tmp_path,
         "0001-ok.yaml",
-        f"attribution: flip-museum\nclaims:\n  - model.{machine_model.slug}:\n      year: 1990\n",
+        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      year: 1990\n",
     )
     _write(
         tmp_path,
         "0002-bad.yaml",
-        "attribution: flip-museum\nclaims:\n  - manufacturer.nope:\n      name: Nope\n",
+        "attribution: flipcommons-catalog\nclaims:\n  - manufacturer.nope:\n      name: Nope\n",
     )
     _write(
         tmp_path,
         "0003-later.yaml",
-        f"attribution: flip-museum\nclaims:\n  - model.{machine_model.slug}:\n      year: 1992\n",
+        f"attribution: flipcommons-catalog\nclaims:\n  - model.{machine_model.slug}:\n      year: 1992\n",
     )
     with pytest.raises(CommandError):
         call_command("ingest_patches", "--patches-dir", str(tmp_path))
@@ -1836,7 +1840,7 @@ def test_command_invalid_claim_value_reported(tmp_path, stern_entity):
     _write(
         tmp_path,
         "0001-bad.yaml",
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - corporate-entity.stern-pinball-inc:\n"
         "      year_start: 5000\n",
@@ -1853,7 +1857,7 @@ def test_command_invalid_claim_value_reported(tmp_path, stern_entity):
 
 
 _WIKIPEDIA = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 sources:
   - name: Wikipedia
     source_type: web
@@ -1886,17 +1890,17 @@ def test_sources_only_patch_is_valid_and_applies():
 
 def test_empty_patch_rejected():
     with pytest.raises(PatchError, match="non-empty"):
-        load_patch("attribution: flip-museum\nclaims: []\n")
+        load_patch("attribution: flipcommons-catalog\nclaims: []\n")
 
 
 def test_sources_missing_name_rejected():
     with pytest.raises(PatchError, match="'name' is required"):
-        load_patch("attribution: flip-museum\nsources:\n  - source_type: web\n")
+        load_patch("attribution: flipcommons-catalog\nsources:\n  - source_type: web\n")
 
 
 def test_sources_unknown_key_rejected():
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "sources:\n"
         "  - name: X\n"
         "    source_type: web\n"
@@ -1908,7 +1912,7 @@ def test_sources_unknown_key_rejected():
 
 def test_sources_children_rejected():
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "sources:\n"
         "  - name: X\n"
         "    source_type: web\n"
@@ -1920,7 +1924,7 @@ def test_sources_children_rejected():
 
 def test_sources_link_missing_url_rejected():
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "sources:\n"
         "  - name: X\n"
         "    source_type: web\n"
@@ -1935,7 +1939,7 @@ def test_sources_link_missing_url_rejected():
 
 
 def _bad_source(node_body: str) -> str:
-    return f"attribution: flip-museum\nsources:\n  - {node_body}\n"
+    return f"attribution: flipcommons-catalog\nsources:\n  - {node_body}\n"
 
 
 @pytest.mark.parametrize(
@@ -1962,7 +1966,7 @@ def test_sources_semantic_invalidity_rejected(node_body, match):
 
 def test_sources_duplicate_declared_link_url_rejected():
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "sources:\n"
         "  - name: X\n"
         "    source_type: web\n"
@@ -1985,7 +1989,7 @@ def test_sources_semantic_invalidity_caught_at_dry_run():
 
 
 _MULTI_LINK = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 sources:
   - name: Wikipedia
     source_type: web
@@ -2107,7 +2111,7 @@ def test_sources_root_then_cite_nests_no_wedge(machine_model):
     # page in the same patch. The hook runs first, so the cite recognizes the
     # domain and nests under the root instead of raising.
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 sources:
   - name: Wikipedia
     source_type: web
@@ -2172,7 +2176,7 @@ def _alias_claim(value_lower: str) -> Claim:
 
 def test_assert_manufacturer_alias(stern):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.stern:
       manufacturer_alias: [Stern Pinball]
@@ -2201,7 +2205,7 @@ claims:
 
 def test_assert_abbreviation(machine_model):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       abbreviation: [MM]
@@ -2222,7 +2226,7 @@ def test_remove_alias_tombstone_parity(stern):
     # An earlier patch asserts two aliases; a later one removes one. The dropped
     # member's tombstone must be lowercased and carry NO alias_display.
     assert_text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.stern:
       manufacturer_alias: [Stern Pinball, Stern Inc]
@@ -2232,7 +2236,7 @@ claims:
     assert _alias_values(stern) == {"Stern Pinball", "Stern Inc"}
 
     remove_text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.stern:
       remove: { manufacturer_alias: [Stern Inc] }
@@ -2253,10 +2257,10 @@ claims:
 
 
 def test_remove_alias_noop_when_source_lacks_claim(stern):
-    # flip-museum never claimed this alias, so removing it warns (no-op) and
+    # flipcommons-catalog never claimed this alias, so removing it warns (no-op) and
     # writes no tombstone — re-running a patch stays safe.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.stern:
       remove: { manufacturer_alias: [Never Claimed] }
@@ -2273,7 +2277,7 @@ claims:
 def test_reassert_alias_is_unchanged(stern):
     # Re-asserting the same alias from the same source diffs as unchanged.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.stern:
       manufacturer_alias: [Stern Pinball]
@@ -2292,7 +2296,7 @@ def test_multi_key_relationship_member_rejected(machine_model):
     # rejects at classification — before any member resolution — so no person /
     # role fixtures are needed. Confirms we narrowed the gate, not removed it.
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       credit: [pat-lawlor]
@@ -2336,7 +2340,7 @@ def test_non_string_identity_rejected(monkeypatch):
 def test_alias_over_length_rejected(stern):
     long_alias = "x" * 201  # alias_value bound is 200
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.stern:
       manufacturer_alias: ["{long_alias}"]
@@ -2348,7 +2352,7 @@ claims:
 def test_abbreviation_over_length_rejected(machine_model):
     long_abbr = "y" * 51  # abbreviation value bound is 50
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       abbreviation: ["{long_abbr}"]
@@ -2374,7 +2378,7 @@ def test_schema_carries_max_length():
 def test_intra_list_duplicate_alias_rejected(stern):
     # Stern and stern fold to the same identity → same claim_key twice.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.stern:
       manufacturer_alias: [Stern, stern]
@@ -2385,7 +2389,7 @@ claims:
 
 def test_intra_list_duplicate_abbreviation_rejected(machine_model):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       abbreviation: [MM, MM]
@@ -2397,7 +2401,7 @@ claims:
 def test_intra_list_duplicate_in_remove_rejected(stern):
     # The remove path dedups by the same fold → claim_key as the assert path.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.stern:
       remove: { manufacturer_alias: [Stern Inc, stern inc] }
@@ -2408,7 +2412,7 @@ claims:
 
 def test_blank_alias_member_rejected(stern):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.stern:
       manufacturer_alias: ["   "]
@@ -2419,7 +2423,7 @@ claims:
 
 def test_blank_abbreviation_member_rejected(machine_model):
     text = f"""
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       abbreviation: ["   "]

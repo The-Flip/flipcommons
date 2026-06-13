@@ -35,6 +35,7 @@ from apps.catalog.claims import (
 )
 from apps.catalog.ingestion.apply import (
     CitationRef,
+    CiteHandle,
     IngestPlan,
     PlannedClaimAssert,
     PlannedClaimRetract,
@@ -52,6 +53,7 @@ from apps.citation.models import (
 from apps.citation.seed_data.types import SeedLink, SeedSource
 from apps.citation.seeding import ensure_root_source, validate_root_source
 from apps.core.entity_types import get_linkable_model
+from apps.core.markdown import get_markdown_fields
 from apps.core.types import EntityKey, JsonBody
 from apps.provenance.models import Claim, IdentityPart, Source, get_claim_fields
 from apps.provenance.models.changeset import CHANGESET_NOTE_MAX_LENGTH
@@ -59,9 +61,22 @@ from apps.provenance.validation import get_relationship_schema
 
 PATCH_ID_RE = re.compile(r"^\d{4}-[a-z0-9-]+$")
 
+# Inline-citation marker scan. Deliberately BROADER than the wikilink registry's
+# ``cite`` authoring pattern (which carries a ``(?!id:)`` negative lookahead):
+# this captures *every* ``[[cite:...]]`` marker — including the ``[[cite:id:N]]``
+# storage form — precisely so the strict-grammar classification below can reject a
+# patch-authored raw-pk marker. Do NOT dedupe this against the registry pattern.
+_CITE_MARKER_RE = re.compile(r"\[\[cite:([^\]]+)\]\]")
+# Strict handle grammars — classification is purely lexical (no DB lookup). A real
+# slug is 8 lowercase consonants (Step 1's ``validate_citation_slug`` + length
+# CHECK), a strict subset of ``^[a-z]+$`` and provably disjoint from ``^[0-9]+$``,
+# so a numeric new-handle can never masquerade as a slug or vice-versa.
+_NUMERIC_HANDLE_RE = re.compile(r"^[0-9]+$")
+_SLUG_HANDLE_RE = re.compile(r"^[a-z]+$")
+
 # Keys in a claim entry's value mapping that are directives, not claim fields.
 RESERVED_FIELD_KEYS = frozenset(
-    {"create", "delete", "expect", "retract", "remove", "note", "cite"}
+    {"create", "delete", "expect", "retract", "remove", "note", "cite", "cites"}
 )
 
 # The claim-controlled lifecycle field (``LifecycleStatusModel.status``).
@@ -251,6 +266,14 @@ class _PatchEntry:
     note: str = ""
     cite: str = ""
     cite_archive: str = ""
+    # Inline-citation specs for *new* footnotes referenced by numeric-handle
+    # ``[[cite:1]]`` markers in this entry's markdown fields, keyed by the
+    # patch-local handle (``"1"``). Each value is a parsed CitationRef minted at
+    # apply time as a floating ``claim=None`` CitationInstance. Existing-slug
+    # markers (``[[cite:<slug>]]``) need no entry here — they self-resolve. Empty
+    # when unset; only ``CreateEntry``/``EditEntry`` ever populate it (a
+    # ``DeleteEntry`` with ``cites:`` is rejected — no markdown claim to bind to).
+    cites: dict[CiteHandle, CitationRef] = field(default_factory=dict)
 
     @property
     def ref(self) -> str:
@@ -400,6 +423,33 @@ def _parse_remove(raw_fields: JsonBody, ref: str) -> RelationshipMembers:
     return cast(RelationshipMembers, raw)
 
 
+def _parse_cites(raw_cites: object, ref: str) -> dict[CiteHandle, CitationRef]:
+    """Parse a ``cites:`` map of ``{handle: cite-spec}`` into CitationRefs.
+
+    Each value is a cite spec in the same grammar as the entry-level ``cite:``
+    (a ``scheme:identifier``/URL string or a ``{url, archive}`` mapping), parsed
+    through the shared :func:`_normalize_raw_cite` + :func:`_parse_cite_value`
+    path so it dedups and errors identically. Handle keys are always strings —
+    the strict YAML loader's ``_assert_json`` rejects a bare integer mapping key
+    before this runs, so an unquoted ``1:`` is a parse error the adapter never
+    sees. The handle *grammar* (numeric new-cite vs slug existing-cite) and
+    marker↔map correspondence are enforced later, at process time, against the
+    actual markdown markers.
+    """
+    if not isinstance(raw_cites, dict):
+        raise PatchError(f"{ref}: 'cites' must be a mapping of handle to cite spec")
+    parsed: dict[CiteHandle, CitationRef] = {}
+    for handle, raw_spec in raw_cites.items():
+        # _assert_json guarantees string keys; assert for the type-checker.
+        assert isinstance(handle, str)
+        spec_ref = f"{ref} cites[{handle!r}]"
+        cite, archive = _normalize_raw_cite(raw_spec, spec_ref)
+        if not cite:
+            raise PatchError(f"{spec_ref}: cite spec must be non-empty")
+        parsed[handle] = _parse_cite_value(cite, archive, spec_ref)
+    return parsed
+
+
 def _parse_entry(raw_entry: object, index: int) -> PatchEntry:
     """Parse + structurally validate one ``claims:`` entry into a typed kind.
 
@@ -425,8 +475,11 @@ def _parse_entry(raw_entry: object, index: int) -> PatchEntry:
     delete = _require_bool(raw_fields, "delete", ref)
     note = _require_str(raw_fields, "note", ref)
     cite, cite_archive = _normalize_raw_cite(raw_fields.get("cite", ""), ref)
+    cites = _parse_cites(raw_fields.get("cites", {}), ref)
     # Authored claim fields: everything that isn't a reserved directive key.
     fields = {k: v for k, v in raw_fields.items() if k not in RESERVED_FIELD_KEYS}
+    # ``cites`` is passed per-constructor below rather than spread here — its
+    # ``dict[str, CitationRef]`` value would widen this all-``str`` mapping.
     common = {
         "entity_type": entity_type,
         "public_id": public_id,
@@ -448,16 +501,17 @@ def _parse_entry(raw_entry: object, index: int) -> PatchEntry:
                 f"({', '.join(sorted(fields))}) — reassign references in a "
                 f"separate entry, in an earlier patch, before the delete"
             )
-        return DeleteEntry(**common, expect=_parse_expect(raw_fields, ref))
+        return DeleteEntry(**common, cites=cites, expect=_parse_expect(raw_fields, ref))
 
     if create:
         for key in ("expect", "retract", "remove"):
             if key in raw_fields:
                 raise PatchError(f"{ref}: {key!r} is meaningless on a create")
-        return CreateEntry(**common, fields=fields)
+        return CreateEntry(**common, cites=cites, fields=fields)
 
     return EditEntry(
         **common,
+        cites=cites,
         expect=_parse_expect(raw_fields, ref),
         retract=_parse_retract(raw_fields, ref),
         remove=_parse_remove(raw_fields, ref),
@@ -678,55 +732,75 @@ def _parse_provenance(entry: PatchEntry) -> tuple[str, CitationRef | None]:
         )
     if not entry.cite:
         return note, None
-    if entry.cite.startswith(("http://", "https://")):
-        return note, _parse_cite_url(entry)
-    scheme, sep, raw_id = entry.cite.partition(":")
+    return note, _parse_cite_value(entry.cite, entry.cite_archive, entry.ref)
+
+
+def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
+    """Parse one non-empty cite spec into a :class:`CitationRef`.
+
+    Shared by the entry-level ``cite:`` (via :func:`_parse_provenance`) and the
+    inline ``cites:`` map (:func:`_parse_cites`). Two forms:
+
+    * a ``http(s)://`` URL — a standalone web source; an optional ``archive``
+      durable-snapshot URL rides along;
+    * ``scheme:identifier`` — the scheme must be a known extractor and the
+      identifier must normalize (``ipdb:4443``).
+
+    The empty-cite short-circuit and (for the entry path) the archive-without-URL
+    guard stay with :func:`_parse_provenance`, which allows an absent cite; here
+    ``cite`` is always non-empty.
+    """
+    if cite.startswith(("http://", "https://")):
+        return _parse_cite_url(cite, archive, ref)
+    if archive:
+        raise PatchError(
+            f"{ref}: 'cite.archive' is only valid alongside a http(s):// URL "
+            f"cite, not a scheme cite"
+        )
+    scheme, sep, raw_id = cite.partition(":")
     if not sep or not scheme or not raw_id:
         raise PatchError(
-            f"{entry.ref}: cite {entry.cite!r} must be 'scheme:identifier' (e.g. 'ipdb:4443')"
+            f"{ref}: cite {cite!r} must be 'scheme:identifier' (e.g. 'ipdb:4443')"
         )
     extractor = EXTRACTORS.get(scheme)
     if extractor is None:
         raise PatchError(
-            f"{entry.ref}: unknown cite scheme {scheme!r} "
+            f"{ref}: unknown cite scheme {scheme!r} "
             f"(known: {', '.join(sorted(EXTRACTORS))})"
         )
     normalized = extractor.normalize(raw_id)
     if normalized is None:
-        raise PatchError(f"{entry.ref}: invalid {scheme} identifier {raw_id!r}")
+        raise PatchError(f"{ref}: invalid {scheme} identifier {raw_id!r}")
     if len(normalized) > CITATION_SOURCE_IDENTIFIER_MAX_LENGTH:
         raise PatchError(
-            f"{entry.ref}: cite identifier exceeds "
+            f"{ref}: cite identifier exceeds "
             f"{CITATION_SOURCE_IDENTIFIER_MAX_LENGTH} characters"
         )
-    return note, CitationRef(scheme=scheme, identifier=normalized)
+    return CitationRef(scheme=scheme, identifier=normalized)
 
 
-def _parse_cite_url(entry: PatchEntry) -> CitationRef:
-    """Validate a ``http(s)://`` ``cite`` URL into a standalone-web CitationRef.
+def _parse_cite_url(url: str, archive_url: str, ref: str) -> CitationRef:
+    """Validate a ``http(s)://`` cite URL into a standalone-web CitationRef.
 
     Rejects a URL that matches a known scheme's record pattern (it has a
     canonical ``scheme:identifier`` form that dedups correctly), a malformed
     URL, and one too long for the link column.
     """
-    url = entry.cite
     for scheme, extractor in EXTRACTORS.items():
         identifier = extractor.extract(url)
         if identifier is not None:
             raise PatchError(
-                f"{entry.ref}: cite URL matches the {scheme} scheme — "
+                f"{ref}: cite URL matches the {scheme} scheme — "
                 f"cite it as {scheme}:{identifier} instead"
             )
     # The caller guarantees an http(s):// scheme, so a host is all that's left
     # to validate (``https://`` alone has none).
     if not urlparse(url).hostname:
-        raise PatchError(f"{entry.ref}: cite {url!r} is not a valid URL")
+        raise PatchError(f"{ref}: cite {url!r} is not a valid URL")
     if len(url) > CITATION_SOURCE_LINK_URL_MAX_LENGTH:
         raise PatchError(
-            f"{entry.ref}: cite URL exceeds {CITATION_SOURCE_LINK_URL_MAX_LENGTH} "
-            f"characters"
+            f"{ref}: cite URL exceeds {CITATION_SOURCE_LINK_URL_MAX_LENGTH} characters"
         )
-    archive_url = entry.cite_archive
     if archive_url:
         # Deliberately NOT scheme-checked: a Wayback URL embeds the original
         # page URL as a path segment, so an ipdb/opdb page would false-match.
@@ -736,12 +810,11 @@ def _parse_cite_url(entry: PatchEntry) -> CitationRef:
             or not urlparse(archive_url).hostname
         ):
             raise PatchError(
-                f"{entry.ref}: cite archive {archive_url!r} is not a valid "
-                f"http(s):// URL"
+                f"{ref}: cite archive {archive_url!r} is not a valid http(s):// URL"
             )
         if len(archive_url) > CITATION_SOURCE_LINK_URL_MAX_LENGTH:
             raise PatchError(
-                f"{entry.ref}: cite archive URL exceeds "
+                f"{ref}: cite archive URL exceeds "
                 f"{CITATION_SOURCE_LINK_URL_MAX_LENGTH} characters"
             )
     return CitationRef(url=url, archive_url=archive_url)
@@ -812,6 +885,79 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     return plan
 
 
+def _classify_inline_cites(
+    entry: CreateEntry | EditEntry,
+    model_class: type[CatalogModel],
+) -> dict[str, dict[CiteHandle, CitationRef]]:
+    """Validate this entry's inline ``[[cite:...]]`` markers against its ``cites:`` map.
+
+    Scans **every** markdown field of the entry (the gate — a marker with no
+    backing never survives), classifies each handle by strict grammar, enforces
+    marker↔map correspondence, and returns ``{field_name: {numeric_handle:
+    CitationRef}}`` for each markdown field carrying ≥1 *new*-cite marker (the
+    minting payload :func:`_emit_direct` attaches to its assertion). All checks
+    are DB-free; existing-slug validity is enforced downstream by
+    ``convert_authoring_to_storage`` (raises ``Cite not found`` on a bad slug).
+    """
+    markdown_fields = set(get_markdown_fields(model_class))
+    md_values = {
+        k: v
+        for k, v in entry.fields.items()
+        if k in markdown_fields and isinstance(v, str)
+    }
+    if entry.cites and not md_values:
+        raise PatchError(
+            f"{entry.ref}: 'cites:' requires a markdown-field claim to bind to — "
+            f"none of this entry's fields is a citable description field"
+        )
+
+    per_field_numeric: dict[str, set[CiteHandle]] = {}
+    all_numeric: set[CiteHandle] = set()
+    for field_name, value in md_values.items():
+        for handle in _CITE_MARKER_RE.findall(value):
+            if _NUMERIC_HANDLE_RE.match(handle):
+                per_field_numeric.setdefault(field_name, set()).add(handle)
+                all_numeric.add(handle)
+            elif _SLUG_HANDLE_RE.match(handle):
+                continue  # existing-cite slug — resolved later by conversion
+            else:
+                raise PatchError(
+                    f"{entry.ref}: malformed inline citation '[[cite:{handle}]]' in "
+                    f"{field_name!r} — a handle must be all-digits (a new citation, "
+                    f"needs a 'cites:' entry) or all-lowercase-letters (an existing "
+                    f"cite slug); this rejects a raw-pk '[[cite:id:N]]'"
+                )
+
+    # Correspondence (DB-free, loud). A slug-keyed ``cites:`` entry is its own
+    # misuse — check it before the generic "unreferenced" case so the message is
+    # specific.
+    cite_handles = set(entry.cites)
+    slug_keyed = {h for h in cite_handles if not _NUMERIC_HANDLE_RE.match(h)}
+    if slug_keyed:
+        raise PatchError(
+            f"{entry.ref}: 'cites:' key(s) {sorted(slug_keyed)} must be numeric "
+            f"handles (e.g. '1') — an existing cite is named by its slug marker, "
+            f"not declared in 'cites:'"
+        )
+    missing = all_numeric - cite_handles
+    if missing:
+        raise PatchError(
+            f"{entry.ref}: inline citation handle(s) {sorted(missing)} have no "
+            f"'cites:' entry to mint from"
+        )
+    unused = cite_handles - all_numeric
+    if unused:
+        raise PatchError(
+            f"{entry.ref}: 'cites:' entr(y/ies) {sorted(unused)} are not referenced "
+            f"by any '[[cite:N]]' marker"
+        )
+
+    return {
+        field_name: {h: entry.cites[h] for h in handles}
+        for field_name, handles in per_field_numeric.items()
+    }
+
+
 def _process_entry(
     plan: IngestPlan,
     entry: PatchEntry,
@@ -835,7 +981,12 @@ def _process_entry(
     model_class = _resolve_model_class(entry)
     ct_id = ContentType.objects.get_for_model(model_class).pk
     existing = _lookup_entity(model_class, entry.public_id)
-    has_provenance = bool(note) or citation_ref is not None
+    # Inline ``cites:`` count as provenance: each mints a per-assertion floating
+    # instance, but two entries asserting one entity's markdown field collapse to
+    # one claim (last-write-wins in _build_claims), which would orphan the
+    # discarded entry's mint. The multi-entry guard rejects that — same rule as
+    # note/cite: an entity's claims belong in a single entry.
+    has_provenance = bool(note) or citation_ref is not None or bool(entry.cites)
 
     # A delete carries no field assertions and no relationship work, so it
     # finishes here, registering every soft-deleted entity (root + cascade) with
@@ -843,6 +994,11 @@ def _process_entry(
     # status=deleted claim, so a separate entry on any of them that also carries
     # provenance is a genuine collision.
     if isinstance(entry, DeleteEntry):
+        if entry.cites:
+            raise PatchError(
+                f"{entry.ref}: 'cites:' requires a markdown-field claim to bind to — "
+                f"a delete entry takes no field assertions"
+            )
         if existing is None:
             raise PatchError(f"{entry.ref}: no such {entry.entity_type} to delete")
         _check_expect(model_class, existing, entry)
@@ -894,6 +1050,12 @@ def _process_entry(
         )
         target = _Target(content_type_id=ct_id, object_id=existing.pk)
 
+    # Inline-citation markers in the entry's markdown fields: validate grammar +
+    # marker↔``cites:`` correspondence (DB-free) and get the per-field new-cite
+    # minting payloads. Runs once over the whole entry before emitting, so a
+    # marker in any markdown field is gated even if that field is emitted later.
+    inline_cites_by_field = _classify_inline_cites(entry, model_class)
+
     # Shared field loop (create + edit). Track which scalar/FK fields and which
     # relationship members were asserted on an *existing* entity — creates target
     # a handle, so object_id is None and they contribute nothing to the guards —
@@ -912,7 +1074,15 @@ def _process_entry(
                 f"soft-delete with 'delete: true', not a direct claim"
             )
         if key in claim_fields:
-            _emit_direct(plan, key, value, target, note=note, citation_ref=citation_ref)
+            _emit_direct(
+                plan,
+                key,
+                value,
+                target,
+                note=note,
+                citation_ref=citation_ref,
+                inline_cites=inline_cites_by_field.get(key, {}),
+            )
             carrier_written = True
             if target.object_id is not None:
                 asserted_fields.add(key)
@@ -1133,7 +1303,7 @@ def _validate_plan_wide(results: list[_EntryResult]) -> None:
         if count > 1 and has_provenance[tkey]:
             raise PatchError(
                 f"{target_ref[tkey]}: multiple entries target this entity and at "
-                f"least one carries note/cite — combine them into one entry "
+                f"least one carries note/cite/cites — combine them into one entry "
                 f"(an entity's claims share a single changeset)"
             )
 
@@ -1245,6 +1415,7 @@ def _emit_assert(
     claim_key: ClaimKey = "",
     note: str = "",
     citation_ref: CitationRef | None = None,
+    inline_cites: dict[CiteHandle, CitationRef] | None = None,
 ) -> None:
     plan.assertions.append(
         PlannedClaimAssert(
@@ -1253,6 +1424,7 @@ def _emit_assert(
             claim_key=claim_key,
             note=note,
             citation_ref=citation_ref,
+            inline_cites=dict(inline_cites) if inline_cites else {},
             content_type_id=target.content_type_id,
             object_id=target.object_id,
             handle=target.handle,
@@ -1268,8 +1440,14 @@ def _emit_direct(
     *,
     note: str = "",
     citation_ref: CitationRef | None = None,
+    inline_cites: dict[CiteHandle, CitationRef] | None = None,
 ) -> None:
-    """Emit a scalar or FK claim assertion (FK value is the target public_id)."""
+    """Emit a scalar or FK claim assertion (FK value is the target public_id).
+
+    ``inline_cites`` carries any new (numeric-handle) inline citations to mint
+    for a markdown field's value; empty for non-markdown fields and for markdown
+    fields whose cites are all existing slugs.
+    """
     _emit_assert(
         plan,
         target,
@@ -1277,6 +1455,7 @@ def _emit_direct(
         value=value,
         note=note,
         citation_ref=citation_ref,
+        inline_cites=inline_cites,
     )
 
 

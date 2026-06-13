@@ -32,20 +32,6 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def flip_museum(db):
-    # flip-museum is seeded by a provenance data migration, so get-or-create.
-    source, _ = Source.objects.get_or_create(
-        slug="flip-museum",
-        defaults={
-            "name": "Flip Museum",
-            "source_type": "editorial",
-            "priority": 10000,
-        },
-    )
-    return source
-
-
-@pytest.fixture
 def ipdb_root(db):
     """The root CitationSource for the ipdb scheme (children hang under it)."""
     return CitationSource.objects.create(
@@ -64,7 +50,7 @@ def kineticist_root(db):
 
 
 @pytest.fixture
-def pm(db, flip_museum):
+def pm(db, flipcommons_catalog):
     return make_machine_model(
         name="Medieval Madness", slug="medieval-madness", year=1997
     )
@@ -87,7 +73,7 @@ def _apply(text: str, *, patch_id: str = "0001-test"):
 
 def test_note_and_cite_parsed_and_excluded_from_fields():
     doc = load_patch(
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.x:\n"
         "      note: tagged because the name says so\n"
@@ -109,29 +95,29 @@ def test_note_must_be_string():
 # ── build_plan validation ──────────────────────────────────────────
 
 
-def test_bad_cite_format_rejected(flip_museum, pm):
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      cite: ipdb\n      year: 1998\n"
+def test_bad_cite_format_rejected(flipcommons_catalog, pm):
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb\n      year: 1998\n"
     with pytest.raises(PatchError, match="scheme:identifier"):
         _apply(text)
 
 
-def test_unknown_cite_scheme_rejected(flip_museum, pm):
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      cite: bogus:4443\n      year: 1998\n"
+def test_unknown_cite_scheme_rejected(flipcommons_catalog, pm):
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: bogus:4443\n      year: 1998\n"
     with pytest.raises(PatchError, match="unknown cite scheme"):
         _apply(text)
 
 
-def test_invalid_cite_identifier_rejected(flip_museum, pm):
+def test_invalid_cite_identifier_rejected(flipcommons_catalog, pm):
     # ipdb ids are digits; a non-numeric id fails normalization.
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:not-a-number\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:not-a-number\n      year: 1998\n"
     with pytest.raises(PatchError, match="invalid ipdb identifier"):
         _apply(text)
 
 
-def test_overlong_note_rejected(flip_museum, pm):
+def test_overlong_note_rejected(flipcommons_catalog, pm):
     long_note = "x" * 1001
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      note: {long_note}\n"
@@ -141,11 +127,11 @@ def test_overlong_note_rejected(flip_museum, pm):
         _apply(text)
 
 
-def test_same_entity_provenance_conflict_rejected(flip_museum, pm):
+def test_same_entity_provenance_conflict_rejected(flipcommons_catalog, pm):
     # Two entries land on one entity and one carries a note → rejected, because
     # an entity's claims collapse into a single shared changeset.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
       note: first reason
@@ -157,42 +143,42 @@ claims:
         _apply(text)
 
 
-def test_cite_on_retraction_only_entry_rejected(flip_museum, pm):
+def test_cite_on_retraction_only_entry_rejected(flipcommons_catalog, pm):
     # A cite has nothing to attach to when the entry only retracts.
-    Claim.objects.assert_claim(pm, "year", 1998, source=flip_museum)
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      retract: [year]\n"
+    Claim.objects.assert_claim(pm, "year", 1998, source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      retract: [year]\n"
     with pytest.raises(PatchError, match="cite has no field to attach to"):
         _apply(text)
 
 
-def test_cite_on_fieldless_create_rejected(flip_museum):
-    text = "attribution: flip-museum\nclaims:\n  - manufacturer.acme:\n      create: true\n      cite: ipdb:4443\n"
+def test_cite_on_fieldless_create_rejected(flipcommons_catalog):
+    text = "attribution: flipcommons-catalog\nclaims:\n  - manufacturer.acme:\n      create: true\n      cite: ipdb:4443\n"
     with pytest.raises(PatchError, match="cite has no field to attach to"):
         _apply(text)
 
 
-def test_cite_on_empty_relationship_rejected(flip_museum, pm):
+def test_cite_on_empty_relationship_rejected(flipcommons_catalog, pm):
     # `tag: []` has a field key but emits zero claims, so the cite would attach
     # to nothing — a field *key* isn't a carrier.
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      tag: []\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      tag: []\n"
     with pytest.raises(PatchError, match="cite has no field to attach to"):
         _apply(text)
 
 
-def test_note_with_no_carrier_rejected(flip_museum, pm):
+def test_note_with_no_carrier_rejected(flipcommons_catalog, pm):
     # note: alongside only an empty relationship emits no claim/changeset, so
     # the note would silently vanish.
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      note: this goes nowhere\n      tag: []\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: this goes nowhere\n      tag: []\n"
     with pytest.raises(PatchError, match="note has nothing to attach to"):
         _apply(text)
 
 
-def test_duplicate_create_rejected(flip_museum):
+def test_duplicate_create_rejected(flipcommons_catalog):
     # Two creates for the same ref would mint a duplicate handle; build_plan
     # rejects it as a PatchError rather than letting it surface as a ValueError
     # deep in the apply layer (which ingest_patches doesn't catch).
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.acme:
       create: true
@@ -208,18 +194,18 @@ claims:
 # ── apply: note → ChangeSet.note ───────────────────────────────────
 
 
-def test_note_sets_changeset_note(flip_museum, pm):
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      note: corrected per the flyer\n      year: 1998\n"
+def test_note_sets_changeset_note(flipcommons_catalog, pm):
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: corrected per the flyer\n      year: 1998\n"
     _apply(text)
     cs = ChangeSet.objects.get(ingest_run__isnull=False)
     assert cs.note == "corrected per the flyer"
 
 
-def test_retract_only_entry_lands_note(flip_museum, pm):
-    # Seed a flip-museum year claim, then retract it with a note. A retraction
+def test_retract_only_entry_lands_note(flipcommons_catalog, pm):
+    # Seed a flipcommons-catalog year claim, then retract it with a note. A retraction
     # emits no assertion, so its note must still reach the changeset.
-    Claim.objects.assert_claim(pm, "year", 1998, source=flip_museum)
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      note: removing our bad year\n      retract: [year]\n"
+    Claim.objects.assert_claim(pm, "year", 1998, source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: removing our bad year\n      retract: [year]\n"
     report = _apply(text, patch_id="0002-retract")
     assert report.retracted == 1
     cs = ChangeSet.objects.get(ingest_run__patch_id="0002-retract")
@@ -230,10 +216,10 @@ def test_retract_only_entry_lands_note(flip_museum, pm):
 
 
 def test_cite_creates_source_and_attaches_to_claims(
-    flip_museum, ipdb_root, pm, prototype_tag
+    flipcommons_catalog, ipdb_root, pm, prototype_tag
 ):
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
       note: only one prototype made
@@ -257,8 +243,8 @@ claims:
     assert tag_claim.citation_instances.get().citation_source_id == child.pk
 
 
-def test_cite_is_idempotent_across_applications(flip_museum, ipdb_root, pm):
-    base = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: {year}\n"
+def test_cite_is_idempotent_across_applications(flipcommons_catalog, ipdb_root, pm):
+    base = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: {year}\n"
     _apply(base.format(year=1998), patch_id="0001-a")
     _apply(base.format(year=1999), patch_id="0002-b")
     # Re-citing the same id reuses the one child source.
@@ -267,11 +253,11 @@ def test_cite_is_idempotent_across_applications(flip_museum, ipdb_root, pm):
     )
 
 
-def test_create_scaffolding_not_cited(flip_museum, ipdb_root):
+def test_create_scaffolding_not_cited(flipcommons_catalog, ipdb_root):
     # A create entry's authored field (name) is cited; the adapter-owned slug
     # and status claims are not.
     text = """
-attribution: flip-museum
+attribution: flipcommons-catalog
 claims:
   - manufacturer.acme:
       create: true
@@ -288,36 +274,38 @@ claims:
     assert not status_claim.citation_instances.exists()
 
 
-def test_cite_on_unchanged_value_noops(flip_museum, ipdb_root, pm):
+def test_cite_on_unchanged_value_noops(flipcommons_catalog, ipdb_root, pm):
     # An already-correct, same-source value diffs as unchanged, so adding a
     # cite: writes no new claim and attaches no citation (documented v1 limit).
-    Claim.objects.assert_claim(pm, "year", 2000, source=flip_museum)
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 2000\n"
+    Claim.objects.assert_claim(pm, "year", 2000, source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 2000\n"
     _apply(text)
-    year_claim = pm.claims.get(field_name="year", is_active=True, source=flip_museum)
+    year_claim = pm.claims.get(
+        field_name="year", is_active=True, source=flipcommons_catalog
+    )
     assert not year_claim.citation_instances.exists()
     assert not CitationInstance.objects.exists()
 
 
-def test_note_on_unchanged_value_noops(flip_museum, pm):
+def test_note_on_unchanged_value_noops(flipcommons_catalog, pm):
     # Same root cause as the cite no-op: an entry that re-asserts an
     # already-active same-source value diffs as unchanged, so no ChangeSet is
     # created and the note is silently dropped (documented v1 limit). Build
     # time can't catch this — it depends on the post-diff result.
-    Claim.objects.assert_claim(pm, "year", 2000, source=flip_museum)
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      note: confirmed correct\n      year: 2000\n"
+    Claim.objects.assert_claim(pm, "year", 2000, source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: confirmed correct\n      year: 2000\n"
     report = _apply(text)
     assert report.asserted == 0  # nothing written
     assert not ChangeSet.objects.filter(ingest_run__isnull=False).exists()
 
 
-def test_attach_citations_is_per_claim(flip_museum, ipdb_root, pm):
+def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
     # Direct IngestPlan: two assertions on one entity, only one carries a
     # citation_ref. The citation must ride only that claim — never bleed onto
     # the other claim that merely shares the entity.
     ct = ContentType.objects.get_for_model(MachineModel)
     plan = IngestPlan(
-        source=flip_museum, input_fingerprint="fp", patch_id="0001-direct"
+        source=flipcommons_catalog, input_fingerprint="fp", patch_id="0001-direct"
     )
     plan.assertions.append(
         PlannedClaimAssert(
@@ -344,9 +332,9 @@ def test_attach_citations_is_per_claim(flip_museum, ipdb_root, pm):
     assert not qty_claim.citation_instances.exists()
 
 
-def test_missing_citation_root_errors(flip_museum, pm):
+def test_missing_citation_root_errors(flipcommons_catalog, pm):
     # No ipdb root seeded → a clear error, not a silent miss.
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
     with pytest.raises(CitationSource.DoesNotExist, match="No root CitationSource"):
         _apply(text)
 
@@ -354,13 +342,13 @@ def test_missing_citation_root_errors(flip_museum, pm):
 # ── cite: URL form → web CitationSource nested under a root ────────
 
 
-def test_url_cite_without_matching_root_errors(flip_museum, pm):
+def test_url_cite_without_matching_root_errors(flipcommons_catalog, pm):
     # A URL whose domain matches no seeded website root is rejected — a patch
     # must nest evidence under a curated root, not mint a parentless (abstract)
     # web source. The author seeds the root in an earlier patch first.
     url = "https://pinside.com/pinball/forum/topic/mm-prototype"
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {url}\n"
@@ -370,14 +358,14 @@ def test_url_cite_without_matching_root_errors(flip_museum, pm):
         _apply(text)
 
 
-def test_url_cite_reuses_preexisting_source(flip_museum, pm):
+def test_url_cite_reuses_preexisting_source(flipcommons_catalog, pm):
     # A source a curator already linked to this exact URL is reused, not
     # duplicated.
     url = "https://example.com/evidence"
     existing = CitationSource.objects.create(name="Curated", source_type="web")
     existing.links.create(link_type="reference", url=url)
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {url}\n"
@@ -389,12 +377,14 @@ def test_url_cite_reuses_preexisting_source(flip_museum, pm):
     assert CitationSource.objects.filter(links__url=url).distinct().count() == 1
 
 
-def test_url_cite_nests_under_domain_matched_root(flip_museum, kineticist_root, pm):
+def test_url_cite_nests_under_domain_matched_root(
+    flipcommons_catalog, kineticist_root, pm
+):
     # A URL whose domain matches a seeded root becomes a child under that root,
     # not a flat parentless orphan.
     url = "https://kineticist.com/reviews/medieval-madness"
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {url}\n"
@@ -419,11 +409,13 @@ def test_url_cite_nests_under_domain_matched_root(flip_museum, kineticist_root, 
     assert year_claim.citation_instances.get().citation_source_id == child.pk
 
 
-def test_url_cite_under_root_dedups_and_separates(flip_museum, kineticist_root, pm):
+def test_url_cite_under_root_dedups_and_separates(
+    flipcommons_catalog, kineticist_root, pm
+):
     # Same URL twice → one child; a different path on the same domain → a second
     # child under the same root.
     base = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: {url}\n"
@@ -438,13 +430,15 @@ def test_url_cite_under_root_dedups_and_separates(flip_museum, kineticist_root, 
     assert CitationSource.objects.filter(parent=kineticist_root).count() == 2
 
 
-def test_url_cite_with_archive_attaches_both_links(flip_museum, kineticist_root, pm):
+def test_url_cite_with_archive_attaches_both_links(
+    flipcommons_catalog, kineticist_root, pm
+):
     # cite: {url, archive} → the child carries BOTH a 'reference' link (the live
     # page) and an 'archive' link (the Wayback snapshot): one citation, two links.
     url = "https://kineticist.com/reviews/medieval-madness"
     archive = "https://web.archive.org/web/20240101000000/" + url
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
@@ -462,12 +456,12 @@ def test_url_cite_with_archive_attaches_both_links(flip_museum, kineticist_root,
     assert year_claim.citation_instances.get().citation_source_id == child.pk
 
 
-def test_url_cite_archive_idempotent(flip_museum, kineticist_root, pm):
+def test_url_cite_archive_idempotent(flipcommons_catalog, kineticist_root, pm):
     # Re-applying the same {url, archive} cite never duplicates the archive link.
     url = "https://kineticist.com/x"
     archive = "https://web.archive.org/web/20240101000000/" + url
     base = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
@@ -483,19 +477,19 @@ def test_url_cite_archive_idempotent(flip_museum, kineticist_root, pm):
     assert CitationSource.objects.filter(parent=kineticist_root).count() == 1
 
 
-def test_archive_added_to_preexisting_child(flip_museum, kineticist_root, pm):
+def test_archive_added_to_preexisting_child(flipcommons_catalog, kineticist_root, pm):
     # A first patch cites the live URL (no archive); a later patch re-cites it
     # with an archive → the archive link is added to the existing child source,
     # exercising the `existing is not None` branch + the archive backfill.
     url = "https://kineticist.com/x"
     archive = "https://web.archive.org/web/20240101000000/" + url
     _apply(
-        "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n"
+        "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n"
         f"      cite: {url}\n      year: 1998\n",
         patch_id="0001-a",
     )
     _apply(
-        "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n"
+        "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n"
         "      cite:\n"
         f"        url: {url}\n        archive: {archive}\n"
         "      year: 1999\n",
@@ -508,10 +502,10 @@ def test_archive_added_to_preexisting_child(flip_museum, kineticist_root, pm):
     assert CitationSource.objects.filter(parent=kineticist_root).count() == 1
 
 
-def test_cite_archive_with_scheme_cite_rejected(flip_museum, pm):
+def test_cite_archive_with_scheme_cite_rejected(flipcommons_catalog, pm):
     # An archive snapshot only makes sense for a live web page, not a scheme cite.
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
@@ -523,9 +517,9 @@ def test_cite_archive_with_scheme_cite_rejected(flip_museum, pm):
         _apply(text)
 
 
-def test_cite_mapping_unknown_key_rejected(flip_museum, pm):
+def test_cite_mapping_unknown_key_rejected(flipcommons_catalog, pm):
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
@@ -537,9 +531,9 @@ def test_cite_mapping_unknown_key_rejected(flip_museum, pm):
         _apply(text)
 
 
-def test_invalid_archive_url_rejected(flip_museum, kineticist_root, pm):
+def test_invalid_archive_url_rejected(flipcommons_catalog, kineticist_root, pm):
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
@@ -551,10 +545,10 @@ def test_invalid_archive_url_rejected(flip_museum, kineticist_root, pm):
         _apply(text)
 
 
-def test_ipdb_url_cite_rejected(flip_museum, pm):
+def test_ipdb_url_cite_rejected(flipcommons_catalog, pm):
     # A known-scheme record URL must be cited via scheme:identifier so it dedups.
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: https://www.ipdb.org/machine.cgi?id=4443\n"
@@ -564,9 +558,9 @@ def test_ipdb_url_cite_rejected(flip_museum, pm):
         _apply(text)
 
 
-def test_opdb_url_cite_rejected(flip_museum, pm):
+def test_opdb_url_cite_rejected(flipcommons_catalog, pm):
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: https://opdb.org/machines/GRhX5\n"
@@ -576,9 +570,9 @@ def test_opdb_url_cite_rejected(flip_museum, pm):
         _apply(text)
 
 
-def test_malformed_url_cite_rejected(flip_museum, pm):
+def test_malformed_url_cite_rejected(flipcommons_catalog, pm):
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite: https://\n"
@@ -588,10 +582,10 @@ def test_malformed_url_cite_rejected(flip_museum, pm):
         _apply(text)
 
 
-def test_overlong_url_cite_rejected(flip_museum, pm):
+def test_overlong_url_cite_rejected(flipcommons_catalog, pm):
     long_url = "https://example.com/" + "x" * 2000
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {long_url}\n"
@@ -601,12 +595,14 @@ def test_overlong_url_cite_rejected(flip_museum, pm):
         _apply(text)
 
 
-def test_long_url_cite_names_source_by_hostname(flip_museum, kineticist_root, pm):
+def test_long_url_cite_names_source_by_hostname(
+    flipcommons_catalog, kineticist_root, pm
+):
     # A valid URL longer than the name column falls back to the hostname for the
     # child's name (the full URL still lands on the link, which allows more).
     url = "https://kineticist.com/" + "x" * 600
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         f"      cite: {url}\n"
@@ -618,10 +614,12 @@ def test_long_url_cite_names_source_by_hostname(flip_museum, kineticist_root, pm
     assert child.links.get().url == url
 
 
-def test_url_cite_surfaced_in_edit_history(client, flip_museum, kineticist_root, pm):
+def test_url_cite_surfaced_in_edit_history(
+    client, flipcommons_catalog, kineticist_root, pm
+):
     url = "https://kineticist.com/reviews/mm"
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      note: per the forum\n"
@@ -640,14 +638,14 @@ def test_url_cite_surfaced_in_edit_history(client, flip_museum, kineticist_root,
 
 
 def test_url_cite_with_archive_surfaces_live_link_in_edit_history(
-    client, flip_museum, kineticist_root, pm
+    client, flipcommons_catalog, kineticist_root, pm
 ):
     # Compact field history shows the live page, NOT its Wayback snapshot — even
     # though "archive" sorts before "reference" in the default link ordering.
     url = "https://kineticist.com/reviews/mm"
     archive = "https://web.archive.org/web/20240101000000/" + url
     text = (
-        "attribution: flip-museum\n"
+        "attribution: flipcommons-catalog\n"
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
@@ -668,8 +666,8 @@ def test_url_cite_with_archive_surfaces_live_link_in_edit_history(
 # ── edit-history surfacing ─────────────────────────────────────────
 
 
-def test_edit_history_exposes_citation(client, flip_museum, ipdb_root, pm):
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      note: per ipdb\n      cite: ipdb:4443\n      year: 1998\n"
+def test_edit_history_exposes_citation(client, flipcommons_catalog, ipdb_root, pm):
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: per ipdb\n      cite: ipdb:4443\n      year: 1998\n"
     _apply(text)
 
     resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
@@ -683,10 +681,10 @@ def test_edit_history_exposes_citation(client, flip_museum, ipdb_root, pm):
     assert citation["url"] == "https://www.ipdb.org/machine.cgi?id=4443"
 
 
-def test_changeset_detail_exposes_citation(client, flip_museum, ipdb_root, pm):
+def test_changeset_detail_exposes_citation(client, flipcommons_catalog, ipdb_root, pm):
     # The changeset-detail endpoint shares build_changes with edit history, so
     # its claims prefetch must also load citation instances.
-    text = "attribution: flip-museum\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
     _apply(text)
     cs = ChangeSet.objects.get(ingest_run__isnull=False)
 
