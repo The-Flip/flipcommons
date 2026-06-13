@@ -96,6 +96,27 @@ def source(db):
 
 
 @pytest.fixture
+def flipcommons_catalog(db):
+    """The default patch-attribution Source.
+
+    In production the pindata ingest seeds ``flipcommons-catalog`` (see
+    ``ingest_pindata``); no migration creates it. Tests that attribute patches to
+    the catalog's own default source must therefore seed it themselves. It's the
+    default attribution for hand- and AI-authored patches — see
+    docs/DataPatchAuthoring.md.
+    """
+    src, _ = Source.objects.get_or_create(
+        slug="flipcommons-catalog",
+        defaults={
+            "name": "Flipcommons Catalog",
+            "source_type": "editorial",
+            "priority": 300,
+        },
+    )
+    return src
+
+
+@pytest.fixture
 def manufacturer(db, _bootstrap_source):
     mfr = Manufacturer.objects.create(name="Williams", slug="williams")
     Claim.objects.assert_claim(mfr, "name", "Williams", source=_bootstrap_source)

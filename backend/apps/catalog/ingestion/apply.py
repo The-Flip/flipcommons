@@ -106,6 +106,14 @@ class CitationRef:
     archive_url: str = ""
 
 
+# A patch-local citation handle: the ephemeral label wiring a ``[[cite:N]]``
+# authoring marker to its ``cites:`` source spec. A transparent alias of ``str``
+# (like the adapter's ``ClaimKey``/``PublicId``) that names the role where a bare
+# ``str`` key would otherwise be ambiguous — notably the inner key of the patch
+# adapter's field→handle→ref map. All-digits while authoring (``"1"``); rewritten
+# to a ``CitationInstance.slug`` at mint, so it never reaches storage.
+type CiteHandle = str
+
 # Per-claim provenance maps produced by ``_collect_plan_provenance`` and
 # consumed by ``_persist`` / ``_attach_plan_citations``. Named so the opaque
 # ``str`` (a ChangeSet note) and the per-claim citation mapping read clearly
@@ -172,6 +180,13 @@ class PlannedClaimAssert:
     # CitationInstance on the resulting claim at apply time.
     note: str = ""
     citation_ref: CitationRef | None = None
+    # Inline-citation footnotes referenced by ``[[cite:<numeric-handle>]]`` markers
+    # in a markdown field's value, keyed by the patch-local numeric handle. Each
+    # is a *new* citation minted at apply time (a floating ``claim=None``
+    # CitationInstance), after which the handle markers are rewritten to the
+    # minted slug. Existing-slug markers (``[[cite:<slug>]]``) carry nothing here —
+    # they self-resolve through standard conversion. Empty for non-cited fields.
+    inline_cites: dict[CiteHandle, CitationRef] = field(default_factory=dict)
     content_type_id: int | None = None
     object_id: int | None = None
     handle: str | None = None
@@ -286,6 +301,11 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             report.records_created = len(plan.entities)
 
             _patch_handles(plan.assertions, handle_map)
+            # Mint new inline-citation footnotes and rewrite their handle markers
+            # to minted slugs *before* claims are built/validated, so the standard
+            # markdown conversion in _validate_fail_fast resolves them to storage
+            # form. Existing-slug markers self-resolve and aren't touched here.
+            _materialize_inline_citations(plan.assertions)
             # Per-claim provenance (note/citation) carried by the plan, collected
             # once now that handles are resolved (so every assertion carries its
             # real ct/obj). Kept out of _build_claims so that helper's signature —
@@ -585,6 +605,19 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
 
     report.asserted += len(deferred)
 
+    # New-handle inline citations can't validate in dry-run: nothing is minted,
+    # so ``convert_authoring_to_storage`` would raise ``Cite not found`` on the
+    # unminted slug. Carve the whole assertion out — count asserted, skip
+    # validate/diff — mirroring the fk-to-planned carve-outs below, across BOTH
+    # the existing-entity and planned-entity sub-paths. Whole-assertion: a
+    # description mixing new handles with existing slugs loses dry-run validation
+    # of its existing-slug portion too. Correspondence + spec parse already ran at
+    # process time, so structural errors still surfaced. (Existing-slug-only
+    # assertions carry no ``inline_cites`` and stay on the standard path; real
+    # validation of new cites is the snapshot+apply loop.)
+    new_inline_cite_ids = {id(p) for p in concrete if p.inline_cites}
+    report.asserted += len(new_inline_cite_ids)
+
     # FK claims on existing entities whose value points at an entity created
     # *in this same plan* cannot be validated in dry-run — the FK existence
     # check queries the DB, but the target is only planned (the live path
@@ -600,7 +633,11 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
 
     # Claims targeting existing entities: validate + diff.
     existing_assertions = [
-        p for p in concrete if p.handle is None and id(p) not in fk_to_planned_ids
+        p
+        for p in concrete
+        if p.handle is None
+        and id(p) not in fk_to_planned_ids
+        and id(p) not in new_inline_cite_ids
     ]
     if existing_assertions:
         claims = _build_claims(existing_assertions, plan.source)
@@ -632,7 +669,11 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
     fk_on_create_ids = {id(p) for p in fk_on_create_planned}
 
     planned_assertions = [
-        p for p in concrete if p.handle is not None and id(p) not in fk_on_create_ids
+        p
+        for p in concrete
+        if p.handle is not None
+        and id(p) not in fk_on_create_ids
+        and id(p) not in new_inline_cite_ids
     ]
     if planned_assertions:
         handle_to_ct: dict[str, int] = {
@@ -986,6 +1027,31 @@ def _collect_plan_provenance(
     return entity_notes, claim_citations
 
 
+def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> int:
+    """Resolve a ``CitationRef`` to a ``CitationSource`` pk, memoized via ``cache``.
+
+    Shared by the field-level ``cite:`` path (:func:`_attach_plan_citations`) and
+    the inline-footnote path (:func:`_materialize_inline_citations`). Uses the
+    same ``get_or_create_*`` resolvers, so source dedup, web-root matching and
+    ``{url, archive}`` backfill come free. Created sources are *uncounted* — the
+    resolvers return a bare ``CitationSource``, not created-ness — matching the
+    field-``cite:`` stance (only the ``sources:`` block bumps the counters).
+    """
+    source_id = cache.get(ref)
+    if source_id is None:
+        from apps.citation.extractors import (
+            get_or_create_external_source,
+            get_or_create_web_source,
+        )
+
+        if ref.url:
+            source_id = get_or_create_web_source(ref.url, ref.archive_url).pk
+        else:
+            source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
+        cache[ref] = source_id
+    return source_id
+
+
 def _attach_plan_citations(
     to_create: list[Claim],
     claim_citations: ClaimCitations,
@@ -999,10 +1065,6 @@ def _attach_plan_citations(
     """
     if not claim_citations:
         return
-    from apps.citation.extractors import (
-        get_or_create_external_source,
-        get_or_create_web_source,
-    )
     from apps.provenance.models import CitationInstance
 
     source_cache: dict[CitationRef, int] = {}
@@ -1013,16 +1075,57 @@ def _attach_plan_citations(
         )
         if ref is None:
             continue
-        source_id = source_cache.get(ref)
-        if source_id is None:
-            if ref.url:
-                source_id = get_or_create_web_source(ref.url, ref.archive_url).pk
-            else:
-                source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
-            source_cache[ref] = source_id
+        source_id = _resolve_cite_source_id(ref, source_cache)
         instances.append(CitationInstance(citation_source_id=source_id, claim=claim))
     if instances:
         CitationInstance.objects.mint_many(instances)
+
+
+def _materialize_inline_citations(assertions: list[PlannedClaimAssert]) -> None:
+    """Mint floating ``CitationInstance`` rows for *new* inline citations.
+
+    For each assertion carrying ``inline_cites`` (a ``{numeric-handle:
+    CitationRef}`` map populated by the patch adapter), mints one
+    ``claim=None`` ``CitationInstance`` per handle, then rewrites that handle's
+    ``[[cite:<handle>]]`` markers in the assertion value to the minted
+    ``[[cite:<slug>]]``. Existing-slug markers are left untouched.
+
+    Runs after ``_patch_handles`` (so a same-patch ``create:``'s handle-targeted
+    assertion already carries real ct/obj — created and edited entities handled
+    identically) and *before* ``_build_claims``/validation, so the standard
+    ``convert_authoring_to_storage`` then resolves every ``[[cite:slug]]`` to
+    ``[[cite:id:pk]]`` storage and ``_diff_claims`` diffs the final text — no
+    bespoke storage rewrite here. Live path only: dry-run never reaches here (it
+    carves new-cite assertions out before minting). Inside ``apply_plan``'s
+    ``transaction.atomic()``, so a failed apply rolls the mint back; ``mint_many``
+    is savepoint-wrapped for slug-collision retry.
+    """
+    cited = [pca for pca in assertions if pca.inline_cites]
+    if not cited:
+        return
+    from apps.provenance.models import CitationInstance
+
+    # Mint every new instance in one batch, tracking the (assertion, handle) each
+    # belongs to so we can read its assigned slug back after mint_many. Minting is
+    # per-assertion (i.e. per markdown field): a handle reused across two markdown
+    # fields of one entry would mint one instance per field — the design's
+    # per-field footnote semantics, not a shared one. Moot while every entity has
+    # a single markdown field; intentional if that ever changes.
+    source_cache: dict[CitationRef, int] = {}
+    instances: list[CitationInstance] = []
+    owners: list[tuple[PlannedClaimAssert, CiteHandle]] = []
+    for pca in cited:
+        for handle, ref in pca.inline_cites.items():
+            source_id = _resolve_cite_source_id(ref, source_cache)
+            instances.append(CitationInstance(citation_source_id=source_id, claim=None))
+            owners.append((pca, handle))
+    CitationInstance.objects.mint_many(instances)  # assigns each ``.slug`` in place
+
+    for (pca, handle), instance in zip(owners, instances, strict=True):
+        # Full-marker literal replace: the closing ``]]`` makes ``[[cite:1]]``
+        # unambiguous against ``[[cite:11]]``, so no regex/order hazard.
+        assert isinstance(pca.value, str)
+        pca.value = pca.value.replace(f"[[cite:{handle}]]", f"[[cite:{instance.slug}]]")
 
 
 def _persist(

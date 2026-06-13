@@ -113,7 +113,7 @@ Entity references are of format `type.public_id` — the canonical `entity_type`
 
 Field keys are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's `public_id`; **relationship** (`tag`, `theme`, `manufacturer_alias`, `abbreviation`) — key is the namespace, value a list of members (FK public_ids, or bare strings for aliases/abbreviations). The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
 
-Distinct from field keys are the **reserved keys** — directives, not claims: `create:`, `delete:`, `retract:` and `remove:` (each covered with its operation above), plus the cross-cutting `expect:`, `note:` and `cite:` (below).
+Distinct from field keys are the **reserved keys** — directives, not claims: `create:`, `delete:`, `retract:` and `remove:` (each covered with its operation above), plus the cross-cutting `expect:`, `note:`, `cite:` and `cites:` (below).
 
 ### Aliases & abbreviations
 
@@ -171,6 +171,54 @@ Two rules tie note/cite to the single changeset an entry produces:
 
 - **One provenance-bearing entry per entity.** Two entries resolving to the same entity that both set `note`/`cite` is an error — combine them into one.
 - **Provenance rides only an actual write (v1).** note/cite attach to what the patch writes. An entry with nothing to attach to (retraction-only, field-less create, empty `tag: []`) is a hard error. And re-asserting a value the entity already has from the same source diffs as unchanged — no claim, no changeset — so its `note`/`cite` are **silently dropped though the patch reports success**. To record provenance, the entry must change a value or create the entity.
+
+### Inline citations in descriptions
+
+A markdown field (a `description`) can carry **inline footnotes** — an `[[cite:…]]` marker placed after a fact, backing the nearby sentence, rendered as a numbered `[1]` footnote. Each distinct footnote is one `CitationInstance` that **floats** (`claim=null`): it's evidence for a passage, not for the whole field, so it isn't tied to any one claim. Markers reference that instance by its handle — repeat a handle and both markers point at the one footnote. A marker comes in two forms, told apart by its handle's grammar:
+
+- **A new footnote** uses a **numeric handle** (`[[cite:1]]`) declared in a `cites:` map on the same entry. The handle is an ephemeral authoring label wiring the marker to its source; it is minted to a durable citation at apply time. Handles are arbitrary **all-digit** labels with **no ordering or contiguity** requirement (`1`, `2` is convention, not a rule) and a handle is **not** the rendered footnote number (render numbers by order of first appearance). A handle may repeat — two `[[cite:1]]` markers point at the one footnote.
+- **An existing footnote** uses the citation's durable **slug** (`[[cite:bqntvkrs]]`) and needs **no** `cites:` entry — it self-resolves. This is the re-edit form you get from rehydration (below).
+
+First authoring — new citations via numeric handles plus a `cites:` map:
+
+```yaml
+attribution: flipcommons-ai-desc-model
+claims:
+  - model.mazatron:
+      expect: { ipdb_id: 4443 }
+      description: >
+        A 1990 solid-state prototype by Mac Pinball.[[cite:1]]
+        Only two units are known to survive.[[cite:2]]
+      cites:
+        "1": ipdb:4443
+        "2": https://pinside.com/thread
+      note: "Narrative compiled from IPDB and Pinside."
+```
+
+`cites:` declares **only new** citations. Each key is a **numeric handle quoted as a string** (`"1":`, never bare `1:` — an unquoted integer key is a hard parse error) and each value is a cite-spec in the **same v1 grammar as `cite:`** — `scheme:identifier`, an `http(s)://` URL or a `{ url, archive }` map (per-citation locators are deferred to v2). The spec resolves through the same source get-or-create as `cite:`, so a URL still needs its [website root seeded](#citation-sources).
+
+**Marker ↔ map correspondence is enforced** (a structural error, no DB lookup): every numeric-handle marker must have a `cites:` entry, and every `cites:` key must be a numeric handle referenced by at least one marker. A `cites:` entry keyed by a slug, or one no marker references, is a misuse. A marker that is neither all-digits nor a bare slug — notably a raw `[[cite:id:1]]` (storage form) — is rejected.
+
+**Inline `cites:` count as provenance**, so the [one-provenance-bearing-entry-per-entity rule](#notes--citations) applies: an entity's cited description must live in a **single entry** — two entries on the same entity where either carries `cites:` (or `note:`/`cite:`) are rejected ("combine them into one entry").
+
+Re-edit (rehydrated) — markers carry durable slugs, untouched cites need no `cites:`:
+
+```yaml
+attribution: flipcommons-ai-desc-model
+claims:
+  - model.mazatron:
+      description: >
+        A 1990 solid-state prototype manufactured by Mac Pinball.[[cite:bqntvkrs]]
+        Only two units are known to survive.[[cite:mwzfprhd]]
+      note: "Reworded the first sentence."
+```
+
+Re-applying a description with only existing slugs mints nothing and produces byte-identical storage, so it diffs as a no-op — reword one sentence and resubmit with every other citation intact. Generate this shape with [`dump_patch_entry`](DataPatchAuthoring.md#rehydrating-a-description-for-re-edit) rather than hand-copying slugs.
+
+Two limitations to know:
+
+- **`--dry-run` skips validating an assertion that references any new handle** (the slug isn't minted yet, so conversion can't resolve it). Such an assertion is counted but not diffed; its existing-slug portion isn't dry-validated either. Real validation is the snapshot+apply loop.
+- **A bad or stale slug fails at apply with a _generic_ message** — `"N claim(s) failed validation"` live, `"Invalid claim: …"` in dry-run. The specific `Cite not found: [[cite:<slug>]]` only reaches the logs, so don't expect a friendly per-marker error.
 
 ### Strict parsing
 
@@ -252,7 +300,7 @@ On localhost, the simplest undo is restoring a pre-apply snapshot (see [DataPatc
 
 ## Limitations
 
-We've been building the patch system on an as-needed basis. These haven't been needed yet.
+We've been building the patch system on an as-needed basis. These haven't been implemented yet.
 
 - **No same-patch reassign-then-delete** — a `delete:`'s referrer check reads live DB state, so a reference reassigned earlier in the _same_ patch isn't yet visible; reassign in an earlier numbered patch, then delete.
 - `expect:` covers scalar + FK only, not relationships. (`retract:` is scalar/FK; relationship members are dropped with `remove:`.)
