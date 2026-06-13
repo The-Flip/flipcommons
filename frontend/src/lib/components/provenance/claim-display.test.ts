@@ -9,7 +9,7 @@ import {
 import { _resetQualifierWarnings } from './qualifier-renderers';
 
 function display(partial: Partial<ClaimDisplayValueSchema>): ClaimDisplayValueSchema {
-  return { identity: [], qualifiers: [], ...partial };
+  return { kind: 'relationship', identity: [], qualifiers: [], ...partial };
 }
 
 describe('buildDisplaySegments', () => {

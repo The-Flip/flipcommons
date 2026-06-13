@@ -1,4 +1,4 @@
-"""Tests for the relationship-claim display engine in apps.provenance.display."""
+"""Tests for the claim-value display engine in apps.provenance.display."""
 
 from __future__ import annotations
 
@@ -13,16 +13,19 @@ from apps.accounts.test_factories import make_user
 from apps.catalog.models import (
     CreditRole,
     GameplayFeature,
+    MachineModel,
+    Manufacturer,
     Person,
     Theme,
 )
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.display import (
+    ClaimDisplayContext,
     FieldValue,
     FkRef,
-    LabelLookup,
     build_display_value,
     claim_value,
+    resolve_display_context,
     resolve_labels,
 )
 from apps.provenance.models import Claim, Source
@@ -30,7 +33,19 @@ from apps.provenance.schemas import (
     ClaimDisplayIdentityPartSchema,
     ClaimDisplayQualifierPartSchema,
     ClaimDisplayValueSchema,
+    MarkdownClaimDisplaySchema,
 )
+
+# Any ClaimControlledModel works for relationship/scalar dispatch: the display
+# kind is derived from field_name + value, not from this model. Markdown tests
+# pass an explicit model (Manufacturer) since markdown dispatch reads the
+# model's MarkdownField set.
+_MODEL = MachineModel
+
+
+def _ctx(*items: FieldValue) -> ClaimDisplayContext:
+    """Build a display context from explicit (field, value) references."""
+    return resolve_display_context(items)
 
 
 def _identity(parts: list[tuple[str, str]]) -> list[ClaimDisplayIdentityPartSchema]:
@@ -55,8 +70,10 @@ class TestBuildDisplayValue:
         role = CreditRole.objects.create(name="Art", slug="art")
         value = {"person": person.pk, "role": role.pk, "exists": True}
 
-        labels = resolve_labels([FieldValue("credit", value)])
-        assert build_display_value("credit", value, labels) == ClaimDisplayValueSchema(
+        ctx = _ctx(FieldValue("credit", value))
+        assert build_display_value(
+            _MODEL, "credit", value, ctx
+        ) == ClaimDisplayValueSchema(
             identity=_identity([("person", "Pat Lawlor"), ("role", "Art")]),
             qualifiers=[],
         )
@@ -67,8 +84,10 @@ class TestBuildDisplayValue:
         # frontend render this case however it wants; ``label`` is null
         # because the backend doesn't choose presentation.
         value = {"person": 999, "role": 888, "exists": True}
-        labels = resolve_labels([FieldValue("credit", value)])
-        assert build_display_value("credit", value, labels) == ClaimDisplayValueSchema(
+        ctx = _ctx(FieldValue("credit", value))
+        assert build_display_value(
+            _MODEL, "credit", value, ctx
+        ) == ClaimDisplayValueSchema(
             identity=[
                 ClaimDisplayIdentityPartSchema(
                     key="person", label=None, state="deleted"
@@ -84,9 +103,10 @@ class TestBuildDisplayValue:
         # source slips one through, the display engine must not 500 the
         # whole page — log, emit state="missing", carry on.
         value = {"person": "not-an-int", "role": 7, "exists": True}
-        labels = resolve_labels([FieldValue("credit", value)])
-        result = build_display_value("credit", value, labels)
+        ctx = _ctx(FieldValue("credit", value))
+        result = build_display_value(_MODEL, "credit", value, ctx)
         assert result is not None
+        assert isinstance(result, ClaimDisplayValueSchema)
         person_part = next(p for p in result.identity if p.key == "person")
         assert person_part.state == "missing"
         assert person_part.label is None
@@ -94,13 +114,13 @@ class TestBuildDisplayValue:
     def test_gameplay_feature_emits_count_qualifier_when_present(self):
         feat = GameplayFeature.objects.create(name="Multiball", slug="multiball")
         value = {"gameplay_feature": feat.pk, "count": 3, "exists": True}
-        labels = resolve_labels([FieldValue("gameplay_feature", value)])
+        ctx = _ctx(FieldValue("gameplay_feature", value))
         # Backend always emits the qualifier when the key is present in the
         # claim dict — including count==1. The frontend's per-qualifier rule
         # decides whether to render ``×N`` (only when N > 1). Wire format
         # stays data-faithful.
         assert build_display_value(
-            "gameplay_feature", value, labels
+            _MODEL, "gameplay_feature", value, ctx
         ) == ClaimDisplayValueSchema(
             identity=_identity([("gameplay_feature", "Multiball")]),
             qualifiers=_qualifiers([("count", 3)]),
@@ -112,9 +132,9 @@ class TestBuildDisplayValue:
         # hide ``count == 1`` belongs on the frontend.
         feat = GameplayFeature.objects.create(name="Multiball", slug="multiball")
         value = {"gameplay_feature": feat.pk, "count": 1, "exists": True}
-        labels = resolve_labels([FieldValue("gameplay_feature", value)])
+        ctx = _ctx(FieldValue("gameplay_feature", value))
         assert build_display_value(
-            "gameplay_feature", value, labels
+            _MODEL, "gameplay_feature", value, ctx
         ) == ClaimDisplayValueSchema(
             identity=_identity([("gameplay_feature", "Multiball")]),
             qualifiers=_qualifiers([("count", 1)]),
@@ -123,10 +143,10 @@ class TestBuildDisplayValue:
     def test_gameplay_feature_omits_count_qualifier_when_missing(self):
         feat = GameplayFeature.objects.create(name="Multiball", slug="multiball")
         value = {"gameplay_feature": feat.pk, "exists": True}
-        labels = resolve_labels([FieldValue("gameplay_feature", value)])
+        ctx = _ctx(FieldValue("gameplay_feature", value))
         # Absent key → no qualifier emitted. Distinct from count==0.
         assert build_display_value(
-            "gameplay_feature", value, labels
+            _MODEL, "gameplay_feature", value, ctx
         ) == ClaimDisplayValueSchema(
             identity=_identity([("gameplay_feature", "Multiball")]),
             qualifiers=[],
@@ -135,17 +155,19 @@ class TestBuildDisplayValue:
     def test_theme_emits_single_identity_part(self):
         theme = Theme.objects.create(name="Sci-Fi", slug="sci-fi")
         value = {"theme": theme.pk, "exists": True}
-        labels = resolve_labels([FieldValue("theme", value)])
-        assert build_display_value("theme", value, labels) == ClaimDisplayValueSchema(
+        ctx = _ctx(FieldValue("theme", value))
+        assert build_display_value(
+            _MODEL, "theme", value, ctx
+        ) == ClaimDisplayValueSchema(
             identity=_identity([("theme", "Sci-Fi")]),
             qualifiers=[],
         )
 
     def test_abbreviation_emits_scalar_identity(self):
         value = {"value": "DW", "exists": True}
-        labels = resolve_labels([FieldValue("abbreviation", value)])
+        ctx = _ctx(FieldValue("abbreviation", value))
         assert build_display_value(
-            "abbreviation", value, labels
+            _MODEL, "abbreviation", value, ctx
         ) == ClaimDisplayValueSchema(
             identity=_identity([("value", "DW")]),
             qualifiers=[],
@@ -157,8 +179,8 @@ class TestBuildDisplayValue:
         # stale row, a fixture, or an ingest source that skipped validation
         # — surface ``state="missing"`` so the frontend can render a
         # placeholder, and log loudly so the integrity issue is observable.
-        labels = LabelLookup()
-        assert build_display_value("credit", {"exists": False}, labels) == (
+        ctx = _ctx()
+        assert build_display_value(_MODEL, "credit", {"exists": False}, ctx) == (
             ClaimDisplayValueSchema(
                 identity=[
                     ClaimDisplayIdentityPartSchema(
@@ -171,7 +193,7 @@ class TestBuildDisplayValue:
                 qualifiers=[],
             )
         )
-        assert build_display_value("theme", {"exists": False}, labels) == (
+        assert build_display_value(_MODEL, "theme", {"exists": False}, ctx) == (
             ClaimDisplayValueSchema(
                 identity=[
                     ClaimDisplayIdentityPartSchema(
@@ -181,7 +203,7 @@ class TestBuildDisplayValue:
                 qualifiers=[],
             )
         )
-        assert build_display_value("abbreviation", {"exists": False}, labels) == (
+        assert build_display_value(_MODEL, "abbreviation", {"exists": False}, ctx) == (
             ClaimDisplayValueSchema(
                 identity=[
                     ClaimDisplayIdentityPartSchema(
@@ -191,7 +213,7 @@ class TestBuildDisplayValue:
                 qualifiers=[],
             )
         )
-        assert build_display_value("person_alias", {"exists": False}, labels) == (
+        assert build_display_value(_MODEL, "person_alias", {"exists": False}, ctx) == (
             ClaimDisplayValueSchema(
                 identity=[
                     ClaimDisplayIdentityPartSchema(
@@ -206,24 +228,24 @@ class TestBuildDisplayValue:
         # Load-bearing assertion: the backend chose the override (alias_display)
         # for the identity slot's ``label``, but kept the identity key name
         # ``alias_value`` so the wire format is self-describing.
-        labels = LabelLookup()
         value = {
             "alias_value": "the patster",
             "alias_display": "The Patster",
             "exists": True,
         }
+        ctx = _ctx(FieldValue("person_alias", value))
         assert build_display_value(
-            "person_alias", value, labels
+            _MODEL, "person_alias", value, ctx
         ) == ClaimDisplayValueSchema(
             identity=_identity([("alias_value", "The Patster")]),
             qualifiers=[],
         )
 
     def test_alias_falls_back_to_canonical_when_display_missing(self):
-        labels = LabelLookup()
         value = {"alias_value": "the patster", "exists": True}
+        ctx = _ctx(FieldValue("person_alias", value))
         assert build_display_value(
-            "person_alias", value, labels
+            _MODEL, "person_alias", value, ctx
         ) == ClaimDisplayValueSchema(
             identity=_identity([("alias_value", "the patster")]),
             qualifiers=[],
@@ -232,10 +254,10 @@ class TestBuildDisplayValue:
     def test_alias_falls_back_to_canonical_when_display_empty(self):
         # Empty string override → fall through to canonical identity.
         # Mirrors the historical ``val.get("alias_display") or alias_val``.
-        labels = LabelLookup()
         value = {"alias_value": "the patster", "alias_display": "", "exists": True}
+        ctx = _ctx(FieldValue("person_alias", value))
         assert build_display_value(
-            "person_alias", value, labels
+            _MODEL, "person_alias", value, ctx
         ) == ClaimDisplayValueSchema(
             identity=_identity([("alias_value", "the patster")]),
             qualifiers=[],
@@ -245,14 +267,15 @@ class TestBuildDisplayValue:
         # The ``alias_display`` spec is named by ``alias_value.display_key``;
         # it MUST NOT also appear in the qualifiers list. Otherwise the
         # frontend would render the value twice.
-        labels = LabelLookup()
         value = {
             "alias_value": "the patster",
             "alias_display": "The Patster",
             "exists": True,
         }
-        result = build_display_value("person_alias", value, labels)
+        ctx = _ctx(FieldValue("person_alias", value))
+        result = build_display_value(_MODEL, "person_alias", value, ctx)
         assert result is not None
+        assert isinstance(result, ClaimDisplayValueSchema)
         assert all(q.key != "alias_display" for q in result.qualifiers)
 
     def test_media_attachment_emits_identity_and_qualifiers(self):
@@ -260,15 +283,16 @@ class TestBuildDisplayValue:
         # (category) + bool qualifier (is_primary, with bool/int distinction).
         # No need to materialize a real MediaAsset — the missing-target
         # ``<deleted>`` fallback is sufficient to exercise the engine.
-        labels = LabelLookup()
         value = {
             "media_asset": 42,
             "category": "flyer",
             "is_primary": True,
             "exists": True,
         }
-        result = build_display_value("media_attachment", value, labels)
+        ctx = _ctx()
+        result = build_display_value(_MODEL, "media_attachment", value, ctx)
         assert result is not None
+        assert isinstance(result, ClaimDisplayValueSchema)
         # pk=42 is synthetic / unresolved → state="deleted".
         assert result.identity == [
             ClaimDisplayIdentityPartSchema(
@@ -284,15 +308,16 @@ class TestBuildDisplayValue:
         # Backend is data-faithful: ``is_primary: false`` and an empty
         # category are emitted with their raw values. The frontend decides
         # whether to hide them.
-        labels = LabelLookup()
         value = {
             "media_asset": 42,
             "category": "",
             "is_primary": False,
             "exists": True,
         }
-        result = build_display_value("media_attachment", value, labels)
+        ctx = _ctx()
+        result = build_display_value(_MODEL, "media_attachment", value, ctx)
         assert result is not None
+        assert isinstance(result, ClaimDisplayValueSchema)
         assert result.qualifiers == _qualifiers(
             [("category", ""), ("is_primary", False)]
         )
@@ -301,10 +326,11 @@ class TestBuildDisplayValue:
         # Guards against Pydantic v2 coercing True → 1 because bool is an int
         # subclass. ClaimDisplayQualifierPartSchema.value declares bool before int
         # so this round-trip should preserve the type.
-        labels = LabelLookup()
         value = {"media_asset": 42, "is_primary": True, "exists": True}
-        result = build_display_value("media_attachment", value, labels)
+        ctx = _ctx()
+        result = build_display_value(_MODEL, "media_attachment", value, ctx)
         assert result is not None
+        assert isinstance(result, ClaimDisplayValueSchema)
         primary = next(q for q in result.qualifiers if q.key == "is_primary")
         assert primary.value is True
         assert type(primary.value) is bool
@@ -312,16 +338,17 @@ class TestBuildDisplayValue:
     def test_unknown_namespace_returns_none(self):
         # Direct-field claims (scalar new_value, not a registered namespace)
         # fall through — frontend renders the raw scalar.
-        labels = LabelLookup()
-        assert build_display_value("year", 1998, labels) is None
+        ctx = _ctx()
+        assert build_display_value(_MODEL, "year", 1998, ctx) is None
         assert (
-            build_display_value("technology_generation", "solid-state", labels) is None
+            build_display_value(_MODEL, "technology_generation", "solid-state", ctx)
+            is None
         )
 
     def test_non_dict_value_returns_none(self):
-        labels = LabelLookup()
-        assert build_display_value("credit", None, labels) is None
-        assert build_display_value("credit", "string", labels) is None
+        ctx = _ctx()
+        assert build_display_value(_MODEL, "credit", None, ctx) is None
+        assert build_display_value(_MODEL, "credit", "string", ctx) is None
 
     def test_resolve_labels_ignores_direct_fields_and_bare_markers(self):
         # Resolve over a mixed batch: a credit dict, a theme dict, a
@@ -350,14 +377,85 @@ class TestBuildDisplayValue:
 
 
 @pytest.mark.django_db
+class TestMarkdownDisplay:
+    """Markdown-field claim values render as authoring-form text."""
+
+    def test_markdown_field_renders_authoring_form(self):
+        # Storage-form [[manufacturer:id:N]] resolves to the slug authoring
+        # form — what the editor shows, so the diff reads the same.
+        man = Manufacturer.objects.create(name="Williams", slug="williams")
+        value = f"Made by [[manufacturer:id:{man.pk}]] here."
+        ctx = _ctx(FieldValue("description", value))
+        result = build_display_value(Manufacturer, "description", value, ctx)
+        assert result == MarkdownClaimDisplaySchema(
+            text="Made by [[manufacturer:williams]] here."
+        )
+
+    def test_markdown_deleted_target_keeps_storage_form(self):
+        # Broken link (target deleted) keeps storage form — same as the editor.
+        value = "Gone [[manufacturer:id:999999]]."
+        ctx = _ctx(FieldValue("description", value))
+        result = build_display_value(Manufacturer, "description", value, ctx)
+        assert result == MarkdownClaimDisplaySchema(
+            text="Gone [[manufacturer:id:999999]]."
+        )
+
+    def test_empty_markdown_value_has_no_display(self):
+        ctx = _ctx(FieldValue("description", ""))
+        assert build_display_value(Manufacturer, "description", "", ctx) is None
+
+    def test_markdown_without_links_passes_through(self):
+        value = "Just plain prose, no links."
+        ctx = _ctx(FieldValue("description", value))
+        result = build_display_value(Manufacturer, "description", value, ctx)
+        assert result == MarkdownClaimDisplaySchema(text="Just plain prose, no links.")
+
+    def test_edit_history_endpoint_renders_authoring_form(self, client):
+        # End-to-end bug reproduction: before the fix the description diff
+        # showed raw [[manufacturer:id:N]] storage form. A user edit authored
+        # in [[manufacturer:slug]] form must round-trip back to that form in
+        # the diff's display.text (raw stays storage form).
+        user = make_user()
+        pm = make_machine_model(name="MM", slug="mm-eh", year=1997)
+        man = Manufacturer.objects.create(name="Gottlieb", slug="gottlieb")
+
+        client.force_login(user)
+        resp = client.patch(
+            f"/api/models/{pm.slug}/claims/",
+            data=json.dumps(
+                {"fields": {"description": "By [[manufacturer:gottlieb]]."}}
+            ),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200, resp.content
+        client.logout()
+
+        resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        assert resp.status_code == 200
+
+        descr = next(
+            ch
+            for cs in resp.json()
+            for ch in cs["changes"]
+            if ch["field_name"] == "description"
+        )
+        assert descr["new_value"]["display"] == {
+            "kind": "markdown",
+            "text": "By [[manufacturer:gottlieb]].",
+        }
+        # raw stays the stored value — provenance truth is untouched.
+        assert descr["new_value"]["raw"] == f"By [[manufacturer:id:{man.pk}]]."
+
+
+@pytest.mark.django_db
 class TestClaimValue:
     def test_relationship_field_bundles_display(self):
         person = Person.objects.create(name="Pat Lawlor", slug="pat-lawlor")
         role = CreditRole.objects.create(name="Art", slug="art")
         value = {"person": person.pk, "role": role.pk, "exists": True}
 
-        labels = resolve_labels([FieldValue("credit", value)])
-        bundled = claim_value("credit", value, labels)
+        ctx = _ctx(FieldValue("credit", value))
+        bundled = claim_value(_MODEL, "credit", value, ctx)
 
         assert bundled.raw == value
         assert bundled.display == ClaimDisplayValueSchema(
@@ -365,8 +463,20 @@ class TestClaimValue:
             qualifiers=[],
         )
 
+    def test_markdown_field_bundles_authoring_text(self):
+        man = Manufacturer.objects.create(name="Bally", slug="bally")
+        value = f"By [[manufacturer:id:{man.pk}]]."
+        ctx = _ctx(FieldValue("description", value))
+        bundled = claim_value(Manufacturer, "description", value, ctx)
+
+        # raw stays the stored value; display carries the authoring form.
+        assert bundled.raw == value
+        assert bundled.display == MarkdownClaimDisplaySchema(
+            text="By [[manufacturer:bally]]."
+        )
+
     def test_scalar_field_has_null_display(self):
-        bundled = claim_value("name", "Medieval Madness", LabelLookup())
+        bundled = claim_value(_MODEL, "name", "Medieval Madness", _ctx())
         assert bundled.raw == "Medieval Madness"
         assert bundled.display is None
 
@@ -377,10 +487,11 @@ class TestClaimValue:
 
         person.delete()
         # Resolve after deletion to simulate a stale-but-stored FK pk.
-        labels = resolve_labels([FieldValue("credit", value)])
-        bundled = claim_value("credit", value, labels)
+        ctx = _ctx(FieldValue("credit", value))
+        bundled = claim_value(_MODEL, "credit", value, ctx)
 
         assert bundled.display is not None
+        assert isinstance(bundled.display, ClaimDisplayValueSchema)
         states = {part.key: part.state for part in bundled.display.identity}
         assert states["person"] == "deleted"
         assert states["role"] == "resolved"
@@ -461,4 +572,63 @@ class TestQueryCountDoesNotScale:
             f"edit-history query count scales with credit count: {base} -> {scaled}. "
             f"build_display_value is likely resolving FK labels per-row "
             f"instead of via the batched resolve_labels() pass."
+        )
+
+    def test_description_wikilinks_resolved_in_batched_queries(self, client):
+        """Adding more wikilinked description edits must not add per-edit
+        id→slug lookup queries.
+
+        Each edit is a *user* changeset, so the measured request renders N
+        description diffs through ``build_display_value`` (old→new per
+        changeset). Guards the markdown path against a regression that moves
+        storage→authoring conversion into the per-row render: the batched
+        ``resolve_wikilink_authoring`` must resolve all ids in one query per
+        public-id link type, not convert per rendered row.
+        """
+        user = make_user()
+        pm = make_machine_model(name="MM", slug="mm-descr", year=1997)
+
+        counter = 0
+
+        def add_description_edits(n: int) -> None:
+            # Each edit cites a distinct manufacturer (authoring form, converted
+            # to storage on save), so rendering must resolve many distinct ids.
+            nonlocal counter
+            client.force_login(user)
+            for _ in range(n):
+                counter += 1
+                man = Manufacturer.objects.create(
+                    name=f"Maker {counter}", slug=f"maker-{counter}"
+                )
+                resp = client.patch(
+                    f"/api/models/{pm.slug}/claims/",
+                    data=json.dumps(
+                        {
+                            "fields": {
+                                "description": (
+                                    f"Edit {counter} citing [[manufacturer:{man.slug}]]."
+                                )
+                            }
+                        }
+                    ),
+                    content_type="application/json",
+                )
+                assert resp.status_code == 200, (
+                    f"seed PATCH failed with {resp.status_code}: {resp.content!r}"
+                )
+
+        add_description_edits(2)
+        client.logout()
+        url = f"/api/pages/edit-history/model/{pm.slug}/"
+        base = _q(lambda: client.get(url))
+
+        add_description_edits(18)
+        client.logout()
+        scaled = _q(lambda: client.get(url))
+
+        assert scaled == base, (
+            f"edit-history query count scales with description edits: "
+            f"{base} -> {scaled}. The markdown display path is likely "
+            f"converting storage→authoring per rendered row instead of via the "
+            f"batched resolve_wikilink_authoring() pass."
         )

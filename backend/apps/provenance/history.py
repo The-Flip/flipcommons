@@ -7,14 +7,19 @@ from collections.abc import Iterable, Mapping, Sequence
 from itertools import chain
 
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Case, F, IntegerField, Model, Prefetch, Q, Value, When
+from django.db.models import Case, F, IntegerField, Prefetch, Q, Value, When
 
 from apps.citation.models import CitationSourceLink
 from apps.core.authz import PolicyUser, compute_row_capabilities
 
-from .display import FieldValue, LabelLookup, claim_value, resolve_labels
+from .display import (
+    ClaimDisplayContext,
+    FieldValue,
+    claim_value,
+    resolve_display_context,
+)
 from .helpers import changeset_author, citation_instances, citation_instances_prefetch
-from .models import ChangeSet, Claim
+from .models import ChangeSet, Claim, ClaimControlledModel
 from .schemas import (
     ChangeSetSchema,
     ClaimAttributionSchema,
@@ -74,18 +79,22 @@ def _prior_value(claim: Claim, chain: Sequence[Claim]) -> object | None:
 
 
 def build_changes(
+    model: type[ClaimControlledModel],
     own_claims: Iterable[Claim],
     retracted: Iterable[Claim],
     history_by_key: Mapping[str, Sequence[Claim]],
     *,
     winning_ids: set[int] | None = None,
-    labels: LabelLookup | None = None,
+    ctx: ClaimDisplayContext | None = None,
 ) -> tuple[list[FieldChangeSchema], list[RetractionSchema]]:
     """Build per-field changes and retractions for a changeset.
 
-    No per-row DB lookups during display-label building: pass a pre-built ``labels``
+    ``model`` is the subject entity's class — all claims here belong to one
+    entity, so the model is uniform; it lets display dispatch markdown fields.
+
+    No per-row DB lookups during display building: pass a pre-built ``ctx``
     when the caller already has one (e.g. a multi-changeset response that
-    resolved labels across the whole entity); otherwise this builds its
+    resolved references across the whole entity); otherwise this builds its
     own from the union of values referenced here.
 
     ``winning_ids`` is only meaningful for entity-wide history; omit it for
@@ -94,8 +103,8 @@ def build_changes(
     own = list(own_claims)
     rets = list(retracted)
 
-    if labels is None:
-        labels = resolve_labels(
+    if ctx is None:
+        ctx = resolve_display_context(
             FieldValue(c.field_name, c.value)
             for c in chain(own, rets, *history_by_key.values())
         )
@@ -104,9 +113,11 @@ def build_changes(
     for claim in own:
         prior = _prior_value(claim, history_by_key.get(claim.claim_key, []))
         old_value = (
-            claim_value(claim.field_name, prior, labels) if prior is not None else None
+            claim_value(model, claim.field_name, prior, ctx)
+            if prior is not None
+            else None
         )
-        new_value = claim_value(claim.field_name, claim.value, labels)
+        new_value = claim_value(model, claim.field_name, claim.value, ctx)
         changes.append(
             FieldChangeSchema(
                 field_name=claim.field_name,
@@ -129,7 +140,7 @@ def build_changes(
             claim_id=c.pk,
             field_name=c.field_name,
             claim_key=c.claim_key,
-            old_value=claim_value(c.field_name, c.value, labels),
+            old_value=claim_value(model, c.field_name, c.value, ctx),
         )
         for c in rets
     ]
@@ -171,13 +182,16 @@ def _compute_winning_claim_ids(ct: ContentType, entity_pk: int) -> set[int]:
     return winners
 
 
-def build_edit_history(entity: Model, user: PolicyUser) -> list[ChangeSetSchema]:
+def build_edit_history(
+    entity: ClaimControlledModel, user: PolicyUser
+) -> list[ChangeSetSchema]:
     """Build changeset-grouped edit history with old→new diffs for an entity.
 
     Returns ChangeSetSchema rows newest first. Query count is bounded
     independent of changeset count: changesets+prefetches, all claims for
-    the entity (for old-value lookup), winning-claim computation, and one
-    query per distinct FK target model build_display_label needs to resolve.
+    the entity (for old-value lookup), winning-claim computation, one query
+    per distinct FK target model display needs to resolve, and one per
+    public-id link type for markdown wikilink rendering.
 
     ``user`` is the caller (boundary-cast via ``policy_user``) and is
     used to populate the per-row ``capabilities`` map.
@@ -231,20 +245,23 @@ def build_edit_history(entity: Model, user: PolicyUser) -> list[ChangeSetSchema]
     # 3. Compute winning claims for is_winning.
     winning_ids = _compute_winning_claim_ids(ct, entity.pk)
 
-    # 4. Resolve FK labels once across every value any changeset will
-    #    render. ``all_claims`` is the superset (current claims, retracted
-    #    claims, and history chains all draw from it), so one pass suffices.
-    labels = resolve_labels(FieldValue(c.field_name, c.value) for c in all_claims)
+    # 4. Resolve FK labels and wikilink authoring keys once across every value
+    #    any changeset will render. ``all_claims`` is the superset (current
+    #    claims, retracted claims, and history chains all draw from it), so one
+    #    pass suffices.
+    ctx = resolve_display_context(FieldValue(c.field_name, c.value) for c in all_claims)
+    model = type(entity)
 
     # 5. Build response.
     result: list[ChangeSetSchema] = []
     for cs in changesets:
         changes, retractions = build_changes(
+            model,
             cs.claims.all(),
             cs.retracted_claims.all(),
             history,
             winning_ids=winning_ids,
-            labels=labels,
+            ctx=ctx,
         )
         assert cs.pk is not None
         result.append(

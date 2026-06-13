@@ -1,33 +1,37 @@
-import type { ClaimDisplayValueSchema, ClaimValueSchema, FieldChangeSchema } from '$lib/api/schema';
+import type { ClaimValueSchema, FieldChangeSchema } from '$lib/api/schema';
 
 type FieldChange = FieldChangeSchema;
 
-/** A `ClaimValueSchema` whose `raw` payload is known to be a string. */
-type StringClaimValue = Omit<ClaimValueSchema, 'raw'> & {
-  raw: string;
-  display?: ClaimDisplayValueSchema | null;
-};
+/**
+ * The text a claim value contributes to a diff. For markdown fields this is
+ * the authoring-form `display.text` (`[[type:slug]]`), so the diff reads the
+ * same legible form the editor shows rather than raw `[[type:id:N]]` storage.
+ * For everything else it's the raw value coerced to a string.
+ */
+export function diffText(value: ClaimValueSchema | null | undefined): string {
+  if (value?.display?.kind === 'markdown') return value.display.text;
+  const raw = value?.raw;
+  return typeof raw === 'string' ? raw : '';
+}
 
 /**
- * True when both old and new values are strings and at least one exceeds
- * 80 characters, meaning the change should render as an InlineDiff rather
- * than a simple old → new display. Operates on `.raw` since long-string
- * diffs only make sense for direct-field scalars (no display struct).
- *
- * Type guard: inside an `isDiffable(change)` branch, callers get
- * `change.old_value.raw` and `change.new_value.raw` narrowed to `string`
- * without needing an `as string` cast.
+ * Whether a value contributes string content to a diff: a raw string, or a
+ * markdown field whose authoring-form `display.text` we diff. Non-string
+ * scalars and relationship dicts don't diff as text.
  */
-export function isDiffable(
-  change: FieldChange,
-): change is FieldChange & { old_value: StringClaimValue; new_value: StringClaimValue } {
-  const oldRaw = change.old_value?.raw;
-  const newRaw = change.new_value.raw;
-  return (
-    typeof oldRaw === 'string' &&
-    typeof newRaw === 'string' &&
-    (oldRaw.length > 80 || newRaw.length > 80)
-  );
+function diffsAsText(value: ClaimValueSchema | null | undefined): boolean {
+  return typeof value?.raw === 'string' || value?.display?.kind === 'markdown';
+}
+
+/**
+ * True when both old and new values diff as text and at least one exceeds 80
+ * characters, meaning the change should render as an InlineDiff rather than a
+ * simple old → new display. Thresholds on `diffText`, so markdown fields use
+ * their authoring form, not the storage form.
+ */
+export function isDiffable(change: FieldChange): boolean {
+  if (!diffsAsText(change.old_value) || !diffsAsText(change.new_value)) return false;
+  return diffText(change.old_value).length > 80 || diffText(change.new_value).length > 80;
 }
 
 /**

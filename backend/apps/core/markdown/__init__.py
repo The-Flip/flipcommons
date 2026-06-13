@@ -18,10 +18,13 @@ Layout:
 
 from apps.core.markdown.field import (
     MarkdownField,
+    WikilinkAuthoringLookup,
+    apply_storage_to_authoring,
     convert_authoring_to_storage,
     convert_storage_to_authoring,
     get_markdown_fields,
     prepare_markdown_claim_value,
+    resolve_wikilink_authoring,
 )
 from apps.core.markdown.render import (
     RenderedField,
@@ -36,12 +39,15 @@ from apps.core.markdown.render import (
 __all__ = [
     "MarkdownField",
     "RenderedField",
+    "WikilinkAuthoringLookup",
+    "apply_storage_to_authoring",
     "convert_authoring_to_storage",
     "convert_storage_to_authoring",
     "get_markdown_fields",
     "link_preview",
     "prepare_markdown_claim_value",
     "render_all_links",
+    "resolve_wikilink_authoring",
     "render_markdown_field",
     "render_markdown_fields",
     "render_markdown_html",

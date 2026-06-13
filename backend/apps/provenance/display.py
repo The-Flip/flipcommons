@@ -25,16 +25,27 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from typing import NamedTuple
 
 from django.db.models import Model
 
+from apps.core.markdown import (
+    WikilinkAuthoringLookup,
+    apply_storage_to_authoring,
+    get_markdown_fields,
+    resolve_wikilink_authoring,
+)
+
+from .models import ClaimControlledModel
 from .schemas import (
     ClaimDisplayIdentityPartSchema,
     ClaimDisplayIdentityState,
     ClaimDisplayQualifierPartSchema,
+    ClaimDisplaySchema,
     ClaimDisplayValueSchema,
     ClaimValueSchema,
+    MarkdownClaimDisplaySchema,
 )
 from .validation import (
     RelationshipSchema,
@@ -261,14 +272,74 @@ def resolve_labels(items: Iterable[FieldValue]) -> LabelLookup:
     return lookup
 
 
-def build_display_value(
-    field_name: str, value: object, labels: LabelLookup
-) -> ClaimDisplayValueSchema | None:
-    """Return a structured display rendering for a relationship-claim value.
+@dataclass(frozen=True)
+class ClaimDisplayContext:
+    """Pre-resolved references for rendering a batch of claim values.
 
-    Returns ``None`` when ``value`` isn't a relationship-claim dict —
-    direct-field scalars and unknown namespaces fall through, and the
-    frontend renders the raw value.
+    Built once per response by :func:`resolve_display_context` so display
+    rendering issues no per-row queries: ``labels`` resolves relationship FK
+    pks to labels, ``wikilinks`` resolves markdown ``[[type:id:N]]`` markers to
+    their authoring keys.
+    """
+
+    labels: LabelLookup
+    wikilinks: WikilinkAuthoringLookup
+
+
+def resolve_display_context(items: Iterable[FieldValue]) -> ClaimDisplayContext:
+    """Resolve FK labels and wikilink authoring keys for ``items`` in one pass.
+
+    One query per FK target model (via :func:`resolve_labels`) plus one per
+    enabled public-id link type (via :func:`resolve_wikilink_authoring`) —
+    bounded independent of the number of claims. The wikilink scan reads every
+    string value (markers are self-typed, so a non-markdown string simply
+    contributes no markers); only :func:`build_display_value` needs the
+    per-claim model, to decide whether to emit the markdown rendering.
+    """
+    materialized = list(items)
+    return ClaimDisplayContext(
+        labels=resolve_labels(materialized),
+        wikilinks=resolve_wikilink_authoring(
+            value for _, value in materialized if isinstance(value, str)
+        ),
+    )
+
+
+def build_display_value(
+    model: type[ClaimControlledModel],
+    field_name: str,
+    value: object,
+    ctx: ClaimDisplayContext,
+) -> ClaimDisplaySchema | None:
+    """Return the user-facing rendering for a claim value, dispatched by kind.
+
+    Model-driven, three-way dispatch derived from introspection — no
+    hardcoded field names:
+
+    - **relationship** — ``field_name`` is a registered relationship
+      namespace and ``value`` is its dict payload → structured
+      identity/qualifier rendering.
+    - **markdown** — ``field_name`` is a ``MarkdownField`` on ``model`` and
+      ``value`` is a non-empty string → authoring-form text (``[[type:id:N]]``
+      resolved to ``[[type:slug]]``).
+    - otherwise → ``None``; direct-field scalars and unknown namespaces fall
+      through and the frontend renders the raw value.
+    """
+    if isinstance(value, dict):
+        schema = get_relationship_schema(field_name)
+        if schema is not None:
+            return _build_relationship_display(value, schema, ctx.labels)
+    if isinstance(value, str) and value and field_name in get_markdown_fields(model):
+        return MarkdownClaimDisplaySchema(
+            text=apply_storage_to_authoring(value, ctx.wikilinks)
+        )
+    return None
+
+
+def _build_relationship_display(
+    value: dict[str, object], schema: RelationshipSchema, labels: LabelLookup
+) -> ClaimDisplayValueSchema:
+    """Structured rendering for a relationship-claim value.
 
     Generic engine: identity slots are emitted in declaration order via
     :func:`resolve_identity_label`; non-identity, non-display-override
@@ -277,12 +348,6 @@ def build_display_value(
     falsy qualifiers (``None``, ``False``, ``0``, ``""``) are emitted —
     "should this be visible to the user" is the frontend's job.
     """
-    if not isinstance(value, dict):
-        return None
-    schema = get_relationship_schema(field_name)
-    if schema is None:
-        return None
-
     # display_key targets are consumed by their identity spec's rendering;
     # they must not also surface as qualifiers.
     consumed_by_display: set[str] = {
@@ -344,9 +409,12 @@ def build_display_value(
 
 
 def claim_value(
-    field_name: str, value: object, labels: LabelLookup
+    model: type[ClaimControlledModel],
+    field_name: str,
+    value: object,
+    ctx: ClaimDisplayContext,
 ) -> ClaimValueSchema:
-    """Bundle a raw claim value with its structured display rendering."""
+    """Bundle a raw claim value with its user-facing display rendering."""
     return ClaimValueSchema(
-        raw=value, display=build_display_value(field_name, value, labels)
+        raw=value, display=build_display_value(model, field_name, value, ctx)
     )

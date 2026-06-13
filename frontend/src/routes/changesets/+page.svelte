@@ -8,7 +8,7 @@
   import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
   import InlineDiff from '$lib/components/ui/InlineDiff.svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-  import { isDiffable } from '$lib/components/provenance/change-display';
+  import { diffText, isDiffable } from '$lib/components/provenance/change-display';
   import { changesLabel } from './changes';
 
   type ChangeSetSummary = ChangeSetSummarySchema;
@@ -237,8 +237,8 @@
                         <dt>{change.field_name}</dt>
                         <dd>
                           <InlineDiff
-                            oldValue={change.old_value.raw}
-                            newValue={change.new_value.raw}
+                            oldValue={diffText(change.old_value)}
+                            newValue={diffText(change.new_value)}
                           />
                         </dd>
                       </div>

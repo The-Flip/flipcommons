@@ -29,7 +29,7 @@ from apps.core.authz.types import Activity
 from apps.core.models import LinkableModel
 from apps.core.schemas import ErrorDetailSchema
 
-from .display import FieldValue, claim_value, resolve_labels
+from .display import FieldValue, claim_value, resolve_display_context
 from .models import CitationInstance, Claim, ClaimControlledModel, Source
 from .page_endpoints import pages_router
 from .schemas import (
@@ -109,7 +109,7 @@ def list_review_claims(request: HttpRequest) -> list[ReviewClaimSchema]:
         .prefetch_related("subject")
         .order_by("-created_at")
     )
-    labels = resolve_labels(FieldValue(c.field_name, c.value) for c in claims)
+    ctx = resolve_display_context(FieldValue(c.field_name, c.value) for c in claims)
 
     results: list[ReviewClaimSchema] = []
     for claim in claims:
@@ -119,6 +119,12 @@ def list_review_claims(request: HttpRequest) -> list[ReviewClaimSchema]:
         assert subject is None or isinstance(subject, ClaimControlledModel)
         subject_name = str(subject) if subject else "Unknown"
         subject_slug = subject.slug if subject is not None else None
+        # Cross-entity loop: the subject model varies per claim and is needed
+        # to dispatch markdown display. content_type is select_related above, so
+        # this is query-free, and it works even when the subject row is deleted.
+        subject_model = claim.content_type.model_class()
+        assert subject_model is not None
+        assert issubclass(subject_model, ClaimControlledModel)
         if claim.field_name == "title":
             review_links, title_slug = _build_claim_review_context(claim)
         else:
@@ -128,7 +134,7 @@ def list_review_claims(request: HttpRequest) -> list[ReviewClaimSchema]:
                 id=claim.pk,
                 source_name=claim.source.name if claim.source else "User",
                 field_name=claim.field_name,
-                value=claim_value(claim.field_name, claim.value, labels),
+                value=claim_value(subject_model, claim.field_name, claim.value, ctx),
                 needs_review_notes=claim.needs_review_notes,
                 created_at=claim.created_at.isoformat(),
                 subject_type=_subject_entity_type(claim),

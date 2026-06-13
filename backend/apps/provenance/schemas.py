@@ -76,8 +76,15 @@ class ClaimDisplayQualifierPartSchema(Schema):
 
 
 class ClaimDisplayValueSchema(Schema):
-    """Structured user-facing rendering of a relationship-claim value."""
+    """Structured user-facing rendering of a relationship-claim value.
 
+    The ``relationship`` arm of :data:`ClaimDisplaySchema`.
+    """
+
+    kind: Annotated[
+        Literal["relationship"],
+        Field(description='Discriminator; always "relationship".'),
+    ] = "relationship"
     identity: list[ClaimDisplayIdentityPartSchema] = Field(
         description="The claim's identity slots, in display order."
     )
@@ -90,6 +97,34 @@ class ClaimDisplayValueSchema(Schema):
     # frontend falls back to the raw ``old_value`` / ``new_value`` there.
 
 
+class MarkdownClaimDisplaySchema(Schema):
+    """User-facing rendering of a markdown-field claim value.
+
+    The ``markdown`` arm of :data:`ClaimDisplaySchema`. ``text`` is the value
+    in authoring form — ``[[type:id:N]]`` storage markers resolved to their
+    ``[[type:slug]]`` authoring keys — so the edit-history diff and the editor
+    show the same legible representation rather than raw pks. Deleted targets
+    keep storage form.
+    """
+
+    kind: Annotated[
+        Literal["markdown"], Field(description='Discriminator; always "markdown".')
+    ] = "markdown"
+    text: str = Field(description="The claim's markdown value in authoring form.")
+
+
+ClaimDisplaySchema = Annotated[
+    ClaimDisplayValueSchema | MarkdownClaimDisplaySchema,
+    Field(discriminator="kind"),
+]
+"""Tagged union of a claim value's user-facing rendering, keyed on ``kind``.
+
+``relationship`` carries the structured identity/qualifier parts;
+``markdown`` carries the authoring-form text. Direct-field scalars and
+unknown namespaces have no rendering — :class:`ClaimValueSchema.display` is
+null and the frontend falls back to ``raw``."""
+
+
 class ClaimValueSchema(Schema):
     """A claim value paired with its structured user-facing rendering."""
 
@@ -99,12 +134,13 @@ class ClaimValueSchema(Schema):
             "depending on the claim kind."
         )
     )
-    display: ClaimDisplayValueSchema | None = Field(
+    display: ClaimDisplaySchema | None = Field(
         None,
         description=(
-            "Structured rendering for relationship claims, or null when there is "
-            "none (direct-field scalars, unknown namespaces, non-dict values); "
-            "clients fall back to ``raw``."
+            "Structured rendering for relationship claims or authoring-form text "
+            "for markdown fields, or null when there is none (direct-field "
+            "scalars, unknown namespaces, non-dict values); clients fall back to "
+            "``raw``."
         ),
     )
 
