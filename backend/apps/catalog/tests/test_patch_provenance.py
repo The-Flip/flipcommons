@@ -369,6 +369,205 @@ claims:
     assert not status_claim.citation_instances.exists()
 
 
+# ── Phase 2: create + companion edits on a same-patch-created record ───
+
+
+def test_create_then_companion_edit_two_changesets(flipcommons_catalog, ipdb_root):
+    # A create may be followed by an edit on the same new record (resolved via the
+    # same-patch create registry). Each entry mints its own ChangeSet with its own
+    # note + citation; both claims land on the one created record, pk = file order.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme:
+      create: true
+      note: founding record
+      cite: ipdb:4443
+      name: Acme Pinball
+  - manufacturer.acme:
+      note: added the website
+      cite: ipdb:5556
+      website: https://acme.example
+"""
+    report = _apply(text)
+    assert report.records_created == 1
+
+    run = IngestRun.objects.get(patch_id="0001-test")
+    # A companion edit on a same-patch create does not count as a matched record.
+    assert run.records_matched == 0
+    changesets = list(
+        ChangeSet.objects.filter(ingest_run__patch_id="0001-test").order_by("pk")
+    )
+    assert len(changesets) == 2
+    assert changesets[0].note == "founding record"
+    assert changesets[1].note == "added the website"
+
+    acme = Manufacturer.objects.get(slug="acme")
+    name_claim = acme.claims.get(field_name="name", is_active=True)
+    website_claim = acme.claims.get(field_name="website", is_active=True)
+    # Both claims target the one created record, in distinct file-order ChangeSets.
+    assert name_claim.changeset_id == changesets[0].pk
+    assert website_claim.changeset_id == changesets[1].pk
+    assert name_claim.citation_instances.exists()
+    assert website_claim.citation_instances.exists()
+
+
+def test_create_then_companion_edit_dry_run(flipcommons_catalog, ipdb_root):
+    # The create+companion case validates clean at --dry-run: the companion's
+    # handle-targeted assertions route through the planned/sentinel path, and the
+    # empty-diff guard exempts handle assertions (a new record always changes).
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme:
+      create: true
+      name: Acme Pinball
+  - manufacturer.acme:
+      note: added the website
+      website: https://acme.example
+"""
+    report = _apply(text, dry_run=True)
+    assert report.asserted  # validated, nothing raised
+    assert not Manufacturer.objects.filter(slug="acme").exists()
+
+
+def test_create_companion_same_field_rejected(flipcommons_catalog):
+    # Decision 2 spans the create + its companions: the same field asserted by the
+    # create and a companion edit would collapse to one claim — rejected.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme:
+      create: true
+      name: Acme Pinball
+  - manufacturer.acme:
+      name: Acme Pinball Co
+"""
+    with pytest.raises(PatchError, match="more than one entry"):
+        _apply(text)
+
+
+def test_create_companion_same_slug_rejected(flipcommons_catalog):
+    # The create's adapter-owned slug claim is contributed to the disjoint guard,
+    # so a companion re-asserting slug is caught even though _add_create emits it
+    # outside the field loop.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme:
+      create: true
+      name: Acme Pinball
+  - manufacturer.acme:
+      slug: acme
+"""
+    with pytest.raises(PatchError, match="more than one entry"):
+        _apply(text)
+
+
+def test_create_companion_same_deferred_member_rejected(flipcommons_catalog):
+    # Decision 2 (deferred member) across a create + companion: both assert the
+    # same same-patch parent on the created record → one membership claim → rejected.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - theme.sports:
+      create: true
+      name: Sports
+  - theme.baseball:
+      create: true
+      name: Baseball
+      theme_parent: [sports]
+  - theme.baseball:
+      note: reassert the parent
+      theme_parent: [sports]
+"""
+    with pytest.raises(PatchError, match="more than one entry"):
+        _apply(text)
+
+
+def test_edit_above_create_rejected(flipcommons_catalog):
+    # Decision 6: a create must precede the edits that refine it. An edit above its
+    # create resolves nowhere (the registry is single-pass) and the pre-scan names
+    # the below-file create in the diagnostic.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme:
+      website: https://acme.example
+  - manufacturer.acme:
+      create: true
+      name: Acme Pinball
+"""
+    with pytest.raises(PatchError, match="created later in this patch"):
+        _apply(text)
+
+
+def test_expect_on_same_patch_create_rejected(flipcommons_catalog):
+    # A same-patch create has no prior DB state to drift-guard against.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme:
+      create: true
+      name: Acme Pinball
+  - manufacturer.acme:
+      expect: { name: Acme Pinball }
+      website: https://acme.example
+"""
+    with pytest.raises(PatchError, match="'expect:' can't guard a record created"):
+        _apply(text)
+
+
+def test_retract_on_same_patch_create_rejected(flipcommons_catalog):
+    # No prior claims exist on a same-patch create, so retract: is meaningless.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme:
+      create: true
+      name: Acme Pinball
+  - manufacturer.acme:
+      retract: [name]
+"""
+    with pytest.raises(PatchError, match="'retract:' can't apply to a record created"):
+        _apply(text)
+
+
+def test_remove_on_same_patch_create_rejected(flipcommons_catalog):
+    # No prior members exist on a same-patch create, so remove: is meaningless.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - theme.sports:
+      create: true
+      name: Sports
+  - theme.baseball:
+      create: true
+      name: Baseball
+  - theme.baseball:
+      remove: { theme_parent: [sports] }
+"""
+    with pytest.raises(PatchError, match="'remove:' can't apply to a record created"):
+        _apply(text)
+
+
+def test_delete_on_same_patch_create_generic_message(flipcommons_catalog):
+    # A delete of a same-patch create falls through to the generic "no such X to
+    # delete" — deleting a record you just created in the same patch is nonsense,
+    # and the create registry isn't consulted for deletes.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme:
+      create: true
+      name: Acme Pinball
+  - manufacturer.acme:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="no such manufacturer to delete"):
+        _apply(text)
+
+
 def test_cite_on_unchanged_value_rejected(flipcommons_catalog, ipdb_root, pm):
     # Decision 3: an already-correct, same-source value diffs as unchanged, so a
     # cite: would attach to nothing and silently vanish — now a hard error. The

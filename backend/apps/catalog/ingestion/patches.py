@@ -11,6 +11,7 @@ See ``docs/DataPatches.md`` for the file format and design rationale.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
@@ -572,14 +573,23 @@ class _Target(NamedTuple):
     handle: str | None = None
 
 
-class _TargetContribution(NamedTuple):
-    """One entry's contribution to the plan-wide guards for one existing entity.
+# A plan-wide guard target: an existing entity (``EntityKey``) or a same-patch
+# create addressed by its handle (``str``). The two never collide — a 2-int
+# ``NamedTuple`` vs a handle string — so they share one accumulator keyspace.
+type _TargetKey = EntityKey | str
 
-    A create contributes nothing (it targets a handle, not an existing entity);
-    a delete contributes one of these per soft-deleted entity (root + cascade)
-    with empty field sets and ``from_delete=True``; an edit contributes one
-    carrying its retract / assert / remove sets. ``_validate_plan_wide`` merges
-    these across entries, enforcing per-entry-ChangeSet disjointness.
+
+class _TargetContribution(NamedTuple):
+    """One entry's contribution to the plan-wide guards for one target.
+
+    The target is an existing entity (keyed by ``EntityKey``) or a same-patch
+    create (keyed by its handle ``str``). A create contributes its authored +
+    identity (slug) claims under its handle, so the disjoint-claims guard spans
+    the create and any companion edits that refine it; a delete contributes one
+    of these per soft-deleted entity (root + cascade) with empty field sets and
+    ``from_delete=True``; an edit contributes one carrying its retract / assert /
+    remove sets. ``_validate_plan_wide`` merges these across entries, enforcing
+    per-entry-ChangeSet disjointness.
 
     ``deferred_member_ids`` are ``"namespace handle"`` keys for members pointing
     at a same-patch create — kept apart from ``asserted_members`` (concrete
@@ -607,7 +617,7 @@ class _EntryResult(NamedTuple):
     """
 
     matched: bool
-    contributions: dict[EntityKey, _TargetContribution]
+    contributions: dict[_TargetKey, _TargetContribution]
 
 
 class _RemovalResult(NamedTuple):
@@ -862,6 +872,19 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     # ``created_refs``: that dedups by the entry-ref label; this resolves by
     # concrete class + public_id — different keys, different jobs.)
     created: dict[_CreatedKey, str] = {}
+    # Identity of every create in the patch, regardless of file order — a cheap
+    # pre-scan so an edit that resolves nowhere can tell *create-appears-below*
+    # (decision 6: create-first) from *no-such-record*. The single-pass ``created``
+    # registry only holds creates seen so far, so it can't distinguish the two on
+    # its own. A create whose entity_type doesn't resolve is skipped here and
+    # errors when that entry is processed, preserving per-entry error attribution.
+    all_created_ids: set[_CreatedKey] = set()
+    for candidate in doc.claims:
+        if isinstance(candidate, CreateEntry):
+            with contextlib.suppress(PatchError):
+                all_created_ids.add(
+                    _CreatedKey(_resolve_model_class(candidate), candidate.public_id)
+                )
     # child→parent edges asserted into self-referential hierarchies, for the
     # plan-wide acyclicity guard (the patch path's equivalent of the API's
     # plan_parent_claims self-link/cycle check).
@@ -886,6 +909,7 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
                 rel_fields_by_model=rel_fields_by_model,
                 created_refs=created_refs,
                 created=created,
+                all_created_ids=all_created_ids,
                 hierarchy_added=hierarchy_added,
             )
         )
@@ -984,6 +1008,52 @@ def _classify_inline_cites(
     }
 
 
+def _no_such_record_message(
+    entry: EditEntry,
+    model_class: type[CatalogModel],
+    all_created_ids: AbstractSet[_CreatedKey],
+) -> str:
+    """Diagnostic for an edit that resolves to no record (seed, prior patch *or* this one).
+
+    If this patch creates the record but the create appears *below* this edit, say
+    so (decision 6: create-first) — the single-pass create registry can't see it
+    yet, but the pre-scanned ``all_created_ids`` can. Otherwise it genuinely
+    doesn't exist anywhere.
+    """
+    if _CreatedKey(model_class, entry.public_id) in all_created_ids:
+        return (
+            f"{entry.ref}: edits a {entry.entity_type} created later in this patch — "
+            f"move its 'create: true' entry above this edit (a create must precede "
+            f"the edits that refine it)"
+        )
+    return f"{entry.ref}: no such {entry.entity_type} (add create:true to create it)"
+
+
+def _reject_directives_on_same_patch_create(entry: EditEntry) -> None:
+    """Reject directives that have no meaning on a record created in this same patch.
+
+    A same-patch create has no prior DB state, so ``expect:`` (drift guard),
+    ``retract:`` (deactivate a prior claim) and ``remove:`` (tombstone a prior
+    member) are all meaningless — only additional field assertions, each its own
+    separately-attributed ChangeSet, refine the new record.
+    """
+    if entry.expect:
+        raise PatchError(
+            f"{entry.ref}: 'expect:' can't guard a record created earlier in this "
+            f"same patch — it has no prior state to drift from"
+        )
+    if entry.retract:
+        raise PatchError(
+            f"{entry.ref}: 'retract:' can't apply to a record created earlier in "
+            f"this same patch — it has no prior claims to retract"
+        )
+    if entry.remove:
+        raise PatchError(
+            f"{entry.ref}: 'remove:' can't apply to a record created earlier in "
+            f"this same patch — it has no prior members to remove"
+        )
+
+
 def _process_entry(
     plan: IngestPlan,
     entry: PatchEntry,
@@ -993,6 +1063,7 @@ def _process_entry(
     rel_fields_by_model: dict[type[CatalogModel], set[str]],
     created_refs: set[str],
     created: dict[_CreatedKey, str],
+    all_created_ids: AbstractSet[_CreatedKey],
     hierarchy_added: dict[type[CatalogModel], list[_HierarchyEdge]],
 ) -> _EntryResult:
     """Resolve, validate and emit one claim entry; return its cross-entry contribution.
@@ -1024,7 +1095,7 @@ def _process_entry(
         affected = _add_delete(
             plan, existing, entry, note=note, citation_ref=citation_ref
         )
-        contributions = {
+        contributions: dict[_TargetKey, _TargetContribution] = {
             tkey: _TargetContribution(
                 ref=entry.ref,
                 from_delete=True,
@@ -1061,14 +1132,33 @@ def _process_entry(
         target = _Target(handle=entry.ref)
     else:
         if existing is None:
-            raise PatchError(
-                f"{entry.ref}: no such {entry.entity_type} (add create:true to create it)"
+            # Not in the seed or an earlier patch — but it may be created earlier
+            # in *this* patch. Resolve against the same-patch create registry by
+            # the FK-style key (_add_create's own field claims resolve this way),
+            # and emit this entry's field asserts handle-targeted: a second,
+            # separately-attributed ChangeSet of refinements on the new record.
+            ref_handle = created.get(_CreatedKey(model_class, entry.public_id))
+            if ref_handle is None:
+                raise PatchError(
+                    _no_such_record_message(entry, model_class, all_created_ids)
+                )
+            # Only field assertions are meaningful on a brand-new record: there's
+            # no prior DB state to drift-guard, retract or remove against.
+            _reject_directives_on_same_patch_create(entry)
+            target = _Target(handle=ref_handle)
+        else:
+            _check_expect(model_class, existing, entry)
+            retracted_any = _add_retractions(
+                plan,
+                model_class,
+                existing,
+                entry,
+                ct_id,
+                source,
+                rel_namespaces,
+                note=note,
             )
-        _check_expect(model_class, existing, entry)
-        retracted_any = _add_retractions(
-            plan, model_class, existing, entry, ct_id, source, rel_namespaces, note=note
-        )
-        target = _Target(content_type_id=ct_id, object_id=existing.pk)
+            target = _Target(content_type_id=ct_id, object_id=existing.pk)
 
     # Inline-citation markers in the entry's markdown fields: validate grammar +
     # marker↔``cites:`` correspondence (DB-free) and get the per-field new-cite
@@ -1077,9 +1167,10 @@ def _process_entry(
     inline_cites_by_field = _classify_inline_cites(entry, model_class)
 
     # Shared field loop (create + edit). Track which scalar/FK fields and which
-    # relationship members were asserted on an *existing* entity — creates target
-    # a handle, so object_id is None and they contribute nothing to the guards —
-    # and whether any real claim carrier was written (for the provenance check).
+    # relationship members this entry asserts on its target — every target (an
+    # existing entity, or a same-patch create / its companion edits, both keyed by
+    # handle) feeds the plan-wide disjoint-claims guard — and whether any real
+    # claim carrier was written (for the provenance check).
     asserted_fields: set[str] = set()
     asserted_members: set[ClaimKey] = set()
     deferred_member_ids: set[str] = set()
@@ -1105,8 +1196,7 @@ def _process_entry(
                 inline_cites=inline_cites_by_field.get(key, {}),
             )
             carrier_written = True
-            if target.object_id is not None:
-                asserted_fields.add(key)
+            asserted_fields.add(key)
         elif key in rel_namespaces:
             emit = _emit_relationship(
                 plan,
@@ -1123,12 +1213,11 @@ def _process_entry(
             rel_fields_by_model[model_class].add(key)
             if emit.carrier_written:
                 carrier_written = True
-            if target.object_id is not None:
-                # Concrete claim_keys feed the clash + disjoint guards; a deferred
-                # (same-patch) member has no claim_key yet, so its target handle
-                # rides a separate ``(namespace, handle)`` disjoint key.
-                asserted_members.update(emit.clash_keys)
-                deferred_member_ids.update(f"{key} {h}" for h in emit.deferred_handles)
+            # Concrete claim_keys feed the clash + disjoint guards; a deferred
+            # (same-patch) member has no claim_key yet, so its target handle
+            # rides a separate ``(namespace, handle)`` disjoint key.
+            asserted_members.update(emit.clash_keys)
+            deferred_member_ids.update(f"{key} {h}" for h in emit.deferred_handles)
         else:
             raise PatchError(f"{entry.ref}: unknown field {key!r}")
 
@@ -1161,11 +1250,29 @@ def _process_entry(
     )
 
     if isinstance(entry, CreateEntry):
-        # A create targets a handle, not an existing entity, so it contributes
-        # nothing to the plan-wide guards and doesn't count toward records_matched.
-        return _EntryResult(matched=False, contributions={})
+        # A create contributes its authored + identity claims under its handle, so
+        # the disjoint-claims guard spans the create and any companion edits that
+        # refine it (decision 2). The slug/public-id claim is emitted by
+        # _add_create *outside* the field loop, so add it here under the exact
+        # condition _add_create emits it (the public id is itself a claim field —
+        # true for slug-identified entities, false for a derived public id like
+        # Location.location_path, whose authored ``slug`` already rode the loop).
+        # A create doesn't count toward records_matched.
+        create_fields = set(asserted_fields)
+        pid_field = model_class.public_id_field
+        if pid_field in claim_fields:
+            create_fields.add(pid_field)
+        contribution = _TargetContribution(
+            ref=entry.ref,
+            from_delete=False,
+            retracted_fields=frozenset(),
+            asserted_fields=frozenset(create_fields),
+            asserted_members=frozenset(asserted_members),
+            deferred_member_ids=frozenset(deferred_member_ids),
+            removed_members={},
+        )
+        return _EntryResult(matched=False, contributions={entry.ref: contribution})
 
-    assert existing is not None  # an EditEntry always matched above
     contribution = _TargetContribution(
         ref=entry.ref,
         from_delete=False,
@@ -1175,9 +1282,16 @@ def _process_entry(
         deferred_member_ids=frozenset(deferred_member_ids),
         removed_members=removed_members,
     )
-    return _EntryResult(
-        matched=True, contributions={EntityKey(ct_id, existing.pk): contribution}
-    )
+    if existing is not None:
+        return _EntryResult(
+            matched=True, contributions={EntityKey(ct_id, existing.pk): contribution}
+        )
+    # Registry-resolved companion edit on a same-patch create: key by the handle
+    # so its claims join the create's contribution in the disjoint-claims guard.
+    # matched=False — it refined a same-patch create, not a DB row (the record is
+    # already counted by the create).
+    assert target.handle is not None
+    return _EntryResult(matched=False, contributions={target.handle: contribution})
 
 
 def _check_provenance_carrier(
@@ -1295,9 +1409,10 @@ def _validate_hierarchy_acyclic(
 def _validate_plan_wide(results: list[_EntryResult]) -> None:
     """Run the cross-entry guards over all processed entries.
 
-    With per-entry ChangeSets, several entries may target one entity — *provided*
-    the claims they touch are disjoint. Each entry mints its own ChangeSet, and a
-    claim_key shared by two entries would collapse in ``_build_claims`` /
+    With per-entry ChangeSets, several entries may target one record — an existing
+    entity *or* a same-patch create (keyed by its handle) — *provided* the claims
+    they touch are disjoint. Each entry mints its own ChangeSet, and a claim_key
+    shared by two entries would collapse in ``_build_claims`` /
     ``_process_retractions``, silently dropping one entry's grouping. Merges each
     entry's per-target contributions, enforcing on insert:
 
@@ -1312,14 +1427,14 @@ def _validate_plan_wide(results: list[_EntryResult]) -> None:
     4. **No member both asserted present and removed** on one target (both write
        the same claim_key — one would clobber the other).
     """
-    target_ref: dict[EntityKey, str] = {}
-    is_delete: dict[EntityKey, bool] = defaultdict(bool)
-    entry_count: dict[EntityKey, int] = defaultdict(int)
-    retracted_fields: dict[EntityKey, set[str]] = defaultdict(set)
-    asserted_fields: dict[EntityKey, set[str]] = defaultdict(set)
-    asserted_members: dict[EntityKey, set[ClaimKey]] = defaultdict(set)
-    deferred_members: dict[EntityKey, set[str]] = defaultdict(set)
-    removed_members: dict[EntityKey, dict[ClaimKey, str]] = defaultdict(dict)
+    target_ref: dict[_TargetKey, str] = {}
+    is_delete: dict[_TargetKey, bool] = defaultdict(bool)
+    entry_count: dict[_TargetKey, int] = defaultdict(int)
+    retracted_fields: dict[_TargetKey, set[str]] = defaultdict(set)
+    asserted_fields: dict[_TargetKey, set[str]] = defaultdict(set)
+    asserted_members: dict[_TargetKey, set[ClaimKey]] = defaultdict(set)
+    deferred_members: dict[_TargetKey, set[str]] = defaultdict(set)
+    removed_members: dict[_TargetKey, dict[ClaimKey, str]] = defaultdict(dict)
 
     def _reject_dup[T](
         incoming: AbstractSet[T], seen: AbstractSet[T], ref: str, what: str

@@ -13,7 +13,7 @@ Do NOT check syntax, lint or run tests.
 
 ## How to verify
 
-Work from the patch's own uncommitted artifacts (the worksheet, README, generator). Subject to the authoring rules, every value should be backed by its claim `note:` or `cite:`, so you shouldn't need to re-fetch any page. If you think you do, that's a flaw in the authoring process: report it to the user rather than fetching.
+For generated patches, work from the patch's own uncommitted artifacts (the worksheet, README, generator). Hand-authored patches usually will not have a `patches/authoring/NNNN-*` directory; for those, work from the patch file itself. Subject to the authoring rules, every value should be backed by its claim `note:` or `cite:`, so you shouldn't need to re-fetch any page. If you think you do, that's a flaw in the authoring process: report it to the user rather than fetching.
 
 When you need to read deeper:
 

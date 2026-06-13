@@ -44,9 +44,9 @@ Reach for a different attribution only in these cases:
 - **A first-party curatorial source states the fact directly** → that source — `flip-museum` for museum-curated facts no one else claims.
 - **AI-generated record descriptions** → the per-entity-type description source `flipcommons-ai-desc-<entity-type>` (see [Record descriptions](#record-descriptions)).
 
-### One entity per entry
+### One record per entry
 
-**One entity per entry**, carrying all its fields and its single `note`/`cite`.
+**Each entry targets exactly one record.** By default keep that record's fields together in the one entry under a single `note`/`cite`. When the fields have **distinct evidence**, you may instead split them across several entries on the same record — each its own `ChangeSet` with its own `note`/`cite`, as long as the fields are disjoint (see [DataPatches.md](DataPatches.md#notes--citations)).
 
 ### Guard every entry
 
