@@ -125,6 +125,13 @@ class EntityStatus(models.TextChoices):
     DELETED = "deleted", "Deleted"
 
 
+# The claim-controlled lifecycle field name (``LifecycleStatusModel.status``).
+# Named here, beside the model that owns it, so layers that must reason about
+# lifecycle claims without a model instance — the ingest apply layer and the
+# patch adapter — share one source of truth instead of hardcoding ``"status"``.
+LIFECYCLE_STATUS_FIELD = "status"
+
+
 _LifecycleModel = TypeVar("_LifecycleModel", bound="LifecycleStatusModel")
 
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Protocol, cast
 
@@ -27,6 +28,7 @@ from django.core.exceptions import FieldDoesNotExist, ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
+from apps.core.models import LIFECYCLE_STATUS_FIELD
 from apps.core.types import ClaimIdentity, EntityKey
 from apps.provenance.models import (
     ChangeSet,
@@ -71,6 +73,10 @@ class RetractEntry(NamedTuple):
     pk: int
     content_type_id: int
     object_id: int
+    # Patch runs only: the file-order index of the entry that authored this
+    # retraction, used by ``_persist`` to group retractions into per-entry
+    # ChangeSets. ``None`` for non-patch runs (IPDB/OPDB never retract).
+    entry_index: EntryIndex | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -114,12 +120,20 @@ class CitationRef:
 # to a ``CitationInstance.slug`` at mint, so it never reaches storage.
 type CiteHandle = str
 
-# Per-claim provenance maps produced by ``_collect_plan_provenance`` and
-# consumed by ``_persist`` / ``_attach_plan_citations``. Named so the opaque
-# ``str`` (a ChangeSet note) and the per-claim citation mapping read clearly
-# wherever they recur.
-type EntityNotes = dict[EntityKey, str]
+# A patch entry's file-order index — the grouping unit for per-entry ChangeSets.
+# A transparent alias of ``int`` (like ``CiteHandle`` above) that names the role
+# wherever it recurs — on the plan carriers and in the maps below — so a bare
+# ``int`` ordinal isn't mistaken for a pk or count. ``None`` on non-patch runs.
+type EntryIndex = int
+
+# Per-entry / per-claim provenance maps produced by ``_collect_plan_provenance``
+# and consumed by ``_persist`` / ``_attach_plan_citations``. ``EntryNotes`` keys
+# each entry's note by its ``EntryIndex`` (one ChangeSet, one note per patch
+# entry); ``ClaimEntryIndex`` resolves a built claim back to its entry for
+# per-entry ChangeSet grouping; ``ClaimCitations`` keys per claim identity.
+type EntryNotes = dict[EntryIndex, str]
 type ClaimCitations = dict[ClaimIdentity, CitationRef]
+type ClaimEntryIndex = dict[ClaimIdentity, EntryIndex]
 
 
 @dataclass
@@ -187,6 +201,11 @@ class PlannedClaimAssert:
     # minted slug. Existing-slug markers (``[[cite:<slug>]]``) carry nothing here —
     # they self-resolve through standard conversion. Empty for non-cited fields.
     inline_cites: dict[CiteHandle, CitationRef] = field(default_factory=dict)
+    # Patch runs only: the file-order index of the authoring patch entry. Stamped
+    # by the patch adapter (in ``build_plan``) so ``_persist`` can mint one
+    # ChangeSet per entry; ``None`` for non-patch runs (IPDB/OPDB), which group
+    # per affected entity instead.
+    entry_index: EntryIndex | None = None
     content_type_id: int | None = None
     object_id: int | None = None
     handle: str | None = None
@@ -208,9 +227,12 @@ class PlannedClaimRetract:
     content_type_id: int
     object_id: int
     claim_key: str
-    # Per-entry patch note → the entity's ChangeSet note. A retraction has no
+    # Per-entry patch note → the entry's ChangeSet note. A retraction has no
     # new claim, so it carries no ``citation_ref``.
     note: str = ""
+    # Patch runs only: the file-order index of the authoring patch entry (see
+    # ``PlannedClaimAssert.entry_index``). ``None`` for non-patch runs.
+    entry_index: EntryIndex | None = None
 
 
 @dataclass
@@ -270,6 +292,8 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
     _validate_entity_claim_consistency(plan)
     _validate_assertion_targets(plan)
     _validate_handle_refs(plan)
+    # Before the live/dry-run split, so a mis-stamped patch fails at --dry-run too.
+    _validate_entry_index_stamping(plan)
 
     if dry_run:
         return _apply_dry_run(plan, report)
@@ -310,7 +334,9 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             # once now that handles are resolved (so every assertion carries its
             # real ct/obj). Kept out of _build_claims so that helper's signature —
             # and its dry-run call site — stay untouched.
-            entity_notes, claim_citations = _collect_plan_provenance(plan)
+            entry_notes, claim_citations, claim_entry_index = _collect_plan_provenance(
+                plan
+            )
             all_claims = _build_claims(plan.assertions, plan.source)
             valid_claims = _validate_fail_fast(all_claims, report)
 
@@ -326,7 +352,20 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             )
             report.retracted = len(retract_entries)
 
-            _persist(run, to_create, superseded_ids, retract_entries, entity_notes)
+            # A provenance-bearing patch entry that diffs to no change would
+            # silently drop its note/citation — reject it (delete entries exempt).
+            _check_empty_diff_entries(
+                plan, to_create, retract_entries, claim_entry_index
+            )
+
+            _persist(
+                run,
+                to_create,
+                superseded_ids,
+                retract_entries,
+                entry_notes,
+                claim_entry_index,
+            )
             _attach_plan_citations(to_create, claim_citations)
             _resolve(to_create, retract_entries, plan.resolve_hooks)
 
@@ -456,6 +495,32 @@ def _validate_handle_refs(plan: IngestPlan) -> None:
                     f"use one or the other"
                 )
         seen.add(entity.handle)
+
+
+def _validate_entry_index_stamping(plan: IngestPlan) -> None:
+    """Every assertion/retraction in a patch plan must carry an ``entry_index``.
+
+    Patch runs group ChangeSets by ``entry_index`` (``_persist`` patch mode), so a
+    missed stamp — or a hand-built ``patch_id`` plan that forgot to set one —
+    would silently collapse the whole run under a single group. The patch adapter
+    always stamps, so this is an internal invariant: a plain ``ValueError``, not a
+    source-facing ``ValidationError``/``PatchError``. Non-patch plans
+    (``patch_id is None``) group per entity and never read the index, so are exempt.
+    """
+    if plan.patch_id is None:
+        return
+    for pca in plan.assertions:
+        if pca.entry_index is None:
+            raise ValueError(
+                f"Patch plan {plan.patch_id!r} has an assertion without an "
+                f"entry_index (field={pca.field_name!r})"
+            )
+    for pcr in plan.retractions:
+        if pcr.entry_index is None:
+            raise ValueError(
+                f"Patch plan {plan.patch_id!r} has a retraction without an "
+                f"entry_index (claim_key={pcr.claim_key!r})"
+            )
 
 
 def _validate_assertion_targets(plan: IngestPlan) -> None:
@@ -639,6 +704,9 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
         and id(p) not in fk_to_planned_ids
         and id(p) not in new_inline_cite_ids
     ]
+    # Entry indexes whose existing-entity claim survives the diff (a real change),
+    # for the dry-run empty-diff guard below. Carve-outs are added separately.
+    existing_changed: set[EntryIndex] = set()
     if existing_assertions:
         claims = _build_claims(existing_assertions, plan.source)
         valid = _validate_and_collect_errors(claims, report)
@@ -647,6 +715,23 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
             report.asserted += len(to_create)
             report.unchanged += len(valid) - len(to_create)
             report.superseded += len(superseded_ids)
+            idx_by_identity: dict[ClaimIdentity, EntryIndex | None] = {}
+            for p in existing_assertions:
+                # Existing-entity assertions (handle is None) carry concrete ct/obj.
+                assert p.content_type_id is not None
+                assert p.object_id is not None
+                key = ClaimIdentity(
+                    p.content_type_id, p.object_id, p.claim_key or p.field_name
+                )
+                idx_by_identity[key] = p.entry_index
+            for claim in to_create:
+                idx = idx_by_identity.get(
+                    ClaimIdentity(
+                        claim.content_type_id, claim.object_id, claim.claim_key
+                    )
+                )
+                if idx is not None:
+                    existing_changed.add(idx)
 
     # Claims targeting planned entities: validate only (all are new by
     # definition).  Build sentinel claims without mutating the plan.
@@ -701,9 +786,37 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
         report.asserted += len(valid)
 
     # Retractions: verify targets exist, count.
+    retract_entries: list[RetractEntry] = []
     if plan.retractions:
-        entries = _process_retractions(plan.retractions, plan.source, report)
-        report.retracted = len(entries)
+        retract_entries = _process_retractions(plan.retractions, plan.source, report)
+        report.retracted = len(retract_entries)
+
+    # Empty-diff guard (decision 3), same as the live path but with a dry-run
+    # ``changed`` set: assertions this path can't diff — carve-outs (deferred,
+    # new-inline-cite, FK-to-planned) and creates/companions (handle-targeted) —
+    # are *assumed* to change; existing-entity assertions count only when their
+    # claim survived the diff above. So a plain unchanged-value-with-note entry is
+    # rejected at --dry-run too, not only at apply.
+    #
+    # Skip when validation already collected errors: a rejected (invalid) claim
+    # never reaches ``changed``, so the guard would misreport it as a no-op and
+    # mask the real validation error. Live is immune — ``_validate_fail_fast``
+    # raises before the guard — so this keeps dry-run's diagnostic priority equal.
+    if plan.patch_id is not None and not report.errors:
+        changed = set(existing_changed)
+        for p in plan.assertions:
+            assert p.entry_index is not None
+            if (
+                p.relationship_namespace  # deferred member
+                or p.handle is not None  # create or its companion edits
+                or p.inline_cites  # new inline citation
+                or id(p) in fk_to_planned_ids  # existing FK → same-plan create
+            ):
+                changed.add(p.entry_index)
+        for entry in retract_entries:
+            assert entry.entry_index is not None
+            changed.add(entry.entry_index)
+        _reject_empty_diff_provenance(plan, changed)
 
     return report
 
@@ -976,7 +1089,12 @@ def _process_retractions(
         found_pk = found.get(key)
         if found_pk is not None:
             retract_entries.append(
-                RetractEntry(found_pk, key.content_type_id, key.object_id)
+                RetractEntry(
+                    found_pk,
+                    key.content_type_id,
+                    key.object_id,
+                    retract_keys[key].entry_index,
+                )
             )
         else:
             r = retract_keys[key]
@@ -990,41 +1108,145 @@ def _process_retractions(
 
 def _collect_plan_provenance(
     plan: IngestPlan,
-) -> tuple[EntityNotes, ClaimCitations]:
-    """Gather per-claim ``note``/``citation_ref`` carried by the plan into maps.
+) -> tuple[EntryNotes, ClaimCitations, ClaimEntryIndex]:
+    """Gather per-entry ``note``/``citation_ref`` and the claim→entry grouping map.
 
     Source-agnostic — any plan may set these; today only the patch adapter does
     (from a patch entry's ``note:``/``cite:``). Runs after ``_patch_handles``,
-    so every assertion's ct/obj is resolved. ``entity_notes`` (keyed by entity)
-    feeds the per-entity ChangeSet note; ``claim_citations`` (keyed by the exact
-    claim identity) drives per-claim citation attachment in
-    ``_attach_plan_citations``. Citations are keyed per claim — never per
-    entity — so a citation never bleeds onto unrelated claims (or the
-    create-owned scaffolding) that merely share the entity.
+    so every assertion's ct/obj is resolved. Returns three maps:
 
-    The patch adapter's same-entity guard ensures no two entries put conflicting
-    notes on one entity, so last-write-wins here is never reached in practice.
+    * ``entry_notes`` (keyed by the authoring entry's ``entry_index``) feeds each
+      per-entry ChangeSet's note.
+    * ``claim_citations`` (keyed by the exact claim identity) drives per-claim
+      citation attachment in ``_attach_plan_citations``. Keyed per claim — never
+      per entry — so a citation never bleeds onto unrelated claims (or the
+      create-owned scaffolding) that merely share the entity.
+    * ``claim_entry_index`` (keyed by claim identity) lets ``_persist`` group
+      built claims into per-entry ChangeSets. Recorded for *every* patch
+      assertion — note-less ones included — so a multi-entry patch still groups
+      correctly. Skipped when ``entry_index`` is ``None`` (non-patch runs), which
+      keeps the value type a clean ``int``; ``_persist`` reads it only in patch
+      mode, where the coupling check has proven every index non-``None``.
+
+    The disjoint-field guard ensures no two entries assert the same
+    ``ClaimIdentity``, so the map is 1:1 with the deduped claim set and
+    last-write-wins on a note/citation here is never reached in practice.
     """
-    entity_notes: EntityNotes = {}
+    entry_notes: EntryNotes = {}
     claim_citations: ClaimCitations = {}
+    claim_entry_index: ClaimEntryIndex = {}
     for pca in plan.assertions:
-        if not pca.note and pca.citation_ref is None:
-            continue  # the common case (all normal-ingest assertions)
         ct_id = pca.content_type_id
         obj_id = pca.object_id
         # post _patch_handles: handles are resolved to real ct/obj.
         assert ct_id is not None
         assert obj_id is not None
+        ident = ClaimIdentity(ct_id, obj_id, pca.claim_key or pca.field_name)
+        if pca.entry_index is not None:
+            claim_entry_index[ident] = pca.entry_index
+        if not pca.note and pca.citation_ref is None:
+            continue  # the common case (all normal-ingest assertions)
         if pca.note:
-            entity_notes[EntityKey(ct_id, obj_id)] = pca.note
+            # A note only ever rides a patch entry, which always stamps its index.
+            assert pca.entry_index is not None
+            entry_notes[pca.entry_index] = pca.note
         if pca.citation_ref is not None:
-            claim_citations[
-                ClaimIdentity(ct_id, obj_id, pca.claim_key or pca.field_name)
-            ] = pca.citation_ref
+            claim_citations[ident] = pca.citation_ref
     for pcr in plan.retractions:
         if pcr.note:
-            entity_notes[EntityKey(pcr.content_type_id, pcr.object_id)] = pcr.note
-    return entity_notes, claim_citations
+            assert pcr.entry_index is not None
+            entry_notes[pcr.entry_index] = pcr.note
+    return entry_notes, claim_citations, claim_entry_index
+
+
+def _check_empty_diff_entries(
+    plan: IngestPlan,
+    to_create: list[Claim],
+    retract_entries: list[RetractEntry],
+    claim_entry_index: ClaimEntryIndex,
+) -> None:
+    """Live-path empty-diff guard: surviving claims/retractions are the change.
+
+    Maps each surviving built claim back to its authoring entry via
+    ``claim_entry_index`` and delegates to :func:`_reject_empty_diff_provenance`.
+    The dry-run path computes ``changed`` differently (see ``_apply_dry_run``); the
+    rejection logic itself is shared.
+    """
+    if plan.patch_id is None:
+        return
+
+    changed: set[EntryIndex] = set()
+    for claim in to_create:
+        changed.add(
+            claim_entry_index[
+                ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)
+            ]
+        )
+    for entry in retract_entries:
+        assert entry.entry_index is not None
+        changed.add(entry.entry_index)
+
+    _reject_empty_diff_provenance(plan, changed)
+
+
+def _reject_empty_diff_provenance(plan: IngestPlan, changed: set[EntryIndex]) -> None:
+    """Reject a provenance-bearing patch entry absent from *changed* (decision 3).
+
+    A patch entry carrying a ``note``/``cite``/``cites`` (or a ``retract:`` +
+    ``note:``) that diffs to nothing would silently discard that provenance — no
+    ChangeSet is minted for it, so the note/citation just vanishes. Tightening
+    today's silent re-assert no-op into a hard error keeps provenance honest.
+
+    ``changed`` is the set of entry indexes that produced — or, in dry-run, are
+    *assumed* to produce — a real claim change. Both paths share this rejection;
+    they differ only in how ``changed`` is built (the live path diffs every
+    assertion; dry-run can't diff its carve-outs, so it treats new-inline-cite /
+    deferred / FK-to-planned assertions as changed).
+
+    Delete entries are exempt: an idempotent re-delete of an already-deleted
+    entity diffs to a clean no-op by design. A delete emits only ``status``
+    claims, so an entry whose assertions are *all* ``LIFECYCLE_STATUS_FIELD`` is a
+    delete — detected model-drivenly here, since the entry kind isn't threaded
+    into apply.py.
+
+    Patch-only (``patch_id`` set); non-patch runs carry no per-entry provenance.
+    Raises ``ValidationError`` (apply.py is source-agnostic and must not import
+    ``PatchError``); ``_apply_one`` converts it to a clean ``PatchError``.
+    """
+    if plan.patch_id is None:
+        return
+
+    # Per entry: which carry provenance, and which are a pure delete (all-status,
+    # exempt because an idempotent re-delete is a clean no-op by design).
+    has_provenance: set[EntryIndex] = set()
+    only_status: dict[EntryIndex, bool] = {}
+    for pca in plan.assertions:
+        idx = pca.entry_index
+        assert idx is not None  # patch assertions are always stamped
+        if pca.note or pca.citation_ref is not None or pca.inline_cites:
+            has_provenance.add(idx)
+        is_status = pca.field_name == LIFECYCLE_STATUS_FIELD
+        only_status[idx] = only_status.get(idx, True) and is_status
+    # The ``pcr.note`` branch is defensive: a no-op retraction (already-inactive
+    # field) never reaches here — build-time ``_check_provenance_carrier`` rejects
+    # a ``retract:`` + ``note:`` with no carrier — and a real retraction always
+    # yields a ``RetractEntry``, so its ``entry_index`` is already in ``changed``.
+    # Kept so the rule "a note must attach to a change" holds regardless of layer.
+    for pcr in plan.retractions:
+        idx = pcr.entry_index
+        assert idx is not None
+        if pcr.note:
+            has_provenance.add(idx)
+        only_status[idx] = False  # a retraction means the entry isn't a delete
+
+    for idx in has_provenance:
+        if only_status.get(idx, False) or idx in changed:
+            continue
+        raise ValidationError(
+            f"Patch entry at index {idx} carries a note/citation but changes "
+            f"nothing (its value already matches) — remove the no-op entry or "
+            f"correct its value so the provenance attaches to a real change"
+        )
 
 
 def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> int:
@@ -1133,65 +1355,129 @@ def _persist(
     to_create: list[Claim],
     superseded_ids: list[int],
     retract_entries: list[RetractEntry],
-    entity_notes: EntityNotes,
+    entry_notes: EntryNotes,
+    claim_entry_index: ClaimEntryIndex,
 ) -> None:
     """Bulk-create ChangeSets and Claims, deactivate superseded/retracted.
 
-    Superseded claims are deactivated *before* new claims are inserted
-    to satisfy the unique constraint on
-    ``(content_type, object_id, source, claim_key)`` where
-    ``is_active=True``.
+    Superseded claims are deactivated *before* new claims are inserted to satisfy
+    the partial unique index on ``(content_type, object_id, source, claim_key)``
+    where ``is_active=True``. ``superseded_ids`` is always a subset of the
+    entities in ``to_create`` (a superseded claim has a replacement), so the
+    empty-check on ``to_create`` is sufficient.
 
-    ``entity_notes`` carries each affected entity's patch ``note:`` onto its
-    ChangeSet (empty string when the entry set none).
+    Grouping is mode-selected on ``run.patch_id``: patch runs mint one ChangeSet
+    per authoring entry (``entry_index``, carrying that entry's note); normal
+    ingests (IPDB/OPDB) mint one per affected entity. A run is single-adapter, so
+    exactly one mode is in force.
     """
-    # superseded_ids is always a subset of the entities in to_create (a
-    # superseded claim has a replacement in to_create), so checking
-    # to_create is sufficient.
     if not to_create and not retract_entries:
         return
 
-    # One ChangeSet per affected entity.
-    affected: set[EntityKey] = set()
-    for claim in to_create:
-        affected.add(EntityKey(claim.content_type_id, claim.object_id))
-    for entry in retract_entries:
-        affected.add(EntityKey(entry.content_type_id, entry.object_id))
-
-    entity_list = sorted(affected)
-    changesets = [
-        ChangeSet(ingest_run=run, note=entity_notes.get(ek, "")) for ek in entity_list
-    ]
-    ChangeSet.objects.bulk_create(changesets)
-    entity_to_cs: dict[EntityKey, ChangeSet] = dict(
-        zip(entity_list, changesets, strict=True),
-    )
-
-    # Deactivate superseded claims before inserting replacements.
     if superseded_ids:
         Claim.objects.filter(pk__in=superseded_ids).update(is_active=False)
 
-    # Assign changeset and bulk-create new claims.
-    for claim in to_create:
-        claim.changeset_id = entity_to_cs[
-            EntityKey(claim.content_type_id, claim.object_id)
-        ].pk
+    if run.patch_id is not None:
+        _persist_per_entry(
+            run, to_create, retract_entries, entry_notes, claim_entry_index
+        )
+    else:
+        _persist_per_entity(run, to_create, retract_entries)
 
+
+def _link_to_changesets[K](
+    to_create: list[Claim],
+    retract_entries: list[RetractEntry],
+    group_to_cs: dict[K, ChangeSet],
+    claim_group: Callable[[Claim], K],
+    retract_group: Callable[[RetractEntry], K],
+) -> None:
+    """Point each new claim and retraction at its ChangeSet, then write.
+
+    Shared tail of the two ``_persist_*`` modes — they differ only in the grouping
+    key (``entry_index`` vs ``EntityKey``), supplied here as the ``claim_group`` /
+    ``retract_group`` extractors over an already-built ``group_to_cs``. Retracted
+    claims are deactivated in bulk per ChangeSet, stamped ``retracted_by_changeset``.
+    """
+    for claim in to_create:
+        claim.changeset_id = group_to_cs[claim_group(claim)].pk
     if to_create:
         Claim.objects.bulk_create(to_create, batch_size=2000)
 
-    # Deactivate retracted claims with changeset link.
     if retract_entries:
         retract_by_cs: dict[int, list[int]] = defaultdict(list)
         for entry in retract_entries:
-            cs = entity_to_cs[EntityKey(entry.content_type_id, entry.object_id)]
-            retract_by_cs[cs.pk].append(entry.pk)
-
+            retract_by_cs[group_to_cs[retract_group(entry)].pk].append(entry.pk)
         for cs_pk, pks in retract_by_cs.items():
             Claim.objects.filter(pk__in=pks).update(
                 is_active=False,
                 retracted_by_changeset_id=cs_pk,
             )
+
+
+def _persist_per_entry(
+    run: IngestRun,
+    to_create: list[Claim],
+    retract_entries: list[RetractEntry],
+    entry_notes: EntryNotes,
+    claim_entry_index: ClaimEntryIndex,
+) -> None:
+    """One ChangeSet per authoring patch entry, grouped by ``entry_index``.
+
+    Entry indexes are sorted ascending before ``bulk_create`` so ChangeSet pk
+    order matches file order — load-bearing because every ChangeSet in one
+    ``bulk_create`` shares ``created_at`` (db_default ``Now()``), leaving pk as
+    history's only file-order tiebreak (see ``history.py``: ``-created_at, -pk``).
+    A cascade-delete entry stamps one index across several entities, so its whole
+    cascade lands in a single multi-entity ChangeSet — matching the in-app delete.
+    """
+
+    def claim_idx(claim: Claim) -> EntryIndex:
+        return claim_entry_index[
+            ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)
+        ]
+
+    def retract_idx(entry: RetractEntry) -> EntryIndex:
+        assert entry.entry_index is not None  # patch retractions are always stamped
+        return entry.entry_index
+
+    ordered = sorted(
+        {claim_idx(c) for c in to_create} | {retract_idx(e) for e in retract_entries}
+    )
+    changesets = [
+        ChangeSet(ingest_run=run, note=entry_notes.get(idx, "")) for idx in ordered
+    ]
+    ChangeSet.objects.bulk_create(changesets)
+    idx_to_cs = dict(zip(ordered, changesets, strict=True))
+    _link_to_changesets(to_create, retract_entries, idx_to_cs, claim_idx, retract_idx)
+
+
+def _persist_per_entity(
+    run: IngestRun,
+    to_create: list[Claim],
+    retract_entries: list[RetractEntry],
+) -> None:
+    """One ChangeSet per affected entity — the normal-ingest (IPDB/OPDB) path.
+
+    Non-patch runs carry no per-entry notes, so each ChangeSet's note is empty.
+    """
+
+    def claim_entity(claim: Claim) -> EntityKey:
+        return EntityKey(claim.content_type_id, claim.object_id)
+
+    def retract_entity(entry: RetractEntry) -> EntityKey:
+        return EntityKey(entry.content_type_id, entry.object_id)
+
+    ordered = sorted(
+        {claim_entity(c) for c in to_create}
+        | {retract_entity(e) for e in retract_entries}
+    )
+    changesets = [ChangeSet(ingest_run=run, note="") for _ in ordered]
+    ChangeSet.objects.bulk_create(changesets)
+    entity_to_cs = dict(zip(ordered, changesets, strict=True))
+    _link_to_changesets(
+        to_create, retract_entries, entity_to_cs, claim_entity, retract_entity
+    )
 
 
 def _resolve(
