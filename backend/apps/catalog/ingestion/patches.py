@@ -17,6 +17,7 @@ import math
 import re
 from collections import defaultdict
 from collections.abc import Callable
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field
 from typing import NamedTuple, cast
 from urllib.parse import urlparse
@@ -54,6 +55,7 @@ from apps.citation.seed_data.types import SeedLink, SeedSource
 from apps.citation.seeding import ensure_root_source, validate_root_source
 from apps.core.entity_types import get_linkable_model
 from apps.core.markdown import get_markdown_fields
+from apps.core.models import LIFECYCLE_STATUS_FIELD
 from apps.core.types import EntityKey, JsonBody
 from apps.provenance.models import Claim, IdentityPart, Source, get_claim_fields
 from apps.provenance.models.changeset import CHANGESET_NOTE_MAX_LENGTH
@@ -79,11 +81,11 @@ RESERVED_FIELD_KEYS = frozenset(
     {"create", "delete", "expect", "retract", "remove", "note", "cite", "cites"}
 )
 
-# The claim-controlled lifecycle field (``LifecycleStatusModel.status``).
-# Patches never write it directly — it's created as ``active`` and soft-deleted
-# to ``deleted`` via the ``delete:`` directive, which routes through the
-# soft-delete planner. A raw claim would skip that planner's safety checks.
-LIFECYCLE_STATUS_FIELD = "status"
+# The claim-controlled lifecycle field (``LifecycleStatusModel.status``), shared
+# with the apply layer via ``apps.core.models``. Patches never write it directly
+# — it's created as ``active`` and soft-deleted to ``deleted`` via the
+# ``delete:`` directive, which routes through the soft-delete planner. A raw
+# claim would skip that planner's safety checks.
 
 # Allowed keys in a `sources:` node / its links, derived from the seed TypedDicts
 # (the single source of truth). `children` is excluded — v1 sources are flat.
@@ -575,15 +577,22 @@ class _TargetContribution(NamedTuple):
 
     A create contributes nothing (it targets a handle, not an existing entity);
     a delete contributes one of these per soft-deleted entity (root + cascade)
-    with empty field sets; an edit contributes one carrying its retract / assert
-    / remove sets. ``_validate_plan_wide`` merges these across entries.
+    with empty field sets and ``from_delete=True``; an edit contributes one
+    carrying its retract / assert / remove sets. ``_validate_plan_wide`` merges
+    these across entries, enforcing per-entry-ChangeSet disjointness.
+
+    ``deferred_member_ids`` are ``"namespace handle"`` keys for members pointing
+    at a same-patch create — kept apart from ``asserted_members`` (concrete
+    claim_keys) because their real claim_key isn't known until apply time, but
+    still guarded for cross-entry duplication.
     """
 
     ref: str
-    has_provenance: bool
+    from_delete: bool
     retracted_fields: frozenset[str]
     asserted_fields: frozenset[str]
     asserted_members: frozenset[ClaimKey]
+    deferred_member_ids: frozenset[str]
     # claim_key → "namespace public_id" label, for the assert/remove clash error.
     removed_members: dict[ClaimKey, str]
 
@@ -636,13 +645,17 @@ class _MemberEmitResult(NamedTuple):
 
     ``clash_keys`` are the *concrete* claim_keys the assert/remove clash guard
     and ``asserted_members`` consume; a deferred (same-patch-created) member has
-    no concrete claim_key at plan time and contributes none. ``carrier_written``
-    is whether any assertion — concrete or deferred — was emitted, so a
-    ``note:``/``cite:`` on an entry whose members are *all* same-patch creates is
-    not wrongly rejected by the provenance-carrier check.
+    no concrete claim_key at plan time, so its target ``handle`` rides
+    ``deferred_handles`` instead — the cross-entry disjoint guard keys it as
+    ``"namespace handle"`` so two entries asserting the same same-patch member
+    can't silently collapse in ``_build_claims``. ``carrier_written`` is whether
+    any assertion — concrete or deferred — was emitted, so a ``note:``/``cite:``
+    on an entry whose members are *all* same-patch creates is not wrongly rejected
+    by the provenance-carrier check.
     """
 
     clash_keys: list[ClaimKey]
+    deferred_handles: list[str]
     carrier_written: bool
 
 
@@ -854,19 +867,32 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     # plan_parent_claims self-link/cycle check).
     hierarchy_added: dict[type[CatalogModel], list[_HierarchyEdge]] = defaultdict(list)
 
-    results = [
-        _process_entry(
-            plan,
-            entry,
-            source=source,
-            rel_namespaces=rel_namespaces,
-            rel_fields_by_model=rel_fields_by_model,
-            created_refs=created_refs,
-            created=created,
-            hierarchy_added=hierarchy_added,
+    # Stamp each entry's emissions with its file-order index for per-entry
+    # ChangeSet grouping (apply layer). An entry's assertions/retractions are all
+    # appended during its own ``_process_entry`` call and land contiguously at the
+    # end of the plan lists (single-pass, nothing else appends between entries),
+    # so slice-stamping the tail after each call is exact — and avoids threading
+    # ``entry_index`` through every ``_emit_*``/``_add_*`` helper.
+    results: list[_EntryResult] = []
+    for entry_index, entry in enumerate(doc.claims):
+        assert_start = len(plan.assertions)
+        retract_start = len(plan.retractions)
+        results.append(
+            _process_entry(
+                plan,
+                entry,
+                source=source,
+                rel_namespaces=rel_namespaces,
+                rel_fields_by_model=rel_fields_by_model,
+                created_refs=created_refs,
+                created=created,
+                hierarchy_added=hierarchy_added,
+            )
         )
-        for entry in doc.claims
-    ]
+        for pca in plan.assertions[assert_start:]:
+            pca.entry_index = entry_index
+        for pcr in plan.retractions[retract_start:]:
+            pcr.entry_index = entry_index
     plan.records_matched = sum(r.matched for r in results)
     _validate_plan_wide(results)
     _validate_hierarchy_acyclic(hierarchy_added)
@@ -981,18 +1007,11 @@ def _process_entry(
     model_class = _resolve_model_class(entry)
     ct_id = ContentType.objects.get_for_model(model_class).pk
     existing = _lookup_entity(model_class, entry.public_id)
-    # Inline ``cites:`` count as provenance: each mints a per-assertion floating
-    # instance, but two entries asserting one entity's markdown field collapse to
-    # one claim (last-write-wins in _build_claims), which would orphan the
-    # discarded entry's mint. The multi-entry guard rejects that — same rule as
-    # note/cite: an entity's claims belong in a single entry.
-    has_provenance = bool(note) or citation_ref is not None or bool(entry.cites)
 
     # A delete carries no field assertions and no relationship work, so it
     # finishes here, registering every soft-deleted entity (root + cascade) with
-    # the same-entity guard: each carries the entry's note/cite on its
-    # status=deleted claim, so a separate entry on any of them that also carries
-    # provenance is a genuine collision.
+    # the plan-wide guard as a *delete footprint*: decision 5 makes that footprint
+    # exclusive, so any other entry touching one of these entities is rejected.
     if isinstance(entry, DeleteEntry):
         if entry.cites:
             raise PatchError(
@@ -1008,10 +1027,11 @@ def _process_entry(
         contributions = {
             tkey: _TargetContribution(
                 ref=entry.ref,
-                has_provenance=has_provenance,
+                from_delete=True,
                 retracted_fields=frozenset(),
                 asserted_fields=frozenset(),
                 asserted_members=frozenset(),
+                deferred_member_ids=frozenset(),
                 removed_members={},
             )
             for tkey in affected
@@ -1062,6 +1082,7 @@ def _process_entry(
     # and whether any real claim carrier was written (for the provenance check).
     asserted_fields: set[str] = set()
     asserted_members: set[ClaimKey] = set()
+    deferred_member_ids: set[str] = set()
     carrier_written = False
     claim_fields = get_claim_fields(model_class)
     for key, value in entry.fields.items():
@@ -1103,9 +1124,11 @@ def _process_entry(
             if emit.carrier_written:
                 carrier_written = True
             if target.object_id is not None:
-                # Only concrete claim_keys feed the clash guard; a deferred
-                # (same-patch) member has none yet — see _MemberEmitResult.
+                # Concrete claim_keys feed the clash + disjoint guards; a deferred
+                # (same-patch) member has no claim_key yet, so its target handle
+                # rides a separate ``(namespace, handle)`` disjoint key.
                 asserted_members.update(emit.clash_keys)
+                deferred_member_ids.update(f"{key} {h}" for h in emit.deferred_handles)
         else:
             raise PatchError(f"{entry.ref}: unknown field {key!r}")
 
@@ -1145,10 +1168,11 @@ def _process_entry(
     assert existing is not None  # an EditEntry always matched above
     contribution = _TargetContribution(
         ref=entry.ref,
-        has_provenance=has_provenance,
+        from_delete=False,
         retracted_fields=frozenset(entry.retract),
         asserted_fields=frozenset(asserted_fields),
         asserted_members=frozenset(asserted_members),
+        deferred_member_ids=frozenset(deferred_member_ids),
         removed_members=removed_members,
     )
     return _EntryResult(
@@ -1271,40 +1295,75 @@ def _validate_hierarchy_acyclic(
 def _validate_plan_wide(results: list[_EntryResult]) -> None:
     """Run the cross-entry guards over all processed entries.
 
-    Merges each entry's per-entity contributions into accumulators — kept local
-    here, so the per-entry pass stays free of cross-entry state — then enforces:
+    With per-entry ChangeSets, several entries may target one entity — *provided*
+    the claims they touch are disjoint. Each entry mints its own ChangeSet, and a
+    claim_key shared by two entries would collapse in ``_build_claims`` /
+    ``_process_retractions``, silently dropping one entry's grouping. Merges each
+    entry's per-target contributions, enforcing on insert:
 
-    1. one provenance-bearing entry per existing entity (their notes would
-       collide in the shared ChangeSet and their cites would be ambiguous),
-    2. no field both retracted and asserted on one entity by this source (the
-       assert silently wins and the retract is a no-op),
-    3. no relationship member both asserted present and removed on one entity
-       (both write the same claim_key, so one would silently clobber the other).
+    1. **Disjoint claims (decision 2).** No scalar/FK field, concrete or deferred
+       relationship member, or member tombstone may be asserted by two entries on
+       one target; no field retracted by two entries.
+    2. **Delete exclusivity (decision 5).** A delete soft-deletes its root +
+       cascade as one ChangeSet, so no other entry may target any entity in that
+       footprint.
+    3. **No field both retracted and asserted** on one target (the assert wins,
+       the retract is a silent no-op).
+    4. **No member both asserted present and removed** on one target (both write
+       the same claim_key — one would clobber the other).
     """
-    entry_count: dict[EntityKey, int] = defaultdict(int)
-    has_provenance: dict[EntityKey, bool] = defaultdict(bool)
     target_ref: dict[EntityKey, str] = {}
+    is_delete: dict[EntityKey, bool] = defaultdict(bool)
+    entry_count: dict[EntityKey, int] = defaultdict(int)
     retracted_fields: dict[EntityKey, set[str]] = defaultdict(set)
     asserted_fields: dict[EntityKey, set[str]] = defaultdict(set)
     asserted_members: dict[EntityKey, set[ClaimKey]] = defaultdict(set)
+    deferred_members: dict[EntityKey, set[str]] = defaultdict(set)
     removed_members: dict[EntityKey, dict[ClaimKey, str]] = defaultdict(dict)
+
+    def _reject_dup[T](
+        incoming: AbstractSet[T], seen: AbstractSet[T], ref: str, what: str
+    ) -> None:
+        dup = incoming & seen
+        if dup:
+            labels = ", ".join(sorted(str(d) for d in dup))
+            raise PatchError(
+                f"{ref}: {what} {labels} set by more than one entry on this record "
+                f"— each entry is its own changeset, so combine them into one entry"
+            )
+
     for result in results:
         for tkey, c in result.contributions.items():
+            ref = c.ref
             entry_count[tkey] += 1
-            target_ref[tkey] = c.ref
-            if c.has_provenance:
-                has_provenance[tkey] = True
+            target_ref[tkey] = ref
+            if c.from_delete:
+                is_delete[tkey] = True
+            _reject_dup(c.asserted_fields, asserted_fields[tkey], ref, "field")
+            _reject_dup(
+                c.retracted_fields, retracted_fields[tkey], ref, "retracted field"
+            )
+            _reject_dup(c.asserted_members, asserted_members[tkey], ref, "member")
+            _reject_dup(c.deferred_member_ids, deferred_members[tkey], ref, "member")
+            _reject_dup(
+                c.removed_members.keys(),
+                removed_members[tkey].keys(),
+                ref,
+                "removed member",
+            )
             retracted_fields[tkey] |= c.retracted_fields
             asserted_fields[tkey] |= c.asserted_fields
             asserted_members[tkey] |= c.asserted_members
+            deferred_members[tkey] |= c.deferred_member_ids
             removed_members[tkey].update(c.removed_members)
 
-    for tkey, count in entry_count.items():
-        if count > 1 and has_provenance[tkey]:
+    # Decision 5: a delete footprint is exclusive over root + cascade.
+    for tkey, deleting in is_delete.items():
+        if deleting and entry_count[tkey] > 1:
             raise PatchError(
-                f"{target_ref[tkey]}: multiple entries target this entity and at "
-                f"least one carries note/cite/cites — combine them into one entry "
-                f"(an entity's claims share a single changeset)"
+                f"{target_ref[tkey]}: another entry targets an entity this patch "
+                f"deletes (its root or a cascade child) — a delete must be the only "
+                f"entry touching the entities it removes"
             )
 
     for tkey, r_fields in retracted_fields.items():
@@ -1623,6 +1682,7 @@ def _emit_relationship(
             f"{entry.ref}: relationship {namespace!r} value must be a list of members"
         )
     clash_keys: list[ClaimKey] = []
+    deferred_handles: list[str] = []
     seen_keys: set[ClaimKey] = set()
     # Deferred members lack a concrete claim_key, so dedup them on the target
     # handle (the namespace is fixed for this call) to keep the same "duplicate
@@ -1654,6 +1714,7 @@ def _emit_relationship(
                         f"{entry.ref}: duplicate member {member!r} in {namespace!r}"
                     )
                 seen_deferred.add(handle)
+                deferred_handles.append(handle)
                 plan.assertions.append(
                     PlannedClaimAssert(
                         field_name=namespace,
@@ -1691,7 +1752,11 @@ def _emit_relationship(
         )
         clash_keys.append(claim_key)
         carrier_written = True
-    return _MemberEmitResult(clash_keys=clash_keys, carrier_written=carrier_written)
+    return _MemberEmitResult(
+        clash_keys=clash_keys,
+        deferred_handles=deferred_handles,
+        carrier_written=carrier_written,
+    )
 
 
 def _add_removals(

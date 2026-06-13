@@ -25,6 +25,7 @@ from .constraints import (
 from .fields import BoundedTextField
 from .license import License
 from .mixins import (
+    LIFECYCLE_STATUS_FIELD,
     DescribedModel,
     EntityStatus,
     IdentifiableModel,
@@ -51,6 +52,7 @@ __all__ = [
     "LabeledIdentityModel",
     "LabeledModel",
     "LastUpdatedModel",
+    "LIFECYCLE_STATUS_FIELD",
     "License",
     "LifecycleManager",
     "LifecycleQuerySet",

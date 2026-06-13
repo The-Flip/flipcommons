@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 
 from apps.catalog.ingestion.apply import (
     CitationRef,
@@ -26,7 +27,13 @@ from apps.catalog.ingestion.patches import (
 from apps.catalog.models import MachineModel, Manufacturer, Tag
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationSource
-from apps.provenance.models import ChangeSet, CitationInstance, Claim, Source
+from apps.provenance.models import (
+    ChangeSet,
+    CitationInstance,
+    Claim,
+    IngestRun,
+    Source,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -61,11 +68,11 @@ def prototype_tag(db):
     return Tag.objects.create(name="Prototype", slug="prototype")
 
 
-def _apply(text: str, *, patch_id: str = "0001-test"):
+def _apply(text: str, *, patch_id: str = "0001-test", dry_run: bool = False):
     doc = load_patch(text)
     source = Source.objects.get(slug=doc.attribution)
     plan = build_plan(doc, source=source, patch_id=patch_id)
-    return apply_plan(plan)
+    return apply_plan(plan, dry_run=dry_run)
 
 
 # ── Parsing ────────────────────────────────────────────────────────
@@ -127,19 +134,107 @@ def test_overlong_note_rejected(flipcommons_catalog, pm):
         _apply(text)
 
 
-def test_same_entity_provenance_conflict_rejected(flipcommons_catalog, pm):
-    # Two entries land on one entity and one carries a note → rejected, because
-    # an entity's claims collapse into a single shared changeset.
+def test_multiple_disjoint_edits_one_entity(flipcommons_catalog, ipdb_root, pm):
+    # Per-entry ChangeSets: two entries may edit one entity when their fields are
+    # disjoint. Each entry is its own ChangeSet with its own note + citation; pk
+    # order follows file order.
     text = """
 attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
-      note: first reason
+      note: corrected year per the flyer
+      cite: ipdb:4443
+      year: 1998
+  - model.medieval-madness:
+      note: production figure from the archive
+      production_quantity: 4000
+"""
+    report = _apply(text)
+    assert report.asserted == 2
+
+    assert IngestRun.objects.filter(patch_id="0001-test").count() == 1
+    changesets = list(
+        ChangeSet.objects.filter(ingest_run__patch_id="0001-test").order_by("pk")
+    )
+    assert len(changesets) == 2
+    assert changesets[0].note == "corrected year per the flyer"
+    assert changesets[1].note == "production figure from the archive"
+
+    year_claim = pm.claims.get(field_name="year", is_active=True)
+    qty_claim = pm.claims.get(field_name="production_quantity", is_active=True)
+    # pk/file order: first entry → first changeset, second entry → second.
+    assert year_claim.changeset_id == changesets[0].pk
+    assert qty_claim.changeset_id == changesets[1].pk
+    # Citation rode only the first entry's claim.
+    assert year_claim.citation_instances.exists()
+    assert not qty_claim.citation_instances.exists()
+
+
+def test_no_note_multi_entry_still_groups_per_entry(flipcommons_catalog, pm):
+    # Two disjoint-field edits, neither carrying a note → still two ChangeSets,
+    # each owning its claim (grouping rides entry_index, not the note).
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
       year: 1998
   - model.medieval-madness:
       production_quantity: 4000
 """
-    with pytest.raises(PatchError, match="combine them into one entry"):
+    _apply(text)
+    assert ChangeSet.objects.filter(ingest_run__patch_id="0001-test").count() == 2
+
+
+def test_same_field_two_entries_rejected(flipcommons_catalog, pm):
+    # Decision 2: two entries asserting the SAME field on one entity would
+    # collapse to a single claim in _build_claims — rejected as non-disjoint.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      note: first
+      year: 1998
+  - model.medieval-madness:
+      year: 1999
+"""
+    with pytest.raises(PatchError, match="more than one entry"):
+        _apply(text)
+
+
+def test_same_field_retracted_twice_rejected(flipcommons_catalog, pm):
+    # Decision 2 (retractions): two entries retracting the same field collapse to
+    # one deactivation, dropping one entry's note — rejected.
+    Claim.objects.assert_claim(pm, "year", 1998, source=flipcommons_catalog)
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      note: drop it
+      retract: [year]
+  - model.medieval-madness:
+      note: drop it again
+      retract: [year]
+"""
+    with pytest.raises(PatchError, match="more than one entry"):
+        _apply(text)
+
+
+def test_same_deferred_member_two_entries_rejected(flipcommons_catalog, pm):
+    # Decision 2 (deferred member): two entries adding the SAME same-patch-created
+    # tag to one model collapse to one membership claim — rejected.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - tag.newtag:
+      create: true
+      name: New Tag
+  - model.medieval-madness:
+      note: first
+      tag: [newtag]
+  - model.medieval-madness:
+      tag: [newtag]
+"""
+    with pytest.raises(PatchError, match="more than one entry"):
         _apply(text)
 
 
@@ -274,29 +369,58 @@ claims:
     assert not status_claim.citation_instances.exists()
 
 
-def test_cite_on_unchanged_value_noops(flipcommons_catalog, ipdb_root, pm):
-    # An already-correct, same-source value diffs as unchanged, so adding a
-    # cite: writes no new claim and attaches no citation (documented v1 limit).
+def test_cite_on_unchanged_value_rejected(flipcommons_catalog, ipdb_root, pm):
+    # Decision 3: an already-correct, same-source value diffs as unchanged, so a
+    # cite: would attach to nothing and silently vanish — now a hard error. The
+    # empty-diff guard runs in the apply layer (ValidationError; the command
+    # converts it to a PatchError for the author).
     Claim.objects.assert_claim(pm, "year", 2000, source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 2000\n"
-    _apply(text)
-    year_claim = pm.claims.get(
-        field_name="year", is_active=True, source=flipcommons_catalog
-    )
-    assert not year_claim.citation_instances.exists()
+    with pytest.raises(ValidationError, match="changes nothing"):
+        _apply(text)
     assert not CitationInstance.objects.exists()
 
 
-def test_note_on_unchanged_value_noops(flipcommons_catalog, pm):
-    # Same root cause as the cite no-op: an entry that re-asserts an
-    # already-active same-source value diffs as unchanged, so no ChangeSet is
-    # created and the note is silently dropped (documented v1 limit). Build
-    # time can't catch this — it depends on the post-diff result.
+def test_note_on_unchanged_value_rejected(flipcommons_catalog, pm):
+    # Decision 3: re-asserting an already-active same-source value with a note
+    # diffs as unchanged, which would drop the note — now a hard error. Build time
+    # can't catch this (it depends on the post-diff result), so the apply-layer
+    # empty-diff guard does.
     Claim.objects.assert_claim(pm, "year", 2000, source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: confirmed correct\n      year: 2000\n"
-    report = _apply(text)
-    assert report.asserted == 0  # nothing written
+    with pytest.raises(ValidationError, match="changes nothing"):
+        _apply(text)
     assert not ChangeSet.objects.filter(ingest_run__isnull=False).exists()
+
+
+def test_empty_diff_rejected_at_dry_run(flipcommons_catalog, pm):
+    # The empty-diff guard must fire at --dry-run too, so an author's pre-flight
+    # check catches the no-op note before apply — not only at apply time.
+    Claim.objects.assert_claim(pm, "year", 2000, source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: confirmed correct\n      year: 2000\n"
+    with pytest.raises(ValidationError, match="changes nothing"):
+        _apply(text, dry_run=True)
+
+
+def test_changing_note_entry_passes_dry_run(flipcommons_catalog, pm):
+    # A real change carrying a note validates clean at --dry-run (no false reject).
+    Claim.objects.assert_claim(pm, "year", 2000, source=flipcommons_catalog)
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: corrected per the flyer\n      year: 1999\n"
+    report = _apply(text, dry_run=True)
+    assert report.asserted == 1
+
+
+def test_dry_run_invalid_value_reports_validation_not_empty_diff(
+    flipcommons_catalog, pm
+):
+    # An invalid value carrying a note must surface as a validation error at
+    # --dry-run, not be masked by the empty-diff guard as "changes nothing": a
+    # rejected claim never reaches the diff, so the guard would otherwise blame the
+    # entry for a no-op instead of the real problem (year is a positive int).
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: bumping the year\n      year: -5\n"
+    report = _apply(text, dry_run=True)  # must not raise "changes nothing"
+    assert report.rejected == 1
+    assert report.errors
 
 
 def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
@@ -314,6 +438,7 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
             content_type_id=ct.pk,
             object_id=pm.pk,
             citation_ref=CitationRef("ipdb", "4443"),
+            entry_index=0,
         )
     )
     plan.assertions.append(
@@ -322,6 +447,7 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
             value=4000,
             content_type_id=ct.pk,
             object_id=pm.pk,
+            entry_index=1,
         )
     )
     apply_plan(plan)
@@ -330,6 +456,36 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
     qty_claim = pm.claims.get(field_name="production_quantity", is_active=True)
     assert year_claim.citation_instances.exists()
     assert not qty_claim.citation_instances.exists()
+
+
+def test_patch_plan_missing_entry_index_raises(flipcommons_catalog, pm):
+    # Structural guard: a patch_id plan whose assertion lacks an entry_index would
+    # silently collapse all ChangeSet grouping. The coupling check rejects it
+    # before the live/dry-run split, so --dry-run catches it too. Internal
+    # invariant (the adapter always stamps) → ValueError, not PatchError.
+    ct = ContentType.objects.get_for_model(MachineModel)
+    plan = IngestPlan(
+        source=flipcommons_catalog, input_fingerprint="fp", patch_id="0001-bad"
+    )
+    plan.assertions.append(
+        PlannedClaimAssert(
+            field_name="year",
+            value=1998,
+            content_type_id=ct.pk,
+            object_id=pm.pk,
+        )  # entry_index left unset
+    )
+    with pytest.raises(ValueError, match="without an entry_index"):
+        apply_plan(plan, dry_run=True)
+
+
+def test_retract_note_on_already_inactive_field_rejected(flipcommons_catalog, pm):
+    # Decision 3 (retraction note): a retract: + note: on a field this source does
+    # not actively claim emits no RetractEntry, so the note would vanish. Caught at
+    # build time — a no-op retraction carries nothing.
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: removing a year we never claimed\n      retract: [year]\n"
+    with pytest.raises(PatchError, match="note has nothing to attach to"):
+        _apply(text)
 
 
 def test_missing_citation_root_errors(flipcommons_catalog, pm):

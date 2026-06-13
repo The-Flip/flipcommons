@@ -1514,11 +1514,10 @@ claims:
     ).exists()
 
 
-def test_delete_cascade_child_same_entity_provenance_guard(machine_model):
-    # Deleting a Title cascades status=deleted onto its MachineModels. A
-    # separate entry that puts note/cite on a cascaded child collides in that
-    # child's single ChangeSet — the same-entity guard must catch it even
-    # though the child was only reached via the cascade.
+def test_delete_cascade_child_other_entry_rejected(machine_model):
+    # Decision 5: deleting a Title cascades status=deleted onto its MachineModels;
+    # the delete footprint is exclusive, so a separate entry touching a cascaded
+    # child (reached only via the cascade) is rejected.
     text = """
 attribution: flipcommons-catalog
 claims:
@@ -1528,8 +1527,26 @@ claims:
       note: 'edit on a machine that the cascade is deleting'
       year: 1998
 """
-    with pytest.raises(PatchError, match="multiple entries target this entity"):
+    with pytest.raises(PatchError, match="another entry targets an entity this patch"):
         _apply(text)
+
+
+def test_cascade_delete_is_one_changeset(machine_model):
+    # Decision 5: a standalone cascading delete (Title → MachineModel) yields ONE
+    # multi-entity ChangeSet spanning root + cascade, matching the in-app delete.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - title.medieval-madness-title:
+      delete: true
+"""
+    _apply(text, patch_id="0009-del")
+    changesets = ChangeSet.objects.filter(ingest_run__patch_id="0009-del")
+    assert changesets.count() == 1
+    cs = changesets.get()
+    deleted = cs.claims.filter(field_name="status", value="deleted")
+    # status=deleted on both the Title (root) and its cascaded MachineModel.
+    assert deleted.count() == 2
 
 
 def test_delete_must_be_boolean():

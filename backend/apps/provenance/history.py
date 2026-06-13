@@ -223,7 +223,10 @@ def build_edit_history(
                 ).order_by("field_name"),
             ),
         )
-        .order_by("-created_at")
+        # All ChangeSets minted in one ingest ``bulk_create`` share ``created_at``
+        # (db_default ``Now()``), so for a per-entry patch run file order lives only
+        # in pk — tiebreak on it to keep the timeline deterministic and ordered.
+        .order_by("-created_at", "-pk")
     )
 
     # 2. Fetch ALL claims for this entity (active + inactive, any author) to
