@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { FieldChangeSchema } from '$lib/api/schema';
+import type { ClaimValueSchema, FieldChangeSchema } from '$lib/api/schema';
 import {
+  diffText,
   formatValue,
   hasMeaningfulValue,
   isDeletion,
@@ -8,6 +9,21 @@ import {
   isUnchanged,
   simplifyClaimValue,
 } from './change-display';
+
+/** A markdown claim value: storage-form raw + authoring-form display.text. */
+function md(raw: string, text: string): ClaimValueSchema {
+  return { raw, display: { kind: 'markdown', text } };
+}
+
+/** Build a FieldChangeSchema whose old/new are markdown claim values. */
+function mdFc(oldValue: ClaimValueSchema | null, newValue: ClaimValueSchema): FieldChangeSchema {
+  return {
+    field_name: 'description',
+    claim_key: 'description',
+    old_value: oldValue,
+    new_value: newValue,
+  };
+}
 
 /** Build a minimal FieldChangeSchema with raw-only old/new values. */
 function fc(
@@ -91,6 +107,40 @@ describe('isDiffable', () => {
 
   it('returns true when one string is exactly 81 characters', () => {
     expect(isDiffable(fc('a'.repeat(81), 'short'))).toBe(true);
+  });
+
+  it('thresholds markdown fields on the authoring-form display.text', () => {
+    // Long authoring text → diffable, even though raw differs.
+    expect(isDiffable(mdFc(md('s', 'short'), md('s', 'a'.repeat(81))))).toBe(true);
+  });
+
+  it('returns false when markdown authoring text is short despite long raw', () => {
+    // Storage form can be long while the authoring form is short; threshold
+    // on what's actually rendered (display.text).
+    const longStorage = '[[manufacturer:id:1]]'.repeat(10);
+    expect(isDiffable(mdFc(md(longStorage, 'a'), md(longStorage, 'b')))).toBe(false);
+  });
+});
+
+describe('diffText', () => {
+  it('returns the authoring-form display.text for markdown values', () => {
+    expect(diffText(md('Made by [[manufacturer:id:9]].', 'Made by [[manufacturer:bally]].'))).toBe(
+      'Made by [[manufacturer:bally]].',
+    );
+  });
+
+  it('returns the raw string when there is no markdown display', () => {
+    expect(diffText({ raw: 'plain text' })).toBe('plain text');
+  });
+
+  it('returns empty string for non-string raw with no display', () => {
+    expect(diffText({ raw: 1990 })).toBe('');
+    expect(diffText({ raw: { person: 13 } })).toBe('');
+  });
+
+  it('returns empty string for null/undefined', () => {
+    expect(diffText(null)).toBe('');
+    expect(diffText(undefined)).toBe('');
   });
 });
 

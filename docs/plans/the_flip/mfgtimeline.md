@@ -152,25 +152,17 @@ TBD.
 
 TBD.
 
-### Early Japanese makers: UNDONE
+### Early Japanese makers: DONE
 
-**The issue**: Flipcommons is thin on early Japanese pinball. The Flip cross-checked against the thetastates.com/eremeka catalog of early Japanese flipper games and found makers that Flipcommons doesn't surface at all. Two of them clear The Flip's visibility threshold:
+**The issue**: Flipcommons is thin on early Japanese pinball. The Flip cross-checked against the thetastates.com/eremeka catalog of early Japanese flipper games and found makers that Flipcommons doesn't surface at all.
 
-- `sankyo` — 9 machines, 1969–76
-- `nihon-tenbo` — 6 machines, 1967–72
+**Resolution**: Flipcommons imported the eremeka catalog:
 
-Neither is in Flipcommons (nor IPDB nor OPDB) under those exact names. Flipcommons does carry a handful of early Japanese makers, but with placeholder or missing years, so the coverage is both sparse and low-quality. Here is everything Flipcommons has for them:
+- `nihon-tenbo` now exists as a manufacturer carrying all 6 of its eremeka games
+- The Sankyos were deliberately _not_ merged into one `sankyo` brand; instead all 9 of eremeka's Sankyo games now sit under the existing `sankyo-seiki` spanning 1969–76, with the placeholder/null years fixed.
+- We added gap-fill models and year-fixes under Komaya, Universal, Nihon Gorakuki and Game Mate.
 
-| Manufacturer                           | Corporate Entity                                      | # Machines | Year                       |
-| -------------------------------------- | ----------------------------------------------------- | ---------- | -------------------------- |
-| `sankyo-seiki`                         | `sankyo-precision-equipment-company-ltd`              | 5          | unknown (placeholder 1900) |
-| `sankyo-yuen-setsubi-kabushikigaisha`  | `sankyo-amusement-park-equipment-company-ltd-ofjapan` | 1          | unknown                    |
-| `nihon-goraku-ki-kabushikigaisha`      | `japan-amusement-machine-company-ltd`                 | 1          | unknown                    |
-| `nihon-jidou-hanbaiki-kabushikigaisha` | `japan-automatic-vending-machine-company-ltd`         | 1          | unknown                    |
-
-Bringing in the eremeka records, or fixing the years on what's already there, would close the gap. This is the same early-Japanese EM era as 1970s Sega (item 4), a region Flipcommons covers sparsely.
-
-**Workaround**: The Flip imports `sankyo` and `nihon-tenbo` from the eremeka catalog as curated `asia`-band records.
+Four IPDB-only models still carry null years — `attack-ball`, `circus-16`, `fishing-tengu` (Sankyo Seiki) and `dai-uchuu-ryokou` (Game Mate). These are absent from the eremeka catalog, so this source can't date them — they'd need different evidence (IPDB notes, other research).
 
 ## Bonus: all data changes are cited
 

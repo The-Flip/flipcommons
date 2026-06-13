@@ -38,6 +38,7 @@ from .helpers import (
     claims_prefetch,
 )
 from .history import build_changes, build_edit_history
+from .models import ClaimControlledModel
 from .models.changeset import ChangeSet
 from .schemas import (
     ChangeSetBaseSchema,
@@ -151,6 +152,10 @@ def edit_history_page(
     except ValueError:
         return Status(404, {"detail": f"Unknown entity type: {entity_type}"})
     entity = get_object_or_404(model_class, **{model_class.public_id_field: public_id})
+    # get_linkable_model returns type[LinkableModel]; every catalog entity type
+    # it resolves is also a ClaimControlledModel. Narrow for the typed display
+    # surface (same guard validation uses).
+    assert isinstance(entity, ClaimControlledModel)
     return build_edit_history(entity, policy_user(request.user))
 
 
@@ -178,8 +183,9 @@ def sources_page(
         model_class._default_manager.prefetch_related(claims_prefetch()),
         **{model_class.public_id_field: public_id},
     )
+    assert isinstance(entity, ClaimControlledModel)
     claims = active_claims(entity)
-    sources = build_sources(claims)
+    sources = build_sources(type(entity), claims)
     caller = policy_user(request.user)
     evidence: list[CitedChangeSetSchema] = []
     for row in build_cited_changesets(claims):
@@ -390,7 +396,12 @@ def change_detail(
     for c in history_claims:
         by_key[c.claim_key].append(c)
 
-    changes, retractions = build_changes(claims, retracted, by_key)
+    # Cross-entity site: resolve the subject model from the content type
+    # (process-cached, query-free after warmup — no select_related needed).
+    subject_model = ContentType.objects.get_for_id(ct_id).model_class()
+    assert subject_model is not None
+    assert issubclass(subject_model, ClaimControlledModel)
+    changes, retractions = build_changes(subject_model, claims, retracted, by_key)
 
     assert cs.pk is not None
     return ChangeSetDetailSchema(

@@ -11,6 +11,7 @@ from apps.provenance.helpers import (
     claims_prefetch,
 )
 from apps.provenance.models import Claim, Source
+from apps.provenance.schemas import ClaimDisplayValueSchema
 
 
 @pytest.fixture
@@ -79,10 +80,10 @@ class TestBuildSources:
         )
 
         loaded = pm.__class__.objects.prefetch_related(claims_prefetch()).get(pk=pm.pk)
-        sources = build_sources(active_claims(loaded))
+        sources = build_sources(type(loaded), active_claims(loaded))
         credit = next(s for s in sources if s.field_name == "credit")
 
-        assert credit.value.display is not None
+        assert isinstance(credit.value.display, ClaimDisplayValueSchema)
         assert [(p.key, p.label) for p in credit.value.display.identity] == [
             ("person", "Pat Lawlor"),
             ("role", "Art"),
@@ -93,7 +94,7 @@ class TestBuildSources:
         Claim.objects.assert_claim(series, "name", "S", source=source)
 
         loaded = Series.objects.prefetch_related(claims_prefetch()).get(pk=series.pk)
-        sources = build_sources(active_claims(loaded))
+        sources = build_sources(type(loaded), active_claims(loaded))
 
         assert sources[0].value.raw == "S"
         assert sources[0].value.display is None

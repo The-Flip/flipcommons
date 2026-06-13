@@ -16,6 +16,7 @@
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { getEntityContext } from '$lib/entity-context';
   import {
+    diffText,
     hasMeaningfulValue,
     isDeletion,
     isDiffable,
@@ -240,8 +241,8 @@
                       {:else if isDiffable(change)}
                         <dd>
                           <InlineDiff
-                            oldValue={change.old_value.raw}
-                            newValue={change.new_value.raw}
+                            oldValue={diffText(change.old_value)}
+                            newValue={diffText(change.new_value)}
                           />
                         </dd>
                       {:else}
@@ -276,8 +277,8 @@
                       <dt>{change.field_name}</dt>
                       <dd>
                         <InlineDiff
-                          oldValue={change.old_value.raw}
-                          newValue={change.new_value.raw}
+                          oldValue={diffText(change.old_value)}
+                          newValue={diffText(change.new_value)}
                         />
                       </dd>
                       {@render revertControls(change)}

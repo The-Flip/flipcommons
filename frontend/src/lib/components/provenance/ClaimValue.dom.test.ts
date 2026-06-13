@@ -11,6 +11,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { person: 13, role: 9, exists: true },
           display: {
+            kind: 'relationship',
             identity: [
               { key: 'person', label: 'Pat Lawlor', state: 'resolved' },
               { key: 'role', label: 'Art', state: 'resolved' },
@@ -28,6 +29,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { person: 13, role: 9, exists: false },
           display: {
+            kind: 'relationship',
             identity: [
               { key: 'person', label: 'Pat Lawlor', state: 'resolved' },
               { key: 'role', label: 'Art', state: 'resolved' },
@@ -46,6 +48,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { gameplay_feature: 5, count: 3, exists: true },
           display: {
+            kind: 'relationship',
             identity: [{ key: 'gameplay_feature', label: 'Multiball', state: 'resolved' }],
             qualifiers: [{ key: 'count', value: 3 }],
           },
@@ -59,6 +62,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { gameplay_feature: 5, count: 1, exists: true },
           display: {
+            kind: 'relationship',
             identity: [{ key: 'gameplay_feature', label: 'Multiball', state: 'resolved' }],
             qualifiers: [{ key: 'count', value: 1 }],
           },
@@ -72,6 +76,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { theme: 7, exists: true },
           display: {
+            kind: 'relationship',
             identity: [{ key: 'theme', label: 'Horror', state: 'resolved' }],
             qualifiers: [],
           },
@@ -85,6 +90,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { media_asset: 42, category: 'flyer', is_primary: true, exists: true },
           display: {
+            kind: 'relationship',
             identity: [{ key: 'media_asset', label: 'Title cover', state: 'resolved' }],
             qualifiers: [
               { key: 'category', value: 'flyer' },
@@ -101,6 +107,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { media_asset: 42, category: 'flyer', is_primary: false, exists: true },
           display: {
+            kind: 'relationship',
             identity: [{ key: 'media_asset', label: 'Title cover', state: 'resolved' }],
             qualifiers: [
               { key: 'category', value: 'flyer' },
@@ -117,6 +124,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { media_asset: 42, category: null, is_primary: false, exists: true },
           display: {
+            kind: 'relationship',
             identity: [{ key: 'media_asset', label: 'Title cover', state: 'resolved' }],
             qualifiers: [
               { key: 'category', value: null },
@@ -136,6 +144,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { alias_value: 'the patster', alias_display: 'The Patster', exists: true },
           display: {
+            kind: 'relationship',
             identity: [{ key: 'alias_value', label: 'The Patster', state: 'resolved' }],
             qualifiers: [],
           },
@@ -149,6 +158,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { person: 99, role: 9, exists: true },
           display: {
+            kind: 'relationship',
             identity: [
               { key: 'person', label: null, state: 'deleted' },
               { key: 'role', label: 'Art', state: 'resolved' },
@@ -168,6 +178,7 @@ describe('ClaimValue', () => {
         value: {
           raw: { role: 9, exists: true },
           display: {
+            kind: 'relationship',
             identity: [
               { key: 'person', label: null, state: 'missing' },
               { key: 'role', label: 'Art', state: 'resolved' },
@@ -196,6 +207,7 @@ describe('ClaimValue', () => {
           value: {
             raw: { thing: 1, weirdkey: 'hello', exists: true },
             display: {
+              kind: 'relationship',
               identity: [{ key: 'thing', label: 'Widget', state: 'resolved' }],
               qualifiers: [{ key: 'weirdkey', value: 'hello' }],
             },
@@ -211,6 +223,7 @@ describe('ClaimValue', () => {
           value: {
             raw: { thing: 1, weirdkey: null, exists: true },
             display: {
+              kind: 'relationship',
               identity: [{ key: 'thing', label: 'Widget', state: 'resolved' }],
               qualifiers: [{ key: 'weirdkey', value: null }],
             },
@@ -264,6 +277,18 @@ describe('ClaimValue', () => {
         value: { raw: { person: 13, role: 9, exists: true } },
       });
       expect(container.textContent).toBe('{"person":13,"role":9,"exists":true}');
+    });
+  });
+
+  describe('with markdown display', () => {
+    it('renders the authoring-form display.text, not the raw storage form', () => {
+      const { container } = render(ClaimValueFixture, {
+        value: {
+          raw: 'Made by [[manufacturer:id:9]].',
+          display: { kind: 'markdown', text: 'Made by [[manufacturer:bally]].' },
+        },
+      });
+      expect(container.textContent).toBe('Made by [[manufacturer:bally]].');
     });
   });
 });

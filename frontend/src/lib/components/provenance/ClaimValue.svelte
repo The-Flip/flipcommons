@@ -22,12 +22,14 @@
   );
 </script>
 
-{#if display}
+{#if display?.kind === 'relationship'}
   {#if negated}
     <s><ClaimDisplay {display} /></s>
   {:else}
     <ClaimDisplay {display} />
   {/if}
+{:else if display?.kind === 'markdown'}
+  {display.text}
 {:else if simple}
   {#if simple.exists}
     {simple.display}

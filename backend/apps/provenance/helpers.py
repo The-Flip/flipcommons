@@ -5,11 +5,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import cast
 
-from django.db import models
 from django.db.models import Case, F, IntegerField, Prefetch, QuerySet, Value, When
 
-from .display import FieldValue, claim_value, resolve_labels
-from .models import ChangeSet, CitationInstance, Claim
+from .display import FieldValue, claim_value, resolve_display_context
+from .models import ChangeSet, CitationInstance, Claim, ClaimControlledModel
 from .schemas import (
     ClaimAttributionSchema,
     ClaimAuthorSchema,
@@ -82,7 +81,7 @@ def claims_prefetch(
     return Prefetch("claims", queryset=queryset, to_attr=to_attr)
 
 
-def active_claims(entity: models.Model) -> list[Claim]:
+def active_claims(entity: ClaimControlledModel) -> list[Claim]:
     """Return the list of active claims prefetched onto *entity*.
 
     Raises AssertionError if the queryset wasn't set up with
@@ -110,17 +109,25 @@ def citation_instances(claim: Claim) -> list[CitationInstance]:
     return cast(list[CitationInstance], instances)
 
 
-def build_sources(claims: Iterable[Claim]) -> list[ClaimSchema]:
+def build_sources(
+    model: type[ClaimControlledModel], claims: Iterable[Claim]
+) -> list[ClaimSchema]:
     """Serialize pre-fetched active claims into the sources list format.
+
+    ``model`` is the subject entity's class — all claims belong to one entity,
+    so it is uniform and the caller supplies it (do not hop
+    ``claim.content_type`` per claim: ``claims_prefetch`` does not
+    ``select_related`` it, so that would be an N+1).
 
     Claims should be ordered by claim_key, -priority, -created_at. The first
     claim seen per claim_key is marked as the winner.
 
-    The iterable is materialized to a list internally so FK display labels can
-    be resolved in a single batched pass before the per-claim loop.
+    The iterable is materialized to a list internally so FK labels and
+    wikilink authoring keys can be resolved in a single batched pass before
+    the per-claim loop.
     """
     claims = list(claims)
-    labels = resolve_labels(FieldValue(c.field_name, c.value) for c in claims)
+    ctx = resolve_display_context(FieldValue(c.field_name, c.value) for c in claims)
     winners: set[str] = set()
     sources: list[ClaimSchema] = []
     for claim in claims:
@@ -134,7 +141,7 @@ def build_sources(claims: Iterable[Claim]) -> list[ClaimSchema]:
                     created_at=claim.created_at.isoformat(),
                 ),
                 field_name=claim.field_name,
-                value=claim_value(claim.field_name, claim.value, labels),
+                value=claim_value(model, claim.field_name, claim.value, ctx),
                 citation=claim.citation,
                 is_winner=is_winner,
                 changeset_note=claim.changeset.note if claim.changeset else None,
