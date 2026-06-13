@@ -264,6 +264,7 @@ def list_citation_instances(
     return [
         CitationInstanceSchema(
             id=ci.pk,
+            slug=ci.slug,
             citation_source_id=ci.citation_source_id,
             citation_source_name=ci.citation_source.name,
             claim_id=ci.claim_id,
@@ -333,7 +334,9 @@ def create_citation_instance(
         locator=data.locator,
     )
     try:
-        instance.full_clean()
+        # slug is assigned in CitationInstance.save(); exclude it from
+        # validation, which runs first and would otherwise see it blank.
+        instance.full_clean(exclude=["slug"])
         instance.save()
     except ValidationError as exc:
         raise HttpError(422, str(exc)) from exc
@@ -344,6 +347,7 @@ def create_citation_instance(
         201,
         CitationInstanceSchema(
             id=instance.pk,
+            slug=instance.slug,
             citation_source_id=instance.citation_source_id,
             citation_source_name=source.name,
             claim_id=None,

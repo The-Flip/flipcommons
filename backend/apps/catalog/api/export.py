@@ -456,54 +456,65 @@ def _build_link_map(texts: list[str]) -> _LinkMap:
     return link_map
 
 
-# Inline citation marker ``[[cite:N]]`` — the only id-only link type
-# (public_id_field=None); its token carries an internal CitationInstance pk.
-def _id_only_link_re() -> re.Pattern[str]:
-    """Match ``[[<name>:N]]`` tokens for every id-only link type (``cite`` today,
-    plus any future ``public_id_field=None`` type) — derived from the wikilinks
-    registry so a new one can't silently leak a raw pk. Keyed on the registered
-    names, so it never strips a resolved ``[[type:public_id]]`` (even a numeric
-    slug). Matches nothing if there are no id-only types.
+class _LinkStripRules(NamedTuple):
+    """Markers dropped from the public dump, computed once per export build.
 
-    Evaluated fresh per export build (the caller computes it once and threads it),
-    NOT cached for the process lifetime, so ``LinkType.is_enabled``'s runtime
-    toggle is honored.
+    Threaded (not cached process-wide) so ``LinkType.is_enabled``'s runtime
+    toggle is honored on every build.
+    """
+
+    # id-only link types' bare ``[[type:N]]`` form: would leak a raw pk.
+    id_only_re: re.Pattern[str]
+    # Names of ``export_inline=False`` types (citations): their storage-form
+    # ``[[type:id:N]]`` marker is stripped in ``_sub``. Decoupled from
+    # public_id_field so the strip survives cite's flip to a public-id type —
+    # without it, cite would only be dropped incidentally via a link-map miss.
+    inline_types: frozenset[str]
+
+
+def _link_strip_rules() -> _LinkStripRules:
+    """Build the per-export marker-strip rules from the wikilinks registry.
+
+    Derived from the registry so a new id-only type can't silently leak a raw pk,
+    and a new ``export_inline=False`` type is stripped automatically.
     """
     from apps.core.wikilinks import get_enabled_link_types
 
-    names = [
-        re.escape(lt.name)
-        for lt in get_enabled_link_types()
-        if lt.public_id_field is None
-    ]
-    return (
-        re.compile(rf"\[\[(?:{'|'.join(names)}):\d+\]\]")
-        if names
+    types = get_enabled_link_types()
+    id_only_names = [re.escape(lt.name) for lt in types if lt.public_id_field is None]
+    id_only_re = (
+        re.compile(rf"\[\[(?:{'|'.join(id_only_names)}):\d+\]\]")
+        if id_only_names
         else re.compile(r"(?!)")
     )
+    inline_types = frozenset(lt.name for lt in types if not lt.export_inline)
+    return _LinkStripRules(id_only_re=id_only_re, inline_types=inline_types)
 
 
-def _resolve_links(text: str, link_map: _LinkMap, id_only_re: re.Pattern[str]) -> str:
+def _resolve_links(text: str, link_map: _LinkMap, strip_rules: _LinkStripRules) -> str:
     """Rewrite ``[[type:id:pk]]`` tokens to public_id-keyed ``[[type:public_id]]``.
 
     Tokens we can't resolve to a public_id are dropped, never emitted with their
-    raw pk: a broken/dangling link (id not found) or an id-only marker (citations)
-    would otherwise leak an internal database id into the public dump.
+    raw pk: a broken/dangling link (id not found), an inline-only marker
+    (citations, ``export_inline=False``) or an id-only marker would otherwise
+    leak an internal database id into the public dump.
     """
 
     def _sub(m: re.Match[str]) -> str:
         entity_type, pk = m.group(1), int(m.group(2))
+        if entity_type in strip_rules.inline_types:
+            return ""
         public_id = link_map.get(_LinkRef(entity_type, pk))
         return f"[[{entity_type}:{public_id}]]" if public_id else ""
 
-    return id_only_re.sub("", _LINK_RE.sub(_sub, text))
+    return strip_rules.id_only_re.sub("", _LINK_RE.sub(_sub, text))
 
 
 def _serialize_description(
     obj: CatalogModel,
     sfl_map: SourceFieldLicenseMap,
     link_map: _LinkMap,
-    id_only_re: re.Pattern[str],
+    strip_rules: _LinkStripRules,
 ) -> dict[str, Any]:
     """Description source text + winning-claim attribution, query-free.
 
@@ -515,7 +526,7 @@ def _serialize_description(
     """
     # description is a MarkdownField(blank=True) on every CatalogModel — always a
     # str ("" when blank), and _resolve_links("") == "".
-    text = _resolve_links(obj.description, link_map, id_only_re)
+    text = _resolve_links(obj.description, link_map, strip_rules)
     attribution: AttributionSchema | None = None
     for claim in _active_claims(obj):
         if claim.field_name == "description":
@@ -544,13 +555,13 @@ def _serialize_row(
     min_rank: int,
     sfl_map: SourceFieldLicenseMap,
     link_map: _LinkMap,
-    id_only_re: re.Pattern[str],
+    strip_rules: _LinkStripRules,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "public_id": obj.public_id,
         "name": obj.name,
         "last_modified": obj.last_modified.isoformat(),
-        "description": _serialize_description(obj, sfl_map, link_map, id_only_re),
+        "description": _serialize_description(obj, sfl_map, link_map, strip_rules),
     }
     for name, f in _claim_scalar_fields(spec).items():
         if isinstance(f, models.ForeignKey):
@@ -832,7 +843,7 @@ def _register(spec: ExportSpec) -> None:
             return cached
         min_rank = get_minimum_display_rank()
         sfl_map = build_source_field_license_map()
-        id_only_re = _id_only_link_re()  # once per build, honoring is_enabled toggles
+        strip_rules = _link_strip_rules()  # once per build, honoring is_enabled toggles
         objs = list(_build_qs(spec))
         link_map = _build_link_map([o.description for o in objs])
         rows = [
@@ -842,7 +853,7 @@ def _register(spec: ExportSpec) -> None:
                 min_rank=min_rank,
                 sfl_map=sfl_map,
                 link_map=link_map,
-                id_only_re=id_only_re,
+                strip_rules=strip_rules,
             )
             for obj in objs
         ]

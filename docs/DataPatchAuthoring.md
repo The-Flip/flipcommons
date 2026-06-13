@@ -6,12 +6,12 @@ For background, [DataPatches.md](DataPatches.md) defines the patch **file format
 
 ## Hand-authored or generated?
 
-Two ways to produce a patch's YAML:
+Hand-authoring is the default; reach for a generator only when a _population_ earns it.
 
-- **Hand-author** native YAML against [DataPatches.md](DataPatches.md) when you can get the whole patch right by reading each entry once — a handful of targeted corrections, a record description, a vocab file. This is the default.
-- **Generate with `patchkit`** when you're classifying a _population_ from source data: many rows, each needing a live-value `expect:` guard and a verbatim quote extracted-and-escaped from source free text, where hand-copying guards would drift from the live DB and the editorial judgment (what you searched, what you rejected) is worth an auditable worksheet. See [DataPatchKit.md](DataPatchKit.md).
+- **Hand-author** native YAML when you can get the whole patch right by reading each entry once — targeted corrections, a record description, a vocab file. Most patches are this, including ones that touch a dozen entities: a description patch has no per-row guard or quote to mechanize, so a script buys nothing. It also stays cheap to revise, since a later change edits the YAML directly.
+- **Generate with [DataPatchKit.md](DataPatchKit.md)** when you're classifying a population from source data — many rows, each needing a live-value `expect:` guard and a verbatim quote extracted and escaped from source free text. The trigger is the repeated mechanical per-row work, not the row count: hand-copied guards drift from the live DB, while a generator reads them true on every regen and can make each classification field a _required_ per-row key, so a row that omits it fails loudly instead of silently inheriting a wrong value — a model defaulting to `game_format: pinball` is how a non-pinball machine slips through. Enforced uniform coverage is as much the point as true guards. Keep a worksheet recording every search behind the rows — the dead ends too, since proving a term is _absent_ from the sources is what justifies the signal you did use — so the editorial judgment stays auditable. The cost lands later: edits go through the generator and a live-DB-coupled re-run, never the YAML, so don't generate a patch you expect to keep hand-tweaking.
 
-Count is a _symptom_, not the rule — the triggers are repeated mechanical per-row work (pull the live guard, extract the quote, escape it) that a script does more reliably than hand-copying, plus editorial judgment worth recording. A description patch can touch a dozen entities and still be hand-authored: there's no per-row guard or quote extraction to mechanize.
+Decide per patch, not per patch set: a generated bulk patch and hand-written one-offs can sit side by side.
 
 ## Schema cheatsheet
 
@@ -31,11 +31,11 @@ uv run python manage.py shell -c "from apps.catalog.models.taxonomy import GameF
 
 ## Authoring a good patch
 
-These principles apply whether you hand-author or generate. Each is elaborated in a section below or in [DataPatches.md](DataPatches.md).
+These principles apply whether you hand-author or generate.
 
-### Data patch attribution
+### Attribution of the overall patch
 
-**Attribute to `flipcommons-catalog` by default.** It's Flipcommons' own attribution for values we research, scrape and classify ourselves, and it owns the overwhelming majority of patches. Anything web-scraped where we apply editorial judgment is `flipcommons-catalog`; scraping a fact off IPDB or Kineticist does **not** mean attributing the patch to them. Deriving a structured value by classifying a source's free text (parsing IPDB notes into a `game_format`, say) is this same default case, not an exception: `flipcommons-catalog`, with `cite:` to the source text as evidence and `note:` quoting it — there's no source claim to supersede, because the source never had that field.
+**Attribute the overall patch to the `flipcommons-catalog` source by default.** It's Flipcommons' own attribution for values we research, scrape and classify ourselves, and it owns the overwhelming majority of patches. Anything web-scraped where we apply editorial judgment is `flipcommons-catalog`; scraping a fact off IPDB or Kineticist does **not** mean attributing the patch to them. Deriving a structured value by classifying a source's free text (parsing IPDB notes into a `game_format`, say) is this same default case, not an exception: `flipcommons-catalog`, with `cite:` to the source text as evidence and `note:` quoting it — there's no source claim to supersede, because the source never had that field.
 
 Reach for a different attribution only in these cases:
 
@@ -58,13 +58,15 @@ Reach for a different attribution only in these cases:
 
 ### Cite most entries
 
-**Cite external evidence with `cite:`** — `scheme:identifier` for IPDB/OPDB records, or a raw `http(s)://` URL for any other web page (a forum thread, an archive scan, a manufacturer's page). Reach for the scheme form whenever one exists; the URL form is the escape hatch for sources without a scheme. A URL cite needs its **website root seeded first** (a parentless web source whose homepage link shares the domain) — seed it in an earlier patch, the same vocab-first pattern, then cite pages under it (see [Citation sources](#citation-sources)). Skip the citation when the evidence is in the entity's own data and instead write it in the note such as "Its name contains the word 'prototype'". The cite can also differ from the `expect:` guard: when the evidence lives in a _different_ record's note (a cross-reference — "‹other game› is not a pinball"), guard on the model's own id but `cite:` the record that contains the statement.
+**Cite external evidence with `cite:` on every substantive claim.** Skip the cite only when the evidence _is_ the entity's own data — then state it in the `note:` instead ("Its name contains the word 'prototype'"). The other exemptions are scaffolding entries (below) and aliases/abbreviations (see [Aliases and abbreviations](#aliases-and-abbreviations)).
+
+**Pick the cite form by source:** `scheme:identifier` for IPDB/OPDB records, or a raw `http(s)://` URL for any other web page (a forum thread, an archive scan, a manufacturer's page). Reach for the scheme form whenever one exists; the URL form is the escape hatch for sources without a scheme. A URL cite needs its **website root seeded first** — see [Citation sources](#citation-sources).
+
+**The cite can differ from the `expect:` guard.** When the evidence lives in a _different_ record's note (a cross-reference — "‹other game› is not a pinball"), guard on the model's own id but `cite:` the record that contains the statement.
 
 **Only assert what a source supports.** If you can't point to evidence, leave the field unset rather than guess: an unset value reads as "unknown", a wrong claim reads as fact.
 
-### Script large patches
-
-**Large curated patches: keep a worksheet, emit from a script.** For a patch spanning dozens of curated rows, record every search you ran (including the ones that found nothing) and the verbatim source text behind each call in a review worksheet, then generate the YAML from a script that reads live field values for the `expect:` guards. Hand-copying guards drifts from the DB; a generator keeps them true and the worksheet keeps the editorial judgment auditable. The dead-end searches matter too — proving a term is absent from the sources is what justifies relying on the signal you did find. **Don't reinvent the generator** — follow [DataPatchKit.md](DataPatchKit.md) and use the shared `patchkit` helper (escaping, `expect:` guards, source-text extraction).
+Target-creating entries can be **scaffolding** — obvious records like Titles before Models or Locations before corporate-entity claims — and may omit per-entry `note:`/`cite:` when the patch `description:` says why they're needed. The substantive assignment that uses them still needs normal evidence.
 
 ## Patch description
 
@@ -72,14 +74,6 @@ Every patch should contain a top-level description. Don't restate the details of
 
 - ❌ NO: Models for the new active makers, one per game. Each model's title (0053) and corporate entity (0051) already exist. Production status reflects each game's real state: Alice Goes to Wonderland is shipping (produced); the rest are announced (a pre-order, an intended launch, a trademark filing). Corporate inception years stay off the entities; these model years carry the makers' timeline. The Wonderland and Pawlowski home machines carry the home-use tag; the already-catalogued Ramp's Road Trip is tagged widebody.
 - ✅ YES: Models for the new active makers created in a previous patch.
-
-## Create new vocabulary in a patch, not the seed
-
-**New vocabulary must be created by a patch**, never added to the pindata seed. Production is seeded **once** and never re-ingested — it only replays patches — so a new taxonomy value (`GameFormat`, `ProductionStatus`, `Tag`) added only to the seed would never reach prod, and a patch referencing it would fail there. Create the vocab in a patch, then reference it. The same holds for any new FK target — a manufacturer, a title, a parent location.
-
-Within a file, declare a target **above** the entry that references it (same-patch backward refs resolve). Only a _forward_ reference — pointing at an entry below — still needs an earlier patch (see [DataPatches.md → Limitations](DataPatches.md#limitations)).
-
-Target-creating entries can be **scaffolding** — obvious records like Titles before Models or Locations before corporate-entity claims — and may omit per-entry `note:`/`cite:` when the patch `description:` says why they're needed. The substantive assignment that uses them still needs normal evidence.
 
 ## Citation sources
 

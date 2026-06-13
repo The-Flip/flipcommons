@@ -1,5 +1,6 @@
 <script lang="ts">
   import client from '$lib/api/client';
+  import type { CitationInstanceSchema } from '$lib/api/schema';
   import {
     transition,
     isDraftSubmittable,
@@ -20,7 +21,9 @@
     oncancel,
     onback,
   }: {
-    oncomplete: (linkText: string) => void;
+    /** Receives the freshly-minted instance; consumers format the marker
+     * (`[[cite:<slug>]]`) or read its fields directly. */
+    oncomplete: (instance: CitationInstanceSchema) => void;
     oncancel: () => void;
     onback: () => void;
   } = $props();
@@ -49,7 +52,7 @@
       return;
     }
 
-    oncomplete(`[[cite:${data.id}]]`);
+    oncomplete(data);
   }
 
   /** Dispatch an action, then auto-submit if the draft is ready. */

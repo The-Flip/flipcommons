@@ -89,6 +89,7 @@ class TestListCitationInstances:
         data = resp.json()[0]
         assert set(data.keys()) == {
             "id",
+            "slug",
             "citation_source_id",
             "citation_source_name",
             "claim_id",

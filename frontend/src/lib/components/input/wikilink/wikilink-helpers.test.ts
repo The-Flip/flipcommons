@@ -42,8 +42,8 @@ describe('formatLinkText', () => {
     );
   });
 
-  it('formats a citation link with numeric ID', () => {
-    expect(formatLinkText('cite', '42')).toBe('[[cite:42]]');
+  it('formats a citation link with a slug', () => {
+    expect(formatLinkText('cite', 'bqntvkrs')).toBe('[[cite:bqntvkrs]]');
   });
 });
 

@@ -833,7 +833,9 @@ def _attach_citation(
             claim=claim,
             locator=template.locator,
         )
-        instance.full_clean()
+        # slug is assigned in CitationInstance.save(); exclude it from
+        # validation, which runs first and would otherwise see it blank.
+        instance.full_clean(exclude=["slug"])
         instance.save()
 
 

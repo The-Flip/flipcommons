@@ -1,5 +1,5 @@
 <script lang="ts">
-  import client from '$lib/api/client';
+  import type { CitationInstanceSchema } from '$lib/api/schema';
   import { type EditCitationSelection } from '$lib/edit-citation';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import CitationAutocomplete from './CitationAutocomplete.svelte';
@@ -13,7 +13,6 @@
   } = $props();
 
   let pickerOpen = $state(false);
-  let citationError = $state('');
 
   function formatCitationSummary(selectedCitation: EditCitationSelection): string {
     return selectedCitation.locator
@@ -21,49 +20,22 @@
       : selectedCitation.sourceName;
   }
 
-  function extractCitationId(linkText: string): number | null {
-    const match = linkText.match(/^\[\[cite:(\d+)\]\]$/);
-    return match ? Number(match[1]) : null;
-  }
-
-  async function handleComplete(linkText: string) {
-    const citationId = extractCitationId(linkText);
-    if (citationId == null) {
-      citationError = 'Failed to select citation.';
-      return;
-    }
-
-    let data;
-    try {
-      ({ data } = await client.GET('/api/citation-instances/batch/', {
-        params: { query: { ids: String(citationId) } },
-      }));
-    } catch {
-      citationError = 'Failed to load citation.';
-      return;
-    }
-    const selectedCitation = data?.[0];
-    if (!selectedCitation) {
-      citationError = 'Failed to load citation.';
-      return;
-    }
-
+  // The instance is already minted by CitationAutocomplete; read its fields
+  // directly — no pk-keyed refetch. Mint failures surface inside the picker.
+  function handleComplete(instance: CitationInstanceSchema) {
     citation = {
-      citationInstanceId: citationId,
-      sourceName: selectedCitation.source_name,
-      locator: selectedCitation.locator,
+      citationInstanceId: instance.id,
+      sourceName: instance.citation_source_name,
+      locator: instance.locator,
     };
-    citationError = '';
     pickerOpen = false;
   }
 
   function openPicker() {
-    citationError = '';
     pickerOpen = true;
   }
 
   function closePicker() {
-    citationError = '';
     pickerOpen = false;
   }
 </script>
@@ -98,10 +70,6 @@
           This citation will apply to all changed fields in this save. Split unrelated edits if
           needed.
         </p>
-      {/if}
-
-      {#if citationError}
-        <p class="citation-error">{citationError}</p>
       {/if}
 
       {#if pickerOpen}
@@ -157,12 +125,6 @@
     margin: 0;
     font-size: var(--font-size-0);
     color: var(--color-text-muted);
-  }
-
-  .citation-error {
-    margin: 0;
-    font-size: var(--font-size-0);
-    color: var(--color-error-text);
   }
 
   .citation-picker {

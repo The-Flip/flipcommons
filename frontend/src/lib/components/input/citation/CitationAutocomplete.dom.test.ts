@@ -380,7 +380,7 @@ describe('CitationAutocomplete (component-level)', () => {
 
       // Should auto-complete (skip_locator=true for web children)
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(`[[cite:${CREATED_INSTANCE.id}]]`);
+        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
     });
 
@@ -415,7 +415,7 @@ describe('CitationAutocomplete (component-level)', () => {
       fireEvent.pointerDown(screen.getByRole('button', { name: /Create & cite/ }));
 
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(`[[cite:${CREATED_INSTANCE.id}]]`);
+        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
 
       expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
@@ -461,7 +461,7 @@ describe('CitationAutocomplete (component-level)', () => {
       fireEvent.pointerDown(screen.getByRole('button', { name: /Create & cite/ }));
 
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(`[[cite:${CREATED_INSTANCE.id}]]`);
+        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
 
       // The minted child is a specific article page, not the source's
@@ -547,7 +547,7 @@ describe('CitationAutocomplete (component-level)', () => {
       );
 
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(`[[cite:${CREATED_INSTANCE.id}]]`);
+        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
 
       expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
@@ -892,7 +892,7 @@ describe('CitationAutocomplete (component-level)', () => {
 
       // Match has skip_locator=true → auto-completes citation
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(`[[cite:${CREATED_INSTANCE.id}]]`);
+        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
     });
 

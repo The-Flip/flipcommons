@@ -79,6 +79,103 @@ class TestCitationInstanceCreation:
 
 
 # ---------------------------------------------------------------------------
+# Slug minting
+# ---------------------------------------------------------------------------
+
+
+class TestCitationInstanceSlug:
+    def test_save_assigns_slug(self, citation_source):
+        ci = CitationInstance.objects.create(citation_source=citation_source)
+        assert ci.slug
+        assert ci.slug.isalpha()
+        assert ci.slug.islower()
+        assert not any(c in "aeiou" for c in ci.slug)
+
+    def test_slugs_unique_across_instances(self, citation_source):
+        slugs = {
+            CitationInstance.objects.create(citation_source=citation_source).slug
+            for _ in range(25)
+        }
+        assert len(slugs) == 25
+
+    def test_explicit_slug_preserved(self, citation_source):
+        ci = CitationInstance(citation_source=citation_source, slug="bcdfghjk")
+        ci.save()
+        assert ci.slug == "bcdfghjk"
+
+    @pytest.mark.parametrize(
+        "bad_slug",
+        [
+            "abc123de",  # digits
+            "bcdfghj",  # too short
+            "bcdfghjkl",  # too long
+            "bcdfghja",  # vowel
+            "BCDFGHJK",  # uppercase
+            "bcd-fghj",  # punctuation
+        ],
+    )
+    def test_save_rejects_invalid_explicit_slug(self, citation_source, bad_slug):
+        from django.core.exceptions import ValidationError
+
+        ci = CitationInstance(citation_source=citation_source, slug=bad_slug)
+        with pytest.raises(ValidationError, match="Invalid citation slug"):
+            ci.save()
+
+    def test_db_length_check_rejects_wrong_length(self, citation_source):
+        # bulk_create skips save() (and its charset validation), so the
+        # cross-backend length CHECK is the belt that still rejects a bad length.
+        from django.db import IntegrityError, transaction
+
+        with pytest.raises(IntegrityError), transaction.atomic():
+            CitationInstance.objects.bulk_create(
+                [CitationInstance(citation_source=citation_source, slug="bcd")]
+            )
+
+    def test_mint_many_assigns_slugs(self, citation_source):
+        instances = [
+            CitationInstance(citation_source=citation_source) for _ in range(3)
+        ]
+        CitationInstance.objects.mint_many(instances)
+        assert all(inst.pk and inst.slug for inst in instances)
+        assert len({inst.slug for inst in instances}) == 3
+
+    def test_mint_many_empty(self, db):
+        assert CitationInstance.objects.mint_many([]) == []
+
+    def test_mint_many_collision_retries_under_outer_atomic(
+        self, citation_source, monkeypatch
+    ):
+        # Pre-seed a slug, then force the generator to emit it on the first
+        # attempt (poisoning the insert) and a fresh one on the retry. The whole
+        # thing runs inside an outer atomic() — the savepoint must let the failed
+        # bulk_create roll back so the retry succeeds rather than raising
+        # TransactionManagementError.
+        from django.db import transaction
+
+        from apps.provenance.models import citation_instance as ci_mod
+
+        existing = CitationInstance.objects.create(
+            citation_source=citation_source, slug="bcdbcdbc"
+        )
+        calls = {"n": 0}
+
+        def fake_slug() -> str:
+            calls["n"] += 1
+            return "bcdbcdbc" if calls["n"] == 1 else "dfgdfgdf"
+
+        monkeypatch.setattr(ci_mod, "generate_citation_slug", fake_slug)
+
+        with transaction.atomic():
+            (minted,) = CitationInstance.objects.mint_many(
+                [CitationInstance(citation_source=citation_source)]
+            )
+
+        assert minted.slug == "dfgdfgdf"
+        assert minted.slug != existing.slug
+        assert calls["n"] >= 2  # collided once, regenerated
+
+
+# ---------------------------------------------------------------------------
 # Immutability
 # ---------------------------------------------------------------------------
 

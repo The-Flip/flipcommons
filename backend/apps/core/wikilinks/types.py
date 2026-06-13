@@ -95,6 +95,11 @@ class LinkType:
     get_label: Callable[[Any], str] | None = None  # override for irregular label
     select_related: tuple[str, ...] = ()
     prefetch_related: tuple[str, ...] = ()
+    # Whether this link type's markers may appear in the public export dump.
+    # False for inline annotations (citations) that are stripped on export
+    # regardless of public-id vs id-based form — decoupled from public_id_field
+    # so the strip survives cite's flip to a public-id type.
+    export_inline: bool = True
     # When set, _render_by_id() uses this instead of _format_link(). Indices are
     # assigned by unique ID in order of first appearance (duplicate markers share
     # the same index).
