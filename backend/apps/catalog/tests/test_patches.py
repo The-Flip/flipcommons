@@ -2248,7 +2248,7 @@ claims:
     assert _alias_values(stern) == {"Stern Pinball"}
 
     tombstone = _alias_claim("stern inc")
-    # Exact tombstone shape — lowercased, no alias_display (step 8 invariant).
+    # Exact tombstone shape: lowercased, with display-only fields omitted.
     assert tombstone.value == {"alias_value": "stern inc", "exists": False}
     expected_key, _ = build_relationship_claim(
         "manufacturer_alias", {"alias_value": "stern inc"}, exists=False

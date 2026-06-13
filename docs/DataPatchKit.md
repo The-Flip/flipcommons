@@ -55,20 +55,22 @@ import patchkit as pk
 
 Import from the authoring dir (`gen.py` does `sys.path.insert(0, <authoring>)`).
 
-| function                                                                                                                   | purpose                                                                                                 |
-| -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `guard(row, prefer=("ipdb_id","year","corporate_entity"))`                                                                 | most specific `expect:` dict from a live-values row; `{}` if none                                       |
-| `check_resolved(requested, found)`                                                                                         | raise if any ref didn't resolve (typo/drift)                                                            |
-| `sentences(text)` / `sentence_with(blob, needle)`                                                                          | split source free text; pull the sentence containing a needle                                           |
-| `clean_ipdb_quote(text, limit=240)`                                                                                        | normalize a quote's typography, strip the IPD header and `…: "<passage>` framing, truncate with `[...]` |
-| `source_note(source, verbatim, tail="")`                                                                                   | build `IPDB says "<verbatim>"` (normalizes typography, preserves non-ASCII; mark omissions `[...]`)     |
-| `entry(ref, *, create, expect, note, cite, fields, description, tags, relationships, remove, retract, commented, comment)` | one correctly-escaped `claims:` block                                                                   |
-| `write_patch(path, *, attribution, description, entries)`                                                                  | a complete patch file                                                                                   |
-| `yamlq` / `clean_text`                                                                                                     | the escaper / the typography normalizer, if you need them directly                                      |
+| function                                                                                                                          | purpose                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `guard(row, prefer=("ipdb_id","year","corporate_entity"))`                                                                        | most specific `expect:` dict from a live-values row; `{}` if none                                       |
+| `check_resolved(requested, found)`                                                                                                | raise if any ref didn't resolve (typo/drift)                                                            |
+| `sentences(text)` / `sentence_with(blob, needle)`                                                                                 | split source free text; pull the sentence containing a needle                                           |
+| `clean_ipdb_quote(text, limit=240)`                                                                                               | normalize a quote's typography, strip the IPD header and `…: "<passage>` framing, truncate with `[...]` |
+| `source_note(source, verbatim, tail="")`                                                                                          | build `IPDB says "<verbatim>"` (normalizes typography, preserves non-ASCII; mark omissions `[...]`)     |
+| `entry(ref, *, create, expect, note, cite, cites, fields, description, tags, relationships, remove, retract, commented, comment)` | one correctly-escaped `claims:` block                                                                   |
+| `write_patch(path, *, attribution, description, entries)`                                                                         | a complete patch file                                                                                   |
+| `yamlq` / `clean_text`                                                                                                            | the escaper / the typography normalizer, if you need them directly                                      |
 
 **Escaping is solved — use it.** Notes go through `yamlq` (single-quoted YAML: literal except `'`, which doubles). This carries both the double quotes in `... says "x"` and apostrophes, with no backslashes. Do **not** `json.dumps` notes.
 
 **Relationship members.** `entry(...)` also takes `relationships={namespace: [members]}` (the general emitter; `tags=` is the `tag` shorthand) and `remove={namespace: [members]}`. Members are escaped, so string members for aliases / abbreviations are safe — e.g. `relationships={"manufacturer_alias": ["Stern Pinball", "Stern, Inc"]}` or `remove={"abbreviation": ["MedievalMadness"]}`. Alias values case-fold for identity; abbreviations are verbatim (see [DataPatchAuthoring.md → Aliases and abbreviations](DataPatchAuthoring.md#aliases-and-abbreviations)).
+
+**Inline citations.** `entry(..., cites={"1": "ipdb:4443", "2": {"url": "…", "archive": "…"}})` emits a `cites:` map for the new inline footnotes a `description` references as `[[cite:1]]` / `[[cite:2]]` (see [DataPatches.md → Inline citations in descriptions](DataPatches.md#inline-citations-in-descriptions)). `entry()` runs the **within-entry marker ↔ map correspondence guard at author time** — every numeric-handle marker needs a `cites:` entry, every `cites:` key must be a numeric handle a marker references, a slug marker (`[[cite:bqntvkrs]]`, an existing citation) carries no entry — so a structural mistake raises a `ValueError` before the patch ships. It can't confirm a slug _resolves_ (that's the backend's job at apply), and the cross-entry one-entry-per-entity rule stays backend-only (`entry()` sees one entry at a time).
 
 Minimal generator:
 

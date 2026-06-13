@@ -43,6 +43,8 @@ A `CitationInstance` is a single use of a source in a specific place, usually wi
 
 The text uses **point citations**, not text ranges. An inline marker sits at a position and means "this source supports the nearby claim", usually the preceding sentence. Ranges look more precise but demand discipline contributors won't sustain and produce misleadingly precise markup.
 
+The inline marker is a normal **public-id wikilink** keyed on the instance's durable, author-stable **`slug`**: authoring form `[[cite:<slug>]]`, storage form `[[cite:id:<pk>]]` (the same authoring↔storage split as `[[title:…]]` and the other link types). The slug is what makes an inline footnote addressable in a hand- or AI-authored data patch — see [DataPatches.md → Inline citations in descriptions](DataPatches.md#inline-citations-in-descriptions).
+
 ### CitationSourceLink
 
 A `CitationSourceLink` is a reader-facing access point — a canonical URL, an archive URL, an uploaded scan, a museum-hosted copy. Links are ways to _inspect_ a source, not separate sources. They are wholly owned by their source.

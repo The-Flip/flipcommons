@@ -93,6 +93,23 @@ Some patches set narrative record descriptions (Manufacturer, Model, …) — pr
 - **No speculation.** Keep it factual; tell the story, don't guess.
 - **Every statement supported.** Back each claim with the entry's `note:`, its `cite:`, or a fact already in the catalog. A statement resting on existing catalog data needs no citation; anything else does.
 - **Attribute to the description source.** Each entity type has its own description source named `flipcommons-ai-desc-<entity-type>` — `flipcommons-ai-desc-manufacturer`, `flipcommons-ai-desc-model`, … — not the generic `flipcommons-catalog`. These sources already exist (the seed ingest creates one per entity type), so just reference one — unlike a `cite:` website root, you don't create it in an earlier patch.
+- **Cite each fact inline.** A narrative description backs individual sentences with **inline `[[cite:…]]` footnotes** rather than one entry-level `cite:` — see [DataPatches.md → Inline citations in descriptions](DataPatches.md#inline-citations-in-descriptions) for the format (numeric handles plus a `cites:` map for new citations; durable slugs for existing ones). An entry-level `cite:` still works for a whole-field source, but inline footnotes are what make each statement individually verifiable. Inline `cites:` count as provenance, so all of an entity's cited fields belong in **one entry**.
+
+### Rehydrating a description for re-edit
+
+To reword one sentence of an existing cited description without re-supplying every other citation, **dump the current text back to authoring form** and edit that:
+
+```bash
+cd backend
+uv run python manage.py dump_patch_entry model.mazatron > /tmp/p/0NNN-reword.yaml
+```
+
+The command emits a complete, runnable patch document with the entity's markdown fields in authoring format (`[[cite:<slug>]]`, real durable slugs in place) — edit a sentence, drop the marker for any citation you remove, and resubmit. Existing slugs self-resolve, so an untouched citation re-applies to byte-identical storage and diffs as a no-op (no churn, no orphaned instance); only a sentence you actually change writes.
+
+Two behaviors to know:
+
+- **`attribution:` defaults to the field's _owning_ source** (the `flipcommons-ai-desc-<type>` that holds the winning description claim), because a re-apply is a faithful no-op only under that source — `_diff_claims` compares within a source. `--attribution <slug>` overrides it, which **forks** the text into a new source-owned claim rather than preserving no-op semantics. A description that was last edited **interactively in-app** is user-owned (no source) and dumps only with an explicit `--attribution`.
+- **The dump omits `expect:`**, so it carries no drift guard — it will apply even if the entity changed between dump and re-apply. Add an `expect:` yourself if that matters.
 
 ### Manufacturer descriptions
 

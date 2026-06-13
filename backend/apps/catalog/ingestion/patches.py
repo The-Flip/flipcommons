@@ -68,9 +68,9 @@ PATCH_ID_RE = re.compile(r"^\d{4}-[a-z0-9-]+$")
 # patch-authored raw-pk marker. Do NOT dedupe this against the registry pattern.
 _CITE_MARKER_RE = re.compile(r"\[\[cite:([^\]]+)\]\]")
 # Strict handle grammars — classification is purely lexical (no DB lookup). A real
-# slug is 8 lowercase consonants (Step 1's ``validate_citation_slug`` + length
-# CHECK), a strict subset of ``^[a-z]+$`` and provably disjoint from ``^[0-9]+$``,
-# so a numeric new-handle can never masquerade as a slug or vice-versa.
+# CitationInstance slug is constrained to 8 lowercase consonants, a strict subset
+# of ``^[a-z]+$`` and provably disjoint from ``^[0-9]+$``, so a numeric new-handle
+# can never masquerade as a slug or vice-versa.
 _NUMERIC_HANDLE_RE = re.compile(r"^[0-9]+$")
 _SLUG_HANDLE_RE = re.compile(r"^[a-z]+$")
 

@@ -1,4 +1,4 @@
-"""Tests for inline-cited patch descriptions (Step 2).
+"""Tests for inline-cited patch descriptions.
 
 A patch may carry rich markdown descriptions whose facts are backed by inline
 ``[[cite:<handle>]]`` footnotes. A *new* footnote uses a numeric handle declared
@@ -64,7 +64,7 @@ def _floating():
 
 
 def _is_slug(value: str) -> bool:
-    # Step 1's slug: exactly 8 lowercase consonants (digit- and vowel-free).
+    # CitationInstance slugs are exactly 8 lowercase consonants.
     return len(value) == 8 and value.isalpha() and value.islower()
 
 
