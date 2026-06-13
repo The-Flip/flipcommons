@@ -22,7 +22,7 @@ From there they are exported via pindata's `make pull-ingest` to R2, under the p
 
 ## File format
 
-Each patch file carries **one attribution** (→ one `IngestRun`).
+Each patch file carries **one attribution** (→ one `IngestRun`), and each entry under `claims:` becomes its **own** `ChangeSet` — one note slot per entry, rendered in file order on the entity's Edit History page. A record may therefore appear in **several** entries, each carrying its own `note`/`cite` (see [Notes & citations](#notes--citations)). This mirrors the in-app model, where each edit mints one ChangeSet.
 
 ### Edit
 
@@ -42,6 +42,23 @@ claims: # ordered list of single-key entries
       tag: [prototype] # relationship: namespace → member public_ids
 ```
 
+A record can take **several** entries, each its own `ChangeSet` with its own `note`/`cite` — split a change across entries when the facts have distinct evidence:
+
+```yaml
+attribution: flipcommons-catalog
+claims:
+  - model.mazatron:
+      year: 1990
+      note: "IPDB lists a 1990 prototype run."
+      cite: ipdb:4443
+  - model.mazatron: # same record, a disjoint field → its own ChangeSet
+      production_status: unreleased
+      note: "Pinside thread confirms it never shipped."
+      cite: https://pinside.com/thread
+```
+
+The entries' fields must be **disjoint** — two entries can't both set `year` (see [Notes & citations](#notes--citations) for this and the rest of the per-entry rules).
+
 ### Create
 
 Create a new record:
@@ -57,6 +74,22 @@ claims:
 ```
 
 `create: true` opts in to making a new entity — without it an unresolved ref errors; with it on a ref that already resolves, an error (duplicate). An FK target must already exist when the entry runs — in the seed, an _earlier_ patch, or **earlier in this same patch** — so a manufacturer and the corporate entity pointing at it can land together, the manufacturer declared first (a _forward_ reference, pointing at an entry below, isn't supported yet; see [Limitations](#limitations)). Creating a **Location** is the one create whose id is _derived_: write `slug` and `parent` as ordinary claims, and the `location_path` in the ref must compose from `parent + slug` (a mismatch errors).
+
+**Create then refine the same record in one file.** A `create:` entry may be followed by ordinary edit entries on the **same** new record — list the create first, then companion entries that assert _additional_ fields, each its own separately-attributed `ChangeSet`:
+
+```yaml
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.western-products: # create the record
+      name: Western Products
+      create: true
+  - manufacturer.western-products: # refine it — a distinct field, own note/cite
+      website: https://westernproducts.example
+      note: "Company site, per the IPDB listing."
+      cite: ipdb:1234
+```
+
+This is how one coherent change — a create plus a separately-cited refinement — lives in a single file instead of needing a follow-up patch (each entry its own `ChangeSet` with its own `note`/`cite`). Companion entries must appear **below** the create (an edit above its create errors, naming the create below it). A companion edit on a same-patch create takes **only field assertions**: `expect:` (there's no DB state to guard), `retract:` and `remove:` (there are no prior claims to drop) are each rejected. And per the [disjoint-fields rule](#notes--citations), a companion may not reassert a field the create already set.
 
 ### Retract
 
@@ -103,7 +136,7 @@ claims:
       note: "Duplicate of chicago-coin; its sole machine was reassigned first."
 ```
 
-This writes a `status=deleted` claim (no row removal), exactly like an in-app delete. It reuses the app's soft-delete planner, so it obeys the same record-lifecycle rules: it **refuses** while an active PROTECT referrer would be left dangling — reassign any such referrer in an **earlier** patch first (the referrer check reads live DB state — see [Limitations](#limitations)) — and **cascades** `status=deleted` to owned lifecycle children (a warning lists them). A delete entry takes only `expect:`/`note:`/`cite:` — no field assertions, no `create:`, no `retract:`; `note`/`cite` ride the `status=deleted` claim. Idempotent: re-deleting an already-deleted entity diffs as unchanged. It takes effect only if the `status=deleted` claim wins resolution, so attribute it to a source that outranks any existing `status` claim.
+This writes a `status=deleted` claim (no row removal), exactly like an in-app delete. It reuses the app's soft-delete planner, so it obeys the same record-lifecycle rules: it **refuses** while an active PROTECT referrer would be left dangling — reassign any such referrer in an **earlier** patch first (the referrer check reads live DB state — see [Limitations](#limitations)) — and **cascades** `status=deleted` to owned lifecycle children (a warning lists them). The root and its cascade children land in a **single** ChangeSet, matching an in-app delete. A delete is **exclusive over that footprint**: no other entry in the patch may target the deleted entity or any of its cascade children. A delete entry takes only `expect:`/`note:`/`cite:` — no field assertions, no `create:`, no `retract:`; `note`/`cite` ride the `status=deleted` claim. Idempotent: re-deleting an already-deleted entity diffs as unchanged — the one no-op a provenance-bearing entry is allowed (see [Notes & citations](#notes--citations)). It takes effect only if the `status=deleted` claim wins resolution, so attribute it to a source that outranks any existing `status` claim.
 
 ### Entity references
 
@@ -167,10 +200,10 @@ claims:
 - **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
 - **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's domain must match a **seeded website root** (a parentless web source whose homepage link shares the domain); the cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no root matches, the patch errors — declare the website root in this patch's `sources:` block (processed before claims) or an earlier patch. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
 
-Two rules tie note/cite to the single changeset an entry produces:
+As noted under [File format](#file-format), each entry is its own ChangeSet, so one record can take **several** entries in a patch — each with its own `note`/`cite`. Two rules keep that unambiguous:
 
-- **One provenance-bearing entry per entity.** Two entries resolving to the same entity that both set `note`/`cite` is an error — combine them into one.
-- **Provenance rides only an actual write (v1).** note/cite attach to what the patch writes. An entry with nothing to attach to (retraction-only, field-less create, empty `tag: []`) is a hard error. And re-asserting a value the entity already has from the same source diffs as unchanged — no claim, no changeset — so its `note`/`cite` are **silently dropped though the patch reports success**. To record provenance, the entry must change a value or create the entity.
+- **Disjoint fields per record.** Entries targeting the same record (an existing entity _or_ a same-patch create) must assert/retract **disjoint** `claim_key`s. The same field in two entries — including the same relationship member, or one entry asserting and another retracting it — is an error. (Each field resolves to one winning claim, so two entries fighting over it has no coherent meaning.)
+- **Provenance must have something to attach to.** A `note`/`cite`/`cites` rides the claims an entry writes, so an entry carrying provenance with nothing to carry it is a hard error — in two shapes. **No carrier** (caught at build): a `cite:`/`note:` on a field-less `create:`, or an empty `tag: []` — there's no authored claim to attach to (a create's own slug/status claims aren't carriers). **No-op diff** (caught at apply): re-asserting a value the source already holds, or a `retract:`/`remove:` of something already gone — the write diffs to nothing, so the provenance would silently vanish. Previously a no-op diff dropped its provenance while reporting success; now it fails loudly. A retract- or remove-only entry is fully valid **when it drops a live claim** — the note rides that deactivation. (The one allowed no-op is an idempotent re-`delete:` of an already-deleted entity. And a field-less create with no provenance is fine — it just creates the entity.)
 
 ### Inline citations in descriptions
 
@@ -199,7 +232,7 @@ claims:
 
 **Marker ↔ map correspondence is enforced** (a structural error, no DB lookup): every numeric-handle marker must have a `cites:` entry, and every `cites:` key must be a numeric handle referenced by at least one marker. A `cites:` entry keyed by a slug, or one no marker references, is a misuse. A marker that is neither all-digits nor a bare slug — notably a raw `[[cite:id:1]]` (storage form) — is rejected.
 
-**Inline `cites:` count as provenance**, so the [one-provenance-bearing-entry-per-entity rule](#notes--citations) applies: an entity's cited description must live in a **single entry** — two entries on the same entity where either carries `cites:` (or `note:`/`cite:`) are rejected ("combine them into one entry").
+**Inline `cites:` count as provenance.** A `description` is a single field, so by the [disjoint-fields rule](#notes--citations) it lives in **one** entry — you can't split a cited description across two entries on the same record (both would assert the `description` field). Other, disjoint fields on that record may still live in their own separate entries with their own provenance.
 
 Re-edit (rehydrated) — markers carry durable slugs, untouched cites need no `cites:`:
 
