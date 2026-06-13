@@ -92,6 +92,27 @@ class TestExportRelations:
         assert {"person": person.slug, "role": "design"} in row["credits"]
 
 
+class TestExportStripsInlineCitations:
+    def test_cite_marker_stripped_from_description(self, client, machine_model):
+        # Guards the export_inline=False decoupling: after cite became a
+        # public-id type, the strip must still drop its [[cite:id:N]] storage
+        # marker from the public dump (not leak it, not emit a resolved cite).
+        from apps.citation.models import CitationSource
+        from apps.provenance.models import CitationInstance
+
+        src = CitationSource.objects.create(name="Book", source_type="book")
+        ci = CitationInstance.objects.create(citation_source=src)
+        machine_model.description = f"A fact.[[cite:id:{ci.pk}]] More."
+        machine_model.save()
+        invalidate_all()
+
+        row = _row(client, "models", machine_model.slug)
+        text = row["description"]["text"]
+        assert "cite" not in text
+        assert "[[" not in text
+        assert text == "A fact. More."
+
+
 class TestExportCache:
     def test_etag_and_conditional_304(self, client, machine_model):
         r1 = client.get("/api/export/models/")

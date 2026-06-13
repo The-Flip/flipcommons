@@ -3,6 +3,7 @@
 from typing import Any
 
 import pytest
+from django.core.exceptions import ValidationError
 
 from apps.core.markdown import (
     convert_authoring_to_storage,
@@ -147,7 +148,7 @@ class TestRenderMarkdownHtml:
         )
         ci = CitationInstance.objects.create(citation_source=src, locator="ch. 3")
         metadata: list[dict[str, Any]] = []
-        html = render_markdown_html(f"Fact.[[cite:{ci.pk}]]", metadata_out=metadata)
+        html = render_markdown_html(f"Fact.[[cite:id:{ci.pk}]]", metadata_out=metadata)
         assert "data-cite-id" in html
         assert len(metadata) == 1
         assert metadata[0]["source_name"] == "Source Book"
@@ -198,7 +199,7 @@ class TestRenderMarkdownFields:
         src = CitationSource.objects.create(name="Book", source_type="book")
         ci = CitationInstance.objects.create(citation_source=src, locator="p. 1")
         mfr = Manufacturer(
-            name="Test", slug="test", description=f"Info.[[cite:{ci.pk}]]"
+            name="Test", slug="test", description=f"Info.[[cite:id:{ci.pk}]]"
         )
         result = render_markdown_fields(mfr)
         citations = result["description_citations"]
@@ -308,7 +309,7 @@ class TestAuthoringToStorage:
         assert f"[[manufacturer:id:{manufacturer.pk}]]" in result
 
     def test_invalid_slug_raises_validation_error(self, db):
-        with pytest.raises(Exception, match="not found"):
+        with pytest.raises(ValidationError, match="not found"):
             convert_authoring_to_storage("See [[manufacturer:nonexistent]]")
 
     def test_empty_string(self):
@@ -368,11 +369,11 @@ class TestCitationLinkType:
 
         lt = get_link_type("cite")
         assert lt is not None
-        assert lt.public_id_field is None
+        assert lt.public_id_field == "slug"
         assert lt.format_link is not None
 
     def test_render_single_citation(self, citation_instance):
-        text = f"Production was 4,000 units.[[cite:{citation_instance.pk}]]"
+        text = f"Production was 4,000 units.[[cite:id:{citation_instance.pk}]]"
         result = render_all_links(text)
         pk = citation_instance.pk
         assert (
@@ -390,7 +391,7 @@ class TestCitationLinkType:
         ci2 = CitationInstance.objects.create(
             citation_source=citation_source, locator="p. 83"
         )
-        text = f"First fact.[[cite:{ci1.pk}]] Second fact.[[cite:{ci2.pk}]]"
+        text = f"First fact.[[cite:id:{ci1.pk}]] Second fact.[[cite:id:{ci2.pk}]]"
         result = render_all_links(text)
         assert (
             f'<sup data-cite-id="{ci1.pk}" data-cite-index="1"'
@@ -403,24 +404,24 @@ class TestCitationLinkType:
 
     def test_duplicate_citation_same_number(self, citation_instance):
         pk = citation_instance.pk
-        text = f"First mention.[[cite:{pk}]] Second mention.[[cite:{pk}]]"
+        text = f"First mention.[[cite:id:{pk}]] Second mention.[[cite:id:{pk}]]"
         result = render_all_links(text)
         # Both should be [1], not [1] and [2]
         assert result.count("[1]") == 2
         assert "[2]" not in result
 
     def test_render_broken_citation(self, db):
-        text = "Cited.[[cite:99999]]"
+        text = "Cited.[[cite:id:99999]]"
         result = render_all_links(text)
         assert "<sup>[?]</sup>" in result
 
     def test_render_plain_text(self, citation_instance):
-        text = f"Cited.[[cite:{citation_instance.pk}]]"
+        text = f"Cited.[[cite:id:{citation_instance.pk}]]"
         result = render_all_links(text, plain_text=True)
         assert result == "Cited.[1]"
 
     def test_render_broken_plain_text(self, db):
-        text = "Cited.[[cite:99999]]"
+        text = "Cited.[[cite:id:99999]]"
         result = render_all_links(text, plain_text=True)
         assert "[?]" in result
         assert "<sup>" not in result
@@ -428,7 +429,7 @@ class TestCitationLinkType:
     def test_mixed_citations_and_entity_links(self, manufacturer, citation_instance):
         text = (
             f"Made by [[manufacturer:id:{manufacturer.pk}]]."
-            f"[[cite:{citation_instance.pk}]]"
+            f"[[cite:id:{citation_instance.pk}]]"
         )
         result = render_all_links(text)
         assert "[Williams](/manufacturers/williams)" in result
@@ -438,13 +439,13 @@ class TestCitationLinkType:
         )
 
     def test_sync_references_for_citations(self, citation_instance, system):
-        text = f"Cited.[[cite:{citation_instance.pk}]]"
+        text = f"Cited.[[cite:id:{citation_instance.pk}]]"
         sync_references(system, text)
         refs = RecordReference.objects.all()
         assert refs.count() == 1
 
     def test_cite_survives_html_pipeline(self, citation_instance):
-        text = f"Production was 4,000 units.[[cite:{citation_instance.pk}]]"
+        text = f"Production was 4,000 units.[[cite:id:{citation_instance.pk}]]"
         html = render_markdown_html(text)
         pk = citation_instance.pk
         assert f'data-cite-id="{pk}"' in html
@@ -452,6 +453,45 @@ class TestCitationLinkType:
         assert 'tabindex="0"' in html
         assert 'role="button"' in html
         assert "[1]" in html
+
+
+class TestCiteRegularized:
+    """cite is a normal public-id wikilink type keyed on CitationInstance.slug:
+    [[cite:<slug>]] authoring ↔ [[cite:id:<pk>]] storage."""
+
+    def test_storage_to_authoring_uses_slug(self, citation_instance):
+        text = f"Fact.[[cite:id:{citation_instance.pk}]]"
+        result = convert_storage_to_authoring(text)
+        assert result == f"Fact.[[cite:{citation_instance.slug}]]"
+
+    def test_authoring_to_storage_resolves_slug(self, citation_instance):
+        text = f"Fact.[[cite:{citation_instance.slug}]]"
+        result = convert_authoring_to_storage(text)
+        assert result == f"Fact.[[cite:id:{citation_instance.pk}]]"
+
+    def test_roundtrip_unchanged(self, citation_instance):
+        storage = f"Fact.[[cite:id:{citation_instance.pk}]]"
+        assert (
+            convert_authoring_to_storage(convert_storage_to_authoring(storage))
+            == storage
+        )
+
+    def test_unknown_slug_raises_on_conversion(self, db):
+        with pytest.raises(ValidationError, match="not found"):
+            convert_authoring_to_storage("Fact.[[cite:nosuchslug]]")
+
+    def test_storage_form_footnotes(self, citation_instance):
+        result = render_all_links(f"Fact.[[cite:id:{citation_instance.pk}]]")
+        assert f'data-cite-id="{citation_instance.pk}"' in result
+        assert "<sup" in result
+
+    def test_authoring_form_does_not_footnote(self, citation_instance):
+        # A bare authoring [[cite:slug]] reaches the renderer only as
+        # defense-in-depth (stored text is always storage form); it renders as a
+        # plain/broken link via _render_by_public_id, never a <sup> footnote.
+        result = render_all_links(f"Fact.[[cite:{citation_instance.slug}]]")
+        assert "data-cite-id" not in result
+        assert "<sup" not in result
 
 
 class TestMetadataCollection:
@@ -463,7 +503,7 @@ class TestMetadataCollection:
         ci = CitationInstance.objects.create(
             citation_source=citation_source_with_links, locator="p. 42"
         )
-        text = f"Cited.[[cite:{ci.pk}]]"
+        text = f"Cited.[[cite:id:{ci.pk}]]"
         metadata: list[dict[str, Any]] = []
         render_all_links(text, metadata_out=metadata)
         assert len(metadata) == 1
@@ -481,7 +521,7 @@ class TestMetadataCollection:
 
     def test_metadata_deduplicated_by_pk(self, citation_instance):
         pk = citation_instance.pk
-        text = f"First.[[cite:{pk}]] Second.[[cite:{pk}]]"
+        text = f"First.[[cite:id:{pk}]] Second.[[cite:id:{pk}]]"
         metadata: list[dict[str, Any]] = []
         render_all_links(text, metadata_out=metadata)
         assert len(metadata) == 1
@@ -496,7 +536,7 @@ class TestMetadataCollection:
         ci2 = CitationInstance.objects.create(
             citation_source=citation_source, locator="p. 20"
         )
-        text = f"First.[[cite:{ci1.pk}]] Second.[[cite:{ci2.pk}]]"
+        text = f"First.[[cite:id:{ci1.pk}]] Second.[[cite:id:{ci2.pk}]]"
         metadata: list[dict[str, Any]] = []
         render_all_links(text, metadata_out=metadata)
         assert len(metadata) == 2
@@ -507,7 +547,7 @@ class TestMetadataCollection:
 
     def test_no_metadata_when_none(self, citation_instance):
         """metadata_out=None (default) doesn't break anything."""
-        text = f"Cited.[[cite:{citation_instance.pk}]]"
+        text = f"Cited.[[cite:id:{citation_instance.pk}]]"
         result = render_all_links(text)
         assert "data-cite-id" in result
 

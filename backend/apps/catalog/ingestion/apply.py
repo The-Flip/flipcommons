@@ -1022,7 +1022,7 @@ def _attach_plan_citations(
             source_cache[ref] = source_id
         instances.append(CitationInstance(citation_source_id=source_id, claim=claim))
     if instances:
-        CitationInstance.objects.bulk_create(instances)
+        CitationInstance.objects.mint_many(instances)
 
 
 def _persist(

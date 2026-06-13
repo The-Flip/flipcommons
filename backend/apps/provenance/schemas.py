@@ -523,6 +523,9 @@ class CitationInstanceSchema(Schema):
     """
 
     id: int = Field(description="The citation instance's identifier.")
+    slug: str = Field(
+        description="Author-stable handle used in [[cite:<slug>]] authoring markers."
+    )
     citation_source_id: int = Field(description="Identifier of the cited source.")
     citation_source_name: str = Field(description="Display name of the cited source.")
     claim_id: int | None = Field(

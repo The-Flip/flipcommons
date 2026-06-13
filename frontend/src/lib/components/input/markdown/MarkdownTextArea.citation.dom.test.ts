@@ -261,7 +261,7 @@ describe('MarkdownTextArea citation integration', () => {
     mockPOST.mockResolvedValueOnce({ data: CREATED_INSTANCE });
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Insert' }));
 
-    const expectedCitation = `[[cite:${CREATED_INSTANCE.id}]]`;
+    const expectedCitation = `[[cite:${CREATED_INSTANCE.slug}]]`;
     await vi.waitFor(() => {
       expect(textarea).toHaveValue(`See ${expectedCitation} after`);
     });
@@ -291,7 +291,7 @@ describe('MarkdownTextArea citation integration', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Skip' }));
 
     await vi.waitFor(() => {
-      expect(textarea).toHaveValue(`Ref [[cite:${CREATED_INSTANCE.id}]]`);
+      expect(textarea).toHaveValue(`Ref [[cite:${CREATED_INSTANCE.slug}]]`);
     });
 
     expect(document.activeElement).toBe(textarea);
@@ -381,7 +381,7 @@ describe('MarkdownTextArea citation integration', () => {
 
     // skip_locator=true — citation inserted directly, no locator stage
     await vi.waitFor(() => {
-      expect(textarea).toHaveValue(`[[cite:${CREATED_INSTANCE.id}]]`);
+      expect(textarea).toHaveValue(`[[cite:${CREATED_INSTANCE.slug}]]`);
     });
     expect(screen.queryByRole('textbox', { name: /citation locator/i })).not.toBeInTheDocument();
     expectDropdownClosed();
@@ -426,7 +426,7 @@ describe('MarkdownTextArea citation integration', () => {
 
     // Citation should be inserted directly — no identify stage, no manual clicks
     await vi.waitFor(() => {
-      expect(textarea).toHaveValue(`[[cite:${CREATED_INSTANCE.id}]]`);
+      expect(textarea).toHaveValue(`[[cite:${CREATED_INSTANCE.slug}]]`);
     });
 
     expectDropdownClosed();

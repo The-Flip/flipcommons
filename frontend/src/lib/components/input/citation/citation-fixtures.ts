@@ -204,8 +204,17 @@ export const CREATED_IPDB_CHILD = {
   skip_locator: true,
 };
 
-/** Minimal response from POST /api/citation-instances/ — component reads id. */
-export const CREATED_INSTANCE = { id: 42 };
+/** Response from POST /api/citation-instances/ — consumers read id, slug,
+ * citation_source_name and locator. */
+export const CREATED_INSTANCE = {
+  id: 42,
+  slug: 'bqntvkrs',
+  citation_source_id: 1,
+  citation_source_name: 'The Encyclopedia of Pinball',
+  claim_id: null,
+  locator: 'p. 42',
+  created_at: '2024-01-01T00:00:00Z',
+};
 
 // ---------------------------------------------------------------------------
 // Extraction responses — returned by POST /api/citation-sources/extract/

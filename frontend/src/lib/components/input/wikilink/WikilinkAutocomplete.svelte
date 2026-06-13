@@ -271,7 +271,7 @@
     </div>
   {:else if stage === 'cite'}
     <CitationAutocomplete
-      oncomplete={(linkText) => oncomplete(linkText)}
+      oncomplete={(instance) => oncomplete(`[[cite:${instance.slug}]]`)}
       oncancel={() => oncancel()}
       onback={() => goBack()}
     />

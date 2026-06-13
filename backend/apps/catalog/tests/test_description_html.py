@@ -179,7 +179,7 @@ class TestDescriptionCitations:
         Manufacturer.objects.create(
             name="Williams",
             slug="williams",
-            description=f"Founded in 1943.[[cite:{ci.pk}]]",
+            description=f"Founded in 1943.[[cite:id:{ci.pk}]]",
         )
         resp = client.get("/api/pages/manufacturer/williams")
         assert resp.status_code == 200

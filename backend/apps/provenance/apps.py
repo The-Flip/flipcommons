@@ -46,6 +46,19 @@ def _collect_citation_metadata(obj: CitationInstance, index: int) -> dict[str, A
     }
 
 
+def _citation_authoring_url(obj: CitationInstance) -> str:
+    """Degrade an authoring-form ``[[cite:slug]]`` to a hrefless link.
+
+    Footnotes are rendered off the *storage* (``[[cite:id:N]]``) pattern via
+    ``format_link``; an authoring-form cite only reaches the generic
+    ``_render_by_public_id`` path as defense-in-depth (stored text is always
+    storage form). CitationInstance has no URL identity, so without this the
+    generic ``resolve_url`` would ``AttributeError`` on a missing ``public_id``.
+    Return empty so it renders as a plain, non-footnote link instead.
+    """
+    return ""
+
+
 class ProvenanceConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.provenance"
@@ -65,7 +78,15 @@ class ProvenanceConfig(AppConfig):
             LinkType(
                 name="cite",
                 model_path="provenance.CitationInstance",
-                public_id_field=None,
+                # cite is a normal public-id wikilink type keyed on the durable
+                # CitationInstance.slug: [[cite:<slug>]] authoring ↔
+                # [[cite:id:<pk>]] storage. format_link/collect_metadata still
+                # drive footnote rendering off the storage (id) pattern.
+                public_id_field="slug",
+                # Inline footnotes are never emitted into the public export dump.
+                export_inline=False,
+                # Safe degrade for the never-hit authoring-form render path.
+                get_url=_citation_authoring_url,
                 format_link=_format_citation_link,
                 collect_metadata=_collect_citation_metadata,
                 select_related=("citation_source",),
