@@ -30,10 +30,12 @@ from apps.catalog.ingestion.patches import (
 from apps.catalog.models import (
     CorporateEntity,
     CorporateEntityLocation,
+    GameplayFeature,
     Location,
     MachineModel,
     Manufacturer,
     Tag,
+    Title,
 )
 from apps.catalog.resolve import resolve_all_corporate_entity_locations
 from apps.citation.models import CitationSource, CitationSourceLink
@@ -376,10 +378,9 @@ claims:
     assert not IngestRun.objects.filter(patch_id="0002-stern").exists()
 
 
-def test_relationship_member_created_same_patch_is_rejected(machine_model):
-    # Unlike FK fields, relationship members are resolved against the DB
-    # eagerly — a member created in the same patch is not supported (it must
-    # already exist). See docs/DataPatches.md "Limits".
+def test_relationship_member_created_earlier_same_patch(machine_model):
+    # A relationship member created by an *earlier* entry in the same patch
+    # resolves via the deferred (identity_refs) path — no longer rejected.
     text = f"""
 attribution: flip-museum
 claims:
@@ -389,7 +390,318 @@ claims:
   - model.{machine_model.slug}:
       tag: [brand-new-tag]
 """
-    with pytest.raises(PatchError, match="does not resolve"):
+    report = _apply(text)
+    assert report.rejected == 0
+
+    tag = Tag.objects.get(slug="brand-new-tag")
+    machine_model.refresh_from_db()
+    assert list(machine_model.tags.values_list("slug", flat=True)) == [tag.slug]
+
+
+# ── Same-patch backward references (create-first) ──────────────────
+
+
+def test_backward_fk_on_create(_bootstrap_source):
+    # Create a manufacturer, then create a corporate-entity whose `manufacturer`
+    # FK points at it — both in one patch, the dependency declared first.
+    text = """
+attribution: flip-museum
+claims:
+  - manufacturer.western:
+      create: true
+      name: Western
+  - corporate-entity.western-inc:
+      create: true
+      name: Western Inc
+      manufacturer: western
+"""
+    report = _apply(text, patch_id="0001-western")
+    assert report.rejected == 0
+
+    mfr = Manufacturer.objects.get(slug="western")
+    ce = CorporateEntity.objects.get(slug="western-inc")
+    assert ce.manufacturer_id == mfr.pk
+    # The FK provenance claim landed on the create.
+    assert ce.claims.filter(field_name="manufacturer", is_active=True).exists()
+
+
+def test_backward_fk_on_create_dry_run(_bootstrap_source):
+    # Dry-run must not reject the FK-to-planned-target just because the target
+    # doesn't exist yet, and must write nothing (guards the apply.py P1 carve-out).
+    text = """
+attribution: flip-museum
+claims:
+  - manufacturer.western:
+      create: true
+      name: Western
+  - corporate-entity.western-inc:
+      create: true
+      name: Western Inc
+      manufacturer: western
+"""
+    report = _apply(text, patch_id="0001-western", dry_run=True)
+    assert report.rejected == 0
+    assert not Manufacturer.objects.filter(slug="western").exists()
+    assert not CorporateEntity.objects.filter(slug="western-inc").exists()
+    assert not IngestRun.objects.filter(patch_id="0001-western").exists()
+
+
+def test_backward_parent_location():
+    # Create a parent location, then a child whose `parent` FK names it.
+    _country("usa", "USA")
+    text = """
+attribution: flip-museum
+claims:
+  - location.usa/tx:
+      create: true
+      name: Texas
+      slug: tx
+      parent: usa
+      location_type: state
+  - location.usa/tx/paris:
+      create: true
+      name: Paris
+      slug: paris
+      parent: usa/tx
+      location_type: city
+"""
+    report = _apply(text, patch_id="0001-paris")
+    assert report.rejected == 0
+
+    tx = Location.objects.get(location_path="usa/tx")
+    paris = Location.objects.get(location_path="usa/tx/paris")
+    assert paris.parent_id == tx.pk
+
+
+def test_backward_parent_location_dry_run():
+    _country("usa", "USA")
+    text = """
+attribution: flip-museum
+claims:
+  - location.usa/tx:
+      create: true
+      name: Texas
+      slug: tx
+      parent: usa
+      location_type: state
+  - location.usa/tx/paris:
+      create: true
+      name: Paris
+      slug: paris
+      parent: usa/tx
+      location_type: city
+"""
+    report = _apply(text, patch_id="0001-paris", dry_run=True)
+    assert report.rejected == 0
+    assert not Location.objects.filter(location_path="usa/tx").exists()
+
+
+def test_backward_title_then_model(williams_entity):
+    # Create a Title, then a MachineModel whose `title` FK names it.
+    text = """
+attribution: flip-museum
+claims:
+  - title.foo:
+      create: true
+      name: Foo
+  - model.foo:
+      create: true
+      name: Foo
+      title: foo
+"""
+    report = _apply(text, patch_id="0001-foo")
+    assert report.rejected == 0
+
+    title = Title.objects.get(slug="foo")
+    model = MachineModel.objects.get(slug="foo")
+    assert model.title_id == title.pk
+
+
+def test_backward_member_on_existing_entity(bally_wulff):
+    # Create a Location, then assert it as a `location` relationship member on an
+    # existing corporate-entity — the deferred (identity_refs) path.
+    text = """
+attribution: flip-museum
+claims:
+  - location.germany/munich:
+      create: true
+      name: Munich
+      slug: munich
+      parent: germany
+      location_type: city
+  - corporate-entity.bally-wulff:
+      location: [germany/munich]
+"""
+    report = _apply(text, patch_id="0001-munich")
+    assert report.rejected == 0
+
+    munich = Location.objects.get(location_path="germany/munich")
+    assert "germany/munich" in _ce_location_paths(bally_wulff)
+    assert _location_claim("munich").value["location"] == munich.pk
+
+
+def test_backward_member_on_created_subject(_bootstrap_source):
+    # Both the relationship subject (a CE) and its member (a Location) are
+    # created in this same patch — the deferred member targets the subject's
+    # *handle*, not an existing row, plus a backward FK to a created manufacturer.
+    _country("germany", "Germany")
+    text = """
+attribution: flip-museum
+claims:
+  - manufacturer.acme-co:
+      create: true
+      name: Acme Co
+  - location.germany/cologne:
+      create: true
+      name: Cologne
+      slug: cologne
+      parent: germany
+      location_type: city
+  - corporate-entity.acme-inc:
+      create: true
+      name: Acme Inc
+      manufacturer: acme-co
+      location: [germany/cologne]
+"""
+    report = _apply(text, patch_id="0001-acme")
+    assert report.rejected == 0
+
+    ce = CorporateEntity.objects.get(slug="acme-inc")
+    assert ce.manufacturer.slug == "acme-co"
+    assert "germany/cologne" in _ce_location_paths(ce)
+
+
+def test_backward_member_carries_note_and_cite(bally_wulff):
+    # An entry whose relationship members are *all* same-patch creates, carrying
+    # note: and cite:. The carrier must register (no spurious rejection) and the
+    # note/citation must land on the resolved member claim.
+    text = """
+attribution: flip-museum
+claims:
+  - location.germany/munich:
+      create: true
+      name: Munich
+      slug: munich
+      parent: germany
+      location_type: city
+  - corporate-entity.bally-wulff:
+      location: [germany/munich]
+      note: 'flip-museum places it in Munich.'
+      cite: https://example.org/bally-wulff
+sources:
+  - name: Example
+    source_type: web
+    links:
+      - { url: "https://example.org/", label: Example, link_type: homepage }
+"""
+    report = _apply(text, patch_id="0001-munich-cite")
+    assert report.rejected == 0
+
+    claim = _location_claim("munich")
+    assert claim.changeset is not None
+    assert claim.changeset.note == "flip-museum places it in Munich."
+    assert CitationInstance.objects.filter(claim=claim).exists()
+
+
+def test_backward_duplicate_deferred_member_rejected(bally_wulff):
+    # [munich, munich] with a same-patch-created munich → the same "duplicate
+    # member" rejection the concrete path raises (parity for deferred members).
+    text = """
+attribution: flip-museum
+claims:
+  - location.germany/munich:
+      create: true
+      name: Munich
+      slug: munich
+      parent: germany
+      location_type: city
+  - corporate-entity.bally-wulff:
+      location: [germany/munich, germany/munich]
+"""
+    with pytest.raises(PatchError, match="duplicate member"):
+        _apply(text)
+
+
+def test_self_parent_on_create_rejected():
+    # A create that names itself as its own parent must be rejected — the patch
+    # path enforces the same self-link guard as the API's plan_parent_claims.
+    text = """
+attribution: flip-museum
+claims:
+  - gameplay-feature.multiball:
+      create: true
+      name: Multiball
+      gameplay_feature_parent: [multiball]
+"""
+    with pytest.raises(PatchError, match="cannot be its own"):
+        _apply(text)
+
+
+def test_cycle_via_edit_referencing_same_patch_create_rejected():
+    # The vector same-patch refs newly enables: create a child under an existing
+    # root, then point the root at the child — a 2-cycle through a created node.
+    GameplayFeature.objects.create(name="Root", slug="root")
+    text = """
+attribution: flip-museum
+claims:
+  - gameplay-feature.child:
+      create: true
+      name: Child
+      gameplay_feature_parent: [root]
+  - gameplay-feature.root:
+      gameplay_feature_parent: [child]
+"""
+    with pytest.raises(PatchError, match="cycle"):
+        _apply(text)
+
+
+def test_cycle_between_existing_nodes_rejected():
+    # The pre-existing hole the guard also closes: two existing features pointed
+    # at each other in one patch.
+    GameplayFeature.objects.create(name="A", slug="a")
+    GameplayFeature.objects.create(name="B", slug="b")
+    text = """
+attribution: flip-museum
+claims:
+  - gameplay-feature.a:
+      gameplay_feature_parent: [b]
+  - gameplay-feature.b:
+      gameplay_feature_parent: [a]
+"""
+    with pytest.raises(PatchError, match="cycle"):
+        _apply(text)
+
+
+def test_valid_hierarchy_in_one_patch():
+    # A genuine parent→child DAG built in one patch must NOT trip the guard.
+    text = """
+attribution: flip-museum
+claims:
+  - gameplay-feature.ramps:
+      create: true
+      name: Ramps
+  - gameplay-feature.center-ramp:
+      create: true
+      name: Center Ramp
+      gameplay_feature_parent: [ramps]
+"""
+    report = _apply(text, patch_id="0001-ramps")
+    assert report.rejected == 0
+    child = GameplayFeature.objects.get(slug="center-ramp")
+    assert list(child.parents.values_list("slug", flat=True)) == ["ramps"]
+
+
+def test_backward_unresolvable_ref_errors(_bootstrap_source):
+    # A reference in neither the DB nor this patch → PatchError, updated message.
+    text = """
+attribution: flip-museum
+claims:
+  - corporate-entity.western-inc:
+      create: true
+      name: Western Inc
+      manufacturer: does-not-exist
+"""
+    with pytest.raises(PatchError, match="not in the seed, an earlier patch"):
         _apply(text)
 
 
