@@ -146,29 +146,27 @@ However, there's still a lot of smaller manufacturers without locations.
 
 #### ~1,300 null `year`: UNDONE
 
-TBD.
+This remains TODO. It's a pretty hard data acquisition problem. The data is not in IPDB or OPDB.
 
 #### ~70 null `manufacturer_name`: UNDONE
 
-TBD.
+This remains TODO. It's a pretty hard data acquisition problem. The data is not in IPDB or OPDB.
 
 ### Early Japanese makers: DONE
 
 **The issue**: Flipcommons is thin on early Japanese pinball. The Flip cross-checked against the thetastates.com/eremeka catalog of early Japanese flipper games and found makers that Flipcommons doesn't surface at all.
 
-**Resolution**: Flipcommons imported the eremeka catalog:
+**Resolution**: Flipcommons imported the eremeka catalog plus info from a few other Japanese sources:
 
 - `nihon-tenbo` now exists as a manufacturer carrying all 6 of its eremeka games
 - The Sankyos were deliberately _not_ merged into one `sankyo` brand; instead all 9 of eremeka's Sankyo games now sit under the existing `sankyo-seiki` spanning 1969–76, with the placeholder/null years fixed.
 - We added gap-fill models and year-fixes under Komaya, Universal, Nihon Gorakuki and Game Mate.
 
-Four IPDB-only models still carry null years — `attack-ball`, `circus-16`, `fishing-tengu` (Sankyo Seiki) and `dai-uchuu-ryokou` (Game Mate). These are absent from the eremeka catalog, so this source can't date them — they'd need different evidence (IPDB notes, other research).
-
 ## Bonus: all data changes are cited
 
 Every new piece of information discussed here was added to the system not only with citations that have links, but also verbatim quotes from those links. Not only that, adversarial AIs vetting those quotes for semantic accuracy until I'm pretty sure all citations actually prove the info being cited.
 
-You can see the granular changes and their backing quotes at https://flipcommons.org/changesets ; currently you have to go to an individual record's change page ( like https://flipcommons.org/models/cactus-canyon-continued ) to see the detailed citation, but we'll probably include that info on the global page soon.
+You can see the granular changes and their backing quotes at <https://flipcommons.org/changesets> ; currently you have to go to an individual record's change page ( like <https://flipcommons.org/models/cactus-canyon-continued> ) to see the detailed citation, but we'll probably include that info on the global page soon.
 
 ## Potential new issues
 
