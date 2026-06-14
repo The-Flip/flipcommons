@@ -21,15 +21,15 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import CommandError
 
 from apps.catalog.claims import build_relationship_claim
-from apps.catalog.ingestion.apply import (
-    IngestPlan,
-    PlannedClaimAssert,
-)
 from apps.catalog.ingestion.opdb.records import OpdbRecord
 from apps.catalog.ingestion.parsers import (
     map_opdb_display,
     map_opdb_type,
     parse_opdb_date,
+)
+from apps.catalog.ingestion.plan import (
+    IngestPlan,
+    PlannedClaimAssert,
 )
 from apps.catalog.ingestion.vocabulary import (
     build_cabinet_map,
