@@ -108,11 +108,13 @@ class _EntryResult(NamedTuple):
     The plan mutations (entities, assertions, retractions, warnings) have already
     happened inside ``_process_entry``; this carries only what the plan-wide
     guards need. ``matched`` counts toward ``records_matched`` (edit/delete yes,
-    create no).
+    create no). ``hierarchy_edges`` are this entry's self-referential child→parent
+    edges, aggregated across entries for the plan-wide acyclicity guard.
     """
 
     matched: bool
     contributions: dict[_TargetKey, _TargetContribution]
+    hierarchy_edges: list[_HierarchyEdge]
 
 
 def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
@@ -157,11 +159,6 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
                 all_created_ids.add(
                     _CreatedKey(_resolve_model_class(candidate), candidate.public_id)
                 )
-    # child→parent edges asserted into self-referential hierarchies, for the
-    # plan-wide acyclicity guard (the patch path's equivalent of the API's
-    # plan_parent_claims self-link/cycle check).
-    hierarchy_added: dict[type[CatalogModel], list[_HierarchyEdge]] = defaultdict(list)
-
     # Stamp each entry's emissions with its file-order index for per-entry
     # ChangeSet grouping (apply layer). An entry's assertions/retractions are all
     # appended during its own ``_process_entry`` call and land contiguously at the
@@ -182,7 +179,6 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
                 created_refs=created_refs,
                 created=created,
                 all_created_ids=all_created_ids,
-                hierarchy_added=hierarchy_added,
             )
         )
         for pca in plan.assertions[assert_start:]:
@@ -191,7 +187,9 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
             pcr.entry_index = entry_index
     plan.records_matched = sum(r.matched for r in results)
     _validate_plan_wide(results)
-    _validate_hierarchy_acyclic(hierarchy_added)
+    # Acyclicity guard over every entry's self-referential child→parent edges.
+    hierarchy_edges = [edge for r in results for edge in r.hierarchy_edges]
+    _validate_hierarchy_acyclic(hierarchy_edges)
 
     # Relationship resolution: delegate to the canonical post-mutation
     # dispatch (model-driven; no hand-maintained namespace→resolver map). The
@@ -336,7 +334,6 @@ def _process_entry(
     created_refs: set[str],
     created: dict[_CreatedKey, str],
     all_created_ids: AbstractSet[_CreatedKey],
-    hierarchy_added: dict[type[CatalogModel], list[_HierarchyEdge]],
 ) -> _EntryResult:
     """Resolve, validate and emit one claim entry; return its cross-entry contribution.
 
@@ -350,6 +347,9 @@ def _process_entry(
     model_class = _resolve_model_class(entry)
     ct_id = ContentType.objects.get_for_model(model_class).pk
     existing = _lookup_entity(model_class, entry.public_id)
+    # Self-referential child→parent edges this entry asserts, returned on the
+    # _EntryResult for the plan-wide acyclicity guard. A delete asserts none.
+    hierarchy_edges: list[_HierarchyEdge] = []
 
     # A delete carries no field assertions and no relationship work, so it
     # finishes here, registering every soft-deleted entity (root + cascade) with
@@ -379,7 +379,9 @@ def _process_entry(
             )
             for tkey in affected
         }
-        return _EntryResult(matched=True, contributions=contributions)
+        return _EntryResult(
+            matched=True, contributions=contributions, hierarchy_edges=hierarchy_edges
+        )
 
     target: _Target
     retracted_any = False  # set by the edit branch; a real retraction carries a note
@@ -478,11 +480,11 @@ def _process_entry(
                 target,
                 entry,
                 created=created,
-                hierarchy_added=hierarchy_added,
                 note=note,
                 citation_ref=citation_ref,
             )
             rel_fields_by_model[model_class].add(key)
+            hierarchy_edges.extend(emit.hierarchy_edges)
             if emit.carrier_written:
                 carrier_written = True
             # Concrete claim_keys feed the clash + disjoint guards; a deferred
@@ -543,7 +545,11 @@ def _process_entry(
             deferred_member_ids=frozenset(deferred_member_ids),
             removed_members={},
         )
-        return _EntryResult(matched=False, contributions={entry.ref: contribution})
+        return _EntryResult(
+            matched=False,
+            contributions={entry.ref: contribution},
+            hierarchy_edges=hierarchy_edges,
+        )
 
     contribution = _TargetContribution(
         ref=entry.ref,
@@ -556,14 +562,20 @@ def _process_entry(
     )
     if existing is not None:
         return _EntryResult(
-            matched=True, contributions={EntityKey(ct_id, existing.pk): contribution}
+            matched=True,
+            contributions={EntityKey(ct_id, existing.pk): contribution},
+            hierarchy_edges=hierarchy_edges,
         )
     # Registry-resolved companion edit on a same-patch create: key by the handle
     # so its claims join the create's contribution in the disjoint-claims guard.
     # matched=False — it refined a same-patch create, not a DB row (the record is
     # already counted by the create).
     assert target.handle is not None
-    return _EntryResult(matched=False, contributions={target.handle: contribution})
+    return _EntryResult(
+        matched=False,
+        contributions={target.handle: contribution},
+        hierarchy_edges=hierarchy_edges,
+    )
 
 
 def _check_provenance_carrier(
@@ -643,9 +655,7 @@ def _reaches_via_parents(
     return False
 
 
-def _validate_hierarchy_acyclic(
-    hierarchy_added: dict[type[CatalogModel], list[_HierarchyEdge]],
-) -> None:
+def _validate_hierarchy_acyclic(hierarchy_edges: list[_HierarchyEdge]) -> None:
     """Reject self-parent links and cycles in self-referential hierarchies.
 
     The patch path otherwise bypasses the API's ``plan_parent_claims`` guard, so
@@ -659,7 +669,10 @@ def _validate_hierarchy_acyclic(
     source leaves the edge in place via another). A patch that both removes and
     re-adds around an edge may be over-rejected; split it across patches.
     """
-    for model_class, edges in hierarchy_added.items():
+    by_model: dict[type[CatalogModel], list[_HierarchyEdge]] = defaultdict(list)
+    for edge in hierarchy_edges:
+        by_model[edge.model_class].append(edge)
+    for model_class, edges in by_model.items():
         # Post-patch graph: current resolved edges + this patch's added edges.
         parent_map = _existing_parent_edges(model_class)
         for edge in edges:

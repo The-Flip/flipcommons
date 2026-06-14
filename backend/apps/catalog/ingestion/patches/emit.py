@@ -64,6 +64,28 @@ class _RemovalResult(NamedTuple):
     carrier_written: bool
 
 
+class _HierarchyEdge(NamedTuple):
+    """A child→parent edge asserted into a self-referential hierarchy.
+
+    Self-referential relationship namespaces (``theme_parent``,
+    ``gameplay_feature_parent`` — structurally: a single FK identity whose
+    target *is* the subject model) form a DAG. Each ``exists=true`` member is a
+    child→parent edge, identified by public_id so same-patch creates (no PK yet)
+    and existing rows share one namespace. Collected for the plan-wide acyclicity
+    guard that the API enforces but the patch path otherwise bypasses.
+
+    Carries its own ``model_class`` so the edge is self-describing — the
+    acyclicity guard groups a flat edge list by model rather than relying on an
+    external dict key.
+    """
+
+    model_class: type[CatalogModel]
+    namespace: str
+    child: PublicId
+    parent: PublicId
+    ref: str  # the entry-ref/handle that asserted the edge, for the error message
+
+
 class _MemberEmitResult(NamedTuple):
     """Outcome of ``_emit_relationship`` for one entry's namespace.
 
@@ -75,29 +97,15 @@ class _MemberEmitResult(NamedTuple):
     can't silently collapse in ``_build_claims``. ``carrier_written`` is whether
     any assertion — concrete or deferred — was emitted, so a ``note:``/``cite:``
     on an entry whose members are *all* same-patch creates is not wrongly rejected
-    by the provenance-carrier check.
+    by the provenance-carrier check. ``hierarchy_edges`` are the self-referential
+    child→parent edges this call asserted (empty for a non-hierarchy namespace),
+    returned for the caller to thread into the plan-wide acyclicity guard.
     """
 
     clash_keys: list[ClaimKey]
     deferred_handles: list[str]
     carrier_written: bool
-
-
-class _HierarchyEdge(NamedTuple):
-    """A child→parent edge asserted into a self-referential hierarchy.
-
-    Self-referential relationship namespaces (``theme_parent``,
-    ``gameplay_feature_parent`` — structurally: a single FK identity whose
-    target *is* the subject model) form a DAG. Each ``exists=true`` member is a
-    child→parent edge, identified by public_id so same-patch creates (no PK yet)
-    and existing rows share one namespace. Collected for the plan-wide acyclicity
-    guard that the API enforces but the patch path otherwise bypasses.
-    """
-
-    namespace: str
-    child: PublicId
-    parent: PublicId
-    ref: str  # the entry-ref/handle that asserted the edge, for the error message
+    hierarchy_edges: list[_HierarchyEdge]
 
 
 def _resolve_model_class(entry: PatchEntry) -> type[CatalogModel]:
@@ -325,7 +333,6 @@ def _emit_relationship(
     entry: PatchEntry,
     *,
     created: dict[_CreatedKey, str],
-    hierarchy_added: dict[type[CatalogModel], list[_HierarchyEdge]],
     note: str = "",
     citation_ref: CitationRef | None = None,
 ) -> _MemberEmitResult:
@@ -346,6 +353,7 @@ def _emit_relationship(
         )
     clash_keys: list[ClaimKey] = []
     deferred_handles: list[str] = []
+    hierarchy_edges: list[_HierarchyEdge] = []
     seen_keys: set[ClaimKey] = set()
     # Deferred members lack a concrete claim_key, so dedup them on the target
     # handle (the namespace is fixed for this call) to keep the same "duplicate
@@ -361,8 +369,9 @@ def _emit_relationship(
     )
     for member in value:
         if is_self_hierarchy and isinstance(member, str):
-            hierarchy_added[model_class].append(
+            hierarchy_edges.append(
                 _HierarchyEdge(
+                    model_class=model_class,
                     namespace=namespace,
                     child=entry.public_id,
                     parent=member,
@@ -419,6 +428,7 @@ def _emit_relationship(
         clash_keys=clash_keys,
         deferred_handles=deferred_handles,
         carrier_written=carrier_written,
+        hierarchy_edges=hierarchy_edges,
     )
 
 
