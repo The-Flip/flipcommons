@@ -22,13 +22,6 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.catalog.claims import get_relationship_namespaces
-from apps.catalog.ingestion.apply import (
-    CitationRef,
-    CiteHandle,
-    IngestPlan,
-    PreWriteHook,
-    RunReport,
-)
 from apps.catalog.ingestion.patches._types import (
     ClaimKey,
     PatchError,
@@ -58,6 +51,13 @@ from apps.catalog.ingestion.patches.parsing import (
     PatchDoc,
     PatchEntry,
     _parse_provenance,
+)
+from apps.catalog.ingestion.plan import (
+    CitationRef,
+    CiteHandle,
+    IngestPlan,
+    PreWriteHook,
+    RunReport,
 )
 from apps.catalog.models import CatalogModel
 from apps.catalog.resolve import resolve_relationships_bulk

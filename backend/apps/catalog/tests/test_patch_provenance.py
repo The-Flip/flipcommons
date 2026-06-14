@@ -12,17 +12,17 @@ import pytest
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 
-from apps.catalog.ingestion.apply import (
-    CitationRef,
-    IngestPlan,
-    PlannedClaimAssert,
-    apply_plan,
-)
+from apps.catalog.ingestion.apply import apply_plan
 from apps.catalog.ingestion.patches import (
     EditEntry,
     PatchError,
     build_plan,
     load_patch,
+)
+from apps.catalog.ingestion.plan import (
+    CitationRef,
+    IngestPlan,
+    PlannedClaimAssert,
 )
 from apps.catalog.models import MachineModel, Manufacturer, Tag
 from apps.catalog.tests.conftest import make_machine_model

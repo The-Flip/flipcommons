@@ -19,8 +19,8 @@ from urllib.parse import urlparse
 
 import yaml
 
-from apps.catalog.ingestion.apply import CitationRef, CiteHandle
 from apps.catalog.ingestion.patches._types import PatchError
+from apps.catalog.ingestion.plan import CitationRef, CiteHandle
 from apps.citation.extractors import EXTRACTORS
 from apps.citation.models import (
     CITATION_SOURCE_IDENTIFIER_MAX_LENGTH,

@@ -16,7 +16,7 @@ from apps.catalog.claims import (
     normalize_abbreviation_value,
     normalize_alias_identity,
 )
-from apps.catalog.ingestion.apply import RunReport, apply_plan
+from apps.catalog.ingestion.apply import apply_plan
 from apps.catalog.ingestion.patches import (
     EditEntry,
     PatchError,
@@ -29,6 +29,7 @@ from apps.catalog.ingestion.patches.emit import (
     _member_identity,
     _relationship_member_spec,
 )
+from apps.catalog.ingestion.plan import RunReport
 from apps.catalog.models import (
     CorporateEntity,
     CorporateEntityLocation,

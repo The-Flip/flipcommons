@@ -23,14 +23,6 @@ from apps.catalog.claims import (
     normalize_abbreviation_value,
     normalize_alias_identity,
 )
-from apps.catalog.ingestion.apply import (
-    CitationRef,
-    CiteHandle,
-    IngestPlan,
-    PlannedClaimAssert,
-    PlannedClaimRetract,
-    PlannedEntityCreate,
-)
 from apps.catalog.ingestion.patches._types import (
     ClaimKey,
     PatchError,
@@ -43,6 +35,14 @@ from apps.catalog.ingestion.patches.parsing import (
     DeleteEntry,
     EditEntry,
     PatchEntry,
+)
+from apps.catalog.ingestion.plan import (
+    CitationRef,
+    CiteHandle,
+    IngestPlan,
+    PlannedClaimAssert,
+    PlannedClaimRetract,
+    PlannedEntityCreate,
 )
 from apps.catalog.models import CatalogModel
 from apps.core.entity_types import get_linkable_model

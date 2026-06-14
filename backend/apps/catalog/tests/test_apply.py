@@ -6,13 +6,13 @@ import pytest
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 
-from apps.catalog.ingestion.apply import (
+from apps.catalog.ingestion.apply import apply_plan
+from apps.catalog.ingestion.plan import (
     IngestPlan,
     PlannedClaimAssert,
     PlannedClaimRetract,
     PlannedEntityCreate,
     RunReport,
-    apply_plan,
 )
 from apps.catalog.models import CorporateEntity, Manufacturer, Theme
 from apps.provenance.models import ChangeSet, Claim, IngestRun, Source

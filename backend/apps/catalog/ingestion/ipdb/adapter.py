@@ -25,11 +25,6 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.management.base import CommandError
 
 from apps.catalog.claims import build_relationship_claim
-from apps.catalog.ingestion.apply import (
-    IngestPlan,
-    PlannedClaimAssert,
-    PlannedEntityCreate,
-)
 from apps.catalog.ingestion.bulk_utils import (
     ManufacturerResolver,
     generate_unique_slug,
@@ -54,6 +49,11 @@ from apps.catalog.ingestion.parsers import (
     parse_ipdb_manufacturer_string,
 )
 from apps.catalog.ingestion.person_lookup import build_person_lookup
+from apps.catalog.ingestion.plan import (
+    IngestPlan,
+    PlannedClaimAssert,
+    PlannedEntityCreate,
+)
 from apps.catalog.ingestion.vocabulary import (
     build_feature_slug_map,
     build_reward_type_map,
