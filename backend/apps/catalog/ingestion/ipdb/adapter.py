@@ -50,6 +50,7 @@ from apps.catalog.ingestion.parsers import (
 )
 from apps.catalog.ingestion.person_lookup import build_person_lookup
 from apps.catalog.ingestion.plan import (
+    Handle,
     IngestPlan,
     PlannedClaimAssert,
     PlannedEntityCreate,
@@ -753,7 +754,7 @@ def _process_credits(
 
     # Deduplicate person names and decide which need creation.
     seen_names: set[str] = set()
-    new_person_handles: dict[str, str] = {}  # lower_name → handle
+    new_person_handles: dict[str, Handle] = {}  # lower_name → handle
 
     for entry in credit_queue:
         key = entry.name.lower()
@@ -856,7 +857,7 @@ def _process_themes(
         all_slugs.update(entry.slugs)
 
     # Plan creation for new themes.
-    new_theme_handles: dict[str, str] = {}  # slug → handle
+    new_theme_handles: dict[str, Handle] = {}  # slug → handle
     for slug in sorted(all_slugs - theme_by_slug.keys()):
         name = slug.replace("-", " ").title()
         handle = f"theme:{slug}"

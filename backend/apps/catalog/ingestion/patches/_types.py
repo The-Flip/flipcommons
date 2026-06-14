@@ -12,6 +12,8 @@ from typing import NamedTuple
 
 from django.db import models
 
+from apps.catalog.ingestion.plan import Handle
+
 # The composite key identifying one claim — a scalar/FK field name or a
 # relationship member key from ``build_relationship_claim`` (e.g.
 # ``"location:germany"``). A transparent alias of ``str``: it documents the
@@ -40,7 +42,7 @@ class _Target(NamedTuple):
 
     content_type_id: int | None = None
     object_id: int | None = None
-    handle: str | None = None
+    handle: Handle | None = None
 
 
 class _CreatedKey(NamedTuple):

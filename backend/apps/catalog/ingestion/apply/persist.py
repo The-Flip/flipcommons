@@ -31,6 +31,7 @@ from apps.catalog.ingestion.plan import (
     CitationRef,
     CiteHandle,
     EntryIndex,
+    Handle,
     IngestPlan,
     PlannedClaimAssert,
     PlannedEntityCreate,
@@ -51,7 +52,7 @@ type ClaimEntryIndex = dict[ClaimIdentity, EntryIndex]
 
 def _create_entities(
     entities: list[PlannedEntityCreate],
-) -> dict[str, EntityKey]:
+) -> dict[Handle, EntityKey]:
     """Bulk-create entities.  Returns ``{handle: EntityKey(ct_id, pk)}``.
 
     Processes entities in list order, batching consecutive entries of the
@@ -65,14 +66,14 @@ def _create_entities(
     if not entities:
         return {}
 
-    handle_map: dict[str, EntityKey] = {}
+    handle_map: dict[Handle, EntityKey] = {}
 
     # Group consecutive entities of the same model class into batches.
     # A batch is flushed when the model class changes OR when an entity's
     # handle_refs reference a handle in the current pending batch (those
     # PKs aren't available until the batch is bulk_created).
     batches: list[list[PlannedEntityCreate]] = []
-    current_handles: set[str] = set()
+    current_handles: set[Handle] = set()
     for entity in entities:
         refs_current_batch = any(
             h in current_handles for h in entity.handle_refs.values()
@@ -109,7 +110,7 @@ def _create_entities(
 
 def _patch_handles(
     assertions: list[PlannedClaimAssert],
-    handle_map: dict[str, EntityKey],
+    handle_map: dict[Handle, EntityKey],
 ) -> None:
     """Resolve temporary handles to real PKs after entity creation.
 
