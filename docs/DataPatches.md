@@ -22,42 +22,45 @@ From there they are exported via pindata's `make pull-ingest` to R2, under the p
 
 ## File format
 
-Each patch file carries **one attribution** (→ one `IngestRun`), and each entry under `claims:` becomes its **own** `ChangeSet` — one note slot per entry, rendered in file order on the entity's Edit History page. A record may therefore appear in **several** entries, each carrying its own `note`/`cite` (see [Notes & citations](#notes--citations)). This mirrors the in-app model, where each edit mints one ChangeSet.
+Each patch file carries **one attribution** (→ one `IngestRun`), and each correction becomes its **own** `ChangeSet` — one note slot, rendered in file order on the entity's Edit History page (mirroring the in-app model, where each edit mints one ChangeSet). A single record usually needs several separately-cited corrections; the canonical form groups them under one header — the entity ref and the `expect:` drift guard declared once — with a `changesets:` list, one item per `ChangeSet`, each carrying its own `note`/`cite` (see [Notes & citations](#notes--citations)).
 
 ### Edit
 
-Edit an existing record:
+Group several corrections to one record under a single header — the ref and `expect:` declared once, a `changesets:` list beneath, one item per `ChangeSet`:
 
 ```yaml
 attribution: flipcommons-catalog # a Source slug; must already exist
 description:
   > # The whole-patch "why" → IngestRun.note (only viewable in Django admin and git for now)
-  Tag known unreleased prototypes.
+  Correct the Mazatron prototype.
 claims: # ordered list of single-key entries
   - model.mazatron: # entity ref: <entity_type>.<public_id>
-      expect: { year: 1990 } # drift guard (scalar + FK)
-      note: 'IPDB says "exists only as a prototype machine".' # reason / evidence for the claims
-      cite: ipdb:4443 # external evidence → citation on the claims
-      production_status: unreleased # FK → target public_id
-      tag: [prototype] # relationship: namespace → member public_ids
+      expect: { ipdb_id: 4443 } # drift guard (scalar + FK) — declared once, guards every changeset
+      changesets: # each item is its own ChangeSet: note/cite + field assertions
+        - note: 'IPDB says "exists only as a prototype machine".' # reason / evidence for this item's claims
+          cite: ipdb:4443 # external evidence → citation on this item's claims
+          production_status: unreleased # FK → target public_id
+          tag: [prototype] # relationship: namespace → member public_ids
+        - note: "Pinside thread confirms a 1990 prototype run."
+          cite: https://pinside.com/thread
+          year: 1990 # a disjoint field with its own evidence → its own ChangeSet
 ```
 
-A record can take **several** entries, each its own `ChangeSet` with its own `note`/`cite` — split a change across entries when the facts have distinct evidence:
+Each `changesets:` item inherits the header's ref and `expect:` and becomes its own `ChangeSet`. Items carry **only field assertions plus provenance** (`note`/`cite`/`cites`/`retract`/`remove`) — lifecycle (`create:`/`delete:`) and the drift guard (`expect:`) are header-only. The items' fields must be **disjoint**: two items can't both set `year` (see [Notes & citations](#notes--citations) for this and the rest of the per-entry rules).
+
+For a record that needs just **one** correction, the flat single-key form is the shorthand — the body sits directly under the ref, no `changesets:` wrapper:
 
 ```yaml
 attribution: flipcommons-catalog
 claims:
   - model.mazatron:
-      year: 1990
-      note: "IPDB lists a 1990 prototype run."
+      expect: { year: 1990 }
+      note: 'IPDB says "exists only as a prototype machine".'
       cite: ipdb:4443
-  - model.mazatron: # same record, a disjoint field → its own ChangeSet
       production_status: unreleased
-      note: "Pinside thread confirms it never shipped."
-      cite: https://pinside.com/thread
 ```
 
-The entries' fields must be **disjoint** — two entries can't both set `year` (see [Notes & citations](#notes--citations) for this and the rest of the per-entry rules).
+(Repeating the flat single-key entry once per change on the same record — the shape that predates `changesets:` — still parses, but prefer the grouped form so the ref and `expect:` aren't duplicated.)
 
 ### Create
 
@@ -75,7 +78,23 @@ claims:
 
 `create: true` opts in to making a new entity — without it an unresolved ref errors; with it on a ref that already resolves, an error (duplicate). An FK target must already exist when the entry runs — in the seed, an _earlier_ patch, or **earlier in this same patch** — so a manufacturer and the corporate entity pointing at it can land together, the manufacturer declared first (a _forward_ reference, pointing at an entry below, isn't supported yet; see [Limitations](#limitations)). Creating a **Location** is the one create whose id is _derived_: write `slug` and `parent` as ordinary claims, and the `location_path` in the ref must compose from `parent + slug` (a mismatch errors).
 
-**Create then refine the same record in one file.** A `create:` entry may be followed by ordinary edit entries on the **same** new record — list the create first, then companion entries that assert _additional_ fields, each its own separately-attributed `ChangeSet`:
+**Create then refine the same record in one file.** Hang companion edits off the create with a `changesets:` list — the `create: true` header makes the record, each item asserts _additional_ fields as its own separately-attributed `ChangeSet`:
+
+```yaml
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.western-products:
+      create: true # the header is the create
+      name: Western Products
+      changesets: # companion edits on the record just created
+        - website: https://westernproducts.example
+          note: "Company site, per the IPDB listing."
+          cite: ipdb:1234
+```
+
+This is how one coherent change — a create plus a separately-cited refinement — lives in a single file instead of needing a follow-up patch (each item its own `ChangeSet` with its own `note`/`cite`). A companion takes **only field assertions**: `expect:` (there's no DB state to guard), `retract:` and `remove:` (there are no prior claims to drop) are each rejected, and per the [disjoint-fields rule](#notes--citations) it may not reassert a field the create already set.
+
+The older shape — a flat `create:` entry followed by separate single-key companion entries on the same record — still parses, but it forced you to order the companions **below** the create by hand (an edit above its create errors); `changesets:` makes that ordering structural:
 
 ```yaml
 attribution: flipcommons-catalog
@@ -83,13 +102,11 @@ claims:
   - manufacturer.western-products: # create the record
       name: Western Products
       create: true
-  - manufacturer.western-products: # refine it — a distinct field, own note/cite
+  - manufacturer.western-products: # refine it — must sit below the create
       website: https://westernproducts.example
       note: "Company site, per the IPDB listing."
       cite: ipdb:1234
 ```
-
-This is how one coherent change — a create plus a separately-cited refinement — lives in a single file instead of needing a follow-up patch (each entry its own `ChangeSet` with its own `note`/`cite`). Companion entries must appear **below** the create (an edit above its create errors, naming the create below it). A companion edit on a same-patch create takes **only field assertions**: `expect:` (there's no DB state to guard), `retract:` and `remove:` (there are no prior claims to drop) are each rejected. And per the [disjoint-fields rule](#notes--citations), a companion may not reassert a field the create already set.
 
 ### Retract
 
@@ -146,7 +163,7 @@ Entity references are of format `type.public_id` — the canonical `entity_type`
 
 Field keys are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's `public_id`; **relationship** (`tag`, `theme`, `manufacturer_alias`, `abbreviation`) — key is the namespace, value a list of members (FK public_ids, or bare strings for aliases/abbreviations). The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
 
-Distinct from field keys are the **reserved keys** — directives, not claims: `create:`, `delete:`, `retract:` and `remove:` (each covered with its operation above), plus the cross-cutting `expect:`, `note:`, `cite:` and `cites:` (below).
+Distinct from field keys are the **reserved keys** — directives, not claims: `create:`, `delete:`, `retract:` and `remove:` (each covered with its operation above), the cross-cutting `expect:`, `note:`, `cite:` and `cites:` (below), and the grouping key `changesets:` (see [File format](#file-format)).
 
 ### Aliases & abbreviations
 
@@ -200,9 +217,9 @@ claims:
 - **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
 - **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's domain must match a **seeded website root** (a parentless web source whose homepage link shares the domain); the cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no root matches, the patch errors — declare the website root in this patch's `sources:` block (processed before claims) or an earlier patch. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
 
-As noted under [File format](#file-format), each entry is its own ChangeSet, so one record can take **several** entries in a patch — each with its own `note`/`cite`. Two rules keep that unambiguous:
+As noted under [File format](#file-format), each `changesets:` item (and each flat entry) is its own ChangeSet, so one record can take **several** corrections in a patch — each with its own `note`/`cite`. Two rules keep that unambiguous:
 
-- **Disjoint fields per record.** Entries targeting the same record (an existing entity _or_ a same-patch create) must assert/retract **disjoint** `claim_key`s. The same field in two entries — including the same relationship member, or one entry asserting and another retracting it — is an error. (Each field resolves to one winning claim, so two entries fighting over it has no coherent meaning.)
+- **Disjoint fields per record.** The `changesets:` items under one header — and any flat entries — targeting the same record (an existing entity _or_ a same-patch create) must assert/retract **disjoint** `claim_key`s. The same field in two of them — including the same relationship member, or one asserting and another retracting it — is an error. (Each field resolves to one winning claim, so two changesets fighting over it has no coherent meaning.)
 - **Provenance must have something to attach to.** A `note`/`cite`/`cites` rides the claims an entry writes, so an entry carrying provenance with nothing to carry it is a hard error — in two shapes. **No carrier** (caught at build): a `cite:`/`note:` on a field-less `create:`, or an empty `tag: []` — there's no authored claim to attach to (a create's own slug/status claims aren't carriers). **No-op diff** (caught at apply): re-asserting a value the source already holds, or a `retract:`/`remove:` of something already gone — the write diffs to nothing, so the provenance would silently vanish. Previously a no-op diff dropped its provenance while reporting success; now it fails loudly. A retract- or remove-only entry is fully valid **when it drops a live claim** — the note rides that deactivation. (The one allowed no-op is an idempotent re-`delete:` of an already-deleted entity. And a field-less create with no provenance is fine — it just creates the entity.)
 
 ### Inline citations in descriptions
@@ -232,7 +249,7 @@ claims:
 
 **Marker ↔ map correspondence is enforced** (a structural error, no DB lookup): every numeric-handle marker must have a `cites:` entry, and every `cites:` key must be a numeric handle referenced by at least one marker. A `cites:` entry keyed by a slug, or one no marker references, is a misuse. A marker that is neither all-digits nor a bare slug — notably a raw `[[cite:id:1]]` (storage form) — is rejected.
 
-**Inline `cites:` count as provenance.** A `description` is a single field, so by the [disjoint-fields rule](#notes--citations) it lives in **one** entry — you can't split a cited description across two entries on the same record (both would assert the `description` field). Other, disjoint fields on that record may still live in their own separate entries with their own provenance.
+**Inline `cites:` count as provenance.** A `description` is a single field, so by the [disjoint-fields rule](#notes--citations) it lives in **one** changeset — you can't split a cited description across two `changesets:` items (or flat entries) on the same record (both would assert the `description` field). Other, disjoint fields on that record may still live in their own items with their own provenance.
 
 Re-edit (rehydrated) — markers carry durable slugs, untouched cites need no `cites:`:
 

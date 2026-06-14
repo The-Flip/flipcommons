@@ -8,23 +8,18 @@ command discovers, hashes, ledger-checks and applies them.
 
 See ``docs/DataPatches.md`` for the file format and design rationale.
 
-Split by pipeline layer (bottom to top):
+Split by pipeline layer, dependencies flowing one way (acyclic):
+
+    _types ← parsing ← emit ← planning
 
 - :mod:`._types` — carriers shared across layers (``_Target``, ``_CreatedKey`` …).
 - :mod:`.parsing` — patch text → ``PatchDoc`` (pure, no DB).
 - :mod:`.emit` — low-level verbs that build plan rows for one resolved entry.
-- :mod:`.planning` — ``build_plan``: drives parsing output through emit, then runs
-  cross-entry validation.
+- :mod:`.planning` — ``build_plan``: emit + cross-entry validation.
 
-Dependencies flow one way — ``_types ← parsing ← emit ← planning`` (acyclic). A
-lower layer importing a higher one is a layering smell: hoist the shared symbol
-into :mod:`._types` instead. (A result type owned by one layer stays with its
-producer — see :mod:`._types` for that split.)
-
-This package re-exports the public surface (``load_patch``, ``build_plan``,
-``parse_patch_text``, ``fingerprint``, ``PatchError``, the entry types …) so
-callers import from ``apps.catalog.ingestion.patches`` regardless of which layer
-a name lives in.
+A lower layer importing a higher one is a layering smell — hoist the shared
+symbol into :mod:`._types`. The package re-exports the public surface, so
+callers import from ``apps.catalog.ingestion.patches`` regardless of layer.
 """
 
 from __future__ import annotations
