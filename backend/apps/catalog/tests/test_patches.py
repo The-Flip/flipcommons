@@ -20,12 +20,14 @@ from apps.catalog.ingestion.apply import RunReport, apply_plan
 from apps.catalog.ingestion.patches import (
     EditEntry,
     PatchError,
-    _member_identity,
-    _relationship_member_spec,
     build_plan,
     fingerprint,
     load_patch,
     parse_patch_text,
+)
+from apps.catalog.ingestion.patches.emit import (
+    _member_identity,
+    _relationship_member_spec,
 )
 from apps.catalog.models import (
     CorporateEntity,
@@ -2339,7 +2341,7 @@ def test_non_string_identity_rejected(monkeypatch):
         valid_subjects=frozenset({Manufacturer}),
     )
     monkeypatch.setattr(
-        "apps.catalog.ingestion.patches.get_relationship_schema",
+        "apps.catalog.ingestion.patches.emit.get_relationship_schema",
         lambda namespace: crafted if namespace == "fake_int_identity" else None,
     )
     entry = EditEntry(
