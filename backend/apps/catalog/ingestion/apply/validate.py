@@ -16,7 +16,7 @@ from collections import defaultdict
 
 from django.db import models
 
-from apps.catalog.ingestion.plan import IngestPlan
+from apps.catalog.ingestion.plan import Handle, IngestPlan
 
 
 def _validate_entity_claim_consistency(plan: IngestPlan) -> None:
@@ -25,7 +25,7 @@ def _validate_entity_claim_consistency(plan: IngestPlan) -> None:
     targeting the same handle."""
     from apps.provenance.models import get_claim_fields
 
-    asserted_by_handle: dict[str, set[str]] = defaultdict(set)
+    asserted_by_handle: dict[Handle, set[str]] = defaultdict(set)
     for pca in plan.assertions:
         if pca.handle is not None:
             asserted_by_handle[pca.handle].add(pca.field_name)
@@ -81,7 +81,7 @@ def _attname_to_field_name(
 
 def _validate_handle_refs(plan: IngestPlan) -> None:
     """Every handle_ref must point to a handle that appears earlier in the list."""
-    seen: set[str] = set()
+    seen: set[Handle] = set()
     for entity in plan.entities:
         for kwarg_name, ref_handle in entity.handle_refs.items():
             if ref_handle not in seen:
@@ -132,7 +132,7 @@ def _validate_assertion_targets(plan: IngestPlan) -> None:
 
     # Duplicate handles.
     if len(valid_handles) != len(plan.entities):
-        seen: set[str] = set()
+        seen: set[Handle] = set()
         for e in plan.entities:
             if e.handle in seen:
                 raise ValueError(

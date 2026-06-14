@@ -88,6 +88,25 @@ type CiteHandle = str
 # ``None`` on non-patch runs.
 type EntryIndex = int
 
+# A plan-local temporary identifier for a not-yet-created entity — the label a
+# ``PlannedClaimAssert`` (or another create's ``handle_refs``) uses to point at a
+# ``PlannedEntityCreate`` before it has a PK, resolved to an ``EntityKey`` once the
+# entity is bulk-created. A transparent alias of ``str`` (like ``CiteHandle``
+# above) that names the role wherever a bare ``str`` — a handle-map key, an
+# FK/identity-ref value, the adapter's same-patch-create registry value — would
+# otherwise be indistinguishable from a public_id or a field name. Used across the
+# contract here, the apply engine and the patch adapter.
+type Handle = str
+
+# A relationship's namespace — the schema key naming a relationship kind
+# (``"location"``, ``"theme_parent"``, ``"credit"``) that a deferred
+# ``PlannedClaimAssert`` carries and ``build_relationship_claim`` keys off. A
+# transparent alias of ``str`` (like ``Handle`` above) that distinguishes a
+# namespace from the other ``str``s it travels with (a handle, a field name, a
+# public_id) where the distinction is otherwise invisible — e.g. a
+# ``frozenset[str]`` of valid namespaces.
+type Namespace = str
+
 
 @dataclass
 class PlannedEntityCreate:
@@ -109,8 +128,9 @@ class PlannedEntityCreate:
     # kwargs are spread into ``model_class(**kwargs)`` — schema varies per
     # model class, so the value type is genuinely heterogeneous.
     kwargs: dict[str, Any]
-    handle: str
-    handle_refs: dict[str, str] = field(default_factory=dict)
+    handle: Handle
+    # attname (FK column) → the handle of the planned entity supplying its PK.
+    handle_refs: dict[str, Handle] = field(default_factory=dict)
 
 
 @dataclass
@@ -161,16 +181,17 @@ class PlannedClaimAssert:
     entry_index: EntryIndex | None = None
     content_type_id: int | None = None
     object_id: int | None = None
-    handle: str | None = None
+    handle: Handle | None = None
     needs_review: bool = False
     needs_review_notes: str = ""
     license_id: int | None = None
     # Deferred relationship claim identity:
-    relationship_namespace: str = ""
+    relationship_namespace: Namespace = ""
     # identity values mix PKs (int) and tag values (str/bool) per the
     # relationship's claim-key schema; truly heterogeneous.
     identity: dict[str, Any] = field(default_factory=dict)
-    identity_refs: dict[str, str] = field(default_factory=dict)
+    # value-key → the handle of the planned entity whose PK fills that identity slot.
+    identity_refs: dict[str, Handle] = field(default_factory=dict)
 
 
 @dataclass

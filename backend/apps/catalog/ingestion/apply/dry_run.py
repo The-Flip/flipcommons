@@ -32,6 +32,7 @@ from apps.catalog.ingestion.apply.claims import (
 )
 from apps.catalog.ingestion.plan import (
     EntryIndex,
+    Handle,
     IngestPlan,
     PlannedClaimAssert,
     PlannedEntityCreate,
@@ -185,7 +186,7 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
 
     # Claims targeting planned entities: validate only (all are new by
     # definition).  Build sentinel claims without mutating the plan.
-    handle_to_model: dict[str, type[ClaimControlledModel]] = {
+    handle_to_model: dict[Handle, type[ClaimControlledModel]] = {
         e.handle: e.model_class for e in plan.entities
     }
     # A create whose FK points at *another* same-plan create carries a concrete,
@@ -211,7 +212,7 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
         and id(p) not in new_inline_cite_ids
     ]
     if planned_assertions:
-        handle_to_ct: dict[str, int] = {
+        handle_to_ct: dict[Handle, int] = {
             e.handle: ContentType.objects.get_for_model(e.model_class).pk
             for e in plan.entities
         }

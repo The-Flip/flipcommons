@@ -39,7 +39,9 @@ from apps.catalog.ingestion.patches.parsing import (
 from apps.catalog.ingestion.plan import (
     CitationRef,
     CiteHandle,
+    Handle,
     IngestPlan,
+    Namespace,
     PlannedClaimAssert,
     PlannedClaimRetract,
     PlannedEntityCreate,
@@ -80,7 +82,7 @@ class _HierarchyEdge(NamedTuple):
     """
 
     model_class: type[CatalogModel]
-    namespace: str
+    namespace: Namespace
     child: PublicId
     parent: PublicId
     ref: str  # the entry-ref/handle that asserted the edge, for the error message
@@ -103,7 +105,7 @@ class _MemberEmitResult(NamedTuple):
     """
 
     clash_keys: list[ClaimKey]
-    deferred_handles: list[str]
+    deferred_handles: list[Handle]
     carrier_written: bool
     hierarchy_edges: list[_HierarchyEdge]
 
@@ -217,7 +219,7 @@ type _RelationshipMemberSpec = _FkMemberSpec | _StringMemberSpec
 
 def _relationship_member_spec(
     model_class: type[CatalogModel],
-    namespace: str,
+    namespace: Namespace,
     entry: PatchEntry,
 ) -> _RelationshipMemberSpec:
     """Classify *namespace* as a single-identity relationship on *model_class*.
@@ -268,7 +270,7 @@ def _relationship_member_spec(
 
 def _member_identity(
     member: object,
-    namespace: str,
+    namespace: Namespace,
     rel_spec: _RelationshipMemberSpec,
     entry: PatchEntry,
 ) -> dict[str, IdentityPart]:
@@ -327,12 +329,12 @@ def _member_identity(
 def _emit_relationship(
     plan: IngestPlan,
     model_class: type[CatalogModel],
-    namespace: str,
+    namespace: Namespace,
     value: object,
     target: _Target,
     entry: PatchEntry,
     *,
-    created: dict[_CreatedKey, str],
+    created: dict[_CreatedKey, Handle],
     note: str = "",
     citation_ref: CitationRef | None = None,
 ) -> _MemberEmitResult:
@@ -352,13 +354,13 @@ def _emit_relationship(
             f"{entry.ref}: relationship {namespace!r} value must be a list of members"
         )
     clash_keys: list[ClaimKey] = []
-    deferred_handles: list[str] = []
+    deferred_handles: list[Handle] = []
     hierarchy_edges: list[_HierarchyEdge] = []
     seen_keys: set[ClaimKey] = set()
     # Deferred members lack a concrete claim_key, so dedup them on the target
     # handle (the namespace is fixed for this call) to keep the same "duplicate
     # member" strictness as the concrete path's seen_keys.
-    seen_deferred: set[str] = set()
+    seen_deferred: set[Handle] = set()
     carrier_written = False
     # A relationship whose FK identity targets its own subject model is a
     # self-referential hierarchy (theme_parent/gameplay_feature_parent); record
@@ -439,7 +441,7 @@ def _add_removals(
     entry: EditEntry,
     ct_id: int,
     source: Source,
-    rel_namespaces: frozenset[str],
+    rel_namespaces: frozenset[Namespace],
     rel_fields_by_model: dict[type[CatalogModel], set[str]],
     *,
     note: str = "",
@@ -545,9 +547,9 @@ def _add_create(
     plan: IngestPlan,
     model_class: type[CatalogModel],
     entry: CreateEntry,
-    handle: str,
+    handle: Handle,
     *,
-    created: dict[_CreatedKey, str],
+    created: dict[_CreatedKey, Handle],
     note: str = "",
 ) -> None:
     """Emit a ``PlannedEntityCreate`` plus its required identity/status claims.
@@ -623,7 +625,7 @@ def _add_create(
     # the target handle's PK by the apply layer (resolved after the bulk-create).
     # The field loop still emits the concrete provenance claim, which
     # _validate_entity_claim_consistency pairs with this handle_ref.
-    handle_refs: dict[str, str] = {}
+    handle_refs: dict[str, Handle] = {}
 
     for key, value in entry.fields.items():
         if key not in claim_fields:
@@ -791,7 +793,7 @@ def _add_retractions(
     entry: EditEntry,
     ct_id: int,
     source: Source,
-    rel_namespaces: frozenset[str],
+    rel_namespaces: frozenset[Namespace],
     *,
     note: str = "",
 ) -> bool:

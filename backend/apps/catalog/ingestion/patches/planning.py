@@ -55,7 +55,9 @@ from apps.catalog.ingestion.patches.parsing import (
 from apps.catalog.ingestion.plan import (
     CitationRef,
     CiteHandle,
+    Handle,
     IngestPlan,
+    Namespace,
     PreWriteHook,
     RunReport,
 )
@@ -69,16 +71,16 @@ from apps.core.types import EntityKey
 from apps.provenance.models import Source, get_claim_fields
 
 # A plan-wide guard target: an existing entity (``EntityKey``) or a same-patch
-# create addressed by its handle (``str``). The two never collide — a 2-int
+# create addressed by its ``Handle``. The two never collide — a 2-int
 # ``NamedTuple`` vs a handle string — so they share one accumulator keyspace.
-type _TargetKey = EntityKey | str
+type _TargetKey = EntityKey | Handle
 
 
 class _TargetContribution(NamedTuple):
     """One entry's contribution to the plan-wide guards for one target.
 
     The target is an existing entity (keyed by ``EntityKey``) or a same-patch
-    create (keyed by its handle ``str``). A create contributes its authored +
+    create (keyed by its ``Handle``). A create contributes its authored +
     identity (slug) claims under its handle, so the disjoint-claims guard spans
     the create and any companion edits that refine it; a delete contributes one
     of these per soft-deleted entity (root + cascade) with empty field sets and
@@ -145,7 +147,7 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     # patch DB lookup; only neither-found errors. (Kept separate from
     # ``created_refs``: that dedups by the entry-ref label; this resolves by
     # concrete class + public_id — different keys, different jobs.)
-    created: dict[_CreatedKey, str] = {}
+    created: dict[_CreatedKey, Handle] = {}
     # Identity of every create in the patch, regardless of file order — a cheap
     # pre-scan so an edit that resolves nowhere can tell *create-appears-below*
     # (decision 6: create-first) from *no-such-record*. The single-pass ``created``
@@ -329,10 +331,10 @@ def _process_entry(
     entry: PatchEntry,
     *,
     source: Source,
-    rel_namespaces: frozenset[str],
+    rel_namespaces: frozenset[Namespace],
     rel_fields_by_model: dict[type[CatalogModel], set[str]],
     created_refs: set[str],
-    created: dict[_CreatedKey, str],
+    created: dict[_CreatedKey, Handle],
     all_created_ids: AbstractSet[_CreatedKey],
 ) -> _EntryResult:
     """Resolve, validate and emit one claim entry; return its cross-entry contribution.
