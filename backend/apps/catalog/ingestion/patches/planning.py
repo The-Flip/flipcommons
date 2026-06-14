@@ -339,7 +339,7 @@ def _process_entry(
 
     All DB reads and plan mutations for the entry happen here. The entry kind is
     its parsed type — the illegal directive combinations were already rejected in
-    ``_parse_entry``, so each branch only does its own DB-dependent work. The
+    ``_parse_entry_body``, so each branch only does its own DB-dependent work. The
     per-entry provenance-carrier check is enforced inline; the returned
     :class:`_EntryResult` carries only what ``_validate_plan_wide`` needs.
     """

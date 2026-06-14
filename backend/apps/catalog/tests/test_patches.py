@@ -1060,6 +1060,211 @@ claims:
         _apply(text)
 
 
+# ── Grouped `changesets:` form ─────────────────────────────────────
+
+
+def _grouped_notes(patch_id: str) -> list[str]:
+    """ChangeSet notes for a patch, in apply (file) order."""
+    return list(
+        ChangeSet.objects.filter(ingest_run__patch_id=patch_id)
+        .order_by("id")
+        .values_list("note", flat=True)
+    )
+
+
+def test_grouped_pure_wrapper_expands(machine_model):
+    # The dai-uchuu shape: one header (ref + expect:) wrapping two separately
+    # cited changesets. Parses to two EditEntrys sharing ref + expect; both land
+    # as their own ChangeSet, in file order.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      expect: {{ year: 1997 }}
+      changesets:
+        - note: first change
+          player_count: 4
+        - note: second change
+          flipper_count: 2
+"""
+    doc = load_patch(text)
+    assert [type(e) for e in doc.claims] == [EditEntry, EditEntry]
+    assert {e.ref for e in doc.claims} == {f"model.{machine_model.slug}"}
+    assert all(
+        isinstance(e, EditEntry) and e.expect == {"year": 1997} for e in doc.claims
+    )
+
+    report = _apply(text, patch_id="0001-grouped")
+    assert report.rejected == 0
+    assert _grouped_notes("0001-grouped") == ["first change", "second change"]
+    machine_model.refresh_from_db()
+    assert machine_model.player_count == 4
+    assert machine_model.flipper_count == 2
+
+
+def test_grouped_expect_guards_every_item(machine_model):
+    # The header's expect: guards every changeset; a mismatch fails before any
+    # write, a match applies all items.
+    bad = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      expect: {{ year: 1234 }}
+      changesets:
+        - player_count: 4
+        - flipper_count: 2
+"""
+    with pytest.raises(PatchError, match="expect year"):
+        _apply(bad, patch_id="0001-bad")
+    assert not Claim.objects.filter(source__slug="flipcommons-catalog").exists()
+
+    ok = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      expect: {{ year: 1997 }}
+      changesets:
+        - player_count: 4
+        - flipper_count: 2
+"""
+    assert _apply(ok, patch_id="0002-ok").rejected == 0
+    machine_model.refresh_from_db()
+    assert (machine_model.player_count, machine_model.flipper_count) == (4, 2)
+
+
+def test_grouped_disjoint_violation_across_items(machine_model):
+    # Two changesets asserting the same field collapse to one claim_key — rejected
+    # by the same plan-wide guard as the flat cross-entry case.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      expect: {{ year: 1997 }}
+      changesets:
+        - player_count: 4
+        - player_count: 2
+"""
+    with pytest.raises(PatchError, match="set by more than one entry"):
+        _apply(text)
+
+
+def test_grouped_create_header_plus_companions():
+    # `create: true` header is the CreateEntry; each changesets item is a
+    # companion edit on the record just created (replaces the positional dance).
+    text = """
+attribution: flipcommons-catalog
+description: new brand with a companion edit
+claims:
+  - manufacturer.acme-pinball:
+      create: true
+      name: Acme Pinball
+      changesets:
+        - website: https://acme.example.com
+          note: company site
+"""
+    report = _apply(text, patch_id="0001-acme")
+    assert report.records_created == 1
+    assert report.rejected == 0
+
+    mfr = Manufacturer.objects.get(slug="acme-pinball")
+    assert mfr.name == "Acme Pinball"
+    assert mfr.website == "https://acme.example.com"
+    assert "company site" in _grouped_notes("0001-acme")
+
+
+def test_grouped_primary_edit_plus_companions(machine_model):
+    # Header asserts a field (no create/delete) → it is the primary EditEntry;
+    # the changesets items are siblings. All land, header first.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      expect: {{ year: 1997 }}
+      note: header note
+      player_count: 4
+      changesets:
+        - note: companion note
+          flipper_count: 2
+"""
+    doc = load_patch(text)
+    assert [type(e) for e in doc.claims] == [EditEntry, EditEntry]
+    assert doc.claims[0].note == "header note"
+
+    report = _apply(text, patch_id="0001-primary")
+    assert report.rejected == 0
+    assert _grouped_notes("0001-primary") == ["header note", "companion note"]
+    machine_model.refresh_from_db()
+    assert (machine_model.player_count, machine_model.flipper_count) == (4, 2)
+
+
+def test_grouped_delete_with_changesets_rejected(machine_model):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      delete: true
+      changesets:
+        - note: orphan
+"""
+    with pytest.raises(PatchError, match="can't be combined with 'changesets'"):
+        load_patch(text)
+
+
+@pytest.mark.parametrize(
+    "forbidden", ["create: true", "delete: true", "expect: {}", "changesets: []"]
+)
+def test_grouped_item_header_only_key_rejected(forbidden):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      expect: {{ year: 1997 }}
+      changesets:
+        - note: x
+          {forbidden}
+"""
+    with pytest.raises(PatchError, match="header-only"):
+        load_patch(text)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "changesets: []",
+        "changesets: not-a-list",
+        "changesets:\n        - just-a-string",
+    ],
+)
+def test_grouped_empty_or_nonlist_changesets_rejected(bad):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      expect: {{ year: 1997 }}
+      {bad}
+"""
+    with pytest.raises(
+        PatchError, match="non-empty list of mappings|item must be a mapping"
+    ):
+        load_patch(text)
+
+
+def test_grouped_header_provenance_without_fields_rejected():
+    # A header that is only expect: + changesets: but carries a note has nothing
+    # to attach it to — clear message, not the opaque carrier error.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      expect: { year: 1997 }
+      note: orphan note
+      changesets:
+        - player_count: 4
+"""
+    with pytest.raises(PatchError, match="put provenance on the individual changesets"):
+        load_patch(text)
+
+
 # ── Remove relationship member (exists=false supersede) ────────────
 
 

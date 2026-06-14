@@ -46,9 +46,31 @@ _NUMERIC_HANDLE_RE = re.compile(r"^[0-9]+$")
 _SLUG_HANDLE_RE = re.compile(r"^[a-z]+$")
 
 # Keys in a claim entry's value mapping that are directives, not claim fields.
+#
+# Grammar mirror: pindata's `schema/patch.schema.json` is a hand-maintained JSON
+# Schema of this patch *wire* grammar. It's a structural pre-check for authors,
+# living in the repo where patches are written, run by pindata's `make validate`.
+# It's deliberately partial (this parser and planning stay authoritative) and
+# can't see this file, so when you change the wire grammar here, update
+# `patch.schema.json` in pindata to match.
 RESERVED_FIELD_KEYS = frozenset(
-    {"create", "delete", "expect", "retract", "remove", "note", "cite", "cites"}
+    {
+        "create",
+        "delete",
+        "expect",
+        "retract",
+        "remove",
+        "note",
+        "cite",
+        "cites",
+        "changesets",
+    }
 )
+
+# Header-only keys a grouped `changesets:` item may not carry: lifecycle
+# (create/delete) and the drift guard (expect) live on the group header, and a
+# nested changesets is meaningless.
+_CHANGESET_ITEM_FORBIDDEN_KEYS = frozenset({"create", "delete", "expect", "changesets"})
 
 # Allowed keys in a `sources:` node / its links, derived from the seed TypedDicts
 # (the single source of truth). `children` is excluded — v1 sources are flat.
@@ -393,13 +415,14 @@ def _parse_cites(raw_cites: object, ref: str) -> dict[CiteHandle, CitationRef]:
     return parsed
 
 
-def _parse_entry(raw_entry: object, index: int) -> PatchEntry:
-    """Parse + structurally validate one ``claims:`` entry into a typed kind.
+def _split_entry_ref(raw_entry: object, index: int) -> tuple[str, JsonBody]:
+    """Unwrap a single-key ``{ref: body}`` claim entry into its ref and body.
 
-    Decides the entry kind from ``create:``/``delete:`` and validates that the
-    entry carries only the directives legal for that kind — so an illegal
-    combination is rejected here, at parse time, rather than by flag checks in
-    ``build_plan``. Field *values* and DB resolution stay in ``build_plan``.
+    Job (a) of parsing a claim: validate the structural shape (single-key
+    mapping, ``type.public_id`` ref, mapping body) and narrow ``object`` to the
+    typed ``(ref, body)`` pair :func:`_parse_entry_body` consumes. ``index``
+    locates the pre-ref structural errors — the only locator available before a
+    ref exists.
     """
     if not isinstance(raw_entry, dict) or len(raw_entry) != 1:
         raise PatchError(
@@ -413,6 +436,19 @@ def _parse_entry(raw_entry: object, index: int) -> PatchEntry:
         raise PatchError(f"claims[{index}] key {ref!r} must be 'type.public_id'")
     if not isinstance(raw_fields, dict):
         raise PatchError(f"claims[{index}] ({ref}) value must be a mapping")
+    return ref, cast(JsonBody, raw_fields)
+
+
+def _parse_entry_body(ref: str, raw_fields: JsonBody) -> PatchEntry:
+    """Parse + structurally validate a claim entry's body into a typed kind.
+
+    Job (b) of parsing a claim: with the ref and body already unwrapped and
+    typed, decide the entry kind from ``create:``/``delete:`` and validate that
+    the entry carries only the directives legal for that kind — so an illegal
+    combination is rejected here, at parse time, rather than by flag checks in
+    ``build_plan``. Field *values* and DB resolution stay in ``build_plan``.
+    """
+    entity_type, public_id = ref.split(".", 1)
 
     create = _require_bool(raw_fields, "create", ref)
     delete = _require_bool(raw_fields, "delete", ref)
@@ -462,6 +498,68 @@ def _parse_entry(raw_entry: object, index: int) -> PatchEntry:
     )
 
 
+def _parse_claim(raw_entry: object, index: int) -> list[PatchEntry]:
+    """Parse one ``claims:`` entry into one or more typed entries.
+
+    Flat form (no ``changesets:`` key) → a single-element list, identical to
+    parsing the body directly. Grouped form (a ``changesets:`` list) desugars
+    into the existing flat :class:`PatchEntry` union at parse time, so nothing
+    downstream changes:
+
+    * the header's body **minus** ``changesets:`` is parsed as a normal entry —
+      the *primary*, present only if the header asserts something beyond
+      ``expect:`` (a ``create``, fields, a ``retract``/``remove``);
+    * each ``changesets:`` item becomes an additional :class:`EditEntry` on the
+      same record, inheriting the header's ref and ``expect:``.
+
+    Entries come back in file order — primary (if any) first, then the items —
+    which is byte-identical to the flat multi-entry equivalent.
+    """
+    ref, body = _split_entry_ref(raw_entry, index)
+    if "changesets" not in body:
+        return [_parse_entry_body(ref, body)]
+
+    header = {k: v for k, v in body.items() if k != "changesets"}
+    # Carrier keys are everything that can anchor a ChangeSet: field assertions,
+    # create/delete, retract/remove. ``expect`` and the provenance keys can't.
+    carrier_keys = set(header) - {"expect", "note", "cite", "cites"}
+    provenance_keys = {"note", "cite", "cites"} & set(header)
+    # A header with provenance but no carrier — only ``expect:`` — has nothing to
+    # attach it to: there is no group-level note/cite, those ride the individual
+    # changesets. Reject here with a clear message rather than letting the
+    # synthesized carrier-less primary die in planning's opaque carrier check.
+    if provenance_keys and not carrier_keys:
+        raise PatchError(
+            f"{ref}: a group header with no field assertions takes no "
+            f"{', '.join(sorted(provenance_keys))} — put provenance on the "
+            f"individual changesets"
+        )
+
+    expect = _parse_expect(body, ref)  # validated once; shared by every item
+
+    entries: list[PatchEntry] = []
+    if carrier_keys:  # header asserts something → it is the primary entry
+        primary = _parse_entry_body(ref, header)
+        if isinstance(primary, DeleteEntry):
+            raise PatchError(f"{ref}: 'delete' can't be combined with 'changesets'")
+        entries.append(primary)
+
+    raw_changesets = body["changesets"]
+    if not isinstance(raw_changesets, list) or not raw_changesets:
+        raise PatchError(f"{ref}: 'changesets' must be a non-empty list of mappings")
+    for item in raw_changesets:
+        if not isinstance(item, dict):
+            raise PatchError(f"{ref}: each 'changesets' item must be a mapping")
+        forbidden = _CHANGESET_ITEM_FORBIDDEN_KEYS & set(item)
+        if forbidden:
+            raise PatchError(
+                f"{ref}: a 'changesets' item may not carry "
+                f"{', '.join(sorted(forbidden))} — these are header-only"
+            )
+        entries.append(_parse_entry_body(ref, {**item, "expect": expect}))
+    return entries
+
+
 def load_patch(text: str) -> PatchDoc:
     """Parse + structurally validate patch text. Raises :class:`PatchError`."""
     data = parse_patch_text(text)
@@ -489,7 +587,7 @@ def load_patch(text: str) -> PatchDoc:
         for i, entry in enumerate(raw_sources)
     ]
 
-    claims = [_parse_entry(entry, i) for i, entry in enumerate(raw_claims)]
+    claims = [e for i, rc in enumerate(raw_claims) for e in _parse_claim(rc, i)]
 
     return PatchDoc(
         attribution=attribution,
