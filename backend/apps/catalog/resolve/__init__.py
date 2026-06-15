@@ -14,6 +14,7 @@ from django.core.management.base import OutputWrapper
 from django.utils import timezone
 
 from apps.core.types import JsonBody
+from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.licensing import (
     SourceFieldLicenseMap,
     build_source_field_license_map,
@@ -35,7 +36,6 @@ from ._entities import (
 )
 from ._helpers import (
     FKInfo,
-    _annotate_priority,
     _coerce,
     _resolve_fk_generic,
     build_fk_info,
@@ -85,10 +85,8 @@ def resolve_model(machine_model: MachineModel) -> MachineModel:
     Returns the saved MachineModel.
     """
     # Fetch and pick winners (single-object).
-    claims = (
-        _annotate_priority(machine_model.claims.all())
-        .select_related("source__default_license")
-        .order_by("claim_key", "-effective_priority", "-created_at")  # type: ignore[misc]
+    claims = ranked_claims(machine_model.claims.all(), "claim_key").select_related(
+        "source__default_license"
     )
     winners: dict[str, Claim] = {}
     for claim in claims:
@@ -322,11 +320,9 @@ def _build_claims_by_model() -> dict[int, dict[str, Claim]]:
     from django.contrib.contenttypes.models import ContentType
 
     ct = ContentType.objects.get_for_model(MachineModel)
-    claims = (
-        _annotate_priority(Claim.objects.filter(content_type=ct))
-        .select_related("source__default_license")
-        .order_by("object_id", "claim_key", "-effective_priority", "-created_at")  # type: ignore[misc]
-    )
+    claims = ranked_claims(
+        Claim.objects.filter(content_type=ct), "object_id", "claim_key"
+    ).select_related("source__default_license")
 
     result: dict[int, dict[str, Claim]] = {}
     for claim in claims:

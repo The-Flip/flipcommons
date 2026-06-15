@@ -162,6 +162,31 @@ class TestDuplicatePersons:
         assert "person name(s) appear more than once" in captured.out
 
 
+class TestWinningClaims:
+    def test_disabled_source_claim_never_wins(self, db, ipdb):
+        """_winning_claims must match the resolver: disabled sources are excluded.
+
+        Routing the validator through the shared ranked_claims added the
+        disabled-source exclusion; before, a disabled high-priority claim the
+        resolver would never materialize could be validated as the winner.
+        """
+        from django.contrib.contenttypes.models import ContentType
+
+        from apps.catalog.management.commands.validate_catalog import _winning_claims
+
+        disabled = Source.objects.create(
+            name="Disabled", source_type="other", priority=999, is_enabled=False
+        )
+        pm = make_machine_model(name="Win Pin", slug="win-pin")
+        Claim.objects.assert_claim(pm, "year", 1997, source=ipdb)
+        Claim.objects.assert_claim(pm, "year", 2099, source=disabled)
+
+        ct = ContentType.objects.get_for_model(MachineModel)
+        values = {c.value for c in _winning_claims(ct, "year")}
+        assert 2099 not in values  # disabled source excluded, despite priority 999
+        assert 1997 in values
+
+
 class TestUnresolvedFKClaims:
     def test_unresolved_system_claim_is_warning(self, db, ipdb, capsys):
         pm = make_machine_model(name="Test", slug="test-model")

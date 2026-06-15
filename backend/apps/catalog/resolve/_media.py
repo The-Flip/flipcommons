@@ -12,12 +12,12 @@ from django.db import transaction
 
 from apps.core.types import ClaimIdentity, EntityKey
 from apps.media.models import EntityMedia, MediaAsset, MediaSupportedModel
+from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
 from apps.provenance.typing import HasEffectivePriority
 
 from ..cache import invalidate_all
 from ._claim_values import MediaAttachmentClaimValue
-from ._helpers import _annotate_priority
 
 logger = logging.getLogger(__name__)
 
@@ -80,18 +80,12 @@ def resolve_media_attachments(
     """
     # -- Fetch active claims, pick winners ----------------------------------
 
-    claims_qs = _annotate_priority(Claim.objects.filter(field_name="media_attachment"))
+    claims_qs = Claim.objects.filter(field_name="media_attachment")
     if content_type_id is not None:
         claims_qs = claims_qs.filter(content_type_id=content_type_id)
     if subject_ids is not None:
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
-    claims = claims_qs.order_by(  # type: ignore[misc]
-        "content_type_id",
-        "object_id",
-        "claim_key",
-        "-effective_priority",
-        "-created_at",
-    )
+    claims = ranked_claims(claims_qs, "content_type_id", "object_id", "claim_key")
 
     # Winner per (content_type_id, object_id, claim_key).
     # Keep priority + created_at for primary enforcement.

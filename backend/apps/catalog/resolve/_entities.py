@@ -13,10 +13,10 @@ import logging
 from django.utils import timezone
 
 from apps.core.types import JsonBody
+from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim, ClaimControlledModel
 
 from ._helpers import (
-    _annotate_priority,
     _coerce,
     _resolve_fk_generic,
     build_fk_info,
@@ -64,9 +64,7 @@ def _resolve_single(
 
     Mutates *obj* in memory; the caller is responsible for saving.
     """
-    claims = _annotate_priority(obj.claims.all()).order_by(  # type: ignore[misc]
-        "field_name", "-effective_priority", "-created_at"
-    )
+    claims = ranked_claims(obj.claims.all(), "field_name")
 
     winners: dict[str, Claim] = {}
     for claim in claims:
@@ -147,8 +145,8 @@ def _resolve_bulk(
     ct = ContentType.objects.get_for_model(model_class)
 
     # 1. Pre-fetch all active claims for this model class.
-    claims_qs = _annotate_priority(Claim.objects.filter(content_type=ct)).order_by(  # type: ignore[misc]
-        "object_id", "field_name", "-effective_priority", "-created_at"
+    claims_qs = ranked_claims(
+        Claim.objects.filter(content_type=ct), "object_id", "field_name"
     )
     if object_ids is not None:
         claims_qs = claims_qs.filter(object_id__in=object_ids)

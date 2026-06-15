@@ -13,6 +13,7 @@ from typing import NamedTuple, cast
 
 from django.db.models import Model
 
+from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim, ClaimControlledModel
 from apps.provenance.validation import (
     get_display_override,
@@ -47,7 +48,6 @@ from ._claim_values import (
     LocationClaimValue,
     ParentClaimValue,
 )
-from ._helpers import _annotate_priority
 
 logger = logging.getLogger(__name__)
 
@@ -108,14 +108,10 @@ def _resolve_machine_model_m2m(
     ct = ContentType.objects.get_for_model(MachineModel)
 
     # Pre-fetch active claims with priority annotation.
-    claims_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name=spec.field_name)
-    )
+    claims_qs = Claim.objects.filter(content_type=ct, field_name=spec.field_name)
     if subject_ids is not None:
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
-    claims = claims_qs.order_by(  # type: ignore[misc]
-        "object_id", "claim_key", "-effective_priority", "-created_at"
-    )
+    claims = ranked_claims(claims_qs, "object_id", "claim_key")
 
     # Pick winner per (object_id, claim_key).
     winners_by_model: dict[int, list[Claim]] = {}
@@ -219,14 +215,10 @@ def resolve_all_gameplay_features(
 
     ct = ContentType.objects.get_for_model(MachineModel)
 
-    claims_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name="gameplay_feature")
-    )
+    claims_qs = Claim.objects.filter(content_type=ct, field_name="gameplay_feature")
     if subject_ids is not None:
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
-    claims = claims_qs.order_by(  # type: ignore[misc]
-        "object_id", "claim_key", "-effective_priority", "-created_at"
-    )
+    claims = ranked_claims(claims_qs, "object_id", "claim_key")
 
     # Pick winner per (object_id, claim_key).
     winners_by_model: dict[int, list[Claim]] = {}
@@ -349,14 +341,10 @@ def resolve_all_credits(
         )
         return
 
-    credit_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name="credit")
-    )
+    credit_qs = Claim.objects.filter(content_type=ct, field_name="credit")
     if subject_ids is not None:
         credit_qs = credit_qs.filter(object_id__in=subject_ids)
-    credit_claims = credit_qs.order_by(  # type: ignore[misc]
-        "object_id", "claim_key", "-effective_priority", "-created_at"
-    )
+    credit_claims = ranked_claims(credit_qs, "object_id", "claim_key")
 
     winners_by_model: dict[int, list[Claim]] = {}
     seen: set[ClaimDedupKey] = set()
@@ -448,14 +436,10 @@ def resolve_all_title_abbreviations(
 
     ct = ContentType.objects.get_for_model(Title)
 
-    abbr_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name="abbreviation")
-    )
+    abbr_qs = Claim.objects.filter(content_type=ct, field_name="abbreviation")
     if subject_ids is not None:
         abbr_qs = abbr_qs.filter(object_id__in=subject_ids)
-    abbr_claims = abbr_qs.order_by(  # type: ignore[misc]
-        "object_id", "claim_key", "-effective_priority", "-created_at"
-    )
+    abbr_claims = ranked_claims(abbr_qs, "object_id", "claim_key")
 
     winners_by_title: dict[int, list[Claim]] = {}
     seen: set[ClaimDedupKey] = set()
@@ -545,14 +529,10 @@ def resolve_all_model_abbreviations(
 
     ct = ContentType.objects.get_for_model(MachineModel)
 
-    abbr_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name="abbreviation")
-    )
+    abbr_qs = Claim.objects.filter(content_type=ct, field_name="abbreviation")
     if subject_ids is not None:
         abbr_qs = abbr_qs.filter(object_id__in=subject_ids)
-    abbr_claims = abbr_qs.order_by(  # type: ignore[misc]
-        "object_id", "claim_key", "-effective_priority", "-created_at"
-    )
+    abbr_claims = ranked_claims(abbr_qs, "object_id", "claim_key")
 
     winners_by_model: dict[int, list[Claim]] = {}
     seen: set[ClaimDedupKey] = set()
@@ -648,9 +628,11 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
 
     ct = ContentType.objects.get_for_model(parent_model)
 
-    claims_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name=claim_field)
-    ).order_by("object_id", "claim_key", "-effective_priority", "-created_at")  # type: ignore[misc]
+    claims_qs = ranked_claims(
+        Claim.objects.filter(content_type=ct, field_name=claim_field),
+        "object_id",
+        "claim_key",
+    )
 
     # Pick winners per (object_id, claim_key).
     winners_by_parent: dict[int, list[Claim]] = {}
@@ -790,9 +772,11 @@ def _resolve_parents(
     claim_field_name = f"{prefix}_parent"
     ct = ContentType.objects.get_for_model(parent_model)
 
-    claims_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name=claim_field_name)
-    ).order_by("object_id", "claim_key", "-effective_priority", "-created_at")  # type: ignore[misc]
+    claims_qs = ranked_claims(
+        Claim.objects.filter(content_type=ct, field_name=claim_field_name),
+        "object_id",
+        "claim_key",
+    )
 
     # Pick winners per (object_id, claim_key).
     winners_by_child: dict[int, list[Claim]] = {}

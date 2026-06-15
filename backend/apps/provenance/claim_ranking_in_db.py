@@ -1,0 +1,77 @@
+"""Canonical claim winner-pick — how a Source/User wins a ``claim_key``.
+
+Ranking claims is a Claim-level concern, so it lives here in provenance (the
+layer that owns :class:`~apps.provenance.models.Claim`) and is shared by every
+``ClaimControlledModel`` consumer — catalog's resolvers, provenance's own
+prefetch/history helpers and the catalog validator — so the rule cannot drift.
+
+The single public entry point is :func:`ranked_claims`: it filters to eligible
+claims, annotates ``effective_priority`` and applies the deterministic tiebreak
+order in one call, so a consumer cannot accidentally forget the tail and pick an
+arbitrary winner.  Iterate the result and keep the first claim per grouping key::
+
+    for claim in ranked_claims(qs, "object_id", "claim_key"):
+        winners.setdefault((claim.object_id, claim.claim_key), claim)
+
+The order ends in ``-pk`` so claims that tie on priority and ``created_at``
+(real, not hypothetical: one transaction's bulk insert shares
+``db_default=Now()``) resolve deterministically to the highest pk = the last
+write, instead of undefined database row order.
+
+The ORM-free mirror the patch PlanEnvironment ranks *unsaved* claims with lives
+in :mod:`apps.catalog.resolve.claim_ranking_in_memory`; the two are pinned to
+agree by ``apps/catalog/resolve/tests/test_claim_ranking_in_memory.py``.  A
+guard test (``apps/provenance/tests/test_ranking_is_canonical.py``) fails if any
+module re-spells the annotation or the order, or reaches past
+:func:`ranked_claims` to the private primitives below.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from django.db.models import Case, F, IntegerField, Value, When
+
+if TYPE_CHECKING:
+    from django.db.models import QuerySet
+
+    from apps.provenance.models import Claim
+
+# Highest effective_priority, then newest created_at, then highest pk (= last
+# write) — a total, deterministic order.  Private: callers go through
+# ``ranked_claims`` so the tail can never be omitted.
+_WINNER_ORDER: tuple[str, ...] = ("-effective_priority", "-created_at", "-pk")
+
+
+def _annotate_priority(qs: QuerySet[Claim]) -> QuerySet[Claim]:
+    """Filter to active claims from enabled sources and annotate effective_priority.
+
+    Private — :func:`ranked_claims` is the only winner-pick entry point, so the
+    annotation and the order stay welded together.
+    """
+    return (
+        qs.filter(is_active=True)
+        .exclude(source__is_enabled=False)
+        .select_related("source", "user")
+        .annotate(
+            effective_priority=Case(
+                When(source__isnull=False, then=F("source__priority")),
+                When(user__isnull=False, then=F("user__priority")),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+        )
+    )
+
+
+def ranked_claims(qs: QuerySet[Claim], *group_keys: str) -> QuerySet[Claim]:
+    """Eligible claims, ordered so the first per grouping key is the winner.
+
+    The single SQL winner-pick: filters to active claims from enabled sources,
+    annotates ``effective_priority`` and orders by *group_keys* then the
+    priority/recency/pk tiebreak.  Pass the grouping columns the caller dedups on
+    (e.g. ``"object_id", "claim_key"``); they sort first so each group is
+    contiguous, ranked within.  Extra ``.filter()`` / ``.select_related()`` may
+    be chained onto the result — ordering survives.
+    """
+    return _annotate_priority(qs).order_by(*group_keys, *_WINNER_ORDER)
