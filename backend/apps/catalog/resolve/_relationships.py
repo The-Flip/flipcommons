@@ -887,22 +887,27 @@ def resolve_all_corporate_entity_locations(
     ce_ct = ContentType.objects.get_for_model(CorporateEntity)
     valid_loc_pks = set(Location.objects.values_list("pk", flat=True))
 
-    claims_qs = Claim.objects.filter(
-        content_type=ce_ct, field_name="location", is_active=True
-    ).exclude(source__is_enabled=False)
+    claims_qs = Claim.objects.filter(content_type=ce_ct, field_name="location")
     if subject_ids is not None:
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
+    claims = ranked_claims(claims_qs, "object_id", "claim_key")
 
-    active_claims = claims_qs.values("object_id", "value")
-
+    # Pick the winning claim per (object_id, claim_key) by source priority, then
+    # keep only the present locations.  Uniform with the sibling resolvers: a
+    # higher-priority exists=False retraction wins over a lower-priority assertion.
     desired: dict[int, set[int]] = defaultdict(set)
-    for row in active_claims:
-        val = cast(LocationClaimValue, row["value"] or {})
+    seen: set[ClaimDedupKey] = set()
+    for claim in claims:
+        key = ClaimDedupKey(claim.object_id, claim.claim_key)
+        if key in seen:
+            continue
+        seen.add(key)
+        val = cast(LocationClaimValue, claim.value or {})
         if not val.get("exists", True):
             continue
         loc_pk = val.get("location")
         if loc_pk and loc_pk in valid_loc_pks:
-            desired[row["object_id"]].add(loc_pk)
+            desired[claim.object_id].add(loc_pk)
 
     existing_qs = CorporateEntityLocation.objects.all()
     if subject_ids is not None:
