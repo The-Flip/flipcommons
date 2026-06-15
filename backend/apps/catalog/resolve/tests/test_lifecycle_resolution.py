@@ -1,11 +1,10 @@
 """Liveness resolves the same whether read in SQL or in memory.
 
-The patch front end (and increment 2's reverse read) computes an entity's
-liveness *in memory* — winner-pick over the status cell's claims, with a
-materialized fallback — instead of going through the SQL ``.active()``.  These
-tests pin that the in-memory composition (:func:`apps.core.models.is_live` over
-the resolved status) agrees with the production queryset, including the two
-cases two of our bugs lived in:
+The patch front end computes an entity's liveness *in memory* — winner-pick over
+the status cell's claims, with a materialized fallback — instead of going through
+the SQL ``.active()``.  These tests pin that the in-memory composition
+(:func:`apps.core.models.is_live` over the resolved status) agrees with the
+production queryset, including two cases that are easy to get wrong:
 
 * ``None``-is-live — a legacy row with no status claim must read as live (so it
   still blocks a delete / still cascades), not as "no winning status claim → not
@@ -108,14 +107,14 @@ def sources() -> dict[str, Source]:
 
 
 def _resolved_status(entity: CatalogModel) -> str | None:
-    """Resolve status the way the environment will: winning status claim, else
-    the materialized column (decision 3 — untouched cells read materialized).
+    """Resolve status: the winning status claim's value, else the materialized
+    column (an untouched cell reads its already-materialized value).
 
-    A committed-only stand-in. Increment 2's environment resolves over
-    (snapshot + pending) claims and will expose this winner-pick-then-fallback
-    composition as one ``resolve_status``; when it lands, this test should call
-    that helper rather than keep a second copy of the rule (the re-spelling the
-    effort exists to prevent, one layer up from ``is_live``).
+    Committed state only — it does not fold in same-patch pending claims.
+
+    TODO: the patch front end will own a shared ``resolve_status`` over
+    (committed + pending) claims; switch this test to call it rather than keep a
+    second copy of the winner-pick-then-fallback rule.
     """
     claims = list(entity.claims.select_related("source", "user").all())
     winner = pick_winners(claims).get(LIFECYCLE_STATUS_FIELD)

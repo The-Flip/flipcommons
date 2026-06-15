@@ -117,8 +117,8 @@ class TestPickWinners:
 
     def test_pending_still_loses_to_higher_priority(self) -> None:
         # Recency only breaks ties — a higher-priority committed claim beats
-        # a lower-priority pending one.  (The headline reassign-then-delete
-        # validation property in the plan doc.)
+        # a lower-priority pending one.  A pending same-patch reassignment only
+        # takes effect if it actually outranks the committed claim it supersedes.
         committed_hi = _FakeClaim("name", created_at=_T0, pk=1, source=_Src(20))
         pending_lo = _FakeClaim("name", created_at=None, source=_Src(10))
         assert pick_winners([committed_hi, pending_lo])["name"] is committed_hi
