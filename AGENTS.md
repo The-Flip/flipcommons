@@ -311,11 +311,15 @@ When reviewing code or a PR, read [docs/Reviewing.md](Reviewing.md) first and fo
 
 ## Related Repos
 
-This project has two sister projects:
+This project has three sister projects:
 
 ### Catalog seed records
 
 **[pindata](https://github.com/deanmoses/pindata)**: pre-launch seed canonical catalog records (markdown files + JSON schemas). It publishes the catalog as JSON to Cloudflare R2 and this project pulls it down from R2 via `make pull-ingest`.
+
+### Data patches
+
+**[flippatch](https://github.com/deanmoses/flippatch)**: the numbered `NNNN-slug.yaml` data patches applied on top of the seed (split out of pindata). It publishes them to Cloudflare R2 and this project pulls them via `make pull-patches`, then applies them with `make ingest-patches`. See [DataPatches.md](DataPatches.md).
 
 ### Analytics DB over pinball data
 

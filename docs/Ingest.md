@@ -6,13 +6,15 @@ enrichment commands (Fandom, Wikidata) run separately.
 
 ## Data sources
 
-Catalog data and external source files are maintained in the
+The seed catalog and external source files are maintained in the
 [pindata](https://github.com/deanmoses/pindata) repo and published to
 Cloudflare R2. This project pulls them locally before running the ingest pipeline:
 
 ```bash
-make pull-ingest   # download R2 → local data/ingest_sources/
+make pull-ingest   # download seed catalog + external sources from R2 → local data/ingest_sources/
 ```
+
+Data patches are maintained separately in [flippatch](https://github.com/deanmoses/flippatch) and pulled with `make pull-patches` (see [DataPatches.md](DataPatches.md)).
 
 ## Pipeline overview
 
@@ -157,8 +159,8 @@ patch files, then apply only the pending ones (the ledger skips the rest):
 
 ```bash
 railway ssh --service flip-commons
-.venv/bin/python manage.py pull_ingest_sources --dest /tmp/ingest_sources
-.venv/bin/python manage.py ingest_patches --patches-dir /tmp/ingest_sources/pindata/patches
+.venv/bin/python manage.py pull_patches --dest /tmp/ingest_sources
+.venv/bin/python manage.py ingest_patches --patches-dir /tmp/ingest_sources/flippatch/patches
 ```
 
 Add `--dry-run` to `ingest_patches` to preview the claims without writing. See

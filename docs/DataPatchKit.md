@@ -17,10 +17,10 @@ Every good curated patch session converges on these steps:
 
 ## Where the work lives
 
-Authoring artifacts are committed in **pindata**, next to the patches they produce — not in `/tmp` or `~/.claude/plans`, which lose the audit trail:
+Authoring artifacts are committed in **flippatch**, next to the patches they produce — not in `/tmp` or `~/.claude/plans`, which lose the audit trail:
 
 ```text
-pindata/patches/
+flippatch/patches/
   0010-game-formats.yaml              # the shipped patch(es)
   0011-...
   authoring/
