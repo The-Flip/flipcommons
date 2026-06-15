@@ -47,6 +47,7 @@ from apps.catalog.ingestion.plan import (
     PlannedEntityCreate,
 )
 from apps.catalog.models import CatalogModel
+from apps.catalog.resolve.claim_presence import member_is_present
 from apps.core.entity_types import get_linkable_model
 from apps.core.models import LIFECYCLE_STATUS_FIELD
 from apps.core.types import EntityKey
@@ -525,22 +526,23 @@ def _source_claims_member_present(
 ) -> bool:
     """Does *source* hold an active ``exists=true`` claim for this member?
 
-    True only when the source's winning claim for *claim_key* asserts presence —
+    True only when the source's current claim for *claim_key* asserts presence —
     so an already-removed (``exists=false``) or never-claimed member reads as
     absent, and removing it would be an inert no-op.
+
+    The presence/tombstone semantics are the single definition in
+    :func:`~apps.catalog.resolve.claim_presence.member_is_present`; this wraps it
+    with the source-scoped selection (``.first()`` is the source's current claim,
+    given the one-active-claim-per-(source, claim_key) invariant).
     """
-    value = (
-        Claim.objects.filter(
-            source=source,
-            is_active=True,
-            content_type_id=ct_id,
-            object_id=object_id,
-            claim_key=claim_key,
-        )
-        .values_list("value", flat=True)
-        .first()
-    )
-    return isinstance(value, dict) and bool(value.get("exists", True))
+    claim = Claim.objects.filter(
+        source=source,
+        is_active=True,
+        content_type_id=ct_id,
+        object_id=object_id,
+        claim_key=claim_key,
+    ).first()
+    return member_is_present(claim)
 
 
 def _add_create(
