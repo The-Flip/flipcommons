@@ -37,7 +37,7 @@
     "openapi-typescript": "^7.13.0",
     "postcss-custom-media": "^12.0.1",
     "postcss-html": "^1.8.1",
-    "prettier": "^3.8.3",
+    "prettier": "^3.8.4",
     "prettier-plugin-svelte": "^4.1.1",
     "stylelint": "^17.13.0",
     "stylelint-value-no-unknown-custom-properties": "^6.1.1",
@@ -53,12 +53,12 @@
     "@floating-ui/dom": "^1.7.6",
     "@fortawesome/fontawesome-svg-core": "^7.2.0",
     "@fortawesome/free-solid-svg-icons": "^7.2.0",
-    "@sentry/sveltekit": "^10.56.0",
+    "@sentry/sveltekit": "^10.58.0",
     "diff": "^9.0.0",
     "open-props": "^1.7.23",
     "openapi-fetch": "^0.17.0",
     "postcss-jit-props": "^1.0.16",
-    "posthog-js": "^1.383.0",
+    "posthog-js": "^1.386.8",
     "super-sitemap": "~1.0.12"
   },
   "pnpm": {
