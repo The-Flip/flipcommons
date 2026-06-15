@@ -8,7 +8,8 @@ so the database reaches the same state as production.
 production DB — re-running the seed re-asserts the original source claims and
 would clobber same-source patch corrections (and the patch ledger would then
 skip re-applying them). To apply new corrections to a live DB, run
-``pull_ingest_sources`` + ``ingest_patches`` instead (see docs/Ingest.md).
+``pull_ingest_sources`` + ``pull_patches`` + ``ingest_patches`` instead (see
+docs/Ingest.md).
 
 Usage (Railway SSH):
     .venv/bin/python manage.py pull_and_ingest
@@ -65,6 +66,14 @@ class Command(BaseCommand):
             stderr=self.stderr,
         )
 
+        self.stdout.write(self.style.MIGRATE_HEADING("Pulling data patches from R2..."))
+        call_command(
+            "pull_patches",
+            dest=dest,
+            stdout=self.stdout,
+            stderr=self.stderr,
+        )
+
         self.stdout.write(self.style.MIGRATE_HEADING("Running ingest pipeline..."))
         kwargs: dict[str, str | bool] = {
             "ipdb": f"{dest}/ipdb_xantari.json",
@@ -89,7 +98,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.MIGRATE_HEADING("Applying data patches..."))
             call_command(
                 "ingest_patches",
-                patches_dir=f"{dest}/pindata/patches",
+                patches_dir=f"{dest}/flippatch/patches",
                 stdout=self.stdout,
                 stderr=self.stderr,
             )

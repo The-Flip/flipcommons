@@ -157,7 +157,7 @@ Because a patch is immutable once applied (see [DataPatches.md → The ledger](D
 
 ```bash
 cd backend
-mkdir -p /tmp/p && cp ../../pindata/patches/00NN-*.yaml /tmp/p/
+mkdir -p /tmp/p && cp ../../flippatch/patches/00NN-*.yaml /tmp/p/
 cp db.sqlite3 db.pre-00NN.sqlite3                      # snapshot (.sqlite3 -> gitignored)
 uv run python manage.py ingest_patches --patches-dir /tmp/p
 # verify in the running app / Django admin ...
@@ -186,4 +186,4 @@ print(c.changeset.note)
 
 ### Hand off to user
 
-Committing and `make push` in pindata are the user's call — never do either yourself.
+Committing and `make push` in flippatch are the user's call — never do either yourself.

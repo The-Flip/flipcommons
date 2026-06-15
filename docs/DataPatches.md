@@ -14,11 +14,11 @@ A patch is **attributed to a source** — usually `flipcommons-catalog`, Flipcom
 - **remove** — drop a relationship _member_ (a tag, a location) by superseding it with an `exists=false` tombstone. Distinct from retract: the claim stays active, resolving to "absent" — the same mechanism the in-app editor uses.
 - **delete** — soft-delete an entity (the `status=deleted` lifecycle), distinct from a claim retract.
 
-## Patches live in pindata
+## Patches live in flippatch
 
-Data patches live in the [pindata](https://github.com/deanmoses/pindata) repo in the `patches/` directory. They are numbered files `NNNN-slug.yaml`, like `0001-prototype-tags`.
+Data patches live in the [flippatch](https://github.com/deanmoses/flippatch) repo in the `patches/` directory. They are numbered files `NNNN-slug.yaml`, like `0001-prototype-tags`. (They used to live in pindata alongside the seed catalog; they were split out into flippatch, which is now the patch authoring home and transport.)
 
-From there they are exported via pindata's `make pull-ingest` to R2, under the path `data/ingest_sources/pindata/patches/`.
+flippatch's `make push` publishes them to Cloudflare R2 under the `flippatch/` prefix. This repo fetches them with `make pull-patches`, which lands them at `data/ingest_sources/flippatch/patches/` — the directory `ingest_patches` reads by default.
 
 ## File format
 
@@ -314,11 +314,11 @@ This is deliberate: a user can create a source through the app, so a same-identi
 
 Patches don't auto-apply; there's no deploy or startup hook — you run the command manually. Applying patches is the everyday correction path once a database is seeded (production never re-ingests the seed data).
 
-Run `make pull-ingest` first to fetch new patch files:
+Run `make pull-patches` first to fetch new patch files:
 
 ```bash
 # Everyday path — applies pending patches from the default dir
-# (data/ingest_sources/pindata/patches/):
+# (data/ingest_sources/flippatch/patches/):
 make ingest-patches
 
 # That just wraps the management command. Run the mgt cmd directly to preview or

@@ -44,10 +44,10 @@ class ApplyOutcome(NamedTuple):
     report: RunReport | None
 
 
-# <repo>/data/ingest_sources/pindata/patches — where pull_ingest_sources
-# lands the published patch files.
+# <repo>/data/ingest_sources/flippatch/patches — where pull_patches lands the
+# published patch files (authored in the flippatch repo, separate from pindata).
 DEFAULT_PATCHES_DIR = (
-    Path(__file__).parents[5] / "data" / "ingest_sources" / "pindata" / "patches"
+    Path(__file__).parents[5] / "data" / "ingest_sources" / "flippatch" / "patches"
 )
 
 # Bold black == bright black == gray on most terminals; used to mute the
