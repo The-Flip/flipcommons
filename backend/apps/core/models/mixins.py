@@ -132,6 +132,67 @@ class EntityStatus(models.TextChoices):
 LIFECYCLE_STATUS_FIELD = "status"
 
 
+# ---------------------------------------------------------------------------
+# Liveness — the single definition of "is this entity live in the catalog?"
+#
+# Liveness has two execution forms that must agree: a SQL ``Q`` (``.active()`` /
+# ``active_status_q``) for filtering rows, and an in-memory predicate
+# (``is_live`` / ``is_deleted``) for a resolved status value. They are pinned to
+# agree by ``EntityStatus`` being the *closed* domain ``{active, deleted}`` —
+# ``status IN (active, null)`` (the SQL form) equals ``status != deleted`` (the
+# predicate form) *only* while no third member exists. Add ``ARCHIVED``/``DRAFT``
+# and they silently diverge (the SQL form excludes it, the predicate includes
+# it), so the liveness guard test (``apps/core/tests/test_liveness_canonical.py``)
+# fails the build until this definition is revisited. Every liveness read routes
+# through one of the four below — never a hand-spelled ``status``/``"deleted"``
+# comparison.
+# ---------------------------------------------------------------------------
+
+
+def is_live(status: str | None) -> bool:
+    """Whether a resolved lifecycle *status* counts as live in the catalog.
+
+    The in-memory mirror of the SQL :func:`active_status_q`: an entity is live
+    unless its resolved status is exactly ``deleted``. ``None`` is live (legacy
+    ingest rows that predate status claims), matching the null-inclusive SQL
+    form. Pass a *resolved* status — the materialized column, or the winning
+    status claim's value — never a raw, un-ranked claim.
+    """
+    return status != EntityStatus.DELETED
+
+
+def is_deleted(status: str | None) -> bool:
+    """Whether a resolved lifecycle *status* is exactly ``deleted``.
+
+    The inverse of :func:`is_live`, spelled separately for the soft-delete and
+    restore guards that deliberately read for deleted rows (bypassing
+    ``.active()``), so they read as an intent rather than a negated liveness
+    check. ``None`` is *not* deleted.
+    """
+    return status == EntityStatus.DELETED
+
+
+def active_status_q(relation: str = "") -> models.Q:
+    """``Q`` selecting live (active or null-status) rows — the single SQL form.
+
+    Call with no argument for the local ``status`` column; pass a relation path
+    to gate a *related* entity inside ``Count(filter=...)`` or a join where the
+    queryset ``.active()`` method is not available::
+
+        active_status_q()                     # local status column
+        Count("machine_models", filter=Q(...) & active_status_q("machine_models"))
+
+    Null-inclusive for legacy ingest compatibility. The in-memory mirror is
+    :func:`is_live`; the two are pinned to agree by the closed ``EntityStatus``
+    domain (see the module comment above).
+    """
+    prefix = f"{relation}__" if relation else ""
+    field = f"{prefix}{LIFECYCLE_STATUS_FIELD}"
+    return models.Q(**{field: EntityStatus.ACTIVE}) | models.Q(
+        **{f"{field}__isnull": True}
+    )
+
+
 _LifecycleModel = TypeVar("_LifecycleModel", bound="LifecycleStatusModel")
 
 
@@ -143,28 +204,10 @@ class LifecycleQuerySet(models.QuerySet[_LifecycleModel]):
         commands that do not emit status claims yet. Tighten to
         ``status='active'`` only after every ingest path creates status claims.
         """
-        return self.filter(
-            models.Q(status=EntityStatus.ACTIVE) | models.Q(status__isnull=True)
-        )
+        return self.filter(active_status_q())
 
 
 LifecycleManager = models.Manager.from_queryset(LifecycleQuerySet)
-
-
-def active_status_q(relation: str) -> models.Q:
-    """``Q`` filter for active-status entities reached through *relation*.
-
-    Use inside ``Count(filter=...)`` and similar annotations where the
-    queryset ``.active()`` method is not available::
-
-        Count("machine_models", filter=Q(...) & active_status_q("machine_models"))
-
-    Null-inclusive for legacy ingest compatibility — tighten alongside
-    ``LifecycleQuerySet.active()`` once every ingest path creates status claims.
-    """
-    return models.Q(**{f"{relation}__status": EntityStatus.ACTIVE}) | models.Q(
-        **{f"{relation}__status__isnull": True}
-    )
 
 
 class LifecycleStatusModel(models.Model):

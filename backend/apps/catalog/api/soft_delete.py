@@ -43,7 +43,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models as db_models
 
 from apps.catalog.models import CatalogModel
-from apps.core.models import LifecycleStatusModel
+from apps.core.models import LifecycleStatusModel, is_live
 from apps.provenance.models import ChangeSet, ChangeSetAction
 from apps.provenance.schemas import CitationReferenceInputSchema
 
@@ -111,14 +111,6 @@ def _has_status(
     model_class: type[db_models.Model],
 ) -> TypeGuard[type[LifecycleStatusModel]]:
     return issubclass(model_class, LifecycleStatusModel)
-
-
-def _is_active(entity: CatalogModel) -> bool:
-    """An entity is active unless its resolved ``status`` is ``deleted``.
-
-    Null status is treated as active (matches ``LifecycleQuerySet.active``).
-    """
-    return entity.status != "deleted"
 
 
 def _entity_type(entity: db_models.Model) -> str:
@@ -312,7 +304,7 @@ def execute_soft_delete(
         raise SoftDeleteBlockedError(plan.blockers)
 
     active_entities = [
-        entity for entity in plan.entities_to_delete if _is_active(entity)
+        entity for entity in plan.entities_to_delete if is_live(entity.status)
     ]
     if not active_entities:
         # Entity is already soft-deleted; no-op.

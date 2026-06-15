@@ -39,6 +39,7 @@ from ninja.security import django_auth
 from apps.catalog.models import CatalogModel
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
+from apps.core.models import is_deleted
 from apps.core.schemas import (
     ErrorDetailSchema,
     RateLimitErrorSchema,
@@ -244,7 +245,7 @@ def register_entity_delete_restore[ModelT: CatalogModel, SchemaT: Schema](
     ) -> SchemaT | Status[ErrorDetailSchema]:
         # Bypass .active() — we're looking for soft-deleted rows.
         obj = get_object_or_404(model_cls, **{public_id_field: public_id})
-        if obj.status != "deleted":
+        if not is_deleted(obj.status):
             return Status(
                 422, ErrorDetailSchema(detail=f"{friendly_sentence} is not deleted.")
             )
@@ -253,7 +254,7 @@ def register_entity_delete_restore[ModelT: CatalogModel, SchemaT: Schema](
             # Parent FK may be nullable (e.g. Location countries have
             # ``parent=None``); skip the parent-status guard in that case.
             parent = getattr(obj, parent_field)
-            if parent is not None and parent.status == "deleted":
+            if parent is not None and is_deleted(parent.status):
                 return Status(
                     422, ErrorDetailSchema(detail=f"Restore {parent.name} first.")
                 )

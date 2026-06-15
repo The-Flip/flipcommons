@@ -40,6 +40,8 @@ from .mixins import (
     SluggedModel,
     TimeStampedModel,
     active_status_q,
+    is_deleted,
+    is_live,
     unique_slug,
 )
 from .references import RecordReference, register_reference_cleanup
@@ -65,6 +67,8 @@ __all__ = [
     "active_status_q",
     "field_lowercase",
     "field_not_blank",
+    "is_deleted",
+    "is_live",
     "meta_unique_fields",
     "nullable_id_not_empty",
     "register_reference_cleanup",

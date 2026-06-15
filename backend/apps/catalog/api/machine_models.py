@@ -16,6 +16,7 @@ from pydantic import Field
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
+from apps.core.models import is_deleted
 from apps.core.pagination import NamedPageNumberPagination
 from apps.core.schemas import (
     ErrorDetailSchema,
@@ -977,7 +978,7 @@ def restore_model(
     """
     # Bypass .active() — we're looking for soft-deleted models.
     pm = get_object_or_404(MachineModel, **{MachineModel.public_id_field: public_id})
-    if pm.status != "deleted":
+    if not is_deleted(pm.status):
         return Status(422, ErrorDetailSchema(detail="Model is not deleted."))
 
     execute_claims(
