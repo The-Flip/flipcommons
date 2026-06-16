@@ -204,6 +204,29 @@ claims:
     assert ce.manufacturer.slug == "acme-mfr"
 
 
+def test_create_resolves_padded_fk_to_same_patch_create():
+    # The same-patch-create analogue: an FK value is canonicalized identically
+    # whether the target is committed or created earlier in this patch, so a
+    # padded reference reaches the earlier create via the registry
+    # (created_handle) just as it reaches a committed row — no committed-vs-create
+    # split.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme-mfr:
+      create: true
+      name: Acme
+  - corporate-entity.acme-incarnation:
+      create: true
+      name: Acme Incarnation
+      manufacturer: ' acme-mfr '
+"""
+    report = _apply(text, patch_id="0001-padded-fk-create")
+    assert report.records_created == 2
+    ce = CorporateEntity.objects.get(slug="acme-incarnation")
+    assert ce.manufacturer.slug == "acme-mfr"
+
+
 def test_create_when_already_exists_errors(manufacturer):
     text = f"""
 attribution: flipcommons-catalog

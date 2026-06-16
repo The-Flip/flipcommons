@@ -380,7 +380,9 @@ def _emit_relationship(
                 )
             )
         if isinstance(rel_spec, _FkMemberSpec) and isinstance(member, str):
-            handle = registry.created_handle(rel_spec.target_model, member)
+            handle = registry.created_handle(
+                rel_spec.target_model, normalize_fk_value(member)
+            )
             if handle is not None:
                 if handle in seen_deferred:
                     raise PatchError(
@@ -640,7 +642,9 @@ def _add_create(
             if target_pk is not None:
                 kwargs[django_field.attname] = target_pk
             else:
-                ref_handle = registry.created_handle(target_model, value)
+                ref_handle = registry.created_handle(
+                    target_model, normalize_fk_value(value)
+                )
                 if ref_handle is None:
                     raise PatchError(
                         f"{entry.ref}: FK {key!r} target {value!r} is not in the "

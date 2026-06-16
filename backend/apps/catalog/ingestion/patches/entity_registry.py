@@ -49,14 +49,21 @@ class PatchEntityRegistry:
         ).first()
 
     def created_handle(
-        self, model_class: type[models.Model], public_id: str
+        self, model_class: type[models.Model], public_id: str | None
     ) -> Handle | None:
         """The handle of a same-patch create for ``(model_class, public_id)``.
 
         ``model_class`` is keyed as the *resolved concrete class* — for an FK or
         relationship member, the target's ``related_model`` (typed by Django as
         ``Model``), matching ``_CreatedKey``'s identity (see its docstring).
+
+        The caller canonicalizes an FK/member value the same way the committed
+        lookup (``_lookup_pk``) does before passing it, so a padded value reaches
+        an earlier create exactly as it reaches a committed row. A ``None`` key (a
+        value that normalizes to nothing) names no create and returns ``None``.
         """
+        if public_id is None:
+            return None
         return self._created.get(_CreatedKey(model_class, public_id))
 
     def has_create_ref(self, ref: str) -> bool:
