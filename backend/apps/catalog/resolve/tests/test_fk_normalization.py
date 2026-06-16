@@ -1,8 +1,8 @@
 """Unit tests for the single FK-value normalization.
 
-``normalize_fk_value`` is the one definition every FK-value lookup shares
-(:func:`_resolve_fk_generic` at apply time, ``_lookup_pk`` at build time), so a
-padded or non-string value can't resolve one way and look up another.
+``normalize_fk_value`` is the one definition catalog's FK-*resolution* lookups
+share (:func:`_resolve_fk_generic` at apply time, ``_lookup_pk`` at build time),
+so a padded or non-string value can't normalize one way and look up another.
 """
 
 from __future__ import annotations

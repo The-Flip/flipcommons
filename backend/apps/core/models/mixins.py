@@ -156,7 +156,8 @@ def is_live(status: str | None) -> bool:
     unless its resolved status is exactly ``deleted``. ``None`` is live (legacy
     ingest rows that predate status claims), matching the null-inclusive SQL
     form. Pass a *resolved* status — the materialized column, or the winning
-    status claim's value — never a raw, un-ranked claim.
+    status claim's value from the canonical ranking — never a raw, un-ranked
+    claim.
     """
     return status != EntityStatus.DELETED
 

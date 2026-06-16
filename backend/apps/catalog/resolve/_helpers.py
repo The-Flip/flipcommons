@@ -64,11 +64,13 @@ def normalize_fk_value(value: object) -> str | None:
 
     The single normalization an FK claim value passes through before it becomes a
     public_id lookup: cast to ``str`` and trim. A falsy or whitespace-only value
-    resolves to nothing (``None``). Centralized so every FK-value lookup shares
-    one definition — :func:`_resolve_fk_generic` (the apply-time resolver) and the
-    patch front end's ``_lookup_pk`` (build-time create/member resolution) — rather
-    than re-spelling ``str(value).strip()`` and silently drifting on a padded or
-    non-string value.
+    resolves to nothing (``None``). Shared by catalog's two FK-*resolution*
+    lookups — :func:`_resolve_fk_generic` (apply-time) and the patch front end's
+    ``_lookup_pk`` (build-time create/member resolution) — so a padded or
+    non-string value can't normalize one way and look up another. (Provenance's
+    FK-*existence* check in ``validation.py`` sits below catalog and answers a
+    different question — does the value name an existing row — so it keeps its own
+    slug normalization.)
     """
     if not value:
         return None
