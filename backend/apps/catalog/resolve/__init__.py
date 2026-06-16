@@ -3,6 +3,16 @@
 Given a catalog entity, fetch all active claims, pick the winner per
 claim_key (highest source priority, most recent if tied), and write back
 the resolved values.
+
+Each dimension has its own merge policy, in CRDT register/set terms: scalar, FK
+and ``status`` are **last-writer-wins registers** (one winner per claim_key);
+relationship membership is a **set** with **per-element last-writer-wins** (each
+member independently winner-picked, an ``exists=false`` tombstone able to win and
+remove it) — *not* add-wins, so never union members instead of ranking them. The
+materialized columns are a view over the claim log; anything that needs a
+resolved value reuses these primitives (``ranked_claims``, ``member_is_present``,
+``is_live``) and matches this path — never reimplements the merge, since a second
+implementation is where a derived value drifts from what apply produces.
 """
 
 from __future__ import annotations
