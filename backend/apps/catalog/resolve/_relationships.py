@@ -48,6 +48,7 @@ from ._claim_values import (
     LocationClaimValue,
     ParentClaimValue,
 )
+from .claim_presence import member_is_present
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +132,7 @@ def _resolve_machine_model_m2m(
         desired: set[int] = set()
         for claim in claims_list:
             val = cast(Mapping[str, object], claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             target_pk = val.get(spec.field_name)
             if type(target_pk) is not int or target_pk not in valid_pks:
@@ -238,7 +239,7 @@ def resolve_all_gameplay_features(
         desired: dict[int, int | None] = {}
         for claim in claims_list:
             val = cast(GameplayFeatureClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             feature_pk = val.get("gameplay_feature")
             if feature_pk not in valid_pks:
@@ -359,7 +360,7 @@ def resolve_all_credits(
         desired: set[CreditAssignment] = set()
         for claim in claims_list:
             val = cast(CreditClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             person_pk = val.get("person")
             if person_pk not in valid_person_pks:
@@ -454,7 +455,7 @@ def resolve_all_title_abbreviations(
         desired: set[str] = set()
         for claim in claims_list:
             val = cast(AbbreviationClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             desired.add(val["value"])
         desired_by_title[title_id] = desired
@@ -547,7 +548,7 @@ def resolve_all_model_abbreviations(
         desired: set[str] = set()
         for claim in claims_list:
             val = cast(AbbreviationClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             desired.add(val["value"])
         desired_by_model[model_id] = desired
@@ -655,7 +656,7 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
         desired: dict[str, str] = {}
         for claim in claims_list:
             val = cast(AliasClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             alias_val = val.get("alias_value", "")
             if alias_val:
@@ -794,7 +795,7 @@ def _resolve_parents(
         desired: set[int] = set()
         for claim in claims_list:
             val = cast(ParentClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             parent_pk = val.get("parent")
             if parent_pk not in valid_pks:
@@ -903,7 +904,7 @@ def resolve_all_corporate_entity_locations(
             continue
         seen.add(key)
         val = cast(LocationClaimValue, claim.value or {})
-        if not val.get("exists", True):
+        if not member_is_present(claim):
             continue
         loc_pk = val.get("location")
         if loc_pk and loc_pk in valid_loc_pks:

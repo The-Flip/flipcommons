@@ -36,6 +36,7 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
+from apps.catalog.resolve.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
 
@@ -413,7 +414,9 @@ def check_credits_without_matching_claims(result: ValidationResult) -> None:
         content_type=ct, is_active=True, field_name="credit"
     ):
         val = claim.value
-        if not isinstance(val, dict) or not val.get("exists", True):
+        # isinstance narrows val for the payload reads below; member_is_present
+        # is the shared presence/tombstone check.
+        if not isinstance(val, dict) or not member_is_present(claim):
             continue
         person_pk = val.get("person")
         role_pk = val.get("role")

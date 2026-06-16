@@ -18,6 +18,7 @@ from apps.provenance.typing import HasEffectivePriority
 
 from ..cache import invalidate_all
 from ._claim_values import MediaAttachmentClaimValue
+from .claim_presence import member_is_present
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,7 @@ def resolve_media_attachments(
         desired: dict[int, DesiredMediaAttachment] = {}
         for claim in claims_list:
             val = cast(MediaAttachmentClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
 
             asset_pk = val.get("media_asset")
