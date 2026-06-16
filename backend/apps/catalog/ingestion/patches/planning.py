@@ -38,9 +38,9 @@ from apps.catalog.ingestion.patches.emit import (
     _emit_direct,
     _emit_relationship,
     _HierarchyEdge,
-    _lookup_entity,
     _resolve_model_class,
 )
+from apps.catalog.ingestion.patches.entity_registry import PatchEntityRegistry
 from apps.catalog.ingestion.patches.parsing import (
     _CITE_MARKER_RE,
     _NUMERIC_HANDLE_RE,
@@ -137,23 +137,17 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     )
     rel_namespaces = get_relationship_namespaces()
     rel_fields_by_model: dict[type[CatalogModel], set[str]] = defaultdict(set)
-    # Refs already created in this patch. A second create for the same ref would
-    # mint a duplicate handle and blow up as a ValueError deep in the apply layer
-    # (which the command doesn't catch); reject it cleanly in _process_entry.
-    created_refs: set[str] = set()
-    # Registry of same-patch creates → handle, keyed by concrete model class +
-    # public_id, so a *later* entry can reference an entity an *earlier* entry
-    # creates (backward references). A miss falls through to the seed/earlier-
-    # patch DB lookup; only neither-found errors. (Kept separate from
-    # ``created_refs``: that dedups by the entry-ref label; this resolves by
-    # concrete class + public_id — different keys, different jobs.)
-    created: dict[_CreatedKey, Handle] = {}
+    # The patch's symbol table: what entity each reference names — a committed
+    # entity, a same-patch create, or neither. Replaces the three reference-
+    # resolution paths the front end used to thread separately (a create→handle
+    # map, a create-ref dedup set and an inline live-DB lookup).
+    registry = PatchEntityRegistry()
     # Identity of every create in the patch, regardless of file order — a cheap
     # pre-scan so an edit that resolves nowhere can tell *create-appears-below*
-    # (decision 6: create-first) from *no-such-record*. The single-pass ``created``
-    # registry only holds creates seen so far, so it can't distinguish the two on
-    # its own. A create whose entity_type doesn't resolve is skipped here and
-    # errors when that entry is processed, preserving per-entry error attribution.
+    # from *no-such-record*. The registry's single-pass create map only holds
+    # creates seen so far, so it can't distinguish the two on its own. A create
+    # whose entity_type doesn't resolve is skipped here and errors when that entry
+    # is processed, preserving per-entry error attribution.
     all_created_ids: set[_CreatedKey] = set()
     for candidate in doc.claims:
         if isinstance(candidate, CreateEntry):
@@ -178,8 +172,7 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
                 source=source,
                 rel_namespaces=rel_namespaces,
                 rel_fields_by_model=rel_fields_by_model,
-                created_refs=created_refs,
-                created=created,
+                registry=registry,
                 all_created_ids=all_created_ids,
             )
         )
@@ -288,7 +281,7 @@ def _no_such_record_message(
     """Diagnostic for an edit that resolves to no record (seed, prior patch *or* this one).
 
     If this patch creates the record but the create appears *below* this edit, say
-    so (decision 6: create-first) — the single-pass create registry can't see it
+    so — the single-pass create registry can't see it
     yet, but the pre-scanned ``all_created_ids`` can. Otherwise it genuinely
     doesn't exist anywhere.
     """
@@ -333,8 +326,7 @@ def _process_entry(
     source: Source,
     rel_namespaces: frozenset[Namespace],
     rel_fields_by_model: dict[type[CatalogModel], set[str]],
-    created_refs: set[str],
-    created: dict[_CreatedKey, Handle],
+    registry: PatchEntityRegistry,
     all_created_ids: AbstractSet[_CreatedKey],
 ) -> _EntryResult:
     """Resolve, validate and emit one claim entry; return its cross-entry contribution.
@@ -348,15 +340,15 @@ def _process_entry(
     note, citation_ref = _parse_provenance(entry)
     model_class = _resolve_model_class(entry)
     ct_id = ContentType.objects.get_for_model(model_class).pk
-    existing = _lookup_entity(model_class, entry.public_id)
+    existing = registry.lookup_existing(model_class, entry.public_id)
     # Self-referential child→parent edges this entry asserts, returned on the
     # _EntryResult for the plan-wide acyclicity guard. A delete asserts none.
     hierarchy_edges: list[_HierarchyEdge] = []
 
     # A delete carries no field assertions and no relationship work, so it
     # finishes here, registering every soft-deleted entity (root + cascade) with
-    # the plan-wide guard as a *delete footprint*: decision 5 makes that footprint
-    # exclusive, so any other entry touching one of these entities is rejected.
+    # the plan-wide guard as a *delete footprint*: that footprint is exclusive, so
+    # any other entry touching one of these entities is rejected.
     if isinstance(entry, DeleteEntry):
         if entry.cites:
             raise PatchError(
@@ -393,10 +385,10 @@ def _process_entry(
                 f"{entry.ref}: create:true but a {entry.entity_type} with this "
                 f"public_id already exists"
             )
-        if entry.ref in created_refs:
+        if registry.has_create_ref(entry.ref):
             raise PatchError(f"{entry.ref}: duplicate create entry in this patch")
-        created_refs.add(entry.ref)
-        _add_create(plan, model_class, entry, entry.ref, created=created, note=note)
+        registry.mark_create_ref(entry.ref)
+        _add_create(plan, model_class, entry, entry.ref, registry=registry, note=note)
         # Register after _add_create, so a create's own *FK fields* (resolved
         # inside _add_create against earlier creates) can't point at itself. NB
         # this entry's *relationship* fields are emitted below, after this line,
@@ -404,7 +396,7 @@ def _process_entry(
         # gameplay_feature_parent) IS resolvable here — self-link and cycle
         # safety for those is enforced separately by the plan-wide hierarchy
         # guard, not by registration timing.
-        created[_CreatedKey(model_class, entry.public_id)] = entry.ref
+        registry.register_create(model_class, entry.public_id, handle=entry.ref)
         target = _Target(handle=entry.ref)
     else:
         if existing is None:
@@ -413,7 +405,7 @@ def _process_entry(
             # the FK-style key (_add_create's own field claims resolve this way),
             # and emit this entry's field asserts handle-targeted: a second,
             # separately-attributed ChangeSet of refinements on the new record.
-            ref_handle = created.get(_CreatedKey(model_class, entry.public_id))
+            ref_handle = registry.created_handle(model_class, entry.public_id)
             if ref_handle is None:
                 raise PatchError(
                     _no_such_record_message(entry, model_class, all_created_ids)
@@ -481,7 +473,7 @@ def _process_entry(
                 value,
                 target,
                 entry,
-                created=created,
+                registry=registry,
                 note=note,
                 citation_ref=citation_ref,
             )
@@ -528,7 +520,7 @@ def _process_entry(
     if isinstance(entry, CreateEntry):
         # A create contributes its authored + identity claims under its handle, so
         # the disjoint-claims guard spans the create and any companion edits that
-        # refine it (decision 2). The slug/public-id claim is emitted by
+        # refine it. The slug/public-id claim is emitted by
         # _add_create *outside* the field loop, so add it here under the exact
         # condition _add_create emits it (the public id is itself a claim field —
         # true for slug-identified entities, false for a derived public id like
@@ -703,10 +695,10 @@ def _validate_plan_wide(results: list[_EntryResult]) -> None:
     ``_process_retractions``, silently dropping one entry's grouping. Merges each
     entry's per-target contributions, enforcing on insert:
 
-    1. **Disjoint claims (decision 2).** No scalar/FK field, concrete or deferred
+    1. **Disjoint claims.** No scalar/FK field, concrete or deferred
        relationship member, or member tombstone may be asserted by two entries on
        one target; no field retracted by two entries.
-    2. **Delete exclusivity (decision 5).** A delete soft-deletes its root +
+    2. **Delete exclusivity.** A delete soft-deletes its root +
        cascade as one ChangeSet, so no other entry may target any entity in that
        footprint.
     3. **No field both retracted and asserted** on one target (the assert wins,

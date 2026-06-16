@@ -27,9 +27,9 @@ from apps.catalog.ingestion.patches._types import (
     ClaimKey,
     PatchError,
     PublicId,
-    _CreatedKey,
     _Target,
 )
+from apps.catalog.ingestion.patches.entity_registry import PatchEntityRegistry
 from apps.catalog.ingestion.patches.parsing import (
     CreateEntry,
     DeleteEntry,
@@ -120,15 +120,6 @@ def _resolve_model_class(entry: PatchEntry) -> type[CatalogModel]:
     if not issubclass(model_class, CatalogModel):
         raise PatchError(f"{entry.ref}: {entry.entity_type!r} is not a catalog entity")
     return model_class
-
-
-def _lookup_entity(
-    model_class: type[CatalogModel],
-    public_id: str,
-) -> CatalogModel | None:
-    return model_class._default_manager.filter(
-        **{model_class.public_id_field: public_id}
-    ).first()
 
 
 def _lookup_pk(target_model: type[models.Model], public_id: str) -> int | None:
@@ -342,7 +333,7 @@ def _emit_relationship(
     target: _Target,
     entry: PatchEntry,
     *,
-    created: dict[_CreatedKey, Handle],
+    registry: PatchEntityRegistry,
     note: str = "",
     citation_ref: CitationRef | None = None,
 ) -> _MemberEmitResult:
@@ -389,7 +380,7 @@ def _emit_relationship(
                 )
             )
         if isinstance(rel_spec, _FkMemberSpec) and isinstance(member, str):
-            handle = created.get(_CreatedKey(rel_spec.target_model, member))
+            handle = registry.created_handle(rel_spec.target_model, member)
             if handle is not None:
                 if handle in seen_deferred:
                     raise PatchError(
@@ -558,7 +549,7 @@ def _add_create(
     entry: CreateEntry,
     handle: Handle,
     *,
-    created: dict[_CreatedKey, Handle],
+    registry: PatchEntityRegistry,
     note: str = "",
 ) -> None:
     """Emit a ``PlannedEntityCreate`` plus its required identity/status claims.
@@ -649,7 +640,7 @@ def _add_create(
             if target_pk is not None:
                 kwargs[django_field.attname] = target_pk
             else:
-                ref_handle = created.get(_CreatedKey(target_model, value))
+                ref_handle = registry.created_handle(target_model, value)
                 if ref_handle is None:
                     raise PatchError(
                         f"{entry.ref}: FK {key!r} target {value!r} is not in the "
