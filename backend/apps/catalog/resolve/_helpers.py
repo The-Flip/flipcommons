@@ -59,6 +59,22 @@ class FKInfo:
 # ------------------------------------------------------------------
 
 
+def normalize_fk_value(value: object) -> str | None:
+    """Canonicalize an FK claim value to its public_id lookup key.
+
+    The single normalization an FK claim value passes through before it becomes a
+    public_id lookup: cast to ``str`` and trim. A falsy or whitespace-only value
+    resolves to nothing (``None``). Centralized so every FK-value lookup shares
+    one definition — :func:`_resolve_fk_generic` (the apply-time resolver) and the
+    patch front end's ``_lookup_pk`` (build-time create/member resolution) — rather
+    than re-spelling ``str(value).strip()`` and silently drifting on a padded or
+    non-string value.
+    """
+    if not value:
+        return None
+    return str(value).strip() or None
+
+
 def _resolve_fk_generic(
     model_class: type[ClaimControlledModel],
     field_name: str,
@@ -76,10 +92,8 @@ def _resolve_fk_generic(
     If *lookup* is provided (pre-fetched slug→instance dict), it is used
     instead of hitting the database.
     """
-    if not value:
-        return None
-    key = str(value).strip()
-    if not key:
+    key = normalize_fk_value(value)
+    if key is None:
         return None
 
     field = model_class._meta.get_field(field_name)

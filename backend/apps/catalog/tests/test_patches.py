@@ -185,6 +185,25 @@ claims:
     assert {"slug", "name", "status"} <= keys
 
 
+def test_create_resolves_padded_fk_value():
+    # _lookup_pk canonicalizes FK values with the same str-cast + trim the
+    # apply-time resolver uses, so a padded create FK resolves to its target
+    # instead of erroring as not-found — no build-vs-apply FK drift.
+    Manufacturer.objects.create(name="Acme", slug="acme-mfr")
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - corporate-entity.acme-incarnation:
+      create: true
+      name: Acme Incarnation
+      manufacturer: ' acme-mfr '
+"""
+    report = _apply(text, patch_id="0001-padded-fk")
+    assert report.records_created == 1
+    ce = CorporateEntity.objects.get(slug="acme-incarnation")
+    assert ce.manufacturer.slug == "acme-mfr"
+
+
 def test_create_when_already_exists_errors(manufacturer):
     text = f"""
 attribution: flipcommons-catalog

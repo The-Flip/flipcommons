@@ -47,6 +47,7 @@ from apps.catalog.ingestion.plan import (
     PlannedEntityCreate,
 )
 from apps.catalog.models import CatalogModel
+from apps.catalog.resolve._helpers import normalize_fk_value
 from apps.catalog.resolve.claim_presence import member_is_present
 from apps.core.entity_types import get_linkable_model
 from apps.core.models import LIFECYCLE_STATUS_FIELD
@@ -131,9 +132,15 @@ def _lookup_entity(
 
 
 def _lookup_pk(target_model: type[models.Model], public_id: str) -> int | None:
+    # Canonicalize via the same definition the apply-time resolver uses
+    # (str-cast + trim), so a padded value resolves identically at build time
+    # and at apply — no build-vs-apply FK drift.
+    key = normalize_fk_value(public_id)
+    if key is None:
+        return None
     pid_field = getattr(target_model, "public_id_field", "slug")
     return (
-        target_model._default_manager.filter(**{pid_field: public_id})
+        target_model._default_manager.filter(**{pid_field: key})
         .values_list("pk", flat=True)
         .first()
     )
