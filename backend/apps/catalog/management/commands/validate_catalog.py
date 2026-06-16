@@ -36,6 +36,8 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
+from apps.catalog.resolve.claim_presence import member_is_present
+from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
 
 logger = logging.getLogger(__name__)
@@ -44,28 +46,16 @@ logger = logging.getLogger(__name__)
 def _winning_claims(content_type: ContentType, field_name: str) -> list[Claim]:
     """Pick the winning claim per (object_id, claim_key) for a field.
 
-    Replicates the resolver's winner-picking logic: highest source/user
-    priority, then most recent created_at as tiebreaker.  Only the winning
-    claim per claim_key per object is returned.
+    Uses the shared :func:`~apps.provenance.claim_ranking_in_db.ranked_claims` so
+    this validator picks exactly what the resolver materializes — highest
+    source/user priority, newest ``created_at``, then highest pk (last write),
+    and disabled sources excluded.  Only the winning claim per claim_key per
+    object is returned.
     """
-    from django.db.models import Case, IntegerField, Value, When
-
-    claims = (
-        Claim.objects.filter(
-            content_type=content_type,
-            is_active=True,
-            field_name=field_name,
-        )
-        .select_related("source", "user")
-        .annotate(
-            effective_priority=Case(
-                When(source__isnull=False, then=F("source__priority")),
-                When(user__isnull=False, then=F("user__priority")),
-                default=Value(0),
-                output_field=IntegerField(),
-            )
-        )
-        .order_by("object_id", "claim_key", "-effective_priority", "-created_at")
+    claims = ranked_claims(
+        Claim.objects.filter(content_type=content_type, field_name=field_name),
+        "object_id",
+        "claim_key",
     )
 
     winners: list[Claim] = []
@@ -424,7 +414,9 @@ def check_credits_without_matching_claims(result: ValidationResult) -> None:
         content_type=ct, is_active=True, field_name="credit"
     ):
         val = claim.value
-        if not isinstance(val, dict) or not val.get("exists", True):
+        # isinstance narrows val for the payload reads below; member_is_present
+        # is the shared presence/tombstone check.
+        if not isinstance(val, dict) or not member_is_present(claim):
             continue
         person_pk = val.get("person")
         role_pk = val.get("role")

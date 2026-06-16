@@ -44,7 +44,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Lower
 
-from apps.core.models import EntityStatus, active_status_q
+from apps.core.models import active_status_q
 from apps.core.search import fold as _fold
 
 from ..models import (
@@ -142,9 +142,7 @@ _MODEL = Q(machine_models__variant_of__isnull=True) & active_status_q("machine_m
 # ``machine_models__`` prefix) — the *guard* the shared count/bounds leaves apply.
 # Equivalent to ``.filter(variant_of__isnull=True).active()``; spelled as one Q so it
 # can be passed as an argument. ``active()`` is null-inclusive for legacy ingest.
-_MODEL_COUNT_GUARD = Q(variant_of__isnull=True) & (
-    Q(status=EntityStatus.ACTIVE) | Q(status__isnull=True)
-)
+_MODEL_COUNT_GUARD = Q(variant_of__isnull=True) & active_status_q()
 
 # The title's "first model" — see ``Title.first_model_subquery`` for the rule.
 # Its manufacturer is the title's canonical manufacturer (mirrors the card and

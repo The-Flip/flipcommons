@@ -24,6 +24,7 @@ from apps.catalog.naming import MAX_CATALOG_NAME_LENGTH, normalize_catalog_name
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
+from apps.core.models import is_deleted
 from apps.core.schemas import (
     ErrorDetailSchema,
     RateLimitErrorSchema,
@@ -1206,7 +1207,7 @@ def restore_title(
     """
     # Bypass .active() — we're looking for soft-deleted titles.
     title = get_object_or_404(Title, **{Title.public_id_field: public_id})
-    if title.status != "deleted":
+    if not is_deleted(title.status):
         return Status(422, ErrorDetailSchema(detail="Title is not deleted."))
 
     execute_claims(

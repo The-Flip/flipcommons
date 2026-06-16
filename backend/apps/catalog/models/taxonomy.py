@@ -54,6 +54,16 @@ class TechnologyGeneration(
 
     entity_type = "technology-generation"
     entity_type_plural = "technology-generations"
+    # Subgenerations are owned children (CASCADE FK) but are themselves lifecycle
+    # entities, so soft-deleting a generation must cascade a status=deleted claim
+    # to them — otherwise they survive active, orphaned under a deleted parent.
+    # Because the cascade pulls each subgeneration into the plan, a subgeneration
+    # still referenced by an active MachineModel (PROTECT) blocks the generation's
+    # delete too, not only its own direct delete. Enforced by
+    # check_soft_delete_policy (core.E114).
+    soft_delete_cascade_relations: ClassVar[frozenset[str]] = frozenset(
+        {"subgenerations"}
+    )
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
@@ -119,6 +129,12 @@ class DisplayType(
 
     entity_type = "display-type"
     entity_type_plural = "display-types"
+    # Subtypes are owned children (CASCADE FK) but are themselves lifecycle
+    # entities; soft-delete must cascade to them so they don't survive orphaned
+    # under a deleted parent. A subtype still referenced by an active MachineModel
+    # (PROTECT) blocks the type's delete too, not only its own. Enforced by
+    # check_soft_delete_policy (core.E114).
+    soft_delete_cascade_relations: ClassVar[frozenset[str]] = frozenset({"subtypes"})
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)
@@ -242,7 +258,6 @@ class ProductionStatus(
 
     entity_type = "production-status"
     entity_type_plural = "production-statuses"
-    soft_delete_usage_blockers: ClassVar[frozenset[str]] = frozenset({"machine_models"})
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
     display_order = models.PositiveSmallIntegerField(default=0)

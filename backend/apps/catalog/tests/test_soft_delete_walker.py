@@ -20,6 +20,8 @@ from apps.catalog.models import (
     GameplayFeature,
     MachineModel,
     Tag,
+    TechnologyGeneration,
+    TechnologySubgeneration,
     Theme,
     Title,
 )
@@ -275,3 +277,47 @@ class TestExecute:
         assert exc.value.blockers[0].slug == "blocker"
         target.refresh_from_db()
         assert target.status == "active"
+
+
+class TestCascadeToSubgenerations:
+    """Soft-deleting a TechnologyGeneration cascades to its lifecycle
+    subgenerations (CASCADE FK), so they aren't left active and orphaned under a
+    deleted parent. Mirrored on DisplayType → DisplaySubtype; the policy is
+    enforced at boot by check_soft_delete_policy (core.E114)."""
+
+    def _gen_with_sub(self, *, sub_status: str = "active"):
+        gen = TechnologyGeneration.objects.create(
+            name="Solid State", slug="solid-state", status="active"
+        )
+        sub = TechnologySubgeneration.objects.create(
+            name="MPU", slug="mpu", status=sub_status, technology_generation=gen
+        )
+        return gen, sub
+
+    def test_generation_cascades_to_active_subgeneration(self):
+        gen, sub = self._gen_with_sub()
+        plan = plan_soft_delete(gen)
+        assert not plan.is_blocked
+        assert set(plan.entities_to_delete) == {gen, sub}
+
+    def test_soft_deleted_subgeneration_not_in_cascade(self):
+        gen, _ = self._gen_with_sub(sub_status="deleted")
+        plan = plan_soft_delete(gen)
+        assert plan.entities_to_delete == [gen]
+
+    def test_subgeneration_used_by_active_model_blocks_both_deletes(self):
+        """A subgeneration referenced by an active machine blocks its own delete
+        (direct PROTECT) and the parent generation's delete (the cascade pulls
+        the subgeneration in, surfacing its PROTECT referrer)."""
+        gen, sub = self._gen_with_sub()
+        mm = _model(_title("mm"), "mm-pro")
+        mm.technology_subgeneration = sub
+        mm.save()
+
+        child_plan = plan_soft_delete(sub)
+        assert child_plan.is_blocked
+        assert any(b.slug == "mm-pro" for b in child_plan.blockers)
+
+        parent_plan = plan_soft_delete(gen)
+        assert parent_plan.is_blocked
+        assert any(b.slug == "mm-pro" for b in parent_plan.blockers)

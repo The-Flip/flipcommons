@@ -525,6 +525,33 @@ class TestResolveCorporateEntityLocations:
 
         assert CorporateEntityLocation.objects.count() == 2
 
+    def test_high_priority_retraction_beats_low_priority_assertion(self, db):
+        """A higher-priority exists=False claim wins over a lower-priority
+        exists=True claim on the same (CE, location) pair — winner-take-all by
+        source priority, uniform with the other relationship resolvers (cf.
+        test_theme_exists_false_dispute)."""
+        ipdb = Source.objects.create(
+            name="IPDB", slug="ipdb", source_type="database", priority=10
+        )
+        editorial = Source.objects.create(
+            name="Editorial", source_type="editorial", priority=100
+        )
+        ce = self._make_ce("williams")
+        loc = self._make_location("usa/il/chicago")
+
+        # Low-priority source asserts the location, high-priority source retracts it.
+        self._assert_location(ipdb, ce, loc)
+        claim_key, value = build_relationship_claim(
+            "location", {"location": loc.pk}, exists=False
+        )
+        Claim.objects.assert_claim(
+            ce, "location", value, source=editorial, claim_key=claim_key
+        )
+
+        resolve_all_corporate_entity_locations()
+
+        assert not CorporateEntityLocation.objects.filter(corporate_entity=ce).exists()
+
 
 @pytest.mark.django_db
 class TestResolveEntitySlugConflictGuard:

@@ -13,15 +13,16 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 from urllib.parse import urlparse
 
 from django.apps.config import AppConfig
 from django.conf import settings
 from django.core.checks import CheckMessage, Error, Tags, Warning, register
 from django.core.exceptions import FieldDoesNotExist
+from django.db import models
 
-from apps.core.models import LinkableModel
+from apps.core.models import LifecycleStatusModel, LinkableModel
 
 
 @register(Tags.models)
@@ -187,6 +188,303 @@ def _check_one(
             )
         )
 
+    return errors
+
+
+# The on_delete policies the soft-delete walker actually handles. PROTECT →
+# block while referenced; CASCADE → the child either rides with the parent's
+# visibility or is listed in soft_delete_cascade_relations. Anything else
+# (SET_NULL, SET_DEFAULT, RESTRICT, DO_NOTHING, SET(...)) is unclassified and
+# raises NotImplementedError at delete time today.
+_HANDLED_ON_DELETE = (models.PROTECT, models.CASCADE)
+
+
+class _InboundRelation(NamedTuple):
+    """One reference pointing *at* a lifecycle model, projected from ``_meta``.
+
+    Only reverse relations (auto-created, non-concrete) are inbound — a model's
+    own forward FKs, M2M fields and ``GenericRelation``s are outbound and do
+    not constrain *its* deletion. Mirrors the reverse set the soft-delete
+    walker iterates.
+
+    ``kind`` is ``"fk"`` (reverse FK/O2O — a column on the referrer),
+    ``"m2m"`` (reverse many-to-many — membership through an intermediate
+    table or a self-referential hierarchy) or ``"other"`` (a relation shape
+    the classifier does not recognise, e.g. a generic relation). ``accessor``
+    is the reverse accessor name on the target (``None`` when suppressed via
+    ``related_name="+"``). ``on_delete_name`` / ``on_delete_handled`` apply to
+    ``"fk"`` only. ``referrer_is_lifecycle`` is whether the referring model
+    carries lifecycle status — the axis that splits protect-block from
+    owned-child-rides-along.
+    """
+
+    kind: Literal["fk", "m2m", "other"]
+    referrer_label: str
+    referrer_field: str
+    accessor: str | None
+    on_delete_name: str | None
+    on_delete_handled: bool
+    referrer_is_lifecycle: bool
+
+
+class _SoftDeleteFacts(NamedTuple):
+    """Everything ``check_soft_delete_policy`` needs about one lifecycle model.
+
+    Projected from ``_meta`` plus the model's two policy ClassVars by
+    ``_project_soft_delete_facts``. Bundled so the classifier stays a pure,
+    single-argument function over plain data — unit-testable without fabricating
+    Django models.
+
+    ``forward_blocker_m2ms`` are the model's own forward M2M field names whose
+    reverse is suppressed (``related_name="+"``) and whose target is a lifecycle
+    model: an active referrer is reachable *only* through that forward manager,
+    so each name must appear in ``usage_blockers`` (Location.corporate_entities,
+    CreditRole.machine_models/series_credited). Reverse-side memberships are
+    carried in ``inbound`` instead.
+    """
+
+    label: str
+    inbound: tuple[_InboundRelation, ...]
+    forward_blocker_m2ms: tuple[str, ...]
+    usage_blockers: frozenset[str]
+    cascade_relations: frozenset[str]
+
+
+def _inbound_relations(model: type[models.Model]) -> list[_InboundRelation]:
+    """Project ``model``'s inbound references into ``_InboundRelation`` rows.
+
+    Walks the same reverse set as ``soft_delete._iter_protect_referrers`` (so a
+    suppressed ``related_name="+"`` relation is excluded here exactly as the
+    walker can't see it) and adds reverse M2M relations, which the usage-blocker
+    pass reaches separately.
+    """
+    relations: list[_InboundRelation] = []
+    for rel in model._meta.get_fields():
+        # Inbound = auto-created relation. Excludes the model's own forward
+        # fields and GenericRelations (concrete or hand-declared) and the
+        # auto PK (not a relation).
+        if not rel.is_relation or not rel.auto_created:
+            continue
+        related = rel.related_model
+        if related is None or not (
+            isinstance(related, type) and issubclass(related, models.Model)
+        ):
+            continue
+        assert isinstance(rel, models.ForeignObjectRel)
+        # on_delete_name / on_delete_handled are meaningful for "fk" only; the
+        # n/a default (None / True) is never read for the other kinds, which
+        # the classifier keys off ``kind`` instead.
+        kind: Literal["fk", "m2m", "other"]
+        on_delete_name: str | None = None
+        on_delete_handled = True
+        if rel.many_to_many:
+            kind = "m2m"
+        elif rel.one_to_many or rel.one_to_one:
+            kind = "fk"
+            on_delete = rel.field.remote_field.on_delete
+            on_delete_name = getattr(on_delete, "__name__", repr(on_delete))
+            on_delete_handled = on_delete in _HANDLED_ON_DELETE
+        else:
+            kind = "other"
+        relations.append(
+            _InboundRelation(
+                kind=kind,
+                referrer_label=related._meta.label,
+                referrer_field=rel.field.name,
+                accessor=rel.get_accessor_name(),
+                on_delete_name=on_delete_name,
+                on_delete_handled=on_delete_handled,
+                referrer_is_lifecycle=issubclass(related, LifecycleStatusModel),
+            )
+        )
+    return relations
+
+
+def _project_soft_delete_facts(model: type[LifecycleStatusModel]) -> _SoftDeleteFacts:
+    """Gather one model's inbound relations, forward-blocker M2Ms and policy."""
+    forward_blocker_m2ms = tuple(
+        field.name
+        for field in model._meta.get_fields()
+        if isinstance(field, models.ManyToManyField)
+        and field.remote_field.hidden
+        and isinstance(field.related_model, type)
+        and issubclass(field.related_model, LifecycleStatusModel)
+    )
+    return _SoftDeleteFacts(
+        label=model._meta.label,
+        inbound=tuple(_inbound_relations(model)),
+        forward_blocker_m2ms=forward_blocker_m2ms,
+        usage_blockers=model.soft_delete_usage_blockers,
+        cascade_relations=model.soft_delete_cascade_relations,
+    )
+
+
+def _classify_soft_delete(facts: _SoftDeleteFacts) -> list[CheckMessage]:
+    """Pure soft-delete classifier — the testable core of the system check.
+
+    Kept free of Django model access so unit tests exercise each failure mode
+    with synthetic ``_SoftDeleteFacts`` rather than fabricated models.
+    """
+    errors: list[CheckMessage] = []
+    label = facts.label
+    fk_accessors = {
+        r.accessor for r in facts.inbound if r.kind == "fk" and r.accessor is not None
+    }
+
+    for r in facts.inbound:
+        if r.kind == "fk" and not r.on_delete_handled:
+            errors.append(
+                Error(
+                    f"inbound {r.referrer_label}.{r.referrer_field} uses "
+                    f"on_delete={r.on_delete_name}, which the soft-delete walker "
+                    "does not handle (only PROTECT and CASCADE).",
+                    hint=(
+                        "Use PROTECT (block delete while referenced) or CASCADE "
+                        "(child rides with the parent, or list it in "
+                        "soft_delete_cascade_relations), or extend the walker in "
+                        "apps/catalog/api/soft_delete.py to handle this policy."
+                    ),
+                    obj=label,
+                    id="core.E110",
+                )
+            )
+        if (
+            r.kind == "fk"
+            and r.on_delete_name == "CASCADE"
+            and r.referrer_is_lifecycle
+            and r.accessor is not None
+            and r.accessor not in facts.cascade_relations
+        ):
+            errors.append(
+                Error(
+                    f"inbound {r.referrer_label}.{r.referrer_field} is a CASCADE FK "
+                    f"from a lifecycle model, but {r.accessor!r} is not in "
+                    "soft_delete_cascade_relations — soft-deleting this entity "
+                    "would leave the child active and orphaned under it.",
+                    hint=(
+                        f'soft_delete_cascade_relations = frozenset({{"{r.accessor}"}})'
+                        " (or change the FK to PROTECT to block instead)."
+                    ),
+                    obj=label,
+                    id="core.E114",
+                )
+            )
+        if r.kind == "other":
+            errors.append(
+                Error(
+                    f"inbound relation {r.referrer_label}.{r.referrer_field} is "
+                    "a shape the soft-delete classifier does not recognise "
+                    "(neither FK/O2O nor M2M).",
+                    hint=(
+                        "Extend the classifier in apps/core/checks.py and the "
+                        "walker in apps/catalog/api/soft_delete.py to handle it."
+                    ),
+                    obj=label,
+                    id="core.E113",
+                )
+            )
+
+    for name in sorted(facts.usage_blockers & fk_accessors):
+        errors.append(
+            Error(
+                f"soft_delete_usage_blockers names {name!r}, which is a reverse "
+                "FK already covered by the PROTECT pass — redundant, and it "
+                "double-reports the blocker. Remove it; usage-blockers are only "
+                "for M2M / self-ref references the FK pass cannot see.",
+                obj=label,
+                id="core.E111",
+            )
+        )
+
+    for r in facts.inbound:
+        if (
+            r.kind == "m2m"
+            and r.referrer_is_lifecycle
+            and r.accessor is not None
+            and r.accessor not in facts.usage_blockers
+        ):
+            errors.append(
+                Error(
+                    f"reverse M2M {r.accessor!r} (from lifecycle model "
+                    f"{r.referrer_label}) is not in soft_delete_usage_blockers, "
+                    "so an active referrer would not block delete. Add it.",
+                    hint=f'soft_delete_usage_blockers = frozenset({{"{r.accessor}"}})',
+                    obj=label,
+                    id="core.E112",
+                )
+            )
+
+    for name in sorted(set(facts.forward_blocker_m2ms) - facts.usage_blockers):
+        errors.append(
+            Error(
+                f"forward M2M {name!r} targets a lifecycle model with its reverse "
+                "suppressed, so it is the only path to active referrers, but it "
+                "is not in soft_delete_usage_blockers — deleting this entity would "
+                "not block on them. Add it.",
+                hint=f'soft_delete_usage_blockers = frozenset({{"{name}"}})',
+                obj=label,
+                id="core.E115",
+            )
+        )
+
+    return errors
+
+
+@register(Tags.models)
+def check_soft_delete_policy(
+    app_configs: Sequence[AppConfig] | None,
+    **kwargs: Any,  # noqa: ANN401
+) -> list[CheckMessage]:
+    """Validate the soft-delete policy of every concrete ``LifecycleStatusModel``.
+
+    The soft-delete walker (``apps/catalog/api/soft_delete.py``) classifies each
+    inbound reference to a lifecycle model as protect-block,
+    owned-child-rides-along, cascade or usage-block, and trusts — without
+    verifying — that the classification is total and consistent. This check
+    verifies it, moving these failure modes off the delete-time request path to
+    boot:
+
+    - ``core.E110`` — an inbound FK/O2O whose ``on_delete`` the walker does not
+      handle. Today this is a ``NotImplementedError`` raised inside
+      ``_iter_protect_referrers`` the first time such an entity is deleted.
+    - ``core.E111`` — a ``soft_delete_usage_blockers`` entry naming a reverse FK
+      accessor already covered by the PROTECT pass (redundant; double-reports).
+    - ``core.E112`` — a reverse M2M membership or self-referential hierarchy from
+      a lifecycle model not declared in ``soft_delete_usage_blockers``; such a
+      reference is invisible to the FK PROTECT pass, so an active referrer would
+      slip past delete-blocking.
+    - ``core.E113`` — an inbound relation shape the classifier does not recognise.
+    - ``core.E114`` — a CASCADE FK from a *lifecycle* child not listed in
+      ``soft_delete_cascade_relations``; soft-delete would leave the child active
+      and orphaned (DB CASCADE never fires, since no row is deleted).
+    - ``core.E115`` — a forward M2M to a lifecycle model with its reverse
+      suppressed (``related_name="+"``) and not in ``soft_delete_usage_blockers``;
+      that forward manager is the only path to active referrers.
+
+    Walks ``LifecycleStatusModel`` (the lifecycle capability), not any consuming
+    app's base, so a future non-catalog lifecycle model is guarded too. Reaches
+    catalog models via the subclass walk without ``apps/core`` importing
+    ``apps/catalog`` (per AppBoundaries) — the same pattern as
+    ``check_linkable_models``.
+    """
+    _ = app_configs, kwargs
+    errors: list[CheckMessage] = []
+    visited: set[type] = set()
+
+    def walk(cls: type[LifecycleStatusModel]) -> None:
+        for subclass in cls.__subclasses__():
+            if subclass in visited:
+                continue
+            visited.add(subclass)
+            walk(subclass)
+            if subclass._meta.abstract:
+                continue
+            errors.extend(_classify_soft_delete(_project_soft_delete_facts(subclass)))
+
+    # ``LifecycleStatusModel`` is abstract; mypy's ``type-abstract`` flags
+    # passing it where ``type[LifecycleStatusModel]`` is expected, but
+    # ``__subclasses__()`` is the documented walk entry point.
+    walk(LifecycleStatusModel)  # type: ignore[type-abstract]
     return errors
 
 

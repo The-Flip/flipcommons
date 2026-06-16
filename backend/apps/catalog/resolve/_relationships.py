@@ -13,6 +13,7 @@ from typing import NamedTuple, cast
 
 from django.db.models import Model
 
+from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim, ClaimControlledModel
 from apps.provenance.validation import (
     get_display_override,
@@ -47,7 +48,7 @@ from ._claim_values import (
     LocationClaimValue,
     ParentClaimValue,
 )
-from ._helpers import _annotate_priority
+from .claim_presence import member_is_present
 
 logger = logging.getLogger(__name__)
 
@@ -108,14 +109,10 @@ def _resolve_machine_model_m2m(
     ct = ContentType.objects.get_for_model(MachineModel)
 
     # Pre-fetch active claims with priority annotation.
-    claims_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name=spec.field_name)
-    )
+    claims_qs = Claim.objects.filter(content_type=ct, field_name=spec.field_name)
     if subject_ids is not None:
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
-    claims = claims_qs.order_by(  # type: ignore[misc]
-        "object_id", "claim_key", "-effective_priority", "-created_at"
-    )
+    claims = ranked_claims(claims_qs, "object_id", "claim_key")
 
     # Pick winner per (object_id, claim_key).
     winners_by_model: dict[int, list[Claim]] = {}
@@ -135,7 +132,7 @@ def _resolve_machine_model_m2m(
         desired: set[int] = set()
         for claim in claims_list:
             val = cast(Mapping[str, object], claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             target_pk = val.get(spec.field_name)
             if type(target_pk) is not int or target_pk not in valid_pks:
@@ -219,14 +216,10 @@ def resolve_all_gameplay_features(
 
     ct = ContentType.objects.get_for_model(MachineModel)
 
-    claims_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name="gameplay_feature")
-    )
+    claims_qs = Claim.objects.filter(content_type=ct, field_name="gameplay_feature")
     if subject_ids is not None:
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
-    claims = claims_qs.order_by(  # type: ignore[misc]
-        "object_id", "claim_key", "-effective_priority", "-created_at"
-    )
+    claims = ranked_claims(claims_qs, "object_id", "claim_key")
 
     # Pick winner per (object_id, claim_key).
     winners_by_model: dict[int, list[Claim]] = {}
@@ -246,7 +239,7 @@ def resolve_all_gameplay_features(
         desired: dict[int, int | None] = {}
         for claim in claims_list:
             val = cast(GameplayFeatureClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             feature_pk = val.get("gameplay_feature")
             if feature_pk not in valid_pks:
@@ -349,14 +342,10 @@ def resolve_all_credits(
         )
         return
 
-    credit_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name="credit")
-    )
+    credit_qs = Claim.objects.filter(content_type=ct, field_name="credit")
     if subject_ids is not None:
         credit_qs = credit_qs.filter(object_id__in=subject_ids)
-    credit_claims = credit_qs.order_by(  # type: ignore[misc]
-        "object_id", "claim_key", "-effective_priority", "-created_at"
-    )
+    credit_claims = ranked_claims(credit_qs, "object_id", "claim_key")
 
     winners_by_model: dict[int, list[Claim]] = {}
     seen: set[ClaimDedupKey] = set()
@@ -371,7 +360,7 @@ def resolve_all_credits(
         desired: set[CreditAssignment] = set()
         for claim in claims_list:
             val = cast(CreditClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             person_pk = val.get("person")
             if person_pk not in valid_person_pks:
@@ -448,14 +437,10 @@ def resolve_all_title_abbreviations(
 
     ct = ContentType.objects.get_for_model(Title)
 
-    abbr_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name="abbreviation")
-    )
+    abbr_qs = Claim.objects.filter(content_type=ct, field_name="abbreviation")
     if subject_ids is not None:
         abbr_qs = abbr_qs.filter(object_id__in=subject_ids)
-    abbr_claims = abbr_qs.order_by(  # type: ignore[misc]
-        "object_id", "claim_key", "-effective_priority", "-created_at"
-    )
+    abbr_claims = ranked_claims(abbr_qs, "object_id", "claim_key")
 
     winners_by_title: dict[int, list[Claim]] = {}
     seen: set[ClaimDedupKey] = set()
@@ -470,7 +455,7 @@ def resolve_all_title_abbreviations(
         desired: set[str] = set()
         for claim in claims_list:
             val = cast(AbbreviationClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             desired.add(val["value"])
         desired_by_title[title_id] = desired
@@ -545,14 +530,10 @@ def resolve_all_model_abbreviations(
 
     ct = ContentType.objects.get_for_model(MachineModel)
 
-    abbr_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name="abbreviation")
-    )
+    abbr_qs = Claim.objects.filter(content_type=ct, field_name="abbreviation")
     if subject_ids is not None:
         abbr_qs = abbr_qs.filter(object_id__in=subject_ids)
-    abbr_claims = abbr_qs.order_by(  # type: ignore[misc]
-        "object_id", "claim_key", "-effective_priority", "-created_at"
-    )
+    abbr_claims = ranked_claims(abbr_qs, "object_id", "claim_key")
 
     winners_by_model: dict[int, list[Claim]] = {}
     seen: set[ClaimDedupKey] = set()
@@ -567,7 +548,7 @@ def resolve_all_model_abbreviations(
         desired: set[str] = set()
         for claim in claims_list:
             val = cast(AbbreviationClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             desired.add(val["value"])
         desired_by_model[model_id] = desired
@@ -648,9 +629,11 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
 
     ct = ContentType.objects.get_for_model(parent_model)
 
-    claims_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name=claim_field)
-    ).order_by("object_id", "claim_key", "-effective_priority", "-created_at")  # type: ignore[misc]
+    claims_qs = ranked_claims(
+        Claim.objects.filter(content_type=ct, field_name=claim_field),
+        "object_id",
+        "claim_key",
+    )
 
     # Pick winners per (object_id, claim_key).
     winners_by_parent: dict[int, list[Claim]] = {}
@@ -673,7 +656,7 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
         desired: dict[str, str] = {}
         for claim in claims_list:
             val = cast(AliasClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             alias_val = val.get("alias_value", "")
             if alias_val:
@@ -790,9 +773,11 @@ def _resolve_parents(
     claim_field_name = f"{prefix}_parent"
     ct = ContentType.objects.get_for_model(parent_model)
 
-    claims_qs = _annotate_priority(
-        Claim.objects.filter(content_type=ct, field_name=claim_field_name)
-    ).order_by("object_id", "claim_key", "-effective_priority", "-created_at")  # type: ignore[misc]
+    claims_qs = ranked_claims(
+        Claim.objects.filter(content_type=ct, field_name=claim_field_name),
+        "object_id",
+        "claim_key",
+    )
 
     # Pick winners per (object_id, claim_key).
     winners_by_child: dict[int, list[Claim]] = {}
@@ -810,7 +795,7 @@ def _resolve_parents(
         desired: set[int] = set()
         for claim in claims_list:
             val = cast(ParentClaimValue, claim.value)
-            if not val.get("exists", True):
+            if not member_is_present(claim):
                 continue
             parent_pk = val.get("parent")
             if parent_pk not in valid_pks:
@@ -903,22 +888,27 @@ def resolve_all_corporate_entity_locations(
     ce_ct = ContentType.objects.get_for_model(CorporateEntity)
     valid_loc_pks = set(Location.objects.values_list("pk", flat=True))
 
-    claims_qs = Claim.objects.filter(
-        content_type=ce_ct, field_name="location", is_active=True
-    ).exclude(source__is_enabled=False)
+    claims_qs = Claim.objects.filter(content_type=ce_ct, field_name="location")
     if subject_ids is not None:
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
+    claims = ranked_claims(claims_qs, "object_id", "claim_key")
 
-    active_claims = claims_qs.values("object_id", "value")
-
+    # Pick the winning claim per (object_id, claim_key) by source priority, then
+    # keep only the present locations.  Uniform with the sibling resolvers: a
+    # higher-priority exists=False retraction wins over a lower-priority assertion.
     desired: dict[int, set[int]] = defaultdict(set)
-    for row in active_claims:
-        val = cast(LocationClaimValue, row["value"] or {})
-        if not val.get("exists", True):
+    seen: set[ClaimDedupKey] = set()
+    for claim in claims:
+        key = ClaimDedupKey(claim.object_id, claim.claim_key)
+        if key in seen:
+            continue
+        seen.add(key)
+        val = cast(LocationClaimValue, claim.value or {})
+        if not member_is_present(claim):
             continue
         loc_pk = val.get("location")
         if loc_pk and loc_pk in valid_loc_pks:
-            desired[row["object_id"]].add(loc_pk)
+            desired[claim.object_id].add(loc_pk)
 
     existing_qs = CorporateEntityLocation.objects.all()
     if subject_ids is not None:

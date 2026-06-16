@@ -27,9 +27,9 @@ from apps.catalog.ingestion.patches._types import (
     ClaimKey,
     PatchError,
     PublicId,
-    _CreatedKey,
     _Target,
 )
+from apps.catalog.ingestion.patches.entity_registry import PatchEntityRegistry
 from apps.catalog.ingestion.patches.parsing import (
     CreateEntry,
     DeleteEntry,
@@ -47,6 +47,8 @@ from apps.catalog.ingestion.plan import (
     PlannedEntityCreate,
 )
 from apps.catalog.models import CatalogModel
+from apps.catalog.resolve._helpers import normalize_fk_value
+from apps.catalog.resolve.claim_presence import member_is_present
 from apps.core.entity_types import get_linkable_model
 from apps.core.models import LIFECYCLE_STATUS_FIELD
 from apps.core.types import EntityKey
@@ -120,19 +122,16 @@ def _resolve_model_class(entry: PatchEntry) -> type[CatalogModel]:
     return model_class
 
 
-def _lookup_entity(
-    model_class: type[CatalogModel],
-    public_id: str,
-) -> CatalogModel | None:
-    return model_class._default_manager.filter(
-        **{model_class.public_id_field: public_id}
-    ).first()
-
-
 def _lookup_pk(target_model: type[models.Model], public_id: str) -> int | None:
+    # Canonicalize via the same definition the apply-time resolver uses
+    # (str-cast + trim), so a padded value resolves identically at build time
+    # and at apply — no build-vs-apply FK drift.
+    key = normalize_fk_value(public_id)
+    if key is None:
+        return None
     pid_field = getattr(target_model, "public_id_field", "slug")
     return (
-        target_model._default_manager.filter(**{pid_field: public_id})
+        target_model._default_manager.filter(**{pid_field: key})
         .values_list("pk", flat=True)
         .first()
     )
@@ -334,7 +333,7 @@ def _emit_relationship(
     target: _Target,
     entry: PatchEntry,
     *,
-    created: dict[_CreatedKey, Handle],
+    registry: PatchEntityRegistry,
     note: str = "",
     citation_ref: CitationRef | None = None,
 ) -> _MemberEmitResult:
@@ -381,7 +380,9 @@ def _emit_relationship(
                 )
             )
         if isinstance(rel_spec, _FkMemberSpec) and isinstance(member, str):
-            handle = created.get(_CreatedKey(rel_spec.target_model, member))
+            handle = registry.created_handle(
+                rel_spec.target_model, normalize_fk_value(member)
+            )
             if handle is not None:
                 if handle in seen_deferred:
                     raise PatchError(
@@ -525,22 +526,23 @@ def _source_claims_member_present(
 ) -> bool:
     """Does *source* hold an active ``exists=true`` claim for this member?
 
-    True only when the source's winning claim for *claim_key* asserts presence —
+    True only when the source's current claim for *claim_key* asserts presence —
     so an already-removed (``exists=false``) or never-claimed member reads as
     absent, and removing it would be an inert no-op.
+
+    The presence/tombstone semantics are the single definition in
+    :func:`~apps.catalog.resolve.claim_presence.member_is_present`; this wraps it
+    with the source-scoped selection (``.first()`` is the source's current claim,
+    given the one-active-claim-per-(source, claim_key) invariant).
     """
-    value = (
-        Claim.objects.filter(
-            source=source,
-            is_active=True,
-            content_type_id=ct_id,
-            object_id=object_id,
-            claim_key=claim_key,
-        )
-        .values_list("value", flat=True)
-        .first()
-    )
-    return isinstance(value, dict) and bool(value.get("exists", True))
+    claim = Claim.objects.filter(
+        source=source,
+        is_active=True,
+        content_type_id=ct_id,
+        object_id=object_id,
+        claim_key=claim_key,
+    ).first()
+    return member_is_present(claim)
 
 
 def _add_create(
@@ -549,7 +551,7 @@ def _add_create(
     entry: CreateEntry,
     handle: Handle,
     *,
-    created: dict[_CreatedKey, Handle],
+    registry: PatchEntityRegistry,
     note: str = "",
 ) -> None:
     """Emit a ``PlannedEntityCreate`` plus its required identity/status claims.
@@ -640,7 +642,9 @@ def _add_create(
             if target_pk is not None:
                 kwargs[django_field.attname] = target_pk
             else:
-                ref_handle = created.get(_CreatedKey(target_model, value))
+                ref_handle = registry.created_handle(
+                    target_model, normalize_fk_value(value)
+                )
                 if ref_handle is None:
                     raise PatchError(
                         f"{entry.ref}: FK {key!r} target {value!r} is not in the "
