@@ -1,19 +1,20 @@
-"""Liveness resolves the same whether read in SQL or in memory.
+"""Liveness: one definition, correct over the column and over the resolved status.
 
-The patch front end computes an entity's liveness *in memory* — winner-pick over
-the status cell's claims, with a materialized fallback — instead of going through
-the SQL ``.active()``.  These tests pin that the in-memory composition
-(:func:`apps.core.models.is_live` over the resolved status) agrees with the
-production queryset, including two cases that are easy to get wrong:
+``is_live`` is the single liveness predicate (pinned in isolation by
+``apps/core/tests/test_liveness_canonical``).  Here it is pinned in the two
+compositions catalog reads it through:
 
-* ``None``-is-live — a legacy row with no status claim must read as live (so it
-  still blocks a delete / still cascades), not as "no winning status claim → not
-  live".
-* a same-patch delete drops a referrer *only if its* ``status=deleted`` *claim
-  actually wins resolution* — a lower-priority delete must not unblock.
+* over the **materialized column** — ``is_live(row.status)`` and
+  ``active_status_q()`` select exactly the rows ``.active()`` returns.
+* over the **resolved status** — ``is_live`` over the winning status claim (the
+  canonical :func:`ranked_claims` winner-pick) with a materialized-column
+  fallback, covering two cases that are easy to get wrong:
 
-``is_live`` is pinned in isolation by ``apps/core/tests/test_liveness_canonical``;
-here it is composed with the real claim winner-pick over real rows.
+  * ``None``-is-live — a legacy row with no status claim must read as live (so it
+    still blocks a delete / still cascades), not as "no winning status claim →
+    not live".
+  * a ``status=deleted`` claim makes the entity not-live *only if it wins
+    resolution* — a lower-priority delete must not.
 """
 
 from __future__ import annotations
@@ -21,7 +22,6 @@ from __future__ import annotations
 import pytest
 
 from apps.catalog.models import CatalogModel, MachineModel, Manufacturer, Title
-from apps.catalog.resolve.claim_ranking_in_memory import pick_winners
 from apps.catalog.tests.conftest import make_machine_model
 from apps.core.models import (
     LIFECYCLE_STATUS_FIELD,
@@ -29,6 +29,7 @@ from apps.core.models import (
     is_deleted,
     is_live,
 )
+from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim, Source
 
 pytestmark = pytest.mark.django_db
@@ -108,16 +109,14 @@ def sources() -> dict[str, Source]:
 
 def _resolved_status(entity: CatalogModel) -> str | None:
     """Resolve status: the winning status claim's value, else the materialized
-    column (an untouched cell reads its already-materialized value).
+    column (a row with no status claim reads its already-materialized value).
 
-    Committed state only — it does not fold in same-patch pending claims.
-
-    TODO: the patch front end will own a shared ``resolve_status`` over
-    (committed + pending) claims; switch this test to call it rather than keep a
-    second copy of the winner-pick-then-fallback rule.
+    Uses the canonical claim ranking (:func:`ranked_claims`) — the same
+    winner-pick the production resolver applies when it materializes status.
     """
-    claims = list(entity.claims.select_related("source", "user").all())
-    winner = pick_winners(claims).get(LIFECYCLE_STATUS_FIELD)
+    winner = ranked_claims(
+        entity.claims.filter(field_name=LIFECYCLE_STATUS_FIELD), "claim_key"
+    ).first()
     if winner is None:
         return entity.status
     resolved: str | None = winner.value

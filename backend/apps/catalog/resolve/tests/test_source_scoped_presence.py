@@ -24,9 +24,9 @@ Layers: pure-unit edges of :func:`member_is_present` (no database); the
 production no-op checks read correctly on committed claims (``_source_claims_field``
 for scalar existence, ``_source_claims_member_present`` for member
 presence/tombstone); and the divergence guard — the source-scoped no-op vs the
-cross-source ``pick_winners`` winner give opposite verdicts when another source
-owns a member, or wins a tombstone.  Pending same-patch claims are out of scope
-here — these read committed state.
+cross-source resolved winner (via the canonical :func:`ranked_claims`) give
+opposite verdicts when another source owns a member, or wins a tombstone.
+Pending same-patch claims are out of scope here — these read committed state.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ from apps.catalog.ingestion.patches.emit import (
 )
 from apps.catalog.models import CatalogModel, Location, Manufacturer
 from apps.catalog.resolve.claim_presence import member_is_present
-from apps.catalog.resolve.claim_ranking_in_memory import pick_winners
+from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim, Source
 
 _ALIAS_NS = "manufacturer_alias"
@@ -208,17 +208,15 @@ def test_member_owned_by_another_source_is_a_no_op_for_ours(source: Source) -> N
 def _resolved_member_presence(entity: CatalogModel, claim_key: str) -> bool:
     """Presence of the *cross-source* winner — the resolved read, for contrast.
 
-    Runs the same :func:`member_is_present` filter over what ``pick_winners``
-    selects, so the only difference from the source-scoped no-op is the
-    **selection**.  This is what the no-op check must *not* use.
-
-    TODO: the patch front end will own a shared ``resolve_present_members``
-    (``pick_winners`` + :func:`member_is_present` over committed + pending
-    claims); switch this preview to call it rather than keep a second copy of
-    the composition.
+    Runs :func:`member_is_present` over the canonical ranking's winner for the
+    member (:func:`ranked_claims`), so the only difference from the source-scoped
+    no-op is the **selection** (cross-source winner vs this source's own claim).
+    This is what the no-op check must *not* use.
     """
-    claims = list(entity.claims.select_related("source", "user").all())
-    return member_is_present(pick_winners(claims).get(claim_key))
+    winner = ranked_claims(
+        entity.claims.filter(claim_key=claim_key), "claim_key"
+    ).first()
+    return member_is_present(winner)
 
 
 def test_source_scoped_diverges_when_other_source_owns_member(source: Source) -> None:

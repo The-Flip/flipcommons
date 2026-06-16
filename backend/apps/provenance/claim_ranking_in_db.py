@@ -18,11 +18,8 @@ The order ends in ``-pk`` so claims that tie on priority and ``created_at``
 ``db_default=Now()``) resolve deterministically to the highest pk = the last
 write, instead of undefined database row order.
 
-The ORM-free mirror the patch PlanEnvironment ranks *unsaved* claims with lives
-in :mod:`apps.catalog.resolve.claim_ranking_in_memory`; the two are pinned to
-agree by ``apps/catalog/resolve/tests/test_claim_ranking_in_memory.py``.  A
-guard test (``apps/provenance/tests/test_ranking_is_canonical.py``) fails if any
-module re-spells the annotation or the order, or reaches past
+A guard test (``apps/provenance/tests/test_ranking_is_canonical.py``) fails if
+any module re-spells the annotation or the order, or reaches past
 :func:`ranked_claims` to the private primitives below.
 """
 
