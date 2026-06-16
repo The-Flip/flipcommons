@@ -7,6 +7,12 @@ out of these primitives; ``apply_plan`` consumes it. The types live here, apart
 from the engine, so adapters can import the carriers without pulling in the
 engine's machinery — the apply layer imports *these*, never the reverse.
 
+In compiler terms the :class:`IngestPlan` is the **intermediate representation**:
+every source front end *lowers* its input to this one typed instruction list, and
+the shared apply back end is the only thing that turns it into database writes.
+That single IR is what lets one back end serve every source — keep new behavior
+on the front-end/IR side rather than forking ``apply_plan``.
+
 The hook Protocols and the ``RunReport`` result type live here too: they're
 named in the plan's own fields and in ``apply_plan``'s signature. The engine's
 intermediate carriers (``RetractEntry``, the per-entry provenance maps) stay in
