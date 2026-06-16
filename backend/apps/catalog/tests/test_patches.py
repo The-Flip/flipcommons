@@ -1616,6 +1616,182 @@ claims:
     assert williams.status == "deleted"
 
 
+def test_reassign_fk_onto_deleted_root_rejected(machine_model, stern_entity):
+    # The onto-hole: reassign the machine's corporate_entity *onto* stern, then
+    # delete stern — in ONE patch. The committed delete-blocker can't see the
+    # machine point at stern (it still points at williams in the DB), so the
+    # delete would proceed and leave the machine dangling at a soft-deleted
+    # entity. The build-time guard rejects it: an FK claim targets an entity the
+    # same patch deletes.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: stern-pinball-inc
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-root")
+    stern_entity.refresh_from_db()
+    assert stern_entity.status != "deleted"
+
+
+def test_reassign_fk_onto_deleted_cascade_child_rejected(machine_model, db):
+    # Same hole, but the deleted entity is a *cascade child*, not the root.
+    # Deleting the Title cascades to its MachineModel (medieval-madness); a second
+    # machine reassigns variant_of onto medieval-madness in the same patch. The
+    # guard must intersect the FK target with the whole cascade footprint, not
+    # only the delete root.
+    other_title = Title.objects.create(name="Other Title", slug="other-title")
+    MachineModel.objects.create(name="Other Pin", slug="other-pin", title=other_title)
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.other-pin:
+      variant_of: {machine_model.slug}
+  - title.medieval-madness-title:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-cascade")
+    machine_model.refresh_from_db()
+    assert machine_model.status is None  # delete did not proceed
+
+
+def test_create_with_fk_onto_deleted_rejected(db, flipcommons_catalog):
+    # The `_lookup_pk` mirror: a *create* whose FK targets a same-patch-deleted
+    # entity produces the identical dangling row, and an edit-scoped scan would
+    # miss it (creates carry no perturbed cell). The fresh manufacturer has no
+    # other referrers, so only the onto-guard — not the delete-blocker — can catch
+    # this.
+    Manufacturer.objects.create(name="Doomed Brand", slug="doomed-brand")
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - corporate-entity.new-incarnation:
+      create: true
+      name: New Incarnation
+      manufacturer: doomed-brand
+  - manufacturer.doomed-brand:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-create")
+    assert Manufacturer.objects.get(slug="doomed-brand").status != "deleted"
+    assert not CorporateEntity.objects.filter(slug="new-incarnation").exists()
+
+
+def test_reassign_onto_live_entity_not_rejected(machine_model, stern_entity):
+    # Negative pin: the guard fires only when the onto-target is *deleted*.
+    # Reassigning the machine onto stern (a live entity nobody deletes) is an
+    # ordinary edit and must pass.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: stern-pinball-inc
+"""
+    report = _apply(text, patch_id="0001-onto-live")
+    assert report.rejected == 0
+    machine_model.refresh_from_db()
+    assert machine_model.corporate_entity_id == stern_entity.pk
+
+
+def test_losing_fk_reassign_onto_deleted_still_rejected(machine_model, stern_entity):
+    # Documented over-coverage: the guard is *syntactic* (on the FK claim target),
+    # not on the resolved post-patch FK. A higher-priority source pins the
+    # machine's corporate_entity to williams, so the patch's stern claim *loses*
+    # resolution — yet because the patch still asserts corporate_entity=stern and
+    # deletes stern, the guard rejects it. Rejecting a pointless point-at-X-and-
+    # delete-X claim is the strict, defensible choice.
+    authority = Source.objects.create(
+        name="Authority", slug="authority", source_type="editorial", priority=900
+    )
+    Claim.objects.assert_claim(
+        machine_model, "corporate_entity", "williams-electronics", source=authority
+    )
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: stern-pinball-inc
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-losing")
+    stern_entity.refresh_from_db()
+    assert stern_entity.status != "deleted"
+
+
+def test_reassign_fk_onto_deleted_normalizes_whitespace(machine_model, stern_entity):
+    # The guard must canonicalize FK values exactly as apply-time resolution does
+    # (_resolve_fk_generic str-casts and trims). A whitespace-padded value would
+    # otherwise slip the raw-string guard yet still resolve the live machine onto
+    # stern after the same patch deletes it — a dangling reference.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: ' stern-pinball-inc '
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-ws")
+    stern_entity.refresh_from_db()
+    assert stern_entity.status != "deleted"
+
+
+def test_reassign_fk_onto_deleted_normalizes_numeric(machine_model, manufacturer):
+    # A non-str FK value (YAML int) must not skip the guard: apply resolves it via
+    # str(value).strip(), so a numeric slug-like value dangles just the same.
+    doomed = CorporateEntity.objects.create(
+        name="Numbered", slug="1234", manufacturer=manufacturer
+    )
+    Claim.objects.assert_claim(
+        doomed,
+        "name",
+        "Numbered",
+        source=Source.objects.get(slug="flipcommons-catalog"),
+    )
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: 1234
+  - corporate-entity.1234:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-num")
+    doomed.refresh_from_db()
+    assert doomed.status != "deleted"
+
+
+def test_referrer_itself_deleted_onto_target_rejected(machine_model, stern_entity):
+    # The second documented over-coverage shape: the row reassigned *onto* stern is
+    # itself deleted in the same patch (so post-apply it wouldn't actually dangle).
+    # The syntactic guard rejects it anyway — point-at-X and delete-X in one file —
+    # exactly as it rejects a losing claim. Here the machine's own Title is deleted,
+    # cascading the machine to status=deleted.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: stern-pinball-inc
+  - title.medieval-madness-title:
+      delete: true
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-self-del")
+    stern_entity.refresh_from_db()
+    assert stern_entity.status != "deleted"
+
+
 def test_delete_is_idempotent(stern_entity):
     text = """
 attribution: flipcommons-catalog

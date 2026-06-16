@@ -17,9 +17,11 @@ The walker below enforces these cascade rules:
   this rule is enforced here, at the application layer, because the DB
   can't see ``status=deleted``.
 
-The walker is generic over any entity with ``LifecycleStatusModel``. Title is
-the first caller; Model Delete and the rest will plug in by declaring
-``soft_delete_cascade_relations`` on their models.
+The walker is generic over every concrete ``LifecycleStatusModel``: each model
+declares its own cascade relations (``soft_delete_cascade_relations``) and usage
+blockers (``soft_delete_usage_blockers``). That every inbound reference is
+classified — so the walk can't silently miss a blocker — is enforced at boot by
+``check_soft_delete_policy`` in ``core/checks.py``.
 
 Some lifecycle references aren't visible through the reverse-FK pass: M2M
 through-rows (``MachineModelTag``, ``MachineModelTheme``, …) and
@@ -136,7 +138,7 @@ def _entity_key(entity: db_models.Model) -> EntityKey:
     return EntityKey(entity._meta.label_lower, entity.pk)
 
 
-def _cascade_targets(root: CatalogModel) -> list[CatalogModel]:
+def cascade_targets(root: CatalogModel) -> list[CatalogModel]:
     """Walk ``soft_delete_cascade_relations`` to produce the ordered cascade.
 
     Deterministic order (parent before children, siblings by pk) so the
@@ -222,7 +224,7 @@ def plan_soft_delete(root: CatalogModel) -> SoftDeletePlan:
     and any active PROTECT or usage-M2M referrers that would block the
     delete.
     """
-    cascade = _cascade_targets(root)
+    cascade = cascade_targets(root)
     cascade_keys = {_entity_key(e) for e in cascade}
 
     blockers: list[BlockingReferrer] = []

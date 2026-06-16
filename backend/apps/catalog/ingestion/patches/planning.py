@@ -21,6 +21,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.catalog.api.soft_delete import cascade_targets
 from apps.catalog.claims import get_relationship_namespaces
 from apps.catalog.ingestion.patches._types import (
     ClaimKey,
@@ -63,6 +64,7 @@ from apps.catalog.ingestion.plan import (
 )
 from apps.catalog.models import CatalogModel
 from apps.catalog.resolve import resolve_relationships_bulk
+from apps.catalog.resolve._helpers import normalize_fk_value
 from apps.citation.seed_data.types import SeedSource
 from apps.citation.seeding import ensure_root_source, validate_root_source
 from apps.core.markdown import get_markdown_fields
@@ -155,6 +157,11 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
                 all_created_ids.add(
                     _CreatedKey(_resolve_model_class(candidate), candidate.public_id)
                 )
+    # Reject reassigning an FK onto an entity this patch deletes — a dangling
+    # reference the committed delete-blocker can't see. A build-time set
+    # intersection over the patch's FK targets and its delete footprint; no
+    # resolver, no divergence.
+    _reject_reassign_onto_delete(doc, registry)
     # Stamp each entry's emissions with its file-order index for per-entry
     # ChangeSet grouping (apply layer). An entry's assertions/retractions are all
     # appended during its own ``_process_entry`` call and land contiguously at the
@@ -198,6 +205,88 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     _plan_citation_sources(plan, doc.sources)
 
     return plan
+
+
+def _reject_reassign_onto_delete(doc: PatchDoc, registry: PatchEntityRegistry) -> None:
+    """Reject a patch whose FK claim targets an entity the same patch deletes.
+
+    Reassigning a live reference *onto* an entity this patch soft-deletes leaves a
+    dangling reference: post-apply, a live row points at a soft-deleted entity.
+    The committed delete-blocker (``plan_soft_delete``) can't catch it — it
+    enumerates rows that point at the target *now*, but a row this patch reassigns
+    onto the target doesn't point there yet, so it's absent from the enumeration.
+    This build-time guard closes the hole by construction, at the FK-claim level —
+    no resolver, so it adds no predict-vs-actual divergence.
+
+    The guard is **syntactic**: it fires on the FK claim *target*, not the
+    resolved post-patch FK. So it also rejects a few coherent-but-pointless shapes
+    (an FK claim that loses resolution; a referrer itself deleted in the same
+    patch). All are the one contradiction — point-at-X and delete-X in one file —
+    and rejecting them is the strict, defensible choice.
+
+    Covers FK claims on **both creates and edits** — its own walk over the patch's
+    asserted FK values. The create slice is the ``_lookup_pk`` mirror: ``_lookup_pk``
+    resolves FK values while building create kwargs, so a guard blind to create FKs
+    couldn't mirror it. The M2M-member-onto-deleted analogue (a relationship
+    membership, not an FK) is out of scope here.
+    """
+    # Right operand: every entity this patch soft-deletes (root + cascade), via
+    # the same ``cascade_targets`` walk ``plan_soft_delete`` uses, so the guard's
+    # deleted set can't drift from the real delete footprint.
+    deleted: set[tuple[type[CatalogModel], PublicId]] = set()
+    for entry in doc.claims:
+        if not isinstance(entry, DeleteEntry):
+            continue
+        try:
+            model_class = _resolve_model_class(entry)
+        except PatchError:
+            continue  # unresolvable entity_type errors with per-entry attribution
+        existing = registry.lookup_existing(model_class, entry.public_id)
+        if existing is None:
+            continue  # no such record to delete; errors per-entry later
+        for target in cascade_targets(existing):
+            deleted.add((type(target), target.public_id))
+
+    if not deleted:
+        return
+
+    # Left operand: every FK value the patch *asserts*, across creates and edits.
+    claim_fields_by_model: dict[type[CatalogModel], dict[str, str]] = {}
+    for entry in doc.claims:
+        if not isinstance(entry, (CreateEntry, EditEntry)):
+            continue
+        try:
+            model_class = _resolve_model_class(entry)
+        except PatchError:
+            continue
+        claim_fields = claim_fields_by_model.setdefault(
+            model_class, get_claim_fields(model_class)
+        )
+        for field_name, value in entry.fields.items():
+            if field_name not in claim_fields:
+                continue  # relationship namespaces / unknown fields, errored later
+            django_field = model_class._meta.get_field(field_name)
+            if not isinstance(django_field, models.ForeignKey):
+                continue
+            # Canonicalize exactly as apply-time FK resolution does, so a
+            # whitespace-padded or numeric value can't slip the guard yet still
+            # resolve onto the deleted entity (``_resolve_fk_generic`` str-casts
+            # and trims before the public_id lookup). One shared definition.
+            public_id = normalize_fk_value(value)
+            if public_id is None:
+                continue  # falsy/blank FK value resolves to nothing
+            target_model = django_field.related_model
+            assert isinstance(target_model, type)  # resolved FK target
+            if not issubclass(target_model, CatalogModel):
+                continue  # only catalog entities are ever soft-deleted
+            if (target_model, public_id) in deleted:
+                raise PatchError(
+                    f"{entry.ref}: {field_name!r} points at "
+                    f"{target_model.entity_type}.{public_id}, which this patch "
+                    f"deletes (its root or a cascade child) — a live reference to a "
+                    f"soft-deleted entity would dangle; point it elsewhere or "
+                    f"don't delete the target"
+                )
 
 
 def _classify_inline_cites(
