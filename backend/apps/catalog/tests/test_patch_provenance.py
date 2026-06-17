@@ -502,8 +502,9 @@ claims:
         _apply(text)
 
 
-def test_expect_on_same_patch_create_rejected(flipcommons_catalog):
-    # A same-patch create has no prior DB state to drift-guard against.
+def test_expect_on_same_patch_create_ignored(flipcommons_catalog):
+    # expect: is accepted-but-ignored, so a refining edit on a same-patch create
+    # carrying one is no longer rejected — the edit applies.
     text = """
 attribution: flipcommons-catalog
 claims:
@@ -514,8 +515,8 @@ claims:
       expect: { name: Acme Pinball }
       website: https://acme.example
 """
-    with pytest.raises(PatchError, match="'expect:' can't guard a record created"):
-        _apply(text)
+    _apply(text)
+    assert Manufacturer.objects.get(slug="acme").website == "https://acme.example"
 
 
 def test_retract_on_same_patch_create_rejected(flipcommons_catalog):

@@ -5,8 +5,8 @@ Every ``ClaimControlledModel`` ranks claims the same way — through
 any other module re-spells the priority annotation, re-spells the ``order_by``
 tail, or reaches past ``ranked_claims`` to the private primitives.  That is how
 the ``-pk`` tiebreak silently drifted before: catalog's MachineModel resolvers
-had it, while the generic-entity resolver, the relationship/media resolvers, the
-catalog validator and the provenance prefetch/history helpers did not.  A source
+had it, while the generic-entity resolver, the relationship/media resolvers and
+the provenance prefetch/history helpers did not.  A source
 scan is coarse but catches the one thing that matters — a second, divergent copy
 of the rule, or a consumer that orders the winner-pick itself (and could forget
 the tail).

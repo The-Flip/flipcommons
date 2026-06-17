@@ -2,8 +2,8 @@
 
 Ranking claims is a Claim-level concern, so it lives here in provenance (the
 layer that owns :class:`~apps.provenance.models.Claim`) and is shared by every
-``ClaimControlledModel`` consumer — catalog's resolvers, provenance's own
-prefetch/history helpers and the catalog validator — so the rule cannot drift.
+``ClaimControlledModel`` consumer — catalog's resolvers and provenance's own
+prefetch/history helpers — so the rule cannot drift.
 
 The single public entry point is :func:`ranked_claims`: it filters to eligible
 claims, annotates ``effective_priority`` and applies the deterministic tiebreak

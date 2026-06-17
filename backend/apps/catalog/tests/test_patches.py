@@ -757,23 +757,15 @@ claims:
         _apply(text)
 
 
-# ── Drift guard ────────────────────────────────────────────────────
+# ── expect: (legacy drift guard, now accepted-but-ignored) ─────────────
+#
+# `expect:` stays parseable so older patches that carry it still apply, but it
+# no longer guards anything — a mismatch is silently ignored, not an error.
 
 
-def test_expect_scalar_match_applies(machine_model):
-    text = f"""
-attribution: flipcommons-catalog
-claims:
-  - model.{machine_model.slug}:
-      expect: {{ year: {machine_model.year} }}
-      year: 1990
-"""
-    _apply(text)
-    machine_model.refresh_from_db()
-    assert machine_model.year == 1990
-
-
-def test_expect_scalar_mismatch_errors_before_write(machine_model):
+def test_expect_accepted_but_ignored_on_edit(machine_model):
+    # A wrong expect: used to fail before any write; now it's ignored and the
+    # edit applies anyway.
     text = f"""
 attribution: flipcommons-catalog
 claims:
@@ -781,45 +773,23 @@ claims:
       expect: {{ year: 1234 }}
       year: 1990
 """
-    with pytest.raises(PatchError, match="expect year"):
-        _apply(text)
-    assert not Claim.objects.filter(source__slug="flipcommons-catalog").exists()
+    _apply(text)
+    machine_model.refresh_from_db()
+    assert machine_model.year == 1990
 
 
-def test_expect_fk_match_and_mismatch(stern_entity):
-    ok = """
-attribution: flipcommons-catalog
-claims:
-  - corporate-entity.stern-pinball-inc:
-      expect: { manufacturer: stern }
-      year_start: 1986
-"""
-    _apply(ok, patch_id="0001-ok")
-    stern_entity.refresh_from_db()
-    assert stern_entity.year_start == 1986
-
-    bad = """
-attribution: flipcommons-catalog
-claims:
-  - corporate-entity.stern-pinball-inc:
-      expect: { manufacturer: williams }
-      year_start: 1990
-"""
-    with pytest.raises(PatchError, match="expect manufacturer"):
-        _apply(bad, patch_id="0002-bad")
-
-
-def test_expect_on_create_errors():
+def test_expect_accepted_but_ignored_on_create():
+    # expect: on a create is no longer rejected — it's simply ignored.
     text = """
 attribution: flipcommons-catalog
 claims:
   - manufacturer.acme-pinball:
       name: Acme
       create: true
-      expect: { name: Acme }
+      expect: { name: Whatever }
 """
-    with pytest.raises(PatchError, match="meaningless on a create"):
-        _apply(text)
+    _apply(text)
+    assert Manufacturer.objects.filter(slug="acme-pinball").exists()
 
 
 # ── Retract ────────────────────────────────────────────────────────
@@ -1115,14 +1085,13 @@ def _grouped_notes(patch_id: str) -> list[str]:
 
 
 def test_grouped_pure_wrapper_expands(machine_model):
-    # The dai-uchuu shape: one header (ref + expect:) wrapping two separately
-    # cited changesets. Parses to two EditEntrys sharing ref + expect; both land
-    # as their own ChangeSet, in file order.
+    # The dai-uchuu shape: one header (the ref) wrapping two separately cited
+    # changesets. Parses to two EditEntrys sharing the ref; both land as their
+    # own ChangeSet, in file order.
     text = f"""
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      expect: {{ year: 1997 }}
       changesets:
         - note: first change
           player_count: 4
@@ -1132,9 +1101,6 @@ claims:
     doc = load_patch(text)
     assert [type(e) for e in doc.claims] == [EditEntry, EditEntry]
     assert {e.ref for e in doc.claims} == {f"model.{machine_model.slug}"}
-    assert all(
-        isinstance(e, EditEntry) and e.expect == {"year": 1997} for e in doc.claims
-    )
 
     report = _apply(text, patch_id="0001-grouped")
     assert report.rejected == 0
@@ -1144,10 +1110,10 @@ claims:
     assert machine_model.flipper_count == 2
 
 
-def test_grouped_expect_guards_every_item(machine_model):
-    # The header's expect: guards every changeset; a mismatch fails before any
-    # write, a match applies all items.
-    bad = f"""
+def test_grouped_header_expect_ignored(machine_model):
+    # A header expect: is accepted-but-ignored; every changeset still applies
+    # even when the expect would have mismatched.
+    text = f"""
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
@@ -1156,20 +1122,7 @@ claims:
         - player_count: 4
         - flipper_count: 2
 """
-    with pytest.raises(PatchError, match="expect year"):
-        _apply(bad, patch_id="0001-bad")
-    assert not Claim.objects.filter(source__slug="flipcommons-catalog").exists()
-
-    ok = f"""
-attribution: flipcommons-catalog
-claims:
-  - model.{machine_model.slug}:
-      expect: {{ year: 1997 }}
-      changesets:
-        - player_count: 4
-        - flipper_count: 2
-"""
-    assert _apply(ok, patch_id="0002-ok").rejected == 0
+    assert _apply(text).rejected == 0
     machine_model.refresh_from_db()
     assert (machine_model.player_count, machine_model.flipper_count) == (4, 2)
 
@@ -1253,14 +1206,13 @@ claims:
 
 
 @pytest.mark.parametrize(
-    "forbidden", ["create: true", "delete: true", "expect: {}", "changesets: []"]
+    "forbidden", ["create: true", "delete: true", "changesets: []"]
 )
 def test_grouped_item_header_only_key_rejected(forbidden):
     text = f"""
 attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
-      expect: {{ year: 1997 }}
       changesets:
         - note: x
           {forbidden}
@@ -1833,28 +1785,17 @@ claims:
     assert stern_entity.status == "deleted"
 
 
-def test_delete_with_expect_guard(stern_entity):
-    # A mismatched expect: fails loudly before the delete writes anything.
-    bad = """
+def test_delete_with_expect_ignored(stern_entity):
+    # expect: on a delete is accepted-but-ignored; the delete applies even when
+    # the expect would have mismatched.
+    text = """
 attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       expect: { manufacturer: williams }
       delete: true
 """
-    with pytest.raises(PatchError, match="expect manufacturer"):
-        _apply(bad, patch_id="0001-bad")
-    stern_entity.refresh_from_db()
-    assert stern_entity.status != "deleted"
-
-    ok = """
-attribution: flipcommons-catalog
-claims:
-  - corporate-entity.stern-pinball-inc:
-      expect: { manufacturer: stern }
-      delete: true
-"""
-    _apply(ok, patch_id="0002-ok")
+    _apply(text)
     stern_entity.refresh_from_db()
     assert stern_entity.status == "deleted"
 
@@ -2020,7 +1961,6 @@ sources:
 @pytest.mark.parametrize(
     ("directive", "match"),
     [
-        ("expect: {}", "meaningless on a create"),
         ("retract: []", "meaningless on a create"),
         ("remove: {}", "meaningless on a create"),
     ],
@@ -2771,7 +2711,6 @@ def test_non_string_identity_rejected(monkeypatch):
     entry = EditEntry(
         entity_type="manufacturer",
         public_id="stern",
-        expect={},
         retract=[],
         remove={},
         fields={},
@@ -2882,7 +2821,6 @@ def test_member_identity_shares_canonical_fold():
     entry = EditEntry(
         entity_type="manufacturer",
         public_id="stern",
-        expect={},
         retract=[],
         remove={},
         fields={},
@@ -2898,7 +2836,6 @@ def test_member_identity_shares_canonical_fold():
     abbr_entry = EditEntry(
         entity_type="model",
         public_id="medieval-madness",
-        expect={},
         retract=[],
         remove={},
         fields={},

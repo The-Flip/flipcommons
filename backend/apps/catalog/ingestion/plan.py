@@ -1,17 +1,17 @@
 """Plan data types: the declarative carriers an ingest source hands the engine.
 
-These are the public contract between source adapters (``ingestion.patches``,
-the IPDB/OPDB adapters) and the source-agnostic apply engine in
-:mod:`apps.catalog.ingestion.apply`. An adapter builds an :class:`IngestPlan`
-out of these primitives; ``apply_plan`` consumes it. The types live here, apart
-from the engine, so adapters can import the carriers without pulling in the
-engine's machinery — the apply layer imports *these*, never the reverse.
+These are the public contract between the source front end (``ingestion.patches``)
+and the source-agnostic apply engine in :mod:`apps.catalog.ingestion.apply`. A
+front end builds an :class:`IngestPlan` out of these primitives; ``apply_plan``
+consumes it. The types live here, apart from the engine, so a front end can
+import the carriers without pulling in the engine's machinery — the apply layer
+imports *these*, never the reverse.
 
 In compiler terms the :class:`IngestPlan` is the **intermediate representation**:
-every source front end *lowers* its input to this one typed instruction list, and
-the shared apply back end is the only thing that turns it into database writes.
-That single IR is what lets one back end serve every source — keep new behavior
-on the front-end/IR side rather than forking ``apply_plan``.
+the source front end *lowers* its input to this one typed instruction list, and
+the apply back end is the only thing that turns it into database writes. That
+IR boundary is what keeps the engine source-agnostic — keep new behavior on the
+front-end/IR side rather than forking ``apply_plan``.
 
 The hook Protocols and the ``RunReport`` result type live here too: they're
 named in the plan's own fields and in ``apply_plan``'s signature. The engine's
@@ -91,7 +91,8 @@ type CiteHandle = str
 # A transparent alias of ``int`` (like ``CiteHandle`` above) that names the role
 # wherever it recurs — on the plan carriers here and in the engine's per-entry
 # provenance maps — so a bare ``int`` ordinal isn't mistaken for a pk or count.
-# ``None`` on non-patch runs.
+# Typed ``| None`` on the carriers only because the front end stamps it in a
+# second pass (see ``planning.build_plan``); it is always set by apply time.
 type EntryIndex = int
 
 # A plan-local temporary identifier for a not-yet-created entity — the label a
@@ -163,10 +164,6 @@ class PlannedClaimAssert:
     # genuinely arbitrary, so the type stays open.
     value: Any = None
     claim_key: str = ""
-    # Legacy free-text citation string written to ``Claim.citation`` (used by
-    # some ingest paths). Distinct from ``citation_ref`` below, which is the
-    # structured CitationInstance reference — don't conflate them.
-    citation: str = ""
     # Per-entry patch provenance. ``note`` flows to the entity's ChangeSet
     # note; ``citation_ref`` (set only on explicit-field assertions, never the
     # create-owned slug/status scaffolding) is materialized as a
@@ -180,16 +177,14 @@ class PlannedClaimAssert:
     # minted slug. Existing-slug markers (``[[cite:<slug>]]``) carry nothing here —
     # they self-resolve through standard conversion. Empty for non-cited fields.
     inline_cites: dict[CiteHandle, CitationRef] = field(default_factory=dict)
-    # Patch runs only: the file-order index of the authoring patch entry. Stamped
-    # by the patch adapter (in ``build_plan``) so ``_persist`` can mint one
-    # ChangeSet per entry; ``None`` for non-patch runs (IPDB/OPDB), which group
-    # per affected entity instead.
+    # The file-order index of the authoring patch entry, so ``_persist`` can mint
+    # one ChangeSet per entry. The front end stamps it in a second pass (see
+    # ``planning.build_plan``), so it is ``None`` only transiently between
+    # construction and stamping — always set by apply time.
     entry_index: EntryIndex | None = None
     content_type_id: int | None = None
     object_id: int | None = None
     handle: Handle | None = None
-    needs_review: bool = False
-    needs_review_notes: str = ""
     license_id: int | None = None
     # Deferred relationship claim identity:
     relationship_namespace: Namespace = ""
@@ -210,8 +205,8 @@ class PlannedClaimRetract:
     # Per-entry patch note → the entry's ChangeSet note. A retraction has no
     # new claim, so it carries no ``citation_ref``.
     note: str = ""
-    # Patch runs only: the file-order index of the authoring patch entry (see
-    # ``PlannedClaimAssert.entry_index``). ``None`` for non-patch runs.
+    # The file-order index of the authoring patch entry (see
+    # ``PlannedClaimAssert.entry_index``); stamped in the same second pass.
     entry_index: EntryIndex | None = None
 
 
@@ -221,6 +216,8 @@ class IngestPlan:
 
     source: Source
     input_fingerprint: str
+    # The NNNN-slug data patch filename stem — the applied-ledger key. Required.
+    patch_id: str
     entities: list[PlannedEntityCreate] = field(default_factory=list)
     assertions: list[PlannedClaimAssert] = field(default_factory=list)
     retractions: list[PlannedClaimRetract] = field(default_factory=list)
@@ -231,10 +228,7 @@ class IngestPlan:
     # create), each handed the RunReport. Patch-only: citation source upserts.
     pre_write_hooks: list[PreWriteHook] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-    # Patch runs only: the NNNN-slug filename stem (the applied-ledger key)
-    # and the patch's description (copied to ``IngestRun.note``). Null/empty
-    # for normal ingests.
-    patch_id: str | None = None
+    # The patch's description, copied to ``IngestRun.note``.
     note: str = ""
 
 

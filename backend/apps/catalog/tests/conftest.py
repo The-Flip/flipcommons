@@ -4,11 +4,7 @@ from django.utils.text import slugify
 
 from apps.catalog.models import (
     CorporateEntity,
-    CorporateEntityLocation,
     CreditRole,
-    DisplayType,
-    GameplayFeature,
-    Location,
     MachineModel,
     Manufacturer,
     Person,
@@ -99,9 +95,10 @@ def source(db):
 def flipcommons_catalog(db):
     """The default patch-attribution Source.
 
-    In production the pindata ingest seeds ``flipcommons-catalog`` (see
-    ``ingest_pindata``); no migration creates it. Tests that attribute patches to
-    the catalog's own default source must therefore seed it themselves. It's the
+    No migration creates ``flipcommons-catalog``; it lives in the database
+    baseline (loaded via DB export/import), so a fresh test database lacks it.
+    Tests that attribute patches to the catalog's own default source must
+    therefore seed it themselves. It's the
     default attribution for hand- and AI-authored patches — see
     docs/DataPatchAuthoring.md.
     """
@@ -167,43 +164,6 @@ def solid_state(db):
     return TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
 
 
-_TECHNOLOGY_GENERATIONS = [
-    ("solid-state", "Solid State"),
-    ("electromechanical", "Electromechanical"),
-    ("pure-mechanical", "Pure Mechanical"),
-]
-
-_DISPLAY_TYPES = [
-    ("dot-matrix", "Dot Matrix"),
-    ("lcd", "LCD"),
-    ("score-reels", "Score Reels"),
-    ("alphanumeric", "Alphanumeric"),
-    ("backglass-lights", "Backglass Lights"),
-    ("cga", "CGA"),
-]
-
-
-@pytest.fixture
-def ingest_taxonomy(db):
-    """Seed TechnologyGeneration and DisplayType rows needed by ingest tests.
-
-    FK claims for technology_generation and display_type are validated at the
-    claim boundary — the target rows must exist or the claims are rejected.
-    """
-    TechnologyGeneration.objects.bulk_create(
-        [TechnologyGeneration(slug=s, name=n) for s, n in _TECHNOLOGY_GENERATIONS],
-        update_conflicts=True,
-        unique_fields=["slug"],
-        update_fields=["name"],
-    )
-    DisplayType.objects.bulk_create(
-        [DisplayType(slug=s, name=n) for s, n in _DISPLAY_TYPES],
-        update_conflicts=True,
-        unique_fields=["slug"],
-        update_fields=["name"],
-    )
-
-
 @pytest.fixture
 def williams_entity(db, manufacturer, _bootstrap_source):
     ce = CorporateEntity.objects.create(
@@ -248,80 +208,6 @@ def machine_model(db, williams_entity, solid_state, _bootstrap_source):
     t = Theme.objects.create(name="Medieval", slug="medieval")
     pm.themes.add(t)
     return pm
-
-
-_IPDB_NARRATIVE_FEATURE_SLUGS = [
-    "multiball",
-    "kickback",
-    "magna-save",
-    "ball-save",
-    "skill-shot",
-    "multi-level-playfield",
-    "head-to-head",
-]
-
-
-@pytest.fixture
-def ipdb_locations(db):
-    """Create Location records and curated CE+CEL rows for the IPDB fixture.
-
-    IPDB validation requires CEs to already have curated locations.
-    The fixture covers the three manufacturers in ipdb_sample.json:
-    Gottlieb (93) and Williams (351) in Chicago, Bally/Midway (349) in Franklin Park.
-    """
-    usa = Location.objects.create(
-        location_path="usa", slug="usa", name="USA", location_type="country"
-    )
-    il = Location.objects.create(
-        location_path="usa/il",
-        slug="il",
-        name="Illinois",
-        location_type="state",
-        parent=usa,
-    )
-    chicago = Location.objects.create(
-        location_path="usa/il/chicago",
-        slug="chicago",
-        name="Chicago",
-        location_type="city",
-        parent=il,
-    )
-    franklin_park = Location.objects.create(
-        location_path="usa/il/franklin-park",
-        slug="franklin-park",
-        name="Franklin Park",
-        location_type="city",
-        parent=il,
-    )
-
-    def _make_ce(name, slug, ipdb_id, location):
-        mfr = Manufacturer.objects.create(name=name, slug=slug)
-        ce = CorporateEntity.objects.create(
-            name=name,
-            slug=slug,
-            manufacturer=mfr,
-            ipdb_manufacturer_id=ipdb_id,
-        )
-        CorporateEntityLocation.objects.create(corporate_entity=ce, location=location)
-        return ce
-
-    _make_ce("D. Gottlieb & Company", "d-gottlieb-co", 93, chicago)
-    _make_ce("Midway Manufacturing Company", "midway-manufacturing", 349, franklin_park)
-    _make_ce("Williams Electronic Games", "williams-electronic-games", 351, chicago)
-
-
-@pytest.fixture
-def ipdb_narrative_features(db):
-    """Create GameplayFeature records for IPDB narrative pattern slugs.
-
-    Required by ingest_ipdb, which validates these slugs exist at startup.
-    """
-    return GameplayFeature.objects.bulk_create(
-        [GameplayFeature(slug=s, name=s) for s in _IPDB_NARRATIVE_FEATURE_SLUGS],
-        update_conflicts=True,
-        unique_fields=["slug"],
-        update_fields=["name"],
-    )
 
 
 @pytest.fixture

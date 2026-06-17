@@ -80,9 +80,9 @@ class Command(BaseCommand):
 
         if not patches_dir.is_dir():
             # Benign: a fresh DB or a bundle with no patches yet (e.g. before
-            # `make pull-ingest`). Treated like an empty dir so chaining this
-            # onto full ingest never hard-fails. An empty existing dir is the
-            # same no-op below.
+            # `make pull-patches`). Treated like an empty dir so it's a no-op
+            # rather than a hard failure. An empty existing dir is the same
+            # no-op below.
             self.stdout.write(f"No patches directory at {patches_dir} — nothing to do")
             return
 
@@ -119,9 +119,9 @@ class Command(BaseCommand):
                     self._muted(f"∅ skipped {patch_id} (already applied)")
                 )
 
-        # Invalidate cached endpoint data once, at the command level — the
-        # same pattern ingest_all / resolve_claims use (apply_plan does not
-        # invalidate). Needed even for patches with no relationship claims.
+        # Invalidate cached endpoint data once, at the command level
+        # (apply_plan does not invalidate). Needed even for patches with no
+        # relationship claims.
         if applied and not dry_run:
             from apps.catalog.cache import invalidate_all
 

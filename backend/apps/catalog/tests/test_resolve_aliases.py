@@ -26,31 +26,35 @@ from apps.provenance.models import Claim, Source
 
 
 def _assert_alias_claims(source, parent_obj, claim_field, aliases: list[str]) -> None:
-    """Assert alias claims for *parent_obj*, mirroring ingest_pindata._assert_alias_claims.
+    """Set *source*'s alias claims for *parent_obj* as a full sync.
 
-    Passing an empty list puts the parent in scope with no pending claims,
-    which causes the sweep to delete any stale alias rows.
+    Deactivates this source's prior active alias claims for the field on the
+    parent (the sweep), then creates the new set. Passing an empty list sweeps
+    all of them, so the resolver removes any stale alias rows.
     """
     ct_id = ContentType.objects.get_for_model(parent_obj).pk
-    pending = []
+    # Sweep: deactivate this source's prior active alias claims for the parent.
+    Claim.objects.filter(
+        source=source,
+        content_type_id=ct_id,
+        object_id=parent_obj.pk,
+        field_name=claim_field,
+        is_active=True,
+    ).update(is_active=False)
+    # Create the new alias claims as active.
     for alias_str in aliases:
         lower = alias_str.lower()
         claim_key, value = build_relationship_claim(
             claim_field, {"alias_value": lower, "alias_display": alias_str}
         )
-        pending.append(
-            Claim(
-                content_type_id=ct_id,
-                object_id=parent_obj.pk,
-                field_name=claim_field,
-                claim_key=claim_key,
-                value=value,
-            )
+        Claim.objects.create(
+            source=source,
+            content_type_id=ct_id,
+            object_id=parent_obj.pk,
+            field_name=claim_field,
+            claim_key=claim_key,
+            value=value,
         )
-    scope = {(ct_id, parent_obj.pk)}
-    Claim.objects.bulk_assert_claims(
-        source, pending, sweep_field=claim_field, authoritative_scope=scope
-    )
 
 
 def _create_parent(parent_model):

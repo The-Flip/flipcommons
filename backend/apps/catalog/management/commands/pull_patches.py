@@ -1,17 +1,14 @@
 """Download data patches from Cloudflare R2.
 
-Data patches are authored and published by the **flippatch** repo, separately
-from the seed catalog (pindata). flippatch's `make push` ships them under the
-``flippatch/`` prefix of the shared bucket, with ``flippatch/manifest.json``
-listing the patch files at ``flippatch/patches/NNNN-slug.yaml``.
+Data patches are authored and published by the **flippatch** repo. flippatch's
+`make push` ships them under the ``flippatch/`` prefix of the bucket, with
+``flippatch/manifest.json`` listing the patch files at
+``flippatch/patches/NNNN-slug.yaml``.
 
 This command fetches that manifest and downloads the patches into
 ``<dest>/flippatch/patches/`` — the default dir `ingest_patches` reads from.
-The seed catalog and external sources are pulled separately by
-`pull_ingest_sources`.
 
-The shared R2 download/checksum logic lives in
-``apps.catalog.ingestion.r2_pull``.
+The R2 download/checksum logic lives in ``apps.catalog.ingestion.r2_pull``.
 
 Usage (local):
     uv run python manage.py pull_patches --dest ../data/ingest_sources
