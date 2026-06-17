@@ -2,9 +2,9 @@
 
 A **data patch** is a small set of catalog claims authored as YAML and applied to a running database, without triggering a full re-ingest of the entire catalog's seed data. It's how you make a targeted, reproducible correction: author it, run it on localhost to check the effect, then run the identical file on production.
 
-## The model: seed baseline, patches replayed on top
+## The model: a database baseline, patches replayed on top
 
-It's the schema-migration model, but for catalog data. The seed ingest is an **immutable baseline** we never edit to fix data. Corrections and ongoing source updates are **append-only, numbered patches replayed on top of the seed in every environment**: a fresh database reaches production's state by replaying seed → `0001` → `0002` → …. Production is seeded once, then patches arrive over time.
+It's the schema-migration model, but for catalog data. A database starts from a **baseline** loaded via Django's database export/import (`dumpdata`/`loaddata`, or a copied DB snapshot) — a fresh dev DB is populated this way, prod is restored from backup. The baseline is never edited by hand to fix data. On top of it, corrections and ongoing source updates are **append-only, numbered patches replayed in order in every environment** (`0001` → `0002` → …). Patches are never edited once applied; fixes arrive as new patches over time.
 
 A patch is **attributed to a source** — usually `flipcommons-catalog`, Flipcommons' own attribution for values we research, scrape and classify ourselves (see [DataPatchAuthoring.md → Authoring a good patch](DataPatchAuthoring.md#authoring-a-good-patch)) — and does one of three things to _that source's_ claims:
 
@@ -22,11 +22,11 @@ flippatch's `make push` publishes them to Cloudflare R2 under the `flippatch/` p
 
 ## File format
 
-Each patch file carries **one attribution** (→ one `IngestRun`), and each correction becomes its **own** `ChangeSet` — one note slot, rendered in file order on the entity's Edit History page (mirroring the in-app model, where each edit mints one ChangeSet). A single record usually needs several separately-cited corrections; the canonical form groups them under one header — the entity ref and the `expect:` drift guard declared once — with a `changesets:` list, one item per `ChangeSet`, each carrying its own `note`/`cite` (see [Notes & citations](#notes--citations)).
+Each patch file carries **one attribution** (→ one `IngestRun`), and each correction becomes its **own** `ChangeSet` — one note slot, rendered in file order on the entity's Edit History page (mirroring the in-app model, where each edit mints one ChangeSet). A single record usually needs several separately-cited corrections; the canonical form groups them under one header — the entity ref declared once — with a `changesets:` list, one item per `ChangeSet`, each carrying its own `note`/`cite` (see [Notes & citations](#notes--citations)).
 
 ### Edit
 
-Group several corrections to one record under a single header — the ref and `expect:` declared once, a `changesets:` list beneath, one item per `ChangeSet`:
+Group several corrections to one record under a single header — the ref declared once, a `changesets:` list beneath, one item per `ChangeSet`:
 
 ```yaml
 attribution: flipcommons-catalog # a Source slug; must already exist
@@ -35,7 +35,6 @@ description:
   Correct the Mazatron prototype.
 claims: # ordered list of single-key entries
   - model.mazatron: # entity ref: <entity_type>.<public_id>
-      expect: { ipdb_id: 4443 } # drift guard (scalar + FK) — declared once, guards every changeset
       changesets: # each item is its own ChangeSet: note/cite + field assertions
         - note: 'IPDB says "exists only as a prototype machine".' # reason / evidence for this item's claims
           cite: ipdb:4443 # external evidence → citation on this item's claims
@@ -46,7 +45,7 @@ claims: # ordered list of single-key entries
           year: 1990 # a disjoint field with its own evidence → its own ChangeSet
 ```
 
-Each `changesets:` item inherits the header's ref and `expect:` and becomes its own `ChangeSet`. Items carry **only field assertions plus provenance** (`note`/`cite`/`cites`/`retract`/`remove`) — lifecycle (`create:`/`delete:`) and the drift guard (`expect:`) are header-only. The items' fields must be **disjoint**: two items can't both set `year` (see [Notes & citations](#notes--citations) for this and the rest of the per-entry rules).
+Each `changesets:` item inherits the header's ref and becomes its own `ChangeSet`. Items carry **only field assertions plus provenance** (`note`/`cite`/`cites`/`retract`/`remove`) — lifecycle (`create:`/`delete:`) is header-only. The items' fields must be **disjoint**: two items can't both set `year` (see [Notes & citations](#notes--citations) for this and the rest of the per-entry rules).
 
 For a record that needs just **one** correction, the flat single-key form is the shorthand — the body sits directly under the ref, no `changesets:` wrapper:
 
@@ -54,13 +53,12 @@ For a record that needs just **one** correction, the flat single-key form is the
 attribution: flipcommons-catalog
 claims:
   - model.mazatron:
-      expect: { year: 1990 }
       note: 'IPDB says "exists only as a prototype machine".'
       cite: ipdb:4443
       production_status: unreleased
 ```
 
-(Repeating the flat single-key entry once per change on the same record — the shape that predates `changesets:` — still parses, but prefer the grouped form so the ref and `expect:` aren't duplicated.)
+(Repeating the flat single-key entry once per change on the same record — the shape that predates `changesets:` — still parses, but prefer the grouped form so the ref isn't duplicated.)
 
 ### Create
 
@@ -92,7 +90,7 @@ claims:
           cite: ipdb:1234
 ```
 
-This is how one coherent change — a create plus a separately-cited refinement — lives in a single file instead of needing a follow-up patch (each item its own `ChangeSet` with its own `note`/`cite`). A companion takes **only field assertions**: `expect:` (there's no DB state to guard), `retract:` and `remove:` (there are no prior claims to drop) are each rejected, and per the [disjoint-fields rule](#notes--citations) it may not reassert a field the create already set.
+This is how one coherent change — a create plus a separately-cited refinement — lives in a single file instead of needing a follow-up patch (each item its own `ChangeSet` with its own `note`/`cite`). A companion takes **only field assertions**: `retract:` and `remove:` (there are no prior claims to drop) are each rejected, and per the [disjoint-fields rule](#notes--citations) it may not reassert a field the create already set.
 
 The older shape — a flat `create:` entry followed by separate single-key companion entries on the same record — still parses, but it forced you to order the companions **below** the create by hand (an edit above its create errors); `changesets:` makes that ordering structural:
 
@@ -148,12 +146,11 @@ Soft-delete an entity:
 attribution: flipcommons-catalog
 claims:
   - corporate-entity.chicago-coin-machinery-company:
-      expect: { manufacturer: chicago-coin } # guard the row you're deleting
       delete: true
       note: "Duplicate of chicago-coin; its sole machine was reassigned first."
 ```
 
-This writes a `status=deleted` claim (no row removal), exactly like an in-app delete. It reuses the app's soft-delete planner, so it obeys the same record-lifecycle rules: it **refuses** while an active PROTECT referrer would be left dangling — reassign any such referrer in an **earlier** patch first (the referrer check reads live DB state — see [Limitations](#limitations)) — and **cascades** `status=deleted` to owned lifecycle children (a warning lists them). The root and its cascade children land in a **single** ChangeSet, matching an in-app delete. A delete is **exclusive over that footprint**: no other entry in the patch may target the deleted entity or any of its cascade children. A delete entry takes only `expect:`/`note:`/`cite:` — no field assertions, no `create:`, no `retract:`; `note`/`cite` ride the `status=deleted` claim. Idempotent: re-deleting an already-deleted entity diffs as unchanged — the one no-op a provenance-bearing entry is allowed (see [Notes & citations](#notes--citations)). It takes effect only if the `status=deleted` claim wins resolution, so attribute it to a source that outranks any existing `status` claim.
+This writes a `status=deleted` claim (no row removal), exactly like an in-app delete. It reuses the app's soft-delete planner, so it obeys the same record-lifecycle rules: it **refuses** while an active PROTECT referrer would be left dangling — reassign any such referrer in an **earlier** patch first (the referrer check reads live DB state — see [Limitations](#limitations)) — and **cascades** `status=deleted` to owned lifecycle children (a warning lists them). The root and its cascade children land in a **single** ChangeSet, matching an in-app delete. A delete is **exclusive over that footprint**: no other entry in the patch may target the deleted entity or any of its cascade children. A delete entry takes only `note:`/`cite:` — no field assertions, no `create:`, no `retract:`; `note`/`cite` ride the `status=deleted` claim. Idempotent: re-deleting an already-deleted entity diffs as unchanged — the one no-op a provenance-bearing entry is allowed (see [Notes & citations](#notes--citations)). It takes effect only if the `status=deleted` claim wins resolution, so attribute it to a source that outranks any existing `status` claim.
 
 ### Entity references
 
@@ -163,7 +160,7 @@ Entity references are of format `type.public_id` — the canonical `entity_type`
 
 Field keys are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's `public_id`; **relationship** (`tag`, `theme`, `manufacturer_alias`, `abbreviation`) — key is the namespace, value a list of members (FK public_ids, or bare strings for aliases/abbreviations). The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
 
-Distinct from field keys are the **reserved keys** — directives, not claims: `create:`, `delete:`, `retract:` and `remove:` (each covered with its operation above), the cross-cutting `expect:`, `note:`, `cite:` and `cites:` (below), and the grouping key `changesets:` (see [File format](#file-format)).
+Distinct from field keys are the **reserved keys** — directives, not claims: `create:`, `delete:`, `retract:` and `remove:` (each covered with its operation above), the cross-cutting `note:`, `cite:` and `cites:` (below), the grouping key `changesets:` (see [File format](#file-format)).
 
 ### Aliases & abbreviations
 
@@ -180,18 +177,6 @@ claims:
 ```
 
 The field key is the **literal registered namespace** (`manufacturer_alias`, `abbreviation`); members are bare strings, not public_ids (alias values case-fold for identity, original case preserved for display; abbreviations are verbatim). Aliases and abbreviations need no `note:`/`cite:`. `remove:` drops a member the same way it drops an FK member.
-
-### Drift guard
-
-`expect:` is a drift guard: a map of currently-resolved values the target must already have, checked before any write (mismatch → error). Covers scalar + FK. It stops a hand-authored id from writing to a drifted or same-named row — guard every entry with it.
-
-```yaml
-attribution: flipcommons-catalog
-claims:
-  - model.medieval-madness:
-      expect: { ipdb_id: 4032 } # write only if this row already resolves to IPDB 4032
-      production_status: produced
-```
 
 ### Notes & citations
 
@@ -235,7 +220,6 @@ First authoring — new citations via numeric handles plus a `cites:` map:
 attribution: flipcommons-ai-desc-model
 claims:
   - model.mazatron:
-      expect: { ipdb_id: 4443 }
       description: >
         A 1990 solid-state prototype by Mac Pinball.[[cite:1]]
         Only two units are known to survive.[[cite:2]]
@@ -276,7 +260,7 @@ Duplicate keys error, and values must be JSON-shaped — YAML coercion is off, s
 
 ## Citation sources
 
-A patch can also create **citation sources** — the reference works (`ipdb`, `pinside`, a manufacturer's site) that `cite:` points at — via a top-level `sources:` block. Use it to add a new web/book/magazine root without editing the seed file. Unlike claims, a source is _not attributed_ and carries no provenance; `attribution:` still names the source that owns the run's ledger entry, not the citation sources.
+A patch can also create **citation sources** — the reference works (`ipdb`, `pinside`, a manufacturer's site) that `cite:` points at — via a top-level `sources:` block. This is the way to add a new web/book/magazine root: declare it here and it's created at apply time. Unlike claims, a source is _not attributed_ and carries no provenance; `attribution:` still names the source that owns the run's ledger entry, not the citation sources.
 
 ```yaml
 attribution: flipcommons-catalog # owns the IngestRun; does NOT attribute the sources
@@ -298,7 +282,7 @@ sources: # processed before claims, so a cite: below can nest under a root creat
 claims: [] # optional — a sources-only patch is valid
 ```
 
-A `sources:` node is the seed-data source shape (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, and `links`). **v1 is flat** — nested `children` is rejected; a child source under a root is created on demand when you `cite:` a URL on its domain.
+A `sources:` node is a flat citation-source record (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, and `links`). **v1 is flat** — nested `children` is rejected; a child source under a root is created on demand when you `cite:` a URL on its domain.
 
 **Identity and the get-or-create policy.** A source has no slug; identity is `isbn` if present, else `(name, source_type)`. The block is **additive get-or-create**, never an overwrite:
 
@@ -332,10 +316,6 @@ Patches apply in numeric order. The command **pre-flights the whole batch** (fil
 
 To test-and-revise a patch on localhost before shipping, snapshot the DB first — see [DataPatchAuthoring.md → Validate via snapshot](DataPatchAuthoring.md#validate-via-snapshot).
 
-### Full ingest also applies patches
-
-`make ingest-all`, the fresh-DB data bootstrap, also runs `ingest_patches`, to get the DB into something approximating production: seed, then the replayed patch log.
-
 ## The ledger: applied once, immutably
 
 A patch application **is** an ingest run. Each `IngestRun` carries the `patch_id` (filename stem) and an `input_fingerprint` (sha256 of the normalized parsed content — comments, whitespace and key order ignored). The applied set is the `SUCCESS` runs with a `patch_id`, tracked **per database** (what makes "run locally, then on prod" work). On re-run: fingerprint matches → skip (a cosmetic reformat still skips); fingerprint differs → **hard error**, since an applied patch is immutable — a semantic change means you changed history, so add a new numbered patch instead. The invariant is enforced by a partial unique index on `patch_id` where `status='success'`, flipped in the same transaction as the claims.
@@ -353,7 +333,6 @@ On localhost, the simplest undo is restoring a pre-apply snapshot (see [DataPatc
 We've been building the patch system on an as-needed basis. These haven't been implemented yet.
 
 - **No same-patch reassign-then-delete** — a `delete:`'s referrer check reads live DB state, so a reference reassigned earlier in the _same_ patch isn't yet visible; reassign in an earlier numbered patch, then delete.
-- `expect:` covers scalar + FK only, not relationships. (`retract:` is scalar/FK; relationship members are dropped with `remove:`.)
 - Relationship `remove:` covers **single-identity** relationships — single-FK members (`tag`, `location`, `theme`) and single string members (aliases, `abbreviation`). Multi-key relationships (e.g. credits) aren't yet removable via patch.
 - **Single-identity relationships are writable** — both single-FK members (`tag`, `location`, `theme`, …, whose member is an FK to another entity) and single **string** members (`manufacturer_alias` and the other alias namespaces, `abbreviation`), whose member is a bare string. Alias values **case-fold** for identity (the original case is preserved for display); abbreviations are stored verbatim. **Multi-key** relationships (e.g. credits, person + role) remain unsupported.
 - **No forward same-patch references.** A reference — an FK on a `create` or edit, a location `parent`, or a relationship member (`tag`, `location`, …) — resolves against the seed, an earlier patch, or an entry **earlier in this same patch**. What it can't yet do is point _forward_ at an entry declared **below** it: declare the target (manufacturer, title, tag, parent location, …) above its reference, or in an earlier patch. (Citing a `sources:`-declared website root in the same patch always works regardless of order — the source block is processed before claims.)

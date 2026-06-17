@@ -73,7 +73,7 @@ from django.db.models import (
 )
 from django.db.models.functions import Coalesce, Lower
 
-from apps.core.models import EntityStatus, active_status_q
+from apps.core.models import active_status_q
 from apps.core.search import fold as _fold
 
 from ..models import (
@@ -161,9 +161,7 @@ _MODEL = Q(entities__models__variant_of__isnull=True) & active_status_q(
 # as an argument. ``active()`` is null-inclusive for legacy ingest. (Manufacturers
 # copies titles' ``_MODEL_COUNT_GUARD`` rather than sharing it — it names
 # ``variant_of``, a MachineModel-specific field, so it is not domain-free.)
-_MODEL_COUNT_GUARD = Q(variant_of__isnull=True) & (
-    Q(status=EntityStatus.ACTIVE) | Q(status__isnull=True)
-)
+_MODEL_COUNT_GUARD = Q(variant_of__isnull=True) & active_status_q()
 
 # Distinct count of a manufacturer's active non-variant models, as a correlated
 # ``Subquery`` — the card's displayed ``model_count`` AND the "most prolific first"

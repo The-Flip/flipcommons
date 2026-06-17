@@ -73,6 +73,7 @@ class TestApplyStatusEnforcement:
         plan = IngestPlan(
             source=test_source,
             input_fingerprint="fp-1",
+            patch_id="fp-1",
             entities=[
                 PlannedEntityCreate(
                     model_class=Manufacturer,
@@ -81,9 +82,15 @@ class TestApplyStatusEnforcement:
                 ),
             ],
             assertions=[
-                PlannedClaimAssert(field_name="name", value="Bally", handle="bally"),
-                PlannedClaimAssert(field_name="slug", value="bally", handle="bally"),
-                PlannedClaimAssert(field_name="status", value="active", handle="bally"),
+                PlannedClaimAssert(
+                    field_name="name", value="Bally", handle="bally", entry_index=0
+                ),
+                PlannedClaimAssert(
+                    field_name="slug", value="bally", handle="bally", entry_index=0
+                ),
+                PlannedClaimAssert(
+                    field_name="status", value="active", handle="bally", entry_index=0
+                ),
             ],
         )
         with pytest.raises(ValueError, match="status='active'"):
@@ -94,6 +101,7 @@ class TestApplyStatusEnforcement:
         plan = IngestPlan(
             source=test_source,
             input_fingerprint="fp-1",
+            patch_id="fp-1",
             entities=[
                 PlannedEntityCreate(
                     model_class=Manufacturer,
@@ -102,10 +110,14 @@ class TestApplyStatusEnforcement:
                 ),
             ],
             assertions=[
-                PlannedClaimAssert(field_name="name", value="Bally", handle="bally"),
-                PlannedClaimAssert(field_name="slug", value="bally", handle="bally"),
                 PlannedClaimAssert(
-                    field_name="status", value="deleted", handle="bally"
+                    field_name="name", value="Bally", handle="bally", entry_index=0
+                ),
+                PlannedClaimAssert(
+                    field_name="slug", value="bally", handle="bally", entry_index=0
+                ),
+                PlannedClaimAssert(
+                    field_name="status", value="deleted", handle="bally", entry_index=0
                 ),
             ],
         )
@@ -117,6 +129,7 @@ class TestApplyStatusEnforcement:
         plan = IngestPlan(
             source=test_source,
             input_fingerprint="fp-1",
+            patch_id="fp-1",
             entities=[
                 PlannedEntityCreate(
                     model_class=Manufacturer,
@@ -125,9 +138,15 @@ class TestApplyStatusEnforcement:
                 ),
             ],
             assertions=[
-                PlannedClaimAssert(field_name="name", value="Bally", handle="bally"),
-                PlannedClaimAssert(field_name="slug", value="bally", handle="bally"),
-                PlannedClaimAssert(field_name="status", value="active", handle="bally"),
+                PlannedClaimAssert(
+                    field_name="name", value="Bally", handle="bally", entry_index=0
+                ),
+                PlannedClaimAssert(
+                    field_name="slug", value="bally", handle="bally", entry_index=0
+                ),
+                PlannedClaimAssert(
+                    field_name="status", value="active", handle="bally", entry_index=0
+                ),
             ],
         )
         report = apply_plan(plan)

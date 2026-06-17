@@ -139,12 +139,11 @@ class TestAutocompleteEngine:
 class TestRendererValidatorParity:
     def test_link_type_keys_match_catalog_model_walk(self):
         """For every catalog ``LinkType``, the same ``entity_type`` key is
-        reachable from the ingest validator's CatalogModel walk and points
-        to the same model class.
+        reachable from the CatalogModel walk and points to the same model
+        class.
 
-        The validator at ``ingest_pindata.validate_cross_entity_wikilinks``
-        builds its lookup as ``{model.entity_type: model for model in
-        catalog_models()}``; the renderer's registration loop builds
+        The model walk builds its lookup as ``{model.entity_type: model for
+        model in catalog_models()}``; the renderer's registration loop builds
         ``LinkType.name = model.entity_type``.
         Both must resolve any ``[[<entity-type>:<public-id>]]`` to the
         same row.

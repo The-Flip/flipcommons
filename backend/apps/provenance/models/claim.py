@@ -11,7 +11,6 @@ from django.db import models, transaction
 from django.db.models.functions import Now
 
 from apps.core.models import BoundedTextField, field_not_blank
-from apps.core.types import ClaimIdentity
 
 from .base import ClaimControlledModel
 from .changeset import ChangeSet
@@ -41,9 +40,6 @@ class ExistingClaimRow(NamedTuple):
 
     # ``value`` is the raw JSONField payload — scalar, dict, list, or null.
     value: object
-    citation: str
-    needs_review: bool
-    needs_review_notes: str
     license_id: int | None
     pk: int
 
@@ -165,151 +161,6 @@ class ClaimManager(models.Manager["Claim"]):
                 license=license,
                 changeset=changeset,
             )
-
-    def bulk_assert_claims(
-        self,
-        source: Source,
-        pending_claims: list[Claim],
-        *,
-        sweep_field: str | list[str] = "",
-        authoritative_scope: set[tuple[int, int]] | None = None,
-    ) -> dict[str, int]:
-        """Bulk-assert claims for a source. Only writes what changed.
-
-        Compares pending claims against existing active claims from the same
-        source. Unchanged claims are skipped, changed claims are superseded
-        (deactivated), and new/changed claims are created in bulk.
-
-        Idempotent: running the same ingest twice writes zero rows the second time.
-
-        ``pending_claims`` is a list of **unsaved** Claim objects with
-        ``content_type_id``, ``object_id``, ``field_name``, ``claim_key``,
-        ``value``, and ``citation`` set. The ``source`` FK is set here.
-
-        If ``sweep_field`` is provided (a single field name or a list), any
-        active claims from this source with one of those field_names that are
-        *not* in ``pending_claims`` will be deactivated.
-        ``authoritative_scope`` is a set of ``(content_type_id, object_id)``
-        tuples defining the full set of entities this source is authoritative
-        for. If omitted, scope is derived from pending claims.
-
-        **Full-sync contract**: sweep assumes a full sync — authoritative_scope
-        must cover every entity this source is authoritative for, not just a
-        partial batch. Omit sweep_field for incremental ingests.
-        """
-        # 0. Validate claim values (scalars, FK targets, field name recognition).
-        from apps.provenance.validation import validate_claims_batch
-
-        pending_claims, validation_rejected = validate_claims_batch(pending_claims)
-
-        # 1. Deduplicate: last-write-wins per (content_type_id, object_id, claim_key),
-        #    matching assert_claim() semantics where later calls overwrite.
-        seen: dict[ClaimIdentity, Claim] = {}
-        for claim in pending_claims:
-            claim.source = source
-            if not claim.claim_key:
-                claim.claim_key = claim.field_name
-            seen[
-                ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)
-            ] = claim
-        deduped = list(seen.values())
-        duplicates_removed = len(pending_claims) - len(deduped)
-
-        # 2. Fetch existing active claims from this source.
-        # Use values_list to avoid full ORM object instantiation — on large
-        # sources (40-50k+ claims) the overhead of JSONField deserialization
-        # on full Claim objects causes multi-minute stalls on SQLite.
-        existing: dict[ClaimIdentity, ExistingClaimRow] = {}
-        for row in self.filter(source=source, is_active=True).values_list(
-            "pk",
-            "content_type_id",
-            "object_id",
-            "claim_key",
-            "value",
-            "citation",
-            "needs_review",
-            "needs_review_notes",
-            "license_id",
-        ):
-            pk, ct_id, obj_id, ck, val, cit, nr, nrn, lic_id = row
-            existing[ClaimIdentity(ct_id, obj_id, ck)] = ExistingClaimRow(
-                value=val,
-                citation=cit,
-                needs_review=nr,
-                needs_review_notes=nrn,
-                license_id=lic_id,
-                pk=pk,
-            )
-
-        # 3. Diff: skip unchanged, collect superseded + new.
-        to_deactivate_ids: list[int] = []
-        to_create: list[Claim] = []
-        for new_claim in deduped:
-            key = ClaimIdentity(
-                new_claim.content_type_id, new_claim.object_id, new_claim.claim_key
-            )
-            old = existing.get(key)
-            if old:
-                if (
-                    old.value == new_claim.value
-                    and old.citation == new_claim.citation
-                    and old.needs_review == new_claim.needs_review
-                    and old.needs_review_notes == new_claim.needs_review_notes
-                    and old.license_id == new_claim.license_id
-                ):
-                    continue  # Already correct
-                to_deactivate_ids.append(old.pk)
-            to_create.append(new_claim)
-
-        # 4. Sweep: deactivate stale relationship claims not in pending set.
-        swept = 0
-        if sweep_field:
-            sweep_fields = (
-                [sweep_field] if isinstance(sweep_field, str) else list(sweep_field)
-            )
-            pending_keys: set[ClaimIdentity] = {
-                ClaimIdentity(c.content_type_id, c.object_id, c.claim_key)
-                for c in deduped
-            }
-            if authoritative_scope:
-                parent_groups: dict[int, set[int]] = {}
-                for ct_id, obj_id in authoritative_scope:
-                    parent_groups.setdefault(ct_id, set()).add(obj_id)
-            else:
-                parent_groups = {}
-                for c in deduped:
-                    parent_groups.setdefault(c.content_type_id, set()).add(c.object_id)
-
-            stale_ids: list[int] = []
-            for ct_id, obj_ids in parent_groups.items():
-                for pk, c_ct_id, c_obj_id, c_ck in self.filter(
-                    source=source,
-                    field_name__in=sweep_fields,
-                    is_active=True,
-                    content_type_id=ct_id,
-                    object_id__in=obj_ids,
-                ).values_list("pk", "content_type_id", "object_id", "claim_key"):
-                    if ClaimIdentity(c_ct_id, c_obj_id, c_ck) not in pending_keys:
-                        stale_ids.append(pk)
-
-            to_deactivate_ids.extend(stale_ids)
-            swept = len(stale_ids)
-
-        # 5. Apply delta atomically.
-        with transaction.atomic():
-            if to_deactivate_ids:
-                self.filter(pk__in=to_deactivate_ids).update(is_active=False)
-            if to_create:
-                self.bulk_create(to_create, batch_size=2000)
-
-        return {
-            "unchanged": len(deduped) - len(to_create),
-            "created": len(to_create),
-            "superseded": len(to_deactivate_ids) - swept,
-            "swept": swept,
-            "duplicates_removed": duplicates_removed,
-            "validation_rejected": validation_rejected,
-        }
 
 
 class Claim(models.Model):
@@ -472,7 +323,7 @@ class Claim(models.Model):
 
         Derives content_type_id from obj automatically, so callers never need
         to capture a ct_id variable. Returns an unsaved instance suitable for
-        passing to bulk_assert_claims().
+        batch validation (``validate_claims_batch``).
         """
         ct_id = ContentType.objects.get_for_model(obj).pk
         return cls(

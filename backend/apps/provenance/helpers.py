@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import cast
 
-from django.db.models import Case, F, IntegerField, Prefetch, QuerySet, Value, When
+from django.db.models import Prefetch, QuerySet
 
+from .claim_ranking_in_db import ranked_claims
 from .display import FieldValue, claim_value, resolve_display_context
 from .models import ChangeSet, CitationInstance, Claim, ClaimControlledModel
 from .schemas import (
@@ -62,19 +63,9 @@ def claims_prefetch(
     so it doesn't drag the whole claim table.
     """
     queryset = (
-        Claim.objects.filter(is_active=True)
-        .exclude(source__is_enabled=False)
-        .select_related("source", "user", "changeset__user")
+        ranked_claims(Claim.objects.all(), "claim_key")
+        .select_related("changeset__user")
         .prefetch_related(citation_instances_prefetch())
-        .annotate(
-            effective_priority=Case(
-                When(source__isnull=False, then=F("source__priority")),
-                When(user__isnull=False, then=F("user__priority")),
-                default=Value(0),
-                output_field=IntegerField(),
-            )
-        )
-        .order_by("claim_key", "-effective_priority", "-created_at")
     )
     if field_names is not None:
         queryset = queryset.filter(field_name__in=list(field_names))

@@ -1,6 +1,6 @@
-"""Shared Cloudflare R2 manifest-download helper for the ingest pull commands.
+"""Cloudflare R2 manifest-download helper for the data-patch pull command.
 
-Used by the ``pull_ingest_sources`` and ``pull_patches`` management commands.
+Used by the ``pull_patches`` management command.
 Pulls are manifest-driven: a ``manifest.json`` lists ``{path, size, sha256}``
 entries; this downloads the files a caller wants and verifies each checksum.
 

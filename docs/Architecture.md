@@ -18,7 +18,7 @@ The pieces the system is built from. See [Hosting.md](Hosting.md#services) for t
 | Error monitoring | Sentry     | —                |
 | Analytics        | PostHog    | —                |
 
-There is **no async layer**: no task queue, worker pool or scheduler. Work that elsewhere would be backgrounded — ingest, in particular — runs as synchronous management commands invoked by hand.
+There is **no async layer**: no task queue, worker pool or scheduler. Work that elsewhere would be backgrounded — applying data patches, in particular — runs as synchronous management commands invoked by hand.
 
 The shared rate-limit store is a file-based Django cache, not an external service.
 
@@ -66,7 +66,7 @@ Django is the source of truth for:
 
 - the catalog and supporting models
 - provenance, claim assertion, and claim resolution
-- ingest from external and editorial sources
+- data-patch ingest of catalog data
 - authentication and authorization
 - admin and operational tooling
 - the API exported to the frontend

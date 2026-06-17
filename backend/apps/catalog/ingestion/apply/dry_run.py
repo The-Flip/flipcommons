@@ -225,10 +225,7 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
                 field_name=pca.field_name,
                 claim_key=pca.claim_key or pca.field_name,
                 value=pca.value,
-                citation=pca.citation,
                 source=plan.source,
-                needs_review=pca.needs_review,
-                needs_review_notes=pca.needs_review_notes,
                 license_id=pca.license_id,
             )
 
@@ -253,7 +250,7 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
     # never reaches ``changed``, so the guard would misreport it as a no-op and
     # mask the real validation error. Live is immune — ``_validate_fail_fast``
     # raises before the guard — so this keeps dry-run's diagnostic priority equal.
-    if plan.patch_id is not None and not report.errors:
+    if not report.errors:
         changed = set(existing_changed)
         for p in plan.assertions:
             assert p.entry_index is not None

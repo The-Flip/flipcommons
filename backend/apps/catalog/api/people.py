@@ -19,7 +19,7 @@ from apps.catalog.naming import normalize_catalog_name
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
-from apps.core.models import active_status_q
+from apps.core.models import active_status_q, is_deleted
 from apps.core.schemas import (
     ErrorDetailSchema,
     RateLimitErrorSchema,
@@ -458,10 +458,10 @@ def _active_credit_count(person: Person) -> int:
     designing for the wrong shape.
     """
     # Credit.model XOR Credit.series — exactly one side is non-null. The
-    # null-inclusive ``active_status_q`` can't be used alone because
-    # ``series__status__isnull=True`` matches any Credit where series is
-    # unset, regardless of the model's status. Scope each branch to the
-    # side that's actually populated.
+    # null-inclusive ``active_status_q`` can't be used alone because its
+    # null-status clause matches any Credit where the related side is unset,
+    # regardless of the other side's status. Scope each branch to the side
+    # that's actually populated.
     return person.credits.filter(
         (Q(model__isnull=False) & active_status_q("model"))
         | (Q(series__isnull=False) & active_status_q("series"))
@@ -585,7 +585,7 @@ def restore_person(
     """
     # Bypass .active() — we're looking for soft-deleted people.
     person = get_object_or_404(Person, **{Person.public_id_field: public_id})
-    if person.status != "deleted":
+    if not is_deleted(person.status):
         return Status(422, ErrorDetailSchema(detail="Person is not deleted."))
 
     execute_claims(

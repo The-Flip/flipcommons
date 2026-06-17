@@ -45,9 +45,8 @@ The admin password form is disabled — WorkOS is the only login surface — so 
 | `make mypy`           | Run backend type checks                                    |
 | `make quality`        | Lint + regenerate API types + svelte-check                 |
 | `make codegen`        | Regenerate frontend API types from the backend schema      |
-| `make pull-ingest`    | Download catalog data from R2                              |
-| `make ingest-all`     | Fresh-DB bootstrap: full seed ingest, then all patches     |
-| `make ingest-patches` | Apply pending data patches (the post-seed correction path) |
+| `make pull-patches`   | Download data patches from R2                              |
+| `make ingest-patches` | Apply pending data patches (the bulk catalog write path)   |
 | `make agent-docs`     | Regenerate CLAUDE.md and AGENTS.md from docs/AGENTS.src.md |
 
 ## Project Structure

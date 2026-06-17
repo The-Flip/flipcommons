@@ -263,30 +263,3 @@ Many entities support aliases — alternate names used for matching and search. 
 ### Claims & Provenance
 
 Nearly all fields on catalog entities are claims-controlled — their values are resolved from the provenance system rather than set directly. See [Provenance.md](Provenance.md) for architecture details.
-
-## Mapping from External Sources
-
-This section describes how external data sources map to the domain model during ingestion. See [Ingest.md](Ingest.md) for operational details.
-
-### OPDB
-
-OPDB has no Franchise, Series, or separate corporate-entity concept. Franchise and Series data is hand-curated in pindata.
-
-| OPDB record type                 | `physical_machine` | Maps to          |
-| -------------------------------- | ------------------ | ---------------- |
-| Group ID (e.g. `G5pe4`)          | n/a                | Title            |
-| Non-alias record                 | `1`                | Model            |
-| Non-alias record                 | `0`                | Skipped          |
-| Alias record (`is_alias` is set) | n/a                | Model or Variant |
-
-#### Non-physical machines (`physical_machine=0`)
-
-OPDB uses `physical_machine=0` records as grouping containers (e.g., "Godzilla (Premium/LE)") — these are not real buyable machines. During ingest, these records are skipped entirely. Their alias records are promoted: one alias becomes a canonical Model (chosen by heuristic — Premium > Pro > LE > PE; Collector's Edition is never promoted), and the remaining aliases become variants of it. Curated overrides in pindata correct any heuristic mistakes.
-
-#### Alias records
-
-OPDB alias records (`is_alias` is set) become Variants. They are linked to the Model created by their parent record via `variant_of`.
-
-### IPDB
-
-IPDB records map one-to-one to Models. Title grouping and corporate-entity resolution are handled during ingest. IPDB has no group/alias concept.

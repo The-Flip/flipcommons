@@ -147,10 +147,7 @@ def _get_location_tree() -> _LocationTree:
             "corporate_entity__manufacturer",
         )
         .filter(corporate_entity__manufacturer__isnull=False)
-        .filter(
-            Q(corporate_entity__status="active")
-            | Q(corporate_entity__status__isnull=True)
-        )
+        .filter(active_status_q("corporate_entity"))
     ):
         mfr_pk = cel.corporate_entity.manufacturer_id
         cur: Location | None = cel.location

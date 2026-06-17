@@ -1,8 +1,10 @@
-"""Tests for Claim.license write path — assert_claim and bulk_assert_claims."""
+"""Tests for Claim.license write path — assert_claim and the apply path."""
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
 
+from apps.catalog.ingestion.apply import apply_plan
+from apps.catalog.ingestion.plan import IngestPlan, PlannedClaimAssert
 from apps.core.models import License
 from apps.provenance.models import Claim, Source
 
@@ -54,37 +56,45 @@ class TestAssertClaimLicense:
 
 
 @pytest.mark.django_db
-class TestBulkAssertClaimsLicense:
+class TestApplyPlanLicense:
+    """License-aware claim diffing on the bulk ingest (apply) path."""
+
+    def _desc_plan(self, source, ct_id, obj_id, fp, license_id):
+        # patch_id keyed off the (per-call distinct) fingerprint so the ledger's
+        # per-patch_id uniqueness stays happy across the two runs.
+        return IngestPlan(
+            source=source,
+            input_fingerprint=fp,
+            patch_id=fp,
+            assertions=[
+                PlannedClaimAssert(
+                    field_name="description",
+                    value="text",
+                    content_type_id=ct_id,
+                    object_id=obj_id,
+                    license_id=license_id,
+                    entry_index=0,
+                ),
+            ],
+        )
+
     def test_license_change_detected(self, source, cc_by_sa, not_allowed):
         """Changing only the license on a claim should supersede the old one."""
-
         from apps.catalog.models import Manufacturer
 
         mfr = Manufacturer.objects.create(name="Test", slug="test")
         ct_id = ContentType.objects.get_for_model(Manufacturer).pk
 
         # First: assert with cc_by_sa license.
-        claim1 = Claim(
-            content_type_id=ct_id,
-            object_id=mfr.pk,
-            field_name="description",
-            value="text",
-            license=cc_by_sa,
-        )
-        stats = Claim.objects.bulk_assert_claims(source, [claim1])
-        assert stats["created"] == 1
+        report = apply_plan(self._desc_plan(source, ct_id, mfr.pk, "fp-1", cc_by_sa.pk))
+        assert report.asserted == 1
 
         # Second: same value, different license.
-        claim2 = Claim(
-            content_type_id=ct_id,
-            object_id=mfr.pk,
-            field_name="description",
-            value="text",
-            license=not_allowed,
+        report = apply_plan(
+            self._desc_plan(source, ct_id, mfr.pk, "fp-2", not_allowed.pk)
         )
-        stats = Claim.objects.bulk_assert_claims(source, [claim2])
-        assert stats["created"] == 1
-        assert stats["superseded"] == 1
+        assert report.asserted == 1
+        assert report.superseded == 1
 
         # Verify the active claim has the new license.
         active = Claim.objects.get(
@@ -97,29 +107,14 @@ class TestBulkAssertClaimsLicense:
 
     def test_same_license_unchanged(self, source, cc_by_sa):
         """Re-asserting the same value+license should be a no-op."""
-
         from apps.catalog.models import Manufacturer
 
         mfr = Manufacturer.objects.create(name="Test", slug="test")
         ct_id = ContentType.objects.get_for_model(Manufacturer).pk
 
-        claim = Claim(
-            content_type_id=ct_id,
-            object_id=mfr.pk,
-            field_name="description",
-            value="text",
-            license=cc_by_sa,
-        )
-        Claim.objects.bulk_assert_claims(source, [claim])
+        apply_plan(self._desc_plan(source, ct_id, mfr.pk, "fp-1", cc_by_sa.pk))
 
         # Re-assert identical claim.
-        claim2 = Claim(
-            content_type_id=ct_id,
-            object_id=mfr.pk,
-            field_name="description",
-            value="text",
-            license=cc_by_sa,
-        )
-        stats = Claim.objects.bulk_assert_claims(source, [claim2])
-        assert stats["unchanged"] == 1
-        assert stats["created"] == 0
+        report = apply_plan(self._desc_plan(source, ct_id, mfr.pk, "fp-2", cc_by_sa.pk))
+        assert report.unchanged == 1
+        assert report.asserted == 0

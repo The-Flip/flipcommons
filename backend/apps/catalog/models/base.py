@@ -63,7 +63,7 @@ class CatalogModel(
 ):
     """Abstract marker for top-level catalog entities.
 
-    Used to distinguish catalog-specific code paths (e.g. ``ingest_pindata``,
+    Used to distinguish catalog-specific code paths (e.g. data-patch ingest,
     soft-delete wire format), as well as define the capabilies that all catalog
     models must have.
 
@@ -80,13 +80,6 @@ class CatalogModel(
     # ``LifecycleManager[ModelT]``.
     # See LifecycleStatusModel.objects for why pyright is ignored here.
     objects: ClassVar[LifecycleManager[Self]] = LifecycleManager()  # pyright: ignore[reportInvalidTypeForm]
-
-    # Soft-delete walker policy — see apps/catalog/api/soft_delete.py.
-    # Concrete subclasses override these frozensets when they need to
-    # cascade deletion to dependent entities or block deletion when M2M /
-    # self-ref usage exists. Empty defaults keep the walker generic.
-    soft_delete_cascade_relations: ClassVar[frozenset[str]] = frozenset()
-    soft_delete_usage_blockers: ClassVar[frozenset[str]] = frozenset()
 
     class Meta:
         abstract = True

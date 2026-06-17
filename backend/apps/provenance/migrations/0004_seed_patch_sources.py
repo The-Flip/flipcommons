@@ -5,13 +5,13 @@ facts (e.g. the prototype list). It sits at the user tier (priority 10000)
 so its facts resolve as peer edits (newest-wins, re-breakable).
 
 Corrections to existing data are *not* an override tier: a patch attributes
-to the source that erred (``flipcommons-catalog``, ``ipdb``, ``opdb``, …,
-already seeded by the ingest) and supersedes or retracts that source's own
+to the source that erred (``flipcommons-catalog``, ``ipdb``, ``opdb``, …, which
+arrive with the catalog data) and supersedes or retracts that source's own
 claim. So no editorial override source is seeded here.
 
-Sources are infra-ish, so auto-creating on ``migrate`` is fine: it makes the
-apply command's "error if attribution missing" check meaningful (the rows
-exist after deploy). Idempotent via ``update_or_create``.
+``flip-museum`` is infra-ish, so auto-creating on ``migrate`` is fine: it makes
+the apply command's "error if attribution missing" check meaningful (the row
+exists after deploy). Idempotent via ``update_or_create``.
 """
 
 from __future__ import annotations

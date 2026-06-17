@@ -7,11 +7,12 @@ from collections.abc import Iterable, Mapping, Sequence
 from itertools import chain
 
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Case, F, IntegerField, Prefetch, Q, Value, When
+from django.db.models import Prefetch, Q
 
 from apps.citation.models import CitationSourceLink
 from apps.core.authz import PolicyUser, compute_row_capabilities
 
+from .claim_ranking_in_db import ranked_claims
 from .display import (
     ClaimDisplayContext,
     FieldValue,
@@ -155,22 +156,8 @@ def _compute_winning_claim_ids(ct: ContentType, entity_pk: int) -> set[int]:
     ``effective_priority``, breaking ties by most recent ``created_at``, then
     highest ``pk``.
     """
-    active_claims = (
-        Claim.objects.filter(
-            content_type=ct,
-            object_id=entity_pk,
-            is_active=True,
-        )
-        .exclude(source__is_enabled=False)
-        .annotate(
-            effective_priority=Case(
-                When(source__isnull=False, then=F("source__priority")),
-                When(user__isnull=False, then=F("user__priority")),
-                default=Value(0),
-                output_field=IntegerField(),
-            )
-        )
-        .order_by("claim_key", "-effective_priority", "-created_at", "-pk")
+    active_claims = ranked_claims(
+        Claim.objects.filter(content_type=ct, object_id=entity_pk), "claim_key"
     )
 
     winners: set[int] = set()

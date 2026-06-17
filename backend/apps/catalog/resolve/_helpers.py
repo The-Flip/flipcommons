@@ -1,4 +1,9 @@
-"""Shared helpers for claim resolution: coercion, FK lookup, priority annotation."""
+"""Shared helpers for claim resolution: coercion, FK lookup, field defaults.
+
+The claim winner-pick itself (priority annotation + tiebreak order) lives in
+:mod:`apps.provenance.claim_ranking_in_db`, shared by every ``ClaimControlledModel``
+consumer.
+"""
 
 from __future__ import annotations
 
@@ -6,16 +11,12 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from django.db import models
-from django.db.models import QuerySet
 
 from apps.core.models import meta_unique_fields
 from apps.provenance.models import ClaimControlledModel
-
-if TYPE_CHECKING:
-    from apps.provenance.models import Claim
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,24 @@ class FKInfo:
 # ------------------------------------------------------------------
 
 
+def normalize_fk_value(value: object) -> str | None:
+    """Canonicalize an FK claim value to its public_id lookup key.
+
+    The single normalization an FK claim value passes through before it becomes a
+    public_id lookup: cast to ``str`` and trim. A falsy or whitespace-only value
+    resolves to nothing (``None``). Shared by catalog's two FK-*resolution*
+    lookups — :func:`_resolve_fk_generic` (apply-time) and the patch front end's
+    ``_lookup_pk`` (build-time create/member resolution) — so a padded or
+    non-string value can't normalize one way and look up another. (Provenance's
+    FK-*existence* check in ``validation.py`` sits below catalog and answers a
+    different question — does the value name an existing row — so it keeps its own
+    slug normalization.)
+    """
+    if not value:
+        return None
+    return str(value).strip() or None
+
+
 def _resolve_fk_generic(
     model_class: type[ClaimControlledModel],
     field_name: str,
@@ -75,10 +94,8 @@ def _resolve_fk_generic(
     If *lookup* is provided (pre-fetched slug→instance dict), it is used
     instead of hitting the database.
     """
-    if not value:
-        return None
-    key = str(value).strip()
-    if not key:
+    key = normalize_fk_value(value)
+    if key is None:
         return None
 
     field = model_class._meta.get_field(field_name)
@@ -168,40 +185,6 @@ def _coerce(
         return bool(value)
 
     return value
-
-
-# ------------------------------------------------------------------
-# Claim query helpers
-# ------------------------------------------------------------------
-
-
-def _annotate_priority(qs: QuerySet[Claim]) -> QuerySet[Claim]:
-    """Filter to active claims from enabled sources, annotate effective_priority.
-
-    Returns a queryset with ``effective_priority`` annotation (highest wins)
-    and ``select_related("source", "user")``.  Callers supply their
-    own ``.order_by()`` and may chain additional ``.select_related()`` or
-    ``.filter()`` calls.
-
-    Callers that ``.order_by("-effective_priority")`` must add
-    ``# type: ignore[misc]`` — django-stubs validates order_by strings against
-    the model's declared fields and cannot see runtime ``.annotate()`` fields.
-    """
-    from django.db.models import Case, F, IntegerField, Value, When
-
-    return (
-        qs.filter(is_active=True)
-        .exclude(source__is_enabled=False)
-        .select_related("source", "user")
-        .annotate(
-            effective_priority=Case(
-                When(source__isnull=False, then=F("source__priority")),
-                When(user__isnull=False, then=F("user__priority")),
-                default=Value(0),
-                output_field=IntegerField(),
-            )
-        )
-    )
 
 
 # ------------------------------------------------------------------

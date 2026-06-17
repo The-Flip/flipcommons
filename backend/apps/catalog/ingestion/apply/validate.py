@@ -101,17 +101,14 @@ def _validate_handle_refs(plan: IngestPlan) -> None:
 
 
 def _validate_entry_index_stamping(plan: IngestPlan) -> None:
-    """Every assertion/retraction in a patch plan must carry an ``entry_index``.
+    """Every assertion/retraction must carry an ``entry_index``.
 
-    Patch runs group ChangeSets by ``entry_index`` (``_persist`` patch mode), so a
-    missed stamp — or a hand-built ``patch_id`` plan that forgot to set one —
-    would silently collapse the whole run under a single group. The patch adapter
-    always stamps, so this is an internal invariant: a plain ``ValueError``, not a
-    source-facing ``ValidationError``/``PatchError``. Non-patch plans
-    (``patch_id is None``) group per entity and never read the index, so are exempt.
+    ``_persist`` groups ChangeSets by ``entry_index``, so a missed stamp would
+    silently collapse the whole run under a single group. The front end stamps
+    every entry in a second pass (see ``planning.build_plan``); this guards that
+    invariant — a plain ``ValueError`` (an internal bug), not a source-facing
+    ``ValidationError``/``PatchError``.
     """
-    if plan.patch_id is None:
-        return
     for pca in plan.assertions:
         if pca.entry_index is None:
             raise ValueError(

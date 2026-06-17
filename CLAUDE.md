@@ -45,9 +45,8 @@ make lint         # Run ruff (backend) + eslint/prettier (frontend)
 make mypy         # Run backend type checks
 make quality      # Lint + regenerate API types + svelte-check
 make codegen      # Regenerate frontend API types from the backend schema
-make pull-ingest    # Download catalog data from R2
-make ingest-all     # Fresh-DB bootstrap: full seed pipeline, then data patches
-make ingest-patches # Apply pending data patches (the post-seed correction path)
+make pull-patches   # Download data patches from R2
+make ingest-patches # Apply pending data patches (the bulk catalog write path)
 make agent-docs     # Regenerate CLAUDE.md and AGENTS.md
 ```
 
@@ -247,7 +246,7 @@ GitHub access:
 
 ## Data Ingestion
 
-The catalog app has management commands for importing from external data sources (IPDB, OPDB, Fandom wiki, etc.). Run `make pull-ingest` to download data from R2, then `make ingest-all` to run the full pipeline on a fresh DB. An already-seeded system (prod, dev) is never re-ingested — it only runs `make ingest-patches` to apply pending data patches. See [docs/Ingest.md](Ingest.md) for sources, file formats, and production ingestion steps, and [docs/DataPatches.md](DataPatches.md) for the patch model.
+Catalog data enters the database exclusively through **data patches** — numbered YAML files applied by `make ingest-patches`. There is no seed-ingest of external sources. Run `make pull-patches` to download patches from R2, then `make ingest-patches` to apply the pending ones (idempotent — already-applied patches are skipped). See [docs/DataPatches.md](DataPatches.md) for the patch model and [docs/Data.md](Data.md) for the overall data flow.
 
 ## Pre-commit Hooks
 
@@ -307,13 +306,13 @@ When reviewing code or a PR, read [docs/Reviewing.md](Reviewing.md) first and fo
 
 This project has three sister projects:
 
-### Catalog seed records
-
-**[pindata](https://github.com/deanmoses/pindata)**: pre-launch seed canonical catalog records (markdown files + JSON schemas). It publishes the catalog as JSON to Cloudflare R2 and this project pulls it down from R2 via `make pull-ingest`.
-
 ### Data patches
 
-**[flippatch](https://github.com/deanmoses/flippatch)**: the numbered `NNNN-slug.yaml` data patches applied on top of the seed (split out of pindata). It publishes them to Cloudflare R2 and this project pulls them via `make pull-patches`, then applies them with `make ingest-patches`. See [DataPatches.md](DataPatches.md).
+**[flippatch](https://github.com/deanmoses/flippatch)**: the numbered `NNNN-slug.yaml` data patches — the sole bulk write path into the catalog (split out of pindata). It publishes them to Cloudflare R2 and this project pulls them via `make pull-patches`, then applies them with `make ingest-patches`. See [DataPatches.md](DataPatches.md).
+
+### Catalog seed records
+
+**[pindata](https://github.com/deanmoses/pindata)**: canonical seed catalog source records (markdown files + JSON schemas). Originally bulk-ingested to bootstrap the database; flipcommons no longer ingests it directly. It remains a source repo for catalog facts and feeds pinexplore.
 
 ### Analytics DB over pinball data
 

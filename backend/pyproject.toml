@@ -22,7 +22,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "beautifulsoup4>=4.12",
     "django-stubs-ext>=6.0.3",
     "django-stubs[compatible-mypy]>=6.0.3",
     "libcst>=1.8.6",
@@ -30,9 +29,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-django>=4.9",
     "pytest-xdist>=3.8.0",
-    "requests>=2.32",
     "ruff>=0.8",
-    "types-requests>=2.32",
     "types-pyyaml>=6.0",
 ]
 

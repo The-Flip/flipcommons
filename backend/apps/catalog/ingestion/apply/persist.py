@@ -159,11 +159,10 @@ def _collect_plan_provenance(
       per entry — so a citation never bleeds onto unrelated claims (or the
       create-owned scaffolding) that merely share the entity.
     * ``claim_entry_index`` (keyed by claim identity) lets ``_persist`` group
-      built claims into per-entry ChangeSets. Recorded for *every* patch
-      assertion — note-less ones included — so a multi-entry patch still groups
-      correctly. Skipped when ``entry_index`` is ``None`` (non-patch runs), which
-      keeps the value type a clean ``int``; ``_persist`` reads it only in patch
-      mode, where the coupling check has proven every index non-``None``.
+      built claims into per-entry ChangeSets. Recorded for *every* assertion —
+      note-less ones included — so a multi-entry patch still groups correctly.
+      The front end's second pass stamps every assertion, so the index is
+      always present here.
 
     The disjoint-field guard ensures no two entries assert the same
     ``ClaimIdentity``, so the map is 1:1 with the deduped claim set and
@@ -179,13 +178,12 @@ def _collect_plan_provenance(
         assert ct_id is not None
         assert obj_id is not None
         ident = ClaimIdentity(ct_id, obj_id, pca.claim_key or pca.field_name)
-        if pca.entry_index is not None:
-            claim_entry_index[ident] = pca.entry_index
+        # Every assertion is stamped by the front end's second pass.
+        assert pca.entry_index is not None
+        claim_entry_index[ident] = pca.entry_index
         if not pca.note and pca.citation_ref is None:
-            continue  # the common case (all normal-ingest assertions)
+            continue  # the common case: a plain assertion with no note/cite
         if pca.note:
-            # A note only ever rides a patch entry, which always stamps its index.
-            assert pca.entry_index is not None
             entry_notes[pca.entry_index] = pca.note
         if pca.citation_ref is not None:
             claim_citations[ident] = pca.citation_ref
@@ -209,9 +207,6 @@ def _check_empty_diff_entries(
     The dry-run path computes ``changed`` differently (see ``_apply_dry_run``); the
     rejection logic itself is shared.
     """
-    if plan.patch_id is None:
-        return
-
     changed: set[EntryIndex] = set()
     for claim in to_create:
         changed.add(
@@ -343,10 +338,8 @@ def _persist(
     entities in ``to_create`` (a superseded claim has a replacement), so the
     empty-check on ``to_create`` is sufficient.
 
-    Grouping is mode-selected on ``run.patch_id``: patch runs mint one ChangeSet
-    per authoring entry (``entry_index``, carrying that entry's note); normal
-    ingests (IPDB/OPDB) mint one per affected entity. A run is single-adapter, so
-    exactly one mode is in force.
+    ChangeSets are minted one per authoring patch entry (``entry_index``, carrying
+    that entry's note) — see :func:`_persist_per_entry`.
     """
     if not to_create and not retract_entries:
         return
@@ -354,12 +347,7 @@ def _persist(
     if superseded_ids:
         Claim.objects.filter(pk__in=superseded_ids).update(is_active=False)
 
-    if run.patch_id is not None:
-        _persist_per_entry(
-            run, to_create, retract_entries, entry_notes, claim_entry_index
-        )
-    else:
-        _persist_per_entity(run, to_create, retract_entries)
+    _persist_per_entry(run, to_create, retract_entries, entry_notes, claim_entry_index)
 
 
 def _link_to_changesets[K](
@@ -371,10 +359,12 @@ def _link_to_changesets[K](
 ) -> None:
     """Point each new claim and retraction at its ChangeSet, then write.
 
-    Shared tail of the two ``_persist_*`` modes — they differ only in the grouping
-    key (``entry_index`` vs ``EntityKey``), supplied here as the ``claim_group`` /
-    ``retract_group`` extractors over an already-built ``group_to_cs``. Retracted
-    claims are deactivated in bulk per ChangeSet, stamped ``retracted_by_changeset``.
+    The changeset-linking tail of ``_persist_per_entry``, parameterized by the
+    grouping key via the ``claim_group`` / ``retract_group`` extractors over an
+    already-built ``group_to_cs``. Kept generic over the key ``K`` so a second
+    grouping mode (e.g. per-entity, for a future non-patch source) can reuse it
+    without re-deriving this. Retracted claims are deactivated in bulk per
+    ChangeSet, stamped ``retracted_by_changeset``.
     """
     for claim in to_create:
         claim.changeset_id = group_to_cs[claim_group(claim)].pk
@@ -427,34 +417,6 @@ def _persist_per_entry(
     ChangeSet.objects.bulk_create(changesets)
     idx_to_cs = dict(zip(ordered, changesets, strict=True))
     _link_to_changesets(to_create, retract_entries, idx_to_cs, claim_idx, retract_idx)
-
-
-def _persist_per_entity(
-    run: IngestRun,
-    to_create: list[Claim],
-    retract_entries: list[RetractEntry],
-) -> None:
-    """One ChangeSet per affected entity — the normal-ingest (IPDB/OPDB) path.
-
-    Non-patch runs carry no per-entry notes, so each ChangeSet's note is empty.
-    """
-
-    def claim_entity(claim: Claim) -> EntityKey:
-        return EntityKey(claim.content_type_id, claim.object_id)
-
-    def retract_entity(entry: RetractEntry) -> EntityKey:
-        return EntityKey(entry.content_type_id, entry.object_id)
-
-    ordered = sorted(
-        {claim_entity(c) for c in to_create}
-        | {retract_entity(e) for e in retract_entries}
-    )
-    changesets = [ChangeSet(ingest_run=run, note="") for _ in ordered]
-    ChangeSet.objects.bulk_create(changesets)
-    entity_to_cs = dict(zip(ordered, changesets, strict=True))
-    _link_to_changesets(
-        to_create, retract_entries, entity_to_cs, claim_entity, retract_entity
-    )
 
 
 def _resolve(

@@ -185,6 +185,48 @@ claims:
     assert {"slug", "name", "status"} <= keys
 
 
+def test_create_resolves_padded_fk_value():
+    # _lookup_pk canonicalizes FK values with the same str-cast + trim the
+    # apply-time resolver uses, so a padded create FK resolves to its target
+    # instead of erroring as not-found — no build-vs-apply FK drift.
+    Manufacturer.objects.create(name="Acme", slug="acme-mfr")
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - corporate-entity.acme-incarnation:
+      create: true
+      name: Acme Incarnation
+      manufacturer: ' acme-mfr '
+"""
+    report = _apply(text, patch_id="0001-padded-fk")
+    assert report.records_created == 1
+    ce = CorporateEntity.objects.get(slug="acme-incarnation")
+    assert ce.manufacturer.slug == "acme-mfr"
+
+
+def test_create_resolves_padded_fk_to_same_patch_create():
+    # The same-patch-create analogue: an FK value is canonicalized identically
+    # whether the target is committed or created earlier in this patch, so a
+    # padded reference reaches the earlier create via the registry
+    # (created_handle) just as it reaches a committed row — no committed-vs-create
+    # split.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme-mfr:
+      create: true
+      name: Acme
+  - corporate-entity.acme-incarnation:
+      create: true
+      name: Acme Incarnation
+      manufacturer: ' acme-mfr '
+"""
+    report = _apply(text, patch_id="0001-padded-fk-create")
+    assert report.records_created == 2
+    ce = CorporateEntity.objects.get(slug="acme-incarnation")
+    assert ce.manufacturer.slug == "acme-mfr"
+
+
 def test_create_when_already_exists_errors(manufacturer):
     text = f"""
 attribution: flipcommons-catalog
@@ -715,23 +757,15 @@ claims:
         _apply(text)
 
 
-# ── Drift guard ────────────────────────────────────────────────────
+# ── expect: (legacy drift guard, now accepted-but-ignored) ─────────────
+#
+# `expect:` stays parseable so older patches that carry it still apply, but it
+# no longer guards anything — a mismatch is silently ignored, not an error.
 
 
-def test_expect_scalar_match_applies(machine_model):
-    text = f"""
-attribution: flipcommons-catalog
-claims:
-  - model.{machine_model.slug}:
-      expect: {{ year: {machine_model.year} }}
-      year: 1990
-"""
-    _apply(text)
-    machine_model.refresh_from_db()
-    assert machine_model.year == 1990
-
-
-def test_expect_scalar_mismatch_errors_before_write(machine_model):
+def test_expect_accepted_but_ignored_on_edit(machine_model):
+    # A wrong expect: used to fail before any write; now it's ignored and the
+    # edit applies anyway.
     text = f"""
 attribution: flipcommons-catalog
 claims:
@@ -739,45 +773,23 @@ claims:
       expect: {{ year: 1234 }}
       year: 1990
 """
-    with pytest.raises(PatchError, match="expect year"):
-        _apply(text)
-    assert not Claim.objects.filter(source__slug="flipcommons-catalog").exists()
+    _apply(text)
+    machine_model.refresh_from_db()
+    assert machine_model.year == 1990
 
 
-def test_expect_fk_match_and_mismatch(stern_entity):
-    ok = """
-attribution: flipcommons-catalog
-claims:
-  - corporate-entity.stern-pinball-inc:
-      expect: { manufacturer: stern }
-      year_start: 1986
-"""
-    _apply(ok, patch_id="0001-ok")
-    stern_entity.refresh_from_db()
-    assert stern_entity.year_start == 1986
-
-    bad = """
-attribution: flipcommons-catalog
-claims:
-  - corporate-entity.stern-pinball-inc:
-      expect: { manufacturer: williams }
-      year_start: 1990
-"""
-    with pytest.raises(PatchError, match="expect manufacturer"):
-        _apply(bad, patch_id="0002-bad")
-
-
-def test_expect_on_create_errors():
+def test_expect_accepted_but_ignored_on_create():
+    # expect: on a create is no longer rejected — it's simply ignored.
     text = """
 attribution: flipcommons-catalog
 claims:
   - manufacturer.acme-pinball:
       name: Acme
       create: true
-      expect: { name: Acme }
+      expect: { name: Whatever }
 """
-    with pytest.raises(PatchError, match="meaningless on a create"):
-        _apply(text)
+    _apply(text)
+    assert Manufacturer.objects.filter(slug="acme-pinball").exists()
 
 
 # ── Retract ────────────────────────────────────────────────────────
@@ -1073,14 +1085,13 @@ def _grouped_notes(patch_id: str) -> list[str]:
 
 
 def test_grouped_pure_wrapper_expands(machine_model):
-    # The dai-uchuu shape: one header (ref + expect:) wrapping two separately
-    # cited changesets. Parses to two EditEntrys sharing ref + expect; both land
-    # as their own ChangeSet, in file order.
+    # The dai-uchuu shape: one header (the ref) wrapping two separately cited
+    # changesets. Parses to two EditEntrys sharing the ref; both land as their
+    # own ChangeSet, in file order.
     text = f"""
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
-      expect: {{ year: 1997 }}
       changesets:
         - note: first change
           player_count: 4
@@ -1090,9 +1101,6 @@ claims:
     doc = load_patch(text)
     assert [type(e) for e in doc.claims] == [EditEntry, EditEntry]
     assert {e.ref for e in doc.claims} == {f"model.{machine_model.slug}"}
-    assert all(
-        isinstance(e, EditEntry) and e.expect == {"year": 1997} for e in doc.claims
-    )
 
     report = _apply(text, patch_id="0001-grouped")
     assert report.rejected == 0
@@ -1102,10 +1110,10 @@ claims:
     assert machine_model.flipper_count == 2
 
 
-def test_grouped_expect_guards_every_item(machine_model):
-    # The header's expect: guards every changeset; a mismatch fails before any
-    # write, a match applies all items.
-    bad = f"""
+def test_grouped_header_expect_ignored(machine_model):
+    # A header expect: is accepted-but-ignored; every changeset still applies
+    # even when the expect would have mismatched.
+    text = f"""
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
@@ -1114,20 +1122,7 @@ claims:
         - player_count: 4
         - flipper_count: 2
 """
-    with pytest.raises(PatchError, match="expect year"):
-        _apply(bad, patch_id="0001-bad")
-    assert not Claim.objects.filter(source__slug="flipcommons-catalog").exists()
-
-    ok = f"""
-attribution: flipcommons-catalog
-claims:
-  - model.{machine_model.slug}:
-      expect: {{ year: 1997 }}
-      changesets:
-        - player_count: 4
-        - flipper_count: 2
-"""
-    assert _apply(ok, patch_id="0002-ok").rejected == 0
+    assert _apply(text).rejected == 0
     machine_model.refresh_from_db()
     assert (machine_model.player_count, machine_model.flipper_count) == (4, 2)
 
@@ -1211,14 +1206,13 @@ claims:
 
 
 @pytest.mark.parametrize(
-    "forbidden", ["create: true", "delete: true", "expect: {}", "changesets: []"]
+    "forbidden", ["create: true", "delete: true", "changesets: []"]
 )
 def test_grouped_item_header_only_key_rejected(forbidden):
     text = f"""
 attribution: flipcommons-catalog
 claims:
   - model.medieval-madness:
-      expect: {{ year: 1997 }}
       changesets:
         - note: x
           {forbidden}
@@ -1597,6 +1591,182 @@ claims:
     assert williams.status == "deleted"
 
 
+def test_reassign_fk_onto_deleted_root_rejected(machine_model, stern_entity):
+    # The onto-hole: reassign the machine's corporate_entity *onto* stern, then
+    # delete stern — in ONE patch. The committed delete-blocker can't see the
+    # machine point at stern (it still points at williams in the DB), so the
+    # delete would proceed and leave the machine dangling at a soft-deleted
+    # entity. The build-time guard rejects it: an FK claim targets an entity the
+    # same patch deletes.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: stern-pinball-inc
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-root")
+    stern_entity.refresh_from_db()
+    assert stern_entity.status != "deleted"
+
+
+def test_reassign_fk_onto_deleted_cascade_child_rejected(machine_model, db):
+    # Same hole, but the deleted entity is a *cascade child*, not the root.
+    # Deleting the Title cascades to its MachineModel (medieval-madness); a second
+    # machine reassigns variant_of onto medieval-madness in the same patch. The
+    # guard must intersect the FK target with the whole cascade footprint, not
+    # only the delete root.
+    other_title = Title.objects.create(name="Other Title", slug="other-title")
+    MachineModel.objects.create(name="Other Pin", slug="other-pin", title=other_title)
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.other-pin:
+      variant_of: {machine_model.slug}
+  - title.medieval-madness-title:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-cascade")
+    machine_model.refresh_from_db()
+    assert machine_model.status is None  # delete did not proceed
+
+
+def test_create_with_fk_onto_deleted_rejected(db, flipcommons_catalog):
+    # The `_lookup_pk` mirror: a *create* whose FK targets a same-patch-deleted
+    # entity produces the identical dangling row, and an edit-scoped scan would
+    # miss it (creates carry no perturbed cell). The fresh manufacturer has no
+    # other referrers, so only the onto-guard — not the delete-blocker — can catch
+    # this.
+    Manufacturer.objects.create(name="Doomed Brand", slug="doomed-brand")
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - corporate-entity.new-incarnation:
+      create: true
+      name: New Incarnation
+      manufacturer: doomed-brand
+  - manufacturer.doomed-brand:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-create")
+    assert Manufacturer.objects.get(slug="doomed-brand").status != "deleted"
+    assert not CorporateEntity.objects.filter(slug="new-incarnation").exists()
+
+
+def test_reassign_onto_live_entity_not_rejected(machine_model, stern_entity):
+    # Negative pin: the guard fires only when the onto-target is *deleted*.
+    # Reassigning the machine onto stern (a live entity nobody deletes) is an
+    # ordinary edit and must pass.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: stern-pinball-inc
+"""
+    report = _apply(text, patch_id="0001-onto-live")
+    assert report.rejected == 0
+    machine_model.refresh_from_db()
+    assert machine_model.corporate_entity_id == stern_entity.pk
+
+
+def test_losing_fk_reassign_onto_deleted_still_rejected(machine_model, stern_entity):
+    # Documented over-coverage: the guard is *syntactic* (on the FK claim target),
+    # not on the resolved post-patch FK. A higher-priority source pins the
+    # machine's corporate_entity to williams, so the patch's stern claim *loses*
+    # resolution — yet because the patch still asserts corporate_entity=stern and
+    # deletes stern, the guard rejects it. Rejecting a pointless point-at-X-and-
+    # delete-X claim is the strict, defensible choice.
+    authority = Source.objects.create(
+        name="Authority", slug="authority", source_type="editorial", priority=900
+    )
+    Claim.objects.assert_claim(
+        machine_model, "corporate_entity", "williams-electronics", source=authority
+    )
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: stern-pinball-inc
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-losing")
+    stern_entity.refresh_from_db()
+    assert stern_entity.status != "deleted"
+
+
+def test_reassign_fk_onto_deleted_normalizes_whitespace(machine_model, stern_entity):
+    # The guard must canonicalize FK values exactly as apply-time resolution does
+    # (_resolve_fk_generic str-casts and trims). A whitespace-padded value would
+    # otherwise slip the raw-string guard yet still resolve the live machine onto
+    # stern after the same patch deletes it — a dangling reference.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: ' stern-pinball-inc '
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-ws")
+    stern_entity.refresh_from_db()
+    assert stern_entity.status != "deleted"
+
+
+def test_reassign_fk_onto_deleted_normalizes_numeric(machine_model, manufacturer):
+    # A non-str FK value (YAML int) must not skip the guard: apply resolves it via
+    # str(value).strip(), so a numeric slug-like value dangles just the same.
+    doomed = CorporateEntity.objects.create(
+        name="Numbered", slug="1234", manufacturer=manufacturer
+    )
+    Claim.objects.assert_claim(
+        doomed,
+        "name",
+        "Numbered",
+        source=Source.objects.get(slug="flipcommons-catalog"),
+    )
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: 1234
+  - corporate-entity.1234:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-num")
+    doomed.refresh_from_db()
+    assert doomed.status != "deleted"
+
+
+def test_referrer_itself_deleted_onto_target_rejected(machine_model, stern_entity):
+    # The second documented over-coverage shape: the row reassigned *onto* stern is
+    # itself deleted in the same patch (so post-apply it wouldn't actually dangle).
+    # The syntactic guard rejects it anyway — point-at-X and delete-X in one file —
+    # exactly as it rejects a losing claim. Here the machine's own Title is deleted,
+    # cascading the machine to status=deleted.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: stern-pinball-inc
+  - title.medieval-madness-title:
+      delete: true
+  - corporate-entity.stern-pinball-inc:
+      delete: true
+"""
+    with pytest.raises(PatchError, match="points at"):
+        _apply(text, patch_id="0001-onto-self-del")
+    stern_entity.refresh_from_db()
+    assert stern_entity.status != "deleted"
+
+
 def test_delete_is_idempotent(stern_entity):
     text = """
 attribution: flipcommons-catalog
@@ -1615,28 +1785,17 @@ claims:
     assert stern_entity.status == "deleted"
 
 
-def test_delete_with_expect_guard(stern_entity):
-    # A mismatched expect: fails loudly before the delete writes anything.
-    bad = """
+def test_delete_with_expect_ignored(stern_entity):
+    # expect: on a delete is accepted-but-ignored; the delete applies even when
+    # the expect would have mismatched.
+    text = """
 attribution: flipcommons-catalog
 claims:
   - corporate-entity.stern-pinball-inc:
       expect: { manufacturer: williams }
       delete: true
 """
-    with pytest.raises(PatchError, match="expect manufacturer"):
-        _apply(bad, patch_id="0001-bad")
-    stern_entity.refresh_from_db()
-    assert stern_entity.status != "deleted"
-
-    ok = """
-attribution: flipcommons-catalog
-claims:
-  - corporate-entity.stern-pinball-inc:
-      expect: { manufacturer: stern }
-      delete: true
-"""
-    _apply(ok, patch_id="0002-ok")
+    _apply(text)
     stern_entity.refresh_from_db()
     assert stern_entity.status == "deleted"
 
@@ -1802,7 +1961,6 @@ sources:
 @pytest.mark.parametrize(
     ("directive", "match"),
     [
-        ("expect: {}", "meaningless on a create"),
         ("retract: []", "meaningless on a create"),
         ("remove: {}", "meaningless on a create"),
     ],
@@ -2553,7 +2711,6 @@ def test_non_string_identity_rejected(monkeypatch):
     entry = EditEntry(
         entity_type="manufacturer",
         public_id="stern",
-        expect={},
         retract=[],
         remove={},
         fields={},
@@ -2664,7 +2821,6 @@ def test_member_identity_shares_canonical_fold():
     entry = EditEntry(
         entity_type="manufacturer",
         public_id="stern",
-        expect={},
         retract=[],
         remove={},
         fields={},
@@ -2680,7 +2836,6 @@ def test_member_identity_shares_canonical_fold():
     abbr_entry = EditEntry(
         entity_type="model",
         public_id="medieval-madness",
-        expect={},
         retract=[],
         remove={},
         fields={},
