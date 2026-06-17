@@ -7,7 +7,6 @@ import pytest
 from apps.catalog.api._typing import CreditKey, CreditPkKey
 from apps.catalog.api.edit_claims import (
     FieldConstraintSchema,
-    StructuredValidationError,
     _normalize_abbreviations,
     build_credit_claim_specs,
     build_gameplay_feature_claim_specs,
@@ -18,6 +17,7 @@ from apps.catalog.api.edit_claims import (
     plan_scalar_field_claims,
     validate_scalar_fields,
 )
+from apps.catalog.exceptions import StructuredValidationError
 from apps.catalog.models import CorporateEntity, MachineModel, Person, Title
 
 

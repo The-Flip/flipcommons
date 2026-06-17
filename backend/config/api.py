@@ -8,11 +8,9 @@ from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError, ValidationError
 from ninja.security import django_auth
 
-from apps.catalog.api.edit_claims import (
-    FieldConstraintSchema,
-    StructuredValidationError,
-)
+from apps.catalog.api.edit_claims import FieldConstraintSchema
 from apps.catalog.api.export import export_rate_limit_summary, export_router
+from apps.catalog.exceptions import StructuredValidationError
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.exceptions import StructuredApiError

@@ -40,6 +40,7 @@ from apps.provenance.schemas import (
     ChangeSetInputSchema,
 )
 
+from ..exceptions import StructuredValidationError
 from ..models import (
     Cabinet,
     Credit,
@@ -60,7 +61,6 @@ from ..models import (
 from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import (
     ClaimSpec,
-    StructuredValidationError,
     execute_claims,
     plan_abbreviation_claims,
     plan_credit_claims,

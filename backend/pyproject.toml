@@ -267,7 +267,6 @@ ignore_imports = [
     "apps.catalog.cache -> apps.catalog.api.export",
     "apps.catalog.ingestion.patches.emit -> apps.catalog.api.soft_delete",
     "apps.catalog.ingestion.patches.planning -> apps.catalog.api.soft_delete",
-    "apps.catalog.services.location_paths -> apps.catalog.api.edit_claims",
 ]
 
 [tool.mypy]

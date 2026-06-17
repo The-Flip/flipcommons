@@ -21,7 +21,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 
-from apps.catalog.api.edit_claims import StructuredValidationError
+from apps.catalog.exceptions import StructuredValidationError
 from apps.catalog.models import (
     CorporateEntity,
     CorporateEntityLocation,
