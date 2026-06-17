@@ -5,6 +5,9 @@ cd "$(dirname "$0")/.."
 echo "==> Backend lint..."
 (cd backend && uv run ruff check . && uv run ruff format --check .)
 
+echo "==> Backend import boundaries..."
+(cd backend && uv run lint-imports)
+
 echo "==> Backend type check..."
 (cd backend && uv run mypy --config-file pyproject.toml .)
 
