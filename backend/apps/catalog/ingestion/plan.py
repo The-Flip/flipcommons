@@ -163,10 +163,6 @@ class PlannedClaimAssert:
     # genuinely arbitrary, so the type stays open.
     value: Any = None
     claim_key: str = ""
-    # Legacy free-text citation string written to ``Claim.citation`` (used by
-    # some ingest paths). Distinct from ``citation_ref`` below, which is the
-    # structured CitationInstance reference — don't conflate them.
-    citation: str = ""
     # Per-entry patch provenance. ``note`` flows to the entity's ChangeSet
     # note; ``citation_ref`` (set only on explicit-field assertions, never the
     # create-owned slug/status scaffolding) is materialized as a
@@ -188,8 +184,6 @@ class PlannedClaimAssert:
     content_type_id: int | None = None
     object_id: int | None = None
     handle: Handle | None = None
-    needs_review: bool = False
-    needs_review_notes: str = ""
     license_id: int | None = None
     # Deferred relationship claim identity:
     relationship_namespace: Namespace = ""

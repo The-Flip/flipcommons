@@ -66,10 +66,7 @@ def _build_claims(
             field_name=pca.field_name,
             claim_key=claim_key,
             value=pca.value,
-            citation=pca.citation,
             source=source,
-            needs_review=pca.needs_review,
-            needs_review_notes=pca.needs_review_notes,
             license_id=pca.license_id,
         )
         seen[ClaimIdentity(content_type_id, object_id, claim_key)] = claim
@@ -139,17 +136,11 @@ def _diff_claims(
             "object_id",
             "claim_key",
             "value",
-            "citation",
-            "needs_review",
-            "needs_review_notes",
             "license_id",
         ):
-            pk, ct, oid, ck, val, cit, nr, nrn, lic_id = row
+            pk, ct, oid, ck, val, lic_id = row
             existing[ClaimIdentity(ct, oid, ck)] = ExistingClaimRow(
                 value=val,
-                citation=cit,
-                needs_review=nr,
-                needs_review_notes=nrn,
                 license_id=lic_id,
                 pk=pk,
             )
@@ -161,13 +152,7 @@ def _diff_claims(
         key = ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)
         old = existing.get(key)
         if old:
-            if (
-                old.value == claim.value
-                and old.citation == claim.citation
-                and old.needs_review == claim.needs_review
-                and old.needs_review_notes == claim.needs_review_notes
-                and old.license_id == claim.license_id
-            ):
+            if old.value == claim.value and old.license_id == claim.license_id:
                 continue
             superseded_ids.append(old.pk)
         to_create.append(claim)

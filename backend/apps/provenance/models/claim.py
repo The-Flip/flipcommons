@@ -40,9 +40,6 @@ class ExistingClaimRow(NamedTuple):
 
     # ``value`` is the raw JSONField payload — scalar, dict, list, or null.
     value: object
-    citation: str
-    needs_review: bool
-    needs_review_notes: str
     license_id: int | None
     pk: int
 

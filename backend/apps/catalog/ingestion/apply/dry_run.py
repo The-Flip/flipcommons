@@ -225,10 +225,7 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
                 field_name=pca.field_name,
                 claim_key=pca.claim_key or pca.field_name,
                 value=pca.value,
-                citation=pca.citation,
                 source=plan.source,
-                needs_review=pca.needs_review,
-                needs_review_notes=pca.needs_review_notes,
                 license_id=pca.license_id,
             )
 
