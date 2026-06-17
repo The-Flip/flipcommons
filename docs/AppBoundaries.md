@@ -64,6 +64,7 @@ Beyond the cross-app tiers, several intra-app invariants are enforced:
 - **Domain models do not import the api/schema layer** — a model reaching up into HTTP serialization is a dependency inversion.
 - **The api layer is a leaf** — the domain (models, services, resolve, ingestion, …) must not import back into `api/`. Catalog and core both have multi-module `api/` packages with their own leaf contracts; the remaining apps are single `api.py` modules and leaves by construction.
 - **Production code does not import test factories** — `test_factories` is test-only scaffolding and must not enter the runtime path.
+- **Catalog domain does not import the ingest system** — `ingestion/` is the bulk write path, a top-level consumer. The rest of catalog must not import it; only the management commands that drive ingest may, as the orchestration entrypoint.
 - **Patch front end does not depend on the ingest back end** — the patch system lowers YAML to an `IngestPlan` (the IR); `catalog.ingestion.patches` must not reach into `catalog.ingestion.apply`. See [DataArchitecture.md](DataArchitecture.md).
 - **Media internal layering** — `constants < models < {storage|processing|schemas|helpers} < authz < api`, a `layers` contract that also keeps `media.api` a leaf.
 

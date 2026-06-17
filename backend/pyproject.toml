@@ -265,6 +265,28 @@ ignore_imports = [
     "apps.catalog.ingestion.patches.planning -> apps.catalog.api.soft_delete",
 ]
 
+# The ingest system (ingestion/) is the bulk catalog write path — a top-level
+# consumer, not a dependency. The rest of catalog must not import it; only the
+# management commands that drive ingest (manage.py ingest_patches / pull_patches)
+# may, and they live outside this source list as the orchestration entrypoint.
+[[tool.importlinter.contracts]]
+name = "Catalog domain does not import the ingest system"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.catalog.models",
+    "apps.catalog.claims",
+    "apps.catalog.resolve",
+    "apps.catalog.services",
+    "apps.catalog.cache",
+    "apps.catalog.naming",
+    "apps.catalog.signals",
+    "apps.catalog.authz",
+    "apps.catalog.api",
+]
+forbidden_modules = ["apps.catalog.ingestion"]
+ignore_imports = ["apps.catalog.*.tests.** -> apps.catalog.ingestion.**"]
+
 # core has a multi-module api/ package (like catalog); the same leaf rule applies.
 [[tool.importlinter.contracts]]
 name = "The core api layer is a leaf"
