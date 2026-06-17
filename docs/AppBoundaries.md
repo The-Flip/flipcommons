@@ -59,10 +59,12 @@ These rules are enforced statically by [import-linter](https://import-linter.rea
 
 The tiers above map to a `layers` contract; the media peer-isolation rules map to two `forbidden` contracts (one per direction). The `media.models -> provenance.models` exception and the page-API carve-out are expressed as `ignore_imports` entries, as is the test surface — tests are exempt from boundary rules, the same way the frontend ESLint config gives test files vendor-boundary-only treatment.
 
-Beyond the cross-app tiers, three intra-app invariants are enforced:
+Beyond the cross-app tiers, several intra-app invariants are enforced:
 
 - **Domain models do not import the api/schema layer** — a model reaching up into HTTP serialization is a dependency inversion.
-- **The api layer is a leaf** — the domain (models, services, resolve, ingestion, …) must not import back into `api/`. Only catalog has a multi-module `api/` package; the other apps are single `api.py` modules and leaves by construction.
+- **The api layer is a leaf** — the domain (models, services, resolve, ingestion, …) must not import back into `api/`. Catalog and core both have multi-module `api/` packages with their own leaf contracts; the remaining apps are single `api.py` modules and leaves by construction.
 - **Production code does not import test factories** — `test_factories` is test-only scaffolding and must not enter the runtime path.
+- **Patch front end does not depend on the ingest back end** — the patch system lowers YAML to an `IngestPlan` (the IR); `catalog.ingestion.patches` must not reach into `catalog.ingestion.apply`. See [DataArchitecture.md](DataArchitecture.md).
+- **Media internal layering** — `constants < models < {storage|processing|schemas|helpers} < authz < api`, a `layers` contract that also keeps `media.api` a leaf.
 
-Several contracts carry a `# BASELINE` block listing pre-existing violations that predate enforcement: upward imports in `App layer tiers` (e.g. `provenance -> catalog` deferred imports, `core -> accounts` leaks) and domain-logic-stranded-under-`api/` in `The api layer is a leaf` (the `soft_delete` and `export` helpers consumed by catalog's domain layer). Each baseline is a burn-down list: fix the underlying import and delete the line. Do not add to one.
+Several contracts carry a `# BASELINE` block listing pre-existing violations that predate enforcement: upward imports in `App layer tiers` (e.g. `provenance -> catalog` deferred imports, `core -> accounts` leaks) and domain-logic-stranded-under-`api/` in `The api layer is a leaf` (the `soft_delete` helpers consumed by catalog's ingestion layer). Each baseline is a burn-down list: fix the underlying import and delete the line. Do not add to one.

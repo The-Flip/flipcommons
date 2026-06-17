@@ -236,16 +236,13 @@ source_modules = [
 forbidden_modules = ["apps.provenance.test_factories"]
 ignore_imports = ["apps.*.tests.** -> apps.provenance.test_factories"]
 
-# The api/ layer is a leaf: it composes models/services/schemas into HTTP
-# endpoints, so nothing below it should import back into it. Today only catalog
-# has a multi-module api/ package; the others are single api.py modules that are
-# leaves by construction. Domain logic currently stranded under catalog/api/ is
-# baselined below for burn-down (see docs/AppBoundaries.md § Enforcement).
 # The api/ layer is a leaf: it composes the domain layers below into HTTP
 # endpoints, so the domain must not import back into it. Source is enumerated
 # (forbidden cannot be a descendant of source) — this list also documents what
-# counts as catalog's domain layer. Only catalog has a multi-module api/ package;
-# the other apps are single api.py modules, leaves by construction.
+# counts as catalog's domain layer. Catalog has a multi-module api/ package; the
+# core api/ package gets its own leaf contract below, and the remaining apps are
+# single api.py modules that are leaves by construction. Domain logic stranded
+# under catalog/api/ is baselined for burn-down (see docs/AppBoundaries.md).
 [[tool.importlinter.contracts]]
 name = "The api layer is a leaf"
 type = "forbidden"
@@ -266,6 +263,57 @@ ignore_imports = [
     # --- BASELINE: domain logic stranded under api/; move it out, then delete ---
     "apps.catalog.ingestion.patches.emit -> apps.catalog.api.soft_delete",
     "apps.catalog.ingestion.patches.planning -> apps.catalog.api.soft_delete",
+]
+
+# core has a multi-module api/ package (like catalog); the same leaf rule applies.
+[[tool.importlinter.contracts]]
+name = "The core api layer is a leaf"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.core.types",
+    "apps.core.exceptions",
+    "apps.core.models",
+    "apps.core.authz",
+    "apps.core.autocomplete",
+    "apps.core.markdown",
+    "apps.core.wikilinks",
+    "apps.core.search",
+    "apps.core.sitemap",
+    "apps.core.pagination",
+    "apps.core.rate_limits",
+    "apps.core.validators",
+    "apps.core.licensing",
+    "apps.core.schemas",
+    "apps.core.entity_types",
+    "apps.core.api_helpers",
+    "apps.core.middleware",
+]
+forbidden_modules = ["apps.core.api"]
+
+# The patch system is a compiler front end: it lowers YAML patches to an
+# IngestPlan (the IR), which the ingest back end (apply/) executes. The split is
+# load-bearing — new patch behavior belongs in the front end against the IR, not
+# as a fork of apply_plan. See docs/DataArchitecture.md.
+[[tool.importlinter.contracts]]
+name = "Patch front end does not depend on the ingest back end"
+type = "forbidden"
+source_modules = ["apps.catalog.ingestion.patches"]
+forbidden_modules = ["apps.catalog.ingestion.apply"]
+
+# Media internal layering: a vertical stack from constants/models at the bottom
+# up to the api composition layer. This also enforces that media.api is a leaf
+# (nothing below it imports it). The cross-app media.models -> provenance.models
+# crack is governed by the media peer-isolation contract above, not here.
+[[tool.importlinter.contracts]]
+name = "Media internal layers"
+type = "layers"
+layers = [
+    "apps.media.api",
+    "apps.media.authz",
+    "apps.media.processing | apps.media.storage | apps.media.schemas | apps.media.helpers",
+    "apps.media.models",
+    "apps.media.constants",
 ]
 
 [tool.mypy]
