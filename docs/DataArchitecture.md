@@ -4,10 +4,10 @@ This documents the architecture of how data flows through the system.
 
 ## The Layers
 
-Catalog data moves through different layers depending on whether you are a 🧑‍🦰 human (a contributor using the UI) or a 🤖 data source (various machine-driven sources, such as curated data patches). The architectural difference between humans and data sources is bulkification: humans generate one single ChangeSet at a time -- they click Save when editing a record, that creates a ChangeSet -- whereas data sources can ingest a 100,000 ChangeSets at once in bulk.
+Catalog data moves through different layers depending on whether you are a 🧑‍🦰 human (a contributor using the UI) or a 🤖 data source (the curated data patches). The architectural difference between humans and data sources is bulkification: humans generate one single ChangeSet at a time -- they click Save when editing a record, that creates a ChangeSet -- whereas data patches can ingest 100,000 ChangeSets at once in bulk.
 
 ```text
-🧑‍🦰 Humans                  🤖 Data Sources
+🧑‍🦰 Humans                  🤖 Data Patches
 ______________________________________________
 ⬇️ Sveltekit UI            ⬇️ Data Patch System
 ⬇️ Catalog API             ⬇️ Ingest System
@@ -29,17 +29,17 @@ See [Provenance.md](Provenance.md) for the claims and resolution model. See [Cit
 
 ## Data Patch System
 
-The data patch system owns the YAML-based [data patch authoring language](DataPatches.md). It parses and validates numbered YAML patch files. It is one source-driven write front end, not the only way data gets into the system.
+The data patch system owns the YAML-based [data patch authoring language](DataPatches.md). It parses and validates numbered YAML patch files. It is the source-driven write front end; the only other way data gets into the system is interactive human writes.
 
-The data patch system does not write database rows directly; it outputs an `IngestPlan`, the shared contract consumed by the ingest system. Patch-specific concepts belong here: YAML syntax, file-order behavior, patch drift guards, same-patch references, patch-only diagnostics and same-patch reference resolution.
+The data patch system does not write database rows directly; it outputs an `IngestPlan`, the contract consumed by the ingest system. Patch-specific concepts belong here: YAML syntax, file-order behavior, patch drift guards, same-patch references, patch-only diagnostics and same-patch reference resolution.
 
-In compiler terms the patch system is a **front end**: it parses the YAML patch language, resolves and validates each entry, and _lowers_ it to an `IngestPlan` — the **intermediate representation** — which the shared ingest **back end** (`apply_plan`) executes. There is exactly one back end, shared with the bulk source adapters, and the patch system never writes rows itself. Treat that split as load-bearing: new patch behavior belongs in the front end against the IR, not as a fork of `apply_plan`.
+In compiler terms the patch system is a **front end**: it parses the YAML patch language, resolves and validates each entry, and _lowers_ it to an `IngestPlan` — the **intermediate representation** — which the ingest **back end** (`apply_plan`) executes. The front end and back end stay decoupled across the `IngestPlan` boundary, and the patch system never writes rows itself. Treat that split as load-bearing: new patch behavior belongs in the front end against the IR, not as a fork of `apply_plan`.
 
 The patch front end keeps a **symbol table** (`PatchEntityRegistry`) binding each reference (`entity_type.public_id`) to the entity it names — a committed entity, or an entity an earlier entry in the same patch creates. It resolves _references to entities_, not _claims to values_: it makes same-patch backward references work, and stops there. It is not a second resolver and not a second claims system.
 
 ## Ingest System
 
-The ingest system owns execution of an `IngestPlan`. It is shared by patch ingest and other source adapters, so it should remain source-agnostic: by the time `apply_plan()` runs, the source-specific front end has already lowered its input into planned entity creates, claim assertions, claim retractions and hooks.
+The ingest system owns execution of an `IngestPlan`. The data patch system is currently its only front end, but it stays source-agnostic by design: by the time `apply_plan()` runs, the front end has already lowered its input into planned entity creates, claim assertions, claim retractions and hooks.
 
 The ingest system creates planned entities, resolves temporary handles, builds unsaved claims, validates claim payloads, diffs against existing active claims from the same source, persists claims and audit rows, attaches citations and invokes resolution for the affected entities.
 
@@ -86,11 +86,11 @@ human contributor
   -> materialized catalog state
 ```
 
-The source-driven ingest path is:
+The source-driven data-patch path is:
 
 ```text
-source input or patch YAML
-  -> source adapter or patch compiler
+patch YAML
+  -> patch compiler
   -> IngestPlan
   -> apply_plan()
   -> persist claims and audit rows
@@ -98,7 +98,7 @@ source input or patch YAML
   -> materialized catalog state
 ```
 
-The important boundary for source-driven data is the `IngestPlan`. Patch and adapter code stop there. The shared ingest backend starts there. Interactive UI writes intentionally bypass that boundary because they already operate on one user action at a time and can write the user `ChangeSet` directly.
+The important boundary for source-driven data is the `IngestPlan`. Patch code stops there. The ingest backend starts there. Interactive UI writes intentionally bypass that boundary because they already operate on one user action at a time and can write the user `ChangeSet` directly.
 
 ## Boundary Rules
 

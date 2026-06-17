@@ -2,9 +2,9 @@
 
 A **data patch** is a small set of catalog claims authored as YAML and applied to a running database, without triggering a full re-ingest of the entire catalog's seed data. It's how you make a targeted, reproducible correction: author it, run it on localhost to check the effect, then run the identical file on production.
 
-## The model: seed baseline, patches replayed on top
+## The model: a database baseline, patches replayed on top
 
-It's the schema-migration model, but for catalog data. The seed ingest is an **immutable baseline** we never edit to fix data. Corrections and ongoing source updates are **append-only, numbered patches replayed on top of the seed in every environment**: a fresh database reaches production's state by replaying seed → `0001` → `0002` → …. Production is seeded once, then patches arrive over time.
+It's the schema-migration model, but for catalog data. A database starts from a **baseline** loaded via Django's database export/import (`dumpdata`/`loaddata`, or a copied DB snapshot) — a fresh dev DB is populated this way, prod is restored from backup. The baseline is never edited by hand to fix data. On top of it, corrections and ongoing source updates are **append-only, numbered patches replayed in order in every environment** (`0001` → `0002` → …). Patches are never edited once applied; fixes arrive as new patches over time.
 
 A patch is **attributed to a source** — usually `flipcommons-catalog`, Flipcommons' own attribution for values we research, scrape and classify ourselves (see [DataPatchAuthoring.md → Authoring a good patch](DataPatchAuthoring.md#authoring-a-good-patch)) — and does one of three things to _that source's_ claims:
 
@@ -331,10 +331,6 @@ uv run python manage.py ingest_patches --patches-dir DIR  # override the default
 Patches apply in numeric order. The command **pre-flights the whole batch** (filename format, unique numeric prefixes), then **stops at the first failure** — patches before it stay committed, the failing one and everything after are left unapplied. A missing or empty directory is a no-op. It is idempotent — the ledger skips already-applied patches.
 
 To test-and-revise a patch on localhost before shipping, snapshot the DB first — see [DataPatchAuthoring.md → Validate via snapshot](DataPatchAuthoring.md#validate-via-snapshot).
-
-### Full ingest also applies patches
-
-`make ingest-all`, the fresh-DB data bootstrap, also runs `ingest_patches`, to get the DB into something approximating production: seed, then the replayed patch log.
 
 ## The ledger: applied once, immutably
 

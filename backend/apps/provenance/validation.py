@@ -3,7 +3,7 @@
 Provides ``classify_claim`` for structural claim classification,
 ``validate_claim_value`` for per-field scalar validation (used by both the
 interactive PATCH path and bulk ingest), ``validate_claims_batch`` for
-batch-mode validation inside ``bulk_assert_claims``, and
+batch-mode validation in the data-patch ingest path, and
 ``validate_fk_claims_batch`` for batched FK target existence checks,
 and ``validate_relationship_claims_batch`` for batched relationship
 target checks.
@@ -524,7 +524,7 @@ def validate_claim_value(
     if not isinstance(field, models.Field) or field.is_relation:
         return value
 
-    # Mojibake check — subsumes the old step-0 check in bulk_assert_claims.
+    # Mojibake check — subsumes the old step-0 check in the bulk ingest path.
     if isinstance(value, str) and validate_no_mojibake in field.validators:
         validate_no_mojibake(value)
 

@@ -34,11 +34,31 @@ def _mfr_ct_id() -> int:
     return ContentType.objects.get_for_model(Manufacturer).pk
 
 
+# Every apply_plan caller is now the data-patch front end, so test plans carry a
+# patch_id and per-entry provenance. These factories default both: patch_id is
+# keyed off the (per-call distinct) fingerprint so the ledger's per-patch_id
+# uniqueness stays happy across multi-run tests, and entry_index defaults to a
+# single entry. Tests that exercise entry grouping pass entry_index explicitly.
+def _plan(**kwargs):
+    kwargs.setdefault("patch_id", kwargs.get("input_fingerprint", "fp-test"))
+    return IngestPlan(**kwargs)
+
+
+def _assert(**kwargs):
+    kwargs.setdefault("entry_index", 0)
+    return PlannedClaimAssert(**kwargs)
+
+
+def _retract(**kwargs):
+    kwargs.setdefault("entry_index", 0)
+    return PlannedClaimRetract(**kwargs)
+
+
 # ── Test 1: Create entities + claims ───────────────────────────────
 
 
 def test_create_entities_and_claims(test_source):
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -49,10 +69,10 @@ def test_create_entities_and_claims(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(field_name="name", value="Bally", handle="bally"),
-            PlannedClaimAssert(field_name="slug", value="bally", handle="bally"),
-            PlannedClaimAssert(field_name="status", value="active", handle="bally"),
-            PlannedClaimAssert(
+            _assert(field_name="name", value="Bally", handle="bally"),
+            _assert(field_name="slug", value="bally", handle="bally"),
+            _assert(field_name="status", value="active", handle="bally"),
+            _assert(
                 field_name="description",
                 value="A pinball company",
                 handle="bally",
@@ -85,11 +105,11 @@ def test_idempotency(test_source):
     ct_id = _mfr_ct_id()
 
     def _make_plan(fp):
-        return IngestPlan(
+        return _plan(
             source=test_source,
             input_fingerprint=fp,
             assertions=[
-                PlannedClaimAssert(
+                _assert(
                     field_name="description",
                     value="A pinball company",
                     content_type_id=ct_id,
@@ -119,11 +139,11 @@ def test_explicit_retraction(test_source):
     ct_id = _mfr_ct_id()
 
     # Run 1: assert description.
-    plan1 = IngestPlan(
+    plan1 = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="Original",
                 content_type_id=ct_id,
@@ -139,11 +159,11 @@ def test_explicit_retraction(test_source):
     ).exists()
 
     # Run 2: retract that claim.
-    plan2 = IngestPlan(
+    plan2 = _plan(
         source=test_source,
         input_fingerprint="fp-2",
         retractions=[
-            PlannedClaimRetract(
+            _retract(
                 content_type_id=ct_id,
                 object_id=mfr.pk,
                 claim_key="description",
@@ -167,11 +187,11 @@ def test_invalid_claim_fails_run(test_source):
     theme = Theme.objects.create(name="Medieval", slug="medieval")
     ct_id = ContentType.objects.get_for_model(Theme).pk
 
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="bogus_field",
                 value="whatever",
                 content_type_id=ct_id,
@@ -199,17 +219,17 @@ def test_omitted_field_preserved(test_source):
     ct_id = _mfr_ct_id()
 
     # Run 1: assert description + website.
-    plan1 = IngestPlan(
+    plan1 = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="A company",
                 content_type_id=ct_id,
                 object_id=mfr.pk,
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="website",
                 value="https://bally.com",
                 content_type_id=ct_id,
@@ -220,11 +240,11 @@ def test_omitted_field_preserved(test_source):
     apply_plan(plan1)
 
     # Run 2: assert only description (website omitted).
-    plan2 = IngestPlan(
+    plan2 = _plan(
         source=test_source,
         input_fingerprint="fp-2",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="A company",
                 content_type_id=ct_id,
@@ -254,11 +274,11 @@ def test_dry_run(test_source):
     initial_runs = IngestRun.objects.count()
     initial_cs = ChangeSet.objects.count()
 
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-dry",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="Test",
                 content_type_id=ct_id,
@@ -287,11 +307,11 @@ def test_failed_apply_ingest_run_survives(test_source):
     def raise_error(*, subject_ids=None):
         raise RuntimeError("Resolve failed!")
 
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="A pinball company",
                 content_type_id=ct_id,
@@ -311,29 +331,36 @@ def test_failed_apply_ingest_run_survives(test_source):
     assert Claim.objects.filter(source=test_source).count() == 0
 
 
-# ── Test 8: ChangeSets per target entity ───────────────────────────
+# ── Test 8: ChangeSets per authoring entry ─────────────────────────
 
 
-def test_changesets_per_entity(test_source):
+def test_changesets_per_entry(test_source):
+    """ChangeSets group by ``entry_index``, not by entity.
+
+    Two assertions in distinct entries (0, 1) → two ChangeSets, even though
+    both target a Manufacturer — one ChangeSet per authoring entry.
+    """
     mfr1 = Manufacturer.objects.create(name="Bally", slug="bally")
     mfr2 = Manufacturer.objects.create(name="Williams", slug="williams")
     ct_id = _mfr_ct_id()
 
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="Company 1",
                 content_type_id=ct_id,
                 object_id=mfr1.pk,
+                entry_index=0,
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="Company 2",
                 content_type_id=ct_id,
                 object_id=mfr2.pk,
+                entry_index=1,
             ),
         ],
     )
@@ -341,20 +368,56 @@ def test_changesets_per_entity(test_source):
     assert report.asserted == 2
 
     run = IngestRun.objects.get(source=test_source)
-    changesets = ChangeSet.objects.filter(ingest_run=run)
-    assert changesets.count() == 2
+    assert ChangeSet.objects.filter(ingest_run=run).count() == 2
 
-    # Each claim has a different changeset.
-    claims = Claim.objects.filter(source=test_source, is_active=True)
-    cs_ids = {c.changeset_id for c in claims}
+    # Each claim lands in its own entry's changeset.
+    cs_ids = {
+        c.changeset_id for c in Claim.objects.filter(source=test_source, is_active=True)
+    }
     assert len(cs_ids) == 2
+
+
+def test_one_entry_spans_multiple_entities(test_source):
+    """A single entry touching several entities → one multi-entity ChangeSet.
+
+    The cascade-delete shape: one authoring action is one undoable event, no
+    matter how many entities it touches.
+    """
+    mfr1 = Manufacturer.objects.create(name="Bally", slug="bally")
+    mfr2 = Manufacturer.objects.create(name="Williams", slug="williams")
+    ct_id = _mfr_ct_id()
+
+    plan = _plan(
+        source=test_source,
+        input_fingerprint="fp-1",
+        assertions=[
+            _assert(
+                field_name="description",
+                value="Company 1",
+                content_type_id=ct_id,
+                object_id=mfr1.pk,
+                entry_index=0,
+            ),
+            _assert(
+                field_name="description",
+                value="Company 2",
+                content_type_id=ct_id,
+                object_id=mfr2.pk,
+                entry_index=0,
+            ),
+        ],
+    )
+    apply_plan(plan)
+
+    run = IngestRun.objects.get(source=test_source)
+    assert ChangeSet.objects.filter(ingest_run=run).count() == 1
 
 
 # ── Test 9: Entity-claim consistency validation ────────────────────
 
 
 def test_entity_claim_consistency(test_source):
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -366,12 +429,12 @@ def test_entity_claim_consistency(test_source):
         ],
         assertions=[
             # Slug + status assertions present, but name assertion is missing.
-            PlannedClaimAssert(
+            _assert(
                 field_name="slug",
                 value="bally",
                 handle="bally",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="status",
                 value="active",
                 handle="bally",
@@ -395,11 +458,11 @@ def test_supersede_on_value_change(test_source):
     ct_id = _mfr_ct_id()
 
     # Run 1: assert description.
-    plan1 = IngestPlan(
+    plan1 = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="Old value",
                 content_type_id=ct_id,
@@ -416,11 +479,11 @@ def test_supersede_on_value_change(test_source):
     )
 
     # Run 2: assert different value for same field.
-    plan2 = IngestPlan(
+    plan2 = _plan(
         source=test_source,
         input_fingerprint="fp-2",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="New value",
                 content_type_id=ct_id,
@@ -449,11 +512,11 @@ def test_supersede_on_value_change(test_source):
 
 
 def test_unknown_handle_raises(test_source):
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="whatever",
                 handle="nonexistent",
@@ -467,11 +530,11 @@ def test_unknown_handle_raises(test_source):
 
 def test_missing_target_raises(test_source):
     """Assertion with neither handle nor content_type_id/object_id."""
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="whatever",
             ),
@@ -489,11 +552,11 @@ def test_retraction_warning_for_missing_target(test_source):
     mfr = Manufacturer.objects.create(name="Bally", slug="bally")
     ct_id = _mfr_ct_id()
 
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         retractions=[
-            PlannedClaimRetract(
+            _retract(
                 content_type_id=ct_id,
                 object_id=mfr.pk,
                 claim_key="description",
@@ -511,7 +574,7 @@ def test_retraction_warning_for_missing_target(test_source):
 
 
 def test_duplicate_handle_raises(test_source):
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -527,9 +590,9 @@ def test_duplicate_handle_raises(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(field_name="name", value="Bally", handle="dupe"),
-            PlannedClaimAssert(field_name="slug", value="bally", handle="dupe"),
-            PlannedClaimAssert(field_name="status", value="active", handle="dupe"),
+            _assert(field_name="name", value="Bally", handle="dupe"),
+            _assert(field_name="slug", value="bally", handle="dupe"),
+            _assert(field_name="status", value="active", handle="dupe"),
         ],
     )
 
@@ -542,11 +605,11 @@ def test_duplicate_handle_raises(test_source):
 
 def test_dry_run_rejects_missing_target(test_source):
     """Dry-run should produce the same ValueError as the live path."""
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-dry",
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="description",
                 value="whatever",
             ),
@@ -563,7 +626,7 @@ def test_dry_run_rejects_missing_target(test_source):
 def test_both_handle_and_target_raises(test_source):
     """Assertion with both handle and content_type_id/object_id is ambiguous."""
     ct_id = _mfr_ct_id()
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -574,19 +637,19 @@ def test_both_handle_and_target_raises(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="name",
                 value="Bally",
                 handle="bally",
                 content_type_id=ct_id,
                 object_id=999,
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="slug",
                 value="bally",
                 handle="bally",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="status",
                 value="active",
                 handle="bally",
@@ -603,7 +666,7 @@ def test_both_handle_and_target_raises(test_source):
 
 def test_handle_refs_resolves_fk(test_source):
     """CorporateEntity with handle_ref to a planned Manufacturer."""
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -624,31 +687,25 @@ def test_handle_refs_resolves_fk(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(
-                field_name="name", value="Williams", handle="mfr-williams"
-            ),
-            PlannedClaimAssert(
-                field_name="slug", value="williams", handle="mfr-williams"
-            ),
-            PlannedClaimAssert(
-                field_name="status", value="active", handle="mfr-williams"
-            ),
-            PlannedClaimAssert(
+            _assert(field_name="name", value="Williams", handle="mfr-williams"),
+            _assert(field_name="slug", value="williams", handle="mfr-williams"),
+            _assert(field_name="status", value="active", handle="mfr-williams"),
+            _assert(
                 field_name="name",
                 value="Williams Electronics",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="slug",
                 value="williams-electronics",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="status",
                 value="active",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="manufacturer",
                 value="williams",
                 handle="ce-williams",
@@ -670,7 +727,7 @@ def test_handle_refs_resolves_fk(test_source):
 
 def test_handle_refs_forward_reference_raises(test_source):
     """handle_ref pointing to a handle that appears later is rejected."""
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -691,31 +748,25 @@ def test_handle_refs_forward_reference_raises(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(
-                field_name="name", value="Williams", handle="mfr-williams"
-            ),
-            PlannedClaimAssert(
-                field_name="slug", value="williams", handle="mfr-williams"
-            ),
-            PlannedClaimAssert(
-                field_name="status", value="active", handle="mfr-williams"
-            ),
-            PlannedClaimAssert(
+            _assert(field_name="name", value="Williams", handle="mfr-williams"),
+            _assert(field_name="slug", value="williams", handle="mfr-williams"),
+            _assert(field_name="status", value="active", handle="mfr-williams"),
+            _assert(
                 field_name="name",
                 value="Williams Electronics",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="slug",
                 value="williams-electronics",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="status",
                 value="active",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="manufacturer",
                 value="williams",
                 handle="ce-williams",
@@ -732,7 +783,7 @@ def test_handle_refs_forward_reference_raises(test_source):
 
 def test_handle_refs_kwarg_conflict_raises(test_source):
     """Same field in both kwargs and handle_refs is rejected."""
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -754,31 +805,25 @@ def test_handle_refs_kwarg_conflict_raises(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(
-                field_name="name", value="Williams", handle="mfr-williams"
-            ),
-            PlannedClaimAssert(
-                field_name="slug", value="williams", handle="mfr-williams"
-            ),
-            PlannedClaimAssert(
-                field_name="status", value="active", handle="mfr-williams"
-            ),
-            PlannedClaimAssert(
+            _assert(field_name="name", value="Williams", handle="mfr-williams"),
+            _assert(field_name="slug", value="williams", handle="mfr-williams"),
+            _assert(field_name="status", value="active", handle="mfr-williams"),
+            _assert(
                 field_name="name",
                 value="Williams Electronics",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="slug",
                 value="williams-electronics",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="status",
                 value="active",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="manufacturer",
                 value="williams",
                 handle="ce-williams",
@@ -795,7 +840,7 @@ def test_handle_refs_kwarg_conflict_raises(test_source):
 
 def test_handle_ref_without_claim_raises(test_source):
     """handle_ref sets a claim-controlled FK but no assertion exists for it."""
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -816,32 +861,32 @@ def test_handle_ref_without_claim_raises(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(
+            _assert(
                 field_name="name",
                 value="Williams",
                 handle="mfr-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="slug",
                 value="williams",
                 handle="mfr-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="status",
                 value="active",
                 handle="mfr-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="name",
                 value="Williams Electronics",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="slug",
                 value="williams-electronics",
                 handle="ce-williams",
             ),
-            PlannedClaimAssert(
+            _assert(
                 field_name="status",
                 value="active",
                 handle="ce-williams",
@@ -859,7 +904,7 @@ def test_handle_ref_without_claim_raises(test_source):
 
 def test_identity_refs_resolves_pk(test_source):
     """Deferred relationship claim gets claim_key + value generated after handle resolution."""
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -875,26 +920,14 @@ def test_identity_refs_resolves_pk(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(
-                field_name="name", value="Sports", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
-                field_name="slug", value="sports", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
-                field_name="status", value="active", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
-                field_name="name", value="Baseball", handle="theme:baseball"
-            ),
-            PlannedClaimAssert(
-                field_name="slug", value="baseball", handle="theme:baseball"
-            ),
-            PlannedClaimAssert(
-                field_name="status", value="active", handle="theme:baseball"
-            ),
+            _assert(field_name="name", value="Sports", handle="theme:sports"),
+            _assert(field_name="slug", value="sports", handle="theme:sports"),
+            _assert(field_name="status", value="active", handle="theme:sports"),
+            _assert(field_name="name", value="Baseball", handle="theme:baseball"),
+            _assert(field_name="slug", value="baseball", handle="theme:baseball"),
+            _assert(field_name="status", value="active", handle="theme:baseball"),
             # Deferred: Baseball's parent is Sports (both planned).
-            PlannedClaimAssert(
+            _assert(
                 field_name="theme_parent",
                 handle="theme:baseball",
                 relationship_namespace="theme_parent",
@@ -934,7 +967,7 @@ def test_identity_refs_with_existing_target(test_source):
     )
     ct_id = ContentType.objects.get_for_model(Theme).pk
 
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -945,17 +978,11 @@ def test_identity_refs_with_existing_target(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(
-                field_name="name", value="Baseball", handle="theme:baseball"
-            ),
-            PlannedClaimAssert(
-                field_name="slug", value="baseball", handle="theme:baseball"
-            ),
-            PlannedClaimAssert(
-                field_name="status", value="active", handle="theme:baseball"
-            ),
+            _assert(field_name="name", value="Baseball", handle="theme:baseball"),
+            _assert(field_name="slug", value="baseball", handle="theme:baseball"),
+            _assert(field_name="status", value="active", handle="theme:baseball"),
             # Existing Sports gets a theme_parent claim referencing planned Baseball.
-            PlannedClaimAssert(
+            _assert(
                 field_name="theme_parent",
                 content_type_id=ct_id,
                 object_id=existing_parent.pk,
@@ -985,7 +1012,7 @@ def test_identity_refs_with_existing_target(test_source):
 
 def test_identity_refs_unknown_handle_raises(test_source):
     """identity_ref referencing a non-existent handle is rejected."""
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -996,16 +1023,10 @@ def test_identity_refs_unknown_handle_raises(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(
-                field_name="name", value="Sports", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
-                field_name="slug", value="sports", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
-                field_name="status", value="active", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
+            _assert(field_name="name", value="Sports", handle="theme:sports"),
+            _assert(field_name="slug", value="sports", handle="theme:sports"),
+            _assert(field_name="status", value="active", handle="theme:sports"),
+            _assert(
                 field_name="theme_parent",
                 handle="theme:sports",
                 relationship_namespace="theme_parent",
@@ -1024,7 +1045,7 @@ def test_identity_refs_unknown_handle_raises(test_source):
 
 def test_identity_refs_mutual_exclusivity_raises(test_source):
     """Having both claim_key/value and relationship_namespace is rejected."""
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
         entities=[
@@ -1035,16 +1056,10 @@ def test_identity_refs_mutual_exclusivity_raises(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(
-                field_name="name", value="Sports", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
-                field_name="slug", value="sports", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
-                field_name="status", value="active", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
+            _assert(field_name="name", value="Sports", handle="theme:sports"),
+            _assert(field_name="slug", value="sports", handle="theme:sports"),
+            _assert(field_name="status", value="active", handle="theme:sports"),
+            _assert(
                 field_name="theme_parent",
                 handle="theme:sports",
                 claim_key="theme_parent|parent:99",
@@ -1067,7 +1082,7 @@ def test_identity_refs_dry_run(test_source):
     """Deferred relationship claims are counted but not validated in dry-run."""
     initial_claims = Claim.objects.count()
 
-    plan = IngestPlan(
+    plan = _plan(
         source=test_source,
         input_fingerprint="fp-dry",
         entities=[
@@ -1083,26 +1098,14 @@ def test_identity_refs_dry_run(test_source):
             ),
         ],
         assertions=[
-            PlannedClaimAssert(
-                field_name="name", value="Sports", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
-                field_name="slug", value="sports", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
-                field_name="status", value="active", handle="theme:sports"
-            ),
-            PlannedClaimAssert(
-                field_name="name", value="Baseball", handle="theme:baseball"
-            ),
-            PlannedClaimAssert(
-                field_name="slug", value="baseball", handle="theme:baseball"
-            ),
-            PlannedClaimAssert(
-                field_name="status", value="active", handle="theme:baseball"
-            ),
+            _assert(field_name="name", value="Sports", handle="theme:sports"),
+            _assert(field_name="slug", value="sports", handle="theme:sports"),
+            _assert(field_name="status", value="active", handle="theme:sports"),
+            _assert(field_name="name", value="Baseball", handle="theme:baseball"),
+            _assert(field_name="slug", value="baseball", handle="theme:baseball"),
+            _assert(field_name="status", value="active", handle="theme:baseball"),
             # Deferred — would fail validation without real PKs.
-            PlannedClaimAssert(
+            _assert(
                 field_name="theme_parent",
                 handle="theme:baseball",
                 relationship_namespace="theme_parent",

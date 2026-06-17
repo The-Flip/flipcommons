@@ -1,4 +1,4 @@
-.PHONY: bootstrap dev test lint quality agent-docs codegen ingest-all ingest-patches pull-ingest pull-patches mypy mypy-warm mypy-restart mypy-status
+.PHONY: bootstrap dev test lint quality agent-docs codegen ingest-patches pull-patches mypy mypy-warm mypy-restart mypy-status
 
 bootstrap:
 	./scripts/bootstrap
@@ -25,25 +25,12 @@ codegen:
 	cd frontend && pnpm exec prettier --write src/lib/entities/entity-meta.ts
 	cd frontend && pnpm api:gen
 
-# Fresh-DB bootstrap ONLY: ingest the full seed data, then replay all data-patches.
-# This gives a brand-new database something approaching the production state.
-# Do NOT run this on an already-seeded system — prod and the dev DB are seeded once
-# and from then on ONLY run `make ingest-patches`, never a re-ingest.
-# Run `make pull-ingest && make pull-patches` first to fetch the files to ingest.
-ingest-all:
-	cd backend && uv run python manage.py ingest_all --write && uv run python manage.py ingest_patches
-
-# Apply just the pending data patches — the everyday correction path once DB is seeded.
+# Apply pending data patches — the bulk write path for catalog data.
 # Run `make pull-patches` first to fetch new patch files.
 # Idempotent: already-applied patches are skipped.
 # For a preview, run `manage.py ingest_patches --dry-run` directly.
 ingest-patches:
 	cd backend && uv run python manage.py ingest_patches
-
-# Pull seed catalog + external ingest sources (pindata, IPDB, OPDB) from R2 to
-# local data/ingest_sources/. Does NOT fetch data patches — see pull-patches.
-pull-ingest:
-	./scripts/pull_ingest_sources.sh
 
 # Pull data patches (the flippatch/ R2 prefix) to local
 # data/ingest_sources/flippatch/patches/ — the dir ingest-patches reads.

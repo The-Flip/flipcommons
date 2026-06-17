@@ -63,7 +63,7 @@ class CatalogModel(
 ):
     """Abstract marker for top-level catalog entities.
 
-    Used to distinguish catalog-specific code paths (e.g. ``ingest_pindata``,
+    Used to distinguish catalog-specific code paths (e.g. data-patch ingest,
     soft-delete wire format), as well as define the capabilies that all catalog
     models must have.
 

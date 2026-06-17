@@ -39,7 +39,7 @@ These principles apply whether you hand-author or generate.
 
 Reach for a different attribution only in these cases:
 
-- **Retracting or superseding another source's seed-ingest claim** → attribute to _that_ source (`ipdb`, `opdb`, …), so you act on its own claim. This is the only time `ipdb`/`opdb` attribute a patch — never a fresh first-party assertion.
+- **Retracting or superseding another source's existing claim** → attribute to _that_ source (`ipdb`, `opdb`, …), so you act on its own claim. This is the only time `ipdb`/`opdb` attribute a patch — never a fresh first-party assertion.
 - **Wholesale import of structured data from an external site or API** → create or reuse a source for that site and attribute to it: the site supplies the field directly, so there's no judgment of ours to own.
 - **A first-party curatorial source states the fact directly** → that source — `flip-museum` for museum-curated facts no one else claims.
 - **AI-generated record descriptions** → the per-entity-type description source `flipcommons-ai-desc-<entity-type>` (see [Record descriptions](#record-descriptions)).
@@ -92,7 +92,7 @@ Some patches set narrative record descriptions (Manufacturer, Model, …) — pr
 
 - **No speculation.** Keep it factual; tell the story, don't guess.
 - **Every statement supported.** Back each claim with the entry's `note:`, its `cite:`, or a fact already in the catalog. A statement resting on existing catalog data needs no citation; anything else does.
-- **Attribute to the description source.** Each entity type has its own description source named `flipcommons-ai-desc-<entity-type>` — `flipcommons-ai-desc-manufacturer`, `flipcommons-ai-desc-model`, … — not the generic `flipcommons-catalog`. These sources already exist (the seed ingest creates one per entity type), so just reference one — unlike a `cite:` website root, you don't create it in an earlier patch.
+- **Attribute to the description source.** Each entity type has its own description source named `flipcommons-ai-desc-<entity-type>` — `flipcommons-ai-desc-manufacturer`, `flipcommons-ai-desc-model`, … — not the generic `flipcommons-catalog`. These sources already exist in the database, so just reference one — unlike a `cite:` website root, you don't create it in an earlier patch.
 - **Cite each fact inline.** A narrative description backs individual sentences with **inline `[[cite:…]]` footnotes** rather than one entry-level `cite:` — see [DataPatches.md → Inline citations in descriptions](DataPatches.md#inline-citations-in-descriptions) for the format (numeric handles plus a `cites:` map for new citations; durable slugs for existing ones). An entry-level `cite:` still works for a whole-field source, but inline footnotes are what make each statement individually verifiable. Inline `cites:` count as provenance, so all of an entity's cited fields belong in **one changeset**.
 
 ### Rehydrating a description for re-edit

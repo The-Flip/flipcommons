@@ -98,28 +98,24 @@ class TestMojibakeClaimsApiIntegration:
 
 
 @pytest.mark.django_db
-class TestMojibakeBulkAssertClaims:
-    """Mojibake is rejected when written via bulk_assert_claims (ingestion path)."""
+class TestMojibakeBatchValidation:
+    """Mojibake handling in batch validation (the bulk ingest path).
 
-    @pytest.fixture
-    def source(self):
-        from apps.provenance.models import Source
-
-        return Source.objects.create(
-            name="Test", slug="test", source_type="database", priority=10
-        )
+    ``validate_claims_batch`` logs and drops invalid claims instead of
+    raising, the opposite of the per-field ``validate_no_mojibake`` path.
+    """
 
     @pytest.fixture
     def pm(self):
-
         return make_machine_model(
             name="Medieval Madness",
             slug="medieval-madness",
             year=1997,
         )
 
-    def test_rejects_mojibake_name_claim(self, source, pm):
+    def test_rejects_mojibake_name_claim(self, pm):
         from apps.provenance.models import Claim
+        from apps.provenance.validation import validate_claims_batch
 
         ct_id = ContentType.objects.get_for_model(pm).pk
         pending = [
@@ -131,12 +127,13 @@ class TestMojibakeBulkAssertClaims:
             ),
         ]
         # Batch validation logs and skips mojibake claims instead of raising.
-        result = Claim.objects.bulk_assert_claims(source, pending)
-        assert result["validation_rejected"] == 1
-        assert result["created"] == 0
+        valid, rejected = validate_claims_batch(pending)
+        assert rejected == 1
+        assert valid == []
 
-    def test_allows_valid_accented_name_claim(self, source, pm):
+    def test_allows_valid_accented_name_claim(self, pm):
         from apps.provenance.models import Claim
+        from apps.provenance.validation import validate_claims_batch
 
         ct_id = ContentType.objects.get_for_model(pm).pk
         pending = [
@@ -147,19 +144,20 @@ class TestMojibakeBulkAssertClaims:
                 value="Médiéval Madness",
             ),
         ]
-        result = Claim.objects.bulk_assert_claims(source, pending)
-        assert result["created"] == 1
+        valid, rejected = validate_claims_batch(pending)
+        assert rejected == 0
+        assert len(valid) == 1
 
-    def test_allows_mojibake_in_alias_claim(self, source, pm):
+    def test_allows_mojibake_in_alias_claim(self):
         """Alias fields do NOT have the mojibake validator — garbled source
         names are legitimate lookup values."""
+        from apps.catalog.claims import build_relationship_claim
         from apps.catalog.models import Manufacturer
+        from apps.provenance.models import Claim
+        from apps.provenance.validation import validate_claims_batch
 
         mfr = Manufacturer.objects.create(name="Williams", slug="williams")
         ct_id = ContentType.objects.get_for_model(mfr).pk
-
-        from apps.catalog.claims import build_relationship_claim
-        from apps.provenance.models import Claim
 
         claim_key, value = build_relationship_claim(
             "manufacturer_alias",
@@ -174,9 +172,10 @@ class TestMojibakeBulkAssertClaims:
                 value=value,
             ),
         ]
-        # Should NOT raise — alias values are exempt from mojibake validation
-        result = Claim.objects.bulk_assert_claims(source, pending)
-        assert result["created"] == 1
+        # Should NOT be rejected — alias values are exempt from mojibake validation.
+        valid, rejected = validate_claims_batch(pending)
+        assert rejected == 0
+        assert len(valid) == 1
 
 
 @pytest.mark.django_db

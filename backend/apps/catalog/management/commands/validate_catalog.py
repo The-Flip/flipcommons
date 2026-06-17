@@ -2,7 +2,7 @@
 
 Checks the resolved catalog for data quality issues: missing fields,
 broken references, duplicate entities, unresolved claims, and structural
-invariant violations. Intended to run after ``resolve_claims``.
+invariant violations. Intended to run after applying data patches.
 
 Exit codes:
   0 — no errors (warnings may be present)
@@ -439,7 +439,7 @@ def check_credits_without_matching_claims(result: ValidationResult) -> None:
 
 
 def check_uncurated_themes(result: ValidationResult) -> None:
-    """Themes that were auto-created during ingestion (no flipcommons-catalog source claim)."""
+    """Themes lacking a flipcommons-catalog name claim (uncurated / auto-created)."""
     from apps.provenance.models import Source
 
     flipcommons_catalog = Source.objects.filter(slug="flipcommons-catalog").first()

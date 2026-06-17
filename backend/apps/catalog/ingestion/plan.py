@@ -1,17 +1,17 @@
 """Plan data types: the declarative carriers an ingest source hands the engine.
 
-These are the public contract between source adapters (``ingestion.patches``,
-the IPDB/OPDB adapters) and the source-agnostic apply engine in
-:mod:`apps.catalog.ingestion.apply`. An adapter builds an :class:`IngestPlan`
-out of these primitives; ``apply_plan`` consumes it. The types live here, apart
-from the engine, so adapters can import the carriers without pulling in the
-engine's machinery — the apply layer imports *these*, never the reverse.
+These are the public contract between the source front end (``ingestion.patches``)
+and the source-agnostic apply engine in :mod:`apps.catalog.ingestion.apply`. A
+front end builds an :class:`IngestPlan` out of these primitives; ``apply_plan``
+consumes it. The types live here, apart from the engine, so a front end can
+import the carriers without pulling in the engine's machinery — the apply layer
+imports *these*, never the reverse.
 
 In compiler terms the :class:`IngestPlan` is the **intermediate representation**:
-every source front end *lowers* its input to this one typed instruction list, and
-the shared apply back end is the only thing that turns it into database writes.
-That single IR is what lets one back end serve every source — keep new behavior
-on the front-end/IR side rather than forking ``apply_plan``.
+the source front end *lowers* its input to this one typed instruction list, and
+the apply back end is the only thing that turns it into database writes. That
+IR boundary is what keeps the engine source-agnostic — keep new behavior on the
+front-end/IR side rather than forking ``apply_plan``.
 
 The hook Protocols and the ``RunReport`` result type live here too: they're
 named in the plan's own fields and in ``apply_plan``'s signature. The engine's

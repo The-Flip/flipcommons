@@ -338,7 +338,7 @@ def resolve_all_credits(
     if not valid_role_pks:
         logger.warning(
             "CreditRole table is empty — skipping bulk credit resolution. "
-            "Run the taxonomy phase of ingest_pindata to seed credit roles."
+            "Apply the data patches that seed credit roles first."
         )
         return
 
