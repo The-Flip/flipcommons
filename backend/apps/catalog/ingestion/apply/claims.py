@@ -39,9 +39,9 @@ class RetractEntry(NamedTuple):
     pk: int
     content_type_id: int
     object_id: int
-    # Patch runs only: the file-order index of the entry that authored this
-    # retraction, used by ``_persist`` to group retractions into per-entry
-    # ChangeSets. ``None`` for non-patch runs (IPDB/OPDB never retract).
+    # The file-order index of the entry that authored this retraction, used by
+    # ``_persist`` to group retractions into per-entry ChangeSets. ``None`` only
+    # transiently before the front end's second pass stamps it.
     entry_index: EntryIndex | None = None
 
 
@@ -232,13 +232,9 @@ def _reject_empty_diff_provenance(plan: IngestPlan, changed: set[EntryIndex]) ->
     delete — detected model-drivenly here, since the entry kind isn't threaded
     into the apply engine.
 
-    Patch-only (``patch_id`` set); non-patch runs carry no per-entry provenance.
     Raises ``ValidationError`` (the apply engine is source-agnostic and must not
     import ``PatchError``); ``_apply_one`` converts it to a clean ``PatchError``.
     """
-    if plan.patch_id is None:
-        return
-
     # Per entry: which carry provenance, and which are a pure delete (all-status,
     # exempt because an idempotent re-delete is a clean no-op by design).
     has_provenance: set[EntryIndex] = set()

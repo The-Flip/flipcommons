@@ -1,10 +1,9 @@
 """The orchestrator: ``apply_plan`` drives one ingest plan through the pipeline.
 
-This is the shared ingest **back end**: it turns the ``IngestPlan`` intermediate
-representation into batched database writes, and it is the *single* back end
-every source front end (the patch compiler, the IPDB/OPDB adapters) feeds. Keep
-it source-agnostic — new source behavior belongs in a front end against the IR,
-never as a fork here.
+This is the ingest **back end**: it turns the ``IngestPlan`` intermediate
+representation into batched database writes. The data-patch compiler is its only
+front end today, but it stays source-agnostic by design — new source behavior
+belongs in a front end against the IR, never as a fork here.
 
 Wires the package's stages in order — structural validation (:mod:`.validate`),
 the live/dry-run fork (:mod:`.dry_run`), then for the live path: entity creation +

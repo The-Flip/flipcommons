@@ -91,7 +91,8 @@ type CiteHandle = str
 # A transparent alias of ``int`` (like ``CiteHandle`` above) that names the role
 # wherever it recurs — on the plan carriers here and in the engine's per-entry
 # provenance maps — so a bare ``int`` ordinal isn't mistaken for a pk or count.
-# ``None`` on non-patch runs.
+# Typed ``| None`` on the carriers only because the front end stamps it in a
+# second pass (see ``planning.build_plan``); it is always set by apply time.
 type EntryIndex = int
 
 # A plan-local temporary identifier for a not-yet-created entity — the label a
@@ -176,10 +177,10 @@ class PlannedClaimAssert:
     # minted slug. Existing-slug markers (``[[cite:<slug>]]``) carry nothing here —
     # they self-resolve through standard conversion. Empty for non-cited fields.
     inline_cites: dict[CiteHandle, CitationRef] = field(default_factory=dict)
-    # Patch runs only: the file-order index of the authoring patch entry. Stamped
-    # by the patch adapter (in ``build_plan``) so ``_persist`` can mint one
-    # ChangeSet per entry; ``None`` for non-patch runs (IPDB/OPDB), which group
-    # per affected entity instead.
+    # The file-order index of the authoring patch entry, so ``_persist`` can mint
+    # one ChangeSet per entry. The front end stamps it in a second pass (see
+    # ``planning.build_plan``), so it is ``None`` only transiently between
+    # construction and stamping — always set by apply time.
     entry_index: EntryIndex | None = None
     content_type_id: int | None = None
     object_id: int | None = None
@@ -204,8 +205,8 @@ class PlannedClaimRetract:
     # Per-entry patch note → the entry's ChangeSet note. A retraction has no
     # new claim, so it carries no ``citation_ref``.
     note: str = ""
-    # Patch runs only: the file-order index of the authoring patch entry (see
-    # ``PlannedClaimAssert.entry_index``). ``None`` for non-patch runs.
+    # The file-order index of the authoring patch entry (see
+    # ``PlannedClaimAssert.entry_index``); stamped in the same second pass.
     entry_index: EntryIndex | None = None
 
 
@@ -215,6 +216,8 @@ class IngestPlan:
 
     source: Source
     input_fingerprint: str
+    # The NNNN-slug data patch filename stem — the applied-ledger key. Required.
+    patch_id: str
     entities: list[PlannedEntityCreate] = field(default_factory=list)
     assertions: list[PlannedClaimAssert] = field(default_factory=list)
     retractions: list[PlannedClaimRetract] = field(default_factory=list)
@@ -225,10 +228,7 @@ class IngestPlan:
     # create), each handed the RunReport. Patch-only: citation source upserts.
     pre_write_hooks: list[PreWriteHook] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-    # Patch runs only: the NNNN-slug filename stem (the applied-ledger key)
-    # and the patch's description (copied to ``IngestRun.note``). Null/empty
-    # for normal ingests.
-    patch_id: str | None = None
+    # The patch's description, copied to ``IngestRun.note``.
     note: str = ""
 
 
