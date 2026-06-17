@@ -11,6 +11,7 @@ cookie.
 from __future__ import annotations
 
 import json
+from functools import cache as _lru
 from hashlib import md5
 from typing import Any
 
@@ -41,6 +42,24 @@ _LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
 # catalog edit can ripple across entities (e.g. a Model edit shifts a
 # Manufacturer's model_count).
 _EXPORT_BASE = f"catalog:export:{_CACHE_VERSION}"
+
+
+@_lru
+def export_entity_types() -> tuple[str, ...]:
+    """Entity types with a bulk-export endpoint: every linkable ``CatalogModel``,
+    sorted. Source of truth for export cache-slot invalidation; ``api.export``
+    builds one route per entry. Derived from the model registry (no hand-listing)
+    and evaluated lazily because the app registry isn't ready at module import.
+    """
+    from apps.catalog.models import CatalogModel
+    from apps.core.entity_types import all_linkable_models
+
+    return tuple(
+        sorted(
+            m.entity_type for m in all_linkable_models() if issubclass(m, CatalogModel)
+        )
+    )
+
 
 _BASES: tuple[str, ...] = (
     _TITLES_FACETS_BASE,
@@ -114,10 +133,7 @@ def invalidate_all() -> None:
     for base in _BASES:
         for audience in _AUDIENCES:
             cache.delete(f"{base}:{audience}")
-    # Per-entity export blobs. Lazy import avoids an import cycle (export.py
-    # imports this module's get/set_cached_response + export_key).
-    from apps.catalog.api.export import EXPORT_ENTITY_TYPES
-
-    for entity_type in EXPORT_ENTITY_TYPES:
+    # Per-entity export blobs, keyed by the model-derived export entity types.
+    for entity_type in export_entity_types():
         for audience in _AUDIENCES:
             cache.delete(f"{_EXPORT_BASE}:{entity_type}:{audience}")

@@ -64,7 +64,12 @@ from apps.provenance.models.introspection import get_claim_fields
 from apps.provenance.schemas import AttributionSchema
 from apps.provenance.validation import get_all_relationship_schemas
 
-from ..cache import export_key, get_cached_response, set_cached_response
+from ..cache import (
+    export_entity_types,
+    export_key,
+    get_cached_response,
+    set_cached_response,
+)
 from .images import extract_image_attribution, extract_image_urls, media_prefetch
 
 # The "export" tag is the opt-in marker for the public API reference: /api-docs
@@ -872,9 +877,10 @@ def _register(spec: ExportSpec) -> None:
 
 
 _REGISTRY = _build_registry()
-EXPORT_ENTITY_TYPES: tuple[str, ...] = tuple(
-    sorted(spec.model.entity_type for spec in _REGISTRY.values())
-)
+# Sourced from the domain tier (cache) rather than redrived here: both sides
+# derive from the same model registry, so the test asserting len-parity with
+# _REGISTRY now cross-checks the two derivations agree.
+EXPORT_ENTITY_TYPES: tuple[str, ...] = export_entity_types()
 
 for _spec in _REGISTRY.values():
     _register(_spec)

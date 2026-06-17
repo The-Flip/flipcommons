@@ -264,7 +264,6 @@ source_modules = [
 forbidden_modules = ["apps.catalog.api"]
 ignore_imports = [
     # --- BASELINE: domain logic stranded under api/; move it out, then delete ---
-    "apps.catalog.cache -> apps.catalog.api.export",
     "apps.catalog.ingestion.patches.emit -> apps.catalog.api.soft_delete",
     "apps.catalog.ingestion.patches.planning -> apps.catalog.api.soft_delete",
 ]
