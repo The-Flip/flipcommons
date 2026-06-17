@@ -35,7 +35,6 @@ from apps.catalog.ingestion.patches.emit import (
     _add_delete,
     _add_removals,
     _add_retractions,
-    _check_expect,
     _emit_direct,
     _emit_relationship,
     _HierarchyEdge,
@@ -386,16 +385,11 @@ def _no_such_record_message(
 def _reject_directives_on_same_patch_create(entry: EditEntry) -> None:
     """Reject directives that have no meaning on a record created in this same patch.
 
-    A same-patch create has no prior DB state, so ``expect:`` (drift guard),
-    ``retract:`` (deactivate a prior claim) and ``remove:`` (tombstone a prior
-    member) are all meaningless — only additional field assertions, each its own
-    separately-attributed ChangeSet, refine the new record.
+    A same-patch create has no prior DB state, so ``retract:`` (deactivate a
+    prior claim) and ``remove:`` (tombstone a prior member) are meaningless —
+    only additional field assertions, each its own separately-attributed
+    ChangeSet, refine the new record.
     """
-    if entry.expect:
-        raise PatchError(
-            f"{entry.ref}: 'expect:' can't guard a record created earlier in this "
-            f"same patch — it has no prior state to drift from"
-        )
     if entry.retract:
         raise PatchError(
             f"{entry.ref}: 'retract:' can't apply to a record created earlier in "
@@ -446,7 +440,6 @@ def _process_entry(
             )
         if existing is None:
             raise PatchError(f"{entry.ref}: no such {entry.entity_type} to delete")
-        _check_expect(model_class, existing, entry)
         affected = _add_delete(
             plan, existing, entry, note=note, citation_ref=citation_ref
         )
@@ -500,11 +493,10 @@ def _process_entry(
                     _no_such_record_message(entry, model_class, all_created_ids)
                 )
             # Only field assertions are meaningful on a brand-new record: there's
-            # no prior DB state to drift-guard, retract or remove against.
+            # no prior DB state to retract or remove against.
             _reject_directives_on_same_patch_create(entry)
             target = _Target(handle=ref_handle)
         else:
-            _check_expect(model_class, existing, entry)
             retracted_any = _add_retractions(
                 plan,
                 model_class,

@@ -31,7 +31,7 @@ See [Provenance.md](Provenance.md) for the claims and resolution model. See [Cit
 
 The data patch system owns the YAML-based [data patch authoring language](DataPatches.md). It parses and validates numbered YAML patch files. It is the source-driven write front end; the only other way data gets into the system is interactive human writes.
 
-The data patch system does not write database rows directly; it outputs an `IngestPlan`, the contract consumed by the ingest system. Patch-specific concepts belong here: YAML syntax, file-order behavior, patch drift guards, same-patch references, patch-only diagnostics and same-patch reference resolution.
+The data patch system does not write database rows directly; it outputs an `IngestPlan`, the contract consumed by the ingest system. Patch-specific concepts belong here: YAML syntax, file-order behavior, same-patch references, patch-only diagnostics and same-patch reference resolution.
 
 In compiler terms the patch system is a **front end**: it parses the YAML patch language, resolves and validates each entry, and _lowers_ it to an `IngestPlan` — the **intermediate representation** — which the ingest **back end** (`apply_plan`) executes. The front end and back end stay decoupled across the `IngestPlan` boundary, and the patch system never writes rows itself. Treat that split as load-bearing: new patch behavior belongs in the front end against the IR, not as a fork of `apply_plan`.
 
@@ -102,7 +102,7 @@ The important boundary for source-driven data is the `IngestPlan`. Patch code st
 
 ## Boundary Rules
 
-- Patch-specific concepts belong in the data patch system: YAML syntax, file-order behavior, patch drift guards, same-patch references, patch-only diagnostics and same-patch reference resolution.
+- Patch-specific concepts belong in the data patch system: YAML syntax, file-order behavior, same-patch references, patch-only diagnostics and same-patch reference resolution.
 - Source-agnostic execution belongs in the ingest system: plan validation, entity creation, claim construction, claim diffing, persistence and run reporting.
 - Interactive request handling belongs in catalog API endpoints and edit helpers: request validation, `ClaimSpec` planning, user `ChangeSet` creation and citation attachment.
 - Durable attribution belongs in the claims system: claims, sources, users, ChangeSets, citation instances, active/inactive claim state and source priority.

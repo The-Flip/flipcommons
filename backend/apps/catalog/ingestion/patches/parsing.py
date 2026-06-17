@@ -57,6 +57,8 @@ RESERVED_FIELD_KEYS = frozenset(
     {
         "create",
         "delete",
+        # ``expect`` is obsolete, now accepted-but-ignored: it stays
+        # reserved so older patches that carry it still parse
         "expect",
         "retract",
         "remove",
@@ -68,9 +70,9 @@ RESERVED_FIELD_KEYS = frozenset(
 )
 
 # Header-only keys a grouped `changesets:` item may not carry: lifecycle
-# (create/delete) and the drift guard (expect) live on the group header, and a
-# nested changesets is meaningless.
-_CHANGESET_ITEM_FORBIDDEN_KEYS = frozenset({"create", "delete", "expect", "changesets"})
+# (create/delete) lives on the group header, and a nested changesets is
+# meaningless.
+_CHANGESET_ITEM_FORBIDDEN_KEYS = frozenset({"create", "delete", "changesets"})
 
 # Allowed keys in a `sources:` node / its links, derived from the seed TypedDicts
 # (the single source of truth). `children` is excluded — v1 sources are flat.
@@ -214,7 +216,7 @@ class _PatchEntry:
     :class:`EditEntry`, :class:`DeleteEntry`. The kind is decided while
     parsing, from the ``create:``/``delete:`` directives, and each subclass
     carries *only* the fields legal for that kind. So an illegal combination
-    (``expect`` on a create, ``retract`` on a delete, a field assertion on a
+    (``retract`` on a create, ``remove`` on a delete, a field assertion on a
     delete, …) is a parse-time error rather than a runtime flag check, and
     ``build_plan`` dispatches on the entry's *type* instead of re-testing
     boolean combinations.
@@ -259,7 +261,6 @@ class EditEntry(_PatchEntry):
     The default kind — an entry with neither ``create:`` nor ``delete:``.
     """
 
-    expect: JsonBody
     # Scalar/FK field names whose claim from this source to deactivate.
     retract: list[str]
     # The relationship analogue of ``retract``, by a *different* mechanism: a map
@@ -275,12 +276,9 @@ class EditEntry(_PatchEntry):
 class DeleteEntry(_PatchEntry):
     """Soft-delete an existing entity (``delete: true``).
 
-    Carries an optional ``expect:`` drift guard and provenance only — no field
-    assertions, ``retract`` or ``remove`` (reassign any references in an
-    earlier patch, before the delete).
+    Carries provenance only — no field assertions, ``retract`` or ``remove``
+    (reassign any references in an earlier patch, before the delete).
     """
-
-    expect: JsonBody
 
 
 # A parsed claim entry, discriminated by kind.
@@ -357,13 +355,6 @@ def _require_str(raw_fields: JsonBody, key: str, ref: str) -> str:
     if not isinstance(raw, str):
         raise PatchError(f"{ref}: {key!r} must be a string")
     return raw
-
-
-def _parse_expect(raw_fields: JsonBody, ref: str) -> JsonBody:
-    raw = raw_fields.get("expect", {})
-    if not isinstance(raw, dict):
-        raise PatchError(f"{ref}: 'expect' must be a mapping")
-    return cast(JsonBody, raw)
 
 
 def _parse_retract(raw_fields: JsonBody, ref: str) -> list[str]:
@@ -480,10 +471,10 @@ def _parse_entry_body(ref: str, raw_fields: JsonBody) -> PatchEntry:
                 f"({', '.join(sorted(fields))}) — reassign references in a "
                 f"separate entry, in an earlier patch, before the delete"
             )
-        return DeleteEntry(**common, cites=cites, expect=_parse_expect(raw_fields, ref))
+        return DeleteEntry(**common, cites=cites)
 
     if create:
-        for key in ("expect", "retract", "remove"):
+        for key in ("retract", "remove"):
             if key in raw_fields:
                 raise PatchError(f"{ref}: {key!r} is meaningless on a create")
         return CreateEntry(**common, cites=cites, fields=fields)
@@ -491,7 +482,6 @@ def _parse_entry_body(ref: str, raw_fields: JsonBody) -> PatchEntry:
     return EditEntry(
         **common,
         cites=cites,
-        expect=_parse_expect(raw_fields, ref),
         retract=_parse_retract(raw_fields, ref),
         remove=_parse_remove(raw_fields, ref),
         fields=fields,
@@ -507,10 +497,10 @@ def _parse_claim(raw_entry: object, index: int) -> list[PatchEntry]:
     downstream changes:
 
     * the header's body **minus** ``changesets:`` is parsed as a normal entry —
-      the *primary*, present only if the header asserts something beyond
-      ``expect:`` (a ``create``, fields, a ``retract``/``remove``);
+      the *primary*, present only if the header asserts something (a ``create``,
+      fields, a ``retract``/``remove``);
     * each ``changesets:`` item becomes an additional :class:`EditEntry` on the
-      same record, inheriting the header's ref and ``expect:``.
+      same record, inheriting the header's ref.
 
     Entries come back in file order — primary (if any) first, then the items —
     which is byte-identical to the flat multi-entry equivalent.
@@ -521,21 +511,20 @@ def _parse_claim(raw_entry: object, index: int) -> list[PatchEntry]:
 
     header = {k: v for k, v in body.items() if k != "changesets"}
     # Carrier keys are everything that can anchor a ChangeSet: field assertions,
-    # create/delete, retract/remove. ``expect`` and the provenance keys can't.
+    # create/delete, retract/remove. The accepted-but-ignored ``expect`` and the
+    # provenance keys can't.
     carrier_keys = set(header) - {"expect", "note", "cite", "cites"}
     provenance_keys = {"note", "cite", "cites"} & set(header)
-    # A header with provenance but no carrier — only ``expect:`` — has nothing to
-    # attach it to: there is no group-level note/cite, those ride the individual
-    # changesets. Reject here with a clear message rather than letting the
-    # synthesized carrier-less primary die in planning's opaque carrier check.
+    # A header with provenance but no carrier has nothing to attach it to: there
+    # is no group-level note/cite, those ride the individual changesets. Reject
+    # here with a clear message rather than letting the synthesized carrier-less
+    # primary die in planning's opaque carrier check.
     if provenance_keys and not carrier_keys:
         raise PatchError(
             f"{ref}: a group header with no field assertions takes no "
             f"{', '.join(sorted(provenance_keys))} — put provenance on the "
             f"individual changesets"
         )
-
-    expect = _parse_expect(body, ref)  # validated once; shared by every item
 
     entries: list[PatchEntry] = []
     if carrier_keys:  # header asserts something → it is the primary entry
@@ -556,7 +545,7 @@ def _parse_claim(raw_entry: object, index: int) -> list[PatchEntry]:
                 f"{ref}: a 'changesets' item may not carry "
                 f"{', '.join(sorted(forbidden))} — these are header-only"
             )
-        entries.append(_parse_entry_body(ref, {**item, "expect": expect}))
+        entries.append(_parse_entry_body(ref, item))
     return entries
 
 

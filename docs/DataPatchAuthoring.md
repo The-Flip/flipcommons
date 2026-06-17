@@ -8,8 +8,8 @@ For background, [DataPatches.md](DataPatches.md) defines the patch **file format
 
 Hand-authoring is the default; reach for a generator only when a _population_ earns it.
 
-- **Hand-author** native YAML when you can get the whole patch right by reading each entry once — targeted corrections, a record description, a vocab file. Most patches are this, including ones that touch a dozen entities: a description patch has no per-row guard or quote to mechanize, so a script buys nothing. It also stays cheap to revise, since a later change edits the YAML directly.
-- **Generate with [DataPatchKit.md](DataPatchKit.md)** when you're classifying a population from source data — many rows, each needing a live-value `expect:` guard and a verbatim quote extracted and escaped from source free text. The trigger is the repeated mechanical per-row work, not the row count: hand-copied guards drift from the live DB, while a generator reads them true on every regen and can make each classification field a _required_ per-row key, so a row that omits it fails loudly instead of silently inheriting a wrong value — a model defaulting to `game_format: pinball` is how a non-pinball machine slips through. Enforced uniform coverage is as much the point as true guards. Keep a worksheet recording every search behind the rows — the dead ends too, since proving a term is _absent_ from the sources is what justifies the signal you did use — so the editorial judgment stays auditable. The cost lands later: edits go through the generator and a live-DB-coupled re-run, never the YAML, so don't generate a patch you expect to keep hand-tweaking.
+- **Hand-author** native YAML when you can get the whole patch right by reading each entry once — targeted corrections, a record description, a vocab file. Most patches are this, including ones that touch a dozen entities: a description patch has no per-row quote to mechanize, so a script buys nothing. It also stays cheap to revise, since a later change edits the YAML directly.
+- **Generate with [DataPatchKit.md](DataPatchKit.md)** when you're classifying a population from source data — many rows, each needing a verbatim quote extracted and escaped from source free text. The trigger is the repeated mechanical per-row work, not the row count: a generator can make each classification field a _required_ per-row key, so a row that omits it fails loudly instead of silently inheriting a wrong value — a model defaulting to `game_format: pinball` is how a non-pinball machine slips through. Enforced uniform coverage is the point. Keep a worksheet recording every search behind the rows — the dead ends too, since proving a term is _absent_ from the sources is what justifies the signal you did use — so the editorial judgment stays auditable. The cost lands later: edits go through the generator, never the YAML, so don't generate a patch you expect to keep hand-tweaking.
 
 Decide per patch, not per patch set: a generated bulk patch and hand-written one-offs can sit side by side.
 
@@ -48,10 +48,6 @@ Reach for a different attribution only in these cases:
 
 **Each entry targets exactly one record.** By default keep that record's fields together in the one entry under a single `note`/`cite`. When the fields have **distinct evidence**, you may instead split them across several entries on the same record — each its own `ChangeSet` with its own `note`/`cite`, as long as the fields are disjoint (see [DataPatches.md](DataPatches.md#notes--citations)).
 
-### Guard every entry
-
-**Guard every entry with `expect:`** against a current resolved value — `year`, or another stable field like `corporate_entity` when year is null — so a typo'd or drifted public_id fails loudly instead of writing to the wrong row. When claims are keyed off an external record (IPDB/OPDB), guard on that id — `expect: { ipdb_id: 4965 }`: it's the most specific guard, it's the same record your `cite:` points at, and it's present even when `year` and `corporate_entity` are both null.
-
 ### Note every entry
 
 **Explain every change with `note:`**, written as `<source> says "<verbatim quote>"`. Quote the source _verbatim_ and mark your own omissions with `[...]`. **Preserve the source's own characters**, including non-ASCII letters in foreign-language quotes (e.g. `Günter`, `gegründet`) — notes are stored as UTF-8, so don't strip or transliterate them. Only normalize stray _typography_ that's a copy-paste artifact rather than part of the quote: straighten smart quotes (`“ ”` → `"`) and spell out an ellipsis `…` as `[...]`.
@@ -62,7 +58,7 @@ Reach for a different attribution only in these cases:
 
 **Pick the cite form by source:** `scheme:identifier` for IPDB/OPDB records, or a raw `http(s)://` URL for any other web page (a forum thread, an archive scan, a manufacturer's page). Reach for the scheme form whenever one exists; the URL form is the escape hatch for sources without a scheme. A URL cite needs its **website root seeded first** — see [Citation sources](#citation-sources).
 
-**The cite can differ from the `expect:` guard.** When the evidence lives in a _different_ record's note (a cross-reference — "‹other game› is not a pinball"), guard on the model's own id but `cite:` the record that contains the statement.
+**The cite can target a different record than the claim.** When the evidence lives in a _different_ record's note (a cross-reference — "‹other game› is not a pinball"), `cite:` the record that contains the statement.
 
 **Only assert what a source supports.** If you can't point to evidence, leave the field unset rather than guess: an unset value reads as "unknown", a wrong claim reads as fact.
 
@@ -106,10 +102,9 @@ uv run python manage.py dump_patch_entry model.mazatron > /tmp/p/0NNN-reword.yam
 
 The command emits a complete, runnable patch document with the entity's markdown fields in authoring format (`[[cite:<slug>]]`, real durable slugs in place) — edit a sentence, drop the marker for any citation you remove, and resubmit. Existing slugs self-resolve, so an untouched citation re-applies to byte-identical storage and diffs as a no-op (no churn, no orphaned instance); only a sentence you actually change writes.
 
-Two behaviors to know:
+One behavior to know:
 
 - **`attribution:` defaults to the field's _owning_ source** (the `flipcommons-ai-desc-<type>` that holds the winning description claim), because a re-apply is a faithful no-op only under that source — `_diff_claims` compares within a source. `--attribution <slug>` overrides it, which **forks** the text into a new source-owned claim rather than preserving no-op semantics. A description that was last edited **interactively in-app** is user-owned (no source) and dumps only with an explicit `--attribution`.
-- **The dump omits `expect:`**, so it carries no drift guard — it will apply even if the entity changed between dump and re-apply. Add an `expect:` yourself if that matters.
 
 ### Manufacturer descriptions
 
@@ -147,7 +142,7 @@ How to validate your changes:
 
 ### Dry run
 
-`--dry-run` parses the patch and runs every structural check (schema, escaping, `expect:` guards, citation roots) without writing. This catches most single-file mistakes in seconds. However, what it cannot do is show the resolved result or validate a dependency that spans patch files, because it commits nothing.
+`--dry-run` parses the patch and runs every structural check (schema, escaping, citation roots) without writing. This catches most single-file mistakes in seconds. However, what it cannot do is show the resolved result or validate a dependency that spans patch files, because it commits nothing.
 
 **`--dry-run` can't validate a reference to an entity from another patch file.** Dry-run commits nothing, so if a later patch references something an earlier patch file creates — a title before its model, a manufacturer, a parent location, a vocab value — the later patch reports "FK target does not exist" for it. When you are testing multiple patch files together where one depends on a previous, validate with the snapshot+apply above instead of dry-run.
 

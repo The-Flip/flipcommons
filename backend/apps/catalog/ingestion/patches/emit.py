@@ -753,43 +753,6 @@ def _add_delete(
     return affected
 
 
-def _check_expect(
-    model_class: type[CatalogModel],
-    existing: CatalogModel,
-    entry: EditEntry | DeleteEntry,
-) -> None:
-    """Drift guard: every ``expect:`` value must equal the resolved value.
-
-    Piggybacks the entity already loaded for the claim target — no extra
-    query for scalars, one related access for FKs. v1 covers scalar + FK;
-    relationship-``expect`` is unsupported.
-    """
-    if not entry.expect:
-        return
-    claim_fields = get_claim_fields(model_class)
-    for field_name, expected in entry.expect.items():
-        if field_name not in claim_fields:
-            raise PatchError(
-                f"{entry.ref}: expect field {field_name!r} is not a scalar/FK field "
-                f"(relationship-expect is unsupported in v1)"
-            )
-        django_field = model_class._meta.get_field(field_name)
-        if isinstance(django_field, models.ForeignKey):
-            related = getattr(existing, field_name)
-            if related is None:
-                actual: object = None
-            else:
-                pid_field = getattr(type(related), "public_id_field", "slug")
-                actual = getattr(related, pid_field)
-        else:
-            actual = getattr(existing, field_name)
-        if actual != expected:
-            raise PatchError(
-                f"{entry.ref}: expect {field_name}={expected!r} but the resolved "
-                f"value is {actual!r}"
-            )
-
-
 def _add_retractions(
     plan: IngestPlan,
     model_class: type[CatalogModel],

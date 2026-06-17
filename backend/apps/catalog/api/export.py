@@ -276,7 +276,7 @@ def _claim_scalar_fields(spec: ExportSpec) -> dict[str, models.Field[Any, Any]]:
 
 
 def _relationship_namespaces(model: type[CatalogModel]) -> set[str]:
-    """Claim-relationship namespaces registered for this model (for drift-guard)."""
+    """Claim-relationship namespaces registered for this model."""
     return {
         ns
         for ns, schema in get_all_relationship_schemas().items()
