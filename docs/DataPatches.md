@@ -260,7 +260,7 @@ Duplicate keys error, and values must be JSON-shaped — YAML coercion is off, s
 
 ## Citation sources
 
-A patch can also create **citation sources** — the reference works (`ipdb`, `pinside`, a manufacturer's site) that `cite:` points at — via a top-level `sources:` block. Use it to add a new web/book/magazine root without editing the seed file. Unlike claims, a source is _not attributed_ and carries no provenance; `attribution:` still names the source that owns the run's ledger entry, not the citation sources.
+A patch can also create **citation sources** — the reference works (`ipdb`, `pinside`, a manufacturer's site) that `cite:` points at — via a top-level `sources:` block. This is the way to add a new web/book/magazine root: declare it here and it's created at apply time. Unlike claims, a source is _not attributed_ and carries no provenance; `attribution:` still names the source that owns the run's ledger entry, not the citation sources.
 
 ```yaml
 attribution: flipcommons-catalog # owns the IngestRun; does NOT attribute the sources
@@ -282,7 +282,7 @@ sources: # processed before claims, so a cite: below can nest under a root creat
 claims: [] # optional — a sources-only patch is valid
 ```
 
-A `sources:` node is the seed-data source shape (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, and `links`). **v1 is flat** — nested `children` is rejected; a child source under a root is created on demand when you `cite:` a URL on its domain.
+A `sources:` node is a flat citation-source record (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, and `links`). **v1 is flat** — nested `children` is rejected; a child source under a root is created on demand when you `cite:` a URL on its domain.
 
 **Identity and the get-or-create policy.** A source has no slug; identity is `isbn` if present, else `(name, source_type)`. The block is **additive get-or-create**, never an overwrite:
 

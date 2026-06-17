@@ -1,52 +1,20 @@
-"""Seed canonical citation sources for known pinball reference works.
+"""Get-or-create citation sources for the data-patch ``sources:`` block.
 
-Two callers share the leaf write primitives here:
-
-* ``ensure_citation_sources`` / ``_seed_nodes`` — the seed pipeline. Walks a
-  ``SeedSource`` tree (roots + children), *updating* existing rows to match the
-  seed data (the seed file is the source of truth).
-* ``ensure_root_source`` — the data-patch path (``apps.catalog.ingestion``).
-  Flat (roots only) and **additive-only**: it creates a missing source or
-  backfills a missing link, but never overwrites an existing row or link. A
-  collision is a warning, never a failure — so a user-created source can't wedge
-  the patch queue. See ``docs/DataPatches.md``.
-
-The shared surface is deliberately small — the lookup and the single-row
-create/link writes — leaving the divergent orchestration (update-on-diff +
-children for the seed; additive + flat for the patch) in each caller.
+The patch path (``apps.catalog.ingestion``) is the only caller. It is flat
+(roots only) and **additive-only**: ``ensure_root_source`` creates a missing
+source or backfills a missing link, but never overwrites an existing row or
+link. A collision is a warning, never a failure — so a user-created source
+can't wedge the patch queue. See ``docs/DataPatches.md``.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, NamedTuple
 
-from django.core.management.base import CommandError
-from django.db import transaction
-
-from apps.citation.seed_data import SEED_SOURCES as _SEED_SOURCES
 from apps.citation.seed_data.types import SeedLink, SeedSource
 
 if TYPE_CHECKING:
     from apps.citation.models import CitationSource
-
-
-def ensure_citation_sources(
-    sources: list[SeedSource] | None = None,
-) -> dict[str, int]:
-    """Seed citation sources. Returns {"created": N, "updated": N, "unchanged": N}.
-
-    If sources is None, uses SEED_SOURCES (the canonical pinball reference data).
-    Accepts a custom list for testing.
-    """
-    if sources is None:
-        sources = _SEED_SOURCES
-
-    counts: dict[str, int] = {"created": 0, "updated": 0, "unchanged": 0}
-
-    with transaction.atomic():
-        _seed_nodes(sources, parent=None, counts=counts)
-
-    return counts
 
 
 # Fields that are model columns (excluding children, links, and parent).
@@ -88,23 +56,20 @@ def _source_fields(node: SeedSource) -> dict[str, object]:
     return {k: v for k, v in node.items() if k in _SOURCE_FIELDS}
 
 
-def _lookup_source(
-    fields: dict[str, object],
-    *,
-    roots_only: bool = False,
-) -> tuple[CitationSource | None, int]:
+def _lookup_source(fields: dict[str, object]) -> tuple[CitationSource | None, int]:
     """Find an existing source by the soft natural key. Returns (first, count).
 
     Keys on ``isbn`` when present (DB-unique → at most one), else on
-    ``(name, source_type)`` (count can exceed 1; callers decide what to do).
+    ``(name, source_type)`` scoped to parentless rows (count can exceed 1; the
+    caller decides what to do).
 
-    ``roots_only`` scopes the ``(name, source_type)`` match to parentless rows.
-    The data-patch path creates *roots*, so a same-named child (one a ``cite:``
-    minted, say) must not shadow the root it should create — otherwise the root
-    is never made and links land on a child, where ``recognize_url`` can't see
-    them. It deliberately does **not** scope the ``isbn`` path: ``isbn`` is
-    globally unique (a flat book root carries one), and excluding a child that
-    holds the isbn would force a create that violates the unique constraint.
+    The ``(name, source_type)`` match is root-scoped because the patch path
+    creates *roots*: a same-named child (one a ``cite:`` minted, say) must not
+    shadow the root it should create — otherwise the root is never made and
+    links land on a child, where ``recognize_url`` can't see them. The ``isbn``
+    path is deliberately **not** scoped: ``isbn`` is globally unique (a flat
+    book root carries one), and excluding a child that holds the isbn would
+    force a create that violates the unique constraint.
     """
     from apps.citation.models import CitationSource
 
@@ -113,10 +78,8 @@ def _lookup_source(
         obj = CitationSource.objects.filter(isbn=isbn).first()
         return obj, (1 if obj is not None else 0)
     qs = CitationSource.objects.filter(
-        name=fields["name"], source_type=fields["source_type"]
+        name=fields["name"], source_type=fields["source_type"], parent__isnull=True
     )
-    if roots_only:
-        qs = qs.filter(parent__isnull=True)
     return qs.first(), qs.count()
 
 
@@ -201,7 +164,7 @@ def ensure_root_source(
     fields = _source_fields(node)
     name = fields["name"]
     source_type = fields["source_type"]
-    obj, match_count = _lookup_source(fields, roots_only=True)
+    obj, match_count = _lookup_source(fields)
 
     if match_count > 1:
         warnings.append(
@@ -242,78 +205,3 @@ def ensure_root_source(
                 f"different type/label; left unchanged."
             )
     return SourceUpsertResult(source_created=False, links_created=links_created)
-
-
-# ---------------------------------------------------------------------------
-# Seed pipeline: update-on-diff walk over roots + children
-# ---------------------------------------------------------------------------
-
-
-def _seed_nodes(
-    nodes: list[SeedSource],
-    parent: CitationSource | None,
-    counts: dict[str, int],
-) -> None:
-    from apps.citation.models import CitationSourceLink
-
-    for node in nodes:
-        children = node.get("children", [])
-        links = node.get("links", [])
-        fields = _source_fields(node)
-
-        # -- Look up existing record --
-        # count > 1 only arises on the (name, source_type) path — the isbn path
-        # is DB-unique — so the message can always name that pair.
-        obj, count = _lookup_source(fields)
-        if count > 1:
-            raise CommandError(
-                f"Multiple sources match ({fields['name']!r}, "
-                f"{fields['source_type']!r}) — resolve manually"
-            )
-
-        # -- Create or update --
-        if obj is None:
-            obj = _create_source({**fields, "parent": parent})
-            counts["created"] += 1
-        else:
-            # Compare fields, using parent_id for FK comparison
-            changes = {k: v for k, v in fields.items() if getattr(obj, k) != v}
-            if parent is not None:
-                if obj.parent_id != parent.pk:
-                    changes["parent"] = parent
-            elif obj.parent_id is not None:
-                changes["parent"] = None
-
-            if changes:
-                for k, v in changes.items():
-                    setattr(obj, k, v)
-                obj.full_clean()
-                obj.save(update_fields=[*changes.keys(), "updated_at"])
-                counts["updated"] += 1
-            else:
-                counts["unchanged"] += 1
-
-        # -- Links --
-        for link_data in links:
-            url = link_data["url"]
-            label = link_data.get("label", "")
-            link_type = link_data["link_type"]
-            existing = CitationSourceLink.objects.filter(
-                citation_source=obj, url=url
-            ).first()
-            if existing is None:
-                _create_link(obj, link_data)
-            else:
-                link_changes = {}
-                if existing.label != label:
-                    link_changes["label"] = label
-                if existing.link_type != link_type:
-                    link_changes["link_type"] = link_type
-                if link_changes:
-                    for k, v in link_changes.items():
-                        setattr(existing, k, v)
-                    existing.full_clean()
-                    existing.save(update_fields=[*link_changes.keys(), "updated_at"])
-
-        # -- Recurse into children --
-        _seed_nodes(children, parent=obj, counts=counts)
