@@ -30,6 +30,7 @@ from django.db import IntegrityError, transaction
 from django.db import models as db_models
 from django.db.models import Q
 
+from apps.catalog.exceptions import StructuredValidationError
 from apps.catalog.models import AliasModel, CatalogModel
 from apps.catalog.naming import normalize_catalog_name
 from apps.core.models import meta_unique_fields
@@ -39,7 +40,6 @@ from apps.provenance.schemas import CitationReferenceInputSchema
 
 from .edit_claims import (
     ClaimSpec,
-    StructuredValidationError,
     execute_claims,
 )
 from .schemas import EntityCreateInputSchema

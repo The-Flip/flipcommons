@@ -12,7 +12,7 @@ class ErrorDetailSchema(Schema):
 
     # The shared shape for non-structured failures. Structured 422s (with
     # ``field_errors`` / ``form_errors``) come from
-    # ``apps.catalog.api.edit_claims.StructuredValidationError`` and have their
+    # ``apps.catalog.exceptions.StructuredValidationError`` and have their
     # own wire format; this schema covers the simpler "detail only" case.
     detail: str = Field(description="A human-readable error message.")
 

@@ -42,6 +42,7 @@ from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import ChangeSetInputSchema
 
+from ..exceptions import StructuredValidationError
 from ..models import CatalogModel, Location
 from ..services.location_paths import (
     compute_location_path,
@@ -49,7 +50,6 @@ from ..services.location_paths import (
 )
 from .edit_claims import (
     ClaimSpec,
-    StructuredValidationError,
     execute_claims,
     plan_alias_claims,
     raise_form_error,

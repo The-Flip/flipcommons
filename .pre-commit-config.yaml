@@ -58,6 +58,16 @@ repos:
         language: system
         files: ^backend/
         pass_filenames: false
+      # Import boundary enforcement (import-linter). Contracts live in
+      # backend/pyproject.toml [tool.importlinter]; spec is docs/AppBoundaries.md.
+      # pass_filenames: false so the full import graph is analyzed every time.
+      - id: import-linter
+        name: import-linter (app boundaries)
+        entry: bash -c 'cd backend && uv run lint-imports'
+        language: system
+        # Re-validate on any backend .py change OR an edit to the contracts.
+        files: (^backend/.*\.py$|^backend/pyproject\.toml$)
+        pass_filenames: false
       # Static type checking via mypy (with django-stubs plugin) in daemon mode.
       # dmypy holds the project type graph in memory across commits — cold start
       # is slow (~30-60s) but every subsequent run is fast and full-project.

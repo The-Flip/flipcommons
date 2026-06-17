@@ -14,44 +14,28 @@ the tail).
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import apps.provenance.claim_ranking_in_db as ranking
+from apps.core.tests._source_guard import offenders
 
-_CANONICAL = Path(ranking.__file__).resolve()
-_APPS_DIR = _CANONICAL.parents[1]  # .../backend/apps
-
-
-def _production_sources() -> list[Path]:
-    """Every non-test, non-migration app module except the canonical one."""
-    return [
-        path
-        for path in _APPS_DIR.rglob("*.py")
-        if "migrations" not in path.parts
-        and "tests" not in path.parts
-        and path.resolve() != _CANONICAL
-    ]
-
-
-def _offenders(needle: str) -> list[str]:
-    return [str(p) for p in _production_sources() if needle in p.read_text()]
+# The canonical module spells the rule on purpose; exempt it from its own guard.
+_CANONICAL = {"provenance/claim_ranking_in_db.py"}
 
 
 def test_priority_annotation_defined_only_in_ranking() -> None:
     """The ``effective_priority`` annotation exists only in the canonical module."""
-    offenders = _offenders("effective_priority=Case")
-    assert not offenders, (
+    found = offenders("effective_priority=Case", allow=_CANONICAL)
+    assert not found, (
         f"Re-implemented the priority annotation outside {ranking.__name__}: "
-        f"{offenders}. Use ranked_claims() instead."
+        f"{found}. Use ranked_claims() instead."
     )
 
 
 def test_winner_order_spelled_only_in_ranking() -> None:
     """The ``-effective_priority`` order key is only spelled in the canonical module."""
-    offenders = _offenders('"-effective_priority"')
-    assert not offenders, (
+    found = offenders('"-effective_priority"', allow=_CANONICAL)
+    assert not found, (
         f"Hard-coded the winner-pick order outside {ranking.__name__}: "
-        f"{offenders}. Use ranked_claims() instead."
+        f"{found}. Use ranked_claims() instead."
     )
 
 
@@ -63,8 +47,8 @@ def test_winner_pick_entered_only_through_ranked_claims() -> None:
     A consumer that instead calls the private ``annotate_priority`` and orders by
     hand *could* — so that primitive must stay inside the canonical module.
     """
-    offenders = _offenders("annotate_priority")
-    assert not offenders, (
+    found = offenders("annotate_priority", allow=_CANONICAL)
+    assert not found, (
         f"Called the private annotate_priority outside {ranking.__name__}: "
-        f"{offenders}. Use ranked_claims() so the tiebreak order can't be dropped."
+        f"{found}. Use ranked_claims() so the tiebreak order can't be dropped."
     )

@@ -23,6 +23,7 @@ from apps.catalog.claims import (
     normalize_abbreviation_value,
     normalize_alias_identity,
 )
+from apps.catalog.exceptions import StructuredValidationError
 from apps.catalog.models import (
     CorporateEntity,
     CreditRole,
@@ -33,9 +34,7 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
-from apps.core.exceptions import StructuredApiError
 from apps.core.models import SluggedModel
-from apps.core.types import JsonBody
 from apps.provenance.models import (
     ChangeSet,
     ChangeSetAction,
@@ -72,46 +71,6 @@ class ClaimSpec:
     # consumers narrow per field_name before persisting.
     value: object
     claim_key: str = ""
-
-
-class StructuredValidationError(StructuredApiError):
-    """Validation error with separate field-level and form-level messages.
-
-    Raised by claim-editing helpers and routed through the shared
-    ``StructuredApiError`` handler in ``config/api.py``, which returns a
-    422 JSON response:
-
-    .. code-block:: json
-
-        {
-            "detail": {
-                "kind": "validation_error",
-                "message": "summary",
-                "field_errors": {"year": "Must be ≤ 2100."},
-                "form_errors": ["No changes provided."]
-            }
-        }
-    """
-
-    kind = "validation_error"
-    status = 422
-
-    def __init__(
-        self,
-        *,
-        message: str,
-        field_errors: dict[str, str] | None = None,
-        form_errors: list[str] | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.field_errors = field_errors or {}
-        self.form_errors = form_errors or []
-
-    def to_body(self) -> JsonBody:
-        return {
-            "field_errors": self.field_errors,
-            "form_errors": self.form_errors,
-        }
 
 
 @dataclass

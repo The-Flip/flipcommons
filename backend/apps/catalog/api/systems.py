@@ -30,12 +30,12 @@ from apps.provenance.rate_limits import (
     rate_limited,
 )
 
+from ..exceptions import StructuredValidationError
 from ..models import MachineModel, Manufacturer, System
 from ._typing import HasModelCount
 from .constants import NameQuery, PageParam
 from .edit_claims import (
     ClaimSpec,
-    StructuredValidationError,
     execute_claims,
     plan_scalar_field_claims,
 )

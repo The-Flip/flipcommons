@@ -18,30 +18,8 @@ re-fork: a hand-written liveness ``Q`` that forgets the null clause, or a
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from apps.core.models import EntityStatus, is_deleted, is_live
-
-_APPS_DIR = Path(__file__).resolve().parents[2]  # .../backend/apps
-
-
-def _production_sources() -> list[Path]:
-    """Every non-test, non-migration app module."""
-    return [
-        path
-        for path in _APPS_DIR.rglob("*.py")
-        if "migrations" not in path.parts and "tests" not in path.parts
-    ]
-
-
-def _offenders(needle: str, *allowed: str) -> list[str]:
-    allow = set(allowed)
-    return [
-        str(p)
-        for p in _production_sources()
-        if p.name not in allow and needle in p.read_text()
-    ]
-
+from apps.core.tests._source_guard import offenders
 
 # ---------------------------------------------------------------------------
 # Closed-domain guard — the reason the SQL and predicate forms agree.
@@ -118,9 +96,9 @@ def test_deadness_compared_only_through_is_live_is_deleted() -> None:
         "== EntityStatus.DELETED",
         "!= EntityStatus.DELETED",
     ):
-        offenders = _offenders(needle, "mixins.py")
-        assert not offenders, (
-            f"Hand-compared status to deleted ({needle!r}) in {offenders}. "
+        found = offenders(needle, allow={"core/models/mixins.py"})
+        assert not found, (
+            f"Hand-compared status to deleted ({needle!r}) in {found}. "
             "Use is_live() / is_deleted() from apps.core.models instead."
         )
 
@@ -135,8 +113,8 @@ def test_null_status_q_spelled_only_canonically() -> None:
     else is a hand-rolled liveness/active filter that must call
     ``active_status_q()`` instead.
     """
-    offenders = _offenders("status__isnull", "constraints.py")
-    assert not offenders, (
-        f"Hand-built a status__isnull Q in {offenders}. Use active_status_q() "
+    found = offenders("status__isnull", allow={"core/models/constraints.py"})
+    assert not found, (
+        f"Hand-built a status__isnull Q in {found}. Use active_status_q() "
         "from apps.core.models so the null-inclusive clause can't be dropped."
     )

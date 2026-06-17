@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from apps.catalog.api.edit_claims import StructuredValidationError
+from apps.catalog.exceptions import StructuredValidationError
 from apps.catalog.models import Location
 
 __all__ = [

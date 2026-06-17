@@ -24,6 +24,7 @@ dependencies = [
 dev = [
     "django-stubs-ext>=6.0.3",
     "django-stubs[compatible-mypy]>=6.0.3",
+    "import-linter>=2.11",
     "libcst>=1.8.6",
     "mypy>=1.20.2",
     "pytest>=9.0.3",
@@ -96,6 +97,246 @@ section-order = ["future", "standard-library", "third-party", "first-party", "lo
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
+
+# Import boundary enforcement — see docs/AppBoundaries.md for the prose spec.
+# Run with `lint-imports` (wired into scripts/lint). Contracts translate the
+# app dependency tiers and peer-isolation rules into checkable form.
+[tool.importlinter]
+root_packages = ["apps"]
+
+# The vertical dependency spine. Higher tiers may import lower ones; lower may
+# not import higher; pipe-separated names are independent siblings at one level.
+# Media is NOT listed here — its peer-isolation rule is asymmetric (provenance
+# may import citation, but media internals may import neither) and is enforced
+# by the two forbidden contracts below.
+[[tool.importlinter.contracts]]
+name = "App layer tiers"
+type = "layers"
+layers = [
+    "apps.kiosk",
+    "apps.catalog",
+    "apps.provenance",
+    "apps.citation",
+    "apps.accounts",
+    "apps.core",
+]
+ignore_imports = [
+    # --- Tests are exempt (mirrors the frontend's test-file boundary policy) ---
+    # A test for one app routinely imports another app's models and factories.
+    "apps.*.tests.** -> apps.**",
+    # --- Page-API carve-out (permanent) ---------------------------------
+    # Page endpoints intentionally cross tiers to compose a route's full
+    # render payload. See docs/AppBoundaries.md § Exception: Page API endpoints.
+    "apps.accounts.api.* -> apps.provenance.**",
+    "apps.core.api.admin_dashboard_page -> apps.**",
+    # --- BASELINE: existing violations to fix; do NOT add to this list ---
+    "apps.provenance.api -> apps.catalog.models",
+    "apps.provenance.revert -> apps.catalog.resolve",
+    "apps.core.api_helpers -> apps.accounts.models",
+    "apps.core.middleware.sentry_scope -> apps.accounts.models",
+]
+
+# Media internals (storage/processing/schemas/models) are peer-isolated from
+# the citation/provenance data apps. The one sanctioned crack is
+# media.models -> provenance.models for ClaimControlledModel.
+[[tool.importlinter.contracts]]
+name = "Media internals do not reach into the data apps"
+type = "forbidden"
+source_modules = [
+    "apps.media.storage",
+    "apps.media.processing",
+    "apps.media.schemas",
+    "apps.media.models",
+]
+forbidden_modules = [
+    "apps.provenance",
+    "apps.citation",
+]
+ignore_imports = [
+    # Surgical exception: media_attachment is a claim field, so every
+    # MediaSupportedModel is structurally a ClaimControlledModel.
+    "apps.media.models.base -> apps.provenance.models",
+]
+
+# The reverse direction: the data apps must not depend on media. Direct-only:
+# the indirect chain provenance -> catalog -> media is the provenance -> catalog
+# baseline issue above, not a provenance -> media dependency.
+[[tool.importlinter.contracts]]
+name = "Data apps do not depend on media"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.provenance",
+    "apps.citation",
+]
+forbidden_modules = ["apps.media"]
+
+# Domain models are the bottom of each app's internal stack: they must not reach
+# up into the HTTP/serialization layer. Direct-only — an indirect models -> X ->
+# api chain is X's problem, caught by the api-leaf contract below.
+[[tool.importlinter.contracts]]
+name = "Domain models do not import the api/schema layer"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.core.models",
+    "apps.accounts.models",
+    "apps.catalog.models",
+    "apps.provenance.models",
+    "apps.citation.models",
+    "apps.media.models",
+    "apps.kiosk.models",
+]
+forbidden_modules = [
+    "apps.core.api",
+    "apps.accounts.api",
+    "apps.catalog.api",
+    "apps.provenance.api",
+    "apps.citation.api",
+    "apps.media.api",
+    "apps.kiosk.api",
+    "apps.core.schemas",
+    "apps.accounts.schemas",
+    "apps.citation.schemas",
+    "apps.media.schemas",
+    "apps.provenance.schemas",
+]
+
+# Test-only helpers must never be imported by production code. test_factories
+# encode test-fixture invariants; importing them from app code ships test
+# scaffolding into the runtime path. One contract per factory: a forbidden
+# module cannot be a descendant of its source, so each sources all apps EXCEPT
+# the one that owns the factory (which covers every cross-app leak; a same-app
+# self-import is the only residual gap and is trivially caught in review).
+[[tool.importlinter.contracts]]
+name = "Production code does not import accounts test factories"
+type = "forbidden"
+source_modules = [
+    "apps.core",
+    "apps.catalog",
+    "apps.citation",
+    "apps.provenance",
+    "apps.media",
+    "apps.kiosk",
+]
+forbidden_modules = ["apps.accounts.test_factories"]
+ignore_imports = ["apps.*.tests.** -> apps.accounts.test_factories"]
+
+[[tool.importlinter.contracts]]
+name = "Production code does not import provenance test factories"
+type = "forbidden"
+source_modules = [
+    "apps.core",
+    "apps.accounts",
+    "apps.catalog",
+    "apps.citation",
+    "apps.media",
+    "apps.kiosk",
+]
+forbidden_modules = ["apps.provenance.test_factories"]
+ignore_imports = ["apps.*.tests.** -> apps.provenance.test_factories"]
+
+# The api/ layer is a leaf: it composes the domain layers below into HTTP
+# endpoints, so the domain must not import back into it. Source is enumerated
+# (forbidden cannot be a descendant of source) — this list also documents what
+# counts as catalog's domain layer. Catalog has a multi-module api/ package; the
+# core api/ package gets its own leaf contract below, and the remaining apps are
+# single api.py modules that are leaves by construction. Domain logic stranded
+# under catalog/api/ is baselined for burn-down (see docs/AppBoundaries.md).
+[[tool.importlinter.contracts]]
+name = "The api layer is a leaf"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.catalog.models",
+    "apps.catalog.services",
+    "apps.catalog.resolve",
+    "apps.catalog.ingestion",
+    "apps.catalog.claims",
+    "apps.catalog.cache",
+    "apps.catalog.naming",
+    "apps.catalog.authz",
+    "apps.catalog.signals",
+]
+forbidden_modules = ["apps.catalog.api"]
+ignore_imports = [
+    # --- BASELINE: domain logic stranded under api/; move it out, then delete ---
+    "apps.catalog.ingestion.patches.emit -> apps.catalog.api.soft_delete",
+    "apps.catalog.ingestion.patches.planning -> apps.catalog.api.soft_delete",
+]
+
+# The ingest system (ingestion/) is the bulk catalog write path — a top-level
+# consumer, not a dependency. The rest of catalog must not import it; only the
+# management commands that drive ingest (manage.py ingest_patches / pull_patches)
+# may, and they live outside this source list as the orchestration entrypoint.
+[[tool.importlinter.contracts]]
+name = "Catalog domain does not import the ingest system"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.catalog.models",
+    "apps.catalog.claims",
+    "apps.catalog.resolve",
+    "apps.catalog.services",
+    "apps.catalog.cache",
+    "apps.catalog.naming",
+    "apps.catalog.signals",
+    "apps.catalog.authz",
+    "apps.catalog.api",
+]
+forbidden_modules = ["apps.catalog.ingestion"]
+ignore_imports = ["apps.catalog.*.tests.** -> apps.catalog.ingestion.**"]
+
+# core has a multi-module api/ package (like catalog); the same leaf rule applies.
+[[tool.importlinter.contracts]]
+name = "The core api layer is a leaf"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.core.types",
+    "apps.core.exceptions",
+    "apps.core.models",
+    "apps.core.authz",
+    "apps.core.autocomplete",
+    "apps.core.markdown",
+    "apps.core.wikilinks",
+    "apps.core.search",
+    "apps.core.sitemap",
+    "apps.core.pagination",
+    "apps.core.rate_limits",
+    "apps.core.validators",
+    "apps.core.licensing",
+    "apps.core.schemas",
+    "apps.core.entity_types",
+    "apps.core.api_helpers",
+    "apps.core.middleware",
+]
+forbidden_modules = ["apps.core.api"]
+
+# The patch system is a compiler front end: it lowers YAML patches to an
+# IngestPlan (the IR), which the ingest back end (apply/) executes. The split is
+# load-bearing — new patch behavior belongs in the front end against the IR, not
+# as a fork of apply_plan. See docs/DataArchitecture.md.
+[[tool.importlinter.contracts]]
+name = "Patch front end does not depend on the ingest back end"
+type = "forbidden"
+source_modules = ["apps.catalog.ingestion.patches"]
+forbidden_modules = ["apps.catalog.ingestion.apply"]
+
+# Media internal layering: a vertical stack from constants/models at the bottom
+# up to the api composition layer. This also enforces that media.api is a leaf
+# (nothing below it imports it). The cross-app media.models -> provenance.models
+# crack is governed by the media peer-isolation contract above, not here.
+[[tool.importlinter.contracts]]
+name = "Media internal layers"
+type = "layers"
+layers = [
+    "apps.media.api",
+    "apps.media.authz",
+    "apps.media.processing | apps.media.storage | apps.media.schemas | apps.media.helpers",
+    "apps.media.models",
+    "apps.media.constants",
+]
 
 [tool.mypy]
 python_version = "3.14"
