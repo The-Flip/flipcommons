@@ -1,5 +1,9 @@
 # Model-Driven Delete Page
 
+## Status: planned — not yet in code
+
+The per-entity delete-page wrappers have not been consolidated into a single dynamic route, and `export_entity_meta` does not yet emit a `delete` block in `ENTITY_META`. Not started.
+
 ## Context
 
 This work is an instance of the broader pattern in [ModelDrivenMetadata.md](ModelDrivenMetadata.md): encode per-model behavior as metadata, consume it generically from shared infrastructure.

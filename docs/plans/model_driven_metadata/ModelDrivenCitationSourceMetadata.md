@@ -1,5 +1,9 @@
 # Model-Driven Citation Source Metadata
 
+## Status: deferred
+
+The `citation_source_spec` axis is not built. The existing extractor registry (`apps/citation/extractors.py`) already absorbs part of this surface; the full typed spec is deferred until a third extractor-backed source family is imminent (only `ipdb` and `opdb` exist today).
+
 Sibling doc to [ModelDrivenMetadata.md](ModelDrivenMetadata.md). The umbrella doc establishes the principle ("Django model is source of truth; one axis, one typed spec"). This doc is the design for the `citation_source_spec` axis — the typed spec that unifies the citation-source identity metadata currently scattered across extractor code, Django model fields, CHECK constraints, and seed data.
 
 ## Scope

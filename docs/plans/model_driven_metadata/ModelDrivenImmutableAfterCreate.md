@@ -1,5 +1,9 @@
 # Immutable After Create
 
+## Status: not started
+
+No `immutable_after_create` ClassVar or enforcement guard exists yet — this is the one piece of [ModelDrivenClaimsMetadata.md](ModelDrivenClaimsMetadata.md) still planned. The forward-path code it patches has since moved in the `edit_claims.py → claim_write.py` split ([ModelDrivenClaimWrite.md](ModelDrivenClaimWrite.md) Step 0); the call sites below are updated to the new home.
+
 ## Context
 
 This work is a pre-condition for [ModelDrivenLinkability.md](ModelDrivenLinkability.md), and an instance of the broader pattern described in [ModelDrivenMetadata.md](ModelDrivenMetadata.md): encode per-model behavior on the model itself and consume it generically from shared infrastructure.
@@ -102,7 +106,7 @@ def check_immutable_after_create(entity: ClaimControlledModel) -> None:
 
 The helper does its own resolution via `compute_winning_claims` — callers do not need to pass projected winners in. Call sites:
 
-- **Forward path**: [\_write_claims_in_changeset](../../../backend/apps/catalog/api/edit_claims.py) (`backend/apps/catalog/api/edit_claims.py:761`) — call once after the per-spec `assert_claim` loop completes, before returning. The surrounding `transaction.atomic` in `execute_claims` rolls back on raise.
+- **Forward path**: [\_write_claims_in_changeset](../../../backend/apps/catalog/api/claim_write.py) (`backend/apps/catalog/api/claim_write.py`, moved here from `edit_claims.py` in the Step 0 split) — call once after the per-spec `assert_claim` loop completes, before returning. The surrounding `transaction.atomic` in `execute_claims` rolls back on raise.
 - **Bulk path**: [bulk_assert_claims](../../../backend/apps/provenance/models/claim.py) (`backend/apps/provenance/models/claim.py:167`) — call after the batch insert, before the enclosing transaction commits. Per-row error surface is whatever the bulk caller already uses for `ValidationError`.
 - **Revert path**: [execute_revert](../../../backend/apps/provenance/revert.py) (`backend/apps/provenance/revert.py:41`) — call after toggling claims active/inactive, before commit. Same applies to `execute_undo_changeset`.
 
@@ -117,7 +121,7 @@ except ValidationError as exc:
 
 `exc.messages` discards the field key, so a field-scoped error becomes a generic `form_errors` entry. The fix is small and benefits any future field-scoped `ValidationError` from claims, not just immutability — it is a precondition for this work, not optional polish.
 
-`StructuredValidationError` ([backend/apps/catalog/api/edit_claims.py:140](../../../backend/apps/catalog/api/edit_claims.py#L140)) already carries a `field_errors` dict, so the new surface is a sibling to `raise_form_error`:
+`StructuredValidationError` (`apps/catalog/exceptions.py`) already carries a `field_errors` dict, so the new surface is a sibling to `raise_form_error`:
 
 ```python
 def raise_field_errors(field_errors: dict[str, list[str]]) -> NoReturn:
@@ -128,7 +132,7 @@ def raise_field_errors(field_errors: dict[str, list[str]]) -> NoReturn:
     )
 ```
 
-Both catch sites in `execute_claims` (lines 853 and 911) change to:
+Both catch sites in `execute_claims` (now in `apps/catalog/api/claim_write.py`) change to:
 
 ```python
 except ValidationError as exc:

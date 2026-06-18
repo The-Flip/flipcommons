@@ -19,7 +19,9 @@ Each item has its own per-feature doc with the full design, examples, and step-b
 | 7   | `NamedModel` base                       | New base          | [ModelDrivenNamedMetadata.md](ModelDrivenNamedMetadata.md)               | Large (~14 models) | —          |
 | 8   | Resolver signature standardization      | Cleanup           | (inline below)                                                           | Small              | —          |
 
-**Suggested order:** **1** (remaining small hoist), then **2** (pre-condition for #3), then **3** (the active steel thread), then **4** (proves #3 against Location's multi-segment public ID), then **5** (reconciles endpoint ownership around a framework-neutral entity contract before any API-shaped model spec is treated as chosen direction), then **6** (uses Linkability outputs), then **7** (broadest reach, lowest urgency, save for after the patterns and tooling are well-exercised). Item **8** is independent and can land any time.
+**Status** (the table's "in flight" annotations above predate these landings): **#1** (soft-delete hoist), **#3** (Linkability — main body; only its follow-ups remain), and **#6** (`WikilinkableModel`) are ✅ **done**. **#4** (Location CRUD) has its backend committed; the frontend write routes remain. Still to do: **#2** (`immutable_after_create`), **#5** (API endpoint ownership — see [ModelDrivenEntityContract.md](ModelDrivenEntityContract.md) vs [ModelDrivenApi.md](ModelDrivenApi.md), unreconciled), **#7** (`NamedModel`), and **#8** (resolver signature standardization, independent — can land any time).
+
+**Suggested order for the remainder:** **2**, then **4**'s frontend, then **5**, then **7**.
 
 ### Resolver signature standardization
 

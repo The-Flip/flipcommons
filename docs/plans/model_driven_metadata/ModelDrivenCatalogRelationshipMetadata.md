@@ -25,7 +25,7 @@ What this doc would add on top that PVT does not:
 **Pieces from this doc that stay relevant regardless:**
 
 - **Identity declared, not derived** — landed in PVT as `register_relationship_schema`'s identity labels + startup validator.
-- **Generic resolver contract semantics** (`is_active=True` pre-filter before winner selection, retractions are active `exists=False` claims, winner-per-`(object_id, claim_key)` priority ordering, FK-existence carve-out for `exists=False`) — describe the correct claim-resolution behavior regardless of who owns the schema. Belongs in resolver code comments or a sibling doc, not in this deferred plan.
+- **Generic resolver contract semantics** (`is_active=True` pre-filter before winner selection, retractions are active `exists=False` claims, winner-per-`(object_id, claim_key)` priority ordering, FK-existence carve-out for `exists=False`) — describe the correct claim-resolution behavior regardless of who owns the schema. Belongs in resolver code comments or a sibling doc ([ModelDrivenClaimResolution.md](ModelDrivenClaimResolution.md), which makes the read-side case for driving resolution off this spec), not in this deferred plan.
 - **[SeriesCreditClaims.md](../SeriesCreditClaims.md)** — independent provenance-compliance fix; stands on its own. Not gated by anything here.
 
 **Not elevating to their own plan docs:** the self-parent M2M promotion is a ~20-line engineering cleanup. Do it opportunistically next time someone is in the resolver code; it doesn't gate anything.
