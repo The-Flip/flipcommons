@@ -53,10 +53,10 @@ class _CreatedKey(NamedTuple):
     ``related_model`` — the same class ``_lookup_pk`` queries — with no
     ``"corporate-entity"`` vs ``corporate_entity`` or base-vs-concrete drift.
 
-    Typed ``type[models.Model]`` (not ``type[CatalogModel]``) because lookups key
-    by an FK target's ``related_model``, which Django only types as ``Model``; at
-    runtime every catalog FK target *is* a ``CatalogModel``. The key is pure
-    identity, so the wider annotation costs nothing.
+    Typed ``type[models.Model]`` (not ``type[LinkableClaimModel]``) because
+    lookups key by an FK target's ``related_model``, which Django only types as
+    ``Model``; at runtime every catalog FK target *is* a ``LinkableClaimModel``.
+    The key is pure identity, so the wider annotation costs nothing.
     """
 
     model_class: type[models.Model]

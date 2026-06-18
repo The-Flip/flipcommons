@@ -59,16 +59,19 @@ from apps.catalog.ingestion.plan import (
     PreWriteHook,
     RunReport,
 )
-from apps.catalog.models import CatalogModel
 from apps.catalog.resolve import resolve_relationships_bulk
 from apps.citation.seed_data.types import SeedSource
 from apps.citation.seeding import ensure_root_source, validate_root_source
 from apps.core.markdown import get_markdown_fields
-from apps.core.models import LIFECYCLE_STATUS_FIELD, LinkableModel
+from apps.core.models import (
+    LIFECYCLE_STATUS_FIELD,
+    LifecycleStatusModel,
+    LinkableModel,
+)
 from apps.core.soft_delete import cascade_targets, require_linkable
 from apps.core.types import EntityKey
 from apps.provenance.claims import normalize_fk_value
-from apps.provenance.models import Source, get_claim_fields
+from apps.provenance.models import LinkableClaimModel, Source, get_claim_fields
 from apps.provenance.validation import get_relationship_namespaces
 
 # A plan-wide guard target: an existing entity (``EntityKey``) or a same-patch
@@ -137,7 +140,7 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
         records_parsed=len(doc.claims),
     )
     rel_namespaces = get_relationship_namespaces()
-    rel_fields_by_model: dict[type[CatalogModel], set[str]] = defaultdict(set)
+    rel_fields_by_model: dict[type[LinkableClaimModel], set[str]] = defaultdict(set)
     # The patch's symbol table: what entity each reference names — a committed
     # entity, a same-patch create, or neither. Replaces the three reference-
     # resolution paths the front end used to thread separately (a create→handle
@@ -243,6 +246,12 @@ def _reject_reassign_onto_delete(doc: PatchDoc, registry: PatchEntityRegistry) -
         existing = registry.lookup_existing(model_class, entry.public_id)
         if existing is None:
             continue  # no such record to delete; errors per-entry later
+        # Lifecycle is a discovered capability (see ``LinkableClaimModel``): only
+        # a lifecycle-bearing target is soft-deletable, so a lifecycle-less one
+        # contributes nothing to the delete footprint (``_add_delete`` rejects it
+        # during apply). Skip it here rather than over-reject the reassignment.
+        if not isinstance(existing, LifecycleStatusModel):
+            continue
         # The core walk yields ``LifecycleStatusModel``; narrow each member to
         # read its canonical ``public_id`` (every cascade member is linkable).
         for member in cascade_targets(existing):
@@ -253,7 +262,7 @@ def _reject_reassign_onto_delete(doc: PatchDoc, registry: PatchEntityRegistry) -
         return
 
     # Left operand: every FK value the patch *asserts*, across creates and edits.
-    claim_fields_by_model: dict[type[CatalogModel], dict[str, str]] = {}
+    claim_fields_by_model: dict[type[LinkableClaimModel], dict[str, str]] = {}
     for entry in doc.claims:
         if not isinstance(entry, (CreateEntry, EditEntry)):
             continue
@@ -279,8 +288,8 @@ def _reject_reassign_onto_delete(doc: PatchDoc, registry: PatchEntityRegistry) -
                 continue  # falsy/blank FK value resolves to nothing
             target_model = django_field.related_model
             assert isinstance(target_model, type)  # resolved FK target
-            if not issubclass(target_model, CatalogModel):
-                continue  # only catalog entities are ever soft-deleted
+            if not issubclass(target_model, LinkableClaimModel):
+                continue  # only addressable claim subjects can be in `deleted`
             if (target_model, public_id) in deleted:
                 raise PatchError(
                     f"{entry.ref}: {field_name!r} points at "
@@ -293,7 +302,7 @@ def _reject_reassign_onto_delete(doc: PatchDoc, registry: PatchEntityRegistry) -
 
 def _classify_inline_cites(
     entry: CreateEntry | EditEntry,
-    model_class: type[CatalogModel],
+    model_class: type[LinkableClaimModel],
 ) -> dict[str, dict[CiteHandle, CitationRef]]:
     """Validate this entry's inline ``[[cite:...]]`` markers against its ``cites:`` map.
 
@@ -366,7 +375,7 @@ def _classify_inline_cites(
 
 def _no_such_record_message(
     entry: EditEntry,
-    model_class: type[CatalogModel],
+    model_class: type[LinkableClaimModel],
     all_created_ids: AbstractSet[_CreatedKey],
 ) -> str:
     """Diagnostic for an edit that resolves to no record (seed, prior patch *or* this one).
@@ -411,7 +420,7 @@ def _process_entry(
     *,
     source: Source,
     rel_namespaces: frozenset[Namespace],
-    rel_fields_by_model: dict[type[CatalogModel], set[str]],
+    rel_fields_by_model: dict[type[LinkableClaimModel], set[str]],
     registry: PatchEntityRegistry,
     all_created_ids: AbstractSet[_CreatedKey],
 ) -> _EntryResult:
@@ -695,7 +704,7 @@ def _check_provenance_carrier(
 
 
 def _existing_parent_edges(
-    model_class: type[CatalogModel],
+    model_class: type[LinkableClaimModel],
 ) -> dict[PublicId, set[PublicId]]:
     """Current resolved child→parent public_id edges for a hierarchy model.
 
@@ -707,7 +716,7 @@ def _existing_parent_edges(
     edges: dict[PublicId, set[PublicId]] = {}
     queryset = model_class._default_manager.prefetch_related("parents")  # type: ignore[misc]
     for inst in queryset:
-        parents: models.Manager[CatalogModel] = inst.parents  # type: ignore[attr-defined]
+        parents: models.Manager[LinkableClaimModel] = inst.parents  # type: ignore[attr-defined]
         edges[inst.public_id] = {p.public_id for p in parents.all()}
     return edges
 
@@ -747,7 +756,7 @@ def _validate_hierarchy_acyclic(hierarchy_edges: list[_HierarchyEdge]) -> None:
     source leaves the edge in place via another). A patch that both removes and
     re-adds around an edge may be over-rejected; split it across patches.
     """
-    by_model: dict[type[CatalogModel], list[_HierarchyEdge]] = defaultdict(list)
+    by_model: dict[type[LinkableClaimModel], list[_HierarchyEdge]] = defaultdict(list)
     for edge in hierarchy_edges:
         by_model[edge.model_class].append(edge)
     for model_class, edges in by_model.items():
@@ -916,7 +925,7 @@ def _make_sources_hook(sources: list[SeedSource]) -> PreWriteHook:
 
 
 def _make_resolve_hook(
-    model_class: type[CatalogModel],
+    model_class: type[LinkableClaimModel],
     field_names: list[str],
 ) -> Callable[..., None]:
     """Build a resolve hook that bulk-resolves the given relationship namespaces.

@@ -12,7 +12,7 @@ from apps.core.models import (
     LifecycleStatusModel,
     SitemappedModel,
 )
-from apps.provenance.models import ClaimControlledModel
+from apps.provenance.models import LinkableClaimModel
 
 __all__ = ["AliasModel", "CatalogModel"]
 
@@ -59,7 +59,7 @@ class AliasModel(models.Model):
 
 
 class CatalogModel(
-    DescribedModel, SitemappedModel, LifecycleStatusModel, ClaimControlledModel
+    DescribedModel, SitemappedModel, LifecycleStatusModel, LinkableClaimModel
 ):
     """Abstract marker for top-level catalog entities.
 
