@@ -2,17 +2,17 @@
 
 import pytest
 
-from apps.catalog.claims import (
+from apps.catalog.claims import make_authoritative_scope
+from apps.catalog.models import MachineModel, Manufacturer
+from apps.catalog.tests.conftest import make_machine_model
+from apps.provenance.claims import (
     AliasIdentity,
     build_relationship_claim,
-    get_relationship_namespaces,
-    make_authoritative_scope,
     normalize_abbreviation_value,
     normalize_alias_identity,
 )
-from apps.catalog.models import MachineModel, Manufacturer
-from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.models import make_claim_key
+from apps.provenance.validation import get_relationship_namespaces
 
 # ---------------------------------------------------------------------------
 # make_claim_key (provenance utility)

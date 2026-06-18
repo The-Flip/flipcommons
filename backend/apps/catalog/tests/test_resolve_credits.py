@@ -2,10 +2,10 @@
 
 import pytest
 
-from apps.catalog.claims import build_relationship_claim
 from apps.catalog.models import Credit, CreditRole, Person
 from apps.catalog.resolve import resolve_all_credits
 from apps.catalog.tests.conftest import make_machine_model
+from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, Source
 
 

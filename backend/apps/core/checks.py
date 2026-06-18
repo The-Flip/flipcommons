@@ -342,7 +342,7 @@ def _classify_soft_delete(facts: _SoftDeleteFacts) -> list[CheckMessage]:
                         "Use PROTECT (block delete while referenced) or CASCADE "
                         "(child rides with the parent, or list it in "
                         "soft_delete_cascade_relations), or extend the walker in "
-                        "apps/catalog/api/soft_delete.py to handle this policy."
+                        "apps/core/soft_delete.py to handle this policy."
                     ),
                     obj=label,
                     id="core.E110",
@@ -377,7 +377,7 @@ def _classify_soft_delete(facts: _SoftDeleteFacts) -> list[CheckMessage]:
                     "(neither FK/O2O nor M2M).",
                     hint=(
                         "Extend the classifier in apps/core/checks.py and the "
-                        "walker in apps/catalog/api/soft_delete.py to handle it."
+                        "walker in apps/core/soft_delete.py to handle it."
                     ),
                     obj=label,
                     id="core.E113",
@@ -437,7 +437,7 @@ def check_soft_delete_policy(
 ) -> list[CheckMessage]:
     """Validate the soft-delete policy of every concrete ``LifecycleStatusModel``.
 
-    The soft-delete walker (``apps/catalog/api/soft_delete.py``) classifies each
+    The soft-delete walker (``apps/core/soft_delete.py``) classifies each
     inbound reference to a lifecycle model as protect-block,
     owned-child-rides-along, cascade or usage-block, and trusts — without
     verifying — that the classification is total and consistent. This check

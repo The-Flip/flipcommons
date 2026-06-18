@@ -151,8 +151,8 @@ class TestMojibakeBatchValidation:
     def test_allows_mojibake_in_alias_claim(self):
         """Alias fields do NOT have the mojibake validator — garbled source
         names are legitimate lookup values."""
-        from apps.catalog.claims import build_relationship_claim
         from apps.catalog.models import Manufacturer
+        from apps.provenance.claims import build_relationship_claim
         from apps.provenance.models import Claim
         from apps.provenance.validation import validate_claims_batch
 

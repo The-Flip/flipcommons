@@ -18,11 +18,6 @@ from django.db import models as db_models
 from ninja import Schema
 
 from apps.accounts.models import User
-from apps.catalog.claims import (
-    build_relationship_claim,
-    normalize_abbreviation_value,
-    normalize_alias_identity,
-)
 from apps.catalog.exceptions import StructuredValidationError
 from apps.catalog.models import (
     CorporateEntity,
@@ -35,6 +30,11 @@ from apps.catalog.models import (
     Title,
 )
 from apps.core.models import SluggedModel
+from apps.provenance.claims import (
+    build_relationship_claim,
+    normalize_abbreviation_value,
+    normalize_alias_identity,
+)
 from apps.provenance.models import (
     ChangeSet,
     ChangeSetAction,

@@ -11,11 +11,6 @@ from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.catalog.claims import (
-    build_relationship_claim,
-    normalize_abbreviation_value,
-    normalize_alias_identity,
-)
 from apps.catalog.ingestion.apply import apply_plan
 from apps.catalog.ingestion.patches import (
     EditEntry,
@@ -42,6 +37,11 @@ from apps.catalog.models import (
 )
 from apps.catalog.resolve import resolve_all_corporate_entity_locations
 from apps.citation.models import CitationSource, CitationSourceLink
+from apps.provenance.claims import (
+    build_relationship_claim,
+    normalize_abbreviation_value,
+    normalize_alias_identity,
+)
 from apps.provenance.models import ChangeSet, CitationInstance, Claim, IngestRun, Source
 from apps.provenance.validation import (
     RelationshipSchema,

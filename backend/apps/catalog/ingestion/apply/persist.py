@@ -126,7 +126,7 @@ def _patch_handles(
        ``build_relationship_claim()`` to generate both ``claim_key``
        and ``value`` in sync.
     """
-    from apps.catalog.claims import build_relationship_claim
+    from apps.provenance.claims import build_relationship_claim
 
     for pca in assertions:
         if pca.handle is not None:

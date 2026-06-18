@@ -1,8 +1,8 @@
 import pytest
 
-from apps.catalog.claims import build_relationship_claim
 from apps.catalog.models import GameplayFeature
 from apps.catalog.resolve._relationships import resolve_gameplay_feature_parents
+from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, Source
 
 

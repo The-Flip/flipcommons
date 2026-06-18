@@ -12,13 +12,13 @@ from django.db import transaction
 
 from apps.core.types import ClaimIdentity, EntityKey
 from apps.media.models import EntityMedia, MediaAsset, MediaSupportedModel
+from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
 from apps.provenance.typing import HasEffectivePriority
 
 from ..cache import invalidate_all
 from ._claim_values import MediaAttachmentClaimValue
-from .claim_presence import member_is_present
 
 logger = logging.getLogger(__name__)
 

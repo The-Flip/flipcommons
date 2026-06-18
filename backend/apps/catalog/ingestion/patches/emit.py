@@ -17,12 +17,6 @@ from typing import NamedTuple
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
-from apps.catalog.api.soft_delete import plan_soft_delete
-from apps.catalog.claims import (
-    build_relationship_claim,
-    normalize_abbreviation_value,
-    normalize_alias_identity,
-)
 from apps.catalog.ingestion.patches._types import (
     ClaimKey,
     PatchError,
@@ -47,11 +41,17 @@ from apps.catalog.ingestion.plan import (
     PlannedEntityCreate,
 )
 from apps.catalog.models import CatalogModel
-from apps.catalog.resolve._helpers import normalize_fk_value
-from apps.catalog.resolve.claim_presence import member_is_present
 from apps.core.entity_types import get_linkable_model
 from apps.core.models import LIFECYCLE_STATUS_FIELD
+from apps.core.soft_delete import CascadeBlocker, require_linkable, soft_delete_walk
 from apps.core.types import EntityKey
+from apps.provenance.claim_presence import member_is_present
+from apps.provenance.claims import (
+    build_relationship_claim,
+    normalize_abbreviation_value,
+    normalize_alias_identity,
+    normalize_fk_value,
+)
 from apps.provenance.models import Claim, IdentityPart, Source, get_claim_fields
 from apps.provenance.validation import get_relationship_schema
 
@@ -531,7 +531,7 @@ def _source_claims_member_present(
     absent, and removing it would be an inert no-op.
 
     The presence/tombstone semantics are the single definition in
-    :func:`~apps.catalog.resolve.claim_presence.member_is_present`; this wraps it
+    :func:`~apps.provenance.claim_presence.member_is_present`; this wraps it
     with the source-scoped selection (``.first()`` is the source's current claim,
     given the one-active-claim-per-(source, claim_key) invariant).
     """
@@ -704,8 +704,9 @@ def _add_delete(
     """Emit ``status=deleted`` assertions to soft-delete *existing* and its cascade.
 
     A patch delete is a ``status=deleted`` claim, exactly like the in-app
-    delete — no row removal. It reuses the app's :func:`plan_soft_delete` so it
-    obeys the same record-lifecycle rules: it **refuses** when an active PROTECT
+    delete — no row removal. It reuses the generic
+    :func:`apps.core.soft_delete.soft_delete_walk` so it obeys the same
+    record-lifecycle rules: it **refuses** when an active PROTECT
     referrer would be left dangling (reassign or delete the referrer first, in
     an earlier patch — the blocker check reads live DB state, so a same-patch
     reassignment isn't yet visible) and **cascades** ``status=deleted`` to owned
@@ -721,19 +722,16 @@ def _add_delete(
     them all in the same-entity provenance guard (a cascaded child is otherwise
     invisible to it, and a separate entry on that child would collide unseen).
     """
-    sd_plan = plan_soft_delete(existing)
-    if sd_plan.is_blocked:
-        blockers = "; ".join(
-            f"{b.entity_type} {b.slug or b.name!r} (via {b.relation})"
-            for b in sd_plan.blockers
-        )
+    walk = soft_delete_walk(existing)
+    if walk.blockers:
+        blockers = "; ".join(_format_blocker(b) for b in walk.blockers)
         raise PatchError(
             f"{entry.ref}: cannot delete — still referenced by "
-            f"{len(sd_plan.blockers)} active entity(ies): {blockers}. Reassign or "
+            f"{len(walk.blockers)} active entity(ies): {blockers}. Reassign or "
             f"delete the referrer first (in an earlier patch)."
         )
     affected: list[EntityKey] = []
-    for target_entity in sd_plan.entities_to_delete:
+    for target_entity in walk.cascade:
         ct_id = ContentType.objects.get_for_model(type(target_entity)).pk
         _emit_assert(
             plan,
@@ -744,13 +742,24 @@ def _add_delete(
             citation_ref=citation_ref,
         )
         affected.append(EntityKey(ct_id, target_entity.pk))
-    cascaded = [e for e in sd_plan.entities_to_delete if e.pk != existing.pk]
+    cascaded = [require_linkable(e) for e in walk.cascade if e.pk != existing.pk]
     if cascaded:
         members = ", ".join(f"{e.entity_type}.{e.public_id}" for e in cascaded)
         plan.warnings.append(
             f"{entry.ref}: delete cascades to {len(cascaded)} child entity(ies): {members}"
         )
     return affected
+
+
+def _format_blocker(blocker: CascadeBlocker) -> str:
+    """Render one core :class:`CascadeBlocker` for the delete-refusal message.
+
+    Narrows the referrer to ``LinkableModel`` for its canonical ``entity_type``,
+    falling back to ``str(referrer)`` when it has no ``slug``.
+    """
+    ref = require_linkable(blocker.referrer)
+    slug = getattr(ref, "slug", None)
+    return f"{ref.entity_type} {(slug or str(ref))!r} (via {blocker.relation})"
 
 
 def _add_retractions(

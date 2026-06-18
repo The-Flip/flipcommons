@@ -7,7 +7,7 @@ so a padded or non-string value can't normalize one way and look up another.
 
 from __future__ import annotations
 
-from apps.catalog.resolve._helpers import normalize_fk_value
+from apps.provenance.claims import normalize_fk_value
 
 
 def test_trims_surrounding_whitespace():

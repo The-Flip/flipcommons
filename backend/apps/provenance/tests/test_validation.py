@@ -363,7 +363,8 @@ class TestClassifyClaim:
         below, not by the classifier (which is registry-driven and does not
         inspect ``claim_key`` or ``value``).
         """
-        from apps.catalog.claims import build_relationship_claim, get_all_namespace_keys
+        from apps.catalog.claims import get_all_namespace_keys
+        from apps.provenance.claims import build_relationship_claim
 
         for namespace, keys in get_all_namespace_keys().items():
             identity = dict.fromkeys(keys, "test-value")
