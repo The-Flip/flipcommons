@@ -157,7 +157,7 @@ Retarget the front-end/back-end split likewise: `apps.claim_ingest.patches ⊄ a
 
 **Acceptance.** `uv run lint-imports` green with the contracts retargeted **and `apps.claim_ingest` added to the media-wall source list**; `make mypy` clean; the **full** backend suite green (the string mock target and signals across apps reach the pipeline).
 
-## Step 4 — Create `claim_edit`; extract the interactive write core
+## ✅ DONE: Step 4 — Create `claim_edit`; extract the interactive write core
 
 Step 0 already isolated the generic core into `catalog/api/claim_write.py` with an enforced `⊄ catalog domain` boundary, so this step is mostly a relocation, not a carve: `git mv apps/catalog/api/claim_write.py apps/claim_edit/claim_write.py` (**pin the destination path** — the importer repoint string depends on it), add the `AppConfig` + `INSTALLED_APPS` entry (between `apps.catalog` and `apps.citation`, mirroring Step 3), and repoint importers. The domain spec-builders stay in `catalog/api`; `edit_claims.py` imports `ClaimSpec, ValidationErrors, raise_form_error` from the module — only the path changes to `claim_edit`.
 

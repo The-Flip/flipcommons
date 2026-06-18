@@ -115,6 +115,7 @@ type = "layers"
 layers = [
     "apps.kiosk",
     "apps.catalog",
+    "apps.claim_edit",
     "apps.provenance",
     "apps.citation",
     "apps.accounts",
@@ -167,6 +168,7 @@ allow_indirect_imports = "true"
 source_modules = [
     "apps.provenance",
     "apps.citation",
+    "apps.claim_edit",
     "apps.claim_ingest",
 ]
 forbidden_modules = ["apps.media"]
@@ -214,6 +216,8 @@ type = "forbidden"
 source_modules = [
     "apps.core",
     "apps.catalog",
+    "apps.claim_edit",
+    "apps.claim_ingest",
     "apps.citation",
     "apps.provenance",
     "apps.media",
@@ -229,6 +233,8 @@ source_modules = [
     "apps.core",
     "apps.accounts",
     "apps.catalog",
+    "apps.claim_edit",
+    "apps.claim_ingest",
     "apps.citation",
     "apps.media",
     "apps.kiosk",
@@ -299,34 +305,25 @@ allow_indirect_imports = "true"
 source_modules = ["apps.claim_ingest"]
 forbidden_modules = ["apps.catalog"]
 
-# The interactive claim-write core (catalog/api/claim_write.py) is the generic
-# write engine: it must not import the catalog domain, so it stays reusable
-# across domains and can later extract into its own app below catalog. The split
-# from the domain spec-builders is what exposes this seam to import-linter, which
-# is module-granular. See docs/AppBoundaries.md.
+# The two claim-write engines are independent peers: claim_edit (interactive
+# HTTP edits) and claim_ingest (the bulk patch pipeline) share no code — only the
+# provenance/core substrate both write through. "Never each other" is a headline
+# property, and the layer spine covers neither direction (claim_ingest is out of
+# the spine), so both edges are forbidden explicitly — one contract per direction,
+# mirroring the catalog↔ingest pair above. See docs/AppBoundaries.md.
 [[tool.importlinter.contracts]]
-name = "Interactive claim-write core does not import the catalog domain"
+name = "Interactive engine does not import the bulk ingest system"
 type = "forbidden"
 allow_indirect_imports = "true"
-source_modules = ["apps.catalog.api.claim_write"]
-forbidden_modules = [
-    "apps.catalog.models",
-    "apps.catalog.claims",
-    "apps.catalog.resolve",
-    "apps.catalog.services",
-    "apps.catalog.cache",
-    "apps.catalog.naming",
-    "apps.catalog.signals",
-    "apps.catalog.authz",
-    "apps.catalog.exceptions",
-]
-ignore_imports = [
-    # --- BASELINE: claim_write -> catalog couplings to sever; delete each as the
-    # step that resolves it lands. Do NOT add to this list. ---
-    # raise_form_error raises StructuredValidationError; clears when that error
-    # relocates to core.
-    "apps.catalog.api.claim_write -> apps.catalog.exceptions",
-]
+source_modules = ["apps.claim_edit"]
+forbidden_modules = ["apps.claim_ingest"]
+
+[[tool.importlinter.contracts]]
+name = "Bulk ingest system does not import the interactive engine"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = ["apps.claim_ingest"]
+forbidden_modules = ["apps.claim_edit"]
 
 # The generic resolver core — scalar/bulk claim projection (_entities), its
 # coercion/FK/constraint helpers (_helpers), and the read-side payload
@@ -360,7 +357,6 @@ forbidden_modules = [
     "apps.catalog.naming",
     "apps.catalog.signals",
     "apps.catalog.authz",
-    "apps.catalog.exceptions",
 ]
 
 # core has a multi-module api/ package (like catalog); the same leaf rule applies.

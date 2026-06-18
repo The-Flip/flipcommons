@@ -13,7 +13,7 @@ from apps.catalog.api.edit_claims import (
     normalize_credit_inputs,
     normalize_gameplay_feature_inputs,
 )
-from apps.catalog.exceptions import StructuredValidationError
+from apps.core.exceptions import StructuredValidationError
 
 
 class TestNormalizeGameplayFeatureInputs:

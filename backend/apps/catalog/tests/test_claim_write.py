@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from apps.catalog.api.claim_write import (
+from apps.catalog.models import CorporateEntity, MachineModel, Person, Title
+from apps.claim_edit.claim_write import (
     FieldConstraintSchema,
     get_field_constraints,
     plan_scalar_field_claims,
     validate_scalar_fields,
 )
-from apps.catalog.exceptions import StructuredValidationError
-from apps.catalog.models import CorporateEntity, MachineModel, Person, Title
+from apps.core.exceptions import StructuredValidationError
 
 
 class TestValidateScalarFields:

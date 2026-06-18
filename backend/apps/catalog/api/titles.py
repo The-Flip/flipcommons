@@ -21,6 +21,12 @@ from ninja.security import django_auth
 from pydantic import Field, TypeAdapter
 
 from apps.catalog.naming import MAX_CATALOG_NAME_LENGTH, normalize_catalog_name
+from apps.claim_edit.claim_write import (
+    ClaimSpec,
+    execute_claims,
+    plan_scalar_field_claims,
+    raise_form_error,
+)
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
@@ -69,12 +75,6 @@ from ._title_facets import (
     ordered_titles,
 )
 from ._typing import CreditKey, FacetOptionDict, GameplayFeatureAgreement
-from .claim_write import (
-    ClaimSpec,
-    execute_claims,
-    plan_scalar_field_claims,
-    raise_form_error,
-)
 from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import plan_abbreviation_claims
 from .entity_create import (

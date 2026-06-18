@@ -3,10 +3,10 @@
 The per-relationship planners that know concrete catalog shapes (credits,
 gameplay features, M2Ms, abbreviations, parents, aliases). Each validates
 domain input and returns a list of :class:`ClaimSpec` for the generic write
-engine in :mod:`.claim_write` to execute.
+engine in :mod:`apps.claim_edit.claim_write` to execute.
 
-These import from :mod:`.claim_write`, never the reverse: the domain layer
-depends on the generic engine, not vice versa.
+These import from :mod:`apps.claim_edit.claim_write`, never the reverse: the
+domain layer depends on the generic engine, not vice versa.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
+from apps.claim_edit.claim_write import ClaimSpec, ValidationErrors, raise_form_error
 from apps.core.models import SluggedModel
 from apps.provenance.claims import (
     build_relationship_claim,
@@ -30,7 +31,6 @@ from apps.provenance.claims import (
 from apps.provenance.validation import get_relationship_schema
 
 from ._typing import CreditKey, CreditPkKey
-from .claim_write import ClaimSpec, ValidationErrors, raise_form_error
 from .schemas import CreditInputSchema, GameplayFeatureInputSchema
 
 # Concrete catalog models with a self-referencing ``parents`` M2M / reverse

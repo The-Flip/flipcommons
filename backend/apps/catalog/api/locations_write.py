@@ -36,23 +36,23 @@ from ninja import Router
 from ninja.security import django_auth
 from pydantic import ConfigDict, field_validator
 
-from apps.core.authz.markers import requires
-from apps.core.authz.types import Activity
-from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import ChangeSetInputSchema
-
-from ..exceptions import StructuredValidationError
-from ..models import CatalogModel, Location
-from ..services.location_paths import (
-    compute_location_path,
-    derive_child_location_type,
-)
-from .claim_write import (
+from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
     raise_form_error,
     validate_scalar_fields,
+)
+from apps.core.authz.markers import requires
+from apps.core.authz.types import Activity
+from apps.core.exceptions import StructuredValidationError
+from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
+from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
+from apps.provenance.schemas import ChangeSetInputSchema
+
+from ..models import CatalogModel, Location
+from ..services.location_paths import (
+    compute_location_path,
+    derive_child_location_type,
 )
 from .edit_claims import plan_alias_claims
 from .entity_crud import (

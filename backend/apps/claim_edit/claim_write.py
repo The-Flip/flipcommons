@@ -7,9 +7,10 @@ attach citations and trigger resolution. Binds the loose
 needs nothing about addressing.
 
 The concrete, per-relationship spec-builders that feed it ``ClaimSpec``s
-live alongside the domain endpoints in :mod:`.edit_claims`; this module
-imports no concrete catalog model, a boundary import-linter enforces so the
-engine stays a generic write surface. See docs/AppBoundaries.md.
+live alongside the domain endpoints in :mod:`apps.catalog.api.edit_claims`.
+This module imports no catalog symbol at all; the app-layer spine enforces
+``claim_edit ⊄ catalog``, keeping the engine a generic write surface
+reusable across domains. See docs/AppBoundaries.md.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from django.db import models as db_models
 from ninja import Schema
 
 from apps.accounts.models import User
-from apps.catalog.exceptions import StructuredValidationError
+from apps.core.exceptions import StructuredValidationError
 from apps.provenance.models import (
     ChangeSet,
     ChangeSetAction,

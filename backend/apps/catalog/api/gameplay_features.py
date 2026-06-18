@@ -9,6 +9,11 @@ from ninja import Router, Schema
 from ninja.security import django_auth
 from pydantic import Field
 
+from apps.claim_edit.claim_write import (
+    execute_claims,
+    raise_form_error,
+    validate_scalar_fields,
+)
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
@@ -19,7 +24,6 @@ from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..models import GameplayFeature
 from ._counts import bulk_title_counts_via_models
-from .claim_write import execute_claims, raise_form_error, validate_scalar_fields
 from .constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PageParam
 from .edit_claims import plan_alias_claims, plan_parent_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
