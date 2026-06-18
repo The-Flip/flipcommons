@@ -39,8 +39,8 @@ from apps.provenance.schemas import ChangeSetInputSchema
 
 from ..models import Credit, MachineModel, Person
 from ._typing import HasCreditCount
+from .claim_write import ClaimSpec, execute_claims, plan_scalar_field_claims
 from .constants import NameAliasQuery, PageParam
-from .edit_claims import ClaimSpec, execute_claims, plan_scalar_field_claims
 from .entity_create import (
     assert_name_available,
     assert_public_id_available,

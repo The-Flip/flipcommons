@@ -48,13 +48,13 @@ from ..services.location_paths import (
     compute_location_path,
     derive_child_location_type,
 )
-from .edit_claims import (
+from .claim_write import (
     ClaimSpec,
     execute_claims,
-    plan_alias_claims,
     raise_form_error,
     validate_scalar_fields,
 )
+from .edit_claims import plan_alias_claims
 from .entity_crud import (
     CreateExtras,
     register_entity_create,

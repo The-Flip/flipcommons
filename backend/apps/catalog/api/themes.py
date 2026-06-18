@@ -18,14 +18,9 @@ from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..models import MachineModel, Theme
 from ._counts import bulk_title_counts_via_models
+from .claim_write import execute_claims, raise_form_error, validate_scalar_fields
 from .constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PageParam
-from .edit_claims import (
-    execute_claims,
-    plan_alias_claims,
-    plan_parent_claims,
-    raise_form_error,
-    validate_scalar_fields,
-)
+from .edit_claims import plan_alias_claims, plan_parent_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .entity_list import _apply_list_q
 from .helpers import serialize_title_machine

@@ -17,7 +17,7 @@ What lives here:
 
 What does not live here: name normalization (see ``apps.catalog.naming``),
 rate limiting (see ``apps.provenance.rate_limits``), or the claim
-machinery itself (see :mod:`.edit_claims`).
+machinery itself (see :mod:`.claim_write`).
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.schemas import CitationReferenceInputSchema
 
-from .edit_claims import (
+from .claim_write import (
     ClaimSpec,
     execute_claims,
 )
@@ -343,7 +343,7 @@ def create_entity_with_claims(
       rolls the row back (and vice versa).
     * Creates the row via ``model_cls.objects.create(**row_kwargs)``.
     * Writes a user ChangeSet with ``action=create`` and the given
-      *claim_specs* via :func:`.edit_claims.execute_claims`.
+      *claim_specs* via :func:`.claim_write.execute_claims`.
     * Translates a DB ``IntegrityError`` on the slug into the same
       field-level 422 that the pre-check produces. This covers the tiny
       TOCTOU window between ``assert_public_id_available`` and the insert.

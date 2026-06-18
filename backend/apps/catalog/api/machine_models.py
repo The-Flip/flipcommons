@@ -58,16 +58,18 @@ from ..models import (
     TechnologySubgeneration,
     Theme,
 )
-from .constants import DEFAULT_PAGE_SIZE
-from .edit_claims import (
+from .claim_write import (
     ClaimSpec,
     execute_claims,
+    plan_scalar_field_claims,
+    raise_form_error,
+)
+from .constants import DEFAULT_PAGE_SIZE
+from .edit_claims import (
     plan_abbreviation_claims,
     plan_credit_claims,
     plan_gameplay_feature_claims,
     plan_m2m_claims,
-    plan_scalar_field_claims,
-    raise_form_error,
 )
 from .helpers import (
     _extract_variant_features,

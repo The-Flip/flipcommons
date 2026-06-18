@@ -8,7 +8,7 @@ from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError, ValidationError
 from ninja.security import django_auth
 
-from apps.catalog.api.edit_claims import FieldConstraintSchema
+from apps.catalog.api.claim_write import FieldConstraintSchema
 from apps.catalog.api.export import export_rate_limit_summary, export_router
 from apps.catalog.exceptions import StructuredValidationError
 from apps.core.authz.markers import requires
@@ -217,7 +217,7 @@ def get_field_constraints(
     request: HttpRequest, entity_type: str
 ) -> dict[str, FieldConstraintSchema]:
     """Return numeric field constraints derived from model validators."""
-    from apps.catalog.api.edit_claims import get_field_constraints as _get
+    from apps.catalog.api.claim_write import get_field_constraints as _get
     from apps.core.entity_types import get_linkable_model
     from apps.provenance.models import ClaimControlledModel
 

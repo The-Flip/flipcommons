@@ -21,8 +21,8 @@ from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..models import Franchise, MachineModel, Title
 from ._typing import HasTitleCount
+from .claim_write import execute_claims, plan_scalar_field_claims
 from .constants import NameQuery, PageParam
-from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .entity_list import paginated_list_response
 from .helpers import serialize_title_ref

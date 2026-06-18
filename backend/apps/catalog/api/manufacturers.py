@@ -46,8 +46,8 @@ from ._manufacturer_facets import (
     query_count,
 )
 from ._typing import FacetOptionDict, HasModelCount
+from .claim_write import execute_claims, plan_scalar_field_claims
 from .constants import DEFAULT_PAGE_SIZE
-from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .helpers import (
     collect_titles,

@@ -53,7 +53,7 @@ from apps.provenance.rate_limits import (
 )
 from apps.provenance.schemas import ChangeSetInputSchema
 
-from .edit_claims import ClaimSpec, execute_claims
+from .claim_write import ClaimSpec, execute_claims
 from .entity_create import (
     assert_public_id_available,
     create_entity_with_claims,

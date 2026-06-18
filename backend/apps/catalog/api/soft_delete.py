@@ -25,7 +25,7 @@ from apps.core.soft_delete import CascadeBlocker, require_linkable, soft_delete_
 from apps.provenance.models import ChangeSet, ChangeSetAction
 from apps.provenance.schemas import CitationReferenceInputSchema
 
-from .edit_claims import ClaimSpec, execute_multi_entity_claims
+from .claim_write import ClaimSpec, EntityClaims, execute_multi_entity_claims
 from .schemas import BlockingReferrerSchema
 
 _UserLike = AbstractBaseUser | AnonymousUser
@@ -179,7 +179,7 @@ def execute_soft_delete(
         return None, []
 
     entries = [
-        (entity, [ClaimSpec(field_name="status", value="deleted")])
+        EntityClaims(entity, [ClaimSpec(field_name="status", value="deleted")])
         for entity in active_entities
     ]
     changeset = execute_multi_entity_claims(

@@ -324,6 +324,38 @@ ignore_imports = [
     "apps.catalog.ingestion.patches.planning -> apps.catalog.resolve",
 ]
 
+# The interactive claim-write core (catalog/api/claim_write.py) is the generic
+# write engine: it must not import the catalog domain, so it stays reusable
+# across domains and can later extract into its own app below catalog. The split
+# from the domain spec-builders is what exposes this seam to import-linter, which
+# is module-granular. See docs/AppBoundaries.md.
+[[tool.importlinter.contracts]]
+name = "Interactive claim-write core does not import the catalog domain"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = ["apps.catalog.api.claim_write"]
+forbidden_modules = [
+    "apps.catalog.models",
+    "apps.catalog.claims",
+    "apps.catalog.resolve",
+    "apps.catalog.services",
+    "apps.catalog.cache",
+    "apps.catalog.naming",
+    "apps.catalog.signals",
+    "apps.catalog.authz",
+    "apps.catalog.exceptions",
+]
+ignore_imports = [
+    # --- BASELINE: claim_write -> catalog couplings to sever; delete each as the
+    # step that resolves it lands. Do NOT add to this list. ---
+    # execute_* call resolve_after_mutation; clears when resolution dispatch
+    # moves to a provenance-local seam.
+    "apps.catalog.api.claim_write -> apps.catalog.resolve",
+    # raise_form_error raises StructuredValidationError; clears when that error
+    # relocates to core.
+    "apps.catalog.api.claim_write -> apps.catalog.exceptions",
+]
+
 # core has a multi-module api/ package (like catalog); the same leaf rule applies.
 [[tool.importlinter.contracts]]
 name = "The core api layer is a leaf"

@@ -41,8 +41,8 @@ from ..models import (
 )
 from ._counts import bulk_title_counts_via_models
 from ._typing import HasTitleCount
+from .claim_write import execute_claims, plan_scalar_field_claims
 from .constants import NameAliasQuery, NameQuery, PageParam
-from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import (
     register_entity_create,
     register_entity_delete_restore,
