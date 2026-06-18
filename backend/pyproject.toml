@@ -259,11 +259,6 @@ source_modules = [
     "apps.catalog.signals",
 ]
 forbidden_modules = ["apps.catalog.api"]
-ignore_imports = [
-    # --- BASELINE: domain logic stranded under api/; move it out, then delete ---
-    "apps.catalog.ingestion.patches.emit -> apps.catalog.api.soft_delete",
-    "apps.catalog.ingestion.patches.planning -> apps.catalog.api.soft_delete",
-]
 
 # The ingest system (ingestion/) is the bulk catalog write path — a top-level
 # consumer, not a dependency. The rest of catalog must not import it; only the
@@ -297,7 +292,7 @@ ignore_imports = ["apps.catalog.*.tests.** -> apps.catalog.ingestion.**"]
 # reverse contract's source list) so a NEW coupling to any catalog package is
 # caught, not just today's offenders — it is NOT scoped to currently-imported
 # packages. apps.catalog.api is omitted: it is governed by the api-leaf
-# contract, which already baselines the two soft_delete edges. The domain set
+# contract (whose ingest soft_delete baselines are now cleared). The domain set
 # is enumerated rather than a single "apps.catalog" forbid because import-linter
 # forbids a source from being a descendant of a forbidden module, and
 # apps.catalog.ingestion is a descendant of apps.catalog.

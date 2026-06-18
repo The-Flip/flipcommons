@@ -21,7 +21,6 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from apps.catalog.api.soft_delete import cascade_targets
 from apps.catalog.ingestion.patches._types import (
     ClaimKey,
     PatchError,
@@ -65,7 +64,8 @@ from apps.catalog.resolve import resolve_relationships_bulk
 from apps.citation.seed_data.types import SeedSource
 from apps.citation.seeding import ensure_root_source, validate_root_source
 from apps.core.markdown import get_markdown_fields
-from apps.core.models import LIFECYCLE_STATUS_FIELD
+from apps.core.models import LIFECYCLE_STATUS_FIELD, LinkableModel
+from apps.core.soft_delete import cascade_targets, require_linkable
 from apps.core.types import EntityKey
 from apps.provenance.claims import normalize_fk_value
 from apps.provenance.models import Source, get_claim_fields
@@ -232,7 +232,7 @@ def _reject_reassign_onto_delete(doc: PatchDoc, registry: PatchEntityRegistry) -
     # Right operand: every entity this patch soft-deletes (root + cascade), via
     # the same ``cascade_targets`` walk ``plan_soft_delete`` uses, so the guard's
     # deleted set can't drift from the real delete footprint.
-    deleted: set[tuple[type[CatalogModel], PublicId]] = set()
+    deleted: set[tuple[type[LinkableModel], PublicId]] = set()
     for entry in doc.claims:
         if not isinstance(entry, DeleteEntry):
             continue
@@ -243,7 +243,10 @@ def _reject_reassign_onto_delete(doc: PatchDoc, registry: PatchEntityRegistry) -
         existing = registry.lookup_existing(model_class, entry.public_id)
         if existing is None:
             continue  # no such record to delete; errors per-entry later
-        for target in cascade_targets(existing):
+        # The core walk yields ``LifecycleStatusModel``; narrow each member to
+        # read its canonical ``public_id`` (every cascade member is linkable).
+        for member in cascade_targets(existing):
+            target = require_linkable(member)
             deleted.add((type(target), target.public_id))
 
     if not deleted:

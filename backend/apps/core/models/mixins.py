@@ -249,7 +249,7 @@ class LifecycleStatusModel(models.Model):
     # plugin under multiple inheritance, so we keep the assignment form.
     objects: ClassVar[LifecycleManager[Self]] = LifecycleManager()  # pyright: ignore[reportInvalidTypeForm]
 
-    # Soft-delete walker policy — see apps/catalog/api/soft_delete.py and the
+    # Soft-delete walker policy — see apps/core/soft_delete.py and the
     # check_soft_delete_policy system check in apps/core/checks.py. Concrete
     # subclasses override these frozensets when they need to cascade deletion to
     # dependent entities, or to block deletion when an active referrer reaches
