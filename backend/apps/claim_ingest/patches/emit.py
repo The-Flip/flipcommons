@@ -17,20 +17,20 @@ from typing import NamedTuple
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
-from apps.catalog.ingestion.patches._types import (
+from apps.claim_ingest.patches._types import (
     ClaimKey,
     PatchError,
     PublicId,
     _Target,
 )
-from apps.catalog.ingestion.patches.entity_registry import PatchEntityRegistry
-from apps.catalog.ingestion.patches.parsing import (
+from apps.claim_ingest.patches.entity_registry import PatchEntityRegistry
+from apps.claim_ingest.patches.parsing import (
     CreateEntry,
     DeleteEntry,
     EditEntry,
     PatchEntry,
 )
-from apps.catalog.ingestion.plan import (
+from apps.claim_ingest.plan import (
     CitationRef,
     CiteHandle,
     Handle,

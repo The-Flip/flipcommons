@@ -20,7 +20,7 @@ from typing import NamedTuple
 
 from django.core.exceptions import ValidationError
 
-from apps.catalog.ingestion.plan import (
+from apps.claim_ingest.plan import (
     EntryIndex,
     IngestPlan,
     PlannedClaimAssert,

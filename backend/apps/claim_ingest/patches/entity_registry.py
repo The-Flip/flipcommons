@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from django.db import models
 
-from apps.catalog.ingestion.patches._types import _CreatedKey
-from apps.catalog.ingestion.plan import Handle
+from apps.claim_ingest.patches._types import _CreatedKey
+from apps.claim_ingest.plan import Handle
 from apps.provenance.models import LinkableClaimModel
 
 

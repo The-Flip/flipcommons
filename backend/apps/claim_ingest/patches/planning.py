@@ -20,14 +20,16 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from apps.catalog.ingestion.patches._types import (
+from apps.citation.seed_data.types import SeedSource
+from apps.citation.seeding import ensure_root_source, validate_root_source
+from apps.claim_ingest.patches._types import (
     ClaimKey,
     PatchError,
     PublicId,
     _CreatedKey,
     _Target,
 )
-from apps.catalog.ingestion.patches.emit import (
+from apps.claim_ingest.patches.emit import (
     _add_create,
     _add_delete,
     _add_removals,
@@ -37,8 +39,8 @@ from apps.catalog.ingestion.patches.emit import (
     _HierarchyEdge,
     _resolve_model_class,
 )
-from apps.catalog.ingestion.patches.entity_registry import PatchEntityRegistry
-from apps.catalog.ingestion.patches.parsing import (
+from apps.claim_ingest.patches.entity_registry import PatchEntityRegistry
+from apps.claim_ingest.patches.parsing import (
     _CITE_MARKER_RE,
     _NUMERIC_HANDLE_RE,
     _SLUG_HANDLE_RE,
@@ -49,7 +51,7 @@ from apps.catalog.ingestion.patches.parsing import (
     PatchEntry,
     _parse_provenance,
 )
-from apps.catalog.ingestion.plan import (
+from apps.claim_ingest.plan import (
     CitationRef,
     CiteHandle,
     Handle,
@@ -58,8 +60,6 @@ from apps.catalog.ingestion.plan import (
     PreWriteHook,
     RunReport,
 )
-from apps.citation.seed_data.types import SeedSource
-from apps.citation.seeding import ensure_root_source, validate_root_source
 from apps.core.markdown import get_markdown_fields
 from apps.core.models import (
     LIFECYCLE_STATUS_FIELD,

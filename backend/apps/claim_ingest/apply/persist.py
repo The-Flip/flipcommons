@@ -24,11 +24,11 @@ from typing import cast
 
 from django.contrib.contenttypes.models import ContentType
 
-from apps.catalog.ingestion.apply.claims import (
+from apps.claim_ingest.apply.claims import (
     RetractEntry,
     _reject_empty_diff_provenance,
 )
-from apps.catalog.ingestion.plan import (
+from apps.claim_ingest.plan import (
     CitationRef,
     CiteHandle,
     ContentTypeId,

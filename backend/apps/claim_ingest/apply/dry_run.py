@@ -22,7 +22,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import FieldDoesNotExist
 from django.db import models
 
-from apps.catalog.ingestion.apply.claims import (
+from apps.claim_ingest.apply.claims import (
     RetractEntry,
     _build_claims,
     _diff_claims,
@@ -30,7 +30,7 @@ from apps.catalog.ingestion.apply.claims import (
     _reject_empty_diff_provenance,
     _validate_and_collect_errors,
 )
-from apps.catalog.ingestion.plan import (
+from apps.claim_ingest.plan import (
     EntryIndex,
     Handle,
     IngestPlan,

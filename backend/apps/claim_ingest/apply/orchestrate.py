@@ -18,14 +18,14 @@ from __future__ import annotations
 from django.db import transaction
 from django.utils import timezone
 
-from apps.catalog.ingestion.apply.claims import (
+from apps.claim_ingest.apply.claims import (
     _build_claims,
     _diff_claims,
     _process_retractions,
     _validate_fail_fast,
 )
-from apps.catalog.ingestion.apply.dry_run import _apply_dry_run
-from apps.catalog.ingestion.apply.persist import (
+from apps.claim_ingest.apply.dry_run import _apply_dry_run
+from apps.claim_ingest.apply.persist import (
     _attach_plan_citations,
     _check_empty_diff_entries,
     _collect_plan_provenance,
@@ -35,13 +35,13 @@ from apps.catalog.ingestion.apply.persist import (
     _persist,
     _resolve,
 )
-from apps.catalog.ingestion.apply.validate import (
+from apps.claim_ingest.apply.validate import (
     _validate_assertion_targets,
     _validate_entity_claim_consistency,
     _validate_entry_index_stamping,
     _validate_handle_refs,
 )
-from apps.catalog.ingestion.plan import IngestPlan, RunReport
+from apps.claim_ingest.plan import IngestPlan, RunReport
 from apps.provenance.models import IngestRun
 
 

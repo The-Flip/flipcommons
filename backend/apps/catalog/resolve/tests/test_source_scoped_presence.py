@@ -36,11 +36,11 @@ from dataclasses import dataclass
 import pytest
 from django.contrib.contenttypes.models import ContentType
 
-from apps.catalog.ingestion.patches.emit import (
+from apps.catalog.models import CatalogModel, Location, Manufacturer
+from apps.claim_ingest.patches.emit import (
     _source_claims_field,
     _source_claims_member_present,
 )
-from apps.catalog.models import CatalogModel, Location, Manufacturer
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.claims import build_relationship_claim

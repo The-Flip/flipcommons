@@ -167,6 +167,7 @@ allow_indirect_imports = "true"
 source_modules = [
     "apps.provenance",
     "apps.citation",
+    "apps.claim_ingest",
 ]
 forbidden_modules = ["apps.media"]
 
@@ -250,7 +251,6 @@ source_modules = [
     "apps.catalog.models",
     "apps.catalog.services",
     "apps.catalog.resolve",
-    "apps.catalog.ingestion",
     "apps.catalog.claims",
     "apps.catalog.cache",
     "apps.catalog.naming",
@@ -259,10 +259,11 @@ source_modules = [
 ]
 forbidden_modules = ["apps.catalog.api"]
 
-# The ingest system (ingestion/) is the bulk catalog write path — a top-level
-# consumer, not a dependency. The rest of catalog must not import it; only the
-# management commands that drive ingest (manage.py ingest_patches / pull_patches)
-# may, and they live outside this source list as the orchestration entrypoint.
+# The ingest system (apps.claim_ingest) is the bulk catalog write path — a
+# top-level consumer, not a dependency. The catalog domain must not import it.
+# The source list omits apps.catalog.management on purpose: the ingest commands
+# (manage.py ingest_patches / pull_patches) live there and legitimately drive the
+# pipeline (and catalog's own cache invalidation) as the orchestration entrypoint.
 [[tool.importlinter.contracts]]
 name = "Catalog domain does not import the ingest system"
 type = "forbidden"
@@ -278,41 +279,25 @@ source_modules = [
     "apps.catalog.authz",
     "apps.catalog.api",
 ]
-forbidden_modules = ["apps.catalog.ingestion"]
-ignore_imports = ["apps.catalog.*.tests.** -> apps.catalog.ingestion.**"]
+forbidden_modules = ["apps.claim_ingest"]
+ignore_imports = ["apps.catalog.*.tests.** -> apps.claim_ingest.**"]
 
 # The forward direction (mirror of the contract above): the ingest system must
-# not reach back into the catalog domain. ingestion/ depends only on core,
-# provenance and citation; its remaining catalog imports are a burn-down list,
-# severed step by step (generic claim helpers -> provenance, the soft-delete
-# walk -> core, resolution inverted into a provenance registry). When the list
-# reaches zero the boundary is sealed and the ingest system can move to its own
-# app. forbidden_modules enumerates the full catalog domain (the mirror of the
-# reverse contract's source list) so a NEW coupling to any catalog package is
-# caught, not just today's offenders — it is NOT scoped to currently-imported
-# packages. apps.catalog.api is omitted: it is governed by the api-leaf
-# contract (whose ingest soft_delete baselines are now cleared). The domain set
-# is enumerated rather than a single "apps.catalog" forbid because import-linter
-# forbids a source from being a descendant of a forbidden module, and
-# apps.catalog.ingestion is a descendant of apps.catalog.
+# not reach back into the catalog domain. claim_ingest depends only on core,
+# provenance and citation; its catalog couplings (the model-type bound and the
+# resolution dispatch) were severed step by step (Steps 1-2) before it moved to
+# its own app. A single "apps.catalog" forbid suffices now that claim_ingest is
+# a separate top-level app (not a descendant of catalog): it catches a NEW
+# coupling to ANY catalog package — catalog.api included — not just today's
+# (zero) offenders. The reverse contract above must enumerate its source instead,
+# because it has to exclude apps.catalog.management (the ingest commands
+# legitimately import the pipeline); the forward direction has no such carve-out.
 [[tool.importlinter.contracts]]
 name = "Ingest system does not import the catalog domain"
 type = "forbidden"
 allow_indirect_imports = "true"
-source_modules = ["apps.catalog.ingestion"]
-forbidden_modules = [
-    "apps.catalog.models",
-    "apps.catalog.claims",
-    "apps.catalog.resolve",
-    "apps.catalog.services",
-    "apps.catalog.cache",
-    "apps.catalog.naming",
-    "apps.catalog.signals",
-    "apps.catalog.authz",
-]
-# No baselines: the ingest -> catalog couplings (the model-type bound and the
-# resolution dispatch) are fully severed (Steps 1-2). The contract now enforces
-# clean.
+source_modules = ["apps.claim_ingest"]
+forbidden_modules = ["apps.catalog"]
 
 # The interactive claim-write core (catalog/api/claim_write.py) is the generic
 # write engine: it must not import the catalog domain, so it stays reusable
@@ -411,8 +396,8 @@ forbidden_modules = ["apps.core.api"]
 [[tool.importlinter.contracts]]
 name = "Patch front end does not depend on the ingest back end"
 type = "forbidden"
-source_modules = ["apps.catalog.ingestion.patches"]
-forbidden_modules = ["apps.catalog.ingestion.apply"]
+source_modules = ["apps.claim_ingest.patches"]
+forbidden_modules = ["apps.claim_ingest.apply"]
 
 # Media internal layering: a vertical stack from constants/models at the bottom
 # up to the api composition layer. This also enforces that media.api is a leaf

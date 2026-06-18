@@ -6,13 +6,13 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 
-from apps.catalog.ingestion.apply import apply_plan
-from apps.catalog.ingestion.plan import (
+from apps.catalog.models import Manufacturer
+from apps.claim_ingest.apply import apply_plan
+from apps.claim_ingest.plan import (
     IngestPlan,
     PlannedClaimAssert,
     PlannedEntityCreate,
 )
-from apps.catalog.models import Manufacturer
 from apps.provenance.models import Claim, Source
 from apps.provenance.validation import validate_claim_value
 

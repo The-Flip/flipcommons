@@ -1,7 +1,7 @@
 """Plan data types: the declarative carriers an ingest source hands the engine.
 
 These are the public contract between the source front end (``ingestion.patches``)
-and the source-agnostic apply engine in :mod:`apps.catalog.ingestion.apply`. A
+and the source-agnostic apply engine in :mod:`apps.claim_ingest.apply`. A
 front end builds an :class:`IngestPlan` out of these primitives; ``apply_plan``
 consumes it. The types live here, apart from the engine, so a front end can
 import the carriers without pulling in the engine's machinery — the apply layer

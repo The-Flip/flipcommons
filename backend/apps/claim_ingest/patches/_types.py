@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 from django.db import models
 
-from apps.catalog.ingestion.plan import Handle
+from apps.claim_ingest.plan import Handle
 
 # The composite key identifying one claim — a scalar/FK field name or a
 # relationship member key from ``build_relationship_claim`` (e.g.

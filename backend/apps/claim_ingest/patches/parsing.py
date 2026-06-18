@@ -19,14 +19,14 @@ from urllib.parse import urlparse
 
 import yaml
 
-from apps.catalog.ingestion.patches._types import PatchError
-from apps.catalog.ingestion.plan import CitationRef, CiteHandle
 from apps.citation.extractors import EXTRACTORS
 from apps.citation.models import (
     CITATION_SOURCE_IDENTIFIER_MAX_LENGTH,
     CITATION_SOURCE_LINK_URL_MAX_LENGTH,
 )
 from apps.citation.seed_data.types import SeedLink, SeedSource
+from apps.claim_ingest.patches._types import PatchError
+from apps.claim_ingest.plan import CitationRef, CiteHandle
 from apps.core.types import JsonBody
 from apps.provenance.models.changeset import CHANGESET_NOTE_MAX_LENGTH
 
