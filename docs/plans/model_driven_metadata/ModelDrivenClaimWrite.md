@@ -105,35 +105,13 @@ Made the interactive boundary apparent and enforced before any code moves betwee
 
 This makes Step 4 a near-trivial `git mv` of `claim_write.py` (and `test_claim_write.py`) into the new app.
 
-## Step 1 — Define `LinkableClaimModel` in provenance
+## ✅ DONE: Step 1 — Define `LinkableClaimModel` in provenance
 
-Add one abstract base to `provenance/models/base.py`, beside `ClaimControlledModel`: `LinkableClaimModel(LinkableModel, ClaimControlledModel)`. It declares no fields, so it adds no table, content-type or migration.
+`provenance/models/base.py` declares `LinkableClaimModel(LinkableModel, ClaimControlledModel)` beside `ClaimControlledModel` — the addressable-claim-subject contract (a model is namable in a patch or by URL when it is both **linkable** and **claim-controlled**), in the one layer that sees both bases. It declares no fields, so it added no table, content-type or migration. `CatalogModel` extends it (dropping its now-redundant direct `ClaimControlledModel`, keeping its direct `LifecycleStatusModel`), and the bulk compiler's model bounds (`emit`, `entity_registry`, `planning`) bind it instead of `CatalogModel` — the gate is `issubclass(model_class, LinkableClaimModel)`. The three `apps.catalog.ingestion.patches.{emit,entity_registry,planning} -> apps.catalog.models` baselines are gone. Confirmed before commit: C3 reaches each repeated base (`LinkableModel`, `ClaimControlledModel`) once, no `_meta` field clash on a media (`MachineModel`) or non-media (`Title`) concrete, and `makemigrations --check` reports no changes.
 
-A model can be named in a patch (or addressed by URL) when it is **linkable** (publicly addressable) and **claim-controlled**. `LinkableClaimModel` names that conjunction after what it is — the addressable-claim-subject contract — and provenance is exactly the layer that sees both bases (`LinkableModel` from core, `ClaimControlledModel` provenance's own).
+**The capability contract is the docstring now.** The required / discovered / ignored tiers — what the write paths bind, detect by guard/introspection, and never touch — live in `LinkableClaimModel`'s docstring (`apps/provenance/models/base.py`). Read them there rather than maintaining a second copy; the design rationale that did _not_ go into code stays below.
 
-### Capabilities: what the write paths require, discover, and ignore
-
-`LinkableClaimModel` is the target contract for the addressing-dependent paths (`claim_ingest`, which resolves references, and the domain's URL routing). The interactive `execute_*` bind the looser `ClaimControlledModel`, because their caller has already resolved the row. Three tiers; only the first is a bound, and this list becomes `LinkableClaimModel`'s docstring.
-
-**Required (the bound).** Without these a model cannot be a target at all:
-
-| Capability | Base (home)                         | What the write paths use                                                                                                                                                   |
-| ---------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Addressing | `LinkableModel` (core)              | `entity_type` + `get_linkable_model()` registry (content-type dispatch); `public_id` (resolve `entity_type:public_id` → row); `name`/label (error messages, alias folding) |
-| Claims     | `ClaimControlledModel` (provenance) | `get_claim_fields()` introspection; reads and writes only claims                                                                                                           |
-
-`LinkableClaimModel = LinkableModel + ClaimControlledModel` is exactly this pair — the minimum. No narrower bound works: `IdentifiableModel` alone lacks `entity_type`, which the addressing scheme requires. (`MediaSupportedModel` is claim-controlled but not linkable, and indeed not addressable; media enters as a `media_attachment` relationship claim on a linkable entity.) Both bases and their introspection (`LinkableModel` addressing, `get_claim_fields`) are already in the code — `apps/core/models/mixins.py` and `apps/provenance/models/introspection.py`.
-
-**Discovered (used when present, never bound).** Reached through a guard or introspection so they stay optional — a target lacking them is still create/edit-patchable:
-
-| Capability                          | Detected via                                        | Used for                                                                                                                                                 |
-| ----------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lifecycle (`LifecycleStatusModel`)  | `has_lifecycle()` TypeGuard (`core/soft_delete.py`) | create stamps `status='active'`; `delete:` routes through the soft-delete planner. A lifecycle-less target → only `delete:` rejects it ("no lifecycle"). |
-| Markdown content (`DescribedModel`) | `get_markdown_fields()` introspection               | inline-citation validation in description text                                                                                                           |
-
-Binding either would force the capability onto **every** target — the re-tightening this work exists to avoid. The guard/introspection keeps each statically visible at its use site without widening the contract.
-
-**Ignored (the write paths never touch).** Sitemapping (`SitemappedModel`), `lastmod`/timestamps (`LastUpdatedModel`, `TimeStampedModel`), and any other web-presentation capability. These sit _above_ `LinkableModel` on the core chain (`SitemappedModel(LinkableModel, …)`), so a path bound at the `LinkableModel` level is structurally blind to them. **Do not fold these into `LinkableClaimModel`**: sitemap membership is a read/presentation concern, irrelevant to writing claims.
+**Lifecycle is gated symmetrically at create _and_ delete.** The original draft of this step said only that `delete:` rejects a lifecycle-less target; implementation showed create needs the same treatment. Widening the bound from `CatalogModel` (always lifecycle) to `LinkableClaimModel` dropped the static guarantee, so the create-time `status='active'` stamp is now gated behind `has_lifecycle(model_class)` in **three places that move together** — the create kwarg, its paired `PlannedClaimAssert`, and the `adapter_owned` rejection — because the apply layer's create contract requires every claim-controlled kwarg to have a matching assertion (`apps/catalog/ingestion/apply/validate.py`). Delete is gated by an `isinstance(existing, LifecycleStatusModel)` guard in `_add_delete`. Net: a lifecycle-less target is genuinely create/edit-patchable and only `delete:` rejects it — matching how the rest of the system already treats the optional lifecycle capability (`autocomplete_queryset`, the soft-delete walk's reverse-FK pass). Source of truth: `apps/catalog/ingestion/patches/{emit,planning}.py`.
 
 ### ABC structure: one marker, deliberately
 
@@ -142,15 +120,7 @@ Binding either would force the capability onto **every** target — the re-tight
 - **`DeletableClaimModel(LinkableClaimModel, LifecycleStatusModel)`** as a marker for delete-able targets — rejected. It would re-tighten lifecycle onto everything inheriting it, while the `has_lifecycle` TypeGuard already makes the capability visible at the sites that branch on it. Optionality belongs at the use site, not in a base.
 - **`WikiEntityModel(DescribedModel, SitemappedModel, LifecycleStatusModel, LinkableClaimModel)`** as a domain-composition base that `CatalogModel` (and a future baseball/medicine base) would extend — deferred, not adopted. It is a _domain-author_ convenience (DRY across domains), not a write-path concern: no engine binds it, and spelling out `CatalogModel`'s four bases is clearer at the leaf than hiding them behind an alias while there is only one domain. It is the natural seam to introduce the day a second domain appears; until then it adds a layer with a single consumer.
 
-The core mixins are already cleanly factored on orthogonal axes (addressing / claims / lifecycle / content), so no mixin restructuring is needed. The clarity win is the capability contract above, captured in the marker's docstring — not a deeper hierarchy.
-
-### Wiring
-
-`CatalogModel` extends `LinkableClaimModel` (dropping its now-redundant direct `ClaimControlledModel`, keeping its direct `LifecycleStatusModel`), so every catalog entity is a linkable claim subject — `catalog → provenance`, an edge that already exists. Repoint the bulk compiler's `CatalogModel` bounds (`emit`, `entity_registry`, `planning`) to import `LinkableClaimModel` from provenance. The gate becomes `issubclass(model_class, LinkableClaimModel)`.
-
-**Diamond caveat — verify before relying on it.** `CatalogModel` becomes `CatalogModel(DescribedModel, SitemappedModel, LifecycleStatusModel, LinkableClaimModel)`. C3 reaches each repeated base (`LinkableModel` via `SitemappedModel` and `LinkableClaimModel`; `ClaimControlledModel` via `LinkableClaimModel` and, for media concretes, `MediaSupportedModel`) as a single class — harmless as long as `LinkableClaimModel` declares no fields. Confirm the MRO and `_meta` field set on a media concrete (`MachineModel`) and a non-media one (`Title`), **and that `manage.py makemigrations --check --dry-run` reports no changes**, before committing.
-
-**Acceptance.** The three `apps.catalog.ingestion.patches.{emit,entity_registry,planning} -> apps.catalog.models` baselines are deleted; `uv run lint-imports` green; `make mypy` clean; `pytest apps/catalog apps/provenance apps/core` green.
+The core mixins are already cleanly factored on orthogonal axes (addressing / claims / lifecycle / content), so no mixin restructuring was needed. The clarity win is the capability contract (now the docstring) — not a deeper hierarchy.
 
 ## Step 2 — Invert resolution
 
@@ -166,7 +136,7 @@ Provenance exposes **two** dispatch entries, one per shape, each looking the pai
 Two separable pieces:
 
 - **The inversion (an IR change).** `IngestPlan.resolve_hooks` (closures over `catalog.resolve`) becomes per-content-type changed-field **data**, and the `ResolveHook` protocol retires. At apply time `_resolve` maps each affected `ct_id` to its model and dispatches by model class. Because `_resolve` raises on a missing handler, catalog registers one for **every** concrete model at `ready()` — a model-driven loop.
-- **Retiring the `MachineModel` special-case** — two branches (bulk `issubclass`, per-entity `isinstance`) folded into per-model registration. A genuine model-driven cleanup that rides on the inversion and can be deferred if the inversion alone gets hairy — safe to defer precisely because the inversion keeps the two shapes distinct.
+- **Retiring the `MachineModel` special-case** — two branches (bulk `issubclass`, per-entity `isinstance`) folded into per-model registration. A genuine model-driven cleanup that rides on the inversion and can be deferred if the inversion alone gets hairy — safe to defer precisely because the inversion keeps the two shapes distinct. The `ready()`-time registration this introduces is what deletes the dispatch's three accidental-complexity warts together — the `isinstance` type-switch, the `getattr`-by-string-name reflection, and the `global … is None` lazy-init singletons are all artifacts of having no registration phase, not design choices. See [ModelDrivenClaimResolution.md § Dispatch design](ModelDrivenClaimResolution.md#dispatch-design-patterns-the-ownership-ladder-and-rejected-alternatives) for the full analysis.
 
 This frees both write paths' resolve dependency at once: `apply/persist.py` and the interactive `execute_claims` now call the provenance-local seam, and `provenance.revert` does too — one seam, three callers.
 

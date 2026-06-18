@@ -353,6 +353,41 @@ ignore_imports = [
     "apps.catalog.api.claim_write -> apps.catalog.exceptions",
 ]
 
+# The generic resolver core — scalar/bulk claim projection (_entities), its
+# coercion/FK/constraint helpers (_helpers), and the read-side payload
+# vocabulary (_claim_values) — is domain-agnostic substrate that merely lives
+# in catalog: it names no concrete model and drives entirely off claim-field
+# introspection (get_claim_fields, _meta). Forbidding it from importing the
+# catalog domain turns the claim-resolution plan's load-bearing premise ("Tier
+# 1 is already fully generic") into an enforced invariant, so a stray `from
+# ..models import …` can't silently re-couple it, and the eventual hoist to the
+# substrate stays a near-trivial move. This is a ratchet on what is already
+# true today (green, no baselines) — NOT the model-driven resolver engine,
+# which awaits the deferred relationship-declaration vocabulary. The
+# relationship/dispatch resolvers (_relationships, _dispatch, __init__) still
+# bind MachineModel and are deliberately out of scope; the dispatch seam is
+# restructured by ModelDrivenClaimWrite.md's "Invert resolution" step. See
+# docs/plans/model_driven_metadata/ModelDrivenClaimResolution.md.
+[[tool.importlinter.contracts]]
+name = "Generic resolver core does not import the catalog domain"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.catalog.resolve._entities",
+    "apps.catalog.resolve._helpers",
+    "apps.catalog.resolve._claim_values",
+]
+forbidden_modules = [
+    "apps.catalog.models",
+    "apps.catalog.claims",
+    "apps.catalog.services",
+    "apps.catalog.cache",
+    "apps.catalog.naming",
+    "apps.catalog.signals",
+    "apps.catalog.authz",
+    "apps.catalog.exceptions",
+]
+
 # core has a multi-module api/ package (like catalog); the same leaf rule applies.
 [[tool.importlinter.contracts]]
 name = "The core api layer is a leaf"
