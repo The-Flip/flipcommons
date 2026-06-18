@@ -7,7 +7,6 @@ the generic _resolve_aliases() function works for every registered alias type.
 import pytest
 from django.contrib.contenttypes.models import ContentType
 
-from apps.catalog.claims import build_relationship_claim
 from apps.catalog.models import (
     CorporateEntity,
     GameplayFeature,
@@ -18,6 +17,7 @@ from apps.catalog.models import (
     Theme,
 )
 from apps.catalog.resolve._relationships import ALIAS_TYPES, _resolve_aliases
+from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, Source
 
 # ---------------------------------------------------------------------------

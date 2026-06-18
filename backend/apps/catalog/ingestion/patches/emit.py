@@ -18,11 +18,6 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
 from apps.catalog.api.soft_delete import plan_soft_delete
-from apps.catalog.claims import (
-    build_relationship_claim,
-    normalize_abbreviation_value,
-    normalize_alias_identity,
-)
 from apps.catalog.ingestion.patches._types import (
     ClaimKey,
     PatchError,
@@ -47,11 +42,16 @@ from apps.catalog.ingestion.plan import (
     PlannedEntityCreate,
 )
 from apps.catalog.models import CatalogModel
-from apps.catalog.resolve._helpers import normalize_fk_value
-from apps.catalog.resolve.claim_presence import member_is_present
 from apps.core.entity_types import get_linkable_model
 from apps.core.models import LIFECYCLE_STATUS_FIELD
 from apps.core.types import EntityKey
+from apps.provenance.claim_presence import member_is_present
+from apps.provenance.claims import (
+    build_relationship_claim,
+    normalize_abbreviation_value,
+    normalize_alias_identity,
+    normalize_fk_value,
+)
 from apps.provenance.models import Claim, IdentityPart, Source, get_claim_fields
 from apps.provenance.validation import get_relationship_schema
 
@@ -531,7 +531,7 @@ def _source_claims_member_present(
     absent, and removing it would be an inert no-op.
 
     The presence/tombstone semantics are the single definition in
-    :func:`~apps.catalog.resolve.claim_presence.member_is_present`; this wraps it
+    :func:`~apps.provenance.claim_presence.member_is_present`; this wraps it
     with the source-scoped selection (``.first()`` is the source's current claim,
     given the one-active-claim-per-(source, claim_key) invariant).
     """

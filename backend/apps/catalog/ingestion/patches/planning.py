@@ -22,7 +22,6 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.catalog.api.soft_delete import cascade_targets
-from apps.catalog.claims import get_relationship_namespaces
 from apps.catalog.ingestion.patches._types import (
     ClaimKey,
     PatchError,
@@ -63,13 +62,14 @@ from apps.catalog.ingestion.plan import (
 )
 from apps.catalog.models import CatalogModel
 from apps.catalog.resolve import resolve_relationships_bulk
-from apps.catalog.resolve._helpers import normalize_fk_value
 from apps.citation.seed_data.types import SeedSource
 from apps.citation.seeding import ensure_root_source, validate_root_source
 from apps.core.markdown import get_markdown_fields
 from apps.core.models import LIFECYCLE_STATUS_FIELD
 from apps.core.types import EntityKey
+from apps.provenance.claims import normalize_fk_value
 from apps.provenance.models import Source, get_claim_fields
+from apps.provenance.validation import get_relationship_namespaces
 
 # A plan-wide guard target: an existing entity (``EntityKey``) or a same-patch
 # create addressed by its ``Handle``. The two never collide — a 2-int

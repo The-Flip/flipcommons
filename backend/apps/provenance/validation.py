@@ -25,6 +25,7 @@ from django.core.exceptions import (
 from django.db import models
 
 from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
+from apps.provenance.claim_presence import member_is_present
 from apps.provenance.models import ClaimControlledModel, get_claim_fields
 
 if TYPE_CHECKING:
@@ -802,7 +803,7 @@ def validate_relationship_claims_batch(
             continue
         # Retractions (exists=False) don't need target validation — the
         # target may have been deleted, and the claim is being removed.
-        if not value.get("exists", True):
+        if not member_is_present(claim):
             continue
         for spec in schema.value_keys:
             if spec.fk_target is None:

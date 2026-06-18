@@ -1,40 +1,32 @@
-"""Catalog-level helpers for relationship claims.
+"""Catalog-specific relationship-claim helpers.
 
 Domain knowledge about relationship claim shapes lives here via
 ``register_catalog_relationship_schemas()``, called from
 ``CatalogConfig.ready()``. The unified registry is owned by
-``apps.provenance.validation``; this module only declares catalog
-namespaces and provides the ``build_relationship_claim`` helper that
-ingest commands and the resolution layer use.
+``apps.provenance.validation``; this module declares the catalog namespaces
+and keeps the two catalog-coupled helpers — ``build_media_attachment_claim``
+(validates against the entity's ``MEDIA_CATEGORIES``) and
+``make_authoritative_scope``. The generic, model-agnostic construction
+helpers (``build_relationship_claim``, the normalizers) live in
+``apps.provenance.claims``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from typing import NamedTuple
+from collections.abc import Iterable
 
 from django.contrib.contenttypes.models import ContentType
 
-from apps.core.types import JsonBody
 from apps.media.models import MediaSupportedModel
-from apps.provenance.models import ClaimControlledModel, IdentityPart, make_claim_key
+from apps.provenance.claims import RelationshipClaim, build_relationship_claim
+from apps.provenance.models import ClaimControlledModel
 from apps.provenance.validation import (
     FkTarget,
     RelationshipSchema,
     ValueKeySpec,
     get_all_relationship_schemas,
-    get_relationship_schema,
     register_relationship_schema,
 )
-from apps.provenance.validation import (
-    get_relationship_namespaces as _get_relationship_namespaces,
-)
-
-# A (claim_key, value_dict) pair ready to write as a relationship Claim row.
-# claim_key is the canonical compound string; value_dict is the JSONField
-# payload — identity fields plus "exists", optionally "category"/"is_primary".
-RelationshipClaim = tuple[str, JsonBody]
-
 
 # ---------------------------------------------------------------------------
 # Registration
@@ -284,15 +276,6 @@ def register_catalog_relationship_schemas() -> None:
 # ---------------------------------------------------------------------------
 
 
-def get_relationship_namespaces() -> frozenset[str]:
-    """Return the full set of registered relationship namespace names.
-
-    Thin re-export of the cached provenance-layer function, kept at this
-    module path for existing import sites.
-    """
-    return _get_relationship_namespaces()
-
-
 def get_all_namespace_keys() -> dict[str, list[str]]:
     """Return namespace → list of identity value-key names for every namespace.
 
@@ -304,79 +287,6 @@ def get_all_namespace_keys() -> dict[str, list[str]]:
             spec.name for spec in schema.value_keys if spec.identity is not None
         ]
     return result
-
-
-class AliasIdentity(NamedTuple):
-    """The canonical fold of one raw alias string.
-
-    ``value`` is the lowercased identity (drives the claim_key); ``display``
-    is the original-case rendering stored in ``alias_display``. Both the
-    in-app editor (``plan_alias_claims``) and the data-patch adapter build
-    alias claims through this one fold so their bytes are identical by
-    construction — a patch alias and an editor alias supersede/dedup against
-    each other only if the (value, display) pair matches exactly.
-    """
-
-    value: str
-    display: str
-
-
-def normalize_alias_identity(raw: str) -> AliasIdentity:
-    """Canonical alias fold: strip, lowercase for identity, keep original case."""
-    s = raw.strip()
-    return AliasIdentity(value=s.lower(), display=s)
-
-
-def normalize_abbreviation_value(raw: str) -> str:
-    """Canonical abbreviation fold: strip only — abbreviations are case-sensitive."""
-    return raw.strip()
-
-
-def build_relationship_claim(
-    field_name: str,
-    identity: Mapping[str, IdentityPart],
-    exists: bool = True,
-) -> RelationshipClaim:
-    """Return ``(claim_key, value)`` for a relationship claim.
-
-    ``identity`` contains the identity fields for this relationship, e.g.,
-    ``{"person": 42, "role": 5}`` or ``{"alias_value": "foo"}``. Keys are
-    value-dict names (``alias_value``), not identity labels (``alias``) —
-    the mapping is resolved via ``ValueKeySpec.identity``. The mapping may
-    also carry non-identity keys (e.g. ``alias_display``) for an assert.
-
-    The claim_key is derived from identity using the registered schema for
-    *field_name*.
-
-    Tombstone invariant: when ``exists=False`` the value carries **only** the
-    schema-identity keys plus ``exists`` — any non-identity payload in
-    *identity* is dropped. No resolver reads a non-identity key off an absent
-    member (they short-circuit on ``exists=False`` first), so dropping it keeps
-    tombstone bytes canonical and lets every write path supersede/dedup
-    byte-identically. This is a no-op for callers that already pass
-    identity-only dicts on removal (all of them, today).
-    """
-    schema = get_relationship_schema(field_name)
-    if schema is None:
-        raise ValueError(f"Unknown relationship namespace: {field_name!r}")
-
-    identity_parts: dict[str, IdentityPart] = {}
-    identity_key_names: list[str] = []
-    for spec in schema.value_keys:
-        if spec.identity is None:
-            continue
-        if spec.name not in identity:
-            raise ValueError(f"Missing required key {spec.name!r} for {field_name!r}")
-        identity_parts[spec.identity] = identity[spec.name]
-        identity_key_names.append(spec.name)
-    claim_key = make_claim_key(field_name, **identity_parts)
-    value: JsonBody
-    if exists:
-        value = {**identity, "exists": True}
-    else:
-        value = {name: identity[name] for name in identity_key_names}
-        value["exists"] = False
-    return claim_key, value
 
 
 def build_media_attachment_claim(
@@ -417,7 +327,7 @@ def build_media_attachment_claim(
     if exists:
         value["category"] = category
         value["is_primary"] = is_primary
-    return claim_key, value
+    return RelationshipClaim(claim_key, value)
 
 
 def make_authoritative_scope(
@@ -437,16 +347,10 @@ def make_authoritative_scope(
 # because this module instantiates them; downstream code should import from
 # whichever module they already use.
 __all__ = [
-    "AliasIdentity",
-    "RelationshipClaim",
     "RelationshipSchema",
     "ValueKeySpec",
     "build_media_attachment_claim",
-    "build_relationship_claim",
     "get_all_namespace_keys",
-    "get_relationship_namespaces",
     "make_authoritative_scope",
-    "normalize_alias_identity",
-    "normalize_abbreviation_value",
     "register_catalog_relationship_schemas",
 ]

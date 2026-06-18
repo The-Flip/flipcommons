@@ -150,7 +150,8 @@ def _resolve_non_machine_model(
     field_names: list[str] | None,
 ) -> None:
     """Non-MachineModel path — dispatch relationship resolvers then scalars."""
-    from ..claims import get_relationship_namespaces
+    from apps.provenance.validation import get_relationship_namespaces
+
     from ._entities import resolve_entity
     from ._media import resolve_media_attachments
     from ._relationships import _resolve_aliases, _resolve_parents

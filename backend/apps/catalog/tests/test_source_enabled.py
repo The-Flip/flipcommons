@@ -2,7 +2,6 @@
 
 import pytest
 
-from apps.catalog.claims import build_relationship_claim
 from apps.catalog.models import (
     CreditRole,
     Manufacturer,
@@ -17,6 +16,7 @@ from apps.catalog.resolve import (
 )
 from apps.catalog.resolve._relationships import resolve_all_credits
 from apps.catalog.tests.conftest import make_machine_model
+from apps.provenance.claims import build_relationship_claim
 from apps.provenance.helpers import active_claims
 from apps.provenance.models import Claim, Source, get_claim_fields
 

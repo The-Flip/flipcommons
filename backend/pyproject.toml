@@ -322,17 +322,11 @@ ignore_imports = [
     # (A tests-under-ingestion exemption is deliberately omitted: no such tests
     # exist yet, and import-linter errors on an unmatched ignore. It is added at
     # the app-move step, when the engine tests relocate into the app.)
-    "apps.catalog.ingestion.apply.persist -> apps.catalog.claims",
     "apps.catalog.ingestion.apply.persist -> apps.catalog.resolve._entities",
-    "apps.catalog.ingestion.patches.emit -> apps.catalog.claims",
     "apps.catalog.ingestion.patches.emit -> apps.catalog.models",
-    "apps.catalog.ingestion.patches.emit -> apps.catalog.resolve._helpers",
-    "apps.catalog.ingestion.patches.emit -> apps.catalog.resolve.claim_presence",
     "apps.catalog.ingestion.patches.entity_registry -> apps.catalog.models",
-    "apps.catalog.ingestion.patches.planning -> apps.catalog.claims",
     "apps.catalog.ingestion.patches.planning -> apps.catalog.models",
     "apps.catalog.ingestion.patches.planning -> apps.catalog.resolve",
-    "apps.catalog.ingestion.patches.planning -> apps.catalog.resolve._helpers",
 ]
 
 # core has a multi-module api/ package (like catalog); the same leaf rule applies.

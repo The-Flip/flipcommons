@@ -16,6 +16,7 @@ from typing import Any, cast
 from django.db import models
 
 from apps.core.models import meta_unique_fields
+from apps.provenance.claims import normalize_fk_value
 from apps.provenance.models import ClaimControlledModel
 
 logger = logging.getLogger(__name__)
@@ -57,24 +58,6 @@ class FKInfo:
 # ------------------------------------------------------------------
 # Generic FK resolution (model-introspected)
 # ------------------------------------------------------------------
-
-
-def normalize_fk_value(value: object) -> str | None:
-    """Canonicalize an FK claim value to its public_id lookup key.
-
-    The single normalization an FK claim value passes through before it becomes a
-    public_id lookup: cast to ``str`` and trim. A falsy or whitespace-only value
-    resolves to nothing (``None``). Shared by catalog's two FK-*resolution*
-    lookups — :func:`_resolve_fk_generic` (apply-time) and the patch front end's
-    ``_lookup_pk`` (build-time create/member resolution) — so a padded or
-    non-string value can't normalize one way and look up another. (Provenance's
-    FK-*existence* check in ``validation.py`` sits below catalog and answers a
-    different question — does the value name an existing row — so it keeps its own
-    slug normalization.)
-    """
-    if not value:
-        return None
-    return str(value).strip() or None
 
 
 def _resolve_fk_generic(

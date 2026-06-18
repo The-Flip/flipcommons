@@ -3,7 +3,6 @@
 import pytest
 
 from apps.catalog._alias_registry import discover_alias_types
-from apps.catalog.claims import build_relationship_claim
 from apps.catalog.models import (
     CorporateEntity,
     GameplayFeature,
@@ -17,6 +16,7 @@ from apps.catalog.models import (
 )
 from apps.catalog.resolve._dispatch import resolve_after_mutation
 from apps.catalog.tests.conftest import make_machine_model
+from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, ClaimControlledModel, Source
 from apps.provenance.validation import get_relationship_schema
 

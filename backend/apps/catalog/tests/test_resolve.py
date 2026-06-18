@@ -1,7 +1,6 @@
 import pytest
 from django.utils import timezone
 
-from apps.catalog.claims import build_relationship_claim
 from apps.catalog.models import (
     CorporateEntity,
     CorporateEntityLocation,
@@ -19,6 +18,7 @@ from apps.catalog.resolve import (
 )
 from apps.catalog.resolve._relationships import resolve_all_corporate_entity_locations
 from apps.catalog.tests.conftest import make_machine_model
+from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, Source
 
 
@@ -81,7 +81,7 @@ class TestResolveModel:
         assert resolved.extra_data["model_number"] == "20021"
 
     def test_abbreviation_relationship_claim(self, pm, ipdb):
-        from apps.catalog.claims import build_relationship_claim
+        from apps.provenance.claims import build_relationship_claim
 
         Claim.objects.assert_claim(pm, "name", "Test Game", source=ipdb)
         claim_key, value = build_relationship_claim("abbreviation", {"value": "MM"})
@@ -206,7 +206,7 @@ class TestResolveAll:
         pm_bulk = make_machine_model(name="P1", slug="p1", title=title)
         pm_single = make_machine_model(name="P2", slug="p2", title=title)
 
-        from apps.catalog.claims import build_relationship_claim
+        from apps.provenance.claims import build_relationship_claim
 
         abbr_key, abbr_val = build_relationship_claim("abbreviation", {"value": "MM"})
 

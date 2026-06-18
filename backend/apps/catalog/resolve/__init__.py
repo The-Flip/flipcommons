@@ -31,8 +31,8 @@ from apps.provenance.licensing import (
     resolve_effective_license,
 )
 from apps.provenance.models import Claim, ClaimControlledModel
+from apps.provenance.validation import get_relationship_namespaces
 
-from ..claims import get_relationship_namespaces
 from ..models import (
     MachineModel,
     Title,

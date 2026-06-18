@@ -7,12 +7,12 @@ import json
 import pytest
 from django.contrib.auth import get_user_model
 
-from apps.catalog.claims import build_relationship_claim
 from apps.catalog.models import Franchise, Title
 from apps.catalog.resolve import resolve_all_entities
 from apps.catalog.resolve._relationships import resolve_all_title_abbreviations
 from apps.citation.models import CitationSource
 from apps.core.types import JsonBody
+from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import ChangeSet, Claim, Source
 from apps.provenance.test_factories import user_changeset
 

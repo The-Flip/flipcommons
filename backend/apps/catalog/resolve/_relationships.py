@@ -13,6 +13,7 @@ from typing import NamedTuple, cast
 
 from django.db.models import Model
 
+from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim, ClaimControlledModel
 from apps.provenance.validation import (
@@ -48,7 +49,6 @@ from ._claim_values import (
     LocationClaimValue,
     ParentClaimValue,
 )
-from .claim_presence import member_is_present
 
 logger = logging.getLogger(__name__)
 
