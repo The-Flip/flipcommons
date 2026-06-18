@@ -287,6 +287,54 @@ source_modules = [
 forbidden_modules = ["apps.catalog.ingestion"]
 ignore_imports = ["apps.catalog.*.tests.** -> apps.catalog.ingestion.**"]
 
+# The forward direction (mirror of the contract above): the ingest system must
+# not reach back into the catalog domain. ingestion/ depends only on core,
+# provenance and citation; its remaining catalog imports are a burn-down list,
+# severed step by step (generic claim helpers -> provenance, the soft-delete
+# walk -> core, resolution inverted into a provenance registry). When the list
+# reaches zero the boundary is sealed and the ingest system can move to its own
+# app. forbidden_modules enumerates the full catalog domain (the mirror of the
+# reverse contract's source list) so a NEW coupling to any catalog package is
+# caught, not just today's offenders — it is NOT scoped to currently-imported
+# packages. apps.catalog.api is omitted: it is governed by the api-leaf
+# contract, which already baselines the two soft_delete edges. The domain set
+# is enumerated rather than a single "apps.catalog" forbid because import-linter
+# forbids a source from being a descendant of a forbidden module, and
+# apps.catalog.ingestion is a descendant of apps.catalog.
+[[tool.importlinter.contracts]]
+name = "Ingest system does not import the catalog domain"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = ["apps.catalog.ingestion"]
+forbidden_modules = [
+    "apps.catalog.models",
+    "apps.catalog.claims",
+    "apps.catalog.resolve",
+    "apps.catalog.services",
+    "apps.catalog.cache",
+    "apps.catalog.naming",
+    "apps.catalog.signals",
+    "apps.catalog.authz",
+]
+ignore_imports = [
+    # --- BASELINE: ingest -> catalog couplings to sever; delete each as the
+    # step that resolves it lands. Do NOT add to this list. ---
+    # (A tests-under-ingestion exemption is deliberately omitted: no such tests
+    # exist yet, and import-linter errors on an unmatched ignore. It is added at
+    # the app-move step, when the engine tests relocate into the app.)
+    "apps.catalog.ingestion.apply.persist -> apps.catalog.claims",
+    "apps.catalog.ingestion.apply.persist -> apps.catalog.resolve._entities",
+    "apps.catalog.ingestion.patches.emit -> apps.catalog.claims",
+    "apps.catalog.ingestion.patches.emit -> apps.catalog.models",
+    "apps.catalog.ingestion.patches.emit -> apps.catalog.resolve._helpers",
+    "apps.catalog.ingestion.patches.emit -> apps.catalog.resolve.claim_presence",
+    "apps.catalog.ingestion.patches.entity_registry -> apps.catalog.models",
+    "apps.catalog.ingestion.patches.planning -> apps.catalog.claims",
+    "apps.catalog.ingestion.patches.planning -> apps.catalog.models",
+    "apps.catalog.ingestion.patches.planning -> apps.catalog.resolve",
+    "apps.catalog.ingestion.patches.planning -> apps.catalog.resolve._helpers",
+]
+
 # core has a multi-module api/ package (like catalog); the same leaf rule applies.
 [[tool.importlinter.contracts]]
 name = "The core api layer is a leaf"
