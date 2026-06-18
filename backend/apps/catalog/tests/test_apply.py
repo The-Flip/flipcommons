@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest import mock
+
 import pytest
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
@@ -304,9 +306,6 @@ def test_failed_apply_ingest_run_survives(test_source):
     mfr = Manufacturer.objects.create(name="Bally", slug="bally")
     ct_id = _mfr_ct_id()
 
-    def raise_error(*, subject_ids=None):
-        raise RuntimeError("Resolve failed!")
-
     plan = _plan(
         source=test_source,
         input_fingerprint="fp-1",
@@ -318,10 +317,17 @@ def test_failed_apply_ingest_run_survives(test_source):
                 object_id=mfr.pk,
             ),
         ],
-        resolve_hooks={ct_id: [raise_error]},
     )
 
-    with pytest.raises(RuntimeError, match="Resolve failed"):
+    # A resolve failure (here, the provenance bulk dispatch raising) must fail
+    # the run and roll the transaction back.
+    with (
+        mock.patch(
+            "apps.provenance.resolution.resolve_entities_bulk",
+            side_effect=RuntimeError("Resolve failed!"),
+        ),
+        pytest.raises(RuntimeError, match="Resolve failed"),
+    ):
         apply_plan(plan)
 
     run = IngestRun.objects.get(source=test_source)

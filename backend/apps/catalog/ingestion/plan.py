@@ -27,17 +27,6 @@ from typing import Any, Protocol
 from apps.provenance.models import ClaimControlledModel, Source
 
 
-class ResolveHook(Protocol):
-    """Signature for relationship resolvers registered in ``resolve_hooks``.
-
-    Matches the standardised resolve function signature::
-
-        def resolve_all_gameplay_features(*, subject_ids: set[int] | None = None) -> None
-    """
-
-    def __call__(self, *, subject_ids: set[int] | None = None) -> None: ...
-
-
 class PreWriteHook(Protocol):
     """A side write run first inside the apply transaction, before any claim.
 
@@ -94,6 +83,11 @@ type CiteHandle = str
 # Typed ``| None`` on the carriers only because the front end stamps it in a
 # second pass (see ``planning.build_plan``); it is always set by apply time.
 type EntryIndex = int
+
+# A ``ContentType`` pk — the key of ``IngestPlan.changed_relationship_fields``.
+# A transparent alias of ``int`` (like ``CiteHandle``/``EntryIndex`` above) that
+# names the role so a bare ``int`` isn't mistaken for an object pk or count.
+type ContentTypeId = int
 
 # A plan-local temporary identifier for a not-yet-created entity — the label a
 # ``PlannedClaimAssert`` (or another create's ``handle_refs``) uses to point at a
@@ -223,7 +217,14 @@ class IngestPlan:
     retractions: list[PlannedClaimRetract] = field(default_factory=list)
     records_parsed: int = 0
     records_matched: int = 0
-    resolve_hooks: dict[int, list[ResolveHook]] = field(default_factory=dict)
+    # Per-content-type changed relationship namespaces, consumed by the apply
+    # engine's ``_resolve``: it dispatches each affected model to the provenance
+    # bulk resolver, passing this set so only the relationships a patch touched
+    # re-resolve (scalars re-resolve regardless). Relationship namespaces only —
+    # the bulk resolver rejects a scalar field name.
+    changed_relationship_fields: dict[ContentTypeId, frozenset[str]] = field(
+        default_factory=dict
+    )
     # Side writes run first inside the apply transaction (before any entity
     # create), each handed the RunReport. Patch-only: citation source upserts.
     pre_write_hooks: list[PreWriteHook] = field(default_factory=list)

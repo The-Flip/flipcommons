@@ -14,10 +14,10 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
-from apps.catalog.resolve._dispatch import resolve_after_mutation
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, ClaimControlledModel, Source
+from apps.provenance.resolution import resolve_after_mutation
 from apps.provenance.validation import get_relationship_schema
 
 # ---------------------------------------------------------------------------

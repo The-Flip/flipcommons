@@ -131,7 +131,6 @@ ignore_imports = [
     "apps.core.api.admin_dashboard_page -> apps.**",
     # --- BASELINE: existing violations to fix; do NOT add to this list ---
     "apps.provenance.api -> apps.catalog.models",
-    "apps.provenance.revert -> apps.catalog.resolve",
     "apps.core.api_helpers -> apps.accounts.models",
     "apps.core.middleware.sentry_scope -> apps.accounts.models",
 ]
@@ -311,15 +310,9 @@ forbidden_modules = [
     "apps.catalog.signals",
     "apps.catalog.authz",
 ]
-ignore_imports = [
-    # --- BASELINE: ingest -> catalog couplings to sever; delete each as the
-    # step that resolves it lands. Do NOT add to this list. ---
-    # (A tests-under-ingestion exemption is deliberately omitted: no such tests
-    # exist yet, and import-linter errors on an unmatched ignore. It is added at
-    # the app-move step, when the engine tests relocate into the app.)
-    "apps.catalog.ingestion.apply.persist -> apps.catalog.resolve._entities",
-    "apps.catalog.ingestion.patches.planning -> apps.catalog.resolve",
-]
+# No baselines: the ingest -> catalog couplings (the model-type bound and the
+# resolution dispatch) are fully severed (Steps 1-2). The contract now enforces
+# clean.
 
 # The interactive claim-write core (catalog/api/claim_write.py) is the generic
 # write engine: it must not import the catalog domain, so it stays reusable
@@ -345,9 +338,6 @@ forbidden_modules = [
 ignore_imports = [
     # --- BASELINE: claim_write -> catalog couplings to sever; delete each as the
     # step that resolves it lands. Do NOT add to this list. ---
-    # execute_* call resolve_after_mutation; clears when resolution dispatch
-    # moves to a provenance-local seam.
-    "apps.catalog.api.claim_write -> apps.catalog.resolve",
     # raise_form_error raises StructuredValidationError; clears when that error
     # relocates to core.
     "apps.catalog.api.claim_write -> apps.catalog.exceptions",

@@ -182,7 +182,7 @@ class TestRevertNonWinning:
             name="HiPri", slug="hipri", source_type="database", priority=20000
         )
         Claim.objects.assert_claim(pm, "year", 1998, source=hi_source)
-        from apps.catalog.resolve import resolve_after_mutation
+        from apps.provenance.resolution import resolve_after_mutation
 
         resolve_after_mutation(pm, field_names=["year"])
         pm.refresh_from_db()

@@ -129,7 +129,7 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
                 claim_entry_index,
             )
             _attach_plan_citations(to_create, claim_citations)
-            _resolve(to_create, retract_entries, plan.resolve_hooks)
+            _resolve(to_create, retract_entries, plan.changed_relationship_fields)
 
             # SUCCESS flip inside the transaction — see note above. The
             # partial unique index on (patch_id) WHERE status='success'

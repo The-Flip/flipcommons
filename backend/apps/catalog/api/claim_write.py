@@ -35,10 +35,9 @@ from apps.provenance.models import (
     ClaimControlledModel,
     get_claim_fields,
 )
+from apps.provenance.resolution import resolve_after_mutation
 from apps.provenance.schemas import CitationReferenceInputSchema
 from apps.provenance.validation import validate_claim_value
-
-from ..resolve import resolve_after_mutation
 
 # ``request.user`` is typed as ``AbstractBaseUser | AnonymousUser``; callers
 # narrow at the entry points below before threading into the internal helper.

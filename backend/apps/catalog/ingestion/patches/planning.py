@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import contextlib
 from collections import defaultdict
-from collections.abc import Callable
 from collections.abc import Set as AbstractSet
 from typing import NamedTuple
 
@@ -59,7 +58,6 @@ from apps.catalog.ingestion.plan import (
     PreWriteHook,
     RunReport,
 )
-from apps.catalog.resolve import resolve_relationships_bulk
 from apps.citation.seed_data.types import SeedSource
 from apps.citation.seeding import ensure_root_source, validate_root_source
 from apps.core.markdown import get_markdown_fields
@@ -195,14 +193,14 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
     hierarchy_edges = [edge for r in results for edge in r.hierarchy_edges]
     _validate_hierarchy_acyclic(hierarchy_edges)
 
-    # Relationship resolution: delegate to the canonical post-mutation
-    # dispatch (model-driven; no hand-maintained namespace→resolver map). The
-    # engine resolves scalar/FK itself; these hooks cover the relationships.
+    # Relationship resolution: record which relationship namespaces each
+    # affected content type touched, as plan data. The apply engine's
+    # ``_resolve`` dispatches them to the provenance bulk resolver (which
+    # resolves scalar/FK regardless; this set scopes the relationship pass).
     for rel_model, field_names in rel_fields_by_model.items():
         rel_ct_id = ContentType.objects.get_for_model(rel_model).pk
-        plan.resolve_hooks.setdefault(rel_ct_id, []).append(
-            _make_resolve_hook(rel_model, sorted(field_names))
-        )
+        existing = plan.changed_relationship_fields.get(rel_ct_id, frozenset())
+        plan.changed_relationship_fields[rel_ct_id] = existing | frozenset(field_names)
 
     _plan_citation_sources(plan, doc.sources)
 
@@ -920,27 +918,5 @@ def _make_sources_hook(sources: list[SeedSource]) -> PreWriteHook:
             else:
                 report.sources_skipped += 1
             report.source_links_created += result.links_created
-
-    return hook
-
-
-def _make_resolve_hook(
-    model_class: type[LinkableClaimModel],
-    field_names: list[str],
-) -> Callable[..., None]:
-    """Build a resolve hook that bulk-resolves the given relationship namespaces.
-
-    Registered on the plan per content type and invoked by the apply engine with
-    the affected ``subject_ids``. Resolves the whole set in a single pass per
-    namespace (see ``resolve_relationships_bulk``) rather than re-resolving each
-    entity individually — the per-object path re-loads FK lookup tables and
-    re-runs every resolver once per object, which is O(N) full re-resolutions
-    and dominates patch runtime on large patches.
-    """
-
-    def hook(*, subject_ids: set[int] | None = None) -> None:
-        if not subject_ids:
-            return
-        resolve_relationships_bulk(model_class, field_names, set(subject_ids))
 
     return hook
