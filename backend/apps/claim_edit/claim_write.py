@@ -40,9 +40,41 @@ from apps.provenance.resolution import resolve_after_mutation
 from apps.provenance.schemas import CitationReferenceInputSchema
 from apps.provenance.validation import validate_claim_value
 
+__all__ = [
+    "ClaimSpec",
+    "EntityClaims",
+    "ValidationErrors",
+    "raise_form_error",
+    "plan_scalar_field_claims",
+    "validate_scalar_fields",
+    "FieldConstraintSchema",
+    "get_field_constraints",
+    "execute_claims",
+    "execute_multi_entity_claims",
+]
+
 # ``request.user`` is typed as ``AbstractBaseUser | AnonymousUser``; callers
 # narrow at the entry points below before threading into the internal helper.
 _RequestUser = AbstractBaseUser | AnonymousUser
+
+
+def _narrow_to_user(user: _RequestUser) -> User:
+    """Narrow a ``request.user`` to the concrete ``User`` for ``ChangeSet.user``.
+
+    All callers sit behind ``auth=django_auth``, so an anonymous user can't
+    reach the write helpers. Narrow so ``ChangeSet.user`` (NOT NULL) isn't
+    handed an ``AnonymousUser`` whose ``pk`` is ``None``. The runtime check
+    only excludes ``AnonymousUser`` (the actual invariant) so it stays correct
+    if ``AUTH_USER_MODEL`` is ever swapped.
+
+    The ``cast(User, user)`` is a django-stubs workaround: the FK to
+    ``settings.AUTH_USER_MODEL`` is typed against ``auth.User`` while
+    ``request.user`` is ``AbstractBaseUser | AnonymousUser``. Both the cast and
+    the tripwire go away if/when the project swaps in a custom User model that
+    django-stubs can track directly.
+    """
+    assert not isinstance(user, AnonymousUser)
+    return cast(User, user)
 
 
 @dataclass(frozen=True)
@@ -309,19 +341,7 @@ def execute_claims(
 
     Raises HttpError 422 on IntegrityError (unique constraint violations).
     """
-    # All callers sit behind ``auth=django_auth``, so an anonymous user can't
-    # reach this helper. Narrow so ``ChangeSet.user`` (NOT NULL) isn't handed
-    # an ``AnonymousUser`` whose ``pk`` is ``None``. The runtime check only
-    # excludes ``AnonymousUser`` (the actual invariant) so it stays correct
-    # if ``AUTH_USER_MODEL`` is ever swapped.
-    #
-    # The ``cast(User, user)`` at the ``create`` call is a django-stubs
-    # workaround: the FK to ``settings.AUTH_USER_MODEL`` is typed against
-    # ``auth.User`` while ``request.user`` is ``AbstractBaseUser |
-    # AnonymousUser``. Both the cast and the tripwire go away if/when the
-    # project swaps in a custom User model that django-stubs can track directly.
-    assert not isinstance(user, AnonymousUser)
-    auth_user = cast(User, user)
+    auth_user = _narrow_to_user(user)
     try:
         with transaction.atomic():
             cs = ChangeSet.objects.create(user=auth_user, action=action, note=note)
@@ -359,19 +379,7 @@ def execute_multi_entity_claims(
     Returns the created ChangeSet so callers can thread its id into the
     response (Undo needs it).
     """
-    # All callers sit behind ``auth=django_auth``, so an anonymous user can't
-    # reach this helper. Narrow so ``ChangeSet.user`` (NOT NULL) isn't handed
-    # an ``AnonymousUser`` whose ``pk`` is ``None``. The runtime check only
-    # excludes ``AnonymousUser`` (the actual invariant) so it stays correct
-    # if ``AUTH_USER_MODEL`` is ever swapped.
-    #
-    # The ``cast(User, user)`` at the ``create`` call is a django-stubs
-    # workaround: the FK to ``settings.AUTH_USER_MODEL`` is typed against
-    # ``auth.User`` while ``request.user`` is ``AbstractBaseUser |
-    # AnonymousUser``. Both the cast and the tripwire go away if/when the
-    # project swaps in a custom User model that django-stubs can track directly.
-    assert not isinstance(user, AnonymousUser)
-    auth_user = cast(User, user)
+    auth_user = _narrow_to_user(user)
     try:
         with transaction.atomic():
             cs = ChangeSet.objects.create(user=auth_user, action=action, note=note)

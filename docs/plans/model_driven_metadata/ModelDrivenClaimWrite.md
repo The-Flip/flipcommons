@@ -176,6 +176,15 @@ After this, the domain's edit flow is: endpoint → domain spec-builder (`catalo
 
 **Acceptance.** `uv run lint-imports` green with `claim_edit` in the spine and the `claim_ingest` forbids retargeted; `make mypy` clean; the **full** backend suite green (`uv run --directory backend pytest` — endpoints, admin, signals across apps reach `claim_edit`).
 
+## ✅ DONE: Step 5 — Tighten `claim_edit`'s public surface
+
+- **Add `__all__`** to `claim_write.py` listing the ten public names (`ClaimSpec`, `EntityClaims`, `ValidationErrors`, `raise_form_error`, `plan_scalar_field_claims`, `validate_scalar_fields`, `FieldConstraintSchema`, `get_field_constraints`, `execute_claims`, `execute_multi_entity_claims`). This is the one real goal of the original package idea — an explicit, enforced public surface. **Not** for mypy's no-implicit-reexport: every public name is _defined_ in this module (not imported and re-exposed), so it's already exported with or without `__all__`, and no importer can break. `__all__`'s value here is the documented surface and `import *` control. Zero importer churn.
+- **Dedupe the AnonymousUser narrowing.** `execute_claims` and `execute_multi_entity_claims` carried a verbatim 12-line comment block + `assert not isinstance(user, AnonymousUser)` + `cast(User, user)`. Extracted one `_narrow_to_user(user: _RequestUser) -> User` helper; both rationales (the `AnonymousUser` tripwire and the `cast(User, …)` django-stubs workaround) moved into its docstring, since the cast now lives in the helper rather than at the `create` call. This was the only genuine code smell in the file.
+
+  Considered and **not** done: `execute_claims` is a strict single-entity special case of `execute_multi_entity_claims` (same `try/except`, create→write→attach→resolve), so it could collapse to a one-line delegate. Skipped to keep this a surface-tightening commit — the collapse is a behavioral-equivalence claim widening the blast radius, and the two entry points carry distinct docstrings and return types (`None` vs. the `ChangeSet` Undo needs).
+
+- **Flag the real future home of `get_field_constraints` / `FieldConstraintSchema`.** These are the read-side outlier: model-driven introspection serving `GET /field-constraints/{entity_type}` (`config/api.py`), with no `ChangeSet`, no claims, no write. They sit in a write engine only because as of this plan, the generic HTTP-surface app doesn't exist yet. Their natural home will be `entity_api` — the generic read/write HTTP surface that picks them up during its carve (see [ModelDrivenEntityApi.md](ModelDrivenEntityApi.md)). Do **not** carve a `constraints.py` island inside `claim_edit` now just to relocate it again then; leave it in `claim_write.py` until that carve.
+
 ## Verification
 
 - After each step: `make lint && make mypy` clean, plus a **step-scoped** pytest (the engine apps don't exist until Steps 3–4, so naming them earlier fails collection):
