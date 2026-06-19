@@ -391,11 +391,15 @@ ignore_imports = ["apps.catalog.engine.** -> apps.catalog.engine.**"]
 # registry below them (`aliases` reads `models`); the cross-cutting wire bases and
 # the leaf substrate (`schemas`, `models`, `naming`, `walks`) at the base. The
 # `entity_api ⊄ export_api` seam joins this contract in Phase E, when the public
-# export surface (`export_api`) is extracted alongside `entity_api`.
+# export surface (`export_api`) is extracted alongside `entity_api`. `tests` is
+# the only ignore needed (engine has no `apps.py` and no migrations, so the
+# `apps`/`migrations` ignores the catalog/core contracts carry don't apply): a
+# co-located `engine/tests/` is test scaffolding, not a layerable unit.
 [[tool.importlinter.contracts]]
 name = "Engine internal layers"
 type = "layers"
 exhaustive = true
+exhaustive_ignores = ["tests"]
 containers = ["apps.catalog.engine"]
 layers = [
     "entity_api",

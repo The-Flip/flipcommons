@@ -72,11 +72,12 @@ core
 ```text
 catalog/
   engine/
-    __init__.py        # engine public API — the registrars + shared types, with __all__
+    __init__.py        # import-light namespace (docstring only); public API is the family subpackages (see below)
     schemas.py         # cross-cutting wire bases (EntityRef, EntityDetailSchema, …), shared by both surfaces
     models.py          # AliasModel — the one generic catalog-level model base (flat module, not a package)
-    aliases.py         # alias-type discovery registry (AliasType, discover_alias_types, alias_type_for)
+    aliases.py         # alias-type registry (AliasType, discover_alias_types, alias_type_for); injection-populated at ready()
     naming.py          # normalize_catalog_name + MAX_CATALOG_NAME_LENGTH
+    walks.py           # generic app_subclasses(app_label, base); catalog keeps thin scoped wrappers in _walks.py
     entity_api/        # the private internal API surface (the site's own UI)
       create/          # register_entity_create; persist (validate/assert_public_id/create_with_claims); schemas
       detail/          # register_entity_detail_page  (thin — registrar only)
@@ -94,6 +95,7 @@ catalog/
 
 Rationale and the deliberate asymmetries:
 
+- **`engine/__init__.py` stays import-light; the public API is the family subpackages.** `__init__.py` carries only a docstring, and consumers import registrars directly from their family (`from …engine.entity_api.create import register_entity_create`) — the per-entity routers do exactly this, and a second-domain consumer imports the same subpackages at [app-extraction](#deferred-app-extraction) time. Keep it that way: `engine/__init__.py` is imported during Django model setup (`catalog/models/base.py` imports `engine.models.AliasModel` at class-definition time), so re-exporting the registrars there — which pull in `claim_edit` and the ninja routers — would risk an import cycle before the app registry is ready.
 - **`entity_api/` vs `export_api/` = private vs public API surface.** The real seam is the private internal API (read + write, the site's own UI) vs the public API (own OpenAPI doc, rate limit, external stability contract) — the two `NinjaAPI` instances in `config/api.py`. Export is the public surface's sole resident _today_; the boundary is durable even though the label is concrete. They sit as sibling subpackages under `engine/`, split by audience/contract, enforced by an intra-app contract (`entity_api ⊄ export_api`; both may use `engine/schemas.py`). `export_api`'s _route registration_ stays domain-side in catalog while its transforms live here. If a second public surface appears, it joins `export_api`'s tier.
 - **`engine/models.py` is a single flat module, not an `engine/models/` package.** The cross-layer bases (`LinkableClaimModel`, `LinkableLifecycleClaimModel`) live in `provenance`; `CatalogModel` is the bundle the _concrete domain_ models inherit, so it stays in `catalog/models/`. The engine is mostly code, not Django models — but `AliasModel` is the one generic catalog-level base that is neither a provenance cross-layer base nor domain-specific. It's the materialized projection target of alias claims (a denormalized lookup table, like the M2M through-tables, but generic to any encyclopedia); the alias _claim_ fold itself stays in provenance (`normalize_alias_identity`), since claims go down and target tables stay up. So it lands in a single flat `engine/models.py`, with its discovery registry beside it in `engine/aliases.py`. This is the reserved case finally taken; keep it a flat module, not a package, until a second generic base actually joins it.
 - **`update/` is deliberately absent.** PATCH `.../claims/` is not yet consolidated — it's hand-wired in the catalog routers (calling `claim_edit` + the domain planners). A generic update registrar is `ModelDrivenApi.md`'s work; when it lands it slots in beside `create`/`delete` inside `entity_api/`.
@@ -138,7 +140,7 @@ Done in place (Phase B), the existing suite is a behavior-preserving oracle for 
 
 ## Phasing
 
-Each phase is its own commit (or small commit series). 🛑 STOP for user review before committing each. Ordered by dependency: Phase A (the media-selector cohesion move) is **done**; the in-place `CatalogModel` rebind (B) is the remaining prerequisite; relocating into `engine/` (C) is a genuinely mechanical `git mv` (and carries the rides-into-C substrate — alias subsystem, naming, walk, schema bases — with it); consolidating own-media into the detail/list registrars (D) is a behavior-restructuring refactor split out of the relocation so C stays suite-verified-identical; export (E) is last because it's the most domain-entangled. The intra-app contract machinery these plug into already exists — the exhaustive `Catalog internal layers` contract and the catalog-agnostic forbidden pattern.
+Each phase is its own commit (or small commit series). 🛑 STOP for user review before committing each. Phases A (the media-selector cohesion move), the in-place `CatalogModel` rebind (B) and the relocation into `engine/` (C) are **done**; the engine owns its full private HTTP surface (create / list / detail / delete-restore / field-constraints) behind the `Engine internal layers` and `catalog.engine ⊄ catalog-domain` contracts. Three phases remain. C2 and D are siblings — both finish the registrars' caller-injection design (C2 the delete registrar's hard-coded preview schema; D own-media in detail/list), behavior-restructuring refactors with a weaker oracle than C's pure moves, landable in either order. E moves the export engine last, as the most domain-entangled piece. A sub-step that stays green on the full suite is its own commit.
 
 ### ✅ DONE: Phase A — sink the pure media selectors out of catalog
 
@@ -161,7 +163,7 @@ The actual extraction (Finding 1). Do it **in place, inside `catalog/api/`, befo
 
 After Phase B, no registrar references `catalog.models.CatalogModel`; the files still live in `catalog/api/`, still mounted by the same per-entity routers, still green on the full suite. The relocation that follows is then a pure `git mv`.
 
-### Phase C — relocate the generic registrars into `catalog/engine/entity_api/`
+### ✅ DONE: Phase C — relocate the generic registrars into `catalog/engine/entity_api/`
 
 With Phase A done and the registrars rebound (B), move them under `engine/` — an intra-catalog `git mv` + import repoint, then flip the layered contract on. The remaining substrate tendrils are severed by this same move (they carry no below-catalog consumer, so landing in `engine/` is all it takes — see below). **C is a pure relocation**: every wire URL is byte-identical pre/post, so the full suite is an exact oracle. The own-media consolidation that once rode here is split out to Phase D precisely to keep that guarantee — it is a behavior-restructuring refactor, not a move, with a weaker oracle, and it is _not_ a precondition for the boundary (`catalog.engine ⊄ catalog-domain` passes with own-media left caller-injected in the domain routers). Source → destination follows [Package shape](#package-shape):
 
@@ -177,6 +179,20 @@ With Phase A done and the registrars rebound (B), move them under `engine/` — 
 - catalog's per-entity routers keep mounting the registrars and passing querysets/serializers/hooks; only import paths change.
 - **Contract:** this is an edit to the existing exhaustive `Catalog internal layers` contract, not just an append — `naming` and `_alias_registry` **leave** the catalog layer list (they emigrate into `engine`), `_walks` is gutted to thin scoped wrappers, and `engine` joins as the **bottom** layer (below `models | authz`: concrete alias models in `catalog/models/` subclass `engine`'s `AliasModel`, so `models → engine`). Add a forbidden contract `catalog.engine ⊄ catalog-domain`, mirroring the resolver-core rule. Add a second exhaustive contract, `Engine internal layers`, over `engine`'s own subtree (`entity_api` / `export_api` / `query` on top; `schemas | models | aliases | naming` at the base) so a new engine submodule left unplaced fails the build — the same ratchet the catalog/core contracts apply. The `entity_api ⊄ export_api` seam lands in Phase E, when `export_api` exists. Record the additions in `docs/AppBoundaries.md`. No `INSTALLED_APPS`/spine change — this is one app.
 
+### Phase C2 — make the delete registrar's preview path caller-injected
+
+**Open question (settle before implementing): keep the name `TaxonomyDeletePreviewSchema`, or rename it?** Keeping it makes C2 **wire-identical** — moving the class engine→domain doesn't change the OpenAPI component, so `make codegen` produces no churn and the oracle is "delete-preview output byte-identical for all nine entities." Renaming it (to de-domain the now-imprecise "Taxonomy" — Manufacturer and CorporateEntity route through it and aren't taxonomy) churns the component name and the generated frontend types. **Recommendation:** land C2 wire-identical with the name kept, and treat the rename as a separable one-line decision taken on its own.
+
+C2 closes the one gap Phase C's "serialization fully caller-injected" promise left open. `register_entity_delete_restore` is schema-agnostic on its detail / listing / restore paths (each takes an injected serializer or `response_schema`), but its **delete-preview path hard-codes `TaxonomyDeletePreviewSchema`** — return type, construction and `response=`. That baked-in schema is the lone delete-preview that emigrated into `engine/` in Phase C while its siblings (`ModelDeletePreviewSchema` / `PersonDeletePreviewSchema` / `TitleDeletePreviewSchema`) correctly stayed domain-side, so a domain-named schema now lives in the neutral engine — invisible to `lint-imports` because it is _defined_ there, not _imported_ (the "string, not an import" gap the [Boundary](#boundary) section warns about). The registrar's own docstring gives it away: it lists detail queryset / serializer / restore response schema as injected, and the preview schema is conspicuously absent.
+
+The move:
+
+- `register_entity_delete_restore` gains a `preview_schema` + `serialize_preview` pair (mirroring restore's `response_schema` and detail/list's `serialize_detail` / `serialize_row`). The registrar still computes the generic pieces it computes today — name, slug, `changeset_count`, blockers, `parent` (via `parent_field`), `active_children` (via `child_related_name`) — and hands them to the injected serializer instead of building `TaxonomyDeletePreviewSchema` inline.
+- `TaxonomyDeletePreviewSchema` moves **back** to `catalog/api/schemas.py`, beside the `Model` / `Person` / `Title` previews. catalog provides **one shared default** preview serializer + schema that the callers pass, so the call sites don't each hand-roll a serializer. After C2 the engine holds **zero** delete-preview schemas and no domain-named wire shapes.
+- The nine callers (themes, locations, systems, series, corporate_entities, franchises, gameplay_features, manufacturers, taxonomy) pass that shared default.
+
+Behavior-restructuring, not a move: the oracle is **weaker** than C's pure relocations — it proves the wire output unchanged per entity, not that the wiring is reshaped correctly — so verify each of the nine entities' delete-preview responses byte-identical pre/post (see [Verification](#verification)). A sibling of D (both finish the registrars' caller-injection design) over a different registrar; independent of D and E, landable in any order, its own commit.
+
 ### Phase D — consolidate own-media into the detail/list registrars
 
 The one behavior-restructuring step, split out of the C relocation so each stays cleanly oracle-able. Today own-media is woven into every per-entity `serialize_detail` (e.g. `uploaded_media=serialize_uploaded_media(all_media(x))`) and the list `thumbnail_provider` hook. This consolidates the **automatic** case into the engine: the registrar serializes own-media when `issubclass(model, MediaSupportedModel)` (calling `media.selectors`) and exposes an optional `thumbnail_source(entity)` hook for borrowed thumbnails, into which catalog's per-entity specs pass the domain traversal (`fetch_model_media_map`, `fetch_title_media_map`, `first_thumbnail`). Derived thumbnails stay domain-owned (Finding 3's honest seam).
@@ -188,6 +204,10 @@ The suite is a **weaker oracle** here than for the C moves (it proves the wire o
 ### Phase E — export engine into `catalog/engine/export_api/` (last; most entangled)
 
 Move the generic transforms (Finding 5) plus the `extra_data` extractors (`extract_image_urls`/`extract_image_attribution`, per Finding 4) into `engine/export_api/`. `_build_registry`, `_annotate_*`, `CreditExportSchema`, `_register`, `export_router` and cache wiring stay in catalog — they hand-list the concrete models, so they're domain, exactly like a per-entity router. catalog's `_register` calls the moved transforms (downward, domain → engine); the transforms import `media.{models,selectors}` for the own-image branches. Add the `entity_api ⊄ export_api` seam to the `Engine internal layers` contract now that `export_api` exists.
+
+**Add `export_api` as a sibling of `entity_api` on the `Engine internal layers` top tier** — `"entity_api | export_api"`. A layers `|` forbids mutual import, which _is_ the `entity_api ⊄ export_api` seam (both still reach down to `engine/schemas.py`); no separate forbidden contract is needed unless an _asymmetric_ allowance ever appears.
+
+**Relocate the export schemas without renaming them.** `EntityExportSchema` / `DescriptionExportSchema` etc. are route-response → OpenAPI components, so a rename churns frontend codegen and breaks the pure-move guarantee. Move the classes, leave the component names alone — a slightly domain-flavored name in the engine is the right trade.
 
 Sequenced **last** because it's the most domain-entangled piece — not because it's optional. Phases A–C are shippable milestones that deliver the CRUD/list/detail/delete surface on their own; export is part of the engine's final surface.
 
@@ -214,6 +234,7 @@ When a domain swap actually arrives, lift `catalog/engine/` to a top-level app. 
 - After Phase C (and again after D/E): **full** backend suite green (per-entity routers, signals, export, admin all reach `catalog/engine`); `make codegen` produces no consumer-facing route churn (wire URLs unchanged — the relocation is a code move, not a route change). For C the suite is an **exact** oracle (pure move); for the D media refactor it proves only that wire output is unchanged, not that the wiring is correctly reshaped — hence the per-entity own-media/borrowed-thumbnail spot-checks below.
 - End-to-end on a dev DB: a create, a scalar claim PATCH, a delete-preview/delete/restore, a detail page with own-media (a `MediaSupportedModel`) and with a borrowed thumbnail (e.g. Manufacturer), and a bulk export — all behaving identically to pre-move.
 - Boundary complete when `lint-imports` enforces `catalog.engine ⊄ catalog-domain` (and `entity_api ⊄ export_api`), and the substrate tendrils (naming, alias, generic schemas, image helpers) no longer resolve into the catalog domain layer. At that point the [deferred app extraction](#deferred-app-extraction) is a `git mv`.
+- **During file-heavy moves, trust `mypy .` over the daemon.** The pre-commit `dmypy` daemon can cache a moved symbol's _old_ module identity and report false `incompatible type` / `has no attribute` errors a fresh non-daemon `mypy .` doesn't. If a type error names a module you just relocated, `uv run dmypy stop` (it cold-starts next run) and re-check before chasing it.
 
 ## Relationship to other docs
 

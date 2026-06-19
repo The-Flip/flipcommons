@@ -21,10 +21,7 @@ from typing import Any, NamedTuple, NoReturn, cast
 
 from django.contrib.auth.models import AbstractBaseUser, AnonymousUser
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import IntegrityError, transaction
-from django.db import models as db_models
-from ninja import Schema
 
 from apps.accounts.models import User
 from apps.core.exceptions import StructuredValidationError
@@ -47,8 +44,6 @@ __all__ = [
     "raise_form_error",
     "plan_scalar_field_claims",
     "validate_scalar_fields",
-    "FieldConstraintSchema",
-    "get_field_constraints",
     "execute_claims",
     "execute_multi_entity_claims",
 ]
@@ -159,62 +154,6 @@ def plan_scalar_field_claims[M: ClaimControlledModel](
     if not specs:
         raise_form_error("No changes provided.")
     return specs
-
-
-class FieldConstraintSchema(Schema):
-    """Numeric validator-derived constraint for a single field.
-
-    The endpoint serializes with ``exclude_none=True`` so ``min`` / ``max``
-    keys are omitted when unbounded rather than sent as ``null``.
-    """
-
-    min: float | int | None = None
-    max: float | int | None = None
-    step: float | int
-
-
-def get_field_constraints(
-    model_class: type[ClaimControlledModel],
-) -> dict[str, FieldConstraintSchema]:
-    """Extract min/max/step constraints from numeric claim fields.
-
-    Only fields with at least one validator-derived bound are included.
-    Step is derived from ``DecimalField.decimal_places``.
-    """
-    numeric_types = (
-        db_models.IntegerField,
-        db_models.SmallIntegerField,
-        db_models.PositiveIntegerField,
-        db_models.PositiveSmallIntegerField,
-        db_models.DecimalField,
-        db_models.FloatField,
-    )
-    editable = get_claim_fields(model_class)
-    constraints: dict[str, FieldConstraintSchema] = {}
-
-    for field_name in editable:
-        field = model_class._meta.get_field(field_name)
-        if not isinstance(field, numeric_types):
-            continue
-
-        bounds: dict[str, float | int] = {}
-        # Use _validators (explicitly declared) rather than .validators
-        # (which includes DB-range validators like max=9223372036854775807).
-        for v in cast(list[object], getattr(field, "_validators", [])):
-            if isinstance(v, MinValueValidator):
-                bounds["min"] = v.limit_value
-            elif isinstance(v, MaxValueValidator):
-                bounds["max"] = v.limit_value
-
-        if not bounds:
-            continue
-        if isinstance(field, db_models.DecimalField) and field.decimal_places:
-            step: float | int = float(f"1e-{field.decimal_places}")
-        else:
-            step = 1
-        constraints[field_name] = FieldConstraintSchema(**bounds, step=step)
-
-    return constraints
 
 
 def validate_scalar_fields[M: ClaimControlledModel](
