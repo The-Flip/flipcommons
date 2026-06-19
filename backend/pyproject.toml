@@ -249,9 +249,9 @@ ignore_imports = ["apps.*.tests.** -> apps.provenance.test_factories"]
 # catalog submodule to appear as a layer (or in exhaustive_ignores): a new module
 # left unplaced fails the build, closing the gaps the old enumerated "api is a
 # leaf" forbidden left (it never covered _walks / _alias_registry / admin). This
-# subsumes that contract AND documents the domain layering in one place. Catalog's
-# top-level graph is acyclic, which is what makes a clean layer order possible —
-# core's is not (see "The core api layer is a leaf" below).
+# subsumes that contract AND documents the domain layering in one place. Both
+# catalog and core have acyclic top-level graphs, which is what makes a clean
+# layer order possible (see "Core internal layers" below).
 [[tool.importlinter.contracts]]
 name = "Catalog internal layers"
 type = "layers"
@@ -356,36 +356,30 @@ forbidden_modules = [
     "apps.catalog.authz",
 ]
 
-# Core's api/ is also a leaf, but — unlike catalog — it CANNOT be expressed as a
-# clean layered contract: core's top-level graph has cycles (models ↔ markdown,
-# and models ↔ wikilinks ↔ autocomplete), so no valid layer order exists. It
-# stays an enumerated forbidden contract: the source lists core's importable
-# modules, each forbidden from importing core.api (forbidden can't be a descendant
-# of its source, which is why core/ can't simply be the container here).
+# Core, like catalog, is an exhaustive layered contract over its whole acyclic
+# internal stack — a new submodule left unplaced fails the build, which the old
+# enumerated "core api is a leaf" forbidden never did (it silently omitted admin,
+# checks and soft_delete). apps/migrations/tests stay exhaustive_ignores as in
+# catalog — bootstrap wiring (the AppConfig's ready() imports across layers by
+# design), generated code and test scaffolding, none meaningfully layerable.
+# Core's graph was made acyclic by moving MarkdownField down into models (it was
+# the models → markdown edge) and deleting the dead bulk_create_validated helper
+# (the validators → models edge). api/ is still a leaf — it sits at the top and
+# nothing imports back up into it — but now as one tier of the full stack.
 [[tool.importlinter.contracts]]
-name = "The core api layer is a leaf"
-type = "forbidden"
-allow_indirect_imports = "true"
-source_modules = [
-    "apps.core.types",
-    "apps.core.exceptions",
-    "apps.core.models",
-    "apps.core.authz",
-    "apps.core.autocomplete",
-    "apps.core.markdown",
-    "apps.core.wikilinks",
-    "apps.core.search",
-    "apps.core.sitemap",
-    "apps.core.pagination",
-    "apps.core.rate_limits",
-    "apps.core.validators",
-    "apps.core.licensing",
-    "apps.core.schemas",
-    "apps.core.entity_types",
-    "apps.core.api_helpers",
-    "apps.core.middleware",
+name = "Core internal layers"
+type = "layers"
+exhaustive = true
+exhaustive_ignores = ["apps", "migrations", "tests"]
+containers = ["apps.core"]
+layers = [
+    "api",
+    "markdown",
+    "wikilinks | middleware",
+    "admin | api_helpers | authz | autocomplete | checks | entity_types | licensing | rate_limits | sitemap | soft_delete",
+    "exceptions | models",
+    "admin_apps | admin_site | pagination | schemas | search | types | validators",
 ]
-forbidden_modules = ["apps.core.api"]
 
 # The patch system is a compiler front end: it lowers YAML patches to an
 # IngestPlan (the IR), which the ingest back end (apply/) executes. The split is

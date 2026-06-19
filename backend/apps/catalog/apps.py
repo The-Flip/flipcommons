@@ -26,8 +26,7 @@ class CatalogConfig(AppConfig):
     def _register_reference_cleanup() -> None:
         from django.apps import apps
 
-        from apps.core.markdown import MarkdownField
-        from apps.core.models import register_reference_cleanup
+        from apps.core.models import MarkdownField, register_reference_cleanup
 
         models_with_markdown = [
             model

@@ -12,7 +12,7 @@ from django.db.models.expressions import Combinable
 from django.db.models.functions import Now
 from django.utils.text import slugify
 
-from apps.core.markdown import MarkdownField
+from apps.core.models.fields import MarkdownField
 
 
 class TimeStampedModel(models.Model):

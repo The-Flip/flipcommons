@@ -9,7 +9,8 @@ Implementation lives in submodules:
 - ``constraints`` — CHECK / UNIQUE constraint factories used in concrete Meta.
 - ``license`` — the License model.
 - ``references`` — RecordReference graph + post_delete cleanup signal.
-- ``fields`` — shared Django field classes (BoundedTextField).
+- ``fields`` — shared Django field classes (BoundedTextField,
+  MarkdownField).
 """
 
 from .constraints import (
@@ -22,7 +23,7 @@ from .constraints import (
     status_valid,
     unique_ci,
 )
-from .fields import BoundedTextField
+from .fields import BoundedTextField, MarkdownField
 from .license import License
 from .mixins import (
     LIFECYCLE_STATUS_FIELD,
@@ -60,6 +61,7 @@ __all__ = [
     "LifecycleQuerySet",
     "LifecycleStatusModel",
     "LinkableModel",
+    "MarkdownField",
     "RecordReference",
     "SitemappedModel",
     "SluggedModel",
