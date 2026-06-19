@@ -30,9 +30,7 @@ from apps.core.schemas import (
     RateLimitErrorSchema,
     ValidationErrorSchema,
 )
-from apps.media.helpers import all_media, media_prefetch
-from apps.media.schemas import UploadedMediaSchema
-from apps.media.selectors import serialize_uploaded_media
+from apps.media.helpers import media_prefetch
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
@@ -58,6 +56,7 @@ from ..engine.entity_api.delete import (
     serialize_blocking_referrer,
 )
 from ..engine.entity_api.listing import _apply_list_q, paginated_list_response
+from ..engine.entity_api.own_media import own_media
 from ..engine.query.constants import NameAliasQuery, PageParam
 from ..models import Credit, MachineModel, Person
 from ._typing import HasCreditCount
@@ -72,6 +71,7 @@ from .schemas import (
     DeleteResponseSchema,
     EntityCreateInputSchema,
     EntityDetailSchema,
+    OwnMediaSchema,
     PersonDeletePreviewSchema,
     PersonSoftDeleteBlockedSchema,
     RelatedTitleSchema,
@@ -98,7 +98,7 @@ class PersonTitleSchema(RelatedTitleSchema):
     roles: list[str] = []
 
 
-class PersonDetailSchema(EntityDetailSchema):
+class PersonDetailSchema(EntityDetailSchema, OwnMediaSchema):
     slug: str
     birth_year: int | None = None
     birth_month: int | None = None
@@ -111,7 +111,6 @@ class PersonDetailSchema(EntityDetailSchema):
     photo_url: str | None = None
     wikidata_id: str | None = None
     titles: list[PersonTitleSchema]
-    uploaded_media: list[UploadedMediaSchema] = []
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +128,7 @@ class _PersonTitleAccum:
     roles: list[str] = field(default_factory=list)
 
 
+@own_media(Person)
 def _serialize_person_detail(person: Person) -> PersonDetailSchema:
     """Serialize a Person into the detail response schema.
 
@@ -198,7 +198,6 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
         photo_url=person.photo_url,
         wikidata_id=person.wikidata_id,
         titles=titles,
-        uploaded_media=serialize_uploaded_media(all_media(person)),
     )
 
 

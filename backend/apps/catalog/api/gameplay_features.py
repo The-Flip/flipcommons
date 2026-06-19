@@ -17,15 +17,14 @@ from apps.claim_edit.claim_write import (
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.media.helpers import all_media, media_prefetch
-from apps.media.schemas import UploadedMediaSchema
-from apps.media.selectors import serialize_uploaded_media
+from apps.media.helpers import media_prefetch
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..engine.entity_api.create import register_entity_create
 from ..engine.entity_api.delete import register_entity_delete_restore
 from ..engine.entity_api.listing import _apply_list_q
+from ..engine.entity_api.own_media import own_media
 from ..engine.query.constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PageParam
 from ..models import GameplayFeature
 from ._counts import bulk_title_counts_via_models
@@ -35,6 +34,7 @@ from .schemas import (
     EntityDetailSchema,
     EntityRef,
     HierarchyClaimPatchSchema,
+    OwnMediaSchema,
 )
 
 # ---------------------------------------------------------------------------
@@ -67,12 +67,11 @@ class GameplayFeatureListSchema(Schema):
     count: int
 
 
-class GameplayFeatureDetailSchema(EntityDetailSchema):
+class GameplayFeatureDetailSchema(EntityDetailSchema, OwnMediaSchema):
     slug: str
     aliases: list[str] = []
     parents: list[EntityRef] = []
     children: list[EntityRef] = []
-    uploaded_media: list[UploadedMediaSchema] = []
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +89,7 @@ def _detail_qs() -> QuerySet[GameplayFeature]:
     )
 
 
+@own_media(GameplayFeature)
 def _serialize_detail(feature: GameplayFeature) -> GameplayFeatureDetailSchema:
     return GameplayFeatureDetailSchema(
         name=feature.name,
@@ -105,7 +105,6 @@ def _serialize_detail(feature: GameplayFeature) -> GameplayFeatureDetailSchema:
             EntityRef(name=c.name, public_id=c.public_id)
             for c in feature.children.order_by("name")
         ],
-        uploaded_media=serialize_uploaded_media(all_media(feature)),
     )
 
 

@@ -32,6 +32,7 @@ from ..engine.schemas import (
     HierarchyClaimPatchSchema,
     LastModifiedDetailSchema,
     LinkableDetailSchema,
+    OwnMediaSchema,
     YearBoundsSchema,
 )
 
@@ -49,6 +50,7 @@ __all__ = [
     "HierarchyClaimPatchSchema",
     "LastModifiedDetailSchema",
     "LinkableDetailSchema",
+    "OwnMediaSchema",
     "SoftDeleteBlockedSchema",
     "YearBoundsSchema",
 ]

@@ -33,8 +33,6 @@ from apps.core.schemas import (
 from apps.core.types import JsonBody
 from apps.media.helpers import all_media, media_prefetch, primary_media
 from apps.media.models import EntityMedia
-from apps.media.schemas import UploadedMediaSchema
-from apps.media.selectors import serialize_uploaded_media
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
@@ -55,6 +53,7 @@ from ..engine.entity_api.delete import (
     plan_soft_delete,
     serialize_blocking_referrer,
 )
+from ..engine.entity_api.own_media import own_media
 from ..engine.query.constants import DEFAULT_PAGE_SIZE
 from ..models import (
     Cabinet,
@@ -102,6 +101,7 @@ from .schemas import (
     ModelClaimPatchSchema,
     ModelDeletePreviewSchema,
     ModelEditOptionsSchema,
+    OwnMediaSchema,
     SoftDeleteBlockedSchema,
     TitleModelSchema,
 )
@@ -140,7 +140,7 @@ class ModelRef(Schema):
     year: int | None = None
 
 
-class ModelDetailSchema(EntityDetailSchema):
+class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     slug: str
     manufacturer: EntityRef | None = None
     corporate_entity: EntityRef | None = None
@@ -163,7 +163,6 @@ class ModelDetailSchema(EntityDetailSchema):
     thumbnail_url: str | None = None
     hero_image_url: str | None = None
     image_attribution: AttributionSchema | None = None
-    uploaded_media: list[UploadedMediaSchema] = []
     variant_features: list[str] = []
     variants: list[ModelVariantSchema] = []
     title: EntityRef
@@ -300,23 +299,27 @@ def _serialize_model_list(
     )
 
 
+@own_media(MachineModel)
 def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
     """Serialize a MachineModel into the detail response schema.
 
     Expects *pm* to have been fetched with prefetch_related for credits
     (with select_related("person")) and claims (to_attr="active_claims").
+
+    The own-media gallery (``uploaded_media``) is filled by the ``own_media``
+    decorator. This body still reads ``all_media(pm)`` for the *primary*-media
+    subset that drives the domain thumbnail/hero derivation (``extract_image_*``
+    over ``extra_data``), which stays domain.
     """
     min_rank = get_minimum_display_rank()
 
     credits = [serialize_credit(c) for c in pm.credits.all()]
 
-    media = all_media(pm)
-    primary = [em for em in media if em.is_primary]
+    primary = [em for em in all_media(pm) if em.is_primary]
     thumbnail_url, hero_image_url = extract_image_urls(
         pm.extra_data or {}, primary or None, min_rank=min_rank
     )
     image_attribution = extract_image_attribution(pm.extra_data or {}, primary or None)
-    uploaded_media = serialize_uploaded_media(media)
     variant_features = _extract_variant_features(pm.extra_data or {})
 
     variants = [
@@ -408,7 +411,6 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         thumbnail_url=thumbnail_url,
         hero_image_url=hero_image_url,
         image_attribution=image_attribution,
-        uploaded_media=uploaded_media,
         variant_features=variant_features,
         variants=variants,
         variant_of=(

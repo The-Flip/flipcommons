@@ -20,9 +20,7 @@ from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.media.helpers import all_media, media_prefetch
-from apps.media.schemas import UploadedMediaSchema
-from apps.media.selectors import serialize_uploaded_media
+from apps.media.helpers import media_prefetch
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
@@ -33,6 +31,7 @@ from ..cache import (
 )
 from ..engine.entity_api.create import register_entity_create
 from ..engine.entity_api.delete import register_entity_delete_restore
+from ..engine.entity_api.own_media import own_media
 from ..engine.query.constants import DEFAULT_PAGE_SIZE
 from ..models import (
     CorporateEntity,
@@ -66,6 +65,7 @@ from .schemas import (
     CorporateEntityLocationSchema,
     EntityDetailSchema,
     FacetOptionSchema,
+    OwnMediaSchema,
     RelatedTitleSchema,
     YearBoundsSchema,
 )
@@ -198,7 +198,7 @@ class ManufacturerPersonSchema(Schema):
     roles: list[str] = []
 
 
-class ManufacturerDetailSchema(EntityDetailSchema):
+class ManufacturerDetailSchema(EntityDetailSchema, OwnMediaSchema):
     slug: str
     year_of_first_model: int | None = None
     year_of_last_model: int | None = None
@@ -211,7 +211,6 @@ class ManufacturerDetailSchema(EntityDetailSchema):
     titles: list[RelatedTitleSchema]
     systems: list[ManufacturerSystemSchema]
     persons: list[ManufacturerPersonSchema] = []
-    uploaded_media: list[UploadedMediaSchema] = []
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +242,7 @@ def _serialize_mfr_entity(e: CorporateEntity) -> ManufacturerCorporateEntitySche
     )
 
 
+@own_media(Manufacturer)
 def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchema:
     """Serialize a Manufacturer into the detail response schema.
 
@@ -297,7 +297,6 @@ def _serialize_manufacturer_detail(mfr: Manufacturer) -> ManufacturerDetailSchem
             for s in mfr.systems.all()
         ],
         persons=persons,
-        uploaded_media=serialize_uploaded_media(all_media(mfr)),
     )
 
 

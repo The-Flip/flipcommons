@@ -27,6 +27,8 @@ from ninja import Router, Schema
 
 from apps.core.models import SitemappedModel
 
+from ..own_media import assert_own_media_detail_schema
+
 
 def register_entity_detail_page[ModelT: SitemappedModel, SchemaT: Schema](
     router: Router,
@@ -41,7 +43,13 @@ def register_entity_detail_page[ModelT: SitemappedModel, SchemaT: Schema](
     Replaces the per-entity boilerplate of ``get_object_or_404`` +
     serializer + response_schema for SSR detail pages mounted under
     ``/api/pages/``.
+
+    For a ``MediaSupportedModel``, asserts at registration that
+    *response_schema* inherits ``OwnMediaSchema`` — the gallery field the
+    ``own_media`` decorator fills — so a missing mixin fails at import, not on
+    the first request.
     """
+    assert_own_media_detail_schema(model_cls, response_schema)
     entity_type = model_cls.entity_type
     public_id_field = model_cls.public_id_field
 

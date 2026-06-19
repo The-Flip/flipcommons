@@ -14,6 +14,7 @@ from typing import Annotated, Any
 from ninja import Schema
 from pydantic import Field
 
+from apps.media.schemas import UploadedMediaSchema
 from apps.provenance.schemas import ChangeSetInputSchema, RichTextSchema
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "HierarchyClaimPatchSchema",
     "LastModifiedDetailSchema",
     "LinkableDetailSchema",
+    "OwnMediaSchema",
     "YearBoundsSchema",
 ]
 
@@ -110,6 +112,24 @@ class EntityDetailSchema(
     # ("when did this last change") and describability — mirroring the
     # ``LinkableModel`` / ``LastUpdatedModel`` / ``DescribedModel`` split on the
     # model side. Top-level entity detail responses inherit this single base.
+
+
+class OwnMediaSchema(Schema):
+    """An entity's own uploaded-media gallery.
+
+    Mixed into the detail schema of every ``MediaSupportedModel``. The field is
+    engine-contributed and engine-filled: the ``own_media`` decorator
+    (:mod:`apps.catalog.engine.entity_api.own_media`) populates it after the
+    per-entity serializer runs, gated on ``issubclass(model_cls,
+    MediaSupportedModel)``, so a domain serializer never serializes its own
+    gallery. ``register_entity_detail_page`` asserts at registration that a
+    media model's detail schema inherits this base.
+    """
+
+    uploaded_media: list[UploadedMediaSchema] = Field(
+        default=[],
+        description="Media uploaded directly to this entity (its own gallery).",
+    )
 
 
 class EntityCreateInputSchema(ChangeSetInputSchema):
