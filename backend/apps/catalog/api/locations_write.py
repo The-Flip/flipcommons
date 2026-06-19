@@ -50,17 +50,14 @@ from apps.provenance.models import LinkableLifecycleClaimModel
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import ChangeSetInputSchema
 
+from ..engine.entity_api.create import CreateExtras, register_entity_create
+from ..engine.entity_api.delete import register_entity_delete_restore
 from ..models import Location
 from ..services.location_paths import (
     compute_location_path,
     derive_child_location_type,
 )
 from .edit_claims import plan_alias_claims
-from .entity_crud import (
-    CreateExtras,
-    register_entity_create,
-    register_entity_delete_restore,
-)
 from .locations import LocationDetailSchema, _get_location_detail
 from .schemas import EntityCreateInputSchema
 

@@ -58,6 +58,21 @@ from ..cache import (
     set_cached_response,
     titles_facets_key,
 )
+from ..engine.entity_api.create import (
+    assert_name_available,
+    assert_public_id_available,
+    create_entity_with_claims,
+    validate_name,
+    validate_slug_format,
+)
+from ..engine.entity_api.delete import (
+    SoftDeleteBlockedError,
+    count_entity_changesets,
+    execute_soft_delete,
+    plan_soft_delete,
+    serialize_blocking_referrer,
+)
+from ..engine.query.constants import DEFAULT_PAGE_SIZE
 from ..models import (
     PRODUCED_SLUG,
     MachineModel,
@@ -75,15 +90,7 @@ from ._title_facets import (
     ordered_titles,
 )
 from ._typing import CreditKey, FacetOptionDict, GameplayFeatureAgreement
-from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import plan_abbreviation_claims
-from .entity_create import (
-    assert_name_available,
-    assert_public_id_available,
-    create_entity_with_claims,
-    validate_name,
-    validate_slug_format,
-)
 from .helpers import (
     _intersect_facet_sets,
     serialize_credit,
@@ -109,13 +116,6 @@ from .schemas import (
     TitleDeletePreviewSchema,
     TitleModelSchema,
     YearBoundsSchema,
-)
-from .soft_delete import (
-    SoftDeleteBlockedError,
-    count_entity_changesets,
-    execute_soft_delete,
-    plan_soft_delete,
-    serialize_blocking_referrer,
 )
 
 # ---------------------------------------------------------------------------

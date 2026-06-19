@@ -302,12 +302,16 @@ def test_factory_crud_routes_carry_marker() -> None:
     """
     from config.api import api
 
-    factory_module = "apps.catalog.api.entity_crud"
+    # The create and delete/restore registrars live in sibling engine modules.
+    factory_modules = {
+        "apps.catalog.engine.entity_api.create.registrar",
+        "apps.catalog.engine.entity_api.delete.registrar",
+    }
     mutating_methods = {"POST", "PATCH", "DELETE"}
     factory_routes = [
         (method, path_, view)
         for method, path_, view in iter_operations(api)
-        if view.__module__ == factory_module and method in mutating_methods
+        if view.__module__ in factory_modules and method in mutating_methods
     ]
 
     # Floor reflects the factory's current footprint. Each registered

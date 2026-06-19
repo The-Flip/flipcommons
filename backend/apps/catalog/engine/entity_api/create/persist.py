@@ -30,8 +30,6 @@ from django.db import IntegrityError, transaction
 from django.db import models as db_models
 from django.db.models import Q
 
-from apps.catalog.engine.naming import normalize_catalog_name
-from apps.catalog.models import AliasModel
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
@@ -46,7 +44,9 @@ from apps.provenance.models import (
 )
 from apps.provenance.schemas import CitationReferenceInputSchema
 
-from .schemas import EntityCreateInputSchema
+from ...models import AliasModel
+from ...naming import normalize_catalog_name
+from ...schemas import EntityCreateInputSchema
 
 _UserLike = AbstractBaseUser | AnonymousUser
 

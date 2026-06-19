@@ -1,7 +1,7 @@
 """Diacritic-folding search primitives shared across apps.
 
 The catalog listing pages tuned diacritic-insensitive matching once
-(``apps.catalog.api._facet_helpers``); the autocomplete engine
+(``apps.catalog.engine.query.facet_helpers``); the autocomplete engine
 (``apps.core.autocomplete``) needs the same behavior, so the reusable
 primitives live here in ``core``:
 

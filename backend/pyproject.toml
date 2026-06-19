@@ -385,6 +385,24 @@ source_modules = ["apps.catalog.engine"]
 forbidden_modules = ["apps.catalog"]
 ignore_imports = ["apps.catalog.engine.** -> apps.catalog.engine.**"]
 
+# The engine's own internal stack, exhaustively layered like the catalog and core
+# contracts so a new engine submodule left unplaced fails the build. The HTTP
+# registrars (`entity_api`) sit on top; the generic query fold and the alias
+# registry below them (`aliases` reads `models`); the cross-cutting wire bases and
+# the leaf substrate (`schemas`, `models`, `naming`, `walks`) at the base. The
+# `entity_api ⊄ export_api` seam joins this contract in Phase E, when the public
+# export surface (`export_api`) is extracted alongside `entity_api`.
+[[tool.importlinter.contracts]]
+name = "Engine internal layers"
+type = "layers"
+exhaustive = true
+containers = ["apps.catalog.engine"]
+layers = [
+    "entity_api",
+    "query | aliases",
+    "schemas | models | naming | walks",
+]
+
 # Core, like catalog, is an exhaustive layered contract over its whole acyclic
 # internal stack — a new submodule left unplaced fails the build, which the old
 # enumerated "core api is a leaf" forbidden never did (it silently omitted admin,

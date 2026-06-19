@@ -8,7 +8,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 
-from apps.catalog.api.soft_delete import execute_soft_delete
+from apps.catalog.engine.entity_api.delete import execute_soft_delete
 from apps.catalog.models import (
     Credit,
     CreditRole,

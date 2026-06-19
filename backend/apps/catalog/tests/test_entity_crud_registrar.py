@@ -17,8 +17,8 @@ from django.db.models import Q
 from django.test import RequestFactory
 from ninja import Router, Schema
 
-from apps.catalog.api.entity_crud import CreateExtras, register_entity_create
 from apps.catalog.api.schemas import EntityCreateInputSchema
+from apps.catalog.engine.entity_api.create import CreateExtras, register_entity_create
 from apps.catalog.models import Theme
 from apps.claim_edit.claim_write import ClaimSpec
 from apps.provenance.models import Claim

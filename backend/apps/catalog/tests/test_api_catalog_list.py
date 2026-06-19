@@ -11,9 +11,9 @@ from django.db import connection
 from apps.catalog.api import routers
 from apps.catalog.api._counts import bulk_title_counts_via_models
 from apps.catalog.api._typing import HasTitleCount
-from apps.catalog.api.constants import DEFAULT_PAGE_SIZE
-from apps.catalog.api.entity_list import _apply_list_q
 from apps.catalog.api.taxonomy import _flat_taxonomy_list_qs
+from apps.catalog.engine.entity_api.listing import _apply_list_q
+from apps.catalog.engine.query.constants import DEFAULT_PAGE_SIZE
 from apps.catalog.models import (
     Cabinet,
     CorporateEntity,

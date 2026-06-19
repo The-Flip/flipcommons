@@ -1,4 +1,4 @@
-"""Unit tests for the shared facet leaves in ``api/_facet_helpers.py``.
+"""Unit tests for the shared facet leaves in ``engine/query/facet_helpers.py``.
 
 Titles' suite exercises these leaves through one shape only: a ``MachineModel``
 root, ``title_id`` reverse key, slug-keyed values, a slug/DAG hierarchy. These
@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from django.db.models import Q
 
-from apps.catalog.api._facet_helpers import (
+from apps.catalog.engine.query.facet_helpers import (
     FacetOption,
     ancestor_map,
     bounds,

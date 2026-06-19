@@ -27,9 +27,9 @@ from django.db.models.functions import Lower
 
 from apps.core.search import fold as _fold
 
-from ..engine.aliases import alias_type_for
-from ._facet_helpers import _fold_exists, _Unaccent
-from .constants import DEFAULT_PAGE_SIZE
+from ...aliases import alias_type_for
+from ...query.constants import DEFAULT_PAGE_SIZE
+from ...query.facet_helpers import _fold_exists, _Unaccent
 
 # Maps one page's primary keys → their thumbnail URLs, batched (run once per page, never
 # per row). Implemented by the entities that carry thumbnails (people, series).
