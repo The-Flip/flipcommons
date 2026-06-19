@@ -17,7 +17,7 @@ from ninja.responses import Status
 from ninja.security import django_auth
 from pydantic import Field
 
-from apps.catalog.naming import normalize_catalog_name
+from apps.catalog.engine.naming import normalize_catalog_name
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
@@ -51,9 +51,9 @@ from .entity_list import paginated_list_response
 from .images import extract_image_urls, fetch_model_media_map
 from .rich_text import describe
 from .schemas import (
-    CatalogDetailSchema,
     ClaimPatchSchema,
     EntityCreateInputSchema,
+    EntityDetailSchema,
     EntityRef,
     RelatedTitleSchema,
 )
@@ -84,7 +84,7 @@ class SystemCreateSchema(EntityCreateInputSchema):
     manufacturer_slug: str
 
 
-class SystemDetailSchema(CatalogDetailSchema):
+class SystemDetailSchema(EntityDetailSchema):
     slug: str
     manufacturer: EntityRef
     technology_subgeneration: EntityRef | None = None

@@ -11,10 +11,15 @@ class CatalogConfig(AppConfig):
             authz,  # noqa: F401  # registers authz rules at startup
             signals,
         )
+        from ._walks import alias_models
         from .claims import register_catalog_relationship_schemas
+        from .engine.aliases import register_alias_types
         from .resolve import register_catalog_resolve_handlers
 
         signals.connect()
+        # Push the catalog's concrete AliasModel subclasses into the engine's
+        # neutral registry first: the resolve handlers read it at import time.
+        register_alias_types(alias_models())
         register_catalog_relationship_schemas()
         register_catalog_resolve_handlers()
         self._register_link_types()

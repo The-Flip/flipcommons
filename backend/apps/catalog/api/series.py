@@ -34,9 +34,9 @@ from .helpers import (
 from .images import extract_image_urls, fetch_model_media_map, fetch_title_media_map
 from .rich_text import build_rich_text, describe
 from .schemas import (
-    CatalogDetailSchema,
     ClaimPatchSchema,
     CreditSchema,
+    EntityDetailSchema,
     TitleRef,
 )
 
@@ -68,7 +68,7 @@ class SeriesListSchema(Schema):
     count: int
 
 
-class SeriesDetailSchema(CatalogDetailSchema):
+class SeriesDetailSchema(EntityDetailSchema):
     slug: str
     titles: list[TitleRef]
     credits: list[CreditSchema] = []

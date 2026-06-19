@@ -15,7 +15,7 @@ from ninja.responses import Status
 from ninja.security import django_auth
 from pydantic import Field
 
-from apps.catalog.naming import normalize_catalog_name
+from apps.catalog.engine.naming import normalize_catalog_name
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
@@ -61,10 +61,10 @@ from .images import (
 from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
-    CatalogDetailSchema,
     ClaimPatchSchema,
     DeleteResponseSchema,
     EntityCreateInputSchema,
+    EntityDetailSchema,
     PersonDeletePreviewSchema,
     PersonSoftDeleteBlockedSchema,
     RelatedTitleSchema,
@@ -98,7 +98,7 @@ class PersonTitleSchema(RelatedTitleSchema):
     roles: list[str] = []
 
 
-class PersonDetailSchema(CatalogDetailSchema):
+class PersonDetailSchema(EntityDetailSchema):
     slug: str
     birth_year: int | None = None
     birth_month: int | None = None

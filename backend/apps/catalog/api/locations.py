@@ -33,7 +33,7 @@ from ..services.location_paths import lookup_child_division
 from ._typing import HasModelCount
 from .images import first_thumbnail
 from .rich_text import describe
-from .schemas import CatalogDetailSchema
+from .schemas import EntityDetailSchema
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -59,7 +59,7 @@ class LocationAncestorRef(Schema):
     public_id: str
 
 
-class LocationDetailSchema(CatalogDetailSchema):
+class LocationDetailSchema(EntityDetailSchema):
     slug: str
     location_type: str | None = None
     # Server-derived label for the next tier of children (e.g. "state",

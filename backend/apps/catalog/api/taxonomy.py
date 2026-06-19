@@ -53,8 +53,8 @@ from .images import extract_image_urls, fetch_model_media_map
 from .people import PersonCardSchema
 from .rich_text import build_rich_text
 from .schemas import (
-    CatalogDetailSchema,
     ClaimPatchSchema,
+    EntityDetailSchema,
     EntityRef,
     TitleModelSchema,
 )
@@ -64,7 +64,7 @@ from .schemas import (
 # ---------------------------------------------------------------------------
 
 
-class TaxonomySchema(CatalogDetailSchema):
+class TaxonomySchema(EntityDetailSchema):
     """A catalog taxonomy entity (cabinet style, tag, reward type, …)."""
 
     slug: str = Field(description="The entity's URL slug.")

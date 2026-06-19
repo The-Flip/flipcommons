@@ -86,10 +86,10 @@ from .images import (
 from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
-    CatalogDetailSchema,
     CreditSchema,
     DeleteResponseSchema,
     EditOptionSchema,
+    EntityDetailSchema,
     EntityRef,
     GameplayFeatureRef,
     ModelClaimPatchSchema,
@@ -140,7 +140,7 @@ class ModelRef(Schema):
     year: int | None = None
 
 
-class ModelDetailSchema(CatalogDetailSchema):
+class ModelDetailSchema(EntityDetailSchema):
     slug: str
     manufacturer: EntityRef | None = None
     corporate_entity: EntityRef | None = None

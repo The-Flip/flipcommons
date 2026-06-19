@@ -21,7 +21,7 @@ from apps.provenance.validation import (
     get_relationship_schema,
 )
 
-from .._alias_registry import AliasType, alias_type_for, discover_alias_types
+from ..engine.aliases import alias_type_for, discover_alias_types
 from ..models import (
     CatalogModel,
     CorporateEntity,
@@ -740,12 +740,12 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
 # ---------------------------------------------------------------------------
 # Alias registry — drives resolve_all_aliases() and dispatch
 # ---------------------------------------------------------------------------
-# Auto-discovered from AliasModel subclasses.  Safe to compute at module level
-# because this module already imports Django models at the top, so the app
-# registry is guaranteed to be ready.  ``ALIAS_TYPES`` is kept as a public
-# binding (same shape as before) so that existing callers — including the
-# test suite — continue to work.
-ALIAS_TYPES: list[AliasType] = list(discover_alias_types())
+# No import-time snapshot of the engine alias registry: this module is imported
+# *during* ``CatalogConfig.ready`` (via ``register_catalog_resolve_handlers``),
+# which is before ``register_alias_types`` has populated the registry, so a
+# module-level ``list(discover_alias_types())`` would freeze an empty result.
+# Every consumer reads the live registry via ``discover_alias_types()`` instead
+# (see ``resolve_all_aliases`` below; the alias test suite parametrizes over it).
 
 
 def resolve_theme_aliases() -> None:

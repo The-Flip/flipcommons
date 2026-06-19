@@ -15,7 +15,7 @@ What lives here:
   of work: row creation, ChangeSet + claims, and TOCTOU-safe translation
   of a DB unique-constraint violation into a field-level slug error.
 
-What does not live here: name normalization (see ``apps.catalog.naming``),
+What does not live here: name normalization (see ``apps.catalog.engine.naming``),
 rate limiting (see ``apps.provenance.rate_limits``), or the claim
 machinery itself (see :mod:`apps.claim_edit.claim_write`).
 """
@@ -30,8 +30,8 @@ from django.db import IntegrityError, transaction
 from django.db import models as db_models
 from django.db.models import Q
 
+from apps.catalog.engine.naming import normalize_catalog_name
 from apps.catalog.models import AliasModel
-from apps.catalog.naming import normalize_catalog_name
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
@@ -126,7 +126,7 @@ def assert_name_available(
     """Raise a field-level 422 if *name* collides with an existing record.
 
     Names are compared after passing through *normalize* — typically
-    :func:`apps.catalog.naming.normalize_catalog_name`. The normalization
+    :func:`apps.catalog.engine.naming.normalize_catalog_name`. The normalization
     rule is shared with the frontend so the UI's "search returned zero
     results" signal and the API's enforcement stay in sync.
 

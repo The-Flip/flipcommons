@@ -27,7 +27,7 @@ from django.db.models.functions import Lower
 
 from apps.core.search import fold as _fold
 
-from .._alias_registry import alias_type_for
+from ..engine.aliases import alias_type_for
 from ._facet_helpers import _fold_exists, _Unaccent
 from .constants import DEFAULT_PAGE_SIZE
 

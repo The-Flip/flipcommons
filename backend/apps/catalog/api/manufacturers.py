@@ -61,9 +61,9 @@ from .images import (
 )
 from .rich_text import describe
 from .schemas import (
-    CatalogDetailSchema,
     ClaimPatchSchema,
     CorporateEntityLocationSchema,
+    EntityDetailSchema,
     FacetOptionSchema,
     RelatedTitleSchema,
     YearBoundsSchema,
@@ -197,7 +197,7 @@ class ManufacturerPersonSchema(Schema):
     roles: list[str] = []
 
 
-class ManufacturerDetailSchema(CatalogDetailSchema):
+class ManufacturerDetailSchema(EntityDetailSchema):
     slug: str
     year_of_first_model: int | None = None
     year_of_last_model: int | None = None

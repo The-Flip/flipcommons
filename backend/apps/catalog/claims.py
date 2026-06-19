@@ -56,7 +56,7 @@ def register_catalog_relationship_schemas() -> None:
     )
     from apps.media.models import MediaAsset
 
-    from ._alias_registry import discover_alias_types
+    from .engine.aliases import discover_alias_types
 
     # Credit: Person + CreditRole on MachineModel and Series.
     register_relationship_schema(

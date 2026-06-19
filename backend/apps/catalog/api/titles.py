@@ -20,7 +20,7 @@ from ninja.responses import Status
 from ninja.security import django_auth
 from pydantic import Field, TypeAdapter
 
-from apps.catalog.naming import MAX_CATALOG_NAME_LENGTH, normalize_catalog_name
+from apps.catalog.engine.naming import MAX_CATALOG_NAME_LENGTH, normalize_catalog_name
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
@@ -98,9 +98,9 @@ from .machine_models import (
 from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
-    CatalogDetailSchema,
     CreditSchema,
     EntityCreateInputSchema,
+    EntityDetailSchema,
     EntityRef,
     FacetOptionSchema,
     GameplayFeatureRef,
@@ -330,7 +330,7 @@ class AggregatedMediaSchema(Schema):
     source_model: EntityRef
 
 
-class TitleDetailSchema(CatalogDetailSchema):
+class TitleDetailSchema(EntityDetailSchema):
     slug: str
     opdb_id: str | None = None
     fandom_page_id: int | None = None

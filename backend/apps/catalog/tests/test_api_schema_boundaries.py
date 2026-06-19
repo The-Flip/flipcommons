@@ -29,13 +29,14 @@ class TestSharedSchemaOwnership:
                 f"got {cls.__module__}"
             )
 
-    def test_create_schema_is_defined_in_catalog(self):
-        # ``CreateSchema`` adds ``name`` + ``slug`` (catalog domain concepts)
-        # to ``ChangeSetInputSchema``, so it lives in catalog. Pin against a
-        # future move into provenance, which would force provenance to import
-        # catalog vocabulary.
+    def test_create_schema_is_defined_in_engine(self):
+        # ``EntityCreateInputSchema`` adds ``name`` + ``slug`` to
+        # ``ChangeSetInputSchema`` — a generic create shape, so it lives in the
+        # domain-neutral engine (re-exported by ``catalog.api.schemas``). Pin
+        # against a future move into provenance, which would force provenance to
+        # import the create vocabulary.
         cls = catalog_schemas.EntityCreateInputSchema
-        assert cls.__module__ == "apps.catalog.api.schemas"
+        assert cls.__module__ == "apps.catalog.engine.schemas"
 
     def test_media_owned_shapes_are_defined_in_media(self):
         for name in ("MediaRenditionsSchema", "UploadedMediaSchema"):

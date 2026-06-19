@@ -21,8 +21,8 @@ from django.db import transaction
 
 from apps.provenance.models import ClaimControlledModel
 
-from .._alias_registry import discover_alias_types
 from ..cache import invalidate_all
+from ..engine.aliases import discover_alias_types
 
 logger = logging.getLogger(__name__)
 

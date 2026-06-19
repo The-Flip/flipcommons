@@ -249,14 +249,18 @@ ignore_imports = ["apps.*.tests.** -> apps.provenance.test_factories"]
 
 # Catalog's whole internal stack as one exhaustive layered contract: api/admin/
 # management on top (leaf consumers — the domain must not import them), down
-# through the read/claim/signal tier, the alias registry, the walk/cache/service
-# tier, to models/naming/authz at the bottom. `exhaustive = true` requires every
-# catalog submodule to appear as a layer (or in exhaustive_ignores): a new module
-# left unplaced fails the build, closing the gaps the old enumerated "api is a
-# leaf" forbidden left (it never covered _walks / _alias_registry / admin). This
-# subsumes that contract AND documents the domain layering in one place. Both
-# catalog and core have acyclic top-level graphs, which is what makes a clean
-# layer order possible (see "Core internal layers" below).
+# through the read/claim/signal tier and the walk/cache/service tier, to
+# models/authz, and finally the domain-neutral `engine` at the bottom. `engine`
+# sits below `models` because the concrete alias models in `models/` subclass
+# `engine.models.AliasModel` (models → engine, the sanctioned downward edge); the
+# generic HTTP-surface substrate the domain mounts also lives there. The former
+# `naming` and `_alias_registry` layers are gone — both emigrated into `engine`.
+# `exhaustive = true` requires every catalog submodule to appear as a layer (or
+# in exhaustive_ignores): a new module left unplaced fails the build, closing the
+# gaps the old enumerated "api is a leaf" forbidden left (it never covered
+# _walks / admin). This subsumes that contract AND documents the domain layering
+# in one place. Both catalog and core have acyclic top-level graphs, which is
+# what makes a clean layer order possible (see "Core internal layers" below).
 [[tool.importlinter.contracts]]
 name = "Catalog internal layers"
 type = "layers"
@@ -266,9 +270,9 @@ containers = ["apps.catalog"]
 layers = [
     "api | admin | management",
     "claims | resolve | signals",
-    "_alias_registry",
     "_walks | cache | services",
-    "models | naming | authz",
+    "models | authz",
+    "engine",
 ]
 
 # The ingest system (apps.claim_ingest) is the bulk catalog write path — a
@@ -356,10 +360,30 @@ forbidden_modules = [
     "apps.catalog.claims",
     "apps.catalog.services",
     "apps.catalog.cache",
-    "apps.catalog.naming",
+    "apps.catalog.engine.naming",
     "apps.catalog.signals",
     "apps.catalog.authz",
 ]
+
+# The domain-neutral engine — the generic HTTP-surface substrate plus the generic
+# bases (AliasModel, the wire schema bases, naming, the model-registry walk) the
+# concrete domain mounts and subclasses — must never reach back up into the
+# catalog domain. This is the in-app mirror of the resolver-core rule above and
+# the load-bearing invariant behind the deferred app extraction: once enforced,
+# lifting `engine/` to its own top-level app is a `git mv`. The "Catalog internal
+# layers" contract already forbids this structurally (engine is the bottom
+# layer), but the explicit forbid is a durable, self-documenting ratchet that
+# survives any future layer reshuffle. Whole-package source with a wildcard
+# ignore for engine's own internal edges (e.g. aliases → models) is more concise
+# and more complete than enumerating the sibling domain modules — it catches a
+# new coupling to ANY catalog domain module, present or future.
+[[tool.importlinter.contracts]]
+name = "Engine does not import the catalog domain"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = ["apps.catalog.engine"]
+forbidden_modules = ["apps.catalog"]
+ignore_imports = ["apps.catalog.engine.** -> apps.catalog.engine.**"]
 
 # Core, like catalog, is an exhaustive layered contract over its whole acyclic
 # internal stack — a new submodule left unplaced fails the build, which the old

@@ -44,10 +44,10 @@ from .helpers import (
 from .manufacturers import manufacturers_router
 from .rich_text import describe
 from .schemas import (
-    CatalogDetailSchema,
     CorporateEntityClaimPatchSchema,
     CorporateEntityLocationSchema,
     EntityCreateInputSchema,
+    EntityDetailSchema,
     EntityRef,
     RelatedTitleSchema,
 )
@@ -91,7 +91,7 @@ class CorporateEntityListSchema(Schema):
     count: int
 
 
-class CorporateEntityDetailSchema(CatalogDetailSchema):
+class CorporateEntityDetailSchema(EntityDetailSchema):
     slug: str
     manufacturer: EntityRef
     year_of_first_model: int | None = None

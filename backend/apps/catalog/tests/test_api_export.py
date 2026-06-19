@@ -6,13 +6,13 @@ from typing import Any
 
 from constance.test import override_config
 
-from apps.catalog._alias_registry import discover_alias_types
 from apps.catalog.api.export import (
     _REGISTRY,
     EXPORT_ENTITY_TYPES,
     _relationship_namespaces,
 )
 from apps.catalog.cache import invalidate_all
+from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.models import MachineModel
 
 from .conftest import SAMPLE_IMAGES

@@ -28,7 +28,7 @@ from .entity_list import paginated_list_response
 from .helpers import serialize_title_ref
 from .images import fetch_title_media_map
 from .rich_text import describe
-from .schemas import CatalogDetailSchema, ClaimPatchSchema, TitleRef
+from .schemas import ClaimPatchSchema, EntityDetailSchema, TitleRef
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -51,7 +51,7 @@ class FranchiseListSchema(Schema):
     count: int
 
 
-class FranchiseDetailSchema(CatalogDetailSchema):
+class FranchiseDetailSchema(EntityDetailSchema):
     slug: str
     titles: list[TitleRef]
 

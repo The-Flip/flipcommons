@@ -2,7 +2,7 @@
 
 import pytest
 
-from apps.catalog._alias_registry import discover_alias_types
+from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.models import (
     CorporateEntity,
     GameplayFeature,

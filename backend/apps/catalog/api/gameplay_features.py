@@ -31,7 +31,7 @@ from .entity_crud import register_entity_create, register_entity_delete_restore
 from .entity_list import _apply_list_q
 from .rich_text import describe
 from .schemas import (
-    CatalogDetailSchema,
+    EntityDetailSchema,
     EntityRef,
     HierarchyClaimPatchSchema,
 )
@@ -66,7 +66,7 @@ class GameplayFeatureListSchema(Schema):
     count: int
 
 
-class GameplayFeatureDetailSchema(CatalogDetailSchema):
+class GameplayFeatureDetailSchema(EntityDetailSchema):
     slug: str
     aliases: list[str] = []
     parents: list[EntityRef] = []

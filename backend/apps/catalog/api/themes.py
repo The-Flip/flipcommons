@@ -31,7 +31,7 @@ from .helpers import serialize_title_machine
 from .images import fetch_model_media_map
 from .rich_text import describe
 from .schemas import (
-    CatalogDetailSchema,
+    EntityDetailSchema,
     EntityRef,
     HierarchyClaimPatchSchema,
     TitleModelSchema,
@@ -66,7 +66,7 @@ class ThemeListSchema(Schema):
     count: int
 
 
-class ThemeDetailSchema(CatalogDetailSchema):
+class ThemeDetailSchema(EntityDetailSchema):
     slug: str
     aliases: list[str] = []
     parents: list[EntityRef] = []

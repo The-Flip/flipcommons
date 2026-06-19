@@ -745,7 +745,7 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
     # string values) and registry-known, so derive them rather than hand-listing
     # per entity — otherwise an entity with aliases is silently dropped from the
     # dump (e.g. Manufacturer/Person/Location/RewardType were).
-    from apps.catalog._alias_registry import discover_alias_types
+    from apps.catalog.engine.aliases import discover_alias_types
 
     alias_models = {at.parent_model for at in discover_alias_types()}
     for model, spec in by_model.items():
