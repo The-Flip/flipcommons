@@ -9,10 +9,9 @@ from django.db import models
 from apps.core.models import (
     DescribedModel,
     LifecycleManager,
-    LifecycleStatusModel,
     SitemappedModel,
 )
-from apps.provenance.models import LinkableClaimModel
+from apps.provenance.models import LinkableLifecycleClaimModel
 
 __all__ = ["AliasModel", "CatalogModel"]
 
@@ -58,14 +57,18 @@ class AliasModel(models.Model):
         return self.value
 
 
-class CatalogModel(
-    DescribedModel, SitemappedModel, LifecycleStatusModel, LinkableClaimModel
-):
+class CatalogModel(DescribedModel, SitemappedModel, LinkableLifecycleClaimModel):
     """Abstract marker for top-level catalog entities.
 
     Used to distinguish catalog-specific code paths (e.g. data-patch ingest,
     soft-delete wire format), as well as define the capabilies that all catalog
     models must have.
+
+    The lifecycle + claim leaves come from ``LinkableLifecycleClaimModel``
+    (``LifecycleStatusModel`` + ``LinkableClaimModel``); the bundle is
+    ``DescribedModel`` + ``SitemappedModel`` on top. Inserting the combined ABC
+    is MRO-preserving — it declares no fields, manager or constraints — so the
+    field layout, default manager and migration state are unchanged.
 
     Each concrete subclass must still carry its own ``status_valid()`` constraint
     in ``Meta`` because Django does not inherit abstract-parent constraints when

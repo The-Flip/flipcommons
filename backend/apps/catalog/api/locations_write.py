@@ -46,10 +46,11 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.exceptions import StructuredValidationError
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
+from apps.provenance.models import LinkableLifecycleClaimModel
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import ChangeSetInputSchema
 
-from ..models import CatalogModel, Location
+from ..models import Location
 from ..services.location_paths import (
     compute_location_path,
     derive_child_location_type,
@@ -186,14 +187,16 @@ locations_write_router = Router(tags=["private"])
 # ---------------------------------------------------------------------------
 
 
-def _top_level_scope(_data: EntityCreateInputSchema, _parent: CatalogModel | None) -> Q:
+def _top_level_scope(
+    _data: EntityCreateInputSchema, _parent: LinkableLifecycleClaimModel | None
+) -> Q:
     # Country tier: name / slug uniqueness is scoped to root-level rows
     # (matches the partial UNIQUE constraints with ``parent IS NULL``).
     return Q(parent__isnull=True)
 
 
 def _top_level_extras(
-    data: EntityCreateInputSchema, _parent: CatalogModel | None
+    data: EntityCreateInputSchema, _parent: LinkableLifecycleClaimModel | None
 ) -> CreateExtras:
     assert isinstance(data, LocationTopLevelCreateSchema)
     divisions = data.divisions
@@ -227,7 +230,9 @@ register_entity_create(
 # ---------------------------------------------------------------------------
 
 
-def _child_scope(_data: EntityCreateInputSchema, parent: CatalogModel | None) -> Q:
+def _child_scope(
+    _data: EntityCreateInputSchema, parent: LinkableLifecycleClaimModel | None
+) -> Q:
     # Child tier: name / slug uniqueness is scoped to siblings (matches
     # the partial UNIQUE constraints with ``parent IS NOT NULL``).
     assert parent is not None
@@ -235,7 +240,7 @@ def _child_scope(_data: EntityCreateInputSchema, parent: CatalogModel | None) ->
 
 
 def _child_extras(
-    data: EntityCreateInputSchema, parent: CatalogModel | None
+    data: EntityCreateInputSchema, parent: LinkableLifecycleClaimModel | None
 ) -> CreateExtras:
     assert parent is not None
     assert isinstance(parent, Location)

@@ -21,10 +21,10 @@ from apps.core.authz.types import Activity
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
+from apps.provenance.models import LinkableLifecycleClaimModel
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
 from ..models import (
-    CatalogModel,
     CorporateEntity,
     CorporateEntityLocation,
     MachineModel,
@@ -265,7 +265,7 @@ def patch_corporate_entity_claims(
 
 
 def _scope_by_manufacturer(
-    _data: EntityCreateInputSchema, parent: CatalogModel | None
+    _data: EntityCreateInputSchema, parent: LinkableLifecycleClaimModel | None
 ) -> Q:
     # CE create is parented; the factory always passes a resolved parent.
     assert parent is not None

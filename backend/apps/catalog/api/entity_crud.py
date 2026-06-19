@@ -36,7 +36,6 @@ from ninja import Router, Schema
 from ninja.responses import Status
 from ninja.security import django_auth
 
-from apps.catalog.models import CatalogModel
 from apps.claim_edit.claim_write import ClaimSpec, execute_claims
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -46,7 +45,7 @@ from apps.core.schemas import (
     RateLimitErrorSchema,
     ValidationErrorSchema,
 )
-from apps.provenance.models import ChangeSetAction
+from apps.provenance.models import ChangeSetAction, LinkableLifecycleClaimModel
 from apps.provenance.rate_limits import (
     CREATE_RATE_LIMIT_SPEC,
     DELETE_RATE_LIMIT_SPEC,
@@ -97,7 +96,10 @@ class CreateExtras(NamedTuple):
 
 # ``ModelT`` / ``SchemaT`` link the four contractually-related arguments
 # — model class, detail queryset, serializer, response schema must agree.
-def register_entity_delete_restore[ModelT: CatalogModel, SchemaT: Schema](
+def register_entity_delete_restore[
+    ModelT: LinkableLifecycleClaimModel,
+    SchemaT: Schema,
+](
     router: Router,
     model_cls: type[ModelT],
     *,
@@ -291,7 +293,7 @@ def register_entity_delete_restore[ModelT: CatalogModel, SchemaT: Schema](
     )(_restore)
 
 
-def register_entity_create[ModelT: CatalogModel, SchemaT: Schema](
+def register_entity_create[ModelT: LinkableLifecycleClaimModel, SchemaT: Schema](
     router: Router,
     model_cls: type[ModelT],
     *,
@@ -299,20 +301,30 @@ def register_entity_create[ModelT: CatalogModel, SchemaT: Schema](
     serialize_detail: Callable[[ModelT], SchemaT],
     response_schema: type[SchemaT],
     parent_field: str | None = None,
-    parent_model: type[CatalogModel] | None = None,
+    parent_model: type[LinkableLifecycleClaimModel] | None = None,
     route_suffix: str = "",
-    scope_filter_builder: Callable[[EntityCreateInputSchema, CatalogModel | None], Q]
+    scope_filter_builder: Callable[
+        [EntityCreateInputSchema, LinkableLifecycleClaimModel | None], Q
+    ]
     | None = None,
     include_deleted_name_check: bool | None = None,
     body_schema: type[EntityCreateInputSchema] | None = None,
     extra_create_fields_builder: Callable[
-        [EntityCreateInputSchema, CatalogModel | None],
+        [EntityCreateInputSchema, LinkableLifecycleClaimModel | None],
         CreateExtras,
     ]
     | None = None,
     op_id_suffix: str = "",
 ) -> None:
     """Attach a POST create route.
+
+    The bound is ``LinkableLifecycleClaimModel``: create is lifecycle-*bound*,
+    not lifecycle-*optional*. Every create stamps the ``status`` column, writes
+    a ``status=active`` claim, and filters its collision / parent lookups
+    through ``.active()`` — so lifecycle is a precondition, not a discovered
+    refinement. Today every creatable entity is a ``CatalogModel`` (which is
+    lifecycle), so a non-lifecycle creatable entity is hypothetical; when a real
+    one appears, split the bound then, against that model rather than a fake.
 
     When *parent_field* is None, mounts ``POST /`` on the entity's own
     router. Otherwise all three parent-related args must be supplied
@@ -419,7 +431,7 @@ def register_entity_create[ModelT: CatalogModel, SchemaT: Schema](
     def _do_create(
         request: HttpRequest,
         data: EntityCreateInputSchema,
-        parent: CatalogModel | None = None,
+        parent: LinkableLifecycleClaimModel | None = None,
     ) -> Status[SchemaT]:
         scope_filter = (
             scope_filter_builder(data, parent)
