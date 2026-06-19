@@ -55,7 +55,7 @@ class SourceAdmin(admin.ModelAdmin[Source]):
 class IngestRunAdmin(ReadOnlyAdminMixin, admin.ModelAdmin[IngestRun]):
     """Read-only inspection view. IngestRun records are created by the apply layer."""
 
-    list_display = ("pk", "source", "status", "started_at", "finished_at")
+    list_display = ("pk", "patch_id", "source", "status", "started_at")
     list_filter = ("source", "status")
     readonly_fields = (
         "source",
