@@ -16,7 +16,7 @@ from collections import defaultdict
 
 from django.db import models
 
-from apps.catalog.ingestion.plan import Handle, IngestPlan
+from apps.claim_ingest.plan import Handle, IngestPlan
 
 
 def _validate_entity_claim_consistency(plan: IngestPlan) -> None:

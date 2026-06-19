@@ -1,5 +1,9 @@
 # Model-Driven Delete Routes
 
+## Status: planned — not yet in code
+
+The machinery this doc proposes — `register_delete_routes`, the `expose_delete_routes` / `delete_active_children_relation` / `delete_parent_field` ClassVars, `detail_queryset()`, and the registration checks — does not exist yet. A related per-entity factory, `register_entity_delete_restore` (`apps/catalog/api/entity_crud.py`), is in use today; this doc's generic route registration has not landed.
+
 ## Context
 
 This work is an instance of the broader pattern in [ModelDrivenMetadata.md](ModelDrivenMetadata.md): encode per-model behavior on the model itself, consume it generically from shared infrastructure, replace hand-maintained registries with `__subclasses__()`-style discovery.

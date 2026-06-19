@@ -17,7 +17,7 @@ What lives here:
 
 What does not live here: name normalization (see ``apps.catalog.naming``),
 rate limiting (see ``apps.provenance.rate_limits``), or the claim
-machinery itself (see :mod:`.edit_claims`).
+machinery itself (see :mod:`apps.claim_edit.claim_write`).
 """
 
 from __future__ import annotations
@@ -30,18 +30,18 @@ from django.db import IntegrityError, transaction
 from django.db import models as db_models
 from django.db.models import Q
 
-from apps.catalog.exceptions import StructuredValidationError
 from apps.catalog.models import AliasModel, CatalogModel
 from apps.catalog.naming import normalize_catalog_name
+from apps.claim_edit.claim_write import (
+    ClaimSpec,
+    execute_claims,
+)
+from apps.core.exceptions import StructuredValidationError
 from apps.core.models import meta_unique_fields
 from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.schemas import CitationReferenceInputSchema
 
-from .edit_claims import (
-    ClaimSpec,
-    execute_claims,
-)
 from .schemas import EntityCreateInputSchema
 
 _UserLike = AbstractBaseUser | AnonymousUser
@@ -343,7 +343,7 @@ def create_entity_with_claims(
       rolls the row back (and vice versa).
     * Creates the row via ``model_cls.objects.create(**row_kwargs)``.
     * Writes a user ChangeSet with ``action=create`` and the given
-      *claim_specs* via :func:`.edit_claims.execute_claims`.
+      *claim_specs* via :func:`apps.claim_edit.claim_write.execute_claims`.
     * Translates a DB ``IntegrityError`` on the slug into the same
       field-level 422 that the pre-check produces. This covers the tiny
       TOCTOU window between ``assert_public_id_available`` and the insert.

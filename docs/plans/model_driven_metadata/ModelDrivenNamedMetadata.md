@@ -1,5 +1,9 @@
 # Named Model
 
+## Status: not started
+
+No `NamedModel` mixin exists yet; catalog models still declare `name` per-subclass and `LinkableModel` carries only a `name: str` annotation. Scoped and ready, pending prioritization.
+
 ## Context
 
 This work is an instance of the broader pattern in [ModelDrivenMetadata.md](ModelDrivenMetadata.md): encode per-model behavior on the model itself, consume it generically from shared infrastructure.

@@ -17,20 +17,20 @@ from typing import NamedTuple
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
-from apps.catalog.ingestion.patches._types import (
+from apps.claim_ingest.patches._types import (
     ClaimKey,
     PatchError,
     PublicId,
     _Target,
 )
-from apps.catalog.ingestion.patches.entity_registry import PatchEntityRegistry
-from apps.catalog.ingestion.patches.parsing import (
+from apps.claim_ingest.patches.entity_registry import PatchEntityRegistry
+from apps.claim_ingest.patches.parsing import (
     CreateEntry,
     DeleteEntry,
     EditEntry,
     PatchEntry,
 )
-from apps.catalog.ingestion.plan import (
+from apps.claim_ingest.plan import (
     CitationRef,
     CiteHandle,
     Handle,
@@ -40,10 +40,14 @@ from apps.catalog.ingestion.plan import (
     PlannedClaimRetract,
     PlannedEntityCreate,
 )
-from apps.catalog.models import CatalogModel
 from apps.core.entity_types import get_linkable_model
-from apps.core.models import LIFECYCLE_STATUS_FIELD
-from apps.core.soft_delete import CascadeBlocker, require_linkable, soft_delete_walk
+from apps.core.models import LIFECYCLE_STATUS_FIELD, LifecycleStatusModel
+from apps.core.soft_delete import (
+    CascadeBlocker,
+    has_lifecycle,
+    require_linkable,
+    soft_delete_walk,
+)
 from apps.core.types import EntityKey
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claims import (
@@ -52,7 +56,13 @@ from apps.provenance.claims import (
     normalize_alias_identity,
     normalize_fk_value,
 )
-from apps.provenance.models import Claim, IdentityPart, Source, get_claim_fields
+from apps.provenance.models import (
+    Claim,
+    IdentityPart,
+    LinkableClaimModel,
+    Source,
+    get_claim_fields,
+)
 from apps.provenance.validation import get_relationship_schema
 
 
@@ -83,7 +93,7 @@ class _HierarchyEdge(NamedTuple):
     external dict key.
     """
 
-    model_class: type[CatalogModel]
+    model_class: type[LinkableClaimModel]
     namespace: Namespace
     child: PublicId
     parent: PublicId
@@ -112,12 +122,16 @@ class _MemberEmitResult(NamedTuple):
     hierarchy_edges: list[_HierarchyEdge]
 
 
-def _resolve_model_class(entry: PatchEntry) -> type[CatalogModel]:
+def _resolve_model_class(entry: PatchEntry) -> type[LinkableClaimModel]:
     try:
         model_class = get_linkable_model(entry.entity_type)
     except ValueError as exc:
         raise PatchError(f"{entry.ref}: {exc}") from exc
-    if not issubclass(model_class, CatalogModel):
+    # A patch may name any addressable claim subject. Today every concrete
+    # ``LinkableClaimModel`` is a ``CatalogModel``, so this gate is behaviorally
+    # identical to the former ``issubclass(_, CatalogModel)`` — it just no longer
+    # names the domain base.
+    if not issubclass(model_class, LinkableClaimModel):
         raise PatchError(f"{entry.ref}: {entry.entity_type!r} is not a catalog entity")
     return model_class
 
@@ -217,7 +231,7 @@ type _RelationshipMemberSpec = _FkMemberSpec | _StringMemberSpec
 
 
 def _relationship_member_spec(
-    model_class: type[CatalogModel],
+    model_class: type[LinkableClaimModel],
     namespace: Namespace,
     entry: PatchEntry,
 ) -> _RelationshipMemberSpec:
@@ -327,7 +341,7 @@ def _member_identity(
 
 def _emit_relationship(
     plan: IngestPlan,
-    model_class: type[CatalogModel],
+    model_class: type[LinkableClaimModel],
     namespace: Namespace,
     value: object,
     target: _Target,
@@ -437,13 +451,13 @@ def _emit_relationship(
 
 def _add_removals(
     plan: IngestPlan,
-    model_class: type[CatalogModel],
-    existing: CatalogModel,
+    model_class: type[LinkableClaimModel],
+    existing: LinkableClaimModel,
     entry: EditEntry,
     ct_id: int,
     source: Source,
     rel_namespaces: frozenset[Namespace],
-    rel_fields_by_model: dict[type[CatalogModel], set[str]],
+    rel_fields_by_model: dict[type[LinkableClaimModel], set[str]],
     *,
     note: str = "",
     citation_ref: CitationRef | None = None,
@@ -547,7 +561,7 @@ def _source_claims_member_present(
 
 def _add_create(
     plan: IngestPlan,
-    model_class: type[CatalogModel],
+    model_class: type[LinkableClaimModel],
     entry: CreateEntry,
     handle: Handle,
     *,
@@ -557,10 +571,10 @@ def _add_create(
     """Emit a ``PlannedEntityCreate`` plus its required identity/status claims.
 
     The author writes only the authored fields; the adapter supplies the
-    public_id (from the entry key) and ``status='active'``, and feeds every
-    claim-controlled kwarg into both the create kwargs *and* a matching
-    assertion (the engine's create contract). Authored field assertions are
-    emitted by the caller's field loop.
+    public_id (from the entry key) and, for a lifecycle-bearing target,
+    ``status='active'``, and feeds every claim-controlled kwarg into both the
+    create kwargs *and* a matching assertion (the engine's create contract).
+    Authored field assertions are emitted by the caller's field loop.
 
     Two identity shapes, distinguished model-drivenly by whether the public id
     *is* the form field:
@@ -594,12 +608,16 @@ def _add_create(
             f"public id ({pid_field}) is system-generated, not claim-based"
         )
     # Adapter-owned on a create: the public_id_field comes from the entity
-    # reference and status is always 'active'. Authoring them would either
-    # spawn an entity that doesn't match its reference or trip the engine's
-    # create contract (status must be 'active'), so reject. The form field
-    # itself (slug) stays author-writable on a derived create — only the
-    # derived public id field is off-limits.
-    adapter_owned = {pid_field, LIFECYCLE_STATUS_FIELD} & entry.fields.keys()
+    # reference, and — for a lifecycle-bearing target — status is always
+    # 'active'. Authoring either would spawn an entity that doesn't match its
+    # reference or trip the engine's create contract, so reject. The form field
+    # itself (slug) stays author-writable on a derived create — only the derived
+    # public id field is off-limits. (Status is adapter-owned only when present;
+    # lifecycle is a discovered capability — see the ``status`` stamp below.)
+    adapter_owned_fields = {pid_field}
+    if has_lifecycle(model_class):
+        adapter_owned_fields.add(LIFECYCLE_STATUS_FIELD)
+    adapter_owned = adapter_owned_fields & entry.fields.keys()
     if adapter_owned:
         raise PatchError(
             f"{entry.ref}: do not set {', '.join(sorted(adapter_owned))} on a create "
@@ -619,10 +637,15 @@ def _add_create(
     # ``delete:`` directive (which routes through the soft-delete planner). A raw
     # claim would skip that planner's safety checks — so :mod:`.planning` rejects
     # any ``status`` field key before it reaches here.
-    kwargs: dict[str, object] = {
-        pid_field: entry.public_id,
-        LIFECYCLE_STATUS_FIELD: "active",
-    }
+    #
+    # Lifecycle is a discovered capability (see ``LinkableClaimModel``): a target
+    # without ``LifecycleStatusModel`` has no ``status`` field, so the stamp and
+    # its paired assertion (below) are both omitted. They must stay in lockstep —
+    # the apply layer requires every claim-controlled create kwarg to have a
+    # matching assertion.
+    kwargs: dict[str, object] = {pid_field: entry.public_id}
+    if has_lifecycle(model_class):
+        kwargs[LIFECYCLE_STATUS_FIELD] = "active"
     # FK columns whose target is created earlier in this same patch: deferred to
     # the target handle's PK by the apply layer (resolved after the bulk-create).
     # The field loop still emits the concrete provenance claim, which
@@ -683,19 +706,22 @@ def _add_create(
                 field_name=pid_field, value=entry.public_id, handle=handle, note=note
             )
         )
-    plan.assertions.append(
-        PlannedClaimAssert(
-            field_name=LIFECYCLE_STATUS_FIELD,
-            value="active",
-            handle=handle,
-            note=note,
+    # Paired with the ``status`` create kwarg above — emitted only for a
+    # lifecycle-bearing target (the two must stay in lockstep).
+    if has_lifecycle(model_class):
+        plan.assertions.append(
+            PlannedClaimAssert(
+                field_name=LIFECYCLE_STATUS_FIELD,
+                value="active",
+                handle=handle,
+                note=note,
+            )
         )
-    )
 
 
 def _add_delete(
     plan: IngestPlan,
-    existing: CatalogModel,
+    existing: LinkableClaimModel,
     entry: DeleteEntry,
     *,
     note: str = "",
@@ -722,6 +748,15 @@ def _add_delete(
     them all in the same-entity provenance guard (a cascaded child is otherwise
     invisible to it, and a separate entry on that child would collide unseen).
     """
+    # Soft-delete is a lifecycle operation. Lifecycle is a discovered capability
+    # (see ``LinkableClaimModel``): a target without ``LifecycleStatusModel`` is
+    # create/edit-patchable but not deletable, so ``delete:`` is the one
+    # directive that rejects it. (Every concrete target is a ``CatalogModel``
+    # today, but the contract holds for a future lower-capability model.)
+    if not isinstance(existing, LifecycleStatusModel):
+        raise PatchError(
+            f"{entry.ref}: {entry.entity_type!r} has no lifecycle and cannot be deleted"
+        )
     walk = soft_delete_walk(existing)
     if walk.blockers:
         blockers = "; ".join(_format_blocker(b) for b in walk.blockers)
@@ -764,8 +799,8 @@ def _format_blocker(blocker: CascadeBlocker) -> str:
 
 def _add_retractions(
     plan: IngestPlan,
-    model_class: type[CatalogModel],
-    existing: CatalogModel,
+    model_class: type[LinkableClaimModel],
+    existing: LinkableClaimModel,
     entry: EditEntry,
     ct_id: int,
     source: Source,

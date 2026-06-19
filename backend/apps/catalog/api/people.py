@@ -16,6 +16,11 @@ from ninja.security import django_auth
 from pydantic import Field
 
 from apps.catalog.naming import normalize_catalog_name
+from apps.claim_edit.claim_write import (
+    ClaimSpec,
+    execute_claims,
+    plan_scalar_field_claims,
+)
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
@@ -40,7 +45,6 @@ from apps.provenance.schemas import ChangeSetInputSchema
 from ..models import Credit, MachineModel, Person
 from ._typing import HasCreditCount
 from .constants import NameAliasQuery, PageParam
-from .edit_claims import ClaimSpec, execute_claims, plan_scalar_field_claims
 from .entity_create import (
     assert_name_available,
     assert_public_id_available,

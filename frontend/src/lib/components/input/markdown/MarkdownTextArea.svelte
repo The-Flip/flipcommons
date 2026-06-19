@@ -352,8 +352,7 @@
         onclick={handleTextareaClick}
         onblur={handleTextareaBlur}
         aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-      ></textarea>
+        aria-describedby={error ? errorId : undefined}></textarea>
     {/snippet}
   </FieldGroup>
 

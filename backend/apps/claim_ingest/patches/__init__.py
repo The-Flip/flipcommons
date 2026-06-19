@@ -2,7 +2,7 @@
 
 A *data patch* is a small, source-attributed set of catalog claims authored
 as plain YAML and applied through the existing ingest apply engine
-(:mod:`apps.catalog.ingestion.apply`) — not a parallel engine. This package
+(:mod:`apps.claim_ingest.apply`) — not a parallel engine. This package
 turns a patch's text into an :class:`IngestPlan`; the ``ingest_patches``
 command discovers, hashes, ledger-checks and applies them.
 
@@ -19,13 +19,13 @@ Split by pipeline layer, dependencies flowing one way (acyclic):
 
 A lower layer importing a higher one is a layering smell — hoist the shared
 symbol into :mod:`._types`. The package re-exports the public surface, so
-callers import from ``apps.catalog.ingestion.patches`` regardless of layer.
+callers import from ``apps.claim_ingest.patches`` regardless of layer.
 """
 
 from __future__ import annotations
 
-from apps.catalog.ingestion.patches._types import PatchError
-from apps.catalog.ingestion.patches.parsing import (
+from apps.claim_ingest.patches._types import PatchError
+from apps.claim_ingest.patches.parsing import (
     PATCH_ID_RE,
     CreateEntry,
     DeleteEntry,
@@ -36,7 +36,7 @@ from apps.catalog.ingestion.patches.parsing import (
     load_patch,
     parse_patch_text,
 )
-from apps.catalog.ingestion.patches.planning import build_plan
+from apps.claim_ingest.patches.planning import build_plan
 
 __all__ = [
     "PATCH_ID_RE",

@@ -1,4 +1,4 @@
-"""Abstract base for entities whose display fields are claim-controlled."""
+"""Abstract bases for claim-controlled entities and addressable claim subjects."""
 
 from __future__ import annotations
 
@@ -7,7 +7,9 @@ from typing import ClassVar
 from django.contrib.contenttypes.fields import GenericRelation
 from django.db import models
 
-__all__ = ["ClaimControlledModel"]
+from apps.core.models import LinkableModel
+
+__all__ = ["ClaimControlledModel", "LinkableClaimModel"]
 
 
 class ClaimControlledModel(models.Model):
@@ -50,6 +52,62 @@ class ClaimControlledModel(models.Model):
     claim_fk_lookups: ClassVar[dict[str, str]] = {}
 
     claims = GenericRelation("provenance.Claim")
+
+    class Meta:
+        abstract = True
+
+
+class LinkableClaimModel(LinkableModel, ClaimControlledModel):
+    """Abstract contract for an *addressable claim subject*.
+
+    A model can be named in a data patch (or addressed by URL) when it is both
+    **linkable** (publicly addressable) and **claim-controlled**.
+    ``LinkableClaimModel`` is exactly that conjunction —
+    ``LinkableModel`` (core) + ``ClaimControlledModel`` (provenance) — and
+    provenance is the one layer that sees both bases. It declares no fields, so
+    it adds no table, content-type or migration; it exists only as the target
+    contract the addressing-dependent write paths bind.
+
+    The bulk pipeline (``claim_ingest``) binds this to resolve
+    ``entity_type:public_id`` references; the domain's URL routing binds it for
+    the same reason. The interactive ``execute_*`` write functions bind the
+    looser ``ClaimControlledModel`` instead, because their caller has already
+    resolved the row and needs nothing about addressing.
+
+    **Required (the bound).** Without these a model cannot be a target at all:
+
+    - *Addressing* (``LinkableModel``): ``entity_type`` + the
+      ``get_linkable_model()`` registry for content-type dispatch;
+      ``public_id`` to resolve ``entity_type:public_id`` → row; ``name``/label
+      for error messages and alias folding.
+    - *Claims* (``ClaimControlledModel``): ``get_claim_fields()`` introspection;
+      reads and writes only claims.
+
+    No narrower bound works: ``IdentifiableModel`` alone lacks ``entity_type``,
+    which the addressing scheme requires. ``MediaSupportedModel`` is
+    claim-controlled but not linkable — media enters as a ``media_attachment``
+    relationship claim on a linkable entity, not as its own target.
+
+    **Discovered (used when present, never bound).** Reached through a guard or
+    introspection so they stay optional — a target lacking them is still
+    create/edit-patchable:
+
+    - *Lifecycle* (``LifecycleStatusModel``), via ``has_lifecycle()``: create
+      stamps ``status='active'``; ``delete:`` routes through the soft-delete
+      planner. A lifecycle-less target → only ``delete:`` rejects it.
+    - *Markdown content* (``DescribedModel``), via ``get_markdown_fields()``:
+      inline-citation validation in description text.
+
+    Binding either would force the capability onto every target — the
+    re-tightening this contract exists to avoid.
+
+    **Ignored (the write paths never touch).** Sitemapping
+    (``SitemappedModel``), ``lastmod``/timestamps and any other
+    web-presentation capability sit *above* ``LinkableModel`` on the core
+    chain, so a path bound here is structurally blind to them. Do not fold them
+    in: sitemap membership is a read/presentation concern, irrelevant to
+    writing claims.
+    """
 
     class Meta:
         abstract = True

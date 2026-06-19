@@ -3,7 +3,7 @@
 Processes three explicit primitives — ``create_entity``, ``assert_claim``,
 ``retract_claim`` — in one transaction.  Contains no source-specific logic; every
 adapter (IPDB, OPDB, the data-patch system …) compiles its input into an
-``IngestPlan`` (see :mod:`apps.catalog.ingestion.plan`) and calls
+``IngestPlan`` (see :mod:`apps.claim_ingest.plan`) and calls
 :func:`apply_plan`.
 
 Design decisions that look like bugs but aren't:
@@ -32,6 +32,6 @@ regardless of which stage module a helper lives in.
 
 from __future__ import annotations
 
-from apps.catalog.ingestion.apply.orchestrate import apply_plan
+from apps.claim_ingest.apply.orchestrate import apply_plan
 
 __all__ = ["apply_plan"]

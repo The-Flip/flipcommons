@@ -1,15 +1,20 @@
-"""Centralised resolution dispatch after claim mutations.
+"""Catalog's resolve handlers, registered into the provenance dispatch seam.
 
-Provides :func:`resolve_after_mutation` — a single entry-point that any
-module (including provenance) can call after mutating claims on an entity.
-Internally it routes to the correct resolver(s) based on entity type and
-the claim field names that changed, then invalidates cached endpoint data.
+The two public entry points live in :mod:`apps.provenance.resolution`; this
+module provides catalog's concrete implementations of that seam's
+:class:`~apps.provenance.resolution.PerEntityResolver` and
+:class:`~apps.provenance.resolution.BulkResolver` contracts, plus
+:func:`register_catalog_resolve_handlers`, which registers them for every
+catalog model at ``CatalogConfig.ready()``. The handlers route to the correct
+resolver(s) based on entity type and the claim field names that changed; the
+per-entity handler also invalidates cached endpoint data (the bulk handler does
+not — the bulk caller invalidates once after its run).
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import NamedTuple, cast
 
 from django.db import transaction
@@ -99,28 +104,27 @@ def _get_custom_dispatch() -> dict[str, CustomDispatchSpec]:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Registration into the provenance dispatch seam
 # ---------------------------------------------------------------------------
 
 
-def resolve_after_mutation(
+def _per_entity_handler(
     entity: ClaimControlledModel,
     field_names: list[str] | None = None,
 ) -> None:
-    """Re-resolve an entity after its claims have been mutated.
+    """Per-entity resolve handler — catalog's ``PerEntityResolver``.
 
-    Call this inside a ``transaction.atomic()`` block after creating,
-    deactivating, or modifying claims.  Resolution runs synchronously
-    inside the caller's transaction.  Cache invalidation runs after
-    resolution completes.
+    Re-resolves one entity after its claims have been mutated, then schedules
+    cache invalidation. Runs synchronously inside the caller's transaction.
 
     Parameters
     ----------
     entity:
         The catalog entity whose claims changed.
     field_names:
-        The claim ``field_name`` values that were mutated.  When ``None``,
-        all applicable resolvers run (safe but less efficient).
+        The claim ``field_name`` values that were mutated (scalar and
+        relationship both).  When ``None``, all applicable resolvers run
+        (safe but less efficient).
     """
     from ..models import MachineModel
 
@@ -130,6 +134,41 @@ def resolve_after_mutation(
         _resolve_non_machine_model(entity, field_names)
 
     transaction.on_commit(invalidate_all)
+
+
+def _bulk_handler(
+    model_class: type[ClaimControlledModel],
+    subject_ids: set[int],
+    field_names: Collection[str],
+) -> None:
+    """Bulk resolve handler — catalog's ``BulkResolver``.
+
+    Re-resolves scalar/FK fields for the whole subject set, then the changed
+    relationship namespaces in a single pass each. Does **not** invalidate
+    caches — the bulk caller invalidates once after its run.
+    """
+    from ._entities import resolve_all_entities
+
+    resolve_all_entities(model_class, object_ids=subject_ids)
+    resolve_relationships_bulk(model_class, field_names, subject_ids)
+
+
+def register_catalog_resolve_handlers() -> None:
+    """Register catalog's resolve handlers for every catalog model.
+
+    Called from ``CatalogConfig.ready()``. Iterates the catalog-scoped
+    ``catalog_models()`` walk (every concrete ``CatalogModel`` — which is
+    exactly catalog's claim-controlled set) and registers the same generic
+    handler pair for each, so the provenance dispatch resolves any catalog
+    model and raises for a model no domain has claimed.
+    """
+    from apps.provenance.resolution import ResolveHandlers, register_resolve_handlers
+
+    from .._walks import catalog_models
+
+    handlers = ResolveHandlers(per_entity=_per_entity_handler, bulk=_bulk_handler)
+    for model in catalog_models():
+        register_resolve_handlers(model, handlers)
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +267,7 @@ def _call_custom_resolver(spec: CustomDispatchSpec, entity_pk: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Bulk relationship resolution (for ingest/patch resolve hooks)
+# Bulk relationship resolution (the relationship half of ``_bulk_handler``)
 # ---------------------------------------------------------------------------
 
 
@@ -268,19 +307,19 @@ def _get_mm_relationship_resolvers() -> dict[str, Callable[..., None]]:
 
 def resolve_relationships_bulk(
     model_class: type[ClaimControlledModel],
-    field_names: list[str],
+    field_names: Collection[str],
     subject_ids: set[int],
 ) -> None:
     """Bulk re-resolve relationship namespaces for many subjects in one pass.
 
-    The batched equivalent of calling :func:`resolve_after_mutation` once per
-    object for relationship fields. The ingest apply engine already
-    bulk-resolves scalar/FK fields (``resolve_all_entities``); this covers only
-    the relationship namespaces, which is all a data patch's resolve hook needs.
+    The batched equivalent of calling the per-entity handler once per object
+    for relationship fields. :func:`_bulk_handler` calls this after
+    ``resolve_all_entities`` has bulk-resolved scalar/FK fields; this covers
+    only the relationship namespaces.
 
-    Unlike :func:`resolve_after_mutation`, this does NOT register an
-    ``on_commit`` cache invalidation — the caller invalidates once after the run
-    (the ``ingest_patches`` command does, as does the apply engine's caller).
+    Unlike :func:`_per_entity_handler`, this does NOT register an ``on_commit``
+    cache invalidation — the caller invalidates once after the run (the
+    ``ingest_patches`` command does, as does the apply engine's caller).
 
     Raises ``ValueError`` for a namespace with no bulk resolver on
     *model_class*, so an unhandled relationship fails loudly instead of leaving
@@ -309,7 +348,7 @@ def resolve_relationships_bulk(
 
 def _resolve_non_machine_relationships_bulk(
     model_class: type[ClaimControlledModel],
-    field_names: list[str],
+    field_names: Collection[str],
     subject_ids: set[int],
 ) -> None:
     """Bulk relationship resolution for non-MachineModel entities.

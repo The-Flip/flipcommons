@@ -1,5 +1,9 @@
 # Wikilinkable Model
 
+## Status: DONE
+
+Landed in commit `5470f478` — the `WikilinkableModel` mixin (`apps/core/wikilinks/base.py`) shipped, the renderer/picker registries split, and the catalog models adopted it. The body below is the original design, retained for rationale; its "Hoist" steps are complete, not pending.
+
 ## Context
 
 This work is an instance of the broader pattern in [ModelDrivenMetadata.md](ModelDrivenMetadata.md): encode per-model behavior on the model itself, consume it generically from shared infrastructure. It's adjacent to but separate from [ModelDrivenLinkability.md](ModelDrivenLinkability.md) — see "Why this is separate from `LinkableModel`" below.

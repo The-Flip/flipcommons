@@ -8,7 +8,7 @@ Data patches are authored and published by the **flippatch** repo. flippatch's
 This command fetches that manifest and downloads the patches into
 ``<dest>/flippatch/patches/`` — the default dir `ingest_patches` reads from.
 
-The R2 download/checksum logic lives in ``apps.catalog.ingestion.r2_pull``.
+The R2 download/checksum logic lives in ``apps.claim_ingest.r2_pull``.
 
 Usage (local):
     uv run python manage.py pull_patches --dest ../data/ingest_sources
@@ -26,7 +26,7 @@ from urllib.error import HTTPError
 
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.catalog.ingestion.r2_pull import DEFAULT_DEST, download_manifest
+from apps.claim_ingest.r2_pull import DEFAULT_DEST, download_manifest
 
 
 class Command(BaseCommand):

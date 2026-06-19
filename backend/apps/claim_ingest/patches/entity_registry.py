@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from django.db import models
 
-from apps.catalog.ingestion.patches._types import _CreatedKey
-from apps.catalog.ingestion.plan import Handle
-from apps.catalog.models import CatalogModel
+from apps.claim_ingest.patches._types import _CreatedKey
+from apps.claim_ingest.plan import Handle
+from apps.provenance.models import LinkableClaimModel
 
 
 class PatchEntityRegistry:
@@ -41,8 +41,8 @@ class PatchEntityRegistry:
         self._created_refs: set[str] = set()
 
     def lookup_existing(
-        self, model_class: type[CatalogModel], public_id: str
-    ) -> CatalogModel | None:
+        self, model_class: type[LinkableClaimModel], public_id: str
+    ) -> LinkableClaimModel | None:
         """The committed entity for ``(model_class, public_id)``, or ``None``."""
         return model_class._default_manager.filter(
             **{model_class.public_id_field: public_id}
@@ -75,7 +75,7 @@ class PatchEntityRegistry:
         self._created_refs.add(ref)
 
     def register_create(
-        self, model_class: type[CatalogModel], public_id: str, *, handle: Handle
+        self, model_class: type[LinkableClaimModel], public_id: str, *, handle: Handle
     ) -> None:
         """Register a same-patch create's handle for backward references.
 

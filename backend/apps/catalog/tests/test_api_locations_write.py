@@ -21,7 +21,6 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 
-from apps.catalog.exceptions import StructuredValidationError
 from apps.catalog.models import (
     CorporateEntity,
     CorporateEntityLocation,
@@ -33,6 +32,7 @@ from apps.catalog.services.location_paths import (
     derive_child_location_type,
     lookup_child_division,
 )
+from apps.core.exceptions import StructuredValidationError
 from apps.provenance.models import ChangeSet, ChangeSetAction, Claim
 
 User = get_user_model()

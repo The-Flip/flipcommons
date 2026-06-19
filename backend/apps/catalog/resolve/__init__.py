@@ -37,7 +37,7 @@ from ..models import (
     MachineModel,
     Title,
 )
-from ._dispatch import resolve_after_mutation, resolve_relationships_bulk
+from ._dispatch import register_catalog_resolve_handlers
 from ._entities import (
     _resolve_bulk,
     _resolve_single,

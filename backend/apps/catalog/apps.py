@@ -12,9 +12,11 @@ class CatalogConfig(AppConfig):
             signals,
         )
         from .claims import register_catalog_relationship_schemas
+        from .resolve import register_catalog_resolve_handlers
 
         signals.connect()
         register_catalog_relationship_schemas()
+        register_catalog_resolve_handlers()
         self._register_link_types()
         self._register_autocomplete_types()
         self._register_picker_types()

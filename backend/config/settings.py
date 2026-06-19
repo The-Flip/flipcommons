@@ -52,6 +52,8 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.core",
     "apps.catalog",
+    "apps.claim_edit",
+    "apps.claim_ingest",
     "apps.citation",
     "apps.provenance",
     "apps.media",

@@ -20,12 +20,16 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models as db_models
 
 from apps.catalog.models import CatalogModel
+from apps.claim_edit.claim_write import (
+    ClaimSpec,
+    EntityClaims,
+    execute_multi_entity_claims,
+)
 from apps.core.models import is_live
 from apps.core.soft_delete import CascadeBlocker, require_linkable, soft_delete_walk
 from apps.provenance.models import ChangeSet, ChangeSetAction
 from apps.provenance.schemas import CitationReferenceInputSchema
 
-from .edit_claims import ClaimSpec, execute_multi_entity_claims
 from .schemas import BlockingReferrerSchema
 
 _UserLike = AbstractBaseUser | AnonymousUser
@@ -179,7 +183,7 @@ def execute_soft_delete(
         return None, []
 
     entries = [
-        (entity, [ClaimSpec(field_name="status", value="deleted")])
+        EntityClaims(entity, [ClaimSpec(field_name="status", value="deleted")])
         for entity in active_entities
     ]
     changeset = execute_multi_entity_claims(

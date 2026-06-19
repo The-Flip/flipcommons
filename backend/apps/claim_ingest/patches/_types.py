@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 from django.db import models
 
-from apps.catalog.ingestion.plan import Handle
+from apps.claim_ingest.plan import Handle
 
 # The composite key identifying one claim — a scalar/FK field name or a
 # relationship member key from ``build_relationship_claim`` (e.g.
@@ -53,10 +53,10 @@ class _CreatedKey(NamedTuple):
     ``related_model`` — the same class ``_lookup_pk`` queries — with no
     ``"corporate-entity"`` vs ``corporate_entity`` or base-vs-concrete drift.
 
-    Typed ``type[models.Model]`` (not ``type[CatalogModel]``) because lookups key
-    by an FK target's ``related_model``, which Django only types as ``Model``; at
-    runtime every catalog FK target *is* a ``CatalogModel``. The key is pure
-    identity, so the wider annotation costs nothing.
+    Typed ``type[models.Model]`` (not ``type[LinkableClaimModel]``) because
+    lookups key by an FK target's ``related_model``, which Django only types as
+    ``Model``; at runtime every catalog FK target *is* a ``LinkableClaimModel``.
+    The key is pure identity, so the wider annotation costs nothing.
     """
 
     model_class: type[models.Model]

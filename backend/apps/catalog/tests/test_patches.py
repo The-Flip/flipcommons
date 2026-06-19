@@ -11,20 +11,6 @@ from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from apps.catalog.ingestion.apply import apply_plan
-from apps.catalog.ingestion.patches import (
-    EditEntry,
-    PatchError,
-    build_plan,
-    fingerprint,
-    load_patch,
-    parse_patch_text,
-)
-from apps.catalog.ingestion.patches.emit import (
-    _member_identity,
-    _relationship_member_spec,
-)
-from apps.catalog.ingestion.plan import RunReport
 from apps.catalog.models import (
     CorporateEntity,
     CorporateEntityLocation,
@@ -37,6 +23,20 @@ from apps.catalog.models import (
 )
 from apps.catalog.resolve import resolve_all_corporate_entity_locations
 from apps.citation.models import CitationSource, CitationSourceLink
+from apps.claim_ingest.apply import apply_plan
+from apps.claim_ingest.patches import (
+    EditEntry,
+    PatchError,
+    build_plan,
+    fingerprint,
+    load_patch,
+    parse_patch_text,
+)
+from apps.claim_ingest.patches.emit import (
+    _member_identity,
+    _relationship_member_spec,
+)
+from apps.claim_ingest.plan import RunReport
 from apps.provenance.claims import (
     build_relationship_claim,
     normalize_abbreviation_value,
@@ -2705,7 +2705,7 @@ def test_non_string_identity_rejected(monkeypatch):
         valid_subjects=frozenset({Manufacturer}),
     )
     monkeypatch.setattr(
-        "apps.catalog.ingestion.patches.emit.get_relationship_schema",
+        "apps.claim_ingest.patches.emit.get_relationship_schema",
         lambda namespace: crafted if namespace == "fake_int_identity" else None,
     )
     entry = EditEntry(

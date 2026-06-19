@@ -4,7 +4,7 @@ Re-exports all public names so existing ``from apps.provenance.models import …
 continues to work unchanged.
 """
 
-from .base import ClaimControlledModel
+from .base import ClaimControlledModel, LinkableClaimModel
 from .changeset import CHANGESET_NOTE_MAX_LENGTH, ChangeSet, ChangeSetAction
 from .citation_instance import CITATION_INSTANCE_LOCATOR_MAX_LENGTH, CitationInstance
 from .claim import (

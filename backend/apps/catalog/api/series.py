@@ -12,6 +12,7 @@ from ninja import Router, Schema
 from ninja.security import django_auth
 from pydantic import Field
 
+from apps.claim_edit.claim_write import execute_claims, plan_scalar_field_claims
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.licensing import get_minimum_display_rank
@@ -24,7 +25,6 @@ from apps.provenance.schemas import RichTextSchema
 from ..models import Credit, MachineModel, Series, Title
 from ._typing import HasTitleCount
 from .constants import NameQuery, PageParam
-from .edit_claims import execute_claims, plan_scalar_field_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .entity_list import paginated_list_response
 from .helpers import (

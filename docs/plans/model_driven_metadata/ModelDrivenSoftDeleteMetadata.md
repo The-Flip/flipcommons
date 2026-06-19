@@ -1,5 +1,9 @@
 # Model-Driven Soft-Delete Metadata
 
+## Status: DONE
+
+Both knobs (`soft_delete_cascade_relations`, `soft_delete_usage_blockers`) are hoisted onto `LifecycleStatusModel` (`apps/core/models/mixins.py:260-261`) and read by **direct attribute access** — not `getattr` — in the cascade walk, which now lives in `apps/core/soft_delete.py` (`cascade_targets`, `soft_delete_walk`). `apps/catalog/api/soft_delete.py` retains only the catalog-typed execution wrapper. The Context below describes the pre-hoist state and the original recipe; references to the machinery living in `catalog/api/soft_delete.py` predate the hoist to core.
+
 ## Context
 
 This work is an instance of the broader pattern in [ModelDrivenMetadata.md](ModelDrivenMetadata.md): encode per-model behavior on the model itself, consume it generically from shared infrastructure.

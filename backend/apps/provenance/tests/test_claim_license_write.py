@@ -3,8 +3,8 @@
 import pytest
 from django.contrib.contenttypes.models import ContentType
 
-from apps.catalog.ingestion.apply import apply_plan
-from apps.catalog.ingestion.plan import IngestPlan, PlannedClaimAssert
+from apps.claim_ingest.apply import apply_plan
+from apps.claim_ingest.plan import IngestPlan, PlannedClaimAssert
 from apps.core.models import License
 from apps.provenance.models import Claim, Source
 

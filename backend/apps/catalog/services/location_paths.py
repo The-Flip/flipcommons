@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from apps.catalog.exceptions import StructuredValidationError
 from apps.catalog.models import Location
+from apps.core.exceptions import StructuredValidationError
 
 __all__ = [
     "compute_location_path",

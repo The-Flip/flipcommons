@@ -28,6 +28,7 @@ from apps.core.types import EntityKey
 
 from .constants import REVERT_OTHERS_MIN_EDITS
 from .models import ChangeSet, ChangeSetAction, Claim, ClaimControlledModel
+from .resolution import resolve_after_mutation
 
 
 class RevertError(Exception):
@@ -92,8 +93,6 @@ def execute_revert(
                     },
                 )
             )
-
-    from apps.catalog.resolve import resolve_after_mutation
 
     try:
         with transaction.atomic():
@@ -188,8 +187,6 @@ def execute_undo_changeset(
             "This delete is no longer the latest action on every affected "
             "field. Use edit history to restore individual fields."
         )
-
-    from apps.catalog.resolve import resolve_after_mutation
 
     affected_fields: dict[EntityKey, set[str]] = defaultdict(set)
     try:

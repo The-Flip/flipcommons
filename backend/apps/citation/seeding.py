@@ -1,6 +1,6 @@
 """Get-or-create citation sources for the data-patch ``sources:`` block.
 
-The patch path (``apps.catalog.ingestion``) is the only caller. It is flat
+The patch path (``apps.claim_ingest``) is the only caller. It is flat
 (roots only) and **additive-only**: ``ensure_root_source`` creates a missing
 source or backfills a missing link, but never overwrites an existing row or
 link. A collision is a warning, never a failure — so a user-created source

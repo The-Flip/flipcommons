@@ -14,11 +14,11 @@ from __future__ import annotations
 import pytest
 from django.core.exceptions import ValidationError
 
-from apps.catalog.ingestion.apply import apply_plan
-from apps.catalog.ingestion.patches import PatchError, build_plan, load_patch
 from apps.catalog.models import Manufacturer
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationSource
+from apps.claim_ingest.apply import apply_plan
+from apps.claim_ingest.patches import PatchError, build_plan, load_patch
 from apps.core.markdown import (
     convert_storage_to_authoring,
     render_all_links,

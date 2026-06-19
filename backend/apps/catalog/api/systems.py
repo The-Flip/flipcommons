@@ -18,8 +18,14 @@ from ninja.security import django_auth
 from pydantic import Field
 
 from apps.catalog.naming import normalize_catalog_name
+from apps.claim_edit.claim_write import (
+    ClaimSpec,
+    execute_claims,
+    plan_scalar_field_claims,
+)
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
+from apps.core.exceptions import StructuredValidationError
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
@@ -30,15 +36,9 @@ from apps.provenance.rate_limits import (
     rate_limited,
 )
 
-from ..exceptions import StructuredValidationError
 from ..models import MachineModel, Manufacturer, System
 from ._typing import HasModelCount
 from .constants import NameQuery, PageParam
-from .edit_claims import (
-    ClaimSpec,
-    execute_claims,
-    plan_scalar_field_claims,
-)
 from .entity_create import (
     assert_name_available,
     assert_public_id_available,

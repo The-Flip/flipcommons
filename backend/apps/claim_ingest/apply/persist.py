@@ -9,10 +9,11 @@ claims into ChangeSets grouped per-entry (patch) or per-entity (ingest)
 (:func:`_persist` and its ``_persist_*`` modes). :func:`_resolve` then
 materialises derived values on affected entities.
 
-Depends on :mod:`.claims` (``RetractEntry``, the empty-diff guard). Holds the two
-catalog touchpoints — ``build_relationship_claim`` in :func:`_patch_handles` and
-``resolve_all_entities`` in :func:`_resolve` — as lazy imports, the only places
-the otherwise source-agnostic engine reaches into the catalog app.
+Depends on :mod:`.claims` (``RetractEntry``, the empty-diff guard). Reaches the
+substrate through two provenance helpers, held as lazy imports:
+``build_relationship_claim`` in :func:`_patch_handles` and the
+``resolve_entities_bulk`` dispatch in :func:`_resolve` — the latter routes to the
+domain's registered resolver without this engine importing the domain.
 """
 
 from __future__ import annotations
@@ -23,19 +24,19 @@ from typing import cast
 
 from django.contrib.contenttypes.models import ContentType
 
-from apps.catalog.ingestion.apply.claims import (
+from apps.claim_ingest.apply.claims import (
     RetractEntry,
     _reject_empty_diff_provenance,
 )
-from apps.catalog.ingestion.plan import (
+from apps.claim_ingest.plan import (
     CitationRef,
     CiteHandle,
+    ContentTypeId,
     EntryIndex,
     Handle,
     IngestPlan,
     PlannedClaimAssert,
     PlannedEntityCreate,
-    ResolveHook,
 )
 from apps.core.types import ClaimIdentity, EntityKey
 from apps.provenance.models import ChangeSet, Claim, ClaimControlledModel, IngestRun
@@ -422,12 +423,17 @@ def _persist_per_entry(
 def _resolve(
     to_create: list[Claim],
     retract_entries: list[RetractEntry],
-    resolve_hooks: dict[int, list[ResolveHook]],
+    changed_relationship_fields: dict[ContentTypeId, frozenset[str]],
 ) -> None:
-    """Materialise resolved values on affected entities."""
-    from apps.catalog.resolve._entities import resolve_all_entities
+    """Materialise resolved values on affected entities.
 
-    affected_by_ct: dict[int, set[int]] = defaultdict(set)
+    Dispatches each affected content type to the provenance bulk resolver,
+    which re-resolves scalar/FK fields for the whole subject set and the changed
+    relationship namespaces (``changed_relationship_fields``) in one pass each.
+    """
+    from apps.provenance.resolution import resolve_entities_bulk
+
+    affected_by_ct: dict[ContentTypeId, set[int]] = defaultdict(set)
     for claim in to_create:
         affected_by_ct[claim.content_type_id].add(claim.object_id)
     for entry in retract_entries:
@@ -440,8 +446,8 @@ def _resolve(
         # Affected CTs are always claim-controlled catalog entities by
         # construction (they carry claims).  ContentType.model_class()
         # returns ``type[Model]``, so the narrowing cast is unavoidable.
-        resolve_all_entities(
-            cast(type[ClaimControlledModel], model_class), object_ids=obj_ids
+        resolve_entities_bulk(
+            cast(type[ClaimControlledModel], model_class),
+            subject_ids=obj_ids,
+            field_names=changed_relationship_fields.get(ct_id, frozenset()),
         )
-        for hook in resolve_hooks.get(ct_id, []):
-            hook(subject_ids=obj_ids)

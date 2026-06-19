@@ -1,5 +1,9 @@
 # Model-Driven Entity Contract
 
+## Status: proposed
+
+A framework-neutral alternative to [ModelDrivenApi.md](ModelDrivenApi.md) for where the domain/delivery seam lives. Not implemented — models carry no `catalog_contract` declaration today. The two docs are competing designs; neither has landed.
+
 ## Framing
 
 A catalog model should describe itself in terms the outside world can consume, without knowing who is consuming it. It should not know about Django Ninja, about HTTP, about routers, about response schemas, about JSON. If the project replaced Ninja with DRF, with vanilla Django views, or with a GraphQL layer tomorrow, the catalog models should not change.

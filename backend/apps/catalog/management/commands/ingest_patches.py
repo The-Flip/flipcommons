@@ -22,14 +22,14 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import IntegrityError
 from django.utils.termcolors import make_style
 
-from apps.catalog.ingestion.apply import apply_plan
-from apps.catalog.ingestion.patches import (
+from apps.claim_ingest.apply import apply_plan
+from apps.claim_ingest.patches import (
     PATCH_ID_RE,
     PatchError,
     build_plan,
     load_patch,
 )
-from apps.catalog.ingestion.plan import RunReport
+from apps.claim_ingest.plan import RunReport
 from apps.provenance.models import IngestRun, Source
 
 

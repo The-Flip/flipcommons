@@ -61,7 +61,7 @@ The claim stream is the system of record for user-inputted catalog fields. Catal
 
 ## Resolution System
 
-The resolution system owns the current catalog view derived from claims. It is invoked by both write paths: interactive writes call `resolve_after_mutation()`, while ingest calls batch entity resolution and any plan resolve hooks. In both cases, resolution reads active, eligible claims, ranks them by source/user priority and recency, then materializes the winners onto Django model fields, relationship tables and lifecycle state.
+The resolution system owns the current catalog view derived from claims. It is invoked by both write paths through a single dispatch seam (`apps.provenance.resolution`): interactive writes call `resolve_after_mutation()` per entity, while ingest dispatches each affected model class to the bulk resolver, passing the relationship namespaces a patch touched. In both cases, resolution reads active, eligible claims, ranks them by source/user priority and recency, then materializes the winners onto Django model fields, relationship tables and lifecycle state.
 
 Resolution is where scalar values, FKs, relationship membership and `status` become the current catalog rows that pages and APIs read. The resolution system must be deterministic: the same claim set should always produce the same materialized catalog view.
 

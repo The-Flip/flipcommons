@@ -37,6 +37,7 @@ from ninja.responses import Status
 from ninja.security import django_auth
 
 from apps.catalog.models import CatalogModel
+from apps.claim_edit.claim_write import ClaimSpec, execute_claims
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.models import is_deleted
@@ -53,7 +54,6 @@ from apps.provenance.rate_limits import (
 )
 from apps.provenance.schemas import ChangeSetInputSchema
 
-from .edit_claims import ClaimSpec, execute_claims
 from .entity_create import (
     assert_public_id_available,
     create_entity_with_claims,
