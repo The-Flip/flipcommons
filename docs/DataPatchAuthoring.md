@@ -138,7 +138,7 @@ How to validate your changes:
 
 1. [`--dry-run`](#dry-run) is the cheap first pass: it parses the patch and runs every structural check without writing.
 2. [Validate via snapshot](#validate-via-snapshot) is the real check: it commits to localhost, so you see the resolved effect in the running app and can validate cross-file dependencies, then roll back.
-3. [Hand off to user](#hand-off-to-user) only after those. Committing is the user's call.
+3. [Hand off to user](#hand-off-to-user) only after those. Committing and `make push` are the user's call.
 
 ### Dry run
 
@@ -181,4 +181,4 @@ print(c.changeset.note)
 
 ### Hand off to user
 
-Committing and `make push` in flippatch are the user's call — never do either yourself.
+Committing and `make push` in flippatch are the user's call — never automatic, never something you do yourself. `make push` (publish to R2, whence other environments pull via `make pull-patches && make ingest-patches`) is a deliberate user command on the same footing as `git commit`/`git push`; the authoring loop ends at localhost validation and never touches R2.
