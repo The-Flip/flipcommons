@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from typing import Any
 
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Prefetch
 
 from apps.core.licensing import (
     UNKNOWN_LICENSE_RANK,
@@ -15,7 +13,6 @@ from apps.core.licensing import (
 )
 from apps.core.types import JsonData
 from apps.media.models import EntityMedia
-from apps.media.schemas import MediaRenditionsSchema, UploadedMediaSchema
 from apps.media.storage import build_public_url, build_storage_key
 from apps.provenance.schemas import AttributionSchema
 
@@ -27,8 +24,6 @@ __all__ = [
     "fetch_model_media_map",
     "fetch_title_media_map",
     "first_thumbnail",
-    "media_prefetch",
-    "serialize_uploaded_media",
 ]
 
 
@@ -70,42 +65,6 @@ def fetch_title_media_map(
     walking ``title.machine_models.all()`` triggers one query per title.
     """
     return fetch_model_media_map(pm.pk for t in titles for pm in t.machine_models.all())
-
-
-# Slot 2 is Any because prefetch_related has a single _PrefetchedQuerySetT
-# TypeVar it must unify across all heterogeneous Prefetch args at the call
-# site; any concrete queryset type here breaks that unification. The Any
-# is an artifact of django-stubs' API design, not lost information.
-def media_prefetch() -> Prefetch[str, Any, str]:
-    """Return a Prefetch for ready EntityMedia with assets."""
-    return Prefetch(
-        "entity_media",
-        queryset=EntityMedia.objects.filter(
-            asset__status="ready",
-        ).select_related("asset", "asset__uploaded_by"),
-        to_attr="all_media",
-    )
-
-
-def serialize_uploaded_media(
-    all_media: Iterable[EntityMedia],
-) -> list[UploadedMediaSchema]:
-    """Serialize EntityMedia rows into the uploaded_media response list."""
-    return [
-        UploadedMediaSchema(
-            asset_uuid=str(em.asset.uuid),
-            category=em.category,
-            is_primary=em.is_primary,
-            uploaded_by_username=(
-                em.asset.uploaded_by.username if em.asset.uploaded_by else None
-            ),
-            renditions=MediaRenditionsSchema(
-                thumb=build_public_url(build_storage_key(em.asset.uuid, "thumb")),
-                display=build_public_url(build_storage_key(em.asset.uuid, "display")),
-            ),
-        )
-        for em in all_media
-    ]
 
 
 def _uploaded_image_urls(

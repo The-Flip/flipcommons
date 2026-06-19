@@ -17,8 +17,9 @@ from apps.claim_edit.claim_write import (
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
-from apps.media.helpers import all_media
+from apps.media.helpers import all_media, media_prefetch
 from apps.media.schemas import UploadedMediaSchema
+from apps.media.selectors import serialize_uploaded_media
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
@@ -28,7 +29,6 @@ from .constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PageParam
 from .edit_claims import plan_alias_claims, plan_parent_claims
 from .entity_crud import register_entity_create, register_entity_delete_restore
 from .entity_list import _apply_list_q
-from .images import media_prefetch, serialize_uploaded_media
 from .rich_text import describe
 from .schemas import (
     CatalogDetailSchema,

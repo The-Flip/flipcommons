@@ -1,12 +1,28 @@
-"""Helpers for reading prefetched EntityMedia off catalog entities."""
+"""Helpers for prefetching EntityMedia onto catalog entities and reading it back."""
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 from django.db import models
+from django.db.models import Prefetch
 
 from .models import EntityMedia
+
+
+# Slot 2 is Any because prefetch_related has a single _PrefetchedQuerySetT
+# TypeVar it must unify across all heterogeneous Prefetch args at the call
+# site; any concrete queryset type here breaks that unification. The Any
+# is an artifact of django-stubs' API design, not lost information.
+def media_prefetch() -> Prefetch[str, Any, str]:
+    """Return a Prefetch for ready EntityMedia with assets."""
+    return Prefetch(
+        "entity_media",
+        queryset=EntityMedia.objects.filter(
+            asset__status="ready",
+        ).select_related("asset", "asset__uploaded_by"),
+        to_attr="all_media",
+    )
 
 
 def all_media(entity: models.Model) -> list[EntityMedia]:

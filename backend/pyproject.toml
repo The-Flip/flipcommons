@@ -136,16 +136,21 @@ ignore_imports = [
     "apps.core.middleware.sentry_scope -> apps.accounts.models",
 ]
 
-# Media internals (storage/processing/schemas/models) are peer-isolated from
-# the citation/provenance data apps. The one sanctioned crack is
-# media.models -> provenance.models for ClaimControlledModel.
+# Media internals (selectors/processing/storage/schemas/helpers/models) are
+# peer-isolated from the citation/provenance data apps. The one sanctioned crack
+# is media.models -> provenance.models for ClaimControlledModel; because this is
+# a forbidden contract (indirect imports counted), the ignore_imports below
+# severs that edge for every source — including selectors/helpers, which reach
+# media.models transitively.
 [[tool.importlinter.contracts]]
 name = "Media internals do not reach into the data apps"
 type = "forbidden"
 source_modules = [
-    "apps.media.storage",
+    "apps.media.selectors",
     "apps.media.processing",
+    "apps.media.storage",
     "apps.media.schemas",
+    "apps.media.helpers",
     "apps.media.models",
 ]
 forbidden_modules = [
@@ -392,9 +397,12 @@ source_modules = ["apps.claim_ingest.patches"]
 forbidden_modules = ["apps.claim_ingest.apply"]
 
 # Media internal layering: a vertical stack from constants/models at the bottom
-# up to the api composition layer. This also enforces that media.api is a leaf
-# (nothing below it imports it). The cross-app media.models -> provenance.models
-# crack is governed by the media peer-isolation contract above, not here.
+# up to the api composition layer. `selectors` sits above the
+# storage/schemas/helpers peer-group because it composes storage + schemas into
+# wire schemas, which the peer-isolated `helpers` tier may not do. This also
+# enforces that media.api is a leaf (nothing below it imports it). The cross-app
+# media.models -> provenance.models crack is governed by the media peer-isolation
+# contract above, not here.
 [[tool.importlinter.contracts]]
 name = "Media internal layers"
 type = "layers"
@@ -402,6 +410,7 @@ containers = ["apps.media"]
 layers = [
     "api",
     "authz",
+    "selectors",
     "processing | storage | schemas | helpers",
     "models",
     "constants",

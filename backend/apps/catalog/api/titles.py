@@ -36,7 +36,7 @@ from apps.core.schemas import (
     RateLimitErrorSchema,
     ValidationErrorSchema,
 )
-from apps.media.helpers import all_media
+from apps.media.helpers import all_media, media_prefetch
 from apps.media.models import EntityMedia
 from apps.media.schemas import MediaRenditionsSchema
 from apps.media.storage import build_public_url, build_storage_key
@@ -89,7 +89,7 @@ from .helpers import (
     serialize_credit,
     serialize_title_machine,
 )
-from .images import extract_image_urls, fetch_model_media_map, media_prefetch
+from .images import extract_image_urls, fetch_model_media_map
 from .machine_models import (
     ModelDetailSchema,
     _model_detail_qs,

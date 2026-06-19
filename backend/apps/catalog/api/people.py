@@ -30,8 +30,9 @@ from apps.core.schemas import (
     RateLimitErrorSchema,
     ValidationErrorSchema,
 )
-from apps.media.helpers import all_media
+from apps.media.helpers import all_media, media_prefetch
 from apps.media.schemas import UploadedMediaSchema
+from apps.media.selectors import serialize_uploaded_media
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
@@ -56,8 +57,6 @@ from .entity_list import _apply_list_q, paginated_list_response
 from .images import (
     extract_image_urls,
     fetch_model_media_map,
-    media_prefetch,
-    serialize_uploaded_media,
 )
 from .rich_text import describe
 from .schemas import (
