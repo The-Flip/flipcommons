@@ -242,51 +242,48 @@ source_modules = [
 forbidden_modules = ["apps.provenance.test_factories"]
 ignore_imports = ["apps.*.tests.** -> apps.provenance.test_factories"]
 
-# The api/ layer is a leaf: it composes the domain layers below into HTTP
-# endpoints, so the domain must not import back into it. Source is enumerated
-# (forbidden cannot be a descendant of source) — this list also documents what
-# counts as catalog's domain layer. Catalog has a multi-module api/ package; the
-# core api/ package gets its own leaf contract below, and the remaining apps are
-# single api.py modules that are leaves by construction. Domain logic stranded
-# under catalog/api/ is baselined for burn-down (see docs/AppBoundaries.md).
+# Catalog's whole internal stack as one exhaustive layered contract: api/admin/
+# management on top (leaf consumers — the domain must not import them), down
+# through the read/claim/signal tier, the alias registry, the walk/cache/service
+# tier, to models/naming/authz at the bottom. `exhaustive = true` requires every
+# catalog submodule to appear as a layer (or in exhaustive_ignores): a new module
+# left unplaced fails the build, closing the gaps the old enumerated "api is a
+# leaf" forbidden left (it never covered _walks / _alias_registry / admin). This
+# subsumes that contract AND documents the domain layering in one place. Catalog's
+# top-level graph is acyclic, which is what makes a clean layer order possible —
+# core's is not (see "The core api layer is a leaf" below).
 [[tool.importlinter.contracts]]
-name = "The api layer is a leaf"
-type = "forbidden"
-allow_indirect_imports = "true"
-source_modules = [
-    "apps.catalog.models",
-    "apps.catalog.services",
-    "apps.catalog.resolve",
-    "apps.catalog.claims",
-    "apps.catalog.cache",
-    "apps.catalog.naming",
-    "apps.catalog.authz",
-    "apps.catalog.signals",
+name = "Catalog internal layers"
+type = "layers"
+exhaustive = true
+exhaustive_ignores = ["apps", "migrations", "tests"]
+containers = ["apps.catalog"]
+layers = [
+    "api | admin | management",
+    "claims | resolve | signals",
+    "_alias_registry",
+    "_walks | cache | services",
+    "models | naming | authz",
 ]
-forbidden_modules = ["apps.catalog.api"]
 
 # The ingest system (apps.claim_ingest) is the bulk catalog write path — a
-# top-level consumer, not a dependency. The catalog domain must not import it.
-# The source list omits apps.catalog.management on purpose: the ingest commands
-# (manage.py ingest_patches / pull_patches) live there and legitimately drive the
-# pipeline (and catalog's own cache invalidation) as the orchestration entrypoint.
+# top-level consumer, not a dependency. The whole catalog domain must not import
+# it; the sole sanctioned edge is the ingest_patches / pull_patches management
+# commands, which drive the pipeline (with catalog cache invalidation) as the
+# orchestration entrypoint. Whole-app source + an ignore for that one edge is
+# both more concise and more complete than enumerating the domain modules — it
+# now catches a new coupling from ANY catalog submodule, not just the listed ones.
 [[tool.importlinter.contracts]]
 name = "Catalog domain does not import the ingest system"
 type = "forbidden"
 allow_indirect_imports = "true"
-source_modules = [
-    "apps.catalog.models",
-    "apps.catalog.claims",
-    "apps.catalog.resolve",
-    "apps.catalog.services",
-    "apps.catalog.cache",
-    "apps.catalog.naming",
-    "apps.catalog.signals",
-    "apps.catalog.authz",
-    "apps.catalog.api",
-]
+source_modules = ["apps.catalog"]
 forbidden_modules = ["apps.claim_ingest"]
-ignore_imports = ["apps.catalog.*.tests.** -> apps.claim_ingest.**"]
+ignore_imports = [
+    "apps.catalog.management.** -> apps.claim_ingest.**",
+    "apps.catalog.tests.** -> apps.claim_ingest.**",
+    "apps.catalog.*.tests.** -> apps.claim_ingest.**",
+]
 
 # The forward direction (mirror of the contract above): the ingest system must
 # not reach back into the catalog domain. claim_ingest depends only on core,
@@ -359,7 +356,12 @@ forbidden_modules = [
     "apps.catalog.authz",
 ]
 
-# core has a multi-module api/ package (like catalog); the same leaf rule applies.
+# Core's api/ is also a leaf, but — unlike catalog — it CANNOT be expressed as a
+# clean layered contract: core's top-level graph has cycles (models ↔ markdown,
+# and models ↔ wikilinks ↔ autocomplete), so no valid layer order exists. It
+# stays an enumerated forbidden contract: the source lists core's importable
+# modules, each forbidden from importing core.api (forbidden can't be a descendant
+# of its source, which is why core/ can't simply be the container here).
 [[tool.importlinter.contracts]]
 name = "The core api layer is a leaf"
 type = "forbidden"
@@ -402,12 +404,13 @@ forbidden_modules = ["apps.claim_ingest.apply"]
 [[tool.importlinter.contracts]]
 name = "Media internal layers"
 type = "layers"
+containers = ["apps.media"]
 layers = [
-    "apps.media.api",
-    "apps.media.authz",
-    "apps.media.processing | apps.media.storage | apps.media.schemas | apps.media.helpers",
-    "apps.media.models",
-    "apps.media.constants",
+    "api",
+    "authz",
+    "processing | storage | schemas | helpers",
+    "models",
+    "constants",
 ]
 
 [tool.mypy]

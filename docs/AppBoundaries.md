@@ -1,80 +1,81 @@
 # Django App Boundaries
 
-This document defines the dependency rules and responsibilities of this project's Django apps.
+This document is the conceptual map of the project's app dependency rules. The executable rules — every contract, its exact module lists, baselines and mechanical rationale — live in [`backend/pyproject.toml`](../backend/pyproject.toml) under `[tool.importlinter]`; this doc explains the architecture they enforce, not their line-by-line detail.
 
 ## Apps
 
 - `core`: shared foundation layer used by the rest of the project
 - `accounts`: authentication and account-specific behavior
 - `catalog`: the pinball business/domain/data model
-- `claim_edit`: the interactive catalog write path — validates scalar fields, writes claims, attaches citations and triggers resolution.
-- `claim_ingest`: the bulk catalog write path — ingests YAML data patches and applies them in batches.
+- `claim_edit`: interactive catalog writes — validates scalar fields, writes claims, attaches citations, triggers resolution
+- `claim_ingest`: bulk catalog writes — ingests YAML data patches and applies them in batches
 - `citation`: citation-source metadata and evidence objects that can be cited
-- `provenance`: claims, source, and audit system
+- `provenance`: claims, source and audit system
 - `media`: media upload and hosting infrastructure
-- `kiosk`: kiosk display configuration (operational settings, not catalog claims)
+- `kiosk`: museum kiosk display configuration
 
-## Dependencies
+## The dependency spine
+
+Most apps form a single linear stack — higher tiers may import lower, never the reverse (the `App layer tiers` contract):
 
 ```text
-        kiosk | media.api
-____________________________
-           catalog
-____________________________
-          claim_edit
-____________________________
-provenance | media.{models,storage,processing,schemas} | citation
-____________________________
-            accounts
-____________________________
-             core
+kiosk         museum kiosk config
+  │
+catalog       the domain
+  │
+claim_edit    interactive writes
+  │
+provenance    claims / audit
+  │
+citation      citable sources
+  │
+accounts      auth
+  │
+core          foundation — depends on nothing
 ```
 
-`claim_ingest` is not shown in the spine above: it is a top-level consumer driven by management commands, deliberately kept _out_ of the layer order so `catalog → claim_ingest` stays forbidden (see the two ingest contracts below). `claim_edit` _is_ in the spine — catalog imports it, so it sits one tier below catalog and above provenance.
+The edges that carry meaning beyond "higher imports lower":
 
-- `core` is the foundation layer and depends on nothing
-- `accounts` depends only on `core`; `core` must not depend on `accounts`
-- `citation`, `provenance`, and `media.{storage,processing,schemas}` are peer-isolated (must not depend on each other). `media.models` is permitted one targeted dependency on `provenance.models` for `ClaimControlledModel` only — `media_attachment` is a claim field, so any `MediaSupportedModel` entity is by construction a `ClaimControlledModel`; the inheritance encodes that structural commitment as a compile-time guarantee. The rest of `media.models` (concrete `MediaAsset` / `MediaRendition` / `EntityMedia`) does not reach into provenance.
-- `provenance` depends on `citation` but `citation` does not depend on `provenance`
-- `catalog` uses the full middle tier
-- `media.api` depends on `catalog` and `provenance`: upload handlers write `media_attachment` claims through catalog's relationship-claim registry and persist `Claim` rows directly. This is a structural consequence of `media_attachment` being a catalog-registered relationship type whose target happens to live in media; splitting it out would require extracting the whole relationship-claim machinery into a neutral app
-- `kiosk` depends on `catalog` (FK to `Title`); audit FKs reference `AUTH_USER_MODEL` via Django core, not `accounts.UserProfile`. Kiosk configs are operational settings, not claims-controlled — the app deliberately stays out of `provenance`
+- `core` depends on nothing; `accounts` depends only on `core` (so `core` must not import `accounts`).
+- `provenance` imports `citation`, not the reverse — they are adjacent tiers, not peers.
+- `catalog` uses the full middle tier and sits one above `claim_edit`, whose interactive write path catalog's HTTP edit endpoints call into.
+
+Two apps sit **outside** the linear spine:
+
+- **`media`** has its own internal stack (`Media internal layers`): `constants → models → {storage|processing|schemas|helpers} → authz → api`. Its `api` tier consumes `catalog` and `provenance` (upload handlers write `media_attachment` claims), so it is effectively a top-level consumer like `kiosk`. Its lower tiers are peer-isolated from `provenance`/`citation` — they must not import them — with one sanctioned edge, `media.models → provenance.models`: `media_attachment` is a claim field, so any `MediaSupportedModel` is structurally a `ClaimControlledModel`, and the inheritance encodes that as a compile-time guarantee. The reverse direction — data apps importing `media` — is forbidden outright.
+- **`claim_ingest`** is the bulk write path: a management-command-driven consumer kept deliberately out of the spine so `catalog → claim_ingest` stays forbidden (sealed in both directions). It and `claim_edit` are mutually independent — the two claim-write surfaces share no code, only the provenance/core substrate they both write through.
+
+`kiosk` references `catalog` (FK to `Title`); its audit FKs use `AUTH_USER_MODEL` via Django core, not `accounts.UserProfile`. Kiosk configs are operational settings, not claims, so the app stays out of `provenance`.
+
+## Intra-app invariants
+
+Within an app, a few internal boundaries are enforced (named contracts in `pyproject.toml` carry the module lists):
+
+- **The api/schema layer is a leaf.** Domain code (models, services, …) must not import back up into `api/`. Catalog expresses this as `Catalog internal layers`, an _exhaustive_ layered contract over catalog's whole acyclic internal stack — a new submodule left unplaced fails the build. Core can _not_ be layered (its top-level graph has cycles: `models ↔ markdown`, `models ↔ wikilinks ↔ autocomplete`), so it stays the enumerated `The core api layer is a leaf` forbidden contract. The remaining apps are single `api.py` modules, leaves by construction.
+- **Domain models do not import the api/schema layer** — a model reaching up into HTTP serialization is a dependency inversion.
+- **The generic resolver core stays catalog-agnostic.** `catalog/resolve/{_entities,_helpers,_claim_values}` drive entirely off claim-field introspection and name no concrete model; the contract forbids them from importing the catalog domain so that property can't silently regress.
+- **The patch front end does not depend on the ingest back end** — `claim_ingest.patches` lowers YAML to an `IngestPlan` that `claim_ingest.apply` executes; new patch behavior belongs against that IR, not as a fork of the back end.
+- **Production code does not import test factories** — `test_factories` is test-only scaffolding and must not enter the runtime path.
 
 ## Preferred patterns over widening imports
 
-When strict app boundaries make integration awkward, prefer these patterns over widening imports:
+When strict boundaries make integration awkward, prefer these over widening imports:
 
-- generic foreign keys and content types for cross-domain references where appropriate
-- registration hooks, where a generic subsystem lets another app register behavior without becoming coupled to it
+- generic foreign keys and content types for cross-domain references
+- registration hooks, where a generic subsystem lets another app register behavior without coupling to it
 - serialized or value-level contracts rather than direct model imports
-- orchestration in higher-level entrypoints, such as API composition or management commands, rather than deep lateral imports
+- orchestration in higher-level entrypoints (API composition, management commands) rather than deep lateral imports
 
-The important rule is: solve integration by designing a boundary, not by punching through one.
+The rule: solve integration by designing a boundary, not by punching through one.
 
 ## Exception: Page API endpoints
 
-Page API endpoints (see [ApiDesign.md § Two API types](ApiDesign.md#two-api-types)) are expected to cross app layers. A page endpoint's job is to return one route's full rendering payload, which routinely means reading from several apps and returning a composed page model.
-
-A page endpoint lives in the app that owns the _page concept_, not the app that owns the most data it reads. The title detail page is about a title, so `/api/pages/title/{slug}` lives in catalog even though it reads claims from provenance and attachments from media. The user profile page is about a user, so `/api/pages/user/{username}/` lives in accounts even though it reads ChangeSets and Claims from provenance.
-
-The rules above apply to the non-page surface (models, services, helpers). Page endpoints are an intentional carve-out and should not be refactored to obey peer isolation at the cost of the page-composition pattern.
+Page API endpoints (see [ApiDesign.md § Two API types](ApiDesign.md#two-api-types)) are expected to cross app layers: a page endpoint returns one route's full rendering payload, which routinely reads from several apps. It lives in the app that owns the _page concept_, not the app that owns the most data it reads — `/api/pages/title/{slug}` lives in catalog though it reads claims from provenance and attachments from media; `/api/pages/user/{username}/` lives in accounts though it reads from provenance. These are an intentional carve-out (`ignore_imports` entries) and should not be refactored to obey peer isolation at the cost of the page-composition pattern; the peer-isolation rules apply to the non-page surface (models, services, helpers).
 
 ## Enforcement
 
-These rules are enforced statically by [import-linter](https://import-linter.readthedocs.io/). The contracts live in [`backend/pyproject.toml`](../backend/pyproject.toml) under `[tool.importlinter]` and run as part of `make lint` (via `scripts/lint`) and as a pre-commit hook. Run them directly with `cd backend && uv run lint-imports`.
+The rules above are enforced statically by [import-linter](https://import-linter.readthedocs.io/). The contracts — with their exact module lists and per-rule rationale — live in [`backend/pyproject.toml`](../backend/pyproject.toml) under `[tool.importlinter]`. They run via `make lint` (through `scripts/lint`) and as a pre-commit hook; run them directly with `cd backend && uv run lint-imports`.
 
-The tiers above map to a `layers` contract; the media peer-isolation rules map to two `forbidden` contracts (one per direction). The `media.models -> provenance.models` exception and the page-API carve-out are expressed as `ignore_imports` entries, as is the test surface — tests are exempt from boundary rules, the same way the frontend ESLint config gives test files vendor-boundary-only treatment.
+Tests are exempt from the boundary rules (an `ignore_imports` pattern), the same way the frontend ESLint config gives test files vendor-boundary-only treatment.
 
-Beyond the cross-app tiers, several intra-app invariants are enforced:
-
-- **Domain models do not import the api/schema layer** — a model reaching up into HTTP serialization is a dependency inversion.
-- **The api layer is a leaf** — the domain (models, services, resolve, …) must not import back into `api/`. Catalog and core both have multi-module `api/` packages with their own leaf contracts; the remaining apps are single `api.py` modules and leaves by construction.
-- **Production code does not import test factories** — `test_factories` is test-only scaffolding and must not enter the runtime path.
-- **Catalog domain does not import the ingest system** — `claim_ingest` is the bulk write path, a top-level consumer. The rest of catalog must not import it; only the `ingest_patches` / `pull_patches` management commands (which stay in `catalog/management/commands/`) may, as the orchestration entrypoint — they compose the pipeline with catalog cache invalidation, the one coupling that keeps `claim_ingest` itself free of catalog.
-- **Ingest system does not import the catalog domain** — the forward mirror of the rule above: `claim_ingest` depends only on core, provenance and citation. A single whole-app `forbidden_modules = ["apps.catalog"]` catches a new coupling to **any** catalog package — `catalog.api` included — not only the burn-down baselines. The blanket forbid is possible because `claim_ingest` is a separate top-level app, not a descendant of `catalog`, so the source needn't be enumerated to dodge import-linter's descendant rule (the reverse rule above must still enumerate its source, to exclude `catalog.management`). The catalog imports were a `# BASELINE` list severed step by step (the model-type bound and the resolution dispatch were the last two); having reached **zero**, the boundary was sealed and the ingest system moved to its own app, `apps.claim_ingest`.
-- **Claim-write engines are mutually independent** — `claim_edit` (interactive) and `claim_ingest` (bulk) are the two claim-write surfaces below catalog and above provenance: `claim_edit` in the spine, consumed by catalog's HTTP edit endpoints; `claim_ingest` out of the spine behind the two ingest forbids, driven by management commands. They share no code — only the provenance/core substrate both write through — so two `forbidden` contracts (`claim_edit ⊄ claim_ingest` and `claim_ingest ⊄ claim_edit`) enforce "never each other" in both directions, which the layer spine cannot (it covers neither, since `claim_ingest` is out of it). Both are media-free substrate, so both are sources on the **Data apps do not depend on media** forbid. The Step-0 contract that guarded `catalog/api/claim_write.py` while it still lived under catalog retired when the module moved to `apps.claim_edit`: the spine now carries the same `claim_edit ⊄ catalog` guarantee one tier up, while permitting `catalog → claim_edit`.
-- **Generic resolver core does not import the catalog domain** — the read-side analog of the claim-write rule, and the first enforced step of [ModelDrivenClaimResolution.md](plans/model_driven_metadata/ModelDrivenClaimResolution.md). Resolution materializes claims into denormalized fields and through-tables, and its Tier-1 core — `catalog/resolve/_entities.py` (scalar/bulk projection), `_helpers.py` (coercion, FK, constraints) and `_claim_values.py` (read-side payload TypedDicts) — is already fully model-driven: it names no concrete model, driving entirely off `get_claim_fields`/`_meta` introspection. The contract forbids these three modules from importing the catalog domain so that property can't silently regress and the eventual hoist to the substrate stays a near-trivial move. It is green with no baselines — a ratchet on what is already true, not the model-driven resolver engine (which awaits the deferred relationship-declaration vocabulary). The relationship/dispatch resolvers (`_relationships`, `_dispatch`, `__init__`) still bind `MachineModel` and are deliberately out of scope; the dispatch seam is restructured by [ModelDrivenClaimWrite.md](plans/model_driven_metadata/ModelDrivenClaimWrite.md)'s "Invert resolution" step.
-- **Patch front end does not depend on the ingest back end** — the patch system lowers YAML to an `IngestPlan` (the IR); `claim_ingest.patches` must not reach into `claim_ingest.apply`. See [DataArchitecture.md](DataArchitecture.md).
-- **Media internal layering** — `constants < models < {storage|processing|schemas|helpers} < authz < api`, a `layers` contract that also keeps `media.api` a leaf.
-
-Several contracts carry a `# BASELINE` block listing pre-existing violations that predate enforcement: upward imports in `App layer tiers` (e.g. `provenance -> catalog` deferred imports, `core -> accounts` leaks) and domain-logic-stranded-under-`api/` in `The api layer is a leaf` (the `soft_delete` helpers consumed by catalog's ingestion layer). Each baseline is a burn-down list: fix the underlying import and delete the line. Do not add to one. import-linter errors on an unmatched `ignore_imports` entry, so a baseline left stale after its import is gone fails the build until deleted — that error is the burn-down's forcing function.
+Some contracts carry a `# BASELINE` block: pre-existing violations that predate enforcement (currently a few upward imports in `App layer tiers`). Each is a burn-down list — fix the underlying import and delete the line; never add to one. import-linter errors on an unmatched non-wildcard `ignore_imports` entry, so a baseline left stale after its import is gone fails the build until deleted — that error is the burn-down's forcing function.
