@@ -21,7 +21,6 @@ from ..engine.entity_api.delete.schemas import (
     DeletePreviewBaseSchema,
     DeleteResponseSchema,
     SoftDeleteBlockedSchema,
-    TaxonomyDeletePreviewSchema,
 )
 from ..engine.schemas import (
     ClaimPatchSchema,
@@ -51,7 +50,6 @@ __all__ = [
     "LastModifiedDetailSchema",
     "LinkableDetailSchema",
     "SoftDeleteBlockedSchema",
-    "TaxonomyDeletePreviewSchema",
     "YearBoundsSchema",
 ]
 

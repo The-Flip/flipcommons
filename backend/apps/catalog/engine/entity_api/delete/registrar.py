@@ -40,8 +40,8 @@ from ...schemas import EntityRef
 from .schemas import (
     AlreadyDeletedSchema,
     DeleteResponseSchema,
+    EntityDeletePreviewSchema,
     SoftDeleteBlockedSchema,
-    TaxonomyDeletePreviewSchema,
 )
 from .soft_delete import (
     SoftDeleteBlockedError,
@@ -92,7 +92,7 @@ def register_entity_delete_restore[
 
     def _delete_preview(
         request: HttpRequest, public_id: str
-    ) -> TaxonomyDeletePreviewSchema:
+    ) -> EntityDeletePreviewSchema:
         obj = get_object_or_404(
             model_cls.objects.active(), **{public_id_field: public_id}
         )
@@ -114,7 +114,7 @@ def register_entity_delete_restore[
             if parent is not None:
                 parent_ref = EntityRef(name=parent.name, public_id=parent.public_id)
 
-        return TaxonomyDeletePreviewSchema(
+        return EntityDeletePreviewSchema(
             name=obj.name,
             slug=obj.slug,
             parent=parent_ref,
@@ -127,7 +127,7 @@ def register_entity_delete_restore[
     router.get(
         "/{path:public_id}/delete-preview/",
         auth=django_auth,
-        response=TaxonomyDeletePreviewSchema,
+        response=EntityDeletePreviewSchema,
         tags=["private"],
     )(_delete_preview)
 

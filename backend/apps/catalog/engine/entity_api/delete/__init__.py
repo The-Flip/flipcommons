@@ -12,8 +12,8 @@ from .schemas import (
     BlockingReferrerSchema,
     DeletePreviewBaseSchema,
     DeleteResponseSchema,
+    EntityDeletePreviewSchema,
     SoftDeleteBlockedSchema,
-    TaxonomyDeletePreviewSchema,
 )
 from .soft_delete import (
     BlockingReferrer,
@@ -31,10 +31,10 @@ __all__ = [
     "BlockingReferrerSchema",
     "DeletePreviewBaseSchema",
     "DeleteResponseSchema",
+    "EntityDeletePreviewSchema",
     "SoftDeleteBlockedError",
     "SoftDeleteBlockedSchema",
     "SoftDeletePlan",
-    "TaxonomyDeletePreviewSchema",
     "count_entity_changesets",
     "execute_soft_delete",
     "plan_soft_delete",

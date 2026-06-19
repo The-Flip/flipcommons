@@ -81,7 +81,18 @@ class DeletePreviewBaseSchema(Schema):
     blocked_by: list[BlockingReferrerSchema] = []
 
 
-class TaxonomyDeletePreviewSchema(DeletePreviewBaseSchema):
+class EntityDeletePreviewSchema(DeletePreviewBaseSchema):
+    """The registrar's generic delete-preview body.
+
+    Built inline by :func:`register_entity_delete_restore` for every entity
+    routed through it — flat (Manufacturer, CorporateEntity) and hierarchical
+    (Theme, Location, …) alike. Domain-neutral in shape: ``parent`` is a
+    generic entity ref and ``active_children_count`` a generic tree count,
+    exactly as generic as :class:`DeleteResponseSchema`, so it stays
+    engine-side. Entity-specific previews that need bespoke blocking semantics
+    (Model / Person / Title) hand-roll their own routes and schemas domain-side.
+    """
+
     parent: EntityRef | None = None
     # 0 on leaf entities; non-zero only for parents (tech-gen, display-type)
     # whose active children would block the delete.
