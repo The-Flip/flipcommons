@@ -132,6 +132,26 @@ claims:
 - **Remove** drops a member exactly like an FK member: `remove: { manufacturer_alias: [Stern Inc] }`, attributed to the source holding the membership claim.
 - **No `note:` or `cite:` needed.** Aliases and abbreviations don't require `note:`/`cite:`. It fine for them to ride in a Change Set whose `note:`/`cite:` supports other things.
 
+## Credits
+
+A credit attaches a `{person, role}` pair to a model or series. Each member is a **single-key mapping** under `credit:` — the key is the person public_id, the value is the role (a `credit-role`) public_id (see [DataPatches.md → Credits](DataPatches.md#credits) for the full syntax). Authoring guidance:
+
+```yaml
+claims:
+  - model.medieval-madness:
+      cite: ipdb:4032
+      credit:
+        - brian-eddy: design
+        - dan-forden: software
+        - dan-forden: sound # one person, two roles → two credits
+```
+
+- **Cite the credit.** Unlike aliases, credits are substantive facts and should carry evidence. An entry-level `cite:` attaches to every credit in the entry; if different credits come from different sources, split them across `changesets:` items, each with its own `cite:`. The pinball cataloguing standard is IPDB's credit block — cite it (`ipdb:NNNN`).
+- **Person and role must resolve.** Both are public_ids that must already exist — in the seed, an earlier patch, or earlier in this same patch. A new `credit-role` is creatable with `create: true` (like `tag`/`theme`); create unfamiliar people the same way before crediting them.
+- **One person, many roles.** Repeat the person across list items — `dan-forden: software` and `dan-forden: sound` are two distinct credits, not a duplicate. The duplicate guard only rejects the _same_ `{person, role}` pair twice in one entry.
+- **Series vs model.** Put a credit on the `series.*` entry only when it genuinely applies to the series as a whole (e.g. an original designer credited across the line); a credit specific to one machine belongs on its `model.*` entry.
+- **Remove** drops a credit like any other member: `remove: { credit: [{ john-youssi: art }] }` (or the block form), attributed to the source holding the claim.
+
 ## Validation process
 
 How to validate your changes:

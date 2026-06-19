@@ -178,6 +178,57 @@ claims:
 
 The field key is the **literal registered namespace** (`manufacturer_alias`, `abbreviation`); members are bare strings, not public_ids (alias values case-fold for identity, original case preserved for display; abbreviations are verbatim). Aliases and abbreviations need no `note:`/`cite:`. `remove:` drops a member the same way it drops an FK member.
 
+### Credits
+
+A **credit** — "person X did role Y on this model or series" — is the catalog's one **multi-key** relationship: its identity is `{person, role}`, two FK keys. A credit member is written as a **single-key mapping** `<person-public_id>: <role-public_id>` — one line per credit, no braces. In YAML a list item `- brian-eddy: design` parses to the dict `{brian-eddy: design}`, so the **key is the person** public_id and the **value is the role** (a `credit-role`) public_id. The `credit:` value is a flat list of these, so a person can repeat — each list item is one `{person, role}` claim:
+
+```yaml
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      cite: ipdb:4032
+      credit:
+        - brian-eddy: design
+        - john-youssi: art
+        - dan-forden: software
+        - dan-forden: sound # same person, second role → distinct claim
+```
+
+An entry-level `cite:`/`note:` rides each credit claim exactly as it does a scalar or FK claim. (The inline `[[cite:N]]` footnote form is markdown-field-only and doesn't apply — a credit carries no text.) Both the person and the role must already exist (in the seed, an earlier patch, or earlier in this same patch); a `credit-role` is creatable with `create: true` like any other taxonomy value.
+
+> **Quote slugs YAML would read as non-strings.** A person or role slug that looks like a YAML boolean, null or number — `off`, `no`, `null`, `1979` — parses to a bool/null/int rather than a string and is rejected (loudly, never silently). Quote it: `- some-designer: "no"`.
+
+Credits work on `series.*` entries as well as `model.*`:
+
+```yaml
+claims:
+  - series.world-cup-soccer:
+      credit:
+        - pat-lawlor: design
+```
+
+**Same-patch create.** Either slot may reference an entity created earlier in the same patch — declare the `person` (or `credit-role`) above, then credit it below:
+
+```yaml
+claims:
+  - person.jane-newcomer:
+      create: true
+      name: Jane Newcomer
+  - model.some-game:
+      credit:
+        - jane-newcomer: art # resolves to the create above
+```
+
+**Remove** drops a credit member like any other relationship member — same single-key mapping, attributed to the source holding the membership claim:
+
+```yaml
+claims:
+  - model.medieval-madness:
+      remove:
+        credit:
+          - john-youssi: art
+```
+
 ### Notes & citations
 
 Write a `note:` about the changeset and `cite:` citations:
@@ -330,10 +381,6 @@ On localhost, the simplest undo is restoring a pre-apply snapshot (see [DataPatc
 
 ## Limitations
 
-We've been building the patch system on an as-needed basis. These haven't been implemented yet.
-
 - **No same-patch reassign-then-delete** — a `delete:`'s referrer check reads live DB state, so a reference reassigned earlier in the _same_ patch isn't yet visible; reassign in an earlier numbered patch, then delete.
-- Relationship `remove:` covers **single-identity** relationships — single-FK members (`tag`, `location`, `theme`) and single string members (aliases, `abbreviation`). Multi-key relationships (e.g. credits) aren't yet removable via patch.
-- **Single-identity relationships are writable** — both single-FK members (`tag`, `location`, `theme`, …, whose member is an FK to another entity) and single **string** members (`manufacturer_alias` and the other alias namespaces, `abbreviation`), whose member is a bare string. Alias values **case-fold** for identity (the original case is preserved for display); abbreviations are stored verbatim. **Multi-key** relationships (e.g. credits, person + role) remain unsupported.
 - **No forward same-patch references.** A reference — an FK on a `create` or edit, a location `parent`, or a relationship member (`tag`, `location`, …) — resolves against the seed, an earlier patch, or an entry **earlier in this same patch**. What it can't yet do is point _forward_ at an entry declared **below** it: declare the target (manufacturer, title, tag, parent location, …) above its reference, or in an earlier patch. (Citing a `sources:`-declared website root in the same patch always works regardless of order — the source block is processed before claims.)
 - **Parent hierarchies stay acyclic.** The self-referential parent relationships (`theme_parent`, `gameplay_feature_parent`) reject a self-link or a cycle, same as the in-app editor. The check is conservative: it weighs the patch's added edges against the current resolved graph and ignores `remove:`, so a patch that both detaches and re-attaches around the same edge may be over-rejected — split it across patches.

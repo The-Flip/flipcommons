@@ -201,11 +201,18 @@ def fingerprint(data: JsonBody) -> str:
 # ---------------------------------------------------------------------------
 
 
+# One parsed relationship member: a bare public_id/string (tag, location, alias,
+# abbreviation) or a one-key ``{person: role}`` mapping for credit, the lone
+# multi-key relationship. YAML can hand us any dict; the single-key invariant on
+# the mapping is enforced in the emitter (``_unpack_credit_member``), so the
+# parse layer keeps members uniformly loose rather than encoding a shape it
+# can't fully express in the type system.
+type RelationshipMemberValue = str | dict[str, str]
 # A ``remove:`` directive's shape: relationship namespace → member values to
-# drop. (Both keys and members are bare ``str`` — a member is an FK public_id
-# (tag, location) or a bare string (alias, abbreviation); the catalog keeps both
-# uniformly untyped, so this alias names the structure without enforcing them.)
-type RelationshipMembers = dict[str, list[str]]
+# drop. (Keys are bare ``str``; members are :data:`RelationshipMemberValue` — the
+# catalog keeps both uniformly untyped, so this alias names the structure without
+# enforcing them.)
+type RelationshipMembers = dict[str, list[RelationshipMemberValue]]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -366,10 +373,14 @@ def _parse_retract(raw_fields: JsonBody, ref: str) -> list[str]:
 
 def _parse_remove(raw_fields: JsonBody, ref: str) -> RelationshipMembers:
     raw = raw_fields.get("remove", {})
+    # A member is a bare string (single-key relationship) or a one-key mapping
+    # (the multi-key credit relationship — ``{person: role}``). Shape is checked
+    # shallowly here (``str`` or ``dict``); the emitter's ``_unpack_credit_member``
+    # enforces the one-key string→string invariant on the mapping.
     if not isinstance(raw, dict) or not all(
         isinstance(namespace, str)
         and isinstance(members, list)
-        and all(isinstance(m, str) for m in members)
+        and all(isinstance(m, str | dict) for m in members)
         for namespace, members in raw.items()
     ):
         raise PatchError(
