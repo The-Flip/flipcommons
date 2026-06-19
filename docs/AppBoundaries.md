@@ -51,7 +51,7 @@ Two apps sit **outside** the linear spine:
 
 Within an app, a few internal boundaries are enforced (named contracts in `pyproject.toml` carry the module lists):
 
-- **The api/schema layer is a leaf.** Domain code (models, services, …) must not import back up into `api/`. Catalog expresses this as `Catalog internal layers`, an _exhaustive_ layered contract over catalog's whole acyclic internal stack — a new submodule left unplaced fails the build. Core can _not_ be layered (its top-level graph has cycles: `models ↔ markdown`, `models ↔ wikilinks ↔ autocomplete`), so it stays the enumerated `The core api layer is a leaf` forbidden contract. The remaining apps are single `api.py` modules, leaves by construction.
+- **The api/schema layer is a leaf.** Domain code (models, services, …) must not import back up into `api/`. Both catalog and core express this as an _exhaustive_ layered contract over the app's whole acyclic internal stack (`Catalog internal layers`, `Core internal layers`) — a new submodule left unplaced fails the build. The remaining apps are single `api.py` modules, leaves by construction.
 - **Domain models do not import the api/schema layer** — a model reaching up into HTTP serialization is a dependency inversion.
 - **The generic resolver core stays catalog-agnostic.** `catalog/resolve/{_entities,_helpers,_claim_values}` drive entirely off claim-field introspection and name no concrete model; the contract forbids them from importing the catalog domain so that property can't silently regress.
 - **The patch front end does not depend on the ingest back end** — `claim_ingest.patches` lowers YAML to an `IngestPlan` that `claim_ingest.apply` executes; new patch behavior belongs against that IR, not as a fork of the back end.

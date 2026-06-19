@@ -7,7 +7,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 
 from apps.catalog.tests.conftest import make_machine_model
-from apps.core.validators import bulk_create_validated, validate_no_mojibake
+from apps.core.validators import validate_no_mojibake
 
 
 class TestValidateNoMojibake:
@@ -176,27 +176,3 @@ class TestMojibakeBatchValidation:
         valid, rejected = validate_claims_batch(pending)
         assert rejected == 0
         assert len(valid) == 1
-
-
-@pytest.mark.django_db
-class TestMojibakeBulkCreateValidated:
-    """Mojibake is rejected when using bulk_create_validated (ingestion path)."""
-
-    def test_rejects_mojibake_name_in_bulk_create(self):
-        from apps.catalog.models import MachineModel
-
-        objs = [MachineModel(name="MediÃ©val Madness", slug="medieval-madness")]
-        with pytest.raises(ValidationError, match="mojibake"):
-            bulk_create_validated(MachineModel, objs)
-
-    def test_accepts_valid_name_in_bulk_create(self):
-        from apps.catalog.models import MachineModel, Title
-
-        title = Title.objects.create(
-            name="Médiéval Madness", slug="medieval-madness-title"
-        )
-        objs = [
-            MachineModel(name="Médiéval Madness", slug="medieval-madness", title=title)
-        ]
-        created = bulk_create_validated(MachineModel, objs)
-        assert len(created) == 1

@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Collection
-from typing import Any
 
 from django.core.exceptions import ValidationError
-from django.db.models import Field, Model
-from django.utils import timezone
 
 # System-wide slug shape: lowercase ASCII letters/digits, single hyphens
 # between segments, no leading/trailing/repeated hyphens. Stricter than
@@ -21,62 +17,6 @@ SLUG_FORMAT_MESSAGE = (
     "Slug may contain only lowercase letters, digits, and hyphens, "
     "with no leading, trailing, or repeated hyphens."
 )
-
-
-def bulk_create_validated[M: Model](
-    model: type[M],
-    objs: list[M],
-    *,
-    batch_size: int | None = None,
-    ignore_conflicts: bool = False,
-    update_conflicts: bool = False,
-    update_fields: Collection[str] | None = None,
-    unique_fields: Collection[str] | None = None,
-) -> list[M]:
-    """Like ``model.objects.bulk_create()`` but runs mojibake validation first.
-
-    Checks every field that has ``validate_no_mojibake`` in its validators
-    and raises ``ValidationError`` if any value contains encoding corruption.
-    Use this in ingestion commands instead of bare ``bulk_create()``.
-    """
-    checked_fields: list[Field[Any, Any]] = [
-        f
-        for f in model._meta.get_fields()
-        if isinstance(f, Field) and validate_no_mojibake in f.validators
-    ]
-    if checked_fields:
-        for obj in objs:
-            for field in checked_fields:
-                value = getattr(obj, field.attname, None)
-                if value:
-                    validate_no_mojibake(value)
-
-    # Django's auto_now does not fire during bulk_create, so refresh
-    # updated_at manually on TimeStampedModel descendants. When
-    # update_conflicts is in use, also ensure the column is in update_fields
-    # so existing rows get the new value written back.
-    from apps.core.models import TimeStampedModel  # avoid circular import
-
-    if issubclass(model, TimeStampedModel):
-        now = timezone.now()
-        for obj in objs:
-            assert isinstance(obj, TimeStampedModel)
-            obj.updated_at = now
-        if (
-            update_conflicts
-            and update_fields is not None
-            and "updated_at" not in update_fields
-        ):
-            update_fields = [*update_fields, "updated_at"]
-
-    return model._default_manager.bulk_create(
-        objs,
-        batch_size=batch_size,
-        ignore_conflicts=ignore_conflicts,
-        update_conflicts=update_conflicts,
-        update_fields=update_fields,
-        unique_fields=unique_fields,
-    )
 
 
 def validate_no_mojibake(value: object) -> None:

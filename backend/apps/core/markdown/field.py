@@ -1,7 +1,10 @@
-"""``MarkdownField`` and the conversion path that doesn't touch ``RecordReference``.
+"""Wikilink-aware authoring↔storage conversion for ``MarkdownField`` content.
 
-Models import :class:`MarkdownField` from here (notably the
-``DescribedModel`` mixin). This module intentionally does not import
+The :class:`MarkdownField` storage class itself lives in
+:mod:`apps.core.models.fields` (the models layer); it is imported here only so
+:func:`get_markdown_fields` can introspect models for it. The conversion helpers
+below are wikilink-aware (they lazy-import :mod:`apps.core.wikilinks`) and must
+stay above the models layer. This module intentionally does not import
 :mod:`apps.core.markdown.references`, so including a ``MarkdownField`` on a
 model never drags in the reference graph.
 """
@@ -10,72 +13,15 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.forms import Textarea
 
-from apps.core.models.fields import _contribute_max_length_check
-from apps.core.validators import validate_no_mojibake as _validate_no_mojibake
+from apps.core.models.fields import MarkdownField
 
 if TYPE_CHECKING:
     from apps.core.wikilinks import LinkType
-
-DEFAULT_MARKDOWN_MAX_LENGTH = 10_000
-
-
-class MarkdownField(models.TextField[str, str]):
-    """A TextField containing markdown with ``[[<entity-type>:<public-id>]]`` links.
-
-    The system introspects models for MarkdownField instances to:
-    - Auto-discover which fields need reference syncing
-    - Auto-generate ``{field}_html`` rendered output in API responses
-
-    Includes ``validate_no_mojibake`` as a default validator to reject
-    encoding-corrupted text at the model level.
-
-    Auto-contributes a ``CHECK (char_length(field) <= max_length)``
-    constraint named ``{app}_{model}_{field}_max_length`` — see
-    :func:`apps.core.models.fields._contribute_max_length_check`.
-    """
-
-    default_validators = [_validate_no_mojibake]
-
-    def __init__(
-        self,
-        *args: Any,  # noqa: ANN401
-        max_length: int = DEFAULT_MARKDOWN_MAX_LENGTH,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> None:
-        kwargs["max_length"] = max_length
-        super().__init__(*args, **kwargs)
-
-    # Django's migration protocol; see Field.deconstruct.
-    def deconstruct(self) -> Any:  # noqa: ANN401
-        name, _path, args, kwargs = super().deconstruct()
-        return name, "django.db.models.TextField", args, kwargs
-
-    def contribute_to_class(
-        self,
-        cls: type[models.Model],
-        name: str,
-        private_only: bool = False,
-    ) -> None:
-        super().contribute_to_class(cls, name, private_only=private_only)
-        _contribute_max_length_check(self, cls, name)
-
-    def formfield(self, **kwargs: Any) -> Any:  # type: ignore[override]  # noqa: ANN401
-        # See BoundedTextField.formfield — Django's TextField.formfield()
-        # does not propagate max_length, so without this override the
-        # admin form would skip length validation and an over-cap value
-        # would surface as IntegrityError instead of ValidationError.
-        defaults: dict[str, Any] = {
-            "max_length": self.max_length,
-            "widget": Textarea(attrs={"maxlength": self.max_length}),
-        }
-        defaults.update(kwargs)
-        return super().formfield(**defaults)
 
 
 def get_markdown_fields(model: type[models.Model]) -> list[str]:
