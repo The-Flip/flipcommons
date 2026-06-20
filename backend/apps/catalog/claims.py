@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from django.contrib.contenttypes.models import ContentType
+from django.core.validators import MinValueValidator
 
 from apps.media.models import MediaSupportedModel
 from apps.provenance.claims import RelationshipClaim, build_relationship_claim
@@ -45,6 +46,7 @@ def register_catalog_relationship_schemas() -> None:
         GameplayFeature,
         Location,
         MachineModel,
+        MachineModelGameplayFeature,
         ModelAbbreviation,
         Person,
         RewardType,
@@ -80,7 +82,29 @@ def register_catalog_relationship_schemas() -> None:
         valid_subjects={MachineModel, Series},
     )
 
-    # Gameplay feature M2M on MachineModel — with optional integer count.
+    # Gameplay feature M2M on MachineModel — with optional integer count. The
+    # count's lower bound is the through-model field's own explicit
+    # MinValueValidator, so the patch adapter rejects a too-small count (0,
+    # negative) at plan time instead of deferring to the DB CHECK as an opaque
+    # IntegrityError (see ValueKeySpec.min_value). No symmetric upper bound:
+    # PositiveSmallIntegerField declares no explicit MaxValueValidator, only the
+    # backend integer range — which SQLite (the patch author's local DB) reports
+    # as the full 64-bit range, not Postgres's 32767. A meaningful max therefore
+    # isn't model-derivable here (the same reason max_length is the only string
+    # bound we pre-check), so an over-large count falls through to a Postgres range
+    # error in prod.
+    count_field = MachineModelGameplayFeature._meta.get_field("count")
+    count_min = max(
+        (
+            int(v.limit_value)
+            for v in count_field.validators
+            if isinstance(v, MinValueValidator)
+        ),
+        default=None,
+    )
+    assert count_min is not None, (
+        "MachineModelGameplayFeature.count must declare a MinValueValidator"
+    )
     register_relationship_schema(
         namespace="gameplay_feature",
         value_keys=(
@@ -96,6 +120,7 @@ def register_catalog_relationship_schemas() -> None:
                 scalar_type=int,
                 required=False,
                 nullable=True,
+                min_value=count_min,
             ),
         ),
         valid_subjects={MachineModel},

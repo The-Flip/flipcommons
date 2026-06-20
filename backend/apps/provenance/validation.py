@@ -74,6 +74,13 @@ class ValueKeySpec:
     ``CharField(max_length=...)``, so an over-long string would pass every
     local check and only fail as an ``IntegrityError`` on Postgres in prod.
     ``None`` for FK and non-length-bounded keys.
+
+    ``min_value`` (optional, int payload specs only) carries the inclusive lower
+    bound the through-model field already declares (its ``MinValueValidator``),
+    derived from the model at registration. Consumed by the data-patch adapter so
+    an out-of-range payload (e.g. ``count: 0``) fails as a clear ``PatchError`` at
+    plan time rather than deferring to the DB CHECK as an opaque ``IntegrityError``
+    when the resolver materializes the row. ``None`` for unbounded keys.
     """
 
     name: str
@@ -84,6 +91,7 @@ class ValueKeySpec:
     fk_target: FkTarget | None = None
     display_key: str | None = None
     max_length: int | None = None
+    min_value: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

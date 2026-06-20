@@ -19,6 +19,7 @@ from apps.catalog.models import (
     GameplayFeature,
     Location,
     MachineModel,
+    MachineModelGameplayFeature,
     Manufacturer,
     Person,
     Series,
@@ -749,6 +750,154 @@ claims:
     assert report.rejected == 0
     child = GameplayFeature.objects.get(slug="center-ramp")
     assert list(child.parents.values_list("slug", flat=True)) == ["ramps"]
+
+
+def _feature_counts(machine_model: MachineModel) -> dict[str, int | None]:
+    """slug → count for a model's materialized gameplay-feature through rows."""
+    return {
+        row.gameplayfeature.slug: row.count
+        for row in MachineModelGameplayFeature.objects.filter(
+            machinemodel=machine_model
+        ).select_related("gameplayfeature")
+    }
+
+
+def test_gameplay_feature_count_via_mapping(machine_model):
+    # Format A: a bare slug ⇒ count NULL, a one-key ``{slug: count}`` map ⇒ count.
+    GameplayFeature.objects.create(name="Multiball", slug="multiball")
+    GameplayFeature.objects.create(name="Flippers", slug="flippers")
+    text = f"""
+attribution: flipcommons-catalog
+description: gameplay features with a count
+claims:
+  - model.{machine_model.slug}:
+      gameplay_feature:
+        - multiball
+        - flippers: 2
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+    assert _feature_counts(machine_model) == {"multiball": None, "flippers": 2}
+
+
+def test_gameplay_feature_count_same_patch_create(machine_model):
+    # A counted member whose feature is created earlier in the same patch must
+    # still carry the count through the deferred (identity_refs) path.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - gameplay-feature.flippers:
+      create: true
+      name: Flippers
+  - model.{machine_model.slug}:
+      gameplay_feature:
+        - flippers: 2
+"""
+    report = _apply(text, patch_id="0001-flippers")
+    assert report.rejected == 0
+    assert _feature_counts(machine_model) == {"flippers": 2}
+
+
+def test_gameplay_feature_remove_by_bare_slug(machine_model):
+    # count is not part of identity, so removal stays a bare slug.
+    GameplayFeature.objects.create(name="Flippers", slug="flippers")
+    _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      gameplay_feature:
+        - flippers: 2
+""",
+        patch_id="0001-add",
+    )
+    assert _feature_counts(machine_model) == {"flippers": 2}
+    _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      remove:
+        gameplay_feature:
+          - flippers
+""",
+        patch_id="0002-remove",
+    )
+    assert _feature_counts(machine_model) == {}
+
+
+def test_tag_rejects_count_mapping(machine_model):
+    # A relationship with no payload slot (tag) rejects the mapping form.
+    Tag.objects.create(name="Prototype", slug="prototype")
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      tag:
+        - prototype: 2
+"""
+    with pytest.raises(PatchError, match="must be a public_id string"):
+        _apply(text)
+
+
+def test_gameplay_feature_explicit_null_count(machine_model):
+    # An explicit ``null`` on the nullable count slot ⇒ NULL, identical to the
+    # bare-slug form. (A bare empty ``flippers:`` is the string '' — rejected below.)
+    GameplayFeature.objects.create(name="Flippers", slug="flippers")
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      gameplay_feature:
+        - flippers: null
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+    assert _feature_counts(machine_model) == {"flippers": None}
+
+
+def test_gameplay_feature_empty_count_rejected(machine_model):
+    # ``- flippers:`` parses as the empty string, not null — rejected as non-int
+    # rather than silently treated as "no count".
+    GameplayFeature.objects.create(name="Flippers", slug="flippers")
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      gameplay_feature:
+        - flippers:
+"""
+    with pytest.raises(PatchError, match="count must be int"):
+        _apply(text)
+
+
+@pytest.mark.parametrize("bad_count", [0, -1])
+def test_gameplay_feature_count_must_be_positive(machine_model, bad_count):
+    # The count's lower bound is the through-model field's MinValueValidator, so a
+    # 0/negative count is a plan-time PatchError, not a deferred IntegrityError.
+    GameplayFeature.objects.create(name="Flippers", slug="flippers")
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      gameplay_feature:
+        - flippers: {bad_count}
+"""
+    with pytest.raises(PatchError, match="count must be >= 1"):
+        _apply(text)
+
+
+def test_gameplay_feature_count_must_be_int(machine_model):
+    GameplayFeature.objects.create(name="Flippers", slug="flippers")
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      gameplay_feature:
+        - flippers: lots
+"""
+    with pytest.raises(PatchError, match="count"):
+        _apply(text)
 
 
 def test_backward_unresolvable_ref_errors(_bootstrap_source):
@@ -2786,6 +2935,97 @@ def test_more_than_two_fk_slots_not_authorable():
     )
     with pytest.raises(PatchError, match="only 2-slot members are authorable"):
         _unpack_credit_member({"a": "b"}, spec, "fake_three_fk", entry)
+
+
+def test_payload_on_non_single_fk_rejected(monkeypatch):
+    # A non-identity payload slot is authorable only via the one-key
+    # '{public_id: value}' form, which only a single-FK shape uses. A multi-FK
+    # (or any non-single-FK) shape carrying one has no syntax for it. No prod
+    # schema does this, so craft one and confirm registration-time rejection.
+    crafted = RelationshipSchema(
+        namespace="fake_multikey_payload",
+        value_keys=(
+            ValueKeySpec(
+                name="person",
+                scalar_type=int,
+                required=True,
+                identity="person",
+                fk_target=FkTarget(Person, "pk"),
+            ),
+            ValueKeySpec(
+                name="role",
+                scalar_type=int,
+                required=True,
+                identity="role",
+                fk_target=FkTarget(CreditRole, "pk"),
+            ),
+            ValueKeySpec(name="weight", scalar_type=int, required=False, nullable=True),
+        ),
+        valid_subjects=frozenset({Manufacturer}),
+    )
+    monkeypatch.setattr(
+        "apps.claim_ingest.patches.emit.get_relationship_schema",
+        lambda namespace: crafted if namespace == "fake_multikey_payload" else None,
+    )
+    entry = EditEntry(
+        entity_type="manufacturer",
+        public_id="stern",
+        retract=[],
+        remove={},
+        fields={},
+    )
+    with pytest.raises(PatchError, match="no authoring syntax"):
+        _relationship_member_spec(Manufacturer, "fake_multikey_payload", entry)
+
+
+def test_multiple_payload_slots_rejected(monkeypatch):
+    # The one-key '{public_id: value}' form encodes exactly one extra value, so a
+    # single-FK shape can carry at most one payload slot. Craft a two-payload one.
+    crafted = RelationshipSchema(
+        namespace="fake_two_payload",
+        value_keys=(
+            ValueKeySpec(
+                name="feature",
+                scalar_type=int,
+                required=True,
+                identity="feature",
+                fk_target=FkTarget(GameplayFeature, "pk"),
+            ),
+            ValueKeySpec(name="count", scalar_type=int, required=False, nullable=True),
+            ValueKeySpec(name="note", scalar_type=str, required=False, nullable=True),
+        ),
+        valid_subjects=frozenset({Manufacturer}),
+    )
+    monkeypatch.setattr(
+        "apps.claim_ingest.patches.emit.get_relationship_schema",
+        lambda namespace: crafted if namespace == "fake_two_payload" else None,
+    )
+    entry = EditEntry(
+        entity_type="manufacturer",
+        public_id="stern",
+        retract=[],
+        remove={},
+        fields={},
+    )
+    with pytest.raises(PatchError, match="not patch-authorable"):
+        _relationship_member_spec(Manufacturer, "fake_two_payload", entry)
+
+
+def test_media_attachment_not_patch_authorable():
+    # media_attachment is a *real* registered single-FK schema (media_asset)
+    # carrying two non-identity slots — category and is_primary. It is authored
+    # through the media API, never via data patches, so the multi-payload guard
+    # must reject it. Pinned on the real schema, not a synthetic stand-in, so a
+    # future media-schema change that made it look patch-authorable is caught here.
+    entry = EditEntry(
+        entity_type="model",
+        public_id="x",
+        retract=[],
+        remove={},
+        fields={},
+    )
+    with pytest.raises(PatchError, match="not patch-authorable"):
+        _relationship_member_spec(MachineModel, "media_attachment", entry)
 
 
 # ── Credits (multi-key: person + role) ─────────────────────────────
