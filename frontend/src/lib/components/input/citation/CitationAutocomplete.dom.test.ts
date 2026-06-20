@@ -450,6 +450,10 @@ describe('CitationAutocomplete (component-level)', () => {
       await vi.waitFor(() => {
         expect(screen.getByText(recognizedUrl)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Create & cite/ })).toBeInTheDocument();
+        // A domain match surfaces the recognized parent, so it doesn't look
+        // like a brand-new source.
+        expect(screen.getByText(/Cite a page under/)).toBeInTheDocument();
+        expect(screen.getByText(JJP_SOURCE.name)).toBeInTheDocument();
       });
 
       mockPOST

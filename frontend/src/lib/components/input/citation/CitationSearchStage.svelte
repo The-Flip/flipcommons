@@ -390,6 +390,11 @@
   {#if recognitionItem}
     <div class="recognition-block" id={itemId('recognition')}>
       <div class="recognition-label">{recognitionItem.label}</div>
+      {#if recognitionItem.type === 'create_by_url'}
+        <div class="recognition-parent">
+          Cite a page under <strong>{recognitionItem.parentName}</strong>
+        </div>
+      {/if}
       <button
         class="recognition-btn"
         disabled={creating}
@@ -511,6 +516,11 @@
 
   .recognition-label {
     font-size: var(--font-size-1);
+  }
+
+  .recognition-parent {
+    font-size: var(--font-size-0);
+    color: var(--color-text-muted);
   }
 
   .recognition-btn {
