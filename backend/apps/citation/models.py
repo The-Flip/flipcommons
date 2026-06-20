@@ -246,10 +246,37 @@ class CitationSource(TimeStampedModel):
             ),
         ]
 
+    # Source types that are abstract when parentless: a web/magazine root is a
+    # container (a site, a publication), not directly-citable evidence. A book
+    # is not — a parentless book is itself the work, and is citable.
+    ABSTRACT_PARENTLESS_SOURCE_TYPES = frozenset({SourceType.WEB, SourceType.MAGAZINE})
+
     @property
     def skip_locator(self) -> bool:
         """Web children skip the locator stage — their URL is the locator."""
         return self.source_type == "web" and self.parent_id is not None
+
+    def is_abstract(self, *, has_children: bool) -> bool:
+        """Whether the UI should steer away from citing this directly.
+
+        A **per-request display hint, not an enforced write invariant**:
+        abstract when it has children (prefer a specific child) or it's a
+        parentless web/magazine root (a site/publication container). "Don't
+        cite a web root" is handled structurally, not by a citation-time guard
+        — the URL cite paths (``recognize_url``, ``get_or_create_web_source``,
+        the cite-url endpoint) always resolve to a child under the matched root,
+        so an abstract web/magazine root is never the cited record. A standalone
+        book stays a valid cite target whether or not it later gains editions,
+        so abstractness is deliberately *not* used to reject a target.
+
+        ``has_children`` is supplied by the caller so a bulk lister can pass a
+        queryset annotation while a single-row caller passes ``children.exists()``
+        — this method issues no query of its own.
+        """
+        return has_children or (
+            self.parent_id is None
+            and self.source_type in self.ABSTRACT_PARENTLESS_SOURCE_TYPES
+        )
 
     def __str__(self) -> str:
         if self.author and self.year:

@@ -81,11 +81,6 @@ class _HasChildren(Protocol):
     has_children: bool
 
 
-def _is_abstract(source_type: str, parent_id: int | None, has_children: bool) -> bool:
-    """Source is abstract if it has children or is a root web/magazine source."""
-    return has_children or (parent_id is None and source_type in ("web", "magazine"))
-
-
 def _clean_and_save(
     instance: models.Model,
     update_fields: Sequence[str] | None = None,
@@ -152,7 +147,7 @@ def _serialize_search_row(s: CitationSource) -> CitationSourceSearchSchema:
         isbn=s.isbn,
         parent_id=s.parent_id,
         has_children=has_children,
-        is_abstract=_is_abstract(s.source_type, s.parent_id, has_children),
+        is_abstract=s.is_abstract(has_children=has_children),
         skip_locator=s.skip_locator,
         identifier_key=s.identifier_key,
     )
