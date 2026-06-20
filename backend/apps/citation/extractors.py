@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from apps.citation.hosts import (
+    Host,
     RootDomainMatch,
     label_suffixes,
     longest_suffix_match,
@@ -211,8 +212,9 @@ def recognize_url(url: str) -> Recognition | None:
         host__in=label_suffixes(host),
         source__parent__isnull=True,
     ).values_list("source_id", "source__name", "host")
+    # ``candidate_host`` is stored normalized (the model's clean()), so it's a Host.
     candidates = [
-        RootDomainMatch(source_id, source_name, candidate_host)
+        RootDomainMatch(source_id, source_name, Host(candidate_host))
         for source_id, source_name, candidate_host in rows
     ]
     winner = longest_suffix_match(host, candidates)

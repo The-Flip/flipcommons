@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, NamedTuple, NotRequired, TypedDict
 from urllib.parse import urlparse
 
-from apps.citation.hosts import normalize_host
+from apps.citation.hosts import Host, normalize_host
 from apps.citation.seed_data.types import SeedLink, SeedSource
 
 if TYPE_CHECKING:
@@ -153,7 +153,7 @@ def _create_link(source: CitationSource, link: SeedLink) -> None:
     obj.save()
 
 
-def _declared_homepage_hosts(links: Sequence[SeedLink]) -> list[str]:
+def _declared_homepage_hosts(links: Sequence[SeedLink]) -> list[Host]:
     """Normalized recognition hosts a node declares via its ``homepage`` links.
 
     Only ``homepage``-typed links contribute a recognition host (matching the
@@ -161,7 +161,7 @@ def _declared_homepage_hosts(links: Sequence[SeedLink]) -> list[str]:
     URL's hostname is parsed and normalized; a ``None`` hostname is skipped
     (honoring ``hosts``' None→skip contract). Order-preserving and de-duplicated.
     """
-    hosts: list[str] = []
+    hosts: list[Host] = []
     for link in links:
         if link["link_type"] != "homepage":
             continue
@@ -174,7 +174,7 @@ def _declared_homepage_hosts(links: Sequence[SeedLink]) -> list[str]:
     return hosts
 
 
-def _roots_owning_hosts(hosts: Sequence[str]) -> list[CitationSource]:
+def _roots_owning_hosts(hosts: Sequence[Host]) -> list[CitationSource]:
     """The distinct **root** sources that already own any of the given hosts.
 
     Exact-host lookup against ``CitationSourceRootDomain`` — **never** the
@@ -195,7 +195,7 @@ def _roots_owning_hosts(hosts: Sequence[str]) -> list[CitationSource]:
 
 
 def _ensure_root_domains(
-    source: CitationSource, hosts: Sequence[str], *, warnings: list[str]
+    source: CitationSource, hosts: Sequence[Host], *, warnings: list[str]
 ) -> None:
     """Additively mint a recognition domain on ``source`` for each unowned host.
 

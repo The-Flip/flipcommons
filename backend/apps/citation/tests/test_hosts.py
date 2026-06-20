@@ -8,6 +8,7 @@ none of these tests touch the database.
 import pytest
 
 from apps.citation.hosts import (
+    Host,
     RootDomainMatch,
     label_suffixes,
     longest_suffix_match,
@@ -69,13 +70,13 @@ class TestLabelSuffixes:
 
 # A handful of seeded recognition rows to resolve against.
 AMERICAN = RootDomainMatch(
-    source_id=1, source_name="American Pinball", host="american-pinball.com"
+    source_id=1, source_name="American Pinball", host=Host("american-pinball.com")
 )
 KINETICIST = RootDomainMatch(
-    source_id=2, source_name="Kineticist", host="kineticist.com"
+    source_id=2, source_name="Kineticist", host=Host("kineticist.com")
 )
 TWIP = RootDomainMatch(
-    source_id=3, source_name="This Week in Pinball", host="twip.kineticist.com"
+    source_id=3, source_name="This Week in Pinball", host=Host("twip.kineticist.com")
 )
 
 DOMAINS = [AMERICAN, KINETICIST, TWIP]
@@ -109,19 +110,20 @@ class TestLongestSuffixMatch:
         assert longest_suffix_match(url_host, DOMAINS) == expected
 
     def test_no_domains_is_none(self):
-        assert longest_suffix_match("american-pinball.com", []) is None
+        assert longest_suffix_match(Host("american-pinball.com"), []) is None
 
     @pytest.mark.parametrize("order", [[KINETICIST, TWIP], [TWIP, KINETICIST]])
     def test_most_specific_wins_regardless_of_order(self, order):
         # Whether the broader or the more-specific row is seen first, the
         # longest label-boundary suffix always wins.
-        assert longest_suffix_match("blog.twip.kineticist.com", order) == TWIP
+        assert longest_suffix_match(Host("blog.twip.kineticist.com"), order) == TWIP
 
     def test_expects_a_normalized_host(self):
-        # The matcher compares verbatim and does not normalize: a raw,
-        # www-prefixed, mixed-case host silently misses until the caller
-        # normalizes it (recognition does, before calling). This pins the
-        # precondition rather than masking it with internal coercion.
+        # The matcher compares verbatim and does not normalize. The `Host` type
+        # guards this precondition at real call sites; here we deliberately
+        # fabricate a `Host` from a raw, www-prefixed, mixed-case string (the
+        # bypass a raw-SQL row or a careless cast would represent) to prove the
+        # matcher coerces nothing internally — it silently misses.
         raw = "WWW.American-Pinball.com"
-        assert longest_suffix_match(raw, DOMAINS) is None
+        assert longest_suffix_match(Host(raw), DOMAINS) is None
         assert longest_suffix_match(normalize_host(raw), DOMAINS) == AMERICAN
