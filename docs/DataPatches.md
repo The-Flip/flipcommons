@@ -335,11 +335,12 @@ claims: [] # optional — a sources-only patch is valid
 
 A `sources:` node is a flat citation-source record (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, and `links`). **v1 is flat** — nested `children` is rejected; a child source under a root is created on demand when you `cite:` a URL on its domain.
 
-**Identity and the get-or-create policy.** A source has no slug; identity is `isbn` if present, else `(name, source_type)`. The block is **additive get-or-create**, never an overwrite:
+**Identity and the get-or-create policy.** A source has no slug. A root with a `homepage` link owns one or more **recognition domains** (the normalized homepage hosts) — that's the signal a later `cite:` URL resolves against, and the primary identity. Resolution is by recognition host first, then `isbn`, then `(name, source_type)`. The block is **additive get-or-create**, never an overwrite:
 
-- not found → create the source and its declared links.
-- found → leave the existing row untouched (a divergent declared field is a **warning**, not an error), and **additively backfill** any declared link the row is missing — so a later `cite:` can nest under the root even when the row already existed without your `homepage` link. An existing link with the same URL but a different `link_type`/`label` is left as-is and warned.
-- two-plus rows match `(name, source_type)` → operate on the first, warn.
+- a declared homepage host already owned by a root → **that root**, even if it's stored under a different name (re-declaring a site under a new name reuses it, never duplicates).
+- otherwise not found → create the source, its declared links, and a recognition domain per homepage host.
+- found → leave the existing row untouched (a divergent declared field is a **warning**, not an error), **additively backfill** any declared link the row is missing — so a later `cite:` can nest under the root even when the row existed without your `homepage` link — and **mint a recognition domain** for any new homepage host, so one root accretes many domains (a rebrand, a `.com`+`.co.uk`). An existing same-URL link with a different `link_type`/`label` is left as-is and warned.
+- declared homepage hosts already split across **two different roots** → the node is **skipped with no writes** and warned (resolve the duplicate roots first); two-plus `(name, source_type)` rows → operate on the first, warn.
 
 This is deliberate: a user can create a source through the app, so a same-identity collision is invisible when you author the patch. A strict "differs → error" policy would let one such collision **fail the patch and dam every later patch on prod** (patches stop at the first failure). Get-or-create never wedges and never clobbers user data — at the cost that, on a collision, the patch's description/links don't win (correctable only in Django admin). Because it's additive, re-applying is a clean no-op.
 

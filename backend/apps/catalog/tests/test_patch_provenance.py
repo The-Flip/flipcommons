@@ -39,24 +39,6 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def ipdb_root(db):
-    """The root CitationSource for the ipdb scheme (children hang under it)."""
-    return CitationSource.objects.create(
-        name="Internet Pinball Database",
-        source_type="web",
-        identifier_key="ipdb",
-    )
-
-
-@pytest.fixture
-def kineticist_root(db):
-    """A non-scheme root web source with a homepage link, for domain matching."""
-    root = CitationSource.objects.create(name="Kineticist", source_type="web")
-    root.links.create(link_type="homepage", url="https://kineticist.com/")
-    return root
-
-
-@pytest.fixture
 def pm(db, flipcommons_catalog):
     return make_machine_model(
         name="Medieval Madness", slug="medieval-madness", year=1997

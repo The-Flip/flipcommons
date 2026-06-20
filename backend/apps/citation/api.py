@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Protocol, cast
+from urllib.parse import urlparse
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
@@ -28,7 +29,13 @@ from apps.core.schemas import ErrorDetailSchema
 
 from .extraction import classify_input, extract_isbn, normalize_isbn
 from .extractors import EXTRACTORS, Recognition, recognize_url
-from .models import CitationSource, CitationSourceLink
+from .hosts import normalize_host
+from .models import (
+    CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG,
+    CitationSource,
+    CitationSourceLink,
+    CitationSourceRootDomain,
+)
 from .schemas import (
     CitationExtractDraftSchema,
     CitationExtractInputSchema,
@@ -317,15 +324,31 @@ def create_citation_source(
         )
 
         if url:
+            link_type = data.link_type or "homepage"
             link = CitationSourceLink(
                 citation_source=source,
-                link_type=data.link_type or "homepage",
+                link_type=link_type,
                 url=url,
                 label=data.link_label,
                 created_by=user,
                 updated_by=user,
             )
             _clean_and_save(link)
+
+            # A parentless source with a homepage link owns a recognition host
+            # (any source_type — see the any-root decision). Dedup belongs to
+            # the interactive cite-url flow; here a host another root already
+            # owns surfaces as a 422 — from full_clean's unique check (the
+            # field's custom message), with integrity_msg as the create-race
+            # backstop. Either way the surrounding atomic() rolls the create back.
+            hostname = urlparse(url).hostname
+            if parent is None and link_type == "homepage" and hostname is not None:
+                domain = CitationSourceRootDomain(
+                    source=source, host=normalize_host(hostname)
+                )
+                _clean_and_save(
+                    domain, integrity_msg=CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG
+                )
 
     source = get_object_or_404(_detail_qs(), pk=source.pk)
     return Status(201, _serialize_detail(source))

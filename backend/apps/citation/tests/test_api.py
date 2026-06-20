@@ -9,7 +9,11 @@ import pytest
 from django.core.cache import cache
 
 from apps.citation.extraction import ExtractionDraft, ExtractionResult
-from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.models import (
+    CitationSource,
+    CitationSourceLink,
+    CitationSourceRootDomain,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -191,10 +195,8 @@ class TestSearchRecognition:
         jjp = CitationSource.objects.create(
             name="Jersey Jack Pinball", source_type="web"
         )
-        CitationSourceLink.objects.create(
-            citation_source=jjp,
-            link_type="homepage",
-            url="https://www.jerseyjackpinball.com/",
+        CitationSourceRootDomain.objects.create(
+            source=jjp, host="jerseyjackpinball.com"
         )
         client.force_login(user)
         resp = client.get(
@@ -249,20 +251,14 @@ class TestSearchRecognition:
         assert data["recognition"] is None
         assert len(data["results"]) >= 1
 
-    def test_subdomain_not_confused(self, client, user, db):
-        """twip.kineticist.com should not match kineticist.com."""
+    def test_subdomain_resolves_to_most_specific_root(self, client, user, db):
+        """twip.kineticist.com resolves to the TWiP root, not kineticist.com."""
         kineticist = CitationSource.objects.create(name="Kineticist", source_type="web")
-        CitationSourceLink.objects.create(
-            citation_source=kineticist,
-            link_type="homepage",
-            url="https://www.kineticist.com/",
+        CitationSourceRootDomain.objects.create(
+            source=kineticist, host="kineticist.com"
         )
         twip = CitationSource.objects.create(name="TWiP", source_type="web")
-        CitationSourceLink.objects.create(
-            citation_source=twip,
-            link_type="homepage",
-            url="https://twip.kineticist.com/",
-        )
+        CitationSourceRootDomain.objects.create(source=twip, host="twip.kineticist.com")
         client.force_login(user)
         resp = client.get(
             "/api/citation-sources/search/?q=https://twip.kineticist.com/some-article"
@@ -271,8 +267,11 @@ class TestSearchRecognition:
         assert rec is not None
         assert rec["parent"]["id"] == twip.pk
 
-    def test_non_homepage_links_not_matched(self, client, user, db):
-        """Domain matching only uses homepage links, not reference links."""
+    def test_source_without_recognition_host_not_matched(self, client, user, db):
+        """Recognition keys off CitationSourceRootDomain, not arbitrary links.
+
+        A source with only a reference link (no root-domain row) is not matched.
+        """
         source = CitationSource.objects.create(name="Some Source", source_type="web")
         CitationSourceLink.objects.create(
             citation_source=source,
@@ -609,6 +608,94 @@ class TestCreateCitationSourceWithLink:
         assert resp.status_code == 201
         link = CitationSourceLink.objects.get(citation_source_id=resp.json()["id"])
         assert link.created_by == user
+
+
+class TestCreateCitationSourceRootDomain:
+    """A parentless source with a homepage link owns a recognition domain."""
+
+    def test_root_with_homepage_mints_normalized_domain(self, client, user):
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "American Pinball",
+                "source_type": "web",
+                "url": "https://www.American-Pinball.com/",
+            },
+        )
+        assert resp.status_code == 201
+        domain = CitationSourceRootDomain.objects.get(source_id=resp.json()["id"])
+        assert domain.host == "american-pinball.com"
+
+    def test_any_root_type_mints_domain(self, client, user):
+        """Any-root, not web-only: a book root with a homepage link gets one."""
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "A Pinball Book",
+                "source_type": "book",
+                "url": "https://pinball-book.example/",
+            },
+        )
+        assert resp.status_code == 201
+        assert CitationSourceRootDomain.objects.filter(
+            source_id=resp.json()["id"], host="pinball-book.example"
+        ).exists()
+
+    def test_child_mints_no_domain(self, client, user, citation_source):
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "A Page",
+                "source_type": "web",
+                "url": "https://example.com/page",
+                "parent_id": citation_source.pk,
+            },
+        )
+        assert resp.status_code == 201
+        assert not CitationSourceRootDomain.objects.filter(
+            source_id=resp.json()["id"]
+        ).exists()
+
+    def test_non_homepage_link_mints_no_domain(self, client, user):
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "Catalog Root",
+                "source_type": "web",
+                "url": "https://example.com/catalog",
+                "link_type": "catalog",
+            },
+        )
+        assert resp.status_code == 201
+        assert not CitationSourceRootDomain.objects.filter(
+            source_id=resp.json()["id"]
+        ).exists()
+
+    def test_second_root_claiming_same_host_returns_422(self, client, user):
+        client.force_login(user)
+        first = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "First", "source_type": "web", "url": "https://example.com/"},
+        )
+        assert first.status_code == 201
+        second = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "Second", "source_type": "web", "url": "https://example.com/x"},
+        )
+        assert second.status_code == 422
+        assert "already recognized" in second.json()["detail"]
+        # The whole create rolled back — no orphaned second source.
+        assert not CitationSource.objects.filter(name="Second").exists()
 
 
 class TestCreateCitationSourceWithIdentifier:

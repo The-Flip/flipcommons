@@ -49,7 +49,11 @@ The inline marker is a normal **public-id wikilink** keyed on the instance's dur
 
 A `CitationSourceLink` is a reader-facing access point — a canonical URL, an archive URL, an uploaded scan, a museum-hosted copy. Links are ways to _inspect_ a source, not separate sources. They are wholly owned by their source.
 
-Each link carries a `link_type`, and one value is load-bearing: **`homepage` marks a source's own root page and is the signal recognition's domain match keys off** (step 3 below), so it belongs only on a true root. Every other type (`reference`, `archive`, …) is a plain access point with no recognition role. A specific page minted under a root — a cited article, a forum thread — must be `reference`, never `homepage`, or domain matching would later mistake that one page for the whole domain's root.
+Each link carries a `link_type`. `homepage` marks a source's own root page and is the human-facing URL for a root — it is **display only**, not the recognition signal. Recognition keys off `CitationSourceRootDomain` (see below), an owned recognition host on the root, decoupled from the homepage link so editing the display URL never silently changes matching. Every type (`homepage`, `reference`, `archive`, …) is a plain access point with no recognition role.
+
+### Recognition hosts — `CitationSourceRootDomain`
+
+A root's recognition host(s) live in `CitationSourceRootDomain`: a normalized host (lowercased, `www.`-stripped) that is globally `unique` and resolves to the root that owns it. One root may own many hosts (a rebrand's old + new domain, a `.com` + `.co.uk`, an asset subdomain). It is an owned fact, set deliberately — at root creation from the homepage host, or by an admin — never inferred from links and never via external HTTP. Recognition matches a pasted URL's host to the root whose recognition host is the **longest label-boundary suffix** of it, so `s4.american-pinball.com` collapses to the `american-pinball.com` root while a deliberately-seeded `twip.kineticist.com` still wins over `kineticist.com` for its own subtree.
 
 ## Authoring model
 
@@ -67,7 +71,7 @@ Recognition maps input to **existing data** using local DB queries only, with no
 
 1. **Extractor match** — the URL matches a known scheme; an `Extractor` extracts and validates the identifier, then looks up the root and existing child. High confidence: one-click child creation is appropriate.
 2. **Full-URL child-link match** — the URL exactly matches a stored child link. High confidence: re-citation of a known page.
-3. **Domain match** — the hostname matches a root source's homepage link. Lower confidence: this suggests parent _reuse_ only, so the UI pre-selects the parent but still asks for child details.
+3. **Recognition-host match** — the hostname resolves to a root via its `CitationSourceRootDomain` (longest label-boundary suffix wins, so subdomains collapse to the owning root). Lower confidence: this suggests parent _reuse_ only, so the UI pre-selects the parent but still asks for child details.
 
 The schemes live in an extractor registry keyed by `identifier_key` (currently IPDB, OPDB and YouTube). Each `Extractor` knows how to pull an identifier from a URL, validate a bare identifier and build the canonical URL. YouTube accepts any of its URL shapes — `watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/` — and collapses them to the canonical `watch?v=<id>`, so the same video cited through different shapes resolves to one child.
 

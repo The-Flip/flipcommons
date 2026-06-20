@@ -34,6 +34,13 @@ CITATION_SOURCE_LINK_URL_MAX_LENGTH = 2_000
 CITATION_SOURCE_LINK_LABEL_MAX_LENGTH = 200
 CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH = 253  # RFC 1035 DNS hostname limit
 
+# Shown when a write tries to claim a recognition host another root already owns
+# (the `host` unique). Shared by the model's validation error and the API's
+# race-backstop integrity message so both paths read identically.
+CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG = (
+    "That domain is already recognized by another citation source."
+)
+
 
 class CitationSource(TimeStampedModel):
     """A work or evidence object that can be cited: book, flyer, web page, etc.
@@ -354,7 +361,9 @@ class CitationSourceRootDomain(TimeStampedModel):
         related_name="root_domains",
     )
     host = models.CharField(
-        max_length=CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH, unique=True
+        max_length=CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH,
+        unique=True,
+        error_messages={"unique": CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG},
     )
 
     class Meta:
