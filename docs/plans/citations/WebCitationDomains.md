@@ -78,14 +78,15 @@ This is the model class **plus its generated `CreateModel` migration** (the `hos
 
 🛑 STOP for user review before committing.
 
-### 1.3 Data migration — `backend/apps/citation/migrations/`
+### ✅ DONE: 1.3 Backfill migration — `backend/apps/citation/migrations/`
 
-The only prod-data surgery in the plan (deletes a root, backfills recognition rows).
+Backfill recognition rows from existing homepage links. The duplicate-root delete is **manual** (see below), not migration logic — keeping it out of the migration removes the fingerprint matching, `ProtectedError`/provenance coupling, the reverse-recreate-root logic and the pk-drift round-trip bug that an in-migration delete dragged in.
 
-- `RunPython`: **delete root 49** (assert name `This Week in Pinball (TWiP)` + homepage `twip.kineticist.com` + **zero children AND zero `instances`** before delete — `CitationInstance.citation_source` is `PROTECT` ([provenance citation_instance.py:116]), so a stray instance would block the delete with an opaque error; dev is clean, prod must be asserted).
-- **Reverse restores the pre-migration state fully.** Forward both deletes root 49 **and** inserts `CitationSourceRootDomain` rows; the table was empty before this migration, so the reverse must **delete all `CitationSourceRootDomain` rows** _and_ recreate root 49. A reverse that only recreates root 49 leaves the backfilled rows behind, so reverse-then-reapply trips the `host` `unique`.
-- **Audit before inserting.** Build the `{normalized host: [roots]}` map across all roots' homepage links in memory first; if any host is owned by >1 root (beyond the handled TWIP pair), **raise listing the colliding roots** — _before_ any insert. Otherwise the offending `INSERT` mid-loop trips the `host` `unique` and surfaces an opaque `IntegrityError` instead of the helpful message. Then insert one root-domain per host. Inline the normalization (`urlparse(url).hostname`, strip `www.`, lower) rather than importing `hosts.py`, so the frozen migration stays self-contained (matches `provenance/0004`, which imports no app code). Child homepage links are skipped (not roots), as is any link whose `urlparse(...).hostname` is `None`.
-- **Tests (after — test-first is awkward for migrations):** backfill creates a row per root homepage host, skips children, deletes root 49; the audit raises on an unexpected duplicate host.
+- **Manual one-off prod cleanup (not in the migration): delete root 49.** The empty duplicate `This Week in Pinball (TWiP)` collides with the populated `This Week in Pinball` on `twip.kineticist.com`. Delete it by hand in a prod shell, guarded with `assert r.name == "This Week in Pinball (TWiP)" and not r.children.exists() and not r.instances.exists()` before `r.delete()`. Run this **before** the backfill migration deploys — otherwise the audit (below) trips on the twip collision. Dev is already clean; CI/fresh DBs never had it.
+- **`RunPython` backfill (any-root).** Build the `{normalized host: {roots}}` map across all roots' homepage links (no `source_type` filter — the any-root decision). Inline the normalization (`urlparse(url).hostname`, strip trailing dot, `www.`, lower) rather than importing `hosts.py`, so the frozen migration stays self-contained (matches `provenance/0004`). Child homepage links are skipped (not roots), as is any link whose hostname is `None`. The same root declaring a host twice (http+https) is fine; two different roots is not.
+- **Audit before inserting.** If any host is owned by >1 root, **raise listing the colliding roots** before any insert — this is the safety net if the manual root-49 delete was skipped. Otherwise the `INSERT` mid-loop trips the `host` `unique` with an opaque `IntegrityError`.
+- **Reverse just empties the table.** The table was empty before this migration, so reverse deletes all rows — restoring the pre-migration state and keeping reverse-then-reapply clean (no root recreation; the manual delete is not migration-owned).
+- **Tests (after — test-first is awkward for migrations):** backfill creates a row per root homepage host; backfills any root type (web/book/magazine — locks in any-root); skips children; same-root-twice is not a collision; the audit raises on a host owned by two roots; reverse empties the table; reverse-then-reapply rebuilds rows.
 
 Review the migration + dry-run output.
 
