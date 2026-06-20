@@ -178,6 +178,35 @@ claims:
 
 The field key is the **literal registered namespace** (`manufacturer_alias`, `abbreviation`); members are bare strings, not public_ids (alias values case-fold for identity, original case preserved for display; abbreviations are verbatim). Aliases and abbreviations need no `note:`/`cite:`. `remove:` drops a member the same way it drops an FK member.
 
+### Counted members (gameplay features)
+
+Most relationship members are a bare public_id (a `tag`, a `theme`). `gameplay_feature` is the one namespace whose members can also carry a **count** — "4 ramps", "3 flippers". Author the count with a **one-key `{public_id: count}` mapping** in place of the bare slug; mix the two forms freely in one list:
+
+```yaml
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      gameplay_feature:
+        - multiball # bare slug → count NULL
+        - ramps: 4 # one-key mapping → count 4
+```
+
+Rules:
+
+- If you supply a count, it must be **positive integer** (`>= 1`); it cannot be `0`, negative or non-int (`ramps: lots`). A bare `ramps:` parses as the empty string `''` and not null, so it's rejected.
+- Only `gameplay_feature` takes a count. Every other relationship (`tag`, `theme`, `location`) rejects the mapping form — `- prototype: 2` errors with "must be a public_id string".
+- The count is **not part of member identity**: re-asserting a member with a new count supersedes the old one.
+
+`remove:` uses the bare slug:
+
+```yaml
+claims:
+  - model.medieval-madness:
+      remove:
+        gameplay_feature:
+          - ramps
+```
+
 ### Credits
 
 A **credit** — "person X did role Y on this model or series" — is the catalog's one **multi-key** relationship: its identity is `{person, role}`, two FK keys. A credit member is written as a **single-key mapping** `<person-public_id>: <role-public_id>` — one line per credit, no braces. In YAML a list item `- brian-eddy: design` parses to the dict `{brian-eddy: design}`, so the **key is the person** public_id and the **value is the role** (a `credit-role`) public_id. The `credit:` value is a flat list of these, so a person can repeat — each list item is one `{person, role}` claim:
