@@ -68,7 +68,7 @@ Model-free module so `models`, `extractors`, `seeding` and migrations can import
 
 🛑 STOP for user review before committing.
 
-### 1.2 Model — `backend/apps/citation/models.py`
+### ✅ DONE: 1.2 Model — `backend/apps/citation/models.py`
 
 This is the model class **plus its generated `CreateModel` migration** (the `host` `unique` lands here, on an empty table — low-risk schema-only; the destructive data step is the separate §1.3 commit).
 
