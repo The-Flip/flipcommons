@@ -292,16 +292,17 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
     recognition the interactive editor uses — so the URL resolves to a *known*
     source:
 
-    * an existing child that already covers the URL (exact link or scheme
+    * an existing *child* that already covers the URL (exact link or scheme
       identifier) is reused;
     * a domain match to a seeded root (e.g. the "Kineticist" source) becomes a
-      new child *under that root*.
+      new child *under that root* — including when the URL equals the root's own
+      homepage link, since a root is abstract and never directly citable.
 
     A URL whose domain matches no seeded root raises
     ``CitationSource.DoesNotExist`` (mirroring the scheme path's missing-root
     error). We deliberately do *not* mint a parentless web source: a root web
     source is *abstract* — a container, not directly-citable evidence (see
-    ``apps.citation.schemas`` / ``api._is_abstract``) — so a parentless page
+    ``CitationSource.is_abstract``) — so a parentless page
     would be concrete in intent but root-like in citation search/UI. Seed the
     website root in an earlier patch, then cite pages under it.
 
@@ -310,15 +311,22 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
     keys off ``CitationSourceRootDomain``), so this is display convention.
 
     Idempotent by exact URL — re-citing the same URL (or citing one a curator
-    already linked) reuses the existing source, so a re-applied patch never
-    duplicates.
+    already linked to a child) reuses the existing source, so a re-applied patch
+    never duplicates. Only *child* links count for reuse; a root's homepage link
+    is ignored so the cite resolves to a page under the root, not the root.
 
     The caller is responsible for rejecting URLs that match a known scheme;
     those must be cited as ``scheme:identifier`` so they dedup through the
     scheme path.
     """
+    # Children only: a root's own homepage link can equal the cited URL, but a
+    # root is abstract — reusing it would cite the container, not a page. Filter
+    # to child links so the cite falls through to a domain match that mints a
+    # child (recognize_url's own exact-link step is likewise children-only).
     existing = (
-        CitationSourceLink.objects.filter(url=url)
+        CitationSourceLink.objects.filter(
+            url=url, citation_source__parent__isnull=False
+        )
         .select_related("citation_source")
         .first()
     )

@@ -696,11 +696,15 @@ def test_url_cite_without_matching_root_errors(flipcommons_catalog, pm):
         _apply(text)
 
 
-def test_url_cite_reuses_preexisting_source(flipcommons_catalog, pm):
-    # A source a curator already linked to this exact URL is reused, not
-    # duplicated.
-    url = "https://example.com/evidence"
-    existing = CitationSource.objects.create(name="Curated", source_type="web")
+def test_url_cite_reuses_preexisting_source(flipcommons_catalog, kineticist_root, pm):
+    # A child a curator already linked to this exact URL is reused, not
+    # duplicated. The reusable source must be a child under a root (a parentless
+    # web source is abstract and never a citation target) — re-citing its URL
+    # resolves back to it via the children-only exact-link match.
+    url = "https://kineticist.com/reviews/medieval-madness"
+    existing = CitationSource.objects.create(
+        name="Curated", source_type="web", parent=kineticist_root
+    )
     existing.links.create(link_type="reference", url=url)
     text = (
         "attribution: flipcommons-catalog\n"

@@ -9,6 +9,7 @@ import pytest
 from apps.citation.extractors import (
     EXTRACTORS,
     get_or_create_external_source,
+    get_or_create_web_source,
     recognize_url,
 )
 from apps.citation.models import (
@@ -180,4 +181,38 @@ class TestYouTubeGetOrCreate:
         second = get_or_create_external_source(
             "youtube", f"https://www.youtube.com/watch?v={VID}&t=10s"
         )
+        assert first.id == second.id
+
+
+class TestGetOrCreateWebSourceRootHomepage:
+    """Citing a URL equal to a root's own homepage must resolve to a child.
+
+    A root web source is abstract (a container, not citable evidence), so a URL
+    that happens to equal its homepage link must create/reuse a child under it —
+    never return the root itself.
+    """
+
+    HOST = "american-pinball.com"
+    HOMEPAGE = "https://american-pinball.com/"
+
+    def _root(self, db) -> CitationSource:
+        root = CitationSource.objects.create(name="American Pinball", source_type="web")
+        CitationSourceRootDomain.objects.create(source=root, host=self.HOST)
+        CitationSourceLink.objects.create(
+            citation_source=root,
+            link_type=CitationSourceLink.LinkType.HOMEPAGE,
+            url=self.HOMEPAGE,
+        )
+        return root
+
+    def test_citing_root_homepage_creates_child_not_root(self, db):
+        root = self._root(db)
+        source = get_or_create_web_source(self.HOMEPAGE)
+        assert source.id != root.id
+        assert source.parent_id == root.id
+
+    def test_citing_root_homepage_is_idempotent(self, db):
+        self._root(db)
+        first = get_or_create_web_source(self.HOMEPAGE)
+        second = get_or_create_web_source(self.HOMEPAGE)
         assert first.id == second.id
