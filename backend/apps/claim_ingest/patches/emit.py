@@ -247,11 +247,36 @@ def _emit_direct(
     )
 
 
+class _PayloadSlot(NamedTuple):
+    """A single non-identity scalar a counted FK member carries.
+
+    Surfaced from the schema's lone non-identity, non-``display_key`` value-key so
+    nothing here names ``count``. The one-key ``{public_id: value}`` authoring form
+    encodes exactly one extra value, so only a single-FK relationship with exactly
+    one such slot yields a ``_PayloadSlot`` — today just gameplay_feature.count.
+    A relationship with two (media_attachment) is rejected upstream in
+    ``_relationship_member_spec`` before any slot is built, so this stays singular.
+    """
+
+    value_key: str  # the value-dict key carrying the payload (``spec.name``)
+    scalar_type: type  # int/str — the authored value is type-checked against it
+    nullable: bool  # whether an explicit ``null`` is allowed (else omit ⇒ NULL)
+    # Inclusive lower bound for an int payload (the model field's own
+    # ``MinValueValidator``), or ``None`` if unbounded. Enforced at plan time so an
+    # out-of-range value is a clear ``PatchError``, not a deferred ``IntegrityError``.
+    min_value: int | None
+
+
 class _FkMemberSpec(NamedTuple):
     """Member is a public_id resolving to an FK on another entity (tag, theme, location)."""
 
     value_key: str  # the value-dict key carrying the member FK (``spec.name``)
     target_model: type[models.Model]  # what a member public_id resolves to
+    # An optional non-identity scalar carried alongside the FK via the one-key
+    # ``{public_id: value}`` form (gameplay_feature's ``count``). ``None`` ⇒ the
+    # member is a bare public_id string (tag, theme, location). Always ``None``
+    # for the slots of a ``_MultiFkMemberSpec`` (identity slots carry no payload).
+    payload: _PayloadSlot | None = None
 
 
 class _StringMemberSpec(NamedTuple):
@@ -328,6 +353,42 @@ def _relationship_member_spec(
             f"{model_class.__name__}"
         )
     identity_specs = [s for s in schema.value_keys if s.identity is not None]
+    # Non-identity slots split in two: a ``display_key`` (derived from the member
+    # itself, e.g. alias_display) is never authored separately, so exclude it. What
+    # remains is independently-authored payload. Two real schemas have it:
+    # gameplay_feature (one slot, ``count`` — patch-authorable below) and
+    # media_attachment (two slots, ``category`` + ``is_primary`` — rejected by the
+    # guards below; media is authored through the media API, not data patches).
+    display_keys = {
+        s.display_key for s in schema.value_keys if s.display_key is not None
+    }
+    payload_specs = [
+        s
+        for s in schema.value_keys
+        if s.identity is None and s.name not in display_keys
+    ]
+    # A payload slot is authored only via the one-key ``{public_id: value}`` form,
+    # which is also how a multi-FK identity is authored — so payload is exclusive to
+    # a single-FK relationship, and that form encodes exactly one extra value. Reject
+    # every other shape loudly here rather than silently dropping the slot, so the
+    # single-FK branch below can read ``payload_specs[0]`` knowing it is the only one.
+    is_single_fk = len(identity_specs) == 1 and identity_specs[0].fk_target is not None
+    if payload_specs and not is_single_fk:
+        raise PatchError(
+            f"{entry.ref}: relationship {namespace!r} carries non-identity "
+            f"slot(s) {[s.name for s in payload_specs]!r} on a shape that has "
+            f"no authoring syntax for them (unsupported)"
+        )
+    if len(payload_specs) >= 2:
+        # The one-key mapping form carries exactly one extra value, so a relationship
+        # with >1 payload slot (today only media_attachment) has no patch member
+        # syntax at all — not "use one slot", but "not patch-authorable".
+        raise PatchError(
+            f"{entry.ref}: relationship {namespace!r} carries "
+            f"{len(payload_specs)} non-identity slots "
+            f"({[s.name for s in payload_specs]!r}); the patch member syntax "
+            f"encodes at most one, so it is not patch-authorable"
+        )
     if len(identity_specs) >= 2:
         # A multi-key relationship is authorable only when every identity slot is
         # an FK (the one-key ``{a: b}`` mapping form maps public_ids onto slots).
@@ -350,7 +411,21 @@ def _relationship_member_spec(
         )
     spec = identity_specs[0]
     if spec.fk_target is not None:
-        return _FkMemberSpec(value_key=spec.name, target_model=spec.fk_target.model)
+        payload = (
+            _PayloadSlot(
+                value_key=payload_specs[0].name,
+                scalar_type=payload_specs[0].scalar_type,
+                nullable=payload_specs[0].nullable,
+                min_value=payload_specs[0].min_value,
+            )
+            if payload_specs
+            else None
+        )
+        return _FkMemberSpec(
+            value_key=spec.name,
+            target_model=spec.fk_target.model,
+            payload=payload,
+        )
     if spec.scalar_type is str:
         if spec.max_length is None:
             raise PatchError(
@@ -368,6 +443,87 @@ def _relationship_member_spec(
     )
 
 
+def _unpack_fk_member(
+    member: object,
+    rel_spec: _FkMemberSpec,
+    namespace: Namespace,
+    entry: PatchEntry,
+) -> tuple[PublicId, dict[str, IdentityPart]]:
+    """Split an FK member into its public_id and optional non-identity payload.
+
+    A bare ``str`` ⇒ ``(member, {})`` — the universal form (tag, theme, location,
+    and the no-count gameplay_feature case). When the spec declares a payload slot,
+    a one-key ``{public_id: value}`` mapping ⇒ ``(public_id, {payload_key: value})``
+    with the value type-checked against the slot. An omitted or explicit-null value
+    yields an empty payload dict, so the resolver writes NULL — identical to the
+    bare-string form. Shared by ``_member_identity`` (committed assert + remove) and
+    the deferred-create branch in ``_emit_relationship``, so a counted member can
+    still reference a same-patch create.
+
+    ``member`` is untyped parsed YAML, so this re-checks the shape at the boundary.
+    """
+    empty: dict[str, IdentityPart] = {}
+    if isinstance(member, str):
+        return member, empty
+    if rel_spec.payload is not None and isinstance(member, dict) and len(member) == 1:
+        ((public_id, raw),) = member.items()
+        if isinstance(public_id, str):
+            value = _coerce_payload_value(
+                rel_spec.payload, raw, public_id, namespace, entry
+            )
+            if value is None:
+                return public_id, empty
+            return public_id, {rel_spec.payload.value_key: value}
+    suffix = (
+        f" or a single '{{<public_id>: <{rel_spec.payload.value_key}>}}' mapping"
+        if rel_spec.payload is not None
+        else ""
+    )
+    raise PatchError(
+        f"{entry.ref}: relationship {namespace!r} member {member!r} "
+        f"must be a public_id string{suffix}"
+    )
+
+
+def _coerce_payload_value(
+    payload: _PayloadSlot,
+    raw: object,
+    public_id: str,
+    namespace: Namespace,
+    entry: PatchEntry,
+) -> IdentityPart:
+    """Validate one authored payload value against its slot, or raise.
+
+    Returns ``None`` for an explicit ``null`` on a nullable slot (the caller omits
+    the key, so the resolver writes NULL). ``bool`` is rejected where an ``int`` is
+    expected — YAML ``true``/``false`` are ``int`` subclasses but never a count.
+    """
+    if raw is None:
+        if payload.nullable:
+            return None
+        raise PatchError(
+            f"{entry.ref}: relationship {namespace!r} member {public_id!r} "
+            f"{payload.value_key} must not be null"
+        )
+    if (
+        payload.scalar_type is int
+        and isinstance(raw, int)
+        and not isinstance(raw, bool)
+    ):
+        if payload.min_value is not None and raw < payload.min_value:
+            raise PatchError(
+                f"{entry.ref}: relationship {namespace!r} member {public_id!r} "
+                f"{payload.value_key} must be >= {payload.min_value}, got {raw}"
+            )
+        return raw
+    if payload.scalar_type is str and isinstance(raw, str):
+        return raw
+    raise PatchError(
+        f"{entry.ref}: relationship {namespace!r} member {public_id!r} "
+        f"{payload.value_key} must be {payload.scalar_type.__name__}, got {raw!r}"
+    )
+
+
 def _member_identity(
     member: object,
     namespace: Namespace,
@@ -381,23 +537,24 @@ def _member_identity(
     non-identity key (e.g. ``alias_display``) to produce the canonical
     tombstone — so this stays the one authoritative identity builder.
 
-    ``member`` is untyped parsed YAML, so each branch re-checks it is a ``str``
-    at this boundary (a parse-edge guard, not a model-type branch).
+    ``member`` is untyped parsed YAML, so the shape is re-checked at this boundary
+    (a parse-edge guard, not a model-type branch): the FK branch delegates that to
+    ``_unpack_fk_member`` (bare public_id, or the ``{public_id: count}`` form), the
+    string branches re-check ``str`` inline.
     """
     match rel_spec:
         case _FkMemberSpec(value_key, target_model):
-            if not isinstance(member, str):
-                raise PatchError(
-                    f"{entry.ref}: relationship {namespace!r} member {member!r} "
-                    f"must be a public_id string"
-                )
-            member_pk = _lookup_pk(target_model, member)
+            public_id, payload = _unpack_fk_member(member, rel_spec, namespace, entry)
+            member_pk = _lookup_pk(target_model, public_id)
             if member_pk is None:
                 raise PatchError(
-                    f"{entry.ref}: relationship {namespace!r} member {member!r} "
+                    f"{entry.ref}: relationship {namespace!r} member {public_id!r} "
                     f"does not resolve to a {target_model.__name__}"
                 )
-            return {value_key: member_pk}
+            # ``payload`` (e.g. count) is non-identity: it rides the assert value
+            # and is dropped by ``build_relationship_claim(..., exists=False)`` on
+            # the remove path, so the same builder serves both.
+            return {value_key: member_pk, **payload}
         case _StringMemberSpec(value_key, max_length, display_key):
             if not isinstance(member, str):
                 raise PatchError(
@@ -609,9 +766,10 @@ def _emit_relationship(
                 carrier_written = True
                 continue
             identity = resolved.concrete
-        elif isinstance(rel_spec, _FkMemberSpec) and isinstance(member, str):
+        elif isinstance(rel_spec, _FkMemberSpec):
+            public_id, payload = _unpack_fk_member(member, rel_spec, namespace, entry)
             handle = registry.created_handle(
-                rel_spec.target_model, normalize_fk_value(member)
+                rel_spec.target_model, normalize_fk_value(public_id)
             )
             if handle is not None:
                 member_key = (
@@ -627,6 +785,10 @@ def _emit_relationship(
                     PlannedClaimAssert(
                         field_name=namespace,
                         relationship_namespace=namespace,
+                        # ``payload`` (e.g. count) is non-identity; it rides
+                        # ``identity`` and is merged into the value at apply time,
+                        # after the FK handle resolves (see persist._patch_handles).
+                        identity=payload,
                         identity_refs={rel_spec.value_key: handle},
                         note=note,
                         citation_ref=citation_ref,
