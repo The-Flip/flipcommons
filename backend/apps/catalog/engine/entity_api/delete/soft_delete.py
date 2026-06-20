@@ -19,7 +19,6 @@ from django.contrib.auth.models import AbstractBaseUser, AnonymousUser
 from django.contrib.contenttypes.models import ContentType
 from django.db import models as db_models
 
-from apps.catalog.models import CatalogModel
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     EntityClaims,
@@ -27,7 +26,12 @@ from apps.claim_edit.claim_write import (
 )
 from apps.core.models import is_live
 from apps.core.soft_delete import CascadeBlocker, require_linkable, soft_delete_walk
-from apps.provenance.models import ChangeSet, ChangeSetAction
+from apps.provenance.models import (
+    ChangeSet,
+    ChangeSetAction,
+    LinkableClaimModel,
+    LinkableLifecycleClaimModel,
+)
 from apps.provenance.schemas import CitationReferenceInputSchema
 
 from .schemas import BlockingReferrerSchema
@@ -39,7 +43,7 @@ _UserLike = AbstractBaseUser | AnonymousUser
 class BlockingReferrer:
     """A live reference that prevents a soft-delete from proceeding."""
 
-    entity_type: str  # canonical hyphenated CatalogModel.entity_type, e.g. "model"
+    entity_type: str  # canonical hyphenated LinkableModel.entity_type, e.g. "model"
     pk: int
     name: str
     slug: str | None
@@ -69,7 +73,7 @@ class SoftDeletePlan:
     ordered list to receive ``status=deleted`` claims in a single ChangeSet.
     """
 
-    entities_to_delete: list[CatalogModel] = field(default_factory=list)
+    entities_to_delete: list[LinkableLifecycleClaimModel] = field(default_factory=list)
     blockers: list[BlockingReferrer] = field(default_factory=list)
 
     @property
@@ -77,19 +81,25 @@ class SoftDeletePlan:
         return bool(self.blockers)
 
 
-def _require_catalog(entity: db_models.Model) -> CatalogModel:
-    """Narrow a core walk result to ``CatalogModel`` or raise.
+def _require_linkable_lifecycle(
+    entity: db_models.Model,
+) -> LinkableLifecycleClaimModel:
+    """Narrow a core walk result to ``LinkableLifecycleClaimModel`` or raise.
 
-    The core walk is typed on ``LifecycleStatusModel``; every cascade member it
-    yields for a catalog root is a ``CatalogModel`` at runtime, but the static
-    bound is looser. This boundary assert keeps :class:`SoftDeletePlan` honestly
-    catalog-typed (consumers count provenance and isinstance-test members) and
-    fails loudly should the walk ever surface a non-catalog lifecycle entity.
+    The core walk is typed on ``LifecycleStatusModel`` (the minimum the cascade
+    algorithm needs); narrowing those members to ``LinkableLifecycleClaimModel``
+    is a downcast — a bare ``LifecycleStatusModel`` is not statically linkable
+    or claim-controlled. Every cascade member yielded for a catalog root is one
+    at runtime, but the static bound is looser, so this boundary assert keeps
+    :class:`SoftDeletePlan` honestly typed (consumers read claims and
+    isinstance-test members) and fails loudly should the walk ever surface a
+    lifecycle entity that isn't an addressable claim subject.
     """
-    if not isinstance(entity, CatalogModel):
+    if not isinstance(entity, LinkableLifecycleClaimModel):
         raise TypeError(
-            f"{type(entity).__name__} is not a CatalogModel; soft-delete plan "
-            "requires catalog entities."
+            f"{type(entity).__name__} is not a LinkableLifecycleClaimModel; "
+            "soft-delete plan requires addressable, claim-controlled lifecycle "
+            "entities."
         )
     return entity
 
@@ -115,22 +125,22 @@ def _to_blocking_referrer(blocker: CascadeBlocker) -> BlockingReferrer:
     )
 
 
-def plan_soft_delete(root: CatalogModel) -> SoftDeletePlan:
+def plan_soft_delete(root: LinkableLifecycleClaimModel) -> SoftDeletePlan:
     """Plan a soft-delete of *root* plus every active cascade child.
 
     Wraps the generic :func:`apps.core.soft_delete.soft_delete_walk` into the
-    catalog-typed plan the delete API serializes: the entities that would
-    receive ``status=deleted`` claims and any active PROTECT or usage-M2M
-    referrers that would block the delete.
+    typed plan the delete API serializes: the entities that would receive
+    ``status=deleted`` claims and any active PROTECT or usage-M2M referrers
+    that would block the delete.
     """
     walk = soft_delete_walk(root)
     return SoftDeletePlan(
-        entities_to_delete=[_require_catalog(e) for e in walk.cascade],
+        entities_to_delete=[_require_linkable_lifecycle(e) for e in walk.cascade],
         blockers=[_to_blocking_referrer(b) for b in walk.blockers],
     )
 
 
-def count_entity_changesets(*entities: CatalogModel) -> int:
+def count_entity_changesets(*entities: LinkableClaimModel) -> int:
     """Count distinct user ChangeSets with a claim on any of *entities*.
 
     Variadic so delete-preview endpoints can roll up provenance across a
@@ -160,12 +170,12 @@ class SoftDeleteBlockedError(Exception):
 
 
 def execute_soft_delete(
-    root: CatalogModel,
+    root: LinkableLifecycleClaimModel,
     *,
     user: _UserLike,
     note: str = "",
     citation: CitationReferenceInputSchema | None = None,
-) -> tuple[ChangeSet | None, list[CatalogModel]]:
+) -> tuple[ChangeSet | None, list[LinkableLifecycleClaimModel]]:
     """Soft-delete *root* and all cascade children in one ChangeSet.
 
     Raises :class:`SoftDeleteBlockedError` when an active PROTECT referrer would

@@ -21,8 +21,8 @@ from django.db import transaction
 
 from apps.provenance.models import ClaimControlledModel
 
-from .._alias_registry import discover_alias_types
 from ..cache import invalidate_all
+from ..engine.aliases import discover_alias_types
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def _get_custom_dispatch() -> dict[str, CustomDispatchSpec]:
     """field_name → CustomDispatchSpec for entity-specific resolvers."""
     global _custom_dispatch
     if _custom_dispatch is None:
-        from ..models import CorporateEntity, Title
+        from ..models import CorporateEntity, Series, Title
 
         _custom_dispatch = {
             "abbreviation": CustomDispatchSpec(
@@ -99,6 +99,7 @@ def _get_custom_dispatch() -> dict[str, CustomDispatchSpec]:
                 CorporateEntity,
                 "resolve_all_corporate_entity_locations",
             ),
+            "credit": CustomDispatchSpec(Series, "resolve_all_series_credits"),
         }
     return _custom_dispatch
 

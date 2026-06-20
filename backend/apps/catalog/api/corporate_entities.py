@@ -11,6 +11,7 @@ from ninja import Router, Schema
 from ninja.security import django_auth
 from pydantic import Field
 
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import (
     execute_claims,
     raise_form_error,
@@ -21,10 +22,14 @@ from apps.core.authz.types import Activity
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
+from apps.provenance.models import LinkableLifecycleClaimModel
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
+from ..engine.entity_api.create import register_entity_create
+from ..engine.entity_api.delete import register_entity_delete_restore
+from ..engine.entity_api.listing import paginated_list_response
+from ..engine.query.constants import NameAliasQuery, PageParam
 from ..models import (
-    CatalogModel,
     CorporateEntity,
     CorporateEntityLocation,
     MachineModel,
@@ -32,22 +37,18 @@ from ..models import (
     OperatingStatus,
 )
 from ._typing import CorporateEntityListAnnotations
-from .constants import NameAliasQuery, PageParam
 from .edit_claims import plan_alias_claims
-from .entity_crud import register_entity_create, register_entity_delete_restore
-from .entity_list import paginated_list_response
 from .helpers import (
     collect_titles,
     model_year_bounds,
     serialize_locations,
 )
 from .manufacturers import manufacturers_router
-from .rich_text import describe
 from .schemas import (
-    CatalogDetailSchema,
     CorporateEntityClaimPatchSchema,
     CorporateEntityLocationSchema,
     EntityCreateInputSchema,
+    EntityDetailSchema,
     EntityRef,
     RelatedTitleSchema,
 )
@@ -91,7 +92,7 @@ class CorporateEntityListSchema(Schema):
     count: int
 
 
-class CorporateEntityDetailSchema(CatalogDetailSchema):
+class CorporateEntityDetailSchema(EntityDetailSchema):
     slug: str
     manufacturer: EntityRef
     year_of_first_model: int | None = None
@@ -265,7 +266,7 @@ def patch_corporate_entity_claims(
 
 
 def _scope_by_manufacturer(
-    _data: EntityCreateInputSchema, parent: CatalogModel | None
+    _data: EntityCreateInputSchema, parent: LinkableLifecycleClaimModel | None
 ) -> Q:
     # CE create is parented; the factory always passes a resolved parent.
     assert parent is not None

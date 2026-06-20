@@ -1,7 +1,7 @@
 """Server-side faceted filtering for the manufacturers listing page.
 
 Manufacturers' parallel to ``_title_facets.py`` — its own explicit ``filtered`` /
-``facet_counts`` assembly calling the shared leaves in ``_facet_helpers.py``,
+``facet_counts`` assembly calling the shared leaves in ``engine/query/facet_helpers.py``,
 free to diverge where manufacturers genuinely differ from titles.
 
 Like titles, it applies one narrower per dimension in an N-1 loop (:func:`filtered`),
@@ -76,6 +76,17 @@ from django.db.models.functions import Coalesce, Lower
 from apps.core.models import active_status_q
 from apps.core.search import fold as _fold
 
+from ..engine.query.facet_helpers import (
+    Bounds,
+    FacetOption,
+    _fold_exists,
+    _Unaccent,
+    ancestor_map,
+    bounds,
+    count_distinct,
+    hierarchy_rollup,
+    with_selected,
+)
 from ..models import (
     CorporateEntity,
     CorporateEntityAlias,
@@ -86,17 +97,6 @@ from ..models import (
     ManufacturerAlias,
     Person,
     TechnologyGeneration,
-)
-from ._facet_helpers import (
-    Bounds,
-    FacetOption,
-    _fold_exists,
-    _Unaccent,
-    ancestor_map,
-    bounds,
-    count_distinct,
-    hierarchy_rollup,
-    with_selected,
 )
 
 # ---------------------------------------------------------------------------

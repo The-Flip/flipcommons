@@ -68,7 +68,7 @@ class TestCitationSourceIdentifierKey:
         cs = CitationSource.objects.create(name="Test", source_type="web")
         assert cs.identifier_key == ""
 
-    @pytest.mark.parametrize("key", ["ipdb", "opdb"])
+    @pytest.mark.parametrize("key", ["ipdb", "opdb", "youtube"])
     def test_valid_identifier_key_accepted(self, db, key):
         cs = CitationSource.objects.create(
             name="Test", source_type="web", identifier_key=key

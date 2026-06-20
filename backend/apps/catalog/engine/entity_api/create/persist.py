@@ -15,7 +15,7 @@ What lives here:
   of work: row creation, ChangeSet + claims, and TOCTOU-safe translation
   of a DB unique-constraint violation into a field-level slug error.
 
-What does not live here: name normalization (see ``apps.catalog.naming``),
+What does not live here: name normalization (see ``apps.catalog.engine.naming``),
 rate limiting (see ``apps.provenance.rate_limits``), or the claim
 machinery itself (see :mod:`apps.claim_edit.claim_write`).
 """
@@ -30,19 +30,23 @@ from django.db import IntegrityError, transaction
 from django.db import models as db_models
 from django.db.models import Q
 
-from apps.catalog.models import AliasModel, CatalogModel
-from apps.catalog.naming import normalize_catalog_name
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
 )
 from apps.core.exceptions import StructuredValidationError
-from apps.core.models import meta_unique_fields
+from apps.core.models import IdentifiableModel, LifecycleStatusModel, meta_unique_fields
 from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
-from apps.provenance.models import ChangeSetAction
+from apps.provenance.models import (
+    ChangeSetAction,
+    LinkableClaimModel,
+    LinkableLifecycleClaimModel,
+)
 from apps.provenance.schemas import CitationReferenceInputSchema
 
-from .schemas import EntityCreateInputSchema
+from ...models import AliasModel
+from ...naming import normalize_catalog_name
+from ...schemas import EntityCreateInputSchema
 
 _UserLike = AbstractBaseUser | AnonymousUser
 
@@ -89,7 +93,7 @@ def validate_name(name: str, *, max_length: int) -> str:
 
 
 def _resolve_alias_relation(
-    model_cls: type[CatalogModel],
+    model_cls: type[db_models.Model],
 ) -> tuple[type[AliasModel], str] | None:
     """Return ``(alias_model, parent_fk_name)`` if *model_cls* exposes an
     ``aliases`` reverse manager, else ``None``.
@@ -110,7 +114,7 @@ def _resolve_alias_relation(
 
 
 def assert_name_available(
-    model_cls: type[CatalogModel],
+    model_cls: type[LifecycleStatusModel],
     name: str,
     *,
     normalize: Callable[[str], str],
@@ -122,7 +126,7 @@ def assert_name_available(
     """Raise a field-level 422 if *name* collides with an existing record.
 
     Names are compared after passing through *normalize* — typically
-    :func:`apps.catalog.naming.normalize_catalog_name`. The normalization
+    :func:`apps.catalog.engine.naming.normalize_catalog_name`. The normalization
     rule is shared with the frontend so the UI's "search returned zero
     results" signal and the API's enforcement stay in sync.
 
@@ -164,9 +168,9 @@ def assert_name_available(
     qs = manager.all() if include_deleted else manager.active()
     if scope_filter is not None:
         qs = qs.filter(scope_filter)
-    # ``name`` is declared on each concrete subclass; the django-stubs
-    # plugin can't see it on abstract ``CatalogModel`` (see
-    # ``LabeledModel`` for the rationale).
+    # ``name`` is a field only on concrete subclasses — the abstract
+    # ``LifecycleStatusModel`` bound carries none — so the django-stubs plugin
+    # can't see it here (see ``LabeledModel`` for the rationale).
     for pk, other_name in qs.values_list("pk", "name"):  # type: ignore[misc]
         if exclude_pk is not None and pk == exclude_pk:
             continue
@@ -239,7 +243,7 @@ def _rewrite_scope_for_alias(scope_filter: Q, parent_fk_name: str) -> Q:
 
 def validate_create_input(
     data: EntityCreateInputSchema,
-    model_cls: type[CatalogModel],
+    model_cls: type[LinkableLifecycleClaimModel],
     *,
     scope_filter: Q | None = None,
     include_deleted_name_check: bool | None = None,
@@ -264,8 +268,9 @@ def validate_create_input(
     aligned with the standard validation phase.
     """
     # ``name`` is registered as a Django field on each concrete subclass;
-    # the django-stubs plugin can't see it on abstract ``CatalogModel``
-    # (see ``LabeledModel`` for the rationale).
+    # the django-stubs plugin can't see it on the abstract
+    # ``LinkableLifecycleClaimModel`` base (see ``LabeledModel`` for the
+    # rationale).
     name_field = model_cls._meta.get_field("name")  # type: ignore[misc]
     assert isinstance(name_field, db_models.Field)
     name_max = name_field.max_length
@@ -290,7 +295,10 @@ def validate_create_input(
 
 
 def assert_public_id_available(
-    model_cls: type[CatalogModel], value: str, *, form_value: str | None = None
+    model_cls: type[IdentifiableModel],
+    value: str,
+    *,
+    form_value: str | None = None,
 ) -> None:
     """Raise a field-level 422 if *value* collides on the model's public-id field.
 
@@ -328,15 +336,15 @@ def assert_public_id_available(
         )
 
 
-def create_entity_with_claims(
-    model_cls: type[CatalogModel],
+def create_entity_with_claims[M: LinkableClaimModel](
+    model_cls: type[M],
     *,
     row_kwargs: dict[str, Any],
     claim_specs: list[ClaimSpec],
     user: _UserLike,
     note: str = "",
     citation: CitationReferenceInputSchema | None = None,
-) -> CatalogModel:
+) -> M:
     """Create a new catalog row + its initial claims atomically.
 
     * Opens a ``transaction.atomic`` block so that a claim-write failure

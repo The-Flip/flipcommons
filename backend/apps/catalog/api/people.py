@@ -15,7 +15,8 @@ from ninja.responses import Status
 from ninja.security import django_auth
 from pydantic import Field
 
-from apps.catalog.naming import normalize_catalog_name
+from apps.catalog.engine.naming import normalize_catalog_name
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
@@ -30,8 +31,7 @@ from apps.core.schemas import (
     RateLimitErrorSchema,
     ValidationErrorSchema,
 )
-from apps.media.helpers import all_media
-from apps.media.schemas import UploadedMediaSchema
+from apps.media.helpers import media_prefetch
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
@@ -42,40 +42,39 @@ from apps.provenance.rate_limits import (
 )
 from apps.provenance.schemas import ChangeSetInputSchema
 
-from ..models import Credit, MachineModel, Person
-from ._typing import HasCreditCount
-from .constants import NameAliasQuery, PageParam
-from .entity_create import (
+from ..engine.entity_api.create import (
     assert_name_available,
     assert_public_id_available,
     create_entity_with_claims,
     validate_name,
     validate_slug_format,
 )
-from .entity_list import _apply_list_q, paginated_list_response
-from .images import (
-    extract_image_urls,
-    fetch_model_media_map,
-    media_prefetch,
-    serialize_uploaded_media,
-)
-from .rich_text import describe
-from .schemas import (
-    AlreadyDeletedSchema,
-    CatalogDetailSchema,
-    ClaimPatchSchema,
-    DeleteResponseSchema,
-    EntityCreateInputSchema,
-    PersonDeletePreviewSchema,
-    PersonSoftDeleteBlockedSchema,
-    RelatedTitleSchema,
-)
-from .soft_delete import (
+from ..engine.entity_api.delete import (
     SoftDeleteBlockedError,
     count_entity_changesets,
     execute_soft_delete,
     plan_soft_delete,
     serialize_blocking_referrer,
+)
+from ..engine.entity_api.listing import _apply_list_q, paginated_list_response
+from ..engine.entity_api.own_media import own_media
+from ..engine.query.constants import NameAliasQuery, PageParam
+from ..models import Credit, MachineModel, Person
+from ._typing import HasCreditCount
+from .images import (
+    extract_image_urls,
+    fetch_model_media_map,
+)
+from .schemas import (
+    AlreadyDeletedSchema,
+    ClaimPatchSchema,
+    DeleteResponseSchema,
+    EntityCreateInputSchema,
+    EntityDetailSchema,
+    OwnMediaSchema,
+    PersonDeletePreviewSchema,
+    PersonSoftDeleteBlockedSchema,
+    RelatedTitleSchema,
 )
 
 
@@ -99,7 +98,7 @@ class PersonTitleSchema(RelatedTitleSchema):
     roles: list[str] = []
 
 
-class PersonDetailSchema(CatalogDetailSchema):
+class PersonDetailSchema(EntityDetailSchema, OwnMediaSchema):
     slug: str
     birth_year: int | None = None
     birth_month: int | None = None
@@ -112,7 +111,6 @@ class PersonDetailSchema(CatalogDetailSchema):
     photo_url: str | None = None
     wikidata_id: str | None = None
     titles: list[PersonTitleSchema]
-    uploaded_media: list[UploadedMediaSchema] = []
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +128,7 @@ class _PersonTitleAccum:
     roles: list[str] = field(default_factory=list)
 
 
+@own_media(Person)
 def _serialize_person_detail(person: Person) -> PersonDetailSchema:
     """Serialize a Person into the detail response schema.
 
@@ -199,7 +198,6 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
         photo_url=person.photo_url,
         wikidata_id=person.wikidata_id,
         titles=titles,
-        uploaded_media=serialize_uploaded_media(all_media(person)),
     )
 
 

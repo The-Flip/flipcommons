@@ -7,9 +7,13 @@ from typing import ClassVar
 from django.contrib.contenttypes.fields import GenericRelation
 from django.db import models
 
-from apps.core.models import LinkableModel
+from apps.core.models import LifecycleStatusModel, LinkableModel
 
-__all__ = ["ClaimControlledModel", "LinkableClaimModel"]
+__all__ = [
+    "ClaimControlledModel",
+    "LinkableClaimModel",
+    "LinkableLifecycleClaimModel",
+]
 
 
 class ClaimControlledModel(models.Model):
@@ -107,6 +111,37 @@ class LinkableClaimModel(LinkableModel, ClaimControlledModel):
     chain, so a path bound here is structurally blind to them. Do not fold them
     in: sitemap membership is a read/presentation concern, irrelevant to
     writing claims.
+    """
+
+    class Meta:
+        abstract = True
+
+
+class LinkableLifecycleClaimModel(LifecycleStatusModel, LinkableClaimModel):
+    """Abstract contract for an *addressable, soft-deletable claim subject*.
+
+    ``LinkableClaimModel`` + ``LifecycleStatusModel`` — the conjunction the
+    surfaces that *write the lifecycle status claim* require as a precondition,
+    not a discovered refinement:
+
+    - **soft-delete / restore** — a user "delete" is a ``status=deleted`` claim;
+      restore writes ``status=active``. The operation *is* a lifecycle write, so
+      ``.status`` / ``.active()`` are hard requirements.
+    - **create** — every create stamps the ``status`` column and writes a
+      ``status=active`` claim, and filters its collision / parent lookups
+      through ``.active()``.
+
+    Binding this base turns what would otherwise be a runtime ``AttributeError``
+    (``.active()`` on a plain manager, ``.status`` on a non-lifecycle field)
+    into a compile-time error at the registration site. Surfaces that only
+    *read* claims and never write lifecycle bind something looser —
+    ``LinkableClaimModel`` or less.
+
+    Declares no fields — it only conjoins two abstract bases — so it adds no
+    table, content-type or migration. The base order (``LifecycleStatusModel``
+    then ``LinkableClaimModel``) lets a model that already lists those two
+    leaves in that order re-parent onto this combined base with no change to
+    its MRO leaf order.
     """
 
     class Meta:

@@ -168,7 +168,7 @@ def reset_for_user(user: AbstractBaseUser, bucket: str) -> None:
 # the same one ``@requires`` uses — Ninja resolves forward-ref
 # annotations through ``view.__globals__``, and a plain wrapper would
 # carry *this* module's globals, breaking annotation resolution for
-# closure-built views (e.g. the ``entity_crud`` factory).
+# closure-built views (e.g. the entity create / delete-restore registrars).
 
 F = TypeVar("F", bound=Callable[..., object])
 

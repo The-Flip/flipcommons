@@ -12,6 +12,7 @@ from ninja import Router, Schema
 from ninja.security import django_auth
 from pydantic import Field
 
+from apps.catalog.engine.rich_text import build_rich_text, describe
 from apps.claim_edit.claim_write import execute_claims, plan_scalar_field_claims
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -22,21 +23,21 @@ from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 from apps.provenance.schemas import RichTextSchema
 
+from ..engine.entity_api.create import register_entity_create
+from ..engine.entity_api.delete import register_entity_delete_restore
+from ..engine.entity_api.listing import paginated_list_response
+from ..engine.query.constants import NameQuery, PageParam
 from ..models import Credit, MachineModel, Series, Title
 from ._typing import HasTitleCount
-from .constants import NameQuery, PageParam
-from .entity_crud import register_entity_create, register_entity_delete_restore
-from .entity_list import paginated_list_response
 from .helpers import (
     serialize_credit,
     serialize_title_ref,
 )
 from .images import extract_image_urls, fetch_model_media_map, fetch_title_media_map
-from .rich_text import build_rich_text, describe
 from .schemas import (
-    CatalogDetailSchema,
     ClaimPatchSchema,
     CreditSchema,
+    EntityDetailSchema,
     TitleRef,
 )
 
@@ -68,7 +69,7 @@ class SeriesListSchema(Schema):
     count: int
 
 
-class SeriesDetailSchema(CatalogDetailSchema):
+class SeriesDetailSchema(EntityDetailSchema):
     slug: str
     titles: list[TitleRef]
     credits: list[CreditSchema] = []

@@ -20,7 +20,8 @@ from ninja.responses import Status
 from ninja.security import django_auth
 from pydantic import Field, TypeAdapter
 
-from apps.catalog.naming import MAX_CATALOG_NAME_LENGTH, normalize_catalog_name
+from apps.catalog.engine.naming import MAX_CATALOG_NAME_LENGTH, normalize_catalog_name
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
@@ -36,7 +37,7 @@ from apps.core.schemas import (
     RateLimitErrorSchema,
     ValidationErrorSchema,
 )
-from apps.media.helpers import all_media
+from apps.media.helpers import all_media, media_prefetch
 from apps.media.models import EntityMedia
 from apps.media.schemas import MediaRenditionsSchema
 from apps.media.storage import build_public_url, build_storage_key
@@ -58,6 +59,21 @@ from ..cache import (
     set_cached_response,
     titles_facets_key,
 )
+from ..engine.entity_api.create import (
+    assert_name_available,
+    assert_public_id_available,
+    create_entity_with_claims,
+    validate_name,
+    validate_slug_format,
+)
+from ..engine.entity_api.delete import (
+    SoftDeleteBlockedError,
+    count_entity_changesets,
+    execute_soft_delete,
+    plan_soft_delete,
+    serialize_blocking_referrer,
+)
+from ..engine.query.constants import DEFAULT_PAGE_SIZE
 from ..models import (
     PRODUCED_SLUG,
     MachineModel,
@@ -75,32 +91,23 @@ from ._title_facets import (
     ordered_titles,
 )
 from ._typing import CreditKey, FacetOptionDict, GameplayFeatureAgreement
-from .constants import DEFAULT_PAGE_SIZE
 from .edit_claims import plan_abbreviation_claims
-from .entity_create import (
-    assert_name_available,
-    assert_public_id_available,
-    create_entity_with_claims,
-    validate_name,
-    validate_slug_format,
-)
 from .helpers import (
     _intersect_facet_sets,
     serialize_credit,
     serialize_title_machine,
 )
-from .images import extract_image_urls, fetch_model_media_map, media_prefetch
+from .images import extract_image_urls, fetch_model_media_map
 from .machine_models import (
     ModelDetailSchema,
     _model_detail_qs,
     _serialize_model_detail,
 )
-from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
-    CatalogDetailSchema,
     CreditSchema,
     EntityCreateInputSchema,
+    EntityDetailSchema,
     EntityRef,
     FacetOptionSchema,
     GameplayFeatureRef,
@@ -109,13 +116,6 @@ from .schemas import (
     TitleDeletePreviewSchema,
     TitleModelSchema,
     YearBoundsSchema,
-)
-from .soft_delete import (
-    SoftDeleteBlockedError,
-    count_entity_changesets,
-    execute_soft_delete,
-    plan_soft_delete,
-    serialize_blocking_referrer,
 )
 
 # ---------------------------------------------------------------------------
@@ -330,7 +330,7 @@ class AggregatedMediaSchema(Schema):
     source_model: EntityRef
 
 
-class TitleDetailSchema(CatalogDetailSchema):
+class TitleDetailSchema(EntityDetailSchema):
     slug: str
     opdb_id: str | None = None
     fandom_page_id: int | None = None

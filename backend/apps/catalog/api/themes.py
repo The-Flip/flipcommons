@@ -9,6 +9,7 @@ from ninja import Router, Schema
 from ninja.security import django_auth
 from pydantic import Field
 
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import (
     execute_claims,
     raise_form_error,
@@ -21,17 +22,17 @@ from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
+from ..engine.entity_api.create import register_entity_create
+from ..engine.entity_api.delete import register_entity_delete_restore
+from ..engine.entity_api.listing import _apply_list_q
+from ..engine.query.constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PageParam
 from ..models import MachineModel, Theme
 from ._counts import bulk_title_counts_via_models
-from .constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PageParam
 from .edit_claims import plan_alias_claims, plan_parent_claims
-from .entity_crud import register_entity_create, register_entity_delete_restore
-from .entity_list import _apply_list_q
 from .helpers import serialize_title_machine
 from .images import fetch_model_media_map
-from .rich_text import describe
 from .schemas import (
-    CatalogDetailSchema,
+    EntityDetailSchema,
     EntityRef,
     HierarchyClaimPatchSchema,
     TitleModelSchema,
@@ -66,7 +67,7 @@ class ThemeListSchema(Schema):
     count: int
 
 
-class ThemeDetailSchema(CatalogDetailSchema):
+class ThemeDetailSchema(EntityDetailSchema):
     slug: str
     aliases: list[str] = []
     parents: list[EntityRef] = []

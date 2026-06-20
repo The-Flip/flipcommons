@@ -63,6 +63,23 @@ EXTRACTORS: dict[str, Extractor] = {
         id_pattern=re.compile(r"[A-Za-z0-9_-]+"),
         build_url=lambda id: f"https://opdb.org/machines/{id}",
     ),
+    "youtube": Extractor(
+        source_name="YouTube",
+        # YouTube's one 11-char video id, reached through any URL shape
+        # (watch?v=, youtu.be/, /shorts/, /embed/, /live/, mobile `m.`) plus
+        # trailing params — all collapse to one canonical child. Host-bound on
+        # `https?://<host>` like the others so `notyoutube.com` can't match, and
+        # `(?![A-Za-z0-9_-])` pins the id to 11 chars so a 12-char typo fails
+        # instead of truncating to a wrong-but-valid-looking id.
+        url_pattern=re.compile(
+            r"https?://(?:"
+            r"(?:www\.|m\.)?youtube\.com/(?:watch\?(?:[^\s]*&)?v=|embed/|shorts/|live/)"
+            r"|(?:www\.)?youtu\.be/"
+            r")([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])"
+        ),
+        id_pattern=re.compile(r"[A-Za-z0-9_-]{11}"),
+        build_url=lambda id: f"https://www.youtube.com/watch?v={id}",
+    ),
 }
 
 

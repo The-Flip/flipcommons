@@ -1,12 +1,15 @@
 """Tests for _resolve_aliases() — sweep and display-casing behaviour.
 
-Tests are parametrized across all alias types via ALIAS_TYPES, ensuring
-the generic _resolve_aliases() function works for every registered alias type.
+Tests are parametrized across all alias types via the live engine alias
+registry, ensuring the generic _resolve_aliases() function works for every
+registered alias type. The registry is read at collection time (after
+django.setup() has run register_alias_types), not snapshotted at import.
 """
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
 
+from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.models import (
     CorporateEntity,
     GameplayFeature,
@@ -16,9 +19,11 @@ from apps.catalog.models import (
     RewardType,
     Theme,
 )
-from apps.catalog.resolve._relationships import ALIAS_TYPES, _resolve_aliases
+from apps.catalog.resolve._relationships import _resolve_aliases
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, Source
+
+_ALIAS_TYPES = discover_alias_types()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -96,7 +101,7 @@ def source(db):
 
 
 # Build pytest parametrize IDs from claim field names.
-_ALIAS_IDS = [at.claim_field for at in ALIAS_TYPES]
+_ALIAS_IDS = [at.claim_field for at in _ALIAS_TYPES]
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +111,7 @@ _ALIAS_IDS = [at.claim_field for at in ALIAS_TYPES]
 
 @pytest.mark.django_db
 class TestAliasSweptAllTypes:
-    @pytest.mark.parametrize("at", ALIAS_TYPES, ids=_ALIAS_IDS)
+    @pytest.mark.parametrize("at", _ALIAS_TYPES, ids=_ALIAS_IDS)
     def test_aliases_created_on_first_run(self, source, at):
         parent = _create_parent(at.parent_model)
         _assert_alias_claims(
@@ -121,7 +126,7 @@ class TestAliasSweptAllTypes:
         )
         assert values == {"Alt Name A", "Alt Name B"}
 
-    @pytest.mark.parametrize("at", ALIAS_TYPES, ids=_ALIAS_IDS)
+    @pytest.mark.parametrize("at", _ALIAS_TYPES, ids=_ALIAS_IDS)
     def test_stale_aliases_swept(self, source, at):
         parent = _create_parent(at.parent_model)
         aliases = at.alias_model._default_manager.filter(**{at.fk_name: parent})
@@ -134,7 +139,7 @@ class TestAliasSweptAllTypes:
         _resolve_aliases(at.parent_model)
         assert aliases.count() == 0
 
-    @pytest.mark.parametrize("at", ALIAS_TYPES, ids=_ALIAS_IDS)
+    @pytest.mark.parametrize("at", _ALIAS_TYPES, ids=_ALIAS_IDS)
     def test_display_case_preserved(self, source, at):
         parent = _create_parent(at.parent_model)
 

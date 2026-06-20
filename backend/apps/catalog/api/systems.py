@@ -17,7 +17,8 @@ from ninja.responses import Status
 from ninja.security import django_auth
 from pydantic import Field
 
-from apps.catalog.naming import normalize_catalog_name
+from apps.catalog.engine.naming import normalize_catalog_name
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
@@ -36,24 +37,23 @@ from apps.provenance.rate_limits import (
     rate_limited,
 )
 
-from ..models import MachineModel, Manufacturer, System
-from ._typing import HasModelCount
-from .constants import NameQuery, PageParam
-from .entity_create import (
+from ..engine.entity_api.create import (
     assert_name_available,
     assert_public_id_available,
     create_entity_with_claims,
     validate_name,
     validate_slug_format,
 )
-from .entity_crud import register_entity_delete_restore
-from .entity_list import paginated_list_response
+from ..engine.entity_api.delete import register_entity_delete_restore
+from ..engine.entity_api.listing import paginated_list_response
+from ..engine.query.constants import NameQuery, PageParam
+from ..models import MachineModel, Manufacturer, System
+from ._typing import HasModelCount
 from .images import extract_image_urls, fetch_model_media_map
-from .rich_text import describe
 from .schemas import (
-    CatalogDetailSchema,
     ClaimPatchSchema,
     EntityCreateInputSchema,
+    EntityDetailSchema,
     EntityRef,
     RelatedTitleSchema,
 )
@@ -84,7 +84,7 @@ class SystemCreateSchema(EntityCreateInputSchema):
     manufacturer_slug: str
 
 
-class SystemDetailSchema(CatalogDetailSchema):
+class SystemDetailSchema(EntityDetailSchema):
     slug: str
     manufacturer: EntityRef
     technology_subgeneration: EntityRef | None = None

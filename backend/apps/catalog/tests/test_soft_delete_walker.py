@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from apps.accounts.test_factories import make_user
-from apps.catalog.api.soft_delete import (
+from apps.catalog.engine.entity_api.delete import (
     SoftDeleteBlockedError,
     execute_soft_delete,
     plan_soft_delete,

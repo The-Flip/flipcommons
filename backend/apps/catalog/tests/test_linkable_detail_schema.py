@@ -79,7 +79,7 @@ class TestLinkableDetailSchemaParity:
     def test_every_detail_response_exposes_last_modified(self) -> None:
         """Every linkable catalog entity's detail response carries
         ``last_modified`` (freshness for JSON-LD ``dateModified``), so a future
-        entity that forgets ``LastModifiedDetailSchema`` / ``CatalogDetailSchema``
+        entity that forgets ``LastModifiedDetailSchema`` / ``EntityDetailSchema``
         fails here rather than silently dropping ``dateModified``.
         """
         schema = api.get_openapi_schema()
@@ -100,7 +100,7 @@ class TestLinkableDetailSchemaParity:
 
         assert not missing, (
             "These catalog detail responses don't expose `last_modified`. "
-            "Inherit `CatalogDetailSchema` and pass "
+            "Inherit `EntityDetailSchema` and pass "
             f"`last_modified=obj.last_modified`: {missing}"
         )
 

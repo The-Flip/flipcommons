@@ -52,6 +52,7 @@ from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.rate_limits import RateLimitSpec, check_and_record_ip
 from apps.core.schemas import RateLimitErrorSchema
+from apps.media.helpers import media_prefetch
 from apps.media.models import MediaSupportedModel
 from apps.provenance.helpers import active_claims as _active_claims
 from apps.provenance.helpers import claims_prefetch
@@ -70,7 +71,7 @@ from ..cache import (
     get_cached_response,
     set_cached_response,
 )
-from .images import extract_image_attribution, extract_image_urls, media_prefetch
+from .images import extract_image_attribution, extract_image_urls
 
 # The "export" tag is the opt-in marker for the public API reference: /api-docs
 # shows only export-tagged endpoints (and uses the tag as the section heading).
@@ -744,7 +745,7 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
     # string values) and registry-known, so derive them rather than hand-listing
     # per entity — otherwise an entity with aliases is silently dropped from the
     # dump (e.g. Manufacturer/Person/Location/RewardType were).
-    from apps.catalog._alias_registry import discover_alias_types
+    from apps.catalog.engine.aliases import discover_alias_types
 
     alias_models = {at.parent_model for at in discover_alias_types()}
     for model, spec in by_model.items():

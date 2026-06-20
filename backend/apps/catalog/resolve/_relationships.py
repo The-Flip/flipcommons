@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import NamedTuple, cast
+from typing import Literal, NamedTuple, cast
 
 from django.db.models import Model
 
@@ -21,7 +21,7 @@ from apps.provenance.validation import (
     get_relationship_schema,
 )
 
-from .._alias_registry import AliasType, alias_type_for, discover_alias_types
+from ..engine.aliases import alias_type_for, discover_alias_types
 from ..models import (
     CatalogModel,
     CorporateEntity,
@@ -36,6 +36,7 @@ from ..models import (
     ModelAbbreviation,
     Person,
     RewardType,
+    Series,
     Tag,
     Theme,
     Title,
@@ -328,10 +329,37 @@ def resolve_all_credits(
     *,
     subject_ids: set[int] | None = None,
 ) -> None:
-    """Bulk-resolve credit claims into Credit rows."""
+    """Bulk-resolve MachineModel credit claims into Credit rows."""
+    _resolve_credits(MachineModel, "model", subject_ids=subject_ids)
+
+
+def resolve_all_series_credits(
+    *,
+    subject_ids: set[int] | None = None,
+) -> None:
+    """Bulk-resolve Series credit claims into Credit rows."""
+    _resolve_credits(Series, "series", subject_ids=subject_ids)
+
+
+def _resolve_credits(
+    subject_model: type[ClaimControlledModel],
+    fk_field: Literal["model", "series"],
+    *,
+    subject_ids: set[int] | None = None,
+) -> None:
+    """Subject-agnostic core for bulk credit resolution.
+
+    Shared by the MachineModel and Series passes. ``fk_field`` is the ``Credit``
+    FK attribute for this subject (``"model"`` or ``"series"``); the
+    ContentType, claim set, existing rows and new rows are all derived from
+    ``subject_model`` / ``fk_field`` so no concrete subject is named. ``Credit``'s
+    model/series XOR constraint guarantees a row belongs to exactly one subject,
+    so the two passes never touch each other's rows.
+    """
     from django.contrib.contenttypes.models import ContentType
 
-    ct = ContentType.objects.get_for_model(MachineModel)
+    ct = ContentType.objects.get_for_model(subject_model)
+    fk_id = f"{fk_field}_id"
 
     valid_person_pks = set(Person.objects.values_list("pk", flat=True))
     valid_role_pks = set(CreditRole.objects.values_list("pk", flat=True))
@@ -347,16 +375,16 @@ def resolve_all_credits(
         credit_qs = credit_qs.filter(object_id__in=subject_ids)
     credit_claims = ranked_claims(credit_qs, "object_id", "claim_key")
 
-    winners_by_model: dict[int, list[Claim]] = {}
+    winners_by_subject: dict[int, list[Claim]] = {}
     seen: set[ClaimDedupKey] = set()
     for claim in credit_claims:
         key = ClaimDedupKey(claim.object_id, claim.claim_key)
         if key not in seen:
             seen.add(key)
-            winners_by_model.setdefault(claim.object_id, []).append(claim)
+            winners_by_subject.setdefault(claim.object_id, []).append(claim)
 
-    desired_by_model: dict[int, set[CreditAssignment]] = {}
-    for model_id, claims_list in winners_by_model.items():
+    desired_by_subject: dict[int, set[CreditAssignment]] = {}
+    for subject_id, claims_list in winners_by_subject.items():
         desired: set[CreditAssignment] = set()
         for claim in claims_list:
             val = cast(CreditClaimValue, claim.value)
@@ -365,55 +393,57 @@ def resolve_all_credits(
             person_pk = val.get("person")
             if person_pk not in valid_person_pks:
                 logger.warning(
-                    "Unresolved person pk %r in credit claim (model pk=%s)",
+                    "Unresolved person pk %r in credit claim (subject pk=%s)",
                     person_pk,
-                    model_id,
+                    subject_id,
                 )
                 continue
             role_pk = val.get("role")
             if role_pk not in valid_role_pks:
                 logger.warning(
-                    "Unresolved credit role pk %r in credit claim (model pk=%s)",
+                    "Unresolved credit role pk %r in credit claim (subject pk=%s)",
                     role_pk,
-                    model_id,
+                    subject_id,
                 )
                 continue
             desired.add(CreditAssignment(person_pk, role_pk))
-        desired_by_model[model_id] = desired
+        desired_by_subject[subject_id] = desired
 
     if subject_ids is not None:
-        all_model_ids = subject_ids
+        all_subject_ids = subject_ids
     else:
-        all_model_ids = set(MachineModel.objects.values_list("pk", flat=True))
-    existing_by_model: dict[int, set[CreditAssignment]] = {}
-    dc_qs = Credit.objects.filter(model_id__in=all_model_ids)
-    for model_id, person_id, role_id in dc_qs.values_list(
-        "model_id", "person_id", "role_id"
+        all_subject_ids = set(
+            subject_model._default_manager.values_list("pk", flat=True)
+        )
+    existing_by_subject: dict[int, set[CreditAssignment]] = {}
+    existing_rows = Credit.objects.filter(**{f"{fk_id}__in": all_subject_ids})
+    for subject_id, person_id, role_id in existing_rows.values_list(
+        fk_id, "person_id", "role_id"
     ):
-        existing_by_model.setdefault(model_id, set()).add(
+        existing_by_subject.setdefault(subject_id, set()).add(
             CreditAssignment(person_id, role_id)
         )
 
     to_create: list[Credit] = []
     to_delete_pks: list[int] = []
 
-    for model_id in all_model_ids:
-        desired = desired_by_model.get(model_id, set())
-        existing = existing_by_model.get(model_id, set())
+    for subject_id in all_subject_ids:
+        desired = desired_by_subject.get(subject_id, set())
+        existing = existing_by_subject.get(subject_id, set())
 
         for assignment in desired - existing:
             to_create.append(
                 Credit(
-                    model_id=model_id,
+                    **{fk_id: subject_id},
                     person_id=assignment.person_id,
                     role_id=assignment.role_id,
                 )
             )
 
-    for pk, model_id, person_id, role_id in Credit.objects.filter(
-        model_id__in=all_model_ids
-    ).values_list("pk", "model_id", "person_id", "role_id"):
-        desired = desired_by_model.get(model_id, set())
+    for pk, subject_id, person_id, role_id in Credit.objects.filter(
+        **{f"{fk_id}__in": all_subject_ids}
+    ).values_list("pk", fk_id, "person_id", "role_id"):
+        desired = desired_by_subject.get(subject_id, set())
         if CreditAssignment(person_id, role_id) not in desired:
             to_delete_pks.append(pk)
 
@@ -710,12 +740,12 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
 # ---------------------------------------------------------------------------
 # Alias registry — drives resolve_all_aliases() and dispatch
 # ---------------------------------------------------------------------------
-# Auto-discovered from AliasModel subclasses.  Safe to compute at module level
-# because this module already imports Django models at the top, so the app
-# registry is guaranteed to be ready.  ``ALIAS_TYPES`` is kept as a public
-# binding (same shape as before) so that existing callers — including the
-# test suite — continue to work.
-ALIAS_TYPES: list[AliasType] = list(discover_alias_types())
+# No import-time snapshot of the engine alias registry: this module is imported
+# *during* ``CatalogConfig.ready`` (via ``register_catalog_resolve_handlers``),
+# which is before ``register_alias_types`` has populated the registry, so a
+# module-level ``list(discover_alias_types())`` would freeze an empty result.
+# Every consumer reads the live registry via ``discover_alias_types()`` instead
+# (see ``resolve_all_aliases`` below; the alias test suite parametrizes over it).
 
 
 def resolve_theme_aliases() -> None:

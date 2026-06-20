@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from apps.catalog.naming import normalize_catalog_name
+from apps.catalog.engine.naming import normalize_catalog_name
 
 _FIXTURE = (
     Path(__file__).resolve().parents[4]

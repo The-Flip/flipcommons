@@ -1,17 +1,24 @@
-"""Rich-text rendering helpers for catalog API endpoints."""
+"""Rich-text rendering helpers for the generic entity HTTP surface.
+
+Domain-neutral: builds the ``RichTextSchema`` (authoring text, rendered HTML,
+plain projection, inline citations and winning-claim attribution) for any text
+field on any model. The per-entity detail/list serializers in the domain routers
+call these downward (domain → engine, the sanctioned edge).
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
-from apps.catalog.models import CatalogModel
+from django.db import models
+
 from apps.core.markdown import convert_storage_to_authoring, render_markdown_field
 from apps.provenance.helpers import active_claims
 from apps.provenance.licensing import (
     build_source_field_license_map,
     resolve_effective_license,
 )
-from apps.provenance.models import Claim
+from apps.provenance.models import Claim, ClaimControlledModel
 from apps.provenance.schemas import (
     AttributionSchema,
     InlineCitationSchema,
@@ -49,7 +56,7 @@ def _extract_description_attribution(
 
 
 def build_rich_text(
-    obj: CatalogModel,
+    obj: models.Model,
     field_name: str,
     active_claims: Iterable[Claim] | None = None,
 ) -> RichTextSchema:
@@ -82,6 +89,13 @@ def build_rich_text(
     )
 
 
-def describe(obj: CatalogModel) -> RichTextSchema:
-    """Build the description RichTextSchema for any catalog entity."""
+def describe(obj: ClaimControlledModel) -> RichTextSchema:
+    """Build the description RichTextSchema for any claim-controlled entity.
+
+    Bound to ``ClaimControlledModel`` — what ``active_claims(obj)`` requires.
+    The entity must also carry a ``description`` field (``DescribedModel``),
+    read dynamically by ``build_rich_text``; the two capabilities have no
+    common base below catalog, and inventing a one-off ABC to conjoin them for
+    this single caller isn't worth it.
+    """
     return build_rich_text(obj, "description", active_claims(obj))

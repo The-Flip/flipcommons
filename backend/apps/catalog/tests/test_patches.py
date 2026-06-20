@@ -14,10 +14,14 @@ from django.utils import timezone
 from apps.catalog.models import (
     CorporateEntity,
     CorporateEntityLocation,
+    Credit,
+    CreditRole,
     GameplayFeature,
     Location,
     MachineModel,
     Manufacturer,
+    Person,
+    Series,
     Tag,
     Title,
 )
@@ -33,8 +37,11 @@ from apps.claim_ingest.patches import (
     parse_patch_text,
 )
 from apps.claim_ingest.patches.emit import (
+    _FkMemberSpec,
     _member_identity,
+    _MultiFkMemberSpec,
     _relationship_member_spec,
+    _unpack_credit_member,
 )
 from apps.claim_ingest.plan import RunReport
 from apps.provenance.claims import (
@@ -44,6 +51,7 @@ from apps.provenance.claims import (
 )
 from apps.provenance.models import ChangeSet, CitationInstance, Claim, IngestRun, Source
 from apps.provenance.validation import (
+    FkTarget,
     RelationshipSchema,
     ValueKeySpec,
     get_relationship_schema,
@@ -2674,17 +2682,18 @@ claims:
     assert second.pk == first.pk
 
 
-def test_multi_key_relationship_member_rejected(machine_model):
-    # 'credit' is a registered multi-key relationship (person + role); the gate
-    # rejects at classification — before any member resolution — so no person /
-    # role fixtures are needed. Confirms we narrowed the gate, not removed it.
+def test_credit_bare_string_member_rejected(machine_model):
+    # 'credit' is a multi-key (person + role) relationship: a member must be a
+    # one-key '{person: role}' mapping, not the bare public_id a single-key
+    # relationship takes. Confirms the multi-FK arm validates shape (no fixtures
+    # needed — it rejects before resolving).
     text = f"""
 attribution: flipcommons-catalog
 claims:
   - model.{machine_model.slug}:
       credit: [pat-lawlor]
 """
-    with pytest.raises(PatchError, match="single-key relationship"):
+    with pytest.raises(PatchError, match="single 'person: role' mapping"):
         _apply(text)
 
 
@@ -2717,6 +2726,348 @@ def test_non_string_identity_rejected(monkeypatch):
     )
     with pytest.raises(PatchError, match="non-FK, non-string identity"):
         _relationship_member_spec(Manufacturer, "fake_int_identity", entry)
+
+
+def test_mixed_multi_key_identity_rejected(monkeypatch):
+    # A multi-key identity is authorable only when every slot is an FK. No prod
+    # schema mixes an FK and a non-FK identity slot, so craft one — the gate must
+    # reject it rather than classify it as a multi-FK member.
+    crafted = RelationshipSchema(
+        namespace="fake_mixed_multikey",
+        value_keys=(
+            ValueKeySpec(
+                name="person",
+                scalar_type=int,
+                required=True,
+                identity="person",
+                fk_target=FkTarget(Person, "pk"),
+            ),
+            ValueKeySpec(
+                name="amount",
+                scalar_type=int,
+                required=True,
+                identity="amount",
+            ),
+        ),
+        valid_subjects=frozenset({Manufacturer}),
+    )
+    monkeypatch.setattr(
+        "apps.claim_ingest.patches.emit.get_relationship_schema",
+        lambda namespace: crafted if namespace == "fake_mixed_multikey" else None,
+    )
+    entry = EditEntry(
+        entity_type="manufacturer",
+        public_id="stern",
+        retract=[],
+        remove={},
+        fields={},
+    )
+    with pytest.raises(PatchError, match="not all-FK"):
+        _relationship_member_spec(Manufacturer, "fake_mixed_multikey", entry)
+
+
+def test_more_than_two_fk_slots_not_authorable():
+    # The one-key '{a: b}' mapping encodes exactly two values, so a hypothetical
+    # >2-slot multi-FK relationship has no authoring syntax. No prod schema has
+    # one, so build the spec directly and confirm the unpack guard rejects it.
+    spec = _MultiFkMemberSpec(
+        slots=(
+            _FkMemberSpec(value_key="person", target_model=Person),
+            _FkMemberSpec(value_key="role", target_model=CreditRole),
+            _FkMemberSpec(value_key="extra", target_model=Manufacturer),
+        )
+    )
+    entry = EditEntry(
+        entity_type="manufacturer",
+        public_id="stern",
+        retract=[],
+        remove={},
+        fields={},
+    )
+    with pytest.raises(PatchError, match="only 2-slot members are authorable"):
+        _unpack_credit_member({"a": "b"}, spec, "fake_three_fk", entry)
+
+
+# ── Credits (multi-key: person + role) ─────────────────────────────
+
+
+def _credit_claim(person_pk: int, role_slug: str) -> Claim:
+    """The active 'credit' claim for ``(person_pk, role)``."""
+    role = CreditRole.objects.get(slug=role_slug)
+    claim_key, _ = build_relationship_claim(
+        "credit", {"person": person_pk, "role": role.pk}
+    )
+    return Claim.objects.get(claim_key=claim_key, field_name="credit", is_active=True)
+
+
+def test_credit_on_model_with_citation(machine_model, person, credit_roles):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      cite: https://example.org/mm-credits
+      credit:
+        - pat-lawlor: design
+sources:
+  - name: Example
+    source_type: web
+    links:
+      - {{ url: "https://example.org/", label: Example, link_type: homepage }}
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+
+    assert Credit.objects.filter(
+        model=machine_model, person=person, role__slug="design"
+    ).exists()
+    # The entry-level cite: rides the credit claim like any scalar/FK claim.
+    assert CitationInstance.objects.filter(
+        claim=_credit_claim(person.pk, "design")
+    ).exists()
+
+
+def test_credit_on_series(person, credit_roles):
+    series = Series.objects.create(name="World Cup Soccer", slug="world-cup-soccer")
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - series.{series.slug}:
+      credit:
+        - pat-lawlor: design
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+    # Exercises the Phase 1 series resolver through the patch path.
+    assert Credit.objects.filter(
+        series=series, person=person, role__slug="design"
+    ).exists()
+
+
+def test_credit_same_person_two_roles(machine_model, person, credit_roles):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      credit:
+        - pat-lawlor: design
+        - pat-lawlor: software
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+    assert Credit.objects.filter(model=machine_model, person=person).count() == 2
+
+
+def test_credit_same_patch_create_person(another_model, credit_roles):
+    # Person slot defers to a same-patch create; role slot is committed.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - person.jane-newcomer:
+      create: true
+      name: Jane Newcomer
+  - model.{another_model.slug}:
+      credit:
+        - jane-newcomer: art
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+    jane = Person.objects.get(slug="jane-newcomer")
+    assert Credit.objects.filter(
+        model=another_model, person=jane, role__slug="art"
+    ).exists()
+
+
+def test_credit_same_patch_create_person_and_role(another_model):
+    # BOTH slots defer to same-patch creates — no credit_roles fixture, the role
+    # is created in the patch. Exercises the second identity slot's deferral and
+    # the composite deferred-key path that the person-only case leaves unhit.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - person.dana-newcomer:
+      create: true
+      name: Dana Newcomer
+  - credit-role.lead-designer:
+      create: true
+      name: Lead Designer
+  - model.{another_model.slug}:
+      credit:
+        - dana-newcomer: lead-designer
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+    dana = Person.objects.get(slug="dana-newcomer")
+    assert Credit.objects.filter(
+        model=another_model, person=dana, role__slug="lead-designer"
+    ).exists()
+
+
+def test_credit_two_persons_share_created_role(another_model):
+    # Two persons crediting the *same* same-patch-created role both defer on the
+    # one role handle. Keyed by the bare handle they would collide as a false
+    # "duplicate member"; the composite (person, role) deferred key keeps them
+    # distinct. Regression guard for the disjoint-key construction.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - credit-role.co-designer:
+      create: true
+      name: Co-Designer
+  - person.amy-one:
+      create: true
+      name: Amy One
+  - person.ben-two:
+      create: true
+      name: Ben Two
+  - model.{another_model.slug}:
+      credit:
+        - amy-one: co-designer
+        - ben-two: co-designer
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+    assert (
+        Credit.objects.filter(model=another_model, role__slug="co-designer").count()
+        == 2
+    )
+
+
+def test_credit_remove(machine_model, person, credit_roles):
+    add = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      credit:
+        - pat-lawlor: design
+"""
+    _apply(add, patch_id="0001-add")
+    assert Credit.objects.filter(model=machine_model, person=person).exists()
+
+    remove = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      remove:
+        credit:
+          - pat-lawlor: design
+"""
+    report = _apply(remove, patch_id="0002-remove")
+    assert report.rejected == 0
+    assert not Credit.objects.filter(model=machine_model, person=person).exists()
+
+
+def test_credit_remove_absent_is_noop(machine_model, person, credit_roles):
+    # Removing a credit this source never claimed is a logged no-op, not an error.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      remove:
+        credit:
+          - pat-lawlor: design
+"""
+    report = _apply(text)
+    assert report.rejected == 0
+    assert not Credit.objects.filter(model=machine_model).exists()
+
+
+def test_credit_idempotent(machine_model, person, credit_roles):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      credit:
+        - pat-lawlor: design
+"""
+    _apply(text, patch_id="0001-x")
+    first = _credit_claim(person.pk, "design")
+    _apply(text, patch_id="0002-x")
+    second = _credit_claim(person.pk, "design")
+    # Unchanged re-assert: same active claim row, single Credit.
+    assert second.pk == first.pk
+    assert Credit.objects.filter(model=machine_model).count() == 1
+
+
+def test_credit_unknown_person_rejected(machine_model, credit_roles):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      credit:
+        - nobody-here: design
+"""
+    with pytest.raises(PatchError, match="does not resolve to a Person"):
+        _apply(text)
+
+
+def test_credit_unknown_role_rejected(machine_model, person, credit_roles):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      credit:
+        - pat-lawlor: no-such-role
+"""
+    with pytest.raises(PatchError, match="does not resolve to a CreditRole"):
+        _apply(text)
+
+
+def test_credit_non_string_value_rejected(machine_model, person, credit_roles):
+    # A role slug YAML reads as a number (unquoted) is a non-string value → the
+    # shape guard rejects it (the quoting gotcha the docs warn about).
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      credit:
+        - pat-lawlor: 1979
+"""
+    with pytest.raises(PatchError, match="single 'person: role' mapping"):
+        _apply(text)
+
+
+def test_credit_multi_key_member_rejected(machine_model, person, credit_roles):
+    # A two-key mapping is not a single 'person: role' member.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      credit:
+        - pat-lawlor: design
+          john-youssi: art
+"""
+    with pytest.raises(PatchError, match="single 'person: role' mapping"):
+        _apply(text)
+
+
+def test_credit_duplicate_member_in_entry_rejected(machine_model, person, credit_roles):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      credit:
+        - pat-lawlor: design
+        - pat-lawlor: design
+"""
+    with pytest.raises(PatchError, match="duplicate member"):
+        _apply(text)
+
+
+def test_credit_assert_and_remove_same_member_rejected(
+    machine_model, person, credit_roles
+):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      credit:
+        - pat-lawlor: design
+      remove:
+        credit:
+          - pat-lawlor: design
+"""
+    with pytest.raises(PatchError, match="cannot both assert and remove"):
+        _apply(text)
 
 
 def test_alias_over_length_rejected(stern):

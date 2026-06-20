@@ -87,9 +87,9 @@ This is because a root is reusable, so a reason-specific description goes stale 
 Some patches set narrative record descriptions (Manufacturer, Model, …) — prose, not classified values. The rules:
 
 - **No speculation.** Keep it factual; tell the story, don't guess.
-- **Every statement supported.** Back each claim with the entry's `note:`, its `cite:`, or a fact already in the catalog. A statement resting on existing catalog data needs no citation; anything else does.
+- **Every statement supported.** Back each claim with an inline `[[cite:…]]` footnote or a fact already in the catalog. A statement resting on existing catalog data needs no citation; anything else does — and every description must footnote **at least one** fact (a description with no inline citation at all is rejected by the lint, so a purely-catalog description still cites its primary source).
 - **Attribute to the description source.** Each entity type has its own description source named `flipcommons-ai-desc-<entity-type>` — `flipcommons-ai-desc-manufacturer`, `flipcommons-ai-desc-model`, … — not the generic `flipcommons-catalog`. These sources already exist in the database, so just reference one — unlike a `cite:` website root, you don't create it in an earlier patch.
-- **Cite each fact inline.** A narrative description backs individual sentences with **inline `[[cite:…]]` footnotes** rather than one entry-level `cite:` — see [DataPatches.md → Inline citations in descriptions](DataPatches.md#inline-citations-in-descriptions) for the format (numeric handles plus a `cites:` map for new citations; durable slugs for existing ones). An entry-level `cite:` still works for a whole-field source, but inline footnotes are what make each statement individually verifiable. Inline `cites:` count as provenance, so all of an entity's cited fields belong in **one changeset**.
+- **Cite each fact inline.** A narrative description backs individual sentences with **inline `[[cite:…]]` footnotes**, never a single entry-level `cite:` covering the whole field — see [DataPatches.md → Inline citations in descriptions](DataPatches.md#inline-citations-in-descriptions) for the format (numeric handles plus a `cites:` map for new citations; durable slugs for existing ones). The editorial lint enforces two rules here: a `description:` unit must carry **at least one** inline `[[cite:N]]` footnote (`description-needs-inline-cite`), and it may **not** carry an entry-level `cite:` (`description-no-entry-cite`). Even when one source covers the whole description, footnote it inline (a single `[[cite:1]]` at the end is fine) so each statement is individually verifiable. Inline `cites:` count as provenance, so all of an entity's cited fields belong in **one changeset**. (Patches already applied to production predate these rules and are grandfathered; supersede them in a new patch under the same `flipcommons-ai-desc-<type>` source if you need to convert them.)
 
 ### Rehydrating a description for re-edit
 
@@ -132,13 +132,33 @@ claims:
 - **Remove** drops a member exactly like an FK member: `remove: { manufacturer_alias: [Stern Inc] }`, attributed to the source holding the membership claim.
 - **No `note:` or `cite:` needed.** Aliases and abbreviations don't require `note:`/`cite:`. It fine for them to ride in a Change Set whose `note:`/`cite:` supports other things.
 
+## Credits
+
+A credit attaches a `{person, role}` pair to a model or series. Each member is a **single-key mapping** under `credit:` — the key is the person public_id, the value is the role (a `credit-role`) public_id (see [DataPatches.md → Credits](DataPatches.md#credits) for the full syntax). Authoring guidance:
+
+```yaml
+claims:
+  - model.medieval-madness:
+      cite: ipdb:4032
+      credit:
+        - brian-eddy: design
+        - dan-forden: software
+        - dan-forden: sound # one person, two roles → two credits
+```
+
+- **Cite the credit.** Unlike aliases, credits are substantive facts and should carry evidence. An entry-level `cite:` attaches to every credit in the entry; if different credits come from different sources, split them across `changesets:` items, each with its own `cite:`. The pinball cataloguing standard is IPDB's credit block — cite it (`ipdb:NNNN`).
+- **Person and role must resolve.** Both are public_ids that must already exist — in the seed, an earlier patch, or earlier in this same patch. A new `credit-role` is creatable with `create: true` (like `tag`/`theme`); create unfamiliar people the same way before crediting them.
+- **One person, many roles.** Repeat the person across list items — `dan-forden: software` and `dan-forden: sound` are two distinct credits, not a duplicate. The duplicate guard only rejects the _same_ `{person, role}` pair twice in one entry.
+- **Series vs model.** Put a credit on the `series.*` entry only when it genuinely applies to the series as a whole (e.g. an original designer credited across the line); a credit specific to one machine belongs on its `model.*` entry.
+- **Remove** drops a credit like any other member: `remove: { credit: [{ john-youssi: art }] }` (or the block form), attributed to the source holding the claim.
+
 ## Validation process
 
 How to validate your changes:
 
 1. [`--dry-run`](#dry-run) is the cheap first pass: it parses the patch and runs every structural check without writing.
 2. [Validate via snapshot](#validate-via-snapshot) is the real check: it commits to localhost, so you see the resolved effect in the running app and can validate cross-file dependencies, then roll back.
-3. [Hand off to user](#hand-off-to-user) only after those. Committing is the user's call.
+3. [Hand off to user](#hand-off-to-user) only after those. Committing and `make push` are the user's call.
 
 ### Dry run
 
@@ -181,4 +201,4 @@ print(c.changeset.note)
 
 ### Hand off to user
 
-Committing and `make push` in flippatch are the user's call — never do either yourself.
+Committing and `make push` in flippatch are the user's call — never automatic, never something you do yourself. `make push` (publish to R2, whence other environments pull via `make pull-patches && make ingest-patches`) is a deliberate user command on the same footing as `git commit`/`git push`; the authoring loop ends at localhost validation and never touches R2.

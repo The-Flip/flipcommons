@@ -90,8 +90,9 @@ class _TargetContribution(NamedTuple):
     remove sets. ``_validate_plan_wide`` merges these across entries, enforcing
     per-entry-ChangeSet disjointness.
 
-    ``deferred_member_ids`` are ``"namespace handle"`` keys for members pointing
-    at a same-patch create — kept apart from ``asserted_members`` (concrete
+    ``deferred_member_ids`` are ``"namespace <composite>"`` keys for members with
+    at least one slot pointing at a same-patch create — the composite is a pk or
+    handle per identity slot. Kept apart from ``asserted_members`` (concrete
     claim_keys) because their real claim_key isn't known until apply time, but
     still guarded for cross-entry duplication.
     """
@@ -573,10 +574,13 @@ def _process_entry(
             if emit.carrier_written:
                 carrier_written = True
             # Concrete claim_keys feed the clash + disjoint guards; a deferred
-            # (same-patch) member has no claim_key yet, so its target handle
-            # rides a separate ``(namespace, handle)`` disjoint key.
+            # (same-patch) member has no claim_key yet, so its whole composite
+            # identity (a pk or handle per slot) rides a separate disjoint key.
+            # Keying on the *full* composite — not a single handle — keeps two
+            # members that share one deferred slot (e.g. two persons crediting the
+            # same same-patch-created role) distinct rather than false-duplicates.
             asserted_members.update(emit.clash_keys)
-            deferred_member_ids.update(f"{key} {h}" for h in emit.deferred_handles)
+            deferred_member_ids.update(f"{key} {m}" for m in emit.deferred_members)
         else:
             raise PatchError(f"{entry.ref}: unknown field {key!r}")
 

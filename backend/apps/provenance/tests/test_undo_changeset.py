@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from apps.accounts.test_factories import make_user
-from apps.catalog.api.soft_delete import execute_soft_delete
+from apps.catalog.engine.entity_api.delete import execute_soft_delete
 from apps.catalog.models import Title
 from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
 from apps.provenance.revert import UndoError, execute_undo_changeset

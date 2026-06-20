@@ -41,10 +41,10 @@ from apps.catalog.models import (
 )
 from apps.core.licensing import get_minimum_display_rank
 
+from ..engine.entity_api.detail import register_entity_detail_page
 from .corporate_entities import CorporateEntityDetailSchema
 from .corporate_entities import _detail_qs as _corp_entity_detail_qs
 from .corporate_entities import _serialize_detail as _serialize_corp_entity_detail
-from .entity_detail_page import register_entity_detail_page
 from .franchises import (
     FranchiseDetailSchema,
     _franchise_detail_qs,

@@ -47,6 +47,16 @@ from django.db.models.functions import Lower
 from apps.core.models import active_status_q
 from apps.core.search import fold as _fold
 
+from ..engine.query.facet_helpers import (
+    Bounds,
+    FacetOption,
+    _Unaccent,
+    ancestor_map,
+    bounds,
+    count_distinct,
+    hierarchy_rollup,
+    with_selected,
+)
 from ..models import (
     DisplayType,
     Franchise,
@@ -60,16 +70,6 @@ from ..models import (
     TechnologyGeneration,
     Theme,
     Title,
-)
-from ._facet_helpers import (
-    Bounds,
-    FacetOption,
-    _Unaccent,
-    ancestor_map,
-    bounds,
-    count_distinct,
-    hierarchy_rollup,
-    with_selected,
 )
 
 # ---------------------------------------------------------------------------

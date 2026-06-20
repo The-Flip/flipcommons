@@ -11,6 +11,7 @@ from ninja import Router, Schema
 from ninja.security import django_auth
 from pydantic import Field
 
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import execute_claims, plan_scalar_field_claims
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -20,15 +21,15 @@ from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
 
+from ..engine.entity_api.create import register_entity_create
+from ..engine.entity_api.delete import register_entity_delete_restore
+from ..engine.entity_api.listing import paginated_list_response
+from ..engine.query.constants import NameQuery, PageParam
 from ..models import Franchise, MachineModel, Title
 from ._typing import HasTitleCount
-from .constants import NameQuery, PageParam
-from .entity_crud import register_entity_create, register_entity_delete_restore
-from .entity_list import paginated_list_response
 from .helpers import serialize_title_ref
 from .images import fetch_title_media_map
-from .rich_text import describe
-from .schemas import CatalogDetailSchema, ClaimPatchSchema, TitleRef
+from .schemas import ClaimPatchSchema, EntityDetailSchema, TitleRef
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -51,7 +52,7 @@ class FranchiseListSchema(Schema):
     count: int
 
 
-class FranchiseDetailSchema(CatalogDetailSchema):
+class FranchiseDetailSchema(EntityDetailSchema):
     slug: str
     titles: list[TitleRef]
 

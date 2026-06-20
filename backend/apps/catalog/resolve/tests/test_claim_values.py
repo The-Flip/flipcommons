@@ -15,7 +15,7 @@ from __future__ import annotations
 import types
 from typing import Union, get_args, get_origin, get_type_hints
 
-from apps.catalog._alias_registry import discover_alias_types
+from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.resolve._claim_values import (
     AbbreviationClaimValue,
     AliasClaimValue,

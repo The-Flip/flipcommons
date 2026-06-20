@@ -100,14 +100,38 @@ class _HierarchyEdge(NamedTuple):
     ref: str  # the entry-ref/handle that asserted the edge, for the error message
 
 
+class _DeferredSlotRef(NamedTuple):
+    """One identity slot of a deferred member, resolved to a pk or a handle.
+
+    ``target`` is a committed pk (``int``) for a slot that resolved against the
+    DB, or a same-patch-create ``Handle`` (``str``) for a slot still awaiting
+    creation. A tuple of these over *all* a member's slots is its
+    :data:`_DeferredMemberKey`.
+    """
+
+    value_key: str
+    target: int | Handle
+
+
+# A deferred relationship member's composite identity: one ``_DeferredSlotRef``
+# per identity slot, ordered by the schema's slots. It dedups deferred members
+# both within an entry (``seen_deferred``) and plan-wide (``deferred_member_ids``
+# in :mod:`.planning`). A single-FK deferred member is the 1-tuple
+# ``((value_key, handle),)``, so the single- and multi-key paths share one key
+# type. Keying on the *whole* composite — not a bare handle — is what keeps two
+# members that share one deferred slot (e.g. two persons crediting the same
+# same-patch-created role) distinct rather than colliding as a false duplicate.
+type _DeferredMemberKey = tuple[_DeferredSlotRef, ...]
+
+
 class _MemberEmitResult(NamedTuple):
     """Outcome of ``_emit_relationship`` for one entry's namespace.
 
     ``clash_keys`` are the *concrete* claim_keys the assert/remove clash guard
     and ``asserted_members`` consume; a deferred (same-patch-created) member has
-    no concrete claim_key at plan time, so its target ``handle`` rides
-    ``deferred_handles`` instead — the cross-entry disjoint guard keys it as
-    ``"namespace handle"`` so two entries asserting the same same-patch member
+    no concrete claim_key at plan time, so its composite :data:`_DeferredMemberKey`
+    rides ``deferred_members`` instead — the cross-entry disjoint guard keys it as
+    ``"namespace <composite>"`` so two entries asserting the same same-patch member
     can't silently collapse in ``_build_claims``. ``carrier_written`` is whether
     any assertion — concrete or deferred — was emitted, so a ``note:``/``cite:``
     on an entry whose members are *all* same-patch creates is not wrongly rejected
@@ -117,7 +141,7 @@ class _MemberEmitResult(NamedTuple):
     """
 
     clash_keys: list[ClaimKey]
-    deferred_handles: list[Handle]
+    deferred_members: list[_DeferredMemberKey]
     carrier_written: bool
     hierarchy_edges: list[_HierarchyEdge]
 
@@ -149,6 +173,25 @@ def _lookup_pk(target_model: type[models.Model], public_id: str) -> int | None:
         .values_list("pk", flat=True)
         .first()
     )
+
+
+def _resolve_committed_slot(
+    slot: _FkMemberSpec, ref: PublicId, *, namespace: Namespace, entry: PatchEntry
+) -> int:
+    """Resolve one FK slot's public_id to a committed pk, or raise.
+
+    Shared by both multi-FK identity callers — the remove path
+    (``_member_identity``) and the assert path's committed-slot resolution
+    (``_resolve_member_slots``) — so the "does not resolve to a {Model}" error is
+    defined once and the two paths can't drift.
+    """
+    member_pk = _lookup_pk(slot.target_model, ref)
+    if member_pk is None:
+        raise PatchError(
+            f"{entry.ref}: relationship {namespace!r} member {ref!r} "
+            f"does not resolve to a {slot.target_model.__name__}"
+        )
+    return member_pk
 
 
 def _emit_assert(
@@ -224,10 +267,37 @@ class _StringMemberSpec(NamedTuple):
     display_key: str | None
 
 
+class _MultiFkMemberSpec(NamedTuple):
+    """Member is a multi-key relationship whose identity is ≥2 FK slots.
+
+    Today this is only ``credit`` (``person`` + ``role``). ``slots`` reuses
+    :class:`_FkMemberSpec` per identity slot — each carries its own ``value_key``
+    and ``target_model`` — so a slot is self-describing and no bare positional
+    tuple crosses a boundary. Slot order is the schema's declaration order and is
+    significant: the authored one-key mapping maps its key onto ``slots[0]`` and
+    its value onto ``slots[1]`` (see ``_unpack_credit_member``).
+    """
+
+    slots: tuple[_FkMemberSpec, ...]
+
+
+class _MemberSlotRef(NamedTuple):
+    """One identity slot paired with the public_id authored for it.
+
+    Produced by ``_unpack_credit_member`` from a one-key ``{person: role}``
+    mapping — ``slot`` is the schema slot, ``ref`` the public_id to resolve
+    against ``slot.target_model``.
+    """
+
+    slot: _FkMemberSpec
+    ref: PublicId
+
+
 # Closed discriminated union: an FK member never has a display key, a string
-# member never has a target model — modelled so the illegal combinations are
-# unrepresentable rather than guarded by nullable sentinels.
-type _RelationshipMemberSpec = _FkMemberSpec | _StringMemberSpec
+# member never has a target model, a multi-FK member carries an ordered slot
+# tuple — modelled so the illegal combinations are unrepresentable rather than
+# guarded by nullable sentinels.
+type _RelationshipMemberSpec = _FkMemberSpec | _StringMemberSpec | _MultiFkMemberSpec
 
 
 def _relationship_member_spec(
@@ -240,12 +310,14 @@ def _relationship_member_spec(
     Shared by the assert (``_emit_relationship``) and remove (``_add_removals``)
     paths so both reject the same unsupported shapes with the same messages.
     Rejects an unknown namespace, one not valid on the subject model, a
-    genuinely multi-key relationship (e.g. credit — still unsupported), and a
+    multi-key relationship whose identity slots are not *all* FK, and a
     single-identity relationship whose identity is neither an FK nor a string.
 
     Classification keys off declared schema properties (``fk_target``,
     ``scalar_type``, ``max_length``), never a model name or ``isinstance`` —
-    so every FK-identity and string-identity relationship lights up uniformly.
+    so every FK-identity, string-identity and multi-FK relationship lights up
+    uniformly (today the multi-FK arm is only ``credit``, but nothing here names
+    it).
     """
     schema = get_relationship_schema(namespace)
     if schema is None:
@@ -256,10 +328,25 @@ def _relationship_member_spec(
             f"{model_class.__name__}"
         )
     identity_specs = [s for s in schema.value_keys if s.identity is not None]
-    if len(identity_specs) != 1:
+    if len(identity_specs) >= 2:
+        # A multi-key relationship is authorable only when every identity slot is
+        # an FK (the one-key ``{a: b}`` mapping form maps public_ids onto slots).
+        # A mixed FK/non-FK multi-key identity has no authoring syntax yet.
+        if not all(s.fk_target is not None for s in identity_specs):
+            raise PatchError(
+                f"{entry.ref}: relationship {namespace!r} has a multi-key identity "
+                f"that is not all-FK (unsupported)"
+            )
+        return _MultiFkMemberSpec(
+            slots=tuple(
+                _FkMemberSpec(value_key=s.name, target_model=s.fk_target.model)
+                for s in identity_specs
+                if s.fk_target is not None  # narrowing; guaranteed by the check above
+            )
+        )
+    if not identity_specs:
         raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} is not a single-key "
-            f"relationship (multi-key relationships are unsupported)"
+            f"{entry.ref}: relationship {namespace!r} has no identity key (unsupported)"
         )
     spec = identity_specs[0]
     if spec.fk_target is not None:
@@ -337,6 +424,100 @@ def _member_identity(
                 ident = normalize_alias_identity(member)
                 return {value_key: ident.value, display_key: ident.display}
             return {value_key: normalize_abbreviation_value(member)}
+        case _MultiFkMemberSpec():
+            # Reached only by the remove path: ``_emit_relationship`` resolves
+            # multi-FK members itself (committed or deferred) and never delegates
+            # here. Removal targets committed credits only, so resolve every slot
+            # against a committed row.
+            identity: dict[str, IdentityPart] = {}
+            for slot_ref in _unpack_credit_member(member, rel_spec, namespace, entry):
+                identity[slot_ref.slot.value_key] = _resolve_committed_slot(
+                    slot_ref.slot, slot_ref.ref, namespace=namespace, entry=entry
+                )
+            return identity
+
+
+def _unpack_credit_member(
+    member: object,
+    rel_spec: _MultiFkMemberSpec,
+    namespace: Namespace,
+    entry: PatchEntry,
+) -> tuple[_MemberSlotRef, ...]:
+    """Validate a multi-FK member and pair each authored public_id with its slot.
+
+    A multi-FK member is authored as a one-key ``{<slot0-public_id>:
+    <slot1-public_id>}`` mapping (for credit, ``{person: role}``). The dict's
+    single key maps onto ``slots[0]`` and its value onto ``slots[1]``, **per the
+    schema's slot declaration order** — credit declares ``person`` before
+    ``role`` in ``apps/catalog/claims.py``, so a reorder there would swap the
+    mapping and is the one thing to re-check if the schema's slots change.
+
+    Validated in one place so both the identity builder (``_member_identity``)
+    and the deferred-slot resolver (``_emit_relationship``) share a single
+    definition of the legal shape and its error message. The one-key mapping
+    encodes exactly two values, so it expresses a 2-slot identity only; a future
+    >2-slot relationship would need a new authoring syntax, guarded here.
+    """
+    if len(rel_spec.slots) != 2:
+        # The one-key ``{a: b}`` mapping encodes exactly two values, so it can
+        # only express a 2-slot identity; checked before touching ``slots[1]``.
+        slot_names = " / ".join(s.value_key for s in rel_spec.slots)
+        raise PatchError(
+            f"{entry.ref}: relationship {namespace!r} has {len(rel_spec.slots)} "
+            f"identity slots ({slot_names}); only 2-slot members are authorable"
+        )
+    shape_error = (
+        f"{entry.ref}: relationship {namespace!r} member {member!r} must be a "
+        f"single '{rel_spec.slots[0].value_key}: {rel_spec.slots[1].value_key}' "
+        f"mapping"
+    )
+    if not isinstance(member, dict) or len(member) != 1:
+        raise PatchError(shape_error)
+    ((key, value),) = member.items()
+    if not isinstance(key, str) or not isinstance(value, str):
+        raise PatchError(shape_error)
+    return (
+        _MemberSlotRef(slot=rel_spec.slots[0], ref=key),
+        _MemberSlotRef(slot=rel_spec.slots[1], ref=value),
+    )
+
+
+class _ResolvedMember(NamedTuple):
+    """A multi-FK member's slots resolved against the DB and same-patch creates.
+
+    ``concrete`` holds the committed slots (value_key → pk); ``refs`` the deferred
+    slots (value_key → same-patch ``Handle``). ``key`` is the composite
+    :data:`_DeferredMemberKey` over *all* slots, used to dedup deferred members.
+    An empty ``refs`` means the member is fully committed and the caller emits it
+    concretely; a non-empty ``refs`` means at least one slot defers to a create.
+    """
+
+    concrete: dict[str, IdentityPart]
+    refs: dict[str, Handle]
+    key: _DeferredMemberKey
+
+
+def _resolve_member_slots(
+    slot_refs: tuple[_MemberSlotRef, ...],
+    *,
+    registry: PatchEntityRegistry,
+    namespace: Namespace,
+    entry: PatchEntry,
+) -> _ResolvedMember:
+    """Resolve each slot to a committed pk or a same-patch-create handle."""
+    concrete: dict[str, IdentityPart] = {}
+    refs: dict[str, Handle] = {}
+    key_parts: list[_DeferredSlotRef] = []
+    for slot, ref in slot_refs:
+        handle = registry.created_handle(slot.target_model, normalize_fk_value(ref))
+        if handle is not None:
+            refs[slot.value_key] = handle
+            key_parts.append(_DeferredSlotRef(value_key=slot.value_key, target=handle))
+            continue
+        member_pk = _resolve_committed_slot(slot, ref, namespace=namespace, entry=entry)
+        concrete[slot.value_key] = member_pk
+        key_parts.append(_DeferredSlotRef(value_key=slot.value_key, target=member_pk))
+    return _ResolvedMember(concrete=concrete, refs=refs, key=tuple(key_parts))
 
 
 def _emit_relationship(
@@ -354,12 +535,15 @@ def _emit_relationship(
     """Emit ``exists=true`` member assertions; return their clash keys + carrier flag.
 
     A member that resolves against the DB is emitted concretely (its ``claim_key``
-    is recorded for the plan-wide assert/remove conflict guard). An FK member that
-    instead names a *same-patch* create is emitted **deferred**
-    (``relationship_namespace`` + ``identity_refs``), resolved post-creation in
-    ``_patch_handles`` — it has no concrete claim_key yet, so it stays out of the
-    clash list (the remove path can't reference a same-patch create at all, so
-    there is nothing to clash with). Either way a carrier is written.
+    is recorded for the plan-wide assert/remove conflict guard). A member that
+    instead names a *same-patch* create — a single-FK member, or any slot of a
+    multi-FK (credit) member — is emitted **deferred**
+    (``relationship_namespace`` + ``identity`` for committed slots + ``identity_refs``
+    for deferred slots), resolved post-creation in ``_patch_handles``. A deferred
+    member has no concrete claim_key yet, so it stays out of the clash list (the
+    remove path can't reference a same-patch create at all, so there is nothing to
+    clash with) and dedups on its composite :data:`_DeferredMemberKey`. Either way
+    a carrier is written.
     """
     rel_spec = _relationship_member_spec(model_class, namespace, entry)
     if not isinstance(value, list):
@@ -367,18 +551,19 @@ def _emit_relationship(
             f"{entry.ref}: relationship {namespace!r} value must be a list of members"
         )
     clash_keys: list[ClaimKey] = []
-    deferred_handles: list[Handle] = []
+    deferred_members: list[_DeferredMemberKey] = []
     hierarchy_edges: list[_HierarchyEdge] = []
     seen_keys: set[ClaimKey] = set()
-    # Deferred members lack a concrete claim_key, so dedup them on the target
-    # handle (the namespace is fixed for this call) to keep the same "duplicate
-    # member" strictness as the concrete path's seen_keys.
-    seen_deferred: set[Handle] = set()
+    # Deferred members lack a concrete claim_key, so dedup them on their composite
+    # identity (a pk or handle per slot; the namespace is fixed for this call) to
+    # keep the same "duplicate member" strictness as the concrete path's seen_keys.
+    seen_deferred: set[_DeferredMemberKey] = set()
     carrier_written = False
     # A relationship whose FK identity targets its own subject model is a
     # self-referential hierarchy (theme_parent/gameplay_feature_parent); record
     # each asserted edge for the plan-wide acyclicity guard, whether the parent
-    # is an existing row or a same-patch create.
+    # is an existing row or a same-patch create. (Multi-FK members are never
+    # hierarchies — the check is FK-only and never matches one.)
     is_self_hierarchy = (
         isinstance(rel_spec, _FkMemberSpec) and rel_spec.target_model is model_class
     )
@@ -393,17 +578,51 @@ def _emit_relationship(
                     ref=entry.ref,
                 )
             )
-        if isinstance(rel_spec, _FkMemberSpec) and isinstance(member, str):
+        # Resolve the member's identity, splitting same-patch-create slots
+        # (deferred) from committed ones. Any deferred slot makes the whole member
+        # deferred; a fully-committed member falls through to the concrete path.
+        if isinstance(rel_spec, _MultiFkMemberSpec):
+            slot_refs = _unpack_credit_member(member, rel_spec, namespace, entry)
+            resolved = _resolve_member_slots(
+                slot_refs, registry=registry, namespace=namespace, entry=entry
+            )
+            if resolved.refs:
+                if resolved.key in seen_deferred:
+                    raise PatchError(
+                        f"{entry.ref}: duplicate member {member!r} in {namespace!r}"
+                    )
+                seen_deferred.add(resolved.key)
+                deferred_members.append(resolved.key)
+                plan.assertions.append(
+                    PlannedClaimAssert(
+                        field_name=namespace,
+                        relationship_namespace=namespace,
+                        identity=resolved.concrete,
+                        identity_refs=resolved.refs,
+                        note=note,
+                        citation_ref=citation_ref,
+                        content_type_id=target.content_type_id,
+                        object_id=target.object_id,
+                        handle=target.handle,
+                    )
+                )
+                carrier_written = True
+                continue
+            identity = resolved.concrete
+        elif isinstance(rel_spec, _FkMemberSpec) and isinstance(member, str):
             handle = registry.created_handle(
                 rel_spec.target_model, normalize_fk_value(member)
             )
             if handle is not None:
-                if handle in seen_deferred:
+                member_key = (
+                    _DeferredSlotRef(value_key=rel_spec.value_key, target=handle),
+                )
+                if member_key in seen_deferred:
                     raise PatchError(
                         f"{entry.ref}: duplicate member {member!r} in {namespace!r}"
                     )
-                seen_deferred.add(handle)
-                deferred_handles.append(handle)
+                seen_deferred.add(member_key)
+                deferred_members.append(member_key)
                 plan.assertions.append(
                     PlannedClaimAssert(
                         field_name=namespace,
@@ -418,7 +637,9 @@ def _emit_relationship(
                 )
                 carrier_written = True
                 continue
-        identity = _member_identity(member, namespace, rel_spec, entry)
+            identity = _member_identity(member, namespace, rel_spec, entry)
+        else:
+            identity = _member_identity(member, namespace, rel_spec, entry)
         claim_key, claim_value = build_relationship_claim(namespace, identity)
         # Reject a post-fold duplicate within one entry (e.g. [Stern, stern] →
         # same alias identity): emitting the same claim_key twice into one plan
@@ -443,7 +664,7 @@ def _emit_relationship(
         carrier_written = True
     return _MemberEmitResult(
         clash_keys=clash_keys,
-        deferred_handles=deferred_handles,
+        deferred_members=deferred_members,
         carrier_written=carrier_written,
         hierarchy_edges=hierarchy_edges,
     )

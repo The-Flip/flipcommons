@@ -1,71 +1,40 @@
-"""CatalogModel and AliasModel abstract bases for catalog entities."""
+"""CatalogModel abstract base for catalog entities.
+
+``AliasModel`` — the one generic, domain-neutral catalog model base — lives in
+``catalog.engine.models`` and is re-exported here so concrete alias models keep
+their single ``from .base import AliasModel`` import site. The
+``catalog.models -> catalog.engine`` edge is the sanctioned downward direction
+(domain → engine).
+"""
 
 from __future__ import annotations
 
 from typing import ClassVar, Self
 
-from django.db import models
-
 from apps.core.models import (
     DescribedModel,
     LifecycleManager,
-    LifecycleStatusModel,
     SitemappedModel,
 )
-from apps.provenance.models import LinkableClaimModel
+from apps.provenance.models import LinkableLifecycleClaimModel
+
+from ..engine.models import AliasModel
 
 __all__ = ["AliasModel", "CatalogModel"]
 
 
-class AliasModel(models.Model):
-    """Abstract base for alias lookup models.
-
-    Alias values are stored and compared in lowercase (matching the
-    UniqueConstraint(Lower("value")) that every subclass must define).
-    Claims live on the *parent* object, not on the alias row itself.
-
-    Subclasses must add:
-    - A ForeignKey to the parent model (named after the parent, related_name="aliases")
-    - A UniqueConstraint on Lower("value") with a table-specific name
-    - ``alias_claim_field``: the claim namespace on the parent that carries
-      alias values (e.g. ``"theme_alias"``). Enforced at class creation
-      via ``__init_subclass__``; read by ``discover_alias_types``.
-    """
-
-    alias_claim_field: ClassVar[str]
-
-    value = models.CharField(max_length=200)
-
-    class Meta:
-        abstract = True
-        ordering = ["value"]
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        # We can't gate on ``cls._meta.abstract`` here — Django's ModelBase
-        # runs ``__init_subclass__`` with ``abstract`` still inherited as True
-        # from the parent, then rewrites it to False for concrete subclasses
-        # later. So this check runs for every AliasModel subclass, concrete or
-        # not. That's fine: any abstract intermediate can just declare
-        # ``alias_claim_field`` for its concrete descendants to inherit.
-        super().__init_subclass__(**kwargs)
-        if not getattr(cls, "alias_claim_field", None):
-            raise TypeError(
-                f"{cls.__name__} must declare a non-empty `alias_claim_field` "
-                'class attr (e.g. `alias_claim_field = "theme_alias"`)'
-            )
-
-    def __str__(self) -> str:
-        return self.value
-
-
-class CatalogModel(
-    DescribedModel, SitemappedModel, LifecycleStatusModel, LinkableClaimModel
-):
+class CatalogModel(DescribedModel, SitemappedModel, LinkableLifecycleClaimModel):
     """Abstract marker for top-level catalog entities.
 
     Used to distinguish catalog-specific code paths (e.g. data-patch ingest,
     soft-delete wire format), as well as define the capabilies that all catalog
     models must have.
+
+    The lifecycle + claim leaves come from ``LinkableLifecycleClaimModel``
+    (``LifecycleStatusModel`` + ``LinkableClaimModel``); the bundle is
+    ``DescribedModel`` + ``SitemappedModel`` on top. Inserting the combined ABC
+    is MRO-preserving — it declares no fields, manager or constraints — so the
+    field layout, default manager and migration state are unchanged.
 
     Each concrete subclass must still carry its own ``status_valid()`` constraint
     in ``Meta`` because Django does not inherit abstract-parent constraints when

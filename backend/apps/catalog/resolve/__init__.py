@@ -63,6 +63,7 @@ from ._relationships import (
     resolve_all_location_aliases,
     resolve_all_model_abbreviations,
     resolve_all_reward_types,
+    resolve_all_series_credits,
     resolve_all_tags,
     resolve_all_themes,
     resolve_all_title_abbreviations,
