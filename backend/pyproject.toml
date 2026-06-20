@@ -389,7 +389,9 @@ ignore_imports = ["apps.catalog.engine.** -> apps.catalog.engine.**"]
 # contracts so a new engine submodule left unplaced fails the build. The HTTP
 # registrars (`entity_api`) sit on top; the generic query fold and the alias
 # registry below them (`aliases` reads `models`); the cross-cutting wire bases and
-# the leaf substrate (`schemas`, `models`, `naming`, `walks`) at the base. The
+# the leaf substrate (`schemas`, `models`, `naming`, `rich_text`, `walks`) at the
+# base (`rich_text` builds the description ``RichTextSchema`` for the domain
+# serializers; like `naming` it has no engine consumer — a leaf the domain calls). The
 # `entity_api ⊄ export_api` seam joins this contract in Phase E, when the public
 # export surface (`export_api`) is extracted alongside `entity_api`. `tests` is
 # the only ignore needed (engine has no `apps.py` and no migrations, so the
@@ -404,7 +406,7 @@ containers = ["apps.catalog.engine"]
 layers = [
     "entity_api",
     "query | aliases",
-    "schemas | models | naming | walks",
+    "schemas | models | naming | rich_text | walks",
 ]
 
 # Core, like catalog, is an exhaustive layered contract over its whole acyclic

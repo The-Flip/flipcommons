@@ -21,6 +21,7 @@ from ninja.security import django_auth
 from pydantic import Field, TypeAdapter
 
 from apps.catalog.engine.naming import MAX_CATALOG_NAME_LENGTH, normalize_catalog_name
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
@@ -102,7 +103,6 @@ from .machine_models import (
     _model_detail_qs,
     _serialize_model_detail,
 )
-from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
     CreditSchema,

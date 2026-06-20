@@ -16,6 +16,7 @@ from ninja import Router, Schema
 from ninja.decorators import decorate_view
 from ninja.errors import HttpError
 
+from apps.catalog.engine.rich_text import describe
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.provenance.helpers import claims_prefetch
@@ -32,7 +33,6 @@ from ..models import (
 from ..services.location_paths import lookup_child_division
 from ._typing import HasModelCount
 from .images import first_thumbnail
-from .rich_text import describe
 from .schemas import EntityDetailSchema
 
 # ---------------------------------------------------------------------------

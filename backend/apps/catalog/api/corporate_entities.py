@@ -11,6 +11,7 @@ from ninja import Router, Schema
 from ninja.security import django_auth
 from pydantic import Field
 
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import (
     execute_claims,
     raise_form_error,
@@ -43,7 +44,6 @@ from .helpers import (
     serialize_locations,
 )
 from .manufacturers import manufacturers_router
-from .rich_text import describe
 from .schemas import (
     CorporateEntityClaimPatchSchema,
     CorporateEntityLocationSchema,

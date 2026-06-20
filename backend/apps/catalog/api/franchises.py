@@ -11,6 +11,7 @@ from ninja import Router, Schema
 from ninja.security import django_auth
 from pydantic import Field
 
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import execute_claims, plan_scalar_field_claims
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -28,7 +29,6 @@ from ..models import Franchise, MachineModel, Title
 from ._typing import HasTitleCount
 from .helpers import serialize_title_ref
 from .images import fetch_title_media_map
-from .rich_text import describe
 from .schemas import ClaimPatchSchema, EntityDetailSchema, TitleRef
 
 # ---------------------------------------------------------------------------

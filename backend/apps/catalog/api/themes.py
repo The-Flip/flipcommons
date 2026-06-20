@@ -9,6 +9,7 @@ from ninja import Router, Schema
 from ninja.security import django_auth
 from pydantic import Field
 
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import (
     execute_claims,
     raise_form_error,
@@ -30,7 +31,6 @@ from ._counts import bulk_title_counts_via_models
 from .edit_claims import plan_alias_claims, plan_parent_claims
 from .helpers import serialize_title_machine
 from .images import fetch_model_media_map
-from .rich_text import describe
 from .schemas import (
     EntityDetailSchema,
     EntityRef,

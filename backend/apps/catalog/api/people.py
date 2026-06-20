@@ -16,6 +16,7 @@ from ninja.security import django_auth
 from pydantic import Field
 
 from apps.catalog.engine.naming import normalize_catalog_name
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import (
     ClaimSpec,
     execute_claims,
@@ -64,7 +65,6 @@ from .images import (
     extract_image_urls,
     fetch_model_media_map,
 )
-from .rich_text import describe
 from .schemas import (
     AlreadyDeletedSchema,
     ClaimPatchSchema,

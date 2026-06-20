@@ -14,6 +14,7 @@ from ninja.params.functions import Query as QueryParam
 from ninja.security import django_auth
 from pydantic import Field, TypeAdapter
 
+from apps.catalog.engine.rich_text import describe
 from apps.claim_edit.claim_write import execute_claims, plan_scalar_field_claims
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -59,7 +60,6 @@ from .images import (
     extract_image_urls,
     fetch_model_media_map,
 )
-from .rich_text import describe
 from .schemas import (
     ClaimPatchSchema,
     CorporateEntityLocationSchema,
