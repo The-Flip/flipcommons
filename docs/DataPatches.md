@@ -250,7 +250,7 @@ claims:
 
 `cite:` is external evidence, attached to each of the entry's authored claims and shown beside the field on the edit-history page, in one of two forms:
 
-- **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
+- **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`, `youtube:O-2BXTXLXIY`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
 - **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's domain must match a **seeded website root** (a parentless web source whose homepage link shares the domain); the cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no root matches, the patch errors — declare the website root in this patch's `sources:` block (processed before claims) or an earlier patch. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
 
 As noted under [File format](#file-format), each `changesets:` item (and each flat entry) is its own ChangeSet, so one record can take **several** corrections in a patch — each with its own `note`/`cite`. Two rules keep that unambiguous:

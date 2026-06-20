@@ -106,7 +106,7 @@ class CitationSourceSearchSchema(Schema):
         "",
         description=(
             "For a root web source, the identifier scheme its children use "
-            '("ipdb" or "opdb"); an empty string otherwise.'
+            '("ipdb", "opdb" or "youtube"); an empty string otherwise.'
         ),
     )
 
@@ -303,7 +303,7 @@ class CitationSourceDetailSchema(Schema):
     description: str = Field(description="Free-text description, or an empty string.")
     identifier_key: str = Field(
         "",
-        description='For a root web source, the identifier scheme its children use ("ipdb" or "opdb"); an empty string otherwise.',
+        description='For a root web source, the identifier scheme its children use ("ipdb", "opdb" or "youtube"); an empty string otherwise.',
     )
     skip_locator: bool = Field(
         False,

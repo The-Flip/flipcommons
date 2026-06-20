@@ -121,6 +121,7 @@ class CitationSource(TimeStampedModel):
     class IdentifierKey(models.TextChoices):
         IPDB = "ipdb", "IPDB"
         OPDB = "opdb", "OPDB"
+        YOUTUBE = "youtube", "YouTube"
 
     identifier_key = models.CharField(
         max_length=50,
@@ -200,7 +201,7 @@ class CitationSource(TimeStampedModel):
             nullable_id_not_empty("isbn"),
             # identifier_key must be blank or a valid enum value
             models.CheckConstraint(
-                condition=models.Q(identifier_key__in=["", "ipdb", "opdb"]),
+                condition=models.Q(identifier_key__in=["", "ipdb", "opdb", "youtube"]),
                 name="citation_citationsource_identifier_key_valid",
             ),
             # identifier_key lives on roots only
