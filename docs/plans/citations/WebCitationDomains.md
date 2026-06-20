@@ -52,7 +52,7 @@ For a URL host `H`, the winning root is the one whose `CitationSourceRootDomain.
 - **PR 1 — the fix (no PSL).** The model, the matcher, the cleanup migration, the dedup. Closes all three Context problems, is mostly read-path, needs no new dependency, and carries little of the risk.
 - **PR 2 — governance.** PSL + public-suffix guard, the eTLD+1 contributor restriction, the atomic create-from-URL endpoint, and the cosmetic `link_type` tidy-up. This is the deliberate anti-fragmentation layer and the richer create UX.
 
-## PR 1 — root-domain matching + dedup
+## ✅ DONE: PR 1 — root-domain matching + dedup
 
 Sections are in build order, one commit each, 🛑 STOP for user review before committing. In commit messages, do NOT reference ephemera that future readers will not understand, such as step numbers, PR numbers, links to this plan.
 
@@ -129,7 +129,7 @@ Creation and dedup ship together: without dedup, re-seeding a root under a cosme
 
 🛑 STOP for user review before committing.
 
-### 1.7 Exact-link-matches-root fix (bug → failing-test-first) — `backend/apps/citation/extractors.py`
+### ✅ DONE: 1.7 Exact-link-matches-root fix (bug → failing-test-first) — `backend/apps/citation/extractors.py`
 
 - `get_or_create_web_source`'s pre-recognition exact-link reuse ([extractors.py:316]) matches any link by URL, so citing a URL equal to a root's homepage (`https://american-pinball.com/`) returns the abstract root, not a child. Filter that lookup to `citation_source__parent__isnull=False` (children only), then fall through to recognition's domain match → create/reuse a child. (`recognize_url`'s own exact-link step already filters to children, [extractors.py:179].) Independent of the root-domain work — it fixes the existing patch path.
 - **Tests (failing-first):** citing a URL equal to an existing root homepage creates/reuses a **child**, not the root.
