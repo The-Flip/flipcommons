@@ -328,9 +328,10 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
         recognition = recognize_url(url)
         if recognition is None:
             raise CitationSource.DoesNotExist(
-                f"No website CitationSource root matches {url!r}; seed the website "
-                f"root (a parentless source whose homepage link shares the domain) "
-                f"before citing a page under it."
+                f"No website CitationSource root's recognition domain matches "
+                f"{url!r}; declare the root in a patch — a sources: root's homepage "
+                f"host is minted as its recognition domain — before citing a page "
+                f"under it."
             )
         if recognition.child is not None:
             source = CitationSource.objects.get(pk=recognition.child.id)
