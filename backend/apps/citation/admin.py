@@ -1,14 +1,31 @@
+from typing import Any
+
 from django.contrib import admin
+from django.contrib.admin.options import InlineModelAdmin
 from django.forms import BaseInlineFormSet, ModelForm
 from django.http import HttpRequest
 
-from .models import CitationSource, CitationSourceLink
+from .models import CitationSource, CitationSourceLink, CitationSourceRootDomain
 
 
 class CitationSourceLinkInline(admin.TabularInline[CitationSourceLink, CitationSource]):
     model = CitationSourceLink
     extra = 1
     readonly_fields = ("created_by", "updated_by")
+
+
+class CitationSourceRootDomainInline(
+    admin.TabularInline[CitationSourceRootDomain, CitationSource]
+):
+    """Recognition hosts owned by a root.
+
+    The sole edit surface for the recognition signal — there is no contributor
+    endpoint for it. Shown only on root sources (see ``get_inline_instances``);
+    the model's ``clean()`` rejects a domain on a child as a backstop.
+    """
+
+    model = CitationSourceRootDomain
+    extra = 1
 
 
 @admin.register(CitationSource)
@@ -18,7 +35,7 @@ class CitationSourceAdmin(admin.ModelAdmin[CitationSource]):
     search_fields = ("name", "author", "publisher", "isbn")
     list_select_related = ("parent",)
     readonly_fields = ("created_by", "updated_by")
-    inlines = [CitationSourceLinkInline]
+    inlines = [CitationSourceLinkInline, CitationSourceRootDomainInline]
 
     def get_readonly_fields(
         self,
@@ -28,6 +45,22 @@ class CitationSourceAdmin(admin.ModelAdmin[CitationSource]):
         if obj:  # editing existing — parent is locked
             return (*self.readonly_fields, "parent")
         return tuple(self.readonly_fields)
+
+    def get_inline_instances(
+        self,
+        request: HttpRequest,
+        obj: CitationSource | None = None,
+    ) -> list[InlineModelAdmin[Any, CitationSource]]:
+        # A recognition domain may attach only to a root, so the inline is a
+        # trap on a child page — drop it there. Roots and the add form keep it.
+        instances = super().get_inline_instances(request, obj)
+        if obj is not None and obj.parent_id is not None:
+            instances = [
+                inline
+                for inline in instances
+                if not isinstance(inline, CitationSourceRootDomainInline)
+            ]
+        return instances
 
     def has_delete_permission(
         self,
@@ -56,6 +89,11 @@ class CitationSourceAdmin(admin.ModelAdmin[CitationSource]):
         form: ModelForm[CitationSource],
         formset: BaseInlineFormSet[
             CitationSourceLink, CitationSource, ModelForm[CitationSourceLink]
+        ]
+        | BaseInlineFormSet[
+            CitationSourceRootDomain,
+            CitationSource,
+            ModelForm[CitationSourceRootDomain],
         ],
         change: bool,
     ) -> None:
@@ -63,6 +101,8 @@ class CitationSourceAdmin(admin.ModelAdmin[CitationSource]):
         user = request.user
         instances = formset.save(commit=False)
         for instance in instances:
+            # CitationSourceRootDomain has no created_by/updated_by — only links
+            # carry attribution; the row is saved regardless.
             if isinstance(instance, CitationSourceLink):
                 if not instance.pk:
                     instance.created_by = user
