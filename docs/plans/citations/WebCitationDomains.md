@@ -136,21 +136,73 @@ Creation and dedup ship together: without dedup, re-seeding a root under a cosme
 
 🛑 STOP for user review before committing.
 
+### ✅ DONE: 1.8: Surface the recognized parent on a domain match
+
+On the frontend, surface the recognized parent on a domain match.`CitationSearchStage.svelte`'s `create_by_url` item carries `parentName` but renders only the URL + "Create & cite" ([:148-154], [:390-407]) — a domain match looks identical to a brand-new source (the `twip.kineticist.com` screenshot). Render "Create a page under **This Week in Pinball**."
+
+## PR 1.1 — describe-site stage + deferred-write web create
+
+The interactive web-create flow should have two properties that don't depend on the PSL, so they land here ahead of PR 2:
+
+- **Writes happen only on finalize** — nothing is created until the contributor commits the citation, so an abandoned flow leaves no half-described root.
+- **A pasted web URL cites a page child** under its site root, never the bare root — upholding `is_abstract`'s contract that the cited record is always a child under the matched root.
+
+PR 1.1 delivers both: a `cite-url` endpoint that creates the site root and the page child, and a "describe this new site" stage. It needs no new dependency — `cite-url` roots at the **raw** host here, and §2.4 rounds it to the registrable domain once the PSL lands.
+
+**Scope: the new-web-root path only** — a pasted web URL whose domain no root yet owns. A domain _match_ recognized at search uses the "Cite a page under **X**" → `create_by_url` path (it writes only on the click); book/magazine and explicit-parent creates use `create_citation_source` (a book root is concrete and citable — no describe-site step). §2.5 optionally unifies the domain-match path onto `cite-url`.
+
+### Decisions
+
+- **Site name** = scraped `og:site_name` (the extract draft's existing `publisher` field) when present, else the **domain**. The fallback-to-domain lives on the backend (root `name = site_name or host`), so the Site field can prefill with `og:site_name` or sit blank and still produce a sensible root name.
+- **No description scrape.** `og:description` is page-level, not site-level, so it isn't used. The Site description is an **optional, manual** field — blank by default. (Nothing new to scrape, so the extract draft and its cache key are untouched.)
+- **No Author/Year anywhere in the web flow** — neither the describe-site step (site-level) nor the page step (Page name + URL only). A web citation is a site plus a page; Author and Year belong to authored, dated works (books, magazines).
+- **Raw host now, registrable domain in §2.4.** PR 1.1 roots a new source at the **raw pasted host** (`normalize_host`); §2.4 rounds that to `registrable_domain` once the PSL lands. A brand-new **subdomain** paste (`blog.newsite.com`, `newsite.com` not yet seeded) therefore roots at the subdomain until §2.4 rounds it; both land in the same branch, so the un-rounded form never reaches prod.
+
+Sections are in build order, one commit each, 🛑 STOP for user review before committing.
+
+### PR 1.1a — `cite-url` endpoint (raw host, no PSL) — `api.py`
+
+- `POST /api/citation-sources/cite-url/`, `@requires(Activity.CITATION_EDIT)`, `response={201: CitationSourceMatchSchema, 422: ErrorDetailSchema}` (return `201` always — the exact-child reuse is rare/defensive, not worth a 200/201 split). **Request** `{url, site_name, site_description, page_name}`, every field typed (strong-typing rule): `url: LinkUrlStr` (the `URLField`-backed type the create schema already uses, so a hostless / `mailto:` input is a clean 422 at the Pydantic boundary, not a 500), `site_name: NameStr`, `site_description: DescriptionStr`, `page_name: NameStr`. **Returns `CitationSourceMatchSchema`** (`id`, `name`, `skip_locator`) — the web child to cite. One transaction, every created row attributed to `request.user`.
+- **Re-recognize, then branch** (one `recognize_url(url)` call returns all buckets; check in this order): `rec is None` → **no match** → create the root **and** the child; `rec.identifier is not None` → **scheme identifier** (IPDB/OPDB/…) → 422 telling the caller to use `scheme:identifier` (check **before** child — a scheme hit with an existing child sets both); `rec.child is not None` → **exact child** → reuse; else (parent only) → **domain match** → create the page child under the existing root, **ignoring `site_*`** (the root already exists — it is never renamed from here). (Not routed through `get_or_create_external_source` — that patch helper writes no `created_by`/`updated_by`, breaking the every-row-attributed promise.)
+- **New root, raw host — the one line PR 2 changes.** `host = normalize_host(urlparse(url).hostname)`, the pasted host as-is (PR 2 swaps to `registrable_domain(host)`). Create: the root (`source_type=web`, `name = site_name or host`, `description = site_description`), its `homepage` link `https://{host}/`, its `CitationSourceRootDomain(host=host)`, the page child, and the child's `reference` link at `url`.
+- **Factor `web_child_name(url, name="")`** (in `extractors.py`) — the reviewed-name → URL → hostname (when blank or over `CITATION_SOURCE_NAME_MAX_LENGTH`) fallback now inline in `get_or_create_web_source` — and call it from both the patch path and here so the two web-child mints share one name rule. Preserve the current `hostname or url[:MAX]` truncation branch for the `hostname is None` case. The domain-match path sends no `page_name`, so the blank-name fallback stays exercised.
+- **Root-create race — do not route the domain row through `_clean_and_save`.** That helper converts `IntegrityError` → `HttpError(422)`, which would swallow the race signal. Instead, the create-root branch runs in a **savepoint**: `domain.full_clean()` (catch `ValidationError` → 422 so §1.2's root-only / §2.2's public-suffix guards fire) then `domain.save()` with an explicit `except IntegrityError:` → roll back the savepoint, re-`recognize_url` (the root now exists) and nest the child under it. Since recognition returned no match at the top, `full_clean`'s `validate_unique` won't fire on a committed row (a suffix match would have been found) — the `IntegrityError` here is genuinely the race. **Same-URL child race** (two cites of one URL under a root both create a child) is an accepted benign duplicate for gardening — call it out, don't handle inline.
+- **Tests:** no-match creates root + child at the raw host, all rows attributed; a domain match nests the child under the existing root and ignores `site_*`; hostless / `mailto:` → 422 (no 500); the root-create race re-recognizes and nests instead of 500ing; an exact child → reuse; a scheme URL → 422.
+
+Run `make codegen`.
+
+🛑 STOP for user review before committing.
+
+### PR 1.1b — describe-site + page stages; writes only on finalize — `frontend/src/lib/components/input/citation/`
+
+- **New `describe_site` stage** in the state machine, entered only on the **web new-root** path (an `extraction` or `web-url` seed with no recognized parent). Copy frames it as one-time site setup — _"This will be the first citation from this domain."_ Fields: **Site name** (prefill `og:site_name` when scraped, else blank — a blank name defaults to the domain on the backend) and an optional **Site description** (manual, blank — nothing is scraped for it). "Next" → the page step.
+- **Page step:** **Page name** (prefill `og:title`, else blank) and the **URL** (confirmation; editable on a failed scrape — when the URL is most likely to need correcting). Its button is the **finalize** — a web child has `skip_locator=true`, so there is no locator step after it. **No Author or Year** on either step.
+- **All writes fire on finalize, not before.** The finalize button calls `cite-url({url, site_name, site_description, page_name})`, then the existing `POST /api/citation-instances/` with the returned child. Source creation happens only on this button, so abandoning at `describe_site` or the page step writes nothing. If the instance POST fails _after_ `cite-url` succeeded an orphan root is left — **accepted** (rare, gardening-mergeable): the goal is no-litter-on-_abandon_, not all-or-nothing, so the two calls stay separate — `cite-url` keeps one job and the instance endpoint stays the universal cite sink.
+- **The cited record is the web child**, never the parentless root — upholding `is_abstract`'s contract that the cited record is always a child under the matched root.
+- **Docs:** update `docs/Citations.md`'s web-create section to describe the `cite-url` flow (paste → describe-site → page → child under a root). The PSL/eTLD+1 governance docs still land in §2.6.
+- **Tests:** dom — `describe_site` → page → finalize calls `cite-url` then the instance endpoint and cites the returned child; abandoning before finalize issues no writes; a domain-recognized URL still uses the existing `create_by_url` path (unchanged); a book / explicit-parent create still hits `create_citation_source`.
+
+🛑 STOP for user review before committing.
+
 ## PR 2 — governance (PSL + eTLD+1 + atomic create endpoint)
+
+We will do PR 2 in the same branch as PR 1. **NOT** a separate PR.
 
 Sections are in build order, one commit each, 🛑 STOP for user review before committing. In commit messages, do NOT reference ephemera that future readers will not understand, such as step numbers, PR numbers, links to this plan.
 
 ### 2.1 Public Suffix List
 
 - Add `publicsuffixlist` (bundled snapshot, no network) to `backend/pyproject.toml`. Add `is_public_suffix(host) -> bool` and `registrable_domain(host) -> str | None` to `hosts.py` — the single `Any` boundary for the untyped dep (`ignore_missing_imports` in `[tool.mypy]`, no scattered `# type: ignore`). Pure (table lookup). Used only at write/validate time, never in recognition, so matching stays PSL-free and deterministic.
+- **Honor the PRIVATE section — load-bearing, not incidental.** Both helpers must treat the PSL's PRIVATE rules as suffixes (the `publicsuffixlist` private flag on / `only_icann` off — verify the exact `publicsuffixlist` API at implement time). This is what keeps `legit.github.io` and `evil.github.io` distinct roots instead of collapsing onto one shared `github.io`, and what makes §2.4's registrable-domain rounding keep `someproject.github.io` whole (its own root) rather than collapsing it to `github.io`. It is consistent with Known Limitations: only **non-PSL** subdomain-per-publisher platforms collapse to the eTLD+1; PSL-private ones stay separated. With the private section honored, `is_public_suffix("github.io")` is true (so a bare `github.io` is rejected as a recognition host) and `registrable_domain("foo.github.io") == "foo.github.io"`.
 - **We don't maintain a local denylist.** The PSL (its PRIVATE section) already is the infrastructure-host list (`cloudfront.net`, `s3.amazonaws.com`, `github.io`, …); gaps go upstream, not into a forked copy.
+- **Tests:** `is_public_suffix` true for `com`/`co.uk`/`github.io`/`cloudfront.net`, false for `american-pinball.com`; `registrable_domain` collapses `s4.american-pinball.com` → `american-pinball.com`, keeps `foo.github.io` whole (private-section coverage) and returns `None` for a bare public suffix.
 
 🛑 STOP for user review before committing.
 
 ### 2.2 Public-suffix guard (model-level)
 
 - `CitationSourceRootDomain.clean()` rejects a `host` that `is_public_suffix` — a bare `cloudfront.net` / `co.uk` can't be a recognition host, on every path (API, patch, admin). A real invariant on a dedicated model (no link polymorphism to dance around).
-- **Audit existing rows when this lands.** PR 1 ships with no PSL guard, so a bad host could already sit in `CitationSourceRootDomain` (and silently drive recognition) by the time PR 2 deploys — `clean()` only blocks _new_ writes. Ship a data migration alongside the guard that scans existing `host`s for public suffixes and **raises listing any offenders** (don't auto-delete — a row may have children routing to it; a human resolves), so deploy fails loud rather than leaving a live vacuum root.
+- **Audit existing rows when this lands.** The already-committed §1.3 backfill inserts root-domain rows with no PSL guard in force (`clean()` only blocks _new_ writes after this lands), so a public-suffix host can reach `CitationSourceRootDomain` and silently drive recognition — both on prod (the §1.3 backfill runs in the same deploy, just earlier in the migration order) and on any fresh DB that re-runs §1.3 before this guard. Ship a data migration alongside the guard that scans existing `host`s for public suffixes and **raises listing any offenders** (don't auto-delete — a row may have children routing to it; a human resolves), so deploy fails loud rather than leaving a live vacuum root.
 - **Tests:** `com`/`co.uk`/`github.io` rejected on write; `american-pinball.com` accepted; the audit migration raises on a pre-existing public-suffix row.
 
 🛑 STOP for user review before committing.
@@ -159,32 +211,30 @@ Sections are in build order, one commit each, 🛑 STOP for user review before c
 
 - **Guards exactly one contributor path: the recognition host minted by §1.5b's `create_citation_source` branch for a parentless root.** Reject a host that isn't its own eTLD+1 (`registrable_domain(host)`), with an error naming the registrable domain. Keyed on **a `CitationSourceRootDomain` being minted, not on `source_type`** — root-domains are any-root (Decisions), so a contributor making a non-web root with a subdomain homepage host must be guarded too; the anti-fragmentation rule is about the recognition host, not the medium. That mint is the only place a contributor sets a recognition host:
   - `cite-url` (§2.4) auto-roots at the registrable domain by construction, so it needs no check.
-  - There is **no contributor edit-recognition-host endpoint** — admin owns recognition-host edits via the §1.6 inline. (No "update path" / "merged effective host" machinery — that was V1-era, from when recognition _was_ the homepage link.)
-  - `update_citation_source_link` is **not** guarded: the homepage `CitationSourceLink` is decoupled from recognition (Decisions), so its host no longer affects matching — policing it would be pointless.
+  - There is **no contributor edit-recognition-host endpoint** — admin owns recognition-host edits via the §1.6 inline.
+  - `update_citation_source_link` is **not** guarded: the homepage `CitationSourceLink` is display-only and decoupled from recognition (Decisions), so its host has no bearing on matching — policing it would be pointless.
 - Patches are exempt (trusted) — they may seed subdomain roots (`twip.kineticist.com`).
 - **Tests:** `create_citation_source` for a parentless root rejects a subdomain host (message points at the registrable domain) and accepts the registrable domain; the same rejection fires for a non-web root (any-root coverage); a patch may create a subdomain root.
 
 🛑 STOP for user review before committing.
 
-### 2.4 Atomic "cite a web URL" endpoint — `api.py`
+### 2.4 Harden `cite-url` with the PSL — `api.py`
 
-- `POST /api/citation-sources/cite-url/`, `@requires(Activity.CITATION_EDIT)`, no throttle (recognition is local DB). **Request** carries the reviewed draft `{url, name, publisher, author, year}` (fields `extract_url` scrapes / the user edits, [url_extraction.py:180-187]); `source_type` is implied `web`; `name`/`author`/`year` apply to the **child**, `publisher` to the **root**. **Response** is the child to cite (`id`, `name`, `skip_locator`). One transaction, attributing every created row to `request.user`:
-  1. `recognize_url(url)` returns one of four shapes — handle all for direct-API robustness (the frontend pre-routes, but the contract shouldn't be silent): **exact child** → reuse; **scheme identifier, no child yet** (`identifier` set, `child=None` — a pasted IPDB/OPDB URL) → **422**, telling the caller to use the `scheme:identifier` path. (Not routed through `get_or_create_external_source` — that patch helper writes no `created_by`/`updated_by`, which would break this endpoint's every-row-attributed promise; the frontend pre-routes scheme URLs anyway.); **domain match** → child under the root; **no match** → `registrable_domain(host)` → **422 if `None`** (bare public suffix) → else get-or-create the **root** (+ its `CitationSourceRootDomain` at the registrable domain, **full_cleaned** so the model guards fire; homepage link `https://{registrable_domain}/` — `CitationSourceLink.url` is a `URLField`, a bare host fails validation; root `name` = `publisher` if given else the registrable domain) and create the child.
-  2. **Root-create race:** the create-root branch runs inside a **savepoint** (nested `atomic`). If a concurrent request trips the `host` `unique`, the `IntegrityError` poisons only the savepoint — roll it back, then re-run `recognize_url` (the root now exists) and nest the child. (A bare `except IntegrityError` without the savepoint can't re-query — the outer transaction is poisoned.)
-  3. **Same-URL child race (accepted):** two concurrent cites of the same URL under an existing root can both create a child (no `unique` spans child reference URLs — distinct child `citation_source`s). Unlike the root race this raises nothing, so it's left as a benign rare duplicate for gardening to merge, not handled inline. Call it out so it's a decision, not an oversight.
-- **Scope:** this is _only_ the URL-paste, no-explicit-parent path. When the user picked a `parentContext`, the child create stays on `create_citation_source` with that `parent_id` — recognition must never override a deliberate parent choice (else `twip.kineticist.com` pasted under a hand-picked "Kineticist" would silently reroute).
-- Keeps PSL/eTLD+1/root-host logic backend-side; the frontend POSTs the draft and cites the returned child. `get_or_create_web_source` (patch path) stays lean and raises on no root — interactive root creation lives here, not there.
-- **Tests:** child reuse; a scheme URL → 422 (use `scheme:identifier`); domain-match nest; no-match creates root (+ root-domain + child) named from `publisher`, all rows attributed; bare-public-suffix → 422; the root-create race re-recognizes and nests (savepoint) instead of 500ing; an explicit `parentContext` does not reroute.
+`cite-url` (built in §1.1a) already handles the request shape, the recognition buckets, the savepoint root-create race, the shared `web_child_name` fallback, per-row attribution, and the response. §2.4 adds the one thing that needs the PSL — a new source roots at its **registrable domain**, the eTLD+1 a recognition host belongs at:
 
-Run `make codegen`.
+- **Root a new source at its registrable domain.** In the no-match branch the new root's host is `registrable_domain(host)`, so the first cite of a never-seen site via a subdomain URL (`s4.american-pinball.com/…`) creates the `american-pinball.com` root, and its `CitationSourceRootDomain` and homepage link (`https://{registrable_domain}/`) use that registrable host. (A subdomain of an _already-seeded_ root never reaches this branch — recognition matches the parent and nests the child.)
+- **422 on a bare public suffix.** `registrable_domain(host)` returns `None` for `com` / `co.uk` / a bare `github.io` → 422 (there is nothing to root at).
+- §2.4 is just the registrable rounding and the bare-suffix guard; `cite-url`'s child-under-root cite and finalize-only writes already hold from §1.1a.
+- **Tests:** no-match rounds `s4.american-pinball.com/…` up to the `american-pinball.com` root; a bare public suffix → 422. (The §1.1a bucket/race/attribution tests cover the rest.)
 
 🛑 STOP for user review before committing.
 
-### 2.5 Frontend — `frontend/src/lib/components/input/citation/`
+### 2.5 Unify the domain-match path onto `cite-url` (optional) — `frontend/src/lib/components/input/citation/`
 
-- **Surface the recognized parent on a domain match.** `CitationSearchStage.svelte`'s `create_by_url` item carries `parentName` but renders only the URL + "Create & cite" ([:148-154], [:390-407]) — a domain match looks identical to a brand-new source (the `twip.kineticist.com` screenshot). Render "Create a page under **This Week in Pinball**."
-- **Create-from-URL POSTs the reviewed draft to §2.4 and cites the returned child.** The user still reviews/edits the name; the draft rides along, so the metadata isn't discarded. No PSL, no host munging, no two-call partial-failure in Svelte. The cited record is the web **child** (`skip_locator=true`), not the abstract root. Only the no-explicit-parent path reroutes here.
-- **Tests:** dom test — a domain match renders the parent name; create-from-URL sends the draft and cites the returned child.
+§1.1b already routes the new-root web path through `cite-url` (describe-site → page → finalize), made the Site/Page split a real stage, defers writes to finalize, and cites the child. The only web-cite call site still on `create_citation_source` is the **domain-match** recognition item (`create_by_url`, bucket 3) — which already cites a child and writes only on the click, so it's correct, just not uniform.
+
+- Optionally point `create_by_url` at `cite-url` too (send `{url, page_name}`; cite-url re-recognizes and nests the child under the matched root, ignoring site fields). Win: one web-cite code path, and the server re-recognizes rather than trusting a frontend `parentId`. Low-value polish — defer or skip if the churn isn't worth it.
+- **Tests (only if done):** a domain-match cite still nests the child under the parent and renders the parent name; the existing dom tests stay green.
 
 🛑 STOP for user review before committing.
 
