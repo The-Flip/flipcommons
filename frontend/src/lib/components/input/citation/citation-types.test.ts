@@ -5,6 +5,8 @@ import {
   emptyDraft,
   transition,
   parentContextFromSource,
+  isWebSeed,
+  hostFromUrl,
   urlFromQuery,
   type CitationSourceResult,
   type CiteState,
@@ -125,6 +127,54 @@ describe('urlFromQuery', () => {
 // ---------------------------------------------------------------------------
 // parentContextFromSource
 // ---------------------------------------------------------------------------
+
+describe('hostFromUrl', () => {
+  it('returns the lowercased host', () => {
+    expect(hostFromUrl('https://Example.COM/a/b')).toBe('example.com');
+  });
+
+  it('strips a leading www.', () => {
+    expect(hostFromUrl('https://www.newsite.com/article')).toBe('newsite.com');
+  });
+
+  it('keeps a non-www subdomain', () => {
+    expect(hostFromUrl('https://blog.newsite.com/post')).toBe('blog.newsite.com');
+  });
+
+  it('returns "" for an unparseable URL', () => {
+    expect(hostFromUrl('not a url')).toBe('');
+  });
+});
+
+describe('isWebSeed', () => {
+  it('true for a new-site web seed (no siteName, scrape failed)', () => {
+    expect(isWebSeed({ kind: 'web', url: 'https://x.com/a', siteName: null, draft: null })).toBe(
+      true,
+    );
+  });
+
+  it('true for an existing-site web seed (siteName set)', () => {
+    expect(isWebSeed({ kind: 'web', url: 'https://x.com/a', siteName: 'X', draft: null })).toBe(
+      true,
+    );
+  });
+
+  it('false for a book extraction seed', () => {
+    const draft: ExtractionDraft = {
+      name: 'A book',
+      source_type: 'book',
+      author: 'Author',
+      publisher: 'Pub',
+      year: 2009,
+      isbn: '9780596517748',
+    };
+    expect(isWebSeed({ kind: 'extraction', draft })).toBe(false);
+  });
+
+  it('false for a manual name seed', () => {
+    expect(isWebSeed({ kind: 'name', name: 'Anything' })).toBe(false);
+  });
+});
 
 describe('parentContextFromSource', () => {
   it('extracts parent context from source result', () => {
@@ -350,17 +400,22 @@ describe('transition', () => {
       }
     });
 
-    it('web-url seed from search → create carrying the url, parent null', () => {
+    it('web seed from search → create carrying the seed, parent null', () => {
+      // The web/authored split is a rendering concern (the orchestrator picks the
+      // component via isWebSeed); the reducer routes every create to `create`.
       const state = searchState();
-      const next = transition(state, {
-        type: 'create_started',
-        seed: { kind: 'web-url', url: 'https://example.com/page' },
-      });
+      const seed = {
+        kind: 'web',
+        url: 'https://example.com/page',
+        siteName: null,
+        draft: null,
+      } as const;
+      const next = transition(state, { type: 'create_started', seed });
 
       expect(next.stage).toBe('create');
       if (next.stage === 'create') {
         expect(next.parent).toBeNull();
-        expect(next.seed).toEqual({ kind: 'web-url', url: 'https://example.com/page' });
+        expect(next.seed).toEqual(seed);
       }
     });
   });

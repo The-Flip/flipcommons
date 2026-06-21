@@ -90,6 +90,20 @@ Implemented today:
 
 The result is always one of: a draft, an existing match, or a structured failure (`not_found`, `timeout`, `parse_error`, …). Extraction produces a **draft, not an auto-create** — external-service confidence is lower and editorial review has value. (This draft-first rule is specific to extraction; recognition resolving to validated local data can be one-click.)
 
+### Interactive web create
+
+Pasting a web URL always follows the same shape — **Create Site → Create Page** — with recognition collapsing the steps that are already settled:
+
+- **Existing page** (the URL exactly matches a child): cited directly, no create steps.
+- **Existing site, new page** (the domain matches a root): only the **page** step shows, headed "Cite a page under _X_".
+- **New site**: both steps — **describe-site** then **page**.
+
+The **describe-site** step has a Site name (prefilled from the scraped `og:site_name`, else the domain, so it always shows the name the new root will get; the backend also defaults a blank name to the domain) and an optional manual Site description. The **page** step has a Page name (prefilled from `og:title`) and the URL for confirmation (editable when the scrape failed). There is no Author or Year anywhere — a web citation is a site plus a page, not an authored dated work.
+
+Nothing is written until the contributor commits: the finalize button calls `cite-url`, which in one transaction creates the site root (its `homepage` link and `CitationSourceRootDomain`) when new and a page child under it, then cites that child. Abandoning beforehand writes nothing. `cite-url` re-recognizes the URL server-side and re-derives the same buckets — no match creates the root and child; a domain match nests a new child under the existing root (ignoring the site fields — the root is never renamed from here); an exact child is reused; a scheme URL (IPDB/OPDB/…) is rejected in favor of its `scheme:identifier` form — so the server, not a trusted frontend `parentId`, decides where the child lands. The cited record is always the page child, never the abstract root.
+
+This is the interactive counterpart to the patch helper `get_or_create_web_source` above: the helper raises on an unseeded domain (patches seed roots deliberately), while `cite-url` is allowed to mint the root because the contributor describes it in the same flow.
+
 ### SSRF safety
 
 Generic URL fetching goes through a guarded fetch that validates the target **by resolved IP, not by hostname**. It resolves DNS before connecting and checks that the resolved IP is globally routable, which closes the DNS-rebinding window and catches internal hosts (they resolve to private IPs) without a fragile hostname blocklist. Only `http`/`https` are allowed, redirects are re-validated each hop, and a wall-clock deadline bounds the whole chain. This applies to the generic URL fallback, not to hardcoded known-API endpoints like Open Library.

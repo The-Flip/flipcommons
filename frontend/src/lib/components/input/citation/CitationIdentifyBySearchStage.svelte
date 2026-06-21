@@ -160,6 +160,19 @@
 
   function startCreate() {
     debouncedChildSearch.cancel();
+    if (isWeb) {
+      // A page under a known web root: hand off to the web flow's page step
+      // (Create Site skipped — the site exists). The typed text prefills the
+      // page name; the URL is entered there. One web-create path, via cite-url.
+      oncreatestarted({
+        kind: 'web',
+        url: '',
+        siteName: parentContext.name,
+        draft: null,
+        pageName: filterQuery.trim(),
+      });
+      return;
+    }
     oncreatestarted({ kind: 'name', name: filterQuery.trim() });
   }
 

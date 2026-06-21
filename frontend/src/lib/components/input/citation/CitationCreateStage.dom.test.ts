@@ -7,11 +7,11 @@ import { CREATED_SOURCE } from './citation-fixtures';
 const { mockPOST } = vi.hoisted(() => ({ mockPOST: vi.fn() }));
 vi.mock('$lib/api/client', () => ({ default: { POST: mockPOST } }));
 
-const WEB_ROOT_PARENT = {
+const BOOK_PARENT = {
   id: 30,
-  name: 'Jersey Jack',
-  source_type: 'web',
-  author: '',
+  name: 'Learning Python',
+  source_type: 'book',
+  author: 'Mark Lutz',
   identifier_key: '',
 };
 
@@ -19,124 +19,97 @@ function noop() {}
 
 beforeEach(() => mockPOST.mockReset());
 
-describe('CitationCreateStage link_type', () => {
-  it('posts reference for a web child created under a parent root', async () => {
-    // A child is a specific page, not the source's homepage — 'reference' keeps
-    // it from masquerading as a domain root in later URL recognition.
+describe('CitationCreateStage', () => {
+  it('creates a parentless book root via the type picker (no URL field — web is URL-only)', async () => {
     const user = userEvent.setup();
     mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
     render(CitationCreateStage, {
-      parentContext: WEB_ROOT_PARENT,
-      seed: { kind: 'name', name: 'Elton John product page' },
+      parentContext: null,
+      seed: { kind: 'name', name: 'Pinball Compendium' },
       onsourcecreated: noop,
       oncancel: noop,
       onback: noop,
     });
 
-    await user.type(
-      screen.getByLabelText('URL'),
-      'https://jerseyjackpinball.com/products/elton-john',
-    );
-    // A web child (under a parent) cites on submit, so the button says so.
-    await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+    // Books and magazines only — web sources are created by pasting a URL.
+    expect(screen.getByRole('button', { name: 'book' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'magazine' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'web' })).not.toBeInTheDocument();
+    // No URL field anywhere in this stage.
+    expect(screen.queryByLabelText('URL')).not.toBeInTheDocument();
+
+    // A non-web source advances to the locator next, so the button says "Continue".
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
 
     await waitFor(() => expect(mockPOST).toHaveBeenCalled());
     expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
       body: expect.objectContaining({
-        parent_id: WEB_ROOT_PARENT.id,
+        name: 'Pinball Compendium',
+        source_type: 'book',
+        parent_id: null,
+        link_type: 'homepage',
+      }),
+    });
+  });
+
+  it('creates an edition under a parent (type locked, reference link)', async () => {
+    const user = userEvent.setup();
+    mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
+    render(CitationCreateStage, {
+      parentContext: BOOK_PARENT,
+      seed: { kind: 'name', name: 'Second Edition' },
+      onsourcecreated: noop,
+      oncancel: noop,
+      onback: noop,
+    });
+
+    // A parent locks the type, so no picker.
+    expect(screen.queryByRole('button', { name: 'book' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
+
+    await waitFor(() => expect(mockPOST).toHaveBeenCalled());
+    expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
+      body: expect.objectContaining({
+        source_type: 'book',
+        parent_id: BOOK_PARENT.id,
         link_type: 'reference',
       }),
     });
   });
 
-  it('posts homepage for a new root web source (no parent)', async () => {
-    const user = userEvent.setup();
-    mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
-    render(CitationCreateStage, {
+  it('an extraction (ISBN) draft prefills Publisher and Year; a manual name seed does not', () => {
+    const { unmount } = render(CitationCreateStage, {
       parentContext: null,
-      seed: { kind: 'name', name: 'Some Site' },
+      seed: {
+        kind: 'extraction',
+        draft: {
+          name: 'Learning Python',
+          source_type: 'book',
+          author: 'Mark Lutz',
+          publisher: "O'Reilly Media",
+          year: 2009,
+          isbn: '9780596517748',
+        },
+      },
       onsourcecreated: noop,
       oncancel: noop,
       onback: noop,
     });
 
-    await user.click(screen.getByRole('button', { name: 'web' }));
-    await user.type(screen.getByLabelText('URL'), 'https://somesite.com/');
-    // A parentless web root advances to the locator next, so the button says "Continue".
-    await user.click(screen.getByRole('button', { name: /Continue/ }));
+    expect((screen.getByLabelText(/Author/) as HTMLInputElement).value).toBe('Mark Lutz');
+    expect((screen.getByLabelText(/Publisher/) as HTMLInputElement).value).toBe("O'Reilly Media");
+    expect((screen.getByLabelText(/Year/) as HTMLInputElement).value).toBe('2009');
+    unmount();
 
-    await waitFor(() => expect(mockPOST).toHaveBeenCalled());
-    expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
-      body: expect.objectContaining({ parent_id: null, link_type: 'homepage' }),
-    });
-  });
-});
-
-describe('CitationCreateStage seed rendering', () => {
-  const WEB_DRAFT = {
-    name: 'Pinball - Wikipedia',
-    source_type: 'web',
-    author: '',
-    publisher: 'Wikipedia',
-    year: null,
-    isbn: null,
-    url: 'https://en.wikipedia.org/wiki/Pinball',
-  };
-
-  it('extraction seed: Page Name + read-only URL, no Publisher/Year, retrieval note', () => {
+    // A manual 'name' seed has no scraped metadata, so Publisher/Year are hidden.
     render(CitationCreateStage, {
       parentContext: null,
-      seed: { kind: 'extraction', draft: WEB_DRAFT },
+      seed: { kind: 'name', name: 'Manual Book' },
       onsourcecreated: noop,
       oncancel: noop,
       onback: noop,
     });
-
-    // Web source: the name field is "Page Name", prefilled from the scrape.
-    expect((screen.getByLabelText('Page Name') as HTMLInputElement).value).toBe(
-      'Pinball - Wikipedia',
-    );
-    // The URL is shown for confirmation but read-only (the user already pasted it).
-    const urlInput = screen.getByLabelText('URL') as HTMLInputElement;
-    expect(urlInput.value).toBe('https://en.wikipedia.org/wiki/Pinball');
-    expect(urlInput.readOnly).toBe(true);
-    // Publisher and Year are hidden for web.
-    expect(screen.queryByLabelText(/publisher/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/year/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/Retrieved from page/i)).toBeInTheDocument();
-  });
-
-  it('extraction seed with no title: blank Page Name, no retrieval note', () => {
-    // A scrape that returned 200 but found no og:title/<title> yields an empty
-    // name — there's nothing to "review", so the note is omitted.
-    render(CitationCreateStage, {
-      parentContext: null,
-      seed: { kind: 'extraction', draft: { ...WEB_DRAFT, name: '' } },
-      onsourcecreated: noop,
-      oncancel: noop,
-      onback: noop,
-    });
-
-    expect((screen.getByLabelText('Page Name') as HTMLInputElement).value).toBe('');
-    expect(screen.queryByText(/Retrieved from page/i)).not.toBeInTheDocument();
-  });
-
-  it('web-url seed (failed scrape): blank Page Name, editable prefilled URL', () => {
-    render(CitationCreateStage, {
-      parentContext: null,
-      seed: { kind: 'web-url', url: 'https://example.com/article' },
-      onsourcecreated: noop,
-      oncancel: noop,
-      onback: noop,
-    });
-
-    // No title was found, so Page Name is blank for the user to fill.
-    expect((screen.getByLabelText('Page Name') as HTMLInputElement).value).toBe('');
-    const urlInput = screen.getByLabelText('URL') as HTMLInputElement;
-    expect(urlInput.value).toBe('https://example.com/article');
-    // A failed scrape is exactly when the URL may be mistyped, so it stays editable.
-    expect(urlInput.readOnly).toBe(false);
-    // Not an extraction, so no retrieval note.
-    expect(screen.queryByText(/Retrieved from page/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Publisher/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Year/)).not.toBeInTheDocument();
   });
 });

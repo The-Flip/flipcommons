@@ -95,7 +95,7 @@ Review the migration + dry-run output.
 ### ✅ DONE: 1.4 Recognition — `backend/apps/citation/extractors.py` (committed with §1.5a/§1.5b)
 
 - Rewrite step 3 of `recognize_url`: parse `urlparse(url).hostname` (None → no match) → `normalize_host`; query `CitationSourceRootDomain.objects.filter(host__in=label_suffixes(host), source__parent__isnull=True).select_related("source")`; pick the longest host; return its source. The `parent__isnull` filter is cheap defense-in-depth for the app-only root-only invariant (§1.2). Replaces the full-table Python loop over homepage links. Steps 1 (extractor) and 2 (exact child link) unchanged. The `host__in` filter already restricts candidates to exact label-boundary suffixes, so "pick longest" is just max-by-length — reuse §1.1's `longest_suffix_match` over the fetched rows (keeps selection logic unit-tested) rather than re-deriving it inline.
-- **Rewrite the recognition docs in this commit, not PR 2.** Recognition behavior changes _here_, so its docs change here. Rewrite the `recognize_url` docstring — the current working-tree edit at [extractors.py:128-138] argues _against_ subdomain loosening and is now superseded — and `docs/Citations.md`'s step-3 + homepage-link explanation, to describe `CitationSourceRootDomain` as the recognition signal and the longest-suffix subdomain match. PR 2's §2.6 keeps only the PSL/eTLD+1 doc additions.
+- **Rewrite the recognition docs in this commit, not PR 2.** Recognition behavior changes _here_, so its docs change here. Rewrite the `recognize_url` docstring — the current working-tree edit at [extractors.py:128-138] argues _against_ subdomain loosening and is now superseded — and `docs/Citations.md`'s step-3 + homepage-link explanation, to describe `CitationSourceRootDomain` as the recognition signal and the longest-suffix subdomain match. PR 2's §2.5 keeps only the PSL/eTLD+1 doc additions.
 - **Tests:** `s4.american-pinball.com/…` → American Pinball; `twip.kineticist.com/…` → the TWIP root (most specific) when one exists, else the Kineticist root; a deeper subdomain → nearest root.
 
 🛑 STOP for user review before committing.
@@ -140,7 +140,7 @@ Creation and dedup ship together: without dedup, re-seeding a root under a cosme
 
 On the frontend, surface the recognized parent on a domain match.`CitationSearchStage.svelte`'s `create_by_url` item carries `parentName` but renders only the URL + "Create & cite" ([:148-154], [:390-407]) — a domain match looks identical to a brand-new source (the `twip.kineticist.com` screenshot). Render "Create a page under **This Week in Pinball**."
 
-## PR 1.1 — describe-site stage + deferred-write web create
+## ✅ DONE: PR 1.1 — describe-site stage + deferred-write web create
 
 The interactive web-create flow should have two properties that don't depend on the PSL, so they land here ahead of PR 2:
 
@@ -149,7 +149,7 @@ The interactive web-create flow should have two properties that don't depend on 
 
 PR 1.1 delivers both: a `cite-url` endpoint that creates the site root and the page child, and a "describe this new site" stage. It needs no new dependency — `cite-url` roots at the **raw** host here, and §2.4 rounds it to the registrable domain once the PSL lands.
 
-**Scope: the new-web-root path only** — a pasted web URL whose domain no root yet owns. A domain _match_ recognized at search uses the "Cite a page under **X**" → `create_by_url` path (it writes only on the click); book/magazine and explicit-parent creates use `create_citation_source` (a book root is concrete and citable — no describe-site step). §2.5 optionally unifies the domain-match path onto `cite-url`.
+**Scope: the new-web-root path only** — a pasted web URL whose domain no root yet owns. A domain _match_ recognized at search uses the "Cite a page under **X**" → `create_by_url` path (it writes only on the click); book/magazine and explicit-parent creates use `create_citation_source` (a book root is concrete and citable — no describe-site step). §1.1c unifies the domain-match path onto `cite-url`.
 
 ### Decisions
 
@@ -175,12 +175,18 @@ Run `make codegen`.
 
 ### PR 1.1b — describe-site + page stages; writes only on finalize — `frontend/src/lib/components/input/citation/`
 
+> **As built (differs from the bullets below).** The flow ended up recognition-driven rather than a single new-root path: an exact-child paste cites directly (no create steps); a domain match shows only the page step; a new site shows describe-site → page. There is **no `describe_site` reducer stage** — the state machine kept its four stages (`search`/`identify`/`create`/`locator`) and the orchestrator picks `CitationWebCreateStage` vs the authored-work form by a single `isWebSeed(seed)` check. The three web seeds (`web-url`, the web `extraction`, a domain-match seed) collapsed into one `web` seed `{url, siteName, draft}`. **§2.5 was folded in here** — the domain-match path now routes through `cite-url` too, and the manual "add a page under a known web root" path (identify → +create) routes through the same web page step. `CitationCreateStage` is now authored-works only (book/magazine), and a shared `DropdownButton` replaced the per-stage submit buttons. Both web paths scrape the page, so the page name prefills in every case. (Committed as `feat(citation): unify web citation create into one describe-site → page flow`.)
+
 - **New `describe_site` stage** in the state machine, entered only on the **web new-root** path (an `extraction` or `web-url` seed with no recognized parent). Copy frames it as one-time site setup — _"This will be the first citation from this domain."_ Fields: **Site name** (prefill `og:site_name` when scraped, else blank — a blank name defaults to the domain on the backend) and an optional **Site description** (manual, blank — nothing is scraped for it). "Next" → the page step.
 - **Page step:** **Page name** (prefill `og:title`, else blank) and the **URL** (confirmation; editable on a failed scrape — when the URL is most likely to need correcting). Its button is the **finalize** — a web child has `skip_locator=true`, so there is no locator step after it. **No Author or Year** on either step.
 - **All writes fire on finalize, not before.** The finalize button calls `cite-url({url, site_name, site_description, page_name})`, then the existing `POST /api/citation-instances/` with the returned child. Source creation happens only on this button, so abandoning at `describe_site` or the page step writes nothing. If the instance POST fails _after_ `cite-url` succeeded an orphan root is left — **accepted** (rare, gardening-mergeable): the goal is no-litter-on-_abandon_, not all-or-nothing, so the two calls stay separate — `cite-url` keeps one job and the instance endpoint stays the universal cite sink.
 - **The cited record is the web child**, never the parentless root — upholding `is_abstract`'s contract that the cited record is always a child under the matched root.
 - **Docs:** update `docs/Citations.md`'s web-create section to describe the `cite-url` flow (paste → describe-site → page → child under a root). The PSL/eTLD+1 governance docs still land in §2.6.
 - **Tests:** dom — `describe_site` → page → finalize calls `cite-url` then the instance endpoint and cites the returned child; abandoning before finalize issues no writes; a domain-recognized URL still uses the existing `create_by_url` path (unchanged); a book / explicit-parent create still hits `create_citation_source`.
+
+#### Unify the domain-match path onto `cite-url` — `frontend/src/lib/components/input/citation/`
+
+Landed as part of the 1.1b unification (it was the natural way to fix the page-name asymmetry between the new-site and domain-match paths). The domain-match recognition item now scrapes the page, then hands off to the web flow's page step (Create Site skipped) and finalizes via `cite-url` — which re-recognizes server-side and nests the child under the matched root, ignoring the site fields. The inline `create_by_url` POST to `create_citation_source` is gone; one web-cite code path remains. The dom tests assert the domain-match cite nests under the parent, renders the parent name, and routes through `cite-url` (no direct `create_citation_source` POST).
 
 🛑 STOP for user review before committing.
 
@@ -214,6 +220,7 @@ Sections are in build order, one commit each, 🛑 STOP for user review before c
   - There is **no contributor edit-recognition-host endpoint** — admin owns recognition-host edits via the §1.6 inline.
   - `update_citation_source_link` is **not** guarded: the homepage `CitationSourceLink` is display-only and decoupled from recognition (Decisions), so its host has no bearing on matching — policing it would be pointless.
 - Patches are exempt (trusted) — they may seed subdomain roots (`twip.kineticist.com`).
+- **Scope note (post-1.1b).** The de-dupe removed every _interactive_ path that mints a recognition host via `create_citation_source`: web roots are created only through `cite-url` now (which auto-rounds — §2.4), and `CitationCreateStage` creates book/magazine roots that carry **no URL**, so they mint no `CitationSourceRootDomain`. This guard therefore now protects only **direct API callers** of `create_citation_source` (a parentless source posted with a `homepage` URL) — no UI surfaces it. Still worth a server-side guard for the raw endpoint, but it's no longer on a contributor's screen; consider demoting it to a plain validation rather than a UX-shaped error.
 - **Tests:** `create_citation_source` for a parentless root rejects a subdomain host (message points at the registrable domain) and accepts the registrable domain; the same rejection fires for a non-web root (any-root coverage); a patch may create a subdomain root.
 
 🛑 STOP for user review before committing.
@@ -230,16 +237,7 @@ Sections are in build order, one commit each, 🛑 STOP for user review before c
 
 🛑 STOP for user review before committing.
 
-### 2.5 Unify the domain-match path onto `cite-url` (optional) — `frontend/src/lib/components/input/citation/`
-
-§1.1b already routes the new-root web path through `cite-url` (describe-site → page → finalize), made the Site/Page split a real stage, defers writes to finalize, and cites the child. The only web-cite call site still on `create_citation_source` is the **domain-match** recognition item (`create_by_url`, bucket 3) — which already cites a child and writes only on the click, so it's correct, just not uniform.
-
-- Optionally point `create_by_url` at `cite-url` too (send `{url, page_name}`; cite-url re-recognizes and nests the child under the matched root, ignoring site fields). Win: one web-cite code path, and the server re-recognizes rather than trusting a frontend `parentId`. Low-value polish — defer or skip if the churn isn't worth it.
-- **Tests (only if done):** a domain-match cite still nests the child under the parent and renders the parent name; the existing dom tests stay green.
-
-🛑 STOP for user review before committing.
-
-### 2.6 Cosmetic `link_type` tidy-up (non-blocking)
+### 2.5 Cosmetic `link_type` tidy-up (non-blocking)
 
 - Now that recognition ignores `link_type`, the 145 child `homepage` links are purely a display wart. Reclassify them → `reference` (one-off migration) and fix the default footgun: change the create schema's `link_type` default from `"homepage"` to `None` ([schemas.py:207-210]) AND make `create_citation_source` parent-aware (`data.link_type or ("homepage" if parent is None else "reference")`) — the schema default currently shadows the `or`. Optional; bundle with PR 2 or split out.
 - **Docs:** add the PSL / public-suffix-guard / eTLD+1 governance docs to `docs/Citations.md`. (The `recognize_url` docstring, `CitationSource` docstring and `docs/Citations.md` step-3 / homepage-link rewrites land in §1.4, where recognition behavior actually changes — not here.)

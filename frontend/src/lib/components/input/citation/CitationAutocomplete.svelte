@@ -1,9 +1,11 @@
+<!-- @component Orchestrates the citation create/cite flow across its stages. -->
 <script lang="ts">
   import client from '$lib/api/client';
   import type { CitationInstanceSchema } from '$lib/api/schema';
   import {
     transition,
     isDraftSubmittable,
+    isWebSeed,
     emptyDraft,
     type CiteState,
     type CiteAction,
@@ -14,6 +16,7 @@
   import CitationSearchStage from './CitationSearchStage.svelte';
   import CitationIdentifyBySearchStage from './CitationIdentifyBySearchStage.svelte';
   import CitationCreateStage from './CitationCreateStage.svelte';
+  import CitationWebCreateStage from './CitationWebCreateStage.svelte';
   import CitationLocatorStage from './CitationLocatorStage.svelte';
 
   let {
@@ -136,13 +139,30 @@
       onback={goBackToSearch}
     />
   {:else if flow.stage === 'create'}
-    <CitationCreateStage
-      parentContext={flow.parent}
-      seed={flow.seed}
-      onsourcecreated={handleSourceCreated}
-      {oncancel}
-      onback={goBackToSearch}
-    />
+    <!-- A pasted web URL gets the describe-site → page web flow (the seed says
+         whether the site is new or already exists); books and magazines use the
+         authored-work form. -->
+    {#if isWebSeed(flow.seed)}
+      <!-- flow.parent is set only when the create was started from the identify
+           stage (an explicit "add a page under this root"); search-started web
+           pastes (new site, domain match) carry no parent and let cite-url
+           resolve the root. -->
+      <CitationWebCreateStage
+        seed={flow.seed}
+        parentId={flow.parent?.id ?? null}
+        onsourcecreated={handleSourceCreated}
+        {oncancel}
+        onback={goBackToSearch}
+      />
+    {:else}
+      <CitationCreateStage
+        parentContext={flow.parent}
+        seed={flow.seed}
+        onsourcecreated={handleSourceCreated}
+        {oncancel}
+        onback={goBackToSearch}
+      />
+    {/if}
   {:else if flow.stage === 'locator'}
     <CitationLocatorStage
       draft={flow.draft}

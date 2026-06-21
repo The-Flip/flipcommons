@@ -426,7 +426,7 @@ describe('CitationAutocomplete (component-level)', () => {
       });
     });
 
-    it('creates child source when domain-recognized URL is pasted', async () => {
+    it('domain-recognized URL → scrape → page step (Create Site skipped), page name prefilled', async () => {
       const user = userEvent.setup();
       const { oncomplete } = renderAutocomplete();
 
@@ -442,48 +442,70 @@ describe('CitationAutocomplete (component-level)', () => {
         }
         return Promise.resolve({ data: [] });
       });
+      mockPOST.mockImplementation((url: string) => {
+        if (url === '/api/citation-sources/extract/') {
+          return Promise.resolve({
+            data: {
+              draft: {
+                name: 'Elton John',
+                source_type: 'web',
+                author: '',
+                publisher: 'Jersey Jack',
+                year: null,
+                isbn: null,
+                url: recognizedUrl,
+              },
+              match: null,
+              error: null,
+            },
+          });
+        }
+        if (url === '/api/citation-sources/cite-url/') {
+          return Promise.resolve({ data: { id: 31, name: recognizedUrl, skip_locator: true } });
+        }
+        return Promise.resolve({ data: CREATED_INSTANCE });
+      });
 
       const input = getSearchInput();
       input.focus();
       await user.keyboard(recognizedUrl);
 
       await vi.waitFor(() => {
-        expect(screen.getByText(recognizedUrl)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Create Citation/ })).toBeInTheDocument();
-        // A domain match surfaces the recognized parent, so it doesn't look
-        // like a brand-new source.
+        // A domain match surfaces the recognized site, not a brand-new source.
         expect(screen.getByText(/Cite a page under/)).toBeInTheDocument();
         expect(screen.getByText(JJP_SOURCE.name)).toBeInTheDocument();
       });
 
-      mockPOST
-        .mockResolvedValueOnce({
-          data: { id: 31, name: recognizedUrl, skip_locator: true },
-        })
-        .mockResolvedValueOnce({ data: CREATED_INSTANCE });
+      // Continue scrapes the page, then advances to the page step.
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Continue' }));
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: /Create Citation/ }));
+      await vi.waitFor(() => {
+        expect(screen.getByText('New page')).toBeInTheDocument();
+      });
+      // The site exists, so there's no Create Site panel; the page name is
+      // prefilled from the scrape (the bug fix) and the URL carried in.
+      expect(screen.queryByLabelText(/Site name/i)).not.toBeInTheDocument();
+      expect((screen.getByLabelText(/Page name/i) as HTMLInputElement).value).toBe('Elton John');
+      expect((screen.getByLabelText('URL') as HTMLInputElement).value).toBe(recognizedUrl);
+
+      await user.click(screen.getByRole('button', { name: /Create Citation/ }));
 
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
 
-      // The minted child is a specific article page, not the source's
-      // homepage — type it 'reference' so it can't masquerade as a domain root.
-      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
-        body: expect.objectContaining({
-          parent_id: JJP_SOURCE.id,
-          url: recognizedUrl,
-          link_type: 'reference',
-        }),
+      // Routed through cite-url — which re-recognizes server-side and nests the
+      // child under the existing root (site fields blank) — not a direct create.
+      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/cite-url/', {
+        body: { url: recognizedUrl, site_name: '', site_description: '', page_name: 'Elton John' },
       });
+      expect(mockPOST).not.toHaveBeenCalledWith('/api/citation-sources/', expect.anything());
     });
 
-    it('scheme-less domain-recognized URL creates a child under the parent', async () => {
-      // A scheme-less paste of a recognized domain must behave like the schemed
-      // one: recognition fires (the normalized URL is sent to search) and the
-      // child is created under the parent with the normalized URL — not routed
-      // to extraction, which would post a new parentless root and 422.
+    it('scheme-less domain-recognized URL carries the normalized URL through a failed scrape', async () => {
+      // A scheme-less paste of a recognized domain behaves like the schemed one:
+      // recognition fires (the normalized URL is sent to search). Here the scrape
+      // fails, so the page step opens with a blank page name and the normalized URL.
       const user = userEvent.setup();
       const { oncomplete } = renderAutocomplete();
 
@@ -497,36 +519,136 @@ describe('CitationAutocomplete (component-level)', () => {
         }
         return Promise.resolve({ data: [] });
       });
+      mockPOST.mockImplementation((url: string) => {
+        if (url === '/api/citation-sources/extract/') {
+          return Promise.resolve({ data: { draft: null, match: null, error: 'timeout' } });
+        }
+        if (url === '/api/citation-sources/cite-url/') {
+          return Promise.resolve({ data: { id: 31, name: 'x', skip_locator: true } });
+        }
+        return Promise.resolve({ data: CREATED_INSTANCE });
+      });
 
       const input = getSearchInput();
       input.focus();
       await user.keyboard('jerseyjackpinball.com/products/elton-john');
 
       await vi.waitFor(() => {
-        expect(screen.getByRole('button', { name: /Create Citation/ })).toBeInTheDocument();
         expect(screen.getByText(/Cite a page under/)).toBeInTheDocument();
       });
-      // No "Use this URL" — recognition took over, not the extraction path.
+      // No "Use this URL" — recognition took over, not the new-site extraction item.
       expect(screen.queryByRole('option', { name: /Use this URL/i })).not.toBeInTheDocument();
 
-      mockPOST
-        .mockResolvedValueOnce({ data: { id: 31, name: 'x', skip_locator: true } })
-        .mockResolvedValueOnce({ data: CREATED_INSTANCE });
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Continue' }));
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: /Create Citation/ }));
+      await vi.waitFor(() => {
+        expect(screen.getByText('New page')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /Create Citation/ }));
 
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
 
-      // Child under the parent, with the URL normalized to https://.
+      // cite-url receives the URL normalized to https://.
+      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/cite-url/', {
+        body: {
+          url: 'https://jerseyjackpinball.com/products/elton-john',
+          site_name: '',
+          site_description: '',
+          page_name: '',
+        },
+      });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Identify stage → create a page under a known web root (routes to web flow)
+  // -----------------------------------------------------------------------
+
+  describe('create a page under a known web root', () => {
+    it('"+ Create" under a web root opens the web page step (not the authored-work form), page name prefilled', async () => {
+      const user = userEvent.setup();
+      const { oncomplete } = renderAutocomplete();
+
+      const jjpDetail = {
+        id: JJP_SOURCE.id,
+        name: JJP_SOURCE.name,
+        source_type: 'web',
+        author: '',
+        publisher: '',
+        year: null,
+        month: null,
+        day: null,
+        date_note: '',
+        isbn: null,
+        description: '',
+        identifier_key: '',
+        skip_locator: false,
+        parent: null,
+        links: [],
+        children: [],
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      };
+      mockGET.mockImplementation((url: string) => {
+        if (url === '/api/citation-sources/search/') return mockSearchReturning([JJP_SOURCE]);
+        if (url === '/api/citation-sources/{source_id}/')
+          return Promise.resolve({ data: jjpDetail });
+        if (url === '/api/citation-sources/{source_id}/children/')
+          return Promise.resolve({ data: [] });
+        return Promise.resolve({ data: [] });
+      });
+
+      // Search → select the abstract web root → identify stage ("Search pages…").
+      await searchAndWaitFor(user, 'jersey', JJP_SOURCE);
+      await selectSource(JJP_SOURCE);
+      await vi.waitFor(() => {
+        expect(screen.getByText(/No pages yet/)).toBeInTheDocument();
+      });
+
+      // Type a page title that matches nothing, then "+ Create".
+      await user.keyboard('Elton John');
+      fireEvent.pointerDown(screen.getByRole('option', { name: /Create "Elton John"/ }));
+
+      // Routes to the web flow's page step — not the book/magazine form.
+      await vi.waitFor(() => {
+        expect(screen.getByText('New page')).toBeInTheDocument();
+      });
+      expect(screen.getByText(JJP_SOURCE.name)).toBeInTheDocument();
+      expect(screen.queryByLabelText(/Site name/i)).not.toBeInTheDocument();
+      // The typed text carries through as the page-name prefill.
+      expect((screen.getByLabelText(/Page name/i) as HTMLInputElement).value).toBe('Elton John');
+      const urlInput = screen.getByLabelText('URL') as HTMLInputElement;
+      expect(urlInput.value).toBe('');
+      expect(urlInput.readOnly).toBe(false);
+
+      // Finalize files the page DIRECTLY under the chosen root (the explicit
+      // parent the user navigated into) via create_citation_source — not cite-url,
+      // which would re-recognize the typed URL and could land it elsewhere.
+      mockPOST
+        .mockResolvedValueOnce({ data: { id: 31, name: 'Elton John', skip_locator: true } })
+        .mockResolvedValueOnce({ data: CREATED_INSTANCE });
+      await user.type(urlInput, 'https://jerseyjackpinball.com/products/elton-john');
+      await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+
+      await vi.waitFor(() => {
+        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+      });
       expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
         body: expect.objectContaining({
           parent_id: JJP_SOURCE.id,
+          source_type: 'web',
+          name: 'Elton John',
           url: 'https://jerseyjackpinball.com/products/elton-john',
           link_type: 'reference',
         }),
       });
+      expect(mockPOST).not.toHaveBeenCalledWith(
+        '/api/citation-sources/cite-url/',
+        expect.anything(),
+      );
     });
   });
 
@@ -906,15 +1028,18 @@ describe('CitationAutocomplete (component-level)', () => {
       expect(screen.queryByRole('option', { name: /\+ Create/ })).not.toBeInTheDocument();
     });
 
-    it('URL lookup returns draft → create stage with URL pre-filled and scrape note', async () => {
+    it('URL lookup web draft → describe-site flow → finalize calls cite-url then the instance endpoint', async () => {
       const user = userEvent.setup();
-      renderAutocomplete();
+      const { oncomplete } = renderAutocomplete();
 
       mockGET.mockReturnValue(mockSearchReturning([]));
       mockPOST.mockImplementation((url: string) => {
         if (url === '/api/citation-sources/extract/')
           return Promise.resolve({ data: EXTRACT_URL_DRAFT });
-        if (url === '/api/citation-sources/') return Promise.resolve({ data: CREATED_SOURCE });
+        if (url === '/api/citation-sources/cite-url/')
+          return Promise.resolve({
+            data: { id: 99, name: 'Wikipedia', skip_locator: true },
+          });
         return Promise.resolve({ data: CREATED_INSTANCE });
       });
 
@@ -928,21 +1053,76 @@ describe('CitationAutocomplete (component-level)', () => {
 
       fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
 
+      // Site panel: a one-time site-setup step, name prefilled from og:site_name.
       await vi.waitFor(() => {
-        expect(screen.getByText('New source')).toBeInTheDocument();
+        expect(screen.getByText('New site')).toBeInTheDocument();
+      });
+      expect((screen.getByLabelText(/Site name/i) as HTMLInputElement).value).toBe('Wikipedia');
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+
+      // Page panel: page name prefilled from og:title, URL confirmed.
+      expect((screen.getByLabelText(/Page name/i) as HTMLInputElement).value).toBe(
+        'Pinball - Wikipedia',
+      );
+      expect((screen.getByLabelText('URL') as HTMLInputElement).value).toBe(
+        'https://en.wikipedia.org/wiki/Pinball',
+      );
+
+      await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+
+      // Finalize fires cite-url, then the instance endpoint auto-submits the
+      // returned web child (skip_locator=true) — citing the child, not a root.
+      await vi.waitFor(() => {
+        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+      });
+      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/cite-url/', {
+        body: {
+          url: 'https://en.wikipedia.org/wiki/Pinball',
+          site_name: 'Wikipedia',
+          site_description: '',
+          page_name: 'Pinball - Wikipedia',
+        },
+      });
+      expect(mockPOST).toHaveBeenCalledWith('/api/citation-instances/', {
+        body: { citation_source_id: 99, locator: '' },
+      });
+      // No bare-root create.
+      expect(mockPOST).not.toHaveBeenCalledWith('/api/citation-sources/', expect.anything());
+    });
+
+    it('abandoning the describe-site flow before finalize issues no writes', async () => {
+      const user = userEvent.setup();
+      const { oncancel } = renderAutocomplete();
+
+      mockGET.mockReturnValue(mockSearchReturning([]));
+      mockPOST.mockImplementation((url: string) => {
+        if (url === '/api/citation-sources/extract/')
+          return Promise.resolve({ data: EXTRACT_URL_DRAFT });
+        return Promise.resolve({ data: CREATED_INSTANCE });
       });
 
-      // Verify prefilled fields (Name + URL)
-      expect(screen.getByDisplayValue('Pinball - Wikipedia')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('https://en.wikipedia.org/wiki/Pinball')).toBeInTheDocument();
-      // Publisher and Year are book/magazine concerns — hidden for a web source,
-      // so the scraped site name is not surfaced as an editable field.
-      expect(screen.queryByLabelText(/publisher/i)).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/year/i)).not.toBeInTheDocument();
-      // Retrieval note visible
-      expect(screen.getByText(/Retrieved from page/i)).toBeInTheDocument();
-      // Type picker should be hidden (locked to web)
-      expect(screen.queryByText('book')).not.toBeInTheDocument();
+      const input = getSearchInput();
+      input.focus();
+      await user.keyboard('https://en.wikipedia.org/wiki/Pinball');
+      await vi.waitFor(() => {
+        expect(screen.getByRole('option', { name: /Use this URL/i })).toBeInTheDocument();
+      });
+      fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
+      await vi.waitFor(() => {
+        expect(screen.getByText('New site')).toBeInTheDocument();
+      });
+
+      // Advance to the page panel, then bail out via Escape — nothing written.
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+      await user.keyboard('{Escape}');
+
+      expect(oncancel).toHaveBeenCalled();
+      // Only the search GET and extract POST ran; no source/instance write.
+      expect(mockPOST).not.toHaveBeenCalledWith(
+        '/api/citation-sources/cite-url/',
+        expect.anything(),
+      );
+      expect(mockPOST).not.toHaveBeenCalledWith('/api/citation-instances/', expect.anything());
     });
 
     it('URL lookup returns match → auto-completes (skip_locator)', async () => {
@@ -972,7 +1152,7 @@ describe('CitationAutocomplete (component-level)', () => {
       });
     });
 
-    it('URL lookup error → advances to create stage as a web source, URL prefilled', async () => {
+    it('URL lookup error → describe-site flow as a web source, URL prefilled and editable', async () => {
       const user = userEvent.setup();
       renderAutocomplete();
 
@@ -1001,15 +1181,19 @@ describe('CitationAutocomplete (component-level)', () => {
 
       fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
 
-      // A failed scrape no longer dead-ends — it lands in the create stage as a
-      // web source with the URL prefilled, no error message.
+      // A failed scrape no longer dead-ends — it lands in the describe-site flow
+      // (web-new-root), no error message.
       await vi.waitFor(() => {
-        expect(screen.getByText('New source')).toBeInTheDocument();
+        expect(screen.getByText('New site')).toBeInTheDocument();
       });
-      expect(screen.getByDisplayValue('https://example.com/slow-page')).toBeInTheDocument();
       expect(screen.queryByText(/timed out/i)).not.toBeInTheDocument();
-      // Type is locked to web — no type-picker chips.
-      expect(screen.queryByRole('button', { name: 'book' })).not.toBeInTheDocument();
+      // Nothing scraped, so Site name prefills from the domain.
+      expect((screen.getByLabelText(/Site name/i) as HTMLInputElement).value).toBe('example.com');
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+      const urlInput = screen.getByLabelText('URL') as HTMLInputElement;
+      expect(urlInput.value).toBe('https://example.com/slow-page');
+      // A failed scrape is exactly when the URL may be mistyped — it's editable.
+      expect(urlInput.readOnly).toBe(false);
     });
 
     it('URL lookup blocked → dead-ends with a message, does NOT advance to create', async () => {
