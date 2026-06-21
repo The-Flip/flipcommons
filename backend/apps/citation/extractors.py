@@ -223,6 +223,22 @@ def recognize_url(url: str) -> Recognition | None:
     return Recognition(parent_id=winner.source_id, parent_name=winner.source_name)
 
 
+def web_child_name(url: str, name: str = "") -> str:
+    """Pick a display name for a web child source.
+
+    Prefers a caller-supplied *name* (a reviewed page name), else the *url*
+    itself; when that candidate is over the name-column limit, falls back to the
+    URL's hostname (or a truncated URL when even the hostname is missing). Both
+    callers always pass a non-empty *url*, so the result is never blank. Shared
+    by the patch path (``get_or_create_web_source``) and the interactive
+    ``cite-url`` endpoint so both web-child mints use one name rule.
+    """
+    candidate = name or url
+    if len(candidate) <= CITATION_SOURCE_NAME_MAX_LENGTH:
+        return candidate
+    return urlparse(url).hostname or url[:CITATION_SOURCE_NAME_MAX_LENGTH]
+
+
 def get_or_create_external_source(scheme: str, identifier: str) -> CitationSource:
     """Get-or-create the child ``CitationSource`` for ``scheme:identifier``.
 
@@ -345,14 +361,9 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
             source = CitationSource.objects.get(pk=recognition.child.id)
         else:
             # Domain match: a new child under the recognized root. Name defaults
-            # to the URL; the link column allows more than the name column, so
-            # fall back to the hostname for an over-long URL.
-            name = url
-            if len(name) > CITATION_SOURCE_NAME_MAX_LENGTH:
-                name = urlparse(url).hostname or url[:CITATION_SOURCE_NAME_MAX_LENGTH]
-
+            # to the URL, falling back to the hostname for an over-long URL.
             source = CitationSource.objects.create(
-                name=name,
+                name=web_child_name(url),
                 source_type=CitationSource.SourceType.WEB,
                 parent_id=recognition.parent_id,
             )
