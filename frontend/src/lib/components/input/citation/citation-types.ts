@@ -17,6 +17,16 @@ export type RecognitionResult = CitationRecognitionSchema;
 /** Draft metadata returned by the extract endpoint (Open Library, etc.). */
 export type ExtractionDraft = CitationExtractDraftSchema;
 
+/** What seeds the create stage. The discriminant tells the create stage what it
+ *  knows, so it sets `source_type` explicitly instead of guessing:
+ *  - `name`: manual text — show the type picker (book default), unless a parent locks the type.
+ *  - `web-url`: a pasted URL whose scrape failed or was skipped — lock to web, prefill the URL.
+ *  - `extraction`: a successful scrape — prefill every field and show the "Retrieved from page" note. */
+export type CreateSeed =
+  | { kind: 'name'; name: string }
+  | { kind: 'web-url'; url: string }
+  | { kind: 'extraction'; draft: ExtractionDraft };
+
 /** Subset of a search result carried through the state machine after selecting an abstract source. */
 export type ParentContext = {
   id: number;
@@ -44,13 +54,12 @@ export type CiteState =
       draft: CitationInstanceDraft;
       parent: ParentContext;
     }
-  /** User is creating a new source manually (or from an extraction draft). */
+  /** User is creating a new source. The seed carries what we know to prefill it. */
   | {
       stage: 'create';
       draft: CitationInstanceDraft;
       parent: ParentContext | null;
-      prefillName: string;
-      extractionDraft: ExtractionDraft | null;
+      seed: CreateSeed;
     }
   /** Source is chosen. User enters an optional locator (page number, URL fragment, etc.). */
   | { stage: 'locator'; draft: CitationInstanceDraft };
@@ -61,10 +70,8 @@ export type CiteAction =
   | { type: 'source_selected'; source: CitationSourceResult }
   /** The exact citable CitationSource is known (via URL recognition, child selection, etc.). → locator. */
   | { type: 'source_identified'; sourceId: number; sourceName: string; skipLocator: boolean }
-  /** User wants to create a new CitationSource. → create. */
-  | { type: 'source_create_started'; prefillName: string }
-  /** Extraction API returned a draft for user confirmation. → create (prefilled). */
-  | { type: 'extraction_draft_ready'; extractionDraft: ExtractionDraft }
+  /** User wants to create a new CitationSource. The seed says what prefill we have. → create. */
+  | { type: 'create_started'; seed: CreateSeed }
   /** New CitationSource was created via API. → locator. */
   | { type: 'source_created'; sourceId: number; sourceName: string; skipLocator: boolean }
   /** User submitted or skipped the locator. */
@@ -73,6 +80,24 @@ export type CiteAction =
 // ---------------------------------------------------------------------------
 // Pure functions
 // ---------------------------------------------------------------------------
+
+/** If *q* looks like a web URL — with or without a scheme — return it as a
+ *  normalized `https://…` URL; otherwise null.
+ *
+ *  An already-schemed URL is returned verbatim (so a pasted `https://…` with an
+ *  unencoded space still works as before). A scheme-less dotted host
+ *  (`www.imdb.com/title/…`, `imdb.com`) gets `https://` prepended so the paste
+ *  flow recognizes it. To avoid mistaking a plain search term for a URL, the
+ *  scheme-less form requires no whitespace and a TLD-like final label (2+
+ *  letters) — so `imdb.com` matches but `e.g` does not. A filename-shaped token
+ *  like `notes.md` is an accepted false positive (rare in source search). */
+export function urlFromQuery(q: string): string | null {
+  const t = q.trim();
+  if (!t) return null;
+  if (/^https?:\/\//i.test(t)) return t;
+  if (/\s/.test(t)) return null;
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/.*)?$/i.test(t) ? `https://${t}` : null;
+}
 
 export function suppressChildResults(results: CitationSourceResult[]): CitationSourceResult[] {
   const resultIds = new Set(results.map((r) => r.id));
@@ -171,25 +196,13 @@ export function transition(state: CiteState, action: CiteAction): CiteState {
       };
     }
 
-    case 'source_create_started': {
+    case 'create_started': {
       if (state.stage !== 'search' && state.stage !== 'identify') return state;
       return {
         stage: 'create',
         draft: state.draft,
         parent: state.stage === 'identify' ? state.parent : null,
-        prefillName: action.prefillName,
-        extractionDraft: null,
-      };
-    }
-
-    case 'extraction_draft_ready': {
-      if (state.stage !== 'search') return state;
-      return {
-        stage: 'create',
-        draft: state.draft,
-        parent: null,
-        prefillName: action.extractionDraft.name,
-        extractionDraft: action.extractionDraft,
+        seed: action.seed,
       };
     }
 

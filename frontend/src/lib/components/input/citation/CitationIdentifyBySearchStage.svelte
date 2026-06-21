@@ -1,7 +1,12 @@
 <script lang="ts">
   import client from '$lib/api/client';
   import { createDebouncedSearch } from '$lib/components/input/dropdown/search-helpers';
-  import { createChildByIdentifier, type ParentContext, type ChildSource } from './citation-types';
+  import {
+    createChildByIdentifier,
+    type ParentContext,
+    type ChildSource,
+    type CreateSeed,
+  } from './citation-types';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
   import DropdownItem from '$lib/components/input/dropdown/DropdownItem.svelte';
   import DropdownSearchInput from '$lib/components/input/dropdown/DropdownSearchInput.svelte';
@@ -9,7 +14,7 @@
   let {
     parentContext,
     onsourceidentified,
-    onsourcecreatestarted,
+    oncreatestarted,
     oncancel,
     onback,
   }: {
@@ -19,7 +24,7 @@
       sourceName: string;
       skipLocator: boolean;
     }) => void;
-    onsourcecreatestarted: (prefillName: string) => void;
+    oncreatestarted: (seed: CreateSeed) => void;
     oncancel: () => void;
     onback: () => void;
   } = $props();
@@ -47,7 +52,7 @@
 
   // For parents with identifier_key, the filter input doubles as identifier
   // entry. When the input doesn't match any existing children, offer a
-  // direct "Create & cite" that posts with the identifier.
+  // direct "Create Citation" that posts with the identifier.
   let canQuickCreate = $derived(
     !loading &&
       !loadError &&
@@ -155,7 +160,7 @@
 
   function startCreate() {
     debouncedChildSearch.cancel();
-    onsourcecreatestarted(filterQuery);
+    oncreatestarted({ kind: 'name', name: filterQuery.trim() });
   }
 
   async function quickCreateByIdentifier() {
@@ -275,7 +280,7 @@
         onhover={() => (activeIndex = quickCreateIndex)}
       >
         <span class="item-label">{parentContext.name} #{filterQuery.trim()}</span>
-        <span class="item-desc">{creatingIdentifier ? 'Creating…' : 'Create & cite'}</span>
+        <span class="item-desc">{creatingIdentifier ? 'Creating…' : 'Create Citation'}</span>
       </DropdownItem>
     {/if}
     {#if createError}

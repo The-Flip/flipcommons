@@ -9,7 +9,7 @@
     type CiteAction,
     type CitationInstanceDraft,
     type CitationSourceResult,
-    type ExtractionDraft,
+    type CreateSeed,
   } from './citation-types';
   import CitationSearchStage from './CitationSearchStage.svelte';
   import CitationIdentifyBySearchStage from './CitationIdentifyBySearchStage.svelte';
@@ -85,12 +85,8 @@
     dispatch({ type: 'source_identified', ...child });
   }
 
-  function handleSourceCreateStarted(prefillName: string) {
-    dispatch({ type: 'source_create_started', prefillName });
-  }
-
-  function handleExtractionDraft(extractionDraft: ExtractionDraft) {
-    dispatch({ type: 'extraction_draft_ready', extractionDraft });
+  function handleCreateStarted(seed: CreateSeed) {
+    dispatch({ type: 'create_started', seed });
   }
 
   function handleSourceCreated(result: {
@@ -127,8 +123,7 @@
     <CitationSearchStage
       onsourceselected={handleSourceSelected}
       onsourceidentified={handleSourceIdentified}
-      onsourcecreatestarted={handleSourceCreateStarted}
-      onextractiondraft={handleExtractionDraft}
+      oncreatestarted={handleCreateStarted}
       {oncancel}
       onback={handleBack}
     />
@@ -136,15 +131,14 @@
     <CitationIdentifyBySearchStage
       parentContext={flow.parent}
       onsourceidentified={handleSourceIdentified}
-      onsourcecreatestarted={handleSourceCreateStarted}
+      oncreatestarted={handleCreateStarted}
       {oncancel}
       onback={goBackToSearch}
     />
   {:else if flow.stage === 'create'}
     <CitationCreateStage
       parentContext={flow.parent}
-      prefillName={flow.prefillName}
-      extractionDraft={flow.extractionDraft}
+      seed={flow.seed}
       onsourcecreated={handleSourceCreated}
       {oncancel}
       onback={goBackToSearch}

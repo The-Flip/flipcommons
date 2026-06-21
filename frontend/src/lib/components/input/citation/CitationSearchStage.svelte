@@ -7,9 +7,10 @@
   import {
     suppressChildResults,
     createChildByIdentifier,
+    urlFromQuery,
     type CitationSourceResult,
     type RecognitionResult,
-    type ExtractionDraft,
+    type CreateSeed,
   } from './citation-types';
   import type { CitationSourceSearchResponseSchema } from '$lib/api/schema';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
@@ -19,8 +20,7 @@
   let {
     onsourceselected,
     onsourceidentified,
-    onsourcecreatestarted,
-    onextractiondraft,
+    oncreatestarted,
     oncancel,
     onback,
   }: {
@@ -30,8 +30,7 @@
       sourceName: string;
       skipLocator: boolean;
     }) => void;
-    onsourcecreatestarted: (prefillName: string) => void;
-    onextractiondraft: (draft: ExtractionDraft) => void;
+    oncreatestarted: (seed: CreateSeed) => void;
     oncancel: () => void;
     onback: () => void;
   } = $props();
@@ -72,13 +71,11 @@
   // URL detection
   // -----------------------------------------------------------------------
 
+  // Accepts scheme-less hosts too (`www.imdb.com/…` → `https://www.imdb.com/…`),
+  // so a pasted URL without http(s):// still routes through the URL flow rather
+  // than falling to "+ Create". The lookup/create then sees a valid URL.
   let urlInput = $derived(
-    !recognition &&
-      searchResults.length === 0 &&
-      searchQuery.trim() &&
-      (searchQuery.trim().startsWith('http://') || searchQuery.trim().startsWith('https://'))
-      ? searchQuery.trim()
-      : null,
+    !recognition && searchResults.length === 0 ? urlFromQuery(searchQuery) : null,
   );
 
   // ARIA — per-instance IDs for combobox pattern
@@ -119,14 +116,17 @@
     creating = false;
     createError = '';
     extractError = '';
-    debouncedSearch.search(searchQuery);
+    // Send the normalized URL (scheme prepended) so the backend recognizes a
+    // scheme-less host the same as a schemed one — otherwise a domain match is
+    // missed and the URL wrongly creates a new root instead of a child.
+    debouncedSearch.search(urlFromQuery(searchQuery) ?? searchQuery);
   }
 
   // -----------------------------------------------------------------------
   // Recognition-derived items
   // -----------------------------------------------------------------------
 
-  // Recognition can produce a top item: exact child match, or identifier-based "Create & cite"
+  // Recognition can produce a top item: exact child match, or identifier-based "Create Citation"
   let recognitionItem = $derived.by(() => {
     if (!recognition) return null;
     if (recognition.child) {
@@ -145,10 +145,13 @@
         identifier: recognition.identifier,
       };
     }
-    // Domain-only match — create child with the pasted URL
+    // Domain-only match — create a child citing the pasted URL. `url` is the
+    // normalized form so a scheme-less paste posts a valid URL (the displayed
+    // `label` stays as the user typed it).
     return {
       type: 'create_by_url' as const,
       label: searchQuery.trim(),
+      url: urlFromQuery(searchQuery) ?? searchQuery.trim(),
       parentId: recognition.parent.id,
       parentName: recognition.parent.name,
     };
@@ -162,7 +165,10 @@
   let hasIsbnItem = $derived(isbnInput !== null && !recognition);
   let hasUrlItem = $derived(urlInput !== null && !recognition);
   let hasExtractionItem = $derived(hasIsbnItem || hasUrlItem);
-  let showCreateNew = $derived(searchQuery.trim().length > 0 && !recognition);
+  // A URL has its own "Use this URL →" action that always advances to the create
+  // stage, so the generic "+ Create" would be a redundant, worse path (it leaves
+  // the raw URL as the name and defaults to book). Suppress it for URL input.
+  let showCreateNew = $derived(searchQuery.trim().length > 0 && !recognition && !urlInput);
   let resultsStartIndex = $derived(hasRecognitionItem ? 1 : hasExtractionItem ? 1 : 0);
   let createNewIndex = $derived(resultsStartIndex + searchResults.length);
   let totalItems = $derived(
@@ -244,7 +250,7 @@
     // link would let it pose as a domain root in later URL recognition.
     const { data, error } = await client.POST('/api/citation-sources/', {
       body: {
-        name: recognitionItem.label,
+        name: recognitionItem.url,
         source_type: 'web',
         author: '',
         publisher: '',
@@ -252,7 +258,7 @@
         description: '',
         parent_id: recognitionItem.parentId,
         identifier: '',
-        url: recognitionItem.label,
+        url: recognitionItem.url,
         link_label: '',
         link_type: 'reference',
       },
@@ -271,10 +277,14 @@
 
   function startCreate() {
     debouncedSearch.cancel();
-    onsourcecreatestarted(searchQuery);
+    oncreatestarted({ kind: 'name', name: searchQuery.trim() });
   }
 
-  async function lookupExtraction(input: string, errorMessages: Record<string, string>) {
+  async function lookupExtraction(
+    input: string,
+    errorMessages: Record<string, string>,
+    onFailure: ((errorCode: string | null) => void) | null = null,
+  ) {
     if (extracting) return;
     extracting = true;
     extractError = '';
@@ -285,12 +295,7 @@
 
     extracting = false;
 
-    if (error || !data) {
-      extractError = 'Lookup failed. You can still create manually.';
-      return;
-    }
-
-    if (data.match) {
+    if (!error && data?.match) {
       debouncedSearch.cancel();
       onsourceidentified({
         sourceId: data.match.id,
@@ -300,14 +305,24 @@
       return;
     }
 
-    if (data.draft) {
+    if (!error && data?.draft) {
       debouncedSearch.cancel();
-      onextractiondraft(data.draft);
+      oncreatestarted({ kind: 'extraction', draft: data.draft });
       return;
     }
 
-    extractError =
-      errorMessages[data.error ?? ''] ?? 'Lookup failed. You can still create manually.';
+    // No match and no draft: the lookup failed. Distinguish a returned error
+    // code (data.error) from a transport failure (no data) so the caller can
+    // treat them differently — the URL path advances on a recoverable failure
+    // but dead-ends a `blocked` host.
+    const code = error || !data ? null : (data.error ?? null);
+    if (onFailure) {
+      debouncedSearch.cancel();
+      onFailure(code);
+      return;
+    }
+    const fallbackMsg = 'Lookup failed. You can still create manually.';
+    extractError = code === null ? fallbackMsg : (errorMessages[code] ?? fallbackMsg);
   }
 
   function lookupIsbn(isbn: string) {
@@ -319,11 +334,17 @@
   }
 
   function lookupUrl(url: string) {
-    lookupExtraction(url, {
-      not_found: 'Page not found. You can still create manually.',
-      blocked: 'URL not allowed. You can still create manually.',
-      timeout: 'Lookup timed out. You can still create manually.',
-      api_error: 'External service error. You can still create manually.',
+    // A successful scrape prefills the create stage (extraction seed); a
+    // recoverable failure (timeout / not found / API error) lands there as a
+    // blank web source with the URL prefilled (web-url seed). A `blocked` host
+    // (SSRF guard: internal/private address) must NOT become a one-click
+    // citation — dead-end it with a message instead.
+    lookupExtraction(url, {}, (code) => {
+      if (code === 'blocked') {
+        extractError = "That URL can't be cited — it points to a disallowed or internal address.";
+        return;
+      }
+      oncreatestarted({ kind: 'web-url', url });
     });
   }
 
@@ -408,7 +429,7 @@
         {:else if creating}
           Creating…
         {:else}
-          Create & cite
+          Create Citation
         {/if}
       </button>
     </div>
@@ -440,7 +461,7 @@
       {#if extracting}
         <span class="item-label extract-loading">Looking up URL…</span>
       {:else}
-        <span class="item-label">Look up URL</span>
+        <span class="item-label">Use this URL →</span>
       {/if}
     </DropdownItem>
   {/if}

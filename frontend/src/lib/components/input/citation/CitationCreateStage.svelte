@@ -1,21 +1,21 @@
 <script lang="ts">
   import client from '$lib/api/client';
-  import type { ParentContext, ExtractionDraft } from './citation-types';
+  import type { ParentContext, CreateSeed } from './citation-types';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
+  import FieldGroup from '$lib/components/input/FieldGroup.svelte';
+  import TextField from '$lib/components/input/TextField.svelte';
 
   type SourceType = 'book' | 'magazine' | 'web';
 
   let {
     parentContext,
-    prefillName,
-    extractionDraft = null,
+    seed,
     onsourcecreated,
     oncancel,
     onback,
   }: {
     parentContext: ParentContext | null;
-    prefillName: string;
-    extractionDraft?: ExtractionDraft | null;
+    seed: CreateSeed;
     onsourcecreated: (result: {
       sourceId: number;
       sourceName: string;
@@ -27,33 +27,61 @@
 
   // These props are intentionally captured once at mount — the orchestrator
   // creates a fresh component for each stage transition, so they won't change.
+  // Only an 'extraction' seed carries scraped metadata; 'name'/'web-url' don't.
   // svelte-ignore state_referenced_locally
-  let name = $state(prefillName);
+  const draft = seed.kind === 'extraction' ? seed.draft : null;
+
+  // svelte-ignore state_referenced_locally
+  let name = $state(seed.kind === 'name' ? seed.name : (draft?.name ?? ''));
   // svelte-ignore state_referenced_locally
   let sourceType = $state<SourceType>(
-    extractionDraft
-      ? (extractionDraft.source_type as SourceType)
-      : parentContext
-        ? (parentContext.source_type as SourceType)
-        : 'book',
+    draft
+      ? (draft.source_type as SourceType)
+      : seed.kind === 'web-url'
+        ? 'web'
+        : parentContext
+          ? (parentContext.source_type as SourceType)
+          : 'book',
   );
   // svelte-ignore state_referenced_locally
-  let author = $state(extractionDraft?.author ?? parentContext?.author ?? '');
+  let author = $state(draft?.author ?? parentContext?.author ?? '');
+  let publisher = $state(draft?.publisher ?? '');
+  let year = $state<number | null>(draft?.year ?? null);
   // svelte-ignore state_referenced_locally
-  let publisher = $state(extractionDraft?.publisher ?? '');
-  // svelte-ignore state_referenced_locally
-  let year = $state<number | null>(extractionDraft?.year ?? null);
-  // svelte-ignore state_referenced_locally
-  let url = $state(extractionDraft?.url ?? '');
+  let url = $state(draft?.url ?? (seed.kind === 'web-url' ? seed.url : ''));
   let error = $state('');
   let submitting = $state(false);
   let nameInputEl: HTMLInputElement | undefined = $state();
 
-  let showTypePicker = $derived(!parentContext && !extractionDraft);
+  // The picker shows only for a manual 'name' seed with no parent; a parent,
+  // a scrape, or a pasted URL all lock the type.
+  let showTypePicker = $derived(seed.kind === 'name' && !parentContext);
   let showUrlField = $derived(sourceType === 'web');
   let showAuthorField = $derived(sourceType === 'book' || sourceType === 'magazine');
-  let showPublisherField = $derived(!!extractionDraft);
-  let showYearField = $derived(!!extractionDraft);
+  // Publisher and Year are book/magazine concerns; a web source is a site/page,
+  // not a dated publication, so they're hidden for web. (PR 2's web rework
+  // reintroduces a publisher-as-Site-name field on the web path.)
+  let showPublisherField = $derived(seed.kind === 'extraction' && sourceType !== 'web');
+  let showYearField = $derived(seed.kind === 'extraction' && sourceType !== 'web');
+
+  // A web child (under a parent) skips the locator and cites on submit; every
+  // other source advances to the locator step next. Mirrors
+  // CitationSource.skip_locator so the button promises the right outcome.
+  let citesImmediately = $derived(sourceType === 'web' && !!parentContext);
+  let submitLabel = $derived(citesImmediately ? 'Create Citation' : 'Continue');
+
+  // Show the "retrieved" note only when the scrape actually returned a title to
+  // review; an extraction that found nothing leaves Page Name blank, so there's
+  // nothing to review. (draft is non-null only for an extraction seed.)
+  let showRetrievalNote = $derived(sourceType === 'web' && !!draft?.name);
+
+  // A web source's name is the page's; books/magazines just use "Name".
+  let nameLabel = $derived(sourceType === 'web' ? 'Page Name' : 'Name');
+
+  // Read-only only for a successful scrape (the URL is confirmed reachable, just
+  // for confirmation). A failed scrape (web-url) or manual create keeps it
+  // editable — a failed scrape is exactly when the URL may be mistyped.
+  let urlReadonly = $derived(seed.kind === 'extraction');
 
   $effect(() => {
     if (nameInputEl) {
@@ -89,7 +117,7 @@
         publisher: showPublisherField ? publisher : '',
         year: year ?? null,
         date_note: '',
-        isbn: extractionDraft?.isbn ?? null,
+        isbn: draft?.isbn ?? null,
         description: '',
         parent_id: parentContext?.id ?? null,
         identifier: '',
@@ -143,69 +171,52 @@
       {/each}
     </div>
   {/if}
-  {#if extractionDraft && sourceType === 'web'}
-    <div class="extraction-note">Scraped from page — review before saving</div>
+  {#if showRetrievalNote}
+    <div class="extraction-note">Retrieved from page — review before saving</div>
   {/if}
-  <input
-    bind:this={nameInputEl}
-    type="text"
-    placeholder="Name"
-    bind:value={name}
-    autocomplete="off"
-    data-1p-ignore
-    data-lpignore="true"
-  />
+  <TextField label={nameLabel} bind:value={name} bind:inputRef={nameInputEl} noAutofill />
   {#if showAuthorField}
-    <input
-      type="text"
-      placeholder="Author (optional)"
-      bind:value={author}
-      autocomplete="off"
-      data-1p-ignore
-      data-lpignore="true"
-    />
+    <TextField label="Author" optional bind:value={author} noAutofill />
   {/if}
   {#if showPublisherField}
-    <input
-      type="text"
-      placeholder="Publisher (optional)"
-      bind:value={publisher}
-      autocomplete="off"
-      data-1p-ignore
-      data-lpignore="true"
-    />
+    <TextField label="Publisher" optional bind:value={publisher} noAutofill />
   {/if}
   {#if showYearField}
-    <input
-      type="text"
-      inputmode="numeric"
-      placeholder="Year (optional)"
-      value={year ?? ''}
-      oninput={(e) => {
-        const v = (e.currentTarget as HTMLInputElement).value.trim();
-        const n = v ? parseInt(v, 10) : null;
-        year = n !== null && !isNaN(n) ? n : null;
-      }}
-      autocomplete="off"
-      data-1p-ignore
-      data-lpignore="true"
-    />
+    <!-- Custom (not NumberField): a nullable, optional integer with no spinner. -->
+    <FieldGroup label="Year" optional>
+      {#snippet children(inputId)}
+        <input
+          id={inputId}
+          type="text"
+          inputmode="numeric"
+          value={year ?? ''}
+          oninput={(e) => {
+            const v = (e.currentTarget as HTMLInputElement).value.trim();
+            const n = v ? parseInt(v, 10) : null;
+            year = n !== null && !isNaN(n) ? n : null;
+          }}
+          autocomplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+        />
+      {/snippet}
+    </FieldGroup>
   {/if}
   {#if showUrlField}
-    <input
+    <TextField
+      label="URL"
       type="url"
-      placeholder="URL"
+      placeholder="https://\u2026"
+      readonly={urlReadonly}
       bind:value={url}
-      autocomplete="off"
-      data-1p-ignore
-      data-lpignore="true"
+      noAutofill
     />
   {/if}
   {#if error}
     <div class="form-error">{error}</div>
   {/if}
   <button type="submit" class="submit-btn" disabled={submitting}>
-    {submitting ? 'Creating\u2026' : 'Create & cite'}
+    {submitting ? 'Creating\u2026' : submitLabel}
   </button>
 </form>
 

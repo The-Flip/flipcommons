@@ -5,6 +5,7 @@ import {
   emptyDraft,
   transition,
   parentContextFromSource,
+  urlFromQuery,
   type CitationSourceResult,
   type CiteState,
   type CitationInstanceDraft,
@@ -81,6 +82,43 @@ describe('suppressChildResults', () => {
 
   it('returns empty array for empty input', () => {
     expect(suppressChildResults([])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// urlFromQuery
+// ---------------------------------------------------------------------------
+
+describe('urlFromQuery', () => {
+  it('returns a schemed URL verbatim', () => {
+    expect(urlFromQuery('https://imdb.com/title/tt1/')).toBe('https://imdb.com/title/tt1/');
+    expect(urlFromQuery('http://example.com')).toBe('http://example.com');
+  });
+
+  it('prepends https:// to a scheme-less host with a path', () => {
+    expect(urlFromQuery('www.imdb.com/title/tt27714946/')).toBe(
+      'https://www.imdb.com/title/tt27714946/',
+    );
+  });
+
+  it('prepends https:// to a bare dotted domain', () => {
+    expect(urlFromQuery('imdb.com')).toBe('https://imdb.com');
+    expect(urlFromQuery('s4.american-pinball.com')).toBe('https://s4.american-pinball.com');
+  });
+
+  it('trims surrounding whitespace before deciding', () => {
+    expect(urlFromQuery('  imdb.com/x  ')).toBe('https://imdb.com/x');
+  });
+
+  it('rejects plain search terms', () => {
+    expect(urlFromQuery('Pinball Wizard')).toBeNull();
+    expect(urlFromQuery('e.g')).toBeNull(); // single-char final label is not TLD-like
+    expect(urlFromQuery('')).toBeNull();
+    expect(urlFromQuery('   ')).toBeNull();
+  });
+
+  it('rejects a scheme-less candidate containing whitespace', () => {
+    expect(urlFromQuery('imdb.com /title')).toBeNull();
   });
 });
 
@@ -259,27 +297,70 @@ describe('transition', () => {
     });
   });
 
-  describe('source_create_started', () => {
-    it('from search → create with parent: null', () => {
+  describe('create_started', () => {
+    const draft: ExtractionDraft = {
+      name: 'Learning Python',
+      source_type: 'book',
+      author: 'Mark Lutz',
+      publisher: "O'Reilly Media",
+      year: 2009,
+      isbn: '9780596517748',
+    };
+
+    it('name seed from search → create with parent: null', () => {
       const state = searchState();
-      const next = transition(state, { type: 'source_create_started', prefillName: 'New Source' });
+      const next = transition(state, {
+        type: 'create_started',
+        seed: { kind: 'name', name: 'New Source' },
+      });
 
       expect(next.stage).toBe('create');
       if (next.stage === 'create') {
         expect(next.parent).toBeNull();
-        expect(next.prefillName).toBe('New Source');
+        expect(next.seed).toEqual({ kind: 'name', name: 'New Source' });
       }
     });
 
-    it('from identify → create with parent carried over', () => {
+    it('name seed from identify → create with parent carried over', () => {
       const parent = makeParent({ id: 10, name: 'Book Series' });
       const state = identifyState(parent);
-      const next = transition(state, { type: 'source_create_started', prefillName: 'New Edition' });
+      const next = transition(state, {
+        type: 'create_started',
+        seed: { kind: 'name', name: 'New Edition' },
+      });
 
       expect(next.stage).toBe('create');
       if (next.stage === 'create') {
         expect(next.parent).toEqual(parent);
-        expect(next.prefillName).toBe('New Edition');
+        expect(next.seed).toEqual({ kind: 'name', name: 'New Edition' });
+      }
+    });
+
+    it('extraction seed from search → create carrying the draft, parent null', () => {
+      const state = searchState();
+      const next = transition(state, {
+        type: 'create_started',
+        seed: { kind: 'extraction', draft },
+      });
+
+      expect(next.stage).toBe('create');
+      if (next.stage === 'create') {
+        expect(next.parent).toBeNull();
+        expect(next.seed).toEqual({ kind: 'extraction', draft });
+      }
+    });
+
+    it('web-url seed from search → create carrying the url, parent null', () => {
+      const state = searchState();
+      const next = transition(state, {
+        type: 'create_started',
+        seed: { kind: 'web-url', url: 'https://example.com/page' },
+      });
+
+      expect(next.stage).toBe('create');
+      if (next.stage === 'create') {
+        expect(next.parent).toBeNull();
+        expect(next.seed).toEqual({ kind: 'web-url', url: 'https://example.com/page' });
       }
     });
   });
@@ -290,8 +371,7 @@ describe('transition', () => {
         stage: 'create',
         draft: emptyDraft(),
         parent: null,
-        prefillName: 'New Source',
-        extractionDraft: null,
+        seed: { kind: 'name', name: 'New Source' },
       };
       const next = transition(state, {
         type: 'source_created',
@@ -311,8 +391,7 @@ describe('transition', () => {
         stage: 'create',
         draft: emptyDraft(),
         parent: makeParent(),
-        prefillName: 'Web Child',
-        extractionDraft: null,
+        seed: { kind: 'name', name: 'Web Child' },
       };
       const next = transition(state, {
         type: 'source_created',
@@ -326,7 +405,7 @@ describe('transition', () => {
     });
   });
 
-  describe('extraction_draft_ready', () => {
+  describe('create_started invalid transitions', () => {
     const draft: ExtractionDraft = {
       name: 'Learning Python',
       source_type: 'book',
@@ -336,40 +415,13 @@ describe('transition', () => {
       isbn: '9780596517748',
     };
 
-    it('from search → create with extractionDraft populated', () => {
-      const state = searchState();
-      const next = transition(state, { type: 'extraction_draft_ready', extractionDraft: draft });
-
-      expect(next.stage).toBe('create');
-      if (next.stage === 'create') {
-        expect(next.extractionDraft).toEqual(draft);
-        expect(next.prefillName).toBe('Learning Python');
-        expect(next.parent).toBeNull();
-      }
-    });
-
-    it('from identify → no-op', () => {
-      const state = identifyState();
-      const next = transition(state, { type: 'extraction_draft_ready', extractionDraft: draft });
-      expect(next).toBe(state);
-    });
-
     it('from locator → no-op', () => {
       const state: CiteState = { stage: 'locator', draft: emptyDraft() };
-      const next = transition(state, { type: 'extraction_draft_ready', extractionDraft: draft });
+      const next = transition(state, {
+        type: 'create_started',
+        seed: { kind: 'extraction', draft },
+      });
       expect(next).toBe(state);
-    });
-  });
-
-  describe('source_create_started sets extractionDraft null', () => {
-    it('from search → create with extractionDraft: null', () => {
-      const state = searchState();
-      const next = transition(state, { type: 'source_create_started', prefillName: 'Manual' });
-
-      expect(next.stage).toBe('create');
-      if (next.stage === 'create') {
-        expect(next.extractionDraft).toBeNull();
-      }
     });
   });
 
@@ -393,21 +445,20 @@ describe('transition', () => {
       expect(next).toBe(state);
     });
 
-    it('source_create_started from locator → no-op', () => {
+    it('create_started from locator → no-op', () => {
       const state: CiteState = { stage: 'locator', draft: emptyDraft() };
-      const next = transition(state, { type: 'source_create_started', prefillName: 'X' });
+      const next = transition(state, { type: 'create_started', seed: { kind: 'name', name: 'X' } });
       expect(next).toBe(state);
     });
 
-    it('source_create_started from create → no-op', () => {
+    it('create_started from create → no-op', () => {
       const state: CiteState = {
         stage: 'create',
         draft: emptyDraft(),
         parent: null,
-        prefillName: 'Y',
-        extractionDraft: null,
+        seed: { kind: 'name', name: 'Y' },
       };
-      const next = transition(state, { type: 'source_create_started', prefillName: 'X' });
+      const next = transition(state, { type: 'create_started', seed: { kind: 'name', name: 'X' } });
       expect(next).toBe(state);
     });
   });

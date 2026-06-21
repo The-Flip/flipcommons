@@ -144,12 +144,12 @@ describe('CitationAutocomplete (component-level)', () => {
       await enterCreateStage(user);
 
       // Clear the pre-filled name
-      const nameInput = screen.getByPlaceholderText('Name') as HTMLInputElement;
+      const nameInput = screen.getByLabelText('Name') as HTMLInputElement;
       nameInput.focus();
       await user.clear(nameInput);
 
       // Submit the form — type="submit" button requires click, not pointerDown
-      await user.click(screen.getByRole('button', { name: /create & cite/i }));
+      await user.click(screen.getByRole('button', { name: /continue/i }));
 
       await vi.waitFor(() => {
         expect(screen.getByText('Name is required.')).toBeInTheDocument();
@@ -164,7 +164,7 @@ describe('CitationAutocomplete (component-level)', () => {
 
       // First attempt: POST fails (non-string error triggers generic message)
       mockPOST.mockResolvedValueOnce({ error: { detail: 'Server error' } });
-      await user.click(screen.getByRole('button', { name: /create & cite/i }));
+      await user.click(screen.getByRole('button', { name: /continue/i }));
 
       await vi.waitFor(() => {
         expect(screen.getByText('Failed to create source.')).toBeInTheDocument();
@@ -174,7 +174,7 @@ describe('CitationAutocomplete (component-level)', () => {
       mockPOST
         .mockResolvedValueOnce({ data: CREATED_SOURCE })
         .mockResolvedValueOnce({ data: CREATED_INSTANCE });
-      await user.click(screen.getByRole('button', { name: /create & cite/i }));
+      await user.click(screen.getByRole('button', { name: /continue/i }));
 
       // Error clears and flow continues (to locator, since CREATED_SOURCE has skip_locator: false)
       await vi.waitFor(() => {
@@ -291,7 +291,7 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await enterCreateStage(user);
 
-      const nameInput = screen.getByPlaceholderText('Name');
+      const nameInput = screen.getByLabelText('Name');
       fireEvent.keyDown(nameInput, { key: 'Escape' });
 
       expect(oncancel).toHaveBeenCalledOnce();
@@ -408,11 +408,11 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await vi.waitFor(() => {
         expect(screen.getByText(/Internet Pinball Database #9999/)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Create & cite/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Create Citation/ })).toBeInTheDocument();
       });
 
-      // Click the "Create & cite" button
-      fireEvent.pointerDown(screen.getByRole('button', { name: /Create & cite/ }));
+      // Click the "Create Citation" button
+      fireEvent.pointerDown(screen.getByRole('button', { name: /Create Citation/ }));
 
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
@@ -449,7 +449,7 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await vi.waitFor(() => {
         expect(screen.getByText(recognizedUrl)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Create & cite/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Create Citation/ })).toBeInTheDocument();
         // A domain match surfaces the recognized parent, so it doesn't look
         // like a brand-new source.
         expect(screen.getByText(/Cite a page under/)).toBeInTheDocument();
@@ -462,7 +462,7 @@ describe('CitationAutocomplete (component-level)', () => {
         })
         .mockResolvedValueOnce({ data: CREATED_INSTANCE });
 
-      fireEvent.pointerDown(screen.getByRole('button', { name: /Create & cite/ }));
+      fireEvent.pointerDown(screen.getByRole('button', { name: /Create Citation/ }));
 
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
@@ -474,6 +474,56 @@ describe('CitationAutocomplete (component-level)', () => {
         body: expect.objectContaining({
           parent_id: JJP_SOURCE.id,
           url: recognizedUrl,
+          link_type: 'reference',
+        }),
+      });
+    });
+
+    it('scheme-less domain-recognized URL creates a child under the parent', async () => {
+      // A scheme-less paste of a recognized domain must behave like the schemed
+      // one: recognition fires (the normalized URL is sent to search) and the
+      // child is created under the parent with the normalized URL — not routed
+      // to extraction, which would post a new parentless root and 422.
+      const user = userEvent.setup();
+      const { oncomplete } = renderAutocomplete();
+
+      mockGET.mockImplementation((url: string) => {
+        if (url === '/api/citation-sources/search/') {
+          return mockSearchReturning([], {
+            parent: { id: JJP_SOURCE.id, name: JJP_SOURCE.name },
+            child: null,
+            identifier: null,
+          });
+        }
+        return Promise.resolve({ data: [] });
+      });
+
+      const input = getSearchInput();
+      input.focus();
+      await user.keyboard('jerseyjackpinball.com/products/elton-john');
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole('button', { name: /Create Citation/ })).toBeInTheDocument();
+        expect(screen.getByText(/Cite a page under/)).toBeInTheDocument();
+      });
+      // No "Use this URL" — recognition took over, not the extraction path.
+      expect(screen.queryByRole('option', { name: /Use this URL/i })).not.toBeInTheDocument();
+
+      mockPOST
+        .mockResolvedValueOnce({ data: { id: 31, name: 'x', skip_locator: true } })
+        .mockResolvedValueOnce({ data: CREATED_INSTANCE });
+
+      fireEvent.pointerDown(screen.getByRole('button', { name: /Create Citation/ }));
+
+      await vi.waitFor(() => {
+        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+      });
+
+      // Child under the parent, with the URL normalized to https://.
+      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
+        body: expect.objectContaining({
+          parent_id: JJP_SOURCE.id,
+          url: 'https://jerseyjackpinball.com/products/elton-john',
           link_type: 'reference',
         }),
       });
@@ -521,7 +571,7 @@ describe('CitationAutocomplete (component-level)', () => {
         expect(
           screen.getByRole('option', { name: /Internet Pinball Database #4443/ }),
         ).toBeInTheDocument();
-        expect(screen.getByText('Create & cite')).toBeInTheDocument();
+        expect(screen.getByText('Create Citation')).toBeInTheDocument();
       });
 
       // No generic create should appear alongside quick create
@@ -775,7 +825,7 @@ describe('CitationAutocomplete (component-level)', () => {
       });
 
       // Author field present and empty (editable)
-      const authorInput = screen.getByPlaceholderText('Author (optional)') as HTMLInputElement;
+      const authorInput = screen.getByLabelText(/author/i) as HTMLInputElement;
       expect(authorInput.value).toBe('');
     });
 
@@ -822,7 +872,7 @@ describe('CitationAutocomplete (component-level)', () => {
   // -----------------------------------------------------------------------
 
   describe('URL extraction flows', () => {
-    it('shows "Look up URL" action when URL-shaped input has no matches', async () => {
+    it('shows "Use this URL" action and suppresses "+ Create" for URL input', async () => {
       const user = userEvent.setup();
       renderAutocomplete();
 
@@ -833,8 +883,27 @@ describe('CitationAutocomplete (component-level)', () => {
       await user.keyboard('https://en.wikipedia.org/wiki/Pinball');
 
       await vi.waitFor(() => {
-        expect(screen.getByRole('option', { name: /Look up URL/i })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: /Use this URL/i })).toBeInTheDocument();
       });
+      // The generic "+ Create" is redundant for a URL — "Use this URL" already
+      // advances to the create stage — so it must not appear.
+      expect(screen.queryByRole('option', { name: /\+ Create/ })).not.toBeInTheDocument();
+    });
+
+    it('treats a scheme-less URL as a URL ("Use this URL", no "+ Create")', async () => {
+      const user = userEvent.setup();
+      renderAutocomplete();
+
+      mockGET.mockReturnValue(mockSearchReturning([]));
+
+      const input = getSearchInput();
+      input.focus();
+      await user.keyboard('www.imdb.com/title/tt27714946/');
+
+      await vi.waitFor(() => {
+        expect(screen.getByRole('option', { name: /Use this URL/i })).toBeInTheDocument();
+      });
+      expect(screen.queryByRole('option', { name: /\+ Create/ })).not.toBeInTheDocument();
     });
 
     it('URL lookup returns draft → create stage with URL pre-filled and scrape note', async () => {
@@ -854,21 +923,24 @@ describe('CitationAutocomplete (component-level)', () => {
       await user.keyboard('https://en.wikipedia.org/wiki/Pinball');
 
       await vi.waitFor(() => {
-        expect(screen.getByRole('option', { name: /Look up URL/i })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: /Use this URL/i })).toBeInTheDocument();
       });
 
-      fireEvent.pointerDown(screen.getByRole('option', { name: /Look up URL/i }));
+      fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
 
       await vi.waitFor(() => {
         expect(screen.getByText('New source')).toBeInTheDocument();
       });
 
-      // Verify prefilled fields
+      // Verify prefilled fields (Name + URL)
       expect(screen.getByDisplayValue('Pinball - Wikipedia')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('Wikipedia')).toBeInTheDocument();
       expect(screen.getByDisplayValue('https://en.wikipedia.org/wiki/Pinball')).toBeInTheDocument();
-      // Scrape note visible
-      expect(screen.getByText(/Scraped from page/i)).toBeInTheDocument();
+      // Publisher and Year are book/magazine concerns — hidden for a web source,
+      // so the scraped site name is not surfaced as an editable field.
+      expect(screen.queryByLabelText(/publisher/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/year/i)).not.toBeInTheDocument();
+      // Retrieval note visible
+      expect(screen.getByText(/Retrieved from page/i)).toBeInTheDocument();
       // Type picker should be hidden (locked to web)
       expect(screen.queryByText('book')).not.toBeInTheDocument();
     });
@@ -889,10 +961,10 @@ describe('CitationAutocomplete (component-level)', () => {
       await user.keyboard('https://www.ipdb.org/machine.cgi?id=4836');
 
       await vi.waitFor(() => {
-        expect(screen.getByRole('option', { name: /Look up URL/i })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: /Use this URL/i })).toBeInTheDocument();
       });
 
-      fireEvent.pointerDown(screen.getByRole('option', { name: /Look up URL/i }));
+      fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
 
       // Match has skip_locator=true → auto-completes citation
       await vi.waitFor(() => {
@@ -900,7 +972,7 @@ describe('CitationAutocomplete (component-level)', () => {
       });
     });
 
-    it('URL lookup error → error message with Create fallback', async () => {
+    it('URL lookup error → advances to create stage as a web source, URL prefilled', async () => {
       const user = userEvent.setup();
       renderAutocomplete();
 
@@ -924,20 +996,25 @@ describe('CitationAutocomplete (component-level)', () => {
       await user.keyboard('https://example.com/slow-page');
 
       await vi.waitFor(() => {
-        expect(screen.getByRole('option', { name: /Look up URL/i })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: /Use this URL/i })).toBeInTheDocument();
       });
 
-      fireEvent.pointerDown(screen.getByRole('option', { name: /Look up URL/i }));
+      fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
 
+      // A failed scrape no longer dead-ends — it lands in the create stage as a
+      // web source with the URL prefilled, no error message.
       await vi.waitFor(() => {
-        expect(screen.getByText(/timed out/i)).toBeInTheDocument();
+        expect(screen.getByText('New source')).toBeInTheDocument();
       });
-
-      // Create fallback still available
-      expect(screen.getByRole('option', { name: /Create/i })).toBeInTheDocument();
+      expect(screen.getByDisplayValue('https://example.com/slow-page')).toBeInTheDocument();
+      expect(screen.queryByText(/timed out/i)).not.toBeInTheDocument();
+      // Type is locked to web — no type-picker chips.
+      expect(screen.queryByRole('button', { name: 'book' })).not.toBeInTheDocument();
     });
 
-    it('URL lookup blocked → "URL not allowed" error message', async () => {
+    it('URL lookup blocked → dead-ends with a message, does NOT advance to create', async () => {
+      // `blocked` is the SSRF guard (internal/disallowed host). Unlike a transient
+      // failure, it must not funnel into a saved citation — it dead-ends instead.
       const user = userEvent.setup();
       renderAutocomplete();
 
@@ -953,14 +1030,16 @@ describe('CitationAutocomplete (component-level)', () => {
       await user.keyboard('http://localhost:8000/admin/');
 
       await vi.waitFor(() => {
-        expect(screen.getByRole('option', { name: /Look up URL/i })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: /Use this URL/i })).toBeInTheDocument();
       });
 
-      fireEvent.pointerDown(screen.getByRole('option', { name: /Look up URL/i }));
+      fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
 
       await vi.waitFor(() => {
-        expect(screen.getByText(/URL not allowed/i)).toBeInTheDocument();
+        expect(screen.getByText(/can't be cited/i)).toBeInTheDocument();
       });
+      // It must NOT have advanced to the create stage.
+      expect(screen.queryByText('New source')).not.toBeInTheDocument();
     });
   });
 });
