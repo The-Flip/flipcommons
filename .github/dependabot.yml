@@ -31,6 +31,17 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
+    ignore:
+      # @testing-library/svelte 5.4.1 ships svelte-core@1.1.2, whose
+      # wrapper-scaffold.svelte still uses legacy `export let`. Our
+      # svelte.config.js sets compilerOptions.runes:true globally, which
+      # vite-plugin-svelte applies to that node_modules component too, so
+      # every *.dom.test.ts fails to compile ("Cannot use `export let` in
+      # runes mode"). Upstream is fixing it —
+      # https://github.com/testing-library/svelte-testing-library/issues/496.
+      # Ignore only this version so we pick up the next (fixed) release.
+      - dependency-name: "@testing-library/svelte"
+        versions: ["5.4.1"]
     groups:
       # Packages that must move together (framework + its ecosystem plugins).
       svelte:
