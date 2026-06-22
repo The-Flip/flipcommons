@@ -156,9 +156,9 @@ def extract_url(url: str) -> ExtractionResult:
     # Domain-only matches are intentionally ignored here: extraction needs a
     # specific child source so it knows which locator rules apply.
 
-    # 2. Cache check
-    # v2: the name fallback changed (no longer the URL when no title is found),
-    # so v1-cached drafts must not be served.
+    # 2. Cache check. The ``v2`` namespace pins cached drafts to the current
+    # name-fallback semantics; bump it when those change so stale-semantics
+    # drafts are abandoned rather than served.
     cache_key = f"extract:v2:url:{url}"
     cached: ExtractionResult | None = cache.get(cache_key)
     if cached is not None:

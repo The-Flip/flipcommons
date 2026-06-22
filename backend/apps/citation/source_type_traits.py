@@ -8,10 +8,9 @@ handle.
 
 The trait table is the single home for the facts that vary by source type, so
 shared code reads a trait instead of branching on ``source_type == "web"`` (the
-"branch on type in shared code" smell CLAUDE.md flags). Child *creation* is
-deliberately **not** here — it keys on parent kind (scheme root vs domain
-root), not source type, so it stays as the two plain leaves in ``extractors``/
-``api``, not a method on this table.
+"branch on type in shared code" smell CLAUDE.md flags). Only facts live here,
+never behavior: child *creation*, for one, keys on parent kind (scheme root vs
+domain root), not source type, so it has no place in this table.
 """
 
 from __future__ import annotations

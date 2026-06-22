@@ -36,8 +36,8 @@ CITATION_SOURCE_LINK_LABEL_MAX_LENGTH = 200
 CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH = 253  # RFC 1035 DNS hostname limit
 
 # Shown when a write tries to claim a recognition host another root already owns
-# (the `host` unique). Shared by the model's validation error and the API's
-# race-backstop integrity message so both paths read identically.
+# (the `host` unique). A module constant so every surface that reports the
+# collision reads identically.
 CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG = (
     "That domain is already recognized by another citation source."
 )
@@ -283,12 +283,11 @@ class CitationSource(TimeStampedModel):
         A **per-request display hint, not an enforced write invariant**:
         abstract when it has children (prefer a specific child) or it's a
         parentless web/magazine root (a site/publication container). "Don't
-        cite a web root" is handled structurally, not by a citation-time guard
-        — the URL cite paths (``recognize_url``, ``get_or_create_web_source``,
-        the cite-url endpoint) always resolve to a child under the matched root,
-        so an abstract web/magazine root is never the cited record. A standalone
-        book stays a valid cite target whether or not it later gains editions,
-        so abstractness is deliberately *not* used to reject a target.
+        cite a web root" is handled structurally, not by a citation-time guard:
+        URL recognition always resolves to a child under the matched root, so an
+        abstract web/magazine root is never the cited record. A standalone book
+        stays a valid cite target whether or not it gains editions, so
+        abstractness is deliberately *not* used to reject a target.
 
         ``has_children`` is supplied by the caller so a bulk lister can pass a
         queryset annotation while a single-row caller passes ``children.exists()``
