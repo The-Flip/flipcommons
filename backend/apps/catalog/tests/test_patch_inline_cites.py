@@ -16,7 +16,6 @@ from django.core.exceptions import ValidationError
 
 from apps.catalog.models import Manufacturer
 from apps.catalog.tests.conftest import make_machine_model
-from apps.citation.models import CitationSource
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import PatchError, build_plan, load_patch
 from apps.core.markdown import (
@@ -26,22 +25,6 @@ from apps.core.markdown import (
 from apps.provenance.models import CitationInstance, Source
 
 pytestmark = pytest.mark.django_db
-
-
-@pytest.fixture
-def ipdb_root(db):
-    """The root CitationSource for the ipdb scheme (children hang under it)."""
-    return CitationSource.objects.create(
-        name="Internet Pinball Database", source_type="web", identifier_key="ipdb"
-    )
-
-
-@pytest.fixture
-def kineticist_root(db):
-    """A non-scheme root web source with a homepage link, for domain matching."""
-    root = CitationSource.objects.create(name="Kineticist", source_type="web")
-    root.links.create(link_type="homepage", url="https://kineticist.com/")
-    return root
 
 
 @pytest.fixture

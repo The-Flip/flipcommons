@@ -315,7 +315,7 @@ class TestExtractUrlCache:
         mock_cache.get.return_value = cached
         result = extract_url("https://example.com")
         assert _draft_name(result).name == "Cached"
-        mock_cache.get.assert_called_once_with("extract:v1:url:https://example.com")
+        mock_cache.get.assert_called_once_with("extract:v2:url:https://example.com")
 
     @patch("apps.citation.url_extraction.safe_fetch")
     @patch("apps.citation.url_extraction.recognize_url", return_value=None)
@@ -379,7 +379,9 @@ class TestExtractUrlSuccess:
     @patch("apps.citation.url_extraction.safe_fetch")
     @patch("apps.citation.url_extraction.recognize_url", return_value=None)
     @patch("apps.citation.url_extraction.cache")
-    def test_fallback_to_url_as_name(self, mock_cache, mock_rec, mock_fetch):
+    def test_no_title_leaves_name_empty(self, mock_cache, mock_rec, mock_fetch):
+        # No og:title and no <title>: name is empty (not the URL), so the create
+        # form prompts the user to name the page instead of prefilling a URL.
         mock_cache.get.return_value = None
         mock_fetch.return_value = FetchResponse(
             status=200,
@@ -387,7 +389,7 @@ class TestExtractUrlSuccess:
             body=b"<html><head></head><body></body></html>",
         )
         result = extract_url("https://example.com/bare")
-        assert _draft_name(result).name == "https://example.com/bare"
+        assert _draft_name(result).name == ""
 
     @patch("apps.citation.url_extraction.safe_fetch")
     @patch("apps.citation.url_extraction.recognize_url", return_value=None)
@@ -400,7 +402,7 @@ class TestExtractUrlSuccess:
             body=b"%PDF-1.4...",
         )
         result = extract_url("https://example.com/doc.pdf")
-        # Non-HTML: falls back to URL as name
+        # Non-HTML: no parseable title, so name is empty (not the URL).
         draft = _draft_name(result)
-        assert draft.name == "https://example.com/doc.pdf"
+        assert draft.name == ""
         assert draft.source_type == "web"

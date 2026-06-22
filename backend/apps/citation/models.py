@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
+from apps.citation.hosts import normalize_host
 from apps.core.models import (
     BoundedTextField,
     TimeStampedModel,
+    field_lowercase,
     field_not_blank,
     nullable_id_not_empty,
 )
 from apps.core.validators import validate_no_mojibake
 
-__all__ = ["CitationSource", "CitationSourceLink"]
+__all__ = ["CitationSource", "CitationSourceLink", "CitationSourceRootDomain"]
 
 YEAR_MIN, YEAR_MAX = 1800, 2100
 MONTH_MIN, MONTH_MAX = 1, 12
@@ -29,6 +32,14 @@ CITATION_SOURCE_IDENTIFIER_MAX_LENGTH = 200
 CITATION_SOURCE_DESCRIPTION_MAX_LENGTH = 5_000
 CITATION_SOURCE_LINK_URL_MAX_LENGTH = 2_000
 CITATION_SOURCE_LINK_LABEL_MAX_LENGTH = 200
+CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH = 253  # RFC 1035 DNS hostname limit
+
+# Shown when a write tries to claim a recognition host another root already owns
+# (the `host` unique). Shared by the model's validation error and the API's
+# race-backstop integrity message so both paths read identically.
+CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG = (
+    "That domain is already recognized by another citation source."
+)
 
 
 class CitationSource(TimeStampedModel):
@@ -41,6 +52,7 @@ class CitationSource(TimeStampedModel):
 
     id: int
     links: models.Manager[CitationSourceLink]
+    root_domains: models.Manager[CitationSourceRootDomain]
     parent_id: int | None
 
     class SourceType(models.TextChoices):
@@ -234,10 +246,37 @@ class CitationSource(TimeStampedModel):
             ),
         ]
 
+    # Source types that are abstract when parentless: a web/magazine root is a
+    # container (a site, a publication), not directly-citable evidence. A book
+    # is not — a parentless book is itself the work, and is citable.
+    ABSTRACT_PARENTLESS_SOURCE_TYPES = frozenset({SourceType.WEB, SourceType.MAGAZINE})
+
     @property
     def skip_locator(self) -> bool:
         """Web children skip the locator stage — their URL is the locator."""
         return self.source_type == "web" and self.parent_id is not None
+
+    def is_abstract(self, *, has_children: bool) -> bool:
+        """Whether the UI should steer away from citing this directly.
+
+        A **per-request display hint, not an enforced write invariant**:
+        abstract when it has children (prefer a specific child) or it's a
+        parentless web/magazine root (a site/publication container). "Don't
+        cite a web root" is handled structurally, not by a citation-time guard
+        — the URL cite paths (``recognize_url``, ``get_or_create_web_source``,
+        the cite-url endpoint) always resolve to a child under the matched root,
+        so an abstract web/magazine root is never the cited record. A standalone
+        book stays a valid cite target whether or not it later gains editions,
+        so abstractness is deliberately *not* used to reject a target.
+
+        ``has_children`` is supplied by the caller so a bulk lister can pass a
+        queryset annotation while a single-row caller passes ``children.exists()``
+        — this method issues no query of its own.
+        """
+        return has_children or (
+            self.parent_id is None
+            and self.source_type in self.ABSTRACT_PARENTLESS_SOURCE_TYPES
+        )
 
     def __str__(self) -> str:
         if self.author and self.year:
@@ -316,3 +355,63 @@ class CitationSourceLink(TimeStampedModel):
         if self.label:
             return f"{self.label} ({self.url})"
         return self.url
+
+
+class CitationSourceRootDomain(TimeStampedModel):
+    """A recognition host owned by a root ``CitationSource``.
+
+    The signal ``recognize_url`` keys off: a normalized host (lowercased,
+    ``www.``-stripped — see ``apps.citation.hosts``) that resolves to the root
+    that owns it, by longest label-boundary suffix. One root may own many hosts
+    (a rebrand's old + new domain, ``.com`` + ``.co.uk``, an asset subdomain).
+
+    Decoupled from the display ``homepage`` ``CitationSourceLink``: editing a
+    display link never changes recognition, and there is no derived column to
+    keep in sync. ``host`` is globally ``unique`` — two roots cannot claim the
+    same recognition host. ``clean()`` canonicalizes ``host`` through
+    ``hosts.normalize_host`` (lowercase, ``www.``-strip, trailing-dot), so every
+    validated write — admin inline, API, patches — stores a normalized value
+    without the caller having to remember. The DB lowercase CHECK is a backstop
+    for writes that bypass validation (raw SQL / bulk), which it can only
+    partially cover (case, not ``www.``-stripping).
+
+    **Root-only.** A domain may attach only to a root (a parentless source). A
+    CHECK constraint cannot reach ``source.parent_id`` across the FK, so the
+    invariant is enforced in ``clean()`` on every ``full_clean`` path; for rows
+    that bypass validation (raw SQL / bulk) recognition keeps a defensive
+    ``source__parent__isnull=True`` filter.
+    """
+
+    source = models.ForeignKey(
+        CitationSource,
+        on_delete=models.CASCADE,
+        related_name="root_domains",
+    )
+    host = models.CharField(
+        max_length=CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH,
+        unique=True,
+        error_messages={"unique": CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG},
+    )
+
+    class Meta:
+        ordering = ["host"]
+        constraints = [
+            field_not_blank("host"),
+            field_lowercase("host"),
+        ]
+
+    def clean(self) -> None:
+        super().clean()
+        self.host = normalize_host(self.host)
+        if self.source_id is not None and self.source.parent_id is not None:
+            raise ValidationError(
+                {
+                    "source": (
+                        "A recognition domain may attach only to a root source "
+                        "(one with no parent)."
+                    )
+                }
+            )
+
+    def __str__(self) -> str:
+        return self.host

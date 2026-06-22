@@ -7,11 +7,14 @@
   import {
     suppressChildResults,
     createChildByIdentifier,
+    urlFromQuery,
     type CitationSourceResult,
     type RecognitionResult,
+    type CreateSeed,
     type ExtractionDraft,
   } from './citation-types';
   import type { CitationSourceSearchResponseSchema } from '$lib/api/schema';
+  import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
   import DropdownItem from '$lib/components/input/dropdown/DropdownItem.svelte';
   import DropdownSearchInput from '$lib/components/input/dropdown/DropdownSearchInput.svelte';
@@ -19,8 +22,7 @@
   let {
     onsourceselected,
     onsourceidentified,
-    onsourcecreatestarted,
-    onextractiondraft,
+    oncreatestarted,
     oncancel,
     onback,
   }: {
@@ -30,8 +32,7 @@
       sourceName: string;
       skipLocator: boolean;
     }) => void;
-    onsourcecreatestarted: (prefillName: string) => void;
-    onextractiondraft: (draft: ExtractionDraft) => void;
+    oncreatestarted: (seed: CreateSeed) => void;
     oncancel: () => void;
     onback: () => void;
   } = $props();
@@ -72,13 +73,11 @@
   // URL detection
   // -----------------------------------------------------------------------
 
+  // Accepts scheme-less hosts too (`www.imdb.com/…` → `https://www.imdb.com/…`),
+  // so a pasted URL without http(s):// still routes through the URL flow rather
+  // than falling to "+ Create". The lookup/create then sees a valid URL.
   let urlInput = $derived(
-    !recognition &&
-      searchResults.length === 0 &&
-      searchQuery.trim() &&
-      (searchQuery.trim().startsWith('http://') || searchQuery.trim().startsWith('https://'))
-      ? searchQuery.trim()
-      : null,
+    !recognition && searchResults.length === 0 ? urlFromQuery(searchQuery) : null,
   );
 
   // ARIA — per-instance IDs for combobox pattern
@@ -119,14 +118,17 @@
     creating = false;
     createError = '';
     extractError = '';
-    debouncedSearch.search(searchQuery);
+    // Send the normalized URL (scheme prepended) so the backend recognizes a
+    // scheme-less host the same as a schemed one — otherwise a domain match is
+    // missed and the URL wrongly creates a new root instead of a child.
+    debouncedSearch.search(urlFromQuery(searchQuery) ?? searchQuery);
   }
 
   // -----------------------------------------------------------------------
   // Recognition-derived items
   // -----------------------------------------------------------------------
 
-  // Recognition can produce a top item: exact child match, or identifier-based "Create & cite"
+  // Recognition can produce a top item: exact child match, or identifier-based "Create Citation"
   let recognitionItem = $derived.by(() => {
     if (!recognition) return null;
     if (recognition.child) {
@@ -145,10 +147,14 @@
         identifier: recognition.identifier,
       };
     }
-    // Domain-only match — create child with the pasted URL
+    // Domain-only match — the site is known but this page isn't a child yet.
+    // Selecting it hands off to the web flow's page step. `url` is the
+    // normalized form so a scheme-less paste carries a valid URL (the displayed
+    // `label` stays as the user typed it).
     return {
       type: 'create_by_url' as const,
       label: searchQuery.trim(),
+      url: urlFromQuery(searchQuery) ?? searchQuery.trim(),
       parentId: recognition.parent.id,
       parentName: recognition.parent.name,
     };
@@ -162,7 +168,10 @@
   let hasIsbnItem = $derived(isbnInput !== null && !recognition);
   let hasUrlItem = $derived(urlInput !== null && !recognition);
   let hasExtractionItem = $derived(hasIsbnItem || hasUrlItem);
-  let showCreateNew = $derived(searchQuery.trim().length > 0 && !recognition);
+  // A URL has its own "Use this URL →" action that always advances to the create
+  // stage, so the generic "+ Create" would be a redundant, worse path (it leaves
+  // the raw URL as the name and defaults to book). Suppress it for URL input.
+  let showCreateNew = $derived(searchQuery.trim().length > 0 && !recognition && !urlInput);
   let resultsStartIndex = $derived(hasRecognitionItem ? 1 : hasExtractionItem ? 1 : 0);
   let createNewIndex = $derived(resultsStartIndex + searchResults.length);
   let totalItems = $derived(
@@ -206,6 +215,7 @@
     debouncedSearch.cancel();
 
     if (recognitionItem.type === 'exact_match') {
+      // The exact page already exists — cite it directly, no create step.
       onsourceidentified({
         sourceId: recognitionItem.id,
         sourceName: recognitionItem.label,
@@ -214,67 +224,59 @@
       return;
     }
 
+    if (recognitionItem.type === 'create_by_url') {
+      // The site is recognized but this exact page isn't a child yet. Scrape the
+      // page for its metadata, then hand off to the web flow's page step (Create
+      // Site is skipped — the site exists); it writes only on finalize.
+      startWebCite(recognitionItem.url, recognitionItem.parentName);
+      return;
+    }
+
+    // create_identified (a scheme child, e.g. IPDB): one-click child create.
     if (creating) return;
     creating = true;
     createError = '';
 
-    if (recognitionItem.type === 'create_identified') {
-      const result = await createChildByIdentifier(
-        client,
-        recognitionItem.parentId,
-        recognition!.parent.name,
-        'web',
-        recognitionItem.identifier,
-      );
-      if (!result.ok) {
-        creating = false;
-        createError = result.error;
-        return;
-      }
-      onsourceidentified({
-        sourceId: result.sourceId,
-        sourceName: result.sourceName,
-        skipLocator: result.skipLocator,
-      });
-      return;
-    }
-
-    // create_by_url: mint a child under the domain-matched parent. Its link is
-    // 'reference' (not 'homepage') — an article page is evidence, and a homepage
-    // link would let it pose as a domain root in later URL recognition.
-    const { data, error } = await client.POST('/api/citation-sources/', {
-      body: {
-        name: recognitionItem.label,
-        source_type: 'web',
-        author: '',
-        publisher: '',
-        date_note: '',
-        description: '',
-        parent_id: recognitionItem.parentId,
-        identifier: '',
-        url: recognitionItem.label,
-        link_label: '',
-        link_type: 'reference',
-      },
-    });
-    if (error) {
+    const result = await createChildByIdentifier(
+      client,
+      recognitionItem.parentId,
+      recognition!.parent.name,
+      'web',
+      recognitionItem.identifier,
+    );
+    if (!result.ok) {
       creating = false;
-      createError = typeof error === 'string' ? error : 'Failed to create source.';
+      createError = result.error;
       return;
     }
     onsourceidentified({
-      sourceId: data.id,
-      sourceName: data.name,
-      skipLocator: data.skip_locator,
+      sourceId: result.sourceId,
+      sourceName: result.sourceName,
+      skipLocator: result.skipLocator,
     });
   }
 
   function startCreate() {
     debouncedSearch.cancel();
-    onsourcecreatestarted(searchQuery);
+    oncreatestarted({ kind: 'name', name: searchQuery.trim() });
   }
 
-  async function lookupExtraction(input: string, errorMessages: Record<string, string>) {
+  /** Scrape an ISBN or URL via the extract endpoint, then route the result:
+   *  an existing match cites directly; a draft or a recoverable failure is
+   *  handed to `onDraft` (which builds the seed); an unrecoverable failure with
+   *  no `onFailure` shows a message. */
+  async function lookupExtraction(
+    input: string,
+    {
+      errorMessages = {},
+      onDraft,
+      onFailure = null,
+    }: {
+      errorMessages?: Record<string, string>;
+      onDraft: (draft: ExtractionDraft) => void;
+      onFailure?: ((errorCode: string | null) => void) | null;
+    },
+  ) {
     if (extracting) return;
     extracting = true;
     extractError = '';
@@ -285,12 +287,7 @@
 
     extracting = false;
 
-    if (error || !data) {
-      extractError = 'Lookup failed. You can still create manually.';
-      return;
-    }
-
-    if (data.match) {
+    if (!error && data?.match) {
       debouncedSearch.cancel();
       onsourceidentified({
         sourceId: data.match.id,
@@ -300,31 +297,57 @@
       return;
     }
 
-    if (data.draft) {
+    if (!error && data?.draft) {
       debouncedSearch.cancel();
-      onextractiondraft(data.draft);
+      onDraft(data.draft);
       return;
     }
 
-    extractError =
-      errorMessages[data.error ?? ''] ?? 'Lookup failed. You can still create manually.';
+    // No match and no draft: the lookup failed. Distinguish a returned error
+    // code (data.error) from a transport failure (no data) so the caller can
+    // treat them differently — the URL path advances on a recoverable failure
+    // but dead-ends a `blocked` host.
+    const code = error || !data ? null : (data.error ?? null);
+    if (onFailure) {
+      debouncedSearch.cancel();
+      onFailure(code);
+      return;
+    }
+    const fallbackMsg = 'Lookup failed. You can still create manually.';
+    extractError = code === null ? fallbackMsg : (errorMessages[code] ?? fallbackMsg);
   }
 
   function lookupIsbn(isbn: string) {
     lookupExtraction(isbn, {
-      not_found: 'ISBN not found. You can still create manually.',
-      timeout: 'Lookup timed out. You can still create manually.',
-      api_error: 'External service error. You can still create manually.',
+      errorMessages: {
+        not_found: 'ISBN not found. You can still create manually.',
+        timeout: 'Lookup timed out. You can still create manually.',
+        api_error: 'External service error. You can still create manually.',
+      },
+      onDraft: (draft) => oncreatestarted({ kind: 'extraction', draft }),
+    });
+  }
+
+  /** Scrape a web URL, then enter the web create flow. `siteName` is the
+   *  recognized site (existing — Create Site is skipped) or null (a new site). A
+   *  successful scrape prefills the page (and, for a new site, the site name); a
+   *  recoverable failure advances with nothing prefilled. A `blocked` host (SSRF
+   *  guard: internal/private address) must NOT become a citation — dead-end it. */
+  function startWebCite(url: string, siteName: string | null) {
+    lookupExtraction(url, {
+      onDraft: (draft) => oncreatestarted({ kind: 'web', url, siteName, draft }),
+      onFailure: (code) => {
+        if (code === 'blocked') {
+          extractError = "That URL can't be cited — it points to a disallowed or internal address.";
+          return;
+        }
+        oncreatestarted({ kind: 'web', url, siteName, draft: null });
+      },
     });
   }
 
   function lookupUrl(url: string) {
-    lookupExtraction(url, {
-      not_found: 'Page not found. You can still create manually.',
-      blocked: 'URL not allowed. You can still create manually.',
-      timeout: 'Lookup timed out. You can still create manually.',
-      api_error: 'External service error. You can still create manually.',
-    });
+    startWebCite(url, null);
   }
 
   // -----------------------------------------------------------------------
@@ -390,22 +413,33 @@
   {#if recognitionItem}
     <div class="recognition-block" id={itemId('recognition')}>
       <div class="recognition-label">{recognitionItem.label}</div>
-      <button
-        class="recognition-btn"
-        disabled={creating}
-        onpointerdown={(e) => {
-          e.preventDefault();
-          handleRecognitionSelect();
-        }}
-      >
-        {#if recognitionItem.type === 'exact_match'}
-          Cite
-        {:else if creating}
-          Creating…
-        {:else}
-          Create & cite
-        {/if}
-      </button>
+      {#if recognitionItem.type === 'create_by_url'}
+        <div class="recognition-parent">
+          Cite a page under <strong>{recognitionItem.parentName}</strong>
+        </div>
+      {/if}
+      <!-- Wrapper aligns the button to the start of the flex column (the button
+           shouldn't stretch full width). align-self can't live on the child
+           component's element from here, so it goes on this wrapper. -->
+      <div class="recognition-action">
+        <DropdownButton
+          disabled={creating || extracting}
+          onpointerdown={(e) => {
+            e.preventDefault();
+            handleRecognitionSelect();
+          }}
+        >
+          {#if recognitionItem.type === 'exact_match'}
+            Cite
+          {:else if recognitionItem.type === 'create_by_url'}
+            {extracting ? 'Looking up…' : 'Continue'}
+          {:else if creating}
+            Creating…
+          {:else}
+            Create Citation
+          {/if}
+        </DropdownButton>
+      </div>
     </div>
   {/if}
   {#if isbnInput && !recognition}
@@ -435,7 +469,7 @@
       {#if extracting}
         <span class="item-label extract-loading">Looking up URL…</span>
       {:else}
-        <span class="item-label">Look up URL</span>
+        <span class="item-label">Use this URL →</span>
       {/if}
     </DropdownItem>
   {/if}
@@ -509,29 +543,17 @@
     gap: var(--size-2);
   }
 
+  .recognition-action {
+    align-self: flex-start;
+  }
+
   .recognition-label {
     font-size: var(--font-size-1);
   }
 
-  .recognition-btn {
-    padding: var(--size-1) var(--size-2);
-    font-size: var(--font-size-1);
-    font-family: inherit;
-    border: 1px solid var(--color-input-border);
-    border-radius: var(--radius-2);
-    background-color: var(--color-input-focus-ring);
-    color: var(--color-text);
-    cursor: pointer;
-    align-self: flex-start;
-  }
-
-  .recognition-btn:hover:not(:disabled) {
-    border-color: var(--color-input-focus);
-  }
-
-  .recognition-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  .recognition-parent {
+    font-size: var(--font-size-0);
+    color: var(--color-text-muted);
   }
 
   .create-error {

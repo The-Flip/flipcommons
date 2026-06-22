@@ -7,11 +7,11 @@ import { CREATED_SOURCE } from './citation-fixtures';
 const { mockPOST } = vi.hoisted(() => ({ mockPOST: vi.fn() }));
 vi.mock('$lib/api/client', () => ({ default: { POST: mockPOST } }));
 
-const WEB_ROOT_PARENT = {
+const BOOK_PARENT = {
   id: 30,
-  name: 'Jersey Jack',
-  source_type: 'web',
-  author: '',
+  name: 'Learning Python',
+  source_type: 'book',
+  author: 'Mark Lutz',
   identifier_key: '',
 };
 
@@ -19,53 +19,97 @@ function noop() {}
 
 beforeEach(() => mockPOST.mockReset());
 
-describe('CitationCreateStage link_type', () => {
-  it('posts reference for a web child created under a parent root', async () => {
-    // A child is a specific page, not the source's homepage — 'reference' keeps
-    // it from masquerading as a domain root in later URL recognition.
+describe('CitationCreateStage', () => {
+  it('creates a parentless book root via the type picker (no URL field — web is URL-only)', async () => {
     const user = userEvent.setup();
     mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
     render(CitationCreateStage, {
-      parentContext: WEB_ROOT_PARENT,
-      prefillName: 'Elton John product page',
+      parentContext: null,
+      seed: { kind: 'name', name: 'Pinball Compendium' },
       onsourcecreated: noop,
       oncancel: noop,
       onback: noop,
     });
 
-    await user.type(
-      screen.getByPlaceholderText('URL'),
-      'https://jerseyjackpinball.com/products/elton-john',
-    );
-    await user.click(screen.getByRole('button', { name: /Create & cite/ }));
+    // Books and magazines only — web sources are created by pasting a URL.
+    expect(screen.getByRole('button', { name: 'book' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'magazine' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'web' })).not.toBeInTheDocument();
+    // No URL field anywhere in this stage.
+    expect(screen.queryByLabelText('URL')).not.toBeInTheDocument();
+
+    // A non-web source advances to the locator next, so the button says "Continue".
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
 
     await waitFor(() => expect(mockPOST).toHaveBeenCalled());
     expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
       body: expect.objectContaining({
-        parent_id: WEB_ROOT_PARENT.id,
+        name: 'Pinball Compendium',
+        source_type: 'book',
+        parent_id: null,
+        link_type: 'homepage',
+      }),
+    });
+  });
+
+  it('creates an edition under a parent (type locked, reference link)', async () => {
+    const user = userEvent.setup();
+    mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
+    render(CitationCreateStage, {
+      parentContext: BOOK_PARENT,
+      seed: { kind: 'name', name: 'Second Edition' },
+      onsourcecreated: noop,
+      oncancel: noop,
+      onback: noop,
+    });
+
+    // A parent locks the type, so no picker.
+    expect(screen.queryByRole('button', { name: 'book' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
+
+    await waitFor(() => expect(mockPOST).toHaveBeenCalled());
+    expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
+      body: expect.objectContaining({
+        source_type: 'book',
+        parent_id: BOOK_PARENT.id,
         link_type: 'reference',
       }),
     });
   });
 
-  it('posts homepage for a new root web source (no parent)', async () => {
-    const user = userEvent.setup();
-    mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
-    render(CitationCreateStage, {
+  it('an extraction (ISBN) draft prefills Publisher and Year; a manual name seed does not', () => {
+    const { unmount } = render(CitationCreateStage, {
       parentContext: null,
-      prefillName: 'Some Site',
+      seed: {
+        kind: 'extraction',
+        draft: {
+          name: 'Learning Python',
+          source_type: 'book',
+          author: 'Mark Lutz',
+          publisher: "O'Reilly Media",
+          year: 2009,
+          isbn: '9780596517748',
+        },
+      },
       onsourcecreated: noop,
       oncancel: noop,
       onback: noop,
     });
 
-    await user.click(screen.getByRole('button', { name: 'web' }));
-    await user.type(screen.getByPlaceholderText('URL'), 'https://somesite.com/');
-    await user.click(screen.getByRole('button', { name: /Create & cite/ }));
+    expect((screen.getByLabelText(/Author/) as HTMLInputElement).value).toBe('Mark Lutz');
+    expect((screen.getByLabelText(/Publisher/) as HTMLInputElement).value).toBe("O'Reilly Media");
+    expect((screen.getByLabelText(/Year/) as HTMLInputElement).value).toBe('2009');
+    unmount();
 
-    await waitFor(() => expect(mockPOST).toHaveBeenCalled());
-    expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
-      body: expect.objectContaining({ parent_id: null, link_type: 'homepage' }),
+    // A manual 'name' seed has no scraped metadata, so Publisher/Year are hidden.
+    render(CitationCreateStage, {
+      parentContext: null,
+      seed: { kind: 'name', name: 'Manual Book' },
+      onsourcecreated: noop,
+      oncancel: noop,
+      onback: noop,
     });
+    expect(screen.queryByLabelText(/Publisher/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Year/)).not.toBeInTheDocument();
   });
 });

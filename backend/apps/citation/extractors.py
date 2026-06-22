@@ -6,7 +6,7 @@ an identifier.
 
 The ``recognize_url`` function is the main entry point: given a raw URL
 it tries extractors first, then checks for an exact child-link match,
-then falls back to domain matching against homepage links.
+then falls back to recognition-host matching via ``CitationSourceRootDomain``.
 """
 
 from __future__ import annotations
@@ -16,10 +16,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from apps.citation.hosts import normalize_host
 from apps.citation.models import (
     CITATION_SOURCE_NAME_MAX_LENGTH,
     CitationSource,
     CitationSourceLink,
+    CitationSourceRootDomain,
 )
 
 
@@ -108,25 +110,26 @@ class Recognition:
     identifier: str | None = None
 
 
-def _normalize_domain(hostname: str) -> str:
-    """Strip ``www.`` prefix for domain comparison."""
-    return hostname.removeprefix("www.").lower()
-
-
 def recognize_url(url: str) -> Recognition | None:
     """Try to recognize a pasted URL against known sources.
 
     Three-step resolution:
 
-    1. Try all extractors — can identify parent + extract identifier,
-       then look up existing child by identifier.
-    2. Check if the full URL exactly matches any child source's linked
+    1. Try all extractors — identify the scheme parent + extract its
+       identifier, then look up an existing child by that identifier.
+    2. Check if the full URL exactly matches a child source's linked
        URL — returns parent + child for instant re-citation.
-    3. Fall back to domain matching against ``link_type="homepage"``
-       links — returns parent only, no identifier.
+    3. Fall back to recognition-host matching: resolve the URL's host to
+       the root that owns it via ``CitationSourceRootDomain``, longest
+       label-boundary suffix wins — returns parent only, no identifier.
 
-    Domain matching normalises away ``www.`` but compares full
-    subdomains (``twip.kineticist.com`` ≠ ``kineticist.com``).
+    Step 3 matches subdomains most-specific-first: an asset host
+    ``s4.american-pinball.com`` collapses to the ``american-pinball.com``
+    root, while a deliberately-seeded ``twip.kineticist.com`` still wins
+    over ``kineticist.com`` for its own subtree. The recognition host is
+    an owned fact on the root (``CitationSourceRootDomain``), decoupled
+    from the display ``homepage`` link — declared deliberately, never
+    inferred and never via external HTTP. See ``docs/Citations.md``.
     """
     # --- Step 1: Extractor match -------------------------------------------
     for key, extractor in EXTRACTORS.items():
@@ -189,25 +192,48 @@ def recognize_url(url: str) -> Recognition | None:
             ),
         )
 
-    # --- Step 3: Domain match against homepage links -----------------------
+    # --- Step 3: Recognition-host match (exact host) -----------------------
+    # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3): match the
+    # normalized host exactly, not by longest label-boundary suffix. Exact
+    # matching can't over-match, so it ships with no public-suffix guard; the
+    # label_suffixes/longest_suffix_match helpers stay built and tested in
+    # hosts.py, dormant, until G3 re-points this step at them.
     parsed = urlparse(url)
     if not parsed.hostname:
         return None
 
-    input_domain = _normalize_domain(parsed.hostname)
+    host = normalize_host(parsed.hostname)
 
-    # Query homepage links and compare domains in Python (small result set).
-    homepage_links = CitationSourceLink.objects.filter(
-        link_type="homepage",
-        citation_source__parent__isnull=True,
-    ).values_list("citation_source_id", "citation_source__name", "url")
+    # The root-only filter is defense-in-depth for the app-level clean()
+    # invariant (rows inserted via raw SQL / bulk that bypass it).
+    row = (
+        CitationSourceRootDomain.objects.filter(
+            host=host,
+            source__parent__isnull=True,
+        )
+        .values_list("source_id", "source__name")
+        .first()
+    )
+    if row is None:
+        return None
+    source_id, source_name = row
+    return Recognition(parent_id=source_id, parent_name=source_name)
 
-    for source_id, source_name, homepage_url in homepage_links:
-        hp_parsed = urlparse(homepage_url)
-        if hp_parsed.hostname and _normalize_domain(hp_parsed.hostname) == input_domain:
-            return Recognition(parent_id=source_id, parent_name=source_name)
 
-    return None
+def web_child_name(url: str, name: str = "") -> str:
+    """Pick a display name for a web child source.
+
+    Prefers a caller-supplied *name* (a reviewed page name), else the *url*
+    itself; when that candidate is over the name-column limit, falls back to the
+    URL's hostname (or a truncated URL when even the hostname is missing). Both
+    callers always pass a non-empty *url*, so the result is never blank. Shared
+    by the patch path (``get_or_create_web_source``) and the interactive
+    ``cite-url`` endpoint so both web-child mints use one name rule.
+    """
+    candidate = name or url
+    if len(candidate) <= CITATION_SOURCE_NAME_MAX_LENGTH:
+        return candidate
+    return urlparse(url).hostname or url[:CITATION_SOURCE_NAME_MAX_LENGTH]
 
 
 def get_or_create_external_source(scheme: str, identifier: str) -> CitationSource:
@@ -253,8 +279,9 @@ def get_or_create_external_source(scheme: str, identifier: str) -> CitationSourc
     )
     if created:
         # A record page is a child under the scheme root, so its link is
-        # ``reference`` — ``homepage`` is reserved for roots (it's the domain
-        # signal recognition keys off, which only applies to parentless roots).
+        # ``reference``; ``homepage`` is conventionally a root's own page.
+        # ``link_type`` no longer affects recognition (that keys off
+        # ``CitationSourceRootDomain``) — this is display convention.
         CitationSourceLink.objects.create(
             citation_source=source,
             link_type=CitationSourceLink.LinkType.REFERENCE,
@@ -278,34 +305,41 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
     recognition the interactive editor uses — so the URL resolves to a *known*
     source:
 
-    * an existing child that already covers the URL (exact link or scheme
+    * an existing *child* that already covers the URL (exact link or scheme
       identifier) is reused;
     * a domain match to a seeded root (e.g. the "Kineticist" source) becomes a
-      new child *under that root*.
+      new child *under that root* — including when the URL equals the root's own
+      homepage link, since a root is abstract and never directly citable.
 
     A URL whose domain matches no seeded root raises
     ``CitationSource.DoesNotExist`` (mirroring the scheme path's missing-root
     error). We deliberately do *not* mint a parentless web source: a root web
     source is *abstract* — a container, not directly-citable evidence (see
-    ``apps.citation.schemas`` / ``api._is_abstract``) — so a parentless page
+    ``CitationSource.is_abstract``) — so a parentless page
     would be concrete in intent but root-like in citation search/UI. Seed the
     website root in an earlier patch, then cite pages under it.
 
     A newly minted child's link is typed ``reference`` — it's an evidence page,
-    never a domain homepage. ``homepage`` is reserved for the seeded root;
-    typing a one-off page that way would let recognize_url's domain step treat
-    it as a root for later cites.
+    not a root's homepage. ``link_type`` no longer affects recognition (that
+    keys off ``CitationSourceRootDomain``), so this is display convention.
 
     Idempotent by exact URL — re-citing the same URL (or citing one a curator
-    already linked) reuses the existing source, so a re-applied patch never
-    duplicates.
+    already linked to a child) reuses the existing source, so a re-applied patch
+    never duplicates. Only *child* links count for reuse; a root's homepage link
+    is ignored so the cite resolves to a page under the root, not the root.
 
     The caller is responsible for rejecting URLs that match a known scheme;
     those must be cited as ``scheme:identifier`` so they dedup through the
     scheme path.
     """
+    # Children only: a root's own homepage link can equal the cited URL, but a
+    # root is abstract — reusing it would cite the container, not a page. Filter
+    # to child links so the cite falls through to a domain match that mints a
+    # child (recognize_url's own exact-link step is likewise children-only).
     existing = (
-        CitationSourceLink.objects.filter(url=url)
+        CitationSourceLink.objects.filter(
+            url=url, citation_source__parent__isnull=False
+        )
         .select_related("citation_source")
         .first()
     )
@@ -315,22 +349,18 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
         recognition = recognize_url(url)
         if recognition is None:
             raise CitationSource.DoesNotExist(
-                f"No website CitationSource root matches {url!r}; seed the website "
-                f"root (a parentless source whose homepage link shares the domain) "
-                f"before citing a page under it."
+                f"No website CitationSource root's recognition domain matches "
+                f"{url!r}; declare the root in a patch — a sources: root's homepage "
+                f"host is minted as its recognition domain — before citing a page "
+                f"under it."
             )
         if recognition.child is not None:
             source = CitationSource.objects.get(pk=recognition.child.id)
         else:
             # Domain match: a new child under the recognized root. Name defaults
-            # to the URL; the link column allows more than the name column, so
-            # fall back to the hostname for an over-long URL.
-            name = url
-            if len(name) > CITATION_SOURCE_NAME_MAX_LENGTH:
-                name = urlparse(url).hostname or url[:CITATION_SOURCE_NAME_MAX_LENGTH]
-
+            # to the URL, falling back to the hostname for an over-long URL.
             source = CitationSource.objects.create(
-                name=name,
+                name=web_child_name(url),
                 source_type=CitationSource.SourceType.WEB,
                 parent_id=recognition.parent_id,
             )

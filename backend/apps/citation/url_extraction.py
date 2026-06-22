@@ -157,7 +157,9 @@ def extract_url(url: str) -> ExtractionResult:
     # specific child source so it knows which locator rules apply.
 
     # 2. Cache check
-    cache_key = f"extract:v1:url:{url}"
+    # v2: the name fallback changed (no longer the URL when no title is found),
+    # so v1-cached drafts must not be served.
+    cache_key = f"extract:v2:url:{url}"
     cached: ExtractionResult | None = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -176,8 +178,11 @@ def extract_url(url: str) -> ExtractionResult:
     except _HttpStatusError:
         return ExtractionResult(error="api_error")
 
-    # Build draft — graceful fallback chain for name
-    name = meta.og_title or meta.title or url
+    # Name falls back from og:title to <title>, then to empty — never to the URL.
+    # An empty name signals "no title found" so the create form leaves Page Name
+    # blank (and focused) for the user to fill, rather than prefilling a URL that
+    # reads as a junk title.
+    name = meta.og_title or meta.title or ""
     draft = ExtractionDraft(
         name=name,
         source_type="web",

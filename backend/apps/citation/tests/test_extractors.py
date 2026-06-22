@@ -9,9 +9,14 @@ import pytest
 from apps.citation.extractors import (
     EXTRACTORS,
     get_or_create_external_source,
+    get_or_create_web_source,
     recognize_url,
 )
-from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.models import (
+    CitationSource,
+    CitationSourceLink,
+    CitationSourceRootDomain,
+)
 
 # A real-looking 11-char video id (Rick Astley, "Never Gonna Give You Up").
 VID = "dQw4w9WgXcQ"
@@ -100,6 +105,72 @@ class TestYouTubeRecognition:
         assert recognize_url(f"https://youtu.be/{VID}") is None
 
 
+class TestRootDomainRecognition:
+    """``recognize_url`` step 3: resolve a host to its root by exact match.
+
+    SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3): step 3
+    matches the host exactly; subdomain (longest-suffix) cases assert the
+    deferred no-match behavior until G3 re-enables suffix matching.
+    """
+
+    def _root(self, name: str, host: str) -> CitationSource:
+        root = CitationSource.objects.create(name=name, source_type="web")
+        CitationSourceRootDomain.objects.create(source=root, host=host)
+        return root
+
+    def test_subdomain_not_recognized_under_exact_matching(self, db):
+        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
+        self._root("American Pinball", "american-pinball.com")
+        assert (
+            recognize_url("http://s4.american-pinball.com/games/gtf/manual.pdf") is None
+        )
+
+    def test_exact_root_host_resolves(self, db):
+        # twip.kineticist.com is itself a seeded host → exact match wins even
+        # with kineticist.com also seeded (the "most specific" framing is moot
+        # under exact matching, but the assertion holds).
+        self._root("Kineticist", "kineticist.com")
+        twip = self._root("TWiP", "twip.kineticist.com")
+        rec = recognize_url("https://twip.kineticist.com/some-article")
+        assert rec is not None
+        assert rec.parent_id == twip.id
+
+    def test_subdomain_does_not_resolve_to_parent_under_exact_matching(self, db):
+        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
+        self._root("Kineticist", "kineticist.com")
+        assert recognize_url("https://twip.kineticist.com/some-article") is None
+
+    def test_deeper_subdomain_not_recognized_under_exact_matching(self, db):
+        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
+        self._root("American Pinball", "american-pinball.com")
+        assert recognize_url("https://cdn.assets.american-pinball.com/logo.png") is None
+
+    def test_www_prefixed_input_matches(self, db):
+        ap = self._root("American Pinball", "american-pinball.com")
+        rec = recognize_url("https://www.american-pinball.com/about")
+        assert rec is not None
+        assert rec.parent_id == ap.id
+
+    def test_lookalike_host_does_not_match(self, db):
+        self._root("American Pinball", "american-pinball.com")
+        assert recognize_url("https://evil-american-pinball.com/x") is None
+
+    def test_unknown_host_no_recognition(self, db):
+        self._root("American Pinball", "american-pinball.com")
+        assert recognize_url("https://example.com/x") is None
+
+    def test_root_domain_on_child_is_ignored(self, db):
+        # The source__parent__isnull filter is defense-in-depth for the clean()
+        # root-only rule: a domain attached to a child via a bypass (raw create)
+        # never drives recognition.
+        parent = CitationSource.objects.create(name="Parent", source_type="web")
+        child = CitationSource.objects.create(
+            name="Child", source_type="web", parent=parent
+        )
+        CitationSourceRootDomain.objects.create(source=child, host="child.example.com")
+        assert recognize_url("https://child.example.com/page") is None
+
+
 class TestYouTubeGetOrCreate:
     """``get_or_create_external_source`` is idempotent and builds canonical URLs."""
 
@@ -115,4 +186,38 @@ class TestYouTubeGetOrCreate:
         second = get_or_create_external_source(
             "youtube", f"https://www.youtube.com/watch?v={VID}&t=10s"
         )
+        assert first.id == second.id
+
+
+class TestGetOrCreateWebSourceRootHomepage:
+    """Citing a URL equal to a root's own homepage must resolve to a child.
+
+    A root web source is abstract (a container, not citable evidence), so a URL
+    that happens to equal its homepage link must create/reuse a child under it —
+    never return the root itself.
+    """
+
+    HOST = "american-pinball.com"
+    HOMEPAGE = "https://american-pinball.com/"
+
+    def _root(self, db) -> CitationSource:
+        root = CitationSource.objects.create(name="American Pinball", source_type="web")
+        CitationSourceRootDomain.objects.create(source=root, host=self.HOST)
+        CitationSourceLink.objects.create(
+            citation_source=root,
+            link_type=CitationSourceLink.LinkType.HOMEPAGE,
+            url=self.HOMEPAGE,
+        )
+        return root
+
+    def test_citing_root_homepage_creates_child_not_root(self, db):
+        root = self._root(db)
+        source = get_or_create_web_source(self.HOMEPAGE)
+        assert source.id != root.id
+        assert source.parent_id == root.id
+
+    def test_citing_root_homepage_is_idempotent(self, db):
+        self._root(db)
+        first = get_or_create_web_source(self.HOMEPAGE)
+        second = get_or_create_web_source(self.HOMEPAGE)
         assert first.id == second.id
