@@ -1,21 +1,23 @@
+<!-- @component New-source form for a book or magazine (a root, or an edition under a parent). -->
 <script lang="ts">
   import client from '$lib/api/client';
-  import type { ParentContext, ExtractionDraft } from './citation-types';
+  import type { ParentContext, CreateSeed } from './citation-types';
+  import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
+  import FieldGroup from '$lib/components/input/FieldGroup.svelte';
+  import TextField from '$lib/components/input/TextField.svelte';
 
-  type SourceType = 'book' | 'magazine' | 'web';
+  type SourceType = 'book' | 'magazine';
 
   let {
     parentContext,
-    prefillName,
-    extractionDraft = null,
+    seed,
     onsourcecreated,
     oncancel,
     onback,
   }: {
     parentContext: ParentContext | null;
-    prefillName: string;
-    extractionDraft?: ExtractionDraft | null;
+    seed: CreateSeed;
     onsourcecreated: (result: {
       sourceId: number;
       sourceName: string;
@@ -27,33 +29,35 @@
 
   // These props are intentionally captured once at mount — the orchestrator
   // creates a fresh component for each stage transition, so they won't change.
+  // This stage creates authored works (book/magazine) — a root, or an edition
+  // under a parent. All web creation goes through CitationWebCreateStage, so a
+  // `web` seed never arrives here and an `extraction` seed is always a book.
   // svelte-ignore state_referenced_locally
-  let name = $state(prefillName);
+  const draft = seed.kind === 'extraction' ? seed.draft : null;
+
+  // svelte-ignore state_referenced_locally
+  let name = $state(seed.kind === 'name' ? seed.name : (draft?.name ?? ''));
   // svelte-ignore state_referenced_locally
   let sourceType = $state<SourceType>(
-    extractionDraft
-      ? (extractionDraft.source_type as SourceType)
+    draft
+      ? (draft.source_type as SourceType)
       : parentContext
         ? (parentContext.source_type as SourceType)
         : 'book',
   );
   // svelte-ignore state_referenced_locally
-  let author = $state(extractionDraft?.author ?? parentContext?.author ?? '');
-  // svelte-ignore state_referenced_locally
-  let publisher = $state(extractionDraft?.publisher ?? '');
-  // svelte-ignore state_referenced_locally
-  let year = $state<number | null>(extractionDraft?.year ?? null);
-  // svelte-ignore state_referenced_locally
-  let url = $state(extractionDraft?.url ?? '');
+  let author = $state(draft?.author ?? parentContext?.author ?? '');
+  let publisher = $state(draft?.publisher ?? '');
+  let year = $state<number | null>(draft?.year ?? null);
   let error = $state('');
   let submitting = $state(false);
   let nameInputEl: HTMLInputElement | undefined = $state();
 
-  let showTypePicker = $derived(!parentContext && !extractionDraft);
-  let showUrlField = $derived(sourceType === 'web');
-  let showAuthorField = $derived(sourceType === 'book' || sourceType === 'magazine');
-  let showPublisherField = $derived(!!extractionDraft);
-  let showYearField = $derived(!!extractionDraft);
+  // The picker shows only for a manual 'name' seed with no parent; a parent or
+  // a scrape locks the type.
+  let showTypePicker = $derived(seed.kind === 'name' && !parentContext);
+  // Publisher and Year come only from a (book) extraction draft.
+  let showExtractedFields = $derived(seed.kind === 'extraction');
 
   $effect(() => {
     if (nameInputEl) {
@@ -73,10 +77,6 @@
       error = 'Name is required.';
       return;
     }
-    if (sourceType === 'web' && !url.trim()) {
-      error = 'URL is required for web sources.';
-      return;
-    }
 
     submitting = true;
     error = '';
@@ -85,19 +85,17 @@
       body: {
         name,
         source_type: sourceType,
-        author: showAuthorField ? author : '',
-        publisher: showPublisherField ? publisher : '',
+        author,
+        publisher: showExtractedFields ? publisher : '',
         year: year ?? null,
         date_note: '',
-        isbn: extractionDraft?.isbn ?? null,
+        isbn: draft?.isbn ?? null,
         description: '',
         parent_id: parentContext?.id ?? null,
         identifier: '',
-        url: showUrlField && url.trim() ? url : null,
+        // Required by the create schema; inert here since this stage sends no
+        // `url`, so no link is minted. (§2.6 makes link_type optional/None.)
         link_label: '',
-        // A child is a specific page (reference); only a root holds its own
-        // homepage. 'homepage' on a child page would let it pose as a domain
-        // root in later URL recognition.
         link_type: parentContext ? 'reference' : 'homepage',
       },
     });
@@ -128,7 +126,9 @@
 >
   {#if showTypePicker}
     <div class="type-chips">
-      {#each ['book', 'magazine', 'web'] as t (t)}
+      <!-- Books and magazines only — web sources are created by pasting a URL
+           (CitationWebCreateStage), never typed in here. -->
+      {#each ['book', 'magazine'] as t (t)}
         <button
           type="button"
           class="type-chip"
@@ -143,70 +143,38 @@
       {/each}
     </div>
   {/if}
-  {#if extractionDraft && sourceType === 'web'}
-    <div class="extraction-note">Scraped from page — review before saving</div>
+  <TextField label="Name" bind:value={name} bind:inputRef={nameInputEl} noAutofill />
+  <TextField label="Author" optional bind:value={author} noAutofill />
+  {#if showExtractedFields}
+    <TextField label="Publisher" optional bind:value={publisher} noAutofill />
   {/if}
-  <input
-    bind:this={nameInputEl}
-    type="text"
-    placeholder="Name"
-    bind:value={name}
-    autocomplete="off"
-    data-1p-ignore
-    data-lpignore="true"
-  />
-  {#if showAuthorField}
-    <input
-      type="text"
-      placeholder="Author (optional)"
-      bind:value={author}
-      autocomplete="off"
-      data-1p-ignore
-      data-lpignore="true"
-    />
-  {/if}
-  {#if showPublisherField}
-    <input
-      type="text"
-      placeholder="Publisher (optional)"
-      bind:value={publisher}
-      autocomplete="off"
-      data-1p-ignore
-      data-lpignore="true"
-    />
-  {/if}
-  {#if showYearField}
-    <input
-      type="text"
-      inputmode="numeric"
-      placeholder="Year (optional)"
-      value={year ?? ''}
-      oninput={(e) => {
-        const v = (e.currentTarget as HTMLInputElement).value.trim();
-        const n = v ? parseInt(v, 10) : null;
-        year = n !== null && !isNaN(n) ? n : null;
-      }}
-      autocomplete="off"
-      data-1p-ignore
-      data-lpignore="true"
-    />
-  {/if}
-  {#if showUrlField}
-    <input
-      type="url"
-      placeholder="URL"
-      bind:value={url}
-      autocomplete="off"
-      data-1p-ignore
-      data-lpignore="true"
-    />
+  {#if showExtractedFields}
+    <!-- Custom (not NumberField): a nullable, optional integer with no spinner. -->
+    <FieldGroup label="Year" optional>
+      {#snippet children(inputId)}
+        <input
+          id={inputId}
+          type="text"
+          inputmode="numeric"
+          value={year ?? ''}
+          oninput={(e) => {
+            const v = (e.currentTarget as HTMLInputElement).value.trim();
+            const n = v ? parseInt(v, 10) : null;
+            year = n !== null && !isNaN(n) ? n : null;
+          }}
+          autocomplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+        />
+      {/snippet}
+    </FieldGroup>
   {/if}
   {#if error}
     <div class="form-error">{error}</div>
   {/if}
-  <button type="submit" class="submit-btn" disabled={submitting}>
-    {submitting ? 'Creating\u2026' : 'Create & cite'}
-  </button>
+  <DropdownButton type="submit" disabled={submitting}>
+    {submitting ? 'Creating\u2026' : 'Continue'}
+  </DropdownButton>
 </form>
 
 <style>
@@ -239,34 +207,8 @@
     border-color: var(--color-input-focus);
   }
 
-  .extraction-note {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-0);
-    font-style: italic;
-  }
-
   .form-error {
     color: var(--color-error-text);
     font-size: var(--font-size-0);
-  }
-
-  .submit-btn {
-    padding: var(--size-1) var(--size-2);
-    font-size: var(--font-size-1);
-    font-family: inherit;
-    border: 1px solid var(--color-input-border);
-    border-radius: var(--radius-2);
-    background-color: var(--color-input-focus-ring);
-    color: var(--color-text);
-    cursor: pointer;
-  }
-
-  .submit-btn:hover:not(:disabled) {
-    border-color: var(--color-input-focus);
-  }
-
-  .submit-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 </style>

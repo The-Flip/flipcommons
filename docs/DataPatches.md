@@ -178,6 +178,35 @@ claims:
 
 The field key is the **literal registered namespace** (`manufacturer_alias`, `abbreviation`); members are bare strings, not public_ids (alias values case-fold for identity, original case preserved for display; abbreviations are verbatim). Aliases and abbreviations need no `note:`/`cite:`. `remove:` drops a member the same way it drops an FK member.
 
+### Counted members (gameplay features)
+
+Most relationship members are a bare public_id (a `tag`, a `theme`). `gameplay_feature` is the one namespace whose members can also carry a **count** — "4 ramps", "3 flippers". Author the count with a **one-key `{public_id: count}` mapping** in place of the bare slug; mix the two forms freely in one list:
+
+```yaml
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      gameplay_feature:
+        - multiball # bare slug → count NULL
+        - ramps: 4 # one-key mapping → count 4
+```
+
+Rules:
+
+- If you supply a count, it must be **positive integer** (`>= 1`); it cannot be `0`, negative or non-int (`ramps: lots`). A bare `ramps:` parses as the empty string `''` and not null, so it's rejected.
+- Only `gameplay_feature` takes a count. Every other relationship (`tag`, `theme`, `location`) rejects the mapping form — `- prototype: 2` errors with "must be a public_id string".
+- The count is **not part of member identity**: re-asserting a member with a new count supersedes the old one.
+
+`remove:` uses the bare slug:
+
+```yaml
+claims:
+  - model.medieval-madness:
+      remove:
+        gameplay_feature:
+          - ramps
+```
+
 ### Credits
 
 A **credit** — "person X did role Y on this model or series" — is the catalog's one **multi-key** relationship: its identity is `{person, role}`, two FK keys. A credit member is written as a **single-key mapping** `<person-public_id>: <role-public_id>` — one line per credit, no braces. In YAML a list item `- brian-eddy: design` parses to the dict `{brian-eddy: design}`, so the **key is the person** public_id and the **value is the role** (a `credit-role`) public_id. The `credit:` value is a flat list of these, so a person can repeat — each list item is one `{person, role}` claim:
@@ -251,7 +280,7 @@ claims:
 `cite:` is external evidence, attached to each of the entry's authored claims and shown beside the field on the edit-history page, in one of two forms:
 
 - **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`, `youtube:O-2BXTXLXIY`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
-- **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's domain must match a **seeded website root** (a parentless web source whose homepage link shares the domain); the cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no root matches, the patch errors — declare the website root in this patch's `sources:` block (processed before claims) or an earlier patch. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
+- **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's host must fall under a **seeded website root**'s _recognition domain_ — a root's homepage host becomes its recognition domain when the root is declared in a `sources:` block, and a cite on that host **or any subdomain of it** (`static.example.com` under `example.com`) nests here. The cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no recognition domain matches, the patch errors — declare the website root in this patch's `sources:` block (processed before claims) or an earlier patch. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
 
 As noted under [File format](#file-format), each `changesets:` item (and each flat entry) is its own ChangeSet, so one record can take **several** corrections in a patch — each with its own `note`/`cite`. Two rules keep that unambiguous:
 
@@ -335,11 +364,12 @@ claims: [] # optional — a sources-only patch is valid
 
 A `sources:` node is a flat citation-source record (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, and `links`). **v1 is flat** — nested `children` is rejected; a child source under a root is created on demand when you `cite:` a URL on its domain.
 
-**Identity and the get-or-create policy.** A source has no slug; identity is `isbn` if present, else `(name, source_type)`. The block is **additive get-or-create**, never an overwrite:
+**Identity and the get-or-create policy.** A source has no slug. A root with a `homepage` link owns one or more **recognition domains** (the normalized homepage hosts) — that's the signal a later `cite:` URL resolves against, and the primary identity. Resolution is by recognition host first, then `isbn`, then `(name, source_type)`. The block is **additive get-or-create**, never an overwrite:
 
-- not found → create the source and its declared links.
-- found → leave the existing row untouched (a divergent declared field is a **warning**, not an error), and **additively backfill** any declared link the row is missing — so a later `cite:` can nest under the root even when the row already existed without your `homepage` link. An existing link with the same URL but a different `link_type`/`label` is left as-is and warned.
-- two-plus rows match `(name, source_type)` → operate on the first, warn.
+- a declared homepage host already owned by a root → **that root**, even if it's stored under a different name (re-declaring a site under a new name reuses it, never duplicates).
+- otherwise not found → create the source, its declared links, and a recognition domain per homepage host.
+- found → leave the existing row untouched (a divergent declared field is a **warning**, not an error), **additively backfill** any declared link the row is missing — so a later `cite:` can nest under the root even when the row existed without your `homepage` link — and **mint a recognition domain** for any new homepage host, so one root accretes many domains (a rebrand, a `.com`+`.co.uk`). An existing same-URL link with a different `link_type`/`label` is left as-is and warned.
+- declared homepage hosts already split across **two different roots** → the node is **skipped with no writes** and warned (resolve the duplicate roots first); two-plus `(name, source_type)` rows → operate on the first, warn.
 
 This is deliberate: a user can create a source through the app, so a same-identity collision is invisible when you author the patch. A strict "differs → error" policy would let one such collision **fail the patch and dam every later patch on prod** (patches stop at the first failure). Get-or-create never wedges and never clobbers user data — at the cost that, on a collision, the patch's description/links don't win (correctable only in Django admin). Because it's additive, re-applying is a clean no-op.
 

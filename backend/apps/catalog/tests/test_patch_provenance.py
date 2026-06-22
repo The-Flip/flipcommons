@@ -39,24 +39,6 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
-def ipdb_root(db):
-    """The root CitationSource for the ipdb scheme (children hang under it)."""
-    return CitationSource.objects.create(
-        name="Internet Pinball Database",
-        source_type="web",
-        identifier_key="ipdb",
-    )
-
-
-@pytest.fixture
-def kineticist_root(db):
-    """A non-scheme root web source with a homepage link, for domain matching."""
-    root = CitationSource.objects.create(name="Kineticist", source_type="web")
-    root.links.create(link_type="homepage", url="https://kineticist.com/")
-    return root
-
-
-@pytest.fixture
 def pm(db, flipcommons_catalog):
     return make_machine_model(
         name="Medieval Madness", slug="medieval-madness", year=1997
@@ -714,11 +696,15 @@ def test_url_cite_without_matching_root_errors(flipcommons_catalog, pm):
         _apply(text)
 
 
-def test_url_cite_reuses_preexisting_source(flipcommons_catalog, pm):
-    # A source a curator already linked to this exact URL is reused, not
-    # duplicated.
-    url = "https://example.com/evidence"
-    existing = CitationSource.objects.create(name="Curated", source_type="web")
+def test_url_cite_reuses_preexisting_source(flipcommons_catalog, kineticist_root, pm):
+    # A child a curator already linked to this exact URL is reused, not
+    # duplicated. The reusable source must be a child under a root (a parentless
+    # web source is abstract and never a citation target) — re-citing its URL
+    # resolves back to it via the children-only exact-link match.
+    url = "https://kineticist.com/reviews/medieval-madness"
+    existing = CitationSource.objects.create(
+        name="Curated", source_type="web", parent=kineticist_root
+    )
     existing.links.create(link_type="reference", url=url)
     text = (
         "attribution: flipcommons-catalog\n"
@@ -763,6 +749,25 @@ def test_url_cite_nests_under_domain_matched_root(
 
     year_claim = pm.claims.get(field_name="year", is_active=True)
     assert year_claim.citation_instances.get().citation_source_id == child.pk
+
+
+def test_url_cite_on_subdomain_raises_under_exact_matching(
+    flipcommons_catalog, kineticist_root, pm
+):
+    # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
+    # Exact matching: an asset/subdomain host (static.kineticist.com) does not
+    # match the seeded kineticist.com root, so the patch path raises rather than
+    # nesting a child under it or minting a new root.
+    url = "https://static.kineticist.com/manuals/medieval-madness.pdf"
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        f"      cite: {url}\n"
+        "      year: 1998\n"
+    )
+    with pytest.raises(CitationSource.DoesNotExist):
+        _apply(text)
 
 
 def test_url_cite_under_root_dedups_and_separates(

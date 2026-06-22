@@ -1,3 +1,4 @@
+/** Types, pure helpers and the state-machine reducer for the citation flow. */
 import type {
   CitationSourceChildSchema,
   CitationSourceSearchSchema,
@@ -16,6 +17,27 @@ export type RecognitionResult = CitationRecognitionSchema;
 
 /** Draft metadata returned by the extract endpoint (Open Library, etc.). */
 export type ExtractionDraft = CitationExtractDraftSchema;
+
+/** What seeds a create flow. The orchestrator routes a `web` seed (see
+ *  `isWebSeed`) to the describe-site → page web flow and everything else to the
+ *  authored-work form:
+ *  - `name`: manual text — the authored-work form (book/magazine type picker), unless a parent locks the type.
+ *  - `extraction`: a scraped book/magazine draft (from an ISBN) — the authored-work form, fields prefilled.
+ *  - `web`: a pasted web URL — the web flow. `siteName` non-null means the site already exists
+ *    (Create Site is skipped, it names that site); null means a new site (Create Site shown). `draft`
+ *    is the page scrape (page name + site name prefill, URL confirmed read-only) or null when the
+ *    scrape failed/was skipped (URL stays editable, nothing prefilled). `pageName` prefills the page
+ *    name when there's no scrape — used by the manual "add a page under a known site" path. */
+export type CreateSeed =
+  | { kind: 'name'; name: string }
+  | { kind: 'extraction'; draft: ExtractionDraft }
+  | {
+      kind: 'web';
+      url: string;
+      siteName: string | null;
+      draft: ExtractionDraft | null;
+      pageName?: string;
+    };
 
 /** Subset of a search result carried through the state machine after selecting an abstract source. */
 export type ParentContext = {
@@ -44,13 +66,15 @@ export type CiteState =
       draft: CitationInstanceDraft;
       parent: ParentContext;
     }
-  /** User is creating a new source manually (or from an extraction draft). */
+  /** User is creating a new source. The seed carries what we know to prefill it.
+   *  The orchestrator renders this stage with one of two create components: a
+   *  web seed (see `isWebSeed`) gets the two-panel describe-site → page
+   *  web flow; everything else gets the authored-work (book/magazine) form. */
   | {
       stage: 'create';
       draft: CitationInstanceDraft;
       parent: ParentContext | null;
-      prefillName: string;
-      extractionDraft: ExtractionDraft | null;
+      seed: CreateSeed;
     }
   /** Source is chosen. User enters an optional locator (page number, URL fragment, etc.). */
   | { stage: 'locator'; draft: CitationInstanceDraft };
@@ -61,10 +85,8 @@ export type CiteAction =
   | { type: 'source_selected'; source: CitationSourceResult }
   /** The exact citable CitationSource is known (via URL recognition, child selection, etc.). → locator. */
   | { type: 'source_identified'; sourceId: number; sourceName: string; skipLocator: boolean }
-  /** User wants to create a new CitationSource. → create. */
-  | { type: 'source_create_started'; prefillName: string }
-  /** Extraction API returned a draft for user confirmation. → create (prefilled). */
-  | { type: 'extraction_draft_ready'; extractionDraft: ExtractionDraft }
+  /** User wants to create a new CitationSource. The seed says what prefill we have. → create. */
+  | { type: 'create_started'; seed: CreateSeed }
   /** New CitationSource was created via API. → locator. */
   | { type: 'source_created'; sourceId: number; sourceName: string; skipLocator: boolean }
   /** User submitted or skipped the locator. */
@@ -73,6 +95,37 @@ export type CiteAction =
 // ---------------------------------------------------------------------------
 // Pure functions
 // ---------------------------------------------------------------------------
+
+/** If *q* looks like a web URL — with or without a scheme — return it as a
+ *  normalized `https://…` URL; otherwise null.
+ *
+ *  An already-schemed URL is returned verbatim (so a pasted `https://…` with an
+ *  unencoded space still works as before). A scheme-less dotted host
+ *  (`www.imdb.com/title/…`, `imdb.com`) gets `https://` prepended so the paste
+ *  flow recognizes it. To avoid mistaking a plain search term for a URL, the
+ *  scheme-less form requires no whitespace and a TLD-like final label (2+
+ *  letters) — so `imdb.com` matches but `e.g` does not. A filename-shaped token
+ *  like `notes.md` is an accepted false positive (rare in source search). */
+export function urlFromQuery(q: string): string | null {
+  const t = q.trim();
+  if (!t) return null;
+  if (/^https?:\/\//i.test(t)) return t;
+  if (/\s/.test(t)) return null;
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/.*)?$/i.test(t) ? `https://${t}` : null;
+}
+
+/** The www-stripped, lowercased host of a URL, or `''` if it can't be parsed.
+ *  Used to prefill the Site name when no `og:site_name` was scraped, so the
+ *  field shows the name the new root will get. Mirrors the backend's
+ *  `normalize_host`, which it falls back to (`name = site_name or host`). */
+export function hostFromUrl(url: string): string {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.startsWith('www.') ? host.slice(4) : host;
+  } catch {
+    return '';
+  }
+}
 
 export function suppressChildResults(results: CitationSourceResult[]): CitationSourceResult[] {
   const resultIds = new Set(results.map((r) => r.id));
@@ -129,6 +182,13 @@ export async function createChildByIdentifier(
 // State machine
 // ---------------------------------------------------------------------------
 
+/** True when a create seed is a pasted web URL. The orchestrator renders these
+ *  with the describe-site → page web flow; everything else (manual names,
+ *  book/magazine extractions) uses the authored-work create form. */
+export function isWebSeed(seed: CreateSeed): boolean {
+  return seed.kind === 'web';
+}
+
 export function parentContextFromSource(source: CitationSourceResult): ParentContext {
   return {
     id: source.id,
@@ -171,25 +231,13 @@ export function transition(state: CiteState, action: CiteAction): CiteState {
       };
     }
 
-    case 'source_create_started': {
+    case 'create_started': {
       if (state.stage !== 'search' && state.stage !== 'identify') return state;
       return {
         stage: 'create',
         draft: state.draft,
         parent: state.stage === 'identify' ? state.parent : null,
-        prefillName: action.prefillName,
-        extractionDraft: null,
-      };
-    }
-
-    case 'extraction_draft_ready': {
-      if (state.stage !== 'search') return state;
-      return {
-        stage: 'create',
-        draft: state.draft,
-        parent: null,
-        prefillName: action.extractionDraft.name,
-        extractionDraft: action.extractionDraft,
+        seed: action.seed,
       };
     }
 

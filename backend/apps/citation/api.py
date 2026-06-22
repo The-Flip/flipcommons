@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import asdict
 from typing import Protocol, cast
+from urllib.parse import urlparse
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
@@ -21,15 +22,23 @@ from ninja.responses import Status
 from ninja.security import django_auth
 from ninja.throttling import AuthRateThrottle
 
+from apps.accounts.models import User
 from apps.core.api_helpers import authed_user
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 
 from .extraction import classify_input, extract_isbn, normalize_isbn
-from .extractors import EXTRACTORS, Recognition, recognize_url
-from .models import CitationSource, CitationSourceLink
+from .extractors import EXTRACTORS, Recognition, recognize_url, web_child_name
+from .hosts import normalize_host
+from .models import (
+    CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG,
+    CitationSource,
+    CitationSourceLink,
+    CitationSourceRootDomain,
+)
 from .schemas import (
+    CitationCiteUrlSchema,
     CitationExtractDraftSchema,
     CitationExtractInputSchema,
     CitationExtractResultSchema,
@@ -74,9 +83,15 @@ class _HasChildren(Protocol):
     has_children: bool
 
 
-def _is_abstract(source_type: str, parent_id: int | None, has_children: bool) -> bool:
-    """Source is abstract if it has children or is a root web/magazine source."""
-    return has_children or (parent_id is None and source_type in ("web", "magazine"))
+def _validation_detail(exc: ValidationError) -> str:
+    """Flatten a ``ValidationError`` into a human-readable 422 detail string."""
+    if hasattr(exc, "message_dict"):
+        parts = []
+        for field, messages in exc.message_dict.items():
+            for msg in messages:
+                parts.append(f"{field}: {msg}" if field != "__all__" else msg)
+        return "; ".join(parts)
+    return str(exc)
 
 
 def _clean_and_save(
@@ -97,15 +112,7 @@ def _clean_and_save(
     try:
         instance.full_clean()
     except ValidationError as exc:
-        if hasattr(exc, "message_dict"):
-            parts = []
-            for field, messages in exc.message_dict.items():
-                for msg in messages:
-                    parts.append(f"{field}: {msg}" if field != "__all__" else msg)
-            detail = "; ".join(parts)
-        else:
-            detail = str(exc)
-        raise HttpError(422, detail) from exc
+        raise HttpError(422, _validation_detail(exc)) from exc
     try:
         instance.save(update_fields=update_fields)
     except IntegrityError as exc:
@@ -145,7 +152,7 @@ def _serialize_search_row(s: CitationSource) -> CitationSourceSearchSchema:
         isbn=s.isbn,
         parent_id=s.parent_id,
         has_children=has_children,
-        is_abstract=_is_abstract(s.source_type, s.parent_id, has_children),
+        is_abstract=s.is_abstract(has_children=has_children),
         skip_locator=s.skip_locator,
         identifier_key=s.identifier_key,
     )
@@ -317,9 +324,10 @@ def create_citation_source(
         )
 
         if url:
+            link_type = data.link_type or "homepage"
             link = CitationSourceLink(
                 citation_source=source,
-                link_type=data.link_type or "homepage",
+                link_type=link_type,
                 url=url,
                 label=data.link_label,
                 created_by=user,
@@ -327,8 +335,164 @@ def create_citation_source(
             )
             _clean_and_save(link)
 
+            # A parentless source with a homepage link owns a recognition host
+            # (any source_type — see the any-root decision). Dedup belongs to
+            # the interactive cite-url flow; here a host another root already
+            # owns surfaces as a 422 — from full_clean's unique check (the
+            # field's custom message), with integrity_msg as the create-race
+            # backstop. Either way the surrounding atomic() rolls the create back.
+            hostname = urlparse(url).hostname
+            if parent is None and link_type == "homepage" and hostname is not None:
+                domain = CitationSourceRootDomain(
+                    source=source, host=normalize_host(hostname)
+                )
+                _clean_and_save(
+                    domain, integrity_msg=CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG
+                )
+
     source = get_object_or_404(_detail_qs(), pk=source.pk)
     return Status(201, _serialize_detail(source))
+
+
+def _create_web_child(
+    parent_id: int, url: str, page_name: str, user: User
+) -> CitationSource:
+    """Mint a page child under *parent_id* with a ``reference`` link at *url*.
+
+    The child's name follows the shared ``web_child_name`` rule. A malformed
+    *url* fails the link's ``URLField`` validation → friendly 422.
+    """
+    child = CitationSource(
+        name=web_child_name(url, page_name),
+        source_type=CitationSource.SourceType.WEB,
+        parent_id=parent_id,
+        created_by=user,
+        updated_by=user,
+    )
+    _clean_and_save(child)
+    link = CitationSourceLink(
+        citation_source=child,
+        link_type=CitationSourceLink.LinkType.REFERENCE,
+        url=url,
+        created_by=user,
+        updated_by=user,
+    )
+    _clean_and_save(link)
+    return child
+
+
+def _create_root_and_child(
+    url: str, data: CitationCiteUrlSchema, user: User
+) -> CitationSource:
+    """Create a new site root (homepage link + recognition domain) and a child.
+
+    Roots at the **raw** pasted host (PR 2 rounds this to the registrable
+    domain). The root-create runs in a savepoint: on a concurrent ``host``
+    ``unique`` violation the savepoint rolls back, the URL is re-recognized
+    against the now-committed root, and the child nests under it.
+    """
+    hostname = urlparse(url).hostname
+    if hostname is None:
+        raise HttpError(422, "That URL has no host to create a site from.")
+    host = normalize_host(hostname)
+
+    try:
+        with transaction.atomic():
+            root = CitationSource(
+                name=data.site_name or host,
+                source_type=CitationSource.SourceType.WEB,
+                description=data.site_description,
+                created_by=user,
+                updated_by=user,
+            )
+            _clean_and_save(root)
+            homepage = CitationSourceLink(
+                citation_source=root,
+                link_type=CitationSourceLink.LinkType.HOMEPAGE,
+                url=f"https://{host}/",
+                created_by=user,
+                updated_by=user,
+            )
+            _clean_and_save(homepage)
+            domain = CitationSourceRootDomain(source=root, host=host)
+            # validate_unique=False so the model guards (root-only clean(),
+            # PR2's public-suffix clean(), CHECK constraints) still fire — as a
+            # 422 — while the host-unique race surfaces only as a DB
+            # IntegrityError from save() below, distinct from a guard failure.
+            try:
+                domain.full_clean(validate_unique=False)
+            except ValidationError as exc:
+                raise HttpError(422, _validation_detail(exc)) from exc
+            domain.save()
+            parent_id = root.pk
+    except IntegrityError:
+        # Lost the create-root race: another request committed this host. Re-
+        # recognize and nest the child under the now-existing root.
+        rec = recognize_url(url)
+        if rec is None:
+            raise
+        parent_id = rec.parent_id
+
+    return _create_web_child(parent_id, url, data.page_name, user)
+
+
+@citation_sources_router.post(
+    "/cite-url/",
+    response={201: CitationSourceMatchSchema, 422: ErrorDetailSchema},
+    auth=django_auth,
+)
+@requires(Activity.CITATION_EDIT)
+def cite_url(
+    request: HttpRequest, data: CitationCiteUrlSchema
+) -> Status[CitationSourceMatchSchema]:
+    """Cite a web page, creating its site root and page child as needed.
+
+    The interactive web-create flow's finalize call. The pasted URL is
+    re-recognized server-side and routed to one of four outcomes, all returning
+    the **web child** to cite (never the abstract root):
+
+    * **no match** → create the site root (at the raw host) and a page child;
+    * **domain match** → create a page child under the existing root, ignoring
+      ``site_*`` (the root already exists and is never renamed from here);
+    * **exact child** → reuse it;
+    * **scheme identifier** (IPDB/OPDB/…) → 422; cite it as ``scheme:identifier``.
+
+    One transaction; every created row is attributed to the caller.
+    """
+    user = authed_user(request)
+    url = data.url
+
+    with transaction.atomic():
+        rec = recognize_url(url)
+        if rec is not None and rec.identifier is not None:
+            raise HttpError(
+                422,
+                f"This URL is a {rec.parent_name} record; cite it via its "
+                f"scheme identifier (scheme:identifier), not the web flow.",
+            )
+        if rec is not None and rec.child is not None:
+            # An exact child already covers this URL — reuse it. recognize_url
+            # already loaded the three fields the response needs, so there's
+            # nothing left to create or fetch.
+            return Status(
+                201,
+                CitationSourceMatchSchema(
+                    id=rec.child.id,
+                    name=rec.child.name,
+                    skip_locator=rec.child.skip_locator,
+                ),
+            )
+        if rec is not None:
+            child = _create_web_child(rec.parent_id, url, data.page_name, user)
+        else:
+            child = _create_root_and_child(url, data, user)
+
+    return Status(
+        201,
+        CitationSourceMatchSchema(
+            id=child.pk, name=child.name, skip_locator=child.skip_locator
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

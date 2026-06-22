@@ -28,6 +28,8 @@ Sources may be **hierarchical** via a self-referential parent, when the domain n
 
 A source carries a pragmatic `source_type` (book / magazine / web). Its job is to drive product behavior — search, edit fields, locator prompts, rendering — not to be a bibliography ontology, so the taxonomy stays small and grows only when a new type needs distinct behavior.
 
+Some sources are **abstract** — a container rather than citable evidence: any source with children, or a parentless web or magazine root (a site, a publication). Contributors cite a concrete child instead — a page under a web root, an edition under a book; a parentless book with no children is itself the work, so it stays citable. `is_abstract` is a computed display hint (on the search API) that steers the authoring UI toward children. For web roots it is also structural: the cite paths resolve a URL to a child under the matched root (described below), so the abstract root is never the cited record.
+
 For source families with structured identifiers, two paired fields express the scheme:
 
 - `identifier_key` — the scheme, set on a **root** source only (e.g. an IPDB or OPDB root). A root is a scheme-holder.
@@ -49,7 +51,11 @@ The inline marker is a normal **public-id wikilink** keyed on the instance's dur
 
 A `CitationSourceLink` is a reader-facing access point — a canonical URL, an archive URL, an uploaded scan, a museum-hosted copy. Links are ways to _inspect_ a source, not separate sources. They are wholly owned by their source.
 
-Each link carries a `link_type`, and one value is load-bearing: **`homepage` marks a source's own root page and is the signal recognition's domain match keys off** (step 3 below), so it belongs only on a true root. Every other type (`reference`, `archive`, …) is a plain access point with no recognition role. A specific page minted under a root — a cited article, a forum thread — must be `reference`, never `homepage`, or domain matching would later mistake that one page for the whole domain's root.
+Each link carries a `link_type`. `homepage` marks a source's own root page and is the human-facing URL for a root — it is **display only**, not the recognition signal. Recognition keys off `CitationSourceRootDomain` (see below), an owned recognition host on the root, decoupled from the homepage link so editing the display URL never silently changes matching. Every type (`homepage`, `reference`, `archive`, …) is a plain access point with no recognition role.
+
+### Recognition hosts — `CitationSourceRootDomain`
+
+A root's recognition host(s) live in `CitationSourceRootDomain`: a normalized host (lowercased, `www.`-stripped) that is globally `unique` and resolves to the root that owns it. One root may own many hosts (a rebrand's old + new domain, a `.com` + `.co.uk`, an asset subdomain). It is an owned fact, set deliberately — at root creation from the homepage host, or by an admin — never inferred from links and never via external HTTP. Recognition matches a pasted URL's host to the root whose recognition host is the **longest label-boundary suffix** of it, so `s4.american-pinball.com` collapses to the `american-pinball.com` root while a deliberately-seeded `twip.kineticist.com` still wins over `kineticist.com` for its own subtree.
 
 ## Authoring model
 
@@ -67,11 +73,11 @@ Recognition maps input to **existing data** using local DB queries only, with no
 
 1. **Extractor match** — the URL matches a known scheme; an `Extractor` extracts and validates the identifier, then looks up the root and existing child. High confidence: one-click child creation is appropriate.
 2. **Full-URL child-link match** — the URL exactly matches a stored child link. High confidence: re-citation of a known page.
-3. **Domain match** — the hostname matches a root source's homepage link. Lower confidence: this suggests parent _reuse_ only, so the UI pre-selects the parent but still asks for child details.
+3. **Recognition-host match** — the hostname resolves to a root via its `CitationSourceRootDomain` (longest label-boundary suffix wins, so subdomains collapse to the owning root). Lower confidence: this suggests parent _reuse_ only, so the UI pre-selects the parent but still asks for child details.
 
 The schemes live in an extractor registry keyed by `identifier_key` (currently IPDB, OPDB and YouTube). Each `Extractor` knows how to pull an identifier from a URL, validate a bare identifier and build the canonical URL. YouTube accepts any of its URL shapes — `watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/` — and collapses them to the canonical `watch?v=<id>`, so the same video cited through different shapes resolves to one child.
 
-Two idempotent helpers, `get_or_create_external_source` (scheme + identifier) and `get_or_create_web_source` (raw URL), are the entry points catalog ingestion and data patches use to attach evidence. The web helper runs the same `recognize_url`, so a URL reuses an existing child or nests a new child — with a `reference` link, never `homepage` — under a domain-matched root. A URL whose domain matches no seeded root **raises** rather than minting a parentless source: a root web source is an abstract container, not directly-citable evidence, so the author must seed the website root first. They get-or-create rather than plain-create (the create API 422s on a duplicate), so re-applying a patch never duplicates. For the `cite:` authoring forms — `scheme:identifier` versus a bare URL, and why a scheme URL is rejected — see [DataPatches.md](DataPatches.md).
+Two idempotent helpers, `get_or_create_external_source` (scheme + identifier) and `get_or_create_web_source` (raw URL), are the entry points catalog ingestion and data patches use to attach evidence. The web helper runs the same `recognize_url`, so a URL reuses an existing **child** or nests a new child — with a `reference` link, never `homepage` — under a domain-matched root; even a URL equal to a root's own homepage nests a child, never returning the abstract root. A URL whose domain matches no seeded root **raises** rather than minting a parentless source: a root web source is an abstract container, not directly-citable evidence, so the author must seed the website root first. They get-or-create rather than plain-create (the create API 422s on a duplicate), so re-applying a patch never duplicates. For the `cite:` authoring forms — `scheme:identifier` versus a bare URL, and why a scheme URL is rejected — see [DataPatches.md](DataPatches.md).
 
 ### Extraction — external, slow
 
@@ -83,6 +89,20 @@ Implemented today:
 - **Generic URL → page metadata** — fetch the page and parse `<title>` / Open Graph tags into a sparse draft.
 
 The result is always one of: a draft, an existing match, or a structured failure (`not_found`, `timeout`, `parse_error`, …). Extraction produces a **draft, not an auto-create** — external-service confidence is lower and editorial review has value. (This draft-first rule is specific to extraction; recognition resolving to validated local data can be one-click.)
+
+### Interactive web create
+
+Pasting a web URL always follows the same shape — **Create Site → Create Page** — with recognition collapsing the steps that are already settled:
+
+- **Existing page** (the URL exactly matches a child): cited directly, no create steps.
+- **Existing site, new page** (the domain matches a root): only the **page** step shows, headed "Cite a page under _X_".
+- **New site**: both steps — **describe-site** then **page**.
+
+The **describe-site** step has a Site name (prefilled from the scraped `og:site_name`, else the domain, so it always shows the name the new root will get; the backend also defaults a blank name to the domain) and an optional manual Site description. The **page** step has a Page name (prefilled from `og:title`) and the URL for confirmation (editable when the scrape failed). There is no Author or Year anywhere — a web citation is a site plus a page, not an authored dated work.
+
+Nothing is written until the contributor commits: the finalize button calls `cite-url`, which in one transaction creates the site root (its `homepage` link and `CitationSourceRootDomain`) when new and a page child under it, then cites that child. Abandoning beforehand writes nothing. `cite-url` re-recognizes the URL server-side and re-derives the same buckets — no match creates the root and child; a domain match nests a new child under the existing root (ignoring the site fields — the root is never renamed from here); an exact child is reused; a scheme URL (IPDB/OPDB/…) is rejected in favor of its `scheme:identifier` form — so the server, not a trusted frontend `parentId`, decides where the child lands. The cited record is always the page child, never the abstract root.
+
+This is the interactive counterpart to the patch helper `get_or_create_web_source` above: the helper raises on an unseeded domain (patches seed roots deliberately), while `cite-url` is allowed to mint the root because the contributor describes it in the same flow.
 
 ### SSRF safety
 

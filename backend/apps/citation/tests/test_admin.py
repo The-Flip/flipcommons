@@ -7,8 +7,15 @@ from django.contrib import admin
 from django.forms import inlineformset_factory
 from django.test import RequestFactory
 
-from apps.citation.admin import CitationSourceAdmin
-from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.admin import (
+    CitationSourceAdmin,
+    CitationSourceRootDomainInline,
+)
+from apps.citation.models import (
+    CitationSource,
+    CitationSourceLink,
+    CitationSourceRootDomain,
+)
 
 LinkFormSetCreate: Any = inlineformset_factory(
     CitationSource,
@@ -21,6 +28,20 @@ LinkFormSetUpdate: Any = inlineformset_factory(
     CitationSource,
     CitationSourceLink,
     fields=("link_type", "url", "label"),
+    extra=0,
+    can_delete=True,
+)
+RootDomainFormSetCreate: Any = inlineformset_factory(
+    CitationSource,
+    CitationSourceRootDomain,
+    fields=("host",),
+    extra=1,
+    can_delete=True,
+)
+RootDomainFormSetUpdate: Any = inlineformset_factory(
+    CitationSource,
+    CitationSourceRootDomain,
+    fields=("host",),
     extra=0,
     can_delete=True,
 )
@@ -160,3 +181,85 @@ class TestCitationSourceLinkInlineAttribution:
         assert link.updated_by == superuser
         # created_by should NOT be set on update of existing record
         assert link.created_by is None
+
+
+class TestCitationSourceRootDomainInline:
+    """The recognition-host inline: roots only, saved through save_formset."""
+
+    def test_domain_created_through_admin_form(
+        self, admin_instance, request_factory, superuser, citation_source
+    ):
+        # A non-normalized host proves clean() fires through the formset path —
+        # the integration recognition depends on — not just on the bare model.
+        data = {
+            "root_domains-TOTAL_FORMS": "1",
+            "root_domains-INITIAL_FORMS": "0",
+            "root_domains-0-host": "WWW.Example.com",
+        }
+        formset = RootDomainFormSetCreate(
+            data, instance=citation_source, prefix="root_domains"
+        )
+        assert formset.is_valid(), formset.errors
+
+        request = request_factory.post("/")
+        request.user = superuser
+        admin_instance.save_formset(request, form=None, formset=formset, change=True)
+
+        domain = CitationSourceRootDomain.objects.get(source=citation_source)
+        assert domain.host == "example.com"
+
+    def test_domain_removed_through_admin_form(
+        self, admin_instance, request_factory, superuser, citation_source
+    ):
+        # Removing an alias is a first-class use of this inline; exercise the
+        # formset.deleted_objects path end to end.
+        domain = CitationSourceRootDomain.objects.create(
+            source=citation_source, host="example.com"
+        )
+        data = {
+            "root_domains-TOTAL_FORMS": "1",
+            "root_domains-INITIAL_FORMS": "1",
+            "root_domains-0-id": str(domain.pk),
+            "root_domains-0-host": "example.com",
+            "root_domains-0-DELETE": "on",
+        }
+        formset = RootDomainFormSetUpdate(
+            data, instance=citation_source, prefix="root_domains"
+        )
+        assert formset.is_valid(), formset.errors
+
+        request = request_factory.post("/")
+        request.user = superuser
+        admin_instance.save_formset(request, form=None, formset=formset, change=True)
+
+        assert not CitationSourceRootDomain.objects.filter(pk=domain.pk).exists()
+
+    def test_inline_hidden_on_child(
+        self, admin_instance, request_factory, superuser, citation_source_with_parent
+    ):
+        request = request_factory.get("/")
+        request.user = superuser
+        inlines = admin_instance.get_inline_instances(
+            request, obj=citation_source_with_parent
+        )
+        assert not any(
+            isinstance(inline, CitationSourceRootDomainInline) for inline in inlines
+        )
+
+    def test_inline_shown_on_root(
+        self, admin_instance, request_factory, superuser, citation_source
+    ):
+        request = request_factory.get("/")
+        request.user = superuser
+        inlines = admin_instance.get_inline_instances(request, obj=citation_source)
+        assert any(
+            isinstance(inline, CitationSourceRootDomainInline) for inline in inlines
+        )
+
+    def test_inline_shown_on_add_form(self, admin_instance, request_factory, superuser):
+        request = request_factory.get("/")
+        request.user = superuser
+        inlines = admin_instance.get_inline_instances(request, obj=None)
+        assert any(
+            isinstance(inline, CitationSourceRootDomainInline) for inline in inlines
+        )
