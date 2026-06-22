@@ -29,7 +29,12 @@ from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 
 from .extraction import classify_input, extract_isbn, normalize_isbn
-from .extractors import EXTRACTORS, Recognition, recognize_url, web_child_name
+from .extractors import (
+    Recognition,
+    create_web_child,
+    get_or_create_scheme_child,
+    recognize_url,
+)
 from .hosts import normalize_host
 from .models import (
     CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG,
@@ -281,25 +286,22 @@ def create_citation_source(
     if data.parent_id is not None:
         parent = get_object_or_404(CitationSource, pk=data.parent_id)
 
-    # When an identifier is provided and the parent has an extractor,
-    # validate, normalize, and auto-build the child name and canonical URL.
+    # A scheme child (the parent root carries an identifier_key) mints through
+    # the shared leaf, which owns the "{root} #{id}" name rule and dedups by
+    # (root, identifier) — re-citing an existing id reuses it, not a 422.
+    if data.identifier and parent is not None and parent.identifier_key:
+        try:
+            child = get_or_create_scheme_child(parent, data.identifier, created_by=user)
+        except ValidationError as exc:
+            raise HttpError(422, _validation_detail(exc)) from exc
+        except ValueError as exc:
+            raise HttpError(422, str(exc)) from exc
+        child = get_object_or_404(_detail_qs(), pk=child.pk)
+        return Status(201, _serialize_detail(child))
+
     name = data.name
     url = data.url
     identifier = data.identifier
-    if identifier and parent and parent.identifier_key:
-        extractor = EXTRACTORS.get(parent.identifier_key)
-        if extractor:
-            normalized = extractor.normalize(identifier)
-            if normalized is None:
-                raise HttpError(
-                    422,
-                    f"Invalid identifier for {extractor.source_name}: {identifier!r}",
-                )
-            identifier = normalized
-            if not name or name == data.identifier:
-                name = f"{parent.name} #{identifier}"
-            if not url:
-                url = extractor.build_url(identifier)
 
     with transaction.atomic():
         source = CitationSource(
@@ -354,31 +356,18 @@ def create_citation_source(
     return Status(201, _serialize_detail(source))
 
 
-def _create_web_child(
+def _mint_web_child(
     parent_id: int, url: str, page_name: str, user: User
 ) -> CitationSource:
-    """Mint a page child under *parent_id* with a ``reference`` link at *url*.
+    """Mint a page child via ``create_web_child``, mapping its error to a 422.
 
-    The child's name follows the shared ``web_child_name`` rule. A malformed
-    *url* fails the link's ``URLField`` validation → friendly 422.
+    ``create_web_child`` ``full_clean``s the child and its link and raises
+    ``ValidationError`` (e.g. a malformed *url*); surface that as a 422.
     """
-    child = CitationSource(
-        name=web_child_name(url, page_name),
-        source_type=CitationSource.SourceType.WEB,
-        parent_id=parent_id,
-        created_by=user,
-        updated_by=user,
-    )
-    _clean_and_save(child)
-    link = CitationSourceLink(
-        citation_source=child,
-        link_type=CitationSourceLink.LinkType.REFERENCE,
-        url=url,
-        created_by=user,
-        updated_by=user,
-    )
-    _clean_and_save(link)
-    return child
+    try:
+        return create_web_child(parent_id, url, page_name, created_by=user)
+    except ValidationError as exc:
+        raise HttpError(422, _validation_detail(exc)) from exc
 
 
 def _create_root_and_child(
@@ -386,10 +375,10 @@ def _create_root_and_child(
 ) -> CitationSource:
     """Create a new site root (homepage link + recognition domain) and a child.
 
-    Roots at the **raw** pasted host (PR 2 rounds this to the registrable
-    domain). The root-create runs in a savepoint: on a concurrent ``host``
-    ``unique`` violation the savepoint rolls back, the URL is re-recognized
-    against the now-committed root, and the child nests under it.
+    Roots at the normalized pasted host. The root-create runs in a savepoint: on
+    a concurrent ``host`` ``unique`` violation the savepoint rolls back, the URL
+    is re-recognized against the now-committed root, and the child nests under
+    it.
     """
     hostname = urlparse(url).hostname
     if hostname is None:
@@ -416,9 +405,9 @@ def _create_root_and_child(
             _clean_and_save(homepage)
             domain = CitationSourceRootDomain(source=root, host=host)
             # validate_unique=False so the model guards (root-only clean(),
-            # PR2's public-suffix clean(), CHECK constraints) still fire — as a
-            # 422 — while the host-unique race surfaces only as a DB
-            # IntegrityError from save() below, distinct from a guard failure.
+            # CHECK constraints) still fire — as a 422 — while the host-unique
+            # race surfaces only as a DB IntegrityError from save() below,
+            # distinct from a guard failure.
             try:
                 domain.full_clean(validate_unique=False)
             except ValidationError as exc:
@@ -433,7 +422,7 @@ def _create_root_and_child(
             raise
         parent_id = rec.parent_id
 
-    return _create_web_child(parent_id, url, data.page_name, user)
+    return _mint_web_child(parent_id, url, data.page_name, user)
 
 
 @citation_sources_router.post(
@@ -483,7 +472,7 @@ def cite_url(
                 ),
             )
         if rec is not None:
-            child = _create_web_child(rec.parent_id, url, data.page_name, user)
+            child = _mint_web_child(rec.parent_id, url, data.page_name, user)
         else:
             child = _create_root_and_child(url, data, user)
 

@@ -1002,6 +1002,64 @@ class TestCreateCitationSourceWithIdentifier:
         child = CitationSource.objects.get(pk=data["id"])
         assert child.identifier == "4443"
 
+    def test_recite_existing_identifier_reuses_child(self, client, user, db):
+        """Re-citing an existing identifier reuses the child, not a 422."""
+        parent = CitationSource.objects.create(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+        client.force_login(user)
+        payload = {
+            "name": "4443",
+            "source_type": "web",
+            "parent_id": parent.pk,
+            "identifier": "4443",
+        }
+        first = _post(client, "/api/citation-sources/", payload)
+        second = _post(client, "/api/citation-sources/", payload)
+        assert first.status_code == 201
+        assert second.status_code == 201
+        assert second.json()["id"] == first.json()["id"]
+        assert CitationSource.objects.filter(parent=parent).count() == 1
+
+    def test_scheme_child_link_is_a_reference(self, client, user, db):
+        """The canonical link is a reference (an evidence page), not a homepage."""
+        parent = CitationSource.objects.create(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "4443",
+                "source_type": "web",
+                "parent_id": parent.pk,
+                "identifier": "4443",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["links"][0]["link_type"] == "reference"
+
+    def test_overlong_generated_name_returns_422(self, client, user, db):
+        # A max-length root name + identifier overflows the generated child name;
+        # the leaf's full_clean raises a Django ValidationError, which must map
+        # to a 422, not escape as a 500.
+        parent = CitationSource.objects.create(
+            name="X" * 500, source_type="web", identifier_key="ipdb"
+        )
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "1",
+                "source_type": "web",
+                "parent_id": parent.pk,
+                "identifier": "1",
+            },
+        )
+        assert resp.status_code == 422
+
     def test_invalid_identifier_returns_422(self, client, user, db):
         """An identifier that doesn't match the extractor's format is rejected."""
         parent = CitationSource.objects.create(

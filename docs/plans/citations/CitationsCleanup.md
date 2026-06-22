@@ -71,7 +71,7 @@ The model-driven move here is to give per-type **facts** one type-keyed home, no
 
 🛑 STOP.
 
-### C4 — two validated child leaves — `api.py`, `extractors.py`
+### ✅ DONE: C4 — two validated child leaves — `api.py`, `extractors.py`
 
 WebCitationDomains2 P1.2. Converge web- and scheme-child minting onto two `full_clean`-validated leaves, dispatched by parent kind (scheme root → scheme leaf; else web leaf) — the fork `recognize_url` already draws, not a `source_type` switch. Closes D4 (the one real `clean()` bypass). **Two flagged behavior changes.**
 
@@ -104,7 +104,8 @@ CitationWriteLayerDebt §4, the spine. The 3-step pipeline ([extractors.py:119](
 
 - **Tidy (in scope):** ordered recognizer list, same resolution order (scheme extractor → exact child-link → exact host), no behavior change.
 - **Patch-dispatch unification (splittable tail — see Decisions):** make `CitationRef` ([plan.py:44](backend/apps/claim_ingest/plan.py#L44)) a real **sum type** (web form vs scheme form as distinct types) so "exactly one form is set" is enforced by construction, and route `_resolve_cite_source_id`'s `if ref.url` ([persist.py:242](backend/apps/claim_ingest/apply/persist.py#L242)) through the shared resolver + the C4 leaves. Collapses the double-spelled web/scheme dispatch (D3/D20), making the two surfaces symmetric (one resolver, two surfaces). If this balloons, split it to its own commit; the tidy stands alone.
-- **Tests:** `recognize_url` resolves scheme / exact-child / exact-host cases identically to before; (if the tail lands) a neither-set or both-set `CitationRef` is unconstructable; the patch path and the interactive path resolve the same URL to the same source through the shared resolver.
+- **Make the ingest error contract explicit at the resolver boundary.** Today the leaves' failure surfaces as a per-patch error only because a distant handler ([ingest_patches.py:223](backend/apps/catalog/management/commands/ingest_patches.py#L223)) happens to catch the bare `ValidationError` the leaf raises — unenforced by types, and already leaky (`get_or_create_web_source`'s `CitationSource.DoesNotExist` for a no-matching-root is **not** in that `except`, so it surfaces as a raw traceback). C4 added a regression pin ([test_patch_inline_cites.py](backend/apps/catalog/tests/test_patch_inline_cites.py) — a malformed cite URL must propagate as `ValidationError`); C6 makes it explicit: catch the citation resolvers' failures at `_resolve_cite_source_id` and re-raise one **typed, cite-handle-attached** patch error covering `ValidationError`/`ValueError`/`DoesNotExist` alike, so the per-patch message names the offending URL and a new leaf failure mode can't regress to a traceback. The resolver is the citation↔apply seam this commit already reworks, so the wrap rides here, not retrofitted into C4.
+- **Tests:** `recognize_url` resolves scheme / exact-child / exact-host cases identically to before; (if the tail lands) a neither-set or both-set `CitationRef` is unconstructable; the patch path and the interactive path resolve the same URL to the same source through the shared resolver; a bad cite (malformed URL, unknown-root, over-long id) through `apply_plan` raises the one typed patch error with the handle/URL named.
 
 🛑 STOP.
 

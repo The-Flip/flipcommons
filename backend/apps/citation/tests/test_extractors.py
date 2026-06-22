@@ -5,10 +5,13 @@ the regex collapsing them all to one canonical 11-char id is the risky part.
 """
 
 import pytest
+from django.core.exceptions import ValidationError
 
 from apps.citation.extractors import (
     EXTRACTORS,
+    create_web_child,
     get_or_create_external_source,
+    get_or_create_scheme_child,
     get_or_create_web_source,
     recognize_url,
 )
@@ -171,6 +174,94 @@ class TestRootDomainRecognition:
         assert recognize_url("https://child.example.com/page") is None
 
 
+class TestCreateWebChild:
+    """The shared web-child leaf: validated, attributed, atomic."""
+
+    @pytest.fixture
+    def root(self, db):
+        return CitationSource.objects.create(name="Kineticist", source_type="web")
+
+    def test_mints_validated_child_and_reference_link(self, root):
+        child = create_web_child(root.pk, "https://kineticist.com/article")
+        assert child.parent_id == root.pk
+        assert child.source_type == "web"
+        link = child.links.get()
+        assert link.url == "https://kineticist.com/article"
+        assert link.link_type == "reference"
+
+    def test_rejects_a_malformed_url_and_mints_nothing(self, root):
+        # The link's URLField validates only in full_clean — the leaf's whole
+        # point (closing the .objects.create bypass). Atomic: no orphaned child.
+        with pytest.raises(ValidationError):
+            create_web_child(root.pk, "not a url")
+        assert not CitationSource.objects.children().exists()
+
+    def test_attribution_follows_created_by(self, root, user):
+        attributed = create_web_child(
+            root.pk, "https://kineticist.com/a", created_by=user
+        )
+        assert attributed.created_by_id == user.pk
+        assert attributed.links.get().created_by_id == user.pk
+
+        anon = create_web_child(root.pk, "https://kineticist.com/b")
+        assert anon.created_by_id is None
+        assert anon.links.get().created_by_id is None
+
+
+class TestGetOrCreateSchemeChild:
+    """The shared scheme-child leaf: one name rule, idempotent, attributed."""
+
+    @pytest.fixture
+    def root(self, db):
+        return CitationSource.objects.create(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+
+    def test_mints_named_child_with_canonical_link(self, root):
+        child = get_or_create_scheme_child(root, "4443")
+        assert child.name == "IPDB #4443"
+        assert child.identifier == "4443"
+        link = child.links.get()
+        assert link.url == "https://www.ipdb.org/machine.cgi?id=4443"
+        assert link.link_type == "reference"
+
+    def test_reuses_on_recite_across_url_shapes(self, root):
+        first = get_or_create_scheme_child(root, "4443")
+        second = get_or_create_scheme_child(
+            root, "https://www.ipdb.org/machine.cgi?id=4443"
+        )
+        assert first.pk == second.pk
+        assert first.links.count() == 1
+
+    def test_rejects_an_invalid_identifier(self, root):
+        with pytest.raises(ValueError, match="Invalid ipdb identifier"):
+            get_or_create_scheme_child(root, "not-an-id")
+
+    def test_rejects_a_root_without_a_scheme(self, db):
+        plain = CitationSource.objects.create(name="No scheme", source_type="web")
+        with pytest.raises(ValueError, match="no known identifier scheme"):
+            get_or_create_scheme_child(plain, "4443")
+
+    def test_rejects_an_over_long_identifier(self, root):
+        # The ``\d+`` id regex has no length cap, so an over-long identifier must
+        # be caught by field validation, not silently stored or DB-errored.
+        with pytest.raises(ValidationError):
+            get_or_create_scheme_child(root, "1" * 250)
+        assert not CitationSource.objects.children().exists()
+
+    def test_attribution_follows_created_by(self, root, user):
+        child = get_or_create_scheme_child(root, "4443", created_by=user)
+        assert child.created_by_id == user.pk
+        assert child.links.get().created_by_id == user.pk
+
+    def test_external_source_helper_resolves_the_same_child(self, root):
+        # The patch helper (scheme→root lookup) and the leaf mint one child —
+        # convergence on a single scheme-child home.
+        via_helper = get_or_create_external_source("ipdb", "4443")
+        via_leaf = get_or_create_scheme_child(root, "4443")
+        assert via_helper.pk == via_leaf.pk
+
+
 class TestYouTubeGetOrCreate:
     """``get_or_create_external_source`` is idempotent and builds canonical URLs."""
 
@@ -221,3 +312,12 @@ class TestGetOrCreateWebSourceRootHomepage:
         first = get_or_create_web_source(self.HOMEPAGE)
         second = get_or_create_web_source(self.HOMEPAGE)
         assert first.id == second.id
+
+    def test_rejects_a_malformed_archive_url(self, db):
+        # The archive snapshot rides as a second link; it must pass URLField
+        # validation too, not just the live url. Atomic: no child is left behind.
+        self._root(db)
+        page = "https://american-pinball.com/news/launch"
+        with pytest.raises(ValidationError):
+            get_or_create_web_source(page, archive_url="not a url")
+        assert not CitationSource.objects.children().exists()

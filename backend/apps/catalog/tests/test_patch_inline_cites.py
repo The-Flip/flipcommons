@@ -153,6 +153,26 @@ claims:
     assert "https://web.archive.org/web/2020/https://kineticist.com/mm" in urls
 
 
+def test_malformed_cite_url_surfaces_validation_error(
+    flipcommons_catalog, kineticist_root, pm
+):
+    # A malformed cite URL must propagate out of apply_plan as a ValidationError
+    # — the type the patch runner maps to a per-patch PatchError. Pins the ingest
+    # error contract so a future leaf change (raising a different exception type)
+    # can't silently regress it to an uninformative traceback.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      description: "Bad cite.[[cite:1]]"
+      cites:
+        '1':
+          url: "https://kineticist.com/m m"
+"""
+    with pytest.raises(ValidationError):
+        _apply(text)
+
+
 def test_two_inline_cited_edits_same_entity_rejected(
     flipcommons_catalog, ipdb_root, pm
 ):

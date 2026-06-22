@@ -14,7 +14,10 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
+
+from django.db import transaction
 
 from apps.citation.hosts import normalize_host
 from apps.citation.models import (
@@ -23,6 +26,9 @@ from apps.citation.models import (
     CitationSourceLink,
     CitationSourceRootDomain,
 )
+
+if TYPE_CHECKING:
+    from apps.accounts.models import User
 
 
 @dataclass(frozen=True)
@@ -225,11 +231,9 @@ def web_child_name(url: str, name: str = "") -> str:
     """Pick a display name for a web child source.
 
     Prefers a caller-supplied *name* (a reviewed page name), else the *url*
-    itself; when that candidate is over the name-column limit, falls back to the
-    URL's hostname (or a truncated URL when even the hostname is missing). Both
-    callers always pass a non-empty *url*, so the result is never blank. Shared
-    by the patch path (``get_or_create_web_source``) and the interactive
-    ``cite-url`` endpoint so both web-child mints use one name rule.
+    itself; when that candidate exceeds the name-column limit, falls back to the
+    URL's hostname (or a truncated URL when even the hostname is missing). A
+    non-empty *url* yields a non-blank result.
     """
     candidate = name or url
     if len(candidate) <= CITATION_SOURCE_NAME_MAX_LENGTH:
@@ -237,32 +241,128 @@ def web_child_name(url: str, name: str = "") -> str:
     return urlparse(url).hostname or url[:CITATION_SOURCE_NAME_MAX_LENGTH]
 
 
+def create_web_child(
+    parent_id: int,
+    url: str,
+    name: str = "",
+    *,
+    created_by: User | None = None,
+) -> CitationSource:
+    """Mint a validated web-page child under *parent_id*, linked at *url*.
+
+    The child and its ``reference`` link are both ``full_clean``d, so a
+    malformed *url* is rejected by the ``URLField`` format check rather than
+    silently stored. The display name follows the ``web_child_name`` rule.
+
+    ``created_by`` attributes both rows; ``None`` leaves ``created_by`` /
+    ``updated_by`` null. Raises ``ValidationError`` on invalid input. Atomic, so
+    a link that fails validation leaves no orphaned child behind.
+    """
+    with transaction.atomic():
+        child = CitationSource(
+            name=web_child_name(url, name),
+            source_type=CitationSource.SourceType.WEB,
+            parent_id=parent_id,
+            created_by=created_by,
+            updated_by=created_by,
+        )
+        child.full_clean()
+        child.save()
+        link = CitationSourceLink(
+            citation_source=child,
+            link_type=CitationSourceLink.LinkType.REFERENCE,
+            url=url,
+            created_by=created_by,
+            updated_by=created_by,
+        )
+        link.full_clean()
+        link.save()
+    return child
+
+
+def get_or_create_scheme_child(
+    root: CitationSource,
+    identifier: str,
+    *,
+    created_by: User | None = None,
+) -> CitationSource:
+    """Get-or-create the ``(root, identifier)`` scheme child under *root*.
+
+    *identifier* is normalized through the root's extractor, so a raw URL and a
+    bare id resolve to the same child. Idempotent — re-citing an identifier
+    reuses its child. The child carries the ``{root.name} #{id}`` name and a
+    canonical ``reference`` link, ``full_clean``d on first create.
+
+    ``created_by`` attributes the child; ``None`` leaves it null. Raises
+    ``ValueError`` if *root* carries no known ``identifier_key`` scheme or the
+    identifier is invalid for it.
+    """
+    extractor = EXTRACTORS.get(root.identifier_key)
+    if extractor is None:
+        raise ValueError(
+            f"Root source {root.pk} has no known identifier scheme "
+            f"({root.identifier_key!r})"
+        )
+    normalized = extractor.normalize(identifier)
+    if normalized is None:
+        raise ValueError(f"Invalid {root.identifier_key} identifier {identifier!r}")
+
+    # Field-validate the candidate (the id regex has no length cap, so a too-long
+    # identifier or generated name must surface as a ValidationError, not a DB
+    # error). Skip unique + constraint validation: the (root, identifier) dedup
+    # is get_or_create's job — re-citing must reuse, not raise on the unique
+    # constraint — and the DB enforces the rest on save. Atomic so the child and
+    # its link land together or not at all.
+    with transaction.atomic():
+        candidate = CitationSource(
+            name=f"{root.name} #{normalized}",
+            source_type=CitationSource.SourceType.WEB,
+            parent=root,
+            identifier=normalized,
+            created_by=created_by,
+            updated_by=created_by,
+        )
+        candidate.full_clean(validate_unique=False, validate_constraints=False)
+        source, created = CitationSource.objects.get_or_create(
+            parent=root,
+            identifier=normalized,
+            defaults={
+                "name": candidate.name,
+                "source_type": candidate.source_type,
+                "created_by": created_by,
+                "updated_by": created_by,
+            },
+        )
+        if created:
+            link = CitationSourceLink(
+                citation_source=source,
+                link_type=CitationSourceLink.LinkType.REFERENCE,
+                url=extractor.build_url(normalized),
+                created_by=created_by,
+                updated_by=created_by,
+            )
+            link.full_clean()
+            link.save()
+    return source
+
+
 def get_or_create_external_source(scheme: str, identifier: str) -> CitationSource:
     """Get-or-create the child ``CitationSource`` for ``scheme:identifier``.
 
-    Looks up the root source for ``scheme`` (e.g. the IPDB root), then
-    get-or-creates the ``(parent=root, identifier)`` child, attaching a
-    homepage link with the canonical URL on first creation.
+    Resolves the root source owning *scheme* (e.g. the IPDB root), then
+    get-or-creates the ``(root, identifier)`` child under it via
+    ``get_or_create_scheme_child``.
 
-    Idempotent by design — re-citing the same id reuses the existing child.
-    This differs from ``api.create_citation_source``, which plain-creates and
-    422s on a duplicate: a re-applied data patch must not error, so the
-    new-idempotency semantics live here rather than in that endpoint.
-
-    Raises ``CitationSource.DoesNotExist`` if the root for ``scheme`` isn't
-    seeded, and ``ValueError`` if the scheme/identifier is invalid.
+    Raises ``CitationSource.DoesNotExist`` if no root for *scheme* is seeded,
+    and ``ValueError`` if the scheme or identifier is invalid.
     """
-    extractor = EXTRACTORS.get(scheme)
-    if extractor is None:
+    if scheme not in EXTRACTORS:
         raise ValueError(f"Unknown citation scheme {scheme!r}")
-    normalized = extractor.normalize(identifier)
-    if normalized is None:
-        raise ValueError(f"Invalid {scheme} identifier {identifier!r}")
 
     root = (
         CitationSource.objects.filter(identifier_key=scheme)
         .roots()
-        .only("id", "name")
+        .only("id", "name", "identifier_key")
         .first()
     )
     if root is None:
@@ -270,26 +370,7 @@ def get_or_create_external_source(scheme: str, identifier: str) -> CitationSourc
             f"No root CitationSource seeded for scheme {scheme!r}; "
             f"seed citation sources before applying a patch that cites it."
         )
-
-    source, created = CitationSource.objects.get_or_create(
-        parent=root,
-        identifier=normalized,
-        defaults={
-            "name": f"{root.name} #{normalized}",
-            "source_type": CitationSource.SourceType.WEB,
-        },
-    )
-    if created:
-        # A record page is a child under the scheme root, so its link is
-        # ``reference``; ``homepage`` is conventionally a root's own page.
-        # ``link_type`` no longer affects recognition (that keys off
-        # ``CitationSourceRootDomain``) — this is display convention.
-        CitationSourceLink.objects.create(
-            citation_source=source,
-            link_type=CitationSourceLink.LinkType.REFERENCE,
-            url=extractor.build_url(normalized),
-        )
-    return source
+    return get_or_create_scheme_child(root, identifier)
 
 
 def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
@@ -303,9 +384,8 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
     empty or equal to ``url``.
 
     For citing a web page (forum post, archive scan, manufacturer page) that no
-    extractor scheme covers. Routes through ``recognize_url`` — the same
-    recognition the interactive editor uses — so the URL resolves to a *known*
-    source:
+    extractor scheme covers. Routes through ``recognize_url`` so the URL
+    resolves to a *known* source:
 
     * an existing *child* that already covers the URL (exact link or scheme
       identifier) is reused;
@@ -322,8 +402,8 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
     website root in an earlier patch, then cite pages under it.
 
     A newly minted child's link is typed ``reference`` — it's an evidence page,
-    not a root's homepage. ``link_type`` no longer affects recognition (that
-    keys off ``CitationSourceRootDomain``), so this is display convention.
+    not a root's homepage. Recognition keys off ``CitationSourceRootDomain``, so
+    ``link_type`` is display convention.
 
     Idempotent by exact URL — re-citing the same URL (or citing one a curator
     already linked to a child) reuses the existing source, so a re-applied patch
@@ -334,51 +414,51 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
     those must be cited as ``scheme:identifier`` so they dedup through the
     scheme path.
     """
-    # Children only: a root's own homepage link can equal the cited URL, but a
-    # root is abstract — reusing it would cite the container, not a page. Filter
-    # to child links so the cite falls through to a domain match that mints a
-    # child (recognize_url's own exact-link step is likewise children-only).
-    existing = (
-        CitationSourceLink.objects.filter(
-            url=url, citation_source__parent__isnull=False
-        )
-        .select_related("citation_source")
-        .first()
-    )
-    if existing is not None:
-        source = existing.citation_source
-    else:
-        recognition = recognize_url(url)
-        if recognition is None:
-            raise CitationSource.DoesNotExist(
-                f"No website CitationSource root's recognition domain matches "
-                f"{url!r}; declare the root in a patch — a sources: root's homepage "
-                f"host is minted as its recognition domain — before citing a page "
-                f"under it."
+    with transaction.atomic():
+        # Children only: a root's own homepage link can equal the cited URL, but
+        # a root is abstract — reusing it would cite the container, not a page.
+        # Filter to child links so the cite falls through to a domain match that
+        # mints a child (recognize_url's own exact-link step is children-only).
+        existing = (
+            CitationSourceLink.objects.filter(
+                url=url, citation_source__parent__isnull=False
             )
-        if recognition.child is not None:
-            source = CitationSource.objects.get(pk=recognition.child.id)
+            .select_related("citation_source")
+            .first()
+        )
+        if existing is not None:
+            source = existing.citation_source
         else:
-            # Domain match: a new child under the recognized root. Name defaults
-            # to the URL, falling back to the hostname for an over-long URL.
-            source = CitationSource.objects.create(
-                name=web_child_name(url),
-                source_type=CitationSource.SourceType.WEB,
-                parent_id=recognition.parent_id,
-            )
-            CitationSourceLink.objects.create(
-                citation_source=source,
-                link_type=CitationSourceLink.LinkType.REFERENCE,
-                url=url,
-            )
+            recognition = recognize_url(url)
+            if recognition is None:
+                raise CitationSource.DoesNotExist(
+                    f"No website CitationSource root's recognition domain matches "
+                    f"{url!r}; declare the root in a patch — a sources: root's "
+                    f"homepage host is minted as its recognition domain — before "
+                    f"citing a page under it."
+                )
+            if recognition.child is not None:
+                source = CitationSource.objects.get(pk=recognition.child.id)
+            else:
+                # Domain match: mint a new validated child under the recognized
+                # root, unattributed (created_by stays null).
+                source = create_web_child(recognition.parent_id, url)
 
-    if archive_url and archive_url != url:
-        # The durable snapshot (Wayback/archive.today) rides as a second link on
-        # the same source. Not domain-matched to a root — it intentionally lives
-        # on a different host than the page it preserves.
-        CitationSourceLink.objects.get_or_create(
-            citation_source=source,
-            url=archive_url,
-            defaults={"link_type": CitationSourceLink.LinkType.ARCHIVE},
-        )
+        # The durable snapshot (Wayback/archive.today) rides as a second,
+        # validated link — not domain-matched, it intentionally lives on a
+        # different host than the page it preserves. Idempotent by URL.
+        wants_archive = bool(archive_url) and archive_url != url
+        if (
+            wants_archive
+            and not CitationSourceLink.objects.filter(
+                citation_source=source, url=archive_url
+            ).exists()
+        ):
+            archive = CitationSourceLink(
+                citation_source=source,
+                url=archive_url,
+                link_type=CitationSourceLink.LinkType.ARCHIVE,
+            )
+            archive.full_clean()
+            archive.save()
     return source
