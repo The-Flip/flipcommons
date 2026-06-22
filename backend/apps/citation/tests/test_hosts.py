@@ -17,7 +17,7 @@ from apps.citation.hosts import (
 
 
 class TestNormalizeHost:
-    """``normalize_host`` lowercases and strips a leading ``www.``."""
+    """``normalize_host`` lowercases and strips all leading ``www.`` labels."""
 
     @pytest.mark.parametrize(
         ("raw", "expected"),
@@ -30,13 +30,32 @@ class TestNormalizeHost:
             # A trailing FQDN dot is dropped (matches the dotless stored row).
             ("american-pinball.com.", "american-pinball.com"),
             ("www.american-pinball.com.", "american-pinball.com"),
-            # Only a leading ``www.`` label is stripped, not an embedded one.
-            ("www.www.example.com", "www.example.com"),
+            # All consecutive leading ``www.`` labels are stripped so the result
+            # can't shadow the bare domain (a single strip would leave
+            # ``www.example.com``, a distinct stored host from ``example.com``).
+            ("www.www.example.com", "example.com"),
+            ("www.www.www.example.com", "example.com"),
+            ("WWW.WWW.Example.com", "example.com"),
+            # Only whole ``www.`` labels are stripped, not an embedded prefix.
             ("wwworld.example.com", "wwworld.example.com"),
         ],
     )
     def test_normalize(self, raw, expected):
         assert normalize_host(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "example.com",
+            "www.example.com",
+            "www.www.example.com",
+            "WWW.Example.com.",
+            "wwworld.example.com",
+        ],
+    )
+    def test_idempotent(self, raw):
+        once = normalize_host(raw)
+        assert normalize_host(once) == once
 
 
 class TestLabelSuffixes:

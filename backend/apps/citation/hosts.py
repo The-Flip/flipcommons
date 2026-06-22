@@ -32,16 +32,23 @@ an un-normalized string outside those paths.
 
 
 def normalize_host(hostname: str) -> Host:
-    """Normalize a host for recognition: lowercase, strip a leading ``www.``.
+    """Normalize a host for recognition: lowercase, strip all leading ``www.``.
 
     The single chokepoint that makes ``CitationSourceRootDomain.host``'s
     ``unique`` meaningful — every write of a recognition host goes through here.
-    Only a leading ``www.`` *label* is stripped (``wwworld.example.com`` keeps
-    its first label). A trailing FQDN dot (``example.com.``) is dropped so it
-    matches the same stored row as ``example.com``. The result is a :data:`Host`.
+    **All** consecutive leading ``www.`` *labels* are stripped
+    (``www.www.foo.com`` → ``foo.com``), so the result can't shadow the bare
+    domain — a single strip would leave ``www.foo.com``, a distinct stored host
+    from ``foo.com``. Only whole ``www.`` labels are stripped, so
+    ``wwworld.example.com`` keeps its first label. A trailing FQDN dot
+    (``example.com.``) is dropped so it matches the same stored row as
+    ``example.com``. Idempotent: ``normalize_host(normalize_host(x))`` equals
+    ``normalize_host(x)``. The result is a :data:`Host`.
     """
     host = hostname.strip().lower().rstrip(".")
-    return Host(host.removeprefix("www."))
+    while host.startswith("www."):
+        host = host.removeprefix("www.")
+    return Host(host)
 
 
 def label_suffixes(host: Host) -> list[Host]:
