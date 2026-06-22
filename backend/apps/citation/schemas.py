@@ -216,6 +216,29 @@ class CitationSourceCreateSchema(Schema):
         return None if v == "" else v
 
 
+class CitationCiteUrlSchema(Schema):
+    """Input to cite a web page, creating its site root + page child as needed.
+
+    The interactive web-create flow's finalize call. ``site_*`` describe a *new*
+    site root and are used only when the URL's domain isn't yet recognized; for
+    a domain that already matches a root they're ignored (the root isn't renamed
+    from here).
+    """
+
+    url: LinkUrlStr = Field(description="The page URL to cite.")
+    site_name: NameStr = Field(
+        "",
+        description="Display name for a new site root; falls back to the domain when blank.",
+    )
+    site_description: DescriptionStr = Field(
+        "", description="Optional free-text description for a new site root."
+    )
+    page_name: NameStr = Field(
+        "",
+        description="Display name for the page child; falls back to the URL or its host when blank.",
+    )
+
+
 class CitationSourceUpdateSchema(Schema):
     """Input to update a citation source; a partial update.
 

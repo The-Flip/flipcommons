@@ -64,13 +64,6 @@ def _stored_description(slug: str) -> str:
     return claim.value
 
 
-@pytest.fixture
-def ipdb_root(db):
-    return CitationSource.objects.create(
-        name="Internet Pinball Database", source_type="web", identifier_key="ipdb"
-    )
-
-
 # ── round-trip byte-identity ───────────────────────────────────────
 
 

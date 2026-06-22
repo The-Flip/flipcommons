@@ -6,9 +6,14 @@ independent of Python validators.
 """
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection
 
-from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.models import (
+    CitationSource,
+    CitationSourceLink,
+    CitationSourceRootDomain,
+)
 
 
 def _raw_update(model, pk, **fields):
@@ -398,3 +403,85 @@ class TestIdentifierConstraints:
         )
         assert c1.pk is not None
         assert c2.pk is not None
+
+
+# ---------------------------------------------------------------------------
+# CitationSourceRootDomain: recognition-host constraints + root-only rule
+# ---------------------------------------------------------------------------
+
+
+class TestCitationSourceRootDomain:
+    """Host uniqueness/shape (DB) and the root-only rule (``clean()``)."""
+
+    def test_valid_domain_on_root(self, db):
+        root = CitationSource.objects.create(name="American Pinball", source_type="web")
+        rd = CitationSourceRootDomain.objects.create(
+            source=root, host="american-pinball.com"
+        )
+        assert rd.pk is not None
+
+    def test_domain_on_non_web_root_accepted(self, db):
+        """Any-root, not web-only: a book/magazine root may own a host too."""
+        root = CitationSource.objects.create(name="A Pinball Book", source_type="book")
+        rd = CitationSourceRootDomain(source=root, host="pinball-book.example")
+        rd.full_clean()  # no source_type restriction
+        rd.save()
+        assert rd.pk is not None
+
+    def test_empty_host_rejected(self, db):
+        root = CitationSource.objects.create(name="Root", source_type="web")
+        with pytest.raises(IntegrityError):
+            CitationSourceRootDomain.objects.create(source=root, host="")
+
+    def test_duplicate_host_rejected(self, db):
+        a = CitationSource.objects.create(name="A", source_type="web")
+        b = CitationSource.objects.create(name="B", source_type="web")
+        CitationSourceRootDomain.objects.create(source=a, host="example.com")
+        with pytest.raises(IntegrityError):
+            CitationSourceRootDomain.objects.create(source=b, host="example.com")
+
+    def test_uppercase_host_rejected_at_db(self, db):
+        """The lowercase CHECK fires even when ``clean()`` is bypassed."""
+        root = CitationSource.objects.create(name="Root", source_type="web")
+        with pytest.raises(IntegrityError):
+            CitationSourceRootDomain.objects.create(source=root, host="Example.com")
+
+    def test_clean_rejects_domain_on_child(self, db):
+        parent = CitationSource.objects.create(name="Root", source_type="web")
+        child = CitationSource.objects.create(
+            name="Child", source_type="web", parent=parent
+        )
+        rd = CitationSourceRootDomain(source=child, host="example.com")
+        with pytest.raises(ValidationError):
+            rd.full_clean()
+
+    def test_clean_accepts_domain_on_root(self, db):
+        root = CitationSource.objects.create(name="Root", source_type="web")
+        rd = CitationSourceRootDomain(source=root, host="example.com")
+        rd.full_clean()  # must not raise
+
+    def test_clean_normalizes_host(self, db):
+        """clean() canonicalizes the owned value: lower, www-strip, trailing dot."""
+        root = CitationSource.objects.create(name="Root", source_type="web")
+        rd = CitationSourceRootDomain(source=root, host="  WWW.Example.com.  ")
+        rd.full_clean()
+        assert rd.host == "example.com"
+
+    def test_clean_normalizes_lowercase_www_host(self, db):
+        """An admin typing a lowercase-but-www host still routes recognition.
+
+        ``www.example.com`` passes both CHECKs and the unique untouched, so
+        without normalization it would be a dead recognition row (recognition
+        looks up ``example.com``). clean() strips it to the matchable host.
+        """
+        root = CitationSource.objects.create(name="Root", source_type="web")
+        rd = CitationSourceRootDomain(source=root, host="www.example.com")
+        rd.full_clean()
+        rd.save()
+        assert rd.host == "example.com"
+
+    def test_cascade_delete_with_root(self, db):
+        root = CitationSource.objects.create(name="Root", source_type="web")
+        CitationSourceRootDomain.objects.create(source=root, host="example.com")
+        root.delete()
+        assert not CitationSourceRootDomain.objects.filter(host="example.com").exists()

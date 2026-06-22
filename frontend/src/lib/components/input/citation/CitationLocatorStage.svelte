@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CitationInstanceDraft } from './citation-types';
+  import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
 
   let {
@@ -60,15 +61,14 @@
     onkeydown={handleKeydown}
   />
   <div class="locator-actions">
-    <button
-      class="submit-btn"
+    <DropdownButton
       onpointerdown={(e) => {
         e.preventDefault();
         onsubmit(locator);
       }}
     >
       Insert
-    </button>
+    </DropdownButton>
     <button
       class="skip-btn"
       onpointerdown={(e) => {
@@ -93,21 +93,6 @@
     display: flex;
     gap: var(--size-2);
     align-items: center;
-  }
-
-  .submit-btn {
-    padding: var(--size-1) var(--size-2);
-    font-size: var(--font-size-1);
-    font-family: inherit;
-    border: 1px solid var(--color-input-border);
-    border-radius: var(--radius-2);
-    background-color: var(--color-input-focus-ring);
-    color: var(--color-text);
-    cursor: pointer;
-  }
-
-  .submit-btn:hover {
-    border-color: var(--color-input-focus);
   }
 
   .skip-btn {

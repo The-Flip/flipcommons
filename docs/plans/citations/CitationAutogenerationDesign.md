@@ -7,11 +7,11 @@ This document describes the planned automatic source-draft flow for citations. I
 This project has a backend recognition layer (built April 2026) that handles:
 
 - **Extractor registry** (`backend/apps/citation/extractors.py`): URL pattern matching and identifier validation for IPDB, OPDB, and future schemes. Keyed by `CitationSource.identifier_key`.
-- **Search recognition**: the `/api/citation-sources/search/` endpoint recognizes pasted URLs (extractor match, full URL child-link match, domain matching against homepage links) and returns structured recognition metadata alongside search results.
+- **Search recognition**: the `/api/citation-sources/search/` endpoint recognizes pasted URLs (extractor match, full URL child-link match, recognition-host match) and returns structured recognition metadata alongside search results.
 - **Identifier-based child creation**: the create endpoint validates identifiers through extractors, auto-builds canonical URLs and child names.
 - **DB-level deduplication**: `CitationSource.identifier` field with `UNIQUE(parent, identifier)` constraint prevents duplicate children.
 
-What is not implemented yet is the **extraction layer for external metadata lookups** — calling external services (ISBN APIs, DOI resolvers, page metadata scrapers) and returning proposed `CitationSource` drafts for confirmation.
+The **extraction layer for external metadata lookups** — calling external services and returning proposed `CitationSource` drafts for confirmation — is now partially built: ISBN → Open Library and generic URL → page-metadata drafts exist. DOI resolution and richer URL extraction remain future work.
 
 ## Goal
 
@@ -52,17 +52,17 @@ Pipeline: `raw input → pattern match → existing source pointer`
 Integrated directly into the `/search/` endpoint. Returns a `Recognition` alongside search results in the same response. Three resolution steps:
 
 1. **Extractor match** — URL matches a known scheme (IPDB, OPDB), extracts an identifier, looks up existing parent and child.
-2. **Full URL child-link match** — exact URL match against stored child source links.
-3. **Domain match** — hostname match against parent source homepage links.
+2. **Full URL child-link match** — exact URL match against stored **child** source links.
+3. **Recognition-host match** — the hostname resolves to a root via its `CitationSourceRootDomain`, an owned recognition host on the root (longest label-boundary suffix wins, so subdomains collapse to the owning root). This keys off `CitationSourceRootDomain`, **not** `link_type` and **not** the homepage link — recognition is decoupled from display links so editing a homepage URL never changes matching.
 
 These three steps have different confidence levels:
 
 - **Extractor match** and **child-link match** resolve to validated identifiers or exact known URLs. One-click child creation is the right UX here — the identifier is validated locally, the parent is known, the canonical URL is deterministic. No draft/confirm step needed.
-- **Domain match** returns only a parent pointer with no identifier. This is **suggested parent reuse**, not one-click creation — the UI should pre-select the parent but still require the user to fill in child details.
+- **Recognition-host match** returns only a parent pointer with no identifier. This is **suggested parent reuse**, not one-click creation — the UI should pre-select the parent but still require the user to fill in child details. The cited record is always a child page under the root; the abstract root itself is never a citation target.
 
-### Extraction (not yet implemented)
+### Extraction (partially implemented)
 
-Extraction fetches **new metadata from external services** and proposes a draft source for user confirmation. External HTTP, variable latency, multiple failure modes.
+Extraction fetches **new metadata from external services** and proposes a draft source for user confirmation. External HTTP, variable latency, multiple failure modes. ISBN → Open Library and generic URL → page-metadata drafts are built; DOI resolution remains future work.
 
 Pipeline: `raw input → classify → external fetch → normalize → CitationSource draft`
 
@@ -186,11 +186,11 @@ This applies to the generic URL metadata fallback, not to known-API extractors (
 The first high-value extraction targets, with current status:
 
 - **IPDB/OPDB URL recognition** — implemented via extractor registry
-- **Domain-based source matching** — implemented via homepage link matching
+- **Recognition-host source matching** — implemented via `CitationSourceRootDomain` (longest-suffix, subdomain-aware)
 - **Full URL child-link matching** — implemented for re-citation of known pages
-- ISBN lookup for books — not yet implemented (ISBN text search exists, but no external metadata lookup)
+- **ISBN lookup for books** — implemented via Open Library
+- **generic URL metadata fallback** — implemented (page `<title>` / Open Graph tags)
 - DOI lookup for publications — not yet implemented
-- generic URL metadata fallback — not yet implemented
 
 ## Failure Behavior
 
@@ -208,4 +208,4 @@ The system should not make extraction feel magical or guaranteed.
 
 This design is a planned extension of the citation flow described in [CitationsDesign.md](CitationsDesign.md).
 
-The recognition layer is complete and integrated into search. The extraction layer is the next step, and this document describes its intended shape.
+The recognition layer is complete and integrated into search. The extraction layer is partially built (ISBN and generic-URL drafts); DOI resolution and richer URL extraction are the remaining steps, and this document describes their intended shape.

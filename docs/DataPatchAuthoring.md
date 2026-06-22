@@ -66,7 +66,7 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 
 ## Patch description
 
-Every patch should contain a top-level description. Don't restate the details of each changeset. Don't reference other patches by number. Examples:
+Every patch should contain a top-level description. It maps to the `IngestRun` note — visible only in Django admin (and git), where it reads like a commit-message title, not a place for detail. Keep it to **a single short sentence (the flippatch lint caps it at 80 characters)**: a general summary of what the patch does, not a per-changeset rundown. Stay general enough that it survives adding another change before the patch is finalized — don't restate the details of each changeset, and don't reference other patches by number (that cross-patch bookkeeping goes stale and belongs nowhere public; per-change reasoning belongs in `note:` fields). Examples:
 
 - ❌ NO: Models for the new active makers, one per game. Each model's title (0053) and corporate entity (0051) already exist. Production status reflects each game's real state: Alice Goes to Wonderland is shipping (produced); the rest are announced (a pre-order, an intended launch, a trademark filing). Corporate inception years stay off the entities; these model years carry the makers' timeline. The Wonderland and Pawlowski home machines carry the home-use tag; the already-catalogued Ramp's Road Trip is tagged widebody.
 - ✅ YES: Models for the new active makers created in a previous patch.
