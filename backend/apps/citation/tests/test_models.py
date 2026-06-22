@@ -1,6 +1,7 @@
 """Tests for CitationSource and CitationSourceLink model behavior."""
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 
 from apps.citation.models import CitationSource, CitationSourceLink
@@ -65,6 +66,41 @@ class TestCitationSourceRootChild:
         child = citation_source_with_parent
         parent = child.parent
         assert CitationSource.objects.filter(name=parent.name).roots().get() == parent
+
+
+class TestWebFlatnessGuard:
+    """D2: a web source nests one level — root → child, no grandchildren."""
+
+    def test_rejects_a_web_grandchild(self, db):
+        root = CitationSource.objects.create(name="Site", source_type="web")
+        child = CitationSource.objects.create(
+            name="Page", source_type="web", parent=root
+        )
+        grandchild = CitationSource(name="Sub-page", source_type="web", parent=child)
+        with pytest.raises(ValidationError, match="nests only one level"):
+            grandchild.full_clean()
+
+    def test_accepts_a_web_child_under_a_root(self, db):
+        root = CitationSource.objects.create(name="Site", source_type="web")
+        child = CitationSource(name="Page", source_type="web", parent=root)
+        child.full_clean()  # does not raise
+
+    def test_dangling_parent_id_defers_to_the_fk_validator(self, db):
+        # The guard must not mask the FK field validator: a non-existent
+        # parent_id is a ValidationError (the FK field's job), never a raw
+        # DoesNotExist leaking out of clean().
+        orphan = CitationSource(name="x", source_type="web", parent_id=999999)
+        with pytest.raises(ValidationError):
+            orphan.full_clean()
+
+    def test_accepts_book_three_level_nesting(self, db):
+        # Book is not a flat-hierarchy type, so deep nesting stays valid.
+        root = CitationSource.objects.create(name="Book", source_type="book")
+        edition = CitationSource.objects.create(
+            name="2nd Edition", source_type="book", parent=root
+        )
+        page = CitationSource(name="Page 42", source_type="book", parent=edition)
+        page.full_clean()  # does not raise
 
 
 class TestCitationSourceRelationships:

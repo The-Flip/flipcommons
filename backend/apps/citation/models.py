@@ -8,6 +8,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 from apps.citation.hosts import normalize_host
+from apps.citation.source_type_traits import SourceType, source_type_traits
 from apps.core.models import (
     BoundedTextField,
     TimeStampedModel,
@@ -71,10 +72,11 @@ class CitationSource(TimeStampedModel):
     root_domains: models.Manager[CitationSourceRootDomain]
     parent_id: int | None
 
-    class SourceType(models.TextChoices):
-        BOOK = "book", "Book"
-        MAGAZINE = "magazine", "Magazine"
-        WEB = "web", "Web"
+    # ``SourceType`` and its per-type trait table live in
+    # ``source_type_traits.py`` (a dependency-free leaf, so ``models`` imports it
+    # without a cycle); re-exported here so ``CitationSource.SourceType`` stays
+    # the canonical handle.
+    SourceType = SourceType
 
     name = models.CharField(
         max_length=CITATION_SOURCE_NAME_MAX_LENGTH, validators=[validate_no_mojibake]
@@ -262,11 +264,6 @@ class CitationSource(TimeStampedModel):
             ),
         ]
 
-    # Source types that are abstract when parentless: a web/magazine root is a
-    # container (a site, a publication), not directly-citable evidence. A book
-    # is not — a parentless book is itself the work, and is citable.
-    ABSTRACT_PARENTLESS_SOURCE_TYPES = frozenset({SourceType.WEB, SourceType.MAGAZINE})
-
     @property
     def is_root(self) -> bool:
         """Whether this is a hierarchy root — a source with no parent."""
@@ -275,7 +272,10 @@ class CitationSource(TimeStampedModel):
     @property
     def skip_locator(self) -> bool:
         """Web children skip the locator stage — their URL is the locator."""
-        return self.source_type == "web" and not self.is_root
+        return (
+            source_type_traits(self.source_type).child_skips_locator
+            and not self.is_root
+        )
 
     def is_abstract(self, *, has_children: bool) -> bool:
         """Whether the UI should steer away from citing this directly.
@@ -295,8 +295,38 @@ class CitationSource(TimeStampedModel):
         — this method issues no query of its own.
         """
         return has_children or (
-            self.is_root and self.source_type in self.ABSTRACT_PARENTLESS_SOURCE_TYPES
+            self.is_root and source_type_traits(self.source_type).parentless_abstract
         )
+
+    def clean(self) -> None:
+        super().clean()
+        # D2 web-flatness: a ``flat_hierarchy`` type (web) nests exactly one
+        # level — root → child — so recognition can always resolve a host to the
+        # root and mint a child directly under it. A grandchild (its parent is
+        # itself a child) would be unreachable, so reject it.
+        #
+        # Test the parent's rootness with a ``children()`` ``exists()`` query
+        # rather than dereferencing ``self.parent``: a dangling ``parent_id``
+        # then matches no row (guard skips) and the FK field validator owns that
+        # error, instead of ``self.parent`` raising a raw ``DoesNotExist``
+        # mid-``clean``. The ``in SourceType.values`` guard likewise keeps an
+        # invalid ``source_type`` the field validator's error, not a
+        # ``ValueError`` from the trait lookup.
+        if (
+            self.parent_id is not None
+            and self.source_type in SourceType.values
+            and source_type_traits(self.source_type).flat_hierarchy
+            and CitationSource.objects.children().filter(pk=self.parent_id).exists()
+        ):
+            raise ValidationError(
+                {
+                    "parent": (
+                        f"A {self.source_type} source nests only one level deep: "
+                        "its parent must be a root (a source with no parent of "
+                        "its own)."
+                    )
+                }
+            )
 
     def __str__(self) -> str:
         if self.author and self.year:

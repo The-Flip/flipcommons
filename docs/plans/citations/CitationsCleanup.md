@@ -53,7 +53,7 @@ WebCitationDomains2 P1.1. Pure refactor, behavior-preserving. Lands before the t
 
 🛑 STOP.
 
-### C3 — source-type trait table + web-flatness guard — `models.py`, new `source_type_traits.py`
+### ✅ DONE: C3 — source-type trait table + web-flatness guard — `models.py`, new `source_type_traits.py`
 
 CitationWriteLayerDebt §4. A `dict[SourceType, SourceTypeTraits]` — one frozen-dataclass record per type, **data only, no behavior** — with an import-time exhaustiveness assert. This is CLAUDE.md's "typed spec" rung: the facts that vary by source type live in one type-keyed lookup the model reads from, killing the `source_type == "web"` branches in shared code. **No `create_child` here** — child _creation_ keys on parent kind (scheme root vs domain root), not source type (both leaves mint `SourceType.WEB` children), so it stays as the two plain leaves in C4, not a method on this table. See [§ Why not a strategy](#why-a-trait-table-not-a-strategy). Pure refactor + one flagged guard.
 
