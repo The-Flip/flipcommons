@@ -122,8 +122,8 @@ def _lookup_source(fields: SourceFields) -> SourceMatch:
         obj = CitationSource.objects.filter(isbn=isbn).first()
         return SourceMatch(obj, 1 if obj is not None else 0)
     qs = CitationSource.objects.filter(
-        name=fields["name"], source_type=fields["source_type"], parent__isnull=True
-    )
+        name=fields["name"], source_type=fields["source_type"]
+    ).roots()
     return SourceMatch(qs.first(), qs.count())
 
 

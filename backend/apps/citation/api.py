@@ -160,10 +160,10 @@ def _serialize_search_row(s: CitationSource) -> CitationSourceSearchSchema:
 
 def _serialize_detail(source: CitationSource) -> CitationSourceDetailSchema:
     parent: CitationSourceParentSchema | None = None
-    if source.parent_id is not None:
+    if not source.is_root:
         parent_obj = source.parent
-        assert parent_obj is not None
-        parent = CitationSourceParentSchema(id=source.parent_id, name=parent_obj.name)
+        assert parent_obj is not None  # a non-root always has a parent loaded
+        parent = CitationSourceParentSchema(id=parent_obj.pk, name=parent_obj.name)
     return CitationSourceDetailSchema(
         id=source.pk,
         name=source.name,

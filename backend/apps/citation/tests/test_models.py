@@ -40,6 +40,33 @@ class TestCitationSourceTimestamps:
         assert citation_source.updated_at > original
 
 
+class TestCitationSourceRootChild:
+    """The named root/child distinction: ``is_root`` + ``roots()``/``children()``."""
+
+    def test_is_root(self, citation_source_with_parent):
+        child = citation_source_with_parent
+        parent = child.parent
+        assert parent.is_root is True
+        assert child.is_root is False
+
+    def test_roots_and_children_partition(self, citation_source_with_parent):
+        child = citation_source_with_parent
+        parent = child.parent
+        roots = list(CitationSource.objects.roots())
+        children = list(CitationSource.objects.children())
+        assert parent in roots
+        assert child not in roots
+        assert child in children
+        assert parent not in children
+
+    def test_methods_chain_on_a_filtered_queryset(self, citation_source_with_parent):
+        # ``roots()``/``children()`` are queryset methods, so they compose with
+        # ``filter()`` — the form the recognizer and seeding call sites use.
+        child = citation_source_with_parent
+        parent = child.parent
+        assert CitationSource.objects.filter(name=parent.name).roots().get() == parent
+
+
 class TestCitationSourceRelationships:
     def test_children_relationship(self, citation_source):
         child = CitationSource.objects.create(

@@ -139,7 +139,8 @@ def recognize_url(url: str) -> Recognition | None:
 
         # Find the parent source that uses this extractor.
         parent = (
-            CitationSource.objects.filter(identifier_key=key, parent__isnull=True)
+            CitationSource.objects.filter(identifier_key=key)
+            .roots()
             .only("id", "name")
             .first()
         )
@@ -259,7 +260,8 @@ def get_or_create_external_source(scheme: str, identifier: str) -> CitationSourc
         raise ValueError(f"Invalid {scheme} identifier {identifier!r}")
 
     root = (
-        CitationSource.objects.filter(identifier_key=scheme, parent__isnull=True)
+        CitationSource.objects.filter(identifier_key=scheme)
+        .roots()
         .only("id", "name")
         .first()
     )

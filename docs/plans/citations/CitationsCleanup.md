@@ -42,7 +42,7 @@ WebCitationDomains2 P1.4. Smallest, fully independent — a good first landing.
 
 🛑 STOP.
 
-### C2 — name the root/child distinction — `models.py`, app-wide
+### ✅ DONE: C2 — name the root/child distinction — `models.py`, app-wide
 
 WebCitationDomains2 P1.1. Pure refactor, behavior-preserving. Lands before the trait table because C3's reads and the D2 guard sit on the named distinction.
 

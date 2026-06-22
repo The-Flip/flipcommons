@@ -42,6 +42,21 @@ CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG = (
 )
 
 
+class CitationSourceQuerySet(models.QuerySet["CitationSource"]):
+    """Adds the root/child split the whole citation hierarchy turns on."""
+
+    def roots(self) -> CitationSourceQuerySet:
+        """Top-level sources with no parent (books, magazines, website roots)."""
+        return self.filter(parent__isnull=True)
+
+    def children(self) -> CitationSourceQuerySet:
+        """Sources nested under a parent (editions, articles, pages, records)."""
+        return self.filter(parent__isnull=False)
+
+
+CitationSourceManager = models.Manager.from_queryset(CitationSourceQuerySet)
+
+
 class CitationSource(TimeStampedModel):
     """A work or evidence object that can be cited: book, flyer, web page, etc.
 
@@ -51,6 +66,7 @@ class CitationSource(TimeStampedModel):
     """
 
     id: int
+    objects = CitationSourceManager()
     links: models.Manager[CitationSourceLink]
     root_domains: models.Manager[CitationSourceRootDomain]
     parent_id: int | None
@@ -252,9 +268,14 @@ class CitationSource(TimeStampedModel):
     ABSTRACT_PARENTLESS_SOURCE_TYPES = frozenset({SourceType.WEB, SourceType.MAGAZINE})
 
     @property
+    def is_root(self) -> bool:
+        """Whether this is a hierarchy root — a source with no parent."""
+        return self.parent_id is None
+
+    @property
     def skip_locator(self) -> bool:
         """Web children skip the locator stage — their URL is the locator."""
-        return self.source_type == "web" and self.parent_id is not None
+        return self.source_type == "web" and not self.is_root
 
     def is_abstract(self, *, has_children: bool) -> bool:
         """Whether the UI should steer away from citing this directly.
@@ -274,8 +295,7 @@ class CitationSource(TimeStampedModel):
         — this method issues no query of its own.
         """
         return has_children or (
-            self.parent_id is None
-            and self.source_type in self.ABSTRACT_PARENTLESS_SOURCE_TYPES
+            self.is_root and self.source_type in self.ABSTRACT_PARENTLESS_SOURCE_TYPES
         )
 
     def __str__(self) -> str:
@@ -403,7 +423,7 @@ class CitationSourceRootDomain(TimeStampedModel):
     def clean(self) -> None:
         super().clean()
         self.host = normalize_host(self.host)
-        if self.source_id is not None and self.source.parent_id is not None:
+        if self.source_id is not None and not self.source.is_root:
             raise ValidationError(
                 {
                     "source": (

@@ -54,7 +54,7 @@ class CitationSourceAdmin(admin.ModelAdmin[CitationSource]):
         # A recognition domain may attach only to a root, so the inline is a
         # trap on a child page — drop it there. Roots and the add form keep it.
         instances = super().get_inline_instances(request, obj)
-        if obj is not None and obj.parent_id is not None:
+        if obj is not None and not obj.is_root:
             instances = [
                 inline
                 for inline in instances
