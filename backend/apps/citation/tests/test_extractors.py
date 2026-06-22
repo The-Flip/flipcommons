@@ -106,39 +106,44 @@ class TestYouTubeRecognition:
 
 
 class TestRootDomainRecognition:
-    """``recognize_url`` step 3: resolve a host to its root by longest suffix."""
+    """``recognize_url`` step 3: resolve a host to its root by exact match.
+
+    SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3): step 3
+    matches the host exactly; subdomain (longest-suffix) cases assert the
+    deferred no-match behavior until G3 re-enables suffix matching.
+    """
 
     def _root(self, name: str, host: str) -> CitationSource:
         root = CitationSource.objects.create(name=name, source_type="web")
         CitationSourceRootDomain.objects.create(source=root, host=host)
         return root
 
-    def test_subdomain_collapses_to_registrable_root(self, db):
-        ap = self._root("American Pinball", "american-pinball.com")
-        rec = recognize_url("http://s4.american-pinball.com/games/gtf/manual.pdf")
-        assert rec is not None
-        assert rec.parent_id == ap.id
-        assert rec.child is None
-        assert rec.identifier is None
+    def test_subdomain_not_recognized_under_exact_matching(self, db):
+        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
+        self._root("American Pinball", "american-pinball.com")
+        assert (
+            recognize_url("http://s4.american-pinball.com/games/gtf/manual.pdf") is None
+        )
 
-    def test_most_specific_root_wins(self, db):
+    def test_exact_root_host_resolves(self, db):
+        # twip.kineticist.com is itself a seeded host → exact match wins even
+        # with kineticist.com also seeded (the "most specific" framing is moot
+        # under exact matching, but the assertion holds).
         self._root("Kineticist", "kineticist.com")
         twip = self._root("TWiP", "twip.kineticist.com")
         rec = recognize_url("https://twip.kineticist.com/some-article")
         assert rec is not None
         assert rec.parent_id == twip.id
 
-    def test_subdomain_falls_back_to_parent_when_no_specific_root(self, db):
-        kineticist = self._root("Kineticist", "kineticist.com")
-        rec = recognize_url("https://twip.kineticist.com/some-article")
-        assert rec is not None
-        assert rec.parent_id == kineticist.id
+    def test_subdomain_does_not_resolve_to_parent_under_exact_matching(self, db):
+        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
+        self._root("Kineticist", "kineticist.com")
+        assert recognize_url("https://twip.kineticist.com/some-article") is None
 
-    def test_deeper_subdomain_resolves_to_nearest_root(self, db):
-        ap = self._root("American Pinball", "american-pinball.com")
-        rec = recognize_url("https://cdn.assets.american-pinball.com/logo.png")
-        assert rec is not None
-        assert rec.parent_id == ap.id
+    def test_deeper_subdomain_not_recognized_under_exact_matching(self, db):
+        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
+        self._root("American Pinball", "american-pinball.com")
+        assert recognize_url("https://cdn.assets.american-pinball.com/logo.png") is None
 
     def test_www_prefixed_input_matches(self, db):
         ap = self._root("American Pinball", "american-pinball.com")

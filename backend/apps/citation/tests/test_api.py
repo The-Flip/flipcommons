@@ -812,7 +812,11 @@ class TestCiteUrl:
         # No second root was created.
         assert CitationSource.objects.filter(parent__isnull=True).count() == 1
 
-    def test_subdomain_of_seeded_root_nests_under_it(self, client, user):
+    def test_subdomain_mints_new_root_under_exact_matching(self, client, user):
+        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
+        # Exact matching: an asset subdomain doesn't recognize the seeded
+        # registrable root, so the no-match branch mints a new root at the raw
+        # host instead of nesting under american-pinball.com.
         client.force_login(user)
         root = CitationSource.objects.create(name="American Pinball", source_type="web")
         CitationSourceRootDomain.objects.create(
@@ -825,12 +829,14 @@ class TestCiteUrl:
         )
         assert resp.status_code == 201
         child = CitationSource.objects.get(pk=resp.json()["id"])
-        assert child.parent_id == root.pk
+        assert child.parent_id != root.pk
+        new_root = child.parent
+        assert new_root is not None
+        assert CitationSourceRootDomain.objects.filter(
+            source=new_root, host="s4.american-pinball.com"
+        ).exists()
         # No page_name sent → the child name falls back to the URL.
         assert child.name == "https://s4.american-pinball.com/manual.pdf"
-        assert not CitationSourceRootDomain.objects.filter(
-            host="s4.american-pinball.com"
-        ).exists()
 
     def test_exact_child_is_reused(self, client, user):
         client.force_login(user)

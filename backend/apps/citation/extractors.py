@@ -16,13 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from apps.citation.hosts import (
-    Host,
-    RootDomainMatch,
-    label_suffixes,
-    longest_suffix_match,
-    normalize_host,
-)
+from apps.citation.hosts import normalize_host
 from apps.citation.models import (
     CITATION_SOURCE_NAME_MAX_LENGTH,
     CitationSource,
@@ -198,29 +192,32 @@ def recognize_url(url: str) -> Recognition | None:
             ),
         )
 
-    # --- Step 3: Recognition-host match (longest label-boundary suffix) -----
+    # --- Step 3: Recognition-host match (exact host) -----------------------
+    # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3): match the
+    # normalized host exactly, not by longest label-boundary suffix. Exact
+    # matching can't over-match, so it ships with no public-suffix guard; the
+    # label_suffixes/longest_suffix_match helpers stay built and tested in
+    # hosts.py, dormant, until G3 re-points this step at them.
     parsed = urlparse(url)
     if not parsed.hostname:
         return None
 
     host = normalize_host(parsed.hostname)
 
-    # Only suffixes of the input host can match, so the DB filters to those; the
-    # root-only filter is defense-in-depth for the app-level clean() invariant
-    # (rows inserted via raw SQL / bulk that bypass it).
-    rows = CitationSourceRootDomain.objects.filter(
-        host__in=label_suffixes(host),
-        source__parent__isnull=True,
-    ).values_list("source_id", "source__name", "host")
-    # ``candidate_host`` is stored normalized (the model's clean()), so it's a Host.
-    candidates = [
-        RootDomainMatch(source_id, source_name, Host(candidate_host))
-        for source_id, source_name, candidate_host in rows
-    ]
-    winner = longest_suffix_match(host, candidates)
-    if winner is None:
+    # The root-only filter is defense-in-depth for the app-level clean()
+    # invariant (rows inserted via raw SQL / bulk that bypass it).
+    row = (
+        CitationSourceRootDomain.objects.filter(
+            host=host,
+            source__parent__isnull=True,
+        )
+        .values_list("source_id", "source__name")
+        .first()
+    )
+    if row is None:
         return None
-    return Recognition(parent_id=winner.source_id, parent_name=winner.source_name)
+    source_id, source_name = row
+    return Recognition(parent_id=source_id, parent_name=source_name)
 
 
 def web_child_name(url: str, name: str = "") -> str:
