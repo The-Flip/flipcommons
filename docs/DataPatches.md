@@ -340,7 +340,7 @@ Duplicate keys error, and values must be JSON-shaped — YAML coercion is off, s
 
 ## Citation sources
 
-A patch can also create **citation sources** — the reference works (`ipdb`, `pinside`, a manufacturer's site) that `cite:` points at — via a top-level `sources:` block. This is the way to add a new web/book/magazine root: declare it here and it's created at apply time. Unlike claims, a source is _not attributed_ and carries no provenance; `attribution:` still names the source that owns the run's ledger entry, not the citation sources.
+A patch can create **citation sources** — the reference works (`ipdb`, `pinside`, a manufacturer's site) that `cite:` points at — via a top-level `sources:` block. Unlike claims, a source is _not attributed_ and carries no provenance; `attribution:` still names the source that owns the run's ledger entry, not the citation sources.
 
 ```yaml
 attribution: flipcommons-catalog # owns the IngestRun; does NOT attribute the sources
@@ -362,18 +362,30 @@ sources: # processed before claims, so a cite: below can nest under a root creat
 claims: [] # optional — a sources-only patch is valid
 ```
 
-A `sources:` node is a flat citation-source record (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, and `links`). **v1 is flat** — nested `children` is rejected; a child source under a root is created on demand when you `cite:` a URL on its domain.
+Sources sometimes have additional domains **beyond its homepage**. Declare them via `domains:` (a bare public suffix like `co.uk`, or a non-DNS host, is rejected):
 
-**Identity and the get-or-create policy.** A source has no slug. A root with a `homepage` link owns one or more **recognition domains** (the normalized homepage hosts) — that's the signal a later `cite:` URL resolves against, and the primary identity. Resolution is by recognition host first, then `isbn`, then `(name, source_type)`. The block is **additive get-or-create**, never an overwrite:
+```yaml
+attribution: flipcommons-catalog
+sources:
+  - name: Pinball News
+    source_type: web
+    description: Long-running pinball news site.
+    links:
+      - {
+          url: "https://pinballnews.com/",
+          label: Pinball News,
+          link_type: homepage,
+        }
+    domains: # extra recognition hosts beyond the homepage
+      - pinballnews.co.uk # a .co.uk alias for the same publication
+      - oldpinballnews.com # a former domain, still recognized after a rebrand
+      - "https://pinballnews.blogspot.com/" # a secondary home on a platform subdomain (full-URL form is fine)
+claims: []
+```
 
-- a declared homepage host already owned by a root → **that root**, even if it's stored under a different name (re-declaring a site under a new name reuses it, never duplicates).
-- otherwise not found → create the source, its declared links, and a recognition domain per homepage host.
-- found → leave the existing row untouched (a divergent declared field is a **warning**, not an error), **additively backfill** any declared link the row is missing — so a later `cite:` can nest under the root even when the row existed without your `homepage` link — and **mint a recognition domain** for any new homepage host, so one root accretes many domains (a rebrand, a `.com`+`.co.uk`). An existing same-URL link with a different `link_type`/`label` is left as-is and warned.
-- declared homepage hosts already split across **two different roots** → the node is **skipped with no writes** and warned (resolve the duplicate roots first); two-plus `(name, source_type)` rows → operate on the first, warn.
+A `sources:` node is flat (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, `domains`, `links`). Nested `children` is rejected — a child source under a root is created on demand when you `cite:` a URL on its domain.
 
-This is deliberate: a user can create a source through the app, so a same-identity collision is invisible when you author the patch. A strict "differs → error" policy would let one such collision **fail the patch and dam every later patch on prod** (patches stop at the first failure). Get-or-create never wedges and never clobbers user data — at the cost that, on a collision, the patch's description/links don't win (correctable only in Django admin). Because it's additive, re-applying is a clean no-op.
-
-**What still hard-errors** (all author-controllable, and all surface at `--dry-run` on localhost before you ship): an unknown key, a nested `children`, a missing `name`/`source_type`, and any value the model rejects — a bad `source_type`, an out-of-range `year`/`month`/`day`, an invalid `identifier_key` or `link_type`, a malformed URL, or a duplicate declared link URL.
+The block is **additive get-or-create**: a source is matched by recognition host (homepage ∪ `domains:`), else `isbn`, else `(name, source_type)`. A match is reused — missing links and recognition hosts are backfilled — and an existing row is **never overwritten** (a divergent field warns, doesn't fail). So re-applying is a clean no-op and a patch can't clobber a user-created source or dam later patches. Recognition hosts split across two existing roots skip the node with a warning naming both — resolve the duplicate roots first; visible at `--dry-run`.
 
 ## Applying patches
 
