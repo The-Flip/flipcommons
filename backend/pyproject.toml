@@ -331,6 +331,21 @@ allow_indirect_imports = "true"
 source_modules = ["apps.claim_ingest"]
 forbidden_modules = ["apps.claim_edit"]
 
+# The apply engine is the source-agnostic IR consumer: it turns an IngestPlan
+# (the carriers in apps.claim_ingest.plan) into DB writes and must not know which
+# front end built it. apps.claim_ingest.patches is the patch *adapter* — its
+# format parsing and its PatchError live there. The engine raises plain
+# ValidationError and lets _apply_one map it to PatchError, so the engine never
+# imports the adapter. That rule is asserted only in docstrings (claims.py,
+# persist.py) today; forbidding the edge makes it self-defending. Green now —
+# apply imports nothing from patches.
+[[tool.importlinter.contracts]]
+name = "Apply engine stays source-agnostic (no patch adapter)"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = ["apps.claim_ingest.apply"]
+forbidden_modules = ["apps.claim_ingest.patches"]
+
 # The generic resolver core — scalar/bulk claim projection (_entities), its
 # coercion/FK/constraint helpers (_helpers), and the read-side payload
 # vocabulary (_claim_values) — is domain-agnostic substrate that merely lives
