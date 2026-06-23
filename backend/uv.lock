@@ -52,6 +52,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pillow-heif" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "publicsuffixlist" },
     { name = "pyyaml" },
     { name = "sentry-sdk", extra = ["django"] },
     { name = "whitenoise" },
@@ -85,6 +86,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=11.0" },
     { name = "pillow-heif", specifier = ">=1.2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
+    { name = "publicsuffixlist", specifier = "==1.0.2.20260623" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sentry-sdk", extras = ["django"], specifier = ">=2.0" },
     { name = "whitenoise", specifier = ">=6.8" },
@@ -769,6 +771,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/2c/a4981bf42cf30ebba0424971d7ce70a222ae9b82594c42fc3f2105d7b525/psycopg_binary-3.3.3-cp314-cp314-musllinux_1_2_riscv64.whl", hash = "sha256:47f06fcbe8542b4d96d7392c476a74ada521c5aebdb41c3c0155f6595fc14c8d", size = 3944542, upload-time = "2026-02-18T16:52:04.266Z" },
     { url = "https://files.pythonhosted.org/packages/60/e9/b7c29b56aa0b85a4e0c4d89db691c1ceef08f46a356369144430c155a2f5/psycopg_binary-3.3.3-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:e7800e6c6b5dc4b0ca7cc7370f770f53ac83886b76afda0848065a674231e856", size = 4254339, upload-time = "2026-02-18T16:52:10.444Z" },
     { url = "https://files.pythonhosted.org/packages/98/5a/291d89f44d3820fffb7a04ebc8f3ef5dda4f542f44a5daea0c55a84abf45/psycopg_binary-3.3.3-cp314-cp314-win_amd64.whl", hash = "sha256:165f22ab5a9513a3d7425ffb7fcc7955ed8ccaeef6d37e369d6cc1dff1582383", size = 3652796, upload-time = "2026-02-18T16:52:14.02Z" },
+]
+
+[[package]]
+name = "publicsuffixlist"
+version = "1.0.2.20260623"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/6c/de8185fcf1b12db5a04fb28560d108cae3f0f68659b9b41ddd40008caad5/publicsuffixlist-1.0.2.20260623.tar.gz", hash = "sha256:780df36b759117663e135bf0b69e9f242f0298db3f15d13cdeb3d40e0541cf0b", size = 108780, upload-time = "2026-06-23T06:56:46.35Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/99/f1ab89cb40024dfb1ed35d795cb837c6651994b88cba4fecf1a056b5564c/publicsuffixlist-1.0.2.20260623-py2.py3-none-any.whl", hash = "sha256:f5defc77fc7ffebb2c768f58ed2d604c99e916e01cec6478badb63b352911e62", size = 108576, upload-time = "2026-06-23T06:56:45.017Z" },
 ]
 
 [[package]]

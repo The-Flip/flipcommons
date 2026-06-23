@@ -246,6 +246,20 @@ class TestSearchRecognition:
         data = resp.json()
         assert data["recognition"] is None
 
+    def test_malformed_host_url_no_recognition(self, client, user, db):
+        """A malformed host whose ancestor suffix matches a seeded root still
+        yields no recognition — /search/ must not surface a confident-but-wrong
+        page for garbage input (the read surface has no write-time URL guard)."""
+        root = CitationSource.objects.create(name="American Pinball", source_type="web")
+        CitationSourceRootDomain.objects.create(
+            source=root, host="american-pinball.com"
+        )
+        client.force_login(user)
+        resp = client.get(
+            "/api/citation-sources/search/?q=https://www..american-pinball.com/m.pdf"
+        )
+        assert resp.json()["recognition"] is None
+
     def test_plain_text_no_recognition(self, client, user, citation_source):
         """Plain text searches return no recognition."""
         client.force_login(user)
@@ -614,13 +628,13 @@ class TestCiteUrl:
         resp = _post(client, self.URL, {"url": "https://example.com/page"})
         assert resp.status_code in (401, 403)
 
-    def test_no_match_creates_root_and_child_at_raw_host(self, client, user):
+    def test_no_match_rounds_to_registrable_root_and_creates_child(self, client, user):
         client.force_login(user)
         resp = _post(
             client,
             self.URL,
             {
-                "url": "https://blog.newsite.example/post",
+                "url": "https://blog.newsite.org/post",
                 "site_name": "New Site",
                 "site_description": "A site.",
                 "page_name": "A Post",
@@ -630,18 +644,19 @@ class TestCiteUrl:
         child = CitationSource.objects.get(pk=resp.json()["id"])
         assert child.name == "A Post"
         assert child.parent is not None
-        # Roots at the RAW pasted host (PR 2 rounds to the registrable domain).
+        # The funnel rounds the fuzzy subdomain paste down to the registrable
+        # domain, so the root (and its homepage) sit at newsite.org — future
+        # cites under any subdomain collapse to this one root.
         root = child.parent
         assert root.name == "New Site"
         assert root.description == "A site."
         assert root.parent_id is None
         domain = CitationSourceRootDomain.objects.get(source=root)
-        assert domain.host == "blog.newsite.example"
-        assert (
-            root.links.get(link_type="homepage").url == "https://blog.newsite.example/"
-        )
+        assert domain.host == "newsite.org"
+        assert root.links.get(link_type="homepage").url == "https://newsite.org/"
+        # The child still references the full pasted URL, not the rounded host.
         assert child.links.get(link_type="reference").url == (
-            "https://blog.newsite.example/post"
+            "https://blog.newsite.org/post"
         )
 
     def test_no_match_attributes_every_row_to_caller(self, client, user):
@@ -649,7 +664,7 @@ class TestCiteUrl:
         resp = _post(
             client,
             self.URL,
-            {"url": "https://newsite.example/x", "page_name": "X"},
+            {"url": "https://newsite.org/x", "page_name": "X"},
         )
         assert resp.status_code == 201
         child = CitationSource.objects.get(pk=resp.json()["id"])
@@ -665,24 +680,42 @@ class TestCiteUrl:
             assert link.created_by == user
             assert link.updated_by == user
 
-    def test_blank_site_name_falls_back_to_host(self, client, user):
+    def test_blank_site_name_falls_back_to_rounded_host(self, client, user):
         client.force_login(user)
-        resp = _post(client, self.URL, {"url": "https://newsite.example/p"})
+        resp = _post(client, self.URL, {"url": "https://blog.newsite.org/p"})
         assert resp.status_code == 201
         root = CitationSource.objects.get(pk=resp.json()["id"]).parent
         assert root is not None
-        assert root.name == "newsite.example"
+        # Falls back to the rounded registrable host, not the raw subdomain.
+        assert root.name == "newsite.org"
 
     def test_response_is_the_web_child(self, client, user):
         client.force_login(user)
         resp = _post(
-            client, self.URL, {"url": "https://newsite.example/p", "page_name": "P"}
+            client, self.URL, {"url": "https://newsite.org/p", "page_name": "P"}
         )
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "P"
         # A web child skips the locator stage — its URL is the locator.
         assert data["skip_locator"] is True
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://127.0.0.1/page",  # IP literal — can't root a site
+            "http://foo.test/page",  # reserved RFC special-use TLD
+            "https://gov.uk/page",  # bare public suffix — over-matches if stored
+            "https://[::1/page",  # malformed URL — must 422, not 500
+        ],
+    )
+    def test_unroundable_host_is_422_with_no_write(self, client, user, url):
+        client.force_login(user)
+        resp = _post(client, self.URL, {"url": url})
+        assert resp.status_code == 422
+        # The funnel rejects before any write, so nothing was created.
+        assert not CitationSource.objects.exists()
+        assert not CitationSourceRootDomain.objects.exists()
 
     def test_domain_match_nests_child_and_ignores_site_fields(self, client, user):
         client.force_login(user)
@@ -716,11 +749,10 @@ class TestCiteUrl:
         # No second root was created.
         assert CitationSource.objects.filter(parent__isnull=True).count() == 1
 
-    def test_subdomain_mints_new_root_under_exact_matching(self, client, user):
-        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
-        # Exact matching: an asset subdomain doesn't recognize the seeded
-        # registrable root, so the no-match branch mints a new root at the raw
-        # host instead of nesting under american-pinball.com.
+    def test_subdomain_nests_under_existing_registrable_root(self, client, user):
+        # Suffix matching: an asset subdomain resolves to the seeded registrable
+        # root, so the cite nests a child *under* american-pinball.com rather
+        # than minting a second root.
         client.force_login(user)
         root = CitationSource.objects.create(name="American Pinball", source_type="web")
         CitationSourceRootDomain.objects.create(
@@ -733,12 +765,9 @@ class TestCiteUrl:
         )
         assert resp.status_code == 201
         child = CitationSource.objects.get(pk=resp.json()["id"])
-        assert child.parent_id != root.pk
-        new_root = child.parent
-        assert new_root is not None
-        assert CitationSourceRootDomain.objects.filter(
-            source=new_root, host="s4.american-pinball.com"
-        ).exists()
+        assert child.parent_id == root.pk
+        # No second root was minted.
+        assert CitationSource.objects.filter(parent__isnull=True).count() == 1
         # No page_name sent → the child name falls back to the URL.
         assert child.name == "https://s4.american-pinball.com/manual.pdf"
 
@@ -806,14 +835,16 @@ class TestCiteUrl:
         assert CitationSource.objects.count() == 0
 
     def test_root_domain_guard_failure_returns_422_not_500(self, client, user):
-        """A domain-model guard surfaces as the declared 422 and rolls back.
+        """A domain-model guard failure surfaces as the declared 422 and rolls back.
 
-        No ``clean()`` rule rejects a normalized parentless host in this PR, so
-        we stand in for the forthcoming PR-2 public-suffix guard by making the
-        domain's ``full_clean`` raise: the point is that a ``ValidationError``
-        on the root-domain row becomes a 422 (Django ValidationError has no API
-        exception handler, so an uncaught one would 500) and the whole create
-        rolls back.
+        The root-domain row is ``full_clean``d in its own ``try/except`` so a
+        model guard (the public-suffix / DNS-host ``clean()`` rules) becomes a
+        422 rather than a 500 — Django's ``ValidationError`` has no API exception
+        handler, so an uncaught one would 500. We force ``full_clean`` to raise
+        to exercise that wrapper directly, decoupled from any specific rule. The
+        URL uses a real registrable domain so the ``root_host_from_url`` funnel
+        passes and the mocked ``full_clean`` actually fires; the whole create
+        then rolls back.
         """
         client.force_login(user)
 
@@ -821,7 +852,7 @@ class TestCiteUrl:
             raise ValidationError({"host": "Not an allowed recognition host."})
 
         with patch.object(CitationSourceRootDomain, "full_clean", reject):
-            resp = _post(client, self.URL, {"url": "https://blocked.example/p"})
+            resp = _post(client, self.URL, {"url": "https://blocked.org/p"})
         assert resp.status_code == 422
         assert CitationSource.objects.count() == 0
 
@@ -846,7 +877,7 @@ class TestCiteUrl:
             patch("apps.citation.api.recognize_url", side_effect=[None, rematch]),
         ):
             resp = _post(
-                client, self.URL, {"url": "https://raced.example/p", "page_name": "P"}
+                client, self.URL, {"url": "https://raced.org/p", "page_name": "P"}
             )
         assert resp.status_code == 201
         child = CitationSource.objects.get(pk=resp.json()["id"])
@@ -854,8 +885,9 @@ class TestCiteUrl:
         assert child.parent_id == racer.pk
         assert CitationSource.objects.filter(name="P").count() == 1
         # The savepoint rolled back the attempted root + its homepage link (blank
-        # site_name → it was named after the host), leaving only the racer root.
-        assert not CitationSource.objects.filter(name="raced.example").exists()
+        # site_name → it was named after the rounded host), leaving only the
+        # racer root.
+        assert not CitationSource.objects.filter(name="raced.org").exists()
         assert CitationSource.objects.filter(parent__isnull=True).count() == 1
 
 
@@ -1500,7 +1532,7 @@ class TestExtractEndpoint:
         assert data["match"] is None
 
     def test_extract_url_classifies_correctly(self, client, user):
-        """URL input no longer returns 422 (unsupported)."""
+        """URL input is classified and routed to extract_url, not rejected as 422."""
         cache.clear()
         client.force_login(user)
         with patch("apps.citation.api.extract_url") as mock_extract:

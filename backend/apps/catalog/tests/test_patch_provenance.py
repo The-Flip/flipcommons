@@ -761,13 +761,13 @@ def test_url_cite_nests_under_domain_matched_root(
     assert year_claim.citation_instances.get().citation_source_id == child.pk
 
 
-def test_url_cite_on_subdomain_raises_under_exact_matching(
+def test_url_cite_on_subdomain_nests_under_domain_matched_root(
     flipcommons_catalog, kineticist_root, pm
 ):
-    # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
-    # Exact matching: an asset/subdomain host (static.kineticist.com) does not
-    # match the seeded kineticist.com root, so the patch path raises rather than
-    # nesting a child under it or minting a new root.
+    # Suffix matching: an asset/subdomain host (static.kineticist.com) resolves
+    # to the seeded kineticist.com root through the shared read path, so the
+    # patch path nests a child under it just like a bare-domain cite — proving
+    # the flip fixes the patch surface too, not only cite-url.
     url = "https://static.kineticist.com/manuals/medieval-madness.pdf"
     text = (
         "attribution: flipcommons-catalog\n"
@@ -776,10 +776,18 @@ def test_url_cite_on_subdomain_raises_under_exact_matching(
         f"      cite: {url}\n"
         "      year: 1998\n"
     )
-    # Wrapped into a ValidationError naming the URL.
-    with pytest.raises(ValidationError) as exc_info:
-        _apply(text)
-    assert url in "; ".join(exc_info.value.messages)
+    _apply(text)
+
+    child = CitationSource.objects.get(parent=kineticist_root)
+    assert child.links.get().url == url
+    # No stray root was minted at the subdomain.
+    assert (
+        not CitationSource.objects.filter(source_type="web", parent__isnull=True)
+        .exclude(pk=kineticist_root.pk)
+        .exists()
+    )
+    year_claim = pm.claims.get(field_name="year", is_active=True)
+    assert year_claim.citation_instances.get().citation_source_id == child.pk
 
 
 def test_url_cite_under_root_dedups_and_separates(

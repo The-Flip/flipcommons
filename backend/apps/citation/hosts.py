@@ -11,10 +11,19 @@ subdomain (``s4.american-pinball.com``) resolves to its registrable root, while
 a more-specific seeded host (``twip.kineticist.com``) still beats its parent
 domain for its own subtree. The intended consumer is citation-source
 recognition; on their own these are pure string ops — deterministic and offline.
+
+This module also carries the **syntactic** host predicates
+(:func:`is_dns_host`, :func:`is_reserved_tld`) that the write-time guard and the
+derive funnel gate on — pure string / ``ipaddress`` checks, no DNS lookup. The
+two **PSL-backed** predicates (``is_public_suffix``, ``registrable_domain``)
+deliberately live in :mod:`apps.citation.psl` instead, so this module stays
+dependency-free and the recognition read path never imports the snapshot.
 """
 
 from __future__ import annotations
 
+import ipaddress
+import re
 from collections.abc import Sequence
 from typing import NamedTuple, NewType
 
@@ -49,6 +58,61 @@ def normalize_host(hostname: str) -> Host:
     while host.startswith("www."):
         host = host.removeprefix("www.")
     return Host(host)
+
+
+# A single DNS label: ASCII ``[a-z0-9-]``, 1–63 chars, no leading/trailing
+# hyphen. The charset is pinned ASCII on purpose — ``str.isalnum()`` is
+# unicode-true and would admit raw IDN. ``normalize_host`` lowercases first, so
+# the class needs no uppercase range.
+_DNS_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+
+# RFC 6761 / 6762 special-use top-level names: reserved by the standards bodies
+# to *never* be real registrable domains. A standards constant, not a denylist.
+_RESERVED_TLDS = frozenset({"localhost", "invalid", "test", "example", "local"})
+
+
+def is_dns_host(host: Host) -> bool:
+    """Whether *host* is syntactically a DNS hostname (not an IP literal).
+
+    Syntactic only — no DNS lookup, no PSL. Rejects IP literals (``127.0.0.1``,
+    ``::1``, bracket-stripped) and requires dot-separated :data:`_DNS_LABEL`
+    labels — at least one dot, a total length within the 253-char hostname
+    limit, and a non-all-numeric rightmost label (an all-numeric TLD is an IPv4
+    shape that slipped the literal check). Accepts punycode (``xn--…``);
+    raw-unicode IDN is rejected by the ASCII label charset — a known limitation
+    (an internationalized recognition host must be punycode). Expects a
+    normalized :data:`Host`.
+    """
+    # The full presentation hostname tops out at 253 chars (the RFC 1035
+    # 255-octet wire limit minus the length/root bytes). Owned here so the
+    # syntactic contract is complete, not delegated to the storage column.
+    if not host or len(host) > 253:
+        return False
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        pass
+    else:
+        return False
+    labels = host.split(".")
+    if len(labels) < 2:
+        return False
+    if not all(_DNS_LABEL.fullmatch(label) for label in labels):
+        return False
+    return not labels[-1].isdigit()
+
+
+def is_reserved_tld(host: Host) -> bool:
+    """Whether *host*'s rightmost label is an RFC special-use TLD.
+
+    ``foo.test``, ``bar.localhost`` and a bare ``invalid`` are reserved; a real
+    registrable domain is not. The derive funnel (``cite-url``) rejects these so
+    a fuzzy contributor paste can't mint a root that could never match a real
+    cite; the declare path (``clean()``) deliberately does **not** — declaring a
+    host is curator-trusted, and the citation test fixtures lean on ``.example``.
+    Expects a normalized :data:`Host`.
+    """
+    return host.split(".")[-1] in _RESERVED_TLDS
 
 
 def label_suffixes(host: Host) -> list[Host]:

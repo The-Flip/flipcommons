@@ -64,7 +64,7 @@ Why this is the simplest shape:
 - **Phase 1 — stabilize the creation layer.** Behavior-preserving refactors (plus two flagged behavior changes) that converge the tangled, inconsistently-validated write paths onto a few named pieces. Lands and verifies **first**, so the new behavior never rides on the shaky parts. This is the get-well work, scoped to exactly the debt the feature touches.
 - **Phase 2 — domain governance.** PSL rounding (`cite-url` derive) + the `domains:` verb — the anti-fragmentation layer and multi-host capability. New behavior on the clean foundation; **more deferrable**, since the Context bugs are already closed.
 
-One commit each, 🛑 STOP for user review before committing. Commit messages: no ephemera.
+One commit each, 🛑 STOP for user review before committing. In commit messages, do NOT reference ephemera that future readers will not understand, such as step numbers, PR numbers, links to this plan.
 
 ## Phase 1 — Stabilize the creation layer
 

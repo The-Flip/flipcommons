@@ -7,7 +7,8 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
-from apps.citation.hosts import normalize_host
+from apps.citation.hosts import is_dns_host, normalize_host
+from apps.citation.psl import is_public_suffix
 from apps.citation.source_type_traits import SourceType, source_type_traits
 from apps.core.models import (
     BoundedTextField,
@@ -420,9 +421,12 @@ class CitationSourceRootDomain(TimeStampedModel):
     same recognition host. ``clean()`` canonicalizes ``host`` through
     ``hosts.normalize_host`` (lowercase, ``www.``-strip, trailing-dot), so every
     validated write — admin inline, API, patches — stores a normalized value
-    without the caller having to remember. The DB lowercase CHECK is a backstop
-    for writes that bypass validation (raw SQL / bulk), which it can only
-    partially cover (case, not ``www.``-stripping).
+    without the caller having to remember. ``clean()`` also rejects a host that
+    isn't a syntactic DNS name (an IP literal) or that is a bare public suffix
+    (``com``, ``co.uk``) — the latter would over-match every site beneath it
+    under longest-suffix recognition. The DB lowercase CHECK is a backstop for
+    writes that bypass validation (raw SQL / bulk), which it can only partially
+    cover (case, not ``www.``-stripping or the host-shape guard).
 
     **Root-only.** A domain may attach only to a root (a parentless source). A
     CHECK constraint cannot reach ``source.parent_id`` across the FK, so the
@@ -452,6 +456,27 @@ class CitationSourceRootDomain(TimeStampedModel):
     def clean(self) -> None:
         super().clean()
         self.host = normalize_host(self.host)
+        # The universal recognition-host guard, on every validated write (cite-url,
+        # admin inline, patch declare). A bare public suffix is the dangerous one:
+        # under longest-suffix matching it would resolve every unrelated site
+        # beneath it. is_reserved_tld is deliberately NOT checked here — declaring
+        # a host is curator-trusted; only the derive funnel rejects reserved TLDs.
+        if not is_dns_host(self.host):
+            raise ValidationError(
+                {
+                    "host": "Enter a valid domain name (not an IP address or malformed host)."
+                }
+            )
+        if is_public_suffix(self.host):
+            raise ValidationError(
+                {
+                    "host": (
+                        "A bare public suffix (e.g. com, co.uk) can't be a "
+                        "recognition host — it would match every site beneath it. "
+                        "Use a specific domain such as example.com."
+                    )
+                }
+            )
         if self.source_id is not None and not self.source.is_root:
             raise ValidationError(
                 {

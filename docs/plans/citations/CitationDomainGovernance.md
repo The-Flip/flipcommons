@@ -1,6 +1,10 @@
 # Plan: citation domain governance
 
-Enable **subdomain (longest-suffix) recognition matching** safely, then layer the anti-fragmentation features on top: PSL rounding of fuzzy cite URLs and a `domains:` verb for multi-host roots. It builds on the cleaned write layer ([CitationsCleanup.md](CitationsCleanup.md)) and turns on the subdomain matching that [WebCitationDomainDisablement.md](WebCitationDomainDisablement.md) shipped dormant.
+Enable **subdomain (longest-suffix) recognition matching** safely, then layer the anti-fragmentation features on top: PSL rounding of fuzzy cite URLs and a `domains:` verb for multi-host roots.
+
+## Context
+
+This builds on the cleaned write layer ([CitationsCleanup.md](CitationsCleanup.md)) and turns on the subdomain matching that [WebCitationDomainDisablement.md](WebCitationDomainDisablement.md) shipped dormant.
 
 This supersedes Phase 2 of [WebCitationDomains2.md](WebCitationDomains2.md) (P2.1–P2.4), re-homed and reordered around one fact that changed after it was written: **subdomain matching is no longer live.** [WebCitationDomainDisablement.md](WebCitationDomainDisablement.md) shipped _exact_ host matching (current prod behavior) with the suffix machinery built but unused, precisely because enabling it without a guard is a footgun. So this plan's first job is to install that guard and flip matching on — together.
 
@@ -35,21 +39,23 @@ This plan rides on the foundation the disablement and cleanup straightened, so e
 
 ## The commit sequence
 
-Dependency-ordered. 🛑 STOP after each for review before committing. Commit messages: no ephemera.
+Sections are in build order, one commit each. 🛑 STOP after each for review before committing. In commit messages, do NOT reference ephemera that future readers will not understand, such as step numbers, PR numbers, links to this plan.
 
-### G1 — PSL + host predicates — `pyproject.toml`, `hosts.py`
+### ✅ DONE: G1 — host predicates (pure) + the PSL boundary (isolated) — `pyproject.toml`, `hosts.py`, `psl.py`
 
-WebCitationDomains2 P2.1. Pure additions to `hosts.py`; no caller yet.
+WebCitationDomains2 P2.1. Pure additions; no caller yet. **Split by dependency**: the pure string predicates extend `hosts.py`; the two PSL-backed functions live in a **new `psl.py`**, so `hosts.py` keeps its stated "model-free and dependency-free (no Public Suffix List)" contract ([hosts.py:1-14](backend/apps/citation/hosts.py#L1-L14)) and the recognition read path — which imports `hosts.py` — never pulls the snapshot in transitively.
 
-- Add `publicsuffixlist` — `uv add publicsuffixlist==<pinned>`, commit `uv.lock` (CI runs `uv sync --frozen`). Per-module `[[tool.mypy.overrides]]`, not a global flag. Renovate/dependabot entry — a snapshot rots.
-- `is_public_suffix(host: Host) -> bool` and `registrable_domain(host: Host) -> Host | None` — `Host` in/out. Build `PublicSuffixList` **once at module load** (the single `Any` boundary). **Honor the PRIVATE section** (`github.io` stays a public suffix → `foo.github.io` is one whole site). `accept_unknown=True` — fail open on a gTLD newer than the bundled snapshot.
-- `is_dns_host(host: Host) -> bool` — syntactic only: reject IP literals (`ipaddress`, bracket-stripped `::1`); dot-separated labels (1–63 chars, ≥1 dot, no leading/trailing hyphen, TLD not all-numeric). Pin the charset ASCII `[a-z0-9-]`, **not** `str.isalnum()` (unicode-true). ASCII-only accepts punycode, rejects raw-unicode IDN (a known limitation).
-- `is_reserved_tld(host: Host) -> bool` — rightmost label in a frozen RFC-6761/6762 set (`localhost`, `invalid`, `test`, `example`, `local`). A standards constant, not a denylist.
+- Add `publicsuffixlist` — `uv add publicsuffixlist==<pinned>`, commit `uv.lock` (CI runs `uv sync --frozen`). Per-module `[[tool.mypy.overrides]]`, not a global flag. Pinned exactly (`==`): the version _is_ the bundled snapshot, so it moves only via a reviewed bump. The repo's `.github/dependabot.yml` already covers it (backend `pip` group, `*` pattern) — a snapshot rots otherwise.
+- **`hosts.py` (pure, no new dep):**
+  - `is_dns_host(host: Host) -> bool` — syntactic only: reject IP literals (`ipaddress`, bracket-stripped `::1`); dot-separated labels (1–63 chars, ≥1 dot, no leading/trailing hyphen, TLD not all-numeric). Pin the charset ASCII `[a-z0-9-]`, **not** `str.isalnum()` (unicode-true). ASCII-only accepts punycode, rejects raw-unicode IDN (a known limitation).
+  - `is_reserved_tld(host: Host) -> bool` — rightmost label in a frozen RFC-6761/6762 set (`localhost`, `invalid`, `test`, `example`, `local`). A standards constant, not a denylist.
+- **`psl.py` (new — the single PSL/`Any` boundary):** `is_public_suffix(host: Host) -> bool` and `registrable_domain(host: Host) -> Host | None` — `Host` in/out. Build `PublicSuffixList` **once at module load**. **Honor the PRIVATE section** (`github.io` stays a public suffix → `foo.github.io` is one whole site). `accept_unknown=True` — fail open on a gTLD newer than the bundled snapshot. One-way import: `psl` → `hosts` (for `Host`), never back. `models.clean()` (`G2`) imports `is_public_suffix` from here; `extractors.py` (recognition) imports only `hosts.py` and stays PSL-free.
+- **Import-linter contract** — forbid `apps.citation.hosts` and `apps.citation.extractors` from importing `apps.citation.psl`, so the boundary is enforced, not just documented. **Direct-only** (`allow_indirect_imports`): `G2`'s `clean()` puts `models → psl`, and `extractors → models`, so the indirect `extractors → models → psl` edge is legitimate; only a _direct_ read-path dependency on the PSL is the leak.
 - **Tests (no DB):** each helper; the two-directional `github.io` canary (`foo.github.io` whole, `github.io` a suffix); the `registrable_domain(h) is None ⟺ is_public_suffix(h)` equivalence (the funnel and `clean()` both lean on it — pin it against a snapshot bump).
 
 🛑 STOP.
 
-### G2 — the universal `clean()` guard (the safety prerequisite) — `models.py`
+### ✅ DONE: G2 — the universal `clean()` guard (the safety prerequisite) — `models.py`
 
 The safety half of WebCitationDomains2 P2.2. Lands **before** `G3` and never ships without it.
 
@@ -60,7 +66,7 @@ The safety half of WebCitationDomains2 P2.2. Lands **before** `G3` and never shi
 
 🛑 STOP.
 
-### G3 — enable subdomain matching — `extractors.py`, tests
+### ✅ DONE: G3 — enable subdomain matching — `extractors.py`, tests
 
 Reverse WebCitationDomainDisablement's DISABLE1: re-point `recognize_url` step 3 at the dormant suffix helpers. Safe now because `G2` rejects public-suffix recognition hosts.
 
@@ -71,11 +77,11 @@ Reverse WebCitationDomainDisablement's DISABLE1: re-point `recognize_url` step 3
 
 🛑 STOP.
 
-### G4 — the funnel + cite-url rounding — `hosts.py`, `api.py`
+### ✅ DONE: G4 — the funnel + cite-url rounding — `psl.py`, `api.py`
 
 The funnel half of WebCitationDomains2 P2.2 + P2.3. Anti-fragmentation: a contributor pasting a fuzzy subdomain URL with **no** existing root mints a root at the _registrable domain_, not the bare subdomain, so future cites under the same site collapse to one root.
 
-- `root_host_from_url(url) -> Host` in `hosts.py`, HTTP-free: `urlparse(url).hostname` → `normalize_host` → `is_dns_host` → `is_reserved_tld` reject → `registrable_domain` (`None` = bare public suffix → reject) → return the rounded `Host`. Each gate raises a typed `HostError(reason)` — never `HttpError`. Kept pure for unit-testability and one documented validate-before-round order.
+- `root_host_from_url(url) -> Host` in `psl.py` (it composes `registrable_domain`, so it lives with the PSL boundary, not in pure `hosts.py`), HTTP-free: `urlparse(url).hostname` → `normalize_host` → `is_dns_host` → `is_reserved_tld` reject → `registrable_domain` (`None` = bare public suffix → reject) → return the rounded `Host`. Each gate raises a typed `HostError(reason)` — never `HttpError`. Kept pure for unit-testability and one documented validate-before-round order.
 - `cite-url`'s no-match branch ([api.py:445](backend/apps/citation/api.py#L445)): `try: host = root_host_from_url(url) except HostError → HttpError(422, …)`, at the **top**, before any write; synthesize `https://{host}/`; mint the `CitationSourceRootDomain` at `host`; `create_web_child` under it (the cleanup C4 leaf). The funnel's only caller — the patch path _raises_ on no match, it never derives.
 - **Migrate the `cite-url` rooting tests off `.example`** (the funnel `HostError`s reserved TLDs) → real registrable domains. Declare-path / `recognize_url` `.example` fixtures don't hit the funnel and stay.
 - **Tests:** no-match rounds `s4.american-pinball.com/…` → an `american-pinball.com` root (assert `CitationSourceRootDomain.host` **and** synthesized `homepage.url == "https://american-pinball.com/"`); 422 on IP / reserved-TLD / bare-suffix before any write.
@@ -95,7 +101,8 @@ WebCitationDomains2 P2.4. A diff, not a rebuild: `_roots_owning_hosts`, `_ensure
 
 ## Decisions
 
-- **Recognition is longest-suffix and PSL-free.** Rounding (PSL) is a write-time concern, in the funnel only (`G4`). The read path (`G3`) never consults the PSL — it suffix-matches stored hosts, every one of which is canonical-from-`cite-url` or verbatim-from-a-curator, so dedup stays exact-host.
+- **Recognition is longest-suffix and PSL-free.** Rounding (PSL) is a write-time concern, in the funnel only (`G4`). The read path (`G3`) never consults the PSL — it suffix-matches stored hosts, every one of which is canonical-from-`cite-url` or verbatim-from-a-curator, so dedup stays exact-host. **Enforced by import-linter, not convention:** the PSL lives in `psl.py` (`G1`); a `forbidden` contract bars `hosts` and `extractors` from importing it (direct-only), so the read path can't accidentally grow a PSL dependency.
+- **Reserved-TLD reject is funnel-only — declare is trusted.** `G4`'s funnel rejects RFC special-use TLDs (`.test`, `.example`, …) because it ingests untrusted contributor paste; `G2`'s `clean()` does **not**, because declaring a host is curator/admin gardening (the threat model below). The only cost is a curator could declare a `.test` host that can never match a real cite — a dead row, harmless. This asymmetry is also what lets the existing declare-path / `recognize_url` `.example` test fixtures stand (only the `cite-url` rooting tests migrate off `.example`, `G4`).
 - **Own the recognition host as a fact** (`CitationSourceRootDomain`), decoupled from the display `homepage` link. Set at creation; thereafter independent of display-link edits. A root's recognition hosts are the `homepage:` host (if any) ∪ the `domains:` list (declare), or the rounded host (`cite-url` derive). Never read back out of a link.
 - **`accept_unknown=True`** for `registrable_domain` — fail open on a TLD newer than the bundled PSL snapshot. `is_reserved_tld` still rejects RFC special-use names, so the only accepted-junk case is a genuinely-unknown **real** gTLD — intended.
 - **Right-size to the threat model.** Volunteer-run museum catalog, Activity-gated contributors, admin gardening — not a hostile public API. `clean()` is the gate for every real writer; no CHECK constraints, re-normalizing migration or audit migration.
@@ -104,7 +111,7 @@ WebCitationDomains2 P2.4. A diff, not a rebuild: `_roots_owning_hosts`, `_ensure
 
 - **Asset hosts on a different registrable domain** (a third-party CDN outside the publisher's domain) won't suffix-match — longest-suffix only collapses within one registrable domain. Fix: a `domains:` row (`G5`) or an admin-inline domain.
 - **Non-PSL "subdomain-per-publisher" platforms** collapse to one shared registrable-domain root under `cite-url` rounding until a curator splits them with `domains:` rows.
-- **A genuinely-unknown real gTLD** rounds via `accept_unknown=True` rather than 422-ing — accepted fail-open; the renovate bump keeps the snapshot current.
+- **A genuinely-unknown real gTLD** rounds via `accept_unknown=True` rather than 422-ing — accepted fail-open; the dependabot snapshot bump keeps the list current.
 - **Raw-unicode IDN hosts are rejected** (`is_dns_host` is ASCII-only) — an internationalized recognition host must be punycode (`xn--…`). Revisit (`idna` in `normalize_host`) only if a real publisher needs it.
 - **Admin "promote a subdomain into its own root" gardening tool** — creates a more-specific root and reparents the children that route to it. Orthogonal to _declaring_ a host; this is _reparenting_ at gardening time. Until then, creating a more-specific root leaves existing children under the ancestor (a temporary split).
 
@@ -124,5 +131,17 @@ make mypy && make quality
 uv sync --frozen            # G1 adds publicsuffixlist; the lockfile must satisfy a frozen sync
 ```
 
-- **Before enabling the flip on prod** (`G3`): spot-check that every existing `CitationSourceRootDomain.host` value is non-public-suffix and DNS-valid (a one-line query). Existing rows predate the `G2` guard, and turning on suffix matching is what makes a stray public-suffix row dangerous — this is the gate.
+- **Before enabling the flip on prod** (`G3`): every existing `CitationSourceRootDomain.host` must be non-public-suffix and DNS-valid. Existing rows predate the `G2` guard, and turning on suffix matching is what makes a stray public-suffix row dangerous — this is the gate. Run it (must print `OK`):
+
+```bash
+uv run python manage.py shell -c "
+from apps.citation.models import CitationSourceRootDomain
+from apps.citation.hosts import Host, is_dns_host
+from apps.citation.psl import is_public_suffix
+bad = [d.host for d in CitationSourceRootDomain.objects.all()
+       if is_public_suffix(Host(d.host)) or not is_dns_host(Host(d.host))]
+print('UNSAFE — do not flip G3:', bad) if bad else print('OK: all recognition hosts safe to flip')
+"
+```
+
 - **Dev rebuild:** reset the dev DB, `migrate`, re-apply patches — re-runs every host through the `G2` guard and every subdomain cite through `G3`'s matching. Confirm 0073 (or its interim form) resolves under suffix matching.
