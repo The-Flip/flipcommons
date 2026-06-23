@@ -166,10 +166,10 @@ class TestRootDomainRecognition:
         assert rec.parent_id == ap.id
 
     def test_public_suffix_cannot_be_seeded_so_no_overmatch(self, db):
-        # Ties the G2 guard to G3's matching: longest-suffix matching would let a
-        # bare public-suffix host swallow every site beneath it — but clean()
-        # forbids seeding one, so that root can't exist. Declaring "co.uk" is
-        # rejected, and an unrelated *.co.uk cite stays unrecognized.
+        # Ties the clean() guard to suffix matching: longest-suffix matching
+        # would let a bare public-suffix host swallow every site beneath it — but
+        # clean() forbids seeding one, so that root can't exist. Declaring "co.uk"
+        # is rejected, and an unrelated *.co.uk cite stays unrecognized.
         root = CitationSource.objects.create(name="Bad", source_type="web")
         with pytest.raises(ValidationError):
             CitationSourceRootDomain(source=root, host="co.uk").full_clean()
@@ -188,6 +188,9 @@ class TestRootDomainRecognition:
             # suffix is the seeded american-pinball.com — must NOT match.
             "https://www..american-pinball.com/manual.pdf",
             "https://foo_bar.american-pinball.com/x",  # underscore label
+            # Too malformed for urlparse itself (unterminated IPv6 bracket) — it
+            # raises ValueError; recognition must abstain, not propagate it.
+            "https://[::1/american-pinball.com",
         ],
     )
     def test_malformed_host_is_not_recognized(self, db, url):

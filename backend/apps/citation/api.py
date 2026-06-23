@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import asdict
-from typing import Protocol, cast
-from urllib.parse import urlparse
+from typing import Protocol, assert_never, cast
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
@@ -35,12 +34,12 @@ from .extractors import (
     get_or_create_scheme_child,
     recognize_url,
 )
-from .hosts import normalize_host
 from .models import (
     CitationSource,
     CitationSourceLink,
     CitationSourceRootDomain,
 )
+from .psl import HostError, HostRejection, root_host_from_url
 from .schemas import (
     CitationCiteUrlSchema,
     CitationExtractDraftSchema,
@@ -334,20 +333,47 @@ def _mint_web_child(
         raise HttpError(422, _validation_detail(exc)) from exc
 
 
+def _host_error_detail(reason: HostRejection) -> str:
+    """The 422 message for a funnel rejection. Exhaustive over ``HostRejection``."""
+    match reason:
+        case HostRejection.NO_HOST:
+            return "That URL has no host to create a site from."
+        case HostRejection.NOT_DNS:
+            return (
+                "That URL's host isn't a domain name — an IP address or malformed "
+                "host can't root a site."
+            )
+        case HostRejection.RESERVED_TLD:
+            return (
+                "That URL's host is a reserved test domain, so it can't root a "
+                "real site."
+            )
+        case HostRejection.PUBLIC_SUFFIX:
+            return (
+                "That URL's host is a public suffix (like gov.uk); cite a page on "
+                "a specific site under it instead."
+            )
+    assert_never(reason)
+
+
 def _create_root_and_child(
     url: str, data: CitationCiteUrlSchema, user: User
 ) -> CitationSource:
     """Create a new site root (homepage link + recognition domain) and a child.
 
-    Roots at the normalized pasted host. The root-create runs in a savepoint: on
-    a concurrent ``host`` ``unique`` violation the savepoint rolls back, the URL
-    is re-recognized against the now-committed root, and the child nests under
-    it.
+    Roots at the URL's **registrable domain** — :func:`root_host_from_url` rounds
+    a fuzzy subdomain paste (``s4.american-pinball.com``) down to one root
+    (``american-pinball.com``) so future cites under the same site collapse
+    together, and 422s a host that can't root a site (no host, IP literal,
+    reserved TLD, bare public suffix) before any write. The root-create then runs
+    in a savepoint: on a concurrent ``host`` ``unique`` violation the savepoint
+    rolls back, the URL is re-recognized against the now-committed root, and the
+    child nests under it.
     """
-    hostname = urlparse(url).hostname
-    if hostname is None:
-        raise HttpError(422, "That URL has no host to create a site from.")
-    host = normalize_host(hostname)
+    try:
+        host = root_host_from_url(url)
+    except HostError as exc:
+        raise HttpError(422, _host_error_detail(exc.reason)) from exc
 
     try:
         with transaction.atomic():
@@ -404,7 +430,8 @@ def cite_url(
     re-recognized server-side and routed to one of four outcomes, all returning
     the **web child** to cite (never the abstract root):
 
-    * **no match** → create the site root (at the raw host) and a page child;
+    * **no match** → create the site root (at the URL's registrable domain, or
+      422 if the host can't root a site) and a page child;
     * **domain match** → create a page child under the existing root, ignoring
       ``site_*`` (the root already exists and is never renamed from here);
     * **exact child** → reuse it;

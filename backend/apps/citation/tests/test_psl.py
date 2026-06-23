@@ -9,7 +9,13 @@ surfaces here rather than silently in production recognition.
 import pytest
 
 from apps.citation.hosts import Host, is_dns_host
-from apps.citation.psl import is_public_suffix, registrable_domain
+from apps.citation.psl import (
+    HostError,
+    HostRejection,
+    is_public_suffix,
+    registrable_domain,
+    root_host_from_url,
+)
 
 
 class TestIsPublicSuffix:
@@ -100,3 +106,59 @@ def test_registrable_none_iff_public_suffix(host):
     # this list. This guard fails loudly if someone adds it.
     assert is_dns_host(h) or is_public_suffix(h)
     assert (registrable_domain(h) is None) == is_public_suffix(h)
+
+
+class TestRootHostFromUrl:
+    """The derive funnel: round an untrusted page URL to a storable root host."""
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            # A fuzzy subdomain paste rounds to the registrable domain, so future
+            # cites under any subdomain collapse to one root.
+            (
+                "https://s4.american-pinball.com/games/gtf/manual.pdf",
+                "american-pinball.com",
+            ),
+            ("http://american-pinball.com/", "american-pinball.com"),
+            ("https://www.american-pinball.com/x", "american-pinball.com"),
+            ("https://a.b.co.uk/page", "b.co.uk"),
+            # PRIVATE section: a per-publisher github.io site stays its own root.
+            ("https://foo.github.io/post", "foo.github.io"),
+            # Port, path and query are stripped by urlparse.hostname.
+            ("https://blog.newsite.org:8443/p?q=1", "newsite.org"),
+        ],
+    )
+    def test_rounds_to_registrable_host(self, url, expected):
+        assert root_host_from_url(url) == expected
+
+    @pytest.mark.parametrize(
+        ("url", "reason"),
+        [
+            ("https:///just-a-path", HostRejection.NO_HOST),
+            ("https://127.0.0.1/page", HostRejection.NOT_DNS),
+            ("https://[::1]/page", HostRejection.NOT_DNS),
+            # A malformed URL whose host can't be parsed (unterminated IPv6
+            # bracket) — urlparse raises ValueError; the funnel must catch it and
+            # surface a typed reason, never leak the raw exception.
+            ("https://[::1/page", HostRejection.NOT_DNS),
+            ("http://foo.test/page", HostRejection.RESERVED_TLD),
+            ("http://bar.localhost/page", HostRejection.RESERVED_TLD),
+            ("https://gov.uk/page", HostRejection.PUBLIC_SUFFIX),
+            ("https://co.uk/page", HostRejection.PUBLIC_SUFFIX),
+            # A bare single-label host (``com``) has no dot, so is_dns_host
+            # rejects it as NOT_DNS before rounding ever runs.
+            ("https://com/page", HostRejection.NOT_DNS),
+        ],
+    )
+    def test_unroundable_host_raises_typed_reason(self, url, reason):
+        with pytest.raises(HostError) as exc:
+            root_host_from_url(url)
+        assert exc.value.reason is reason
+
+    def test_reserved_tld_rejected_before_rounding(self):
+        # is_reserved_tld must run before registrable_domain — accept_unknown=True
+        # would otherwise round ``.example`` to itself instead of rejecting it.
+        with pytest.raises(HostError) as exc:
+            root_host_from_url("https://blog.newsite.example/p")
+        assert exc.value.reason is HostRejection.RESERVED_TLD

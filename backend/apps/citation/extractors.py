@@ -235,9 +235,14 @@ def _recognize_by_host(url: str) -> Recognition | None:
     (``www..american-pinball.com`` → ``.american-pinball.com`` →
     ``american-pinball.com``), so without this gate ``/search/`` would surface a
     confident-but-wrong match for garbage input. Recognition must not claim a
-    page it can't honestly resolve; the host's shape is checked once, here.
+    page it can't honestly resolve; the host's shape is checked once, here. A URL
+    too malformed for ``urlparse`` itself (an unterminated IPv6 bracket raises
+    ``ValueError``) abstains the same way.
     """
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
     if not parsed.hostname:
         return None
 

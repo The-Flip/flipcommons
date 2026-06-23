@@ -77,7 +77,7 @@ Reverse WebCitationDomainDisablement's DISABLE1: re-point `recognize_url` step 3
 
 🛑 STOP.
 
-### G4 — the funnel + cite-url rounding — `psl.py`, `api.py`
+### ✅ DONE: G4 — the funnel + cite-url rounding — `psl.py`, `api.py`
 
 The funnel half of WebCitationDomains2 P2.2 + P2.3. Anti-fragmentation: a contributor pasting a fuzzy subdomain URL with **no** existing root mints a root at the _registrable domain_, not the bare subdomain, so future cites under the same site collapse to one root.
 
