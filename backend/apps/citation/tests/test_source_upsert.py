@@ -16,6 +16,7 @@ from apps.citation.source_upsert import (
     _declared_domains_hosts,
     _declared_homepage_hosts,
     _declared_recognition_hosts,
+    detect_host_collision,
     ensure_root_source,
     validate_root_source,
 )
@@ -397,3 +398,34 @@ class TestValidateRootSourceHosts:
                 domains=["oldpin.com", "twip.kineticist.com"],
             )
         )
+
+
+class TestDetectHostCollision:
+    """The committed-state collision preview the dry-run path emits."""
+
+    def test_hosts_spanning_two_roots_returns_warning_naming_both(self):
+        a = CitationSource.objects.create(name="Root A", source_type="web")
+        CitationSourceRootDomain.objects.create(source=a, host="a.example")
+        b = CitationSource.objects.create(name="Root B", source_type="web")
+        CitationSourceRootDomain.objects.create(source=b, host="b.example")
+
+        warning = detect_host_collision(
+            _node("Spans Two", domains=["a.example", "b.example"])
+        )
+        assert warning is not None
+        assert "Root A" in warning
+        assert "Root B" in warning
+
+    def test_single_owning_root_is_not_a_collision(self):
+        """One owner means the node resolves to it — normal dedup, no warning."""
+        owner = CitationSource.objects.create(name="Owner", source_type="web")
+        CitationSourceRootDomain.objects.create(source=owner, host="owned.example")
+        assert (
+            detect_host_collision(
+                _node("X", domains=["owned.example", "fresh.example"])
+            )
+            is None
+        )
+
+    def test_unowned_hosts_are_not_a_collision(self):
+        assert detect_host_collision(_node("X", domains=["fresh.example"])) is None

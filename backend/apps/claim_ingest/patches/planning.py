@@ -21,7 +21,11 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.citation.source_node import SourceNode
-from apps.citation.source_upsert import ensure_root_source, validate_root_source
+from apps.citation.source_upsert import (
+    detect_host_collision,
+    ensure_root_source,
+    validate_root_source,
+)
 from apps.claim_ingest.patches._types import (
     ClaimKey,
     PatchError,
@@ -54,6 +58,7 @@ from apps.claim_ingest.patches.parsing import (
 from apps.claim_ingest.plan import (
     CitationRef,
     CiteHandle,
+    DryRunPreviewHook,
     Handle,
     IngestPlan,
     Namespace,
@@ -881,6 +886,11 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
     appends a pre-write hook that additively get-or-creates the sources when the
     plan is applied. The upsert itself never errors on a collision (see
     ``ensure_root_source``); only author-controllable shape/value errors raise.
+
+    Also registers a dry-run preview hook so a host collision (recognition hosts
+    spanning >1 root → a whole-node skip) surfaces as a warning at ``--dry-run``,
+    not only at live apply. The two hooks are mutually exclusive by path, so the
+    collision never double-warns.
     """
     if not sources:
         return
@@ -892,6 +902,7 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
                 f"sources[{i}] ({node['name']!r}): {_format_validation_error(exc)}"
             ) from exc
     plan.pre_write_hooks.append(_make_sources_hook(sources))
+    plan.dry_run_preview_hooks.append(_make_sources_preview_hook(sources))
 
 
 def _format_validation_error(exc: ValidationError) -> str:
@@ -922,5 +933,24 @@ def _make_sources_hook(sources: list[SourceNode]) -> PreWriteHook:
             else:
                 report.sources_skipped += 1
             report.source_links_created += result.links_created
+
+    return hook
+
+
+def _make_sources_preview_hook(sources: list[SourceNode]) -> DryRunPreviewHook:
+    """Build the dry-run preview hook for a patch's citation sources.
+
+    Read-only counterpart to ``_make_sources_hook``: a pure committed-state
+    ``detect_host_collision`` read per node, appending the spans-two-roots warning
+    so an author sees the whole-node skip at ``--dry-run`` before publishing. The
+    live path runs the authoritative ``_make_sources_hook`` instead, so the
+    collision warns exactly once on each path.
+    """
+
+    def hook(report: RunReport) -> None:
+        for node in sources:
+            warning = detect_host_collision(node)
+            if warning is not None:
+                report.warnings.append(warning)
 
     return hook

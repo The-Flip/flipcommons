@@ -27,7 +27,11 @@ from apps.catalog.models import (
     Title,
 )
 from apps.catalog.resolve import resolve_all_corporate_entity_locations
-from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.models import (
+    CitationSource,
+    CitationSourceLink,
+    CitationSourceRootDomain,
+)
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import (
     EditEntry,
@@ -2577,6 +2581,62 @@ def test_sources_domains_minted_end_to_end():
         "oldpin.com",
         "twip.kineticist.com",
     }
+
+
+# -- Dry-run collision preview (the committed-state host-collision warning) --
+
+
+def _spanning_two_roots_patch() -> str:
+    """Create two roots owning a.example / b.example and return a patch whose
+    node's domains span both — the spans-two-roots collision precondition. NB:
+    mutates the DB (the two roots) in addition to returning the patch text."""
+    a = CitationSource.objects.create(name="Root A", source_type="web")
+    CitationSourceRootDomain.objects.create(source=a, host="a.example")
+    b = CitationSource.objects.create(name="Root B", source_type="web")
+    CitationSourceRootDomain.objects.create(source=b, host="b.example")
+    return (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: Spans Two\n"
+        "    source_type: web\n"
+        "    domains: [a.example, b.example]\n"
+    )
+
+
+def test_sources_collision_reported_at_dry_run_naming_both_roots():
+    # A2: an author validating against the dev DB sees the whole-node skip before
+    # publishing — the live upsert hook never runs at --dry-run, the preview does.
+    text = _spanning_two_roots_patch()
+    sources_before = CitationSource.objects.count()
+    report = _apply(text, patch_id="0001-collide", dry_run=True)  # must not raise
+    collisions = [w for w in report.warnings if "different roots" in w]
+    assert len(collisions) == 1  # the preview warns once, never doubles
+    assert "Root A" in collisions[0]
+    assert "Root B" in collisions[0]
+    assert CitationSource.objects.count() == sources_before  # nothing written
+
+
+def test_sources_collision_warns_exactly_once_at_live_apply():
+    text = _spanning_two_roots_patch()
+    report = _apply(text, patch_id="0001-collide")
+    collisions = [
+        w for w in report.warnings if "different roots" in w and "Spans Two" in w
+    ]
+    assert len(collisions) == 1
+    assert report.sources_skipped == 1
+    assert not CitationSource.objects.filter(name="Spans Two").exists()
+
+
+def test_sources_clean_declaration_dry_runs_quietly():
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: Fresh\n"
+        "    source_type: web\n"
+        "    domains: [fresh.example]\n"
+    )
+    report = _apply(text, patch_id="0001-clean", dry_run=True)
+    assert not any("different roots" in w for w in report.warnings)
 
 
 def test_sources_semantic_invalidity_caught_at_dry_run():

@@ -236,6 +236,24 @@ def _roots_owning_hosts(hosts: Sequence[Host]) -> list[CitationSource]:
     return list({row.source_id: row.source for row in rows}.values())
 
 
+def _spans_two_roots_warning(name: str, host_roots: Sequence[CitationSource]) -> str:
+    """The warning for a node whose recognition hosts span >1 existing root.
+
+    Such a node skips whole at apply — picking one owner and minting the others
+    would trip the ``host`` ``unique`` and wedge the queue. Names each owning root
+    (the merge backlog until citation gardening ships). Shared by the apply-path
+    warn-skip (:func:`ensure_root_source`) and the dry-run preview
+    (:func:`detect_host_collision`) so the two channels never diverge.
+    """
+    owners = ", ".join(sorted(repr(r.name) for r in host_roots))
+    return (
+        f"Citation source {name!r} declares recognition hosts already owned "
+        f"by {len(host_roots)} different roots ({owners}); skipped the node "
+        f"(no writes) to avoid a domain collision. Resolve the duplicate "
+        f"roots first."
+    )
+
+
 def _ensure_root_domains(
     source: CitationSource, hosts: Sequence[Host], *, warnings: list[str]
 ) -> None:
@@ -322,6 +340,32 @@ def validate_root_source(node: SourceNode) -> None:
         domain.full_clean(exclude=["source"], validate_unique=False)
 
 
+def detect_host_collision(node: SourceNode) -> str | None:
+    """Committed-state recognition-host collision for one node, or ``None``.
+
+    The dry-run preview of the whole-node skip :func:`ensure_root_source` would
+    warn on at apply: a pure :func:`_roots_owning_hosts` read returning the
+    spans-two-roots warning when the node's recognition hosts are owned by >1
+    distinct root. An author validating against the dev DB sees the skip before
+    publishing instead of only at live apply.
+
+    **Committed state only — never a write simulation.** This deliberately does
+    *not* account for a root an earlier node in the same plan will create: that
+    would mean predicting the plan's own unwritten mutations (the
+    ``_apply_dry_run`` carve-out pathology). A host that would attach to such a
+    not-yet-created root won't flag here, and that false negative is accepted —
+    the apply-time warn-skip stays the backstop. Keeping it a plain ``SELECT`` is
+    what keeps this a preview, not a simulator. Returns the warning string (the
+    apply path appends the identical one via :func:`_spans_two_roots_warning`) so
+    the caller decides the channel; emits no ``PatchError`` (a collision is a
+    state conflict, not a malformed patch).
+    """
+    host_roots = _roots_owning_hosts(_declared_recognition_hosts(node))
+    if len(host_roots) > 1:
+        return _spans_two_roots_warning(node["name"], host_roots)
+    return None
+
+
 def ensure_root_source(
     node: SourceNode,
     *,
@@ -360,13 +404,7 @@ def ensure_root_source(
     # Resolve by recognition host first; host identity wins over the name key.
     host_roots = _roots_owning_hosts(recognition_hosts)
     if len(host_roots) > 1:
-        owners = ", ".join(sorted(repr(r.name) for r in host_roots))
-        warnings.append(
-            f"Citation source {name!r} declares recognition hosts already owned "
-            f"by {len(host_roots)} different roots ({owners}); skipped the node "
-            f"(no writes) to avoid a domain collision. Resolve the duplicate "
-            f"roots first."
-        )
+        warnings.append(_spans_two_roots_warning(name, host_roots))
         return SourceUpsertResult(source_created=False, links_created=0)
 
     obj: CitationSource | None
