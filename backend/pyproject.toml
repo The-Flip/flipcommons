@@ -102,10 +102,56 @@ quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
 
+[tool.mypy]
+python_version = "3.14"
+strict = true
+plugins = ["mypy_django_plugin.main"]
+explicit_package_bases = true
+exclude = [
+    "migrations/",
+    "\\.venv/",
+    "^media/",  # MEDIA_ROOT at backend/media — anchored so apps/media/ is still type-checked
+    "^cache/",
+]
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Barrel __init__.py files re-export symbols via `from X import Y`. Treat these
+# as intentional public API rather than requiring `__all__` on every barrel.
+implicit_reexport = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings"
+strict_settings = true
+
+# Migrations are generated; don't type-check them.
+[[tool.mypy.overrides]]
+module = "*.migrations.*"
+ignore_errors = true
+
+# Tests and conftest: relax annotation requirements for fixtures. Type correctness
+# of the code under test still matters; per-function annotations in tests do not.
+[[tool.mypy.overrides]]
+module = ["*.tests.*", "tests.*", "conftest"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_decorators = false
+disallow_untyped_calls = false
+
+# Third-party libraries without py.typed markers or upstream stubs.
+# Suppresses import-untyped errors at the import site; the libraries themselves
+# are still treated as Any at use sites.
+[[tool.mypy.overrides]]
+module = ["pillow_heif", "constance", "constance.*", "publicsuffixlist", "publicsuffixlist.*"]
+ignore_missing_imports = true
+
 # Import boundary enforcement — see docs/AppBoundaries.md for the prose spec.
 # Run with `lint-imports` (wired into scripts/lint).
 [tool.importlinter]
 root_packages = ["apps"]
+
+# ===========================================================================
+# Cross-app boundaries
+# ===========================================================================
 
 # The vertical dependency spine. Higher tiers may import lower ones; lower may
 # not import higher; pipe-separated names are independent siblings at one level.
@@ -139,182 +185,7 @@ ignore_imports = [
     "apps.core.middleware.sentry_scope -> apps.accounts.models",
 ]
 
-# Media internals (selectors/processing/storage/schemas/helpers/models) are
-# peer-isolated from the citation/provenance data apps. The one sanctioned crack
-# is media.models -> provenance.models for ClaimControlledModel; because this is
-# a forbidden contract (indirect imports counted), the ignore_imports below
-# severs that edge for every source — including selectors/helpers, which reach
-# media.models transitively.
-[[tool.importlinter.contracts]]
-name = "Media internals do not reach into the data apps"
-type = "forbidden"
-source_modules = [
-    "apps.media.selectors",
-    "apps.media.processing",
-    "apps.media.storage",
-    "apps.media.schemas",
-    "apps.media.helpers",
-    "apps.media.models",
-]
-forbidden_modules = [
-    "apps.provenance",
-    "apps.citation",
-]
-ignore_imports = [
-    # Surgical exception: media_attachment is a claim field, so every
-    # MediaSupportedModel is structurally a ClaimControlledModel.
-    "apps.media.models.base -> apps.provenance.models",
-]
-
-# The reverse direction: the data apps must not depend on media. Direct-only:
-# the indirect chain provenance -> catalog -> media is the provenance -> catalog
-# baseline issue above, not a provenance -> media dependency.
-[[tool.importlinter.contracts]]
-name = "Data apps do not depend on media"
-type = "forbidden"
-allow_indirect_imports = "true"
-source_modules = [
-    "apps.provenance",
-    "apps.citation",
-    "apps.claim_edit",
-    "apps.claim_ingest",
-]
-forbidden_modules = ["apps.media"]
-
-# Domain models are the bottom of each app's internal stack: they must not reach
-# up into the HTTP/serialization layer. Direct-only — an indirect models -> X ->
-# api chain is X's problem, caught by the api-leaf contract below.
-[[tool.importlinter.contracts]]
-name = "Domain models do not import the api/schema layer"
-type = "forbidden"
-allow_indirect_imports = "true"
-source_modules = [
-    "apps.core.models",
-    "apps.accounts.models",
-    "apps.catalog.models",
-    "apps.provenance.models",
-    "apps.citation.models",
-    "apps.media.models",
-    "apps.kiosk.models",
-]
-forbidden_modules = [
-    "apps.core.api",
-    "apps.accounts.api",
-    "apps.catalog.api",
-    "apps.provenance.api",
-    "apps.citation.api",
-    "apps.media.api",
-    "apps.kiosk.api",
-    "apps.core.schemas",
-    "apps.accounts.schemas",
-    "apps.citation.schemas",
-    "apps.media.schemas",
-    "apps.provenance.schemas",
-]
-
-# psl.py is the lone Public Suffix List gateway. The pure hosts module must stay
-# dependency-free, and the recognition read path (extractors) must resolve by
-# exact-stored-host suffix match only — never by consulting the PSL. So neither
-# may import psl. Direct-only: models.py legitimately imports psl for the
-# write-time clean() guard, and extractors imports models, so the indirect
-# extractors -> models -> psl edge is fine — only a *direct* dependency is the
-# leak this forbids.
-[[tool.importlinter.contracts]]
-name = "hosts and the recognition read path stay PSL-free"
-type = "forbidden"
-allow_indirect_imports = "true"
-source_modules = [
-    "apps.citation.hosts",
-    "apps.citation.extractors",
-]
-forbidden_modules = ["apps.citation.psl"]
-
-# The citation app's internal module stack, top to bottom. Higher layers may
-# import lower; a lower layer importing a higher one is an inversion. Modules
-# sharing a layer (pipe-separated) are independent — they may not import each
-# other. This pins the architecture that holds today: the data layer (models)
-# imports nothing above it, and the domain services stay mutually decoupled, so a
-# future stray edge fails CI instead of sliding in. It does NOT subsume the
-# PSL-free contract above — layers permits a higher module (extractors) to import
-# a lower one (psl); only the forbidden contract bans that specific edge.
-[[tool.importlinter.contracts]]
-name = "Citation internal layers"
-type = "layers"
-containers = ["apps.citation"]
-layers = [
-    "api | admin",
-    "url_extraction",
-    "extractors | extraction | seeding | schemas",
-    "models",
-    "psl",
-    "hosts | source_type_traits | safe_fetch",
-]
-
-# Test-only helpers must never be imported by production code. test_factories
-# encode test-fixture invariants; importing them from app code ships test
-# scaffolding into the runtime path. One contract per factory: a forbidden
-# module cannot be a descendant of its source, so each sources all apps EXCEPT
-# the one that owns the factory (which covers every cross-app leak; a same-app
-# self-import is the only residual gap and is trivially caught in review).
-[[tool.importlinter.contracts]]
-name = "Production code does not import accounts test factories"
-type = "forbidden"
-source_modules = [
-    "apps.core",
-    "apps.catalog",
-    "apps.claim_edit",
-    "apps.claim_ingest",
-    "apps.citation",
-    "apps.provenance",
-    "apps.media",
-    "apps.kiosk",
-]
-forbidden_modules = ["apps.accounts.test_factories"]
-ignore_imports = ["apps.*.tests.** -> apps.accounts.test_factories"]
-
-[[tool.importlinter.contracts]]
-name = "Production code does not import provenance test factories"
-type = "forbidden"
-source_modules = [
-    "apps.core",
-    "apps.accounts",
-    "apps.catalog",
-    "apps.claim_edit",
-    "apps.claim_ingest",
-    "apps.citation",
-    "apps.media",
-    "apps.kiosk",
-]
-forbidden_modules = ["apps.provenance.test_factories"]
-ignore_imports = ["apps.*.tests.** -> apps.provenance.test_factories"]
-
-# Catalog's whole internal stack as one exhaustive layered contract: api/admin/
-# management on top (leaf consumers — the domain must not import them), down
-# through the read/claim/signal tier and the walk/cache/service tier, to
-# models/authz, and finally the domain-neutral `engine` at the bottom. `engine`
-# sits below `models` because the concrete alias models in `models/` subclass
-# `engine.models.AliasModel` (models → engine, the sanctioned downward edge); the
-# generic HTTP-surface substrate the domain mounts also lives there. The former
-# `naming` and `_alias_registry` layers are gone — both emigrated into `engine`.
-# `exhaustive = true` requires every catalog submodule to appear as a layer (or
-# in exhaustive_ignores): a new module left unplaced fails the build, closing the
-# gaps the old enumerated "api is a leaf" forbidden left (it never covered
-# _walks / admin). This subsumes that contract AND documents the domain layering
-# in one place. Both catalog and core have acyclic top-level graphs, which is
-# what makes a clean layer order possible (see "Core internal layers" below).
-[[tool.importlinter.contracts]]
-name = "Catalog internal layers"
-type = "layers"
-exhaustive = true
-exhaustive_ignores = ["apps", "migrations", "tests"]
-containers = ["apps.catalog"]
-layers = [
-    "api | admin | management",
-    "claims | resolve | signals",
-    "_walks | cache | services",
-    "models | authz",
-    "engine",
-]
+# --- Inter-app boundaries outside the linear spine ---
 
 # The ingest system (apps.claim_ingest) is the bulk catalog write path — a
 # top-level consumer, not a dependency. The whole catalog domain must not import
@@ -372,20 +243,154 @@ allow_indirect_imports = "true"
 source_modules = ["apps.claim_ingest"]
 forbidden_modules = ["apps.claim_edit"]
 
-# The apply engine is the source-agnostic IR consumer: it turns an IngestPlan
-# (the carriers in apps.claim_ingest.plan) into DB writes and must not know which
-# front end built it. apps.claim_ingest.patches is the patch *adapter* — its
-# format parsing and its PatchError live there. The engine raises plain
-# ValidationError and lets _apply_one map it to PatchError, so the engine never
-# imports the adapter. That rule is asserted only in docstrings (claims.py,
-# persist.py) today; forbidding the edge makes it self-defending. Green now —
-# apply imports nothing from patches.
+# --- Media peer-isolation ---
+
+# Media internals (selectors/processing/storage/schemas/helpers/models) are
+# peer-isolated from the citation/provenance data apps. The one sanctioned crack
+# is media.models -> provenance.models for ClaimControlledModel; because this is
+# a forbidden contract (indirect imports counted), the ignore_imports below
+# severs that edge for every source — including selectors/helpers, which reach
+# media.models transitively.
 [[tool.importlinter.contracts]]
-name = "Apply engine stays source-agnostic (no patch adapter)"
+name = "Media internals do not reach into the data apps"
+type = "forbidden"
+source_modules = [
+    "apps.media.selectors",
+    "apps.media.processing",
+    "apps.media.storage",
+    "apps.media.schemas",
+    "apps.media.helpers",
+    "apps.media.models",
+]
+forbidden_modules = [
+    "apps.provenance",
+    "apps.citation",
+]
+ignore_imports = [
+    # Surgical exception: media_attachment is a claim field, so every
+    # MediaSupportedModel is structurally a ClaimControlledModel.
+    "apps.media.models.base -> apps.provenance.models",
+]
+
+# The reverse direction: the data apps must not depend on media. Direct-only:
+# the indirect chain provenance -> catalog -> media is the provenance -> catalog
+# baseline issue above, not a provenance -> media dependency.
+[[tool.importlinter.contracts]]
+name = "Data apps do not depend on media"
 type = "forbidden"
 allow_indirect_imports = "true"
-source_modules = ["apps.claim_ingest.apply"]
-forbidden_modules = ["apps.claim_ingest.patches"]
+source_modules = [
+    "apps.provenance",
+    "apps.citation",
+    "apps.claim_edit",
+    "apps.claim_ingest",
+]
+forbidden_modules = ["apps.media"]
+
+# --- Cross-cutting invariants ---
+
+# Domain models are the bottom of each app's internal stack: they must not reach
+# up into the HTTP/serialization layer. Direct-only — an indirect models -> X ->
+# api chain is X's problem, caught by the api-leaf contract below.
+[[tool.importlinter.contracts]]
+name = "Domain models do not import the api/schema layer"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.core.models",
+    "apps.accounts.models",
+    "apps.catalog.models",
+    "apps.provenance.models",
+    "apps.citation.models",
+    "apps.media.models",
+    "apps.kiosk.models",
+]
+forbidden_modules = [
+    "apps.core.api",
+    "apps.accounts.api",
+    "apps.catalog.api",
+    "apps.provenance.api",
+    "apps.citation.api",
+    "apps.media.api",
+    "apps.kiosk.api",
+    "apps.core.schemas",
+    "apps.accounts.schemas",
+    "apps.citation.schemas",
+    "apps.media.schemas",
+    "apps.provenance.schemas",
+]
+
+# Test-only helpers must never be imported by production code. test_factories
+# encode test-fixture invariants; importing them from app code ships test
+# scaffolding into the runtime path. One contract per factory: a forbidden
+# module cannot be a descendant of its source, so each sources all apps EXCEPT
+# the one that owns the factory (which covers every cross-app leak; a same-app
+# self-import is the only residual gap and is trivially caught in review).
+[[tool.importlinter.contracts]]
+name = "Production code does not import accounts test factories"
+type = "forbidden"
+source_modules = [
+    "apps.core",
+    "apps.catalog",
+    "apps.claim_edit",
+    "apps.claim_ingest",
+    "apps.citation",
+    "apps.provenance",
+    "apps.media",
+    "apps.kiosk",
+]
+forbidden_modules = ["apps.accounts.test_factories"]
+ignore_imports = ["apps.*.tests.** -> apps.accounts.test_factories"]
+
+[[tool.importlinter.contracts]]
+name = "Production code does not import provenance test factories"
+type = "forbidden"
+source_modules = [
+    "apps.core",
+    "apps.accounts",
+    "apps.catalog",
+    "apps.claim_edit",
+    "apps.claim_ingest",
+    "apps.citation",
+    "apps.media",
+    "apps.kiosk",
+]
+forbidden_modules = ["apps.provenance.test_factories"]
+ignore_imports = ["apps.*.tests.** -> apps.provenance.test_factories"]
+
+# ===========================================================================
+# Per-app internal structure (dependency order: consumers first, core last)
+# ===========================================================================
+
+# ----- catalog -----
+
+# Catalog's whole internal stack as one exhaustive layered contract: api/admin/
+# management on top (leaf consumers — the domain must not import them), down
+# through the read/claim/signal tier and the walk/cache/service tier, to
+# models/authz, and finally the domain-neutral `engine` at the bottom. `engine`
+# sits below `models` because the concrete alias models in `models/` subclass
+# `engine.models.AliasModel` (models → engine, the sanctioned downward edge); the
+# generic HTTP-surface substrate the domain mounts also lives there. The former
+# `naming` and `_alias_registry` layers are gone — both emigrated into `engine`.
+# `exhaustive = true` requires every catalog submodule to appear as a layer (or
+# in exhaustive_ignores): a new module left unplaced fails the build, closing the
+# gaps the old enumerated "api is a leaf" forbidden left (it never covered
+# _walks / admin). This subsumes that contract AND documents the domain layering
+# in one place. Both catalog and core have acyclic top-level graphs, which is
+# what makes a clean layer order possible (see "Core internal layers" below).
+[[tool.importlinter.contracts]]
+name = "Catalog internal layers"
+type = "layers"
+exhaustive = true
+exhaustive_ignores = ["apps", "migrations", "tests"]
+containers = ["apps.catalog"]
+layers = [
+    "api | admin | management",
+    "claims | resolve | signals",
+    "_walks | cache | services",
+    "models | authz",
+    "engine",
+]
 
 # The generic resolver core — scalar/bulk claim projection (_entities), its
 # coercion/FK/constraint helpers (_helpers), and the read-side payload
@@ -465,30 +470,22 @@ layers = [
     "schemas | models | naming | rich_text | walks",
 ]
 
-# Core, like catalog, is an exhaustive layered contract over its whole acyclic
-# internal stack — a new submodule left unplaced fails the build, which the old
-# enumerated "core api is a leaf" forbidden never did (it silently omitted admin,
-# checks and soft_delete). apps/migrations/tests stay exhaustive_ignores as in
-# catalog — bootstrap wiring (the AppConfig's ready() imports across layers by
-# design), generated code and test scaffolding, none meaningfully layerable.
-# Core's graph was made acyclic by moving MarkdownField down into models (it was
-# the models → markdown edge) and deleting the dead bulk_create_validated helper
-# (the validators → models edge). api/ is still a leaf — it sits at the top and
-# nothing imports back up into it — but now as one tier of the full stack.
+# ----- claim_ingest -----
+
+# The apply engine is the source-agnostic IR consumer: it turns an IngestPlan
+# (the carriers in apps.claim_ingest.plan) into DB writes and must not know which
+# front end built it. apps.claim_ingest.patches is the patch *adapter* — its
+# format parsing and its PatchError live there. The engine raises plain
+# ValidationError and lets _apply_one map it to PatchError, so the engine never
+# imports the adapter. That rule is asserted only in docstrings (claims.py,
+# persist.py) today; forbidding the edge makes it self-defending. Green now —
+# apply imports nothing from patches.
 [[tool.importlinter.contracts]]
-name = "Core internal layers"
-type = "layers"
-exhaustive = true
-exhaustive_ignores = ["apps", "migrations", "tests"]
-containers = ["apps.core"]
-layers = [
-    "api",
-    "markdown",
-    "wikilinks | middleware",
-    "admin | api_helpers | authz | autocomplete | checks | entity_types | licensing | rate_limits | sitemap | soft_delete",
-    "exceptions | models",
-    "admin_apps | admin_site | pagination | schemas | search | types | validators",
-]
+name = "Apply engine stays source-agnostic (no patch adapter)"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = ["apps.claim_ingest.apply"]
+forbidden_modules = ["apps.claim_ingest.patches"]
 
 # The patch system is a compiler front end: it lowers YAML patches to an
 # IngestPlan (the IR), which the ingest back end (apply/) executes. The split is
@@ -500,25 +497,7 @@ type = "forbidden"
 source_modules = ["apps.claim_ingest.patches"]
 forbidden_modules = ["apps.claim_ingest.apply"]
 
-# Media internal layering: a vertical stack from constants/models at the bottom
-# up to the api composition layer. `selectors` sits above the
-# storage/schemas/helpers peer-group because it composes storage + schemas into
-# wire schemas, which the peer-isolated `helpers` tier may not do. This also
-# enforces that media.api is a leaf (nothing below it imports it). The cross-app
-# media.models -> provenance.models crack is governed by the media peer-isolation
-# contract above, not here.
-[[tool.importlinter.contracts]]
-name = "Media internal layers"
-type = "layers"
-containers = ["apps.media"]
-layers = [
-    "api",
-    "authz",
-    "selectors",
-    "processing | storage | schemas | helpers",
-    "models",
-    "constants",
-]
+# ----- provenance -----
 
 # Provenance internal layering: an exhaustive acyclic internal stack, so a new
 # submodule left unplaced — or an inversion like
@@ -556,6 +535,48 @@ ignore_imports = [
     "apps.provenance.models.claim -> apps.provenance.validation",
 ]
 
+# ----- citation -----
+
+# psl.py is the lone Public Suffix List gateway. The pure hosts module must stay
+# dependency-free, and the recognition read path (extractors) must resolve by
+# exact-stored-host suffix match only — never by consulting the PSL. So neither
+# may import psl. Direct-only: models.py legitimately imports psl for the
+# write-time clean() guard, and extractors imports models, so the indirect
+# extractors -> models -> psl edge is fine — only a *direct* dependency is the
+# leak this forbids.
+[[tool.importlinter.contracts]]
+name = "hosts and the recognition read path stay PSL-free"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.citation.hosts",
+    "apps.citation.extractors",
+]
+forbidden_modules = ["apps.citation.psl"]
+
+# The citation app's internal module stack, top to bottom. Higher layers may
+# import lower; a lower layer importing a higher one is an inversion. Modules
+# sharing a layer (pipe-separated) are independent — they may not import each
+# other. This pins the architecture that holds today: the data layer (models)
+# imports nothing above it, and the domain services stay mutually decoupled, so a
+# future stray edge fails CI instead of sliding in. It does NOT subsume the
+# PSL-free contract above — layers permits a higher module (extractors) to import
+# a lower one (psl); only the forbidden contract bans that specific edge.
+[[tool.importlinter.contracts]]
+name = "Citation internal layers"
+type = "layers"
+containers = ["apps.citation"]
+layers = [
+    "api | admin",
+    "url_extraction",
+    "extractors | extraction | seeding | schemas",
+    "models",
+    "psl",
+    "hosts | source_type_traits | safe_fetch",
+]
+
+# ----- accounts -----
+
 # Accounts' internal stack: the api subpackage plus the admin/middleware/management
 # edges on top; the model, its wire schemas and the auth-error mapping in the
 # middle; and the dependency-free leaves at the base — backends, the
@@ -575,44 +596,51 @@ layers = [
     "backends | pending | reserved | usernames | workos_client",
 ]
 
-[tool.mypy]
-python_version = "3.14"
-strict = true
-plugins = ["mypy_django_plugin.main"]
-explicit_package_bases = true
-exclude = [
-    "migrations/",
-    "\\.venv/",
-    "^media/",  # MEDIA_ROOT at backend/media — anchored so apps/media/ is still type-checked
-    "^cache/",
+# ----- core -----
+
+# Core, like catalog, is an exhaustive layered contract over its whole acyclic
+# internal stack — a new submodule left unplaced fails the build, which the old
+# enumerated "core api is a leaf" forbidden never did (it silently omitted admin,
+# checks and soft_delete). apps/migrations/tests stay exhaustive_ignores as in
+# catalog — bootstrap wiring (the AppConfig's ready() imports across layers by
+# design), generated code and test scaffolding, none meaningfully layerable.
+# Core's graph was made acyclic by moving MarkdownField down into models (it was
+# the models → markdown edge) and deleting the dead bulk_create_validated helper
+# (the validators → models edge). api/ is still a leaf — it sits at the top and
+# nothing imports back up into it — but now as one tier of the full stack.
+[[tool.importlinter.contracts]]
+name = "Core internal layers"
+type = "layers"
+exhaustive = true
+exhaustive_ignores = ["apps", "migrations", "tests"]
+containers = ["apps.core"]
+layers = [
+    "api",
+    "markdown",
+    "wikilinks | middleware",
+    "admin | api_helpers | authz | autocomplete | checks | entity_types | licensing | rate_limits | sitemap | soft_delete",
+    "exceptions | models",
+    "admin_apps | admin_site | pagination | schemas | search | types | validators",
 ]
-warn_unused_ignores = true
-warn_redundant_casts = true
-# Barrel __init__.py files re-export symbols via `from X import Y`. Treat these
-# as intentional public API rather than requiring `__all__` on every barrel.
-implicit_reexport = true
 
-[tool.django-stubs]
-django_settings_module = "config.settings"
-strict_settings = true
+# ----- media -----
 
-# Migrations are generated; don't type-check them.
-[[tool.mypy.overrides]]
-module = "*.migrations.*"
-ignore_errors = true
-
-# Tests and conftest: relax annotation requirements for fixtures. Type correctness
-# of the code under test still matters; per-function annotations in tests do not.
-[[tool.mypy.overrides]]
-module = ["*.tests.*", "tests.*", "conftest"]
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-disallow_untyped_decorators = false
-disallow_untyped_calls = false
-
-# Third-party libraries without py.typed markers or upstream stubs.
-# Suppresses import-untyped errors at the import site; the libraries themselves
-# are still treated as Any at use sites.
-[[tool.mypy.overrides]]
-module = ["pillow_heif", "constance", "constance.*", "publicsuffixlist", "publicsuffixlist.*"]
-ignore_missing_imports = true
+# Media internal layering: a vertical stack from constants/models at the bottom
+# up to the api composition layer. `selectors` sits above the
+# storage/schemas/helpers peer-group because it composes storage + schemas into
+# wire schemas, which the peer-isolated `helpers` tier may not do. This also
+# enforces that media.api is a leaf (nothing below it imports it). The cross-app
+# media.models -> provenance.models crack is governed by the media peer-isolation
+# contract above, not here.
+[[tool.importlinter.contracts]]
+name = "Media internal layers"
+type = "layers"
+containers = ["apps.media"]
+layers = [
+    "api",
+    "authz",
+    "selectors",
+    "processing | storage | schemas | helpers",
+    "models",
+    "constants",
+]
