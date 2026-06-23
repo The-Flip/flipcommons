@@ -55,7 +55,7 @@ WebCitationDomains2 P2.1. Pure additions; no caller yet. **Split by dependency**
 
 🛑 STOP.
 
-### G2 — the universal `clean()` guard (the safety prerequisite) — `models.py`
+### ✅ DONE: G2 — the universal `clean()` guard (the safety prerequisite) — `models.py`
 
 The safety half of WebCitationDomains2 P2.2. Lands **before** `G3` and never ships without it.
 

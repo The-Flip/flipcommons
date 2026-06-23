@@ -460,6 +460,39 @@ class TestCitationSourceRootDomain:
         rd = CitationSourceRootDomain(source=root, host="example.com")
         rd.full_clean()  # must not raise
 
+    def test_clean_rejects_public_suffix_host(self, db):
+        """A bare public suffix must never be stored: under longest-suffix
+        matching it would over-match every unrelated site beneath it."""
+        root = CitationSource.objects.create(name="Root", source_type="web")
+        for host in ("gov.uk", "co.uk"):
+            rd = CitationSourceRootDomain(source=root, host=host)
+            with pytest.raises(ValidationError):
+                rd.full_clean()
+
+    def test_clean_rejects_non_dns_host(self, db):
+        """An IP literal is not a syntactic DNS recognition host."""
+        root = CitationSource.objects.create(name="Root", source_type="web")
+        rd = CitationSourceRootDomain(source=root, host="127.0.0.1")
+        with pytest.raises(ValidationError):
+            rd.full_clean()
+
+    def test_clean_accepts_subdomain_and_registrable(self, db):
+        """A curator may declare a subdomain verbatim; a registrable domain is
+        the ordinary case. Neither is a public suffix."""
+        root = CitationSource.objects.create(name="Root", source_type="web")
+        for host in ("twip.kineticist.com", "american-pinball.com"):
+            rd = CitationSourceRootDomain(source=root, host=host)
+            rd.full_clean()  # must not raise
+
+    def test_clean_github_io_canary(self, db):
+        """PRIVATE-section boundary at the model edge: ``github.io`` is itself a
+        public suffix (rejected), ``foo.github.io`` is one whole site (accepted)."""
+        root = CitationSource.objects.create(name="Root", source_type="web")
+        with pytest.raises(ValidationError):
+            CitationSourceRootDomain(source=root, host="github.io").full_clean()
+        # A whole site under the PRIVATE suffix — must not raise.
+        CitationSourceRootDomain(source=root, host="foo.github.io").full_clean()
+
     def test_clean_normalizes_host(self, db):
         """clean() canonicalizes the owned value: lower, www-strip, trailing dot."""
         root = CitationSource.objects.create(name="Root", source_type="web")
