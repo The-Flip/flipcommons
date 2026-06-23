@@ -207,6 +207,9 @@ class TestCitationSourceRootDomainInline:
 
         domain = CitationSourceRootDomain.objects.get(source=citation_source)
         assert domain.host == "example.com"
+        # The inline stamps editorial attribution like the link inline does.
+        assert domain.created_by == superuser
+        assert domain.updated_by == superuser
 
     def test_domain_removed_through_admin_form(
         self, admin_instance, request_factory, superuser, citation_source
