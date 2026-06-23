@@ -1,4 +1,4 @@
-"""C7 sum-type guarantees for ``CitationRef`` and the two cite-spec builders.
+"""Sum-type guarantees for ``CitationRef`` and the two cite-spec builders.
 
 ``CitationRef`` is a sum of :class:`WebCitationRef` / :class:`SchemeCitationRef`;
 a both-set / neither-set ref is unconstructable (a static guarantee, exercised

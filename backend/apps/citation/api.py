@@ -537,7 +537,7 @@ def create_citation_source_page(
     The contributor already chose the parent (the identify path), so the URL is
     not re-recognized — the page nests directly under *source_id*. The parent may
     be any root type (a web page under a magazine/book root is intended); the
-    only structural rule is the D2 web-flatness guard, which 422s a page under a
+    only structural rule is the web-flatness guard, which 422s a page under a
     web *child* parent via ``clean()``.
     """
     user = authed_user(request)

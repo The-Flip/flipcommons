@@ -264,7 +264,7 @@ def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> 
     field-``cite:`` stance (only the ``sources:`` block bumps the counters).
 
     The resolvers fail three ways — a malformed URL/identifier (``ValidationError``
-    from the C4 leaves' ``full_clean``), an unknown scheme or bad identifier
+    from the leaves' ``full_clean``), an unknown scheme or bad identifier
     (``ValueError``), a missing root (``CitationSource.DoesNotExist``) — and only
     the first is caught downstream by default. Catch all three here and re-raise
     one enriched ``ValidationError`` naming the offending cite, so every failure

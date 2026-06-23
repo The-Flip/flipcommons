@@ -672,8 +672,8 @@ def test_retract_note_on_already_inactive_field_rejected(flipcommons_catalog, pm
 
 def test_missing_citation_root_errors(flipcommons_catalog, pm):
     # No ipdb root seeded → a clear error, not a silent miss. The resolver wraps
-    # the leaf's DoesNotExist into a ValidationError naming the cite (C6 error
-    # contract), so it reaches _apply_one as a clean per-patch failure.
+    # the leaf's DoesNotExist into a ValidationError naming the cite, so it
+    # reaches _apply_one as a clean per-patch failure.
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
     with pytest.raises(ValidationError) as exc_info:
         _apply(text)
@@ -697,8 +697,8 @@ def test_url_cite_without_matching_root_errors(flipcommons_catalog, pm):
         f"      cite: {url}\n"
         "      year: 1998\n"
     )
-    # The leaf's DoesNotExist is wrapped into a ValidationError naming the URL
-    # (C6 error contract), so a no-matching-root cite reaches _apply_one cleanly.
+    # The leaf's DoesNotExist is wrapped into a ValidationError naming the URL,
+    # so a no-matching-root cite reaches _apply_one cleanly.
     with pytest.raises(ValidationError) as exc_info:
         _apply(text)
     msg = "; ".join(exc_info.value.messages)
@@ -776,7 +776,7 @@ def test_url_cite_on_subdomain_raises_under_exact_matching(
         f"      cite: {url}\n"
         "      year: 1998\n"
     )
-    # Wrapped into a ValidationError naming the URL (C6 error contract).
+    # Wrapped into a ValidationError naming the URL.
     with pytest.raises(ValidationError) as exc_info:
         _apply(text)
     assert url in "; ".join(exc_info.value.messages)

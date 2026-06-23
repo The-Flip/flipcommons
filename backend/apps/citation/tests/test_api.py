@@ -1582,7 +1582,7 @@ class TestCreateCitationSourcePage:
         assert resp.status_code == 404
 
     def test_page_under_web_child_parent_returns_422(self, client, user):
-        # The D2 web-flatness guard: a web child's parent must be a root, so a
+        # The web-flatness guard: a web child's parent must be a root, so a
         # page nested under a web child (a grandchild) is rejected by clean().
         client.force_login(user)
         root = CitationSource.objects.create(name="Site", source_type="web")

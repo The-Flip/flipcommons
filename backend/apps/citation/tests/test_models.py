@@ -69,7 +69,7 @@ class TestCitationSourceRootChild:
 
 
 class TestWebFlatnessGuard:
-    """D2: a web source nests one level — root → child, no grandchildren."""
+    """A web source nests one level — root → child, no grandchildren."""
 
     def test_rejects_a_web_grandchild(self, db):
         root = CitationSource.objects.create(name="Site", source_type="web")

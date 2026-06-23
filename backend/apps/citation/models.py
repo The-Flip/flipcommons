@@ -299,7 +299,7 @@ class CitationSource(TimeStampedModel):
 
     def clean(self) -> None:
         super().clean()
-        # D2 web-flatness: a ``flat_hierarchy`` type (web) nests exactly one
+        # Web-flatness: a ``flat_hierarchy`` type (web) nests exactly one
         # level — root → child — so recognition can always resolve a host to the
         # root and mint a child directly under it. A grandchild (its parent is
         # itself a child) would be unreachable, so reject it.

@@ -126,7 +126,7 @@ class TestYouTubeRecognition:
 
 
 class TestRootDomainRecognition:
-    """``recognize_url`` step 3: resolve a host to its root by exact match.
+    """``recognize_url`` resolves a host to its root by exact match.
 
     SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3): step 3
     matches the host exactly; subdomain (longest-suffix) cases assert the
