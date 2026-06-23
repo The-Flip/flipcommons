@@ -240,8 +240,6 @@
     const result = await createChildByIdentifier(
       client,
       recognitionItem.parentId,
-      recognition!.parent.name,
-      'web',
       recognitionItem.identifier,
     );
     if (!result.ok) {

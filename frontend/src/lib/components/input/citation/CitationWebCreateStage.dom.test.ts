@@ -309,16 +309,14 @@ describe('CitationWebCreateStage explicit parent (identify path)', () => {
     await user.click(screen.getByRole('button', { name: /Create Citation/ }));
 
     await waitFor(() => expect(mockPOST).toHaveBeenCalled());
-    // Filed directly under the chosen root — not routed through cite-url, which
-    // would re-recognize the URL and could land it elsewhere.
-    expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
-      body: expect.objectContaining({
-        parent_id: 30,
-        source_type: 'web',
-        name: 'Elton John',
+    // Filed directly under the chosen root via pages/ — not routed through
+    // cite-url, which would re-recognize the URL and could land it elsewhere.
+    expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/{source_id}/pages/', {
+      params: { path: { source_id: 30 } },
+      body: {
         url: 'https://jerseyjackpinball.com/products/elton-john',
-        link_type: 'reference',
-      }),
+        page_name: 'Elton John',
+      },
     });
     expect(mockPOST).not.toHaveBeenCalledWith('/api/citation-sources/cite-url/', expect.anything());
     expect(created).toHaveBeenCalledWith({
@@ -328,7 +326,7 @@ describe('CitationWebCreateStage explicit parent (identify path)', () => {
     });
   });
 
-  it('requires a page name (create needs one; the cite-url path would derive it)', async () => {
+  it('requires a page name on the explicit-parent path', async () => {
     const user = userEvent.setup();
     render(CitationWebCreateStage, {
       seed: existingSite('', 'Jersey Jack Pinball', null, ''),

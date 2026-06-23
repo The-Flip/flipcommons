@@ -29,10 +29,14 @@ from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 
 from .extraction import classify_input, extract_isbn, normalize_isbn
-from .extractors import EXTRACTORS, Recognition, recognize_url, web_child_name
+from .extractors import (
+    Recognition,
+    create_web_child,
+    get_or_create_scheme_child,
+    recognize_url,
+)
 from .hosts import normalize_host
 from .models import (
-    CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG,
     CitationSource,
     CitationSourceLink,
     CitationSourceRootDomain,
@@ -42,7 +46,9 @@ from .schemas import (
     CitationExtractDraftSchema,
     CitationExtractInputSchema,
     CitationExtractResultSchema,
+    CitationPageCreateSchema,
     CitationRecognitionSchema,
+    CitationRecordCreateSchema,
     CitationSourceChildSchema,
     CitationSourceCreateSchema,
     CitationSourceDetailSchema,
@@ -128,6 +134,13 @@ def _detail_qs() -> QuerySet[CitationSource]:
     )
 
 
+def _serialize_match(source: CitationSource) -> CitationSourceMatchSchema:
+    """The minimal "re-cite this source" shape every child-mint endpoint returns."""
+    return CitationSourceMatchSchema(
+        id=source.pk, name=source.name, skip_locator=source.skip_locator
+    )
+
+
 def _serialize_child(child: CitationSource) -> CitationSourceChildSchema:
     return CitationSourceChildSchema(
         id=child.pk,
@@ -160,10 +173,10 @@ def _serialize_search_row(s: CitationSource) -> CitationSourceSearchSchema:
 
 def _serialize_detail(source: CitationSource) -> CitationSourceDetailSchema:
     parent: CitationSourceParentSchema | None = None
-    if source.parent_id is not None:
+    if not source.is_root:
         parent_obj = source.parent
-        assert parent_obj is not None
-        parent = CitationSourceParentSchema(id=source.parent_id, name=parent_obj.name)
+        assert parent_obj is not None  # a non-root always has a parent loaded
+        parent = CitationSourceParentSchema(id=parent_obj.pk, name=parent_obj.name)
     return CitationSourceDetailSchema(
         id=source.pk,
         name=source.name,
@@ -275,110 +288,50 @@ def search_citation_sources(
 def create_citation_source(
     request: HttpRequest, data: CitationSourceCreateSchema
 ) -> Status[CitationSourceDetailSchema]:
-    """Create a new Citation Source, optionally with an initial link."""
+    """Create a book/magazine root or a linkless authored child.
+
+    This endpoint owns neither URLs nor links: web roots/children are minted by
+    ``cite-url``/``pages/`` and scheme children by ``records/``. It creates a
+    plain authored source — a root, or a child nested under ``parent_id``.
+    """
     user = authed_user(request)
     parent = None
     if data.parent_id is not None:
         parent = get_object_or_404(CitationSource, pk=data.parent_id)
 
-    # When an identifier is provided and the parent has an extractor,
-    # validate, normalize, and auto-build the child name and canonical URL.
-    name = data.name
-    url = data.url
-    identifier = data.identifier
-    if identifier and parent and parent.identifier_key:
-        extractor = EXTRACTORS.get(parent.identifier_key)
-        if extractor:
-            normalized = extractor.normalize(identifier)
-            if normalized is None:
-                raise HttpError(
-                    422,
-                    f"Invalid identifier for {extractor.source_name}: {identifier!r}",
-                )
-            identifier = normalized
-            if not name or name == data.identifier:
-                name = f"{parent.name} #{identifier}"
-            if not url:
-                url = extractor.build_url(identifier)
-
-    with transaction.atomic():
-        source = CitationSource(
-            name=name,
-            source_type=data.source_type,
-            author=data.author,
-            publisher=data.publisher,
-            year=data.year,
-            month=data.month,
-            day=data.day,
-            date_note=data.date_note,
-            isbn=data.isbn,
-            description=data.description,
-            identifier=identifier,
-            parent=parent,
-            created_by=user,
-            updated_by=user,
-        )
-        _clean_and_save(
-            source,
-            integrity_msg="A source with this ISBN or identifier already exists.",
-        )
-
-        if url:
-            link_type = data.link_type or "homepage"
-            link = CitationSourceLink(
-                citation_source=source,
-                link_type=link_type,
-                url=url,
-                label=data.link_label,
-                created_by=user,
-                updated_by=user,
-            )
-            _clean_and_save(link)
-
-            # A parentless source with a homepage link owns a recognition host
-            # (any source_type — see the any-root decision). Dedup belongs to
-            # the interactive cite-url flow; here a host another root already
-            # owns surfaces as a 422 — from full_clean's unique check (the
-            # field's custom message), with integrity_msg as the create-race
-            # backstop. Either way the surrounding atomic() rolls the create back.
-            hostname = urlparse(url).hostname
-            if parent is None and link_type == "homepage" and hostname is not None:
-                domain = CitationSourceRootDomain(
-                    source=source, host=normalize_host(hostname)
-                )
-                _clean_and_save(
-                    domain, integrity_msg=CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG
-                )
+    source = CitationSource(
+        name=data.name,
+        source_type=data.source_type,
+        author=data.author,
+        publisher=data.publisher,
+        year=data.year,
+        month=data.month,
+        day=data.day,
+        date_note=data.date_note,
+        isbn=data.isbn,
+        description=data.description,
+        parent=parent,
+        created_by=user,
+        updated_by=user,
+    )
+    _clean_and_save(source, integrity_msg="A source with this ISBN already exists.")
 
     source = get_object_or_404(_detail_qs(), pk=source.pk)
     return Status(201, _serialize_detail(source))
 
 
-def _create_web_child(
+def _mint_web_child(
     parent_id: int, url: str, page_name: str, user: User
 ) -> CitationSource:
-    """Mint a page child under *parent_id* with a ``reference`` link at *url*.
+    """Mint a page child via ``create_web_child``, mapping its error to a 422.
 
-    The child's name follows the shared ``web_child_name`` rule. A malformed
-    *url* fails the link's ``URLField`` validation → friendly 422.
+    ``create_web_child`` ``full_clean``s the child and its link and raises
+    ``ValidationError`` (e.g. a malformed *url*); surface that as a 422.
     """
-    child = CitationSource(
-        name=web_child_name(url, page_name),
-        source_type=CitationSource.SourceType.WEB,
-        parent_id=parent_id,
-        created_by=user,
-        updated_by=user,
-    )
-    _clean_and_save(child)
-    link = CitationSourceLink(
-        citation_source=child,
-        link_type=CitationSourceLink.LinkType.REFERENCE,
-        url=url,
-        created_by=user,
-        updated_by=user,
-    )
-    _clean_and_save(link)
-    return child
+    try:
+        return create_web_child(parent_id, url, page_name, created_by=user)
+    except ValidationError as exc:
+        raise HttpError(422, _validation_detail(exc)) from exc
 
 
 def _create_root_and_child(
@@ -386,10 +339,10 @@ def _create_root_and_child(
 ) -> CitationSource:
     """Create a new site root (homepage link + recognition domain) and a child.
 
-    Roots at the **raw** pasted host (PR 2 rounds this to the registrable
-    domain). The root-create runs in a savepoint: on a concurrent ``host``
-    ``unique`` violation the savepoint rolls back, the URL is re-recognized
-    against the now-committed root, and the child nests under it.
+    Roots at the normalized pasted host. The root-create runs in a savepoint: on
+    a concurrent ``host`` ``unique`` violation the savepoint rolls back, the URL
+    is re-recognized against the now-committed root, and the child nests under
+    it.
     """
     hostname = urlparse(url).hostname
     if hostname is None:
@@ -416,9 +369,9 @@ def _create_root_and_child(
             _clean_and_save(homepage)
             domain = CitationSourceRootDomain(source=root, host=host)
             # validate_unique=False so the model guards (root-only clean(),
-            # PR2's public-suffix clean(), CHECK constraints) still fire — as a
-            # 422 — while the host-unique race surfaces only as a DB
-            # IntegrityError from save() below, distinct from a guard failure.
+            # CHECK constraints) still fire — as a 422 — while the host-unique
+            # race surfaces only as a DB IntegrityError from save() below,
+            # distinct from a guard failure.
             try:
                 domain.full_clean(validate_unique=False)
             except ValidationError as exc:
@@ -433,7 +386,7 @@ def _create_root_and_child(
             raise
         parent_id = rec.parent_id
 
-    return _create_web_child(parent_id, url, data.page_name, user)
+    return _mint_web_child(parent_id, url, data.page_name, user)
 
 
 @citation_sources_router.post(
@@ -483,16 +436,11 @@ def cite_url(
                 ),
             )
         if rec is not None:
-            child = _create_web_child(rec.parent_id, url, data.page_name, user)
+            child = _mint_web_child(rec.parent_id, url, data.page_name, user)
         else:
             child = _create_root_and_child(url, data, user)
 
-    return Status(
-        201,
-        CitationSourceMatchSchema(
-            id=child.pk, name=child.name, skip_locator=child.skip_locator
-        ),
-    )
+    return Status(201, _serialize_match(child))
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +521,55 @@ def list_citation_source_children(
         .order_by("name")[:20]
     )
     return [_serialize_child(child) for child in children]
+
+
+@citation_sources_router.post(
+    "/{source_id}/pages/",
+    response={201: CitationSourceMatchSchema, 422: ErrorDetailSchema},
+    auth=django_auth,
+)
+@requires(Activity.CITATION_EDIT)
+def create_citation_source_page(
+    request: HttpRequest, source_id: int, data: CitationPageCreateSchema
+) -> Status[CitationSourceMatchSchema]:
+    """Mint a web page child under an explicit parent root.
+
+    The contributor already chose the parent (the identify path), so the URL is
+    not re-recognized — the page nests directly under *source_id*. The parent may
+    be any root type (a web page under a magazine/book root is intended); the
+    only structural rule is the web-flatness guard, which 422s a page under a
+    web *child* parent via ``clean()``.
+    """
+    user = authed_user(request)
+    parent = get_object_or_404(CitationSource, pk=source_id)
+    child = _mint_web_child(parent.pk, data.url, data.page_name, user)
+    return Status(201, _serialize_match(child))
+
+
+@citation_sources_router.post(
+    "/{source_id}/records/",
+    response={201: CitationSourceMatchSchema, 422: ErrorDetailSchema},
+    auth=django_auth,
+)
+@requires(Activity.CITATION_EDIT)
+def create_citation_source_record(
+    request: HttpRequest, source_id: int, data: CitationRecordCreateSchema
+) -> Status[CitationSourceMatchSchema]:
+    """Mint (or reuse) a scheme child under an explicit parent root.
+
+    The parent root carries an ``identifier_key`` scheme (IPDB/OPDB/…); the leaf
+    owns the ``{root} #{id}`` name rule and dedups by ``(root, identifier)``, so
+    re-citing an existing identifier reuses its child rather than 422ing.
+    """
+    user = authed_user(request)
+    parent = get_object_or_404(CitationSource, pk=source_id)
+    try:
+        child = get_or_create_scheme_child(parent, data.identifier, created_by=user)
+    except ValidationError as exc:
+        raise HttpError(422, _validation_detail(exc)) from exc
+    except ValueError as exc:
+        raise HttpError(422, str(exc)) from exc
+    return Status(201, _serialize_match(child))
 
 
 @citation_sources_router.get(

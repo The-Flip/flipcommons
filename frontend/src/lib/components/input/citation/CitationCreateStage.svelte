@@ -92,11 +92,6 @@
         isbn: draft?.isbn ?? null,
         description: '',
         parent_id: parentContext?.id ?? null,
-        identifier: '',
-        // Required by the create schema; inert here since this stage sends no
-        // `url`, so no link is minted. (§2.6 makes link_type optional/None.)
-        link_label: '',
-        link_type: parentContext ? 'reference' : 'homepage',
       },
     });
     submitting = false;

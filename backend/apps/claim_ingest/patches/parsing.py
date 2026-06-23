@@ -26,7 +26,12 @@ from apps.citation.models import (
 )
 from apps.citation.seed_data.types import SeedLink, SeedSource
 from apps.claim_ingest.patches._types import PatchError
-from apps.claim_ingest.plan import CitationRef, CiteHandle
+from apps.claim_ingest.plan import (
+    CitationRef,
+    CiteHandle,
+    SchemeCitationRef,
+    WebCitationRef,
+)
 from apps.core.types import JsonBody
 from apps.provenance.models.changeset import CHANGESET_NOTE_MAX_LENGTH
 
@@ -671,7 +676,7 @@ def _parse_provenance(entry: PatchEntry) -> tuple[str, CitationRef | None]:
 
 
 def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
-    """Parse one non-empty cite spec into a :class:`CitationRef`.
+    """Parse one non-empty cite spec into a :data:`CitationRef`.
 
     Shared by the entry-level ``cite:`` (via :func:`_parse_provenance`) and the
     inline ``cites:`` map (:func:`_parse_cites`). Two forms:
@@ -711,10 +716,10 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
             f"{ref}: cite identifier exceeds "
             f"{CITATION_SOURCE_IDENTIFIER_MAX_LENGTH} characters"
         )
-    return CitationRef(scheme=scheme, identifier=normalized)
+    return SchemeCitationRef(scheme=scheme, identifier=normalized)
 
 
-def _parse_cite_url(url: str, archive_url: str, ref: str) -> CitationRef:
+def _parse_cite_url(url: str, archive_url: str, ref: str) -> WebCitationRef:
     """Validate a ``http(s)://`` cite URL into a standalone-web CitationRef.
 
     Rejects a URL that matches a known scheme's record pattern (it has a
@@ -752,4 +757,4 @@ def _parse_cite_url(url: str, archive_url: str, ref: str) -> CitationRef:
                 f"{ref}: cite archive URL exceeds "
                 f"{CITATION_SOURCE_LINK_URL_MAX_LENGTH} characters"
             )
-    return CitationRef(url=url, archive_url=archive_url)
+    return WebCitationRef(url=url, archive_url=archive_url)

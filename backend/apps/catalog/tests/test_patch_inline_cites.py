@@ -153,6 +153,90 @@ claims:
     assert "https://web.archive.org/web/2020/https://kineticist.com/mm" in urls
 
 
+def test_malformed_cite_url_surfaces_validation_error(
+    flipcommons_catalog, kineticist_root, pm
+):
+    # A malformed cite URL must propagate out of apply_plan as a ValidationError
+    # — the type the patch runner maps to a per-patch PatchError. Pins the ingest
+    # error contract so a future leaf change (raising a different exception type)
+    # can't silently regress it to an uninformative traceback. The wrapped error
+    # must name the offending URL so the PatchError can point at the line.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      description: "Bad cite.[[cite:1]]"
+      cites:
+        '1':
+          url: "https://kineticist.com/m m"
+"""
+    with pytest.raises(ValidationError) as exc_info:
+        _apply(text)
+    assert "https://kineticist.com/m m" in "; ".join(exc_info.value.messages)
+
+
+def test_malformed_cite_archive_url_names_the_archive(
+    flipcommons_catalog, kineticist_root, pm
+):
+    # The page URL is valid and resolves under the kineticist root; the *archive*
+    # URL passes the parser's loose check (http(s):// + host + length) but fails
+    # Django's URLField in get_or_create_web_source's separate archive-link
+    # full_clean. The wrapped error must name the archive URL — naming only the
+    # (valid) page URL would point an author at the wrong line.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      description: "Archived fact.[[cite:1]]"
+      cites:
+        '1':
+          url: https://kineticist.com/mm
+          archive: "https://web.archive.org/web/2020/https://kineticist.com/m m"
+"""
+    with pytest.raises(ValidationError) as exc_info:
+        _apply(text)
+    assert "https://web.archive.org/web/2020/https://kineticist.com/m m" in "; ".join(
+        exc_info.value.messages
+    )
+
+
+def test_unknown_web_root_cite_surfaces_validation_error(flipcommons_catalog, pm):
+    # A well-formed cite URL whose domain matches no seeded root: the web
+    # resolver raises CitationSource.DoesNotExist, which the runner's except
+    # would NOT catch on its own (only ValidationError) — pre-fix it surfaced as
+    # a raw traceback. The resolver wrap re-raises an enriched ValidationError
+    # naming the URL, so it reaches _apply_one as a clean per-patch failure.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      description: "Cite under no root.[[cite:1]]"
+      cites:
+        '1':
+          url: "https://no-such-domain.example/page"
+"""
+    with pytest.raises(ValidationError) as exc_info:
+        _apply(text)
+    assert "https://no-such-domain.example/page" in "; ".join(exc_info.value.messages)
+
+
+def test_unknown_scheme_root_cite_surfaces_validation_error(flipcommons_catalog, pm):
+    # The scheme analog: a valid ipdb cite with no ipdb root seeded. The scheme
+    # resolver raises CitationSource.DoesNotExist (likewise outside the runner's
+    # bare except). The wrap re-raises a ValidationError naming scheme:identifier.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      description: "Cite a scheme with no root.[[cite:1]]"
+      cites:
+        '1': ipdb:4443
+"""
+    with pytest.raises(ValidationError) as exc_info:
+        _apply(text)
+    assert "ipdb:4443" in "; ".join(exc_info.value.messages)
+
+
 def test_two_inline_cited_edits_same_entity_rejected(
     flipcommons_catalog, ipdb_root, pm
 ):

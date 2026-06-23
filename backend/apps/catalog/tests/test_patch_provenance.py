@@ -23,9 +23,9 @@ from apps.claim_ingest.patches import (
     load_patch,
 )
 from apps.claim_ingest.plan import (
-    CitationRef,
     IngestPlan,
     PlannedClaimAssert,
+    SchemeCitationRef,
 )
 from apps.provenance.models import (
     ChangeSet,
@@ -619,7 +619,7 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
             value=1998,
             content_type_id=ct.pk,
             object_id=pm.pk,
-            citation_ref=CitationRef("ipdb", "4443"),
+            citation_ref=SchemeCitationRef("ipdb", "4443"),
             entry_index=0,
         )
     )
@@ -671,10 +671,15 @@ def test_retract_note_on_already_inactive_field_rejected(flipcommons_catalog, pm
 
 
 def test_missing_citation_root_errors(flipcommons_catalog, pm):
-    # No ipdb root seeded → a clear error, not a silent miss.
+    # No ipdb root seeded → a clear error, not a silent miss. The resolver wraps
+    # the leaf's DoesNotExist into a ValidationError naming the cite, so it
+    # reaches _apply_one as a clean per-patch failure.
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
-    with pytest.raises(CitationSource.DoesNotExist, match="No root CitationSource"):
+    with pytest.raises(ValidationError) as exc_info:
         _apply(text)
+    msg = "; ".join(exc_info.value.messages)
+    assert "ipdb:4443" in msg
+    assert "No root CitationSource" in msg
 
 
 # ── cite: URL form → web CitationSource nested under a root ────────
@@ -692,8 +697,13 @@ def test_url_cite_without_matching_root_errors(flipcommons_catalog, pm):
         f"      cite: {url}\n"
         "      year: 1998\n"
     )
-    with pytest.raises(CitationSource.DoesNotExist, match="No website .*root"):
+    # The leaf's DoesNotExist is wrapped into a ValidationError naming the URL,
+    # so a no-matching-root cite reaches _apply_one cleanly.
+    with pytest.raises(ValidationError) as exc_info:
         _apply(text)
+    msg = "; ".join(exc_info.value.messages)
+    assert url in msg
+    assert "No website" in msg
 
 
 def test_url_cite_reuses_preexisting_source(flipcommons_catalog, kineticist_root, pm):
@@ -766,8 +776,10 @@ def test_url_cite_on_subdomain_raises_under_exact_matching(
         f"      cite: {url}\n"
         "      year: 1998\n"
     )
-    with pytest.raises(CitationSource.DoesNotExist):
+    # Wrapped into a ValidationError naming the URL.
+    with pytest.raises(ValidationError) as exc_info:
         _apply(text)
+    assert url in "; ".join(exc_info.value.messages)
 
 
 def test_url_cite_under_root_dedups_and_separates(

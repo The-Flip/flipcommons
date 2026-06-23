@@ -181,13 +181,7 @@
     debouncedChildSearch.cancel();
     creatingIdentifier = true;
     createError = '';
-    const result = await createChildByIdentifier(
-      client,
-      parentContext.id,
-      parentContext.name,
-      parentContext.source_type,
-      filterQuery.trim(),
-    );
+    const result = await createChildByIdentifier(client, parentContext.id, filterQuery.trim());
     if (!result.ok) {
       creatingIdentifier = false;
       createError = result.error;

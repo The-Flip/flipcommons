@@ -534,171 +534,75 @@ class TestCreateCitationSource:
         assert resp.status_code == 422
 
 
-class TestCreateCitationSourceWithLink:
-    """Atomic source + link creation via the optional url field."""
+class TestCreateCitationSourceForbidsMovedFields:
+    """The god-endpoint creates plain authored sources only.
 
-    def test_create_with_url_creates_source_and_link(self, client, user):
+    URLs/links moved to ``cite-url``/``pages/`` and scheme identifiers to
+    ``records/``; ``extra="forbid"`` + the ``source_type`` Literal make every
+    moved field a 422 here. Body shape isn't asserted — the forbid 422 takes the
+    global pydantic-handler path, not the endpoint's declared error schema.
+    """
+
+    def test_authored_child_is_linkless(self, client, user, citation_source):
         client.force_login(user)
         resp = _post(
             client,
             "/api/citation-sources/",
             {
-                "name": "Pinball Wiki Page",
-                "source_type": "web",
-                "url": "https://example.com/pinball",
-            },
-        )
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["name"] == "Pinball Wiki Page"
-        assert len(data["links"]) == 1
-        assert data["links"][0]["url"] == "https://example.com/pinball"
-
-    def test_create_with_url_and_link_label(self, client, user):
-        client.force_login(user)
-        resp = _post(
-            client,
-            "/api/citation-sources/",
-            {
-                "name": "Archive Page",
-                "source_type": "web",
-                "url": "https://archive.org/details/pinball",
-                "link_label": "archive.org",
-            },
-        )
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["links"][0]["label"] == "archive.org"
-
-    def test_create_without_url_creates_no_link(self, client, user):
-        client.force_login(user)
-        resp = _post(
-            client,
-            "/api/citation-sources/",
-            {
-                "name": "A Book",
+                "name": "Edition 2",
                 "source_type": "book",
+                "parent_id": citation_source.pk,
             },
         )
         assert resp.status_code == 201
         assert resp.json()["links"] == []
 
-    def test_invalid_url_returns_422_and_creates_no_source(self, client, user):
+    def test_url_returns_422(self, client, user):
         client.force_login(user)
         resp = _post(
             client,
             "/api/citation-sources/",
-            {
-                "name": "Bad Link Source",
-                "source_type": "web",
-                "url": "not-a-url",
-            },
+            {"name": "X", "source_type": "book", "url": "https://example.com/"},
         )
         assert resp.status_code == 422
-        assert not CitationSource.objects.filter(name="Bad Link Source").exists()
 
-    def test_link_sets_created_by(self, client, user):
+    def test_link_type_returns_422(self, client, user):
         client.force_login(user)
         resp = _post(
             client,
             "/api/citation-sources/",
-            {
-                "name": "Test Web",
-                "source_type": "web",
-                "url": "https://example.com",
-            },
+            {"name": "X", "source_type": "book", "link_type": "homepage"},
         )
-        assert resp.status_code == 201
-        link = CitationSourceLink.objects.get(citation_source_id=resp.json()["id"])
-        assert link.created_by == user
+        assert resp.status_code == 422
 
-
-class TestCreateCitationSourceRootDomain:
-    """A parentless source with a homepage link owns a recognition domain."""
-
-    def test_root_with_homepage_mints_normalized_domain(self, client, user):
+    def test_link_label_returns_422(self, client, user):
         client.force_login(user)
         resp = _post(
             client,
             "/api/citation-sources/",
-            {
-                "name": "American Pinball",
-                "source_type": "web",
-                "url": "https://www.American-Pinball.com/",
-            },
+            {"name": "X", "source_type": "book", "link_label": "label"},
         )
-        assert resp.status_code == 201
-        domain = CitationSourceRootDomain.objects.get(source_id=resp.json()["id"])
-        assert domain.host == "american-pinball.com"
+        assert resp.status_code == 422
 
-    def test_any_root_type_mints_domain(self, client, user):
-        """Any-root, not web-only: a book root with a homepage link gets one."""
+    def test_identifier_returns_422(self, client, user):
         client.force_login(user)
         resp = _post(
             client,
             "/api/citation-sources/",
-            {
-                "name": "A Pinball Book",
-                "source_type": "book",
-                "url": "https://pinball-book.example/",
-            },
+            {"name": "X", "source_type": "book", "identifier": "4443"},
         )
-        assert resp.status_code == 201
-        assert CitationSourceRootDomain.objects.filter(
-            source_id=resp.json()["id"], host="pinball-book.example"
-        ).exists()
+        assert resp.status_code == 422
 
-    def test_child_mints_no_domain(self, client, user, citation_source):
+    def test_web_source_type_returns_422(self, client, user):
+        # Web roots/children are born from cite-url/pages/, never the plain path —
+        # a web child here would be skip_locator with neither locator nor URL.
         client.force_login(user)
         resp = _post(
             client,
             "/api/citation-sources/",
-            {
-                "name": "A Page",
-                "source_type": "web",
-                "url": "https://example.com/page",
-                "parent_id": citation_source.pk,
-            },
+            {"name": "X", "source_type": "web"},
         )
-        assert resp.status_code == 201
-        assert not CitationSourceRootDomain.objects.filter(
-            source_id=resp.json()["id"]
-        ).exists()
-
-    def test_non_homepage_link_mints_no_domain(self, client, user):
-        client.force_login(user)
-        resp = _post(
-            client,
-            "/api/citation-sources/",
-            {
-                "name": "Catalog Root",
-                "source_type": "web",
-                "url": "https://example.com/catalog",
-                "link_type": "catalog",
-            },
-        )
-        assert resp.status_code == 201
-        assert not CitationSourceRootDomain.objects.filter(
-            source_id=resp.json()["id"]
-        ).exists()
-
-    def test_second_root_claiming_same_host_returns_422(self, client, user):
-        client.force_login(user)
-        first = _post(
-            client,
-            "/api/citation-sources/",
-            {"name": "First", "source_type": "web", "url": "https://example.com/"},
-        )
-        assert first.status_code == 201
-        second = _post(
-            client,
-            "/api/citation-sources/",
-            {"name": "Second", "source_type": "web", "url": "https://example.com/x"},
-        )
-        assert second.status_code == 422
-        assert "already recognized" in second.json()["detail"]
-        # The whole create rolled back — no orphaned second source.
-        assert not CitationSource.objects.filter(name="Second").exists()
+        assert resp.status_code == 422
 
 
 class TestCiteUrl:
@@ -953,90 +857,6 @@ class TestCiteUrl:
         # site_name → it was named after the host), leaving only the racer root.
         assert not CitationSource.objects.filter(name="raced.example").exists()
         assert CitationSource.objects.filter(parent__isnull=True).count() == 1
-
-
-class TestCreateCitationSourceWithIdentifier:
-    """Creating children with identifier: validation, normalization, auto-naming."""
-
-    def test_bare_id_creates_child_with_canonical_url(self, client, user, db):
-        """A valid bare identifier auto-builds name and canonical URL."""
-        parent = CitationSource.objects.create(
-            name="IPDB", source_type="web", identifier_key="ipdb"
-        )
-        client.force_login(user)
-        resp = _post(
-            client,
-            "/api/citation-sources/",
-            {
-                "name": "4443",
-                "source_type": "web",
-                "parent_id": parent.pk,
-                "identifier": "4443",
-            },
-        )
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["name"] == "IPDB #4443"
-        assert len(data["links"]) == 1
-        assert data["links"][0]["url"] == "https://www.ipdb.org/machine.cgi?id=4443"
-
-    def test_pasted_url_normalized_to_bare_id(self, client, user, db):
-        """A full IPDB URL as identifier is normalized to the bare ID."""
-        parent = CitationSource.objects.create(
-            name="IPDB", source_type="web", identifier_key="ipdb"
-        )
-        client.force_login(user)
-        resp = _post(
-            client,
-            "/api/citation-sources/",
-            {
-                "name": "",
-                "source_type": "web",
-                "parent_id": parent.pk,
-                "identifier": "https://www.ipdb.org/machine.cgi?id=4443",
-            },
-        )
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["name"] == "IPDB #4443"
-        child = CitationSource.objects.get(pk=data["id"])
-        assert child.identifier == "4443"
-
-    def test_invalid_identifier_returns_422(self, client, user, db):
-        """An identifier that doesn't match the extractor's format is rejected."""
-        parent = CitationSource.objects.create(
-            name="IPDB", source_type="web", identifier_key="ipdb"
-        )
-        client.force_login(user)
-        resp = _post(
-            client,
-            "/api/citation-sources/",
-            {
-                "name": "Bad",
-                "source_type": "web",
-                "parent_id": parent.pk,
-                "identifier": "abc",
-            },
-        )
-        assert resp.status_code == 422
-
-    def test_random_url_as_identifier_returns_422(self, client, user, db):
-        """A non-IPDB URL passed as identifier is rejected."""
-        parent = CitationSource.objects.create(
-            name="IPDB", source_type="web", identifier_key="ipdb"
-        )
-        client.force_login(user)
-        resp = _post(
-            client,
-            "/api/citation-sources/",
-            {
-                "name": "Bad",
-                "source_type": "web",
-                "parent_id": parent.pk,
-                "identifier": "https://example.com/page",
-            },
-        )
-        assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------
@@ -1688,3 +1508,213 @@ class TestExtractEndpoint:
             resp = _post(client, EXTRACT_URL, {"input": "https://example.com"})
             assert resp.status_code == 200
             mock_extract.assert_called_once_with("https://example.com")
+
+
+# ---------------------------------------------------------------------------
+# Nested child-mint endpoints: pages/ and records/
+# ---------------------------------------------------------------------------
+
+
+class TestCreateCitationSourcePage:
+    """``POST /{source_id}/pages/`` — mint a web page child under a chosen root."""
+
+    @staticmethod
+    def _url(parent_id):
+        return f"/api/citation-sources/{parent_id}/pages/"
+
+    def test_anonymous_gets_401(self, client):
+        root = CitationSource.objects.create(name="Site", source_type="web")
+        resp = _post(client, self._url(root.pk), {"url": "https://site.example/p"})
+        assert resp.status_code in (401, 403)
+
+    def test_mints_validated_attributed_child(self, client, user):
+        # pages/ files directly under the chosen parent — no recognition, so the
+        # root needs no recognition domain.
+        client.force_login(user)
+        root = CitationSource.objects.create(name="Site", source_type="web")
+        resp = _post(
+            client,
+            self._url(root.pk),
+            {"url": "https://site.example/article", "page_name": "Article"},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "Article"
+        # A web child skips the locator stage — its URL is the locator.
+        assert data["skip_locator"] is True
+        child = CitationSource.objects.get(pk=data["id"])
+        assert child.parent_id == root.pk
+        assert child.created_by == user
+        assert child.updated_by == user
+        ref = child.links.get(link_type="reference")
+        assert ref.url == "https://site.example/article"
+        assert ref.created_by == user
+
+    def test_blank_page_name_falls_back_to_url(self, client, user):
+        client.force_login(user)
+        root = CitationSource.objects.create(name="Site", source_type="web")
+        resp = _post(client, self._url(root.pk), {"url": "https://site.example/x"})
+        assert resp.status_code == 201
+        child = CitationSource.objects.get(pk=resp.json()["id"])
+        assert child.name == "https://site.example/x"
+
+    def test_accepts_page_under_magazine_root(self, client, user):
+        # pages/ doesn't restrict the parent's type — a web page under a
+        # magazine/book root is intended (the live "Pinball Magazine" magazine
+        # root has web children). Pin it so a future "web-only" guard can't land.
+        client.force_login(user)
+        root = CitationSource.objects.create(
+            name="Pinball Magazine", source_type="magazine"
+        )
+        resp = _post(
+            client,
+            self._url(root.pk),
+            {"url": "https://pinball-magazine.example/post", "page_name": "Post"},
+        )
+        assert resp.status_code == 201
+        child = CitationSource.objects.get(pk=resp.json()["id"])
+        assert child.parent_id == root.pk
+        assert child.source_type == "web"
+
+    def test_missing_parent_returns_404(self, client, user):
+        client.force_login(user)
+        resp = _post(client, self._url(999999), {"url": "https://site.example/p"})
+        assert resp.status_code == 404
+
+    def test_page_under_web_child_parent_returns_422(self, client, user):
+        # The web-flatness guard: a web child's parent must be a root, so a
+        # page nested under a web child (a grandchild) is rejected by clean().
+        client.force_login(user)
+        root = CitationSource.objects.create(name="Site", source_type="web")
+        child = CitationSource.objects.create(
+            name="Page", source_type="web", parent=root
+        )
+        resp = _post(client, self._url(child.pk), {"url": "https://site.example/deep"})
+        assert resp.status_code == 422
+
+    def test_malformed_url_returns_422(self, client, user):
+        client.force_login(user)
+        root = CitationSource.objects.create(name="Site", source_type="web")
+        resp = _post(client, self._url(root.pk), {"url": "not-a-url"})
+        assert resp.status_code == 422
+
+    def test_extra_field_returns_422(self, client, user):
+        client.force_login(user)
+        root = CitationSource.objects.create(name="Site", source_type="web")
+        resp = _post(
+            client,
+            self._url(root.pk),
+            {"url": "https://site.example/p", "source_type": "web"},
+        )
+        assert resp.status_code == 422
+
+
+class TestCreateCitationSourceRecord:
+    """``POST /{source_id}/records/`` — mint/reuse a scheme child under a root."""
+
+    @staticmethod
+    def _url(parent_id):
+        return f"/api/citation-sources/{parent_id}/records/"
+
+    def test_anonymous_gets_401(self, client):
+        root = CitationSource.objects.create(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+        resp = _post(client, self._url(root.pk), {"identifier": "4443"})
+        assert resp.status_code in (401, 403)
+
+    def test_mints_validated_attributed_child(self, client, user):
+        client.force_login(user)
+        root = CitationSource.objects.create(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+        resp = _post(client, self._url(root.pk), {"identifier": "4443"})
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "IPDB #4443"
+        child = CitationSource.objects.get(pk=data["id"])
+        assert child.parent_id == root.pk
+        assert child.identifier == "4443"
+        assert child.created_by == user
+        ref = child.links.get(link_type="reference")
+        assert ref.url == "https://www.ipdb.org/machine.cgi?id=4443"
+
+    def test_recite_existing_identifier_reuses_child(self, client, user):
+        client.force_login(user)
+        root = CitationSource.objects.create(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+        first = _post(client, self._url(root.pk), {"identifier": "4443"})
+        second = _post(client, self._url(root.pk), {"identifier": "4443"})
+        assert first.status_code == 201
+        assert second.status_code == 201
+        assert second.json()["id"] == first.json()["id"]
+        assert CitationSource.objects.filter(parent=root).count() == 1
+
+    def test_pasted_url_normalized_to_bare_id(self, client, user):
+        client.force_login(user)
+        root = CitationSource.objects.create(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+        resp = _post(
+            client,
+            self._url(root.pk),
+            {"identifier": "https://www.ipdb.org/machine.cgi?id=4443"},
+        )
+        assert resp.status_code == 201
+        child = CitationSource.objects.get(pk=resp.json()["id"])
+        assert child.identifier == "4443"
+
+    def test_missing_parent_returns_404(self, client, user):
+        client.force_login(user)
+        resp = _post(client, self._url(999999), {"identifier": "4443"})
+        assert resp.status_code == 404
+
+    def test_parent_without_scheme_returns_422(self, client, user):
+        # A parent root that carries no identifier_key has no scheme; the leaf
+        # raises ValueError, which must surface as a 422 (not a 500).
+        client.force_login(user)
+        root = CitationSource.objects.create(name="Some Site", source_type="web")
+        resp = _post(client, self._url(root.pk), {"identifier": "4443"})
+        assert resp.status_code == 422
+
+    def test_invalid_identifier_returns_422(self, client, user):
+        client.force_login(user)
+        root = CitationSource.objects.create(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+        resp = _post(client, self._url(root.pk), {"identifier": "abc"})
+        assert resp.status_code == 422
+
+    def test_random_url_as_identifier_returns_422(self, client, user):
+        # A non-IPDB URL doesn't match the extractor's format → rejected.
+        client.force_login(user)
+        root = CitationSource.objects.create(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+        resp = _post(
+            client, self._url(root.pk), {"identifier": "https://example.com/page"}
+        )
+        assert resp.status_code == 422
+
+    def test_overlong_generated_name_returns_422(self, client, user):
+        # A max-length root name + identifier overflows the generated child name;
+        # the leaf's full_clean ValidationError must map to a 422, not a 500.
+        client.force_login(user)
+        root = CitationSource.objects.create(
+            name="X" * 500, source_type="web", identifier_key="ipdb"
+        )
+        resp = _post(client, self._url(root.pk), {"identifier": "1"})
+        assert resp.status_code == 422
+
+    def test_extra_field_returns_422(self, client, user):
+        client.force_login(user)
+        root = CitationSource.objects.create(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+        resp = _post(
+            client,
+            self._url(root.pk),
+            {"identifier": "4443", "source_type": "web"},
+        )
+        assert resp.status_code == 422

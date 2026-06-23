@@ -125,7 +125,7 @@
 
   // Finalize: the one write of the whole flow, so abandoning beforehand writes
   // nothing. With an explicit parent (the identify path), file the page directly
-  // under that root via create — the contributor already chose it, so we don't
+  // under that root via `pages/` — the contributor already chose it, so we don't
   // let the URL re-route it. Otherwise `cite-url` resolves the root from the URL
   // (creating the site root + page child for a new site). Either returns the web
   // child; the orchestrator then auto-submits the instance (skip_locator=true).
@@ -135,8 +135,8 @@
       return;
     }
     if (parentId !== null && !pageName.trim()) {
-      // The explicit-parent create needs a name; the cite-url path derives one
-      // from the URL, but create_citation_source does not.
+      // The backend would derive a name from the URL, but on the explicit-parent
+      // path we ask the contributor to name the page rather than auto-deriving.
       error = 'Page name is required.';
       return;
     }
@@ -146,22 +146,13 @@
 
     // Branched (not a ternary) so each call keeps its own response type.
     if (parentId !== null) {
-      const { data, error: apiError } = await client.POST('/api/citation-sources/', {
-        body: {
-          name: pageName,
-          source_type: 'web',
-          author: '',
-          publisher: '',
-          date_note: '',
-          description: '',
-          parent_id: parentId,
-          identifier: '',
-          url,
-          link_label: '',
-          // A specific page under a root is reference evidence, not a homepage.
-          link_type: 'reference',
+      const { data, error: apiError } = await client.POST(
+        '/api/citation-sources/{source_id}/pages/',
+        {
+          params: { path: { source_id: parentId } },
+          body: { url, page_name: pageName },
         },
-      });
+      );
       finish(data, apiError);
     } else {
       const { data, error: apiError } = await client.POST('/api/citation-sources/cite-url/', {

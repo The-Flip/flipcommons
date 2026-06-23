@@ -1,10 +1,9 @@
 """Get-or-create citation sources for the data-patch ``sources:`` block.
 
-The patch path (``apps.claim_ingest``) is the only caller. It is flat
-(roots only) and **additive-only**: ``ensure_root_source`` creates a missing
-source or backfills a missing link, but never overwrites an existing row or
-link. A collision is a warning, never a failure — so a user-created source
-can't wedge the patch queue. See ``docs/DataPatches.md``.
+Flat (roots only) and **additive-only**: ``ensure_root_source`` creates a
+missing source or backfills a missing link, but never overwrites an existing row
+or link. A collision is a warning, never a failure — so a user-created source
+can't wedge the ingest queue. See ``docs/DataPatches.md``.
 """
 
 from __future__ import annotations
@@ -54,7 +53,7 @@ class SourceUpsertResult(NamedTuple):
 
 
 # ---------------------------------------------------------------------------
-# Shared leaf primitives (used by both the seed walk and the patch path)
+# Source lookup + create primitives
 # ---------------------------------------------------------------------------
 
 
@@ -107,8 +106,8 @@ def _lookup_source(fields: SourceFields) -> SourceMatch:
     ``(name, source_type)`` scoped to parentless rows (count can exceed 1; the
     caller decides what to do).
 
-    The ``(name, source_type)`` match is root-scoped because the patch path
-    creates *roots*: a same-named child (one a ``cite:`` minted, say) must not
+    The ``(name, source_type)`` match is root-scoped because only *roots* are
+    created here: a same-named child (one a ``cite:`` minted, say) must not
     shadow the root it should create — otherwise the root is never made and
     links land on a child, where ``recognize_url`` can't see them. The ``isbn``
     path is deliberately **not** scoped: ``isbn`` is globally unique (a flat
@@ -122,8 +121,8 @@ def _lookup_source(fields: SourceFields) -> SourceMatch:
         obj = CitationSource.objects.filter(isbn=isbn).first()
         return SourceMatch(obj, 1 if obj is not None else 0)
     qs = CitationSource.objects.filter(
-        name=fields["name"], source_type=fields["source_type"], parent__isnull=True
-    )
+        name=fields["name"], source_type=fields["source_type"]
+    ).roots()
     return SourceMatch(qs.first(), qs.count())
 
 
@@ -229,7 +228,7 @@ def _ensure_root_domains(
 
 
 # ---------------------------------------------------------------------------
-# Data-patch path: read-phase validation + additive get-or-create
+# Read-phase validation + additive get-or-create
 # ---------------------------------------------------------------------------
 
 
