@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.db import models
 
-from .base import ClaimControlledModel
+from ..model_bases import ClaimControlledModel
 
 __all__ = ["get_claim_fields"]
 

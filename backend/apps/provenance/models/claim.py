@@ -12,7 +12,7 @@ from django.db.models.functions import Now
 
 from apps.core.models import BoundedTextField, field_not_blank
 
-from .base import ClaimControlledModel
+from ..model_bases import ClaimControlledModel
 from .changeset import ChangeSet
 from .source import Source
 
