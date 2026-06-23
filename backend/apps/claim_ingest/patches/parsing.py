@@ -24,7 +24,7 @@ from apps.citation.models import (
     CITATION_SOURCE_IDENTIFIER_MAX_LENGTH,
     CITATION_SOURCE_LINK_URL_MAX_LENGTH,
 )
-from apps.citation.seed_data.types import SeedLink, SeedSource
+from apps.citation.source_node import SourceLinkNode, SourceNode
 from apps.claim_ingest.patches._types import PatchError
 from apps.claim_ingest.plan import (
     CitationRef,
@@ -79,10 +79,11 @@ RESERVED_FIELD_KEYS = frozenset(
 # meaningless.
 _CHANGESET_ITEM_FORBIDDEN_KEYS = frozenset({"create", "delete", "changesets"})
 
-# Allowed keys in a `sources:` node / its links, derived from the seed TypedDicts
-# (the single source of truth). `children` is excluded — v1 sources are flat.
-ALLOWED_SOURCE_KEYS = frozenset(SeedSource.__annotations__) - {"children"}
-ALLOWED_LINK_KEYS = frozenset(SeedLink.__annotations__)
+# Allowed keys in a `sources:` node / its links, derived from the source-node
+# TypedDicts (the single source of truth). `children` is excluded — v1 sources
+# are flat.
+ALLOWED_SOURCE_KEYS = frozenset(SourceNode.__annotations__) - {"children"}
+ALLOWED_LINK_KEYS = frozenset(SourceLinkNode.__annotations__)
 
 
 # ---------------------------------------------------------------------------
@@ -307,7 +308,7 @@ class PatchDoc:
     fingerprint: str
     # Non-claim citation-source upserts (the `sources:` block). Empty for a
     # claims-only patch. Shape-validated here; field-validated in build_plan.
-    sources: list[SeedSource] = field(default_factory=list)
+    sources: list[SourceNode] = field(default_factory=list)
 
 
 def _parse_link_shape(link: object, where: str) -> None:
@@ -325,8 +326,8 @@ def _parse_link_shape(link: object, where: str) -> None:
         raise PatchError(f"{where}: 'label' must be a string")
 
 
-def _parse_source_node(entry: object, where: str) -> SeedSource:
-    """Validate one `sources:` node's shape and return it as a SeedSource.
+def _parse_source_node(entry: object, where: str) -> SourceNode:
+    """Validate one `sources:` node's shape and return it as a SourceNode.
 
     Shape only — required keys, no unknown keys, `children` rejected (v1 is
     flat), link mappings well-formed. Field *values* (enum, ranges, URL format)
@@ -346,13 +347,18 @@ def _parse_source_node(entry: object, where: str) -> SeedSource:
         value = entry.get(key)
         if not isinstance(value, str) or not value:
             raise PatchError(f"{where}: {key!r} is required and must be a string")
+    raw_domains = entry.get("domains", [])
+    if not isinstance(raw_domains, list) or not all(
+        isinstance(d, str) and d for d in raw_domains
+    ):
+        raise PatchError(f"{where}: 'domains' must be a list of non-empty strings")
     raw_links = entry.get("links", [])
     if not isinstance(raw_links, list):
         raise PatchError(f"{where}: 'links' must be a list")
     for j, link in enumerate(raw_links):
         _parse_link_shape(link, f"{where}.links[{j}]")
-    # Shape-validated above; narrow the JSON dict to the seed TypedDict.
-    return cast(SeedSource, entry)
+    # Shape-validated above; narrow the JSON dict to the source-node TypedDict.
+    return cast(SourceNode, entry)
 
 
 def _require_bool(raw_fields: JsonBody, key: str, ref: str) -> bool:

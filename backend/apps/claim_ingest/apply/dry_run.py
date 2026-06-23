@@ -110,6 +110,13 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
     """Read-only path: validate and diff without writing anything."""
     report.records_created = len(plan.entities)
 
+    # Preview committed-state conflicts the live pre-write hooks would warn on at
+    # apply (a citation source whose recognition hosts span >1 root). Read-only
+    # and dry-run-only — the live path runs the authoritative pre_write_hooks
+    # instead, so neither path double-warns. Opaque to the apply layer.
+    for hook in plan.dry_run_preview_hooks:
+        hook(report)
+
     # Deferred relationship claims (identity_refs) cannot be validated
     # in dry-run — the relationship validation layer checks that
     # referenced PKs exist in the DB, but those entities are only

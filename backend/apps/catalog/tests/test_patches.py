@@ -27,7 +27,11 @@ from apps.catalog.models import (
     Title,
 )
 from apps.catalog.resolve import resolve_all_corporate_entity_locations
-from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.models import (
+    CitationSource,
+    CitationSourceLink,
+    CitationSourceRootDomain,
+)
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import (
     EditEntry,
@@ -2475,6 +2479,19 @@ def test_sources_link_missing_url_rejected():
         load_patch(text)
 
 
+def test_sources_domains_not_list_of_strings_rejected():
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: X\n"
+        "    source_type: web\n"
+        "    domains:\n"
+        "      - { not: a-string }\n"
+    )
+    with pytest.raises(PatchError, match="'domains' must be a list of non-empty"):
+        load_patch(text)
+
+
 # -- Read-phase semantic validation (caught at build/dry-run) --
 
 
@@ -2516,6 +2533,110 @@ def test_sources_duplicate_declared_link_url_rejected():
     )
     with pytest.raises(PatchError, match="duplicate declared link"):
         _apply(text, patch_id="0001-dup-link")
+
+
+def test_sources_public_suffix_domain_rejected_at_read_phase():
+    # A bare public suffix would over-match every site beneath it under
+    # longest-suffix recognition; the model's clean() guard fails it at dry-run.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: X\n"
+        "    source_type: web\n"
+        "    domains: [co.uk]\n"
+    )
+    with pytest.raises(PatchError, match="host"):
+        _apply(text, patch_id="0001-bad-domain", dry_run=True)
+
+
+def test_sources_malformed_domain_url_rejected_as_patch_error():
+    # A domains: entry whose .hostname access raises ValueError (unbalanced IPv6
+    # bracket) must surface as a clean PatchError at dry-run, not a raw traceback.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: X\n"
+        "    source_type: web\n"
+        "    domains: ['https://[::1/page']\n"
+    )
+    with pytest.raises(PatchError, match="host"):
+        _apply(text, patch_id="0001-bad-ipv6", dry_run=True)
+
+
+def test_sources_domains_minted_end_to_end():
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: Pinball Now\n"
+        "    source_type: web\n"
+        "    links:\n"
+        "      - { url: 'https://pinballnow.com/', link_type: homepage }\n"
+        "    domains: [oldpin.com, 'https://twip.kineticist.com/']\n"
+    )
+    report = _apply(text, patch_id="0001-domains")
+    assert report.sources_created == 1
+    src = CitationSource.objects.get(name="Pinball Now")
+    assert set(src.root_domains.values_list("host", flat=True)) == {
+        "pinballnow.com",
+        "oldpin.com",
+        "twip.kineticist.com",
+    }
+
+
+# -- Dry-run collision preview (the committed-state host-collision warning) --
+
+
+def _spanning_two_roots_patch() -> str:
+    """Create two roots owning a.example / b.example and return a patch whose
+    node's domains span both — the spans-two-roots collision precondition. NB:
+    mutates the DB (the two roots) in addition to returning the patch text."""
+    a = CitationSource.objects.create(name="Root A", source_type="web")
+    CitationSourceRootDomain.objects.create(source=a, host="a.example")
+    b = CitationSource.objects.create(name="Root B", source_type="web")
+    CitationSourceRootDomain.objects.create(source=b, host="b.example")
+    return (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: Spans Two\n"
+        "    source_type: web\n"
+        "    domains: [a.example, b.example]\n"
+    )
+
+
+def test_sources_collision_reported_at_dry_run_naming_both_roots():
+    # A2: an author validating against the dev DB sees the whole-node skip before
+    # publishing — the live upsert hook never runs at --dry-run, the preview does.
+    text = _spanning_two_roots_patch()
+    sources_before = CitationSource.objects.count()
+    report = _apply(text, patch_id="0001-collide", dry_run=True)  # must not raise
+    collisions = [w for w in report.warnings if "different roots" in w]
+    assert len(collisions) == 1  # the preview warns once, never doubles
+    assert "Root A" in collisions[0]
+    assert "Root B" in collisions[0]
+    assert CitationSource.objects.count() == sources_before  # nothing written
+
+
+def test_sources_collision_warns_exactly_once_at_live_apply():
+    text = _spanning_two_roots_patch()
+    report = _apply(text, patch_id="0001-collide")
+    collisions = [
+        w for w in report.warnings if "different roots" in w and "Spans Two" in w
+    ]
+    assert len(collisions) == 1
+    assert report.sources_skipped == 1
+    assert not CitationSource.objects.filter(name="Spans Two").exists()
+
+
+def test_sources_clean_declaration_dry_runs_quietly():
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: Fresh\n"
+        "    source_type: web\n"
+        "    domains: [fresh.example]\n"
+    )
+    report = _apply(text, patch_id="0001-clean", dry_run=True)
+    assert not any("different roots" in w for w in report.warnings)
 
 
 def test_sources_semantic_invalidity_caught_at_dry_run():

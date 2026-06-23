@@ -1,7 +1,7 @@
 """Pure host helpers for citation-source recognition.
 
 Model-free and dependency-free (no Public Suffix List), so ``models``,
-``extractors``, ``seeding`` and migrations can import it without a cycle.
+``extractors``, ``source_upsert`` and migrations can import it without a cycle.
 Everything here takes a **host**, not a URL — callers parse
 ``urlparse(url).hostname`` first and skip a ``None`` result.
 

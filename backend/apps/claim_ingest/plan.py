@@ -40,6 +40,21 @@ class PreWriteHook(Protocol):
     def __call__(self, report: RunReport) -> None: ...
 
 
+class DryRunPreviewHook(Protocol):
+    """A read-only check run on the **dry-run** path, surfacing a state conflict.
+
+    Registered in ``IngestPlan.dry_run_preview_hooks`` and handed the run's
+    ``RunReport`` so it can append warnings. The live path runs ``pre_write_hooks``
+    instead, so neither path double-warns. Today only the data-patch adapter uses
+    it — previewing, at ``--dry-run``, a ``sources:`` node whose recognition hosts
+    already span >1 root (a whole-node skip the live upsert would warn on at
+    apply). Committed-state-only and writes nothing; the apply layer treats it as
+    opaque.
+    """
+
+    def __call__(self, report: RunReport) -> None: ...
+
+
 @dataclass(frozen=True)
 class WebCitationRef:
     """The url form of a :data:`CitationRef`.
@@ -243,6 +258,11 @@ class IngestPlan:
     # Side writes run first inside the apply transaction (before any entity
     # create), each handed the RunReport. Patch-only: citation source upserts.
     pre_write_hooks: list[PreWriteHook] = field(default_factory=list)
+    # Read-only previews run only on the dry-run path, each handed the RunReport
+    # to append warnings. The dry-run analogue of pre_write_hooks: they surface a
+    # committed-state conflict the live hook would warn on at apply (citation
+    # source host collisions), without the live path's writes.
+    dry_run_preview_hooks: list[DryRunPreviewHook] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     # The patch's description, copied to ``IngestRun.note``.
     note: str = ""

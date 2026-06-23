@@ -505,10 +505,10 @@ containers = ["apps.citation"]
 layers = [
     "api | admin",
     "url_extraction",
-    "extractors | extraction | seeding | schemas",
+    "extractors | extraction | source_upsert | schemas",
     "models",
     "psl",
-    "hosts | source_type_traits | safe_fetch | authz | seed_data",
+    "hosts | source_type_traits | safe_fetch | authz | source_node",
 ]
 
 # psl.py is the lone Public Suffix List gateway. The pure hosts module must stay
