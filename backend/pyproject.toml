@@ -18,6 +18,10 @@ dependencies = [
     "workos>=5.0",
     "sentry-sdk[django]>=2.0",
     "pyyaml>=6.0",
+    # Pinned exactly: the package bundles a Public Suffix List snapshot in its
+    # version, so `==` keeps the snapshot deliberate — it moves only via a
+    # reviewed dependabot bump, never a silent `uv sync`. See apps/citation/psl.py.
+    "publicsuffixlist==1.0.2.20260623",
 ]
 
 [dependency-groups]
@@ -208,6 +212,23 @@ forbidden_modules = [
     "apps.media.schemas",
     "apps.provenance.schemas",
 ]
+
+# psl.py is the lone Public Suffix List gateway. The pure hosts module must stay
+# dependency-free, and the recognition read path (extractors) must resolve by
+# exact-stored-host suffix match only — never by consulting the PSL. So neither
+# may import psl. Direct-only: models.py legitimately imports psl for the
+# write-time clean() guard, and extractors imports models, so the indirect
+# extractors -> models -> psl edge is fine — only a *direct* dependency is the
+# leak this forbids.
+[[tool.importlinter.contracts]]
+name = "hosts and the recognition read path stay PSL-free"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.citation.hosts",
+    "apps.citation.extractors",
+]
+forbidden_modules = ["apps.citation.psl"]
 
 # Test-only helpers must never be imported by production code. test_factories
 # encode test-fixture invariants; importing them from app code ships test
@@ -518,5 +539,5 @@ disallow_untyped_calls = false
 # Suppresses import-untyped errors at the import site; the libraries themselves
 # are still treated as Any at use sites.
 [[tool.mypy.overrides]]
-module = ["pillow_heif", "constance", "constance.*"]
+module = ["pillow_heif", "constance", "constance.*", "publicsuffixlist", "publicsuffixlist.*"]
 ignore_missing_imports = true

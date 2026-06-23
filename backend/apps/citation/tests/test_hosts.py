@@ -10,6 +10,8 @@ import pytest
 from apps.citation.hosts import (
     Host,
     RootDomainMatch,
+    is_dns_host,
+    is_reserved_tld,
     label_suffixes,
     longest_suffix_match,
     normalize_host,
@@ -85,6 +87,65 @@ class TestLabelSuffixes:
     )
     def test_suffixes(self, host, expected):
         assert label_suffixes(host) == expected
+
+
+class TestIsDnsHost:
+    """``is_dns_host`` accepts syntactic DNS names, rejects IPs and junk."""
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "american-pinball.com",
+            "s4.american-pinball.com",
+            "a.b.c.example.com",
+            "gov.uk",  # syntactically a host; the public-suffix guard is separate
+            "x.co",  # single-char label is valid
+            "xn--80ak6aa92e.com",  # punycode IDN
+        ],
+    )
+    def test_accepts(self, host):
+        assert is_dns_host(Host(host)) is True
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "127.0.0.1",  # IPv4 literal
+            "::1",  # IPv6 literal
+            "192.168.0.1",
+            "localhost",  # no dot
+            "com",  # no dot
+            "",  # empty
+            "-leading.com",  # leading hyphen
+            "trailing-.com",  # trailing hyphen
+            "under_score.com",  # underscore not in DNS charset
+            "münchen.de",  # raw-unicode IDN (must be punycode)
+            "example.123",  # all-numeric TLD
+            "a" * 64 + ".com",  # label over 63 chars
+            "a." * 127 + "com",  # whole hostname over 253 chars (labels valid)
+        ],
+    )
+    def test_rejects(self, host):
+        assert is_dns_host(Host(host)) is False
+
+
+class TestIsReservedTld:
+    """``is_reserved_tld`` flags RFC special-use rightmost labels."""
+
+    @pytest.mark.parametrize(
+        "host",
+        ["foo.test", "bar.localhost", "invalid", "site.example", "printer.local"],
+    )
+    def test_reserved(self, host):
+        assert is_reserved_tld(Host(host)) is True
+
+    @pytest.mark.parametrize(
+        "host",
+        ["american-pinball.com", "gov.uk", "twip.kineticist.com", "example.com", ""],
+    )
+    def test_not_reserved(self, host):
+        # ``example.com`` is a normal .com domain — only a bare ``.example`` TLD
+        # is reserved, not the second-level label.
+        assert is_reserved_tld(Host(host)) is False
 
 
 # A handful of seeded recognition rows to resolve against.
