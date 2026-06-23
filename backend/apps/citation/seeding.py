@@ -173,6 +173,39 @@ def _declared_homepage_hosts(links: Sequence[SeedLink]) -> list[Host]:
     return hosts
 
 
+def _declared_domains_hosts(node: SeedSource) -> list[Host]:
+    """Normalized recognition hosts a node declares via the ``domains:`` verb.
+
+    Forgiving input: each entry may be a bare host (``oldpin.com``) or a full URL
+    (``https://oldpin.com/``); ``urlparse(entry).hostname or entry`` lands both on
+    the same host before :func:`normalize_host`. Unlike a homepage host this is a
+    pure recognition declaration — no display side, no rounding. Order-preserving
+    and de-duplicated; the universal DNS/public-suffix guard is applied later by
+    :func:`validate_root_source` and the model's ``clean()`` at mint.
+    """
+    hosts: list[Host] = []
+    for entry in node.get("domains", []):
+        host = normalize_host(urlparse(entry).hostname or entry)
+        if host and host not in hosts:
+            hosts.append(host)
+    return hosts
+
+
+def _declared_recognition_hosts(node: SeedSource) -> list[Host]:
+    """The node's full recognition-host set: ``homepage`` links ∪ ``domains:``.
+
+    One unified set so resolution (:func:`_roots_owning_hosts`) and minting
+    (:func:`_ensure_root_domains`) can never diverge on what identifies a root.
+    Homepage hosts come first (display-and-recognition), then declared-only
+    ``domains:`` hosts; de-duplicated across both, order-preserving.
+    """
+    hosts = _declared_homepage_hosts(node.get("links", []))
+    for host in _declared_domains_hosts(node):
+        if host not in hosts:
+            hosts.append(host)
+    return hosts
+
+
 def _roots_owning_hosts(hosts: Sequence[Host]) -> list[CitationSource]:
     """The distinct **root** sources that already own any of the given hosts.
 
@@ -235,18 +268,28 @@ def _ensure_root_domains(
 def validate_root_source(node: SeedSource) -> None:
     """Field-validate a patch ``sources:`` node in memory (no writes).
 
-    Builds the ``CitationSource`` and its ``CitationSourceLink`` rows and runs
-    ``full_clean`` on them with **DB-uniqueness off** — a node that legitimately
-    matches an existing row (the additive get-or-create's "found" case) must not
-    be rejected, and an in-memory link's required FK is unset. Catches bad
-    ``source_type``, out-of-range dates, invalid ``identifier_key``, malformed
-    URL, invalid ``link_type``, and duplicate declared link URLs. Raises
-    :class:`django.core.exceptions.ValidationError`; the patch adapter maps it to
-    a ``PatchError`` (so it surfaces at ``--dry-run`` before shipping).
+    Builds the ``CitationSource``, its ``CitationSourceLink`` rows and its
+    ``CitationSourceRootDomain`` recognition hosts and runs ``full_clean`` on them
+    with **DB-uniqueness off** — a node that legitimately matches an existing row
+    (the additive get-or-create's "found" case) must not be rejected, and an
+    in-memory link/domain's required FK is unset. Catches bad ``source_type``,
+    out-of-range dates, invalid ``identifier_key``, malformed URL, invalid
+    ``link_type``, duplicate declared link URLs, and a recognition host that isn't
+    a DNS name or is a bare public suffix. The host set is the unified
+    ``homepage ∪ domains`` set, so a bad **homepage** host fails here at
+    ``--dry-run`` rather than crashing mid-apply at mint. Validating through the
+    model's ``clean()`` keeps the host guard single-sourced (no forked predicate
+    check). Raises :class:`django.core.exceptions.ValidationError`; the patch
+    adapter maps it to a ``PatchError`` (so it surfaces at ``--dry-run`` before
+    shipping).
     """
     from django.core.exceptions import ValidationError
 
-    from apps.citation.models import CitationSource, CitationSourceLink
+    from apps.citation.models import (
+        CitationSource,
+        CitationSourceLink,
+        CitationSourceRootDomain,
+    )
 
     source = CitationSource(**_source_fields(node))
     source.full_clean(validate_unique=False)
@@ -264,6 +307,10 @@ def validate_root_source(node: SeedSource) -> None:
         )
         obj.full_clean(exclude=["citation_source"], validate_unique=False)
 
+    for host in _declared_recognition_hosts(node):
+        domain = CitationSourceRootDomain(host=host)
+        domain.full_clean(exclude=["source"], validate_unique=False)
+
 
 def ensure_root_source(
     node: SeedSource,
@@ -274,37 +321,41 @@ def ensure_root_source(
 
     Resolution order, host before name:
 
-    1. **By recognition host.** Resolve the node's declared ``homepage`` hosts to
-       the roots that already own them (exact host, not suffix). Hosts owned by
-       **>1 distinct root** → warn and **skip the node, no writes** (picking one
-       and minting the other would trip the ``host`` ``unique`` and wedge the
-       queue). Exactly **one** owning root → that's the match (host wins even if
-       a differently-named root shares the ``(name, source_type)`` — the re-seed-
-       under-a-new-name case).
+    1. **By recognition host.** Resolve the node's declared recognition hosts
+       (``homepage`` links ∪ ``domains:``) to the roots that already own them
+       (exact host, not suffix). Hosts owned by **>1 distinct root** → warn
+       (naming each owning root, the merge backlog until gardening ships) and
+       **skip the node, no writes** (picking one and minting the other would trip
+       the ``host`` ``unique`` and wedge the queue). Exactly **one** owning root →
+       that's the match (host wins even if a differently-named root shares the
+       ``(name, source_type)`` — the re-seed-under-a-new-name case, or a rebrand
+       declaring its old domain in ``domains:``).
     2. **By soft natural key.** No host match → fall back to ``isbn`` /
        ``(name, source_type)`` (root-scoped so a same-named child can't shadow
-       the root), so a same-named root merely gaining a *new* homepage host is
+       the root), so a same-named root merely gaining a *new* recognition host is
        found, not duplicated. On >1 match, operate on the first and warn. Still
        absent → create the source + all its declared links.
 
     On the matched-or-created root, additively ensure each declared link (create
     a missing URL, no-op an identical one, warn on a same-URL/different-type one)
-    and mint a ``CitationSourceRootDomain`` for every declared homepage host it
+    and mint a ``CitationSourceRootDomain`` for every declared recognition host it
     doesn't already own. Never raises on a collision; the caller tallies counts.
     """
     fields = _source_fields(node)
     name = fields["name"]
     source_type = fields["source_type"]
     links = node.get("links", [])
-    homepage_hosts = _declared_homepage_hosts(links)
+    recognition_hosts = _declared_recognition_hosts(node)
 
     # Resolve by recognition host first; host identity wins over the name key.
-    host_roots = _roots_owning_hosts(homepage_hosts)
+    host_roots = _roots_owning_hosts(recognition_hosts)
     if len(host_roots) > 1:
+        owners = ", ".join(sorted(repr(r.name) for r in host_roots))
         warnings.append(
-            f"Citation source {name!r} declares homepage hosts already owned by "
-            f"{len(host_roots)} different roots; skipped the node (no writes) to "
-            f"avoid a domain collision. Resolve the duplicate roots first."
+            f"Citation source {name!r} declares recognition hosts already owned "
+            f"by {len(host_roots)} different roots ({owners}); skipped the node "
+            f"(no writes) to avoid a domain collision. Resolve the duplicate "
+            f"roots first."
         )
         return SourceUpsertResult(source_created=False, links_created=0)
 
@@ -324,7 +375,7 @@ def ensure_root_source(
         obj = _create_source(fields)
         for link in links:
             _create_link(obj, link)
-        _ensure_root_domains(obj, homepage_hosts, warnings=warnings)
+        _ensure_root_domains(obj, recognition_hosts, warnings=warnings)
         return SourceUpsertResult(source_created=True, links_created=len(links))
 
     # Found: never overwrite the row; warn on any declared-field divergence.
@@ -359,5 +410,5 @@ def ensure_root_source(
                 f"Citation source {name!r} link {url!r} already exists with a "
                 f"different type/label; left unchanged."
             )
-    _ensure_root_domains(obj, homepage_hosts, warnings=warnings)
+    _ensure_root_domains(obj, recognition_hosts, warnings=warnings)
     return SourceUpsertResult(source_created=False, links_created=links_created)

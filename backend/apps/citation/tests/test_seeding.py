@@ -8,10 +8,17 @@ end-to-end by ``apps/catalog/tests/test_patches.py``.
 from __future__ import annotations
 
 import pytest
+from django.core.exceptions import ValidationError
 
 from apps.citation.models import CitationSource, CitationSourceRootDomain
 from apps.citation.seed_data.types import SeedLink
-from apps.citation.seeding import _declared_homepage_hosts, ensure_root_source
+from apps.citation.seeding import (
+    _declared_domains_hosts,
+    _declared_homepage_hosts,
+    _declared_recognition_hosts,
+    ensure_root_source,
+    validate_root_source,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -20,10 +27,12 @@ def _homepage(url: str) -> SeedLink:
     return {"url": url, "link_type": "homepage"}
 
 
-def _node(name, source_type="web", links=None):
+def _node(name, source_type="web", links=None, domains=None):
     node: dict[str, object] = {"name": name, "source_type": source_type}
     if links is not None:
         node["links"] = links
+    if domains is not None:
+        node["domains"] = domains
     return node
 
 
@@ -222,4 +231,162 @@ class TestSeedingDedup:
         assert result.links_created == 0
         assert CitationSource.objects.count() == sources_before  # no node written
         assert CitationSourceRootDomain.objects.count() == domains_before
-        assert any("different roots" in w for w in warnings)
+        # The warning names both owning roots — the merge backlog until gardening.
+        assert any(
+            "different roots" in w and "Root A" in w and "Root B" in w for w in warnings
+        )
+
+
+class TestDeclaredDomainsHosts:
+    """Pure host extraction for the ``domains:`` verb — no DB."""
+
+    def test_bare_host_and_url_normalize_identically(self):
+        assert _declared_domains_hosts(_node("x", domains=["oldpin.com"])) == [
+            "oldpin.com"
+        ]
+        assert _declared_domains_hosts(
+            _node("x", domains=["https://www.OldPin.com/path"])
+        ) == ["oldpin.com"]
+
+    def test_recognition_set_unions_homepage_and_domains_deduped(self):
+        node = _node(
+            "x",
+            links=[_homepage("https://pinballnow.com/")],
+            domains=["oldpin.com", "https://pinballnow.com/"],
+        )
+        # homepage first, then the declared-only host; the dup is dropped.
+        assert _declared_recognition_hosts(node) == ["pinballnow.com", "oldpin.com"]
+
+
+class TestDeclaredDomainsMinting:
+    def test_subdomain_is_minted_verbatim_no_rounding(self):
+        """A declared subdomain stays its own host — declare does not round."""
+        result = ensure_root_source(
+            _node("TWIP", domains=["twip.kineticist.com"]), warnings=[]
+        )
+        assert result.source_created
+        root = CitationSource.objects.get(name="TWIP")
+        assert list(root.root_domains.values_list("host", flat=True)) == [
+            "twip.kineticist.com"
+        ]
+
+    def test_homepage_and_domains_union_onto_one_root(self):
+        ensure_root_source(
+            _node(
+                "Pinball Now",
+                links=[_homepage("https://pinballnow.com/")],
+                domains=["oldpin.com"],
+            ),
+            warnings=[],
+        )
+        root = CitationSource.objects.get(name="Pinball Now")
+        assert set(root.root_domains.values_list("host", flat=True)) == {
+            "pinballnow.com",
+            "oldpin.com",
+        }
+
+    def test_url_form_domain_normalizes_like_bare_form(self):
+        ensure_root_source(
+            _node("Pinball Now", domains=["https://OldPin.com/"]), warnings=[]
+        )
+        root = CitationSource.objects.get(name="Pinball Now")
+        assert root.root_domains.filter(host="oldpin.com").exists()
+
+
+class TestRebrandResolution:
+    def test_rebrand_resolves_to_existing_root_via_domains_no_second_root(self):
+        """``domains:`` declares the old host; the new homepage adds, not forks.
+
+        The canonical rebrand: an existing root owns ``oldpin.com``; a node with
+        ``homepage: pinballnow.com, domains: [oldpin.com]`` must resolve **to that
+        root** (because the unified set feeds resolution) and add the new host —
+        never mint a second root.
+        """
+        existing = CitationSource.objects.create(name="OldPin", source_type="web")
+        CitationSourceRootDomain.objects.create(source=existing, host="oldpin.com")
+        before = CitationSource.objects.count()
+
+        result = ensure_root_source(
+            _node(
+                "Pinball Now",
+                links=[_homepage("https://pinballnow.com/")],
+                domains=["oldpin.com"],
+            ),
+            warnings=[],
+        )
+        assert not result.source_created
+        assert CitationSource.objects.count() == before  # no second root minted
+        assert not CitationSource.objects.filter(name="Pinball Now").exists()
+        existing.refresh_from_db()
+        assert set(existing.root_domains.values_list("host", flat=True)) == {
+            "oldpin.com",
+            "pinballnow.com",
+        }
+
+    def test_domains_host_held_by_a_child_warn_skips_no_integrity_error(self):
+        """A declared domain a *child* squats must warn-skip at mint, not raise.
+
+        The root-scoped resolver can't see the child's row, so the node resolves
+        by name and reaches the mint; the unified host set flows through the same
+        warn-skip the homepage path uses, never tripping the ``host`` unique.
+        """
+        parent = CitationSource.objects.create(name="A Root", source_type="web")
+        child = CitationSource.objects.create(
+            name="A Child", source_type="web", parent=parent
+        )
+        # Bypass clean() to plant the pathological child-owned row.
+        CitationSourceRootDomain.objects.create(source=child, host="squatted.example")
+
+        warnings: list[str] = []
+        result = ensure_root_source(  # must not raise
+            _node("Fresh", domains=["squatted.example", "free.example"]),
+            warnings=warnings,
+        )
+        assert result.source_created
+        root = CitationSource.objects.get(name="Fresh")
+        assert list(root.root_domains.values_list("host", flat=True)) == [
+            "free.example"
+        ]
+        assert any("already owned" in w for w in warnings)
+
+    def test_domains_spanning_two_roots_skips_naming_both(self):
+        a = CitationSource.objects.create(name="Root A", source_type="web")
+        CitationSourceRootDomain.objects.create(source=a, host="a.example")
+        b = CitationSource.objects.create(name="Root B", source_type="web")
+        CitationSourceRootDomain.objects.create(source=b, host="b.example")
+
+        warnings: list[str] = []
+        result = ensure_root_source(
+            _node("Spans Two", domains=["a.example", "b.example"]),
+            warnings=warnings,
+        )
+        assert result.source_created is False
+        assert any(
+            "different roots" in w and "Root A" in w and "Root B" in w for w in warnings
+        )
+
+
+class TestValidateRootSourceHosts:
+    """The read-phase guard validates the unified host set via the model."""
+
+    def test_public_suffix_domain_is_rejected(self):
+        with pytest.raises(ValidationError):
+            validate_root_source(_node("Bad", domains=["co.uk"]))
+
+    def test_non_dns_domain_is_rejected(self):
+        with pytest.raises(ValidationError):
+            validate_root_source(_node("Bad", domains=["127.0.0.1"]))
+
+    def test_bad_homepage_host_now_fails_at_validate(self):
+        """Flagged behavior change: a public-suffix homepage host fails here too."""
+        with pytest.raises(ValidationError):
+            validate_root_source(_node("Bad", links=[_homepage("https://co.uk/")]))
+
+    def test_valid_domains_pass(self):
+        validate_root_source(
+            _node(
+                "Good",
+                links=[_homepage("https://pinballnow.com/")],
+                domains=["oldpin.com", "twip.kineticist.com"],
+            )
+        )

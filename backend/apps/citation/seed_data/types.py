@@ -23,5 +23,6 @@ class SeedSource(TypedDict):
     isbn: NotRequired[str]
     description: NotRequired[str]
     identifier_key: NotRequired[str]
+    domains: NotRequired[list[str]]
     links: NotRequired[list[SeedLink]]
     children: NotRequired[list[SeedSource]]

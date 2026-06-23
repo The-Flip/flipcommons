@@ -2475,6 +2475,19 @@ def test_sources_link_missing_url_rejected():
         load_patch(text)
 
 
+def test_sources_domains_not_list_of_strings_rejected():
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: X\n"
+        "    source_type: web\n"
+        "    domains:\n"
+        "      - { not: a-string }\n"
+    )
+    with pytest.raises(PatchError, match="'domains' must be a list of non-empty"):
+        load_patch(text)
+
+
 # -- Read-phase semantic validation (caught at build/dry-run) --
 
 
@@ -2516,6 +2529,40 @@ def test_sources_duplicate_declared_link_url_rejected():
     )
     with pytest.raises(PatchError, match="duplicate declared link"):
         _apply(text, patch_id="0001-dup-link")
+
+
+def test_sources_public_suffix_domain_rejected_at_read_phase():
+    # A bare public suffix would over-match every site beneath it under
+    # longest-suffix recognition; the model's clean() guard fails it at dry-run.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: X\n"
+        "    source_type: web\n"
+        "    domains: [co.uk]\n"
+    )
+    with pytest.raises(PatchError, match="host"):
+        _apply(text, patch_id="0001-bad-domain", dry_run=True)
+
+
+def test_sources_domains_minted_end_to_end():
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: Pinball Now\n"
+        "    source_type: web\n"
+        "    links:\n"
+        "      - { url: 'https://pinballnow.com/', link_type: homepage }\n"
+        "    domains: [oldpin.com, 'https://twip.kineticist.com/']\n"
+    )
+    report = _apply(text, patch_id="0001-domains")
+    assert report.sources_created == 1
+    src = CitationSource.objects.get(name="Pinball Now")
+    assert set(src.root_domains.values_list("host", flat=True)) == {
+        "pinballnow.com",
+        "oldpin.com",
+        "twip.kineticist.com",
+    }
 
 
 def test_sources_semantic_invalidity_caught_at_dry_run():

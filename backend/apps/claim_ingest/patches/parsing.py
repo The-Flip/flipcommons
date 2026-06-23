@@ -346,6 +346,11 @@ def _parse_source_node(entry: object, where: str) -> SeedSource:
         value = entry.get(key)
         if not isinstance(value, str) or not value:
             raise PatchError(f"{where}: {key!r} is required and must be a string")
+    raw_domains = entry.get("domains", [])
+    if not isinstance(raw_domains, list) or not all(
+        isinstance(d, str) and d for d in raw_domains
+    ):
+        raise PatchError(f"{where}: 'domains' must be a list of non-empty strings")
     raw_links = entry.get("links", [])
     if not isinstance(raw_links, list):
         raise PatchError(f"{where}: 'links' must be a list")
