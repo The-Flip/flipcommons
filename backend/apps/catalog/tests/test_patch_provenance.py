@@ -23,9 +23,9 @@ from apps.claim_ingest.patches import (
     load_patch,
 )
 from apps.claim_ingest.plan import (
-    CitationRef,
     IngestPlan,
     PlannedClaimAssert,
+    SchemeCitationRef,
 )
 from apps.provenance.models import (
     ChangeSet,
@@ -619,7 +619,7 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
             value=1998,
             content_type_id=ct.pk,
             object_id=pm.pk,
-            citation_ref=CitationRef("ipdb", "4443"),
+            citation_ref=SchemeCitationRef("ipdb", "4443"),
             entry_index=0,
         )
     )

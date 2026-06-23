@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
-from typing import cast
+from typing import assert_never, cast
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
@@ -38,6 +38,8 @@ from apps.claim_ingest.plan import (
     IngestPlan,
     PlannedClaimAssert,
     PlannedEntityCreate,
+    SchemeCitationRef,
+    WebCitationRef,
 )
 from apps.core.types import ClaimIdentity, EntityKey
 from apps.provenance.models import ChangeSet, Claim, ClaimControlledModel, IngestRun
@@ -238,12 +240,15 @@ def _cite_resolution_error(ref: CitationRef, exc: Exception) -> str:
     fine; the bare ``URLField`` message is identical for both, so name *both*
     URLs when an archive is present — the author can then spot the malformed one.
     """
-    if ref.url:
-        descriptor = repr(ref.url)
-        if ref.archive_url:
-            descriptor += f" (archive {ref.archive_url!r})"
-    else:
-        descriptor = repr(f"{ref.scheme}:{ref.identifier}")
+    match ref:
+        case WebCitationRef(url=url, archive_url=archive_url):
+            descriptor = repr(url)
+            if archive_url:
+                descriptor += f" (archive {archive_url!r})"
+        case SchemeCitationRef(scheme=scheme, identifier=identifier):
+            descriptor = repr(f"{scheme}:{identifier}")
+        case _:
+            assert_never(ref)
     detail = "; ".join(exc.messages) if isinstance(exc, ValidationError) else str(exc)
     return f"cite {descriptor}: {detail}"
 
@@ -275,10 +280,13 @@ def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> 
         )
 
         try:
-            if ref.url:
-                source_id = get_or_create_web_source(ref.url, ref.archive_url).pk
-            else:
-                source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
+            match ref:
+                case WebCitationRef(url=url, archive_url=archive_url):
+                    source_id = get_or_create_web_source(url, archive_url).pk
+                case SchemeCitationRef(scheme=scheme, identifier=identifier):
+                    source_id = get_or_create_external_source(scheme, identifier).pk
+                case _:
+                    assert_never(ref)
         except (ValidationError, ValueError, ObjectDoesNotExist) as exc:
             raise ValidationError(_cite_resolution_error(ref, exc)) from exc
         cache[ref] = source_id

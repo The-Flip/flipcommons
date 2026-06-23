@@ -41,31 +41,46 @@ class PreWriteHook(Protocol):
 
 
 @dataclass(frozen=True)
-class CitationRef:
-    """A parsed, normalized reference to a citation source.
+class WebCitationRef:
+    """The url form of a :data:`CitationRef`.
 
-    Two mutually-exclusive forms, resolved to a ``CitationSource`` at apply
-    time (no DB access to construct one):
-
-    * **scheme** — ``scheme`` is an ``apps.citation.extractors.EXTRACTORS`` key
-      (e.g. ``"ipdb"``) and ``identifier`` is the normalized in-scheme id (e.g.
-      ``"4443"``); resolved via ``get_or_create_external_source``.
-    * **url** — a raw web-page URL for a standalone web source, resolved via
-      ``get_or_create_web_source``. An optional ``archive_url`` (e.g. a Wayback
-      permalink) rides along as a second ``archive``-typed link on the same
-      child source, so one citation carries both the live page and its durable
-      snapshot. Only meaningful for the url form.
-
-    Defined here, beside the plan dataclasses, rather than in any source
-    adapter: the source-agnostic apply layer must not import an adapter, and
-    adapters (e.g. ``ingestion.patches``) already import the plan carriers
-    from this module.
+    ``url`` is a raw web-page URL for a standalone web source, resolved to a
+    ``CitationSource`` at apply time via ``get_or_create_web_source`` (no DB
+    access to construct one). An optional ``archive_url`` (e.g. a Wayback
+    permalink) rides along as a second ``archive``-typed link on the same child
+    source, so one citation carries both the live page and its durable snapshot
+    — it lives only on this form.
     """
 
-    scheme: str = ""
-    identifier: str = ""
-    url: str = ""
+    url: str
     archive_url: str = ""
+
+
+@dataclass(frozen=True)
+class SchemeCitationRef:
+    """The scheme form of a :data:`CitationRef`.
+
+    ``scheme`` is an ``apps.citation.extractors.EXTRACTORS`` key (e.g.
+    ``"ipdb"``) and ``identifier`` is the normalized in-scheme id (e.g.
+    ``"4443"``); resolved to a ``CitationSource`` at apply time via
+    ``get_or_create_external_source`` (no DB access to construct one).
+    """
+
+    scheme: str
+    identifier: str
+
+
+# A parsed, normalized reference to a citation source: one of two
+# mutually-exclusive forms, resolved to a ``CitationSource`` at apply time. A
+# sum type so a both-set / neither-set ref is unconstructable and the apply-side
+# resolve can ``match`` the variant the builder chose rather than re-reading a
+# field. Aliased ``CitationRef`` because most users (``IngestPlan`` fields, the
+# emit/planning carriers, the resolve cache key) treat it opaquely.
+#
+# Defined here, beside the plan dataclasses, rather than in any source adapter:
+# the source-agnostic apply layer must not import an adapter, and adapters (e.g.
+# ``ingestion.patches``) already import the plan carriers from this module.
+type CitationRef = WebCitationRef | SchemeCitationRef
 
 
 # A patch-local citation handle: the ephemeral label wiring a ``[[cite:N]]``

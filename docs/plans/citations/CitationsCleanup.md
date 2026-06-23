@@ -2,6 +2,10 @@
 
 The get-well work for the citation **write layer** — the source-side minting paths, the recognizer and the type-dispatch — before any further behavior rides on them. Lands commit-by-commit on a **fresh branch off `main`**, opened after [WebCitationDomainDisablement.md](WebCitationDomainDisablement.md) ships the current branch. Each commit is the review boundary (no PR-level review), so each is sized to be reviewed and reasoned about on its own, and is behavior-preserving unless a change is flagged.
 
+## Status: ✅ DONE
+
+This plan has been implemented.
+
 ## Context
 
 This plan is the execution form of [CitationWriteLayerDebt.md](CitationWriteLayerDebt.md) §4 (the source-type-dispatch + `recognize_url` tidy, which rebuilds the narrower "Phase 1" of [WebCitationDomains2.md](WebCitationDomains2.md) around a model-driven spine — §4 sketches a `CitationSourceTypeStrategy`; C3 lands the data-only trait table that fits, see [§ Why not a strategy](#why-a-trait-table-not-a-strategy)) folding in that plan's P1.2/P1.3/P1.4. It supersedes WebCitationDomains2's Phase 1. Subdomain matching's _enablement_, its PSL public-suffix guard, the funnel rounding and the `domains:` verb are in [CitationDomainGovernance.md](CitationDomainGovernance.md); **exact** host matching already shipped via [WebCitationDomainDisablement.md](WebCitationDomainDisablement.md). Neither is in scope here.
@@ -29,7 +33,7 @@ Recognition stays **off** the trait table — it runs before the type is known, 
 
 ## The commit sequence
 
-Dependency-ordered. 🛑 STOP after each for review before committing. Commit messages: no ephemera.
+Dependency-ordered. 🛑 STOP after each for review before committing. In commit messages, do NOT reference ephemera that future readers will not understand, such as step numbers, PR numbers, links to this plan.
 
 ### ✅ DONE: C1 — make `normalize_host` idempotent (standalone bug fix) — `hosts.py`
 
@@ -140,11 +144,16 @@ CitationWriteLayerDebt §4, the spine. Two pieces: the `recognize_url` tidy and 
 
 🛑 STOP.
 
-### C7 — `CitationRef` sum type; route the patch dispatch through the shared resolver — `plan.py`, `parsing.py`, `persist.py`
+### ✅ DONE: C7 — `CitationRef` sum type; route the patch dispatch through the shared resolver — `plan.py`, `parsing.py`, `persist.py`
 
-The patch-dispatch unification carved out of C6 (see Decisions). Make `CitationRef` ([plan.py:44](backend/apps/claim_ingest/plan.py#L44)) a real **sum type** (web form vs scheme form as distinct types) so a both-set / neither-set `CitationRef` is unconstructable, and route `_resolve_cite_source_id`'s `if ref.url` ([persist.py:242](backend/apps/claim_ingest/apply/persist.py#L242)) through the variant the builders already chose. Collapses the double-spelled web/scheme dispatch (D3/D20) — `parsing.py` already forks into `_parse_cite_scheme` ([parsing.py:714](backend/apps/claim_ingest/patches/parsing.py#L714)) vs `_parse_cite_url` ([parsing.py:755](backend/apps/claim_ingest/patches/parsing.py#L755)), so the two return shapes become two types and the resolve site stops re-deciding. Touch points: the type in `plan.py`, the two build sites in `parsing.py`, the resolve site + `dict[CitationRef, int]` cache key type in `persist.py`. Behavior-preserving.
+The patch-dispatch unification carved out of C6 (see Decisions). Make `CitationRef` ([plan.py:44](backend/apps/claim_ingest/plan.py#L44)) a real **sum type** — `WebCitationRef` and `SchemeCitationRef` as distinct frozen dataclasses — so a both-set / neither-set ref is unconstructable, and route `_resolve_cite_source_id`'s `if ref.url` ([persist.py:278](backend/apps/claim_ingest/apply/persist.py#L278)) through the variant the builders already chose. Collapses the double-spelled web/scheme dispatch (D3/D20) — `parsing.py` already forks into `_parse_cite_scheme` ([parsing.py:714](backend/apps/claim_ingest/patches/parsing.py#L714)) vs `_parse_cite_url` ([parsing.py:755](backend/apps/claim_ingest/patches/parsing.py#L755)), so the two return shapes become two types and the resolve site stops re-deciding. Behavior-preserving.
 
-- **Tests:** a neither-set or both-set ref is unconstructable; the patch path and the interactive path resolve the same URL to the same source; the C6 error-contract tests stay green through the retyped dispatch.
+- **Keep the union _named_ `CitationRef`** — `type CitationRef = WebCitationRef | SchemeCitationRef`, the two variants beside it in `plan.py`. Every other user (emit.py, planning.py, the `IngestPlan` fields, the `dict[CitationRef, int]` cache key) treats the ref **opaquely** — typed `CitationRef | None`, never reads a field — so the union name keeps all ~9 passthrough sites unchanged. Only the **4 field-reading sites** churn: the two builders in `parsing.py`, and `_resolve_cite_source_id` + `_cite_resolution_error` ([persist.py:241](backend/apps/claim_ingest/apply/persist.py#L241)) in `persist.py`. (Plus one positional construction in [test_patch_provenance.py:622](backend/apps/catalog/tests/test_patch_provenance.py#L622).)
+- **`archive_url` moves onto `WebCitationRef` only.** Today it's documented "Only meaningful for the url form" yet sits on every ref; the sum type makes that real. This is the concrete illegal-state removal — not just both-set/neither-set.
+- **Dispatch via `match`/`case` + `typing.assert_never`, not `isinstance` chains and not a polymorphic `resolve()` method.** A `resolve()` on the variants would force `plan.py` — the deliberately source-agnostic IR module (imports only `provenance.models`; its docstring forbids importing an adapter or the engine) — to import the citation resolvers and do DB access, breaking exactly the boundary it defends. Dispatch stays in `persist.py` but becomes a type-checked exhaustive `match` over the two variants instead of reading a string field; `assert_never` in the fallthrough makes a future third variant a mypy error. That is the model-driven exhaustiveness here, and it sidesteps the bare-`isinstance` smell.
+- **Near-lateral win, stated honestly.** Per Decisions, this **retypes** the branch, it does not remove it. The value is illegal-states-unrepresentable + `archive_url` localized + mypy-exhaustive dispatch — the commit message must not claim the branch is gone.
+
+- **Tests:** `WebCitationRef`/`SchemeCitationRef` carry only their own form's fields (no both-set/neither-set construction possible); the patch path and the interactive path resolve the same URL to the same source; the C6 error-contract tests stay green through the retyped dispatch.
 
 🛑 STOP.
 
