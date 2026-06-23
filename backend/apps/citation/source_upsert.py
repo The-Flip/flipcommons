@@ -13,16 +13,16 @@ from typing import TYPE_CHECKING, NamedTuple, NotRequired, TypedDict
 from urllib.parse import urlparse
 
 from apps.citation.hosts import Host, normalize_host
-from apps.citation.seed_data.types import SeedLink, SeedSource
+from apps.citation.source_node import SourceLinkNode, SourceNode
 
 if TYPE_CHECKING:
     from apps.citation.models import CitationSource
 
 
 class SourceFields(TypedDict):
-    """The model-column subset of a seed/patch node — no parent, links or children.
+    """The model-column subset of a patch source node — no parent, links or children.
 
-    This is ``SeedSource`` minus its ``links``/``children`` keys: the exact set
+    This is ``SourceNode`` minus its ``links``/``children`` keys: the exact set
     of kwargs that construct a ``CitationSource`` row. Naming each column (rather
     than a ``dict[str, object]`` bag) lets ``_lookup_source`` read ``name`` as a
     ``str`` and ``isbn`` as ``str | None`` without a cast.
@@ -69,11 +69,11 @@ class SourceMatch(NamedTuple):
     match_count: int
 
 
-def _source_fields(node: SeedSource) -> SourceFields:
-    """Project a seed/patch node onto its model columns (drop parent/links/children).
+def _source_fields(node: SourceNode) -> SourceFields:
+    """Project a patch source node onto its model columns (drop parent/links/children).
 
     Built key-by-key rather than by comprehension so each value keeps its column
-    type: ``SeedSource.items()`` erases to ``object``, but copying a known key
+    type: ``SourceNode.items()`` erases to ``object``, but copying a known key
     preserves ``str``/``int``. Omitted optional keys stay omitted (not ``None``),
     so a found-row divergence check never compares against a phantom ``None``.
     """
@@ -138,7 +138,7 @@ def _create_source(
     return obj
 
 
-def _create_link(source: CitationSource, link: SeedLink) -> None:
+def _create_link(source: CitationSource, link: SourceLinkNode) -> None:
     """Validate + save a single ``CitationSourceLink`` on ``source``."""
     from apps.citation.models import CitationSourceLink
 
@@ -152,7 +152,7 @@ def _create_link(source: CitationSource, link: SeedLink) -> None:
     obj.save()
 
 
-def _declared_homepage_hosts(links: Sequence[SeedLink]) -> list[Host]:
+def _declared_homepage_hosts(links: Sequence[SourceLinkNode]) -> list[Host]:
     """Normalized recognition hosts a node declares via its ``homepage`` links.
 
     Only ``homepage``-typed links contribute a recognition host (matching the
@@ -173,7 +173,7 @@ def _declared_homepage_hosts(links: Sequence[SeedLink]) -> list[Host]:
     return hosts
 
 
-def _declared_domains_hosts(node: SeedSource) -> list[Host]:
+def _declared_domains_hosts(node: SourceNode) -> list[Host]:
     """Normalized recognition hosts a node declares via the ``domains:`` verb.
 
     Forgiving input: each entry may be a bare host (``oldpin.com``) or a full URL
@@ -191,7 +191,7 @@ def _declared_domains_hosts(node: SeedSource) -> list[Host]:
     return hosts
 
 
-def _declared_recognition_hosts(node: SeedSource) -> list[Host]:
+def _declared_recognition_hosts(node: SourceNode) -> list[Host]:
     """The node's full recognition-host set: ``homepage`` links ∪ ``domains:``.
 
     One unified set so resolution (:func:`_roots_owning_hosts`) and minting
@@ -211,7 +211,7 @@ def _roots_owning_hosts(hosts: Sequence[Host]) -> list[CitationSource]:
 
     Exact-host lookup against ``CitationSourceRootDomain`` — **never** the
     longest-suffix matcher recognition uses. Dedup keys on the literal host so a
-    deliberately-seeded subdomain root (``twip.kineticist.com`` under an existing
+    deliberately-declared subdomain root (``twip.kineticist.com`` under an existing
     ``kineticist.com``) is treated as a distinct, unseeded host, not folded into
     its parent domain. Root-scoped (``parent__isnull``) because only a root is a
     valid match target; a host illegitimately held by a child (a ``clean()``
@@ -265,7 +265,7 @@ def _ensure_root_domains(
 # ---------------------------------------------------------------------------
 
 
-def validate_root_source(node: SeedSource) -> None:
+def validate_root_source(node: SourceNode) -> None:
     """Field-validate a patch ``sources:`` node in memory (no writes).
 
     Builds the ``CitationSource``, its ``CitationSourceLink`` rows and its
@@ -313,7 +313,7 @@ def validate_root_source(node: SeedSource) -> None:
 
 
 def ensure_root_source(
-    node: SeedSource,
+    node: SourceNode,
     *,
     warnings: list[str],
 ) -> SourceUpsertResult:
@@ -328,7 +328,7 @@ def ensure_root_source(
        **skip the node, no writes** (picking one and minting the other would trip
        the ``host`` ``unique`` and wedge the queue). Exactly **one** owning root →
        that's the match (host wins even if a differently-named root shares the
-       ``(name, source_type)`` — the re-seed-under-a-new-name case, or a rebrand
+       ``(name, source_type)`` — the re-declare-under-a-new-name case, or a rebrand
        declaring its old domain in ``domains:``).
     2. **By soft natural key.** No host match → fall back to ``isbn`` /
        ``(name, source_type)`` (root-scoped so a same-named child can't shadow
@@ -379,7 +379,7 @@ def ensure_root_source(
         return SourceUpsertResult(source_created=True, links_created=len(links))
 
     # Found: never overwrite the row; warn on any declared-field divergence.
-    # A host match under a different name is expected (re-seed under a new name),
+    # A host match under a different name is expected (re-declare under a new name),
     # so name that case explicitly rather than claiming the declared name exists.
     divergent = sorted(k for k, v in fields.items() if getattr(obj, k) != v)
     if divergent and matched_by_host:

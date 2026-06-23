@@ -165,10 +165,10 @@ class TestRootDomainRecognition:
         assert rec is not None
         assert rec.parent_id == ap.id
 
-    def test_public_suffix_cannot_be_seeded_so_no_overmatch(self, db):
+    def test_public_suffix_cannot_be_declared_so_no_overmatch(self, db):
         # Ties the clean() guard to suffix matching: longest-suffix matching
         # would let a bare public-suffix host swallow every site beneath it — but
-        # clean() forbids seeding one, so that root can't exist. Declaring "co.uk"
+        # clean() forbids declaring one, so that root can't exist. Declaring "co.uk"
         # is rejected, and an unrelated *.co.uk cite stays unrecognized.
         root = CitationSource.objects.create(name="Bad", source_type="web")
         with pytest.raises(ValidationError):

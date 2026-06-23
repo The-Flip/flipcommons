@@ -62,7 +62,7 @@ class TestCitationSourceRootChild:
 
     def test_methods_chain_on_a_filtered_queryset(self, citation_source_with_parent):
         # ``roots()``/``children()`` are queryset methods, so they compose with
-        # ``filter()`` — the form the recognizer and seeding call sites use.
+        # ``filter()`` — the form the recognizer and source-upsert call sites use.
         child = citation_source_with_parent
         parent = child.parent
         assert CitationSource.objects.filter(name=parent.name).roots().get() == parent

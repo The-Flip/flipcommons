@@ -1,4 +1,4 @@
-"""Tests for the data-patch ``sources:`` get-or-create path (``seeding``).
+"""Tests for the data-patch ``sources:`` get-or-create path (``source_upsert``).
 
 Focus: recognition-domain minting and host-based dedup layered onto the
 additive ``ensure_root_source`` upsert. Field/link upsert behavior is covered
@@ -11,8 +11,8 @@ import pytest
 from django.core.exceptions import ValidationError
 
 from apps.citation.models import CitationSource, CitationSourceRootDomain
-from apps.citation.seed_data.types import SeedLink
-from apps.citation.seeding import (
+from apps.citation.source_node import SourceLinkNode
+from apps.citation.source_upsert import (
     _declared_domains_hosts,
     _declared_homepage_hosts,
     _declared_recognition_hosts,
@@ -23,7 +23,7 @@ from apps.citation.seeding import (
 pytestmark = pytest.mark.django_db
 
 
-def _homepage(url: str) -> SeedLink:
+def _homepage(url: str) -> SourceLinkNode:
     return {"url": url, "link_type": "homepage"}
 
 
@@ -123,7 +123,7 @@ class TestRootDomainMinting:
         }
 
 
-class TestSeedingDedup:
+class TestSourceUpsertDedup:
     def test_redeclare_by_name_with_new_host_adds_domain_no_duplicate(self):
         """A same-named root gaining a new homepage host is found, not duplicated."""
         ensure_root_source(
@@ -143,7 +143,7 @@ class TestSeedingDedup:
         }
 
     def test_dedup_by_host_under_a_new_name(self):
-        """Re-seeding the same host under a different name reuses the host owner."""
+        """Re-declaring the same host under a different name reuses the host owner."""
         ensure_root_source(
             _node("This Week in Pinball", links=[_homepage("https://twip.example/")]),
             warnings=[],

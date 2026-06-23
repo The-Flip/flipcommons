@@ -20,8 +20,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from apps.citation.seed_data.types import SeedSource
-from apps.citation.seeding import ensure_root_source, validate_root_source
+from apps.citation.source_node import SourceNode
+from apps.citation.source_upsert import ensure_root_source, validate_root_source
 from apps.claim_ingest.patches._types import (
     ClaimKey,
     PatchError,
@@ -873,7 +873,7 @@ def _validate_plan_wide(results: list[_EntryResult]) -> None:
             )
 
 
-def _plan_citation_sources(plan: IngestPlan, sources: list[SeedSource]) -> None:
+def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
     """Validate `sources:` nodes (read phase) and register the upsert hook.
 
     Field-validates each node now — so a bad ``source_type``/date/URL fails as a
@@ -905,7 +905,7 @@ def _format_validation_error(exc: ValidationError) -> str:
     )
 
 
-def _make_sources_hook(sources: list[SeedSource]) -> PreWriteHook:
+def _make_sources_hook(sources: list[SourceNode]) -> PreWriteHook:
     """Build the pre-write hook that upserts a patch's citation sources.
 
     The closure owns the catalog-side accounting: ``ensure_root_source`` is
