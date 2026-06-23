@@ -393,7 +393,9 @@ def _create_root_and_child(
                 updated_by=user,
             )
             _clean_and_save(homepage)
-            domain = CitationSourceRootDomain(source=root, host=host)
+            domain = CitationSourceRootDomain(
+                source=root, host=host, created_by=user, updated_by=user
+            )
             # validate_unique=False so the model guards (root-only clean(),
             # CHECK constraints) still fire — as a 422 — while the host-unique
             # race surfaces only as a DB IntegrityError from save() below,

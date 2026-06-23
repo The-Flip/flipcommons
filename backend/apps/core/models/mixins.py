@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from datetime import datetime
 from typing import ClassVar, Self, TypeVar, cast
 
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.db import models
 from django.db.models.expressions import Combinable
@@ -20,6 +21,45 @@ class TimeStampedModel(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+
+
+class AttributedModel(models.Model):
+    """Abstract base adding editorial attribution: who created / last updated.
+
+    Two nullable FKs to the user model (``created_by`` / ``updated_by``), both
+    ``SET_NULL`` so deleting a user never cascades away the rows they touched,
+    and ``related_name="+"`` because no reverse "things this user authored"
+    accessor is wanted. ``null`` because a row may be authored by no user — an
+    ingest/patch write has no acting user, leaving both null (ingest provenance
+    rides the ``ingest_run`` FK, not these columns).
+
+    This is *editorial* attribution for directly-edited, non-claims-controlled
+    models (the citation-source family). It is **not** the claims/provenance
+    system — claim-controlled catalog fields record authorship through
+    ``ChangeSet``/``Claim``, not here.
+
+    Callers set the fields explicitly (admin ``save_model``/``save_formset``,
+    the interactive API create paths); the base only declares the columns so the
+    two FK blocks aren't copy-pasted per model.
+    """
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
 
     class Meta:
         abstract = True
