@@ -47,12 +47,11 @@ describe('CitationCreateStage', () => {
         name: 'Pinball Compendium',
         source_type: 'book',
         parent_id: null,
-        link_type: 'homepage',
       }),
     });
   });
 
-  it('creates an edition under a parent (type locked, reference link)', async () => {
+  it('creates an edition under a parent (type locked, linkless)', async () => {
     const user = userEvent.setup();
     mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
     render(CitationCreateStage, {
@@ -72,7 +71,6 @@ describe('CitationCreateStage', () => {
       body: expect.objectContaining({
         source_type: 'book',
         parent_id: BOOK_PARENT.id,
-        link_type: 'reference',
       }),
     });
   });

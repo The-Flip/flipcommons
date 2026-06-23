@@ -37,7 +37,6 @@ from .extractors import (
 )
 from .hosts import normalize_host
 from .models import (
-    CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG,
     CitationSource,
     CitationSourceLink,
     CitationSourceRootDomain,
@@ -289,77 +288,33 @@ def search_citation_sources(
 def create_citation_source(
     request: HttpRequest, data: CitationSourceCreateSchema
 ) -> Status[CitationSourceDetailSchema]:
-    """Create a new Citation Source, optionally with an initial link."""
+    """Create a book/magazine root or a linkless authored child.
+
+    This endpoint owns neither URLs nor links: web roots/children are minted by
+    ``cite-url``/``pages/`` and scheme children by ``records/``. It creates a
+    plain authored source — a root, or a child nested under ``parent_id``.
+    """
     user = authed_user(request)
     parent = None
     if data.parent_id is not None:
         parent = get_object_or_404(CitationSource, pk=data.parent_id)
 
-    # A scheme child (the parent root carries an identifier_key) mints through
-    # the shared leaf, which owns the "{root} #{id}" name rule and dedups by
-    # (root, identifier) — re-citing an existing id reuses it, not a 422.
-    if data.identifier and parent is not None and parent.identifier_key:
-        try:
-            child = get_or_create_scheme_child(parent, data.identifier, created_by=user)
-        except ValidationError as exc:
-            raise HttpError(422, _validation_detail(exc)) from exc
-        except ValueError as exc:
-            raise HttpError(422, str(exc)) from exc
-        child = get_object_or_404(_detail_qs(), pk=child.pk)
-        return Status(201, _serialize_detail(child))
-
-    name = data.name
-    url = data.url
-    identifier = data.identifier
-
-    with transaction.atomic():
-        source = CitationSource(
-            name=name,
-            source_type=data.source_type,
-            author=data.author,
-            publisher=data.publisher,
-            year=data.year,
-            month=data.month,
-            day=data.day,
-            date_note=data.date_note,
-            isbn=data.isbn,
-            description=data.description,
-            identifier=identifier,
-            parent=parent,
-            created_by=user,
-            updated_by=user,
-        )
-        _clean_and_save(
-            source,
-            integrity_msg="A source with this ISBN or identifier already exists.",
-        )
-
-        if url:
-            link_type = data.link_type or "homepage"
-            link = CitationSourceLink(
-                citation_source=source,
-                link_type=link_type,
-                url=url,
-                label=data.link_label,
-                created_by=user,
-                updated_by=user,
-            )
-            _clean_and_save(link)
-
-            # A parentless source with a homepage link owns a recognition host
-            # (any source_type — see the any-root decision). Dedup belongs to
-            # the interactive cite-url flow; here a host another root already
-            # owns surfaces as a 422 — from full_clean's unique check (the
-            # field's custom message), with integrity_msg as the create-race
-            # backstop. Either way the surrounding atomic() rolls the create back.
-            hostname = urlparse(url).hostname
-            if parent is None and link_type == "homepage" and hostname is not None:
-                domain = CitationSourceRootDomain(
-                    source=source, host=normalize_host(hostname)
-                )
-                _clean_and_save(
-                    domain, integrity_msg=CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG
-                )
+    source = CitationSource(
+        name=data.name,
+        source_type=data.source_type,
+        author=data.author,
+        publisher=data.publisher,
+        year=data.year,
+        month=data.month,
+        day=data.day,
+        date_note=data.date_note,
+        isbn=data.isbn,
+        description=data.description,
+        parent=parent,
+        created_by=user,
+        updated_by=user,
+    )
+    _clean_and_save(source, integrity_msg="A source with this ISBN already exists.")
 
     source = get_object_or_404(_detail_qs(), pk=source.pk)
     return Status(201, _serialize_detail(source))

@@ -27,7 +27,7 @@ metadata for a pasted URL/ISBN from an external API to prefill a create form
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from ninja import Field, Schema
 from pydantic import ConfigDict, field_validator
@@ -173,10 +173,20 @@ class CitationSourceSearchResponseSchema(Schema):
 
 
 class CitationSourceCreateSchema(Schema):
-    """Input to create a new citation source."""
+    """Input to create a book/magazine root or a linkless authored child.
+
+    This endpoint creates plain authored sources only. Web roots/children are
+    minted by ``cite-url``/``pages/`` and scheme children by ``records/``, so
+    ``source_type`` excludes ``web`` and no ``url``/``identifier``/link fields
+    are accepted; ``extra='forbid'`` turns a stray one into a loud 422.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     name: NameStr = Field(description="The source's display name.")
-    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    source_type: Literal["book", "magazine"] = Field(
+        description='Kind of source: "book" or "magazine".'
+    )
     author: AuthorStr = Field("", description="Author or creator.")
     publisher: PublisherStr = Field("", description="Publisher.")
     year: int | None = Field(None, description="Publication year.")
@@ -194,19 +204,6 @@ class CitationSourceCreateSchema(Schema):
     parent_id: int | None = Field(
         None,
         description="Identifier of the root source to nest this under, or null to create a root.",
-    )
-    identifier: IdentifierStr = Field(
-        "",
-        description="Structured identifier for this child within its parent's scheme (e.g. an IPDB machine id).",
-    )
-    # Optional: atomically create a CitationSourceLink alongside the source.
-    url: LinkUrlStr | None = Field(
-        None, description="If set, a URL to attach to the new source as a link."
-    )
-    link_label: LinkLabelStr = Field("", description="Label for the attached link.")
-    link_type: str = Field(
-        "homepage",
-        description='Type of the attached link: "homepage", "catalog", "publisher", "reference" or "archive".',
     )
 
     @field_validator("isbn", mode="before")

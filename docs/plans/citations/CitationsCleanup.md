@@ -85,7 +85,7 @@ WebCitationDomains2 P1.2. Converge web- and scheme-child minting onto two `full_
 
 🛑 STOP.
 
-### C5 — split the god-endpoint: additive (C5a) then subtractive (C5b)
+### ✅ DONE: C5 — split the god-endpoint: additive (C5a) then subtractive (C5b)
 
 WebCitationDomains2 P1.3, the most user-facing work. Three client call sites POST `/api/citation-sources/` into one god-endpoint; this gives each child kind its own thin endpoint and reduces `create_citation_source` to one job. **Split into two commits — additive-then-subtractive — so the dangerous step (removal) is safe by construction.** C5a adds the new endpoints and moves the two callers that relocate, leaving the god-endpoint fully working; C5b deletes the now-dead branches and forbids the now-unused fields. Because C5a proves nothing needs the removed behavior, C5b's blast radius is "the god-endpoint can no longer do X" with X already abandoned. Each commit is independently green and reviewable on its own — the property the original single C5 lost by bundling six coupled changes (see [§ Why split C5](#why-split-c5)).
 
@@ -105,7 +105,7 @@ WebCitationDomains2 P1.3, the most user-facing work. Three client call sites POS
 
 🛑 STOP.
 
-#### C5b — gut `create_citation_source`, forbid the dead fields, shed them client-side — `api.py`, `schemas.py`, frontend, tests
+#### ✅ DONE: C5b — gut `create_citation_source`, forbid the dead fields, shed them client-side — `api.py`, `schemas.py`, frontend, tests
 
 **Subtractive.** Now that no caller uses the god-endpoint's `url`/`identifier` branches (C5a moved them), delete them. The removal is safe because the move already happened.
 
