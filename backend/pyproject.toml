@@ -144,8 +144,11 @@ disallow_untyped_calls = false
 module = ["pillow_heif", "constance", "constance.*", "publicsuffixlist", "publicsuffixlist.*"]
 ignore_missing_imports = true
 
-# Import boundary enforcement — see docs/AppBoundaries.md for the prose spec.
+# ===========================================================================
+# Import boundary enforcement
+# See docs/AppBoundaries.md for the prose spec.
 # Run with `lint-imports` (wired into scripts/lint).
+# ===========================================================================
 [tool.importlinter]
 root_packages = ["apps"]
 
@@ -245,10 +248,9 @@ forbidden_modules = ["apps.claim_edit"]
 
 # --- Media peer-isolation ---
 
-# Media internals (selectors/processing/storage/schemas/helpers/models) are
-# peer-isolated from the citation/provenance data apps. The one sanctioned crack
-# is media.models -> provenance.models for ClaimControlledModel; because this is
-# a forbidden contract (indirect imports counted), the ignore_imports below
+# Media internals are peer-isolated from the citation/provenance data apps.
+# The one sanctioned crack is media.models -> provenance.models for ClaimControlledModel;
+# because this is a forbidden contract (indirect imports counted), the ignore_imports below
 # severs that edge for every source — including selectors/helpers, which reach
 # media.models transitively.
 [[tool.importlinter.contracts]]
@@ -364,24 +366,10 @@ ignore_imports = ["apps.*.tests.** -> apps.provenance.test_factories"]
 
 # ----- catalog -----
 
-# Catalog's whole internal stack as one exhaustive layered contract: api/admin/
-# management on top (leaf consumers — the domain must not import them), down
-# through the read/claim/signal tier and the walk/cache/service tier, to
-# models/authz, and finally the domain-neutral `engine` at the bottom. `engine`
-# sits below `models` because the concrete alias models in `models/` subclass
-# `engine.models.AliasModel` (models → engine, the sanctioned downward edge); the
-# generic HTTP-surface substrate the domain mounts also lives there. The former
-# `naming` and `_alias_registry` layers are gone — both emigrated into `engine`.
-# `exhaustive = true` requires every catalog submodule to appear as a layer (or
-# in exhaustive_ignores): a new module left unplaced fails the build, closing the
-# gaps the old enumerated "api is a leaf" forbidden left (it never covered
-# _walks / admin). This subsumes that contract AND documents the domain layering
-# in one place. Both catalog and core have acyclic top-level graphs, which is
-# what makes a clean layer order possible (see "Core internal layers" below).
 [[tool.importlinter.contracts]]
-name = "Catalog internal layers"
+name = "Catalog app internal stack"
 type = "layers"
-exhaustive = true
+exhaustive = true # so a new submodule left unplaced fails the build
 exhaustive_ignores = ["apps", "migrations", "tests"]
 containers = ["apps.catalog"]
 layers = [
@@ -389,23 +377,19 @@ layers = [
     "claims | resolve | signals",
     "_walks | cache | services",
     "models | authz",
-    "engine",
+    "engine", # domain-neutral; will eventually be moved out of catalog
 ]
 
 # The generic resolver core — scalar/bulk claim projection (_entities), its
 # coercion/FK/constraint helpers (_helpers), and the read-side payload
 # vocabulary (_claim_values) — is domain-agnostic substrate that merely lives
 # in catalog: it names no concrete model and drives entirely off claim-field
-# introspection (get_claim_fields, _meta). Forbidding it from importing the
-# catalog domain turns the claim-resolution plan's load-bearing premise ("Tier
-# 1 is already fully generic") into an enforced invariant, so a stray `from
-# ..models import …` can't silently re-couple it, and the eventual hoist to the
-# substrate stays a near-trivial move. This is a ratchet on what is already
-# true today (green, no baselines) — NOT the model-driven resolver engine,
-# which awaits the deferred relationship-declaration vocabulary. The
-# relationship/dispatch resolvers (_relationships, _dispatch, __init__) still
-# bind MachineModel and are deliberately out of scope; the dispatch seam is
-# restructured by ModelDrivenClaimWrite.md's "Invert resolution" step. See
+# introspection (get_claim_fields, _meta).
+#
+# This will eventually be hoisted to the substrate, but the model-driven resolver
+# engine is still coupled: it awaits the deferred relationship declaration
+# vocabulary. The relationship/dispatch resolvers (_relationships, _dispatch,
+# __init__) still bind MachineModel. See
 # docs/plans/model_driven_metadata/ModelDrivenClaimResolution.md.
 [[tool.importlinter.contracts]]
 name = "Generic resolver core does not import the catalog domain"
@@ -429,39 +413,32 @@ forbidden_modules = [
 # The domain-neutral engine — the generic HTTP-surface substrate plus the generic
 # bases (AliasModel, the wire schema bases, naming, the model-registry walk) the
 # concrete domain mounts and subclasses — must never reach back up into the
-# catalog domain. This is the in-app mirror of the resolver-core rule above and
-# the load-bearing invariant behind the deferred app extraction: once enforced,
-# lifting `engine/` to its own top-level app is a `git mv`. The "Catalog internal
-# layers" contract already forbids this structurally (engine is the bottom
-# layer), but the explicit forbid is a durable, self-documenting ratchet that
-# survives any future layer reshuffle. Whole-package source with a wildcard
-# ignore for engine's own internal edges (e.g. aliases → models) is more concise
-# and more complete than enumerating the sibling domain modules — it catches a
-# new coupling to ANY catalog domain module, present or future.
+# catalog domain.
+#
+# This is the in-app mirror of the resolver-core rule and the load-bearing invariant
+# behind the deferred app extraction: once enforced, lifting `engine/` to its own
+# top-level app is a `git mv`. The "Catalog internal layers" contract already forbids
+# this structurally (engine is the bottom layer), but the explicit forbid is a
+# durable, self-documenting ratchet that survives any future layer reshuffle.
 [[tool.importlinter.contracts]]
 name = "Engine does not import the catalog domain"
 type = "forbidden"
 allow_indirect_imports = "true"
 source_modules = ["apps.catalog.engine"]
 forbidden_modules = ["apps.catalog"]
+# Whole-package source with a wildcard
+# ignore for engine's own internal edges (e.g. aliases → models) is more concise
+# and more complete than enumerating the sibling domain modules — it catches a
+# new coupling to ANY catalog domain module, present or future.
 ignore_imports = ["apps.catalog.engine.** -> apps.catalog.engine.**"]
 
-# The engine's own internal stack, exhaustively layered like the catalog and core
-# contracts so a new engine submodule left unplaced fails the build. The HTTP
-# registrars (`entity_api`) sit on top; the generic query fold and the alias
-# registry below them (`aliases` reads `models`); the cross-cutting wire bases and
-# the leaf substrate (`schemas`, `models`, `naming`, `rich_text`, `walks`) at the
-# base (`rich_text` builds the description ``RichTextSchema`` for the domain
-# serializers; like `naming` it has no engine consumer — a leaf the domain calls). The
-# `entity_api ⊄ export_api` seam joins this contract in Phase E, when the public
-# export surface (`export_api`) is extracted alongside `entity_api`. `tests` is
-# the only ignore needed (engine has no `apps.py` and no migrations, so the
-# `apps`/`migrations` ignores the catalog/core contracts carry don't apply): a
-# co-located `engine/tests/` is test scaffolding, not a layerable unit.
+# The catalog engine's own internal stack.
+# TODO: `entity_api ⊄ export_api` seam joins this contract when the public
+# export surface (`export_api`) is extracted alongside `entity_api`.
 [[tool.importlinter.contracts]]
-name = "Engine internal layers"
+name = "Catalog engine internal stack"
 type = "layers"
-exhaustive = true
+exhaustive = true # so new submodule left unplaced fails build
 exhaustive_ignores = ["tests"]
 containers = ["apps.catalog.engine"]
 layers = [
@@ -473,13 +450,10 @@ layers = [
 # ----- claim_ingest -----
 
 # The apply engine is the source-agnostic IR consumer: it turns an IngestPlan
-# (the carriers in apps.claim_ingest.plan) into DB writes and must not know which
-# front end built it. apps.claim_ingest.patches is the patch *adapter* — its
-# format parsing and its PatchError live there. The engine raises plain
-# ValidationError and lets _apply_one map it to PatchError, so the engine never
-# imports the adapter. That rule is asserted only in docstrings (claims.py,
-# persist.py) today; forbidding the edge makes it self-defending. Green now —
-# apply imports nothing from patches.
+# (apps.claim_ingest.plan) into DB writes and must not know which front end built
+# it. apps.claim_ingest.patches is the patch adapter — format parsing and
+# PatchError live there. The engine raises plain ValidationError and never imports
+# the adapter, keeping apply source-agnostic.
 [[tool.importlinter.contracts]]
 name = "Apply engine stays source-agnostic (no patch adapter)"
 type = "forbidden"
@@ -499,18 +473,10 @@ forbidden_modules = ["apps.claim_ingest.apply"]
 
 # ----- provenance -----
 
-# Provenance internal layering: an exhaustive acyclic internal stack, so a new
-# submodule left unplaced — or an inversion like
-# the data layer reaching up into a read service — fails the build. Top to
-# bottom: the HTTP/admin edges, page-payload assembly, the read/query services
-# (history/evidence over helpers over display), the claim-write + revert tier, the
-# schema/validation/ranking support tier, then models and the dependency-free
-# leaves. apps (the AppConfig's ready() wiring), migrations and tests/test_factories
-# are exhaustive_ignores — bootstrap and test scaffolding, not layerable units.
 [[tool.importlinter.contracts]]
-name = "Provenance internal layers"
+name = "Provenance app internal stack"
 type = "layers"
-exhaustive = true
+exhaustive = true # so new submodule left unplaced fails build
 exhaustive_ignores = ["apps", "migrations", "tests", "test_factories"]
 containers = ["apps.provenance"]
 layers = [
@@ -523,19 +489,27 @@ layers = [
     "models | claim_presence | constants | entity_resolution | pagination | authz | typing",
 ]
 ignore_imports = [
-    # The one sanctioned cycle break, and it can't be removed by moving code.
-    # validation imports models at module level (it introspects model structure to
-    # classify claims), while ClaimManager.assert_claim — the chokepoint that
-    # guarantees no invalid claim is ever written — must validate at write time, so
-    # it imports validation lazily. Hoisting that call up out of the model would
-    # break the cycle but weaken the self-validation invariant (a caller could then
-    # persist an unvalidated claim); pulling the introspection helpers below
-    # validation just relocates the cycle. So the lazy import stays.
-    # See apps/provenance/models/claim.py.
+    # validation imports models, so ClaimManager (models/claim.py) calls it lazily
+    # at write time; hoisting that out would weaken self-validation.
     "apps.provenance.models.claim -> apps.provenance.validation",
 ]
 
 # ----- citation -----
+
+[[tool.importlinter.contracts]]
+name = "Citation app internal stack"
+type = "layers"
+exhaustive = true # so new submodule left unplaced fails build
+exhaustive_ignores = ["apps", "migrations", "tests", "management"]
+containers = ["apps.citation"]
+layers = [
+    "api | admin",
+    "url_extraction",
+    "extractors | extraction | seeding | schemas",
+    "models",
+    "psl",
+    "hosts | source_type_traits | safe_fetch | authz | seed_data",
+]
 
 # psl.py is the lone Public Suffix List gateway. The pure hosts module must stay
 # dependency-free, and the recognition read path (extractors) must resolve by
@@ -554,40 +528,12 @@ source_modules = [
 ]
 forbidden_modules = ["apps.citation.psl"]
 
-# The citation app's internal module stack, top to bottom. Higher layers may
-# import lower; a lower layer importing a higher one is an inversion. Modules
-# sharing a layer (pipe-separated) are independent — they may not import each
-# other. This pins the architecture that holds today: the data layer (models)
-# imports nothing above it, and the domain services stay mutually decoupled, so a
-# future stray edge fails CI instead of sliding in. It does NOT subsume the
-# PSL-free contract above — layers permits a higher module (extractors) to import
-# a lower one (psl); only the forbidden contract bans that specific edge.
-[[tool.importlinter.contracts]]
-name = "Citation internal layers"
-type = "layers"
-containers = ["apps.citation"]
-layers = [
-    "api | admin",
-    "url_extraction",
-    "extractors | extraction | seeding | schemas",
-    "models",
-    "psl",
-    "hosts | source_type_traits | safe_fetch",
-]
-
 # ----- accounts -----
 
-# Accounts' internal stack: the api subpackage plus the admin/middleware/management
-# edges on top; the model, its wire schemas and the auth-error mapping in the
-# middle; and the dependency-free leaves at the base — backends, the
-# pending/reserved-name policy, the username grammar and the WorkOS client.
-# Exhaustive, like the contracts above, so a new submodule left unplaced fails the
-# build. Acyclic with no cycle break needed: usernames is the shared leaf every
-# middle-tier module reads.
 [[tool.importlinter.contracts]]
-name = "Accounts internal layers"
+name = "Accounts app internal stack"
 type = "layers"
-exhaustive = true
+exhaustive = true # so new submodule left unplaced fails build
 exhaustive_ignores = ["apps", "migrations", "tests", "test_factories"]
 containers = ["apps.accounts"]
 layers = [
@@ -598,20 +544,10 @@ layers = [
 
 # ----- core -----
 
-# Core, like catalog, is an exhaustive layered contract over its whole acyclic
-# internal stack — a new submodule left unplaced fails the build, which the old
-# enumerated "core api is a leaf" forbidden never did (it silently omitted admin,
-# checks and soft_delete). apps/migrations/tests stay exhaustive_ignores as in
-# catalog — bootstrap wiring (the AppConfig's ready() imports across layers by
-# design), generated code and test scaffolding, none meaningfully layerable.
-# Core's graph was made acyclic by moving MarkdownField down into models (it was
-# the models → markdown edge) and deleting the dead bulk_create_validated helper
-# (the validators → models edge). api/ is still a leaf — it sits at the top and
-# nothing imports back up into it — but now as one tier of the full stack.
 [[tool.importlinter.contracts]]
-name = "Core internal layers"
+name = "Core app internal stack"
 type = "layers"
-exhaustive = true
+exhaustive = true # so new submodule left unplaced fails build
 exhaustive_ignores = ["apps", "migrations", "tests"]
 containers = ["apps.core"]
 layers = [
@@ -625,21 +561,16 @@ layers = [
 
 # ----- media -----
 
-# Media internal layering: a vertical stack from constants/models at the bottom
-# up to the api composition layer. `selectors` sits above the
-# storage/schemas/helpers peer-group because it composes storage + schemas into
-# wire schemas, which the peer-isolated `helpers` tier may not do. This also
-# enforces that media.api is a leaf (nothing below it imports it). The cross-app
-# media.models -> provenance.models crack is governed by the media peer-isolation
-# contract above, not here.
 [[tool.importlinter.contracts]]
-name = "Media internal layers"
+name = "Media app internal stack"
 type = "layers"
+exhaustive = true # so new submodule left unplaced fails build
+exhaustive_ignores = ["apps", "migrations", "tests"]
 containers = ["apps.media"]
 layers = [
-    "api",
+    "api | admin",
     "authz",
-    "selectors",
+    "selectors", # selectors gets its own tier above the storage/schemas/helpers peers because it composes storage + schemas into wire schemas, which helpers may not.
     "processing | storage | schemas | helpers",
     "models",
     "constants",
