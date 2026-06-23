@@ -103,8 +103,7 @@ indent-style = "space"
 line-ending = "lf"
 
 # Import boundary enforcement — see docs/AppBoundaries.md for the prose spec.
-# Run with `lint-imports` (wired into scripts/lint). Contracts translate the
-# app dependency tiers and peer-isolation rules into checkable form.
+# Run with `lint-imports` (wired into scripts/lint).
 [tool.importlinter]
 root_packages = ["apps"]
 
@@ -229,6 +228,27 @@ source_modules = [
     "apps.citation.extractors",
 ]
 forbidden_modules = ["apps.citation.psl"]
+
+# The citation app's internal module stack, top to bottom. Higher layers may
+# import lower; a lower layer importing a higher one is an inversion. Modules
+# sharing a layer (pipe-separated) are independent — they may not import each
+# other. This pins the architecture that holds today: the data layer (models)
+# imports nothing above it, and the domain services stay mutually decoupled, so a
+# future stray edge fails CI instead of sliding in. It does NOT subsume the
+# PSL-free contract above — layers permits a higher module (extractors) to import
+# a lower one (psl); only the forbidden contract bans that specific edge.
+[[tool.importlinter.contracts]]
+name = "Citation internal layers"
+type = "layers"
+containers = ["apps.citation"]
+layers = [
+    "api | admin",
+    "url_extraction",
+    "extractors | extraction | seeding | schemas",
+    "models",
+    "psl",
+    "hosts | source_type_traits | safe_fetch",
+]
 
 # Test-only helpers must never be imported by production code. test_factories
 # encode test-fixture invariants; importing them from app code ships test
@@ -498,6 +518,61 @@ layers = [
     "processing | storage | schemas | helpers",
     "models",
     "constants",
+]
+
+# Provenance internal layering: an exhaustive acyclic internal stack, so a new
+# submodule left unplaced — or an inversion like
+# the data layer reaching up into a read service — fails the build. Top to
+# bottom: the HTTP/admin edges, page-payload assembly, the read/query services
+# (history/evidence over helpers over display), the claim-write + revert tier, the
+# schema/validation/ranking support tier, then models and the dependency-free
+# leaves. apps (the AppConfig's ready() wiring), migrations and tests/test_factories
+# are exhaustive_ignores — bootstrap and test scaffolding, not layerable units.
+[[tool.importlinter.contracts]]
+name = "Provenance internal layers"
+type = "layers"
+exhaustive = true
+exhaustive_ignores = ["apps", "migrations", "tests", "test_factories"]
+containers = ["apps.provenance"]
+layers = [
+    "api | admin",
+    "page_endpoints",
+    "evidence | history",
+    "helpers",
+    "claims | display | revert",
+    "validation | schemas | claim_ranking_in_db | licensing | resolution | rate_limits",
+    "models | claim_presence | constants | entity_resolution | pagination | authz | typing",
+]
+ignore_imports = [
+    # The one sanctioned cycle break, and it can't be removed by moving code.
+    # validation imports models at module level (it introspects model structure to
+    # classify claims), while ClaimManager.assert_claim — the chokepoint that
+    # guarantees no invalid claim is ever written — must validate at write time, so
+    # it imports validation lazily. Hoisting that call up out of the model would
+    # break the cycle but weaken the self-validation invariant (a caller could then
+    # persist an unvalidated claim); pulling the introspection helpers below
+    # validation just relocates the cycle. So the lazy import stays.
+    # See apps/provenance/models/claim.py.
+    "apps.provenance.models.claim -> apps.provenance.validation",
+]
+
+# Accounts' internal stack: the api subpackage plus the admin/middleware/management
+# edges on top; the model, its wire schemas and the auth-error mapping in the
+# middle; and the dependency-free leaves at the base — backends, the
+# pending/reserved-name policy, the username grammar and the WorkOS client.
+# Exhaustive, like the contracts above, so a new submodule left unplaced fails the
+# build. Acyclic with no cycle break needed: usernames is the shared leaf every
+# middle-tier module reads.
+[[tool.importlinter.contracts]]
+name = "Accounts internal layers"
+type = "layers"
+exhaustive = true
+exhaustive_ignores = ["apps", "migrations", "tests", "test_factories"]
+containers = ["apps.accounts"]
+layers = [
+    "api | admin | management | middleware",
+    "models | schemas | auth_errors",
+    "backends | pending | reserved | usernames | workos_client",
 ]
 
 [tool.mypy]
