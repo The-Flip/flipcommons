@@ -377,6 +377,13 @@ class TestValidateRootSourceHosts:
         with pytest.raises(ValidationError):
             validate_root_source(_node("Bad", domains=["127.0.0.1"]))
 
+    def test_malformed_ipv6_url_domain_is_rejected_not_raised_raw(self):
+        """``urlparse(...).hostname`` raises ValueError on an unbalanced IPv6
+        bracket; the extractor must route it to the model guard so it surfaces as
+        a ValidationError (→ PatchError), never a raw traceback at read phase."""
+        with pytest.raises(ValidationError):
+            validate_root_source(_node("Bad", domains=["https://[::1/page"]))
+
     def test_bad_homepage_host_now_fails_at_validate(self):
         """Flagged behavior change: a public-suffix homepage host fails here too."""
         with pytest.raises(ValidationError):

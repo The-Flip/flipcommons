@@ -182,10 +182,20 @@ def _declared_domains_hosts(node: SourceNode) -> list[Host]:
     pure recognition declaration — no display side, no rounding. Order-preserving
     and de-duplicated; the universal DNS/public-suffix guard is applied later by
     :func:`validate_root_source` and the model's ``clean()`` at mint.
+
+    A malformed entry whose ``.hostname`` access raises (an unbalanced IPv6
+    bracket, ``https://[::1/page``) falls back to the raw string, so the model
+    guard rejects it as a clean ``ValidationError`` (→ ``PatchError``) at read
+    phase rather than letting a raw ``ValueError`` escape as a traceback. Domains
+    have no upstream URLValidator the way homepage links do.
     """
     hosts: list[Host] = []
     for entry in node.get("domains", []):
-        host = normalize_host(urlparse(entry).hostname or entry)
+        try:
+            hostname = urlparse(entry).hostname
+        except ValueError:
+            hostname = None
+        host = normalize_host(hostname or entry)
         if host and host not in hosts:
             hosts.append(host)
     return hosts

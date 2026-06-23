@@ -2545,6 +2545,20 @@ def test_sources_public_suffix_domain_rejected_at_read_phase():
         _apply(text, patch_id="0001-bad-domain", dry_run=True)
 
 
+def test_sources_malformed_domain_url_rejected_as_patch_error():
+    # A domains: entry whose .hostname access raises ValueError (unbalanced IPv6
+    # bracket) must surface as a clean PatchError at dry-run, not a raw traceback.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "sources:\n"
+        "  - name: X\n"
+        "    source_type: web\n"
+        "    domains: ['https://[::1/page']\n"
+    )
+    with pytest.raises(PatchError, match="host"):
+        _apply(text, patch_id="0001-bad-ipv6", dry_run=True)
+
+
 def test_sources_domains_minted_end_to_end():
     text = (
         "attribution: flipcommons-catalog\n"
