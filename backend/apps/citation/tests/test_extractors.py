@@ -107,6 +107,23 @@ class TestYouTubeRecognition:
     def test_no_root_seeded_yields_no_recognition(self, db):
         assert recognize_url(f"https://youtu.be/{VID}") is None
 
+    def test_extractor_match_without_scheme_root_falls_through_to_host(self, db):
+        # Pins the extractor recognizer's continue-not-return behavior: the URL
+        # matches the youtube pattern, but with no youtube *scheme* root seeded
+        # the extractor recognizer abstains rather than returning None, so a
+        # seeded youtube.com recognition host still resolves it (parent only, no
+        # identifier). A flatten that returned at the first pattern hit would
+        # regress this to None.
+        host_root = CitationSource.objects.create(
+            name="YouTube (web root)", source_type="web"
+        )
+        CitationSourceRootDomain.objects.create(source=host_root, host="youtube.com")
+        rec = recognize_url(f"https://www.youtube.com/watch?v={VID}")
+        assert rec is not None
+        assert rec.parent_id == host_root.id
+        assert rec.identifier is None
+        assert rec.child is None
+
 
 class TestRootDomainRecognition:
     """``recognize_url`` step 3: resolve a host to its root by exact match.

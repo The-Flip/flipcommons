@@ -23,6 +23,7 @@ from collections.abc import Callable
 from typing import cast
 
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 
 from apps.claim_ingest.apply.claims import (
     RetractEntry,
@@ -222,6 +223,31 @@ def _check_empty_diff_entries(
     _reject_empty_diff_provenance(plan, changed)
 
 
+def _cite_resolution_error(ref: CitationRef, exc: Exception) -> str:
+    """Build a patch-readable message naming the cite that failed to resolve.
+
+    The raw resolver exception names no cite — a malformed URL surfaces as the
+    bare ``URLField`` "Enter a valid URL.", a missing root as a
+    ``DoesNotExist``, a bad identifier as a ``ValueError`` — so a ``PatchError``
+    built from it alone can't point an author at the offending line. Prefix the
+    cite descriptor (the URL, or ``scheme:identifier``), in scope here on the
+    ``CitationRef``, so the wrapped ``ValidationError`` carries it through.
+
+    A web cite's ``archive`` link validates separately in
+    ``get_or_create_web_source`` and can be the offender while the page URL is
+    fine; the bare ``URLField`` message is identical for both, so name *both*
+    URLs when an archive is present — the author can then spot the malformed one.
+    """
+    if ref.url:
+        descriptor = repr(ref.url)
+        if ref.archive_url:
+            descriptor += f" (archive {ref.archive_url!r})"
+    else:
+        descriptor = repr(f"{ref.scheme}:{ref.identifier}")
+    detail = "; ".join(exc.messages) if isinstance(exc, ValidationError) else str(exc)
+    return f"cite {descriptor}: {detail}"
+
+
 def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> int:
     """Resolve a ``CitationRef`` to a ``CitationSource`` pk, memoized via ``cache``.
 
@@ -231,6 +257,15 @@ def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> 
     ``{url, archive}`` backfill come free. Created sources are *uncounted* — the
     resolvers return a bare ``CitationSource``, not created-ness — matching the
     field-``cite:`` stance (only the ``sources:`` block bumps the counters).
+
+    The resolvers fail three ways — a malformed URL/identifier (``ValidationError``
+    from the C4 leaves' ``full_clean``), an unknown scheme or bad identifier
+    (``ValueError``), a missing root (``CitationSource.DoesNotExist``) — and only
+    the first is caught downstream by default. Catch all three here and re-raise
+    one enriched ``ValidationError`` naming the offending cite, so every failure
+    mode reaches ``_apply_one`` as a clean per-patch ``PatchError`` rather than a
+    raw traceback. ``ValidationError`` (not ``PatchError``) keeps this engine
+    source-agnostic — ``_apply_one`` owns the mapping to ``PatchError``.
     """
     source_id = cache.get(ref)
     if source_id is None:
@@ -239,10 +274,13 @@ def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> 
             get_or_create_web_source,
         )
 
-        if ref.url:
-            source_id = get_or_create_web_source(ref.url, ref.archive_url).pk
-        else:
-            source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
+        try:
+            if ref.url:
+                source_id = get_or_create_web_source(ref.url, ref.archive_url).pk
+            else:
+                source_id = get_or_create_external_source(ref.scheme, ref.identifier).pk
+        except (ValidationError, ValueError, ObjectDoesNotExist) as exc:
+            raise ValidationError(_cite_resolution_error(ref, exc)) from exc
         cache[ref] = source_id
     return source_id
 
