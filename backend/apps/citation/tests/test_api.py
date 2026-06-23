@@ -246,6 +246,20 @@ class TestSearchRecognition:
         data = resp.json()
         assert data["recognition"] is None
 
+    def test_malformed_host_url_no_recognition(self, client, user, db):
+        """A malformed host whose ancestor suffix matches a seeded root still
+        yields no recognition — /search/ must not surface a confident-but-wrong
+        page for garbage input (the read surface has no write-time URL guard)."""
+        root = CitationSource.objects.create(name="American Pinball", source_type="web")
+        CitationSourceRootDomain.objects.create(
+            source=root, host="american-pinball.com"
+        )
+        client.force_login(user)
+        resp = client.get(
+            "/api/citation-sources/search/?q=https://www..american-pinball.com/m.pdf"
+        )
+        assert resp.json()["recognition"] is None
+
     def test_plain_text_no_recognition(self, client, user, citation_source):
         """Plain text searches return no recognition."""
         client.force_login(user)
@@ -716,11 +730,10 @@ class TestCiteUrl:
         # No second root was created.
         assert CitationSource.objects.filter(parent__isnull=True).count() == 1
 
-    def test_subdomain_mints_new_root_under_exact_matching(self, client, user):
-        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
-        # Exact matching: an asset subdomain doesn't recognize the seeded
-        # registrable root, so the no-match branch mints a new root at the raw
-        # host instead of nesting under american-pinball.com.
+    def test_subdomain_nests_under_existing_registrable_root(self, client, user):
+        # Suffix matching: an asset subdomain resolves to the seeded registrable
+        # root, so the cite nests a child *under* american-pinball.com rather
+        # than minting a second root.
         client.force_login(user)
         root = CitationSource.objects.create(name="American Pinball", source_type="web")
         CitationSourceRootDomain.objects.create(
@@ -733,12 +746,9 @@ class TestCiteUrl:
         )
         assert resp.status_code == 201
         child = CitationSource.objects.get(pk=resp.json()["id"])
-        assert child.parent_id != root.pk
-        new_root = child.parent
-        assert new_root is not None
-        assert CitationSourceRootDomain.objects.filter(
-            source=new_root, host="s4.american-pinball.com"
-        ).exists()
+        assert child.parent_id == root.pk
+        # No second root was minted.
+        assert CitationSource.objects.filter(parent__isnull=True).count() == 1
         # No page_name sent → the child name falls back to the URL.
         assert child.name == "https://s4.american-pinball.com/manual.pdf"
 

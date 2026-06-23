@@ -66,7 +66,7 @@ The safety half of WebCitationDomains2 P2.2. Lands **before** `G3` and never shi
 
 🛑 STOP.
 
-### G3 — enable subdomain matching — `extractors.py`, tests
+### ✅ DONE: G3 — enable subdomain matching — `extractors.py`, tests
 
 Reverse WebCitationDomainDisablement's DISABLE1: re-point `recognize_url` step 3 at the dormant suffix helpers. Safe now because `G2` rejects public-suffix recognition hosts.
 

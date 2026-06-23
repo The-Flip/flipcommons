@@ -19,7 +19,14 @@ from urllib.parse import urlparse
 
 from django.db import transaction
 
-from apps.citation.hosts import normalize_host
+from apps.citation.hosts import (
+    Host,
+    RootDomainMatch,
+    is_dns_host,
+    label_suffixes,
+    longest_suffix_match,
+    normalize_host,
+)
 from apps.citation.models import (
     CITATION_SOURCE_NAME_MAX_LENGTH,
     CitationSource,
@@ -207,49 +214,59 @@ def _recognize_by_child_link(url: str) -> Recognition | None:
 
 
 def _recognize_by_host(url: str) -> Recognition | None:
-    """Recognizer 3 — recognition-host match (exact host).
+    """Recognizer 3 — recognition-host match (longest label-boundary suffix).
 
     Resolve the URL's normalized host to the root that owns it via
-    ``CitationSourceRootDomain`` — returns parent only, no identifier. The
-    recognition host is an owned fact on the root, decoupled from the
-    display ``homepage`` link — declared deliberately, never inferred and
-    never via external HTTP. See ``docs/Citations.md``.
+    ``CitationSourceRootDomain``, by **longest label-boundary suffix** — an
+    asset subdomain (``s4.american-pinball.com``) resolves to its registrable
+    root, while a more-specific seeded host (``twip.kineticist.com``) still
+    wins over its parent domain for its own subtree. Returns parent only, no
+    identifier. The recognition host is an owned fact on the root, decoupled
+    from the display ``homepage`` link — declared deliberately, never inferred
+    and never via external HTTP. See ``docs/Citations.md``.
 
-    SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3): match
-    the normalized host exactly, not by longest label-boundary suffix.
-    Exact matching can't over-match, so it ships with no public-suffix
-    guard; the ``label_suffixes``/``longest_suffix_match`` helpers stay
-    built and tested in ``hosts.py``, dormant, until G3 re-points this step
-    at them.
+    Suffix matching is safe because ``CitationSourceRootDomain.clean()`` rejects
+    any bare public suffix, so no stored host can over-match the unrelated sites
+    beneath a public suffix (``gov.uk`` could never be a root that swallows
+    ``dvla.gov.uk``).
+
+    A syntactically-invalid host abstains: a malformed host (empty label,
+    underscore, IP literal) can still yield a *valid ancestor* suffix
+    (``www..american-pinball.com`` → ``.american-pinball.com`` →
+    ``american-pinball.com``), so without this gate ``/search/`` would surface a
+    confident-but-wrong match for garbage input. Recognition must not claim a
+    page it can't honestly resolve; the host's shape is checked once, here.
     """
     parsed = urlparse(url)
     if not parsed.hostname:
         return None
 
     host = normalize_host(parsed.hostname)
-
-    # The root-only filter is defense-in-depth for the app-level clean()
-    # invariant (rows inserted via raw SQL / bulk that bypass it).
-    row = (
-        CitationSourceRootDomain.objects.filter(
-            host=host,
-            source__parent__isnull=True,
-        )
-        .values_list("source_id", "source__name")
-        .first()
-    )
-    if row is None:
+    if not is_dns_host(host):
         return None
-    source_id, source_name = row
-    return Recognition(parent_id=source_id, parent_name=source_name)
+
+    # Narrow to the host's own label-boundary suffixes (a handful of rows at
+    # most), then let longest_suffix_match pick the most specific. The root-only
+    # filter is defense-in-depth for the app-level clean() invariant (rows
+    # inserted via raw SQL / bulk that bypass it).
+    candidates = [
+        RootDomainMatch(source_id=row[0], source_name=row[1], host=Host(row[2]))
+        for row in CitationSourceRootDomain.objects.filter(
+            host__in=label_suffixes(host),
+            source__parent__isnull=True,
+        ).values_list("source_id", "source__name", "host")
+    ]
+    best = longest_suffix_match(host, candidates)
+    if best is None:
+        return None
+    return Recognition(parent_id=best.source_id, parent_name=best.source_name)
 
 
 # The ordered recognizer pipeline: each tries one resolution mechanism over the
 # shared EXTRACTORS + host machinery; the first to return a Recognition wins.
 # Resolution order is load-bearing (scheme identity before exact link before
-# host) — see each recognizer's docstring. A future suffix recognizer re-points
-# _recognize_by_host; a new pre-processing step (archive-peel, DOI) becomes one
-# more entry here.
+# host suffix) — see each recognizer's docstring. A new pre-processing step
+# (archive-peel, DOI) becomes one more entry here.
 _RECOGNIZERS: tuple[Recognizer, ...] = (
     _recognize_by_extractor,
     _recognize_by_child_link,
@@ -261,7 +278,7 @@ def recognize_url(url: str) -> Recognition | None:
     """Try to recognize a pasted URL against known sources.
 
     Runs the ordered ``_RECOGNIZERS`` pipeline — scheme extractor, then exact
-    child-link, then exact host — and returns the first non-``None``
+    child-link, then host suffix — and returns the first non-``None``
     ``Recognition``, or ``None`` if every recognizer abstains.
     """
     for recognizer in _RECOGNIZERS:

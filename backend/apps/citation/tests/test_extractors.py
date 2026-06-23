@@ -126,11 +126,10 @@ class TestYouTubeRecognition:
 
 
 class TestRootDomainRecognition:
-    """``recognize_url`` resolves a host to its root by exact match.
+    """``recognize_url`` resolves a host to its root by longest label suffix.
 
-    SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3): step 3
-    matches the host exactly; subdomain (longest-suffix) cases assert the
-    deferred no-match behavior until G3 re-enables suffix matching.
+    An asset subdomain collapses to its registrable root, while a deliberately
+    seeded more-specific host still wins over its parent for its own subtree.
     """
 
     def _root(self, name: str, host: str) -> CitationSource:
@@ -138,38 +137,65 @@ class TestRootDomainRecognition:
         CitationSourceRootDomain.objects.create(source=root, host=host)
         return root
 
-    def test_subdomain_not_recognized_under_exact_matching(self, db):
-        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
-        self._root("American Pinball", "american-pinball.com")
-        assert (
-            recognize_url("http://s4.american-pinball.com/games/gtf/manual.pdf") is None
-        )
+    def test_subdomain_resolves_to_registrable_root(self, db):
+        ap = self._root("American Pinball", "american-pinball.com")
+        rec = recognize_url("http://s4.american-pinball.com/games/gtf/manual.pdf")
+        assert rec is not None
+        assert rec.parent_id == ap.id
 
-    def test_exact_root_host_resolves(self, db):
-        # twip.kineticist.com is itself a seeded host → exact match wins even
-        # with kineticist.com also seeded (the "most specific" framing is moot
-        # under exact matching, but the assertion holds).
+    def test_most_specific_host_wins(self, db):
+        # twip.kineticist.com is itself a seeded host → it beats its parent
+        # kineticist.com for its own subtree (longest label-boundary suffix).
         self._root("Kineticist", "kineticist.com")
         twip = self._root("TWiP", "twip.kineticist.com")
         rec = recognize_url("https://twip.kineticist.com/some-article")
         assert rec is not None
         assert rec.parent_id == twip.id
 
-    def test_subdomain_does_not_resolve_to_parent_under_exact_matching(self, db):
-        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
-        self._root("Kineticist", "kineticist.com")
-        assert recognize_url("https://twip.kineticist.com/some-article") is None
+    def test_subdomain_resolves_to_parent_root(self, db):
+        # No twip.* root seeded → the subdomain falls to its parent domain.
+        kin = self._root("Kineticist", "kineticist.com")
+        rec = recognize_url("https://twip.kineticist.com/some-article")
+        assert rec is not None
+        assert rec.parent_id == kin.id
 
-    def test_deeper_subdomain_not_recognized_under_exact_matching(self, db):
-        # SUBDOMAIN-MATCHING-DISABLED (re-enabled in DomainGovernance G3)
-        self._root("American Pinball", "american-pinball.com")
-        assert recognize_url("https://cdn.assets.american-pinball.com/logo.png") is None
+    def test_deeper_subdomain_resolves_to_nearest_root(self, db):
+        ap = self._root("American Pinball", "american-pinball.com")
+        rec = recognize_url("https://cdn.assets.american-pinball.com/logo.png")
+        assert rec is not None
+        assert rec.parent_id == ap.id
+
+    def test_public_suffix_cannot_be_seeded_so_no_overmatch(self, db):
+        # Ties the G2 guard to G3's matching: longest-suffix matching would let a
+        # bare public-suffix host swallow every site beneath it — but clean()
+        # forbids seeding one, so that root can't exist. Declaring "co.uk" is
+        # rejected, and an unrelated *.co.uk cite stays unrecognized.
+        root = CitationSource.objects.create(name="Bad", source_type="web")
+        with pytest.raises(ValidationError):
+            CitationSourceRootDomain(source=root, host="co.uk").full_clean()
+        assert recognize_url("https://example.co.uk/page") is None
 
     def test_www_prefixed_input_matches(self, db):
         ap = self._root("American Pinball", "american-pinball.com")
         rec = recognize_url("https://www.american-pinball.com/about")
         assert rec is not None
         assert rec.parent_id == ap.id
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            # Empty label: normalizes to .american-pinball.com, whose ancestor
+            # suffix is the seeded american-pinball.com — must NOT match.
+            "https://www..american-pinball.com/manual.pdf",
+            "https://foo_bar.american-pinball.com/x",  # underscore label
+        ],
+    )
+    def test_malformed_host_is_not_recognized(self, db, url):
+        # A malformed host can still produce a valid ancestor suffix; the
+        # is_dns_host gate makes recognition abstain rather than claim a match a
+        # read surface (/search/) would then surface as a confident page.
+        self._root("American Pinball", "american-pinball.com")
+        assert recognize_url(url) is None
 
     def test_lookalike_host_does_not_match(self, db):
         self._root("American Pinball", "american-pinball.com")
@@ -338,3 +364,12 @@ class TestGetOrCreateWebSourceRootHomepage:
         with pytest.raises(ValidationError):
             get_or_create_web_source(page, archive_url="not a url")
         assert not CitationSource.objects.children().exists()
+
+    def test_malformed_subdomain_host_not_recognized_nor_nested(self, db):
+        # A malformed host (empty leading label) yields a valid ancestor suffix
+        # (american-pinball.com), but recognition's is_dns_host gate abstains, so
+        # the URL resolves to no root and nests nothing under the matched domain.
+        root = self._root(db)
+        with pytest.raises(CitationSource.DoesNotExist):
+            get_or_create_web_source("https://www..american-pinball.com/manual.pdf")
+        assert not CitationSource.objects.filter(parent=root).exists()
