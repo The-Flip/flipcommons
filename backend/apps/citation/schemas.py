@@ -30,7 +30,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from ninja import Field, Schema
-from pydantic import field_validator
+from pydantic import ConfigDict, field_validator
 
 from .models import (
     CITATION_SOURCE_AUTHOR_MAX_LENGTH,
@@ -236,6 +236,39 @@ class CitationCiteUrlSchema(Schema):
     page_name: NameStr = Field(
         "",
         description="Display name for the page child; falls back to the URL or its host when blank.",
+    )
+
+
+class CitationPageCreateSchema(Schema):
+    """Input to mint a web page child under an explicit parent root.
+
+    The parent is the path param, so only the page's own fields ride the body:
+    the URL and an optional display name (the backend derives one from the URL
+    when blank). ``extra='forbid'`` so a stray ``source_type``/``link_type`` from
+    a stale client is a loud 422, not a silent drop.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: LinkUrlStr = Field(description="The page URL to cite.")
+    page_name: NameStr = Field(
+        "",
+        description="Display name for the page child; falls back to the URL or its host when blank.",
+    )
+
+
+class CitationRecordCreateSchema(Schema):
+    """Input to mint a scheme child (IPDB/OPDB/…) under an explicit parent root.
+
+    The parent is the path param and the leaf owns the name and canonical link,
+    so the identifier is the only body field. ``extra='forbid'`` so a stray
+    ``name``/``source_type`` from a stale client is a loud 422.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    identifier: IdentifierStr = Field(
+        description="Structured identifier for this child within its parent's scheme (e.g. an IPDB machine id).",
     )
 
 

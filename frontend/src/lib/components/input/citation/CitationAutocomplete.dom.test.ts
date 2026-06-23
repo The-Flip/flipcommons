@@ -418,11 +418,9 @@ describe('CitationAutocomplete (component-level)', () => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
 
-      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
-        body: expect.objectContaining({
-          parent_id: IPDB_SOURCE.id,
-          identifier: '9999',
-        }),
+      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/{source_id}/records/', {
+        params: { path: { source_id: IPDB_SOURCE.id } },
+        body: { identifier: '9999' },
       });
     });
 
@@ -636,14 +634,12 @@ describe('CitationAutocomplete (component-level)', () => {
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
-      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
-        body: expect.objectContaining({
-          parent_id: JJP_SOURCE.id,
-          source_type: 'web',
-          name: 'Elton John',
+      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/{source_id}/pages/', {
+        params: { path: { source_id: JJP_SOURCE.id } },
+        body: {
           url: 'https://jerseyjackpinball.com/products/elton-john',
-          link_type: 'reference',
-        }),
+          page_name: 'Elton John',
+        },
       });
       expect(mockPOST).not.toHaveBeenCalledWith(
         '/api/citation-sources/cite-url/',
@@ -726,13 +722,9 @@ describe('CitationAutocomplete (component-level)', () => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
 
-      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
-        body: expect.objectContaining({
-          parent_id: IPDB_SOURCE.id,
-          identifier: '4443',
-          // A record page is a child → reference, not homepage.
-          link_type: 'reference',
-        }),
+      expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/{source_id}/records/', {
+        params: { path: { source_id: IPDB_SOURCE.id } },
+        body: { identifier: '4443' },
       });
     });
 

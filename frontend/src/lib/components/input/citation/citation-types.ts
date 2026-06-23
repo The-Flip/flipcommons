@@ -148,29 +148,17 @@ export type CreateByIdentifierResult =
   | { ok: true; sourceId: number; sourceName: string; skipLocator: boolean }
   | { ok: false; error: string };
 
-/** Create a child source under a parent using a structured identifier.
- *  The backend validates the identifier, auto-builds the name and canonical URL. */
+/** Create (or reuse) a scheme child under a parent root using a structured
+ *  identifier. The parent is the path param; the backend validates the
+ *  identifier and owns the child's name and canonical URL. */
 export async function createChildByIdentifier(
   apiClient: ApiClient,
   parentId: number,
-  parentName: string,
-  sourceType: string,
   identifier: string,
 ): Promise<CreateByIdentifierResult> {
-  const { data, error } = await apiClient.POST('/api/citation-sources/', {
-    body: {
-      name: `${parentName} #${identifier}`,
-      source_type: sourceType,
-      author: '',
-      publisher: '',
-      date_note: '',
-      description: '',
-      parent_id: parentId,
-      identifier,
-      link_label: '',
-      // A record page is a child → reference; homepage is reserved for roots.
-      link_type: 'reference',
-    },
+  const { data, error } = await apiClient.POST('/api/citation-sources/{source_id}/records/', {
+    params: { path: { source_id: parentId } },
+    body: { identifier },
   });
   if (error) {
     return { ok: false, error: typeof error === 'string' ? error : 'Invalid identifier.' };

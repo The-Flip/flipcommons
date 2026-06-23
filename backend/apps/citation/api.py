@@ -47,7 +47,9 @@ from .schemas import (
     CitationExtractDraftSchema,
     CitationExtractInputSchema,
     CitationExtractResultSchema,
+    CitationPageCreateSchema,
     CitationRecognitionSchema,
+    CitationRecordCreateSchema,
     CitationSourceChildSchema,
     CitationSourceCreateSchema,
     CitationSourceDetailSchema,
@@ -130,6 +132,13 @@ def _clean_and_save(
 def _detail_qs() -> QuerySet[CitationSource]:
     return CitationSource.objects.select_related("parent").prefetch_related(
         "links", "children", "children__links"
+    )
+
+
+def _serialize_match(source: CitationSource) -> CitationSourceMatchSchema:
+    """The minimal "re-cite this source" shape every child-mint endpoint returns."""
+    return CitationSourceMatchSchema(
+        id=source.pk, name=source.name, skip_locator=source.skip_locator
     )
 
 
@@ -476,12 +485,7 @@ def cite_url(
         else:
             child = _create_root_and_child(url, data, user)
 
-    return Status(
-        201,
-        CitationSourceMatchSchema(
-            id=child.pk, name=child.name, skip_locator=child.skip_locator
-        ),
-    )
+    return Status(201, _serialize_match(child))
 
 
 # ---------------------------------------------------------------------------
@@ -562,6 +566,55 @@ def list_citation_source_children(
         .order_by("name")[:20]
     )
     return [_serialize_child(child) for child in children]
+
+
+@citation_sources_router.post(
+    "/{source_id}/pages/",
+    response={201: CitationSourceMatchSchema, 422: ErrorDetailSchema},
+    auth=django_auth,
+)
+@requires(Activity.CITATION_EDIT)
+def create_citation_source_page(
+    request: HttpRequest, source_id: int, data: CitationPageCreateSchema
+) -> Status[CitationSourceMatchSchema]:
+    """Mint a web page child under an explicit parent root.
+
+    The contributor already chose the parent (the identify path), so the URL is
+    not re-recognized — the page nests directly under *source_id*. The parent may
+    be any root type (a web page under a magazine/book root is intended); the
+    only structural rule is the D2 web-flatness guard, which 422s a page under a
+    web *child* parent via ``clean()``.
+    """
+    user = authed_user(request)
+    parent = get_object_or_404(CitationSource, pk=source_id)
+    child = _mint_web_child(parent.pk, data.url, data.page_name, user)
+    return Status(201, _serialize_match(child))
+
+
+@citation_sources_router.post(
+    "/{source_id}/records/",
+    response={201: CitationSourceMatchSchema, 422: ErrorDetailSchema},
+    auth=django_auth,
+)
+@requires(Activity.CITATION_EDIT)
+def create_citation_source_record(
+    request: HttpRequest, source_id: int, data: CitationRecordCreateSchema
+) -> Status[CitationSourceMatchSchema]:
+    """Mint (or reuse) a scheme child under an explicit parent root.
+
+    The parent root carries an ``identifier_key`` scheme (IPDB/OPDB/…); the leaf
+    owns the ``{root} #{id}`` name rule and dedups by ``(root, identifier)``, so
+    re-citing an existing identifier reuses its child rather than 422ing.
+    """
+    user = authed_user(request)
+    parent = get_object_or_404(CitationSource, pk=source_id)
+    try:
+        child = get_or_create_scheme_child(parent, data.identifier, created_by=user)
+    except ValidationError as exc:
+        raise HttpError(422, _validation_detail(exc)) from exc
+    except ValueError as exc:
+        raise HttpError(422, str(exc)) from exc
+    return Status(201, _serialize_match(child))
 
 
 @citation_sources_router.get(
