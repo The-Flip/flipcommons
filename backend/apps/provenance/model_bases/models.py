@@ -1,4 +1,17 @@
-"""Abstract bases for claim-controlled entities and addressable claim subjects."""
+"""Abstract bases for claim-controlled entities and addressable claim subjects.
+
+The citation-agnostic substrate every claim-controlled model inherits — catalog
+and media today, citation eventually. Kept a dependency-free leaf on purpose: it
+imports only ``apps.core`` (and names ``provenance.Claim`` solely through the
+string label of a ``GenericRelation``). Two import-linter contracts pin that:
+the ``Provenance app internal stack`` layer keeps it from reaching up into the
+provenance *domain* (``Claim``, ``ChangeSet``, ``Source``), and the
+``Claim-control bases stay a core-only leaf`` forbidden contract blocks the
+cross-app edges the global tiers would otherwise permit (provenance sits above
+citation/accounts). When a lower-tier app needs to inherit these bases, this
+package lifts out to a top-level app via ``git mv`` — still migration-free,
+because every base is abstract.
+"""
 
 from __future__ import annotations
 

@@ -4,7 +4,7 @@ Re-exports all public names so existing ``from apps.provenance.models import …
 continues to work unchanged.
 """
 
-from .base import (
+from ..model_bases import (
     ClaimControlledModel,
     LinkableClaimModel,
     LinkableLifecycleClaimModel,

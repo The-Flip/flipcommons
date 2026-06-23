@@ -487,11 +487,34 @@ layers = [
     "claims | display | revert",
     "validation | schemas | claim_ranking_in_db | licensing | resolution | rate_limits",
     "models | claim_presence | constants | entity_resolution | pagination | authz | typing",
+    # The abstract claim-control bases every claim-controlled model inherits.
+    # Pinned to the bottom so it can't reach UP into the provenance domain
+    # (Claim, ChangeSet, Source). Its core-only-leaf guarantee — no cross-app
+    # imports either — is enforced separately by the forbidden contract below,
+    # since the global tiers would otherwise let it import down into citation /
+    # accounts. Together they keep the package lift-out-ready (below citation).
+    "model_bases",
 ]
 ignore_imports = [
     # validation imports models, so ClaimManager (models/claim.py) calls it lazily
     # at write time; hoisting that out would weaken self-validation.
     "apps.provenance.models.claim -> apps.provenance.validation",
+]
+
+[[tool.importlinter.contracts]]
+name = "Claim-control bases stay a core-only leaf"
+type = "forbidden"
+# model_bases is the substrate every claim-controlled model inherits, meant to
+# lift out to a top-level app below citation; it must import nothing but
+# apps.core. The other boundaries are already covered — the internal-stack layer
+# blocks reaching up into the provenance domain, the global tiers block the apps
+# above provenance, and "Data apps do not depend on media" blocks media. The one
+# gap is the apps the tiers let provenance import DOWNWARD (citation, accounts):
+# a bare tiers check would allow model_bases -> citation, which would later cycle.
+source_modules = ["apps.provenance.model_bases"]
+forbidden_modules = [
+    "apps.citation",
+    "apps.accounts",
 ]
 
 # ----- citation -----
