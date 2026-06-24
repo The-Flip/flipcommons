@@ -171,6 +171,7 @@ layers = [
     "apps.provenance",
     "apps.citation",
     "apps.accounts",
+    "apps.actors",
     "apps.core",
 ]
 ignore_imports = [
@@ -563,6 +564,19 @@ layers = [
     "api | admin | management | middleware",
     "models | schemas | auth_errors",
     "backends | pending | reserved | usernames | workos_client",
+]
+
+# ----- actors -----
+
+[[tool.importlinter.contracts]]
+name = "Actors app internal stack"
+type = "layers"
+exhaustive = true # so new submodule left unplaced fails build
+exhaustive_ignores = ["apps", "migrations", "tests"]
+containers = ["apps.actors"]
+layers = [
+    "admin | registry | checks",
+    "models",
 ]
 
 # ----- core -----

@@ -1,0 +1,77 @@
+import django.db.models.functions.datetime
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    initial = True
+
+    dependencies = []
+
+    operations = [
+        migrations.CreateModel(
+            name="Actor",
+            fields=[
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "backing_model",
+                    models.CharField(
+                        help_text="_meta.model_name of the backing record: "
+                        "'user', 'source', …. Doubles as the select_related "
+                        "accessor and the registry key.",
+                        max_length=50,
+                    ),
+                ),
+                (
+                    "priority",
+                    models.PositiveSmallIntegerField(
+                        help_text="Trust weight feeding claim resolution; higher "
+                        "wins. Replaces User.priority + Source.priority.",
+                    ),
+                ),
+                (
+                    "resolution_status",
+                    models.CharField(
+                        choices=[
+                            ("active", "Active"),
+                            ("suppressed", "Suppressed"),
+                        ],
+                        default="active",
+                        help_text="active = claims compete in resolution; "
+                        "suppressed = retained but never win.",
+                        max_length=10,
+                    ),
+                ),
+                (
+                    "created_at",
+                    models.DateTimeField(
+                        auto_now_add=True,
+                        db_default=django.db.models.functions.datetime.Now(),
+                    ),
+                ),
+            ],
+        ),
+        migrations.AddConstraint(
+            model_name="actor",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("backing_model", ""), _negated=True),
+                name="actors_actor_backing_model_not_blank",
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="actor",
+            constraint=models.CheckConstraint(
+                condition=models.Q(
+                    ("resolution_status__in", ["active", "suppressed"])
+                ),
+                name="actors_actor_resolution_status_valid",
+            ),
+        ),
+    ]
