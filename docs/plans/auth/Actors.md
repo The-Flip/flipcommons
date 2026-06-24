@@ -375,13 +375,15 @@ This will be its own PR.
 
 The media leak wasn't a one-off bug, it was a symptom that the claim-write chokepoint is bypassable. Fix the class.
 
-The sanctioned write path already exists: `execute_claims` / `execute_multi_entity_claims`. The hole is one level down: `assert_claim` is public and takes changeset as optional. So any caller can reach past the chokepoint and write a changeset-less, loosely-attributed claim — which is precisely what the four media endpoints did. The audit found one such caller; nothing stops the fifth.
+There isn't one wrapper everything goes through — interactive edits use `execute_claims` (and `execute_multi_entity_claims`, only for the soft-delete cascade), ingest uses its own `claim_ingest/apply/persist.py`, revert uses `provenance/revert.py`. What they **do** share is the primitive they all call: `assert_claim`. That's the real narrow waist — and the hole is that `assert_claim` is public and takes `changeset` as optional, so any caller can reach past it and write a changeset-less, loosely-attributed claim. The four media endpoints did exactly that; the audit found those, nothing stops the fifth.
 
-Tighten these:
+Tighten the primitive, not the wrappers:
 
-- changeset becomes required on the write primitive. A changeset-less claim becomes unrepresentable at the type level, not just discouraged.
-- assert_claim goes internal to provenance — not a public API. Every writer (interactive, ingest, revert, media) goes through an execute_claims-style helper that creates-or-takes a changeset and writes the claims atomically. One funnel; you can't have a claim without the changeset that attributes it.
-- Enforce it stays the only path. Either an import-linter contract (only the write-helper module may import assert_claim) or a test that asserts no other call site touches the primitive — the same "route-inventory" discipline the authz layer already uses. The leak audit becomes a standing test, not a one-time sweep.
+- **`changeset` becomes required on `assert_claim`.** A changeset-less claim becomes unrepresentable at the type level, not just discouraged. The existing wrappers already pass one; media must too.
+- **`assert_claim` becomes the sole Claim writer.** Nothing else does raw `Claim.objects.create`/`.save`. The wrappers (`execute_claims`, ingest persist, revert) create-or-take a changeset and funnel into it; media routes through `execute_claims` like every other interactive write rather than calling the primitive directly.
+- **Enforce it stays the only path** — an import-linter contract (only the sanctioned wrappers may import `assert_claim`) or a test that asserts no other call site touches it, the same "route-inventory" discipline the authz layer uses. The leak audit becomes a standing test, not a one-time sweep.
+
+Doing this before the Actor work pays off twice: it makes "attribute every claim write" true by construction, and it gives the post-Actor invariant (`Claim.actor == changeset.actor`) a single enforcement point — `assert_claim` derives `Claim.actor` from the changeset — instead of four wrappers to audit.
 
 #### Backfill ingest runs
 
