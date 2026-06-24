@@ -59,7 +59,9 @@ class TestEligibility:
         # Supersede the status=deleted claim with a status=active claim.
         from apps.provenance.models import Claim
 
-        Claim.objects.assert_claim(t, "status", "active", user=author)
+        Claim.objects.assert_claim(
+            t, "status", "active", user=author, changeset=user_changeset(author)
+        )
         with pytest.raises(UndoError):
             execute_undo_changeset(_require_changeset(cs), user=author)
 
@@ -101,7 +103,9 @@ class TestInverseBehavior:
     def test_reactivates_prior_user_claim_if_any(self, author, bootstrap_source):
         t = _title("g", bootstrap_source)
         # User first asserts status=active (their own prior claim).
-        prior = Claim.objects.assert_claim(t, "status", "active", user=author)
+        prior = Claim.objects.assert_claim(
+            t, "status", "active", user=author, changeset=user_changeset(author)
+        )
         # Then deletes.
         delete_cs, _ = execute_soft_delete(t, user=author)
         prior.refresh_from_db()

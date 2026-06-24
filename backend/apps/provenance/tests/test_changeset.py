@@ -56,10 +56,10 @@ class TestChangeSetClaimGrouping:
         assert c2.changeset == cs
         assert set(cs.claims.values_list("pk", flat=True)) == {c1.pk, c2.pk}
 
-    def test_claim_without_changeset(self, user, mfr):
-        """Claims without a changeset still work (backwards compatible)."""
-        claim = Claim.objects.assert_claim(mfr, "name", "Williams", user=user)
-        assert claim.changeset is None
+    def test_user_claim_without_changeset_rejected(self, user, mfr):
+        """A user-attributed claim must carry a ChangeSet — no unattributed user writes."""
+        with pytest.raises(ValueError, match="requires a changeset"):
+            Claim.objects.assert_claim(mfr, "name", "Williams", user=user)
 
     def test_source_claim_with_changeset_accepted(self, source, mfr):
         """Source-attributed claims can use ChangeSets linked to matching ingest run."""
@@ -162,7 +162,8 @@ class TestClaimProtect:
         """PROTECT prevents deleting a user who has claims."""
         from django.db.models import ProtectedError
 
-        Claim.objects.assert_claim(mfr, "name", "Williams", user=user)
+        cs = ChangeSet.objects.create(user=user, action="edit")
+        Claim.objects.assert_claim(mfr, "name", "Williams", user=user, changeset=cs)
         with pytest.raises(ProtectedError):
             user.delete()
 

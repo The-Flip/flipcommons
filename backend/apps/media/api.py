@@ -17,6 +17,7 @@ from ninja import File, Form, Router, Status, UploadedFile
 from ninja.errors import HttpError
 from ninja.security import django_auth
 
+from apps.accounts.models import User
 from apps.catalog.claims import build_media_attachment_claim
 from apps.catalog.resolve import resolve_media_attachments
 from apps.core.api_helpers import authed_user
@@ -57,11 +58,38 @@ from apps.media.storage import (
     delete_from_storage,
     upload_to_storage,
 )
-from apps.provenance.models import Claim
+from apps.provenance.models import ChangeSet, ChangeSetAction, Claim
 
 logger = logging.getLogger(__name__)
 
 media_router = Router(tags=["media", "private"])
+
+
+def _assert_media_claim(
+    entity: MediaSupportedModel,
+    *,
+    claim_key: str,
+    claim_value: object,
+    user: User,
+) -> Claim:
+    """Assert a ``media_attachment`` claim inside a fresh user ChangeSet.
+
+    Every media mutation is one user action, so it gets its own
+    ``action=EDIT`` ChangeSet — the single attribution path through
+    provenance. Callers must already hold a ``transaction.atomic()`` block so
+    the ChangeSet and claim commit together. See docs/plans/auth/Actors.md
+    ("Fix Media Claims").
+    """
+    changeset = ChangeSet.objects.create(user=user, action=ChangeSetAction.EDIT)
+    return Claim.objects.assert_claim(
+        entity,
+        "media_attachment",
+        claim_value,
+        user=user,
+        claim_key=claim_key,
+        changeset=changeset,
+    )
+
 
 # Extensions that require optional codecs.
 _CODEC_EXTENSIONS: dict[str, str] = {
@@ -263,12 +291,8 @@ def upload_media(
                 category=category,
                 is_primary=False,
             )
-            Claim.objects.assert_claim(
-                entity,
-                "media_attachment",
-                claim_value,
-                user=user,
-                claim_key=claim_key,
+            _assert_media_claim(
+                entity, claim_key=claim_key, claim_value=claim_value, user=user
             )
             resolve_media_attachments(
                 content_type_id=ct.id,
@@ -335,12 +359,8 @@ def detach_media(request: HttpRequest, body: MediaAssetInputSchema) -> Status[No
             asset.pk,
             exists=False,
         )
-        Claim.objects.assert_claim(
-            entity,
-            "media_attachment",
-            claim_value,
-            user=user,
-            claim_key=claim_key,
+        _assert_media_claim(
+            entity, claim_key=claim_key, claim_value=claim_value, user=user
         )
         resolve_media_attachments(
             content_type_id=ct.id,
@@ -386,12 +406,8 @@ def set_primary(request: HttpRequest, body: MediaAssetInputSchema) -> Status[Non
             category=em.category,
             is_primary=True,
         )
-        Claim.objects.assert_claim(
-            entity,
-            "media_attachment",
-            claim_value,
-            user=user,
-            claim_key=claim_key,
+        _assert_media_claim(
+            entity, claim_key=claim_key, claim_value=claim_value, user=user
         )
         resolve_media_attachments(
             content_type_id=ct.id,
@@ -446,12 +462,8 @@ def set_category(
         except ValueError as exc:
             raise HttpError(400, str(exc)) from exc
 
-        Claim.objects.assert_claim(
-            entity,
-            "media_attachment",
-            claim_value,
-            user=user,
-            claim_key=claim_key,
+        _assert_media_claim(
+            entity, claim_key=claim_key, claim_value=claim_value, user=user
         )
         resolve_media_attachments(
             content_type_id=ct.id,

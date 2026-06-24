@@ -338,11 +338,25 @@ In the UI, to display attribution, the system must find the actor(s) for the Cha
 
 In order:
 
+#### Enforce single claims write path
+
+The media leak wasn't a one-off bug, it was a symptom that the claim-write chokepoint is bypassable. Fix the class.
+
+There isn't one wrapper everything goes through — interactive edits use `execute_claims` (and `execute_multi_entity_claims`, only for the soft-delete cascade), ingest uses its own `claim_ingest/apply/persist.py`, revert uses `provenance/revert.py`. What they **do** share is the primitive they all call: `assert_claim`. That's the real narrow waist — and the hole is that `assert_claim` is public and takes `changeset` as optional, so any caller can reach past it and write a changeset-less, loosely-attributed claim. The four media endpoints did exactly that; the audit found those, nothing stops the fifth.
+
+Tighten the primitive, not the wrappers:
+
+- **`changeset` becomes required on `assert_claim`.** A changeset-less claim becomes unrepresentable at the type level, not just discouraged. The existing wrappers already pass one; media must too.
+- **`assert_claim` becomes the sole Claim writer.** Nothing else does raw `Claim.objects.create`/`.save`. The wrappers (`execute_claims`, ingest persist, revert) create-or-take a changeset and funnel into it; media routes through `execute_claims` like every other interactive write rather than calling the primitive directly.
+- **Enforce it stays the only path** — an import-linter contract (only the sanctioned wrappers may import `assert_claim`) or a test that asserts no other call site touches it, the same "route-inventory" discipline the authz layer uses. The leak audit becomes a standing test, not a one-time sweep.
+
+Doing this before the Actor work pays off twice: it makes "attribute every claim write" true by construction, and it gives the post-Actor invariant (`Claim.actor == changeset.actor`) a single enforcement point — `assert_claim` derives `Claim.actor` from the changeset — instead of four wrappers to audit.
+
 #### Fix all leaks
 
 Backfill can't chase moving targets. Every write path that mints a `Claim` must create a `ChangeSet`.
 
-##### ✅ DONE: Audit for more leaks
+##### Audit for more leaks
 
 Every live write path that mints a `Claim` has been audited; only the media path leaks.
 

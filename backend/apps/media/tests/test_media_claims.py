@@ -15,10 +15,30 @@ from apps.catalog.models import MachineModel
 from apps.catalog.tests.conftest import make_machine_model
 from apps.media.models import EntityMedia, MediaAsset
 from apps.provenance.models import Claim, Source
+from apps.provenance.test_factories import user_changeset
 
 User = get_user_model()
 
 pytestmark = pytest.mark.django_db
+
+
+def _assert_claim(subject, field_name, value, *, user=None, source=None, claim_key=""):
+    """``assert_claim`` wrapper that opens a throwaway user ChangeSet (tests only).
+
+    User-attributed claims now require a changeset; these resolver tests don't
+    care which one, so each user call gets a fresh ``EDIT`` changeset. Source
+    calls pass through unchanged.
+    """
+    changeset = user_changeset(user) if user is not None else None
+    return Claim.objects.assert_claim(
+        subject,
+        field_name,
+        value,
+        user=user,
+        source=source,
+        claim_key=claim_key,
+        changeset=changeset,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +150,7 @@ class TestClaimAssertion:
         claim_key, value = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=True
         )
-        claim = Claim.objects.assert_claim(
+        claim = _assert_claim(
             machine_model,
             "media_attachment",
             value,
@@ -146,7 +166,7 @@ class TestClaimAssertion:
         claim_key, value1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass"
         )
-        old = Claim.objects.assert_claim(
+        old = _assert_claim(
             machine_model,
             "media_attachment",
             value1,
@@ -157,7 +177,7 @@ class TestClaimAssertion:
         _key, value2 = build_media_attachment_claim(
             machine_model, asset.pk, category="playfield"
         )
-        new = Claim.objects.assert_claim(
+        new = _assert_claim(
             machine_model,
             "media_attachment",
             value2,
@@ -180,7 +200,7 @@ class TestResolutionHappyPath:
         claim_key, value = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=True
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             value,
@@ -203,7 +223,7 @@ class TestResolutionHappyPath:
         claim_key, value = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass"
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             value,
@@ -217,7 +237,7 @@ class TestResolutionHappyPath:
         claim_key, retract_value = build_media_attachment_claim(
             machine_model, asset.pk, exists=False
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             retract_value,
@@ -231,7 +251,7 @@ class TestResolutionHappyPath:
         claim_key, value = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass"
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             value,
@@ -245,7 +265,7 @@ class TestResolutionHappyPath:
         _key, new_value = build_media_attachment_claim(
             machine_model, asset.pk, category="playfield"
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             new_value,
@@ -262,13 +282,13 @@ class TestResolutionHappyPath:
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=False
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model, "media_attachment", val1, user=user, claim_key=key1
         )
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category="backglass", is_primary=False
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model, "media_attachment", val2, user=user, claim_key=key2
         )
         _resolve_media(machine_model)
@@ -279,7 +299,7 @@ class TestResolutionHappyPath:
         _key, new_value = build_media_attachment_claim(
             machine_model, asset2.pk, category="backglass", is_primary=True
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model, "media_attachment", new_value, user=user, claim_key=key2
         )
         _resolve_media(machine_model)
@@ -299,9 +319,7 @@ class TestPrimaryAutoPromotion:
         key, val = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=False
         )
-        Claim.objects.assert_claim(
-            machine_model, "media_attachment", val, user=user, claim_key=key
-        )
+        _assert_claim(machine_model, "media_attachment", val, user=user, claim_key=key)
         _resolve_media(machine_model)
 
         em = EntityMedia.objects.get()
@@ -312,14 +330,14 @@ class TestPrimaryAutoPromotion:
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=False
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model, "media_attachment", val1, user=user, claim_key=key1
         )
 
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category="backglass", is_primary=False
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model, "media_attachment", val2, user=user, claim_key=key2
         )
 
@@ -335,14 +353,14 @@ class TestPrimaryAutoPromotion:
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=False
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model, "media_attachment", val1, user=user, claim_key=key1
         )
 
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category="backglass", is_primary=True
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model, "media_attachment", val2, user=user, claim_key=key2
         )
 
@@ -360,14 +378,14 @@ class TestPrimaryAutoPromotion:
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=False
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model, "media_attachment", val1, user=user, claim_key=key1
         )
 
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category="playfield", is_primary=False
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model, "media_attachment", val2, user=user, claim_key=key2
         )
 
@@ -385,7 +403,7 @@ class TestPrimaryEnforcement:
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=True
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             val1,
@@ -396,7 +414,7 @@ class TestPrimaryEnforcement:
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category="backglass", is_primary=True
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             val2,
@@ -420,7 +438,7 @@ class TestPrimaryEnforcement:
             machine_model, asset.pk, category="backglass", is_primary=True
         )
         # Low priority claims first
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             val1,
@@ -432,7 +450,7 @@ class TestPrimaryEnforcement:
             machine_model, asset2.pk, category="backglass", is_primary=True
         )
         # High priority claims second
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             val2,
@@ -452,7 +470,7 @@ class TestPrimaryEnforcement:
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=True
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             val1,
@@ -463,7 +481,7 @@ class TestPrimaryEnforcement:
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category="playfield", is_primary=True
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             val2,
@@ -485,7 +503,7 @@ class TestPrimaryEnforcement:
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category=None, is_primary=True
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             val1,
@@ -496,7 +514,7 @@ class TestPrimaryEnforcement:
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category=None, is_primary=True
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             val2,
@@ -523,12 +541,12 @@ class TestResolveModelIntegration:
         from apps.catalog.resolve import resolve_model
 
         # Need a name claim so resolve_model can save
-        Claim.objects.assert_claim(machine_model, "name", "Test Machine", source=source)
+        _assert_claim(machine_model, "name", "Test Machine", source=source)
 
         key, val = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=True
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             val,
@@ -546,12 +564,12 @@ class TestResolveModelIntegration:
         """Retracting a media claim through resolve_model deletes EntityMedia."""
         from apps.catalog.resolve import resolve_model
 
-        Claim.objects.assert_claim(machine_model, "name", "Test Machine", source=source)
+        _assert_claim(machine_model, "name", "Test Machine", source=source)
 
         key, val = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass"
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             val,
@@ -565,7 +583,7 @@ class TestResolveModelIntegration:
         _key, retract_val = build_media_attachment_claim(
             machine_model, asset.pk, exists=False
         )
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             retract_val,
@@ -594,7 +612,7 @@ class TestResolverValidation:
             "is_primary": False,
             "exists": True,
         }
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             value,
@@ -617,7 +635,7 @@ class TestResolverValidation:
             "is_primary": False,
             "exists": True,
         }
-        Claim.objects.assert_claim(
+        _assert_claim(
             machine_model,
             "media_attachment",
             value,
@@ -645,7 +663,7 @@ class TestResolverValidation:
             "exists": True,
         }
         with pytest.raises(ValidationError, match="media_attachment"):
-            Claim.objects.assert_claim(
+            _assert_claim(
                 theme,
                 "media_attachment",
                 value,
