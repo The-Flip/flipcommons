@@ -8,6 +8,7 @@ from django.contrib.auth.models import UserManager as BaseUserManager
 from django.db import models
 from django.db.models.functions import Length, Lower
 
+from apps.actors.models import ActorModel, ActorResolutionStatus
 from apps.core.models import field_not_blank
 
 from .usernames import USERNAME_MAX_LEN, USERNAME_MIN_LEN, validate_username_format
@@ -89,7 +90,10 @@ class UserManager(BaseUserManager["User"]):
         return self._create_user(email, password, **extra_fields)
 
 
-class User(AbstractUser):
+class User(ActorModel, AbstractUser):
+    # ActorModel is listed first so its save() (Actor mint/sync) is the first
+    # in the MRO; it contributes the editable=False ``actor`` OneToOne.
+    #
     # AbstractUser provides:
     #   username, first_name, last_name, email,
     #   is_active, is_staff, is_superuser, last_login, date_joined, password
@@ -127,6 +131,9 @@ class User(AbstractUser):
     # Wikipedia-style attribution priority.
     priority = models.PositiveSmallIntegerField(default=10000)
 
+    # ActorModel contract: a human contributor.
+    is_machine: ClassVar[bool] = False
+
     objects: ClassVar[UserManager] = UserManager()
 
     USERNAME_FIELD = "email"
@@ -160,3 +167,14 @@ class User(AbstractUser):
 
     def __str__(self) -> str:
         return self.username or self.email
+
+    # ActorModel hooks: the user's Actor mirrors these. Transitional — they read
+    # the legacy ``priority`` column that "Drop dead schema" later removes.
+    @property
+    def actor_priority(self) -> int:
+        return self.priority
+
+    @property
+    def actor_resolution_status(self) -> ActorResolutionStatus:
+        # Users have no resolution-suppression input in v1.
+        return ActorResolutionStatus.ACTIVE

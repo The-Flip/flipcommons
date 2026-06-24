@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from django.db import models
 
+from apps.actors.models import ActorModel, ActorResolutionStatus
 from apps.core.models import (
     BoundedTextField,
     SluggedModel,
@@ -20,8 +21,15 @@ from apps.core.models import (
 SOURCE_DESCRIPTION_MAX_LENGTH = 2_000
 
 
-class Source(SluggedModel, TimeStampedModel):
-    """A data origin point (external database, book, editorial team, etc.)."""
+class Source(ActorModel, SluggedModel, TimeStampedModel):
+    """A data origin point (external database, book, editorial team, etc.).
+
+    ActorModel is listed first so its save() (Actor mint/sync) runs ahead of the
+    slug-autofill save() below in the MRO chain.
+    """
+
+    # ActorModel contract: a source is a machine/non-human actor.
+    is_machine: ClassVar[bool] = True
 
     class SourceType(models.TextChoices):
         DATABASE = "database", "Database"
@@ -76,6 +84,21 @@ class Source(SluggedModel, TimeStampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+    # ActorModel hooks: the source's Actor mirrors these. Transitional — they
+    # read the legacy ``priority`` / ``is_enabled`` columns that "Drop dead
+    # schema" later removes.
+    @property
+    def actor_priority(self) -> int:
+        return self.priority
+
+    @property
+    def actor_resolution_status(self) -> ActorResolutionStatus:
+        return (
+            ActorResolutionStatus.ACTIVE
+            if self.is_enabled
+            else ActorResolutionStatus.SUPPRESSED
+        )
 
     # Django's Model.save signature is owned by the framework; the override
     # only adds slug autofill before delegating upstream.

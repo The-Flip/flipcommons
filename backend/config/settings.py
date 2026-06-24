@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "config",
     "apps.accounts",
+    "apps.actors",
     "apps.core",
     "apps.catalog",
     "apps.claim_edit",

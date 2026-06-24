@@ -6,6 +6,7 @@ This document is the conceptual map of the project's app dependency rules. The e
 
 - `core`: shared foundation layer used by the rest of the project
 - `accounts`: authentication and account-specific behavior
+- `actors`: attribution/resolution info backed by actors like `User` and `Source`
 - `catalog`: the pinball business/domain/data model
 - `claim_edit`: interactive catalog writes — validates scalar fields, writes claims, attaches citations, triggers resolution
 - `claim_ingest`: bulk catalog writes — ingests YAML data patches and applies them in batches
@@ -31,12 +32,14 @@ citation      citable sources
   │
 accounts      auth
   │
+actors        attribution identities
+  │
 core          foundation — depends on nothing
 ```
 
 The edges that carry meaning beyond "higher imports lower":
 
-- `core` depends on nothing; `accounts` depends only on `core` (so `core` must not import `accounts`).
+- `core` depends on nothing; `actors` depends only on `core`; `accounts` depends on `core` and `actors` (so `core` must not import `actors`, and neither may import `accounts`). `actors` sits just above `core` so every attributing app — `accounts` (`User`), `provenance` (`Source`, `ChangeSet.actor`, `Claim.actor`) and beyond — can FK downward into `Actor`. It must never import its satellites; they inherit `ActorModel` downward and the registry walks `__subclasses__()` at runtime.
 - `provenance` imports `citation`, not the reverse — they are adjacent tiers, not peers.
 - `catalog` uses the full middle tier and sits one above `claim_edit`, whose interactive write path catalog's HTTP edit endpoints call into.
 

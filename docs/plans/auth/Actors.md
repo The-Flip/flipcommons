@@ -307,10 +307,6 @@ We make `Claim.changeset` required as part of this.
 
 Both span two tables, so — unlike the active-claim uniqueness index, which the DB enforces — neither can be a CHECK/unique constraint. They're held by (a) funneling every write through the one helper that sets both sides together, and (b) a data-integrity test asserting them across the table. This replaces `assert_claim`'s current author-consistency guards ("ChangeSet user must match the claim user" / "same IngestRun source"). The denormalization isn't free: bypass the funnel and the uniqueness index still fires — on the wrong actor, silently — which is why the test backstop matters.
 
-#### Current state
-
-Of the 222,118 total claims on the dev db (the prod DB will be 99.5% similar), 104,082 (47%) do not have a `ChangeSet`, and all but 4 of those are source-attributed (user null). Of the changeset-less ones, 103,575 are flipcommons-catalog, ~480 are flipcommons-ai-desc-\* and 16 are web-scrape. What that says is that the older baseline seed bulk ingests were built before the `ChangeSet` concept, and the newer baseline seed bulk ingests were built with `ChangeSet`. It's an incomplete transition.
-
 ### `ActorModel`
 
 Every type of entity that is an actor -- `User`, `Source` -- would implement a new `ActorModel` [abstract base class](/docs/DataModeling.md). This is the mechanism that:
@@ -336,64 +332,19 @@ In the UI, to display attribution, the system must find the actor(s) for the Cha
 
 ### Sequencing
 
-In order:
+Each step below is its own PR, in order.
 
-#### Enforce single claims write path
+**Testing against real data.** A Docker Postgres container (`fc-pg`) holds a very recent copy of the localhost SQLite dev DB. Any PR in this sequence should feel free to test against it — it's the best way to exercise these migrations and backfills on real-volume Users/Sources/ChangeSets/Claims and to confirm Postgres-specific DDL (partial indexes, CHECK constraints) behaves as it does on SQLite. Connect with `DATABASE_URL=postgres://pinbase:pinbase@localhost:5432/pinbase`. <!-- pragma: allowlist secret (local dev throwaway credentials) -->
 
-The media leak wasn't a one-off bug, it was a symptom that the claim-write chokepoint is bypassable. Fix the class.
-
-There isn't one wrapper everything goes through — interactive edits use `execute_claims` (and `execute_multi_entity_claims`, only for the soft-delete cascade), ingest uses its own `claim_ingest/apply/persist.py`, revert uses `provenance/revert.py`. What they **do** share is the primitive they all call: `assert_claim`. That's the real narrow waist — and the hole is that `assert_claim` is public and takes `changeset` as optional, so any caller can reach past it and write a changeset-less, loosely-attributed claim. The four media endpoints did exactly that; the audit found those, nothing stops the fifth.
-
-Tighten the primitive, not the wrappers:
-
-- **`changeset` becomes required on `assert_claim`.** A changeset-less claim becomes unrepresentable at the type level, not just discouraged. The existing wrappers already pass one; media must too.
-- **`assert_claim` becomes the sole Claim writer.** Nothing else does raw `Claim.objects.create`/`.save`. The wrappers (`execute_claims`, ingest persist, revert) create-or-take a changeset and funnel into it; media routes through `execute_claims` like every other interactive write rather than calling the primitive directly.
-- **Enforce it stays the only path** — an import-linter contract (only the sanctioned wrappers may import `assert_claim`) or a test that asserts no other call site touches it, the same "route-inventory" discipline the authz layer uses. The leak audit becomes a standing test, not a one-time sweep.
-
-Doing this before the Actor work pays off twice: it makes "attribute every claim write" true by construction, and it gives the post-Actor invariant (`Claim.actor == changeset.actor`) a single enforcement point — `assert_claim` derives `Claim.actor` from the changeset — instead of four wrappers to audit.
-
-#### Fix all leaks
-
-Backfill can't chase moving targets. Every write path that mints a `Claim` must create a `ChangeSet`.
-
-##### Audit for more leaks
-
-Every live write path that mints a `Claim` has been audited; only the media path leaks.
-
-| Write path                                            | Where                                                                               | Creates ChangeSet?                                                |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Interactive edits                                     | `execute_claims` / `execute_multi_entity_claims` (`apps/claim_edit/claim_write.py`) | ✅ creates the ChangeSet, then `assert_claim(changeset=cs)`       |
-| Patch ingest                                          | `apps/claim_ingest/apply/persist.py`                                                | ✅ mints one ChangeSet per patch entry, links every claim         |
-| Revert / undo                                         | `apps/provenance/revert.py`                                                         | ✅ creates a ChangeSet, stamps `retracted_by_changeset`           |
-| **Media** (attach, detach, set-primary, set-category) | `apps/media/api.py`                                                                 | ❌ calls `Claim.objects.assert_claim(user=…)` with no `changeset` |
-
-`Claim.objects.assert_claim` takes `changeset` as an optional kwarg — that optionality is the hole. Every non-media caller threads a changeset through; the four media endpoints don't. No other surface mints claims: nothing in admin actions, management commands or signals writes claims. The ~104K changeset-less rows are all from the historical seed ingests (no live code path) and are handled by the backfill PRs below.
-
-##### Fix Media Claims
-
-###### Fix the leaks
-
-It is not one endpoint — all four `MEDIA_EDIT` mutations in `apps/media/api.py` mint user claims via `assert_claim` with no changeset: attach, detach, set-primary, set-category. The 4 changeset-less user claims observed in dev (all user=moses, all `media_attachment|media_asset:N`) are just the rows these paths have produced so far.
-
-Route them through a changeset (e.g. wrap in an `execute_claims`-style helper, or open a ChangeSet and pass `changeset=` into `assert_claim`) so every media mutation is attributed. Consider closing the hole at the source by making `changeset` non-optional on the user branch of `assert_claim`, so a fifth leak can't be introduced.
-
-###### Migrate the data
-
-They're user claims, so they need a user changeset (with an action, per action IFF user). That means they don't fit the source-seed backfill below.
-
-###### PR
-
-This will be its own PR.
-
-#### Backfill ingest runs
+#### ✅ DONE: Backfill ingest runs
 
 Much of the initial data seed (flipcommons-catalog + the ai-desc-\* + web-scrape ones) do not have an `IngestRun` even though they were all run within seconds of each other, so each source's claims WERE created in a single conceptual ingest run. We mint a synthetic "seed" IngestRun per baseline source to carry the backfilled changesets.
 
 This will be its own PR.
 
-#### Backfill changesets
+#### ✅ DONE: Backfill changesets
 
-Create changesets for all ChangeSet-less claims, which were created during bulk seed ingest.
+Create changesets for the changeset-less seed claims — ~104,078, all source-attributed (103,575 flipcommons-catalog, ~480 flipcommons-ai-desc-\*, 16 web-scrape; dev counts, prod ~similar).
 
 - Group all changes for a given record from a given ingest source into a single ChangeSet.
 - Set the ChangeSet timestamp to the timestamp of any Claim in the ChangeSet. All the bulk ingest happened at the same moment (around ~17:33:13–28 on dev, not prod). It doesn't matter which Claim is used.
@@ -402,7 +353,7 @@ Because every backfilled changeset gets an `IngestRun`, the backfill satisfies t
 
 This will be its own PR.
 
-#### Implement Actor
+#### ✅ DONE: Implement Actor
 
 - **Build**
   - Actor functionality

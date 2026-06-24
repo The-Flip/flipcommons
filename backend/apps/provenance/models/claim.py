@@ -183,6 +183,7 @@ class Claim(models.Model):
     content_type_id: int
     source_id: int | None
     user_id: int | None
+    actor_id: int | None
     license_id: int | None
     changeset_id: int | None
     retracted_by_changeset_id: int | None
@@ -201,6 +202,17 @@ class Claim(models.Model):
     )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="claims",
+        null=True,
+        blank=True,
+    )
+    # Denormalized copy of ``changeset.actor`` (the source of truth). Nullable
+    # for now; a later PR ("Backfill actor FKs") populates it, then it replaces
+    # the source/user pair and backs the unified active-claim unique index.
+    # Nothing reads it yet.
+    actor = models.ForeignKey(
+        "actors.Actor",
         on_delete=models.PROTECT,
         related_name="claims",
         null=True,
