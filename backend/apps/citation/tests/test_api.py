@@ -679,6 +679,11 @@ class TestCiteUrl:
         ):
             assert link.created_by == user
             assert link.updated_by == user
+        # The minted recognition domain is attributed too — it is a row the
+        # caller's action created, same as the source and its links.
+        domain = CitationSourceRootDomain.objects.get(source=root)
+        assert domain.created_by == user
+        assert domain.updated_by == user
 
     def test_blank_site_name_falls_back_to_rounded_host(self, client, user):
         client.force_login(user)

@@ -26,6 +26,7 @@ class CitationSourceRootDomainInline(
 
     model = CitationSourceRootDomain
     extra = 1
+    readonly_fields = ("created_by", "updated_by")
 
 
 @admin.register(CitationSource)
@@ -101,12 +102,11 @@ class CitationSourceAdmin(admin.ModelAdmin[CitationSource]):
         user = request.user
         instances = formset.save(commit=False)
         for instance in instances:
-            # CitationSourceRootDomain has no created_by/updated_by — only links
-            # carry attribution; the row is saved regardless.
-            if isinstance(instance, CitationSourceLink):
-                if not instance.pk:
-                    instance.created_by = user
-                instance.updated_by = user
+            # Both inline models (links and recognition domains) carry editorial
+            # attribution via AttributedModel.
+            if not instance.pk:
+                instance.created_by = user
+            instance.updated_by = user
             instance.save()
         for obj in formset.deleted_objects:
             obj.delete()

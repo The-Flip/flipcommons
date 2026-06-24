@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
@@ -11,6 +10,7 @@ from apps.citation.hosts import is_dns_host, normalize_host
 from apps.citation.psl import is_public_suffix
 from apps.citation.source_type_traits import SourceType, source_type_traits
 from apps.core.models import (
+    AttributedModel,
     BoundedTextField,
     TimeStampedModel,
     field_lowercase,
@@ -59,7 +59,7 @@ class CitationSourceQuerySet(models.QuerySet["CitationSource"]):
 CitationSourceManager = models.Manager.from_queryset(CitationSourceQuerySet)
 
 
-class CitationSource(TimeStampedModel):
+class CitationSource(TimeStampedModel, AttributedModel):
     """A work or evidence object that can be cited: book, flyer, web page, etc.
 
     NOT claims-controlled — edited directly through admin or future UI.
@@ -126,20 +126,6 @@ class CitationSource(TimeStampedModel):
         blank=True,
         on_delete=models.PROTECT,
         related_name="children",
-    )
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="+",
-    )
-    updated_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="+",
     )
     description = BoundedTextField(
         max_length=CITATION_SOURCE_DESCRIPTION_MAX_LENGTH,
@@ -336,7 +322,7 @@ class CitationSource(TimeStampedModel):
         return self.name
 
 
-class CitationSourceLink(TimeStampedModel):
+class CitationSourceLink(TimeStampedModel, AttributedModel):
     """A URL where a reader can inspect a CitationSource.
 
     Wholly owned by its parent CitationSource — CASCADE on delete.
@@ -362,20 +348,6 @@ class CitationSourceLink(TimeStampedModel):
         max_length=CITATION_SOURCE_LINK_LABEL_MAX_LENGTH,
         blank=True,
         validators=[validate_no_mojibake],
-    )
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="+",
-    )
-    updated_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="+",
     )
 
     class Meta:
@@ -407,7 +379,7 @@ class CitationSourceLink(TimeStampedModel):
         return self.url
 
 
-class CitationSourceRootDomain(TimeStampedModel):
+class CitationSourceRootDomain(TimeStampedModel, AttributedModel):
     """A recognition host owned by a root ``CitationSource``.
 
     The signal ``recognize_url`` keys off: a normalized host (lowercased,
