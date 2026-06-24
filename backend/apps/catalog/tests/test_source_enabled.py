@@ -19,6 +19,7 @@ from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.helpers import active_claims
 from apps.provenance.models import Claim, Source, get_claim_fields
+from apps.provenance.test_factories import user_changeset
 
 
 @pytest.fixture
@@ -106,7 +107,9 @@ class TestIsEnabledUserClaims:
     def test_user_claims_unaffected_by_source_enabled(self, source_a, user):
         """User claims (source=None) should not be filtered by is_enabled."""
         mfr = Manufacturer.objects.create(name="Test Mfr", slug="test-mfr")
-        Claim.objects.assert_claim(mfr, "name", "User Claim", user=user)
+        Claim.objects.assert_claim(
+            mfr, "name", "User Claim", user=user, changeset=user_changeset(user)
+        )
 
         # Disable source_a (irrelevant — the claim is user-owned, not source-owned).
         source_a.is_enabled = False

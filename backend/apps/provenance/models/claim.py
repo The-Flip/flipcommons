@@ -88,11 +88,18 @@ class ClaimManager(models.Manager["Claim"]):
         Exactly one of ``source`` or ``user`` must be provided.
         ``claim_key`` defaults to ``field_name`` for scalar claims.
         ``license`` is an optional per-claim License override (null inherits from source).
-        ``changeset`` is an optional ChangeSet to group this claim with others.
+        ``changeset`` groups this claim with others; it is **required** for
+        user-attributed claims (every user write is an attributed ChangeSet)
+        and optional for source-attributed (ingest) claims.
         Runs in a transaction to ensure the old claim is deactivated atomically.
         """
         if (source is None) == (user is None):
             raise ValueError("Exactly one of source or user must be provided.")
+        if user is not None and changeset is None:
+            raise ValueError(
+                "A user-attributed claim requires a changeset "
+                "(every user write must be an attributed ChangeSet)."
+            )
         if changeset is not None:
             if (
                 user is not None

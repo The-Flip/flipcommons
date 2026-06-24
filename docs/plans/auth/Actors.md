@@ -355,7 +355,7 @@ Every live write path that mints a `Claim` has been audited; only the media path
 
 `Claim.objects.assert_claim` takes `changeset` as an optional kwarg — that optionality is the hole. Every non-media caller threads a changeset through; the four media endpoints don't. No other surface mints claims: nothing in admin actions, management commands or signals writes claims. The ~104K changeset-less rows are all from the historical seed ingests (no live code path) and are handled by the backfill PRs below.
 
-##### Fix Media Claims
+##### ✅ DONE: Fix Media Claims
 
 ###### Fix the leaks
 
@@ -370,6 +370,18 @@ They're user claims, so they need a user changeset (with an action, per action I
 ###### PR
 
 This will be its own PR.
+
+##### Enforce single claims write path
+
+The media leak wasn't a one-off bug, it was a symptom that the claim-write chokepoint is bypassable. Fix the class.
+
+The sanctioned write path already exists: `execute_claims` / `execute_multi_entity_claims`. The hole is one level down: `assert_claim` is public and takes changeset as optional. So any caller can reach past the chokepoint and write a changeset-less, loosely-attributed claim — which is precisely what the four media endpoints did. The audit found one such caller; nothing stops the fifth.
+
+Tighten these:
+
+- changeset becomes required on the write primitive. A changeset-less claim becomes unrepresentable at the type level, not just discouraged.
+- assert_claim goes internal to provenance — not a public API. Every writer (interactive, ingest, revert, media) goes through an execute_claims-style helper that creates-or-takes a changeset and writes the claims atomically. One funnel; you can't have a claim without the changeset that attributes it.
+- Enforce it stays the only path. Either an import-linter contract (only the write-helper module may import assert_claim) or a test that asserts no other call site touches the primitive — the same "route-inventory" discipline the authz layer already uses. The leak audit becomes a standing test, not a one-time sweep.
 
 #### Backfill ingest runs
 

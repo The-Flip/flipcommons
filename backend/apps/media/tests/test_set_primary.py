@@ -11,6 +11,7 @@ from apps.catalog.resolve import resolve_media_attachments
 from apps.catalog.tests.conftest import make_machine_model
 from apps.media.models import EntityMedia, MediaAsset
 from apps.provenance.models import Claim
+from apps.provenance.test_factories import user_changeset
 
 User = get_user_model()
 
@@ -53,6 +54,7 @@ def _attach_via_claims(entity, asset, user, category="backglass", is_primary=Fal
         claim_value,
         user=user,
         claim_key=claim_key,
+        changeset=user_changeset(user),
     )
     ct = ContentType.objects.get_for_model(type(entity))
     resolve_media_attachments(content_type_id=ct.id, subject_ids={entity.pk})

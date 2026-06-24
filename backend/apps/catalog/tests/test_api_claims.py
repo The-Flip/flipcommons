@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 from apps.catalog.resolve import resolve_model
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.models import Claim, Source
+from apps.provenance.test_factories import user_changeset
 
 User = get_user_model()
 
@@ -201,7 +202,9 @@ class TestUserClaimResolution:
             pm, "name", "Medieval Madness", source=low_priority_source
         )
         Claim.objects.assert_claim(pm, "year", 1990, source=low_priority_source)
-        Claim.objects.assert_claim(pm, "year", 2000, user=user)  # priority 10000 > 10
+        Claim.objects.assert_claim(
+            pm, "year", 2000, user=user, changeset=user_changeset(user)
+        )  # priority 10000 > 10
 
         resolved = resolve_model(pm)
         assert resolved.year == 2000
@@ -213,7 +216,7 @@ class TestUserClaimResolution:
         Claim.objects.assert_claim(pm, "name", "Medieval Madness", source=high_source)
         Claim.objects.assert_claim(pm, "year", 1990, source=high_source)
         Claim.objects.assert_claim(
-            pm, "year", 2000, user=user
+            pm, "year", 2000, user=user, changeset=user_changeset(user)
         )  # priority 10000 < 50000
 
         resolved = resolve_model(pm)
