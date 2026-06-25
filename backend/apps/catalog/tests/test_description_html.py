@@ -4,6 +4,7 @@ import pytest
 
 from apps.catalog.models import Location, Manufacturer, System
 from apps.core.models import RecordReference
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -250,12 +251,12 @@ class TestReferenceSync:
         from django.contrib.contenttypes.models import ContentType
 
         from apps.catalog.resolve import resolve_entity
-        from apps.provenance.models import Claim, Source
+        from apps.provenance.models import Source
 
         mfr = Manufacturer.objects.create(name="Williams", slug="williams")
         system = System.objects.create(name="WPC-95", slug="wpc-95", manufacturer=mfr)
         source = Source.objects.create(name="test", priority=100)
-        Claim.objects.assert_claim(
+        make_claim(
             mfr,
             "description",
             f"Uses [[system:id:{system.pk}]].",
@@ -284,7 +285,7 @@ class TestReferenceSync:
         source = Source.objects.create(name="test", priority=100)
 
         # Create a reference via description with a link
-        Claim.objects.assert_claim(
+        make_claim(
             mfr,
             "description",
             f"Uses [[system:id:{system.pk}]].",

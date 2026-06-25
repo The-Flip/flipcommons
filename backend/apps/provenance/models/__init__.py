@@ -13,7 +13,6 @@ from .changeset import CHANGESET_NOTE_MAX_LENGTH, ChangeSet, ChangeSetAction
 from .citation_instance import CITATION_INSTANCE_LOCATOR_MAX_LENGTH, CitationInstance
 from .claim import (
     Claim,
-    ClaimManager,
     ExistingClaimRow,
     IdentityPart,
     make_claim_key,

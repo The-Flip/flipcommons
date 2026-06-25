@@ -4,7 +4,8 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.catalog.models import Manufacturer, Person
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 
 User = get_user_model()
 
@@ -12,14 +13,14 @@ User = get_user_model()
 @pytest.fixture
 def mfr(db, _bootstrap_source):
     m = Manufacturer.objects.create(name="Williams", slug="williams")
-    Claim.objects.assert_claim(m, "name", "Williams", source=_bootstrap_source)
+    make_claim(m, "name", "Williams", source=_bootstrap_source)
     return m
 
 
 @pytest.fixture
 def person(db, _bootstrap_source):
     p = Person.objects.create(name="Pat Lawlor", slug="pat-lawlor")
-    Claim.objects.assert_claim(p, "name", "Pat Lawlor", source=_bootstrap_source)
+    make_claim(p, "name", "Pat Lawlor", source=_bootstrap_source)
     return p
 
 
@@ -164,7 +165,7 @@ class TestPatchManufacturerClaimsPersistence:
         source = Source.objects.create(
             name="LowPri", source_type="database", priority=10
         )
-        Claim.objects.assert_claim(mfr, "description", "Source Name", source=source)
+        make_claim(mfr, "description", "Source Name", source=source)
         from apps.catalog.resolve import resolve_entity
 
         resolve_entity(mfr)

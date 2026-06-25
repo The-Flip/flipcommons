@@ -8,6 +8,7 @@ from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, Source
 from apps.provenance.resolution import resolve_after_mutation, resolve_entities_bulk
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -50,9 +51,7 @@ def _assert_credit_claim(subject, person_pk, role_slug, source, *, exists=True):
     claim_key, value = build_relationship_claim(
         "credit", {"person": person_pk, "role": role.pk}, exists=exists
     )
-    Claim.objects.assert_claim(
-        subject, "credit", value, source=source, claim_key=claim_key
-    )
+    make_claim(subject, "credit", value, source=source, claim_key=claim_key)
 
 
 class TestResolveCredits:
@@ -115,9 +114,7 @@ class TestResolveCredits:
         claim_key, value = build_relationship_claim(
             "credit", {"person": person.pk, "role": design_role.pk}, exists=False
         )
-        Claim.objects.assert_claim(
-            machine, "credit", value, source=high_source, claim_key=claim_key
-        )
+        make_claim(machine, "credit", value, source=high_source, claim_key=claim_key)
         resolve_all_credits(subject_ids={machine.pk})
 
         assert Credit.objects.filter(model=machine).count() == 0
@@ -131,9 +128,7 @@ class TestResolveCredits:
         claim_key, value = build_relationship_claim(
             "credit", {"person": person2.pk, "role": art_role.pk}
         )
-        Claim.objects.assert_claim(
-            machine, "credit", value, source=high_source, claim_key=claim_key
-        )
+        make_claim(machine, "credit", value, source=high_source, claim_key=claim_key)
         resolve_all_credits(subject_ids={machine.pk})
 
         assert Credit.objects.filter(model=machine).count() == 2
@@ -144,9 +139,7 @@ class TestResolveCredits:
         claim_key, value = build_relationship_claim(
             "credit", {"person": 99999, "role": design_role.pk}
         )
-        Claim.objects.assert_claim(
-            machine, "credit", value, source=source, claim_key=claim_key
-        )
+        make_claim(machine, "credit", value, source=source, claim_key=claim_key)
         resolve_all_credits(subject_ids={machine.pk})
 
         assert Credit.objects.filter(model=machine).count() == 0

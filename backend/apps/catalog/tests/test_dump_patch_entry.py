@@ -23,8 +23,8 @@ from apps.citation.models import CitationSource
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import EditEntry, build_plan, load_patch
 from apps.core.markdown import convert_authoring_to_storage
-from apps.provenance.models import CitationInstance, Claim, Source
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.models import CitationInstance, Source
+from apps.provenance.test_factories import make_claim, user_changeset
 
 pytestmark = pytest.mark.django_db
 
@@ -92,7 +92,7 @@ def test_round_trip_byte_identity_with_adversarial_text(flipcommons_catalog):
         f"End with no trailing newline.[[cite:id:{ci2.pk}]]"
     )
     pm = make_machine_model(name="Adversarial", slug="adversarial", description=stored)
-    Claim.objects.assert_claim(pm, "description", stored, source=flipcommons_catalog)
+    make_claim(pm, "description", stored, source=flipcommons_catalog)
 
     dumped = _dump("model.adversarial")
     authoring = _description_of(dumped)
@@ -134,9 +134,7 @@ claims:
 
 def test_attribution_defaults_to_owning_source(flipcommons_catalog):
     pm = make_machine_model(name="Attar", slug="attar", description="Just text.")
-    Claim.objects.assert_claim(
-        pm, "description", "Just text.", source=flipcommons_catalog
-    )
+    make_claim(pm, "description", "Just text.", source=flipcommons_catalog)
 
     doc = yaml.safe_load(_dump("model.attar"))
     assert doc["attribution"] == "flipcommons-catalog"
@@ -147,7 +145,7 @@ def test_attribution_override(flipcommons_catalog):
         slug="flipcommons-ai-desc-model", name="AI Desc", source_type="editorial"
     )
     pm = make_machine_model(name="Override", slug="override", description="Text.")
-    Claim.objects.assert_claim(pm, "description", "Text.", source=flipcommons_catalog)
+    make_claim(pm, "description", "Text.", source=flipcommons_catalog)
 
     doc = yaml.safe_load(_dump("model.override", attribution=other.slug))
     assert doc["attribution"] == "flipcommons-ai-desc-model"
@@ -156,7 +154,7 @@ def test_attribution_override(flipcommons_catalog):
 def test_user_owned_winning_claim_requires_attribution(flipcommons_catalog):
     user = User.objects.create_user(username="editor", email="ed@example.com")
     pm = make_machine_model(name="UserEd", slug="user-ed", description="Hand edited.")
-    Claim.objects.assert_claim(
+    make_claim(
         pm,
         "description",
         "Hand edited.",

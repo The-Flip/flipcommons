@@ -14,7 +14,8 @@ from django.core.cache import cache
 
 from apps.catalog.models import MachineModel, Manufacturer, System, Title
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction, Source
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -27,15 +28,15 @@ def bootstrap_source(db):
 @pytest.fixture
 def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Stern", slug="stern", status="active")
-    Claim.objects.assert_claim(m, "name", "Stern", source=bootstrap_source)
+    make_claim(m, "name", "Stern", source=bootstrap_source)
     return m
 
 
 def _make_system(bootstrap_source, mfr, slug: str, name: str | None = None) -> System:
     label = name or slug.replace("-", " ").title()
     s = System.objects.create(name=label, slug=slug, manufacturer=mfr, status="active")
-    Claim.objects.assert_claim(s, "name", label, source=bootstrap_source)
-    Claim.objects.assert_claim(s, "status", "active", source=bootstrap_source)
+    make_claim(s, "name", label, source=bootstrap_source)
+    make_claim(s, "status", "active", source=bootstrap_source)
     return s
 
 
@@ -45,7 +46,7 @@ def _make_model(
     title = Title.objects.create(
         name=slug.replace("-", " ").title(), slug=f"{slug}-title", status="active"
     )
-    Claim.objects.assert_claim(title, "name", title.name, source=bootstrap_source)
+    make_claim(title, "name", title.name, source=bootstrap_source)
     m = MachineModel.objects.create(
         title=title,
         name=slug.replace("-", " ").title(),
@@ -53,7 +54,7 @@ def _make_model(
         system=system,
         status=status,
     )
-    Claim.objects.assert_claim(m, "name", m.name, source=bootstrap_source)
+    make_claim(m, "name", m.name, source=bootstrap_source)
     return m
 
 
@@ -204,7 +205,7 @@ class TestDeletePreview:
         cs = ChangeSet.objects.create(
             user=user, action=ChangeSetAction.EDIT, note="seed"
         )
-        Claim.objects.assert_claim(s, "description", "hi", user=user, changeset=cs)
+        make_claim(s, "description", "hi", user=user, changeset=cs)
         client.force_login(user)
 
         resp = _get_preview(client, "spike")

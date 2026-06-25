@@ -13,7 +13,8 @@ from django.test.utils import CaptureQueriesContext
 
 from apps.catalog.models import Credit, CreditRole, Manufacturer, Person, Title
 from apps.catalog.tests.conftest import SAMPLE_IMAGES, make_machine_model
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 
 CARD_KEYS = {
     "titles": {"name", "slug", "year", "model_count", "manufacturer", "thumbnail_url"},
@@ -24,13 +25,13 @@ CARD_KEYS = {
 
 def _make_manufacturer(name: str, slug: str, source: Source) -> Manufacturer:
     mfr = Manufacturer.objects.create(name=name, slug=slug)
-    Claim.objects.assert_claim(mfr, "name", name, source=source)
+    make_claim(mfr, "name", name, source=source)
     return mfr
 
 
 def _make_person(name: str, slug: str, source: Source) -> Person:
     p = Person.objects.create(name=name, slug=slug)
-    Claim.objects.assert_claim(p, "name", name, source=source)
+    make_claim(p, "name", name, source=source)
     return p
 
 

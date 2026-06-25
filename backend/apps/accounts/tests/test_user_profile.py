@@ -6,7 +6,8 @@ from django.test import Client
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import Manufacturer
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -24,21 +25,21 @@ def bootstrap_source(db):
 @pytest.fixture
 def manufacturer(db, bootstrap_source):
     mfr = Manufacturer.objects.create(name="Williams", slug="williams")
-    Claim.objects.assert_claim(mfr, "name", "Williams", source=bootstrap_source)
+    make_claim(mfr, "name", "Williams", source=bootstrap_source)
     return mfr
 
 
 @pytest.fixture
 def model_a(db, bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    Claim.objects.assert_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
     return pm
 
 
 @pytest.fixture
 def model_b(db, bootstrap_source):
     pm = make_machine_model(name="Attack from Mars", slug="attack-from-mars", year=1995)
-    Claim.objects.assert_claim(pm, "name", "Attack from Mars", source=bootstrap_source)
+    make_claim(pm, "name", "Attack from Mars", source=bootstrap_source)
     return pm
 
 
@@ -200,10 +201,10 @@ class TestEditHistoryIngestAttribution:
 
         ingest_run = IngestRun.objects.create(source=source, input_fingerprint="abc123")
         ingest_cs = ingest_changeset(ingest_run)
-        Claim.objects.assert_claim(pm, "year", 1979, source=source, changeset=ingest_cs)
+        make_claim(pm, "year", 1979, source=source, changeset=ingest_cs)
 
         user_cs = user_changeset(user)
-        Claim.objects.assert_claim(
+        make_claim(
             pm,
             "description",
             "First talking pinball machine",

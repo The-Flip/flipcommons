@@ -23,7 +23,8 @@ from apps.catalog.models import (
     Title,
 )
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction, Source
+from apps.provenance.test_factories import make_claim
 
 User = get_user_model()
 
@@ -38,7 +39,7 @@ def bootstrap_source(db):
 @pytest.fixture
 def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Stern", slug="stern", status="active")
-    Claim.objects.assert_claim(m, "name", "Stern", source=bootstrap_source)
+    make_claim(m, "name", "Stern", source=bootstrap_source)
     return m
 
 
@@ -50,8 +51,8 @@ def ce(db, bootstrap_source, mfr):
         manufacturer=mfr,
         status="active",
     )
-    Claim.objects.assert_claim(c, "name", c.name, source=bootstrap_source)
-    Claim.objects.assert_claim(c, "status", "active", source=bootstrap_source)
+    make_claim(c, "name", c.name, source=bootstrap_source)
+    make_claim(c, "status", "active", source=bootstrap_source)
     return c
 
 
@@ -63,7 +64,7 @@ def _make_model(
         slug=f"{slug}-title",
         status="active",
     )
-    Claim.objects.assert_claim(title, "name", title.name, source=bootstrap_source)
+    make_claim(title, "name", title.name, source=bootstrap_source)
     m = MachineModel.objects.create(
         title=title,
         name=slug.replace("-", " ").title(),
@@ -71,7 +72,7 @@ def _make_model(
         corporate_entity=ce,
         status=status,
     )
-    Claim.objects.assert_claim(m, "name", m.name, source=bootstrap_source)
+    make_claim(m, "name", m.name, source=bootstrap_source)
     return m
 
 

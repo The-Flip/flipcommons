@@ -13,7 +13,8 @@ from apps.catalog.models import (
     Title,
 )
 from apps.citation.models import CitationSource
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 
 
 def make_machine_model(
@@ -46,14 +47,14 @@ def make_machine_model(
             slug=t_slug, defaults={"name": name}
         )
         if created:
-            Claim.objects.assert_claim(title, "name", name, source=src)
+            make_claim(title, "name", name, source=src)
     mm = MachineModel.objects.create(
         title=title,
         name=name,
         slug=resolved_slug,
         **kwargs,
     )
-    Claim.objects.assert_claim(mm, "name", name, source=src)
+    make_claim(mm, "name", name, source=src)
     return mm
 
 
@@ -136,14 +137,14 @@ def flipcommons_catalog(db):
 @pytest.fixture
 def manufacturer(db, _bootstrap_source):
     mfr = Manufacturer.objects.create(name="Williams", slug="williams")
-    Claim.objects.assert_claim(mfr, "name", "Williams", source=_bootstrap_source)
+    make_claim(mfr, "name", "Williams", source=_bootstrap_source)
     return mfr
 
 
 @pytest.fixture
 def stern(db, _bootstrap_source):
     mfr = Manufacturer.objects.create(name="Stern", slug="stern")
-    Claim.objects.assert_claim(mfr, "name", "Stern", source=_bootstrap_source)
+    make_claim(mfr, "name", "Stern", source=_bootstrap_source)
     return mfr
 
 
@@ -175,7 +176,7 @@ def credit_roles(db):
 @pytest.fixture
 def person(db, _bootstrap_source):
     p = Person.objects.create(name="Pat Lawlor", slug="pat-lawlor")
-    Claim.objects.assert_claim(p, "name", "Pat Lawlor", source=_bootstrap_source)
+    make_claim(p, "name", "Pat Lawlor", source=_bootstrap_source)
     return p
 
 
@@ -191,9 +192,7 @@ def williams_entity(db, manufacturer, _bootstrap_source):
         slug="williams-electronics",
         manufacturer=manufacturer,
     )
-    Claim.objects.assert_claim(
-        ce, "name", "Williams Electronics", source=_bootstrap_source
-    )
+    make_claim(ce, "name", "Williams Electronics", source=_bootstrap_source)
     return ce
 
 
@@ -204,18 +203,14 @@ def stern_entity(db, stern, _bootstrap_source):
         slug="stern-pinball-inc",
         manufacturer=stern,
     )
-    Claim.objects.assert_claim(
-        ce, "name", "Stern Pinball, Inc.", source=_bootstrap_source
-    )
+    make_claim(ce, "name", "Stern Pinball, Inc.", source=_bootstrap_source)
     return ce
 
 
 @pytest.fixture
 def machine_model(db, williams_entity, solid_state, _bootstrap_source):
     title = Title.objects.create(name="Medieval Madness", slug="medieval-madness-title")
-    Claim.objects.assert_claim(
-        title, "name", "Medieval Madness", source=_bootstrap_source
-    )
+    make_claim(title, "name", "Medieval Madness", source=_bootstrap_source)
     pm = MachineModel.objects.create(
         name="Medieval Madness",
         slug="medieval-madness",
@@ -224,7 +219,7 @@ def machine_model(db, williams_entity, solid_state, _bootstrap_source):
         year=1997,
         technology_generation=solid_state,
     )
-    Claim.objects.assert_claim(pm, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", source=_bootstrap_source)
     t = Theme.objects.create(name="Medieval", slug="medieval")
     pm.themes.add(t)
     return pm
@@ -233,9 +228,7 @@ def machine_model(db, williams_entity, solid_state, _bootstrap_source):
 @pytest.fixture
 def another_model(db, stern_entity, solid_state, _bootstrap_source):
     title = Title.objects.create(name="The Mandalorian", slug="the-mandalorian-title")
-    Claim.objects.assert_claim(
-        title, "name", "The Mandalorian", source=_bootstrap_source
-    )
+    make_claim(title, "name", "The Mandalorian", source=_bootstrap_source)
     pm = MachineModel.objects.create(
         name="The Mandalorian",
         slug="the-mandalorian",
@@ -244,5 +237,5 @@ def another_model(db, stern_entity, solid_state, _bootstrap_source):
         year=2021,
         technology_generation=solid_state,
     )
-    Claim.objects.assert_claim(pm, "name", "The Mandalorian", source=_bootstrap_source)
+    make_claim(pm, "name", "The Mandalorian", source=_bootstrap_source)
     return pm

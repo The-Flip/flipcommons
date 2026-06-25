@@ -25,7 +25,8 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 
 pytestmark = pytest.mark.django_db
 
@@ -45,7 +46,7 @@ def _title(
     label = name or slug.replace("-", " ").title()
     t = Title.objects.create(name=label, slug=slug, status=status)
     if source is not None:
-        Claim.objects.assert_claim(t, "name", label, source=source)
+        make_claim(t, "name", label, source=source)
     return t
 
 
@@ -66,7 +67,7 @@ def _model(
         variant_of=variant_of,
     )
     if source is not None:
-        Claim.objects.assert_claim(m, "name", label, source=source)
+        make_claim(m, "name", label, source=source)
     return m
 
 

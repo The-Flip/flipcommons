@@ -21,6 +21,7 @@ from apps.catalog.resolve import resolve_machine_models
 from apps.catalog.tests.conftest import make_machine_model
 from apps.core.types import JsonBody
 from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
+from apps.provenance.test_factories import make_claim
 
 
 def _post(client, path: str, body: JsonBody):
@@ -150,7 +151,7 @@ class TestProductionStatusClaimResolution:
         model = make_machine_model(name="Cancelled Project")
         src = Source.objects.get(slug="bootstrap")
 
-        Claim.objects.assert_claim(model, "production_status", "unreleased", source=src)
+        make_claim(model, "production_status", "unreleased", source=src)
         resolve_machine_models()
 
         model.refresh_from_db()

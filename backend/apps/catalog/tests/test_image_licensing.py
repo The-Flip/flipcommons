@@ -8,7 +8,8 @@ from apps.catalog.resolve import resolve_model
 from apps.catalog.tests.conftest import make_machine_model
 from apps.core.models import License
 from apps.provenance.licensing import resolve_effective_license
-from apps.provenance.models import Claim, Source, SourceFieldLicense
+from apps.provenance.models import Source, SourceFieldLicense
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -60,7 +61,7 @@ class TestEffectiveLicenseResolution:
     def test_claim_license_overrides_all(self, opdb, cc_by_sa):
         """Per-claim license takes precedence over source defaults."""
         title = Title.objects.create(name="Test Title", slug="t1")
-        claim = Claim.objects.assert_claim(title, "description", "text", source=opdb)
+        claim = make_claim(title, "description", "text", source=opdb)
         claim.license = cc_by_sa
         claim.save()
         claim.refresh_from_db()
@@ -76,7 +77,7 @@ class TestEffectiveLicenseResolution:
             source=opdb, field_name="description", license=cc_by_sa
         )
         title = Title.objects.create(name="Test Title", slug="t1")
-        claim = Claim.objects.assert_claim(title, "description", "text", source=opdb)
+        claim = make_claim(title, "description", "text", source=opdb)
         claim.source = opdb
 
         from apps.provenance.licensing import build_source_field_license_map
@@ -88,7 +89,7 @@ class TestEffectiveLicenseResolution:
     def test_source_default_license_fallback(self, ipdb, not_allowed):
         """Falls back to source.default_license when no overrides exist."""
         title = Title.objects.create(name="Test Title", slug="t1")
-        claim = Claim.objects.assert_claim(title, "description", "text", source=ipdb)
+        claim = make_claim(title, "description", "text", source=ipdb)
         claim.source = ipdb
 
         lic = resolve_effective_license(claim)
@@ -97,7 +98,7 @@ class TestEffectiveLicenseResolution:
     def test_all_null_returns_none(self, opdb):
         """Returns None when no license is set anywhere."""
         title = Title.objects.create(name="Test Title", slug="t1")
-        claim = Claim.objects.assert_claim(title, "description", "text", source=opdb)
+        claim = make_claim(title, "description", "text", source=opdb)
         claim.source = opdb
 
         lic = resolve_effective_license(claim)
@@ -112,8 +113,8 @@ class TestImageLicenseDenormalization:
         opdb.save()
 
         pm = make_machine_model(name="Test", slug="test-pm")
-        Claim.objects.assert_claim(pm, "name", "Test", source=opdb)
-        Claim.objects.assert_claim(
+        make_claim(pm, "name", "Test", source=opdb)
+        make_claim(
             pm,
             "opdb.images",
             [
@@ -138,8 +139,8 @@ class TestImageLicenseDenormalization:
     def test_null_license_stores_null_rank(self, opdb):
         """Null license should store null rank in extra_data."""
         pm = make_machine_model(name="Test", slug="test-pm")
-        Claim.objects.assert_claim(pm, "name", "Test", source=opdb)
-        Claim.objects.assert_claim(
+        make_claim(pm, "name", "Test", source=opdb)
+        make_claim(
             pm,
             "opdb.images",
             [

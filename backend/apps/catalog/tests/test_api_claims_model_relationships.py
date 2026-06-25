@@ -16,8 +16,8 @@ from apps.catalog.models import (
 )
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationSource
-from apps.provenance.models import ChangeSet, Claim
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.models import ChangeSet
+from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
 
@@ -31,7 +31,7 @@ def _only_changeset() -> ChangeSet:
 @pytest.fixture
 def pm(db, _bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    Claim.objects.assert_claim(pm, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", source=_bootstrap_source)
     return pm
 
 
@@ -308,7 +308,7 @@ class TestCombinedEdits:
         credit_roles,
         citation_source,
     ):
-        seed_claim = Claim.objects.assert_claim(
+        seed_claim = make_claim(
             pm,
             "description",
             "Template citation seed",

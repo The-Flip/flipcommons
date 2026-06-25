@@ -17,6 +17,7 @@ from apps.catalog.models import (
 )
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.models import Claim, Source
+from apps.provenance.test_factories import make_claim
 from apps.provenance.validation import (
     DIRECT,
     EXTRA,
@@ -396,17 +397,17 @@ class TestAssertClaimValidation:
         """assert_claim should reject invalid scalar values."""
         model = make_machine_model(name="Test", slug="test")
         with pytest.raises(ValidationError, match="must be an integer"):
-            Claim.objects.assert_claim(model, "ipdb_id", "not-a-number", source=source)
+            make_claim(model, "ipdb_id", "not-a-number", source=source)
 
     def test_allows_valid_direct_claim(self, source):
         model = make_machine_model(name="Test", slug="test")
-        claim = Claim.objects.assert_claim(model, "ipdb_id", 42, source=source)
+        claim = make_claim(model, "ipdb_id", 42, source=source)
         assert claim.value == 42
 
     def test_allows_relationship_claim(self, source):
         """assert_claim accepts relationship claims (batch target validation is separate)."""
         model = make_machine_model(name="Test", slug="test")
-        claim = Claim.objects.assert_claim(
+        claim = make_claim(
             model,
             "credit",
             {"person": 1, "role": 2, "exists": True},
@@ -418,18 +419,14 @@ class TestAssertClaimValidation:
     def test_allows_extra_data_claim(self, source):
         """Extra-data claims should pass through without validation."""
         model = make_machine_model(name="Test", slug="test")
-        claim = Claim.objects.assert_claim(
-            model, "opdb.description", "A great game", source=source
-        )
+        claim = make_claim(model, "opdb.description", "A great game", source=source)
         assert claim.value == "A great game"
 
     def test_rejects_unrecognized_claim(self, source):
         """Unrecognized field on a model without extra_data is rejected."""
         theme = Theme.objects.create(name="Medieval", slug="medieval")
         with pytest.raises(ValueError, match="Unrecognized claim field_name"):
-            Claim.objects.assert_claim(
-                theme, "nonexistent_field", "whatever", source=source
-            )
+            make_claim(theme, "nonexistent_field", "whatever", source=source)
 
 
 # ---------------------------------------------------------------------------
@@ -982,7 +979,7 @@ class TestAssertClaimRelationshipShape:
         # model with extra_data would fall through to EXTRA and silently land.
         # Now it routes to RELATIONSHIP and the validator rejects it.
         with pytest.raises(ValidationError, match="missing required 'exists'"):
-            Claim.objects.assert_claim(
+            make_claim(
                 model,
                 "credit",
                 {"person": 1, "role": 1},  # no "exists"
@@ -995,7 +992,7 @@ class TestAssertClaimRelationshipShape:
         design_pk = credit_targets["roles"]["design"].pk
         with pytest.raises(ValidationError, match="not canonical"):
             # No claim_key= → assert_claim defaults it to field_name.
-            Claim.objects.assert_claim(
+            make_claim(
                 model,
                 "credit",
                 {"person": pat_pk, "role": design_pk, "exists": True},
@@ -1005,7 +1002,7 @@ class TestAssertClaimRelationshipShape:
     def test_wrong_subject_rejected(self, source):
         title = Title.objects.create(name="T", slug="t")
         with pytest.raises(ValidationError, match="not valid on Title"):
-            Claim.objects.assert_claim(
+            make_claim(
                 title,
                 "credit",
                 {"person": 1, "role": 1, "exists": True},

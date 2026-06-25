@@ -106,7 +106,7 @@ def execute_revert(
             # Re-activate the most recent superseded (not retracted) claim
             # from the same user for the same claim_key.  Without this,
             # reverting a user's latest edit would leave ALL their previous
-            # edits for the field inactive (because assert_claim deactivates
+            # edits for the field inactive (because _assert_claim deactivates
             # the predecessor when creating a new claim).
             predecessor = (
                 Claim.objects.filter(

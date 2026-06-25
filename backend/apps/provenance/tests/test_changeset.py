@@ -6,7 +6,8 @@ from django.db import IntegrityError
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import Manufacturer
 from apps.core.models import License
-from apps.provenance.models import ChangeSet, Claim, IngestRun, Source
+from apps.provenance.models import ChangeSet, IngestRun, Source
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -46,10 +47,8 @@ class TestChangeSetModel:
 class TestChangeSetClaimGrouping:
     def test_claims_linked_to_changeset(self, user, mfr):
         cs = ChangeSet.objects.create(user=user, action="edit", note="Updated fields")
-        c1 = Claim.objects.assert_claim(
-            mfr, "name", "Williams Electronics", user=user, changeset=cs
-        )
-        c2 = Claim.objects.assert_claim(
+        c1 = make_claim(mfr, "name", "Williams Electronics", user=user, changeset=cs)
+        c2 = make_claim(
             mfr, "description", "Pinball manufacturer", user=user, changeset=cs
         )
         assert c1.changeset == cs
@@ -59,15 +58,13 @@ class TestChangeSetClaimGrouping:
     def test_user_claim_without_changeset_rejected(self, user, mfr):
         """A user-attributed claim must carry a ChangeSet — no unattributed user writes."""
         with pytest.raises(ValueError, match="requires a changeset"):
-            Claim.objects.assert_claim(mfr, "name", "Williams", user=user)
+            make_claim(mfr, "name", "Williams", user=user)
 
     def test_source_claim_with_changeset_accepted(self, source, mfr):
         """Source-attributed claims can use ChangeSets linked to matching ingest run."""
         run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
         cs = ChangeSet.objects.create(ingest_run=run)
-        claim = Claim.objects.assert_claim(
-            mfr, "name", "Williams", source=source, changeset=cs
-        )
+        claim = make_claim(mfr, "name", "Williams", source=source, changeset=cs)
         assert claim.changeset == cs
 
     def test_source_claim_changeset_source_mismatch_rejected(self, source, mfr):
@@ -80,28 +77,22 @@ class TestChangeSetClaimGrouping:
         )
         cs = ChangeSet.objects.create(ingest_run=run)
         with pytest.raises(ValueError, match="same source"):
-            Claim.objects.assert_claim(
-                mfr, "name", "Williams", source=source, changeset=cs
-            )
+            make_claim(mfr, "name", "Williams", source=source, changeset=cs)
 
     def test_changeset_user_mismatch_rejected(self, user, mfr):
         """ChangeSet user must match the claim user."""
         other_user = make_user()
         cs = ChangeSet.objects.create(user=other_user, action="edit")
         with pytest.raises(ValueError, match="must match"):
-            Claim.objects.assert_claim(mfr, "name", "Williams", user=user, changeset=cs)
+            make_claim(mfr, "name", "Williams", user=user, changeset=cs)
 
     def test_changeset_survives_claim_superseding(self, user, mfr):
         """When a claim is superseded, the old claim keeps its changeset link."""
         cs1 = ChangeSet.objects.create(user=user, action="edit", note="First edit")
-        c1 = Claim.objects.assert_claim(
-            mfr, "description", "First", user=user, changeset=cs1
-        )
+        c1 = make_claim(mfr, "description", "First", user=user, changeset=cs1)
 
         cs2 = ChangeSet.objects.create(user=user, action="edit", note="Second edit")
-        c2 = Claim.objects.assert_claim(
-            mfr, "description", "Second", user=user, changeset=cs2
-        )
+        c2 = make_claim(mfr, "description", "Second", user=user, changeset=cs2)
 
         c1.refresh_from_db()
         assert c1.is_active is False
@@ -148,7 +139,7 @@ class TestClaimConstraints:
         """DB-level CHECK constraint rejects empty claim_key."""
         from django.db import IntegrityError, connection
 
-        claim = Claim.objects.assert_claim(mfr, "name", "Williams", source=source)
+        claim = make_claim(mfr, "name", "Williams", source=source)
         with connection.cursor() as cursor, pytest.raises(IntegrityError):
             cursor.execute(
                 "UPDATE provenance_claim SET claim_key = '' WHERE id = %s",
@@ -163,7 +154,7 @@ class TestClaimProtect:
         from django.db.models import ProtectedError
 
         cs = ChangeSet.objects.create(user=user, action="edit")
-        Claim.objects.assert_claim(mfr, "name", "Williams", user=user, changeset=cs)
+        make_claim(mfr, "name", "Williams", user=user, changeset=cs)
         with pytest.raises(ProtectedError):
             user.delete()
 
@@ -172,7 +163,7 @@ class TestClaimProtect:
         from django.db.models import ProtectedError
 
         cs = ChangeSet.objects.create(user=user, action="edit")
-        Claim.objects.assert_claim(mfr, "name", "Williams", user=user, changeset=cs)
+        make_claim(mfr, "name", "Williams", user=user, changeset=cs)
         with pytest.raises(ProtectedError):
             cs.delete()
 
@@ -181,6 +172,6 @@ class TestClaimProtect:
         from django.db.models import ProtectedError
 
         lic = License.objects.create(name="Test License", short_name="test-lic")
-        Claim.objects.assert_claim(mfr, "name", "Williams", source=source, license=lic)
+        make_claim(mfr, "name", "Williams", source=source, license=lic)
         with pytest.raises(ProtectedError):
             lic.delete()

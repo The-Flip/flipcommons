@@ -30,7 +30,8 @@ from apps.core.models import (
     is_live,
 )
 from apps.provenance.claim_ranking_in_db import ranked_claims
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 
 pytestmark = pytest.mark.django_db
 
@@ -129,15 +130,15 @@ def test_delete_drops_referrer_only_when_the_delete_wins(
     """A ``status=deleted`` claim makes the entity not-live iff it wins the pick."""
     # Delete wins: high-priority source deletes, low-priority keeps it active.
     winning = Manufacturer.objects.create(name="Del Wins", slug="del-wins")
-    Claim.objects.assert_claim(winning, "status", "active", source=sources["low"])
-    Claim.objects.assert_claim(winning, "status", "deleted", source=sources["high"])
+    make_claim(winning, "status", "active", source=sources["low"])
+    make_claim(winning, "status", "deleted", source=sources["high"])
     assert _resolved_status(winning) == "deleted"
     assert not is_live(_resolved_status(winning))
 
     # Delete loses: a lower-priority delete must not unblock — entity stays live.
     losing = Manufacturer.objects.create(name="Del Loses", slug="del-loses")
-    Claim.objects.assert_claim(losing, "status", "active", source=sources["high"])
-    Claim.objects.assert_claim(losing, "status", "deleted", source=sources["low"])
+    make_claim(losing, "status", "active", source=sources["high"])
+    make_claim(losing, "status", "deleted", source=sources["low"])
     assert _resolved_status(losing) == "active"
     assert is_live(_resolved_status(losing))
 

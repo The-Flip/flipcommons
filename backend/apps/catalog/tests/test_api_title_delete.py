@@ -11,6 +11,7 @@ from apps.accounts.test_factories import make_user
 from apps.catalog.models import MachineModel, Title
 from apps.core.types import JsonBody
 from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -35,8 +36,8 @@ def _make_title(bootstrap_source, slug: str, name: str | None = None) -> Title:
     # Seed name + status claims from a low-priority source so the resolver
     # has something to fall back to after an undo deactivates the user's
     # status claim. Mirrors what ingest would provide in production.
-    Claim.objects.assert_claim(t, "name", label, source=bootstrap_source)
-    Claim.objects.assert_claim(t, "status", "active", source=bootstrap_source)
+    make_claim(t, "name", label, source=bootstrap_source)
+    make_claim(t, "status", "active", source=bootstrap_source)
     return t
 
 
@@ -48,8 +49,8 @@ def _make_model(bootstrap_source, title: Title, slug: str) -> MachineModel:
         slug=slug,
         status="active",
     )
-    Claim.objects.assert_claim(m, "name", label, source=bootstrap_source)
-    Claim.objects.assert_claim(m, "status", "active", source=bootstrap_source)
+    make_claim(m, "name", label, source=bootstrap_source)
+    make_claim(m, "status", "active", source=bootstrap_source)
     return m
 
 
@@ -237,9 +238,7 @@ class TestDeletePreview:
         cs = ChangeSet.objects.create(
             user=user, action=ChangeSetAction.EDIT, note="seed"
         )
-        Claim.objects.assert_claim(
-            t, "name", "Medieval Madness", user=user, changeset=cs
-        )
+        make_claim(t, "name", "Medieval Madness", user=user, changeset=cs)
         client.force_login(user)
         resp = _get_preview(client, "mm")
         assert resp.status_code == 200

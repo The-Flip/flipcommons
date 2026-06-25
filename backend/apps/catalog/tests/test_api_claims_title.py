@@ -14,7 +14,7 @@ from apps.citation.models import CitationSource
 from apps.core.types import JsonBody
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import ChangeSet, Claim, Source
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
 
@@ -24,7 +24,7 @@ def title(db, _bootstrap_source):
     t = Title.objects.create(
         name="Medieval Madness", slug="medieval-madness", opdb_id="G5pe4"
     )
-    Claim.objects.assert_claim(t, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(t, "name", "Medieval Madness", source=_bootstrap_source)
     return t
 
 
@@ -65,7 +65,7 @@ def _assert_title_abbreviations(
         claim_key, claim_value = build_relationship_claim(
             "abbreviation", {"value": value}
         )
-        Claim.objects.assert_claim(
+        make_claim(
             title,
             "abbreviation",
             claim_value,
@@ -249,7 +249,7 @@ class TestPatchTitleClaims:
         self, client, user, title, citation_source
     ):
         client.force_login(user)
-        template_claim = Claim.objects.assert_claim(
+        template_claim = make_claim(
             title,
             "description",
             "Template citation seed",

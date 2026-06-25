@@ -4,8 +4,8 @@ import pytest
 from django.utils import timezone
 
 from apps.catalog.models import Manufacturer
-from apps.provenance.models import ChangeSet, Claim, IngestRun, Source
-from apps.provenance.test_factories import ingest_changeset, user_changeset
+from apps.provenance.models import ChangeSet, IngestRun, Source
+from apps.provenance.test_factories import ingest_changeset, make_claim, user_changeset
 
 
 @pytest.fixture
@@ -147,7 +147,7 @@ class TestChangeSetIngestRunFK:
 class TestClaimRetractedByChangeset:
     def test_retracted_by_changeset_set(self, source, mfr):
         run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
-        claim = Claim.objects.assert_claim(mfr, "name", "Williams", source=source)
+        claim = make_claim(mfr, "name", "Williams", source=source)
         cs = ingest_changeset(run)
         claim.retracted_by_changeset = cs
         claim.is_active = False
@@ -159,7 +159,7 @@ class TestClaimRetractedByChangeset:
         assert cs.retracted_claims.count() == 1
 
     def test_retracted_by_changeset_null_by_default(self, source, mfr):
-        claim = Claim.objects.assert_claim(mfr, "name", "Williams", source=source)
+        claim = make_claim(mfr, "name", "Williams", source=source)
         assert claim.retracted_by_changeset is None
 
     def test_delete_changeset_blocked_by_retracted_claims(self, source, mfr):
@@ -167,7 +167,7 @@ class TestClaimRetractedByChangeset:
         from django.db.models import ProtectedError
 
         run = IngestRun.objects.create(source=source, input_fingerprint="sha256:ret")
-        claim = Claim.objects.assert_claim(mfr, "name", "Williams", source=source)
+        claim = make_claim(mfr, "name", "Williams", source=source)
         cs = ingest_changeset(run)
         claim.retracted_by_changeset = cs
         claim.is_active = False

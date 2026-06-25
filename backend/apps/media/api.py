@@ -58,6 +58,7 @@ from apps.media.storage import (
     delete_from_storage,
     upload_to_storage,
 )
+from apps.provenance.claim_writer import _assert_claim
 from apps.provenance.models import ChangeSet, ChangeSetAction, Claim
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ def _assert_media_claim(
     ("Fix Media Claims").
     """
     changeset = ChangeSet.objects.create(user=user, action=ChangeSetAction.EDIT)
-    return Claim.objects.assert_claim(
+    return _assert_claim(
         entity,
         "media_attachment",
         claim_value,

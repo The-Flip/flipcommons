@@ -15,7 +15,8 @@ from django.core.cache import cache
 
 from apps.catalog.models import CorporateEntity, Manufacturer, System
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction, Source
+from apps.provenance.test_factories import make_claim
 
 User = get_user_model()
 
@@ -30,8 +31,8 @@ def bootstrap_source(db):
 @pytest.fixture
 def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Stern", slug="stern", status="active")
-    Claim.objects.assert_claim(m, "name", "Stern", source=bootstrap_source)
-    Claim.objects.assert_claim(m, "status", "active", source=bootstrap_source)
+    make_claim(m, "name", "Stern", source=bootstrap_source)
+    make_claim(m, "status", "active", source=bootstrap_source)
     return m
 
 
@@ -44,7 +45,7 @@ def _make_ce(
         manufacturer=mfr,
         status=status,
     )
-    Claim.objects.assert_claim(ce, "name", ce.name, source=bootstrap_source)
+    make_claim(ce, "name", ce.name, source=bootstrap_source)
     return ce
 
 
@@ -55,7 +56,7 @@ def _make_system(bootstrap_source, mfr, slug: str, *, status: str = "active") ->
         manufacturer=mfr,
         status=status,
     )
-    Claim.objects.assert_claim(s, "name", s.name, source=bootstrap_source)
+    make_claim(s, "name", s.name, source=bootstrap_source)
     return s
 
 
@@ -176,7 +177,7 @@ class TestDeletePreview:
         cs = ChangeSet.objects.create(
             user=user, action=ChangeSetAction.EDIT, note="seed"
         )
-        Claim.objects.assert_claim(mfr, "description", "hi", user=user, changeset=cs)
+        make_claim(mfr, "description", "hi", user=user, changeset=cs)
         client.force_login(user)
         resp = _get_preview(client, "stern")
         assert resp.status_code == 200

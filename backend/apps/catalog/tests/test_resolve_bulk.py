@@ -21,6 +21,7 @@ from apps.catalog.resolve import (
 from apps.catalog.tests.conftest import make_machine_model
 from apps.core.models import RecordReference
 from apps.provenance.models import Claim, Source, get_claim_fields
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -43,8 +44,8 @@ class TestResolveBulkTitle:
         t1 = Title.objects.create(opdb_id="G1", name="Title One", slug="t1")
         t2 = Title.objects.create(opdb_id="G2", name="Title Two", slug="t2")
 
-        Claim.objects.assert_claim(t1, "name", "Godzilla", source=opdb)
-        Claim.objects.assert_claim(t2, "name", "Blackout", source=opdb)
+        make_claim(t1, "name", "Godzilla", source=opdb)
+        make_claim(t2, "name", "Blackout", source=opdb)
 
         _resolve_bulk(Title, get_claim_fields(Title))
 
@@ -56,8 +57,8 @@ class TestResolveBulkTitle:
     def test_winner_by_priority(self, opdb, editorial):
         t = Title.objects.create(opdb_id="G1", name="Placeholder", slug="t1")
 
-        Claim.objects.assert_claim(t, "name", "Low Priority", source=opdb)
-        Claim.objects.assert_claim(t, "name", "High Priority", source=editorial)
+        make_claim(t, "name", "Low Priority", source=opdb)
+        make_claim(t, "name", "High Priority", source=editorial)
 
         _resolve_bulk(Title, get_claim_fields(Title))
 
@@ -70,7 +71,7 @@ class TestResolveBulkTitle:
         )
 
         # Name claim to satisfy the NOT-blank constraint; no description claim.
-        Claim.objects.assert_claim(t, "name", "Stale Name", source=opdb)
+        make_claim(t, "name", "Stale Name", source=opdb)
         _resolve_bulk(Title, get_claim_fields(Title))
 
         t.refresh_from_db()
@@ -82,8 +83,8 @@ class TestResolveBulkTitle:
         franchise = Franchise.objects.create(name="Godzilla", slug="godzilla")
         t = Title.objects.create(opdb_id="G1", name="Placeholder", slug="t1")
 
-        Claim.objects.assert_claim(t, "name", "Godzilla", source=opdb)
-        Claim.objects.assert_claim(t, "franchise", "godzilla", source=opdb)
+        make_claim(t, "name", "Godzilla", source=opdb)
+        make_claim(t, "franchise", "godzilla", source=opdb)
 
         resolve_all_entities(Title)
 
@@ -96,8 +97,8 @@ class TestResolveBulkTitle:
         series = Series.objects.create(name="Godzilla Line", slug="godzilla-line")
         t = Title.objects.create(opdb_id="G1", name="Placeholder", slug="t1")
 
-        Claim.objects.assert_claim(t, "name", "Godzilla", source=opdb)
-        Claim.objects.assert_claim(t, "series", "godzilla-line", source=opdb)
+        make_claim(t, "name", "Godzilla", source=opdb)
+        make_claim(t, "series", "godzilla-line", source=opdb)
 
         resolve_all_entities(Title)
 
@@ -113,7 +114,7 @@ class TestResolveBulkTitle:
         )
 
         # Name claim but no franchise claim — franchise should reset to None.
-        Claim.objects.assert_claim(t, "name", "Godzilla", source=opdb)
+        make_claim(t, "name", "Godzilla", source=opdb)
         resolve_all_entities(Title)
 
         t.refresh_from_db()
@@ -128,7 +129,7 @@ class TestResolveBulkTitle:
         )
 
         # Name claim but no series claim — series should reset to None.
-        Claim.objects.assert_claim(t, "name", "Godzilla", source=opdb)
+        make_claim(t, "name", "Godzilla", source=opdb)
         resolve_all_entities(Title)
 
         t.refresh_from_db()
@@ -138,7 +139,7 @@ class TestResolveBulkTitle:
         t1 = Title.objects.create(opdb_id="G1", name="Untouched", slug="t1")
         t2 = Title.objects.create(opdb_id="G2", name="Placeholder", slug="t2")
 
-        Claim.objects.assert_claim(t2, "name", "Resolved", source=opdb)
+        make_claim(t2, "name", "Resolved", source=opdb)
 
         # Only resolve t2.
         _resolve_bulk(Title, get_claim_fields(Title), object_ids={t2.pk})
@@ -152,7 +153,7 @@ class TestResolveBulkTitle:
         t = Title.objects.create(opdb_id="G1", name="Placeholder", slug="t1")
         old_updated_at = t.updated_at
 
-        Claim.objects.assert_claim(t, "name", "New Name", source=opdb)
+        make_claim(t, "name", "New Name", source=opdb)
         _resolve_bulk(Title, get_claim_fields(Title))
 
         t.refresh_from_db()
@@ -169,8 +170,8 @@ class TestResolveBulkManufacturer:
             manufacturer=m, name="Stern Pinball, Inc.", slug="stern-pinball-inc"
         )
 
-        Claim.objects.assert_claim(ce, "name", "Stern Pinball, Inc.", source=opdb)
-        Claim.objects.assert_claim(ce, "year_start", "1999", source=opdb)
+        make_claim(ce, "name", "Stern Pinball, Inc.", source=opdb)
+        make_claim(ce, "year_start", "1999", source=opdb)
 
         _resolve_bulk(
             CorporateEntity,
@@ -189,8 +190,8 @@ class TestResolveBulkMarkdownReferences:
         mfr = Manufacturer.objects.create(name="Williams", slug="williams")
         system = System.objects.create(name="WPC-95", slug="wpc-95", manufacturer=mfr)
 
-        Claim.objects.assert_claim(mfr, "name", "Williams", source=opdb)
-        Claim.objects.assert_claim(
+        make_claim(mfr, "name", "Williams", source=opdb)
+        make_claim(
             mfr,
             "description",
             f"Uses [[system:id:{system.pk}]].",
@@ -214,7 +215,7 @@ class TestResolveBulkMarkdownReferences:
         system = System.objects.create(name="WPC-95", slug="wpc-95", manufacturer=mfr)
 
         # First resolve with a link
-        Claim.objects.assert_claim(
+        make_claim(
             mfr,
             "description",
             f"Uses [[system:id:{system.pk}]].",
@@ -253,7 +254,7 @@ class TestResolveBulkUniqueFieldSafety:
         t2 = Theme.objects.create(name="Sports", slug="sports")
 
         # Only t1 gets a name claim; t2 has none.
-        Claim.objects.assert_claim(t1, "name", "Horror Movies", source=opdb)
+        make_claim(t1, "name", "Horror Movies", source=opdb)
 
         _resolve_bulk(Theme, get_claim_fields(Theme))
 
@@ -269,7 +270,7 @@ class TestResolveBulkUniqueFieldSafety:
         t = Theme.objects.create(name="Horror", slug="horror", description="Old desc")
 
         # Name claim but no description claim.
-        Claim.objects.assert_claim(t, "name", "Horror", source=opdb)
+        make_claim(t, "name", "Horror", source=opdb)
 
         _resolve_bulk(Theme, get_claim_fields(Theme))
 
@@ -283,7 +284,7 @@ class TestResolveBulkUniqueFieldSafety:
         t = Theme.objects.create(name="Horror", slug="horror", description="Old desc")
 
         # Description claim but no name claim.
-        Claim.objects.assert_claim(t, "description", "Scary stuff", source=opdb)
+        make_claim(t, "description", "Scary stuff", source=opdb)
 
         _resolve_single(t, get_claim_fields(Theme))
 
@@ -303,8 +304,8 @@ class TestResolveBulkUniqueFieldSafety:
         )
 
         # Both get only a description claim, no name claim.
-        Claim.objects.assert_claim(t_single, "description", "Scary stuff", source=opdb)
-        Claim.objects.assert_claim(t_bulk, "description", "Scary stuff", source=opdb)
+        make_claim(t_single, "description", "Scary stuff", source=opdb)
+        make_claim(t_bulk, "description", "Scary stuff", source=opdb)
 
         _resolve_single(t_single, get_claim_fields(Theme))
         t_single.save()
@@ -348,7 +349,7 @@ class TestPreserveNotNullFK:
         )
 
         # Name claim but no technology_generation claim.
-        Claim.objects.assert_claim(subgen, "name", "Discrete Logic", source=opdb)
+        make_claim(subgen, "name", "Discrete Logic", source=opdb)
 
         _resolve_bulk(
             TechnologySubgeneration,
@@ -373,7 +374,7 @@ class TestPreserveNotNullFK:
             name="Discrete Logic", slug="discrete-logic", technology_generation=gen
         )
 
-        Claim.objects.assert_claim(subgen, "name", "Discrete Logic", source=opdb)
+        make_claim(subgen, "name", "Discrete Logic", source=opdb)
 
         _resolve_single(subgen, subgen_fields)
         subgen.save()
@@ -395,8 +396,8 @@ class TestPreserveNotNullFK:
             name="Discrete Logic", slug="discrete-logic", technology_generation=gen1
         )
 
-        Claim.objects.assert_claim(subgen, "name", "Discrete Logic", source=opdb)
-        Claim.objects.assert_claim(subgen, "technology_generation", "em", source=opdb)
+        make_claim(subgen, "name", "Discrete Logic", source=opdb)
+        make_claim(subgen, "technology_generation", "em", source=opdb)
 
         _resolve_bulk(
             TechnologySubgeneration,
@@ -416,9 +417,9 @@ class TestResolveBulkTaxonomy:
 
         tag = Tag.objects.create(name="Test Tag", slug="test-tag")
 
-        Claim.objects.assert_claim(tag, "name", "Test Tag", source=opdb)
+        make_claim(tag, "name", "Test Tag", source=opdb)
         with pytest.raises(ValidationError, match="must be an integer"):
-            Claim.objects.assert_claim(tag, "display_order", "abc", source=opdb)
+            make_claim(tag, "display_order", "abc", source=opdb)
 
 
 @pytest.mark.django_db
@@ -427,9 +428,9 @@ class TestResolveTitle:
         franchise = Franchise.objects.create(name="Godzilla", slug="godzilla")
         t = Title.objects.create(opdb_id="G1", name="Placeholder", slug="t1")
 
-        Claim.objects.assert_claim(t, "name", "Godzilla", source=opdb)
-        Claim.objects.assert_claim(t, "description", "A monster game.", source=opdb)
-        Claim.objects.assert_claim(t, "franchise", "godzilla", source=opdb)
+        make_claim(t, "name", "Godzilla", source=opdb)
+        make_claim(t, "description", "A monster game.", source=opdb)
+        make_claim(t, "franchise", "godzilla", source=opdb)
 
         result = resolve_entity(t)
 
@@ -441,9 +442,9 @@ class TestResolveTitle:
         series = Series.objects.create(name="Godzilla Line", slug="godzilla-line")
         t = Title.objects.create(opdb_id="G1", name="Placeholder", slug="t1")
 
-        Claim.objects.assert_claim(t, "name", "Godzilla", source=opdb)
-        Claim.objects.assert_claim(t, "description", "A monster game.", source=opdb)
-        Claim.objects.assert_claim(t, "series", "godzilla-line", source=opdb)
+        make_claim(t, "name", "Godzilla", source=opdb)
+        make_claim(t, "description", "A monster game.", source=opdb)
+        make_claim(t, "series", "godzilla-line", source=opdb)
 
         result = resolve_entity(t)
 
@@ -458,7 +459,7 @@ class TestResolveTitle:
         )
 
         # Only a name claim, no franchise.
-        Claim.objects.assert_claim(t, "name", "Godzilla", source=opdb)
+        make_claim(t, "name", "Godzilla", source=opdb)
         result = resolve_entity(t)
 
         assert result.franchise is None
@@ -470,7 +471,7 @@ class TestResolveTitle:
         )
 
         # Only a name claim, no series.
-        Claim.objects.assert_claim(t, "name", "Godzilla", source=opdb)
+        make_claim(t, "name", "Godzilla", source=opdb)
         result = resolve_entity(t)
 
         assert result.series is None
@@ -491,11 +492,11 @@ class TestSlugConflictDetection:
         t1 = Title.objects.create(name="First", slug="target-slug")
         t2 = Title.objects.create(name="Second", slug="original-slug")
 
-        Claim.objects.assert_claim(t1, "name", "First", source=opdb)
-        Claim.objects.assert_claim(t1, "slug", "target-slug", source=opdb)
-        Claim.objects.assert_claim(t2, "name", "Second", source=opdb)
+        make_claim(t1, "name", "First", source=opdb)
+        make_claim(t1, "slug", "target-slug", source=opdb)
+        make_claim(t2, "name", "Second", source=opdb)
         # t2 claims the same slug as t1.
-        Claim.objects.assert_claim(t2, "slug", "target-slug", source=opdb)
+        make_claim(t2, "slug", "target-slug", source=opdb)
 
         _resolve_bulk(Title, title_fields_with_slug)
 
@@ -509,10 +510,10 @@ class TestSlugConflictDetection:
         t1 = Title.objects.create(name="Changer", slug="alpha")
         t2 = Title.objects.create(name="Preserver", slug="beta")
 
-        Claim.objects.assert_claim(t1, "name", "Changer", source=opdb)
+        make_claim(t1, "name", "Changer", source=opdb)
         # t1 claims t2's slug — t1 is the changer.
-        Claim.objects.assert_claim(t1, "slug", "beta", source=opdb)
-        Claim.objects.assert_claim(t2, "name", "Preserver", source=opdb)
+        make_claim(t1, "slug", "beta", source=opdb)
+        make_claim(t2, "name", "Preserver", source=opdb)
         # t2 has no slug claim — preserved by preserve_when_unclaimed.
 
         _resolve_bulk(Title, title_fields_with_slug)
@@ -526,10 +527,10 @@ class TestSlugConflictDetection:
         t1 = Title.objects.create(name="First", slug="slug-a")
         t2 = Title.objects.create(name="Second", slug="slug-b")
 
-        Claim.objects.assert_claim(t1, "name", "First", source=opdb)
-        Claim.objects.assert_claim(t1, "slug", "slug-a", source=opdb)
-        Claim.objects.assert_claim(t2, "name", "Second", source=opdb)
-        Claim.objects.assert_claim(t2, "slug", "slug-b", source=opdb)
+        make_claim(t1, "name", "First", source=opdb)
+        make_claim(t1, "slug", "slug-a", source=opdb)
+        make_claim(t2, "name", "Second", source=opdb)
+        make_claim(t2, "slug", "slug-b", source=opdb)
 
         _resolve_bulk(Title, title_fields_with_slug)
 
@@ -543,8 +544,8 @@ class TestSlugConflictDetection:
         Title.objects.create(name="Owner", slug="taken-slug")
         t2 = Title.objects.create(name="Challenger", slug="original-slug")
 
-        Claim.objects.assert_claim(t2, "name", "Challenger", source=opdb)
-        Claim.objects.assert_claim(t2, "slug", "taken-slug", source=opdb)
+        make_claim(t2, "name", "Challenger", source=opdb)
+        make_claim(t2, "slug", "taken-slug", source=opdb)
 
         # Use explicit fields so this test is independent of claim-field discovery.
         fields = get_claim_fields(Title)
@@ -556,8 +557,8 @@ class TestSlugConflictDetection:
         # resolve_entity handles this; _resolve_single doesn't check DB.
         # So test via resolve_entity instead.
         t2 = Title.objects.get(pk=t2.pk)  # re-fetch clean
-        Claim.objects.assert_claim(t2, "name", "Challenger", source=opdb)
-        Claim.objects.assert_claim(t2, "slug", "taken-slug", source=opdb)
+        make_claim(t2, "name", "Challenger", source=opdb)
+        make_claim(t2, "slug", "taken-slug", source=opdb)
 
         # resolve_entity checks DB for slug conflict and reverts.
         result = resolve_entity(t2)
@@ -570,7 +571,7 @@ class TestApplyResolutionPreserve:
 
     def test_preserves_slug_without_claim(self, opdb):
         mm = make_machine_model(name="Test", slug="test-slug")
-        Claim.objects.assert_claim(mm, "name", "Test Model", source=opdb)
+        make_claim(mm, "name", "Test Model", source=opdb)
         # No slug claim — slug should be preserved after resolution.
 
         resolve_model(mm)
@@ -581,7 +582,7 @@ class TestApplyResolutionPreserve:
 
     def test_preserves_opdb_id_without_claim(self, opdb):
         mm = make_machine_model(name="Test", slug="test-slug", opdb_id="O123")
-        Claim.objects.assert_claim(mm, "name", "Test Model", source=opdb)
+        make_claim(mm, "name", "Test Model", source=opdb)
         # No opdb_id claim.
 
         resolve_model(mm)
@@ -592,8 +593,8 @@ class TestApplyResolutionPreserve:
     def test_bulk_preserves_slug_without_claim(self, opdb):
         mm1 = make_machine_model(name="A", slug="a-slug")
         mm2 = make_machine_model(name="B", slug="b-slug")
-        Claim.objects.assert_claim(mm1, "name", "Model A", source=opdb)
-        Claim.objects.assert_claim(mm2, "name", "Model B", source=opdb)
+        make_claim(mm1, "name", "Model A", source=opdb)
+        make_claim(mm2, "name", "Model B", source=opdb)
         # No slug claims — both should preserve their slugs.
 
         resolve_machine_models()

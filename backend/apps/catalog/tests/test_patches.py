@@ -55,6 +55,7 @@ from apps.provenance.claims import (
     normalize_alias_identity,
 )
 from apps.provenance.models import ChangeSet, CitationInstance, Claim, IngestRun, Source
+from apps.provenance.test_factories import make_claim
 from apps.provenance.validation import (
     FkTarget,
     RelationshipSchema,
@@ -977,9 +978,9 @@ def test_retract_fk_falls_through_to_remaining_source(
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    Claim.objects.assert_claim(ce, "name", "Western Products, Inc.", source=catalog)
-    Claim.objects.assert_claim(ce, "manufacturer", "williams", source=catalog)
-    Claim.objects.assert_claim(ce, "manufacturer", "stern", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", source=catalog)
+    make_claim(ce, "manufacturer", "williams", source=catalog)
+    make_claim(ce, "manufacturer", "stern", source=ipdb)
 
     text = """
 attribution: flipcommons-catalog
@@ -1014,8 +1015,8 @@ def test_retract_sole_required_fk_claim_preserves_value(stern):
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    Claim.objects.assert_claim(ce, "name", "Western Products, Inc.", source=ipdb)
-    Claim.objects.assert_claim(ce, "manufacturer", "stern", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "manufacturer", "stern", source=ipdb)
 
     text = """
 attribution: ipdb
@@ -1042,7 +1043,7 @@ def test_retract_idempotent_when_claim_absent(stern):
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    Claim.objects.assert_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
 
     text = """
 attribution: ipdb
@@ -1070,7 +1071,7 @@ def test_retract_noop_with_note_rejected(stern):
     )
     # ipdb claims `name` but not `manufacturer`, so retracting manufacturer is a
     # no-op for this source.
-    Claim.objects.assert_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
 
     text = """
 attribution: ipdb
@@ -1094,8 +1095,8 @@ def test_retract_real_with_note_records_changeset(stern):
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    Claim.objects.assert_claim(ce, "name", "Western Products, Inc.", source=ipdb)
-    Claim.objects.assert_claim(ce, "manufacturer", "stern", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "manufacturer", "stern", source=ipdb)
 
     text = """
 attribution: ipdb
@@ -1164,9 +1165,9 @@ def test_retract_one_field_assert_another_in_same_entry(stern, flipcommons_catal
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    Claim.objects.assert_claim(ce, "name", "Western Products, Inc.", source=ipdb)
-    Claim.objects.assert_claim(ce, "manufacturer", "stern", source=ipdb)
-    Claim.objects.assert_claim(ce, "manufacturer", "stern", source=catalog)
+    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "manufacturer", "stern", source=ipdb)
+    make_claim(ce, "manufacturer", "stern", source=catalog)
 
     text = """
 attribution: ipdb
@@ -1196,7 +1197,7 @@ def test_retract_and_assert_same_field_rejected(stern):
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    Claim.objects.assert_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
     text = """
 attribution: ipdb
 claims:
@@ -1220,7 +1221,7 @@ def test_retract_and_assert_same_field_across_entries_rejected(stern):
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    Claim.objects.assert_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
     text = """
 attribution: ipdb
 claims:
@@ -1450,11 +1451,9 @@ def bally_wulff(db, flipcommons_catalog):
     ce = CorporateEntity.objects.create(
         name="Bally Wulff", slug="bally-wulff", manufacturer=mfr
     )
-    Claim.objects.assert_claim(ce, "name", "Bally Wulff", source=catalog)
+    make_claim(ce, "name", "Bally Wulff", source=catalog)
     claim_key, value = build_relationship_claim("location", {"location": germany.pk})
-    Claim.objects.assert_claim(
-        ce, "location", value, source=catalog, claim_key=claim_key
-    )
+    make_claim(ce, "location", value, source=catalog, claim_key=claim_key)
     resolve_all_corporate_entity_locations(subject_ids={ce.pk})
     return ce
 
@@ -1844,7 +1843,7 @@ def test_losing_fk_reassign_onto_deleted_still_rejected(machine_model, stern_ent
     authority = Source.objects.create(
         name="Authority", slug="authority", source_type="editorial", priority=900
     )
-    Claim.objects.assert_claim(
+    make_claim(
         machine_model, "corporate_entity", "williams-electronics", source=authority
     )
     text = f"""
@@ -1886,7 +1885,7 @@ def test_reassign_fk_onto_deleted_normalizes_numeric(machine_model, manufacturer
     doomed = CorporateEntity.objects.create(
         name="Numbered", slug="1234", manufacturer=manufacturer
     )
-    Claim.objects.assert_claim(
+    make_claim(
         doomed,
         "name",
         "Numbered",

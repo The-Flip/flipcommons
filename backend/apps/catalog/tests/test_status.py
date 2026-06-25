@@ -13,7 +13,8 @@ from apps.claim_ingest.plan import (
     PlannedClaimAssert,
     PlannedEntityCreate,
 )
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 from apps.provenance.validation import validate_claim_value
 
 pytestmark = pytest.mark.django_db
@@ -181,7 +182,7 @@ class TestStatusResolution:
     def test_status_resolved_from_claim(self, test_source):
         """Status field is resolved from claims like any other scalar."""
         mfr = Manufacturer.objects.create(name="Bally", slug="bally")
-        Claim.objects.assert_claim(mfr, "status", "active", source=test_source)
+        make_claim(mfr, "status", "active", source=test_source)
 
         from apps.catalog.resolve._entities import resolve_all_entities
 

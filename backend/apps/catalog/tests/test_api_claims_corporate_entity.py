@@ -13,7 +13,8 @@ from apps.catalog.models import (
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.models import ChangeSet, Claim
+from apps.provenance.models import ChangeSet
+from apps.provenance.test_factories import make_claim
 
 User = get_user_model()
 
@@ -21,7 +22,7 @@ User = get_user_model()
 @pytest.fixture
 def mfr(db, _bootstrap_source):
     m = Manufacturer.objects.create(name="Gottlieb", slug="gottlieb")
-    Claim.objects.assert_claim(m, "name", "Gottlieb", source=_bootstrap_source)
+    make_claim(m, "name", "Gottlieb", source=_bootstrap_source)
     return m
 
 
@@ -34,9 +35,7 @@ def entity(db, mfr, _bootstrap_source):
         year_start=1927,
         year_end=1983,
     )
-    Claim.objects.assert_claim(
-        ce, "name", "D. Gottlieb & Company", source=_bootstrap_source
-    )
+    make_claim(ce, "name", "D. Gottlieb & Company", source=_bootstrap_source)
     return ce
 
 
@@ -49,9 +48,7 @@ def other_entity(db, mfr, _bootstrap_source):
         year_start=1983,
         year_end=1984,
     )
-    Claim.objects.assert_claim(
-        ce, "name", "Mylstar Electronics", source=_bootstrap_source
-    )
+    make_claim(ce, "name", "Mylstar Electronics", source=_bootstrap_source)
     return ce
 
 

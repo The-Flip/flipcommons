@@ -56,6 +56,7 @@ NOT claims-based: **System-generated fields** like `id`/`uuid`, timestamps, deri
 
 ## Key Code
 
-- `backend/apps/provenance/models.py` — Source, Claim, ClaimManager
+- `backend/apps/provenance/models/` — Source, Claim, ChangeSet, IngestRun
+- `backend/apps/provenance/claim_writer.py` — `_assert_claim`, the single claim-mint primitive (the one non-ingest place a Claim is persisted)
 - `backend/apps/catalog/claims.py` — Relationship schemas and claim key helpers
 - `backend/apps/catalog/resolve/` — Resolution logic

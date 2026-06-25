@@ -1,13 +1,18 @@
-"""Claim model and manager: atomic fact assertions about catalog entities."""
+"""Claim model: atomic fact assertions about catalog entities.
+
+The mint primitive that writes ``Claim`` rows lives in
+``apps.provenance.claim_writer`` (``_assert_claim``), not on a custom manager —
+see that module and ``tests/test_single_claim_write_path.py``.
+"""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
-from django.db import models, transaction
+from django.db import models
 from django.db.models.functions import Now
 
 from apps.core.models import BoundedTextField, field_not_blank
@@ -20,9 +25,6 @@ CLAIM_CITATION_MAX_LENGTH = 2_000
 CLAIM_NEEDS_REVIEW_NOTES_MAX_LENGTH = 2_000
 
 if TYPE_CHECKING:
-    from apps.accounts.models import User
-    from apps.core.models import License
-
     from .citation_instance import CitationInstance
 
 type IdentityPart = str | int | None
@@ -68,108 +70,6 @@ def make_claim_key(field_name: str, **identity_parts: IdentityPart) -> str:
     return "|".join(parts)
 
 
-class ClaimManager(models.Manager["Claim"]):
-    def assert_claim(
-        self,
-        subject: ClaimControlledModel,
-        field_name: str,
-        value: object,
-        citation: str = "",
-        *,
-        source: Source | None = None,
-        user: User | None = None,
-        claim_key: str = "",
-        license: License | None = None,
-        changeset: ChangeSet | None = None,
-    ) -> Claim:
-        """Create a claim, deactivating any existing active claim for the same claim_key+author.
-
-        ``subject`` can be any model instance (MachineModel, Manufacturer, Person, …).
-        Exactly one of ``source`` or ``user`` must be provided.
-        ``claim_key`` defaults to ``field_name`` for scalar claims.
-        ``license`` is an optional per-claim License override (null inherits from source).
-        ``changeset`` groups this claim with others; it is **required** for
-        user-attributed claims (every user write is an attributed ChangeSet)
-        and optional for source-attributed (ingest) claims.
-        Runs in a transaction to ensure the old claim is deactivated atomically.
-        """
-        if (source is None) == (user is None):
-            raise ValueError("Exactly one of source or user must be provided.")
-        if user is not None and changeset is None:
-            raise ValueError(
-                "A user-attributed claim requires a changeset "
-                "(every user write must be an attributed ChangeSet)."
-            )
-        if changeset is not None:
-            if (
-                user is not None
-                and changeset.user is not None
-                and changeset.user.pk != user.pk
-            ):
-                raise ValueError("ChangeSet user must match the claim user.")
-            ingest_run = changeset.ingest_run
-            if source is not None and (
-                ingest_run is None or ingest_run.source.pk != source.pk
-            ):
-                raise ValueError(
-                    "ChangeSet must belong to an IngestRun from the same source."
-                )
-        if not claim_key:
-            claim_key = field_name
-
-        # Classify and validate. DIRECT claims get scalar/FK validation.
-        # RELATIONSHIP claims get shape validation. EXTRA claims pass through.
-        # UNRECOGNIZED claims are rejected outright.
-        from apps.provenance.validation import (
-            DIRECT,
-            RELATIONSHIP,
-            UNRECOGNIZED,
-            classify_claim,
-            validate_claim_value,
-            validate_single_relationship_claim,
-        )
-
-        model_class = type(subject)
-        ct_result = classify_claim(model_class, field_name, claim_key, value)
-        if ct_result == UNRECOGNIZED:
-            raise ValueError(
-                f"Unrecognized claim field_name {field_name!r} on {model_class.__name__}"
-            )
-        if ct_result == DIRECT:
-            value = validate_claim_value(field_name, value, model_class)
-        elif ct_result == RELATIONSHIP:
-            validate_single_relationship_claim(
-                subject_model=model_class,
-                field_name=field_name,
-                claim_key=claim_key,
-                value=value,
-            )
-
-        ct = ContentType.objects.get_for_model(subject)
-        with transaction.atomic():
-            self.filter(
-                content_type=ct,
-                object_id=subject.pk,
-                source=source,
-                user=user,
-                claim_key=claim_key,
-                is_active=True,
-            ).update(is_active=False)
-
-            return self.create(
-                content_type=ct,
-                object_id=subject.pk,
-                source=source,
-                user=user,
-                field_name=field_name,
-                claim_key=claim_key,
-                value=value,
-                citation=citation,
-                license=license,
-                changeset=changeset,
-            )
-
-
 class Claim(models.Model):
     """A single fact asserted by a Source or User about any catalog entity.
 
@@ -177,7 +77,7 @@ class Claim(models.Model):
     MachineModel, Manufacturer, Person, etc.
 
     Exactly one of ``source`` or ``user`` must be set — enforced by a
-    CheckConstraint and by ClaimManager.assert_claim().
+    CheckConstraint and by ``claim_writer._assert_claim``.
     """
 
     content_type_id: int
@@ -276,8 +176,6 @@ class Claim(models.Model):
         help_text="Context for reviewers about why this claim needs attention.",
     )
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
-
-    objects: ClassVar[ClaimManager] = ClaimManager()
 
     class Meta:
         indexes = [

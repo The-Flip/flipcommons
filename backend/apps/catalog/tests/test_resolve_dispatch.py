@@ -16,8 +16,9 @@ from apps.catalog.models import (
 )
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.claims import build_relationship_claim
-from apps.provenance.models import Claim, ClaimControlledModel, Source
+from apps.provenance.models import ClaimControlledModel, Source
 from apps.provenance.resolution import resolve_after_mutation
+from apps.provenance.test_factories import make_claim
 from apps.provenance.validation import get_relationship_schema
 
 # ---------------------------------------------------------------------------
@@ -131,10 +132,8 @@ class TestLiteralSchemasAutoPopulated:
 class TestMachineModelRouting:
     def test_scalars_resolved(self, pm, source):
         ss = TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
-        Claim.objects.assert_claim(pm, "name", "Test Machine", source=source)
-        Claim.objects.assert_claim(
-            pm, "technology_generation", "solid-state", source=source
-        )
+        make_claim(pm, "name", "Test Machine", source=source)
+        make_claim(pm, "technology_generation", "solid-state", source=source)
 
         resolve_after_mutation(pm, field_names=["name", "technology_generation"])
 
@@ -143,10 +142,10 @@ class TestMachineModelRouting:
         assert pm.technology_generation == ss
 
     def test_m2m_resolved(self, pm, source):
-        Claim.objects.assert_claim(pm, "name", "Test Machine", source=source)
+        make_claim(pm, "name", "Test Machine", source=source)
         theme = Theme.objects.create(name="Adventure", slug="adventure")
         ck, val = build_relationship_claim("theme", {"theme": theme.pk})
-        Claim.objects.assert_claim(pm, "theme", val, source=source, claim_key=ck)
+        make_claim(pm, "theme", val, source=source, claim_key=ck)
 
         resolve_after_mutation(pm, field_names=["name", "theme"])
 
@@ -156,7 +155,7 @@ class TestMachineModelRouting:
 @pytest.mark.django_db
 class TestScalarResolution:
     def test_non_machine_model_scalars(self, theme, source):
-        Claim.objects.assert_claim(theme, "name", "Updated Theme", source=source)
+        make_claim(theme, "name", "Updated Theme", source=source)
 
         resolve_after_mutation(theme, field_names=["name"])
 
@@ -168,9 +167,7 @@ class TestScalarResolution:
 class TestAliasDispatch:
     def test_theme_alias(self, theme, source):
         ck, val = build_relationship_claim("theme_alias", {"alias_value": "test-alias"})
-        Claim.objects.assert_claim(
-            theme, "theme_alias", val, source=source, claim_key=ck
-        )
+        make_claim(theme, "theme_alias", val, source=source, claim_key=ck)
 
         resolve_after_mutation(theme, field_names=["theme_alias"])
 
@@ -180,9 +177,7 @@ class TestAliasDispatch:
         ck, val = build_relationship_claim(
             "manufacturer_alias", {"alias_value": "mfr-alias"}
         )
-        Claim.objects.assert_claim(
-            manufacturer, "manufacturer_alias", val, source=source, claim_key=ck
-        )
+        make_claim(manufacturer, "manufacturer_alias", val, source=source, claim_key=ck)
 
         resolve_after_mutation(manufacturer, field_names=["manufacturer_alias"])
 
@@ -196,9 +191,7 @@ class TestParentDispatch:
         child_theme = Theme.objects.create(name="Child", slug="child")
 
         ck, val = build_relationship_claim("theme_parent", {"parent": parent_theme.pk})
-        Claim.objects.assert_claim(
-            child_theme, "theme_parent", val, source=source, claim_key=ck
-        )
+        make_claim(child_theme, "theme_parent", val, source=source, claim_key=ck)
 
         resolve_after_mutation(child_theme, field_names=["theme_parent"])
 
@@ -208,11 +201,9 @@ class TestParentDispatch:
 @pytest.mark.django_db
 class TestCustomDispatch:
     def test_abbreviation(self, title, source):
-        Claim.objects.assert_claim(title, "name", title.name, source=source)
+        make_claim(title, "name", title.name, source=source)
         ck, val = build_relationship_claim("abbreviation", {"value": "TST"})
-        Claim.objects.assert_claim(
-            title, "abbreviation", val, source=source, claim_key=ck
-        )
+        make_claim(title, "abbreviation", val, source=source, claim_key=ck)
 
         resolve_after_mutation(title, field_names=["abbreviation"])
 
@@ -234,7 +225,7 @@ class TestEntityTypeGuard:
 @pytest.mark.django_db
 class TestFieldNamesNone:
     def test_resolves_scalars(self, theme, source):
-        Claim.objects.assert_claim(theme, "name", "Fallback Theme", source=source)
+        make_claim(theme, "name", "Fallback Theme", source=source)
 
         resolve_after_mutation(theme, field_names=None)
 
@@ -245,9 +236,7 @@ class TestFieldNamesNone:
         ck, val = build_relationship_claim(
             "theme_alias", {"alias_value": "fallback-alias"}
         )
-        Claim.objects.assert_claim(
-            theme, "theme_alias", val, source=source, claim_key=ck
-        )
+        make_claim(theme, "theme_alias", val, source=source, claim_key=ck)
 
         resolve_after_mutation(theme, field_names=None)
 

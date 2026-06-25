@@ -14,6 +14,7 @@ from apps.catalog.models import (
 from apps.catalog.tests.conftest import make_machine_model
 from apps.core.validators import validate_no_mojibake
 from apps.provenance.models import Claim, Source, get_claim_fields
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -211,15 +212,13 @@ class TestCredit:
 
 class TestClaim:
     def test_assert_claim_creates(self, machine_model, source):
-        claim = Claim.objects.assert_claim(
-            machine_model, "name", "Medieval Madness", source=source
-        )
+        claim = make_claim(machine_model, "name", "Medieval Madness", source=source)
         assert claim.is_active is True
         assert claim.value == "Medieval Madness"
 
     def test_assert_claim_supersedes(self, machine_model, source):
-        c1 = Claim.objects.assert_claim(machine_model, "year", 1997, source=source)
-        c2 = Claim.objects.assert_claim(machine_model, "year", 1998, source=source)
+        c1 = make_claim(machine_model, "year", 1997, source=source)
+        c2 = make_claim(machine_model, "year", 1998, source=source)
         c1.refresh_from_db()
         assert c1.is_active is False
         assert c2.is_active is True
@@ -227,10 +226,8 @@ class TestClaim:
     def test_assert_claim_different_sources_coexist(
         self, machine_model, source, editorial_source
     ):
-        c1 = Claim.objects.assert_claim(machine_model, "year", 1997, source=source)
-        c2 = Claim.objects.assert_claim(
-            machine_model, "year", 1997, source=editorial_source
-        )
+        c1 = make_claim(machine_model, "year", 1997, source=source)
+        c2 = make_claim(machine_model, "year", 1997, source=editorial_source)
         c1.refresh_from_db()
         assert c1.is_active is True
         assert c2.is_active is True
@@ -238,7 +235,7 @@ class TestClaim:
     def test_unique_active_constraint(self, machine_model, source):
         from django.contrib.contenttypes.models import ContentType
 
-        Claim.objects.assert_claim(machine_model, "name", "V1", source=source)
+        make_claim(machine_model, "name", "V1", source=source)
         ct = ContentType.objects.get_for_model(machine_model)
         # Direct create (bypassing manager) should violate the constraint
         # (keyed on claim_key, which equals field_name for scalar claims).
@@ -254,7 +251,7 @@ class TestClaim:
             )
 
     def test_str(self, machine_model, source):
-        claim = Claim.objects.assert_claim(machine_model, "year", 1997, source=source)
+        claim = make_claim(machine_model, "year", 1997, source=source)
         assert "IPDB" in str(claim)
         assert "year" in str(claim)
 

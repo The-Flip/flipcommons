@@ -4,7 +4,8 @@ import pytest
 
 from apps.accounts.test_factories import make_user
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -23,7 +24,7 @@ def source(db):
 @pytest.fixture
 def pm(db, _bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    Claim.objects.assert_claim(pm, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", source=_bootstrap_source)
     return pm
 
 
@@ -40,7 +41,7 @@ class TestEditHistoryEmpty:
 
     def test_source_claims_not_included(self, client, pm, source):
         """Source-attributed claims (no changeset) should not appear."""
-        Claim.objects.assert_claim(pm, "year", 1998, source=source)
+        make_claim(pm, "year", 1998, source=source)
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         assert resp.status_code == 200
         assert resp.json() == []
@@ -163,7 +164,7 @@ class TestEditHistoryMultiUser:
 
     def test_old_value_uses_source_claim(self, client, user, pm, source):
         """A user edit shows the prior source/ingest claim's value as old."""
-        Claim.objects.assert_claim(pm, "year", 1997, source=source)
+        make_claim(pm, "year", 1997, source=source)
 
         client.force_login(user)
         client.patch(

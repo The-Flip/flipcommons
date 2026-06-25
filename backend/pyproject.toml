@@ -247,6 +247,29 @@ allow_indirect_imports = "true"
 source_modules = ["apps.claim_ingest"]
 forbidden_modules = ["apps.claim_edit"]
 
+# The single claim-mint chokepoint. ``apps.provenance.claim_writer._assert_claim``
+# is the one sanctioned non-ingest place a Claim is minted; only the two
+# interactive write surfaces may reach it — claim_edit (the generic engine) and
+# media (its own attach/detach mutations). Every other app is forbidden, so a new
+# write path can't quietly grow a second mint primitive. Commit 2 drops media
+# from this allow-set once media routes through claim_edit's execute_claims.
+# (provenance itself is not a source — intra-app imports of claim_writer are
+# governed by the internal-stack layers contract instead.)
+[[tool.importlinter.contracts]]
+name = "Only the interactive write surfaces import the claim-mint primitive"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = [
+    "apps.core",
+    "apps.accounts",
+    "apps.actors",
+    "apps.citation",
+    "apps.catalog",
+    "apps.claim_ingest",
+    "apps.kiosk",
+]
+forbidden_modules = ["apps.provenance.claim_writer"]
+
 # --- Media peer-isolation ---
 
 # Media internals are peer-isolated from the citation/provenance data apps.
@@ -359,7 +382,10 @@ source_modules = [
     "apps.kiosk",
 ]
 forbidden_modules = ["apps.provenance.test_factories"]
-ignore_imports = ["apps.*.tests.** -> apps.provenance.test_factories"]
+# apps.**.tests.** (not apps.*.tests.**) so nested test packages like
+# apps.catalog.resolve.tests are covered — the commit that routed tests through
+# make_claim means deeply-nested test packages now import this factory too.
+ignore_imports = ["apps.**.tests.** -> apps.provenance.test_factories"]
 
 # ===========================================================================
 # Per-app internal structure (dependency order: consumers first, core last)
@@ -485,7 +511,7 @@ layers = [
     "page_endpoints",
     "evidence | history",
     "helpers",
-    "claims | display | revert",
+    "claims | claim_writer | display | revert",
     "validation | schemas | claim_ranking_in_db | licensing | resolution | rate_limits",
     "models | claim_presence | constants | entity_resolution | pagination | authz | typing",
     # The abstract claim-control bases every claim-controlled model inherits.
@@ -495,11 +521,6 @@ layers = [
     # since the global tiers would otherwise let it import down into citation /
     # accounts. Together they keep the package lift-out-ready (below citation).
     "model_bases",
-]
-ignore_imports = [
-    # validation imports models, so ClaimManager (models/claim.py) calls it lazily
-    # at write time; hoisting that out would weaken self-validation.
-    "apps.provenance.models.claim -> apps.provenance.validation",
 ]
 
 [[tool.importlinter.contracts]]

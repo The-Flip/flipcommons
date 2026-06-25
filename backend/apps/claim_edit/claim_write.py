@@ -25,6 +25,7 @@ from django.db import IntegrityError, transaction
 
 from apps.accounts.models import User
 from apps.core.exceptions import StructuredValidationError
+from apps.provenance.claim_writer import _assert_claim
 from apps.provenance.models import (
     ChangeSet,
     ChangeSetAction,
@@ -225,7 +226,7 @@ def _write_claims_in_changeset(
     created_claims: list[Claim] = []
     for spec in specs:
         created_claims.append(
-            Claim.objects.assert_claim(
+            _assert_claim(
                 entity,
                 spec.field_name,
                 spec.value,

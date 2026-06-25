@@ -15,7 +15,8 @@ from django.core.cache import cache
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import MachineModel, Title
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction, Source
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -37,8 +38,8 @@ def _clear_cache():
 def _make_title(bootstrap_source, slug: str, name: str | None = None) -> Title:
     label = name or slug.replace("-", " ").title()
     t = Title.objects.create(name=label, slug=slug, status="active")
-    Claim.objects.assert_claim(t, "name", label, source=bootstrap_source)
-    Claim.objects.assert_claim(t, "status", "active", source=bootstrap_source)
+    make_claim(t, "name", label, source=bootstrap_source)
+    make_claim(t, "status", "active", source=bootstrap_source)
     return t
 
 
@@ -61,8 +62,8 @@ def _make_model(
         converted_from=converted_from,
         remake_of=remake_of,
     )
-    Claim.objects.assert_claim(m, "name", label, source=bootstrap_source)
-    Claim.objects.assert_claim(m, "status", "active", source=bootstrap_source)
+    make_claim(m, "name", label, source=bootstrap_source)
+    make_claim(m, "status", "active", source=bootstrap_source)
     return m
 
 
@@ -288,7 +289,7 @@ class TestDeletePreview:
         cs = ChangeSet.objects.create(
             user=user, action=ChangeSetAction.EDIT, note="seed"
         )
-        Claim.objects.assert_claim(m, "name", "MM Pro", user=user, changeset=cs)
+        make_claim(m, "name", "MM Pro", user=user, changeset=cs)
         client.force_login(user)
 
         resp = _get_preview(client, "mm-pro")
