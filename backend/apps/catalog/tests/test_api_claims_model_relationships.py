@@ -9,10 +9,13 @@ from django.contrib.auth import get_user_model
 
 from apps.catalog.models import (
     GameplayFeature,
+    ModelAbbreviation,
     Person,
     RewardType,
     Tag,
     Theme,
+    Title,
+    TitleAbbreviation,
 )
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationSource
@@ -259,6 +262,24 @@ class TestAbbreviations:
         resp = _patch(client, pm.slug, {"abbreviations": []})
         assert resp.status_code == 200
         assert resp.json()["abbreviations"] == []
+
+    def test_title_overlap_unchanged_save_writes_no_claims(self, client, user, pm):
+        """The editor displays the deduped set, so saving it unchanged must diff
+        against the *deduped* current state — not the raw materialized rows — or
+        it emits a spurious ``exists=false`` removal for each Title-owned
+        abbreviation."""
+        title = Title.objects.create(name="Medieval Madness", slug="mm-title")
+        pm.title = title
+        pm.save()
+        TitleAbbreviation.objects.create(title=title, value="MM")
+        ModelAbbreviation.objects.create(machine_model=pm, value="MM")
+        ModelAbbreviation.objects.create(machine_model=pm, value="TS4LE")
+
+        client.force_login(user)
+        # The editor showed ["TS4LE"] (MM hidden); re-saving it is a no-op.
+        resp = _patch(client, pm.slug, {"abbreviations": ["TS4LE"]})
+        assert resp.status_code == 422  # "No changes provided."
+        assert ChangeSet.objects.filter(actor=user.actor).count() == 0
 
 
 # ---------------------------------------------------------------------------

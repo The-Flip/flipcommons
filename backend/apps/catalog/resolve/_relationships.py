@@ -524,33 +524,6 @@ def resolve_all_title_abbreviations(
         TitleAbbreviation.objects.bulk_create(to_create, batch_size=2000)
 
 
-def _get_title_abbrs_for_models(
-    model_ids: set[int],
-) -> dict[int, set[str]]:
-    """Return {model_id: set(abbreviation_values)} from each model's title."""
-    model_title_map = dict(
-        MachineModel.objects.filter(pk__in=model_ids, title__isnull=False).values_list(
-            "pk", "title_id"
-        )
-    )
-    if not model_title_map:
-        return {}
-
-    title_ids = set(model_title_map.values())
-    title_abbrs: dict[int, set[str]] = {}
-    for title_id, value in TitleAbbreviation.objects.filter(
-        title_id__in=title_ids
-    ).values_list("title_id", "value"):
-        title_abbrs.setdefault(title_id, set()).add(value)
-
-    result: dict[int, set[str]] = {}
-    for model_id, title_id in model_title_map.items():
-        abbrs = title_abbrs.get(title_id)
-        if abbrs:
-            result[model_id] = abbrs
-    return result
-
-
 def resolve_all_model_abbreviations(
     *,
     subject_ids: set[int] | None = None,
@@ -583,16 +556,16 @@ def resolve_all_model_abbreviations(
             desired.add(val["value"])
         desired_by_model[model_id] = desired
 
-    if subject_ids is not None:
-        all_model_ids = subject_ids
-    else:
-        all_model_ids = set(MachineModel.objects.values_list("pk", flat=True))
-    title_abbrs_by_model = _get_title_abbrs_for_models(all_model_ids)
-    for model_id in list(desired_by_model):
-        title_abbrs = title_abbrs_by_model.get(model_id, set())
-        if title_abbrs:
-            desired_by_model[model_id] -= title_abbrs
+    all_model_ids = (
+        subject_ids
+        if subject_ids is not None
+        else set(MachineModel.objects.values_list("pk", flat=True))
+    )
 
+    # Claim-local: the model's own winning abbreviations are materialized as-is,
+    # including any that also belong to its Title. The Title dedup is a read-time
+    # view (api.helpers.displayed_model_abbreviations), not a write-time
+    # subtraction — see docs/plans/provenance/ClaimResolutionRefactor.md.
     existing_by_model: dict[int, set[str]] = {}
     for model_id, value in ModelAbbreviation.objects.filter(
         machine_model_id__in=all_model_ids

@@ -1,11 +1,20 @@
+import pytest
 from django.test.utils import CaptureQueriesContext
 
 from apps.catalog.models import (
     Credit,
     CreditRole,
+    ModelAbbreviation,
     Title,
+    TitleAbbreviation,
+)
+from apps.catalog.resolve import (
+    resolve_all_model_abbreviations,
+    resolve_all_title_abbreviations,
 )
 from apps.catalog.tests.conftest import make_machine_model
+from apps.provenance.claims import build_relationship_claim
+from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim
 
 from .conftest import SAMPLE_IMAGES
@@ -262,3 +271,64 @@ class TestModelsAPI:
         assert any("LIMIT" in q.upper() for q in model_queries), (
             f"Expected LIMIT in query, got: {model_queries[0][:200]}"
         )
+
+
+@pytest.mark.django_db
+class TestModelDetailAbbreviations:
+    """The model-detail endpoint hides Title-owned abbreviations at read time
+    (live dedup over claim-faithful materialized rows)."""
+
+    def test_detail_hides_title_owned_abbreviation(self, client):
+        title = Title.objects.create(name="Medieval Madness", slug="mm-title")
+        pm = make_machine_model(name="MM", slug="mm-model", title=title)
+        TitleAbbreviation.objects.create(title=title, value="MM")
+        ModelAbbreviation.objects.create(machine_model=pm, value="MM")
+        ModelAbbreviation.objects.create(machine_model=pm, value="TS4LE")
+
+        data = client.get(f"/api/pages/model/{pm.slug}").json()
+        assert data["abbreviations"] == ["TS4LE"]
+
+    def test_non_overlapping_abbreviations_all_shown(self, client):
+        title = Title.objects.create(name="Medieval Madness", slug="mm-title")
+        pm = make_machine_model(name="MM", slug="mm-model", title=title)
+        TitleAbbreviation.objects.create(title=title, value="MM")
+        ModelAbbreviation.objects.create(machine_model=pm, value="TS4LE")
+
+        data = client.get(f"/api/pages/model/{pm.slug}").json()
+        assert data["abbreviations"] == ["TS4LE"]
+
+    def test_title_abbreviation_removal_is_live(self, client):
+        """The headline staleness fix: removing a Title's abbreviation surfaces
+        on its models immediately, without re-resolving each model."""
+        ipdb = Source.objects.create(name="IPDB", source_type="database", priority=10)
+        editorial = Source.objects.create(
+            name="Editorial", source_type="editorial", priority=100
+        )
+        title = Title.objects.create(name="Medieval Madness", slug="mm-title")
+        pm = make_machine_model(name="MM", slug="mm-model", title=title)
+
+        abbr_key, abbr_val = build_relationship_claim("abbreviation", {"value": "MM"})
+        ts4_key, ts4_val = build_relationship_claim("abbreviation", {"value": "TS4LE"})
+        make_claim(title, "abbreviation", abbr_val, source=ipdb, claim_key=abbr_key)
+        make_claim(pm, "abbreviation", abbr_val, source=ipdb, claim_key=abbr_key)
+        make_claim(pm, "abbreviation", ts4_val, source=ipdb, claim_key=ts4_key)
+
+        resolve_all_title_abbreviations()
+        resolve_all_model_abbreviations()
+
+        # Initially "MM" is hidden — the Title owns it.
+        data = client.get(f"/api/pages/model/{pm.slug}").json()
+        assert data["abbreviations"] == ["TS4LE"]
+
+        # Remove the Title's "MM" and re-resolve ONLY title abbreviations.
+        gone_key, gone_val = build_relationship_claim(
+            "abbreviation", {"value": "MM"}, exists=False
+        )
+        make_claim(
+            title, "abbreviation", gone_val, source=editorial, claim_key=gone_key
+        )
+        resolve_all_title_abbreviations()
+
+        # The model now shows "MM" live — no model re-resolve happened.
+        data = client.get(f"/api/pages/model/{pm.slug}").json()
+        assert sorted(data["abbreviations"]) == ["MM", "TS4LE"]

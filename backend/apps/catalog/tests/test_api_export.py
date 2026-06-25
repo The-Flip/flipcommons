@@ -93,6 +93,29 @@ class TestExportRelations:
         assert {"person": person.slug, "role": "design"} in row["credits"]
 
 
+class TestExportAbbreviations:
+    """The bulk export is deliberately left claim-faithful — it serializes the
+    raw materialized ``ModelAbbreviation`` rows, including values the Title also
+    owns. (The model-detail endpoint dedups; the export does not.)"""
+
+    def test_model_export_includes_title_overlapping_abbreviation(self, client, db):
+        from apps.catalog.models import (
+            ModelAbbreviation,
+            Title,
+            TitleAbbreviation,
+        )
+
+        title = Title.objects.create(name="Medieval Madness", slug="mm-title")
+        pm = MachineModel.objects.create(name="MM", slug="mm-model", title=title)
+        TitleAbbreviation.objects.create(title=title, value="MM")
+        ModelAbbreviation.objects.create(machine_model=pm, value="MM")
+        ModelAbbreviation.objects.create(machine_model=pm, value="TS4LE")
+        invalidate_all()
+
+        row = _row(client, "models", pm.slug)
+        assert sorted(row["abbreviations"]) == ["MM", "TS4LE"]
+
+
 class TestExportStripsInlineCitations:
     def test_cite_marker_stripped_from_description(self, client, machine_model):
         # Guards the export_inline=False decoupling: after cite became a

@@ -82,6 +82,7 @@ from .edit_claims import (
 from .helpers import (
     _extract_variant_features,
     _get_feature_descendant_slugs,
+    displayed_model_abbreviations,
     serialize_credit,
     serialize_title_machine,
 )
@@ -405,7 +406,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         ipdb_id=pm.ipdb_id,
         opdb_id=pm.opdb_id,
         pinside_id=pm.pinside_id,
-        abbreviations=[a.value for a in pm.abbreviations.all()],
+        abbreviations=displayed_model_abbreviations(pm),
         extra_data=pm.extra_data or {},
         credits=credits,
         thumbnail_url=thumbnail_url,
@@ -560,6 +561,9 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             "tags",
             "reward_types",
             "abbreviations",
+            # Title's abbreviations drive the read-time dedup in
+            # displayed_model_abbreviations.
+            "title__abbreviations",
             Prefetch(
                 "title__machine_models",
                 queryset=MachineModel.objects.active()
@@ -805,12 +809,16 @@ def patch_model_claims(
 ) -> ModelDetailSchema:
     """Assert per-field claims from the authenticated user, then re-resolve the model."""
     pm = get_object_or_404(
-        MachineModel.objects.active().prefetch_related(
+        MachineModel.objects.active()
+        .select_related("title")
+        .prefetch_related(
             "themes",
             "tags",
             "reward_types",
             "machinemodelgameplayfeature_set__gameplayfeature",
             "abbreviations",
+            # Title's abbreviations drive the abbreviation edit-diff dedup.
+            "title__abbreviations",
             "credits__person",
             "credits__role",
         ),

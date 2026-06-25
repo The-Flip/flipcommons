@@ -57,6 +57,24 @@ def model_year_bounds(models: Iterable[MachineModel]) -> ModelYearBounds:
     return ModelYearBounds(min(years), max(years))
 
 
+def displayed_model_abbreviations(pm: MachineModel) -> list[str]:
+    """A model's abbreviations with its Title's abbreviations removed.
+
+    The Title owns the canonical abbreviation (e.g. "MM" for Medieval Madness);
+    a Model carries only edition-specific ones (e.g. "TS4LE"). Stored
+    ``ModelAbbreviation`` rows are claim-faithful and may include values the
+    Title also owns; this live read-time subtraction hides those so a Model
+    never redundantly lists a Title-owned abbreviation. Exact (case-sensitive)
+    match, mirroring the former write-time subtraction in
+    ``resolve_all_model_abbreviations``.
+
+    Expects ``pm.abbreviations`` and ``pm.title__abbreviations`` prefetched
+    (``title`` is a non-null FK, so a model always has one).
+    """
+    title_abbrs = {a.value for a in pm.title.abbreviations.all()}
+    return [a.value for a in pm.abbreviations.all() if a.value not in title_abbrs]
+
+
 def serialize_credit(credit: Credit) -> CreditSchema:
     """Serialize a Credit row into a CreditSchema."""
     return CreditSchema(
