@@ -240,9 +240,9 @@ ClaimAuthorSchema = Annotated[
     Field(discriminator="kind"),
 ]
 """Tagged union: a Claim/ChangeSet is authored by exactly one of a user or
-an ingest source. Mirrors the DB-level XOR CHECK constraints
-(``provenance_claim_source_xor_user``,
-``provenance_changeset_user_xor_ingest_run``) on the wire."""
+an ingest source. The one-of-two invariant comes from the attribution ``Actor``
+having exactly one backing record (its ``backing_model``); the wire shape
+reflects that on the API."""
 
 
 class ClaimAttributionSchema(Schema):

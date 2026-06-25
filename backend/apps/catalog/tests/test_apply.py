@@ -90,7 +90,7 @@ def test_create_entities_and_claims(test_source):
     mfr = Manufacturer.objects.get(slug="bally")
     assert mfr.name == "Bally"
 
-    active_claims = Claim.objects.filter(source=test_source, is_active=True)
+    active_claims = Claim.objects.filter(actor=test_source.actor, is_active=True)
     assert active_claims.count() == 4
 
     run = IngestRun.objects.get(source=test_source)
@@ -124,13 +124,15 @@ def test_idempotency(test_source):
     assert report1.asserted == 1
     assert report1.unchanged == 0
 
-    claim_count_after_first = Claim.objects.filter(source=test_source).count()
+    claim_count_after_first = Claim.objects.filter(actor=test_source.actor).count()
 
     report2 = apply_plan(_make_plan("fp-2"))
     assert report2.asserted == 0
     assert report2.unchanged == 1
     assert report2.superseded == 0
-    assert Claim.objects.filter(source=test_source).count() == claim_count_after_first
+    assert (
+        Claim.objects.filter(actor=test_source.actor).count() == claim_count_after_first
+    )
 
 
 # ── Test 3: Explicit retract_claim ─────────────────────────────────
@@ -155,7 +157,7 @@ def test_explicit_retraction(test_source):
     )
     apply_plan(plan1)
     assert Claim.objects.filter(
-        source=test_source,
+        actor=test_source.actor,
         field_name="description",
         is_active=True,
     ).exists()
@@ -175,7 +177,7 @@ def test_explicit_retraction(test_source):
     report2 = apply_plan(plan2)
     assert report2.retracted == 1
 
-    claim = Claim.objects.get(source=test_source, field_name="description")
+    claim = Claim.objects.get(actor=test_source.actor, field_name="description")
     assert claim.is_active is False
     assert claim.retracted_by_changeset is not None
     assert claim.retracted_by_changeset.ingest_run is not None
@@ -210,7 +212,7 @@ def test_invalid_claim_fails_run(test_source):
     assert run.claims_rejected == 1
     assert len(run.errors) > 0
     # Transaction rolled back — no claims persisted.
-    assert Claim.objects.filter(source=test_source).count() == 0
+    assert Claim.objects.filter(actor=test_source.actor).count() == 0
 
 
 # ── Test 5: Omitted field preserved (additive-only) ───────────────
@@ -258,7 +260,7 @@ def test_omitted_field_preserved(test_source):
 
     # Website claim is still active — not retracted.
     website_claim = Claim.objects.get(
-        source=test_source,
+        actor=test_source.actor,
         field_name="website",
         is_active=True,
     )
@@ -334,7 +336,7 @@ def test_failed_apply_ingest_run_survives(test_source):
     assert run.status == IngestRun.Status.FAILED
     assert "Resolve failed!" in run.errors[0]
     # Transaction rolled back — no claims persisted.
-    assert Claim.objects.filter(source=test_source).count() == 0
+    assert Claim.objects.filter(actor=test_source.actor).count() == 0
 
 
 # ── Test 8: ChangeSets per authoring entry ─────────────────────────
@@ -378,7 +380,8 @@ def test_changesets_per_entry(test_source):
 
     # Each claim lands in its own entry's changeset.
     cs_ids = {
-        c.changeset_id for c in Claim.objects.filter(source=test_source, is_active=True)
+        c.changeset_id
+        for c in Claim.objects.filter(actor=test_source.actor, is_active=True)
     }
     assert len(cs_ids) == 2
 
@@ -479,7 +482,7 @@ def test_supersede_on_value_change(test_source):
     report1 = apply_plan(plan1)
     assert report1.asserted == 1
     old_claim = Claim.objects.get(
-        source=test_source,
+        actor=test_source.actor,
         field_name="description",
         is_active=True,
     )
@@ -506,7 +509,7 @@ def test_supersede_on_value_change(test_source):
     old_claim.refresh_from_db()
     assert old_claim.is_active is False
     new_claim = Claim.objects.get(
-        source=test_source,
+        actor=test_source.actor,
         field_name="description",
         is_active=True,
     )
@@ -953,7 +956,7 @@ def test_identity_refs_resolves_pk(test_source):
 
     # The relationship claim should have been resolved with the real PK.
     claim = Claim.objects.get(
-        source=test_source,
+        actor=test_source.actor,
         field_name="theme_parent",
         is_active=True,
     )
@@ -1005,7 +1008,7 @@ def test_identity_refs_with_existing_target(test_source):
 
     baseball = Theme.objects.get(slug="baseball")
     claim = Claim.objects.get(
-        source=test_source,
+        actor=test_source.actor,
         field_name="theme_parent",
         is_active=True,
     )

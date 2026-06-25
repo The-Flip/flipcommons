@@ -47,11 +47,11 @@ class RetractEntry(NamedTuple):
 
 def _build_claims(
     assertions: list[PlannedClaimAssert],
-    source: Source,
 ) -> list[Claim]:
     """Convert planned assertions to unsaved Claim instances (deduplicated).
 
-    Last-write-wins per ``(content_type_id, object_id, claim_key)``.
+    Last-write-wins per ``(content_type_id, object_id, claim_key)``. Attribution
+    (``actor``) is stamped at persist time from the ChangeSet, not here.
     """
     seen: dict[ClaimIdentity, Claim] = {}
     for pca in assertions:
@@ -66,7 +66,6 @@ def _build_claims(
             field_name=pca.field_name,
             claim_key=claim_key,
             value=pca.value,
-            source=source,
             license_id=pca.license_id,
         )
         seen[ClaimIdentity(content_type_id, object_id, claim_key)] = claim
@@ -126,7 +125,7 @@ def _diff_claims(
     existing: dict[ClaimIdentity, ExistingClaimRow] = {}
     for ct_id, obj_ids in by_ct.items():
         for row in Claim.objects.filter(
-            source=source,
+            actor_id=source.actor_id,
             is_active=True,
             content_type_id=ct_id,
             object_id__in=obj_ids,
@@ -181,7 +180,7 @@ def _process_retractions(
     found: dict[ClaimIdentity, int] = {}
     for ct_id, obj_ids in by_ct.items():
         for pk, c_ct, c_oid, c_ck in Claim.objects.filter(
-            source=source,
+            actor_id=source.actor_id,
             is_active=True,
             content_type_id=ct_id,
             object_id__in=obj_ids,

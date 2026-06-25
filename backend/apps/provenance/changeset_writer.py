@@ -1,10 +1,9 @@
 """The actor-first ChangeSet funnel, ``record_changeset``.
 
 Every interactive (user) ChangeSet is minted here, so attribution is set in
-exactly one place: ``actor`` is always populated, and the legacy ``user``
-column is filled from ``actor.user`` as the single transitional bridge (it
-retires at "Drop dead schema", where ``action IFF user`` becomes
-``action IFF ingest_run IS NULL``).
+exactly one place: ``actor`` is always populated. Interactive edits are
+distinguished from ingest batches by ``ingest_run IS NULL`` (the DB
+``action IFF ingest_run IS NULL`` check), and the actor must be user-backed.
 
 Production ingest does **not** funnel through here — it bulk-creates ChangeSets
 directly in ``claim_ingest/apply/persist.py`` (a sanctioned bulk path). The
@@ -42,8 +41,7 @@ def record_changeset(
     Two shapes, discriminated by ``ingest_run``:
 
     * **interactive** (``ingest_run is None``): an ``action`` is required and the
-      ``actor`` must be user-backed. The legacy ``user`` column is set from
-      ``actor.user`` — the single point that bridges to the pre-actor schema.
+      ``actor`` must be user-backed.
     * **ingest** (``ingest_run`` given): ``action`` must be ``None`` (ingest
       ChangeSets never carry one) and ``actor`` must be the run's source actor.
 
@@ -55,15 +53,12 @@ def record_changeset(
             raise ValueError("An interactive ChangeSet requires an action.")
         # Reverse one-to-one: ``RelatedObjectDoesNotExist`` subclasses
         # AttributeError, so getattr returns None for a non-user actor.
-        user = getattr(actor, "user", None)
-        if user is None:
+        if getattr(actor, "user", None) is None:
             raise ValueError(
                 "An interactive ChangeSet requires a user-backed actor; "
                 f"got a {actor.backing_model!r} actor."
             )
-        return ChangeSet.objects.create(
-            actor=actor, user=user, action=action, note=note
-        )
+        return ChangeSet.objects.create(actor=actor, action=action, note=note)
 
     if action is not None:
         raise ValueError("Ingest ChangeSets never carry an action.")

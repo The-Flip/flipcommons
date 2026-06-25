@@ -43,7 +43,7 @@ def _get_active_claim(pm, field_name, user):
         content_type=ct,
         object_id=pm.pk,
         field_name=field_name,
-        user=user,
+        actor=user.actor,
         is_active=True,
     )
 
@@ -257,8 +257,8 @@ class TestRevertAuth:
         # Create as the verified `user` fixture, then re-attribute so
         # the revert path exercised is self-revert (which skips the
         # experience-required check and isolates the email gate).
-        claim.user = unverified
-        claim.save(update_fields=["user"])
+        claim.actor = unverified.actor
+        claim.save(update_fields=["actor"])
 
         client.force_login(unverified)
         resp = _revert(client, claim.pk, "Reverting my own claim")
@@ -296,7 +296,7 @@ class TestRevertValidation:
             content_type=ct,
             object_id=pm.pk,
             field_name="year",
-            source=source,
+            actor=source.actor,
             is_active=True,
         )
         client.force_login(user)

@@ -16,6 +16,7 @@ from apps.catalog.resolve import (
 )
 from apps.catalog.resolve._relationships import resolve_all_credits
 from apps.catalog.tests.conftest import make_machine_model
+from apps.provenance.attribution import source_backing
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.helpers import active_claims
 from apps.provenance.models import Source, get_claim_fields
@@ -192,6 +193,10 @@ class TestIsEnabledSourcesPrefetch:
         )
 
         claims = active_claims(prefetched)
-        source_slugs = {c.source.slug for c in claims if c.source}
+        source_slugs = {
+            backing.slug
+            for c in claims
+            if (backing := source_backing(c.actor)) is not None
+        }
         assert "source-a" not in source_slugs
         assert "source-b" in source_slugs

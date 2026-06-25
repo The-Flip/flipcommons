@@ -99,7 +99,7 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             entry_notes, claim_citations, claim_entry_index = _collect_plan_provenance(
                 plan
             )
-            all_claims = _build_claims(plan.assertions, plan.source)
+            all_claims = _build_claims(plan.assertions)
             valid_claims = _validate_fail_fast(all_claims, report)
 
             to_create, superseded_ids = _diff_claims(valid_claims, plan.source)

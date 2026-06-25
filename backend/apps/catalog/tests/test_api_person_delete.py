@@ -119,7 +119,7 @@ class TestDeleteHappyPath:
         assert p.status == "deleted"
 
         cs = ChangeSet.objects.get(pk=body["changeset_id"])
-        assert cs.user_id == user.pk
+        assert cs.actor_id == user.actor_id
         assert cs.action == ChangeSetAction.DELETE
         assert cs.note == "bye"
         # Single status claim; Person has no lifecycle children to cascade.

@@ -49,6 +49,7 @@ from apps.claim_ingest.patches.emit import (
     _unpack_credit_member,
 )
 from apps.claim_ingest.plan import RunReport
+from apps.provenance.attribution import source_backing
 from apps.provenance.claims import (
     build_relationship_claim,
     normalize_abbreviation_value,
@@ -147,8 +148,9 @@ claims:
     tag_claim = Claim.objects.get(field_name="tag", is_active=True)
     # Namespace key 'tag' resolves directly (no plural→singular bridge).
     assert tag_claim.claim_key.startswith("tag")
-    assert tag_claim.source is not None
-    assert tag_claim.source.slug == "flipcommons-catalog"
+    tag_source = source_backing(tag_claim.actor)
+    assert tag_source is not None
+    assert tag_source.slug == "flipcommons-catalog"
 
 
 def test_unknown_field_rejected(machine_model):
@@ -193,7 +195,7 @@ claims:
     # Matching claims for the create contract (slug + name + status).
     keys = set(
         Claim.objects.filter(
-            source__slug="flipcommons-catalog", is_active=True
+            actor__source__slug="flipcommons-catalog", is_active=True
         ).values_list("field_name", flat=True)
     )
     assert {"slug", "name", "status"} <= keys
@@ -996,10 +998,10 @@ claims:
     assert ce.manufacturer_id == stern.pk  # fell through to ipdb=stern
 
     assert not Claim.objects.filter(
-        source=catalog, field_name="manufacturer", is_active=True
+        actor=catalog.actor, field_name="manufacturer", is_active=True
     ).exists()
     assert Claim.objects.filter(
-        source=ipdb, field_name="manufacturer", is_active=True
+        actor=ipdb.actor, field_name="manufacturer", is_active=True
     ).exists()
 
 
@@ -1108,7 +1110,7 @@ claims:
     report = _apply(text, patch_id="0001-retract-note")
     assert report.retracted == 1
     retraction = Claim.objects.get(
-        source=ipdb, field_name="manufacturer", is_active=False
+        actor=ipdb.actor, field_name="manufacturer", is_active=False
     )
     assert retraction.retracted_by_changeset is not None
     assert (
@@ -1184,7 +1186,7 @@ claims:
     assert ce.year_start == 1977
     assert ce.manufacturer_id == stern.pk  # catalog claim keeps the FK
     assert not Claim.objects.filter(
-        source=ipdb, field_name="manufacturer", is_active=True
+        actor=ipdb.actor, field_name="manufacturer", is_active=True
     ).exists()
 
 
@@ -1709,7 +1711,7 @@ claims:
     with pytest.raises(PatchError, match="cannot delete.*still referenced"):
         _apply(text, patch_id="0001-del")
     assert not Claim.objects.filter(
-        source__slug="flipcommons-catalog", field_name="status"
+        actor__source__slug="flipcommons-catalog", field_name="status"
     ).exists()
 
 
@@ -2037,7 +2039,7 @@ claims:
     with pytest.raises(PatchError, match="'status' is lifecycle"):
         _apply(text)
     assert not Claim.objects.filter(
-        source__slug="flipcommons-catalog", field_name="status"
+        actor__source__slug="flipcommons-catalog", field_name="status"
     ).exists()
 
 
@@ -2100,7 +2102,7 @@ sources:
 """
     _apply(text, patch_id="0001-del")
     status_claim = Claim.objects.get(
-        source__slug="flipcommons-catalog", field_name="status", is_active=True
+        actor__source__slug="flipcommons-catalog", field_name="status", is_active=True
     )
     assert status_claim.value == "deleted"
     changeset = status_claim.changeset

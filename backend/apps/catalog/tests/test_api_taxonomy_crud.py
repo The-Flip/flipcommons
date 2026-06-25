@@ -66,7 +66,7 @@ class TestTagCreate:
         tag = Tag.objects.get(slug="widebody")
         assert tag.status == "active"
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         fields = set(
             Claim.objects.filter(changeset=cs).values_list("field_name", flat=True)
         )
@@ -159,7 +159,7 @@ class TestSubgenerationCreate:
         sub = TechnologySubgeneration.objects.get(slug="mpu")
         assert sub.technology_generation_id == parent.pk
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         claims = {c.field_name: c.value for c in Claim.objects.filter(changeset=cs)}
         assert claims.keys() == {"name", "slug", "status", "technology_generation"}
         # FK claim stores the parent's slug string, not the PK.
@@ -329,9 +329,9 @@ class TestTagRestore:
         tag.refresh_from_db()
         assert tag.status == "active"
 
-        cs = ChangeSet.objects.filter(user=user, action=ChangeSetAction.EDIT).latest(
-            "pk"
-        )
+        cs = ChangeSet.objects.filter(
+            actor=user.actor, action=ChangeSetAction.EDIT
+        ).latest("pk")
         fields = set(
             Claim.objects.filter(changeset=cs).values_list("field_name", flat=True)
         )
@@ -559,7 +559,7 @@ class TestThemeCreate:
         theme = Theme.objects.get(slug="horror")
         assert theme.status == "active"
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         fields = set(
             Claim.objects.filter(changeset=cs).values_list("field_name", flat=True)
         )
@@ -645,7 +645,7 @@ class TestGameplayFeatureCreate:
         feature = GameplayFeature.objects.get(slug="multiball")
         assert feature.status == "active"
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         fields = set(
             Claim.objects.filter(changeset=cs).values_list("field_name", flat=True)
         )
@@ -721,7 +721,7 @@ class TestSeriesCreate:
         series = Series.objects.get(slug="eight-ball")
         assert series.status == "active"
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         fields = set(
             Claim.objects.filter(changeset=cs).values_list("field_name", flat=True)
         )
@@ -847,7 +847,7 @@ class TestFranchiseCreate:
         fr = Franchise.objects.get(slug="indiana-jones")
         assert fr.status == "active"
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         fields = set(
             Claim.objects.filter(changeset=cs).values_list("field_name", flat=True)
         )

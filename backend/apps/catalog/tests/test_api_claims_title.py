@@ -220,8 +220,8 @@ class TestPatchTitleClaims:
 
         # The title fixture asserts a seed (ingest) name claim, so filter to the
         # user's changeset rather than assuming it's the only row.
-        assert ChangeSet.objects.filter(user=user).count() == 1
-        changeset = ChangeSet.objects.get(user=user)
+        assert ChangeSet.objects.filter(actor=user.actor).count() == 1
+        changeset = ChangeSet.objects.get(actor=user.actor)
         assert changeset.note == "Grouped title edit"
         assert changeset.claims.count() == 3
         assert {claim.field_name for claim in changeset.claims.all()} == {
@@ -277,7 +277,7 @@ class TestPatchTitleClaims:
         # Restrict to the editing user's changesets (the title fixture's seed name
         # claim is ingest) and exclude the citation-template seed changeset.
         changeset = (
-            ChangeSet.objects.filter(user=user)
+            ChangeSet.objects.filter(actor=user.actor)
             .exclude(pk=template_claim.changeset_id)
             .get()
         )
@@ -305,7 +305,7 @@ class TestPatchTitleClaims:
         assert resp.status_code == 422
         # The title fixture's seed name claim is an ingest changeset; the rolled-
         # back edit must leave no user changeset behind.
-        assert ChangeSet.objects.filter(user=user).count() == 0
+        assert ChangeSet.objects.filter(actor=user.actor).count() == 0
         assert not Claim.objects.filter(
-            user=user, field_name="description", value="Updated"
+            actor=user.actor, field_name="description", value="Updated"
         ).exists()

@@ -56,7 +56,6 @@ def test_unified_index_rejects_duplicate_active_per_actor(mfr, user):
         Claim.objects.create(
             content_type=ct,
             object_id=mfr.pk,
-            user=user,
             actor=user.actor,
             changeset=first.changeset,
             field_name="name",
@@ -88,7 +87,6 @@ def test_claim_without_actor_rejected(mfr, source):
         Claim.objects.create(
             content_type=ct,
             object_id=mfr.pk,
-            source=source,
             changeset=source_changeset(source),
             field_name="name",
             claim_key="name",
@@ -102,7 +100,6 @@ def test_claim_without_changeset_rejected(mfr, source):
         Claim.objects.create(
             content_type=ct,
             object_id=mfr.pk,
-            source=source,
             actor=source.actor,
             field_name="name",
             claim_key="name",
@@ -112,4 +109,4 @@ def test_claim_without_changeset_rejected(mfr, source):
 
 def test_changeset_without_actor_rejected(user):
     with pytest.raises(IntegrityError):
-        ChangeSet.objects.create(user=user, action="edit")
+        ChangeSet.objects.create(action="edit")

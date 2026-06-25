@@ -11,3 +11,9 @@ class ActorsConfig(AppConfig):
         # Import for side effects: registers the class-shape system check
         # (DB-free; validates the ActorModel registry, not Actor rows).
         from . import checks  # noqa: F401
+
+        # Wire the pre_delete guard that protects backing records whose Actor
+        # has attributed history (replaces the dropped per-type PROTECT FKs).
+        from .models.base import connect_delete_guards
+
+        connect_delete_guards()

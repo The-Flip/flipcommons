@@ -104,9 +104,9 @@ class TestPatchClaimsPersistence:
             data='{"fields": {"year": 1998}}',
             content_type="application/json",
         )
-        claim = pm.claims.get(user=user, field_name="year", is_active=True)
+        claim = pm.claims.get(actor=user.actor, field_name="year", is_active=True)
         assert claim.value == 1998
-        assert claim.source is None
+        assert claim.actor.backing_model == "user"
 
     def test_repeated_edit_supersedes_previous_claim(self, client, user, pm):
         client.force_login(user)
@@ -120,8 +120,10 @@ class TestPatchClaimsPersistence:
             data='{"fields": {"year": 1999}}',
             content_type="application/json",
         )
-        active = pm.claims.filter(user=user, field_name="year", is_active=True)
-        inactive = pm.claims.filter(user=user, field_name="year", is_active=False)
+        active = pm.claims.filter(actor=user.actor, field_name="year", is_active=True)
+        inactive = pm.claims.filter(
+            actor=user.actor, field_name="year", is_active=False
+        )
         assert active.count() == 1
         assert inactive.count() == 1
         assert active.first().value == 1999

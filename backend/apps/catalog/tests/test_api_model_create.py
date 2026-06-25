@@ -94,7 +94,9 @@ class TestCreateHappyPath:
         assert mm.status == "active"
         assert mm.title_id == godzilla.pk
 
-        changesets = ChangeSet.objects.filter(user=user, action=ChangeSetAction.CREATE)
+        changesets = ChangeSet.objects.filter(
+            actor=user.actor, action=ChangeSetAction.CREATE
+        )
         assert changesets.count() == 1
         cs = changesets.first()
 
@@ -122,7 +124,7 @@ class TestCreateHappyPath:
             },
         )
         assert resp.status_code == 201
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         assert cs.note == "Adding the premium variant"
 
 

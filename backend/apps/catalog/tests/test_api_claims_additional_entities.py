@@ -30,6 +30,7 @@ from apps.catalog.models import (
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationSource
 from apps.core.types import JsonBody
+from apps.provenance.attribution import actor_user
 from apps.provenance.models import ChangeSet, CitationInstance, Source
 from apps.provenance.test_factories import make_claim, user_changeset
 
@@ -360,14 +361,16 @@ class TestAdditionalPatchClaimEndpoints:
         entity.refresh_from_db()
         assert entity.description == field_value
 
-        claim = entity.claims.get(user=user, field_name=field_name, is_active=True)
+        claim = entity.claims.get(
+            actor=user.actor, field_name=field_name, is_active=True
+        )
         assert claim.value == field_value
 
         # Some factories assert a seed (ingest) name claim, so filter to the
         # user's changeset rather than assuming it's the only row.
-        assert ChangeSet.objects.filter(user=user).count() == 1
-        changeset = ChangeSet.objects.get(user=user)
-        assert changeset.user == user
+        assert ChangeSet.objects.filter(actor=user.actor).count() == 1
+        changeset = ChangeSet.objects.get(actor=user.actor)
+        assert actor_user(changeset.actor) == user
         assert changeset.claims.count() == 1
 
     @pytest.mark.parametrize(
@@ -605,7 +608,7 @@ class TestPatchRewardTypeResponseShape:
         assert resp.status_code == 200
 
         created_claim = reward_type.claims.get(
-            user=user,
+            actor=user.actor,
             field_name="description",
             value="Updated reward type copy",
             is_active=True,
@@ -747,5 +750,7 @@ class TestTaxonomyDisplayOrderEditing:
 
         entity.refresh_from_db()
         assert entity.display_order == 7
-        claim = entity.claims.get(user=user, field_name="display_order", is_active=True)
+        claim = entity.claims.get(
+            actor=user.actor, field_name="display_order", is_active=True
+        )
         assert claim.value == 7

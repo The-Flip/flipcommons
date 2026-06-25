@@ -29,14 +29,19 @@ def actor_author(actor: Actor) -> ClaimAuthorSchema:
     ``actor_user``, which it delegates to so the field reads are typed
     (``User.username`` / ``Source.name``) rather than ``getattr``-``Any``.
     Callers must ``select_related`` the backing one-to-one so this is a column
-    read. An actor backed by neither v1 type fails loud here rather than
-    silently rendering as a source chip.
+    read. An orphaned actor (backing row deleted) renders a ``[deleted …]``
+    placeholder of the correct chip type — non-crashing; the full
+    ``[deleted <kind>]`` chip (badge/link) is deferred.
     """
     if (user := actor_user(actor)) is not None:
         return ClaimUserAuthorSchema(username=user.username)
-    source = source_backing(actor)
-    assert source is not None, f"Unhandled actor backing_model: {actor.backing_model!r}"
-    return ClaimSourceAuthorSchema(name=source.name)
+    if (source := source_backing(actor)) is not None:
+        return ClaimSourceAuthorSchema(name=source.name)
+    # Backing row gone (orphaned actor): fall back to a placeholder of the chip
+    # type that backing_model still names.
+    if actor.backing_model == "user":
+        return ClaimUserAuthorSchema(username="[deleted user]")
+    return ClaimSourceAuthorSchema(name=f"[deleted {actor.backing_model}]")
 
 
 def claim_author(claim: Claim) -> ClaimAuthorSchema:

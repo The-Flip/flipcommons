@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from django.core.exceptions import ObjectDoesNotExist
+
 from apps.actors.models import Actor
 
 if TYPE_CHECKING:
@@ -29,23 +31,31 @@ def source_backing(actor: Actor | None) -> Source | None:
     """Return the backing ``Source`` when *actor* is source-backed, else ``None``.
 
     For licensing and export readers that surface source attribution and treat
-    user-backed actors (and the transitional null actor) as "no source" — the
-    old ``claim.source is None`` case. Accepts ``None`` so callers needn't guard.
+    user-backed actors as "no source" — the old ``claim.source is None`` case.
+    Accepts ``None`` so callers needn't guard. Returns ``None`` for an orphaned
+    actor (backing row deleted) rather than raising.
     """
     if actor is None or actor.backing_model != "source":
         return None
-    return cast("Source", getattr(actor, actor.backing_model))
+    try:
+        return cast("Source", getattr(actor, actor.backing_model))
+    except ObjectDoesNotExist:  # orphaned actor — backing row deleted
+        return None
 
 
 def actor_user(actor: Actor | None) -> User | None:
     """Return the backing ``User`` when *actor* is user-backed, else ``None``.
 
     The user-only counterpart to :func:`source_backing`. ``None`` for
-    source-backed (and transitional null) actors.
+    source-backed actors, and for an orphaned actor (backing row deleted) rather
+    than raising.
     """
     if actor is None or actor.backing_model != "user":
         return None
-    return cast("User", getattr(actor, actor.backing_model))
+    try:
+        return cast("User", getattr(actor, actor.backing_model))
+    except ObjectDoesNotExist:  # orphaned actor — backing row deleted
+        return None
 
 
 def actor_user_id(actor: Actor | None) -> int | None:

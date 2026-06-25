@@ -41,7 +41,7 @@ def _assert_alias_claims(source, parent_obj, claim_field, aliases: list[str]) ->
     ct_id = ContentType.objects.get_for_model(parent_obj).pk
     # Sweep: deactivate this source's prior active alias claims for the parent.
     Claim.objects.filter(
-        source=source,
+        actor=source.actor,
         content_type_id=ct_id,
         object_id=parent_obj.pk,
         field_name=claim_field,

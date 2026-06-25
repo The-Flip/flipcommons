@@ -65,8 +65,8 @@ class TestEffectiveLicenseResolution:
         claim.license = cc_by_sa
         claim.save()
         claim.refresh_from_db()
-        # Need source loaded for resolution
-        claim.source = opdb
+        # Need actor loaded for resolution
+        claim.actor = opdb.actor
 
         lic = resolve_effective_license(claim)
         assert lic == cc_by_sa
@@ -78,7 +78,7 @@ class TestEffectiveLicenseResolution:
         )
         title = Title.objects.create(name="Test Title", slug="t1")
         claim = make_claim(title, "description", "text", source=opdb)
-        claim.source = opdb
+        claim.actor = opdb.actor
 
         from apps.provenance.licensing import build_source_field_license_map
 
@@ -90,7 +90,7 @@ class TestEffectiveLicenseResolution:
         """Falls back to source.default_license when no overrides exist."""
         title = Title.objects.create(name="Test Title", slug="t1")
         claim = make_claim(title, "description", "text", source=ipdb)
-        claim.source = ipdb
+        claim.actor = ipdb.actor
 
         lic = resolve_effective_license(claim)
         assert lic == not_allowed
@@ -99,7 +99,7 @@ class TestEffectiveLicenseResolution:
         """Returns None when no license is set anywhere."""
         title = Title.objects.create(name="Test Title", slug="t1")
         claim = make_claim(title, "description", "text", source=opdb)
-        claim.source = opdb
+        claim.actor = opdb.actor
 
         lic = resolve_effective_license(claim)
         assert lic is None

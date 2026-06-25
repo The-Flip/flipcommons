@@ -24,7 +24,7 @@ User = get_user_model()
 
 def _only_user_changeset(user) -> ChangeSet:
     """The sole user-authored changeset (fixture seed claims are ingest)."""
-    return ChangeSet.objects.get(user=user)
+    return ChangeSet.objects.get(actor=user.actor)
 
 
 @pytest.fixture
@@ -288,7 +288,7 @@ class TestCombinedEdits:
 
         # The pm fixture asserts a seed (ingest) name claim, so filter to the
         # user's changeset rather than assuming it's the only row.
-        assert ChangeSet.objects.filter(user=user).count() == 1
+        assert ChangeSet.objects.filter(actor=user.actor).count() == 1
         cs = _only_user_changeset(user)
         assert cs.note == "Full edit"
         field_names = set(cs.claims.values_list("field_name", flat=True))
@@ -340,7 +340,7 @@ class TestCombinedEdits:
         # Restrict to the editing user's changesets (the pm fixture's seed name
         # claim is ingest) and exclude the citation-template seed changeset.
         changeset = (
-            ChangeSet.objects.filter(user=user)
+            ChangeSet.objects.filter(actor=user.actor)
             .exclude(pk=seed_claim.changeset_id)
             .get()
         )
