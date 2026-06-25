@@ -7,17 +7,10 @@ from django.contrib.auth import get_user_model
 
 from apps.catalog.models import Title
 from apps.citation.models import CitationSource, CitationSourceLink
-from apps.provenance.models import CitationInstance, Source
+from apps.provenance.models import CitationInstance
 from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=100
-    )
 
 
 @pytest.fixture
