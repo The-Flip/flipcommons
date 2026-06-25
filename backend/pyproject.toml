@@ -248,13 +248,13 @@ source_modules = ["apps.claim_ingest"]
 forbidden_modules = ["apps.claim_edit"]
 
 # The single claim-mint chokepoint. ``apps.provenance.claim_writer._assert_claim``
-# is the one sanctioned non-ingest place a Claim is minted; only the two
-# interactive write surfaces may reach it — claim_edit (the generic engine) and
-# media (its own attach/detach mutations). Every other app is forbidden, so a new
-# write path can't quietly grow a second mint primitive. Commit 2 drops media
-# from this allow-set once media routes through claim_edit's execute_claims.
-# (provenance itself is not a source — intra-app imports of claim_writer are
-# governed by the internal-stack layers contract instead.)
+# is the one sanctioned non-ingest place a Claim is minted; only claim_edit (the
+# generic interactive write engine) may reach it. Every other app is forbidden,
+# so a new write path can't quietly grow a second mint primitive. Media routes
+# its attach/detach mutations through claim_edit's execute_claims, so it is
+# forbidden here too — leaving execute_claims as the single non-ingest mint
+# caller. (provenance itself is not a source — intra-app imports of claim_writer
+# are governed by the internal-stack layers contract instead.)
 [[tool.importlinter.contracts]]
 name = "Only the interactive write surfaces import the claim-mint primitive"
 type = "forbidden"
@@ -267,6 +267,7 @@ source_modules = [
     "apps.catalog",
     "apps.claim_ingest",
     "apps.kiosk",
+    "apps.media",
 ]
 forbidden_modules = ["apps.provenance.claim_writer"]
 

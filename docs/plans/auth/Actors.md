@@ -386,7 +386,7 @@ Write paths save `ChangeSet.actor` and `Claim.actor` going forward, so the backf
 
 Write-path invariants (held by the funnel plus a NULL-guarded data-integrity test, so they're safe to run pre-backfill): `Claim.actor == changeset.actor`; `changeset.actor == ingest_run.source.actor` / `changeset.user.actor`.
 
-**One PR, three commits** (reviewed on commit boundaries): (1) relocate the mint primitive — behavior-neutral; (2) route media through `execute_claims` — behavioral, characterization-tested; (3) save actor FKs — the actor-first funnel + stamp + invariants.
+**One PR, four commits** (reviewed on commit boundaries): (1) relocate the mint primitive — behavior-neutral; (2) route media through `execute_claims` — behavioral, characterization-tested; (3) upload's error contract — surface 422 from `upload_media` while preserving storage cleanup; (4) save actor FKs — the actor-first funnel + stamp + invariants.
 
 #### Backfill actor FKs
 
