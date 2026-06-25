@@ -365,13 +365,13 @@ This will be its own PR.
 
 This will be its own PR.
 
-#### Enforce single claims write path
+#### ✅ DONE: Enforce single claims write path
 
 Make the claim-mint primitive the single, enforced chokepoint before layering actor attribution on it. Relocate the primitive off `Claim.objects` into a module-level `_assert_claim` (new `apps/provenance/claim_writer.py`) and **delete `ClaimManager`** (its only method). Validation moves up with it, retiring the `models.claim → validation` import-linter exception. Lock the chokepoint two ways: an import-linter forbidden contract (only `claim_edit` may import `claim_writer`) and an AST mint-guard test (no `Claim` _persistence_ — `objects.create`/`bulk_create`/etc. — outside `claim_writer` + ingest's `persist.py`). Route media through `execute_claims` so there's one non-ingest mint caller. Sweep tests onto a `make_claim` factory.
 
 Ships together with "Save actor FKs" as one PR — see the commit breakdown there.
 
-#### Save actor FKs
+#### ✅ DONE: Save actor FKs
 
 Write paths save `ChangeSet.actor` and `Claim.actor` going forward, so the backfill (next step) runs **once** with no fresh gaps appearing behind it.
 
