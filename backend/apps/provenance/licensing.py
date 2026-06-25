@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from apps.core.models import License
+from apps.provenance.attribution import source_backing
 from apps.provenance.models import Claim, SourceFieldLicense
 
 
@@ -38,16 +39,21 @@ def resolve_effective_license(
 
     Resolution order:
     1. claim.license (per-claim override)
-    2. SourceFieldLicense for (claim.source, claim.field_name)
-    3. claim.source.default_license (source-wide default)
+    2. SourceFieldLicense for (source backing the claim's actor, claim.field_name)
+    3. the backing source's default_license (source-wide default)
     4. None (unknown)
+
+    Still source-only: user-backed actors have no source, so steps 2-3 are
+    skipped and the claim resolves to its per-claim override or None — exactly
+    the old ``claim.source is None`` behavior.
     """
     if claim.license_id:
         return claim.license
-    if claim.source_id:
+    source = source_backing(claim.actor)
+    if source is not None:
         if sfl_map is not None:
-            sfl_license = sfl_map.get(SourceField(claim.source_id, claim.field_name))
+            sfl_license = sfl_map.get(SourceField(source.pk, claim.field_name))
             if sfl_license:
                 return sfl_license
-        return claim.source.default_license if claim.source else None
+        return source.default_license
     return None

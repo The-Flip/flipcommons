@@ -388,7 +388,7 @@ Write-path invariants (held by the funnel plus a NULL-guarded data-integrity tes
 
 **One PR, four commits** (reviewed on commit boundaries): (1) relocate the mint primitive — behavior-neutral; (2) route media through `execute_claims` — behavioral, characterization-tested; (3) upload's error contract — surface 422 from `upload_media` while preserving storage cleanup; (4) save actor FKs — the actor-first funnel + stamp + invariants.
 
-#### Backfill actor FKs
+#### ✅ DONE: Backfill actor FKs
 
 All ~222K changesets (original + backfilled) need `ChangeSet.actor` populated:
 
@@ -399,7 +399,7 @@ Then backfill `Claim.actor` from each claim's changeset: `Claim.actor ← claim.
 
 This will be its own PR.
 
-#### Cut over consumers
+#### ✅ DONE: Cut over consumers
 
 Repoint every reader of `Claim.user`/`Claim.source` (and `ChangeSet.user`/`ingest_run`) onto `actor` — before "Drop dead schema" removes the columns:
 

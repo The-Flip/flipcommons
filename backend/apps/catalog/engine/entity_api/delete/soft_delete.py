@@ -158,7 +158,12 @@ def count_entity_changesets(*entities: LinkableClaimModel) -> int:
     q = db_models.Q()
     for ct, pks in by_ct.items():
         q |= db_models.Q(claims__content_type=ct, claims__object_id__in=pks)
-    return ChangeSet.objects.filter(user__isnull=False).filter(q).distinct().count()
+    return (
+        ChangeSet.objects.filter(actor__backing_model="user")
+        .filter(q)
+        .distinct()
+        .count()
+    )
 
 
 class SoftDeleteBlockedError(Exception):

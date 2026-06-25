@@ -22,16 +22,17 @@ class ChangeSetPolicyView(Protocol):
 
     Declared as read-only ``@property`` so mypy treats the predicate as
     type-checked against this narrow shape — any reach for an attribute
-    outside this Protocol (e.g. ``changeset.user.username``) is a static
+    outside this Protocol (e.g. ``changeset.actor.user``) is a static
     error at predicate-definition time, which is what keeps the no-I/O
-    discipline honest.
+    discipline honest. ``actor_id`` is a plain FK column (always loaded), so
+    the predicate needs no join or ``select_related``.
     """
 
     @property
     def id(self) -> int: ...
 
     @property
-    def user_id(self) -> int | None: ...
+    def actor_id(self) -> int | None: ...
 
 
 def is_changeset_author(
@@ -41,11 +42,17 @@ def is_changeset_author(
 ) -> Decision:
     """Allow when the caller authored ``changeset``; else ``OWNER_REQUIRED``.
 
+    Compares the actor FK columns directly: a changeset is the caller's iff its
+    actor is the caller's actor. Both sides are plain columns (no I/O). For an
+    anonymous caller ``user.actor_id`` is ``None`` (patched onto AnonymousUser)
+    and never equals a changeset's non-null actor, so the result is a denial;
+    ``is_authenticated`` supplies the higher-priority ``AUTH_REQUIRED``.
+
     The defensive ``changeset is None`` guard lives in the evaluator
     (``check()``), not here — any target-aware rule called without a
     target raises ``TypeError`` before reaching its predicates.
     """
-    if changeset.user_id != user.id:
+    if changeset.actor_id != user.actor_id:
         return Deny(DenialCode.OWNER_REQUIRED)
     return Allow()
 

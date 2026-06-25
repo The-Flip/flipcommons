@@ -29,6 +29,7 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from apps.catalog.models import CatalogModel
 from apps.core.entity_types import get_linkable_model
 from apps.core.markdown import convert_storage_to_authoring, get_markdown_fields
+from apps.provenance.attribution import source_backing
 from apps.provenance.helpers import active_claims, claims_prefetch
 from apps.provenance.models import Claim, Source
 
@@ -206,5 +207,5 @@ def _winning_source(active: list[Claim], field: str) -> Source | None:
     """
     for claim in active:
         if claim.field_name == field:
-            return claim.source
+            return source_backing(claim.actor)
     return None

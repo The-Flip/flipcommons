@@ -121,6 +121,9 @@ class PolicyUser(Protocol):
     def id(self) -> int | None: ...
 
     @property
+    def actor_id(self) -> int | None: ...
+
+    @property
     def is_authenticated(self) -> bool: ...
 
     @property

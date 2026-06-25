@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from django.db import models
 
 from apps.core.markdown import convert_storage_to_authoring, render_markdown_field
+from apps.provenance.attribution import source_backing
 from apps.provenance.helpers import active_claims
 from apps.provenance.licensing import (
     build_source_field_license_map,
@@ -42,14 +43,15 @@ def _extract_description_attribution(
             if sfl_map is None:
                 sfl_map = build_source_field_license_map()
             lic = resolve_effective_license(claim, sfl_map)
+            src = source_backing(claim.actor)
             return AttributionSchema(
                 license_slug=lic.slug if lic else None,
                 license_name=lic.short_name if lic else None,
                 license_url=lic.url if lic else None,
                 permissiveness_rank=lic.permissiveness_rank if lic else None,
                 requires_attribution=lic.requires_attribution if lic else False,
-                source_name=claim.source.name if claim.source else None,
-                source_url=claim.source.url if claim.source else None,
+                source_name=src.name if src else None,
+                source_url=src.url if src else None,
                 attribution_text=claim.citation or None,
             )
     return None

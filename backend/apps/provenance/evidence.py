@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+from .attribution import actor_user
 from .helpers import citation_instances
 from .models import Claim
 
@@ -28,7 +29,9 @@ class CitedCitation:
 @dataclass(frozen=True)
 class CitedChangeset:
     id: int
-    user_id: int
+    # The changeset's actor id — satisfies ChangeSetPolicyView for the
+    # CHANGESET_UNDO capability check. ``user_username`` carries display.
+    actor_id: int
     user_username: str
     note: str
     created_at: str
@@ -41,7 +44,7 @@ class _CitedChangesetBuilder:
     """Mutable scratch state while grouping citations per changeset."""
 
     id: int
-    user_id: int
+    actor_id: int
     user_username: str
     note: str
     created_at: str
@@ -55,13 +58,14 @@ def build_cited_changesets(claims: Iterable[Claim]) -> list[CitedChangeset]:
     grouped: dict[int, _CitedChangesetBuilder] = {}
 
     for claim in claims:
-        # Read authorship off ``claim.changeset.user`` rather than
-        # ``claim.user``. The two match by write-time convention but
-        # aren't a DB invariant — revert flows can attach source-attributed
-        # claims to a user changeset, in which case ``claim.user`` is null.
-        # The changeset's user is the policy-relevant author.
+        # Read authorship off ``claim.changeset.actor`` rather than the claim's
+        # own actor. The two match by write-time convention but aren't a DB
+        # invariant — revert flows can attach source-attributed claims to a user
+        # changeset. The changeset's actor is the policy-relevant author; only
+        # user-backed changesets surface here (source/ingest are skipped).
         changeset = claim.changeset
-        if changeset is None or changeset.user is None:
+        author = actor_user(changeset.actor) if changeset is not None else None
+        if changeset is None or author is None:
             continue
 
         claim_citations = citation_instances(claim)
@@ -70,10 +74,11 @@ def build_cited_changesets(claims: Iterable[Claim]) -> list[CitedChangeset]:
 
         entry = grouped.get(changeset.pk)
         if entry is None:
+            assert changeset.actor_id is not None
             entry = _CitedChangesetBuilder(
                 id=changeset.pk,
-                user_id=changeset.user.pk,
-                user_username=changeset.user.username,
+                actor_id=changeset.actor_id,
+                user_username=author.username,
                 note=changeset.note,
                 created_at=changeset.created_at.isoformat(),
             )
@@ -102,7 +107,7 @@ def build_cited_changesets(claims: Iterable[Claim]) -> list[CitedChangeset]:
     result: list[CitedChangeset] = [
         CitedChangeset(
             id=entry.id,
-            user_id=entry.user_id,
+            actor_id=entry.actor_id,
             user_username=entry.user_username,
             note=entry.note,
             created_at=entry.created_at,

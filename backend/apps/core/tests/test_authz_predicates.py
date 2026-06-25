@@ -27,6 +27,8 @@ from apps.core.authz.types import Allow, DenialCode, Deny, PolicyUser
 # PolicyUser uses @property declarations, so its attributes don't appear
 # in __annotations__; hardcode them here for the protocol-fit checks.
 _POLICY_USER_ATTRS = (
+    "id",
+    "actor_id",
     "is_authenticated",
     "is_active",
     "email_verified",

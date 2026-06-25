@@ -30,8 +30,10 @@ class StubPolicyUser:
         is_staff: bool = False,
         is_superuser: bool = False,
         id: int = 1,
+        actor_id: int | None = None,
     ) -> None:
         self.id = id
+        self.actor_id = actor_id
         self._is_authenticated = is_authenticated
         self._is_active = is_active
         self._is_email_verified = is_email_verified

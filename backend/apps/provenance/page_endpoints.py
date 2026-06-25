@@ -243,7 +243,7 @@ def list_changes(
     limit = max(1, min(limit, 100))
 
     qs = ChangeSet.objects.select_related(
-        "user", "ingest_run__source"
+        "actor__user", "actor__source"
     ).prefetch_related(
         # ``changeset_id`` and ``retracted_by_changeset_id`` MUST be in
         # ``.only()`` for the reverse-FK prefetch back-association to
@@ -352,10 +352,14 @@ def change_detail(
 
     caller = policy_user(request.user)
     cs = get_object_or_404(
-        ChangeSet.objects.select_related("user", "ingest_run__source").prefetch_related(
+        ChangeSet.objects.select_related(
+            "actor__user", "actor__source"
+        ).prefetch_related(
             Prefetch(
                 "claims",
-                queryset=Claim.objects.prefetch_related(citation_instances_prefetch()),
+                queryset=Claim.objects.select_related("actor__user").prefetch_related(
+                    citation_instances_prefetch()
+                ),
             ),
             "retracted_claims",
         ),

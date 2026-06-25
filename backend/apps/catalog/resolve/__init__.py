@@ -97,7 +97,7 @@ def resolve_model(machine_model: MachineModel) -> MachineModel:
     """
     # Fetch and pick winners (single-object).
     claims = ranked_claims(machine_model.claims.all(), "claim_key").select_related(
-        "source__default_license"
+        "actor__source__default_license"
     )
     winners: dict[str, Claim] = {}
     for claim in claims:
@@ -333,7 +333,7 @@ def _build_claims_by_model() -> dict[int, dict[str, Claim]]:
     ct = ContentType.objects.get_for_model(MachineModel)
     claims = ranked_claims(
         Claim.objects.filter(content_type=ct), "object_id", "claim_key"
-    ).select_related("source__default_license")
+    ).select_related("actor__source__default_license")
 
     result: dict[int, dict[str, Claim]] = {}
     for claim in claims:

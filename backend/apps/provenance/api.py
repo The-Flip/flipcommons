@@ -29,6 +29,7 @@ from apps.core.authz.types import Activity
 from apps.core.models import LinkableModel
 from apps.core.schemas import ErrorDetailSchema
 
+from .attribution import source_backing
 from .display import FieldValue, claim_value, resolve_display_context
 from .models import CitationInstance, Claim, ClaimControlledModel, Source
 from .page_endpoints import pages_router
@@ -105,7 +106,7 @@ def list_review_claims(request: HttpRequest) -> list[ReviewClaimSchema]:
     """Return all active claims flagged for review."""
     claims = list(
         Claim.objects.filter(is_active=True, needs_review=True)
-        .select_related("source", "content_type")
+        .select_related("actor__source", "content_type")
         .prefetch_related("subject")
         .order_by("-created_at")
     )
@@ -132,7 +133,9 @@ def list_review_claims(request: HttpRequest) -> list[ReviewClaimSchema]:
         results.append(
             ReviewClaimSchema(
                 id=claim.pk,
-                source_name=claim.source.name if claim.source else "User",
+                source_name=(
+                    src.name if (src := source_backing(claim.actor)) else "User"
+                ),
                 field_name=claim.field_name,
                 value=claim_value(subject_model, claim.field_name, claim.value, ctx),
                 needs_review_notes=claim.needs_review_notes,
@@ -232,7 +235,7 @@ def undo_changeset(
 
     user = authed_user(request)
     try:
-        changeset = ChangeSet.objects.get(pk=changeset_id)
+        changeset = ChangeSet.objects.select_related("actor").get(pk=changeset_id)
     except ChangeSet.DoesNotExist:
         return Status(404, ErrorDetailSchema(detail="ChangeSet not found."))
 
