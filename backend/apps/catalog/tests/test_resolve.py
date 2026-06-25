@@ -1,4 +1,5 @@
 import pytest
+from django.db import IntegrityError
 from django.utils import timezone
 
 from apps.catalog.models import (
@@ -556,7 +557,12 @@ class TestResolveCorporateEntityLocations:
 
 
 @pytest.mark.django_db
-class TestResolveEntitySlugConflictGuard:
+class TestSingleObjectUniqueConflict:
+    """Single-object resolution (resolve_entity, resolve_model) leaves
+    cross-reference uniqueness to the DB: a globally-unique collision fails
+    loud (IntegrityError), while a non-unique slug change is left alone.
+    """
+
     def test_slug_change_not_reverted_when_slug_field_not_unique(self):
         """resolve_entity must not silently revert a slug change when the
         model's slug field is not globally unique (e.g. Location, where
@@ -595,3 +601,30 @@ class TestResolveEntitySlugConflictGuard:
         target.refresh_from_db()
 
         assert target.slug == "springfield"
+
+    def test_machine_model_slug_conflict_raises(self, ipdb):
+        """resolve_model lets a slug collision hit the DB constraint.
+
+        Resolution leaves cross-reference uniqueness to the DB: the winning slug
+        claim is saved and the unique constraint raises IntegrityError (turned
+        into a 422 by execute_claims) rather than silently reverting.
+        """
+        make_machine_model(name="Owner", slug="taken-slug")
+        pm = make_machine_model(name="Challenger", slug="original-slug")
+        make_claim(pm, "slug", "taken-slug", source=ipdb)
+
+        with pytest.raises(IntegrityError):
+            resolve_model(pm)
+
+    def test_machine_model_opdb_conflict_raises(self, ipdb):
+        """resolve_model lets an opdb_id collision hit the DB constraint.
+
+        Previously the loser's opdb_id was silently cleared to None; now the
+        nullable unique constraint raises, surfacing the conflict.
+        """
+        make_machine_model(name="Alpha", slug="alpha", opdb_id="GCONFLICT-M1")
+        pm_b = make_machine_model(name="Beta", slug="beta")
+        make_claim(pm_b, "opdb_id", "GCONFLICT-M1", source=ipdb)
+
+        with pytest.raises(IntegrityError):
+            resolve_model(pm_b)

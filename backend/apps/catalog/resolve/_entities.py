@@ -8,8 +8,6 @@ Also handles taxonomy model resolution.
 
 from __future__ import annotations
 
-import logging
-
 from django.utils import timezone
 
 from apps.core.types import JsonBody
@@ -26,8 +24,6 @@ from ._helpers import (
     resolve_unique_conflicts,
     validate_check_constraints,
 )
-
-logger = logging.getLogger(__name__)
 
 
 def _sync_markdown_references(obj: ClaimControlledModel) -> None:
@@ -283,39 +279,12 @@ def resolve_entity[T: ClaimControlledModel](obj: T) -> T:
 
     model_class = type(obj)
     fields = get_claim_fields(model_class)
-    original_slug = obj.slug
     _resolve_single(obj, fields)
 
-    # Single-object slug conflict guard — only slug gets silent revert.
-    # Other unique fields (e.g. name) rely on save() → IntegrityError
-    # which execute_claims() catches and returns as 422.
-    # Skip when slug isn't globally unique (e.g. Location, where slug is
-    # unique-per-location_path); mirrors the bulk path's has_unique_slug
-    # check.  django-stubs checks the ``slug=`` filter keyword against the
-    # model's declared fields; abstract ClaimControlledModel._meta lists
-    # none.  The concrete subclass always has slug.
-    slug_field = model_class._meta.get_field("slug") if "slug" in fields else None
-    slug_is_unique = slug_field is not None and bool(
-        getattr(slug_field, "unique", False)
-    )
-    if (
-        slug_is_unique
-        and obj.slug
-        and obj.slug != original_slug
-        and model_class.objects.filter(slug=obj.slug)  # type: ignore[attr-defined]
-        .exclude(pk=obj.pk)
-        .exists()
-    ):
-        logger.warning(
-            "Cannot resolve slug=%r on %s pk=%s: "
-            "already owned by another object, reverting to %r",
-            obj.slug,
-            model_class.__name__,
-            obj.pk,
-            original_slug,
-        )
-        obj.slug = original_slug
-
+    # Cross-reference uniqueness (slug, opdb_id, …) is not resolution's concern:
+    # the DB unique constraint is the source of truth. A collision raises
+    # IntegrityError on save(), which execute_claims() turns into a 422 on the
+    # interactive path — exactly as the non-unique ``name`` field already does.
     validate_check_constraints(obj)
     obj.save()
     _sync_markdown_references(obj)

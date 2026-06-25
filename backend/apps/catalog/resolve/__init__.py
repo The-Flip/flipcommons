@@ -17,7 +17,6 @@ implementation is where a derived value drifts from what apply produces.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from django.core.management.base import OutputWrapper
@@ -77,8 +76,6 @@ from ._relationships import (
     resolve_theme_parents,
 )
 
-logger = logging.getLogger(__name__)
-
 # Claim field_names whose values are images. License metadata for these
 # fields gets denormalized into extra_data so the API can filter by
 # permissiveness_rank without joining back through claims.
@@ -112,8 +109,6 @@ def resolve_model(machine_model: MachineModel) -> MachineModel:
     fk_info = build_fk_info(MachineModel, claim_fields)
     sfl_map = build_source_field_license_map()
     preserve_when_unclaimed = get_preserve_fields(MachineModel, claim_fields)
-    original_slug = machine_model.slug
-    original_opdb_id = machine_model.opdb_id
     _apply_resolution(
         machine_model,
         winners,
@@ -124,34 +119,10 @@ def resolve_model(machine_model: MachineModel) -> MachineModel:
         preserve_when_unclaimed,
     )
 
-    # Post-resolution guards for cross-reference fields only (slug, opdb_id).
-    # Other unique fields (e.g. name) rely on save() → IntegrityError which
-    # execute_claims() catches and returns as 422.
-    conflict_fields = [
-        ("slug", original_slug, original_slug),  # (attr, check_original, revert_to)
-        ("opdb_id", original_opdb_id, None),  # nullable — clear to None
-    ]
-    for attr, original, revert in conflict_fields:
-        value = getattr(machine_model, attr)
-        if not value or value == original:
-            continue
-        conflict = (
-            MachineModel.objects.filter(**{attr: value})
-            .exclude(pk=machine_model.pk)
-            .first()
-        )
-        if conflict:
-            logger.warning(
-                "Cannot resolve %s=%r onto '%s' (pk=%s): already owned by '%s' (pk=%s)",
-                attr,
-                value,
-                machine_model.name,
-                machine_model.pk,
-                conflict.name,
-                conflict.pk,
-            )
-            setattr(machine_model, attr, revert)
-
+    # Cross-reference uniqueness (slug, opdb_id, …) is not resolution's concern:
+    # the DB unique constraint is the source of truth. A collision raises
+    # IntegrityError on save(), which execute_claims() turns into a 422 on the
+    # interactive path — exactly as the non-unique ``name`` field already does.
     validate_check_constraints(machine_model)
     machine_model.save()
 
