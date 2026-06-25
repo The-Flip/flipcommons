@@ -19,6 +19,7 @@ from django.contrib.contenttypes.models import ContentType
 
 from apps.core.markdown.field import get_markdown_fields
 from apps.provenance.models import Claim, Source
+from apps.provenance.test_factories import source_changeset
 
 _migration = importlib.import_module(
     "apps.provenance.migrations.0007_rewrite_cite_markers"
@@ -54,10 +55,15 @@ def test_forward_and_reverse_rewrite_entity_and_claim():
     src = Source.objects.create(
         name="Editorial", slug="editorial-x", source_type="editorial"
     )
+    # Direct create (not make_claim) to seed the legacy [[cite:N]] value the
+    # migration rewrites — make_claim would reject it via markdown validation.
+    # actor + changeset are NOT NULL, so supply a source changeset and its actor.
     claim = Claim.objects.create(
         content_type=ContentType.objects.get_for_model(Manufacturer),
         object_id=mfr.pk,
         source=src,
+        actor=src.actor,
+        changeset=source_changeset(src),
         field_name="description",
         claim_key="description",
         value="A fact.[[cite:7]]",

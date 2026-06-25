@@ -8,6 +8,7 @@ from django.test import RequestFactory
 from apps.citation.models import CitationSource
 from apps.provenance.admin import CitationInstanceAdmin
 from apps.provenance.models import CitationInstance, Claim, Source
+from apps.provenance.test_factories import source_changeset
 
 
 @pytest.fixture
@@ -28,13 +29,18 @@ def provenance_source(db):
 def claim(db, provenance_source):
     from django.contrib.contenttypes.models import ContentType
 
-    # Use CitationSource as a convenient target — any model works
+    # Use CitationSource as a convenient target — any model works. This target
+    # isn't claim-controlled, so we create the row directly (not via make_claim);
+    # actor + changeset are NOT NULL, so supply a source changeset and its actor.
     ct = ContentType.objects.get_for_model(CitationSource)
     cs = CitationSource.objects.create(name="Target", source_type="web")
+    changeset = source_changeset(provenance_source)
     return Claim.objects.create(
         content_type=ct,
         object_id=cs.pk,
         source=provenance_source,
+        actor=provenance_source.actor,
+        changeset=changeset,
         field_name="name",
         claim_key="name",
         value="Target",

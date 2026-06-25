@@ -235,15 +235,18 @@ class TestClaim:
     def test_unique_active_constraint(self, machine_model, source):
         from django.contrib.contenttypes.models import ContentType
 
-        make_claim(machine_model, "name", "V1", source=source)
+        first = make_claim(machine_model, "name", "V1", source=source)
         ct = ContentType.objects.get_for_model(machine_model)
-        # Direct create (bypassing manager) should violate the constraint
-        # (keyed on claim_key, which equals field_name for scalar claims).
+        # Direct create (bypassing the dedupe primitive) of a second active claim
+        # for the same author+claim_key should violate the unique-active index.
+        # actor + changeset are NOT NULL, so reuse the first claim's changeset.
         with pytest.raises(IntegrityError):
             Claim.objects.create(
                 content_type=ct,
                 object_id=machine_model.pk,
                 source=source,
+                actor=source.actor,
+                changeset=first.changeset,
                 field_name="name",
                 claim_key="name",
                 value="V2",
