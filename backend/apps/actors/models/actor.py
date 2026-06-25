@@ -49,7 +49,7 @@ class Actor(models.Model):
     )
     priority = models.PositiveSmallIntegerField(
         help_text="Trust weight feeding claim resolution; higher wins. "
-        "Replaces User.priority + Source.priority.",
+        "Mirrored from the backing record.",
     )
     resolution_status = models.CharField(
         max_length=10,

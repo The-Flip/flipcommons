@@ -1,10 +1,10 @@
 """Grep gate: ``actor`` is the only attribution path in production code.
 
-"Drop dead stuff" removed ``Claim.user`` / ``Claim.source`` / ``ChangeSet.user``.
-The real enforcement is the schema + mypy (any field access is now a hard error);
-this coarse substring gate is the backstop that stops a new module from
-re-introducing a legacy-attribution read. See ``apps.core.tests._source_guard``
-and ``test_ranking_is_canonical`` for the pattern.
+``Claim.user`` / ``Claim.source`` / ``ChangeSet.user`` are gone. The real
+enforcement is the schema + mypy (any field access is now a hard error); this
+coarse substring gate is the backstop that stops a new module from re-introducing
+a legacy-attribution read. See ``apps.core.tests._source_guard`` and
+``test_ranking_is_canonical`` for the pattern.
 
 The allow-list is the handful of provenance modules that name the old columns in
 prose/docstrings only (explaining the historical behavior they replaced) — never

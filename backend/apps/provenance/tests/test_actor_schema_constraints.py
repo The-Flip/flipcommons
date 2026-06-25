@@ -1,7 +1,7 @@
-"""Behavior pinned by the "Tighten schema" PR.
+"""Actor attribution schema constraints.
 
-After this PR ``ChangeSet.actor`` / ``Claim.actor`` / ``Claim.changeset`` are NOT
-NULL, dedupe keys on ``actor``, and a single unified partial-unique index
+``ChangeSet.actor`` / ``Claim.actor`` / ``Claim.changeset`` are NOT NULL, dedupe
+keys on ``actor``, and a single unified partial-unique index
 (``provenance_unique_active_claim_per_actor``) enforces one active claim per
 actor per ``claim_key`` on a subject. These tests lock:
 

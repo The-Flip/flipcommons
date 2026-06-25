@@ -36,7 +36,7 @@ class TestRouteContract:
     form — ``public_id``, ``parent_public_id``, ``<x>_public_id``) must use
     Ninja's ``{path:name}`` converter, never the bare single-segment form.
 
-    This is the structural backstop the plan calls for: it iterates the
+    This is the structural backstop for linkable route shape: it iterates the
     *actual* mounted routes (not the factory source code), so a future
     bespoke router that adds ``"/{public_id}/anything/"`` fails this test
     without anyone having to remember to update it. Adds Location-shaped

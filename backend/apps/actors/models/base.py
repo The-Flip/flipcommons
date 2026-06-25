@@ -9,11 +9,9 @@ runtime (Django has imported every model by app-ready). Same direction as
 The base owns the mint-on-create + sync-on-update of the backing record's
 ``Actor`` row, deriving the resolution fields from per-instance hooks each
 satellite implements. The hooks read the satellite's editable ``priority`` /
-``is_enabled`` columns, making ``Actor`` a continuously-correct mirror of them
-(see ``docs/plans/auth/Actors.md`` § "Why mint *and* sync"). This mirror is
-**permanent**: the satellite columns are the per-type editing surface and Actor
-is the uniform resolution read-model. The columns are intentionally kept (not
-dropped at "Drop dead stuff").
+``is_enabled`` columns, making ``Actor`` a continuously-correct mirror of them.
+This mirror is permanent: the satellite columns are the per-type editing surface
+and Actor is the uniform resolution read-model.
 """
 
 from __future__ import annotations
@@ -47,9 +45,8 @@ class ActorModel(models.Model):
         on_delete=models.PROTECT,  # Actor outlives the backing record
         related_name="%(class)s",  # -> Actor.user / Actor.source
         editable=False,  # mint-managed; never a form field (keeps it out of admin)
-        # null=False (the default) is the FINAL shipped state. The transitional
-        # nullability lives ONLY in the staged migration (AddField null=True ->
-        # RunPython mint -> AlterField null=False). The model never says null=True.
+        # null=False is the shipped model state; historical migrations handled
+        # the temporary nullable window needed to backfill existing rows.
     )
 
     class Meta:
@@ -73,7 +70,7 @@ class ActorModel(models.Model):
                 )
             super().save(*args, **kwargs)
             if not creating and self.actor_id is not None:
-                # UPDATE: keep the mirror in sync with the legacy columns.
+                # UPDATE: keep the Actor mirror in sync with backing fields.
                 # .update() (not .save()) avoids re-entering this method.
                 Actor.objects.filter(pk=self.actor_id).update(
                     priority=self.actor_priority,
@@ -110,9 +107,8 @@ def _protect_backing_with_history(
 ) -> None:
     """Block deleting a backing record whose Actor has attributed history.
 
-    Replaces the per-type PROTECT FKs (``Claim.user`` / ``Claim.source``,
-    ``ChangeSet.user``) that "Drop dead stuff" removed: deletion protection now
-    lives uniformly on the Actor. ``claims`` / ``changesets`` are the reverse
+    Deletion protection now lives uniformly on the Actor, replacing the old
+    per-backing-record history FKs. ``claims`` / ``changesets`` are the reverse
     ``related_name``s Claim / ChangeSet declare on Actor — runtime attribute
     access, so ``apps.actors`` stays a leaf below ``provenance`` (no upward
     import).

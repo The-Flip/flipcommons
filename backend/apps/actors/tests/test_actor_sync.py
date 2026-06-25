@@ -1,4 +1,4 @@
-"""The drift contract: Actor mirrors the legacy columns on create and on update."""
+"""The drift contract: Actor mirrors backing fields on create and on update."""
 
 import pytest
 

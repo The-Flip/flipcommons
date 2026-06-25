@@ -3,8 +3,8 @@
 The schema-free half of the attribution helpers: given a ``Claim`` /
 ``ChangeSet`` ``Actor``, reach its backing record by type. ``backing_model``
 ("user" / "source") is both the reverse-one-to-one accessor (``actor.user`` /
-``actor.source``) and the type discriminator — the single model-driven routing
-point, mirroring how ``claim_writer`` already stamps the legacy column.
+``actor.source``) and the type discriminator, giving attribution readers one
+model-driven routing point.
 
 Lives below ``schemas`` in the provenance internal stack so ``licensing`` (and
 other low layers) can use it; the schema-producing counterpart ``actor_author``

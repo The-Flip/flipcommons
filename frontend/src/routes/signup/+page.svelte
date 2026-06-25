@@ -18,8 +18,8 @@
     | { kind: 'available' }
     | { kind: 'rejected'; reason: ServerReason };
 
-  // Status-line copy. Pinned in the plan; if you tweak the strings, update
-  // .claude/plans/usernames-implementation.md too so they stay in sync.
+  // Status-line copy for server rejection reasons. Keep in sync with
+  // the backend schema's closed reason set.
   const REASON_COPY: Record<ServerReason, string> = {
     too_short: 'Too short — must be at least 3 characters.',
     too_long: 'Too long — must be 20 characters or fewer.',
