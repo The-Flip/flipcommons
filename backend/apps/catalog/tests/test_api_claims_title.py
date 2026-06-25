@@ -20,11 +20,11 @@ User = get_user_model()
 
 
 @pytest.fixture
-def title(db, _bootstrap_source):
+def title(db, bootstrap_source):
     t = Title.objects.create(
         name="Medieval Madness", slug="medieval-madness", opdb_id="G5pe4"
     )
-    make_claim(t, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(t, "name", "Medieval Madness", source=bootstrap_source)
     return t
 
 

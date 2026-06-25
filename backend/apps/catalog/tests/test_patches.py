@@ -467,7 +467,7 @@ claims:
 # ── Same-patch backward references (create-first) ──────────────────
 
 
-def test_backward_fk_on_create(_bootstrap_source):
+def test_backward_fk_on_create(bootstrap_source):
     # Create a manufacturer, then create a corporate-entity whose `manufacturer`
     # FK points at it — both in one patch, the dependency declared first.
     text = """
@@ -491,7 +491,7 @@ claims:
     assert ce.claims.filter(field_name="manufacturer", is_active=True).exists()
 
 
-def test_backward_fk_on_create_dry_run(_bootstrap_source):
+def test_backward_fk_on_create_dry_run(bootstrap_source):
     # Dry-run must not reject the FK-to-planned-target just because the target
     # doesn't exist yet, and must write nothing (guards the apply.py P1 carve-out).
     text = """
@@ -606,7 +606,7 @@ claims:
     assert _location_claim("munich").value["location"] == munich.pk
 
 
-def test_backward_member_on_created_subject(_bootstrap_source):
+def test_backward_member_on_created_subject(bootstrap_source):
     # Both the relationship subject (a CE) and its member (a Location) are
     # created in this same patch — the deferred member targets the subject's
     # *handle*, not an existing row, plus a backward FK to a created manufacturer.
@@ -905,7 +905,7 @@ claims:
         _apply(text)
 
 
-def test_backward_unresolvable_ref_errors(_bootstrap_source):
+def test_backward_unresolvable_ref_errors(bootstrap_source):
     # A reference in neither the DB nor this patch → PatchError, updated message.
     text = """
 attribution: flipcommons-catalog

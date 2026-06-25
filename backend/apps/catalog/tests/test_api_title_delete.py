@@ -10,17 +10,8 @@ from django.core.cache import cache
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import MachineModel, Title
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction, Claim
 from apps.provenance.test_factories import make_claim, user_changeset
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    """Low-priority source; seeds name claims so the resolver doesn't blank
-    ``name`` when a status claim is written during the delete path."""
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
 
 
 @pytest.fixture(autouse=True)

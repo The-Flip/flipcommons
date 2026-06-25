@@ -6,8 +6,13 @@ from django.db import IntegrityError
 from apps.catalog.models import Manufacturer
 from apps.core.models import License
 from apps.provenance.changeset_writer import record_changeset
-from apps.provenance.models import ChangeSet, ChangeSetAction, IngestRun, Source
-from apps.provenance.test_factories import ingest_changeset, make_claim, user_changeset
+from apps.provenance.models import ChangeSet, ChangeSetAction, Source
+from apps.provenance.test_factories import (
+    ingest_changeset,
+    ingest_run,
+    make_claim,
+    user_changeset,
+)
 
 
 @pytest.fixture
@@ -37,7 +42,7 @@ class TestChangeSetModel:
 
     def test_changeset_with_ingest_run(self, source):
         """ChangeSet with ingest_run (no user) is allowed."""
-        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        run = ingest_run(source)
         cs = ChangeSet.objects.create(ingest_run=run)
         assert cs.user is None
         assert cs.ingest_run == run
@@ -65,7 +70,7 @@ class TestChangeSetClaimGrouping:
 
     def test_source_claim_with_changeset_accepted(self, source, mfr):
         """A source claim rides on an ingest ChangeSet's actor."""
-        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        run = ingest_run(source)
         cs = ingest_changeset(run)
         claim = make_claim(mfr, "name", "Williams", source=source, changeset=cs)
         assert claim.changeset == cs
@@ -106,7 +111,7 @@ class TestRecordChangeset:
         assert cs.actor_id == user.actor_id
 
     def test_ingest_rejects_action(self, source):
-        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        run = ingest_run(source)
         with pytest.raises(ValueError, match="never carry an action"):
             record_changeset(
                 actor=source.actor, ingest_run=run, action=ChangeSetAction.EDIT
@@ -114,12 +119,12 @@ class TestRecordChangeset:
 
     def test_ingest_actor_must_match_run_source(self, source):
         other = Source.objects.create(name="Other", slug="other", priority=5)
-        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        run = ingest_run(source)
         with pytest.raises(ValueError, match="source actor"):
             record_changeset(actor=other.actor, ingest_run=run)
 
     def test_ingest_sets_run_and_actor(self, source):
-        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        run = ingest_run(source)
         cs = record_changeset(actor=source.actor, ingest_run=run)
         assert cs.ingest_run == run
         assert cs.actor_id == source.actor_id
@@ -132,7 +137,7 @@ class TestChangeSetConstraints:
         assert cs.pk is not None
 
     def test_ingest_run_only(self, source):
-        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        run = ingest_run(source)
         cs = ChangeSet.objects.create(ingest_run=run)
         assert cs.pk is not None
 
@@ -141,7 +146,7 @@ class TestChangeSetConstraints:
             ChangeSet.objects.create()
 
     def test_both_user_and_ingest_run_rejected(self, user, source):
-        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        run = ingest_run(source)
         with pytest.raises(IntegrityError):
             ChangeSet.objects.create(user=user, ingest_run=run)
 
@@ -152,7 +157,7 @@ class TestChangeSetConstraints:
 
     def test_ingest_run_with_action_rejected(self, source):
         """Ingest ChangeSets must not carry an action value."""
-        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        run = ingest_run(source)
         with pytest.raises(IntegrityError):
             ChangeSet.objects.create(ingest_run=run, action="edit")
 

@@ -25,19 +25,9 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
-from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim
 
 pytestmark = pytest.mark.django_db
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    """Low-priority source used to seed name claims so the resolver doesn't
-    blank the ``name`` column when a status claim is written during delete."""
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
 
 
 def _title(

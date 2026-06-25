@@ -62,6 +62,22 @@ def make_claim(
     )
 
 
+def ingest_run(
+    source: Source,
+    *,
+    input_fingerprint: str = "sha256:test",
+    patch_id: str | None = None,
+) -> IngestRun:
+    """Create an ``IngestRun`` for tests that need one as incidental scaffolding.
+
+    Tests asserting ``IngestRun``'s own constraints/lifecycle should construct
+    it directly with the specific fields under test instead of using this.
+    """
+    return IngestRun.objects.create(
+        source=source, input_fingerprint=input_fingerprint, patch_id=patch_id
+    )
+
+
 def user_changeset(
     user: User,
     *,
@@ -99,7 +115,5 @@ def source_changeset(source: Source, *, note: str = "") -> ChangeSet:
     Use it when a test needs a source-attributed claim minted through
     ``make_claim`` without hand-building the run.
     """
-    run = IngestRun.objects.create(
-        source=source, input_fingerprint="test-source-changeset"
-    )
+    run = ingest_run(source, input_fingerprint="test-source-changeset")
     return ingest_changeset(run, note=note)

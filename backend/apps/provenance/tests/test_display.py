@@ -28,7 +28,6 @@ from apps.provenance.display import (
     resolve_display_context,
     resolve_labels,
 )
-from apps.provenance.models import Source
 from apps.provenance.schemas import (
     ClaimDisplayIdentityPartSchema,
     ClaimDisplayQualifierPartSchema,
@@ -504,13 +503,6 @@ class TestClaimValue:
 # would scale with the number of distinct FK targets in history — this
 # test pins it.
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
 
 
 def _q(fn: Callable[[], object]) -> int:

@@ -30,13 +30,6 @@ def author(db):
     return make_user()
 
 
-@pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
-
-
 def _title(slug: str, source: Source) -> Title:
     label = slug.replace("-", " ").title()
     t = Title.objects.create(name=label, slug=slug, status="active")

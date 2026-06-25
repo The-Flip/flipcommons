@@ -28,9 +28,9 @@ def _only_user_changeset(user) -> ChangeSet:
 
 
 @pytest.fixture
-def pm(db, _bootstrap_source):
+def pm(db, bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    make_claim(pm, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
     return pm
 
 

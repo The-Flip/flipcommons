@@ -12,13 +12,6 @@ REVERT_URL = "/api/claims/{claim_id}/revert/"
 
 
 @pytest.fixture
-def _bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
-
-
-@pytest.fixture
 def source(db):
     return Source.objects.create(
         name="IPDB", slug="ipdb", source_type="database", priority=10
@@ -26,9 +19,9 @@ def source(db):
 
 
 @pytest.fixture
-def pm(db, _bootstrap_source):
+def pm(db, bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    make_claim(pm, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
     return pm
 
 

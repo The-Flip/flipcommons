@@ -20,13 +20,6 @@ def client():
 
 
 @pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
-
-
-@pytest.fixture
 def user_b(db):
     return make_user()
 

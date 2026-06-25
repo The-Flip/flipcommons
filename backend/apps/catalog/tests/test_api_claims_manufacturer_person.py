@@ -11,16 +11,16 @@ User = get_user_model()
 
 
 @pytest.fixture
-def mfr(db, _bootstrap_source):
+def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Williams", slug="williams")
-    make_claim(m, "name", "Williams", source=_bootstrap_source)
+    make_claim(m, "name", "Williams", source=bootstrap_source)
     return m
 
 
 @pytest.fixture
-def person(db, _bootstrap_source):
+def person(db, bootstrap_source):
     p = Person.objects.create(name="Pat Lawlor", slug="pat-lawlor")
-    make_claim(p, "name", "Pat Lawlor", source=_bootstrap_source)
+    make_claim(p, "name", "Pat Lawlor", source=bootstrap_source)
     return p
 
 

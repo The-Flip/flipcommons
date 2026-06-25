@@ -16,13 +16,6 @@ def client():
 
 
 @pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
-
-
-@pytest.fixture
 def manufacturer(db, bootstrap_source):
     mfr = Manufacturer.objects.create(name="Williams", slug="williams")
     make_claim(mfr, "name", "Williams", source=bootstrap_source)
@@ -191,16 +184,18 @@ class TestEditHistoryIngestAttribution:
     """Verify that build_edit_history attributes ingest changesets correctly."""
 
     def test_ingest_and_user_changesets_attributed_correctly(self, client, user):
-        from apps.provenance.models import IngestRun
-        from apps.provenance.test_factories import ingest_changeset, user_changeset
+        from apps.provenance.test_factories import (
+            ingest_changeset,
+            ingest_run,
+            user_changeset,
+        )
 
         source = Source.objects.create(
             name="IPDB", slug="ipdb", source_type="database", priority=10
         )
         pm = make_machine_model(name="Gorgar", slug="gorgar", year=1979)
 
-        ingest_run = IngestRun.objects.create(source=source, input_fingerprint="abc123")
-        ingest_cs = ingest_changeset(ingest_run)
+        ingest_cs = ingest_changeset(ingest_run(source))
         make_claim(pm, "year", 1979, source=source, changeset=ingest_cs)
 
         user_cs = user_changeset(user)

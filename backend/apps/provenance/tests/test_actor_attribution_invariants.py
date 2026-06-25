@@ -63,14 +63,7 @@ def assert_attribution_invariants() -> None:
 
 
 @pytest.fixture
-def _bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
-
-
-@pytest.fixture
-def pm(db, _bootstrap_source):
+def pm(db, bootstrap_source):
     return make_machine_model(
         name="Medieval Madness", slug="medieval-madness", year=1997
     )
@@ -124,7 +117,7 @@ class TestWritePathSetsActor:
         execute_undo_changeset(cs, user=user, note="undo delete")
         assert_attribution_invariants()
 
-    def test_ingest_bulk(self, _bootstrap_source):
+    def test_ingest_bulk(self, bootstrap_source):
         source = Source.objects.create(
             name="TestSource", slug="test-source", source_type="database", priority=50
         )

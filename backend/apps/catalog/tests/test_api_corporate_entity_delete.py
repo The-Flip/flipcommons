@@ -23,17 +23,10 @@ from apps.catalog.models import (
     Title,
 )
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction
 from apps.provenance.test_factories import make_claim
 
 User = get_user_model()
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
 
 
 @pytest.fixture

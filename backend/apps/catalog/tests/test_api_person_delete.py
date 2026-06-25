@@ -15,15 +15,8 @@ from django.core.cache import cache
 
 from apps.catalog.models import Credit, CreditRole, MachineModel, Person, Series, Title
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction
 from apps.provenance.test_factories import make_claim, user_changeset
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
 
 
 @pytest.fixture

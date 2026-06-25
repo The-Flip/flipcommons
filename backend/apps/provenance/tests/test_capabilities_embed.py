@@ -22,17 +22,10 @@ from apps.accounts.test_factories import make_user
 from apps.catalog.models import Title
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationSource
-from apps.provenance.models import CitationInstance, Source
+from apps.provenance.models import CitationInstance
 from apps.provenance.test_factories import make_claim, user_changeset
 
 pytestmark = pytest.mark.django_db
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
 
 
 def _seed_changesets(client, user, pm, n: int) -> None:

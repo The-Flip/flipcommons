@@ -15,17 +15,8 @@ from django.core.cache import cache
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import MachineModel, Title
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction
 from apps.provenance.test_factories import make_claim, user_changeset
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    """Low-priority source so the resolver has something to fall back to
-    after the user's status=deleted claim is undone."""
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
 
 
 @pytest.fixture(autouse=True)

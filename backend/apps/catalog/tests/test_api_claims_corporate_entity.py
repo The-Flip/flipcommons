@@ -20,14 +20,14 @@ User = get_user_model()
 
 
 @pytest.fixture
-def mfr(db, _bootstrap_source):
+def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Gottlieb", slug="gottlieb")
-    make_claim(m, "name", "Gottlieb", source=_bootstrap_source)
+    make_claim(m, "name", "Gottlieb", source=bootstrap_source)
     return m
 
 
 @pytest.fixture
-def entity(db, mfr, _bootstrap_source):
+def entity(db, mfr, bootstrap_source):
     ce = CorporateEntity.objects.create(
         name="D. Gottlieb & Company",
         slug="d-gottlieb-company",
@@ -35,12 +35,12 @@ def entity(db, mfr, _bootstrap_source):
         year_start=1927,
         year_end=1983,
     )
-    make_claim(ce, "name", "D. Gottlieb & Company", source=_bootstrap_source)
+    make_claim(ce, "name", "D. Gottlieb & Company", source=bootstrap_source)
     return ce
 
 
 @pytest.fixture
-def other_entity(db, mfr, _bootstrap_source):
+def other_entity(db, mfr, bootstrap_source):
     ce = CorporateEntity.objects.create(
         name="Mylstar Electronics",
         slug="mylstar-electronics",
@@ -48,7 +48,7 @@ def other_entity(db, mfr, _bootstrap_source):
         year_start=1983,
         year_end=1984,
     )
-    make_claim(ce, "name", "Mylstar Electronics", source=_bootstrap_source)
+    make_claim(ce, "name", "Mylstar Electronics", source=bootstrap_source)
     return ce
 
 
