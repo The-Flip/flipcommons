@@ -505,7 +505,7 @@ forbidden_modules = ["apps.claim_ingest.apply"]
 name = "Provenance app internal stack"
 type = "layers"
 exhaustive = true # so new submodule left unplaced fails build
-exhaustive_ignores = ["apps", "migrations", "tests", "test_factories"]
+exhaustive_ignores = ["apps", "migrations", "tests", "test_factories", "test_migration_state"]
 containers = ["apps.provenance"]
 layers = [
     "api | admin",

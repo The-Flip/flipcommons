@@ -1,5 +1,13 @@
 # Provenance Simplification
 
+## Status: ❌ WON'T DO
+
+**The functional case is gone.** Both this proposal and the current system resolve to the _same winning claims_. Today's de-facto behavior already _is_ "human overrides source, latest human wins": humans default to `priority = 10000`, every source sits ≤300, and recency breaks human-vs-human ties (`provenance/claim_ranking_in_db.py` orders by `-actor.priority, -created_at, -pk`). The layered model would only re-encode that same behavior structurally.
+
+**The one compelling benefit — explaining truth to users in "last edit wins" terms — needs none of this.** Explanation is a read-time presentation concern, fully decoupled from the resolver. Everything required is already on the existing rows: human-vs-machine from `actor.is_machine`/`backing_model`, who/when from the winning claim's `actor` + `created_at`, and "overrides X" from the highest-ranked _source_ claim below a human winner. The UI can truthfully render "Edited by @dean on April 4" or "Showing pindata editorial data" today, with no change to resolution.
+
+---
+
 ## Business Problem
 
 This project's claims/provenance architecture was meant to solve three real problems at once:

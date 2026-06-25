@@ -1,5 +1,9 @@
 # ChangeSet
 
+## Status: ✅ DONE
+
+This plan has been implemented.
+
 ## Background
 
 This project's catalog data is built on a claims/provenance system: every field value is a **Claim** asserted by either an automated Source (IPDB, OPDB, etc.) or a human User. Claim resolution picks the winning value per field based on source priority, with most-recent as a tiebreaker.

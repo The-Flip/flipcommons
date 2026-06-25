@@ -418,7 +418,7 @@ Acceptance criteria:
 
 This will be its own PR.
 
-#### Tighten schema
+#### ✅ DONE: Tighten schema
 
 - **Migrate**
   - Make `ChangeSet.actor` NOT NULL

@@ -42,7 +42,7 @@ class ChangeSet(models.Model):
     retracted_claims: models.Manager[Claim]
     user_id: int | None
     ingest_run_id: int | None
-    actor_id: int | None
+    actor_id: int
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -70,15 +70,13 @@ class ChangeSet(models.Model):
             "Populated for every user ChangeSet; always NULL for ingest."
         ),
     )
-    # Single attribution target. Nullable for now; a later PR ("Backfill actor
-    # FKs") populates it from user / ingest_run.source, then it supersedes the
-    # user-XOR-ingest_run fork. Nothing reads it yet.
+    # The single attribution target, superseding the user-XOR-ingest_run fork.
+    # Every reader resolves attribution through this; the legacy user / ingest_run
+    # columns survive only until "Drop dead stuff".
     actor = models.ForeignKey(
         "actors.Actor",
         on_delete=models.PROTECT,
         related_name="changesets",
-        null=True,
-        blank=True,
         help_text="The actor this changeset is attributed to.",
     )
     note = BoundedTextField(
@@ -99,6 +97,14 @@ class ChangeSet(models.Model):
             models.Index(
                 fields=["user", "action", "-created_at"],
                 name="provenance_cs_user_action",
+            ),
+            models.Index(
+                fields=["actor", "-created_at"],
+                name="provenance_cs_actor_created",
+            ),
+            models.Index(
+                fields=["actor", "action", "-created_at"],
+                name="provenance_cs_actor_action",
             ),
         ]
         constraints = [

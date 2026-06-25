@@ -1,5 +1,21 @@
 # Claims Next Generation
 
+## Status: 🗄️ RETIRED — superseded, nothing actionable remains
+
+This plan is kept as a historical architecture record. Do not treat it as a roadmap.
+
+**Its architecture shipped and survived — under a different name.** The plan/apply split, the three primitives (`create_entity` / `assert_claim` / `retract_claim`), claim-controlled entity lifecycle (`EntityStatus` / `LifecycleStatusModel` in `core/models/mixins.py`), and the DB-level constraints are all live. They were relocated out of the doc's `catalog/ingestion/` into the dedicated **`apps/claim_ingest`** app (`apply/`, `patches/`, `plan.py`), which is what `make ingest-patches` runs. See [DataPatches.md](/docs/DataPatches.md) and [Data.md](/docs/Data.md).
+
+**Its remaining roadmap is moot.** The baseline seed bulk-ingest system this doc was largely about is gone — it did its job and was removed. Fresh dev DBs now come from a Django dump of prod, and catalog data enters exclusively through [data patches](/docs/DataPatches.md). Consequently:
+
+- **Phase 5 (convert the IPDB/OPDB/Fandom/Wikidata/pindata source adapters)** no longer applies — external sources don't ingest directly at all; `catalog/ingestion/` and the per-source `ingest_*` commands were deleted. External data is now upstream of the [flippatch](https://github.com/deanmoses/flippatch) repo.
+- **Phase 6 (per-source model/field permission enforcement)** was deferred and is now a different problem (patch authoring/review, not apply-layer gating).
+- **Phase 7 (trim `validate_catalog`, wire relationship validation into `assert_claim()`)** — the `validate_catalog` trim is moot (that command was deleted). The single-claim path is _not_ gone, just renamed and relocated: it's now `_assert_claim` in `provenance/claim_writer.py`, the enforced mint chokepoint (see [Actors.md](Actors.md)). It shape-validates relationship claims (`validate_single_relationship_claim`) but still leaves relationship target-_existence_ checks to upstream callers — the exact gap this doc flagged. The doc's own triage stands: not worth closing, because every caller pre-validates targets upstream. Live code, settled question — not deleted.
+
+**Posture note.** This doc's "the DB will be reset to `0001`, so no backfill is needed" assumption was true for its pre-launch era, not abandoned. The world moved to "fresh dev DB = prod Django dump," which is why [Actors.md](Actors.md)'s careful backfill migrations are the live reality. The two docs describe two eras.
+
+---
+
 ## The Problem
 
 This project's catalog truth is claims-based: sources and users assert claims, claim resolution picks winners, and resolved model tables materialise the current catalog state. That architecture is sound in principle, but it was not designed as one coherent system from the beginning. Provenance, validation, entity lifecycle, and ingest were added incrementally, and the result is that correctness depends on _how_ data enters the system rather than being enforced uniformly at the claims boundary.

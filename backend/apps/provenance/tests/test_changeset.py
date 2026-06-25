@@ -30,7 +30,7 @@ def source(db):
 class TestChangeSetModel:
     def test_create_changeset(self, user):
         cs = ChangeSet.objects.create(
-            user=user, action="edit", note="Fixed description"
+            user=user, actor=user.actor, action="edit", note="Fixed description"
         )
         assert cs.pk is not None
         assert cs.user == user
@@ -38,13 +38,13 @@ class TestChangeSetModel:
         assert cs.created_at is not None
 
     def test_changeset_without_note(self, user):
-        cs = ChangeSet.objects.create(user=user, action="edit")
+        cs = ChangeSet.objects.create(user=user, actor=user.actor, action="edit")
         assert cs.note == ""
 
     def test_changeset_with_ingest_run(self, source):
         """ChangeSet with ingest_run (no user) is allowed."""
         run = ingest_run(source)
-        cs = ChangeSet.objects.create(ingest_run=run)
+        cs = ChangeSet.objects.create(ingest_run=run, actor=source.actor)
         assert cs.user is None
         assert cs.ingest_run == run
 
@@ -141,33 +141,33 @@ class TestRecordChangeset:
 @pytest.mark.django_db
 class TestChangeSetConstraints:
     def test_user_only(self, user):
-        cs = ChangeSet.objects.create(user=user, action="edit")
+        cs = ChangeSet.objects.create(user=user, actor=user.actor, action="edit")
         assert cs.pk is not None
 
     def test_ingest_run_only(self, source):
         run = ingest_run(source)
-        cs = ChangeSet.objects.create(ingest_run=run)
+        cs = ChangeSet.objects.create(ingest_run=run, actor=source.actor)
         assert cs.pk is not None
 
-    def test_neither_user_nor_ingest_run_rejected(self):
+    def test_neither_user_nor_ingest_run_rejected(self, user):
         with pytest.raises(IntegrityError):
-            ChangeSet.objects.create()
+            ChangeSet.objects.create(actor=user.actor)
 
     def test_both_user_and_ingest_run_rejected(self, user, source):
         run = ingest_run(source)
         with pytest.raises(IntegrityError):
-            ChangeSet.objects.create(user=user, ingest_run=run)
+            ChangeSet.objects.create(user=user, ingest_run=run, actor=user.actor)
 
     def test_user_without_action_rejected(self, user):
         """User ChangeSets must carry an action value."""
         with pytest.raises(IntegrityError):
-            ChangeSet.objects.create(user=user)
+            ChangeSet.objects.create(user=user, actor=user.actor)
 
     def test_ingest_run_with_action_rejected(self, source):
         """Ingest ChangeSets must not carry an action value."""
         run = ingest_run(source)
         with pytest.raises(IntegrityError):
-            ChangeSet.objects.create(ingest_run=run, action="edit")
+            ChangeSet.objects.create(ingest_run=run, actor=source.actor, action="edit")
 
 
 @pytest.mark.django_db

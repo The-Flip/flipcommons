@@ -78,9 +78,9 @@ def _assert_claim(
     # both the reverse accessor on Actor and the legacy Claim FK field name (the
     # FKs are named after the lowercased model, so they coincide with
     # ``_meta.model_name`` by construction). ``getattr`` / ``setattr`` on a
-    # model-declared relation name is sanctioned here. This stamp and the legacy
-    # dedupe key below retire together: dedupe flips to ``actor`` at "Tighten
-    # schema", the stamp at "Drop dead schema".
+    # model-declared relation name is sanctioned here. Dedupe now keys on
+    # ``actor`` (every row is backfilled); the stamp retires at "Drop dead
+    # schema" once the legacy ``user``/``source`` columns are gone.
     actor = changeset.actor
     if actor is None:
         raise ValueError(
@@ -91,15 +91,16 @@ def _assert_claim(
 
     ct = ContentType.objects.get_for_model(subject)
     with transaction.atomic():
-        # Dedupe on the legacy author column — the live per-user / per-source
-        # unique index. Correct while historical active rows still carry
-        # ``actor = NULL``; moves to the ``actor`` key at "Tighten schema".
+        # One active claim per actor per claim_key on this subject — backed by
+        # the unified provenance_unique_active_claim_per_actor index. Equivalent
+        # to the old legacy-author dedupe (actor maps 1:1 to its backing record),
+        # so the still-live per-user / per-source indexes stay satisfied too.
         Claim.objects.filter(
             content_type=ct,
             object_id=subject.pk,
             claim_key=claim_key,
             is_active=True,
-            **{legacy_field: backing},
+            actor=actor,
         ).update(is_active=False)
 
         return Claim.objects.create(

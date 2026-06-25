@@ -9,9 +9,6 @@ NULL at "Tighten schema" the guard is vacuous and the full invariant holds):
 * ``claim.actor IS NULL OR claim.actor == claim.changeset.actor``
 * ``changeset.actor IS NULL OR (ingest_run IS NULL OR actor == ingest_run.source.actor)``
   ``and changeset.actor IS NULL OR (user IS NULL OR actor == user.actor)``
-
-The transition-dedupe test pins the legacy-author-keyed dedupe for the window
-where historical active rows still carry ``actor = NULL``.
 """
 
 from __future__ import annotations
@@ -31,7 +28,6 @@ from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.plan import IngestPlan, PlannedClaimAssert, PlannedEntityCreate
 from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
 from apps.provenance.revert import execute_revert, execute_undo_changeset
-from apps.provenance.test_factories import make_claim
 
 pytestmark = pytest.mark.django_db
 
@@ -150,21 +146,3 @@ class TestWritePathSetsActor:
         assert claim.changeset is not None
         assert claim.changeset.actor_id == source.actor_id
         assert_attribution_invariants()
-
-
-class TestTransitionDedupe:
-    def test_legacy_keyed_dedupe_with_null_actor_predecessor(self, user, pm):
-        """A historical active claim with ``actor = NULL`` is still deactivated
-        when the same user re-edits the field through the actor-first funnel."""
-        # Seed a prior active user claim, then strip its actor to mimic a
-        # not-yet-backfilled historical row (legacy author column intact).
-        seed = make_claim(pm, "year", 1990, user=user)
-        Claim.objects.filter(pk=seed.pk).update(actor=None, changeset=None)
-
-        execute_claims(pm, [ClaimSpec(field_name="year", value=1998)], user=user)
-
-        seed.refresh_from_db()
-        assert seed.is_active is False
-        new_claim = _active_user_claim(pm, "year", user)
-        assert new_claim.value == 1998
-        assert new_claim.actor_id == user.actor_id

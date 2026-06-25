@@ -83,9 +83,9 @@ class Claim(models.Model):
     content_type_id: int
     source_id: int | None
     user_id: int | None
-    actor_id: int | None
+    actor_id: int
     license_id: int | None
-    changeset_id: int | None
+    changeset_id: int
     retracted_by_changeset_id: int | None
     citation_instances: models.Manager[CitationInstance]
 
@@ -107,16 +107,13 @@ class Claim(models.Model):
         null=True,
         blank=True,
     )
-    # Denormalized copy of ``changeset.actor`` (the source of truth). Nullable
-    # for now; a later PR ("Backfill actor FKs") populates it, then it replaces
-    # the source/user pair and backs the unified active-claim unique index.
-    # Nothing reads it yet.
+    # Denormalized copy of ``changeset.actor`` (the source of truth). Backs the
+    # unified active-claim unique index and replaces the legacy source/user pair,
+    # which survives only until "Drop dead stuff".
     actor = models.ForeignKey(
         "actors.Actor",
         on_delete=models.PROTECT,
         related_name="claims",
-        null=True,
-        blank=True,
     )
     field_name = models.CharField(max_length=255)
     claim_key = models.CharField(
@@ -131,9 +128,7 @@ class Claim(models.Model):
         ChangeSet,
         on_delete=models.PROTECT,
         related_name="claims",
-        null=True,
-        blank=True,
-        help_text="Optional grouping of claims from a single edit session.",
+        help_text="The edit session that wrote this claim; carries its attribution.",
     )
     retracted_by_changeset = models.ForeignKey(
         ChangeSet,
@@ -183,6 +178,7 @@ class Claim(models.Model):
             models.Index(fields=["content_type", "object_id", "claim_key"]),
             models.Index(fields=["source", "content_type", "object_id"]),
             models.Index(fields=["user", "content_type", "object_id"]),
+            models.Index(fields=["actor", "content_type", "object_id"]),
             models.Index(fields=["field_name", "is_active"]),
             models.Index(fields=["source", "is_active"]),
         ]
@@ -203,6 +199,11 @@ class Claim(models.Model):
                 fields=["content_type", "object_id", "user", "claim_key"],
                 condition=models.Q(is_active=True, user__isnull=False),
                 name="provenance_unique_active_claim_per_user",
+            ),
+            models.UniqueConstraint(
+                fields=["content_type", "object_id", "actor", "claim_key"],
+                condition=models.Q(is_active=True),
+                name="provenance_unique_active_claim_per_actor",
             ),
             field_not_blank("field_name"),
             field_not_blank("claim_key"),

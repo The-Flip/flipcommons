@@ -34,6 +34,7 @@ def test_bounded_text_field_accepts_exact_max_length() -> None:
     user = User.objects.create(username="bound_pos", email="bp@example.com")
     cs = ChangeSet.objects.create(
         user=user,
+        actor=user.actor,
         action=ChangeSetAction.EDIT,
         note="x" * CHANGESET_NOTE_MAX_LENGTH,
     )
@@ -46,6 +47,7 @@ def test_bounded_text_field_rejects_overlong_at_db_layer() -> None:
     with pytest.raises(IntegrityError), transaction.atomic():
         ChangeSet.objects.create(
             user=user,
+            actor=user.actor,
             action=ChangeSetAction.EDIT,
             note="x" * (CHANGESET_NOTE_MAX_LENGTH + 1),
         )

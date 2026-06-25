@@ -22,6 +22,7 @@ from apps.catalog.models import (
 from apps.catalog.resolve._relationships import _resolve_aliases
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, Source
+from apps.provenance.test_factories import make_claim
 
 _ALIAS_TYPES = discover_alias_types()
 
@@ -46,19 +47,19 @@ def _assert_alias_claims(source, parent_obj, claim_field, aliases: list[str]) ->
         field_name=claim_field,
         is_active=True,
     ).update(is_active=False)
-    # Create the new alias claims as active.
+    # Create the new alias claims as active (through the write primitive, which
+    # supplies the source changeset + actor every claim now requires).
     for alias_str in aliases:
         lower = alias_str.lower()
         claim_key, value = build_relationship_claim(
             claim_field, {"alias_value": lower, "alias_display": alias_str}
         )
-        Claim.objects.create(
+        make_claim(
+            parent_obj,
+            claim_field,
+            value,
             source=source,
-            content_type_id=ct_id,
-            object_id=parent_obj.pk,
-            field_name=claim_field,
             claim_key=claim_key,
-            value=value,
         )
 
 
