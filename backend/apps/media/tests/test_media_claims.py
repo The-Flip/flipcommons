@@ -13,6 +13,7 @@ from django.contrib.contenttypes.models import ContentType
 from apps.catalog.claims import build_media_attachment_claim
 from apps.catalog.models import MachineModel
 from apps.catalog.tests.conftest import make_machine_model
+from apps.media.helpers import displayed_primary_asset_ids
 from apps.media.models import EntityMedia, MediaAsset
 from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim, user_changeset
@@ -99,6 +100,14 @@ def _resolve_media(entity):
 
     ct = ContentType.objects.get_for_model(entity)
     resolve_media_attachments(content_type_id=ct.id, subject_ids={entity.pk})
+
+
+def _displayed_primaries(entity):
+    """Asset ids selected as displayed primary for *entity* (read-time rule)."""
+    ct = ContentType.objects.get_for_model(entity)
+    return displayed_primary_asset_ids(
+        EntityMedia.objects.filter(content_type=ct, object_id=entity.pk)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -277,8 +286,12 @@ class TestResolutionHappyPath:
         assert em.category == "playfield"
 
     def test_update_is_primary(self, machine_model, asset, asset2, user):
-        """Explicit is_primary=True on a non-primary attachment promotes it."""
-        # Upload two images — first becomes auto-primary
+        """Explicit is_primary=True on a non-primary attachment promotes it.
+
+        The resolver stores the raw claimed ``is_primary`` per attachment; the
+        displayed primary is a read-time selection.
+        """
+        # Upload two images — neither claims primary; oldest displays as primary.
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=False
         )
@@ -292,8 +305,9 @@ class TestResolutionHappyPath:
             machine_model, "media_attachment", val2, user=user, claim_key=key2
         )
         _resolve_media(machine_model)
-        assert EntityMedia.objects.get(asset=asset).is_primary is True
+        assert EntityMedia.objects.get(asset=asset).is_primary is False
         assert EntityMedia.objects.get(asset=asset2).is_primary is False
+        assert _displayed_primaries(machine_model) == {asset.pk}
 
         # Explicitly promote asset2
         _key, new_value = build_media_attachment_claim(
@@ -304,6 +318,7 @@ class TestResolutionHappyPath:
         )
         _resolve_media(machine_model)
         assert EntityMedia.objects.get(asset=asset2).is_primary is True
+        assert _displayed_primaries(machine_model) == {asset2.pk}
 
 
 # ---------------------------------------------------------------------------
@@ -312,8 +327,9 @@ class TestResolutionHappyPath:
 
 
 class TestPrimaryAutoPromotion:
-    """When no claim in a (entity, category) group sets is_primary=True,
-    the resolver auto-promotes the oldest (first uploaded) attachment."""
+    """The resolver stores raw claimed ``is_primary``; when no attachment in a
+    (entity, category) group claims primary, the read-time selector
+    auto-promotes the oldest (first uploaded)."""
 
     def test_single_upload_becomes_primary(self, machine_model, asset, user):
         key, val = build_media_attachment_claim(
@@ -323,10 +339,11 @@ class TestPrimaryAutoPromotion:
         _resolve_media(machine_model)
 
         em = EntityMedia.objects.get()
-        assert em.is_primary is True
+        assert em.is_primary is False  # raw claim preserved
+        assert _displayed_primaries(machine_model) == {asset.pk}  # auto-promoted
 
     def test_first_uploaded_stays_primary(self, machine_model, asset, asset2, user):
-        """Two uploads without explicit primary — oldest becomes primary."""
+        """Two uploads without explicit primary — oldest displays as primary."""
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=False
         )
@@ -343,13 +360,13 @@ class TestPrimaryAutoPromotion:
 
         _resolve_media(machine_model)
 
-        em1 = EntityMedia.objects.get(asset=asset)
-        em2 = EntityMedia.objects.get(asset=asset2)
-        assert em1.is_primary is True  # oldest
-        assert em2.is_primary is False
+        # Both store their raw (False) claim; oldest is the displayed primary.
+        assert EntityMedia.objects.get(asset=asset).is_primary is False
+        assert EntityMedia.objects.get(asset=asset2).is_primary is False
+        assert _displayed_primaries(machine_model) == {asset.pk}
 
     def test_explicit_primary_not_overridden(self, machine_model, asset, asset2, user):
-        """If someone explicitly sets primary, auto-promotion does not interfere."""
+        """An explicit is_primary claim is stored and wins the display."""
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=False
         )
@@ -366,15 +383,14 @@ class TestPrimaryAutoPromotion:
 
         _resolve_media(machine_model)
 
-        em1 = EntityMedia.objects.get(asset=asset)
-        em2 = EntityMedia.objects.get(asset=asset2)
-        assert em1.is_primary is False
-        assert em2.is_primary is True  # explicit wins
+        assert EntityMedia.objects.get(asset=asset).is_primary is False
+        assert EntityMedia.objects.get(asset=asset2).is_primary is True
+        assert _displayed_primaries(machine_model) == {asset2.pk}
 
     def test_different_categories_each_get_primary(
         self, machine_model, asset, asset2, user
     ):
-        """Each category independently gets an auto-promoted primary."""
+        """Each category independently gets a displayed primary."""
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=False
         )
@@ -391,65 +407,52 @@ class TestPrimaryAutoPromotion:
 
         _resolve_media(machine_model)
 
-        em1 = EntityMedia.objects.get(asset=asset)
-        em2 = EntityMedia.objects.get(asset=asset2)
-        assert em1.is_primary is True
-        assert em2.is_primary is True
+        assert _displayed_primaries(machine_model) == {asset.pk, asset2.pk}
 
 
-class TestPrimaryEnforcement:
-    def test_last_created_wins_same_priority(self, machine_model, asset, asset2, user):
-        """Two user claims at same priority — most recent created_at wins primary."""
+class TestPrimaryReadTimeSelection:
+    """When several attachments in one category each claim primary (the
+    multi-source contention case), the resolver stores all of them raw and the
+    read-time selector picks the oldest. Claim priority and recency do not
+    affect the displayed primary — only ``(created_at, asset_id)`` does."""
+
+    def test_contending_primaries_oldest_wins(self, machine_model, asset, asset2, user):
+        """Two claims both setting primary — both stored; oldest displays."""
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=True
         )
         _assert_claim(
-            machine_model,
-            "media_attachment",
-            val1,
-            user=user,
-            claim_key=key1,
+            machine_model, "media_attachment", val1, user=user, claim_key=key1
         )
 
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category="backglass", is_primary=True
         )
         _assert_claim(
-            machine_model,
-            "media_attachment",
-            val2,
-            user=user,
-            claim_key=key2,
+            machine_model, "media_attachment", val2, user=user, claim_key=key2
         )
 
         _resolve_media(machine_model)
 
-        em1 = EntityMedia.objects.get(asset=asset)
-        em2 = EntityMedia.objects.get(asset=asset2)
-        # asset2 was claimed later → it gets primary
-        assert em2.is_primary is True
-        assert em1.is_primary is False
+        assert EntityMedia.objects.get(asset=asset).is_primary is True
+        assert EntityMedia.objects.get(asset=asset2).is_primary is True
+        assert _displayed_primaries(machine_model) == {asset.pk}  # oldest
 
-    def test_higher_priority_wins_primary(
+    def test_priority_does_not_affect_display(
         self, machine_model, asset, asset2, source, high_source
     ):
-        """Higher priority source wins primary over lower, regardless of order."""
+        """A higher-priority contending primary does not win the display —
+        oldest still does (priority is not denormalized onto EntityMedia)."""
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category="backglass", is_primary=True
         )
-        # Low priority claims first
         _assert_claim(
-            machine_model,
-            "media_attachment",
-            val1,
-            source=source,
-            claim_key=key1,
+            machine_model, "media_attachment", val1, source=source, claim_key=key1
         )
 
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category="backglass", is_primary=True
         )
-        # High priority claims second
         _assert_claim(
             machine_model,
             "media_attachment",
@@ -460,10 +463,7 @@ class TestPrimaryEnforcement:
 
         _resolve_media(machine_model)
 
-        em1 = EntityMedia.objects.get(asset=asset)
-        em2 = EntityMedia.objects.get(asset=asset2)
-        assert em2.is_primary is True  # high_source wins
-        assert em1.is_primary is False
+        assert _displayed_primaries(machine_model) == {asset.pk}  # oldest, not priority
 
     def test_different_categories_independent(self, machine_model, asset, asset2, user):
         """Primary in different categories don't interfere."""
@@ -471,63 +471,41 @@ class TestPrimaryEnforcement:
             machine_model, asset.pk, category="backglass", is_primary=True
         )
         _assert_claim(
-            machine_model,
-            "media_attachment",
-            val1,
-            user=user,
-            claim_key=key1,
+            machine_model, "media_attachment", val1, user=user, claim_key=key1
         )
 
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category="playfield", is_primary=True
         )
         _assert_claim(
-            machine_model,
-            "media_attachment",
-            val2,
-            user=user,
-            claim_key=key2,
+            machine_model, "media_attachment", val2, user=user, claim_key=key2
         )
 
         _resolve_media(machine_model)
 
-        em1 = EntityMedia.objects.get(asset=asset)
-        em2 = EntityMedia.objects.get(asset=asset2)
-        assert em1.is_primary is True
-        assert em2.is_primary is True
+        assert EntityMedia.objects.get(asset=asset).is_primary is True
+        assert EntityMedia.objects.get(asset=asset2).is_primary is True
+        assert _displayed_primaries(machine_model) == {asset.pk, asset2.pk}
 
-    def test_null_category_primary_enforced_separately(
-        self, machine_model, asset, asset2, user
-    ):
-        """Null-category primaries are enforced in their own group."""
+    def test_null_category_is_its_own_group(self, machine_model, asset, asset2, user):
+        """Null-category primaries select within their own group."""
         key1, val1 = build_media_attachment_claim(
             machine_model, asset.pk, category=None, is_primary=True
         )
         _assert_claim(
-            machine_model,
-            "media_attachment",
-            val1,
-            user=user,
-            claim_key=key1,
+            machine_model, "media_attachment", val1, user=user, claim_key=key1
         )
 
         key2, val2 = build_media_attachment_claim(
             machine_model, asset2.pk, category=None, is_primary=True
         )
         _assert_claim(
-            machine_model,
-            "media_attachment",
-            val2,
-            user=user,
-            claim_key=key2,
+            machine_model, "media_attachment", val2, user=user, claim_key=key2
         )
 
         _resolve_media(machine_model)
 
-        em1 = EntityMedia.objects.get(asset=asset)
-        em2 = EntityMedia.objects.get(asset=asset2)
-        assert em2.is_primary is True
-        assert em1.is_primary is False
+        assert _displayed_primaries(machine_model) == {asset.pk}  # oldest
 
 
 # ---------------------------------------------------------------------------

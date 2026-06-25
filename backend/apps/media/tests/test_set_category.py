@@ -10,6 +10,7 @@ from django.test import Client
 from apps.catalog.claims import build_media_attachment_claim
 from apps.catalog.resolve import resolve_media_attachments
 from apps.catalog.tests.conftest import make_machine_model
+from apps.media.helpers import displayed_primary_asset_ids
 from apps.media.models import EntityMedia, MediaAsset
 from apps.provenance.test_factories import make_claim, user_changeset
 
@@ -89,7 +90,11 @@ class TestSetCategoryEndpoint:
     def test_lone_attachment_auto_promotes_after_move(
         self, auth_client, machine_model, user
     ):
-        """A moved attachment that is alone in its new category auto-promotes."""
+        """A moved attachment alone in its new category displays as primary.
+
+        set-category writes ``is_primary=False``; the row stores that raw value
+        and the lone attachment is auto-promoted at read time.
+        """
         asset = _make_asset(user)
         _attach_via_claims(
             machine_model, asset, user, category="backglass", is_primary=True
@@ -108,7 +113,8 @@ class TestSetCategoryEndpoint:
 
         assert resp.status_code == 204
         em = EntityMedia.objects.get(asset=asset)
-        assert em.is_primary is True
+        assert em.is_primary is False  # raw claim
+        assert displayed_primary_asset_ids([em]) == {asset.pk}  # displayed primary
 
     def test_does_not_demote_existing_primary_in_new_category(
         self, auth_client, machine_model, user

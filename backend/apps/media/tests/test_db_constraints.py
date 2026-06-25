@@ -302,7 +302,9 @@ class TestEntityMediaConstraints:
                 asset=asset, content_type=content_type, object_id=2
             )
 
-    def test_two_primaries_same_category_rejected(self, user, content_type):
+    def test_two_primaries_same_category_allowed(self, user, content_type):
+        """is_primary stores the raw claim, so two primaries in one category are
+        allowed at the DB level — the displayed primary is chosen at read time."""
         asset1 = MediaAsset.objects.create(**_asset_kwargs(user))
         asset2 = MediaAsset.objects.create(**_asset_kwargs(user))
         EntityMedia.objects.create(
@@ -312,16 +314,17 @@ class TestEntityMediaConstraints:
             category="backglass",
             is_primary=True,
         )
-        with pytest.raises(IntegrityError):
-            EntityMedia.objects.create(
-                asset=asset2,
-                content_type=content_type,
-                object_id=1,
-                category="backglass",
-                is_primary=True,
-            )
+        em2 = EntityMedia.objects.create(
+            asset=asset2,
+            content_type=content_type,
+            object_id=1,
+            category="backglass",
+            is_primary=True,
+        )
+        assert em2.pk is not None
 
-    def test_two_uncategorized_primaries_rejected(self, user, content_type):
+    def test_two_uncategorized_primaries_allowed(self, user, content_type):
+        """Raw primaries with null category are likewise allowed."""
         asset1 = MediaAsset.objects.create(**_asset_kwargs(user))
         asset2 = MediaAsset.objects.create(**_asset_kwargs(user))
         EntityMedia.objects.create(
@@ -331,14 +334,14 @@ class TestEntityMediaConstraints:
             category=None,
             is_primary=True,
         )
-        with pytest.raises(IntegrityError):
-            EntityMedia.objects.create(
-                asset=asset2,
-                content_type=content_type,
-                object_id=1,
-                category=None,
-                is_primary=True,
-            )
+        em2 = EntityMedia.objects.create(
+            asset=asset2,
+            content_type=content_type,
+            object_id=1,
+            category=None,
+            is_primary=True,
+        )
+        assert em2.pk is not None
 
     def test_blank_category_rejected(self, asset, content_type):
         with pytest.raises(IntegrityError):

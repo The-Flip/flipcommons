@@ -12,6 +12,7 @@ from apps.core.licensing import (
     get_minimum_display_rank,
 )
 from apps.core.types import JsonData
+from apps.media.helpers import displayed_primary_asset_ids
 from apps.media.models import EntityMedia
 from apps.media.storage import build_public_url, build_storage_key
 from apps.provenance.schemas import AttributionSchema
@@ -30,29 +31,34 @@ __all__ = [
 def fetch_model_media_map(
     model_ids: Iterable[int],
 ) -> dict[int, list[EntityMedia]]:
-    """Return ``{model_id: [primary EntityMedia rows]}`` for the given
-    MachineModel ids.
+    """Return ``{model_id: [displayed-primary EntityMedia rows]}`` for the
+    given MachineModel ids.
 
-    Filters to ``is_primary=True`` and ``asset__status="ready"`` — matches
-    the input shape ``extract_image_urls`` expects via its ``primary_media``
-    parameter.  One indexed query joined to ``MediaAsset`` for the uuid.
+    ``is_primary`` stores the raw claimed value, so the displayed primary is a
+    read-time selection: this loads all ``asset__status="ready"`` rows per model
+    (one indexed query joined to ``MediaAsset``) and applies
+    :func:`displayed_primary_asset_ids` per model — the shape
+    ``extract_image_urls`` expects via its ``primary_media`` parameter.
     """
     ids = list(model_ids)
     if not ids:
         return {}
     ct = ContentType.objects.get_for_model(MachineModel)
-    grouped: dict[int, list[EntityMedia]] = defaultdict(list)
+    all_rows: dict[int, list[EntityMedia]] = defaultdict(list)
     for em in (
         EntityMedia.objects.filter(
             content_type=ct,
             object_id__in=ids,
-            is_primary=True,
             asset__status="ready",
         )
         .select_related("asset")
         .order_by("created_at")
     ):
-        grouped[em.object_id].append(em)
+        all_rows[em.object_id].append(em)
+    grouped: dict[int, list[EntityMedia]] = {}
+    for model_id, rows in all_rows.items():
+        chosen = displayed_primary_asset_ids(rows)
+        grouped[model_id] = [em for em in rows if em.asset_id in chosen]
     return grouped
 
 

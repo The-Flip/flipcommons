@@ -32,8 +32,7 @@ from apps.core.schemas import (
     ValidationErrorSchema,
 )
 from apps.core.types import JsonBody
-from apps.media.helpers import all_media, media_prefetch, primary_media
-from apps.media.models import EntityMedia
+from apps.media.helpers import displayed_primary_media, media_prefetch
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.models import ChangeSetAction
 from apps.provenance.rate_limits import (
@@ -214,16 +213,7 @@ def _build_model_list_qs(
             "corporate_entity__manufacturer",
             "title",
         )
-        .prefetch_related(
-            Prefetch(
-                "entity_media",
-                queryset=EntityMedia.objects.filter(
-                    is_primary=True,
-                    asset__status="ready",
-                ).select_related("asset"),
-                to_attr="primary_media",
-            ),
-        )
+        .prefetch_related(media_prefetch())
     )
     # The catalog lists at the granularity of distinct machines: cosmetic
     # variants are collapsed into their parent model (conversions, being
@@ -284,7 +274,7 @@ def _serialize_model_list(
     pm: MachineModel, *, min_rank: int | None = None
 ) -> ModelListItemSchema:
     thumbnail_url, _ = extract_image_urls(
-        pm.extra_data or {}, primary_media(pm), min_rank=min_rank
+        pm.extra_data or {}, displayed_primary_media(pm), min_rank=min_rank
     )
     mfr = (
         pm.corporate_entity.manufacturer
@@ -308,15 +298,15 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
     (with select_related("person")) and claims (to_attr="active_claims").
 
     The own-media gallery (``uploaded_media``) is filled by the ``own_media``
-    decorator. This body still reads ``all_media(pm)`` for the *primary*-media
-    subset that drives the domain thumbnail/hero derivation (``extract_image_*``
-    over ``extra_data``), which stays domain.
+    decorator. This body derives the *displayed-primary* subset (via
+    ``displayed_primary_media(pm)``) that drives the domain thumbnail/hero
+    (``extract_image_*`` over ``extra_data``), which stays domain.
     """
     min_rank = get_minimum_display_rank()
 
     credits = [serialize_credit(c) for c in pm.credits.all()]
 
-    primary = [em for em in all_media(pm) if em.is_primary]
+    primary = displayed_primary_media(pm)
     thumbnail_url, hero_image_url = extract_image_urls(
         pm.extra_data or {}, primary or None, min_rank=min_rank
     )
