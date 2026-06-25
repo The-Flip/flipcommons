@@ -1,5 +1,15 @@
 # Resolution Boundary: Untangling Provenance and Catalog
 
+## Status: ✅ DONE
+
+**What shipped (the goal).** Provenance can now trigger resolution without importing the domain. `resolve_after_mutation(entity, field_names)` exists (plus a `resolve_entities_bulk` sibling), and the motivating use case — **one-click revert** — is real: `provenance/revert.py` calls it, wired through `provenance/api.py` + `schemas.py`. All three intended callers are connected: the interactive write path (`claim_edit/claim_write.py`), the bulk pipeline (`claim_ingest`'s apply engine), and revert.
+
+**What's different — and better — than the "Direction" section below.** This doc proposed putting the function in `catalog.resolve` with hardcoded dispatch dicts (`PARENT_RESOLVERS` / `SIMPLE_M2M_RESOLVERS` / `CUSTOM_RESOLVERS` / auto-discovered `ALIAS_RESOLVERS`) and `isinstance(MachineModel)` routing all living inside catalog. **None of that shipped.** Instead the inverted owner-registration pattern won: the seam lives in **provenance** (`provenance/resolution/_dispatch.py`) and imports zero domain symbols; catalog _registers_ a per-model `ResolveHandlers(per_entity, bulk)` pair at `CatalogConfig.ready()` (`catalog/resolve/_dispatch.py`). The namespace→resolver dispatch table this doc feared leaking into provenance was avoided entirely — each domain owns its routing behind its registered handler.
+
+**What didn't happen — and is now [Refactor](ClaimResolutionRefactor.md)'s job, not this doc's.** The `isinstance(entity, MachineModel) → resolve_model()` branch still exists, but it moved _inside_ catalog's registered per-entity handler (`catalog/resolve/_dispatch.py`). Killing it is Refactor **REF1**. The per-entity wrapper fns this doc said to retire (`resolve_theme_aliases`, `resolve_theme_parents`) also still exist; that cleanup lands in the Refactor pass too.
+
+---
+
 ## The Problem
 
 Provenance owns claim data (Claim, ChangeSet, Source). Catalog owns what happens when claim data changes — resolving winning values into entity fields, materializing relationships, invalidating caches. But there's no clean boundary between them. Every claim mutation must trigger catalog-specific resolution, and the knowledge of _how_ to resolve is scattered across the codebase.
