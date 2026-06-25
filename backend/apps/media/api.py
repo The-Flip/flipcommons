@@ -408,15 +408,39 @@ def set_primary(request: HttpRequest, body: MediaAssetInputSchema) -> Status[Non
         raise HttpError(404, "This asset is not attached to the specified entity.")
 
     with transaction.atomic():
-        claim_key, claim_value = build_media_attachment_claim(
-            entity,
-            asset.pk,
-            category=em.category,
-            is_primary=True,
+        specs: list[ClaimSpec] = []
+
+        # Demote any current explicit primary in this category (other than the
+        # target). Storing a demotion claim keeps "last set wins" deterministic
+        # without the resolver having to inspect sibling attachments — both
+        # claims ride in this single EDIT ChangeSet, so a revert restores the
+        # prior primary atomically.
+        prior_primaries = (
+            EntityMedia.objects.filter(
+                content_type=ct,
+                object_id=entity.pk,
+                category=em.category,
+                is_primary=True,
+            )
+            .exclude(asset=asset)
+            .values_list("asset_id", flat=True)
         )
-        _write_media_claim(
-            entity, claim_key=claim_key, claim_value=claim_value, user=user
+        for prior_asset_id in prior_primaries:
+            d_key, d_value = build_media_attachment_claim(
+                entity, prior_asset_id, category=em.category, is_primary=False
+            )
+            specs.append(
+                ClaimSpec(field_name="media_attachment", value=d_value, claim_key=d_key)
+            )
+
+        p_key, p_value = build_media_attachment_claim(
+            entity, asset.pk, category=em.category, is_primary=True
         )
+        specs.append(
+            ClaimSpec(field_name="media_attachment", value=p_value, claim_key=p_key)
+        )
+
+        execute_claims(entity, specs, user=user, action=ChangeSetAction.EDIT)
 
     return Status(204, None)
 

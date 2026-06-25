@@ -208,8 +208,9 @@ class TestUploadHappyPath:
         assert em.content_type == ct
         assert em.object_id == machine_model.pk
         assert em.category == "backglass"
-        # Sole image in its category is auto-promoted to primary by claim resolution.
-        assert em.is_primary is True
+        # The resolver stores the raw claimed value; a sole image is auto-promoted
+        # to the displayed primary at read time.
+        assert em.is_primary is False
 
         # Claim created
         claim = Claim.objects.get(

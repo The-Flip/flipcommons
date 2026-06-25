@@ -37,8 +37,12 @@ from apps.core.schemas import (
     RateLimitErrorSchema,
     ValidationErrorSchema,
 )
-from apps.media.helpers import all_media, media_prefetch
-from apps.media.models import EntityMedia
+from apps.media.helpers import (
+    all_media,
+    displayed_primary_asset_ids,
+    displayed_primary_media,
+    media_prefetch,
+)
 from apps.media.schemas import MediaRenditionsSchema
 from apps.media.storage import build_public_url, build_storage_key
 from apps.provenance.helpers import claims_prefetch
@@ -533,12 +537,14 @@ def _collect_aggregated_media(
     items: list[AggregatedMediaSchema] = []
     for m in models:
         source_ref = EntityRef(public_id=m.public_id, name=m.name)
-        for em in all_media(m):
+        rows = all_media(m)
+        primary_ids = displayed_primary_asset_ids(rows)
+        for em in rows:
             items.append(
                 AggregatedMediaSchema(
                     asset_uuid=str(em.asset.uuid),
                     category=em.category,
-                    is_primary=em.is_primary,
+                    is_primary=em.asset_id in primary_ids,
                     uploaded_by_username=(
                         em.asset.uploaded_by.username if em.asset.uploaded_by else None
                     ),
@@ -562,10 +568,12 @@ def _select_title_hero_image_url(
     """Return the title hero — uploaded backglass on any model wins, else
     the earliest model's third-party image."""
     for model in models:
+        rows = all_media(model)
+        primary_ids = displayed_primary_asset_ids(rows)
         backglass = [
             em
-            for em in all_media(model)
-            if em.category == "backglass" and em.is_primary
+            for em in rows
+            if em.category == "backglass" and em.asset_id in primary_ids
         ]
         if backglass:
             _, hero = extract_image_urls(
@@ -724,24 +732,16 @@ def _detail_qs() -> QuerySet[Title]:
 
 def _card_models_prefetch() -> Prefetch[str, Any, str]:
     """Prefetch each title's active non-variant models (ordered first-model-first)
-    with manufacturer and **primary-only** media — the exact shape the card needs.
+    with manufacturer and all ready media — the shape the card needs.
 
-    `_title_models_prefetch()`'s `media_prefetch()` loads *all* ready media (wrong
-    shape for `extract_image_urls`, which wants primary-only); this loads only
-    `is_primary=True` ready media into ``primary_media`` so the card resolver feeds
-    it directly."""
-    primary_media = Prefetch(
-        "entity_media",
-        queryset=EntityMedia.objects.filter(
-            is_primary=True, asset__status="ready"
-        ).select_related("asset"),
-        to_attr="primary_media",
-    )
+    The displayed primary is selected at read time (``displayed_primary_media``),
+    so this loads all ``asset__status="ready"`` rows via ``media_prefetch()``
+    rather than an ``is_primary=True`` subset."""
     return Prefetch(
         "machine_models",
         queryset=MachineModel.first_model_candidates()
         .select_related("corporate_entity__manufacturer")
-        .prefetch_related(primary_media),
+        .prefetch_related(media_prefetch()),
         to_attr="card_models",
     )
 
@@ -764,7 +764,7 @@ def _serialize_card(title: Title, *, min_rank: int) -> TitleCardSchema:
             manufacturer = EntityRef(public_id=mfr.public_id, name=mfr.name)
         thumbnail_url, _ = extract_image_urls(
             first.extra_data or {},
-            getattr(first, "primary_media", None),
+            displayed_primary_media(first),
             min_rank=min_rank,
         )
     return TitleCardSchema(

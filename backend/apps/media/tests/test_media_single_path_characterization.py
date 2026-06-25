@@ -167,7 +167,9 @@ class TestMediaSinglePathCharacterization:
         em = _entity_media(target)
         assert em.asset_id == asset.pk
         assert em.category == target.cat1
-        assert em.is_primary is True  # sole attachment in its category
+        # The resolver stores the raw claimed value; auto-promotion of a sole
+        # attachment to the displayed primary is a read-time selection.
+        assert em.is_primary is False
         # A media mutation never attaches a citation.
         assert (
             CitationInstance.objects.filter(

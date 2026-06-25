@@ -46,18 +46,11 @@ class EntityMedia(TimeStampedModel):
                 fields=["asset"],
                 name="media_entitymedia_unique_asset",
             ),
-            # --- at most one primary per entity per category (non-null) ---
-            models.UniqueConstraint(
-                fields=["content_type", "object_id", "category"],
-                condition=models.Q(is_primary=True, category__isnull=False),
-                name="media_entitymedia_one_primary_per_category",
-            ),
-            # --- at most one uncategorized primary per entity ---
-            models.UniqueConstraint(
-                fields=["content_type", "object_id"],
-                condition=models.Q(is_primary=True, category__isnull=True),
-                name="media_entitymedia_one_primary_uncategorized",
-            ),
+            # NOTE: is_primary stores the *raw claimed* value, so a category may
+            # have zero or several primary-claimed rows. The single displayed
+            # primary is a read-time selection — see
+            # apps.media.helpers.displayed_primary_asset_ids. No uniqueness
+            # constraint on is_primary.
             # --- category not blank when set ---
             models.CheckConstraint(
                 condition=models.Q(category__isnull=True) | ~models.Q(category=""),

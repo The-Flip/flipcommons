@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+from collections.abc import Iterable
 from typing import Any, cast
 
 from django.db import models
@@ -39,15 +41,42 @@ def all_media(entity: models.Model) -> list[EntityMedia]:
     return cast(list[EntityMedia], media)
 
 
-def primary_media(entity: models.Model) -> list[EntityMedia]:
-    """Return primary EntityMedia rows prefetched onto *entity*.
+def displayed_primary_asset_ids(media: Iterable[EntityMedia]) -> set[int]:
+    """Return the asset ids that are the *displayed* primary, one per category.
 
-    Raises AssertionError if the queryset wasn't set up with a Prefetch
-    using to_attr="primary_media".
+    The stored ``EntityMedia.is_primary`` is the raw claimed value, so a
+    category may have zero or several primary-claimed rows.  This selects the
+    single displayed primary per category:
+
+    - if any row in a category claims ``is_primary``, the **oldest** such row wins;
+    - otherwise the **oldest** row in the category is auto-promoted.
+
+    "Oldest" is ``(created_at, asset_id)`` — ``created_at`` matches the existing
+    catalog convention, and ``asset_id`` (monotonic with upload) breaks ties
+    deterministically when a from-scratch rebuild bulk-creates rows with
+    near-identical timestamps.  Rows are grouped by ``category`` (``None`` is its
+    own group).
     """
-    media = getattr(entity, "primary_media", None)
-    if media is None:
-        raise AssertionError(
-            f"{type(entity).__name__} was not loaded with a primary_media prefetch"
-        )
-    return cast(list[EntityMedia], media)
+    by_category: dict[str | None, list[EntityMedia]] = defaultdict(list)
+    for em in media:
+        by_category[em.category].append(em)
+
+    chosen: set[int] = set()
+    for rows in by_category.values():
+        claimed = [em for em in rows if em.is_primary]
+        pool = claimed or rows
+        winner = min(pool, key=lambda em: (em.created_at, em.asset_id))
+        chosen.add(winner.asset_id)
+    return chosen
+
+
+def displayed_primary_media(entity: models.Model) -> list[EntityMedia]:
+    """Return the *displayed* primary EntityMedia rows (one per category).
+
+    Reads the full ``all_media`` prefetch and applies
+    :func:`displayed_primary_asset_ids`, so it requires the entity to have been
+    loaded with ``media_prefetch()``.
+    """
+    rows = all_media(entity)
+    chosen = displayed_primary_asset_ids(rows)
+    return [em for em in rows if em.asset_id in chosen]

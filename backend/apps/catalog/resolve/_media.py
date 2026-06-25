@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
-from datetime import datetime
 from typing import NamedTuple, cast
 
 from django.contrib.contenttypes.models import ContentType
@@ -15,7 +13,6 @@ from apps.media.models import EntityMedia, MediaAsset, MediaSupportedModel
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
-from apps.provenance.typing import HasEffectivePriority
 
 from ..cache import invalidate_all
 from ._claim_values import MediaAttachmentClaimValue
@@ -29,29 +26,6 @@ class CtInfo(NamedTuple):
     model_class: type | None
     is_media_supported: bool
     categories: list[str]
-
-
-class EntityCategoryKey(NamedTuple):
-    """Group key for per-category primary enforcement and auto-promotion."""
-
-    content_type_id: int
-    object_id: int
-    category: str | None
-
-
-class PrimaryCandidate(NamedTuple):
-    """An asset competing for primary within an (entity, category) group."""
-
-    asset_pk: int
-    priority: int
-    created_at: datetime
-
-
-class AttachmentTimestamp(NamedTuple):
-    """Asset + claim timestamp, used for auto-promotion ordering."""
-
-    asset_pk: int
-    created_at: datetime
 
 
 class MediaRowState(NamedTuple):
@@ -78,6 +52,12 @@ def resolve_media_attachments(
 
     Both parameters are optional.  Passing neither resolves all media across
     all entity types.  Passing both scopes to a single entity.
+
+    Claim-local: each winning claim's ``(category, is_primary)`` is materialized
+    verbatim — the resolver does **not** read sibling attachments.  Selecting a
+    single displayed primary per category (and auto-promoting when none is
+    claimed) is a read-time concern, see
+    :func:`apps.media.helpers.displayed_primary_asset_ids`.
     """
     # -- Fetch active claims, pick winners ----------------------------------
 
@@ -121,14 +101,7 @@ def resolve_media_attachments(
         return _ct_cache[ct_id]
 
     # Desired: {EntityKey: {asset_pk: DesiredMediaAttachment}}
-    # Also track claim priority/created_at for primary enforcement.
     desired_by_entity: dict[EntityKey, dict[int, DesiredMediaAttachment]] = {}
-    primary_candidates: dict[EntityCategoryKey, list[PrimaryCandidate]] = defaultdict(
-        list
-    )
-    all_attachments: dict[EntityCategoryKey, list[AttachmentTimestamp]] = defaultdict(
-        list
-    )
 
     for entity_key, claims_list in winners_by_entity.items():
         ct_info = _ct_info(entity_key.content_type_id)
@@ -175,66 +148,7 @@ def resolve_media_attachments(
             is_primary = bool(val.get("is_primary", False))
             desired[asset_pk] = DesiredMediaAttachment(category, is_primary)
 
-            group_key = EntityCategoryKey(
-                entity_key.content_type_id, entity_key.object_id, category
-            )
-            all_attachments[group_key].append(
-                AttachmentTimestamp(asset_pk, claim.created_at)
-            )
-            if is_primary:
-                effective_priority = cast(HasEffectivePriority, claim)
-                primary_candidates[group_key].append(
-                    PrimaryCandidate(
-                        asset_pk,
-                        effective_priority.effective_priority,
-                        claim.created_at,
-                    )
-                )
-
         desired_by_entity[entity_key] = desired
-
-    # -- Primary enforcement ------------------------------------------------
-    # Within each (entity, category) group, at most one primary.
-    # Highest priority wins; ties broken by most recent created_at.
-
-    for group_key, candidates in primary_candidates.items():
-        if len(candidates) <= 1:
-            continue
-        entity_key = EntityKey(group_key.content_type_id, group_key.object_id)
-        if entity_key not in desired_by_entity:
-            continue
-        desired = desired_by_entity[entity_key]
-
-        candidates.sort(key=lambda c: (c.priority, c.created_at), reverse=True)
-        winner_asset_pk = candidates[0].asset_pk
-
-        for candidate in candidates:
-            if candidate.asset_pk != winner_asset_pk:
-                desired[candidate.asset_pk] = desired[candidate.asset_pk]._replace(
-                    is_primary=False
-                )
-
-    # -- Auto-promotion ----------------------------------------------------
-    # If no attachment in a (entity, category) group is primary, promote the
-    # oldest (first uploaded) so there's always a primary per category.
-
-    for group_key, attachments in all_attachments.items():
-        entity_key = EntityKey(group_key.content_type_id, group_key.object_id)
-        if entity_key not in desired_by_entity:
-            continue
-        desired = desired_by_entity[entity_key]
-
-        has_primary = any(
-            d.is_primary
-            for _asset_pk, d in desired.items()
-            if d.category == group_key.category
-        )
-        if has_primary:
-            continue
-
-        attachments.sort(key=lambda a: a.created_at)
-        winner_asset_pk = attachments[0].asset_pk
-        desired[winner_asset_pk] = desired[winner_asset_pk]._replace(is_primary=True)
 
     # -- Fetch existing EntityMedia rows ------------------------------------
 
