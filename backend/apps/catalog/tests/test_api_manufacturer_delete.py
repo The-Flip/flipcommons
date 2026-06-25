@@ -108,7 +108,7 @@ class TestDeleteHappyPath:
         assert mfr.status == "deleted"
 
         cs = ChangeSet.objects.get(pk=resp.json()["changeset_id"])
-        assert cs.user_id == user.pk
+        assert cs.actor_id == user.actor_id
         assert cs.action == ChangeSetAction.DELETE
         assert cs.note == "bye"
 

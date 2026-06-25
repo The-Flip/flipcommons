@@ -82,7 +82,7 @@ class TestCreateHappyPath:
         assert ce.manufacturer == mfr
         assert ce.status == "active"
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         claim_fields = {
             c.field_name: c.value for c in Claim.objects.filter(changeset=cs)
         }

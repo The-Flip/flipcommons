@@ -930,10 +930,10 @@ def _source_claims_member_present(
     The presence/tombstone semantics are the single definition in
     :func:`~apps.provenance.claim_presence.member_is_present`; this wraps it
     with the source-scoped selection (``.first()`` is the source's current claim,
-    given the one-active-claim-per-(source, claim_key) invariant).
+    given the one-active-claim-per-(actor, claim_key) invariant).
     """
     claim = Claim.objects.filter(
-        source=source,
+        actor_id=source.actor_id,
         is_active=True,
         content_type_id=ct_id,
         object_id=object_id,
@@ -1255,7 +1255,7 @@ def _source_claims_field(
     Used to detect a no-op ``retract:`` at build time.
     """
     return Claim.objects.filter(
-        source=source,
+        actor_id=source.actor_id,
         is_active=True,
         content_type_id=ct_id,
         object_id=object_id,

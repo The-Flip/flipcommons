@@ -66,7 +66,7 @@ class TestCreateHappyPath:
         mfr = Manufacturer.objects.get(slug="stern")
         assert mfr.status == "active"
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         claim_fields = {
             c.field_name: c.value for c in Claim.objects.filter(changeset=cs)
         }
@@ -76,7 +76,7 @@ class TestCreateHappyPath:
         client.force_login(user)
         resp = _post(client, _body(note="seeding"))
         assert resp.status_code == 201
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         assert cs.note == "seeding"
 
 

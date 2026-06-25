@@ -71,7 +71,9 @@ class TestCreateHappyPath:
         title = Title.objects.get(slug="godzilla")
         assert title.status == "active"
 
-        changesets = ChangeSet.objects.filter(user=user, action=ChangeSetAction.CREATE)
+        changesets = ChangeSet.objects.filter(
+            actor=user.actor, action=ChangeSetAction.CREATE
+        )
         assert changesets.count() == 1
         cs = changesets.first()
 
@@ -91,7 +93,7 @@ class TestCreateHappyPath:
             },
         )
         assert resp.status_code == 201
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         assert cs.note == "Creating during testing"
 
 

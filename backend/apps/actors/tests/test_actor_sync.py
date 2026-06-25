@@ -1,4 +1,4 @@
-"""The drift contract: Actor mirrors the legacy columns on create and on update."""
+"""The drift contract: Actor mirrors backing fields on create and on update."""
 
 import pytest
 
@@ -58,8 +58,10 @@ def test_editing_user_priority_resyncs_actor():
 
 @pytest.mark.django_db
 def test_queryset_update_bypasses_mirror():
-    """Pins the documented limitation: QuerySet.update() skips save(), so it does
-    NOT sync the Actor. A future dev meets this constraint here, not at cutover.
+    """Pins the permanent limitation: QuerySet.update() skips save(), so it does
+    NOT sync the Actor. The mirror is permanent (the satellite columns are kept),
+    so this constraint is permanent too — e.g. a bulk is_enabled update would
+    silently leave the kill switch desynced.
     See ActorModel mirror-hooks INVARIANT in apps/actors/models/base.py.
     """
     source = Source.objects.create(

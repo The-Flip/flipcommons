@@ -155,7 +155,7 @@ def execute_undo_changeset(
 
     Eligibility:
 
-    * Must be a user-authored ChangeSet (``user_id`` set).
+    * Must be an interactive ChangeSet attributed to a user-backed actor.
     * Must have ``action = DELETE``. Per-claim reverts of EDIT ChangeSets
       use :func:`execute_revert`; CREATE undo (symmetric \u201cmake it as if
       the record was never created\u201d) is deferred \u2014 it requires extra

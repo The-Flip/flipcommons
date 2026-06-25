@@ -6,6 +6,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.catalog.models import GameplayFeature
+from apps.provenance.attribution import actor_user
 from apps.provenance.models import ChangeSet
 
 User = get_user_model()
@@ -102,7 +103,9 @@ class TestPatchGameplayFeaturePersistence:
     def test_claim_created_for_user(self, client, user, feature):
         client.force_login(user)
         _patch(client, feature.slug, {"fields": {"description": "Updated"}})
-        claim = feature.claims.get(user=user, field_name="description", is_active=True)
+        claim = feature.claims.get(
+            actor=user.actor, field_name="description", is_active=True
+        )
         assert claim.value == "Updated"
 
     def test_model_resolved_and_returned(self, client, user, feature):
@@ -118,10 +121,10 @@ class TestPatchGameplayFeaturePersistence:
         _patch(client, feature.slug, {"fields": {"description": "First"}})
         _patch(client, feature.slug, {"fields": {"description": "Second"}})
         active = feature.claims.filter(
-            user=user, field_name="description", is_active=True
+            actor=user.actor, field_name="description", is_active=True
         )
         inactive = feature.claims.filter(
-            user=user, field_name="description", is_active=False
+            actor=user.actor, field_name="description", is_active=False
         )
         assert active.count() == 1
         assert inactive.count() == 1
@@ -144,7 +147,7 @@ class TestPatchGameplayFeatureChangeSet:
         )
         assert ChangeSet.objects.count() == 1
         cs = _only_changeset()
-        assert cs.user == user
+        assert actor_user(cs.actor) == user
         assert cs.claims.count() == 2
         assert set(cs.claims.values_list("field_name", flat=True)) == {
             "name",

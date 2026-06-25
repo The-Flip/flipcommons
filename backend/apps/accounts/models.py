@@ -168,8 +168,7 @@ class User(ActorModel, AbstractUser):
     def __str__(self) -> str:
         return self.username or self.email
 
-    # ActorModel hooks: the user's Actor mirrors these. Transitional — they read
-    # the legacy ``priority`` column that "Drop dead schema" later removes.
+    # ActorModel hooks: the user's Actor mirrors these fields for resolution.
     @property
     def actor_priority(self) -> int:
         return self.priority

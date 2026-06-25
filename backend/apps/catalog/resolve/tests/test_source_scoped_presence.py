@@ -106,7 +106,7 @@ def _source_current_claim(
     """
     ct_id = ContentType.objects.get_for_model(entity).pk
     return Claim.objects.filter(
-        source=source,
+        actor=source.actor,
         is_active=True,
         content_type_id=ct_id,
         object_id=entity.pk,

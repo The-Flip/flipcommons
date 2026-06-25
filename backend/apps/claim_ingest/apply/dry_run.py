@@ -166,7 +166,7 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
     # for the dry-run empty-diff guard below. Carve-outs are added separately.
     existing_changed: set[EntryIndex] = set()
     if existing_assertions:
-        claims = _build_claims(existing_assertions, plan.source)
+        claims = _build_claims(existing_assertions)
         valid = _validate_and_collect_errors(claims, report)
         if valid:
             to_create, superseded_ids = _diff_claims(valid, plan.source)
@@ -232,7 +232,7 @@ def _apply_dry_run(plan: IngestPlan, report: RunReport) -> RunReport:
                 field_name=pca.field_name,
                 claim_key=pca.claim_key or pca.field_name,
                 value=pca.value,
-                source=plan.source,
+                actor_id=plan.source.actor_id,
                 license_id=pca.license_id,
             )
 

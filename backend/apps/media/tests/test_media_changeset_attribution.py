@@ -91,7 +91,7 @@ def _latest_active_media_claim(machine_model) -> Claim:
 def _assert_attributed(claim: Claim, user) -> None:
     cs = claim.changeset
     assert cs is not None, "media claim was minted with no ChangeSet"
-    assert cs.user_id == user.id
+    assert cs.actor_id == user.actor_id
     assert cs.action == ChangeSetAction.EDIT
 
 

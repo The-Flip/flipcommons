@@ -38,7 +38,6 @@ def claim(db, provenance_source):
     return Claim.objects.create(
         content_type=ct,
         object_id=cs.pk,
-        source=provenance_source,
         actor=provenance_source.actor,
         changeset=changeset,
         field_name="name",

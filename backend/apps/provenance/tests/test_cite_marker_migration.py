@@ -61,7 +61,6 @@ def test_forward_and_reverse_rewrite_entity_and_claim():
     claim = Claim.objects.create(
         content_type=ContentType.objects.get_for_model(Manufacturer),
         object_id=mfr.pk,
-        source=src,
         actor=src.actor,
         changeset=source_changeset(src),
         field_name="description",

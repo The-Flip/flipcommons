@@ -5,7 +5,7 @@ each ChangeSet row, the query count at N=20 rows must equal the query count
 at N=2 rows. Narrow scope by design — this catches embed-loop N+1 (e.g. an
 accidental ``cs.user`` lookup inside the per-row loop) and nothing else.
 
-The policy's ``ChangeSetPolicyView`` reads only ``id`` and ``user_id``, which
+The policy's ``ChangeSetPolicyView`` reads only ``id`` and ``actor_id``, which
 live on the row itself, so no prefetch helper is needed today. When a future
 target Protocol grows a relation, this test fails first.
 """

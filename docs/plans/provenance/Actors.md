@@ -2,6 +2,10 @@
 
 How to represent all the actors in the system, human and non, such as the AI agents that create [data patches](/docs/DataPatches.md).
 
+## Status: v1 is DONE ✅
+
+The v1 features have been implemented.
+
 ## Types of actors
 
 ### Human users aka contributors
@@ -258,7 +262,7 @@ Actor is the resolution/attribution record: how a contributor's claims are weigh
 
 - `id`
 - `backing_model`: name of model that backs the actor, like 'User' or 'Source'
-- `priority` # replaces `User.priority` + `Source.priority`
+- `priority` # mirrored from `User.priority` and `Source.priority`
 - `resolution_status`: how claims resolution treats this actor. V1 values: `active` | `suppressed` (retain claims, but make them never win resolution -- migrated from `Source.is_enabled`)
 
 ### Where `Actor` lives
@@ -430,25 +434,27 @@ These migrations don't move data; they only change validation.
 
 This will be its own PR.
 
-#### Drop dead stuff
+#### ✅ DONE: Drop dead stuff
+
+This drops the legacy **attribution** scaffolding — `Claim.user`/`source` and `ChangeSet.user` — now that `actor` has fully replaced it and nothing edits those columns.
+
+**What this does NOT drop.** The **resolution-input** columns — `User.priority`, `Source.priority`, `Source.is_enabled` — are _not_ dropped. Unlike the attribution columns, they are a live **editing surface**, and `ActorModel` keeps mirroring them onto `Actor` (the uniform resolution read-model). Keeping `Source.is_enabled` keeps the source kill switch (✅ "Single path through resolution suppression") exactly where it already lives — naturally source-scoped, no new UI. So the `ActorModel` mirror (the `actor_priority` / `actor_resolution_status` hooks, the mint-and-sync `save()`, the `actors.E002` system check) is **permanent, not transitional**. `Actor.priority` / `resolution_status` are the resolution-time copy; the satellite columns remain the authored source.
 
 Drop dead schema:
 
 - **Migrate**
-  - DELETE priority from User
-  - DELETE priority, is_enabled from Source
   - DELETE `Claim.user` / `Claim.source`, the per-source/per-user unique indexes and the `source`-XOR-`user` check (all replaced by `Claim.actor` + the unified index)
   - DELETE `ChangeSet.user` and the `user`-XOR-`ingest_run` check (replaced by `ChangeSet.actor`); re-express `action IFF user` as `action IFF ingest_run IS NULL` (interactive edits carry an action; batch/ingest ones don't). `ingest_run` itself stays — it's batch metadata now, not attribution.
 
 Drop dead reads:
 
-The load-bearing reads — resolution, license, author/display, history, revert and undo authz — were already repointed onto `actor` in "Cut over consumers" (that PR carries the byte-identical acceptance bar). What's left here is the dead scaffolding that only existed to service the legacy columns, removed in lockstep with deleting them:
+The load-bearing reads — resolution, license, author/display, history, revert and undo authz — were already repointed onto `actor` in "Cut over consumers" (that PR carries the byte-identical acceptance bar). What's left here is the dead scaffolding that only existed to service the legacy attribution columns, removed in lockstep with deleting them:
 
 - **The transitional legacy-author stamp** from "Save actor FKs" — the `setattr(claim, actor.backing_model, backing)` stamp helper and `record_changeset`'s `cs.user = actor.user` line. With `Claim.user`/`source` and `ChangeSet.user` gone there's nothing left to stamp, so the write funnel becomes purely actor (its end state).
-- **The model field declarations + annotations** they leave behind: the `user` / `source` FKs on `Claim`, `user` on `ChangeSet`, and the `user_id` / `ingest_run_id` / `source_id` typing shims. The per-user `ChangeSet` indexes (`provenance_cs_user_created`, `provenance_cs_user_action`) go too — their actor-keyed replacement (for revert's experience gate, `ChangeSet.filter(actor=…)`) lands in "Tighten schema".
-- **Cosmetic readers** that "Cut over consumers" left alone because they don't touch resolution: `ChangeSet.__str__`, provenance/catalog admin `list_display` / `search_fields`, and any `select_related("…user")` / `("source")` prefetch hints that survive — repoint to `actor` or drop.
+- **The model field declarations + annotations** they leave behind: the `user` / `source` FKs on `Claim`, `user` on `ChangeSet`, and the `user_id` / `source_id` typing shims (the `ingest_run` FK and its shim stay — it's batch metadata). The per-user `ChangeSet` indexes (`provenance_cs_user_created`, `provenance_cs_user_action`) go too — their actor-keyed replacement (for revert's experience gate, `ChangeSet.filter(actor=…)`) landed in "Tighten schema".
+- **Cosmetic readers** that "Cut over consumers" left alone because they don't touch resolution: `ChangeSet.__str__`, provenance/catalog admin `list_display` / `search_fields`, and any `select_related("…user")` / `("source")` prefetch hints that survive — repoint to `actor` or drop. (`IngestRunAdmin`'s `source` column and `record_changeset`'s `ingest_run.source.actor` validation read stay — `IngestRun.source` is live batch metadata, not dead attribution.)
 
-Acceptance: a grep gate proving no non-migration code names `claim.user` / `claim.source` / `changeset.user` / `ingest_run.source` for attribution — `actor` is the only attribution read left.
+Acceptance: a grep gate proving no non-migration code names `claim.user` / `claim.source` / `changeset.user` for attribution — `actor` is the only attribution read left. (`ingest_run.source` is exempt: it's retained batch metadata.)
 
 This will be its own PR.
 

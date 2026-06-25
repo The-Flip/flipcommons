@@ -3,7 +3,7 @@
 Pins that ``actor_author`` / ``source_backing`` / ``actor_user`` /
 ``actor_user_id`` route by ``Actor.backing_model`` to the right backing record
 for both v1 actor types (user, source), the single model-driven dispatch the
-cutover relies on.
+current attribution readers rely on.
 """
 
 from __future__ import annotations

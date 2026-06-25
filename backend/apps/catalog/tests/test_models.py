@@ -244,7 +244,6 @@ class TestClaim:
             Claim.objects.create(
                 content_type=ct,
                 object_id=machine_model.pk,
-                source=source,
                 actor=source.actor,
                 changeset=first.changeset,
                 field_name="name",

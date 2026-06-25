@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models.functions import Now
 
@@ -32,26 +32,17 @@ class ChangeSet(models.Model):
     Reverting a claim means deactivating it and re-resolving — the
     resolution machinery picks the correct winner from whatever remains.
 
-    All claims in a ChangeSet must share the same actor (same user or same
-    source). A CheckConstraint enforces that exactly one of user or
-    ingest_run is set; same-actor consistency within those groups is
-    enforced by ``claim_writer._assert_claim``.
+    All claims in a ChangeSet share the same ``actor``. ``ingest_run``
+    discriminates batch (ingest) from interactive edits — interactive
+    ChangeSets carry an ``action`` and a user-backed actor, ingest ones
+    don't; both invariants are enforced by ``changeset_writer.record_changeset``.
     """
 
     claims: models.Manager[Claim]
     retracted_claims: models.Manager[Claim]
-    user_id: int | None
     ingest_run_id: int | None
     actor_id: int
 
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="changesets",
-        null=True,
-        blank=True,
-        help_text="The user who made this edit. Null for source-level changesets.",
-    )
     ingest_run = models.ForeignKey(
         "provenance.IngestRun",
         on_delete=models.PROTECT,
@@ -70,9 +61,8 @@ class ChangeSet(models.Model):
             "Populated for every user ChangeSet; always NULL for ingest."
         ),
     )
-    # The single attribution target, superseding the user-XOR-ingest_run fork.
-    # Every reader resolves attribution through this; the legacy user / ingest_run
-    # columns survive only until "Drop dead stuff".
+    # The single attribution target. Every reader resolves attribution through
+    # this; ``ingest_run`` remains only as batch metadata, not attribution.
     actor = models.ForeignKey(
         "actors.Actor",
         on_delete=models.PROTECT,
@@ -91,14 +81,6 @@ class ChangeSet(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(
-                fields=["user", "-created_at"],
-                name="provenance_cs_user_created",
-            ),
-            models.Index(
-                fields=["user", "action", "-created_at"],
-                name="provenance_cs_user_action",
-            ),
-            models.Index(
                 fields=["actor", "-created_at"],
                 name="provenance_cs_actor_created",
             ),
@@ -108,30 +90,20 @@ class ChangeSet(models.Model):
             ),
         ]
         constraints = [
+            # Action is present exactly for interactive edits (no ingest_run)
+            # and always absent for ingest batches.
             models.CheckConstraint(
                 condition=(
-                    models.Q(user__isnull=False, ingest_run__isnull=True)
-                    | models.Q(user__isnull=True, ingest_run__isnull=False)
+                    models.Q(ingest_run__isnull=True, action__isnull=False)
+                    | models.Q(ingest_run__isnull=False, action__isnull=True)
                 ),
-                name="provenance_changeset_user_xor_ingest_run",
-            ),
-            models.CheckConstraint(
-                condition=(
-                    models.Q(user__isnull=False, action__isnull=False)
-                    | models.Q(user__isnull=True, action__isnull=True)
-                ),
-                name="provenance_changeset_action_iff_user",
+                name="provenance_changeset_action_iff_interactive",
             ),
         ]
 
     def __str__(self) -> str:
-        if self.user is not None:
-            actor = self.user.username
-        else:
-            ingest_run = self.ingest_run
-            actor = (
-                f"ingest:{ingest_run.source.name}"
-                if ingest_run is not None
-                else "ingest:unknown"
-            )
-        return f"ChangeSet #{self.pk} by {actor}"
+        try:
+            label = str(getattr(self.actor, self.actor.backing_model))
+        except ObjectDoesNotExist:  # orphaned actor (backing row deleted)
+            label = f"[deleted {self.actor.backing_model}]"
+        return f"ChangeSet #{self.pk} by {label}"

@@ -196,7 +196,7 @@ class TestCreditRoleCreate:
         role = CreditRole.objects.get(slug="qa")
         assert role.status == "active"
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         fields = set(
             Claim.objects.filter(changeset=cs).values_list("field_name", flat=True)
         )

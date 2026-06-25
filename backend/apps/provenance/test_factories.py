@@ -4,8 +4,9 @@ Kept outside ``tests/`` so test helpers can be imported across apps
 without circular dependencies or duplicated conftest fixtures.
 
 Use these in tests instead of calling ``ChangeSet.objects.create`` directly.
-They encode invariants the DB enforces (user XOR ingest_run; action iff
-user) so mistakes fail at call time rather than at constraint time.
+They encode the attribution invariants (every ChangeSet carries an actor;
+action iff interactive/non-ingest) so mistakes fail at call time rather than
+at constraint time.
 """
 
 from __future__ import annotations

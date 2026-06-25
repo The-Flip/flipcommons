@@ -66,7 +66,7 @@ class TestProductionStatusRouter:
         )
         assert resp.status_code == 201, resp.content
         assert ProductionStatus.objects.get(slug="announced").status == "active"
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         fields = set(
             Claim.objects.filter(changeset=cs).values_list("field_name", flat=True)
         )

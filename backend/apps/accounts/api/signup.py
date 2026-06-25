@@ -141,11 +141,10 @@ def signup_check(request: HttpRequest, username: str) -> SignupCheckResponseSche
     use this handle?" The typed `reason` carries the discriminator;
     callers don't have to branch on status code.
 
-    Order is `pending guard → rate limit` (see plan §Decisions locked).
-    The pending guard short-circuits attackers without a legitimate
-    session shape so their requests don't consume rate-limit slots; for
-    real users whose session just expired, the typed `pending_invalid`
-    is more informative than a 429.
+    The pending guard runs before rate limiting, short-circuiting requests
+    without a legitimate session shape so they don't consume rate-limit slots;
+    for real users whose session just expired, the typed `pending_invalid` is
+    more informative than a 429.
     """
     _require_pending(request)
     check_and_record_session(

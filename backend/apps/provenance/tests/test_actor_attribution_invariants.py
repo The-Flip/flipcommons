@@ -1,14 +1,14 @@
 """Cross-table actor-attribution invariants across every write path.
 
-Commit "Save actor FKs" makes the interactive primitives actor-first and stamps
-``actor`` on bulk ingest rows. Two rules must hold table-wide after any write.
-Each is guarded on the row's own ``actor`` being non-NULL, so it is safe during
-the transition (rows still awaiting backfill are exempt; once ``actor`` is NOT
-NULL at "Tighten schema" the guard is vacuous and the full invariant holds):
+The interactive primitives are actor-first and bulk ingest stamps ``actor`` on
+every row. ``actor`` is NOT NULL on both tables, so these rules hold table-wide
+after any write:
 
-* ``claim.actor IS NULL OR claim.actor == claim.changeset.actor``
-* ``changeset.actor IS NULL OR (ingest_run IS NULL OR actor == ingest_run.source.actor)``
-  ``and changeset.actor IS NULL OR (user IS NULL OR actor == user.actor)``
+* ``claim.actor == claim.changeset.actor``
+* ``changeset.ingest_run IS NULL OR changeset.actor == ingest_run.source.actor``
+* interactive changesets (``ingest_run IS NULL``) are user-backed
+  (``actor.backing_model == "user"``) — the rule that moved off the dropped
+  ``ChangeSet.user`` column.
 """
 
 from __future__ import annotations
@@ -33,28 +33,25 @@ pytestmark = pytest.mark.django_db
 
 
 def assert_attribution_invariants() -> None:
-    """Assert both NULL-guarded cross-table rules over every row in the DB."""
+    """Assert the cross-table attribution rules over every row in the DB."""
     for claim in Claim.objects.select_related("changeset").all():
-        if claim.actor_id is None:
-            continue
         cs = claim.changeset
-        assert cs is not None, f"Claim {claim.pk} carries an actor but no changeset"
+        assert cs is not None, f"Claim {claim.pk} carries no changeset"
         assert claim.actor_id == cs.actor_id, (
             f"Claim {claim.pk}.actor != its changeset.actor"
         )
 
-    for cs in ChangeSet.objects.select_related("user", "ingest_run__source").all():
-        if cs.actor_id is None:
-            continue
+    for cs in ChangeSet.objects.select_related("actor", "ingest_run__source").all():
         ingest_run = cs.ingest_run
         if ingest_run is not None:
             assert cs.actor_id == ingest_run.source.actor_id, (
                 f"ChangeSet {cs.pk}.actor != ingest_run.source.actor"
             )
-        cs_user = cs.user
-        if cs_user is not None:
-            assert cs.actor_id == cs_user.actor_id, (
-                f"ChangeSet {cs.pk}.actor != user.actor"
+        else:
+            # Interactive changesets must be user-backed.
+            assert cs.actor.backing_model == "user", (
+                f"Interactive ChangeSet {cs.pk} has a "
+                f"{cs.actor.backing_model!r} actor, expected 'user'"
             )
 
 
@@ -71,7 +68,7 @@ def _active_user_claim(entity, field_name, user) -> Claim:
         content_type=ct,
         object_id=entity.pk,
         field_name=field_name,
-        user=user,
+        actor=user.actor,
         is_active=True,
     )
 
@@ -81,7 +78,6 @@ class TestWritePathSetsActor:
         execute_claims(pm, [ClaimSpec(field_name="year", value=1998)], user=user)
         claim = _active_user_claim(pm, "year", user)
         assert claim.actor_id == user.actor_id
-        assert claim.user == user
         assert_attribution_invariants()
 
     def test_multi_entity(self, user, pm):
@@ -141,7 +137,7 @@ class TestWritePathSetsActor:
             ],
         )
         apply_plan(plan)
-        claim = Claim.objects.get(source=source, field_name="name")
+        claim = Claim.objects.get(actor=source.actor, field_name="name")
         assert claim.actor_id == source.actor_id
         assert claim.changeset is not None
         assert claim.changeset.actor_id == source.actor_id

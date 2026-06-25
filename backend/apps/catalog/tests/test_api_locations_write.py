@@ -179,7 +179,7 @@ class TestTopLevelCreate:
         assert loc.divisions == ["state", "city"]
         assert loc.parent is None
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         claim_fields = {
             c.field_name: c.value for c in Claim.objects.filter(changeset=cs)
         }
@@ -277,7 +277,7 @@ class TestChildCreate:
         assert il.location_type == "state"
         assert il.parent_id == usa.pk
 
-        cs = ChangeSet.objects.get(user=user, action=ChangeSetAction.CREATE)
+        cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         claim_fields = {
             c.field_name: c.value for c in Claim.objects.filter(changeset=cs)
         }

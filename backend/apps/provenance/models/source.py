@@ -85,9 +85,7 @@ class Source(ActorModel, SluggedModel, TimeStampedModel):
     def __str__(self) -> str:
         return self.name
 
-    # ActorModel hooks: the source's Actor mirrors these. Transitional — they
-    # read the legacy ``priority`` / ``is_enabled`` columns that "Drop dead
-    # schema" later removes.
+    # ActorModel hooks: the source's Actor mirrors these fields for resolution.
     @property
     def actor_priority(self) -> int:
         return self.priority

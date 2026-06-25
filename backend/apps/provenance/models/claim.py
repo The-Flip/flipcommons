@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, NamedTuple
 
-from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models.functions import Now
 
@@ -19,7 +19,6 @@ from apps.core.models import BoundedTextField, field_not_blank
 
 from ..model_bases import ClaimControlledModel
 from .changeset import ChangeSet
-from .source import Source
 
 CLAIM_CITATION_MAX_LENGTH = 2_000
 CLAIM_NEEDS_REVIEW_NOTES_MAX_LENGTH = 2_000
@@ -71,18 +70,16 @@ def make_claim_key(field_name: str, **identity_parts: IdentityPart) -> str:
 
 
 class Claim(models.Model):
-    """A single fact asserted by a Source or User about any catalog entity.
+    """A single fact asserted by an actor about any catalog entity.
 
     Uses a GenericForeignKey (``subject``) so claims can target any model:
     MachineModel, Manufacturer, Person, etc.
 
-    Exactly one of ``source`` or ``user`` must be set — enforced by a
-    CheckConstraint and by ``claim_writer._assert_claim``.
+    Attribution is carried by ``actor`` (a denormalized copy of
+    ``changeset.actor``) — set on every row by ``claim_writer._assert_claim``.
     """
 
     content_type_id: int
-    source_id: int | None
-    user_id: int | None
     actor_id: int
     license_id: int | None
     changeset_id: int
@@ -93,23 +90,8 @@ class Claim(models.Model):
     object_id = models.PositiveBigIntegerField()
     subject = GenericForeignKey("content_type", "object_id")
 
-    source = models.ForeignKey(
-        Source,
-        on_delete=models.PROTECT,
-        related_name="claims",
-        null=True,
-        blank=True,
-    )
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="claims",
-        null=True,
-        blank=True,
-    )
     # Denormalized copy of ``changeset.actor`` (the source of truth). Backs the
-    # unified active-claim unique index and replaces the legacy source/user pair,
-    # which survives only until "Drop dead stuff".
+    # unified active-claim unique index and is the sole attribution column.
     actor = models.ForeignKey(
         "actors.Actor",
         on_delete=models.PROTECT,
@@ -176,30 +158,10 @@ class Claim(models.Model):
         indexes = [
             models.Index(fields=["content_type", "object_id", "field_name"]),
             models.Index(fields=["content_type", "object_id", "claim_key"]),
-            models.Index(fields=["source", "content_type", "object_id"]),
-            models.Index(fields=["user", "content_type", "object_id"]),
             models.Index(fields=["actor", "content_type", "object_id"]),
             models.Index(fields=["field_name", "is_active"]),
-            models.Index(fields=["source", "is_active"]),
         ]
         constraints = [
-            models.CheckConstraint(
-                condition=(
-                    models.Q(source__isnull=False, user__isnull=True)
-                    | models.Q(source__isnull=True, user__isnull=False)
-                ),
-                name="provenance_claim_source_xor_user",
-            ),
-            models.UniqueConstraint(
-                fields=["content_type", "object_id", "source", "claim_key"],
-                condition=models.Q(is_active=True, source__isnull=False),
-                name="provenance_unique_active_claim_per_source",
-            ),
-            models.UniqueConstraint(
-                fields=["content_type", "object_id", "user", "claim_key"],
-                condition=models.Q(is_active=True, user__isnull=False),
-                name="provenance_unique_active_claim_per_user",
-            ),
             models.UniqueConstraint(
                 fields=["content_type", "object_id", "actor", "claim_key"],
                 condition=models.Q(is_active=True),
@@ -221,10 +183,10 @@ class Claim(models.Model):
         ]
 
     def __str__(self) -> str:
-        if self.source is not None:
-            author = self.source.name
-        else:
-            author = self.user.username if self.user is not None else "unknown"
+        try:
+            author = str(getattr(self.actor, self.actor.backing_model))
+        except ObjectDoesNotExist:  # orphaned actor (backing row deleted)
+            author = f"[deleted {self.actor.backing_model}]"
         return f"{author}: {self.subject}.{self.field_name}"
 
     @classmethod

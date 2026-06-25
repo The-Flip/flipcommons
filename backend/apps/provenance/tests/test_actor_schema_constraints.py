@@ -1,7 +1,7 @@
-"""Behavior pinned by the "Tighten schema" PR.
+"""Actor attribution schema constraints.
 
-After this PR ``ChangeSet.actor`` / ``Claim.actor`` / ``Claim.changeset`` are NOT
-NULL, dedupe keys on ``actor``, and a single unified partial-unique index
+``ChangeSet.actor`` / ``Claim.actor`` / ``Claim.changeset`` are NOT NULL, dedupe
+keys on ``actor``, and a single unified partial-unique index
 (``provenance_unique_active_claim_per_actor``) enforces one active claim per
 actor per ``claim_key`` on a subject. These tests lock:
 
@@ -56,7 +56,6 @@ def test_unified_index_rejects_duplicate_active_per_actor(mfr, user):
         Claim.objects.create(
             content_type=ct,
             object_id=mfr.pk,
-            user=user,
             actor=user.actor,
             changeset=first.changeset,
             field_name="name",
@@ -88,7 +87,6 @@ def test_claim_without_actor_rejected(mfr, source):
         Claim.objects.create(
             content_type=ct,
             object_id=mfr.pk,
-            source=source,
             changeset=source_changeset(source),
             field_name="name",
             claim_key="name",
@@ -102,7 +100,6 @@ def test_claim_without_changeset_rejected(mfr, source):
         Claim.objects.create(
             content_type=ct,
             object_id=mfr.pk,
-            source=source,
             actor=source.actor,
             field_name="name",
             claim_key="name",
@@ -112,4 +109,4 @@ def test_claim_without_changeset_rejected(mfr, source):
 
 def test_changeset_without_actor_rejected(user):
     with pytest.raises(IntegrityError):
-        ChangeSet.objects.create(user=user, action="edit")
+        ChangeSet.objects.create(action="edit")

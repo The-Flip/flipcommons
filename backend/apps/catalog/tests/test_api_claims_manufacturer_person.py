@@ -100,7 +100,9 @@ class TestPatchManufacturerClaimsPersistence:
             data='{"fields": {"description": "WMS"}}',
             content_type="application/json",
         )
-        claim = mfr.claims.get(user=user, field_name="description", is_active=True)
+        claim = mfr.claims.get(
+            actor=user.actor, field_name="description", is_active=True
+        )
         assert claim.value == "WMS"
 
     def test_model_resolved_and_returned(self, client, user, mfr):
@@ -153,9 +155,11 @@ class TestPatchManufacturerClaimsPersistence:
             data='{"fields": {"description": "Second"}}',
             content_type="application/json",
         )
-        active = mfr.claims.filter(user=user, field_name="description", is_active=True)
+        active = mfr.claims.filter(
+            actor=user.actor, field_name="description", is_active=True
+        )
         inactive = mfr.claims.filter(
-            user=user, field_name="description", is_active=False
+            actor=user.actor, field_name="description", is_active=False
         )
         assert active.count() == 1
         assert inactive.count() == 1
@@ -221,7 +225,9 @@ class TestPatchPersonClaimsPersistence:
             data='{"fields": {"description": "A great designer."}}',
             content_type="application/json",
         )
-        claim = person.claims.get(user=user, field_name="description", is_active=True)
+        claim = person.claims.get(
+            actor=user.actor, field_name="description", is_active=True
+        )
         assert claim.value == "A great designer."
 
     def test_model_resolved_and_returned(self, client, user, person):

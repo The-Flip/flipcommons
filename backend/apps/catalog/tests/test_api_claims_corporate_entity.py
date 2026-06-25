@@ -281,8 +281,8 @@ class TestPatchCorporateEntityScalars:
         )
         # Fixtures assert seed (ingest) name claims, so filter to the user's
         # changeset rather than assuming it's the only row.
-        assert ChangeSet.objects.filter(user=user).count() == 1
-        cs = ChangeSet.objects.get(user=user)
+        assert ChangeSet.objects.filter(actor=user.actor).count() == 1
+        cs = ChangeSet.objects.get(actor=user.actor)
         assert cs.note == "Test note"
         assert cs.claims.count() == 1
 

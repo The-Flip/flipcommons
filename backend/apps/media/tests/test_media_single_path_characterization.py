@@ -1,12 +1,10 @@
-"""Characterization of media mutations across the single-write-path reroute.
+"""Characterization of media mutations through the shared claim write path.
 
 Pins the observable behavior of the four media endpoints (upload / detach /
-set-primary / set-category) before and after they are rerouted through
-``execute_claims`` (Actors v1, "Save actor FKs" PR, commit 2). The reroute drops
-media's bespoke ``resolve_media_attachments`` call in favor of the generic
-``resolve_after_mutation`` dispatch; this suite must stay green across the change,
-proving the materialized result (``EntityMedia`` rows, primary flag, category)
-and the entity's own scalar columns are unperturbed.
+set-primary / set-category). These endpoints write media attachment claims
+through ``execute_claims`` and use the generic ``resolve_after_mutation``
+dispatch, so this suite proves the materialized result (``EntityMedia`` rows,
+primary flag, category) and the entity's own scalar columns are unperturbed.
 
 Both resolve-dispatch branches are exercised: a MachineModel target (the
 full-re-resolution ``resolve_model`` path) and a Manufacturer target (the
@@ -15,7 +13,7 @@ is claim-backed — modeling production, where re-resolution is a no-op — so t
 scalar-snapshot assertion isolates "the wider re-resolution perturbs nothing".
 
 The error path is pinned separately (per-endpoint status) in
-``test_media_single_path_errors`` once the reroute lands.
+``test_media_single_path_errors``.
 """
 
 from __future__ import annotations

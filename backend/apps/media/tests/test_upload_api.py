@@ -219,7 +219,7 @@ class TestUploadHappyPath:
             is_active=True,
         )
         assert claim.value["media_asset"] == em.asset.pk
-        assert claim.user is not None
+        assert claim.actor.backing_model == "user"
 
 
 # ---------------------------------------------------------------------------

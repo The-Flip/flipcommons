@@ -63,7 +63,7 @@ class TestCursorPaginate:
             make_claim(pm, "year", 1990 + i, user=user, changeset=cs)
 
         # Scope to this user's changesets; the pm fixture seeds ingest changesets.
-        qs = ChangeSet.objects.filter(user=user)
+        qs = ChangeSet.objects.filter(actor=user.actor)
         items1, cursor = cursor_paginate(qs, "", 3)
         assert cursor is not None
         items2, cursor2 = cursor_paginate(qs, cursor, 3)
@@ -85,7 +85,7 @@ class TestCursorPaginate:
             cs_ids.append(cs.pk)
 
         # Scope to this user's changesets; the pm fixture seeds ingest changesets.
-        qs = ChangeSet.objects.filter(user=user)
+        qs = ChangeSet.objects.filter(actor=user.actor)
         items, cursor = cursor_paginate(qs, "", 2)
         assert len(items) == 2
         assert cursor is not None
@@ -261,7 +261,7 @@ class TestChangesDetail:
             data='{"fields": {"year": 1998}}',
             content_type="application/json",
         )
-        cs_id = ChangeSet.objects.filter(user=user).latest("created_at").pk
+        cs_id = ChangeSet.objects.filter(actor=user.actor).latest("created_at").pk
 
         resp = client.get(f"/api/pages/changesets/{cs_id}/")
         assert resp.status_code == 200
@@ -286,7 +286,7 @@ class TestChangesDetail:
             content_type="application/json",
         )
 
-        cs_id = ChangeSet.objects.filter(user=user_b).latest("created_at").pk
+        cs_id = ChangeSet.objects.filter(actor=user_b.actor).latest("created_at").pk
         resp = client.get(f"/api/pages/changesets/{cs_id}/")
         assert resp.status_code == 200
         year_change = next(
@@ -307,7 +307,7 @@ class TestChangesDetail:
             data='{"fields": {"year": 1998}}',
             content_type="application/json",
         )
-        cs_id = ChangeSet.objects.filter(user=user).latest("created_at").pk
+        cs_id = ChangeSet.objects.filter(actor=user.actor).latest("created_at").pk
 
         resp = client.get(f"/api/pages/changesets/{cs_id}/")
         year_change = next(

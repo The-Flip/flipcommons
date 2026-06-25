@@ -76,8 +76,8 @@ class IngestRunAdmin(ReadOnlyAdminMixin, admin.ModelAdmin[IngestRun]):
 
 @admin.register(ChangeSet)
 class ChangeSetAdmin(admin.ModelAdmin[ChangeSet]):
-    list_display = ("pk", "user", "note_truncated", "created_at")
-    list_filter = ("user",)
+    list_display = ("pk", "actor", "note_truncated", "created_at")
+    list_filter = ("actor",)
     readonly_fields = ("created_at",)
 
     @admin.display(description="Note")
@@ -95,11 +95,11 @@ class ClaimAdmin(ReadOnlyAdminMixin, admin.ModelAdmin[Claim]):
         "subject",
         "field_name",
         "value_truncated",
-        "source",
+        "actor",
         "is_active",
         "created_at",
     )
-    list_filter = ("source", "is_active", "field_name")
+    list_filter = ("actor", "is_active", "field_name")
     search_fields = ("field_name",)
     readonly_fields = ("content_type", "object_id", "changeset", "created_at")
 
