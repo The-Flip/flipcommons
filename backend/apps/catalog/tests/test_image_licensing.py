@@ -4,7 +4,7 @@ import pytest
 
 from apps.catalog.api.images import extract_image_urls
 from apps.catalog.models import Title
-from apps.catalog.resolve import resolve_model
+from apps.catalog.resolve import resolve_machine_models, resolve_model
 from apps.catalog.tests.conftest import make_machine_model
 from apps.core.models import License
 from apps.provenance.licensing import resolve_effective_license
@@ -107,6 +107,35 @@ class TestEffectiveLicenseResolution:
 
 @pytest.mark.django_db
 class TestImageLicenseDenormalization:
+    def test_image_license_resolution_does_not_n_plus_one(
+        self, opdb, cc_by_sa, django_assert_max_num_queries
+    ):
+        """The image-license fallback must not lazy-load default_license per model.
+
+        The resolver reads ``claim.actor.source.default_license`` for image
+        fields; ``ranked_claims(...).select_related("actor__source__default_license")``
+        must prefetch the whole chain. If it ever shortens to ``actor__source``
+        (or the stale ``source__default_license``), each model adds one query —
+        an N+1 the byte-identical value tests can't see. Six licensed-image
+        models would add six queries; this bound (measured ~211 + slack) catches
+        the regression while tolerating unrelated query drift.
+        """
+        opdb.default_license = cc_by_sa
+        opdb.save()
+        for i in range(6):
+            pm = make_machine_model(name=f"M{i}", slug=f"m{i}")
+            make_claim(pm, "name", f"M{i}", source=opdb)
+            make_claim(
+                pm,
+                "opdb.images",
+                [{"primary": True, "urls": {"large": f"https://img/{i}.jpg"}}],
+                source=opdb,
+                claim_key=f"opdb.images|x:{i}",
+            )
+
+        with django_assert_max_num_queries(216):
+            resolve_machine_models()
+
     def test_resolution_stores_permissiveness_rank_in_extra_data(self, opdb, cc_by_sa):
         """Resolution should denormalize license rank into extra_data for image fields."""
         opdb.default_license = cc_by_sa

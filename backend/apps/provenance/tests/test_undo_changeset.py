@@ -108,8 +108,6 @@ class TestInverseBehavior:
 
 class TestChangeSetNotFound:
     def test_missing_claims_noop_rejected(self, author):
-        cs = ChangeSet.objects.create(
-            user=author, action=ChangeSetAction.DELETE, note=""
-        )
+        cs = user_changeset(author, action=ChangeSetAction.DELETE)
         with pytest.raises(UndoError):
             execute_undo_changeset(cs, user=author)

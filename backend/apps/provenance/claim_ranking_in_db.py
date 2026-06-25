@@ -27,7 +27,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from django.db.models import Case, F, IntegerField, Value, When
+from django.db.models import F
+
+from apps.actors.models import ActorResolutionStatus
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -41,23 +43,22 @@ _WINNER_ORDER: tuple[str, ...] = ("-effective_priority", "-created_at", "-pk")
 
 
 def _annotate_priority(qs: QuerySet[Claim]) -> QuerySet[Claim]:
-    """Filter to active claims from enabled sources and annotate effective_priority.
+    """Filter to active claims from non-suppressed actors and annotate effective_priority.
 
     Private — :func:`ranked_claims` is the only winner-pick entry point, so the
     annotation and the order stay welded together.
+
+    Reads resolution inputs off ``Claim.actor`` (one uniform column per actor
+    type): ``actor.resolution_status`` (suppressed actors never win — the kill
+    switch migrated from ``Source.is_enabled``) and ``actor.priority`` (replaces
+    the ``Source.priority`` / ``User.priority`` fork). The backing one-to-ones are
+    select_related so downstream attribution display stays a single query.
     """
     return (
         qs.filter(is_active=True)
-        .exclude(source__is_enabled=False)
-        .select_related("source", "user")
-        .annotate(
-            effective_priority=Case(
-                When(source__isnull=False, then=F("source__priority")),
-                When(user__isnull=False, then=F("user__priority")),
-                default=Value(0),
-                output_field=IntegerField(),
-            )
-        )
+        .exclude(actor__resolution_status=ActorResolutionStatus.SUPPRESSED)
+        .select_related("actor__user", "actor__source")
+        .annotate(effective_priority=F("actor__priority"))
     )
 
 

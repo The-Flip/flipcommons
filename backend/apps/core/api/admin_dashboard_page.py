@@ -48,11 +48,11 @@ def admin_dashboard(request: HttpRequest) -> AdminDashboardPageSchema:
     cutoff_7d = now - timedelta(days=7)
 
     # Pre-filter each queryset to the row population the metric describes:
-    # edits exclude ingest ChangeSets (user_id IS NULL); uploads count only
-    # successful assets, not in-progress or failed attempts.
+    # edits count human edits (user-backed actors), excluding ingest;
+    # uploads count only successful assets, not in-progress or failed attempts.
     signups = _metric(User.objects.all(), "date_joined", cutoff_24h, cutoff_7d)
     edits = _metric(
-        ChangeSet.objects.filter(user_id__isnull=False),
+        ChangeSet.objects.filter(actor__backing_model="user"),
         "created_at",
         cutoff_24h,
         cutoff_7d,

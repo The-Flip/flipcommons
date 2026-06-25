@@ -12,6 +12,7 @@ from django.db.models import Prefetch, Q
 from apps.citation.models import CitationSourceLink
 from apps.core.authz import PolicyUser, compute_row_capabilities
 
+from .attribution import actor_user_id
 from .claim_ranking_in_db import ranked_claims
 from .display import (
     ClaimDisplayContext,
@@ -19,7 +20,11 @@ from .display import (
     claim_value,
     resolve_display_context,
 )
-from .helpers import changeset_author, citation_instances, citation_instances_prefetch
+from .helpers import (
+    changeset_author,
+    citation_instances,
+    citation_instances_prefetch,
+)
 from .models import ChangeSet, Claim, ClaimControlledModel
 from .schemas import (
     ChangeSetSchema,
@@ -126,7 +131,7 @@ def build_changes(
                 old_value=old_value,
                 new_value=new_value,
                 claim_id=claim.pk,
-                claim_user_id=claim.user_id,
+                claim_user_id=actor_user_id(claim.actor),
                 is_active=claim.is_active,
                 is_winning=(
                     (claim.pk in winning_ids) if winning_ids is not None else None
@@ -195,11 +200,12 @@ def build_edit_history(
             )
         )
         .distinct()
-        .select_related("user", "ingest_run__source")
+        .select_related("actor__user", "actor__source")
         .prefetch_related(
             Prefetch(
                 "claims",
                 queryset=Claim.objects.filter(content_type=ct, object_id=entity.pk)
+                .select_related("actor__user")
                 .order_by("field_name")
                 .prefetch_related(citation_instances_prefetch()),
             ),

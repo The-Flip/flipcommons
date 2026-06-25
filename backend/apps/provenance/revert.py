@@ -22,6 +22,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
 from apps.accounts.models import User
+from apps.actors.registry import is_machine_actor
 from apps.core.authz.exceptions import PolicyDeniedError
 from apps.core.authz.types import DenialCode, Deny
 from apps.core.types import EntityKey
@@ -69,21 +70,21 @@ def execute_revert(
     ct = ContentType.objects.get_for_model(entity)
 
     try:
-        target = Claim.objects.get(pk=claim_id, content_type=ct, object_id=entity.pk)
+        target = Claim.objects.select_related("actor").get(
+            pk=claim_id, content_type=ct, object_id=entity.pk
+        )
     except Claim.DoesNotExist:
         raise RevertError("Claim not found for this entity.", status_code=404) from None
 
-    if target.source_id is not None:
+    assert target.actor is not None
+    if is_machine_actor(target.actor.backing_model):
         raise RevertError("Source-attributed claims cannot be reverted.")
-    # source_id XOR user_id is enforced by ``provenance_claim_source_xor_user``;
-    # the source_id check above implies user_id is set.
-    assert target.user_id is not None
 
     if not target.is_active:
         raise RevertError("This claim is already inactive.")
 
-    if target.user_id != user.pk:
-        edit_count = ChangeSet.objects.filter(user=user).count()
+    if target.actor_id != user.actor_id:
+        edit_count = ChangeSet.objects.filter(actor_id=user.actor_id).count()
         if edit_count < REVERT_OTHERS_MIN_EDITS:
             raise PolicyDeniedError(
                 Deny(
@@ -113,7 +114,7 @@ def execute_revert(
                 Claim.objects.filter(
                     content_type=ct,
                     object_id=entity.pk,
-                    user_id=target.user_id,
+                    actor=target.actor,
                     claim_key=target.claim_key,
                     is_active=False,
                     retracted_by_changeset__isnull=True,
@@ -170,7 +171,8 @@ def execute_undo_changeset(
 
     Returns the newly-created REVERT ChangeSet.
     """
-    if changeset.user_id is None:
+    assert changeset.actor is not None
+    if is_machine_actor(changeset.actor.backing_model):
         raise UndoError("Only user changesets can be undone.")
     if changeset.action != ChangeSetAction.DELETE:
         raise UndoError(
@@ -178,7 +180,7 @@ def execute_undo_changeset(
             "Edit changesets are reverted per-claim from edit history."
         )
 
-    claims = list(changeset.claims.all())
+    claims = list(changeset.claims.select_related("actor"))
     if not claims:
         raise UndoError("This changeset has no claims to undo.")
 
@@ -204,19 +206,19 @@ def execute_undo_changeset(
                 )
 
                 # Re-activate the most recent superseded (but not retracted)
-                # claim from the same user for the same claim_key, so the
+                # claim from the same actor for the same claim_key, so the
                 # field falls back to their prior value rather than dropping
                 # to the source default. Mirrors execute_revert() semantics.
-                # Skip any source-authored claims defensively — predecessor
-                # restoration is a user-edit concept; the DB XOR constraint
-                # makes ``user_id`` non-null whenever ``source_id`` is null.
-                if claim.user_id is None:
+                # Skip machine-authored (source) claims defensively —
+                # predecessor restoration is a user-edit concept.
+                assert claim.actor is not None
+                if is_machine_actor(claim.actor.backing_model):
                     continue
                 predecessor = (
                     Claim.objects.filter(
                         content_type_id=claim.content_type_id,
                         object_id=claim.object_id,
-                        user_id=claim.user_id,
+                        actor=claim.actor,
                         claim_key=claim.claim_key,
                         is_active=False,
                         retracted_by_changeset__isnull=True,

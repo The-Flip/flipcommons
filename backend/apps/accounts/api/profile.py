@@ -41,11 +41,11 @@ def user_profile_page(request: HttpRequest, username: str) -> UserProfileSchema:
     caller = policy_user(request.user)
     user = get_object_or_404(User, username=username)
 
-    edit_count = ChangeSet.objects.filter(user=user).count()
+    edit_count = ChangeSet.objects.filter(actor_id=user.actor_id).count()
     member_since = user.date_joined.isoformat()
 
     raw_entity_rows = list(
-        Claim.objects.filter(user=user, changeset__isnull=False)
+        Claim.objects.filter(actor_id=user.actor_id, changeset__isnull=False)
         .values("content_type_id", "object_id")
         .annotate(
             edit_count=Count("changeset", distinct=True),
@@ -87,7 +87,7 @@ def user_profile_page(request: HttpRequest, username: str) -> UserProfileSchema:
         )
 
     recent_changesets = (
-        ChangeSet.objects.filter(user=user)
+        ChangeSet.objects.filter(actor_id=user.actor_id)
         .prefetch_related("claims")
         .order_by("-created_at")[:50]
     )

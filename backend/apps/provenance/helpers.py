@@ -7,6 +7,9 @@ from typing import cast
 
 from django.db.models import Prefetch, QuerySet
 
+from apps.actors.models import Actor
+
+from .attribution import actor_user, source_backing
 from .claim_ranking_in_db import ranked_claims
 from .display import FieldValue, claim_value, resolve_display_context
 from .models import ChangeSet, CitationInstance, Claim, ClaimControlledModel
@@ -19,20 +22,33 @@ from .schemas import (
 )
 
 
+def actor_author(actor: Actor) -> ClaimAuthorSchema:
+    """Build the tagged author for an Actor, via its backing record.
+
+    The schema-producing counterpart to ``attribution.source_backing`` /
+    ``actor_user``, which it delegates to so the field reads are typed
+    (``User.username`` / ``Source.name``) rather than ``getattr``-``Any``.
+    Callers must ``select_related`` the backing one-to-one so this is a column
+    read. An actor backed by neither v1 type fails loud here rather than
+    silently rendering as a source chip.
+    """
+    if (user := actor_user(actor)) is not None:
+        return ClaimUserAuthorSchema(username=user.username)
+    source = source_backing(actor)
+    assert source is not None, f"Unhandled actor backing_model: {actor.backing_model!r}"
+    return ClaimSourceAuthorSchema(name=source.name)
+
+
 def claim_author(claim: Claim) -> ClaimAuthorSchema:
-    """Build the tagged author for a Claim. Exactly one FK is set (DB CHECK)."""
-    if claim.user is not None:
-        return ClaimUserAuthorSchema(username=claim.user.username)
-    assert claim.source is not None
-    return ClaimSourceAuthorSchema(name=claim.source.name)
+    """Build the tagged author for a Claim, via its actor."""
+    assert claim.actor is not None
+    return actor_author(claim.actor)
 
 
 def changeset_author(cs: ChangeSet) -> ClaimAuthorSchema:
-    """Build the tagged author for a ChangeSet. Exactly one FK is set (DB CHECK)."""
-    if cs.user is not None:
-        return ClaimUserAuthorSchema(username=cs.user.username)
-    assert cs.ingest_run is not None
-    return ClaimSourceAuthorSchema(name=cs.ingest_run.source.name)
+    """Build the tagged author for a ChangeSet, via its actor."""
+    assert cs.actor is not None
+    return actor_author(cs.actor)
 
 
 def citation_instances_prefetch() -> Prefetch[str, QuerySet[CitationInstance], str]:
@@ -63,8 +79,11 @@ def claims_prefetch(
     so it doesn't drag the whole claim table.
     """
     queryset = (
+        # ranked_claims already select_relates the claim's actor backings (for
+        # claim_author); changeset__actor__user covers the per-claim changeset
+        # note and the changeset author the evidence panel reads.
         ranked_claims(Claim.objects.all(), "claim_key")
-        .select_related("changeset__user")
+        .select_related("changeset__actor__user")
         .prefetch_related(citation_instances_prefetch())
     )
     if field_names is not None:
