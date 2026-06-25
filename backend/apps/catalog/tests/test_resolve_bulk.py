@@ -2,6 +2,7 @@
 
 import pytest
 from django.contrib.contenttypes.models import ContentType
+from django.db import IntegrityError
 
 from apps.catalog.models import (
     Franchise,
@@ -539,30 +540,23 @@ class TestSlugConflictDetection:
         assert t1.slug == "slug-a"
         assert t2.slug == "slug-b"
 
-    def test_single_object_slug_conflict_reverts(self, opdb):
-        # t1 owns "taken-slug" in the DB.
+    def test_single_object_slug_conflict_raises(self, opdb):
+        """A single-object slug collision fails loud at the DB constraint.
+
+        Resolution leaves cross-reference uniqueness to the DB rather than
+        silently reverting the loser. ``resolve_entity`` saves the winning claim
+        and the unique constraint raises IntegrityError, which ``execute_claims``
+        turns into a 422 on the interactive path.
+        """
+        # Owner holds "taken-slug" in the DB.
         Title.objects.create(name="Owner", slug="taken-slug")
         t2 = Title.objects.create(name="Challenger", slug="original-slug")
 
         make_claim(t2, "name", "Challenger", source=opdb)
         make_claim(t2, "slug", "taken-slug", source=opdb)
 
-        # Use explicit fields so this test is independent of claim-field discovery.
-        fields = get_claim_fields(Title)
-        fields["slug"] = "slug"
-        _resolve_single(t2, fields)
-
-        # resolve_entity would save — we test the in-memory state.
-        # Slug should NOT be "taken-slug" because that conflicts.
-        # resolve_entity handles this; _resolve_single doesn't check DB.
-        # So test via resolve_entity instead.
-        t2 = Title.objects.get(pk=t2.pk)  # re-fetch clean
-        make_claim(t2, "name", "Challenger", source=opdb)
-        make_claim(t2, "slug", "taken-slug", source=opdb)
-
-        # resolve_entity checks DB for slug conflict and reverts.
-        result = resolve_entity(t2)
-        assert result.slug == "original-slug"  # Reverted.
+        with pytest.raises(IntegrityError):
+            resolve_entity(t2)
 
 
 @pytest.mark.django_db
