@@ -279,9 +279,10 @@ class TestPatchCorporateEntityScalars:
             entity.slug,
             {"fields": {"description": "Updated"}, "note": "Test note"},
         )
-        assert ChangeSet.objects.count() == 1
-        cs = ChangeSet.objects.first()
-        assert cs is not None
+        # Fixtures assert seed (ingest) name claims, so filter to the user's
+        # changeset rather than assuming it's the only row.
+        assert ChangeSet.objects.filter(user=user).count() == 1
+        cs = ChangeSet.objects.get(user=user)
         assert cs.note == "Test note"
         assert cs.claims.count() == 1
 
@@ -334,7 +335,11 @@ class TestCorporateEntityEditHistory:
     def test_edit_history_empty(self, client, entity):
         resp = client.get(f"/api/pages/edit-history/corporate-entity/{entity.slug}/")
         assert resp.status_code == 200
-        assert resp.json() == []
+        # Seed name claims surface as ingest changesets; only user edits count here.
+        user_entries = [
+            cs for cs in resp.json() if cs["attribution"]["author"]["kind"] == "user"
+        ]
+        assert user_entries == []
 
     def test_edit_history_after_edit(self, client, user, entity):
         client.force_login(user)
@@ -343,7 +348,10 @@ class TestCorporateEntityEditHistory:
         )
         resp = client.get(f"/api/pages/edit-history/corporate-entity/{entity.slug}/")
         assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 1
-        assert data[0]["note"] == "Fix"
-        assert any(c["field_name"] == "description" for c in data[0]["changes"])
+        # Filter out fixture seed (ingest) changesets; assert only the user edit.
+        user_entries = [
+            cs for cs in resp.json() if cs["attribution"]["author"]["kind"] == "user"
+        ]
+        assert len(user_entries) == 1
+        assert user_entries[0]["note"] == "Fix"
+        assert any(c["field_name"] == "description" for c in user_entries[0]["changes"])

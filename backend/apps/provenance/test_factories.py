@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from apps.accounts.models import User
 
+from .changeset_writer import record_changeset
 from .claim_writer import _assert_claim
 from .models import ChangeSet, ChangeSetAction, IngestRun
 
@@ -37,23 +38,27 @@ def make_claim(
 ) -> Claim:
     """Mint a claim through the single write primitive, for tests.
 
-    A behavior-identical drop-in for the old ``Claim.objects.assert_claim``: same
-    arguments, same semantics (user claims still require a ``changeset``; source
-    claims may omit one). The factory exists so tests target a single seam — when
-    the primitive goes actor-first, only this function changes, not the call
-    sites. ``source_changeset`` / ``user_changeset`` remain available for callers
-    that want to mint the attributing ChangeSet explicitly.
+    A drop-in for the old ``Claim.objects.assert_claim``: same ``user=`` /
+    ``source=`` signature. Attribution now rides on a ChangeSet's actor, so when
+    no ``changeset`` is supplied this auto-creates the attributing one (user →
+    ``user_changeset``; source → ``source_changeset``) and threads it into the
+    actor-first primitive. The factory is the single seam the call sites target.
     """
+    if changeset is None:
+        if user is not None and source is None:
+            changeset = user_changeset(user)
+        elif source is not None and user is None:
+            changeset = source_changeset(source)
+        else:
+            raise ValueError("Provide exactly one of source or user (or a changeset).")
     return _assert_claim(
         subject,
         field_name,
         value,
         citation,
-        source=source,
-        user=user,
+        changeset=changeset,
         claim_key=claim_key,
         license=license,
-        changeset=changeset,
     )
 
 
@@ -67,18 +72,22 @@ def user_changeset(
 
     Defaults to ``action=EDIT`` since that's what every pre-create test
     fixture was implicitly asserting. Callers testing create/delete/revert
-    paths pass the matching action explicitly.
+    paths pass the matching action explicitly. Routed through
+    ``record_changeset`` so every fixture ChangeSet carries an actor.
     """
-    return ChangeSet.objects.create(user=user, action=action, note=note)
+    return record_changeset(actor=user.actor, action=ChangeSetAction(action), note=note)
 
 
 def ingest_changeset(ingest_run: IngestRun, *, note: str = "") -> ChangeSet:
     """Create an ingest-attributed ChangeSet for tests.
 
     Ingest ChangeSets never carry an action — that column is reserved for
-    user-driven changes (see ``ChangeSet`` check constraints).
+    user-driven changes (see ``ChangeSet`` check constraints). Routed through
+    ``record_changeset`` so the actor invariant is encoded in one place.
     """
-    return ChangeSet.objects.create(ingest_run=ingest_run, note=note)
+    return record_changeset(
+        actor=ingest_run.source.actor, ingest_run=ingest_run, note=note
+    )
 
 
 def source_changeset(source: Source, *, note: str = "") -> ChangeSet:

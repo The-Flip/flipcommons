@@ -363,8 +363,10 @@ class TestAdditionalPatchClaimEndpoints:
         claim = entity.claims.get(user=user, field_name=field_name, is_active=True)
         assert claim.value == field_value
 
-        assert ChangeSet.objects.count() == 1
-        changeset = ChangeSet.objects.get()
+        # Some factories assert a seed (ingest) name claim, so filter to the
+        # user's changeset rather than assuming it's the only row.
+        assert ChangeSet.objects.filter(user=user).count() == 1
+        changeset = ChangeSet.objects.get(user=user)
         assert changeset.user == user
         assert changeset.claims.count() == 1
 

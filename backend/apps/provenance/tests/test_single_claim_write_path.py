@@ -1,42 +1,46 @@
-"""Guard: the single ``Claim`` persistence chokepoint.
+"""Guard: the single ``Claim`` / ``ChangeSet`` persistence chokepoints.
 
 import-linter (``pyproject.toml``) enforces that only the interactive write
-surfaces may *import* the mint primitive — but it sees imports, not call sites,
-and ``Claim`` is imported everywhere for reads, so an import contract cannot tell
-a read from a write. This AST guard holds the *persistence* line: no production
-module may call ``Claim.objects.{create,bulk_create,get_or_create,update_or_create}``
-except the two sanctioned mint sites — ``claim_writer`` (the interactive
-primitive ``_assert_claim``) and the ingest bulk path. Bare ``Claim(...)``
-construction is fine: ingest builds unsaved instances that persist only through
-the sanctioned ``bulk_create``.
+surfaces may *import* the writer modules — but it sees imports, not call sites,
+and these models are imported everywhere for reads, so an import contract cannot
+tell a read from a write. This AST guard holds the *persistence* line in two
+tiers, applied to both ``Claim`` and ``ChangeSet``:
+
+* **Tier 1 — mint methods**: ``X.objects.{create,bulk_create,get_or_create,
+  update_or_create}`` only in the writer module (``claim_writer`` /
+  ``changeset_writer``) and the ingest bulk path (``claim_ingest/apply/persist.py``).
+* **Tier 2 — construction**: a bare ``X(...)`` call only in the ingest planning /
+  bulk modules that legitimately build unsaved instances. AST can't attribute an
+  ``instance.save()`` to a model without type inference, so *construction* is the
+  detectable proxy — you can't ``.save()`` what you don't construct. This closes
+  the bare-construction hole the mint-method tier alone would leave open.
+
+The writer modules mint via ``.objects.create`` (Tier 1), not bare construction,
+so they appear in the Tier-1 allowlist only; ``persist.py`` constructs *and*
+bulk-creates ``ChangeSet``, so it appears in both ChangeSet tiers.
 """
 
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
+
+import pytest
 
 from apps.core.tests._source_guard import production_sources
 
-# Persisting manager methods. Reads (filter/get/...) and bare ``Claim(...)``
-# construction are not mints and are left alone.
+# Persisting manager methods. Reads (filter/get/...) are not mints.
 _MINT_METHODS = frozenset(
     {"create", "bulk_create", "get_or_create", "update_or_create"}
-)
-
-# The only two modules allowed to persist Claim rows, relative to ``apps/``.
-_SANCTIONED = frozenset(
-    {
-        "provenance/claim_writer.py",
-        "claim_ingest/apply/persist.py",
-    }
 )
 
 _APPS_DIR = Path(__file__).resolve().parents[2]  # .../backend/apps
 
 
-def _claim_mint_methods(tree: ast.AST) -> list[str]:
-    """Method names of every ``Claim.objects.<mint>(...)`` call in ``tree``."""
+def _mint_method_calls(tree: ast.AST, model: str) -> list[str]:
+    """Method names of every ``<model>.objects.<mint>(...)`` call in ``tree``."""
     hits: list[str] = []
     for node in ast.walk(tree):
         func = node.func if isinstance(node, ast.Call) else None
@@ -46,30 +50,80 @@ def _claim_mint_methods(tree: ast.AST) -> list[str]:
             and isinstance(func.value, ast.Attribute)
             and func.value.attr == "objects"
             and isinstance(func.value.value, ast.Name)
-            and func.value.value.id == "Claim"
+            and func.value.value.id == model
         ):
             hits.append(func.attr)
     return hits
 
 
-def test_no_unsanctioned_claim_persistence() -> None:
+def _construction_calls(tree: ast.AST, model: str) -> list[str]:
+    """Every bare ``<model>(...)`` Name-call in ``tree`` (instance construction)."""
+    hits: list[str] = []
+    for node in ast.walk(tree):
+        func = node.func if isinstance(node, ast.Call) else None
+        if isinstance(func, ast.Name) and func.id == model:
+            hits.append(model)
+    return hits
+
+
+class GuardSpec(NamedTuple):
+    """One (model, tier) persistence rule: a detector + its sanctioned files."""
+
+    label: str
+    model: str
+    detector: Callable[[ast.AST, str], list[str]]
+    sanctioned: frozenset[str]  # paths relative to ``apps/``
+
+
+_SPECS = [
+    GuardSpec(
+        "Claim mint methods",
+        "Claim",
+        _mint_method_calls,
+        frozenset({"provenance/claim_writer.py", "claim_ingest/apply/persist.py"}),
+    ),
+    GuardSpec(
+        "ChangeSet mint methods",
+        "ChangeSet",
+        _mint_method_calls,
+        frozenset({"provenance/changeset_writer.py", "claim_ingest/apply/persist.py"}),
+    ),
+    GuardSpec(
+        "Claim construction",
+        "Claim",
+        _construction_calls,
+        frozenset({"claim_ingest/apply/claims.py", "claim_ingest/apply/dry_run.py"}),
+    ),
+    GuardSpec(
+        "ChangeSet construction",
+        "ChangeSet",
+        _construction_calls,
+        frozenset({"claim_ingest/apply/persist.py"}),
+    ),
+]
+
+
+@pytest.mark.parametrize("spec", _SPECS, ids=lambda s: s.label)
+def test_no_unsanctioned_persistence(spec: GuardSpec) -> None:
     offenders = [
         rel
         for path in production_sources()
-        if (rel := path.relative_to(_APPS_DIR).as_posix()) not in _SANCTIONED
-        and _claim_mint_methods(ast.parse(path.read_text()))
+        if (rel := path.relative_to(_APPS_DIR).as_posix()) not in spec.sanctioned
+        and spec.detector(ast.parse(path.read_text()), spec.model)
     ]
     assert not offenders, (
-        "Claim rows must be minted only through claim_writer._assert_claim or the "
-        "sanctioned ingest bulk path. Unsanctioned Claim.objects mint call(s) in: "
-        + ", ".join(sorted(offenders))
+        f"{spec.model} rows must be persisted only through the sanctioned "
+        f"modules ({', '.join(sorted(spec.sanctioned))}). "
+        f"Unsanctioned {spec.label.lower()} in: " + ", ".join(sorted(offenders))
     )
 
 
-def test_sanctioned_paths_actually_mint() -> None:
-    """Canary: the guard isn't passing vacuously — both sanctioned files mint."""
-    for rel in sorted(_SANCTIONED):
+@pytest.mark.parametrize("spec", _SPECS, ids=lambda s: s.label)
+def test_sanctioned_paths_not_vacuous(spec: GuardSpec) -> None:
+    """Canary: each tier's allowlisted files actually exhibit the pattern."""
+    for rel in sorted(spec.sanctioned):
         tree = ast.parse((_APPS_DIR / rel).read_text())
-        assert _claim_mint_methods(tree), (
-            f"{rel} no longer mints a Claim — the guard would pass vacuously"
+        assert spec.detector(tree, spec.model), (
+            f"{rel} no longer matches '{spec.label}' — the guard would pass "
+            "vacuously; update the allowlist."
         )

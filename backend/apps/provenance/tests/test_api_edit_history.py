@@ -1,11 +1,23 @@
 """Tests for GET /api/pages/edit-history/{entity_type}/{public_id}/ endpoint."""
 
+from typing import Any
+
 import pytest
 
 from apps.accounts.test_factories import make_user
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim
+
+
+def _user_changesets(resp) -> list[dict[str, Any]]:
+    """User-authored entries from an edit-history response.
+
+    Seed/ingest claims now carry (ingest) ChangeSets — realistic, and visible in
+    the full history just as ingested catalog data is in production. These tests
+    are about *user* edit history, so they filter to it.
+    """
+    return [cs for cs in resp.json() if cs["attribution"]["author"]["kind"] == "user"]
 
 
 @pytest.fixture
@@ -33,18 +45,18 @@ class TestEditHistoryEmpty:
     def test_no_changesets_returns_empty_list(self, client, pm):
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert _user_changesets(resp) == []
 
     def test_nonexistent_slug_returns_404(self, client):
         resp = client.get("/api/pages/edit-history/model/does-not-exist/")
         assert resp.status_code == 404
 
     def test_source_claims_not_included(self, client, pm, source):
-        """Source-attributed claims (no changeset) should not appear."""
+        """Source-attributed claims should not appear in *user* edit history."""
         make_claim(pm, "year", 1998, source=source)
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert _user_changesets(resp) == []
 
 
 @pytest.mark.django_db
@@ -60,7 +72,7 @@ class TestEditHistoryBasic:
 
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         assert resp.status_code == 200
-        data = resp.json()
+        data = _user_changesets(resp)
         assert len(data) == 1
 
         cs = data[0]
@@ -90,7 +102,7 @@ class TestEditHistoryBasic:
         )
 
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
-        data = resp.json()
+        data = _user_changesets(resp)
         assert len(data) == 2
 
         # Most recent first
@@ -116,7 +128,7 @@ class TestEditHistoryMultipleFields:
         )
 
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
-        data = resp.json()
+        data = _user_changesets(resp)
         assert len(data) == 1
 
         field_names = {c["field_name"] for c in data[0]["changes"]}
@@ -143,7 +155,7 @@ class TestEditHistoryMultiUser:
         )
 
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
-        data = resp.json()
+        data = _user_changesets(resp)
         assert len(data) == 2
 
         # User B's edit is newest — old value is User A's prior claim
@@ -174,7 +186,7 @@ class TestEditHistoryMultiUser:
         )
 
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
-        data = resp.json()
+        data = _user_changesets(resp)
         assert len(data) == 1
         assert data[0]["changes"][0]["old_value"]["raw"] == 1997
         assert data[0]["changes"][0]["new_value"]["raw"] == 1999
@@ -197,7 +209,7 @@ class TestEditHistoryOrdering:
         )
 
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
-        data = resp.json()
+        data = _user_changesets(resp)
         assert len(data) == 2
         # Newest changeset (player_count) first
         assert data[0]["changes"][0]["field_name"] == "player_count"
@@ -224,7 +236,7 @@ class TestEditHistorySoftDeleted:
 
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         assert resp.status_code == 200
-        data = resp.json()
+        data = _user_changesets(resp)
         assert len(data) == 1
         assert data[0]["changes"][0]["new_value"]["raw"] == 1998
 

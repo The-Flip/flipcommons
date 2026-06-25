@@ -3,11 +3,11 @@
 import pytest
 from django.db import IntegrityError
 
-from apps.accounts.test_factories import make_user
 from apps.catalog.models import Manufacturer
 from apps.core.models import License
-from apps.provenance.models import ChangeSet, IngestRun, Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.changeset_writer import record_changeset
+from apps.provenance.models import ChangeSet, ChangeSetAction, IngestRun, Source
+from apps.provenance.test_factories import ingest_changeset, make_claim, user_changeset
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ class TestChangeSetModel:
 @pytest.mark.django_db
 class TestChangeSetClaimGrouping:
     def test_claims_linked_to_changeset(self, user, mfr):
-        cs = ChangeSet.objects.create(user=user, action="edit", note="Updated fields")
+        cs = user_changeset(user, note="Updated fields")
         c1 = make_claim(mfr, "name", "Williams Electronics", user=user, changeset=cs)
         c2 = make_claim(
             mfr, "description", "Pinball manufacturer", user=user, changeset=cs
@@ -55,43 +55,29 @@ class TestChangeSetClaimGrouping:
         assert c2.changeset == cs
         assert set(cs.claims.values_list("pk", flat=True)) == {c1.pk, c2.pk}
 
-    def test_user_claim_without_changeset_rejected(self, user, mfr):
-        """A user-attributed claim must carry a ChangeSet — no unattributed user writes."""
-        with pytest.raises(ValueError, match="requires a changeset"):
-            make_claim(mfr, "name", "Williams", user=user)
+    def test_user_claim_auto_creates_attributed_changeset(self, user, mfr):
+        """make_claim with no changeset mints one carrying the user's actor."""
+        claim = make_claim(mfr, "name", "Williams", user=user)
+        assert claim.changeset is not None
+        assert claim.changeset.actor_id == user.actor_id
+        assert claim.actor_id == user.actor_id
+        assert claim.user == user
 
     def test_source_claim_with_changeset_accepted(self, source, mfr):
-        """Source-attributed claims can use ChangeSets linked to matching ingest run."""
+        """A source claim rides on an ingest ChangeSet's actor."""
         run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
-        cs = ChangeSet.objects.create(ingest_run=run)
+        cs = ingest_changeset(run)
         claim = make_claim(mfr, "name", "Williams", source=source, changeset=cs)
         assert claim.changeset == cs
-
-    def test_source_claim_changeset_source_mismatch_rejected(self, source, mfr):
-        """ChangeSet's ingest run source must match the claim source."""
-        other_source = Source.objects.create(
-            name="OtherSource", slug="other-source", priority=5
-        )
-        run = IngestRun.objects.create(
-            source=other_source, input_fingerprint="sha256:abc"
-        )
-        cs = ChangeSet.objects.create(ingest_run=run)
-        with pytest.raises(ValueError, match="same source"):
-            make_claim(mfr, "name", "Williams", source=source, changeset=cs)
-
-    def test_changeset_user_mismatch_rejected(self, user, mfr):
-        """ChangeSet user must match the claim user."""
-        other_user = make_user()
-        cs = ChangeSet.objects.create(user=other_user, action="edit")
-        with pytest.raises(ValueError, match="must match"):
-            make_claim(mfr, "name", "Williams", user=user, changeset=cs)
+        assert claim.actor_id == source.actor_id
+        assert claim.source == source
 
     def test_changeset_survives_claim_superseding(self, user, mfr):
         """When a claim is superseded, the old claim keeps its changeset link."""
-        cs1 = ChangeSet.objects.create(user=user, action="edit", note="First edit")
+        cs1 = user_changeset(user, note="First edit")
         c1 = make_claim(mfr, "description", "First", user=user, changeset=cs1)
 
-        cs2 = ChangeSet.objects.create(user=user, action="edit", note="Second edit")
+        cs2 = user_changeset(user, note="Second edit")
         c2 = make_claim(mfr, "description", "Second", user=user, changeset=cs2)
 
         c1.refresh_from_db()
@@ -99,6 +85,44 @@ class TestChangeSetClaimGrouping:
         assert c1.changeset == cs1
         assert c2.is_active is True
         assert c2.changeset == cs2
+
+
+@pytest.mark.django_db
+class TestRecordChangeset:
+    """The actor-first funnel's contract (the validations that used to live on
+    ``_assert_claim``'s source/user/changeset args)."""
+
+    def test_interactive_requires_action(self, user):
+        with pytest.raises(ValueError, match="requires an action"):
+            record_changeset(actor=user.actor)
+
+    def test_interactive_requires_user_backed_actor(self, source):
+        with pytest.raises(ValueError, match="user-backed actor"):
+            record_changeset(actor=source.actor, action=ChangeSetAction.EDIT)
+
+    def test_interactive_sets_user_and_actor(self, user):
+        cs = record_changeset(actor=user.actor, action=ChangeSetAction.EDIT)
+        assert cs.user == user
+        assert cs.actor_id == user.actor_id
+
+    def test_ingest_rejects_action(self, source):
+        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        with pytest.raises(ValueError, match="never carry an action"):
+            record_changeset(
+                actor=source.actor, ingest_run=run, action=ChangeSetAction.EDIT
+            )
+
+    def test_ingest_actor_must_match_run_source(self, source):
+        other = Source.objects.create(name="Other", slug="other", priority=5)
+        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        with pytest.raises(ValueError, match="source actor"):
+            record_changeset(actor=other.actor, ingest_run=run)
+
+    def test_ingest_sets_run_and_actor(self, source):
+        run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
+        cs = record_changeset(actor=source.actor, ingest_run=run)
+        assert cs.ingest_run == run
+        assert cs.actor_id == source.actor_id
 
 
 @pytest.mark.django_db
@@ -153,7 +177,7 @@ class TestClaimProtect:
         """PROTECT prevents deleting a user who has claims."""
         from django.db.models import ProtectedError
 
-        cs = ChangeSet.objects.create(user=user, action="edit")
+        cs = user_changeset(user)
         make_claim(mfr, "name", "Williams", user=user, changeset=cs)
         with pytest.raises(ProtectedError):
             user.delete()
@@ -162,7 +186,7 @@ class TestClaimProtect:
         """PROTECT prevents deleting a ChangeSet that has claims."""
         from django.db.models import ProtectedError
 
-        cs = ChangeSet.objects.create(user=user, action="edit")
+        cs = user_changeset(user)
         make_claim(mfr, "name", "Williams", user=user, changeset=cs)
         with pytest.raises(ProtectedError):
             cs.delete()

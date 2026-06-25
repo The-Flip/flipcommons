@@ -11,7 +11,7 @@ from apps.accounts.test_factories import make_user
 from apps.catalog.models import MachineModel, Title
 from apps.core.types import JsonBody
 from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, user_changeset
 
 
 @pytest.fixture
@@ -234,11 +234,10 @@ class TestDeletePreview:
         t = _make_title(bootstrap_source, "mm")
         _make_model(bootstrap_source, t, "mm-pro")
         _make_model(bootstrap_source, t, "mm-le")
-        # Stamp a user changeset touching the title so changeset_count > 0.
-        cs = ChangeSet.objects.create(
-            user=user, action=ChangeSetAction.EDIT, note="seed"
-        )
-        make_claim(t, "name", "Medieval Madness", user=user, changeset=cs)
+        # Stamp a user changeset (via the factory so it carries an actor)
+        # touching the title so changeset_count > 0.
+        cs = user_changeset(user, note="seed")
+        make_claim(t, "name", "Medieval Madness", changeset=cs)
         client.force_login(user)
         resp = _get_preview(client, "mm")
         assert resp.status_code == 200

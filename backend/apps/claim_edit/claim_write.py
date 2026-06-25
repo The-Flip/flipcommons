@@ -25,6 +25,7 @@ from django.db import IntegrityError, transaction
 
 from apps.accounts.models import User
 from apps.core.exceptions import StructuredValidationError
+from apps.provenance.changeset_writer import record_changeset
 from apps.provenance.claim_writer import _assert_claim
 from apps.provenance.models import (
     ChangeSet,
@@ -214,7 +215,6 @@ def _write_claims_in_changeset(
     entity: ClaimControlledModel,
     specs: list[ClaimSpec],
     *,
-    user: User,
     changeset: ChangeSet,
 ) -> list[Claim]:
     """Assert claims on *entity* inside an already-open *changeset*.
@@ -222,6 +222,7 @@ def _write_claims_in_changeset(
     Does not open a transaction, create a ChangeSet, attach citations, or
     resolve. The caller is responsible for all of that. Returns the list of
     newly-created active Claim rows so the caller can attach citations.
+    Attribution rides on ``changeset.actor``.
     """
     created_claims: list[Claim] = []
     for spec in specs:
@@ -230,7 +231,6 @@ def _write_claims_in_changeset(
                 entity,
                 spec.field_name,
                 spec.value,
-                user=user,
                 claim_key=spec.claim_key,
                 changeset=changeset,
             )
@@ -284,10 +284,8 @@ def execute_claims(
     auth_user = _narrow_to_user(user)
     try:
         with transaction.atomic():
-            cs = ChangeSet.objects.create(user=auth_user, action=action, note=note)
-            created_claims = _write_claims_in_changeset(
-                entity, specs, user=auth_user, changeset=cs
-            )
+            cs = record_changeset(actor=auth_user.actor, action=action, note=note)
+            created_claims = _write_claims_in_changeset(entity, specs, changeset=cs)
             _attach_citation(created_claims, citation)
             field_names = list({s.field_name for s in specs})
             resolve_after_mutation(entity, field_names=field_names)
@@ -322,15 +320,13 @@ def execute_multi_entity_claims(
     auth_user = _narrow_to_user(user)
     try:
         with transaction.atomic():
-            cs = ChangeSet.objects.create(user=auth_user, action=action, note=note)
+            cs = record_changeset(actor=auth_user.actor, action=action, note=note)
             all_created: list[Claim] = []
             per_entity_fields: list[tuple[ClaimControlledModel, list[str]]] = []
             for entity, specs in entries:
                 if not specs:
                     continue
-                created = _write_claims_in_changeset(
-                    entity, specs, user=auth_user, changeset=cs
-                )
+                created = _write_claims_in_changeset(entity, specs, changeset=cs)
                 all_created.extend(created)
                 per_entity_fields.append((entity, list({s.field_name for s in specs})))
             _attach_citation(all_created, citation)

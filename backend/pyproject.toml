@@ -513,6 +513,7 @@ layers = [
     "evidence | history",
     "helpers",
     "claims | claim_writer | display | revert",
+    "changeset_writer",
     "validation | schemas | claim_ranking_in_db | licensing | resolution | rate_limits",
     "models | claim_presence | constants | entity_resolution | pagination | authz | typing",
     # The abstract claim-control bases every claim-controlled model inherits.

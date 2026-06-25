@@ -215,7 +215,10 @@ class TestEditHistoryIngestAttribution:
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         data = resp.json()
         attributions = {e["id"]: e["attribution"] for e in data}
-        assert len(attributions) == 2
+        # The model also carries a Bootstrap-source seed name claim from
+        # make_machine_model (its own ingest changeset); assert on the two
+        # changesets under test rather than the total.
+        assert {ingest_cs.pk, user_cs.pk} <= attributions.keys()
 
         ingest_attr = attributions[ingest_cs.pk]
         assert ingest_attr["author"] == {"kind": "source", "name": "IPDB"}
