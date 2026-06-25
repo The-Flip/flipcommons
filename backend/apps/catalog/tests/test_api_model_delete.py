@@ -15,16 +15,8 @@ from django.core.cache import cache
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import MachineModel, Title
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    """Low-priority source so the resolver has something to fall back to
-    after the user's status=deleted claim is undone."""
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
+from apps.provenance.models import ChangeSet, ChangeSetAction
+from apps.provenance.test_factories import make_claim, user_changeset
 
 
 @pytest.fixture(autouse=True)
@@ -37,8 +29,8 @@ def _clear_cache():
 def _make_title(bootstrap_source, slug: str, name: str | None = None) -> Title:
     label = name or slug.replace("-", " ").title()
     t = Title.objects.create(name=label, slug=slug, status="active")
-    Claim.objects.assert_claim(t, "name", label, source=bootstrap_source)
-    Claim.objects.assert_claim(t, "status", "active", source=bootstrap_source)
+    make_claim(t, "name", label, source=bootstrap_source)
+    make_claim(t, "status", "active", source=bootstrap_source)
     return t
 
 
@@ -61,8 +53,8 @@ def _make_model(
         converted_from=converted_from,
         remake_of=remake_of,
     )
-    Claim.objects.assert_claim(m, "name", label, source=bootstrap_source)
-    Claim.objects.assert_claim(m, "status", "active", source=bootstrap_source)
+    make_claim(m, "name", label, source=bootstrap_source)
+    make_claim(m, "status", "active", source=bootstrap_source)
     return m
 
 
@@ -285,10 +277,9 @@ class TestDeletePreview:
     def test_returns_counts_and_title(self, client, user, bootstrap_source):
         t = _make_title(bootstrap_source, "mm", name="Medieval Madness")
         m = _make_model(bootstrap_source, t, "mm-pro")
-        cs = ChangeSet.objects.create(
-            user=user, action=ChangeSetAction.EDIT, note="seed"
-        )
-        Claim.objects.assert_claim(m, "name", "MM Pro", user=user, changeset=cs)
+        # Route through the factory so the seed changeset carries an actor.
+        cs = user_changeset(user, note="seed")
+        make_claim(m, "name", "MM Pro", changeset=cs)
         client.force_login(user)
 
         resp = _get_preview(client, "mm-pro")

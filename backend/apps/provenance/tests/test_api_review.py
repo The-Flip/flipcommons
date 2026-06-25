@@ -9,6 +9,7 @@ from django.test.utils import CaptureQueriesContext
 from apps.catalog.models import CreditRole, Person, Series, Title
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.models import Claim, Source
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -32,7 +33,7 @@ class TestReviewClaimsDisplay:
         pm = make_machine_model(name="MM", slug="mm-review", year=1997)
         person = Person.objects.create(name="Pat Lawlor", slug="pat-lawlor")
         role = CreditRole.objects.create(name="Art", slug="art")
-        claim = Claim.objects.assert_claim(
+        claim = make_claim(
             pm,
             "credit",
             {"person": person.pk, "role": role.pk, "exists": True},
@@ -58,7 +59,7 @@ class TestReviewClaimsDisplay:
         title = Title.objects.create(name="Whirlwind", slug="whirlwind")
         Title.objects.create(name="Whirlwind", slug="whirlwind-opdb", opdb_id="G5pe4")
         pm = make_machine_model(name="Whirlwind", slug="whirlwind-mm")
-        claim = Claim.objects.assert_claim(pm, "title", title.public_id, source=source)
+        claim = make_claim(pm, "title", title.public_id, source=source)
         _flag(claim)
 
         resp = client.get("/api/review/claims/")
@@ -70,7 +71,7 @@ class TestReviewClaimsDisplay:
 
     def test_scalar_claim_value_has_null_display(self, client, source):
         series = Series.objects.create(slug="s", name="S")
-        claim = Claim.objects.assert_claim(series, "name", "Some Name", source=source)
+        claim = make_claim(series, "name", "Some Name", source=source)
         _flag(claim)
 
         resp = client.get("/api/review/claims/")
@@ -88,9 +89,7 @@ def test_review_claims_query_count_does_not_scale_with_rows(client, source):
     def _seed(start: int, count: int) -> None:
         for i in range(start, start + count):
             series = Series.objects.create(slug=f"s-{i}", name=f"S {i}")
-            claim = Claim.objects.assert_claim(
-                series, "name", f"Name {i}", source=source
-            )
+            claim = make_claim(series, "name", f"Name {i}", source=source)
             _flag(claim)
 
     _seed(start=0, count=2)

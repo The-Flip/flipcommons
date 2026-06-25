@@ -414,7 +414,12 @@ def _link_to_changesets[K](
     ChangeSet, stamped ``retracted_by_changeset``.
     """
     for claim in to_create:
-        claim.changeset_id = group_to_cs[claim_group(claim)].pk
+        cs = group_to_cs[claim_group(claim)]
+        claim.changeset_id = cs.pk
+        # Denormalized copy of the ChangeSet's actor (the source of truth), so
+        # each bulk Claim's actor matches its ChangeSet's — same invariant the
+        # interactive path gets from ``changeset.actor``.
+        claim.actor_id = cs.actor_id
     if to_create:
         Claim.objects.bulk_create(to_create, batch_size=2000)
 
@@ -459,7 +464,8 @@ def _persist_per_entry(
         {claim_idx(c) for c in to_create} | {retract_idx(e) for e in retract_entries}
     )
     changesets = [
-        ChangeSet(ingest_run=run, note=entry_notes.get(idx, "")) for idx in ordered
+        ChangeSet(ingest_run=run, actor=run.source.actor, note=entry_notes.get(idx, ""))
+        for idx in ordered
     ]
     ChangeSet.objects.bulk_create(changesets)
     idx_to_cs = dict(zip(ordered, changesets, strict=True))

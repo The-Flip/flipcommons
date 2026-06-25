@@ -28,13 +28,13 @@ from apps.provenance.display import (
     resolve_display_context,
     resolve_labels,
 )
-from apps.provenance.models import Claim, Source
 from apps.provenance.schemas import (
     ClaimDisplayIdentityPartSchema,
     ClaimDisplayQualifierPartSchema,
     ClaimDisplayValueSchema,
     MarkdownClaimDisplaySchema,
 )
+from apps.provenance.test_factories import make_claim
 
 # Any ClaimControlledModel works for relationship/scalar dispatch: the display
 # kind is derived from field_name + value, not from this model. Markdown tests
@@ -505,13 +505,6 @@ class TestClaimValue:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
-
-
 def _q(fn: Callable[[], object]) -> int:
     with CaptureQueriesContext(connection) as ctx:
         fn()
@@ -529,7 +522,7 @@ class TestQueryCountDoesNotScale:
         """
         user = make_user()
         pm = make_machine_model(name="MM", slug="mm-credits", year=1997)
-        Claim.objects.assert_claim(pm, "name", "MM", source=bootstrap_source)
+        make_claim(pm, "name", "MM", source=bootstrap_source)
         CreditRole.objects.create(name="Design", slug="design")
 
         counter = 0

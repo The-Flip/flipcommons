@@ -14,8 +14,8 @@ from apps.catalog.claims import build_media_attachment_claim
 from apps.catalog.models import MachineModel
 from apps.catalog.tests.conftest import make_machine_model
 from apps.media.models import EntityMedia, MediaAsset
-from apps.provenance.models import Claim, Source
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
 
@@ -30,7 +30,7 @@ def _assert_claim(subject, field_name, value, *, user=None, source=None, claim_k
     calls pass through unchanged.
     """
     changeset = user_changeset(user) if user is not None else None
-    return Claim.objects.assert_claim(
+    return make_claim(
         subject,
         field_name,
         value,

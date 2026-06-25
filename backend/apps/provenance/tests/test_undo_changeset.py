@@ -13,9 +13,9 @@ import pytest
 from apps.accounts.test_factories import make_user
 from apps.catalog.engine.entity_api.delete import execute_soft_delete
 from apps.catalog.models import Title
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction, Source
 from apps.provenance.revert import UndoError, execute_undo_changeset
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.test_factories import make_claim, user_changeset
 
 pytestmark = pytest.mark.django_db
 
@@ -30,20 +30,13 @@ def author(db):
     return make_user()
 
 
-@pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
-
-
 def _title(slug: str, source: Source) -> Title:
     label = slug.replace("-", " ").title()
     t = Title.objects.create(name=label, slug=slug, status="active")
     # Seed name + status claims so the resolver has something to fall
     # back to after an undo deactivates the user's claim.
-    Claim.objects.assert_claim(t, "name", label, source=source)
-    Claim.objects.assert_claim(t, "status", "active", source=source)
+    make_claim(t, "name", label, source=source)
+    make_claim(t, "status", "active", source=source)
     return t
 
 
@@ -57,11 +50,8 @@ class TestEligibility:
         t = _title("g", bootstrap_source)
         cs, _ = execute_soft_delete(t, user=author)
         # Supersede the status=deleted claim with a status=active claim.
-        from apps.provenance.models import Claim
 
-        Claim.objects.assert_claim(
-            t, "status", "active", user=author, changeset=user_changeset(author)
-        )
+        make_claim(t, "status", "active", user=author, changeset=user_changeset(author))
         with pytest.raises(UndoError):
             execute_undo_changeset(_require_changeset(cs), user=author)
 
@@ -74,8 +64,8 @@ class TestInverseBehavior:
         m = MachineModel.objects.create(
             title=t, name="MM Pro", slug="mm-pro", status="active"
         )
-        Claim.objects.assert_claim(m, "name", "MM Pro", source=bootstrap_source)
-        Claim.objects.assert_claim(m, "status", "active", source=bootstrap_source)
+        make_claim(m, "name", "MM Pro", source=bootstrap_source)
+        make_claim(m, "status", "active", source=bootstrap_source)
         delete_cs, _ = execute_soft_delete(t, user=author)
 
         t.refresh_from_db()
@@ -103,7 +93,7 @@ class TestInverseBehavior:
     def test_reactivates_prior_user_claim_if_any(self, author, bootstrap_source):
         t = _title("g", bootstrap_source)
         # User first asserts status=active (their own prior claim).
-        prior = Claim.objects.assert_claim(
+        prior = make_claim(
             t, "status", "active", user=author, changeset=user_changeset(author)
         )
         # Then deletes.

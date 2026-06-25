@@ -3,6 +3,7 @@ from apps.catalog.models import (
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
+from apps.provenance.test_factories import make_claim
 
 
 class TestManufacturersAPI:
@@ -153,11 +154,8 @@ class TestManufacturersAPI:
         self, client, manufacturer, williams_entity, source
     ):
         from apps.catalog.resolve import resolve_entity
-        from apps.provenance.models import Claim
 
-        Claim.objects.assert_claim(
-            williams_entity, "operating_status", "ongoing", source=source
-        )
+        make_claim(williams_entity, "operating_status", "ongoing", source=source)
         resolve_entity(williams_entity)
         resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
         data = resp.json()

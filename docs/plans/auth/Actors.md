@@ -365,6 +365,29 @@ This will be its own PR.
 
 This will be its own PR.
 
+#### ✅ DONE: Enforce single claims write path
+
+Make the claim-mint primitive the single, enforced chokepoint before layering actor attribution on it. Relocate the primitive off `Claim.objects` into a module-level `_assert_claim` (new `apps/provenance/claim_writer.py`) and **delete `ClaimManager`** (its only method). Validation moves up with it, retiring the `models.claim → validation` import-linter exception. Lock the chokepoint two ways: an import-linter forbidden contract (only `claim_edit` may import `claim_writer`) and an AST mint-guard test (no `Claim` _persistence_ — `objects.create`/`bulk_create`/etc. — outside `claim_writer` + ingest's `persist.py`). Route media through `execute_claims` so there's one non-ingest mint caller. Sweep tests onto a `make_claim` factory.
+
+Ships together with "Save actor FKs" as one PR — see the commit breakdown there.
+
+#### ✅ DONE: Save actor FKs
+
+Write paths save `ChangeSet.actor` and `Claim.actor` going forward, so the backfill (next step) runs **once** with no fresh gaps appearing behind it.
+
+- **Build**
+  - A `record_changeset(*, actor, action=None, ingest_run=None, …)` funnel (new `changeset_writer.py`) and the relocated `_assert_claim` go **actor-first**: callers pass an `Actor`, never user/source.
+  - `Claim.actor = changeset.actor`. The legacy `user`/`source` column is still populated this PR (its CHECK + unique constraints stay live until later steps) via a **model-driven stamp** — `setattr(claim, actor.backing_model, backing)`, no `if actor_type` branch and no hand-declared per-type field name (`backing_model` already names the legacy Claim FK) — deletion-scheduled for "Drop dead schema".
+  - **Dedupe stays keyed on the legacy author column** this PR: historical active claims have `actor = NULL`, so an actor-keyed filter would miss them and trip the live per-user/per-source unique index on any re-edit. Actor-keyed dedupe moves to "Tighten schema" (with the unified index).
+  - Ingest sets `actor` on its bulk ChangeSets/Claims (`= ingest_run.source.actor`).
+  - Extend the AST guard to also lock `ChangeSet` creation to the funnel + ingest.
+- **Migrate**
+  - None — the `actor` columns already exist nullable.
+
+Write-path invariants (held by the funnel plus a NULL-guarded data-integrity test, so they're safe to run pre-backfill): `Claim.actor == changeset.actor`; `changeset.actor == ingest_run.source.actor` / `changeset.user.actor`.
+
+**One PR, four commits** (reviewed on commit boundaries): (1) relocate the mint primitive — behavior-neutral; (2) route media through `execute_claims` — behavioral, characterization-tested; (3) upload's error contract — surface 422 from `upload_media` while preserving storage cleanup; (4) save actor FKs — the actor-first funnel + stamp + invariants.
+
 #### Backfill actor FKs
 
 All ~222K changesets (original + backfilled) need `ChangeSet.actor` populated:
@@ -407,13 +430,25 @@ These migrations don't move data; they only change validation.
 
 This will be its own PR.
 
-#### Drop dead schema
+#### Drop dead stuff
+
+Drop dead schema:
 
 - **Migrate**
   - DELETE priority from User
   - DELETE priority, is_enabled from Source
   - DELETE `Claim.user` / `Claim.source`, the per-source/per-user unique indexes and the `source`-XOR-`user` check (all replaced by `Claim.actor` + the unified index)
   - DELETE `ChangeSet.user` and the `user`-XOR-`ingest_run` check (replaced by `ChangeSet.actor`); re-express `action IFF user` as `action IFF ingest_run IS NULL` (interactive edits carry an action; batch/ingest ones don't). `ingest_run` itself stays — it's batch metadata now, not attribution.
+
+Drop dead reads:
+
+The load-bearing reads — resolution, license, author/display, history, revert and undo authz — were already repointed onto `actor` in "Cut over consumers" (that PR carries the byte-identical acceptance bar). What's left here is the dead scaffolding that only existed to service the legacy columns, removed in lockstep with deleting them:
+
+- **The transitional legacy-author stamp** from "Save actor FKs" — the `setattr(claim, actor.backing_model, backing)` stamp helper and `record_changeset`'s `cs.user = actor.user` line. With `Claim.user`/`source` and `ChangeSet.user` gone there's nothing left to stamp, so the write funnel becomes purely actor (its end state).
+- **The model field declarations + annotations** they leave behind: the `user` / `source` FKs on `Claim`, `user` on `ChangeSet`, and the `user_id` / `ingest_run_id` / `source_id` typing shims. The per-user `ChangeSet` indexes (`provenance_cs_user_created`, `provenance_cs_user_action`) go too — their actor-keyed replacement (for revert's experience gate, `ChangeSet.filter(actor=…)`) lands in "Tighten schema".
+- **Cosmetic readers** that "Cut over consumers" left alone because they don't touch resolution: `ChangeSet.__str__`, provenance/catalog admin `list_display` / `search_fields`, and any `select_related("…user")` / `("source")` prefetch hints that survive — repoint to `actor` or drop.
+
+Acceptance: a grep gate proving no non-migration code names `claim.user` / `claim.source` / `changeset.user` / `ingest_run.source` for attribution — `actor` is the only attribution read left.
 
 This will be its own PR.
 

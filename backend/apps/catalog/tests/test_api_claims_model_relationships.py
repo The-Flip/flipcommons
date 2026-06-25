@@ -16,22 +16,21 @@ from apps.catalog.models import (
 )
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationSource
-from apps.provenance.models import ChangeSet, Claim
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.models import ChangeSet
+from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
 
 
-def _only_changeset() -> ChangeSet:
-    cs = ChangeSet.objects.first()
-    assert cs is not None
-    return cs
+def _only_user_changeset(user) -> ChangeSet:
+    """The sole user-authored changeset (fixture seed claims are ingest)."""
+    return ChangeSet.objects.get(user=user)
 
 
 @pytest.fixture
-def pm(db, _bootstrap_source):
+def pm(db, bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    Claim.objects.assert_claim(pm, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
     return pm
 
 
@@ -287,8 +286,10 @@ class TestCombinedEdits:
         )
         assert resp.status_code == 200
 
-        assert ChangeSet.objects.count() == 1
-        cs = _only_changeset()
+        # The pm fixture asserts a seed (ingest) name claim, so filter to the
+        # user's changeset rather than assuming it's the only row.
+        assert ChangeSet.objects.filter(user=user).count() == 1
+        cs = _only_user_changeset(user)
         assert cs.note == "Full edit"
         field_names = set(cs.claims.values_list("field_name", flat=True))
         assert "year" in field_names
@@ -308,7 +309,7 @@ class TestCombinedEdits:
         credit_roles,
         citation_source,
     ):
-        seed_claim = Claim.objects.assert_claim(
+        seed_claim = make_claim(
             pm,
             "description",
             "Template citation seed",
@@ -336,7 +337,13 @@ class TestCombinedEdits:
         assert resp.status_code == 200, resp.json()
 
         assert seed_claim.changeset_id is not None
-        changeset = ChangeSet.objects.exclude(pk=seed_claim.changeset_id).get()
+        # Restrict to the editing user's changesets (the pm fixture's seed name
+        # claim is ingest) and exclude the citation-template seed changeset.
+        changeset = (
+            ChangeSet.objects.filter(user=user)
+            .exclude(pk=seed_claim.changeset_id)
+            .get()
+        )
         claims = list(changeset.claims.order_by("pk"))
         assert claims
         for claim in claims:

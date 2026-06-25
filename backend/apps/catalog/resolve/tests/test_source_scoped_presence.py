@@ -45,6 +45,7 @@ from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, Source
+from apps.provenance.test_factories import make_claim
 
 _ALIAS_NS = "manufacturer_alias"
 
@@ -128,7 +129,7 @@ def test_scalar_present_and_absent_agree(source: Source) -> None:
     _assert_scalar_agrees(source, mfr, "name")
 
     # Source holds an active scalar claim → both read present.
-    Claim.objects.assert_claim(mfr, "name", "Gottlieb Inc", source=source)
+    make_claim(mfr, "name", "Gottlieb Inc", source=source)
     _assert_scalar_agrees(source, mfr, "name")
 
 
@@ -145,7 +146,7 @@ def test_scalar_dict_value_reads_present_not_as_a_tombstone(source: Source) -> N
     loc = Location.objects.create(
         location_path="usa", slug="usa", name="USA", location_type="country"
     )
-    Claim.objects.assert_claim(
+    make_claim(
         loc,
         "divisions",
         {"exists": False, "note": "free-form scalar JSON"},
@@ -170,18 +171,14 @@ def test_member_no_op_check_reads_present_tombstone_and_absent(source: Source) -
     assert _source_claims_member_present(source, ct_id, mfr.pk, claim_key) is False
 
     # exists=true membership → present.
-    Claim.objects.assert_claim(
-        mfr, _ALIAS_NS, present, source=source, claim_key=claim_key
-    )
+    make_claim(mfr, _ALIAS_NS, present, source=source, claim_key=claim_key)
     assert _source_claims_member_present(source, ct_id, mfr.pk, claim_key) is True
 
     # Tombstone (exists=false) supersedes it → absent again.
     _, tombstone = build_relationship_claim(
         _ALIAS_NS, {"alias_value": "bally corp"}, exists=False
     )
-    Claim.objects.assert_claim(
-        mfr, _ALIAS_NS, tombstone, source=source, claim_key=claim_key
-    )
+    make_claim(mfr, _ALIAS_NS, tombstone, source=source, claim_key=claim_key)
     assert _source_claims_member_present(source, ct_id, mfr.pk, claim_key) is False
 
 
@@ -193,9 +190,7 @@ def test_member_owned_by_another_source_is_a_no_op_for_ours(source: Source) -> N
     claim_key, present = build_relationship_claim(
         _ALIAS_NS, {"alias_value": "wms", "alias_display": "WMS"}
     )
-    Claim.objects.assert_claim(
-        mfr, _ALIAS_NS, present, source=other, claim_key=claim_key
-    )
+    make_claim(mfr, _ALIAS_NS, present, source=other, claim_key=claim_key)
     # Our source holds nothing here → no-op (source-scoped, not resolved).
     assert _source_claims_member_present(source, ct_id, mfr.pk, claim_key) is False
 
@@ -231,9 +226,7 @@ def test_source_scoped_diverges_when_other_source_owns_member(source: Source) ->
     claim_key, present = build_relationship_claim(
         _ALIAS_NS, {"alias_value": "stern pinball", "alias_display": "Stern Pinball"}
     )
-    Claim.objects.assert_claim(
-        mfr, _ALIAS_NS, present, source=other, claim_key=claim_key
-    )
+    make_claim(mfr, _ALIAS_NS, present, source=other, claim_key=claim_key)
 
     resolved = _resolved_member_presence(mfr, claim_key)
     source_scoped = _source_claims_member_present(source, ct_id, mfr.pk, claim_key)
@@ -260,12 +253,8 @@ def test_source_scoped_diverges_when_other_source_wins_tombstone(
         _ALIAS_NS, {"alias_value": "de"}, exists=False
     )
     # Our (lower-priority) source asserts presence; the winner tombstones it.
-    Claim.objects.assert_claim(
-        mfr, _ALIAS_NS, present, source=source, claim_key=claim_key
-    )
-    Claim.objects.assert_claim(
-        mfr, _ALIAS_NS, tombstone, source=winner, claim_key=claim_key
-    )
+    make_claim(mfr, _ALIAS_NS, present, source=source, claim_key=claim_key)
+    make_claim(mfr, _ALIAS_NS, tombstone, source=winner, claim_key=claim_key)
 
     resolved = _resolved_member_presence(mfr, claim_key)
     source_scoped = _source_claims_member_present(source, ct_id, mfr.pk, claim_key)

@@ -9,6 +9,7 @@ from sentry_sdk.transport import Transport
 from apps.accounts.models import User
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import CreditRole, Person
+from apps.provenance.models import Source
 
 if TYPE_CHECKING:
     from sentry_sdk._types import Event
@@ -37,6 +38,21 @@ def staff(db: None) -> User:
 def superuser(db: None) -> User:
     """Default superuser test user (also staff)."""
     return make_user(is_staff=True, is_superuser=True)
+
+
+@pytest.fixture
+def bootstrap_source(db: None) -> Source:
+    """Low-priority editorial Source for seeding baseline name/scalar claims.
+
+    Priority 1 ensures bootstrap claims never outrank real source or user
+    claims in tests that set up competing claims. Project-root fixture so test
+    files don't each define their own; a local fixture of the same name shadows
+    it (and tests needing a different priority/slug should call
+    ``Source.objects.create`` directly).
+    """
+    return Source.objects.create(
+        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
+    )
 
 
 @pytest.fixture

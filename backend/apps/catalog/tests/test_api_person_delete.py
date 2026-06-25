@@ -15,14 +15,8 @@ from django.core.cache import cache
 
 from apps.catalog.models import Credit, CreditRole, MachineModel, Person, Series, Title
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
+from apps.provenance.models import ChangeSet, ChangeSetAction
+from apps.provenance.test_factories import make_claim, user_changeset
 
 
 @pytest.fixture
@@ -40,15 +34,15 @@ def _clear_cache():
 def _make_person(bootstrap_source, slug: str, name: str | None = None) -> Person:
     label = name or slug.replace("-", " ").title()
     p = Person.objects.create(name=label, slug=slug, status="active")
-    Claim.objects.assert_claim(p, "name", label, source=bootstrap_source)
-    Claim.objects.assert_claim(p, "status", "active", source=bootstrap_source)
+    make_claim(p, "name", label, source=bootstrap_source)
+    make_claim(p, "status", "active", source=bootstrap_source)
     return p
 
 
 def _make_title(bootstrap_source, slug: str) -> Title:
     label = slug.replace("-", " ").title()
     t = Title.objects.create(name=label, slug=slug, status="active")
-    Claim.objects.assert_claim(t, "name", label, source=bootstrap_source)
+    make_claim(t, "name", label, source=bootstrap_source)
     return t
 
 
@@ -57,7 +51,7 @@ def _make_model(
 ) -> MachineModel:
     label = slug.replace("-", " ").title()
     m = MachineModel.objects.create(title=title, name=label, slug=slug, status=status)
-    Claim.objects.assert_claim(m, "name", label, source=bootstrap_source)
+    make_claim(m, "name", label, source=bootstrap_source)
     return m
 
 
@@ -200,9 +194,7 @@ class TestDeleteCreditBlocker:
         series = Series.objects.create(
             name="Star Wars Series", slug="star-wars-series", status="active"
         )
-        Claim.objects.assert_claim(
-            series, "name", "Star Wars Series", source=bootstrap_source
-        )
+        make_claim(series, "name", "Star Wars Series", source=bootstrap_source)
         Credit.objects.create(person=p, series=series, role=design_role)
         client.force_login(user)
 
@@ -274,10 +266,9 @@ class TestDeleteRateLimit:
 class TestDeletePreview:
     def test_returns_counts_without_blockers(self, client, user, bootstrap_source):
         p = _make_person(bootstrap_source, "pat-lawlor")
-        cs = ChangeSet.objects.create(
-            user=user, action=ChangeSetAction.EDIT, note="seed"
-        )
-        Claim.objects.assert_claim(p, "birth_place", "Chicago", user=user, changeset=cs)
+        # Route through the factory so the seed changeset carries an actor.
+        cs = user_changeset(user, note="seed")
+        make_claim(p, "birth_place", "Chicago", changeset=cs)
         client.force_login(user)
 
         resp = _get_preview(client, "pat-lawlor")

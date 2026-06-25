@@ -6,16 +6,9 @@ from django.contrib.contenttypes.models import ContentType
 from apps.accounts.test_factories import make_user
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.models import ChangeSetAction, Claim, Source
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.test_factories import make_claim, user_changeset
 
 REVERT_URL = "/api/claims/{claim_id}/revert/"
-
-
-@pytest.fixture
-def _bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
 
 
 @pytest.fixture
@@ -26,9 +19,9 @@ def source(db):
 
 
 @pytest.fixture
-def pm(db, _bootstrap_source):
+def pm(db, bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    Claim.objects.assert_claim(pm, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
     return pm
 
 
@@ -72,7 +65,7 @@ def _revert(client, claim_id, note):
 class TestRevertScalar:
     def test_revert_deactivates_claim_and_re_resolves(self, client, user, pm, source):
         """Reverting a user's scalar claim deactivates it; source value surfaces."""
-        Claim.objects.assert_claim(pm, "year", 1998, source=source)
+        make_claim(pm, "year", 1998, source=source)
         _make_user_edit(client, user, pm, {"year": 2002})
 
         claim = _get_active_claim(pm, "year", user)
@@ -181,7 +174,7 @@ class TestRevertNonWinning:
         hi_source = Source.objects.create(
             name="HiPri", slug="hipri", source_type="database", priority=20000
         )
-        Claim.objects.assert_claim(pm, "year", 1998, source=hi_source)
+        make_claim(pm, "year", 1998, source=hi_source)
         from apps.provenance.resolution import resolve_after_mutation
 
         resolve_after_mutation(pm, field_names=["year"])
@@ -297,7 +290,7 @@ class TestRevertValidation:
 
     def test_source_claim_returns_422(self, client, user, pm, source):
         """Source-attributed claims cannot be reverted."""
-        Claim.objects.assert_claim(pm, "year", 1998, source=source)
+        make_claim(pm, "year", 1998, source=source)
         ct = ContentType.objects.get_for_model(pm)
         src_claim = Claim.objects.get(
             content_type=ct,
@@ -356,7 +349,7 @@ class TestRevertValidation:
 class TestRevertMultiUser:
     def test_revert_surfaces_next_winner(self, client, user, pm, source, db):
         """A:1998, C:2001, A:2002 → revert A:2002 → surfaces C:2001."""
-        Claim.objects.assert_claim(pm, "year", 1998, source=source)
+        make_claim(pm, "year", 1998, source=source)
 
         user_c = make_user()
         _make_user_edit(client, user_c, pm, {"year": 2001})

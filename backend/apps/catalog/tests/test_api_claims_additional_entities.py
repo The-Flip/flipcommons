@@ -30,8 +30,8 @@ from apps.catalog.models import (
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationSource
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, CitationInstance, Claim, Source
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.models import ChangeSet, CitationInstance, Source
+from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
 
@@ -65,9 +65,7 @@ def _get_bootstrap_source():
 
 def _assert_name_claim(entity):
     """Assert a bootstrap name claim for entities with non-unique name fields."""
-    Claim.objects.assert_claim(
-        entity, "name", entity.name, source=_get_bootstrap_source()
-    )
+    make_claim(entity, "name", entity.name, source=_get_bootstrap_source())
     return entity
 
 
@@ -365,8 +363,10 @@ class TestAdditionalPatchClaimEndpoints:
         claim = entity.claims.get(user=user, field_name=field_name, is_active=True)
         assert claim.value == field_value
 
-        assert ChangeSet.objects.count() == 1
-        changeset = ChangeSet.objects.get()
+        # Some factories assert a seed (ingest) name claim, so filter to the
+        # user's changeset rather than assuming it's the only row.
+        assert ChangeSet.objects.filter(user=user).count() == 1
+        changeset = ChangeSet.objects.get(user=user)
         assert changeset.user == user
         assert changeset.claims.count() == 1
 
@@ -497,12 +497,8 @@ class TestPatchSystemResponseShape:
         )
         # Manufacturer is now claim-controlled on System — assert claims so
         # resolution preserves the FK when description is PATCHed.
-        Claim.objects.assert_claim(
-            system, "manufacturer", manufacturer.slug, source=source
-        )
-        Claim.objects.assert_claim(
-            sibling, "manufacturer", manufacturer.slug, source=source
-        )
+        make_claim(system, "manufacturer", manufacturer.slug, source=source)
+        make_claim(sibling, "manufacturer", manufacturer.slug, source=source)
         title = Title.objects.create(name="Medieval Madness", slug="medieval-madness")
         make_machine_model(
             name="Medieval Madness",
@@ -583,7 +579,7 @@ class TestPatchRewardTypeResponseShape:
         self, client, user, citation_source
     ):
         reward_type = RewardType.objects.create(name="Replay", slug="replay")
-        template_claim = Claim.objects.assert_claim(
+        template_claim = make_claim(
             reward_type,
             field_name="description",
             value="Template citation",

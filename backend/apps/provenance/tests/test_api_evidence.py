@@ -7,25 +7,16 @@ from django.contrib.auth import get_user_model
 
 from apps.catalog.models import Title
 from apps.citation.models import CitationSource, CitationSourceLink
-from apps.provenance.models import CitationInstance, Claim, Source
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.models import CitationInstance
+from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
 
 
 @pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=100
-    )
-
-
-@pytest.fixture
 def title(db, bootstrap_source):
     title = Title.objects.create(name="Medieval Madness", slug="medieval-madness")
-    Claim.objects.assert_claim(
-        title, "name", "Medieval Madness", source=bootstrap_source
-    )
+    make_claim(title, "name", "Medieval Madness", source=bootstrap_source)
     return title
 
 
@@ -55,10 +46,10 @@ class TestCitedEditEvidence:
         self, client, user, title, citation_source
     ):
         changeset = user_changeset(user, note="Documented the flyer")
-        year_claim = Claim.objects.assert_claim(
+        year_claim = make_claim(
             title, "name", "Medieval Madness (1997)", user=user, changeset=changeset
         )
-        desc_claim = Claim.objects.assert_claim(
+        desc_claim = make_claim(
             title, "description", "Updated copy", user=user, changeset=changeset
         )
         _attach_citation(year_claim, citation_source)
@@ -82,10 +73,10 @@ class TestCitedEditEvidence:
         self, client, user, title, citation_source
     ):
         changeset = user_changeset(user, note="Grouped edit")
-        first_claim = Claim.objects.assert_claim(
+        first_claim = make_claim(
             title, "name", "Medieval Madness (1997)", user=user, changeset=changeset
         )
-        second_claim = Claim.objects.assert_claim(
+        second_claim = make_claim(
             title, "description", "Updated copy", user=user, changeset=changeset
         )
         _attach_citation(first_claim, citation_source, locator="p. 3")
@@ -99,10 +90,8 @@ class TestCitedEditEvidence:
     def test_omits_uncited_changesets(self, client, user, title, citation_source):
         uncited = user_changeset(user, note="Uncited cleanup")
         cited = user_changeset(user, note="Cited update")
-        Claim.objects.assert_claim(
-            title, "description", "Cleanup", user=user, changeset=uncited
-        )
-        cited_claim = Claim.objects.assert_claim(
+        make_claim(title, "description", "Cleanup", user=user, changeset=uncited)
+        cited_claim = make_claim(
             title, "name", "Medieval Madness (1997)", user=user, changeset=cited
         )
         _attach_citation(cited_claim, citation_source)
@@ -123,7 +112,7 @@ class TestCitedEditEvidence:
         docstring.
         """
         changeset = user_changeset(user, note="Documented the flyer")
-        cited_claim = Claim.objects.assert_claim(
+        cited_claim = make_claim(
             title, "name", "Medieval Madness (1997)", user=user, changeset=changeset
         )
         _attach_citation(cited_claim, citation_source)

@@ -6,7 +6,7 @@ from apps.catalog.models import (
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.models import Claim
+from apps.provenance.test_factories import make_claim
 
 from .conftest import SAMPLE_IMAGES
 
@@ -99,9 +99,7 @@ class TestModelsAPI:
     ):
         role = CreditRole.objects.get(slug="design")
         Credit.objects.create(model=machine_model, person=person, role=role)
-        Claim.objects.assert_claim(
-            machine_model, "year", 1997, "IPDB entry", source=source
-        )
+        make_claim(machine_model, "year", 1997, "IPDB entry", source=source)
 
         resp = client.get(f"/api/pages/model/{machine_model.slug}")
         assert resp.status_code == 200

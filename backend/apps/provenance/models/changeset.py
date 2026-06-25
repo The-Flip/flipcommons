@@ -35,7 +35,7 @@ class ChangeSet(models.Model):
     All claims in a ChangeSet must share the same actor (same user or same
     source). A CheckConstraint enforces that exactly one of user or
     ingest_run is set; same-actor consistency within those groups is
-    enforced by assert_claim().
+    enforced by ``claim_writer._assert_claim``.
     """
 
     claims: models.Manager[Claim]

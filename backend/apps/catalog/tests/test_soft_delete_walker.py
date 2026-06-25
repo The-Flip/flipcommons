@@ -25,18 +25,9 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
-from apps.provenance.models import Claim, Source
+from apps.provenance.test_factories import make_claim
 
 pytestmark = pytest.mark.django_db
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    """Low-priority source used to seed name claims so the resolver doesn't
-    blank the ``name`` column when a status claim is written during delete."""
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
 
 
 def _title(
@@ -45,7 +36,7 @@ def _title(
     label = name or slug.replace("-", " ").title()
     t = Title.objects.create(name=label, slug=slug, status=status)
     if source is not None:
-        Claim.objects.assert_claim(t, "name", label, source=source)
+        make_claim(t, "name", label, source=source)
     return t
 
 
@@ -66,7 +57,7 @@ def _model(
         variant_of=variant_of,
     )
     if source is not None:
-        Claim.objects.assert_claim(m, "name", label, source=source)
+        make_claim(m, "name", label, source=source)
     return m
 
 

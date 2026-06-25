@@ -3,7 +3,8 @@ import pytest
 from apps.catalog.models import GameplayFeature
 from apps.catalog.resolve._relationships import resolve_gameplay_feature_parents
 from apps.provenance.claims import build_relationship_claim
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -28,7 +29,7 @@ class TestResolveGameplayFeatureParents:
         claim_key, value = build_relationship_claim(
             "gameplay_feature_parent", {"parent": parent.pk}
         )
-        Claim.objects.assert_claim(
+        make_claim(
             child,
             "gameplay_feature_parent",
             value,

@@ -19,11 +19,12 @@ from ninja.security import django_auth
 
 from apps.accounts.models import User
 from apps.catalog.claims import build_media_attachment_claim
-from apps.catalog.resolve import resolve_media_attachments
+from apps.claim_edit.claim_write import ClaimSpec, execute_claims
 from apps.core.api_helpers import authed_user
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.entity_types import get_linkable_model
+from apps.core.exceptions import StructuredValidationError
 from apps.core.schemas import ErrorDetailSchema, ValidationErrorSchema
 from apps.media.constants import (
     ALLOWED_IMAGE_EXTENSIONS,
@@ -58,36 +59,39 @@ from apps.media.storage import (
     delete_from_storage,
     upload_to_storage,
 )
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim
+from apps.provenance.models import ChangeSetAction
 
 logger = logging.getLogger(__name__)
 
 media_router = Router(tags=["media", "private"])
 
 
-def _assert_media_claim(
+def _write_media_claim(
     entity: MediaSupportedModel,
     *,
     claim_key: str,
     claim_value: object,
     user: User,
-) -> Claim:
-    """Assert a ``media_attachment`` claim inside a fresh user ChangeSet.
+) -> None:
+    """Write a ``media_attachment`` claim for *entity* through the single path.
 
-    Every media mutation is one user action, so it gets its own
-    ``action=EDIT`` ChangeSet — the single attribution path through
-    provenance. Callers must already hold a ``transaction.atomic()`` block so
-    the ChangeSet and claim commit together. See docs/plans/auth/Actors.md
-    ("Fix Media Claims").
+    Every media mutation is one user action, so it gets its own ``action=EDIT``
+    ChangeSet. ``execute_claims`` is the single non-ingest mint caller: it opens
+    that ChangeSet, mints the claim and resolves the entity. Resolution needs no
+    media-specific call — the generic ``resolve_after_mutation`` dispatch already
+    routes ``media_attachment`` to the media resolver. Callers stay inside their
+    own ``transaction.atomic()`` block for asset/storage orchestration;
+    ``execute_claims`` nests a savepoint within it. See docs/plans/auth/Actors.md.
     """
-    changeset = ChangeSet.objects.create(user=user, action=ChangeSetAction.EDIT)
-    return Claim.objects.assert_claim(
+    execute_claims(
         entity,
-        "media_attachment",
-        claim_value,
+        [
+            ClaimSpec(
+                field_name="media_attachment", value=claim_value, claim_key=claim_key
+            )
+        ],
         user=user,
-        claim_key=claim_key,
-        changeset=changeset,
+        action=ChangeSetAction.EDIT,
     )
 
 
@@ -164,7 +168,11 @@ def _resolve_entity(
 
 @media_router.post(
     "/upload/",
-    response={200: UploadSchema, 429: ErrorDetailSchema},
+    response={
+        200: UploadSchema,
+        422: ValidationErrorSchema,
+        429: ErrorDetailSchema,
+    },
     auth=django_auth,
 )
 @requires(Activity.MEDIA_EDIT)
@@ -203,7 +211,9 @@ def upload_media(
         raise HttpError(400, f"File exceeds maximum size of {size_mb} MB.")
 
     # --- Resolve entity and validate category ---
-    ct, entity = _resolve_entity(entity_type, public_id)
+    # ``_ct``: upload resolves via execute_claims, so the ContentType the other
+    # endpoints use for their EntityMedia lookup is unused here.
+    _ct, entity = _resolve_entity(entity_type, public_id)
     try:
         # Validate category early (asset_pk=0 is a placeholder — only category
         # validation runs here; the real claim is built after asset creation).
@@ -291,13 +301,15 @@ def upload_media(
                 category=category,
                 is_primary=False,
             )
-            _assert_media_claim(
+            _write_media_claim(
                 entity, claim_key=claim_key, claim_value=claim_value, user=user
             )
-            resolve_media_attachments(
-                content_type_id=ct.id,
-                subject_ids={entity.pk},
-            )
+    except StructuredValidationError:
+        # A client-fault claim failure (constraint/validation) — clean up the
+        # blobs uploaded before the atomic block, then re-raise so Ninja's
+        # handler maps it to a 422, matching the other media endpoints.
+        delete_from_storage(uploaded_keys)
+        raise
     except Exception:
         logger.exception("DB transaction failed, cleaning up storage keys")
         delete_from_storage(uploaded_keys)
@@ -359,12 +371,8 @@ def detach_media(request: HttpRequest, body: MediaAssetInputSchema) -> Status[No
             asset.pk,
             exists=False,
         )
-        _assert_media_claim(
+        _write_media_claim(
             entity, claim_key=claim_key, claim_value=claim_value, user=user
-        )
-        resolve_media_attachments(
-            content_type_id=ct.id,
-            subject_ids={entity.pk},
         )
         asset.delete()
         if storage_keys:
@@ -406,12 +414,8 @@ def set_primary(request: HttpRequest, body: MediaAssetInputSchema) -> Status[Non
             category=em.category,
             is_primary=True,
         )
-        _assert_media_claim(
+        _write_media_claim(
             entity, claim_key=claim_key, claim_value=claim_value, user=user
-        )
-        resolve_media_attachments(
-            content_type_id=ct.id,
-            subject_ids={entity.pk},
         )
 
     return Status(204, None)
@@ -462,12 +466,8 @@ def set_category(
         except ValueError as exc:
             raise HttpError(400, str(exc)) from exc
 
-        _assert_media_claim(
+        _write_media_claim(
             entity, claim_key=claim_key, claim_value=claim_value, user=user
-        )
-        resolve_media_attachments(
-            content_type_id=ct.id,
-            subject_ids={entity.pk},
         )
 
     return Status(204, None)

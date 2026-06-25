@@ -7,6 +7,7 @@ from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.plan import IngestPlan, PlannedClaimAssert
 from apps.core.models import License
 from apps.provenance.models import Claim, Source
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -42,16 +43,14 @@ class TestAssertClaimLicense:
         from apps.catalog.models import Manufacturer
 
         mfr = Manufacturer.objects.create(name="Test", slug="test")
-        claim = Claim.objects.assert_claim(
-            mfr, "description", "text", source=source, license=cc_by_sa
-        )
+        claim = make_claim(mfr, "description", "text", source=source, license=cc_by_sa)
         assert claim.license == cc_by_sa
 
     def test_assert_claim_without_license(self, source):
         from apps.catalog.models import Manufacturer
 
         mfr = Manufacturer.objects.create(name="Test", slug="test")
-        claim = Claim.objects.assert_claim(mfr, "description", "text", source=source)
+        claim = make_claim(mfr, "description", "text", source=source)
         assert claim.license is None
 
 

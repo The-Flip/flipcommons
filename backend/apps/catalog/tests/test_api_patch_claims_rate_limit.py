@@ -31,8 +31,8 @@ import pytest
 from apps.catalog.models import Tag, Title
 from apps.core.types import JsonBody
 from apps.provenance.constants import EDIT_RATE_LIMIT
-from apps.provenance.models import Claim
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, check_and_record
+from apps.provenance.test_factories import make_claim
 
 
 def _fill_edit_bucket(user) -> None:
@@ -54,9 +54,9 @@ def _assert_429_edit(resp) -> None:
 
 
 @pytest.fixture
-def title(db, _bootstrap_source):
+def title(db, bootstrap_source):
     t = Title.objects.create(name="Medieval Madness", slug="medieval-madness")
-    Claim.objects.assert_claim(t, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(t, "name", "Medieval Madness", source=bootstrap_source)
     return t
 
 

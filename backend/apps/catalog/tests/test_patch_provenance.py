@@ -30,10 +30,10 @@ from apps.claim_ingest.plan import (
 from apps.provenance.models import (
     ChangeSet,
     CitationInstance,
-    Claim,
     IngestRun,
     Source,
 )
+from apps.provenance.test_factories import make_claim
 
 pytestmark = pytest.mark.django_db
 
@@ -186,7 +186,7 @@ claims:
 def test_same_field_retracted_twice_rejected(flipcommons_catalog, pm):
     # Decision 2 (retractions): two entries retracting the same field collapse to
     # one deactivation, dropping one entry's note — rejected.
-    Claim.objects.assert_claim(pm, "year", 1998, source=flipcommons_catalog)
+    make_claim(pm, "year", 1998, source=flipcommons_catalog)
     text = """
 attribution: flipcommons-catalog
 claims:
@@ -222,7 +222,7 @@ claims:
 
 def test_cite_on_retraction_only_entry_rejected(flipcommons_catalog, pm):
     # A cite has nothing to attach to when the entry only retracts.
-    Claim.objects.assert_claim(pm, "year", 1998, source=flipcommons_catalog)
+    make_claim(pm, "year", 1998, source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      retract: [year]\n"
     with pytest.raises(PatchError, match="cite has no field to attach to"):
         _apply(text)
@@ -274,14 +274,16 @@ claims:
 def test_note_sets_changeset_note(flipcommons_catalog, pm):
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: corrected per the flyer\n      year: 1998\n"
     _apply(text)
-    cs = ChangeSet.objects.get(ingest_run__isnull=False)
+    # Filter to this patch's changeset; seed name claims now ride their own
+    # (patch_id-less) ingest changesets.
+    cs = ChangeSet.objects.get(ingest_run__patch_id="0001-test")
     assert cs.note == "corrected per the flyer"
 
 
 def test_retract_only_entry_lands_note(flipcommons_catalog, pm):
     # Seed a flipcommons-catalog year claim, then retract it with a note. A retraction
     # emits no assertion, so its note must still reach the changeset.
-    Claim.objects.assert_claim(pm, "year", 1998, source=flipcommons_catalog)
+    make_claim(pm, "year", 1998, source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: removing our bad year\n      retract: [year]\n"
     report = _apply(text, patch_id="0002-retract")
     assert report.retracted == 1
@@ -556,7 +558,7 @@ def test_cite_on_unchanged_value_rejected(flipcommons_catalog, ipdb_root, pm):
     # cite: would attach to nothing and silently vanish — now a hard error. The
     # empty-diff guard runs in the apply layer (ValidationError; the command
     # converts it to a PatchError for the author).
-    Claim.objects.assert_claim(pm, "year", 2000, source=flipcommons_catalog)
+    make_claim(pm, "year", 2000, source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 2000\n"
     with pytest.raises(ValidationError, match="changes nothing"):
         _apply(text)
@@ -568,17 +570,19 @@ def test_note_on_unchanged_value_rejected(flipcommons_catalog, pm):
     # diffs as unchanged, which would drop the note — now a hard error. Build time
     # can't catch this (it depends on the post-diff result), so the apply-layer
     # empty-diff guard does.
-    Claim.objects.assert_claim(pm, "year", 2000, source=flipcommons_catalog)
+    make_claim(pm, "year", 2000, source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: confirmed correct\n      year: 2000\n"
     with pytest.raises(ValidationError, match="changes nothing"):
         _apply(text)
-    assert not ChangeSet.objects.filter(ingest_run__isnull=False).exists()
+    # The no-op apply must mint no changeset; scope to this patch since seed
+    # name/year claims now ride their own ingest changesets.
+    assert not ChangeSet.objects.filter(ingest_run__patch_id="0001-test").exists()
 
 
 def test_empty_diff_rejected_at_dry_run(flipcommons_catalog, pm):
     # The empty-diff guard must fire at --dry-run too, so an author's pre-flight
     # check catches the no-op note before apply — not only at apply time.
-    Claim.objects.assert_claim(pm, "year", 2000, source=flipcommons_catalog)
+    make_claim(pm, "year", 2000, source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: confirmed correct\n      year: 2000\n"
     with pytest.raises(ValidationError, match="changes nothing"):
         _apply(text, dry_run=True)
@@ -586,7 +590,7 @@ def test_empty_diff_rejected_at_dry_run(flipcommons_catalog, pm):
 
 def test_changing_note_entry_passes_dry_run(flipcommons_catalog, pm):
     # A real change carrying a note validates clean at --dry-run (no false reject).
-    Claim.objects.assert_claim(pm, "year", 2000, source=flipcommons_catalog)
+    make_claim(pm, "year", 2000, source=flipcommons_catalog)
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      note: corrected per the flyer\n      year: 1999\n"
     report = _apply(text, dry_run=True)
     assert report.asserted == 1
@@ -1011,7 +1015,11 @@ def test_url_cite_surfaced_in_edit_history(
 
     resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
     assert resp.status_code == 200
-    (cs,) = resp.json()
+    # Seed name claim now rides its own ingest changeset, so pick the one
+    # carrying the year change rather than assuming a single entry.
+    cs = next(
+        c for c in resp.json() if any(ch["field_name"] == "year" for ch in c["changes"])
+    )
     year_change = next(c for c in cs["changes"] if c["field_name"] == "year")
     (citation,) = year_change["citations"]
     assert citation["source_name"] == url
@@ -1038,7 +1046,11 @@ def test_url_cite_with_archive_surfaces_live_link_in_edit_history(
 
     resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
     assert resp.status_code == 200
-    (cs,) = resp.json()
+    # Seed name claim now rides its own ingest changeset, so pick the one
+    # carrying the year change rather than assuming a single entry.
+    cs = next(
+        c for c in resp.json() if any(ch["field_name"] == "year" for ch in c["changes"])
+    )
     year_change = next(c for c in cs["changes"] if c["field_name"] == "year")
     (citation,) = year_change["citations"]
     assert citation["url"] == url  # the live page, not the archive snapshot
@@ -1054,7 +1066,9 @@ def test_edit_history_exposes_citation(client, flipcommons_catalog, ipdb_root, p
     resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
     assert resp.status_code == 200
     body = resp.json()
-    (cs,) = body
+    # Seed name claim now rides its own ingest changeset, so pick the one
+    # carrying the year change rather than assuming a single entry.
+    cs = next(c for c in body if any(ch["field_name"] == "year" for ch in c["changes"]))
     assert cs["note"] == "per ipdb"
     year_change = next(c for c in cs["changes"] if c["field_name"] == "year")
     (citation,) = year_change["citations"]
@@ -1067,7 +1081,9 @@ def test_changeset_detail_exposes_citation(client, flipcommons_catalog, ipdb_roo
     # its claims prefetch must also load citation instances.
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
     _apply(text)
-    cs = ChangeSet.objects.get(ingest_run__isnull=False)
+    # Filter to this patch's changeset; seed name claims now ride their own
+    # (patch_id-less) ingest changesets.
+    cs = ChangeSet.objects.get(ingest_run__patch_id="0001-test")
 
     resp = client.get(f"/api/pages/changesets/{cs.pk}/")
     assert resp.status_code == 200

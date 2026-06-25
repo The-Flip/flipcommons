@@ -9,21 +9,14 @@ from django.utils import timezone
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import Manufacturer
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.models import ChangeSet, Claim, IngestRun, Source
+from apps.provenance.models import ChangeSet, IngestRun, Source
 from apps.provenance.pagination import cursor_paginate
-from apps.provenance.test_factories import ingest_changeset, user_changeset
+from apps.provenance.test_factories import ingest_changeset, make_claim, user_changeset
 
 
 @pytest.fixture
 def client():
     return Client()
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
 
 
 @pytest.fixture
@@ -39,14 +32,14 @@ def source(db):
 @pytest.fixture
 def pm(db, bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    Claim.objects.assert_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
     return pm
 
 
 @pytest.fixture
 def mfr(db, bootstrap_source):
     mfr = Manufacturer.objects.create(name="Williams", slug="williams")
-    Claim.objects.assert_claim(mfr, "name", "Williams", source=bootstrap_source)
+    make_claim(mfr, "name", "Williams", source=bootstrap_source)
     return mfr
 
 
@@ -58,7 +51,7 @@ class TestCursorPaginate:
     def test_first_page(self, user, pm):
         for i in range(5):
             cs = user_changeset(user)
-            Claim.objects.assert_claim(pm, "year", 1990 + i, user=user, changeset=cs)
+            make_claim(pm, "year", 1990 + i, user=user, changeset=cs)
 
         items, next_cursor = cursor_paginate(ChangeSet.objects.all(), "", 3)
         assert len(items) == 3
@@ -67,11 +60,13 @@ class TestCursorPaginate:
     def test_second_page_via_cursor(self, user, pm):
         for i in range(5):
             cs = user_changeset(user)
-            Claim.objects.assert_claim(pm, "year", 1990 + i, user=user, changeset=cs)
+            make_claim(pm, "year", 1990 + i, user=user, changeset=cs)
 
-        items1, cursor = cursor_paginate(ChangeSet.objects.all(), "", 3)
+        # Scope to this user's changesets; the pm fixture seeds ingest changesets.
+        qs = ChangeSet.objects.filter(user=user)
+        items1, cursor = cursor_paginate(qs, "", 3)
         assert cursor is not None
-        items2, cursor2 = cursor_paginate(ChangeSet.objects.all(), cursor, 3)
+        items2, cursor2 = cursor_paginate(qs, cursor, 3)
         assert len(items2) == 2
         assert cursor2 is None
         # No overlapping IDs
@@ -85,14 +80,16 @@ class TestCursorPaginate:
         cs_ids = []
         for i in range(3):
             cs = user_changeset(user)
-            Claim.objects.assert_claim(pm, "year", 1990 + i, user=user, changeset=cs)
+            make_claim(pm, "year", 1990 + i, user=user, changeset=cs)
             ChangeSet.objects.filter(pk=cs.pk).update(created_at=now)
             cs_ids.append(cs.pk)
 
-        items, cursor = cursor_paginate(ChangeSet.objects.all(), "", 2)
+        # Scope to this user's changesets; the pm fixture seeds ingest changesets.
+        qs = ChangeSet.objects.filter(user=user)
+        items, cursor = cursor_paginate(qs, "", 2)
         assert len(items) == 2
         assert cursor is not None
-        items2, _ = cursor_paginate(ChangeSet.objects.all(), cursor, 2)
+        items2, _ = cursor_paginate(qs, cursor, 2)
         assert len(items2) == 1
         all_ids = [i.pk for i in items] + [i.pk for i in items2]
         assert len(set(all_ids)) == 3
@@ -106,6 +103,15 @@ class TestCursorPaginate:
 # ── List endpoint ─────────────────────────────────────────────────
 
 
+def _user_items(resp):
+    """Feed entries authored by users; the pm/mfr fixtures seed ingest changesets."""
+    return [
+        it
+        for it in resp.json()["items"]
+        if it["attribution"]["author"]["kind"] == "user"
+    ]
+
+
 @pytest.mark.django_db
 class TestChangesList:
     def test_returns_user_edits(self, client, user, pm):
@@ -117,9 +123,9 @@ class TestChangesList:
         )
         resp = client.get("/api/pages/changesets/")
         assert resp.status_code == 200
-        data = resp.json()
-        assert len(data["items"]) == 1
-        item = data["items"][0]
+        items = _user_items(resp)
+        assert len(items) == 1
+        item = items[0]
         assert item["attribution"]["author"] == {
             "kind": "user",
             "username": user.username,
@@ -136,13 +142,19 @@ class TestChangesList:
             finished_at=timezone.now(),
         )
         cs = ingest_changeset(run)
-        Claim.objects.assert_claim(pm, "year", 1999, source=source, changeset=cs)
+        make_claim(pm, "year", 1999, source=source, changeset=cs)
 
         resp = client.get("/api/pages/changesets/")
         assert resp.status_code == 200
         items = resp.json()["items"]
-        assert len(items) == 1
-        assert items[0]["attribution"]["author"] == {"kind": "source", "name": "IPDB"}
+        # The pm fixture seeds its own (Bootstrap) ingest changesets; assert the
+        # IPDB ingest changeset created here is present in the feed.
+        ipdb = [
+            it
+            for it in items
+            if it["attribution"]["author"] == {"kind": "source", "name": "IPDB"}
+        ]
+        assert len(ipdb) == 1
 
     def test_entity_type_filter(self, client, user, pm, mfr):
         client.force_login(user)
@@ -159,7 +171,9 @@ class TestChangesList:
 
         resp = client.get("/api/pages/changesets/?entity_type=manufacturer")
         assert resp.status_code == 200
-        items = resp.json()["items"]
+        # mfr fixture seeds an ingest changeset on the manufacturer; assert on the
+        # user edit (which must be a manufacturer, confirming the filter works).
+        items = _user_items(resp)
         assert len(items) == 1
         assert items[0]["entity"]["type_label"] == "Manufacturer"
 
@@ -177,20 +191,23 @@ class TestChangesList:
                 content_type="application/json",
             )
 
+        # The feed also carries the pm fixture's seed ingest changesets, which are
+        # older than these user edits and so sort after them; assert on the user
+        # edits surfaced per page (3 newest, then the remaining 2).
         resp1 = client.get("/api/pages/changesets/?limit=3")
         data1 = resp1.json()
-        assert len(data1["items"]) == 3
+        user1 = _user_items(resp1)
+        assert len(user1) == 3
         assert data1["next_cursor"] is not None
 
         resp2 = client.get(
             f"/api/pages/changesets/?limit=3&cursor={data1['next_cursor']}"
         )
-        data2 = resp2.json()
-        assert len(data2["items"]) == 2
-        assert data2["next_cursor"] is None
+        user2 = _user_items(resp2)
+        assert len(user2) == 2
 
-        ids1 = {i["id"] for i in data1["items"]}
-        ids2 = {i["id"] for i in data2["items"]}
+        ids1 = {i["id"] for i in user1}
+        ids2 = {i["id"] for i in user2}
         assert ids1.isdisjoint(ids2)
 
     def test_after_filter(self, client, user, pm):
@@ -206,11 +223,12 @@ class TestChangesList:
         assert resp.status_code == 200
         assert len(resp.json()["items"]) == 0
 
-        # Use a past timestamp so the edit falls after it.
+        # Use a past timestamp so the edit falls after it. Filter to the user edit;
+        # the pm fixture's seed ingest changesets also fall after the past boundary.
         past = "2000-01-01T00:00:00"
         resp = client.get(f"/api/pages/changesets/?after={past}")
         assert resp.status_code == 200
-        assert len(resp.json()["items"]) == 1
+        assert len(_user_items(resp)) == 1
 
     def test_deleted_entity_excluded(self, client, user, pm):
         client.force_login(user)
@@ -223,7 +241,12 @@ class TestChangesList:
 
         resp = client.get("/api/pages/changesets/")
         assert resp.status_code == 200
-        assert len(resp.json()["items"]) == 0
+        # The deleted model's changesets (including the user edit) are excluded.
+        # The auto-Title survives, so its seed ingest changeset may remain; assert
+        # no feed entry references the deleted Model.
+        items = resp.json()["items"]
+        assert all(it["entity"]["type_label"] != "Model" for it in items)
+        assert _user_items(resp) == []
 
 
 # ── Detail endpoint ───────────────────────────────────────────────
@@ -298,9 +321,7 @@ class TestChangesDetail:
         """A changeset with only retracted claims shows retractions, no changes."""
         # Create a claim, then retract it via a separate changeset.
         original_cs = user_changeset(user)
-        claim = Claim.objects.assert_claim(
-            pm, "year", 2000, user=user, changeset=original_cs
-        )
+        claim = make_claim(pm, "year", 2000, user=user, changeset=original_cs)
 
         retract_cs = user_changeset(user)
         claim.retracted_by_changeset = retract_cs
@@ -331,8 +352,9 @@ class TestChangesListBeforeFilter:
         assert resp.status_code == 200
         assert len(resp.json()["items"]) == 0
 
-        # Use a future timestamp so the edit falls before it.
+        # Use a future timestamp so the edit falls before it. Filter to the user
+        # edit; the pm fixture's seed ingest changesets also fall before the future.
         future = "2099-01-01T00:00:00"
         resp = client.get(f"/api/pages/changesets/?before={future}")
         assert resp.status_code == 200
-        assert len(resp.json()["items"]) == 1
+        assert len(_user_items(resp)) == 1

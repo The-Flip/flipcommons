@@ -13,7 +13,8 @@ from django.db import IntegrityError, connection
 
 from apps.catalog.models import CorporateEntity, Manufacturer, OperatingStatus
 from apps.catalog.resolve import resolve_entity
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 from apps.provenance.validation import validate_claim_value
 
 pytestmark = pytest.mark.django_db
@@ -39,7 +40,7 @@ def entity(db, test_source):
     )
     # Name is non-unique, so resolution resets it to blank unless a claim
     # backs it. Seed one so resolve_entity() in these tests keeps the name.
-    Claim.objects.assert_claim(ce, "name", "D. Gottlieb & Company", source=test_source)
+    make_claim(ce, "name", "D. Gottlieb & Company", source=test_source)
     return ce
 
 
@@ -103,9 +104,7 @@ class TestChoicesValidation:
 class TestResolution:
     def test_resolved_from_claim(self, entity, test_source):
         """The field resolves from a claim like any other scalar."""
-        Claim.objects.assert_claim(
-            entity, "operating_status", "ongoing", source=test_source
-        )
+        make_claim(entity, "operating_status", "ongoing", source=test_source)
         resolve_entity(entity)
         entity.refresh_from_db()
         assert entity.operating_status == OperatingStatus.ONGOING

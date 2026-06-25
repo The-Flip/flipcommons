@@ -15,8 +15,12 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.accounts.test_factories import make_user
 from apps.media.models import MediaAsset
-from apps.provenance.models import ChangeSet, IngestRun, Source
-from apps.provenance.test_factories import ingest_changeset, user_changeset
+from apps.provenance.models import ChangeSet, Source
+from apps.provenance.test_factories import (
+    ingest_changeset,
+    ingest_run,
+    user_changeset,
+)
 
 DASHBOARD_URL = "/api/pages/admin/dashboard/"
 
@@ -130,7 +134,7 @@ class TestEditsMetric:
         source = Source.objects.create(
             name="TestSource", slug="test-source", priority=10
         )
-        run = IngestRun.objects.create(source=source, input_fingerprint="fp-1")
+        run = ingest_run(source)
         ingest_changeset(run)
         ingest_changeset(run)
 

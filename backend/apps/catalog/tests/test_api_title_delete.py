@@ -10,16 +10,8 @@ from django.core.cache import cache
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import MachineModel, Title
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
-
-
-@pytest.fixture
-def bootstrap_source(db):
-    """Low-priority source; seeds name claims so the resolver doesn't blank
-    ``name`` when a status claim is written during the delete path."""
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
+from apps.provenance.models import ChangeSet, ChangeSetAction, Claim
+from apps.provenance.test_factories import make_claim, user_changeset
 
 
 @pytest.fixture(autouse=True)
@@ -35,8 +27,8 @@ def _make_title(bootstrap_source, slug: str, name: str | None = None) -> Title:
     # Seed name + status claims from a low-priority source so the resolver
     # has something to fall back to after an undo deactivates the user's
     # status claim. Mirrors what ingest would provide in production.
-    Claim.objects.assert_claim(t, "name", label, source=bootstrap_source)
-    Claim.objects.assert_claim(t, "status", "active", source=bootstrap_source)
+    make_claim(t, "name", label, source=bootstrap_source)
+    make_claim(t, "status", "active", source=bootstrap_source)
     return t
 
 
@@ -48,8 +40,8 @@ def _make_model(bootstrap_source, title: Title, slug: str) -> MachineModel:
         slug=slug,
         status="active",
     )
-    Claim.objects.assert_claim(m, "name", label, source=bootstrap_source)
-    Claim.objects.assert_claim(m, "status", "active", source=bootstrap_source)
+    make_claim(m, "name", label, source=bootstrap_source)
+    make_claim(m, "status", "active", source=bootstrap_source)
     return m
 
 
@@ -233,13 +225,10 @@ class TestDeletePreview:
         t = _make_title(bootstrap_source, "mm")
         _make_model(bootstrap_source, t, "mm-pro")
         _make_model(bootstrap_source, t, "mm-le")
-        # Stamp a user changeset touching the title so changeset_count > 0.
-        cs = ChangeSet.objects.create(
-            user=user, action=ChangeSetAction.EDIT, note="seed"
-        )
-        Claim.objects.assert_claim(
-            t, "name", "Medieval Madness", user=user, changeset=cs
-        )
+        # Stamp a user changeset (via the factory so it carries an actor)
+        # touching the title so changeset_count > 0.
+        cs = user_changeset(user, note="seed")
+        make_claim(t, "name", "Medieval Madness", changeset=cs)
         client.force_login(user)
         resp = _get_preview(client, "mm")
         assert resp.status_code == 200

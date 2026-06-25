@@ -14,17 +14,17 @@ from apps.citation.models import CitationSource
 from apps.core.types import JsonBody
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import ChangeSet, Claim, Source
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
 
 
 @pytest.fixture
-def title(db, _bootstrap_source):
+def title(db, bootstrap_source):
     t = Title.objects.create(
         name="Medieval Madness", slug="medieval-madness", opdb_id="G5pe4"
     )
-    Claim.objects.assert_claim(t, "name", "Medieval Madness", source=_bootstrap_source)
+    make_claim(t, "name", "Medieval Madness", source=bootstrap_source)
     return t
 
 
@@ -65,7 +65,7 @@ def _assert_title_abbreviations(
         claim_key, claim_value = build_relationship_claim(
             "abbreviation", {"value": value}
         )
-        Claim.objects.assert_claim(
+        make_claim(
             title,
             "abbreviation",
             claim_value,
@@ -218,8 +218,10 @@ class TestPatchTitleClaims:
         )
         assert resp.status_code == 200
 
-        assert ChangeSet.objects.count() == 1
-        changeset = ChangeSet.objects.get()
+        # The title fixture asserts a seed (ingest) name claim, so filter to the
+        # user's changeset rather than assuming it's the only row.
+        assert ChangeSet.objects.filter(user=user).count() == 1
+        changeset = ChangeSet.objects.get(user=user)
         assert changeset.note == "Grouped title edit"
         assert changeset.claims.count() == 3
         assert {claim.field_name for claim in changeset.claims.all()} == {
@@ -249,7 +251,7 @@ class TestPatchTitleClaims:
         self, client, user, title, citation_source
     ):
         client.force_login(user)
-        template_claim = Claim.objects.assert_claim(
+        template_claim = make_claim(
             title,
             "description",
             "Template citation seed",
@@ -272,7 +274,13 @@ class TestPatchTitleClaims:
 
         assert resp.status_code == 200, resp.json()
         assert template_claim.changeset_id is not None
-        changeset = ChangeSet.objects.exclude(pk=template_claim.changeset_id).get()
+        # Restrict to the editing user's changesets (the title fixture's seed name
+        # claim is ingest) and exclude the citation-template seed changeset.
+        changeset = (
+            ChangeSet.objects.filter(user=user)
+            .exclude(pk=template_claim.changeset_id)
+            .get()
+        )
         created_claim = changeset.claims.get(field_name="description")
         claim_citations = list(created_claim.citation_instances.all())
         assert len(claim_citations) == 1
@@ -295,7 +303,9 @@ class TestPatchTitleClaims:
         )
 
         assert resp.status_code == 422
-        assert ChangeSet.objects.count() == 0
+        # The title fixture's seed name claim is an ingest changeset; the rolled-
+        # back edit must leave no user changeset behind.
+        assert ChangeSet.objects.filter(user=user).count() == 0
         assert not Claim.objects.filter(
             user=user, field_name="description", value="Updated"
         ).exists()

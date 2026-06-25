@@ -12,6 +12,7 @@ from apps.provenance.helpers import (
 )
 from apps.provenance.models import Claim, Source
 from apps.provenance.schemas import ClaimDisplayValueSchema
+from apps.provenance.test_factories import make_claim
 
 
 @pytest.fixture
@@ -25,7 +26,7 @@ def source():
 class TestActiveClaims:
     def test_returns_list_when_prefetched(self, source):
         series = Series.objects.create(slug="s", name="S")
-        Claim.objects.assert_claim(series, "name", "S", source=source)
+        make_claim(series, "name", "S", source=source)
 
         loaded = Series.objects.prefetch_related(claims_prefetch()).get(pk=series.pk)
 
@@ -44,7 +45,7 @@ class TestActiveClaims:
 class TestCitationInstances:
     def test_returns_list_when_prefetched(self, source):
         series = Series.objects.create(slug="s", name="S")
-        Claim.objects.assert_claim(series, "name", "S", source=source)
+        make_claim(series, "name", "S", source=source)
 
         loaded = Series.objects.prefetch_related(claims_prefetch()).get(pk=series.pk)
         claim = active_claims(loaded)[0]
@@ -54,7 +55,7 @@ class TestCitationInstances:
 
     def test_raises_when_claim_not_prefetched(self, source):
         series = Series.objects.create(slug="s", name="S")
-        Claim.objects.assert_claim(series, "name", "S", source=source)
+        make_claim(series, "name", "S", source=source)
         bare_claim = Claim.objects.get(object_id=series.pk, field_name="name")
 
         with pytest.raises(AssertionError, match="claims_prefetch"):
@@ -71,7 +72,7 @@ class TestBuildSources:
         pm = make_machine_model(name="MM", slug="mm", year=1997)
         person = Person.objects.create(name="Pat Lawlor", slug="pat-lawlor")
         role = CreditRole.objects.create(name="Art", slug="art")
-        Claim.objects.assert_claim(
+        make_claim(
             pm,
             "credit",
             {"person": person.pk, "role": role.pk, "exists": True},
@@ -91,7 +92,7 @@ class TestBuildSources:
 
     def test_scalar_claim_value_has_null_display(self, source):
         series = Series.objects.create(slug="s", name="S")
-        Claim.objects.assert_claim(series, "name", "S", source=source)
+        make_claim(series, "name", "S", source=source)
 
         loaded = Series.objects.prefetch_related(claims_prefetch()).get(pk=series.pk)
         sources = build_sources(type(loaded), active_claims(loaded))

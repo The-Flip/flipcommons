@@ -13,7 +13,7 @@ from apps.catalog.tests.conftest import make_machine_model
 from apps.media.models import EntityMedia, MediaAsset, MediaRendition
 from apps.media.storage import build_storage_key
 from apps.provenance.models import Claim
-from apps.provenance.test_factories import user_changeset
+from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
 
@@ -64,7 +64,7 @@ def _attach_via_claims(entity, asset, user, category="backglass", is_primary=Tru
     claim_key, claim_value = build_media_attachment_claim(
         entity, asset.pk, category=category, is_primary=is_primary
     )
-    Claim.objects.assert_claim(
+    make_claim(
         entity,
         "media_attachment",
         claim_value,

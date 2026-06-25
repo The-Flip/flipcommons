@@ -26,6 +26,7 @@ from apps.core.authz.exceptions import PolicyDeniedError
 from apps.core.authz.types import DenialCode, Deny
 from apps.core.types import EntityKey
 
+from .changeset_writer import record_changeset
 from .constants import REVERT_OTHERS_MIN_EDITS
 from .models import ChangeSet, ChangeSetAction, Claim, ClaimControlledModel
 from .resolution import resolve_after_mutation
@@ -96,8 +97,8 @@ def execute_revert(
 
     try:
         with transaction.atomic():
-            cs = ChangeSet.objects.create(
-                user=user, action=ChangeSetAction.REVERT, note=note
+            cs = record_changeset(
+                actor=user.actor, action=ChangeSetAction.REVERT, note=note
             )
             target.is_active = False
             target.retracted_by_changeset = cs
@@ -106,7 +107,7 @@ def execute_revert(
             # Re-activate the most recent superseded (not retracted) claim
             # from the same user for the same claim_key.  Without this,
             # reverting a user's latest edit would leave ALL their previous
-            # edits for the field inactive (because assert_claim deactivates
+            # edits for the field inactive (because _assert_claim deactivates
             # the predecessor when creating a new claim).
             predecessor = (
                 Claim.objects.filter(
@@ -191,8 +192,8 @@ def execute_undo_changeset(
     affected_fields: dict[EntityKey, set[str]] = defaultdict(set)
     try:
         with transaction.atomic():
-            new_cs = ChangeSet.objects.create(
-                user=user, action=ChangeSetAction.REVERT, note=note
+            new_cs = record_changeset(
+                actor=user.actor, action=ChangeSetAction.REVERT, note=note
             )
             for claim in claims:
                 claim.is_active = False

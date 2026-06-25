@@ -14,6 +14,7 @@ from apps.catalog.api.export import (
 from apps.catalog.cache import invalidate_all
 from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.models import MachineModel
+from apps.provenance.test_factories import make_claim
 
 from .conftest import SAMPLE_IMAGES
 
@@ -237,11 +238,8 @@ class TestExportDerivedFields:
         self, client, machine_model, williams_entity, source
     ):
         from apps.catalog.resolve import resolve_entity
-        from apps.provenance.models import Claim
 
-        Claim.objects.assert_claim(
-            williams_entity, "operating_status", "ongoing", source=source
-        )
+        make_claim(williams_entity, "operating_status", "ongoing", source=source)
         resolve_entity(williams_entity)
         invalidate_all()
         row = _row(client, "manufacturers", "williams")

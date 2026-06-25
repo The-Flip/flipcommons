@@ -8,6 +8,7 @@ from django.test import Client
 
 from apps.citation.models import CitationSource
 from apps.provenance.models import CitationInstance
+from apps.provenance.test_factories import make_claim
 
 User = get_user_model()
 
@@ -59,7 +60,7 @@ class TestListCitationInstances:
             name="IPDB", slug="ipdb-test", source_type="database", priority=10
         )
         mfr = Manufacturer.objects.create(name="Williams", slug="williams")
-        Claim.objects.assert_claim(mfr, "name", "Williams", source=src)
+        make_claim(mfr, "name", "Williams", source=src)
         claim = Claim.objects.filter(is_active=True).first()
         assert claim is not None
 

@@ -358,7 +358,7 @@ def classify_claim(
 
     Pass ``claim_fields`` to avoid repeated ``get_claim_fields()`` calls in
     batch contexts. When omitted, it is computed on each call (fine for
-    single-claim use in ``assert_claim``).
+    single-claim use in ``_assert_claim``).
     """
     if claim_fields is None:
         claim_fields = get_claim_fields(model_class)
@@ -384,7 +384,7 @@ def validate_single_relationship_claim(
 ) -> None:
     """Validate one relationship claim's shape. Raises ``ValidationError``.
 
-    Shared by ``assert_claim`` and ``validate_claims_batch``. Rules are
+    Shared by ``_assert_claim`` and ``validate_claims_batch``. Rules are
     applied in a fixed order (see implementation) — each rule assumes its
     predecessors have passed; reordering trades a clean ``ValidationError``
     for a ``TypeError``/``KeyError`` that masks the real problem.

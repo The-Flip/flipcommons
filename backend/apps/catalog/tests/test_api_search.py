@@ -13,7 +13,8 @@ from django.test.utils import CaptureQueriesContext
 
 from apps.catalog.models import Credit, CreditRole, Manufacturer, Person, Title
 from apps.catalog.tests.conftest import SAMPLE_IMAGES, make_machine_model
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Source
+from apps.provenance.test_factories import make_claim
 
 CARD_KEYS = {
     "titles": {"name", "slug", "year", "model_count", "manufacturer", "thumbnail_url"},
@@ -24,22 +25,22 @@ CARD_KEYS = {
 
 def _make_manufacturer(name: str, slug: str, source: Source) -> Manufacturer:
     mfr = Manufacturer.objects.create(name=name, slug=slug)
-    Claim.objects.assert_claim(mfr, "name", name, source=source)
+    make_claim(mfr, "name", name, source=source)
     return mfr
 
 
 def _make_person(name: str, slug: str, source: Source) -> Person:
     p = Person.objects.create(name=name, slug=slug)
-    Claim.objects.assert_claim(p, "name", name, source=source)
+    make_claim(p, "name", name, source=source)
     return p
 
 
 @pytest.fixture
-def nova_in_each_section(_bootstrap_source):
+def nova_in_each_section(bootstrap_source):
     """One matching row per section for the term ``nova``."""
     Title.objects.create(name="Nova Madness", slug="nova-madness")
-    _make_manufacturer("Nova Games", "nova-games", _bootstrap_source)
-    _make_person("Nova Lawlor", "nova-lawlor", _bootstrap_source)
+    _make_manufacturer("Nova Games", "nova-games", bootstrap_source)
+    _make_person("Nova Lawlor", "nova-lawlor", bootstrap_source)
 
 
 def test_short_q_returns_empty_sections_and_does_no_db_work(
@@ -73,10 +74,10 @@ def test_basic_q_matches_each_section_with_card_shape(client, nova_in_each_secti
         assert data[section]["has_more"] is False
 
 
-def test_section_caps_at_ten_and_sets_has_more(client, db, _bootstrap_source):
+def test_section_caps_at_ten_and_sets_has_more(client, db, bootstrap_source):
     """11 matches → 10 cards + ``has_more``; the other sections stay empty."""
     for i in range(11):
-        _make_manufacturer(f"Capco {i:02d}", f"capco-{i:02d}", _bootstrap_source)
+        _make_manufacturer(f"Capco {i:02d}", f"capco-{i:02d}", bootstrap_source)
     data = client.get("/api/pages/search?q=capco").json()
     assert len(data["manufacturers"]["items"]) == 10
     assert data["manufacturers"]["has_more"] is True
@@ -84,9 +85,9 @@ def test_section_caps_at_ten_and_sets_has_more(client, db, _bootstrap_source):
     assert data["people"] == {"items": [], "has_more": False}
 
 
-def test_exactly_ten_matches_does_not_set_has_more(client, db, _bootstrap_source):
+def test_exactly_ten_matches_does_not_set_has_more(client, db, bootstrap_source):
     for i in range(10):
-        _make_manufacturer(f"Tenco {i:02d}", f"tenco-{i:02d}", _bootstrap_source)
+        _make_manufacturer(f"Tenco {i:02d}", f"tenco-{i:02d}", bootstrap_source)
     data = client.get("/api/pages/search?q=tenco").json()
     assert len(data["manufacturers"]["items"]) == 10
     assert data["manufacturers"]["has_more"] is False
@@ -117,7 +118,7 @@ def test_no_match_returns_all_empty_sections(client, nova_in_each_section):
 
 
 def test_people_section_preserves_listing_order(
-    client, db, _bootstrap_source, credit_roles, williams_entity
+    client, db, bootstrap_source, credit_roles, williams_entity
 ):
     """A section's rows are a prefix of its listing — so the People section must keep
     the ``-credit_count, name, pk`` order. This guards the explicit ``order_by`` the
@@ -132,9 +133,9 @@ def test_people_section_preserves_listing_order(
     art = CreditRole.objects.get(slug="art")
 
     # Names sort the OPPOSITE way to credit count, so a by-name regression fails.
-    two = _make_person("Order Zzz", "order-zzz", _bootstrap_source)  # 2 credits
-    one = _make_person("Order Mmm", "order-mmm", _bootstrap_source)  # 1 credit
-    _make_person("Order Aaa", "order-aaa", _bootstrap_source)  # 0 credits
+    two = _make_person("Order Zzz", "order-zzz", bootstrap_source)  # 2 credits
+    one = _make_person("Order Mmm", "order-mmm", bootstrap_source)  # 1 credit
+    _make_person("Order Aaa", "order-aaa", bootstrap_source)  # 0 credits
     Credit.objects.create(model=mm, person=two, role=design)
     Credit.objects.create(model=mm, person=two, role=art)
     Credit.objects.create(model=mm, person=one, role=design)
@@ -147,7 +148,7 @@ def test_people_section_preserves_listing_order(
 
 
 def test_query_count_is_constant_across_result_size(
-    client, db, _bootstrap_source, credit_roles, williams_entity
+    client, db, bootstrap_source, credit_roles, williams_entity
 ):
     """N+1 guard: each section batches its rows, related cards and thumbnails, so the
     query count must not grow with the number of matching rows. Rows carry real models,
@@ -165,9 +166,9 @@ def test_query_count_is_constant_across_result_size(
             year=1990 + i,
             extra_data={"opdb.images": SAMPLE_IMAGES},
         )
-        _make_manufacturer(f"Scale Mfr {i}", f"scale-mfr-{i}", _bootstrap_source)
+        _make_manufacturer(f"Scale Mfr {i}", f"scale-mfr-{i}", bootstrap_source)
         person = _make_person(
-            f"Scale Person {i}", f"scale-person-{i}", _bootstrap_source
+            f"Scale Person {i}", f"scale-person-{i}", bootstrap_source
         )
         Credit.objects.create(model=model, person=person, role=design)
 

@@ -15,23 +15,17 @@ from django.core.cache import cache
 
 from apps.catalog.models import CorporateEntity, Manufacturer, System
 from apps.core.types import JsonBody
-from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction
+from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
 
 
 @pytest.fixture
-def bootstrap_source(db):
-    return Source.objects.create(
-        name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
-    )
-
-
-@pytest.fixture
 def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Stern", slug="stern", status="active")
-    Claim.objects.assert_claim(m, "name", "Stern", source=bootstrap_source)
-    Claim.objects.assert_claim(m, "status", "active", source=bootstrap_source)
+    make_claim(m, "name", "Stern", source=bootstrap_source)
+    make_claim(m, "status", "active", source=bootstrap_source)
     return m
 
 
@@ -44,7 +38,7 @@ def _make_ce(
         manufacturer=mfr,
         status=status,
     )
-    Claim.objects.assert_claim(ce, "name", ce.name, source=bootstrap_source)
+    make_claim(ce, "name", ce.name, source=bootstrap_source)
     return ce
 
 
@@ -55,7 +49,7 @@ def _make_system(bootstrap_source, mfr, slug: str, *, status: str = "active") ->
         manufacturer=mfr,
         status=status,
     )
-    Claim.objects.assert_claim(s, "name", s.name, source=bootstrap_source)
+    make_claim(s, "name", s.name, source=bootstrap_source)
     return s
 
 
@@ -173,10 +167,9 @@ class TestDeleteIdempotence:
 @pytest.mark.django_db
 class TestDeletePreview:
     def test_preview_returns_counts(self, client, user, bootstrap_source, mfr):
-        cs = ChangeSet.objects.create(
-            user=user, action=ChangeSetAction.EDIT, note="seed"
-        )
-        Claim.objects.assert_claim(mfr, "description", "hi", user=user, changeset=cs)
+        # Route through the factory so the seed changeset carries an actor.
+        cs = user_changeset(user, note="seed")
+        make_claim(mfr, "description", "hi", changeset=cs)
         client.force_login(user)
         resp = _get_preview(client, "stern")
         assert resp.status_code == 200

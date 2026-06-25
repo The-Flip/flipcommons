@@ -13,20 +13,21 @@ from apps.catalog.models import (
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.models import ChangeSet, Claim
+from apps.provenance.models import ChangeSet
+from apps.provenance.test_factories import make_claim
 
 User = get_user_model()
 
 
 @pytest.fixture
-def mfr(db, _bootstrap_source):
+def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Gottlieb", slug="gottlieb")
-    Claim.objects.assert_claim(m, "name", "Gottlieb", source=_bootstrap_source)
+    make_claim(m, "name", "Gottlieb", source=bootstrap_source)
     return m
 
 
 @pytest.fixture
-def entity(db, mfr, _bootstrap_source):
+def entity(db, mfr, bootstrap_source):
     ce = CorporateEntity.objects.create(
         name="D. Gottlieb & Company",
         slug="d-gottlieb-company",
@@ -34,14 +35,12 @@ def entity(db, mfr, _bootstrap_source):
         year_start=1927,
         year_end=1983,
     )
-    Claim.objects.assert_claim(
-        ce, "name", "D. Gottlieb & Company", source=_bootstrap_source
-    )
+    make_claim(ce, "name", "D. Gottlieb & Company", source=bootstrap_source)
     return ce
 
 
 @pytest.fixture
-def other_entity(db, mfr, _bootstrap_source):
+def other_entity(db, mfr, bootstrap_source):
     ce = CorporateEntity.objects.create(
         name="Mylstar Electronics",
         slug="mylstar-electronics",
@@ -49,9 +48,7 @@ def other_entity(db, mfr, _bootstrap_source):
         year_start=1983,
         year_end=1984,
     )
-    Claim.objects.assert_claim(
-        ce, "name", "Mylstar Electronics", source=_bootstrap_source
-    )
+    make_claim(ce, "name", "Mylstar Electronics", source=bootstrap_source)
     return ce
 
 
@@ -282,9 +279,10 @@ class TestPatchCorporateEntityScalars:
             entity.slug,
             {"fields": {"description": "Updated"}, "note": "Test note"},
         )
-        assert ChangeSet.objects.count() == 1
-        cs = ChangeSet.objects.first()
-        assert cs is not None
+        # Fixtures assert seed (ingest) name claims, so filter to the user's
+        # changeset rather than assuming it's the only row.
+        assert ChangeSet.objects.filter(user=user).count() == 1
+        cs = ChangeSet.objects.get(user=user)
         assert cs.note == "Test note"
         assert cs.claims.count() == 1
 
@@ -337,7 +335,11 @@ class TestCorporateEntityEditHistory:
     def test_edit_history_empty(self, client, entity):
         resp = client.get(f"/api/pages/edit-history/corporate-entity/{entity.slug}/")
         assert resp.status_code == 200
-        assert resp.json() == []
+        # Seed name claims surface as ingest changesets; only user edits count here.
+        user_entries = [
+            cs for cs in resp.json() if cs["attribution"]["author"]["kind"] == "user"
+        ]
+        assert user_entries == []
 
     def test_edit_history_after_edit(self, client, user, entity):
         client.force_login(user)
@@ -346,7 +348,10 @@ class TestCorporateEntityEditHistory:
         )
         resp = client.get(f"/api/pages/edit-history/corporate-entity/{entity.slug}/")
         assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 1
-        assert data[0]["note"] == "Fix"
-        assert any(c["field_name"] == "description" for c in data[0]["changes"])
+        # Filter out fixture seed (ingest) changesets; assert only the user edit.
+        user_entries = [
+            cs for cs in resp.json() if cs["attribution"]["author"]["kind"] == "user"
+        ]
+        assert len(user_entries) == 1
+        assert user_entries[0]["note"] == "Fix"
+        assert any(c["field_name"] == "description" for c in user_entries[0]["changes"])
