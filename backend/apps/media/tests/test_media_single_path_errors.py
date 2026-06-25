@@ -1,16 +1,15 @@
-"""Per-endpoint error contract after media is rerouted through execute_claims.
+"""Uniform per-endpoint error contract for media writes through execute_claims.
 
-Routing media writes through ``execute_claims`` changes how a claim-write failure
-surfaces, and it differs by endpoint:
+All four media endpoints surface a client-fault claim-write failure
+(``execute_claims``'s ``StructuredValidationError``, raised on ``IntegrityError``
+/ ``ValidationError``) as a 422:
 
 - ``detach`` / ``set-primary`` / ``set-category`` have no try/except around their
-  atomic block, so ``execute_claims``'s ``StructuredValidationError`` (raised on
-  ``IntegrityError`` / ``ValidationError``) propagates to Ninja as a 422. Before
-  the reroute these raised an unhandled 500.
-- ``upload`` wraps its DB work in ``try/except Exception`` so it can delete the
-  storage blobs it already uploaded; that broad ``except`` catches the
-  ``StructuredValidationError`` and re-wraps it as a 500. (Surfacing 422 from
-  upload while keeping storage cleanup is a later commit.)
+  atomic block, so it propagates straight to Ninja's 422 handler.
+- ``upload`` wraps its DB work so it can delete the storage blobs it already
+  uploaded; a dedicated ``except StructuredValidationError`` cleans up and
+  re-raises (→ 422), while the broad ``except Exception`` still maps an
+  unexpected failure to a 500 (also cleaning up).
 
 A forced mint failure pins both behaviors.
 """
@@ -147,10 +146,16 @@ class TestMutationEndpointsReturn422:
         assert resp.status_code == 422, resp.content
 
 
-class TestUploadReWrapsTo500:
-    def test_upload_returns_500_and_cleans_up_storage(
+class TestUploadSurfaces422:
+    def test_upload_returns_422_and_cleans_up_storage(
         self, client, machine_model, monkeypatch
     ):
+        """A client-fault claim failure surfaces as 422, blobs still cleaned up.
+
+        Upload's storage-cleanup ``except`` no longer masks the
+        ``StructuredValidationError`` as a 500 — it cleans up and re-raises, so
+        the error contract matches the other three endpoints.
+        """
         deleted: list[list[str]] = []
 
         def record_delete(keys):
@@ -169,7 +174,7 @@ class TestUploadReWrapsTo500:
             },
         )
 
-        assert resp.status_code == 500, resp.content
-        # The broad except cleaned up the blobs uploaded before the failure.
+        assert resp.status_code == 422, resp.content
+        # The dedicated except still cleaned up the blobs uploaded before the failure.
         assert deleted, "delete_from_storage was not called on failure"
         assert deleted[-1], "uploaded storage keys were not cleaned up"

@@ -24,6 +24,7 @@ from apps.core.api_helpers import authed_user
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.entity_types import get_linkable_model
+from apps.core.exceptions import StructuredValidationError
 from apps.core.schemas import ErrorDetailSchema, ValidationErrorSchema
 from apps.media.constants import (
     ALLOWED_IMAGE_EXTENSIONS,
@@ -167,7 +168,11 @@ def _resolve_entity(
 
 @media_router.post(
     "/upload/",
-    response={200: UploadSchema, 429: ErrorDetailSchema},
+    response={
+        200: UploadSchema,
+        422: ValidationErrorSchema,
+        429: ErrorDetailSchema,
+    },
     auth=django_auth,
 )
 @requires(Activity.MEDIA_EDIT)
@@ -299,6 +304,12 @@ def upload_media(
             _write_media_claim(
                 entity, claim_key=claim_key, claim_value=claim_value, user=user
             )
+    except StructuredValidationError:
+        # A client-fault claim failure (constraint/validation) — clean up the
+        # blobs uploaded before the atomic block, then re-raise so Ninja's
+        # handler maps it to a 422, matching the other media endpoints.
+        delete_from_storage(uploaded_keys)
+        raise
     except Exception:
         logger.exception("DB transaction failed, cleaning up storage keys")
         delete_from_storage(uploaded_keys)
