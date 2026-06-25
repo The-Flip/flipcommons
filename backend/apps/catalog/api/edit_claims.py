@@ -31,6 +31,7 @@ from apps.provenance.claims import (
 from apps.provenance.validation import get_relationship_schema
 
 from ._typing import CreditKey, CreditPkKey
+from .helpers import displayed_model_abbreviations
 from .schemas import CreditInputSchema, GameplayFeatureInputSchema
 
 # Concrete catalog models with a self-referencing ``parents`` M2M / reverse
@@ -349,9 +350,17 @@ def plan_abbreviation_claims(
     and diffs against current abbreviation rows.
 
     Shared by MachineModel and Title.
+
+    For a MachineModel the ``current`` set is the **deduped** displayed set
+    (Title-owned abbreviations removed) so it matches what the editor showed;
+    otherwise an unchanged save would emit a spurious ``exists=false`` removal
+    for each Title-owned value the materialized rows still carry.
     """
     desired = set(_normalize_abbreviations(desired_values))
-    current = set(entity.abbreviations.values_list("value", flat=True))
+    if isinstance(entity, MachineModel):
+        current = set(displayed_model_abbreviations(entity))
+    else:
+        current = set(entity.abbreviations.values_list("value", flat=True))
     specs: list[ClaimSpec] = []
 
     for value in desired - current:

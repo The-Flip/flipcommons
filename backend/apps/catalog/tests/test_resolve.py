@@ -13,7 +13,9 @@ from apps.catalog.models import (
     Title,
 )
 from apps.catalog.resolve import (
+    resolve_all_model_abbreviations,
     resolve_all_themes,
+    resolve_all_title_abbreviations,
     resolve_machine_models,
     resolve_model,
 )
@@ -150,6 +152,29 @@ class TestResolveModel:
         assert resolved.year == 1992
         assert resolved.extra_data["toys"] == "Thing hand, bookcase"
         assert resolved.extra_data["fun_facts"] == "A seminal game."
+
+
+@pytest.mark.django_db
+class TestResolveModelAbbreviationsClaimLocal:
+    """Model-abbreviation resolution is claim-local — it stores the model's own
+    winning abbreviations, including ones the Title also owns. The Title dedup
+    moved to read time."""
+
+    def test_stores_title_overlapping_abbreviation(self, ipdb):
+        title = Title.objects.create(name="Medieval Madness", slug="mm-title")
+        pm = make_machine_model(name="MM", slug="mm-model", title=title)
+
+        abbr_key, abbr_val = build_relationship_claim("abbreviation", {"value": "MM"})
+        # Both the Title and the Model claim "MM".
+        make_claim(title, "abbreviation", abbr_val, source=ipdb, claim_key=abbr_key)
+        make_claim(pm, "abbreviation", abbr_val, source=ipdb, claim_key=abbr_key)
+
+        resolve_all_title_abbreviations()
+        resolve_all_model_abbreviations()
+
+        # Claim-faithful: the overlapping "MM" is materialized on the model, not
+        # suppressed (the old write-time subtraction would leave this empty).
+        assert list(pm.abbreviations.values_list("value", flat=True)) == ["MM"]
 
 
 @pytest.mark.django_db
