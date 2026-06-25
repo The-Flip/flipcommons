@@ -51,6 +51,17 @@ def make_claim(
             changeset = source_changeset(source)
         else:
             raise ValueError("Provide exactly one of source or user (or a changeset).")
+    else:
+        # A user=/source= passed alongside an explicit changeset is redundant —
+        # attribution rides on changeset.actor, not these args. Guard that they
+        # agree so a mismatched pair fails loudly here (the cross-check the old
+        # assert_claim enforced) instead of silently attributing to the
+        # changeset's actor.
+        attributed = user if user is not None else source
+        if attributed is not None and changeset.actor_id != attributed.actor_id:
+            raise ValueError(
+                "make_claim: changeset.actor does not match the given user=/source=."
+            )
     return _assert_claim(
         subject,
         field_name,

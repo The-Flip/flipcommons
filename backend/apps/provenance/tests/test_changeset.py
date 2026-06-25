@@ -3,6 +3,7 @@
 import pytest
 from django.db import IntegrityError
 
+from apps.accounts.test_factories import make_user
 from apps.catalog.models import Manufacturer
 from apps.core.models import License
 from apps.provenance.changeset_writer import record_changeset
@@ -67,6 +68,13 @@ class TestChangeSetClaimGrouping:
         assert claim.changeset.actor_id == user.actor_id
         assert claim.actor_id == user.actor_id
         assert claim.user == user
+
+    def test_changeset_actor_mismatch_with_user_rejected(self, user, mfr):
+        """A changeset whose actor differs from user= fails loudly, rather than
+        silently attributing to the changeset's actor."""
+        cs = user_changeset(make_user())
+        with pytest.raises(ValueError, match="does not match"):
+            make_claim(mfr, "name", "Williams", user=user, changeset=cs)
 
     def test_source_claim_with_changeset_accepted(self, source, mfr):
         """A source claim rides on an ingest ChangeSet's actor."""
