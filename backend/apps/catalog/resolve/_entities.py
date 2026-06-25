@@ -15,6 +15,7 @@ from django.utils import timezone
 from apps.core.types import JsonBody
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim, ClaimControlledModel
+from apps.provenance.validation import get_relationship_namespaces
 
 from ._helpers import (
     _coerce,
@@ -85,7 +86,12 @@ def _resolve_single(
     # Apply winners.
     has_extra_data = hasattr(obj, "extra_data")
     extra_data: JsonBody | None = {} if has_extra_data else None
+    relationship_ns = get_relationship_namespaces()
     for field_name, claim in winners.items():
+        # Relationship-namespace claims (media_attachment, credit, …) resolve
+        # into their own tables, never extra_data — mirrors resolve_model().
+        if field_name in relationship_ns:
+            continue
         if field_name in direct_fields:
             attr = direct_fields[field_name]
             field = model_class._meta.get_field(attr)
@@ -194,6 +200,7 @@ def _resolve_bulk(
 
     # 4. Resolve each object in memory.
     now = timezone.now()
+    relationship_ns = get_relationship_namespaces()
     for obj in all_objs:
         winners = claims_by_obj.get(obj.pk, {})
 
@@ -208,6 +215,10 @@ def _resolve_bulk(
         # Apply winners.
         extra_data: JsonBody | None = {} if has_extra_data else None
         for field_name, claim in winners.items():
+            # Relationship-namespace claims (media_attachment, credit, …)
+            # resolve into their own tables, never extra_data.
+            if field_name in relationship_ns:
+                continue
             if field_name in direct_fields:
                 attr = direct_fields[field_name]
                 if attr in fk_info.fk_fields:
