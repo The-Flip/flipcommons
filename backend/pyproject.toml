@@ -516,7 +516,7 @@ layers = [
     "changeset_writer",
     "validation | schemas | claim_ranking_in_db | licensing | resolution | rate_limits",
     "attribution",
-    "models | claim_presence | constants | entity_resolution | pagination | authz | typing",
+    "models | claim_presence | constants | entity_resolution | pagination | authz",
     # The abstract claim-control bases every claim-controlled model inherits.
     # Pinned to the bottom so it can't reach UP into the provenance domain
     # (Claim, ChangeSet, Source). Its core-only-leaf guarantee — no cross-app
@@ -612,7 +612,7 @@ exhaustive = true # so new submodule left unplaced fails build
 exhaustive_ignores = ["apps", "migrations", "tests"]
 containers = ["apps.core"]
 layers = [
-    "api",
+    "api | management",
     "markdown",
     "wikilinks | middleware",
     "admin | api_helpers | authz | autocomplete | checks | entity_types | licensing | rate_limits | sitemap | soft_delete",
