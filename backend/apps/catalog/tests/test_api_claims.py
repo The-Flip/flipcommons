@@ -3,9 +3,9 @@
 import pytest
 from django.contrib.auth import get_user_model
 
-from apps.catalog.resolve import resolve_model
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.models import Source
+from apps.provenance.resolution import resolve_after_mutation
 from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
@@ -174,7 +174,7 @@ class TestPatchClaimsPersistence:
     ):
         make_claim(pm, "name", "Medieval Madness", source=low_priority_source)
         make_claim(pm, "year", 1997, source=low_priority_source)
-        resolve_model(pm)
+        resolve_after_mutation(pm)
         pm.refresh_from_db()
         assert pm.year == 1997
 
@@ -204,8 +204,8 @@ class TestUserClaimResolution:
             pm, "year", 2000, user=user, changeset=user_changeset(user)
         )  # priority 10000 > 10
 
-        resolved = resolve_model(pm)
-        assert resolved.year == 2000
+        resolve_after_mutation(pm)
+        assert pm.year == 2000
 
     def test_source_wins_over_lower_priority_user(self, user, pm):
         high_source = Source.objects.create(
@@ -217,5 +217,5 @@ class TestUserClaimResolution:
             pm, "year", 2000, user=user, changeset=user_changeset(user)
         )  # priority 10000 < 50000
 
-        resolved = resolve_model(pm)
-        assert resolved.year == 1990
+        resolve_after_mutation(pm)
+        assert pm.year == 1990

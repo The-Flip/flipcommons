@@ -27,10 +27,9 @@ def _stamp_image_license(
     """Denormalize *claim*'s effective license into *extra_data*, for image fields.
 
     Writes ``{field}.__license_slug`` and ``{field}.__permissiveness_rank``
-    beside the already-stored image value; a no-op for non-image claims. Shared
-    by the MachineModel path (``_apply_resolution``) and the generic path
-    (``_entities._resolve_single`` / ``_resolve_bulk``) so both stamp
-    identically.
+    beside the already-stored image value; a no-op for non-image claims. The one
+    stamp helper for every write path, so the denormalized sidecars are
+    identical no matter which path resolved the claim.
     """
     if claim.field_name not in IMAGE_FIELDS:
         return

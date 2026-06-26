@@ -509,16 +509,16 @@ class TestPrimaryReadTimeSelection:
 
 
 # ---------------------------------------------------------------------------
-# resolve_model() integration
+# Interactive resolve (resolve_after_mutation) integration
 # ---------------------------------------------------------------------------
 
 
-class TestResolveModelIntegration:
-    def test_resolve_model_materializes_media(self, machine_model, asset, source):
-        """resolve_model() includes media resolution."""
-        from apps.catalog.resolve import resolve_model
+class TestInteractiveResolveIntegration:
+    def test_resolve_materializes_media(self, machine_model, asset, source):
+        """The interactive resolve path includes media resolution."""
+        from apps.provenance.resolution import resolve_after_mutation
 
-        # Need a name claim so resolve_model can save
+        # Need a name claim so the resolver can save
         _assert_claim(machine_model, "name", "Test Machine", source=source)
 
         key, val = build_media_attachment_claim(
@@ -532,15 +532,15 @@ class TestResolveModelIntegration:
             claim_key=key,
         )
 
-        resolve_model(machine_model)
+        resolve_after_mutation(machine_model)
 
         assert EntityMedia.objects.filter(
             asset=asset, object_id=machine_model.pk
         ).exists()
 
-    def test_retraction_via_resolve_model(self, machine_model, asset, source):
-        """Retracting a media claim through resolve_model deletes EntityMedia."""
-        from apps.catalog.resolve import resolve_model
+    def test_retraction_via_resolve(self, machine_model, asset, source):
+        """Retracting a media claim through resolve deletes EntityMedia."""
+        from apps.provenance.resolution import resolve_after_mutation
 
         _assert_claim(machine_model, "name", "Test Machine", source=source)
 
@@ -554,7 +554,7 @@ class TestResolveModelIntegration:
             source=source,
             claim_key=key,
         )
-        resolve_model(machine_model)
+        resolve_after_mutation(machine_model)
         assert EntityMedia.objects.count() == 1
 
         # Retract
@@ -568,7 +568,7 @@ class TestResolveModelIntegration:
             source=source,
             claim_key=key,
         )
-        resolve_model(machine_model)
+        resolve_after_mutation(machine_model)
         assert EntityMedia.objects.count() == 0
 
 

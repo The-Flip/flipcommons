@@ -5,11 +5,10 @@ column on the model, so the API can still filter by them. Relationship-namespace
 claims (``media_attachment``, ``credit``, …) resolve into their own tables
 (``EntityMedia``, through-tables) and must never land in ``extra_data``.
 
-``resolve_model`` (the MachineModel resolver) already skips relationship
-namespaces; the generic ``_resolve_single`` / ``_resolve_bulk`` used for every
-other catalog entity did not, so a Manufacturer/Person/GameplayFeature that
-carried a media claim leaked it into ``extra_data`` on any scalar re-resolution.
-Regression test for that leak.
+The generic ``_resolve_single`` / ``_resolve_bulk`` used for every catalog
+entity once leaked relationship claims into ``extra_data``: a
+Manufacturer/Person/GameplayFeature that carried a media claim spilled it into
+``extra_data`` on any scalar re-resolution. Regression test for that leak.
 """
 
 from __future__ import annotations

@@ -18,12 +18,12 @@ from apps.catalog.resolve import (
     _resolve_bulk,
     _resolve_single,
     resolve_entity,
-    resolve_model,
 )
 from apps.catalog.resolve._helpers import get_nullable_unique_fields
 from apps.catalog.tests.conftest import bulk_resolve, make_machine_model
 from apps.core.models import RecordReference
 from apps.provenance.models import Claim, Source, get_claim_fields
+from apps.provenance.resolution import resolve_after_mutation
 from apps.provenance.test_factories import make_claim
 
 
@@ -646,14 +646,14 @@ class TestNullableUniqueConflictDetection:
 
 @pytest.mark.django_db
 class TestApplyResolutionPreserve:
-    """_apply_resolution preserves UNIQUE fields when no claim exists."""
+    """Single-object resolution preserves UNIQUE fields when no claim exists."""
 
     def test_preserves_slug_without_claim(self, opdb):
         mm = make_machine_model(name="Test", slug="test-slug")
         make_claim(mm, "name", "Test Model", source=opdb)
         # No slug claim — slug should be preserved after resolution.
 
-        resolve_model(mm)
+        resolve_after_mutation(mm)
 
         mm.refresh_from_db()
         assert mm.slug == "test-slug"  # Preserved.
@@ -664,7 +664,7 @@ class TestApplyResolutionPreserve:
         make_claim(mm, "name", "Test Model", source=opdb)
         # No opdb_id claim.
 
-        resolve_model(mm)
+        resolve_after_mutation(mm)
 
         mm.refresh_from_db()
         assert mm.opdb_id == "O123"  # Preserved.

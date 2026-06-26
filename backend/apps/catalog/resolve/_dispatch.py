@@ -14,8 +14,8 @@ not — the bulk caller invalidates once after its run).
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Collection
-from typing import NamedTuple, cast
+from collections.abc import Collection
+from typing import NamedTuple
 
 from django.db import transaction
 
@@ -23,6 +23,7 @@ from apps.provenance.models import ClaimControlledModel
 
 from ..cache import invalidate_all
 from ..engine.aliases import discover_alias_types
+from ._contracts import RelationshipResolver
 
 logger = logging.getLogger(__name__)
 
@@ -39,22 +40,24 @@ class ParentDispatchSpec(NamedTuple):
     claim_field_prefix: str | None
 
 
-class CustomDispatchSpec(NamedTuple):
-    """Entry in the custom-resolver dispatch table.
+class RelationshipDispatchKey(NamedTuple):
+    """Key for the relationship-resolver dispatch table.
 
-    Each entry specifies which model type it applies to and which
-    ``resolve_all_*`` function to call.  Every bespoke resolver takes
-    the canonical ``subject_ids`` kwarg.
+    The conceptual identity of a bespoke relationship resolver is the
+    *pair* ``(field_name, entity_model)``, not the ``field_name`` alone:
+    ``credit`` resolves differently for ``MachineModel`` and ``Series``, and
+    ``abbreviation`` differently for ``MachineModel`` and ``Title``. Keying by
+    the pair lets both coexist and turns dispatch into a direct lookup.
     """
 
-    entity_model: type
-    resolver_function_name: str
+    field_name: str
+    entity_model: type[ClaimControlledModel]
 
 
-_alias_dispatch: dict[str, type] | None = None
+_alias_dispatch: dict[str, type[ClaimControlledModel]] | None = None
 
 
-def _get_alias_dispatch() -> dict[str, type]:
+def _get_alias_dispatch() -> dict[str, type[ClaimControlledModel]]:
     """field_name → parent model class for alias resolvers.
 
     Built lazily and never snapshotted at module level: this module is imported
@@ -88,26 +91,57 @@ def _get_parent_dispatch() -> dict[str, ParentDispatchSpec]:
     return _parent_dispatch
 
 
-_custom_dispatch: dict[str, CustomDispatchSpec] | None = None
+_relationship_dispatch: dict[RelationshipDispatchKey, RelationshipResolver] | None = (
+    None
+)
 
 
-def _get_custom_dispatch() -> dict[str, CustomDispatchSpec]:
-    """field_name → CustomDispatchSpec for entity-specific resolvers."""
-    global _custom_dispatch
-    if _custom_dispatch is None:
-        from ..models import CorporateEntity, Series, Title
+def _get_relationship_dispatch() -> dict[RelationshipDispatchKey, RelationshipResolver]:
+    """(field_name, entity_model) → bulk resolver for bespoke relationship claims.
 
-        _custom_dispatch = {
-            "abbreviation": CustomDispatchSpec(
-                Title, "resolve_all_title_abbreviations"
+    Built lazily post-``ready()`` so it imports the resolver callables directly
+    (no ``getattr`` by name). Keyed explicitly, not introspected — the resolver
+    per namespace is inherently bespoke. ``media_attachment`` is handled
+    separately (content-type keyed, in ``apps.media``), not here.
+    """
+    global _relationship_dispatch
+    if _relationship_dispatch is None:
+        from ..models import CorporateEntity, MachineModel, Series, Title
+        from ._relationships import (
+            resolve_all_corporate_entity_locations,
+            resolve_all_credits,
+            resolve_all_gameplay_features,
+            resolve_all_model_abbreviations,
+            resolve_all_reward_types,
+            resolve_all_series_credits,
+            resolve_all_tags,
+            resolve_all_themes,
+            resolve_all_title_abbreviations,
+        )
+
+        _relationship_dispatch = {
+            RelationshipDispatchKey("abbreviation", Title): (
+                resolve_all_title_abbreviations
             ),
-            "location": CustomDispatchSpec(
-                CorporateEntity,
-                "resolve_all_corporate_entity_locations",
+            RelationshipDispatchKey("location", CorporateEntity): (
+                resolve_all_corporate_entity_locations
             ),
-            "credit": CustomDispatchSpec(Series, "resolve_all_series_credits"),
+            RelationshipDispatchKey("credit", Series): resolve_all_series_credits,
+            # MachineModel relationship namespaces.
+            RelationshipDispatchKey("theme", MachineModel): resolve_all_themes,
+            RelationshipDispatchKey("reward_type", MachineModel): (
+                resolve_all_reward_types
+            ),
+            RelationshipDispatchKey("tag", MachineModel): resolve_all_tags,
+            RelationshipDispatchKey("gameplay_feature", MachineModel): (
+                resolve_all_gameplay_features
+            ),
+            RelationshipDispatchKey("credit", MachineModel): resolve_all_credits,
+            RelationshipDispatchKey("abbreviation", MachineModel): (
+                resolve_all_model_abbreviations
+            ),
         }
-    return _custom_dispatch
+    return _relationship_dispatch
 
 
 # ---------------------------------------------------------------------------
@@ -133,12 +167,7 @@ def _per_entity_handler(
         relationship both).  When ``None``, all applicable resolvers run
         (safe but less efficient).
     """
-    from ..models import MachineModel
-
-    if isinstance(entity, MachineModel):
-        _resolve_machine_model(entity)
-    else:
-        _resolve_non_machine_model(entity, field_names)
+    _resolve_entity_relationships(entity, field_names)
 
     transaction.on_commit(invalidate_all)
 
@@ -183,19 +212,11 @@ def register_catalog_resolve_handlers() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_machine_model(entity: ClaimControlledModel) -> None:
-    """MachineModel path — resolve_model() handles everything."""
-    from ..models import MachineModel
-    from . import resolve_model
-
-    resolve_model(cast(MachineModel, entity))
-
-
-def _resolve_non_machine_model(
+def _resolve_entity_relationships(
     entity: ClaimControlledModel,
     field_names: list[str] | None,
 ) -> None:
-    """Non-MachineModel path — dispatch relationship resolvers then scalars."""
+    """Per-entity path — dispatch relationship resolvers then scalars."""
     from apps.provenance.validation import get_relationship_namespaces
 
     from ._entities import resolve_entity
@@ -236,19 +257,19 @@ def _resolve_non_machine_model(
             if spec.model is entity_type:
                 _resolve_parents(spec.model, claim_field_prefix=spec.claim_field_prefix)
 
-    # --- Custom resolvers (abbreviation, location) ---
-    custom_dispatch = _get_custom_dispatch()
+    # --- Bespoke relationship resolvers (abbreviation, location, credit, …) ---
+    relationship_dispatch = _get_relationship_dispatch()
     if rel_fields is not None:
         for fn in rel_fields:
-            if (
-                fn in custom_dispatch
-                and custom_dispatch[fn].entity_model is entity_type
-            ):
-                _call_custom_resolver(custom_dispatch[fn], entity.pk)
+            resolver = relationship_dispatch.get(
+                RelationshipDispatchKey(fn, entity_type)
+            )
+            if resolver is not None:
+                resolver(subject_ids={entity.pk})
     else:
-        for custom_spec in custom_dispatch.values():
-            if custom_spec.entity_model is entity_type:
-                _call_custom_resolver(custom_spec, entity.pk)
+        for key, resolver in relationship_dispatch.items():
+            if key.entity_model is entity_type:
+                resolver(subject_ids={entity.pk})
 
     # --- Media attachments ---
     from apps.media.models import MediaSupportedModel
@@ -265,51 +286,9 @@ def _resolve_non_machine_model(
     resolve_entity(entity)
 
 
-def _call_custom_resolver(spec: CustomDispatchSpec, entity_pk: int) -> None:
-    """Call a custom resolver by name with scoped IDs."""
-    from . import _relationships
-
-    func = getattr(_relationships, spec.resolver_function_name)
-    func(subject_ids={entity_pk})
-
-
 # ---------------------------------------------------------------------------
 # Bulk relationship resolution (the relationship half of ``_bulk_handler``)
 # ---------------------------------------------------------------------------
-
-
-_mm_relationship_resolvers: dict[str, Callable[..., None]] | None = None
-
-
-def _get_mm_relationship_resolvers() -> dict[str, Callable[..., None]]:
-    """namespace → bulk resolver for MachineModel relationship claims.
-
-    Mirrors the relationship resolvers in ``resolve.resolve_model()``; each
-    takes ``subject_ids`` so an entire affected set resolves in a single pass.
-    Keyed explicitly (not introspected) because the resolver per namespace is
-    inherently bespoke — same rationale as the dispatch tables above. (Media
-    is handled separately; it is keyed by content type, not a per-model M2M.)
-    """
-    global _mm_relationship_resolvers
-    if _mm_relationship_resolvers is None:
-        from ._relationships import (
-            resolve_all_credits,
-            resolve_all_gameplay_features,
-            resolve_all_model_abbreviations,
-            resolve_all_reward_types,
-            resolve_all_tags,
-            resolve_all_themes,
-        )
-
-        _mm_relationship_resolvers = {
-            "credit": resolve_all_credits,
-            "theme": resolve_all_themes,
-            "gameplay_feature": resolve_all_gameplay_features,
-            "reward_type": resolve_all_reward_types,
-            "tag": resolve_all_tags,
-            "abbreviation": resolve_all_model_abbreviations,
-        }
-    return _mm_relationship_resolvers
 
 
 def resolve_relationships_bulk(
@@ -324,6 +303,11 @@ def resolve_relationships_bulk(
     ``resolve_all_entities`` has bulk-resolved scalar/FK fields; this covers
     only the relationship namespaces.
 
+    Reuses the same dispatch tables as :func:`_resolve_entity_relationships`,
+    but invokes each resolver once for the whole subject set instead of per
+    object (alias/parent resolvers resolve their whole type; the bespoke
+    resolvers take the full ``subject_ids``).
+
     Unlike :func:`_per_entity_handler`, this does NOT register an ``on_commit``
     cache invalidation — the caller invalidates once after the run (the
     ``ingest_patches`` command does, as does the apply engine's caller).
@@ -334,45 +318,16 @@ def resolve_relationships_bulk(
     """
     if not subject_ids or not field_names:
         return
-    from ..models import MachineModel
-
-    if issubclass(model_class, MachineModel):
-        resolvers = _get_mm_relationship_resolvers()
-        for fn in field_names:
-            if fn == "media_attachment":
-                _resolve_media_bulk(model_class, subject_ids)
-            elif fn in resolvers:
-                resolvers[fn](subject_ids=subject_ids)
-            else:
-                raise ValueError(
-                    f"No bulk resolver for relationship {fn!r} on "
-                    f"{model_class.__name__}"
-                )
-        return
-
-    _resolve_non_machine_relationships_bulk(model_class, field_names, subject_ids)
-
-
-def _resolve_non_machine_relationships_bulk(
-    model_class: type[ClaimControlledModel],
-    field_names: Collection[str],
-    subject_ids: set[int],
-) -> None:
-    """Bulk relationship resolution for non-MachineModel entities.
-
-    Reuses the same dispatch tables as :func:`_resolve_non_machine_model`, but
-    invokes each resolver once for the whole subject set instead of per object
-    (alias/parent resolvers resolve their whole type; custom resolvers take the
-    full ``subject_ids``).
-    """
-    from . import _relationships
     from ._relationships import _resolve_aliases, _resolve_parents
 
     alias_dispatch = _get_alias_dispatch()
     parent_dispatch = _get_parent_dispatch()
-    custom_dispatch = _get_custom_dispatch()
+    relationship_dispatch = _get_relationship_dispatch()
 
     for fn in field_names:
+        relationship_resolver_fn = relationship_dispatch.get(
+            RelationshipDispatchKey(fn, model_class)
+        )
         if fn == "media_attachment":
             _resolve_media_bulk(model_class, subject_ids)
         elif fn in alias_dispatch and alias_dispatch[fn] is model_class:
@@ -380,11 +335,8 @@ def _resolve_non_machine_relationships_bulk(
         elif fn in parent_dispatch and parent_dispatch[fn].model is model_class:
             spec = parent_dispatch[fn]
             _resolve_parents(spec.model, claim_field_prefix=spec.claim_field_prefix)
-        elif fn in custom_dispatch and custom_dispatch[fn].entity_model is model_class:
-            resolver = getattr(
-                _relationships, custom_dispatch[fn].resolver_function_name
-            )
-            resolver(subject_ids=subject_ids)
+        elif relationship_resolver_fn is not None:
+            relationship_resolver_fn(subject_ids=subject_ids)
         else:
             raise ValueError(
                 f"No bulk resolver for relationship {fn!r} on {model_class.__name__}"

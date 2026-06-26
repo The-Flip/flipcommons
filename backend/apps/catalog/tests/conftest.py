@@ -64,15 +64,14 @@ def bulk_resolve(
 ) -> int:
     """Resolve a model's rows through the generic bulk dispatch (test helper).
 
-    Drop-in replacement for the deleted ``resolve_machine_models()`` in tests:
-    re-resolves scalars/FKs plus every relationship namespace for which the
+    Re-resolves scalars/FKs plus every relationship namespace for which the
     model is a valid subject (including ``media_attachment``). Resolves all rows
     of *model_class* unless *subject_ids* is given. Returns the number of
     subjects resolved.
 
-    Unlike the deleted bulk resolver, this does NOT run the cross-entity
-    dependency preamble (locations/taxonomy/titles) — FK targets must already
-    exist as rows, which they do in tests (FK lookup is by slug).
+    Does NOT run a cross-entity dependency preamble (locations/taxonomy/titles
+    before dependents) — FK targets must already exist as rows, which they do in
+    tests (FK lookup is by slug).
     """
     from apps.provenance.resolution import resolve_entities_bulk
     from apps.provenance.validation import (
