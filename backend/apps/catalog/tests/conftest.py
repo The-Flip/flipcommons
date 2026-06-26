@@ -13,7 +13,7 @@ from apps.catalog.models import (
     Title,
 )
 from apps.citation.models import CitationSource
-from apps.provenance.models import Source
+from apps.provenance.models import ClaimControlledModel, Source
 from apps.provenance.test_factories import make_claim
 
 
@@ -26,8 +26,8 @@ def make_machine_model(
     value get a disposable one derived from the machine's slug/name.
 
     A bootstrap name claim is asserted on the MachineModel and on any
-    auto-created Title so ``resolve_machine_models()`` doesn't reset
-    those names to blank. Callers that supply their own ``title=`` are
+    auto-created Title so resolution doesn't reset those names to blank.
+    Callers that supply their own ``title=`` are
     responsible for backing it with their own name claim before running
     the resolver — otherwise the resolver will wipe ``title.name`` to
     ``""`` and trip the Title CHECK constraint.
@@ -56,6 +56,44 @@ def make_machine_model(
     )
     make_claim(mm, "name", name, source=src)
     return mm
+
+
+def bulk_resolve(
+    model_class: type[ClaimControlledModel] = MachineModel,
+    subject_ids: set[int] | None = None,
+) -> int:
+    """Resolve a model's rows through the generic bulk dispatch (test helper).
+
+    Drop-in replacement for the deleted ``resolve_machine_models()`` in tests:
+    re-resolves scalars/FKs plus every relationship namespace for which the
+    model is a valid subject (including ``media_attachment``). Resolves all rows
+    of *model_class* unless *subject_ids* is given. Returns the number of
+    subjects resolved.
+
+    Unlike the deleted bulk resolver, this does NOT run the cross-entity
+    dependency preamble (locations/taxonomy/titles) — FK targets must already
+    exist as rows, which they do in tests (FK lookup is by slug).
+    """
+    from apps.provenance.resolution import resolve_entities_bulk
+    from apps.provenance.validation import (
+        get_relationship_namespaces,
+        get_relationship_schema,
+    )
+
+    if subject_ids is None:
+        subject_ids = set(
+            model_class.objects.values_list("pk", flat=True)  # type: ignore[attr-defined]
+        )
+    if not subject_ids:
+        return 0
+    namespaces = {
+        ns
+        for ns in get_relationship_namespaces()
+        if (schema := get_relationship_schema(ns)) is not None
+        and model_class in schema.valid_subjects
+    }
+    resolve_entities_bulk(model_class, subject_ids, namespaces)
+    return len(subject_ids)
 
 
 SAMPLE_IMAGES = [

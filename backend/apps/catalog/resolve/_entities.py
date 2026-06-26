@@ -21,6 +21,7 @@ from ._helpers import (
     _resolve_fk_generic,
     build_fk_info,
     get_field_defaults,
+    get_nullable_unique_fields,
     get_preserve_fields,
     resolve_unique_conflicts,
     validate_check_constraints,
@@ -269,6 +270,12 @@ def _resolve_bulk(
     # 4b. Detect unique-field conflicts across resolved objects.
     if has_unique_slug:
         resolve_unique_conflicts(all_objs, "slug", model_class, pre_slugs)
+    # Nullable single-column unique fields (external IDs like opdb_id,
+    # wikidata_id): an in-batch collision clears the loser to None rather than
+    # aborting the whole batch with IntegrityError. Discovered by introspection,
+    # so this covers every such field, not just MachineModel opdb_id.
+    for unique_field in get_nullable_unique_fields(model_class, direct_fields):
+        resolve_unique_conflicts(all_objs, unique_field, model_class)
 
     # 5. Bulk write.  Cross-field CheckConstraints are enforced by the DB
     # on bulk_update — a violation aborts the whole batch with IntegrityError,

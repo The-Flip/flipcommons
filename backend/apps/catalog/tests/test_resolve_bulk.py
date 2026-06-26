@@ -6,6 +6,8 @@ from django.db import IntegrityError
 
 from apps.catalog.models import (
     Franchise,
+    Location,
+    MachineModel,
     Manufacturer,
     Series,
     System,
@@ -16,10 +18,10 @@ from apps.catalog.resolve import (
     _resolve_bulk,
     _resolve_single,
     resolve_entity,
-    resolve_machine_models,
     resolve_model,
 )
-from apps.catalog.tests.conftest import make_machine_model
+from apps.catalog.resolve._helpers import get_nullable_unique_fields
+from apps.catalog.tests.conftest import bulk_resolve, make_machine_model
 from apps.core.models import RecordReference
 from apps.provenance.models import Claim, Source, get_claim_fields
 from apps.provenance.test_factories import make_claim
@@ -559,6 +561,89 @@ class TestSlugConflictDetection:
             resolve_entity(t2)
 
 
+class TestNullableUniqueFieldDiscovery:
+    """get_nullable_unique_fields covers single-column unique IDs only."""
+
+    def test_machine_model_external_ids(self):
+        fields = get_nullable_unique_fields(
+            MachineModel, get_claim_fields(MachineModel)
+        )
+        assert fields == ["ipdb_id", "opdb_id", "pinside_id"]
+
+    def test_excludes_composite_constraint_member(self):
+        """Location.parent is nullable and in (parent, slug) — must NOT appear.
+
+        Clearing it on de-confliction would wrongly null sibling locations'
+        parents. The helper tests field.unique only, never composite membership.
+        """
+        fields = get_nullable_unique_fields(Location, get_claim_fields(Location))
+        assert "parent" not in fields
+
+
+@pytest.mark.django_db
+class TestNullableUniqueConflictDetection:
+    """Bulk de-confliction of every nullable single-column UNIQUE field.
+
+    The bulk path resolves an in-batch collision on a nullable unique field by
+    clearing the loser to ``None`` (first-encountered, by queryset ordering,
+    wins) rather than aborting the whole batch with ``IntegrityError``. This is
+    discovered by introspection, so it covers every external-ID field, not just
+    MachineModel ``opdb_id``.
+    """
+
+    def test_bulk_opdb_id_conflict_clears_loser(self, opdb):
+        """MachineModel opdb_id collision: one keeps it, the loser clears."""
+        mm1 = make_machine_model(name="Alpha", slug="alpha")
+        mm2 = make_machine_model(name="Beta", slug="beta")
+        make_claim(mm1, "opdb_id", "GCONFLICT-1", source=opdb)
+        make_claim(mm2, "opdb_id", "GCONFLICT-1", source=opdb)
+
+        _resolve_bulk(MachineModel, get_claim_fields(MachineModel))
+
+        mm1.refresh_from_db()
+        mm2.refresh_from_db()
+        winners = [m for m in (mm1, mm2) if m.opdb_id == "GCONFLICT-1"]
+        losers = [m for m in (mm1, mm2) if m.opdb_id is None]
+        assert len(winners) == 1
+        assert len(losers) == 1
+
+    def test_bulk_non_mm_unique_id_conflict_clears_loser(self, opdb):
+        """Manufacturer wikidata_id collision exercises the introspection path.
+
+        wikidata_id was never de-conflicted in bulk before — the loser used to
+        abort the batch. Now the loser clears to None like opdb_id.
+        """
+        m1 = Manufacturer.objects.create(name="Stern", slug="stern")
+        m2 = Manufacturer.objects.create(name="Bally", slug="bally")
+        make_claim(m1, "name", "Stern", source=opdb)
+        make_claim(m1, "wikidata_id", "Q123", source=opdb)
+        make_claim(m2, "name", "Bally", source=opdb)
+        make_claim(m2, "wikidata_id", "Q123", source=opdb)
+
+        _resolve_bulk(Manufacturer, get_claim_fields(Manufacturer))
+
+        m1.refresh_from_db()
+        m2.refresh_from_db()
+        winners = [m for m in (m1, m2) if m.wikidata_id == "Q123"]
+        losers = [m for m in (m1, m2) if m.wikidata_id is None]
+        assert len(winners) == 1
+        assert len(losers) == 1
+
+    def test_no_conflict_when_ids_differ(self, opdb):
+        """Distinct nullable-unique values are left untouched."""
+        mm1 = make_machine_model(name="Alpha", slug="alpha")
+        mm2 = make_machine_model(name="Beta", slug="beta")
+        make_claim(mm1, "opdb_id", "GA-1", source=opdb)
+        make_claim(mm2, "opdb_id", "GB-2", source=opdb)
+
+        _resolve_bulk(MachineModel, get_claim_fields(MachineModel))
+
+        mm1.refresh_from_db()
+        mm2.refresh_from_db()
+        assert mm1.opdb_id == "GA-1"
+        assert mm2.opdb_id == "GB-2"
+
+
 @pytest.mark.django_db
 class TestApplyResolutionPreserve:
     """_apply_resolution preserves UNIQUE fields when no claim exists."""
@@ -591,7 +676,7 @@ class TestApplyResolutionPreserve:
         make_claim(mm2, "name", "Model B", source=opdb)
         # No slug claims — both should preserve their slugs.
 
-        resolve_machine_models()
+        bulk_resolve()
 
         mm1.refresh_from_db()
         mm2.refresh_from_db()

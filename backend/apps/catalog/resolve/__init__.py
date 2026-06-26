@@ -19,22 +19,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.core.management.base import OutputWrapper
-from django.utils import timezone
-
 from apps.core.types import JsonBody
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.licensing import (
     SourceFieldLicenseMap,
     build_source_field_license_map,
 )
-from apps.provenance.models import Claim, ClaimControlledModel
+from apps.provenance.models import Claim
 from apps.provenance.validation import get_relationship_namespaces
 
-from ..models import (
-    MachineModel,
-    Title,
-)
+from ..models import MachineModel
 from ._dispatch import register_catalog_resolve_handlers
 from ._entities import (
     _resolve_bulk,
@@ -49,17 +43,14 @@ from ._helpers import (
     build_fk_info,
     get_field_defaults,
     get_preserve_fields,
-    resolve_unique_conflicts,
     validate_check_constraints,
 )
 from ._image_fields import _stamp_image_license
 from ._media import resolve_media_attachments
 from ._relationships import (
-    resolve_all_aliases,
     resolve_all_corporate_entity_locations,
     resolve_all_credits,
     resolve_all_gameplay_features,
-    resolve_all_location_aliases,
     resolve_all_model_abbreviations,
     resolve_all_reward_types,
     resolve_all_series_credits,
@@ -68,12 +59,10 @@ from ._relationships import (
     resolve_all_title_abbreviations,
     resolve_corporate_entity_aliases,
     resolve_gameplay_feature_aliases,
-    resolve_gameplay_feature_parents,
     resolve_manufacturer_aliases,
     resolve_person_aliases,
     resolve_reward_type_aliases,
     resolve_theme_aliases,
-    resolve_theme_parents,
 )
 
 
@@ -82,8 +71,7 @@ def resolve_model(machine_model: MachineModel) -> MachineModel:
 
     Picks the winning claim per claim_key: highest effective priority
     (from source or user profile), then most recent created_at as tiebreaker.
-    Delegates field application to ``_apply_resolution()`` (shared with the
-    bulk path in ``resolve_machine_models()``).
+    Delegates field application to ``_apply_resolution()``.
 
     Returns the saved MachineModel.
     """
@@ -136,179 +124,6 @@ def resolve_model(machine_model: MachineModel) -> MachineModel:
     resolve_media_attachments(content_type_id=ct_mm.id, subject_ids=subject_ids)
 
     return machine_model
-
-
-def resolve_machine_models(stdout: OutputWrapper | None = None) -> int:
-    """Re-resolve every MachineModel and its dependencies from claims (bulk-optimized).
-
-    Resolves in dependency order: locations → taxonomy → titles → machine models
-    + their relationships (credits, themes, gameplay features, etc.).
-    Does NOT resolve manufacturers, corporate entities, or people.
-    Pre-fetches all lookup tables and claims in ~4 queries, resolves
-    in memory, then writes back with a single bulk_update().
-    """
-
-    def _status(msg: str) -> None:
-        if stdout:
-            stdout.write(f"  {msg}")
-
-    # 0. Resolve entity scalars in dependency order (FK targets first).
-    from ..models import (
-        GameplayFeature,
-        Location,
-        Theme,
-    )
-    from ..models.taxonomy import (
-        Cabinet,
-        CreditRole,
-        DisplaySubtype,
-        DisplayType,
-        GameFormat,
-        RewardType,
-        Tag,
-        TechnologyGeneration,
-        TechnologySubgeneration,
-    )
-
-    resolve_all_entities(Location)
-    resolve_all_location_aliases()
-    _status("Locations resolved")
-
-    from ..models import Franchise, Series, System
-
-    tax_models: list[type[ClaimControlledModel]] = [
-        TechnologyGeneration,
-        TechnologySubgeneration,
-        DisplayType,
-        DisplaySubtype,
-        Cabinet,
-        GameFormat,
-        RewardType,
-        Tag,
-        CreditRole,
-        Franchise,
-        Series,
-        System,
-    ]
-    for tax_model in tax_models:
-        resolve_all_entities(tax_model)
-    resolve_all_entities(Theme)
-    resolve_all_entities(GameplayFeature)
-    _status("Taxonomy, themes, gameplay features resolved")
-
-    resolve_theme_parents()
-    resolve_gameplay_feature_parents()
-    resolve_all_aliases()
-    _status("Hierarchy and aliases resolved")
-
-    resolve_all_corporate_entity_locations()
-    _status("Corporate entity locations resolved")
-
-    resolve_all_entities(Title)
-    _status("Titles resolved")
-
-    # 0c. Resolve title abbreviations.
-    resolve_all_title_abbreviations()
-
-    # 1. Pre-fetch lookup tables.
-    from apps.provenance.models import get_claim_fields
-
-    claim_fields = get_claim_fields(MachineModel)
-    field_defaults = get_field_defaults(MachineModel, claim_fields)
-    fk_info = build_fk_info(MachineModel, claim_fields)
-    sfl_map = build_source_field_license_map()
-    preserve_when_unclaimed = get_preserve_fields(MachineModel, claim_fields)
-
-    # 2. Pre-fetch all active claims, grouped by object_id (~1 query).
-    claims_by_model = _build_claims_by_model()
-    _status(f"Loaded {sum(len(v) for v in claims_by_model.values())} winning claims")
-
-    # 3. Load all MachineModels (~1 query).
-    all_models = list(MachineModel.objects.all())
-    pre_slugs = {pm.pk: pm.slug for pm in all_models}
-
-    # 4. Resolve each model in memory.
-    for pm in all_models:
-        winners = claims_by_model.get(pm.pk, {})
-        _apply_resolution(
-            pm,
-            winners,
-            claim_fields,
-            field_defaults,
-            fk_info,
-            sfl_map,
-            preserve_when_unclaimed,
-        )
-
-    # 5. Detect unique-field conflicts across all resolved models.
-    resolve_unique_conflicts(all_models, "opdb_id", MachineModel)
-    resolve_unique_conflicts(all_models, "slug", MachineModel, pre_slugs)
-
-    # 6. Validate check constraints before writing.
-    for pm in all_models:
-        validate_check_constraints(pm)
-
-    # 7. Set updated_at (auto_now not triggered by bulk_update).
-    now = timezone.now()
-    for pm in all_models:
-        pm.updated_at = now
-
-    # 8. Bulk write (~1 query, batched).
-    update_fields = [*claim_fields.values(), "extra_data", "updated_at"]
-    # batch_size=100 is optimal for SQLite (CASE WHEN overhead grows with
-    # batch size × field count). PostgreSQL uses a more efficient UPDATE FROM
-    # VALUES syntax and handles larger batches fine.
-    MachineModel.objects.bulk_update(all_models, update_fields, batch_size=100)
-    _status(f"Wrote {len(all_models)} models")
-
-    # 9. Bulk-resolve relationship claims.
-    all_model_ids = {pm.pk for pm in all_models}
-    resolve_all_credits(subject_ids=all_model_ids)
-    _status("Credits resolved")
-
-    resolve_all_themes(subject_ids=all_model_ids)
-    resolve_all_gameplay_features(subject_ids=all_model_ids)
-    resolve_all_reward_types(subject_ids=all_model_ids)
-    resolve_all_tags(subject_ids=all_model_ids)
-    _status("Themes, features, reward types, tags resolved")
-
-    resolve_all_model_abbreviations(subject_ids=all_model_ids)
-    _status("Abbreviations resolved")
-
-    from django.contrib.contenttypes.models import ContentType
-
-    ct_mm = ContentType.objects.get_for_model(MachineModel)
-    resolve_media_attachments(content_type_id=ct_mm.id, subject_ids=all_model_ids)
-    _status("Media attachments resolved")
-
-    return len(all_models)
-
-
-# ------------------------------------------------------------------
-# Bulk resolution helpers (used by resolve_machine_models)
-# ------------------------------------------------------------------
-
-
-def _build_claims_by_model() -> dict[int, dict[str, Claim]]:
-    """Pre-fetch all active claims for MachineModel, pick winner per (object_id, claim_key).
-
-    Returns {object_id: {claim_key: winning_claim}}.
-    """
-    from django.contrib.contenttypes.models import ContentType
-
-    ct = ContentType.objects.get_for_model(MachineModel)
-    claims = ranked_claims(
-        Claim.objects.filter(content_type=ct), "object_id", "claim_key"
-    ).select_related("actor__source__default_license")
-
-    result: dict[int, dict[str, Claim]] = {}
-    for claim in claims:
-        model_winners = result.setdefault(claim.object_id, {})
-        # First claim per (object_id, claim_key) group is the winner.
-        if claim.claim_key not in model_winners:
-            model_winners[claim.claim_key] = claim
-
-    return result
 
 
 def _apply_resolution(
