@@ -8,7 +8,7 @@ from typing import NamedTuple, cast
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 
-from apps.core.types import ClaimIdentity, EntityKey
+from apps.core.types import EntityKey
 from apps.media.models import EntityMedia, MediaAsset, MediaSupportedModel
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
@@ -16,6 +16,7 @@ from apps.provenance.models import Claim
 
 from ..cache import invalidate_all
 from ._claim_values import MediaAttachmentClaimValue
+from ._engine import pick_winners
 
 logger = logging.getLogger(__name__)
 
@@ -68,16 +69,12 @@ def resolve_media_attachments(
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
     claims = ranked_claims(claims_qs, "content_type_id", "object_id", "claim_key")
 
-    # Winner per (content_type_id, object_id, claim_key).
-    # Keep priority + created_at for primary enforcement.
-    winners_by_entity: dict[EntityKey, list[Claim]] = {}
-    seen: set[ClaimIdentity] = set()
-    for claim in claims:
-        key = ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)
-        if key not in seen:
-            seen.add(key)
-            entity_key = EntityKey(claim.content_type_id, claim.object_id)
-            winners_by_entity.setdefault(entity_key, []).append(claim)
+    # Winner per (content_type_id, object_id, claim_key), grouped by entity.
+    winners_by_entity = pick_winners(
+        claims,
+        lambda c: EntityKey(c.content_type_id, c.object_id),
+        lambda c: c.claim_key,
+    )
 
     # -- Validate winners & build desired state -----------------------------
 
@@ -103,7 +100,7 @@ def resolve_media_attachments(
     # Desired: {EntityKey: {asset_pk: DesiredMediaAttachment}}
     desired_by_entity: dict[EntityKey, dict[int, DesiredMediaAttachment]] = {}
 
-    for entity_key, claims_list in winners_by_entity.items():
+    for entity_key, winners in winners_by_entity.items():
         ct_info = _ct_info(entity_key.content_type_id)
 
         if not ct_info.is_media_supported:
@@ -116,7 +113,7 @@ def resolve_media_attachments(
             continue
 
         desired: dict[int, DesiredMediaAttachment] = {}
-        for claim in claims_list:
+        for claim in winners.values():
             val = cast(MediaAttachmentClaimValue, claim.value)
             if not member_is_present(claim):
                 continue

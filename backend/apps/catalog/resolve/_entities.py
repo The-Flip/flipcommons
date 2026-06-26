@@ -16,6 +16,7 @@ from apps.provenance.licensing import build_source_field_license_map
 from apps.provenance.models import Claim, ClaimControlledModel
 from apps.provenance.validation import get_relationship_namespaces
 
+from ._engine import pick_winners
 from ._helpers import (
     _coerce,
     _resolve_fk_generic,
@@ -70,10 +71,9 @@ def _resolve_single(
     if hasattr(obj, "extra_data"):
         claims = claims.select_related("actor__source__default_license")
 
-    winners: dict[str, Claim] = {}
-    for claim in claims:
-        if claim.field_name not in winners:
-            winners[claim.field_name] = claim
+    winners = pick_winners(claims, lambda c: c.object_id, lambda c: c.field_name).get(
+        obj.pk, {}
+    )
 
     # Reset resolvable fields to defaults.  Some fields must keep their
     # existing value when no winning claim exists — see _resolve_bulk().
@@ -174,11 +174,9 @@ def _resolve_bulk(
         claims_qs = claims_qs.select_related("actor__source__default_license")
 
     # Group by object_id, pick winner per field_name.
-    claims_by_obj: dict[int, dict[str, Claim]] = {}
-    for claim in claims_qs:
-        obj_winners = claims_by_obj.setdefault(claim.object_id, {})
-        if claim.field_name not in obj_winners:
-            obj_winners[claim.field_name] = claim
+    claims_by_obj = pick_winners(
+        claims_qs, lambda c: c.object_id, lambda c: c.field_name
+    )
 
     # Image fields denormalize their effective license into extra_data; build
     # the SourceFieldLicense map once iff a winning claim is an image field.

@@ -50,6 +50,7 @@ from ._claim_values import (
     ParentClaimValue,
 )
 from ._contracts import relationship_resolver
+from ._engine import pick_member_winners
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +58,6 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 # Shared tuple shapes
 # ------------------------------------------------------------------
-
-
-class ClaimDedupKey(NamedTuple):
-    """Dedup key when picking first-winner-per-claim_key for an entity."""
-
-    object_id: int
-    claim_key: str
 
 
 class CreditAssignment(NamedTuple):
@@ -115,23 +109,16 @@ def _resolve_machine_model_m2m(
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
     claims = ranked_claims(claims_qs, "object_id", "claim_key")
 
-    # Pick winner per (object_id, claim_key).
-    winners_by_model: dict[int, list[Claim]] = {}
-    seen: set[ClaimDedupKey] = set()
-    for claim in claims:
-        key = ClaimDedupKey(claim.object_id, claim.claim_key)
-        if key not in seen:
-            seen.add(key)
-            winners_by_model.setdefault(claim.object_id, []).append(claim)
+    winners_by_model = pick_member_winners(claims)
 
     # Valid PKs for existence check against stale claims.
     valid_pks = set(spec.target_model._default_manager.values_list("pk", flat=True))
 
     # Desired PKs from winning claims.
     desired_by_model: dict[int, set[int]] = {}
-    for model_id, claims_list in winners_by_model.items():
+    for model_id, winners in winners_by_model.items():
         desired: set[int] = set()
-        for claim in claims_list:
+        for claim in winners.values():
             val = cast(Mapping[str, object], claim.value)
             if not member_is_present(claim):
                 continue
@@ -219,23 +206,16 @@ def resolve_all_gameplay_features(
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
     claims = ranked_claims(claims_qs, "object_id", "claim_key")
 
-    # Pick winner per (object_id, claim_key).
-    winners_by_model: dict[int, list[Claim]] = {}
-    seen: set[ClaimDedupKey] = set()
-    for claim in claims:
-        key = ClaimDedupKey(claim.object_id, claim.claim_key)
-        if key not in seen:
-            seen.add(key)
-            winners_by_model.setdefault(claim.object_id, []).append(claim)
+    winners_by_model = pick_member_winners(claims)
 
     # Valid PKs for existence check against stale claims.
     valid_pks = set(GameplayFeature.objects.values_list("pk", flat=True))
 
     # Desired (feature_pk, count) from winning claims.
     desired_by_model: dict[int, dict[int, int | None]] = {}
-    for mid, claims_list in winners_by_model.items():
+    for mid, winners in winners_by_model.items():
         desired: dict[int, int | None] = {}
-        for claim in claims_list:
+        for claim in winners.values():
             val = cast(GameplayFeatureClaimValue, claim.value)
             if not member_is_present(claim):
                 continue
@@ -376,18 +356,12 @@ def _resolve_credits(
         credit_qs = credit_qs.filter(object_id__in=subject_ids)
     credit_claims = ranked_claims(credit_qs, "object_id", "claim_key")
 
-    winners_by_subject: dict[int, list[Claim]] = {}
-    seen: set[ClaimDedupKey] = set()
-    for claim in credit_claims:
-        key = ClaimDedupKey(claim.object_id, claim.claim_key)
-        if key not in seen:
-            seen.add(key)
-            winners_by_subject.setdefault(claim.object_id, []).append(claim)
+    winners_by_subject = pick_member_winners(credit_claims)
 
     desired_by_subject: dict[int, set[CreditAssignment]] = {}
-    for subject_id, claims_list in winners_by_subject.items():
+    for subject_id, winners in winners_by_subject.items():
         desired: set[CreditAssignment] = set()
-        for claim in claims_list:
+        for claim in winners.values():
             val = cast(CreditClaimValue, claim.value)
             if not member_is_present(claim):
                 continue
@@ -474,18 +448,12 @@ def resolve_all_title_abbreviations(
         abbr_qs = abbr_qs.filter(object_id__in=subject_ids)
     abbr_claims = ranked_claims(abbr_qs, "object_id", "claim_key")
 
-    winners_by_title: dict[int, list[Claim]] = {}
-    seen: set[ClaimDedupKey] = set()
-    for claim in abbr_claims:
-        key = ClaimDedupKey(claim.object_id, claim.claim_key)
-        if key not in seen:
-            seen.add(key)
-            winners_by_title.setdefault(claim.object_id, []).append(claim)
+    winners_by_title = pick_member_winners(abbr_claims)
 
     desired_by_title: dict[int, set[str]] = {}
-    for title_id, claims_list in winners_by_title.items():
+    for title_id, winners in winners_by_title.items():
         desired: set[str] = set()
-        for claim in claims_list:
+        for claim in winners.values():
             val = cast(AbbreviationClaimValue, claim.value)
             if not member_is_present(claim):
                 continue
@@ -541,18 +509,12 @@ def resolve_all_model_abbreviations(
         abbr_qs = abbr_qs.filter(object_id__in=subject_ids)
     abbr_claims = ranked_claims(abbr_qs, "object_id", "claim_key")
 
-    winners_by_model: dict[int, list[Claim]] = {}
-    seen: set[ClaimDedupKey] = set()
-    for claim in abbr_claims:
-        key = ClaimDedupKey(claim.object_id, claim.claim_key)
-        if key not in seen:
-            seen.add(key)
-            winners_by_model.setdefault(claim.object_id, []).append(claim)
+    winners_by_model = pick_member_winners(abbr_claims)
 
     desired_by_model: dict[int, set[str]] = {}
-    for model_id, claims_list in winners_by_model.items():
+    for model_id, winners in winners_by_model.items():
         desired: set[str] = set()
-        for claim in claims_list:
+        for claim in winners.values():
             val = cast(AbbreviationClaimValue, claim.value)
             if not member_is_present(claim):
                 continue
@@ -630,14 +592,7 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
         "claim_key",
     )
 
-    # Pick winners per (object_id, claim_key).
-    winners_by_parent: dict[int, list[Claim]] = {}
-    seen: set[ClaimDedupKey] = set()
-    for claim in claims_qs:
-        key = ClaimDedupKey(claim.object_id, claim.claim_key)
-        if key not in seen:
-            seen.add(key)
-            winners_by_parent.setdefault(claim.object_id, []).append(claim)
+    winners_by_parent = pick_member_winners(claims_qs)
 
     # Build desired aliases per parent: {lower_val → display_val}.
     # alias_display (original case) is preferred via the schema's
@@ -647,9 +602,9 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
         f"alias namespace {claim_field!r} has no registered relationship schema"
     )
     desired_by_parent: dict[int, dict[str, str]] = {}
-    for parent_id, claims_list in winners_by_parent.items():
+    for parent_id, winners in winners_by_parent.items():
         desired: dict[str, str] = {}
-        for claim in claims_list:
+        for claim in winners.values():
             val = cast(AliasClaimValue, claim.value)
             if not member_is_present(claim):
                 continue
@@ -744,21 +699,14 @@ def _resolve_parents(
         "claim_key",
     )
 
-    # Pick winners per (object_id, claim_key).
-    winners_by_child: dict[int, list[Claim]] = {}
-    seen: set[ClaimDedupKey] = set()
-    for claim in claims_qs:
-        key = ClaimDedupKey(claim.object_id, claim.claim_key)
-        if key not in seen:
-            seen.add(key)
-            winners_by_child.setdefault(claim.object_id, []).append(claim)
+    winners_by_child = pick_member_winners(claims_qs)
 
     valid_pks = set(parent_model.objects.values_list("pk", flat=True))  # type: ignore[attr-defined]
 
     desired_by_child: dict[int, set[int]] = {}
-    for child_id, claims_list in winners_by_child.items():
+    for child_id, winners in winners_by_child.items():
         desired: set[int] = set()
-        for claim in claims_list:
+        for claim in winners.values():
             val = cast(ParentClaimValue, claim.value)
             if not member_is_present(claim):
                 continue
@@ -841,22 +789,19 @@ def resolve_all_corporate_entity_locations(
         claims_qs = claims_qs.filter(object_id__in=subject_ids)
     claims = ranked_claims(claims_qs, "object_id", "claim_key")
 
-    # Pick the winning claim per (object_id, claim_key) by source priority, then
-    # keep only the present locations.  Uniform with the sibling resolvers: a
-    # higher-priority exists=False retraction wins over a lower-priority assertion.
+    # Pick the winning claim per (object_id, claim_key), then keep only the
+    # present locations: a higher-priority exists=False retraction wins over a
+    # lower-priority assertion.
+    winners_by_ce = pick_member_winners(claims)
     desired: dict[int, set[int]] = defaultdict(set)
-    seen: set[ClaimDedupKey] = set()
-    for claim in claims:
-        key = ClaimDedupKey(claim.object_id, claim.claim_key)
-        if key in seen:
-            continue
-        seen.add(key)
-        val = cast(LocationClaimValue, claim.value or {})
-        if not member_is_present(claim):
-            continue
-        loc_pk = val.get("location")
-        if loc_pk and loc_pk in valid_loc_pks:
-            desired[claim.object_id].add(loc_pk)
+    for ce_pk, winners in winners_by_ce.items():
+        for claim in winners.values():
+            val = cast(LocationClaimValue, claim.value or {})
+            if not member_is_present(claim):
+                continue
+            loc_pk = val.get("location")
+            if loc_pk and loc_pk in valid_loc_pks:
+                desired[ce_pk].add(loc_pk)
 
     existing_qs = CorporateEntityLocation.objects.all()
     if subject_ids is not None:
