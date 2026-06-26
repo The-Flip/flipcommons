@@ -2,27 +2,39 @@
 
 The shared kernel between *rank*
 (:func:`apps.provenance.claim_ranking_in_db.ranked_claims`) and the per-shape
-desired/diff/write logic — the layer-2 winner-pick (:func:`pick_winners`) and the
-layer-3 reconcile (:func:`reconcile`).
+desired/diff/write logic: the layer-2 winner-pick (:func:`pick_winners`), the
+layer-3 reconcile (:func:`reconcile`), the typed vocabulary they speak
+(:class:`Projection`, :class:`Delta`, …) and the generic, shape-agnostic
+:class:`ThroughRowProjection` that implements :class:`Projection` for every
+plain/payload/compound through-row namespace.
 
-Deliberately catalog-free — it imports only provenance (+ Django ORM base
-classes) and names no concrete catalog model — so it can move wholesale to
-``apps.provenance.resolution``. An import-linter contract pins that boundary;
-concrete :class:`Projection` instances (which name catalog/media models) live in
-``_relationships.py`` / ``_media.py``, never here.
+Deliberately catalog-free — it imports only provenance (+ the Django ORM) and
+names no concrete catalog model (through models arrive as constructor
+arguments) — so it can move wholesale to ``apps.provenance.resolution``. An
+import-linter contract pins that boundary. The *bespoke* projections
+(:class:`~._relationships.AliasProjection`, :class:`~._media.MediaProjection`)
+and the concrete builders that configure :class:`ThroughRowProjection` name
+domain models and live in ``_relationships.py`` / ``_media.py``, never here.
 """
 
 from __future__ import annotations
 
 from collections.abc import Hashable
-from typing import TYPE_CHECKING, NamedTuple, Protocol
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
+
+from django.contrib.contenttypes.models import ContentType
 
 from apps.provenance.claim_presence import member_is_present
+from apps.provenance.claim_ranking_in_db import ranked_claims
+from apps.provenance.models import Claim
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
-    from apps.provenance.models import Claim
+    from django.db.models import Model
+
+    from apps.provenance.models import ClaimControlledModel
 
 type Winners[Subject: Hashable, Group: Hashable] = dict[Subject, dict[Group, "Claim"]]
 """Winning claim per ``(subject, group)`` — the first claim seen for each group
@@ -229,3 +241,156 @@ def diff[Subject: Hashable, Member: Hashable, Payload](
             if key not in want:
                 delete.append(row.pk)
     return Delta(create, delete, update)
+
+
+# ---------------------------------------------------------------------------
+# The generic through-row Projection
+# ---------------------------------------------------------------------------
+#
+# One data-parameterized Projection covers every plain/payload/compound
+# through-row shape (themes, reward types, tags, gameplay features, credits,
+# abbreviations, parent hierarchies, corporate-entity locations): the through
+# model, its subject/member/payload columns and the write flags are all
+# constructor arguments, so it names no concrete model. The two genuinely
+# bespoke projections — AliasProjection (case-folded keys) and MediaProjection
+# (composite EntityKey subject) — stay in their domain modules.
+
+
+# Column <-> Member/Payload converters.  The ``*_to_columns`` direction takes
+# ``object`` (a Member or Payload) — contravariantly assignable to any concrete
+# param type — while the ``columns_to_*`` direction must return the precise type,
+# so the scalar cases are spelled per result type (int / str / int|None).
+
+
+def _int_from_column(columns: tuple[object, ...]) -> int:
+    """Single int column → its value (FK target pk)."""
+    return cast(int, columns[0])
+
+
+def _str_from_column(columns: tuple[object, ...]) -> str:
+    """Single str column → its value (abbreviation string)."""
+    return cast(str, columns[0])
+
+
+def _int_or_none_from_column(columns: tuple[object, ...]) -> int | None:
+    """Single nullable int column → its value (gameplay count)."""
+    return cast(int | None, columns[0])
+
+
+def _one_column(value: object) -> tuple[object, ...]:
+    """A scalar Member/Payload → its single column."""
+    return (value,)
+
+
+def _no_payload(columns: tuple[object, ...]) -> None:
+    """Set membership: no payload columns → ``None`` payload."""
+    return None
+
+
+def _no_columns(payload: object) -> tuple[object, ...]:
+    """Set membership: ``None`` payload → no payload columns."""
+    return ()
+
+
+@dataclass(frozen=True, slots=True)
+class ThroughRowProjection[Member: Hashable, Payload]:
+    """Generic membership projection over a through-table.
+
+    The through model, its subject/member/payload columns and the create-time
+    write flags are all data, so one class instantiates for themes, reward
+    types, tags, gameplay features, credits, abbreviations, parent hierarchies
+    and corporate-entity locations.  ``Member`` is a single pk/value or a
+    compound :class:`~typing.NamedTuple` key; ``Payload`` is ``None`` for a set
+    or a single attribute (e.g. gameplay ``count``) for a map.
+    """
+
+    subject_model: type[ClaimControlledModel]
+    field_name: str
+    through_model: type[Model]
+    subject_column: str
+    key_columns: tuple[str, ...]
+    payload_columns: tuple[str, ...]
+    extract_member: Callable[[Claim], ExtractedMember[Member, Payload] | None]
+    columns_to_key: Callable[[tuple[object, ...]], Member]
+    key_to_columns: Callable[[Member], tuple[object, ...]]
+    columns_to_payload: Callable[[tuple[object, ...]], Payload]
+    payload_to_columns: Callable[[Payload], tuple[object, ...]]
+    ignore_conflicts: bool = False
+
+    def claims(self, subjects: set[int] | None) -> Iterable[Claim]:
+        ct = ContentType.objects.get_for_model(self.subject_model)
+        claims_qs = Claim.objects.filter(content_type=ct, field_name=self.field_name)
+        if subjects is not None:
+            claims_qs = claims_qs.filter(object_id__in=subjects)
+        return ranked_claims(claims_qs, "object_id", "claim_key")
+
+    def subject(self, claim: Claim) -> int:
+        return claim.object_id
+
+    def extract(self, claim: Claim) -> ExtractedMember[Member, Payload] | None:
+        return self.extract_member(claim)
+
+    def read(
+        self, subjects: set[int] | None
+    ) -> MemberMap[int, Member, RowState[Payload]]:
+        manager = self.through_model._default_manager
+        if subjects is not None:
+            rows_qs = manager.filter(**{f"{self.subject_column}__in": subjects})
+        else:
+            # A NULL subject column means the row belongs to a sibling namespace
+            # sharing this table — Credit's model/series XOR is the only case.
+            # A full-scope read must exclude those, or diff() would bucket them
+            # under a null subject and delete them. A no-op for non-null columns.
+            rows_qs = manager.filter(**{f"{self.subject_column}__isnull": False})
+
+        nkeys = len(self.key_columns)
+        columns = ("pk", self.subject_column, *self.key_columns, *self.payload_columns)
+        existing: MemberMap[int, Member, RowState[Payload]] = {}
+        for row in rows_qs.values_list(*columns):
+            pk, subject_id = row[0], row[1]
+            key = self.columns_to_key(row[2 : 2 + nkeys])
+            payload = self.columns_to_payload(row[2 + nkeys :])
+            existing.setdefault(subject_id, {})[key] = RowState(pk, payload)
+        return existing
+
+    def write(self, delta: Delta[int, Member, Payload]) -> None:
+        manager = self.through_model._default_manager
+        if delta.delete:
+            manager.filter(pk__in=delta.delete).delete()
+        if delta.create:
+            rows = [
+                self.through_model(
+                    **{self.subject_column: row.subject},
+                    **dict(
+                        zip(
+                            self.key_columns,
+                            self.key_to_columns(row.key),
+                            strict=True,
+                        )
+                    ),
+                    **dict(
+                        zip(
+                            self.payload_columns,
+                            self.payload_to_columns(row.payload),
+                            strict=True,
+                        )
+                    ),
+                )
+                for row in delta.create
+            ]
+            manager.bulk_create(
+                rows, batch_size=2000, ignore_conflicts=self.ignore_conflicts
+            )
+        if delta.update:
+            fetched = manager.in_bulk([row.pk for row in delta.update])
+            for row in delta.update:
+                instance = fetched[row.pk]
+                for column, value in zip(
+                    self.payload_columns,
+                    self.payload_to_columns(row.payload),
+                    strict=True,
+                ):
+                    setattr(instance, column, value)
+            manager.bulk_update(
+                list(fetched.values()), list(self.payload_columns), batch_size=2000
+            )
