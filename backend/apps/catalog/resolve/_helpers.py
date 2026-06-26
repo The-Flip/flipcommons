@@ -231,6 +231,34 @@ def get_preserve_fields(
     return preserve
 
 
+def get_nullable_unique_fields(
+    model_class: type[ClaimControlledModel],
+    direct_fields: dict[str, str],
+) -> list[str]:
+    """Claim-controlled fields that are single-column ``unique=True`` AND nullable.
+
+    These are the external-ID fields (``opdb_id``, ``wikidata_id``, …) that the
+    bulk path de-conflicts by clearing the loser to ``None`` when two objects in
+    a batch resolve to the same value.
+
+    Deliberately tests **only** ``field.unique`` — NOT membership in a Meta
+    ``UniqueConstraint``. De-confliction is destructive (it nulls the loser), so
+    a field that is merely *part of a composite* unique key (e.g. ``Location``'s
+    nullable ``parent`` inside ``(parent, slug)``) must never be treated as
+    singly-unique here, or sibling rows would have their ``parent`` wrongly
+    cleared. ``get_preserve_fields`` can safely use the broader predicate because
+    preserving a value is always harmless; clearing one is not.
+
+    Returns a sorted list so de-confliction order is deterministic.
+    """
+    fields: list[str] = []
+    for attr in direct_fields.values():
+        field = model_class._meta.get_field(attr)
+        if getattr(field, "unique", False) and field.null:
+            fields.append(attr)
+    return sorted(fields)
+
+
 def resolve_unique_conflicts(
     all_objs: Sequence[ClaimControlledModel],
     field_name: str,

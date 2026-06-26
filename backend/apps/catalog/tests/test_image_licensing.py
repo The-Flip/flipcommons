@@ -4,8 +4,8 @@ import pytest
 
 from apps.catalog.api.images import extract_image_urls
 from apps.catalog.models import Title
-from apps.catalog.resolve import resolve_entity, resolve_machine_models, resolve_model
-from apps.catalog.tests.conftest import make_machine_model
+from apps.catalog.resolve import resolve_entity, resolve_model
+from apps.catalog.tests.conftest import bulk_resolve, make_machine_model
 from apps.core.models import License
 from apps.provenance.licensing import resolve_effective_license
 from apps.provenance.models import Source, SourceFieldLicense
@@ -134,7 +134,7 @@ class TestImageLicenseDenormalization:
             )
 
         with django_assert_max_num_queries(216):
-            resolve_machine_models()
+            bulk_resolve()
 
     def test_resolution_stores_permissiveness_rank_in_extra_data(self, opdb, cc_by_sa):
         """Resolution should denormalize license rank into extra_data for image fields."""

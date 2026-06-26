@@ -1,7 +1,7 @@
 import pytest
 
 from apps.catalog.models import GameplayFeature
-from apps.catalog.resolve._relationships import resolve_gameplay_feature_parents
+from apps.catalog.resolve._relationships import _resolve_parents
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim
@@ -37,7 +37,7 @@ class TestResolveGameplayFeatureParents:
             claim_key=claim_key,
         )
 
-        resolve_gameplay_feature_parents()
+        _resolve_parents(GameplayFeature, claim_field_prefix="gameplay_feature")
 
         assert list(child.parents.values_list("slug", flat=True)) == ["multiball"]
         assert list(parent.children.values_list("slug", flat=True)) == [

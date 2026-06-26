@@ -17,8 +17,7 @@ import pytest
 from django.db import IntegrityError
 
 from apps.catalog.models import ProductionStatus, Title
-from apps.catalog.resolve import resolve_machine_models
-from apps.catalog.tests.conftest import make_machine_model
+from apps.catalog.tests.conftest import bulk_resolve, make_machine_model
 from apps.core.types import JsonBody
 from apps.provenance.models import ChangeSet, ChangeSetAction, Claim, Source
 from apps.provenance.test_factories import make_claim
@@ -152,7 +151,7 @@ class TestProductionStatusClaimResolution:
         src = Source.objects.get(slug="bootstrap")
 
         make_claim(model, "production_status", "unreleased", source=src)
-        resolve_machine_models()
+        bulk_resolve()
 
         model.refresh_from_db()
         assert model.production_status is not None

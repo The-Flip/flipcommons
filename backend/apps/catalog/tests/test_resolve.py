@@ -16,11 +16,10 @@ from apps.catalog.resolve import (
     resolve_all_model_abbreviations,
     resolve_all_themes,
     resolve_all_title_abbreviations,
-    resolve_machine_models,
     resolve_model,
 )
 from apps.catalog.resolve._relationships import resolve_all_corporate_entity_locations
-from apps.catalog.tests.conftest import make_machine_model
+from apps.catalog.tests.conftest import bulk_resolve, make_machine_model
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim
@@ -195,7 +194,7 @@ class TestResolveAll:
         make_claim(pm3, "technology_generation", "solid-state", source=ipdb)
 
         before = timezone.now()
-        count = resolve_machine_models()
+        count = bulk_resolve()
         assert count == 3
 
         pm1.refresh_from_db()
@@ -241,7 +240,10 @@ class TestResolveAll:
         resolve_model(pm_single)
         pm_single.refresh_from_db()
 
-        resolve_machine_models()
+        # Resolve ONLY pm_bulk through the generic bulk dispatch, so this stays
+        # a true single (resolve_model) vs bulk equivalence check — resolving
+        # all models would route pm_single through the bulk path too.
+        bulk_resolve(subject_ids={pm_bulk.pk})
         pm_bulk.refresh_from_db()
 
         assert pm_bulk.name == pm_single.name
@@ -262,7 +264,7 @@ class TestResolveAll:
         make_claim(pm_a, "opdb_id", "GCONFLICT-M1", source=ipdb)
         make_claim(pm_b, "opdb_id", "GCONFLICT-M1", source=ipdb)
 
-        resolve_machine_models()
+        bulk_resolve()
         pm_a.refresh_from_db()
         pm_b.refresh_from_db()
 
@@ -278,7 +280,7 @@ class TestResolveAll:
         make_claim(pm, "name", "P1", source=ipdb)
         make_claim(pm, "year", 1997, source=ipdb)
         make_claim(pm, "player_count", 4, source=ipdb)
-        resolve_machine_models()
+        bulk_resolve()
         pm.refresh_from_db()
         assert pm.year == 1997
         assert pm.player_count == 4
@@ -287,7 +289,7 @@ class TestResolveAll:
         pm.claims.filter(
             is_active=True, field_name__in=["year", "player_count"]
         ).update(is_active=False)
-        resolve_machine_models()
+        bulk_resolve()
         pm.refresh_from_db()
         assert pm.year is None
         assert pm.player_count is None
@@ -302,8 +304,11 @@ class TestResolveAll:
             make_claim(pm, "name", f"Resolved {i}", source=ipdb)
             make_claim(pm, "year", 2000 + i, source=ipdb)
 
-        with django_assert_max_num_queries(185):
-            resolve_machine_models()
+        # Generic bulk dispatch over 5 models + their relationship namespaces;
+        # ~46 queries today. Ceiling guards against an N+1 that would scale with
+        # model count.
+        with django_assert_max_num_queries(60):
+            bulk_resolve()
 
 
 @pytest.mark.django_db
@@ -383,7 +388,7 @@ class TestResolveThemes:
                 )
                 make_claim(pm, "theme", value, source=ipdb, claim_key=claim_key)
 
-        resolve_machine_models()
+        bulk_resolve()
         assert set(pm1.themes.values_list("slug", flat=True)) == {
             "sports",
             "baseball",
