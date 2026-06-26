@@ -54,7 +54,7 @@ It is reached through the only `isinstance(entity, MachineModel)` branch left in
 
 Everything `resolve_model` does is already available generically. `resolve_all_entities` resolves its scalars and FKs; `resolve_unique_conflicts` already implements the slug/opdb_id guard for the bulk path; the six relationship resolvers already take `subject_ids`. `resolve_model` is not load-bearing — it is un-deleted history.
 
-### Current dispatch state
+### Dispatch state
 
 The owner-registered dispatch inversion **already shipped at the provenance seam**. `apps/provenance/resolution/_dispatch.py` holds the registry keyed by concrete model, `register_resolve_handlers`, fail-fast `ImproperlyConfigured` and the two entry points (`resolve_after_mutation`, `resolve_entities_bulk`); catalog registers a handler pair for every model at `CatalogConfig.ready()`. That part is done and correct — it is the right boundary and should be left alone.
 
@@ -225,7 +225,7 @@ REF1 is byte-identical for the claim-derived columns and through-tables, but **n
 
 Extract the primitives, bottoms-up.
 
-##### <a id="REF2">REF2</a> — Extract `pick_winners`
+##### ✅ DONE: <a id="REF2">REF2</a> — Extract `pick_winners`
 
 Replace all 13 copies. A ~3-line function (`for row in ranked_claims(...): winners.setdefault(key, row)`), 13 call sites. The cheapest win and the one that makes the rest readable. Defines the first named type — `Winners` — as its return type. The kernel is "first row per group" (the fold), **parameterized by the grouping key** — `field_name` on the scalar path (one winner per field: a register) and `claim_key` on the membership path (many winners per subject: a set). That parameter is what lets one function cover all 13 sites; register-vs-set is only how the caller consumes the groups, not a second function.
 
@@ -233,7 +233,7 @@ Replace all 13 copies. A ~3-line function (`for row in ranked_claims(...): winne
 
 Build it with `{create, delete, update}` and collapse the 9 copy-pasted loops onto it. Each resolver shrinks to: build queryset → `pick_winners` → build `desired_by_subject` (the only genuinely per-shape part, ~5 lines) → `reconcile`. After the Before phase **every** resolver is claim-local — no bespoke `desired()` hook remains, and the two universal filters — `member_is_present` (tombstone-drop) and valid-PK existence (for FK-referencing members) — move into the engine, so `desired()` is a pure per-shape `claim → (key, payload)` function. Deletes ~500 lines. **The typed vocabulary is born here, not in a later pass** — `Projection[K, P]`, `MemberMap[K, P]`, `RowState[P]` and `Delta[K, P]` (see [The design](#design)) are `reconcile`'s signature, so the generics are what make the 9 copies collapse into one; extracting with loose types and tightening afterward would reintroduce the very drift this removes. The scalar instantiation (`Projection[str, <column value>]`) firms up in REF4.
 
-This is also where the four parallel dispatch tables (see [Current dispatch state](#current-dispatch-state--accurate-as-of-this-writing)) collapse into one `namespace → Projection` registry: the bespoke resolvers (`title_abbreviations`, `corporate_entity_locations`, `series_credits`) become escape-hatch Projections referenced **by object**, retiring `_custom_dispatch`'s string-`getattr` (the one stringly-typed edge in the subsystem). REF1 has already merged the MM vs non-MM relationship-dispatch divergence into this same table, so by REF3 there is a single keyed-by-namespace map to turn into the registry — not four.
+This is also where the four parallel dispatch tables (see [dispatch state](#dispatch-state)) collapse into one `namespace → Projection` registry: the bespoke resolvers (`title_abbreviations`, `corporate_entity_locations`, `series_credits`) become escape-hatch Projections referenced **by object**, retiring `_custom_dispatch`'s string-`getattr` (the one stringly-typed edge in the subsystem). REF1 has already merged the MM vs non-MM relationship-dispatch divergence into this same table, so by REF3 there is a single keyed-by-namespace map to turn into the registry — not four.
 
 #### Fold in the holdout
 
@@ -255,7 +255,7 @@ Scope it to the entity and dimension a reconcile actually touched, replacing the
 
 #### <a id="POST2">POST2</a> — Operator re-resolve command (`manage.py resolve`)
 
-Rebuild the capability [PRE5](#PRE5) deletes, properly. A `manage.py resolve <target>` command that re-materializes the catalog from claims in dependency order (FK targets before dependents) — the operator's tool after a source-priority or license change, which touches no claim and so triggers no automatic re-resolution. It is also the global `resolve` command the [stale-state discussion](#stale-materialized-state-is-a-completeness-concern-not-a-correctness-gate) assumes is unbuilt. Sequenced _after_ the refactor because it should compose the clean unified resolvers (and eventually `reconcile`), not re-encode the pre-refactor MachineModel rebuild it replaces — building it earlier means building it twice. A scriptable command, not a hand-rolled admin HTML view; if an in-app trigger is wanted later it can shell out to the same entry point.
+Rebuild the capability [PRE5](#PRE5) deletes, properly. A `manage.py resolve <target>` command that re-materializes the catalog from claims in dependency order (FK targets before dependents) — the operator's tool after a source-priority or license change, which touches no claim and so triggers no automatic re-resolution. It is also the global `resolve` command the [stale-state discussion](#staleness) assumes is unbuilt. Sequenced _after_ the refactor because it should compose the clean unified resolvers (and eventually `reconcile`), not re-encode the pre-refactor MachineModel rebuild it replaces — building it earlier means building it twice. A scriptable command, not a hand-rolled admin HTML view; if an in-app trigger is wanted later it can shell out to the same entry point.
 
 **The refactor does most of POST2's work in advance.** After REF1–REF4, "resolve everything" is `for model in ORDER: resolve_all_entities(model)` plus the model's relationships, with **no per-type branching** (the dispatch drives the relationship step uniformly — POST2 never hand-lists a model's resolvers the way `resolve_machine_models` did). The model set is introspectable (`catalog_models()`), the dispatch fail-fasts on an unhandled model, and resolution is idempotent/level-triggered, so POST2 needs no locking, draining or deploy-coupling. POST2's only irreducible hand-written part is the cross-type **order** below.
 
@@ -292,6 +292,10 @@ The claim `field_name` (a.k.a. relationship namespace) is bare `str` everywhere:
 ##### Name the claim-field→attribute map (`ClaimFieldMap`)
 
 `get_claim_fields` returns a `dict[str, str]` mapping each claim `field_name` to the model attribute it resolves into, and that bare `dict[str, str]` is threaded unnamed through `get_preserve_fields`, `get_nullable_unique_fields` and `_resolve_bulk`. Both sides are `str`, so the type hides which is which — the latent-compound-type smell from [Strong Typing](../../Python.md). Give it one alias — `type ClaimFieldMap = dict[FieldName, str]` (keys are the `FieldName` above, so this rides on that cleanup) — and apply it across all sites in one pass, never in a single helper alone: the signature parallel between `get_preserve_fields` and its sibling `get_nullable_unique_fields` is load-bearing, and tightening one would diverge it from the other. (Both helpers read only `.values()`, so each is technically over-typed — `Iterable[str]` would do — but the shared `ClaimFieldMap` keeps the sibling pair honest and is the better call than narrowing per-helper.)
+
+##### Name the claim subject/member keys (`ObjectId`, `ClaimKey`)
+
+The entity `object_id` (bare `int`) and `claim_key` (bare `str`) are the two halves of a claim's membership identity, threaded namelessly across provenance (`Claim.object_id`, `Claim.claim_key`, `make_claim`), catalog resolution and claim_ingest — which has already grown its own local `type ClaimKey = str` ([patches/\_types.py](../../../backend/apps/claim_ingest/patches/_types.py)). REF2's `pick_member_winners` surfaces them as the concrete `Winners[int, str]` (the generic `pick_winners` keeps the abstract `Subject`/`Group` type vars). Give each one documentation alias — `type ObjectId = int`, `type ClaimKey = str` — and thread it through in a single pass, retiring claim_ingest's duplicate so there is one spelling. Deliberately **not** introduced in REF2: a lone alias in `_engine.py` while every other site stays bare `int`/`str` would be a fourth divergent spelling, not a consolidation.
 
 ### End-state homes
 

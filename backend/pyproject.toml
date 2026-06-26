@@ -271,6 +271,28 @@ source_modules = [
 ]
 forbidden_modules = ["apps.provenance.claim_writer"]
 
+# The resolution-engine primitives (apps.catalog.resolve._engine — the shared
+# winner-pick kernel) are deliberately movable to apps.provenance.resolution, so
+# they may import only what provenance already can (provenance/citation/accounts/
+# actors/core/stdlib). Forbid every tier provenance cannot reach — not just a
+# concrete model name — so a stray `from ..engine import X` or `from
+# ._relationships import Y` is caught too, since either equally blocks the hoist.
+# Direct-only (allow_indirect_imports): the module's own imports are the
+# invariant; a transitive provenance -> catalog chain is provenance's baseline,
+# and travels with the module when it moves.
+[[tool.importlinter.contracts]]
+name = "Resolution engine primitives stay catalog-free"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = ["apps.catalog.resolve._engine"]
+forbidden_modules = [
+    "apps.catalog",
+    "apps.media",
+    "apps.claim_edit",
+    "apps.claim_ingest",
+    "apps.kiosk",
+]
+
 # --- Media peer-isolation ---
 
 # Media internals are peer-isolated from the citation/provenance data apps.
