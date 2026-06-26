@@ -310,6 +310,50 @@ class TestReferenceSync:
             == 0
         )
 
+    def test_machine_model_interactive_resolve_syncs_references(self):
+        """Resolving a MachineModel interactively syncs RecordReference backlinks.
+
+        A ``[[entity:id]]`` wikilink in a MachineModel ``description`` claim
+        materializes the matching ``RecordReference`` row on
+        ``resolve_after_mutation``, and retracting the claim clears it — the
+        same backlink sync every other entity's ``description`` gets.
+        """
+        from django.contrib.contenttypes.models import ContentType
+
+        from apps.provenance.models import Claim, Source
+        from apps.provenance.resolution import resolve_after_mutation
+
+        from .conftest import make_machine_model
+
+        mfr = Manufacturer.objects.create(name="Williams", slug="williams")
+        system = System.objects.create(name="WPC-95", slug="wpc-95", manufacturer=mfr)
+        mm = make_machine_model(name="Medieval Madness", slug="mm")
+        source = Source.objects.create(name="test", priority=100)
+        make_claim(
+            mm,
+            "description",
+            f"Runs on [[system:id:{system.pk}]].",
+            source=source,
+        )
+
+        resolve_after_mutation(mm, ["description"])
+
+        mm_ct = ContentType.objects.get_for_model(type(mm))
+        refs = RecordReference.objects.filter(source_type=mm_ct, source_id=mm.pk)
+        assert refs.count() == 1
+        ref = refs.first()
+        assert ref is not None
+        assert ref.target_type == ContentType.objects.get_for_model(System)
+        assert ref.target_id == system.pk
+
+        # Retracting the description clears the backlink.
+        Claim.objects.filter(
+            content_type=mm_ct, object_id=mm.pk, field_name="description"
+        ).update(is_active=False)
+        resolve_after_mutation(mm, ["description"])
+
+        assert refs.count() == 0
+
 
 @pytest.mark.django_db
 class TestApiPatchConversion:

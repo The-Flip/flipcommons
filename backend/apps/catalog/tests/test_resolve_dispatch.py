@@ -154,7 +154,7 @@ class TestMachineModelRouting:
 
 @pytest.mark.django_db
 class TestScalarResolution:
-    def test_non_machine_model_scalars(self, theme, source):
+    def test_entity_scalars(self, theme, source):
         make_claim(theme, "name", "Updated Theme", source=source)
 
         resolve_after_mutation(theme, field_names=["name"])

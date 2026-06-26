@@ -506,10 +506,10 @@ class TestValidateCheckConstraints:
         make_claim(mm, "month", 6, source=source)
         # No year claim — resolver will reset year to None, month stays 6.
         # validate_check_constraints should catch this before save().
-        from apps.catalog.resolve import resolve_model
+        from apps.provenance.resolution import resolve_after_mutation
 
         with pytest.raises(ValidationError, match="month requires year"):
-            resolve_model(mm)
+            resolve_after_mutation(mm)
 
     def test_execute_claims_returns_422_on_cross_field_violation(self, user):
         """PATCH path converts ValidationError to HttpError 422."""

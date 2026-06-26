@@ -16,12 +16,12 @@ from apps.catalog.resolve import (
     resolve_all_model_abbreviations,
     resolve_all_themes,
     resolve_all_title_abbreviations,
-    resolve_model,
 )
 from apps.catalog.resolve._relationships import resolve_all_corporate_entity_locations
 from apps.catalog.tests.conftest import bulk_resolve, make_machine_model
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Source
+from apps.provenance.resolution import resolve_after_mutation
 from apps.provenance.test_factories import make_claim
 
 
@@ -54,32 +54,32 @@ class TestResolveModel:
         make_claim(pm, "year", 1997, source=ipdb)
         make_claim(pm, "technology_generation", "solid-state", source=ipdb)
 
-        resolved = resolve_model(pm)
-        assert resolved.name == "Medieval Madness"
-        assert resolved.year == 1997
-        assert resolved.technology_generation == ss
+        resolve_after_mutation(pm)
+        assert pm.name == "Medieval Madness"
+        assert pm.year == 1997
+        assert pm.technology_generation == ss
 
     def test_higher_priority_wins(self, pm, ipdb, editorial):
         make_claim(pm, "name", "Test Game", source=ipdb)
         make_claim(pm, "year", 1996, source=ipdb)
         make_claim(pm, "year", 1997, source=editorial)
 
-        resolved = resolve_model(pm)
-        assert resolved.year == 1997  # editorial has higher priority
+        resolve_after_mutation(pm)
+        assert pm.year == 1997  # editorial has higher priority
 
     def test_same_priority_latest_wins(self, pm, ipdb, opdb):
         make_claim(pm, "name", "IPDB Name", source=ipdb)
         make_claim(pm, "name", "OPDB Name", source=opdb)
 
-        resolved = resolve_model(pm)
-        assert resolved.name == "OPDB Name"
+        resolve_after_mutation(pm)
+        assert pm.name == "OPDB Name"
 
     def test_extra_data_catchall(self, pm, ipdb):
         make_claim(pm, "name", "Test Game", source=ipdb)
         make_claim(pm, "model_number", "20021", source=ipdb)
 
-        resolved = resolve_model(pm)
-        assert resolved.extra_data["model_number"] == "20021"
+        resolve_after_mutation(pm)
+        assert pm.extra_data["model_number"] == "20021"
 
     def test_abbreviation_relationship_claim(self, pm, ipdb):
         from apps.provenance.claims import build_relationship_claim
@@ -88,17 +88,17 @@ class TestResolveModel:
         claim_key, value = build_relationship_claim("abbreviation", {"value": "MM"})
         make_claim(pm, "abbreviation", value, source=ipdb, claim_key=claim_key)
 
-        resolved = resolve_model(pm)
-        assert list(resolved.abbreviations.values_list("value", flat=True)) == ["MM"]
+        resolve_after_mutation(pm)
+        assert list(pm.abbreviations.values_list("value", flat=True)) == ["MM"]
 
     def test_int_coercion(self, pm, ipdb):
         make_claim(pm, "name", "Test Game", source=ipdb)
         make_claim(pm, "year", "1997", source=ipdb)
         make_claim(pm, "player_count", "4", source=ipdb)
 
-        resolved = resolve_model(pm)
-        assert resolved.year == 1997
-        assert resolved.player_count == 4
+        resolve_after_mutation(pm)
+        assert pm.year == 1997
+        assert pm.player_count == 4
 
     def test_decimal_coercion(self, pm, ipdb):
         from decimal import Decimal
@@ -106,14 +106,14 @@ class TestResolveModel:
         make_claim(pm, "name", "Test Game", source=ipdb)
         make_claim(pm, "ipdb_rating", "8.75", source=ipdb)
 
-        resolved = resolve_model(pm)
-        assert resolved.ipdb_rating == Decimal("8.75")
+        resolve_after_mutation(pm)
+        assert pm.ipdb_rating == Decimal("8.75")
 
     def test_empty_string_coercion(self, pm, ipdb):
         make_claim(pm, "name", "Test Game", source=ipdb)
         make_claim(pm, "year", "", source=ipdb)
-        resolved = resolve_model(pm)
-        assert resolved.year is None
+        resolve_after_mutation(pm)
+        assert pm.year is None
 
     def test_invalid_int_coercion_rejected_at_claim_boundary(self, pm, ipdb):
         """Invalid values are now rejected by assert_claim validation."""
@@ -126,7 +126,7 @@ class TestResolveModel:
         make_claim(pm, "name", "Test Game", source=ipdb)
         make_claim(pm, "year", 1997, source=ipdb)
         make_claim(pm, "player_count", 4, source=ipdb)
-        resolve_model(pm)
+        resolve_after_mutation(pm)
         assert pm.year == 1997
         assert pm.player_count == 4
 
@@ -134,7 +134,7 @@ class TestResolveModel:
         pm.claims.filter(
             is_active=True, field_name__in=["year", "player_count"]
         ).update(is_active=False)
-        resolve_model(pm)
+        resolve_after_mutation(pm)
         pm.refresh_from_db()
         assert pm.year is None
         assert pm.player_count is None
@@ -146,11 +146,11 @@ class TestResolveModel:
         make_claim(pm, "toys", "Thing hand, bookcase", source=ipdb)
         make_claim(pm, "fun_facts", "A seminal game.", source=editorial)
 
-        resolved = resolve_model(pm)
-        assert resolved.name == "The Addams Family"
-        assert resolved.year == 1992
-        assert resolved.extra_data["toys"] == "Thing hand, bookcase"
-        assert resolved.extra_data["fun_facts"] == "A seminal game."
+        resolve_after_mutation(pm)
+        assert pm.name == "The Addams Family"
+        assert pm.year == 1992
+        assert pm.extra_data["toys"] == "Thing hand, bookcase"
+        assert pm.extra_data["fun_facts"] == "A seminal game."
 
 
 @pytest.mark.django_db
@@ -210,7 +210,7 @@ class TestResolveAll:
         assert pm2.updated_at >= before
         assert pm3.updated_at >= before
 
-    def test_matches_resolve_model(self):
+    def test_single_matches_bulk(self):
         ipdb = Source.objects.create(
             name="IPDB", slug="ipdb", source_type="database", priority=10
         )
@@ -237,11 +237,11 @@ class TestResolveAll:
             make_claim(pm, "abbreviation", abbr_val, source=ipdb, claim_key=abbr_key)
             make_claim(pm, "technology_generation", "solid-state", source=ipdb)
 
-        resolve_model(pm_single)
+        resolve_after_mutation(pm_single)
         pm_single.refresh_from_db()
 
         # Resolve ONLY pm_bulk through the generic bulk dispatch, so this stays
-        # a true single (resolve_model) vs bulk equivalence check — resolving
+        # a true generic-single vs generic-bulk equivalence check — resolving
         # all models would route pm_single through the bulk path too.
         bulk_resolve(subject_ids={pm_bulk.pk})
         pm_bulk.refresh_from_db()
@@ -412,7 +412,7 @@ class TestResolveSystem:
         make_claim(pm, "name", "Medieval Madness", source=ipdb)
         make_claim(pm, "system", "wpc-95", source=ipdb)
 
-        resolve_model(pm)
+        resolve_after_mutation(pm)
         pm.refresh_from_db()
         assert pm.system == system
 
@@ -424,7 +424,7 @@ class TestResolveSystem:
         make_claim(pm, "name", "Mystery Machine", source=ipdb)
         make_claim(pm, "system", "nonexistent-slug", source=ipdb)
 
-        resolve_model(pm)
+        resolve_after_mutation(pm)
         pm.refresh_from_db()
         assert pm.system is None
 
@@ -443,7 +443,7 @@ class TestResolveSystem:
         )
         # Name claim but no system claim — system should be cleared after resolve.
         make_claim(pm, "name", "Medieval Madness", source=ipdb)
-        resolve_model(pm)
+        resolve_after_mutation(pm)
         pm.refresh_from_db()
         assert pm.system is None
 
@@ -563,7 +563,7 @@ class TestResolveCorporateEntityLocations:
 
 @pytest.mark.django_db
 class TestSingleObjectUniqueConflict:
-    """Single-object resolution (resolve_entity, resolve_model) leaves
+    """Single-object resolution (resolve_entity / resolve_after_mutation) leaves
     cross-reference uniqueness to the DB: a globally-unique collision fails
     loud (IntegrityError), while a non-unique slug change is left alone.
     """
@@ -608,7 +608,7 @@ class TestSingleObjectUniqueConflict:
         assert target.slug == "springfield"
 
     def test_machine_model_slug_conflict_raises(self, ipdb):
-        """resolve_model lets a slug collision hit the DB constraint.
+        """Resolution lets a slug collision hit the DB constraint.
 
         Resolution leaves cross-reference uniqueness to the DB: the winning slug
         claim is saved and the unique constraint raises IntegrityError (turned
@@ -619,10 +619,10 @@ class TestSingleObjectUniqueConflict:
         make_claim(pm, "slug", "taken-slug", source=ipdb)
 
         with pytest.raises(IntegrityError):
-            resolve_model(pm)
+            resolve_after_mutation(pm)
 
     def test_machine_model_opdb_conflict_raises(self, ipdb):
-        """resolve_model lets an opdb_id collision hit the DB constraint.
+        """Resolution lets an opdb_id collision hit the DB constraint.
 
         Previously the loser's opdb_id was silently cleared to None; now the
         nullable unique constraint raises, surfacing the conflict.
@@ -632,4 +632,4 @@ class TestSingleObjectUniqueConflict:
         make_claim(pm_b, "opdb_id", "GCONFLICT-M1", source=ipdb)
 
         with pytest.raises(IntegrityError):
-            resolve_model(pm_b)
+            resolve_after_mutation(pm_b)

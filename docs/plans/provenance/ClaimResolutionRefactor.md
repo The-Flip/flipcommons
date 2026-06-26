@@ -54,7 +54,7 @@ It is reached through the only `isinstance(entity, MachineModel)` branch left in
 
 Everything `resolve_model` does is already available generically. `resolve_all_entities` resolves its scalars and FKs; `resolve_unique_conflicts` already implements the slug/opdb_id guard for the bulk path; the six relationship resolvers already take `subject_ids`. `resolve_model` is not load-bearing — it is un-deleted history.
 
-### Current dispatch state — accurate as of this writing
+### Current dispatch state
 
 The owner-registered dispatch inversion **already shipped at the provenance seam**. `apps/provenance/resolution/_dispatch.py` holds the registry keyed by concrete model, `register_resolve_handlers`, fail-fast `ImproperlyConfigured` and the two entry points (`resolve_after_mutation`, `resolve_entities_bulk`); catalog registers a handler pair for every model at `CatalogConfig.ready()`. That part is done and correct — it is the right boundary and should be left alone.
 
@@ -213,9 +213,9 @@ A migration must **not** run the global resolve inline — it is a heavy whole-c
 
 With the Before phase done, this becomes a mechanical extraction: no product decisions, byte-identical materialized claim-view (columns + through-tables) at every step (idempotent) and entirely behind the unchanged dispatch seam, so the existing suite stays green by construction.
 
-#### Collapse the divergence
+#### ✅ DONE: Collapse the divergence
 
-##### <a id="REF1">REF1</a> — Kill `resolve_model`; route MachineModel through the generic per-entity path
+##### ✅ DONE: <a id="REF1">REF1</a> — Kill `resolve_model`; route MachineModel through the generic per-entity path
 
 Collapse the divergence. Register its six relationship namespaces into the _same_ `field_name → resolver` dispatch the non-MM path already uses, scoped by `field_names`. With slug (PRE3) and image-license (PRE4) already handled, this is now purely mechanical: it deletes the `isinstance` branch, `_apply_resolution`, `_build_claims_by_model`, `_get_mm_relationship_resolvers` and the MachineModel divergence, and **substantially advances [#558](https://github.com/The-Flip/flipcommons/issues/558)** (field_names honored — same resolved state, less work). It also erases a silent ordering divergence — MM saves scalars then relationships ([\_\_init\_\_.py:156](../../../backend/apps/catalog/resolve/__init__.py#L156) → [:160](../../../backend/apps/catalog/resolve/__init__.py#L160)); the generic path runs relationships then scalars ([\_dispatch.py:208](../../../backend/apps/catalog/resolve/_dispatch.py#L208) → [:259](../../../backend/apps/catalog/resolve/_dispatch.py#L259)) — immaterial to correctness (relationship rows key on the subject pk, never its resolved columns) but exactly the unstated difference that defeats a single mental model. Highest leverage portion of the refactor.
 

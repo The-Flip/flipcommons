@@ -66,7 +66,7 @@ def _resolve_single(
     """
     claims = ranked_claims(obj.claims.all(), "field_name")
     # Prefetch source.default_license for extra_data models — image-field claims
-    # denormalize their license from it (mirrors the bulk path / resolve_model).
+    # denormalize their license from it.
     if hasattr(obj, "extra_data"):
         claims = claims.select_related("actor__source__default_license")
 
@@ -99,7 +99,7 @@ def _resolve_single(
     )
     for field_name, claim in winners.items():
         # Relationship-namespace claims (media_attachment, credit, …) resolve
-        # into their own tables, never extra_data — mirrors resolve_model().
+        # into their own tables, never extra_data.
         if field_name in relationship_ns:
             continue
         if field_name in direct_fields:
@@ -169,7 +169,7 @@ def _resolve_bulk(
         claims_qs = claims_qs.filter(object_id__in=object_ids)
     # Models with extra_data may carry image-field claims, whose license is
     # denormalized into extra_data from source.default_license; prefetch it so
-    # the per-claim stamp stays query-free (mirrors the MachineModel bulk path).
+    # the per-claim stamp stays query-free.
     if hasattr(model_class, "extra_data"):
         claims_qs = claims_qs.select_related("actor__source__default_license")
 
