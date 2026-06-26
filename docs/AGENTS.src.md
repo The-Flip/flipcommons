@@ -316,9 +316,9 @@ For new behavior, include tests. Consider writing the test first, though sometim
 
 ## Strong Typing (backend)
 
-Code MUST be as strongly typed as possible.
+Code MUST be as strongly typed as possible. Types do two jobs: **catch errors** and **document intent** — so a named type can be worth it even when it adds no checker safety (e.g. a semantic alias `Slug = str`). See [docs/Python.md](Python.md) for the strictness-vs-intent split.
 
-The following smells are _sometimes_ legitimate, but are usually a sign the type can be tightened:
+The following smells defeat the first job — _sometimes_ legitimate, but usually a sign the type can be tightened:
 
 - Use of `Any`, `object`, `cast`, `isinstance`, `setattr`, `getattr`, `TYPE_CHECKING`, `# type: ignore`, `# noqa`
 - Compound types in signatures whose meaning isn't obvious from the types alone — `tuple[...]`, nested dicts (`dict[X, dict[Y, Z]]`), `Callable[[A, B, C], R]`. **Heuristic**: if a reader would need a comment to know what each position/key means, name it. Applies to 2-tuples that cross a module boundary or appear in a public signature; locally unpacked pairs (`found, value = _lookup(key)`) are fine as plain tuples.
