@@ -4,11 +4,11 @@ import pytest
 
 from apps.catalog.api.images import extract_image_urls
 from apps.catalog.models import Title
-from apps.catalog.resolve import resolve_entity, resolve_model
 from apps.catalog.tests.conftest import bulk_resolve, make_machine_model
 from apps.core.models import License
 from apps.provenance.licensing import resolve_effective_license
 from apps.provenance.models import Source, SourceFieldLicense
+from apps.provenance.resolution import resolve_after_mutation
 from apps.provenance.test_factories import make_claim
 
 
@@ -159,7 +159,7 @@ class TestImageLicenseDenormalization:
             source=opdb,
         )
 
-        resolve_model(pm)
+        resolve_after_mutation(pm)
         pm.refresh_from_db()
 
         assert pm.extra_data.get("opdb.images.__license_slug") == "cc-by-sa-4-0"
@@ -185,52 +185,11 @@ class TestImageLicenseDenormalization:
             source=opdb,
         )
 
-        resolve_model(pm)
+        resolve_after_mutation(pm)
         pm.refresh_from_db()
 
         assert pm.extra_data.get("opdb.images.__license_slug") is None
         assert pm.extra_data.get("opdb.images.__permissiveness_rank") is None
-
-    def test_generic_path_stamps_image_license_like_mm_path(self, opdb, cc_by_sa):
-        """The generic per-entity path must stamp image-license sidecars
-        identically to the MachineModel path. ``resolve_entity`` (the generic
-        path) previously stamped no license at all, so resolving a MachineModel
-        through it diverged from ``resolve_model``; both must now match.
-        """
-        opdb.default_license = cc_by_sa
-        opdb.save()
-
-        def _model_with_image_claim(slug: str):
-            pm = make_machine_model(name="Test", slug=slug)
-            make_claim(pm, "name", "Test", source=opdb)
-            make_claim(
-                pm,
-                "opdb.images",
-                [{"primary": True, "urls": {"medium": "https://img.opdb.org/m.jpg"}}],
-                source=opdb,
-            )
-            return pm
-
-        mm_path = _model_with_image_claim("mm-path")
-        generic_path = _model_with_image_claim("generic-path")
-
-        resolve_model(mm_path)  # MachineModel path (_apply_resolution)
-        resolve_entity(generic_path)  # generic path (_resolve_single)
-        mm_path.refresh_from_db()
-        generic_path.refresh_from_db()
-
-        # Generic path now stamps (it previously stamped nothing)...
-        assert (
-            generic_path.extra_data.get("opdb.images.__license_slug") == "cc-by-sa-4-0"
-        )
-        assert generic_path.extra_data.get("opdb.images.__permissiveness_rank") == 50
-        # ...identically to the MachineModel path.
-        assert generic_path.extra_data.get(
-            "opdb.images.__license_slug"
-        ) == mm_path.extra_data.get("opdb.images.__license_slug")
-        assert generic_path.extra_data.get(
-            "opdb.images.__permissiveness_rank"
-        ) == mm_path.extra_data.get("opdb.images.__permissiveness_rank")
 
     def test_generic_bulk_path_resolves_image_license_without_n_plus_one(
         self, opdb, cc_by_sa, django_assert_max_num_queries

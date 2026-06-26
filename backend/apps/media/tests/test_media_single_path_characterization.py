@@ -6,10 +6,9 @@ through ``execute_claims`` and use the generic ``resolve_after_mutation``
 dispatch, so this suite proves the materialized result (``EntityMedia`` rows,
 primary flag, category) and the entity's own scalar columns are unperturbed.
 
-Both resolve-dispatch branches are exercised: a MachineModel target (the
-full-re-resolution ``resolve_model`` path) and a Manufacturer target (the
-``_resolve_non_machine_model`` path). Entities are seeded so every scalar field
-is claim-backed — modeling production, where re-resolution is a no-op — so the
+Both a MachineModel target and a Manufacturer target are exercised through the
+same generic per-entity path. Entities are seeded so every scalar field is
+claim-backed — modeling production, where re-resolution is a no-op — so the
 scalar-snapshot assertion isolates "the wider re-resolution perturbs nothing".
 
 The error path is pinned separately (per-endpoint status) in
@@ -84,13 +83,12 @@ def _bootstrap_source() -> Source:
 
 @pytest.fixture(params=["model", "manufacturer"])
 def target(request, db) -> MediaTarget:
-    """A resolution-stable media target, parametrized over both dispatch branches.
+    """A resolution-stable media target, parametrized over MachineModel and
+    Manufacturer — both resolved through the same generic per-entity path.
 
-    ``model`` exercises ``resolve_model`` (ignores field_names, full re-resolve);
-    ``manufacturer`` exercises ``_resolve_non_machine_model`` (always re-resolves
-    scalars). Both are seeded so every scalar claim field is backed, so the
-    post-reroute scalar re-resolution is a no-op and the snapshot assertion
-    measures only "media mutation didn't perturb the row".
+    Both are seeded so every scalar claim field is backed, so the scalar
+    re-resolution is a no-op and the snapshot assertion measures only "media
+    mutation didn't perturb the row".
     """
     if request.param == "model":
         mm = make_machine_model(name="Char Machine", slug="char-machine")

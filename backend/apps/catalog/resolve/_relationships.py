@@ -49,6 +49,7 @@ from ._claim_values import (
     LocationClaimValue,
     ParentClaimValue,
 )
+from ._contracts import relationship_resolver
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,7 @@ def _resolve_machine_model_m2m(
 # ------------------------------------------------------------------
 
 
+@relationship_resolver
 def resolve_all_themes(
     *,
     subject_ids: set[int] | None = None,
@@ -202,6 +204,7 @@ def resolve_all_themes(
     _resolve_machine_model_m2m(M2M_FIELDS["theme"], subject_ids=subject_ids)
 
 
+@relationship_resolver
 def resolve_all_gameplay_features(
     *,
     subject_ids: set[int] | None = None,
@@ -300,6 +303,7 @@ def resolve_all_gameplay_features(
         )
 
 
+@relationship_resolver
 def resolve_all_reward_types(
     *,
     subject_ids: set[int] | None = None,
@@ -307,6 +311,7 @@ def resolve_all_reward_types(
     _resolve_machine_model_m2m(M2M_FIELDS["reward_type"], subject_ids=subject_ids)
 
 
+@relationship_resolver
 def resolve_all_tags(
     *,
     subject_ids: set[int] | None = None,
@@ -319,6 +324,7 @@ def resolve_all_tags(
 # ------------------------------------------------------------------
 
 
+@relationship_resolver
 def resolve_all_credits(
     *,
     subject_ids: set[int] | None = None,
@@ -327,6 +333,7 @@ def resolve_all_credits(
     _resolve_credits(MachineModel, "model", subject_ids=subject_ids)
 
 
+@relationship_resolver
 def resolve_all_series_credits(
     *,
     subject_ids: set[int] | None = None,
@@ -452,6 +459,7 @@ def _resolve_credits(
 # ------------------------------------------------------------------
 
 
+@relationship_resolver
 def resolve_all_title_abbreviations(
     *,
     subject_ids: set[int] | None = None,
@@ -518,6 +526,7 @@ def resolve_all_title_abbreviations(
         TitleAbbreviation.objects.bulk_create(to_create, batch_size=2000)
 
 
+@relationship_resolver
 def resolve_all_model_abbreviations(
     *,
     subject_ids: set[int] | None = None,
@@ -808,6 +817,7 @@ def _resolve_parents(
 # ------------------------------------------------------------------
 
 
+@relationship_resolver
 def resolve_all_corporate_entity_locations(
     *,
     subject_ids: set[int] | None = None,

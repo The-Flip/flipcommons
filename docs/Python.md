@@ -14,12 +14,22 @@ Other daemon commands: `make mypy-warm` (pays cold-start up front), `make mypy-s
 
 ## Typing
 
-Code MUST be as strongly typed as possible.
+Types do two jobs here: **catch errors** — a wrong value fails to type-check — and **document intent** — a reader sees what a value _is_, not just its machine shape. "Code MUST be as strongly typed as possible" means serving both: pick the type that carries the most of each the situation affords. The jobs rarely conflict; where they seem to, it is almost always an alias faking structure (see [Typing for intent](#typing-for-intent)).
 
-The following smells are _sometimes_ legitimate, but are usually a sign the type can be tightened:
+The smells below defeat the first job. They are _sometimes_ legitimate, but usually a sign the type can be tightened:
 
 - Use of `Any`, `object`, `cast`, `isinstance`, `setattr`, `getattr`, `TYPE_CHECKING`, `# type: ignore`, `# noqa`
 - Compound types in signatures whose meaning isn't obvious from the types alone — `tuple[...]`, nested dicts (`dict[X, dict[Y, Z]]`), `Callable[[A, B, C], R]`. **Heuristic**: if a reader would need a comment to know what each position/key means, name it (`NamedTuple` / `TypedDict` / `dataclass` / type alias). Applies to 2-tuples that cross a module boundary or appear in a public signature; locally unpacked pairs (`found, value = _lookup(key)`) are fine as plain tuples.
+
+### Typing for intent
+
+The second job is not a smell to remove but a practice to apply: name a value's _meaning_ even when mypy learns nothing new from the name (`Slug = str`, `PublicId = str` — to the checker still `str`).
+
+**Use a semantic alias** (`Slug = str`, `EntityType = str`) when a bare scalar would force a reader to infer what the value is — but only where that inference is costly: public function signatures, type parameters, and fields on a `Schema` / `NamedTuple` / `TypedDict` that cross a module boundary. A bare `str` / `int` stays fine for locals, private helpers, loop variables and params whose name already says it (`def slugify(text: str)`). The test is the same "would a reader need a comment?" heuristic used for compound types above — applied to a single value's _meaning_ rather than a shape's _positions_.
+
+**Never use an alias to fake structure.** `UserRow = tuple[int, str, datetime]` reads like a type but callers still index by position — that is a strictness gap wearing an intent costume, and the fix is a `NamedTuple`, not a better alias name. Aliases name one value's meaning; named records name a multi-field shape. (This is why [the rule below](#choosing-a-data-shape) and [Reviewing.md](Reviewing.md) warn against aliases — they are warning against _this_ misuse, not against intent aliases.)
+
+The codebase already does this: `JsonData` / `JsonBody` are preferred over a bare `dict[str, Any]` because the name carries the contract.
 
 ### Valid exceptions to strong types
 

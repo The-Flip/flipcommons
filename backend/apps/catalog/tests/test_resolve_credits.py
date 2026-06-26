@@ -201,8 +201,8 @@ class TestResolveSeriesCredits:
 
 class TestSeriesCreditDispatch:
     """Series credits resolve through the public dispatch seam (proves the
-    ``_get_custom_dispatch`` binding, not just the resolver in isolation —
-    the binding is a stringly-typed ``getattr`` invisible to mypy)."""
+    ``_get_relationship_dispatch`` binding for ``(credit, Series)``, not just
+    the resolver in isolation)."""
 
     def test_per_entity_dispatch(self, series, person, source, credit_roles):
         _assert_credit_claim(series, person.pk, "design", source)
@@ -219,8 +219,9 @@ class TestSeriesCreditDispatch:
     def test_model_credit_dispatch_unaffected(
         self, machine, person, source, credit_roles
     ):
-        """Adding ``credit`` to the custom dispatch must not hijack the
-        MachineModel bulk path (it routes via ``_mm_relationship_resolvers``)."""
+        """The ``(credit, Series)`` dispatch key must not hijack MachineModel
+        credit resolution — it routes via its own ``(credit, MachineModel)``
+        key."""
         _assert_credit_claim(machine, person.pk, "design", source)
         resolve_entities_bulk(MachineModel, {machine.pk}, {"credit"})
 
