@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import logging
-from typing import NamedTuple, cast
+from typing import TYPE_CHECKING, NamedTuple, cast
 
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 
 from apps.core.types import EntityKey
 from apps.media.models import EntityMedia, MediaAsset, MediaSupportedModel
-from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
 
 from ..cache import invalidate_all
 from ._claim_values import MediaAttachmentClaimValue
-from ._engine import pick_winners
+from ._engine import Delta, ExtractedMember, MemberMap, RowState, reconcile
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -29,61 +31,40 @@ class CtInfo(NamedTuple):
     categories: list[str]
 
 
-class MediaRowState(NamedTuple):
-    """Existing (or target) EntityMedia row state."""
-
-    row_pk: int
-    category: str | None
-    is_primary: bool
-
-
-class DesiredMediaAttachment(NamedTuple):
-    """Per-asset desired attachment state within an entity's desired-state map."""
+class MediaPayload(NamedTuple):
+    """The materialized attributes of an attachment: its category and primary flag."""
 
     category: str | None
     is_primary: bool
 
 
-def resolve_media_attachments(
-    *,
-    content_type_id: int | None = None,
-    subject_ids: set[int] | None = None,
-) -> None:
-    """Bulk-resolve ``media_attachment`` claims into :class:`EntityMedia` rows.
+class MediaProjection:
+    """Projection for ``media_attachment`` claims into :class:`EntityMedia` rows.
 
-    Both parameters are optional.  Passing neither resolves all media across
-    all entity types.  Passing both scopes to a single entity.
+    Bespoke because the subject is a composite :class:`EntityKey` (media spans
+    every media-supported entity type, keyed by content-type + object), and
+    category validity is per-entity-type.  Scope (``content_type_id`` /
+    ``subject_ids``) is closed over at construction since a composite subject set
+    can't be expressed through :func:`reconcile`'s plain ``subjects`` argument;
+    the wrapper calls ``reconcile(projection, None)``.
 
     Claim-local: each winning claim's ``(category, is_primary)`` is materialized
-    verbatim — the resolver does **not** read sibling attachments.  Selecting a
+    verbatim — the projection does **not** read sibling attachments.  Selecting a
     single displayed primary per category (and auto-promoting when none is
     claimed) is a read-time concern, see
     :func:`apps.media.helpers.displayed_primary_asset_ids`.
     """
-    # -- Fetch active claims, pick winners ----------------------------------
 
-    claims_qs = Claim.objects.filter(field_name="media_attachment")
-    if content_type_id is not None:
-        claims_qs = claims_qs.filter(content_type_id=content_type_id)
-    if subject_ids is not None:
-        claims_qs = claims_qs.filter(object_id__in=subject_ids)
-    claims = ranked_claims(claims_qs, "content_type_id", "object_id", "claim_key")
+    def __init__(
+        self, *, content_type_id: int | None, subject_ids: set[int] | None
+    ) -> None:
+        self.content_type_id = content_type_id
+        self.subject_ids = subject_ids
+        self._valid_asset_pks = set(MediaAsset.objects.values_list("pk", flat=True))
+        self._ct_cache: dict[int, CtInfo] = {}
 
-    # Winner per (content_type_id, object_id, claim_key), grouped by entity.
-    winners_by_entity = pick_winners(
-        claims,
-        lambda c: EntityKey(c.content_type_id, c.object_id),
-        lambda c: c.claim_key,
-    )
-
-    # -- Validate winners & build desired state -----------------------------
-
-    valid_asset_pks = set(MediaAsset.objects.values_list("pk", flat=True))
-
-    _ct_cache: dict[int, CtInfo] = {}
-
-    def _ct_info(ct_id: int) -> CtInfo:
-        if ct_id not in _ct_cache:
+    def _ct_info(self, ct_id: int) -> CtInfo:
+        if ct_id not in self._ct_cache:
             ct = ContentType.objects.get_for_id(ct_id)
             model_class = ct.model_class()
             is_supported = model_class is not None and issubclass(
@@ -94,128 +75,119 @@ def resolve_media_attachments(
                 if is_supported
                 else []
             )
-            _ct_cache[ct_id] = CtInfo(model_class, is_supported, categories)
-        return _ct_cache[ct_id]
+            self._ct_cache[ct_id] = CtInfo(model_class, is_supported, categories)
+        return self._ct_cache[ct_id]
 
-    # Desired: {EntityKey: {asset_pk: DesiredMediaAttachment}}
-    desired_by_entity: dict[EntityKey, dict[int, DesiredMediaAttachment]] = {}
+    def claims(self, subjects: set[EntityKey] | None) -> Iterable[Claim]:
+        claims_qs = Claim.objects.filter(field_name="media_attachment")
+        if self.content_type_id is not None:
+            claims_qs = claims_qs.filter(content_type_id=self.content_type_id)
+        if self.subject_ids is not None:
+            claims_qs = claims_qs.filter(object_id__in=self.subject_ids)
+        return ranked_claims(claims_qs, "content_type_id", "object_id", "claim_key")
 
-    for entity_key, winners in winners_by_entity.items():
-        ct_info = _ct_info(entity_key.content_type_id)
+    def subject(self, claim: Claim) -> EntityKey:
+        return EntityKey(claim.content_type_id, claim.object_id)
 
+    def extract(self, claim: Claim) -> ExtractedMember[int, MediaPayload] | None:
+        ct_id = claim.content_type_id
+        ct_info = self._ct_info(ct_id)
         if not ct_info.is_media_supported:
             logger.warning(
                 "media_attachment claim on non-media-supported entity "
                 "(content_type_id=%s, object_id=%s) — skipping",
-                entity_key.content_type_id,
-                entity_key.object_id,
+                ct_id,
+                claim.object_id,
             )
-            continue
+            return None
 
-        desired: dict[int, DesiredMediaAttachment] = {}
-        for claim in winners.values():
-            val = cast(MediaAttachmentClaimValue, claim.value)
-            if not member_is_present(claim):
-                continue
+        val = cast(MediaAttachmentClaimValue, claim.value)
+        asset_pk = val.get("media_asset")
+        if asset_pk not in self._valid_asset_pks:
+            logger.warning(
+                "Unresolved media_asset pk %r in claim (content_type_id=%s, object_id=%s)",
+                asset_pk,
+                ct_id,
+                claim.object_id,
+            )
+            return None
 
-            asset_pk = val.get("media_asset")
-            if asset_pk not in valid_asset_pks:
-                logger.warning(
-                    "Unresolved media_asset pk %r in claim "
-                    "(content_type_id=%s, object_id=%s)",
-                    asset_pk,
-                    entity_key.content_type_id,
-                    entity_key.object_id,
-                )
-                continue
+        category = val.get("category")
+        if category is not None and (
+            not ct_info.categories or category not in ct_info.categories
+        ):
+            logger.warning(
+                "Invalid category %r in media_attachment claim "
+                "(content_type_id=%s, object_id=%s) — skipping",
+                category,
+                ct_id,
+                claim.object_id,
+            )
+            return None
 
-            category = val.get("category")
-            if category is not None and (
-                not ct_info.categories or category not in ct_info.categories
-            ):
-                logger.warning(
-                    "Invalid category %r in media_attachment claim "
-                    "(content_type_id=%s, object_id=%s) — skipping",
-                    category,
-                    entity_key.content_type_id,
-                    entity_key.object_id,
-                )
-                continue
+        is_primary = bool(val.get("is_primary", False))
+        return ExtractedMember(asset_pk, MediaPayload(category, is_primary))
 
-            is_primary = bool(val.get("is_primary", False))
-            desired[asset_pk] = DesiredMediaAttachment(category, is_primary)
+    def read(
+        self, subjects: set[EntityKey] | None
+    ) -> MemberMap[EntityKey, int, RowState[MediaPayload]]:
+        rows_qs = EntityMedia.objects.all()
+        if self.content_type_id is not None:
+            rows_qs = rows_qs.filter(content_type_id=self.content_type_id)
+        if self.subject_ids is not None:
+            rows_qs = rows_qs.filter(object_id__in=self.subject_ids)
 
-        desired_by_entity[entity_key] = desired
+        existing: MemberMap[EntityKey, int, RowState[MediaPayload]] = {}
+        for row in rows_qs.values_list(
+            "pk", "content_type_id", "object_id", "asset_id", "category", "is_primary"
+        ):
+            pk, ct_id, obj_id, asset_id, category, is_primary = row
+            existing.setdefault(EntityKey(ct_id, obj_id), {})[asset_id] = RowState(
+                pk, MediaPayload(category, is_primary)
+            )
+        return existing
 
-    # -- Fetch existing EntityMedia rows ------------------------------------
-
-    existing_qs = EntityMedia.objects.all()
-    if content_type_id is not None:
-        existing_qs = existing_qs.filter(content_type_id=content_type_id)
-    if subject_ids is not None:
-        existing_qs = existing_qs.filter(object_id__in=subject_ids)
-
-    existing_by_entity: dict[EntityKey, dict[int, MediaRowState]] = {}
-    for row in existing_qs.values_list(
-        "pk", "content_type_id", "object_id", "asset_id", "category", "is_primary"
-    ):
-        pk, ct_id, obj_id, asset_id, category, is_primary = row
-        existing_by_entity.setdefault(EntityKey(ct_id, obj_id), {})[asset_id] = (
-            MediaRowState(pk, category, is_primary)
-        )
-
-    # -- Three-way diff -----------------------------------------------------
-
-    to_create: list[EntityMedia] = []
-    to_delete_pks: list[int] = []
-    to_update: list[MediaRowState] = []
-
-    all_entity_keys = set(desired_by_entity) | set(existing_by_entity)
-
-    for entity_key in all_entity_keys:
-        desired = desired_by_entity.get(entity_key, {})
-        existing = existing_by_entity.get(entity_key, {})
-
-        for asset_pk, d in desired.items():
-            if asset_pk not in existing:
-                to_create.append(
+    def write(self, delta: Delta[EntityKey, int, MediaPayload]) -> None:
+        if delta.delete:
+            EntityMedia.objects.filter(pk__in=delta.delete).delete()
+        if delta.create:
+            EntityMedia.objects.bulk_create(
+                [
                     EntityMedia(
-                        content_type_id=entity_key.content_type_id,
-                        object_id=entity_key.object_id,
-                        asset_id=asset_pk,
-                        category=d.category,
-                        is_primary=d.is_primary,
+                        content_type_id=row.subject.content_type_id,
+                        object_id=row.subject.object_id,
+                        asset_id=row.key,
+                        category=row.payload.category,
+                        is_primary=row.payload.is_primary,
                     )
-                )
-            else:
-                existing_row = existing[asset_pk]
-                if (
-                    existing_row.category != d.category
-                    or existing_row.is_primary != d.is_primary
-                ):
-                    to_update.append(
-                        MediaRowState(existing_row.row_pk, d.category, d.is_primary)
-                    )
+                    for row in delta.create
+                ],
+                batch_size=2000,
+            )
+        if delta.update:
+            fetched = EntityMedia.objects.in_bulk([row.pk for row in delta.update])
+            for row in delta.update:
+                media_row = fetched[row.pk]
+                media_row.category = row.payload.category
+                media_row.is_primary = row.payload.is_primary
+            EntityMedia.objects.bulk_update(
+                list(fetched.values()), ["category", "is_primary"], batch_size=2000
+            )
 
-        for asset_pk, existing_row in existing.items():
-            if asset_pk not in desired:
-                to_delete_pks.append(existing_row.row_pk)
 
-    # -- Apply --------------------------------------------------------------
+def resolve_media_attachments(
+    *,
+    content_type_id: int | None = None,
+    subject_ids: set[int] | None = None,
+) -> None:
+    """Bulk-resolve ``media_attachment`` claims into :class:`EntityMedia` rows.
 
-    if to_delete_pks:
-        EntityMedia.objects.filter(pk__in=to_delete_pks).delete()
-    if to_create:
-        EntityMedia.objects.bulk_create(to_create, batch_size=2000)
-    if to_update:
-        rows = EntityMedia.objects.in_bulk([update.row_pk for update in to_update])
-        for update in to_update:
-            media_row = rows[update.row_pk]
-            media_row.category = update.category
-            media_row.is_primary = update.is_primary
-        EntityMedia.objects.bulk_update(
-            list(rows.values()), ["category", "is_primary"], batch_size=2000
-        )
-
-    if to_delete_pks or to_create or to_update:
+    Both parameters are optional.  Passing neither resolves all media across all
+    entity types.  Passing both scopes to a single entity.
+    """
+    projection = MediaProjection(
+        content_type_id=content_type_id, subject_ids=subject_ids
+    )
+    delta = reconcile(projection, None)
+    if delta.create or delta.delete or delta.update:
         transaction.on_commit(invalidate_all)

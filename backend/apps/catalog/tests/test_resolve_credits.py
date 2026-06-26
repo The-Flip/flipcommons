@@ -198,6 +198,25 @@ class TestResolveSeriesCredits:
         assert Credit.objects.filter(model=machine, series__isnull=True).count() == 1
         assert Credit.objects.filter(series=series, model__isnull=True).count() == 1
 
+    def test_full_scope_does_not_delete_the_other_namespace(
+        self, series, machine, person, source, credit_roles
+    ):
+        """A full-scope (subject_ids=None) model pass must not treat series
+        credits as stale.  Credit's model/series share one table with nullable
+        XOR FKs, so a model credit has series=None and vice versa; reading all
+        rows would bucket the other namespace under a null subject and delete
+        it."""
+        _assert_credit_claim(machine, person.pk, "design", source)
+        _assert_credit_claim(series, person.pk, "design", source)
+        resolve_all_credits(subject_ids={machine.pk})
+        resolve_all_series_credits(subject_ids={series.pk})
+
+        # Full-scope passes (no subject_ids) — the bulk/rebuild path.
+        resolve_all_credits()
+        assert Credit.objects.filter(series=series, model__isnull=True).count() == 1
+        resolve_all_series_credits()
+        assert Credit.objects.filter(model=machine, series__isnull=True).count() == 1
+
 
 class TestSeriesCreditDispatch:
     """Series credits resolve through the public dispatch seam (proves the
