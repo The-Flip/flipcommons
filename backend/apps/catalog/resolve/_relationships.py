@@ -191,12 +191,7 @@ def _resolve_machine_model_m2m(
 
 
 # ------------------------------------------------------------------
-# Public M2M wrappers (single-object)
-# ------------------------------------------------------------------
-
-
-# ------------------------------------------------------------------
-# Public M2M wrappers (bulk)
+# Public M2M wrappers
 # ------------------------------------------------------------------
 
 
@@ -595,19 +590,8 @@ def resolve_all_model_abbreviations(
 
 
 # ------------------------------------------------------------------
-# Alias resolvers (all five alias types)
+# Generic alias resolver
 # ------------------------------------------------------------------
-
-
-def _get_parents_through(parent: type[ClaimControlledModel]) -> type[Model]:
-    """Return the through model for ``parent``'s self-referential ``parents`` M2M.
-
-    ``parent.parents.through`` is a runtime-generated descriptor django-stubs can't
-    see.  Confining the ignore to this helper keeps the category-3 ``Any`` leak out of
-    ``_resolve_parents``.
-    """
-    through: type[Model] = parent.parents.through  # type: ignore[attr-defined]
-    return through
 
 
 def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
@@ -712,6 +696,17 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
 # ------------------------------------------------------------------
 # Parent hierarchy resolvers (Theme and GameplayFeature DAGs)
 # ------------------------------------------------------------------
+
+
+def _get_parents_through(parent: type[ClaimControlledModel]) -> type[Model]:
+    """Return the through model for ``parent``'s self-referential ``parents`` M2M.
+
+    ``parent.parents.through`` is a runtime-generated descriptor django-stubs can't
+    see.  Confining the ignore to this helper keeps the category-3 ``Any`` leak out of
+    ``_resolve_parents``.
+    """
+    through: type[Model] = parent.parents.through  # type: ignore[attr-defined]
+    return through
 
 
 def _resolve_parents(

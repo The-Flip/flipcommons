@@ -78,7 +78,7 @@ def resolve_model(machine_model: MachineModel) -> MachineModel:
         if claim.claim_key not in winners:
             winners[claim.claim_key] = claim
 
-    # Apply field values (shared with bulk path).
+    # Apply field values.
     from apps.provenance.models import get_claim_fields
 
     claim_fields = get_claim_fields(MachineModel)

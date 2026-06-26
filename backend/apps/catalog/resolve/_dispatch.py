@@ -55,7 +55,13 @@ _alias_dispatch: dict[str, type] | None = None
 
 
 def _get_alias_dispatch() -> dict[str, type]:
-    """field_name → parent model class for alias resolvers."""
+    """field_name → parent model class for alias resolvers.
+
+    Built lazily and never snapshotted at module level: this module is imported
+    during ``CatalogConfig.ready`` *before* ``register_alias_types`` populates
+    the registry, so a module-level ``discover_alias_types()`` would freeze an
+    empty result. This is the sole reader of the alias registry in resolve.
+    """
     global _alias_dispatch
     if _alias_dispatch is None:
         _alias_dispatch = {
