@@ -319,13 +319,6 @@ def get_display_override(
     return candidate if candidate else None
 
 
-def is_valid_subject(
-    schema: RelationshipSchema, subject_model: type[ClaimControlledModel]
-) -> bool:
-    """Whether ``subject_model`` is a registered subject for this schema."""
-    return subject_model in schema.valid_subjects
-
-
 def classify_claim(
     model_class: type[ClaimControlledModel],
     field_name: str,
