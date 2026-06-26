@@ -1,7 +1,7 @@
 import pytest
 
 from apps.catalog.models import GameplayFeature
-from apps.catalog.resolve._relationships import _resolve_parents
+from apps.catalog.resolve import resolve_relationship
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim
@@ -15,7 +15,7 @@ def pindata_source(db):
 
 
 class TestResolveGameplayFeatureParents:
-    """Regression: _resolve_parents derived the claim field_name from
+    """Regression: the parent projection derived the claim field_name from
     model._meta.model_name ('gameplayfeature') but claims were stored
     under 'gameplay_feature_parent'.  The resolver silently found zero
     claims and materialised nothing."""
@@ -37,7 +37,7 @@ class TestResolveGameplayFeatureParents:
             claim_key=claim_key,
         )
 
-        _resolve_parents(GameplayFeature, claim_field_prefix="gameplay_feature")
+        resolve_relationship(GameplayFeature, "gameplay_feature_parent")
 
         assert list(child.parents.values_list("slug", flat=True)) == ["multiball"]
         assert list(parent.children.values_list("slug", flat=True)) == [

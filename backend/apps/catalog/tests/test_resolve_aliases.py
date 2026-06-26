@@ -1,9 +1,9 @@
-"""Tests for _resolve_aliases() — sweep and display-casing behaviour.
+"""Tests for alias resolution — sweep and display-casing behaviour.
 
 Tests are parametrized across all alias types via the live engine alias
-registry, ensuring the generic _resolve_aliases() function works for every
-registered alias type. The registry is read at collection time (after
-django.setup() has run register_alias_types), not snapshotted at import.
+registry, ensuring the generic alias projection works for every registered
+alias type. The registry is read at collection time (after django.setup() has
+run register_alias_types), not snapshotted at import.
 """
 
 import pytest
@@ -19,7 +19,7 @@ from apps.catalog.models import (
     RewardType,
     Theme,
 )
-from apps.catalog.resolve._relationships import _resolve_aliases
+from apps.catalog.resolve import resolve_relationship
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, Source
 from apps.provenance.test_factories import make_claim
@@ -118,7 +118,7 @@ class TestAliasSweptAllTypes:
         _assert_alias_claims(
             source, parent, at.claim_field, ["Alt Name A", "Alt Name B"]
         )
-        _resolve_aliases(at.parent_model)
+        resolve_relationship(at.parent_model, at.claim_field)
 
         values = set(
             at.alias_model._default_manager.filter(**{at.fk_name: parent}).values_list(
@@ -133,11 +133,11 @@ class TestAliasSweptAllTypes:
         aliases = at.alias_model._default_manager.filter(**{at.fk_name: parent})
 
         _assert_alias_claims(source, parent, at.claim_field, ["Stale Alias"])
-        _resolve_aliases(at.parent_model)
+        resolve_relationship(at.parent_model, at.claim_field)
         assert aliases.count() == 1
 
         _assert_alias_claims(source, parent, at.claim_field, [])
-        _resolve_aliases(at.parent_model)
+        resolve_relationship(at.parent_model, at.claim_field)
         assert aliases.count() == 0
 
     @pytest.mark.parametrize("at", _ALIAS_TYPES, ids=_ALIAS_IDS)
@@ -145,7 +145,7 @@ class TestAliasSweptAllTypes:
         parent = _create_parent(at.parent_model)
 
         _assert_alias_claims(source, parent, at.claim_field, ["Mixed Case"])
-        _resolve_aliases(at.parent_model)
+        resolve_relationship(at.parent_model, at.claim_field)
         assert (
             at.alias_model._default_manager.get(**{at.fk_name: parent}).value
             == "Mixed Case"

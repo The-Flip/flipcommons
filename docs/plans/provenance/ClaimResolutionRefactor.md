@@ -229,7 +229,7 @@ Extract the primitives, bottoms-up.
 
 Replace all 13 copies. A ~3-line function (`for row in ranked_claims(...): winners.setdefault(key, row)`), 13 call sites. The cheapest win and the one that makes the rest readable. Defines the first named type — `Winners` — as its return type. The kernel is "first row per group" (the fold), **parameterized by the grouping key** — `field_name` on the scalar path (one winner per field: a register) and `claim_key` on the membership path (many winners per subject: a set). That parameter is what lets one function cover all 13 sites; register-vs-set is only how the caller consumes the groups, not a second function.
 
-##### <a id="REF3">REF3</a> — Extract `reconcile`
+##### ✅ DONE: <a id="REF3">REF3</a> — Extract `reconcile`
 
 Build it with `{create, delete, update}` and collapse the 9 copy-pasted loops onto it. Each resolver shrinks to: build queryset → `pick_winners` → build `desired_by_subject` (the only genuinely per-shape part, ~5 lines) → `reconcile`. After the Before phase **every** resolver is claim-local — no bespoke `desired()` hook remains, and the two universal filters — `member_is_present` (tombstone-drop) and valid-PK existence (for FK-referencing members) — move into the engine, so `desired()` is a pure per-shape `claim → (key, payload)` function. Deletes ~500 lines. **The typed vocabulary is born here, not in a later pass** — `Projection[K, P]`, `MemberMap[K, P]`, `RowState[P]` and `Delta[K, P]` (see [The design](#design)) are `reconcile`'s signature, so the generics are what make the 9 copies collapse into one; extracting with loose types and tightening afterward would reintroduce the very drift this removes. The scalar instantiation (`Projection[str, <column value>]`) firms up in REF4.
 

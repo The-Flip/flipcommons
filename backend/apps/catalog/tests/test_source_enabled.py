@@ -4,6 +4,7 @@ import pytest
 
 from apps.catalog.models import (
     CreditRole,
+    MachineModel,
     Manufacturer,
     Person,
     Theme,
@@ -11,10 +12,9 @@ from apps.catalog.models import (
 )
 from apps.catalog.resolve import (
     _resolve_bulk,
-    resolve_all_themes,
     resolve_entity,
+    resolve_relationship,
 )
-from apps.catalog.resolve._relationships import resolve_all_credits
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.attribution import source_backing
 from apps.provenance.claims import build_relationship_claim
@@ -136,14 +136,14 @@ class TestIsEnabledRelationshipResolution:
         )
 
         # With source enabled, theme should resolve.
-        resolve_all_themes(subject_ids={pm.pk})
+        resolve_relationship(MachineModel, "theme", subject_ids={pm.pk})
         assert theme in pm.themes.all()
 
         # Disable source; theme should be removed.
         source_a.is_enabled = False
         source_a.save()
 
-        resolve_all_themes(subject_ids={pm.pk})
+        resolve_relationship(MachineModel, "theme", subject_ids={pm.pk})
         assert theme not in pm.themes.all()
 
     def test_disabled_source_credit_excluded(self, source_a):
@@ -164,14 +164,14 @@ class TestIsEnabledRelationshipResolution:
         )
 
         # With source enabled, credit should resolve.
-        resolve_all_credits(subject_ids={pm.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={pm.pk})
         assert pm.credits.filter(person=person, role=role).exists()
 
         # Disable source; credit should be removed.
         source_a.is_enabled = False
         source_a.save()
 
-        resolve_all_credits(subject_ids={pm.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={pm.pk})
         assert not pm.credits.filter(person=person, role=role).exists()
 
 

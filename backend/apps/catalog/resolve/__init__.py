@@ -22,7 +22,7 @@ dispatched by entity type and changed claim field names in :mod:`._dispatch`.
 
 from __future__ import annotations
 
-from ._dispatch import register_catalog_resolve_handlers
+from ._dispatch import register_catalog_resolve_handlers, resolve_relationship
 from ._entities import (
     _resolve_bulk,
     _resolve_single,
@@ -30,26 +30,13 @@ from ._entities import (
     resolve_entity,
 )
 from ._media import resolve_media_attachments
-from ._relationships import (
-    resolve_all_corporate_entity_locations,
-    resolve_all_credits,
-    resolve_all_model_abbreviations,
-    resolve_all_series_credits,
-    resolve_all_themes,
-    resolve_all_title_abbreviations,
-)
 
 __all__ = [
     "_resolve_bulk",
     "_resolve_single",
     "register_catalog_resolve_handlers",
-    "resolve_all_corporate_entity_locations",
-    "resolve_all_credits",
     "resolve_all_entities",
-    "resolve_all_model_abbreviations",
-    "resolve_all_series_credits",
-    "resolve_all_themes",
-    "resolve_all_title_abbreviations",
     "resolve_entity",
     "resolve_media_attachments",
+    "resolve_relationship",
 ]

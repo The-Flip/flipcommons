@@ -26,7 +26,7 @@ from apps.catalog.models import (
     Tag,
     Title,
 )
-from apps.catalog.resolve import resolve_all_corporate_entity_locations
+from apps.catalog.resolve import resolve_relationship
 from apps.citation.models import (
     CitationSource,
     CitationSourceLink,
@@ -1456,7 +1456,7 @@ def bally_wulff(db, flipcommons_catalog):
     make_claim(ce, "name", "Bally Wulff", source=catalog)
     claim_key, value = build_relationship_claim("location", {"location": germany.pk})
     make_claim(ce, "location", value, source=catalog, claim_key=claim_key)
-    resolve_all_corporate_entity_locations(subject_ids={ce.pk})
+    resolve_relationship(CorporateEntity, "location", subject_ids={ce.pk})
     return ce
 
 

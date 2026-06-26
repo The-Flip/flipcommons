@@ -9,13 +9,21 @@ catalog model at ``CatalogConfig.ready()``. The handlers route to the correct
 resolver(s) based on entity type and the claim field names that changed; the
 per-entity handler also invalidates cached endpoint data (the bulk handler does
 not — the bulk caller invalidates once after its run).
+
+Relationship namespaces resolve through one ``(field_name, model) →
+RegistryEntry`` table (:func:`_get_relationship_registry`): each entry pairs a
+:class:`~apps.catalog.resolve._engine.Projection` builder with a
+:class:`ScopePolicy`, and :func:`resolve_relationship` runs the shared
+:func:`~apps.catalog.resolve._engine.reconcile` over it. ``media_attachment`` is
+content-type keyed and handled separately (in :mod:`._media`).
 """
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Collection
-from typing import NamedTuple
+from collections.abc import Callable, Collection
+from enum import Enum, auto
+from functools import partial
+from typing import Any, NamedTuple
 
 from django.db import transaction
 
@@ -23,29 +31,19 @@ from apps.provenance.models import ClaimControlledModel
 
 from ..cache import invalidate_all
 from ..engine.aliases import discover_alias_types
-from ._contracts import RelationshipResolver
-
-logger = logging.getLogger(__name__)
-
+from ._engine import Projection, reconcile
 
 # ---------------------------------------------------------------------------
-# Dispatch tables — built lazily to avoid import-time model access
+# Relationship registry — one (field_name, model) → projection table
 # ---------------------------------------------------------------------------
-
-
-class ParentDispatchSpec(NamedTuple):
-    """Entry in the parent-hierarchy dispatch table."""
-
-    model: type[ClaimControlledModel]
-    claim_field_prefix: str | None
 
 
 class RelationshipDispatchKey(NamedTuple):
-    """Key for the relationship-resolver dispatch table.
+    """Key for the relationship registry.
 
-    The conceptual identity of a bespoke relationship resolver is the
-    *pair* ``(field_name, entity_model)``, not the ``field_name`` alone:
-    ``credit`` resolves differently for ``MachineModel`` and ``Series``, and
+    The conceptual identity of a relationship resolver is the *pair*
+    ``(field_name, entity_model)``, not the ``field_name`` alone: ``credit``
+    resolves differently for ``MachineModel`` and ``Series``, and
     ``abbreviation`` differently for ``MachineModel`` and ``Title``. Keying by
     the pair lets both coexist and turns dispatch into a direct lookup.
     """
@@ -54,94 +52,146 @@ class RelationshipDispatchKey(NamedTuple):
     entity_model: type[ClaimControlledModel]
 
 
-_alias_dispatch: dict[str, type[ClaimControlledModel]] | None = None
+class ScopePolicy(Enum):
+    """Whether a namespace honors the changed-subject scope or resolves whole-type.
 
-
-def _get_alias_dispatch() -> dict[str, type[ClaimControlledModel]]:
-    """field_name → parent model class for alias resolvers.
-
-    Built lazily and never snapshotted at module level: this module is imported
-    during ``CatalogConfig.ready`` *before* ``register_alias_types`` populates
-    the registry, so a module-level ``discover_alias_types()`` would freeze an
-    empty result. This is the sole reader of the alias registry in resolve.
+    ``SUBJECTS`` resolvers re-materialize only the passed subjects (the common,
+    efficient case). ``FULL_TYPE`` resolvers (aliases, parent hierarchies) ignore
+    the scope and re-resolve their entire type, preserving the pre-refactor
+    behavior. Their projections *could* be scoped — the reads filter by subject —
+    so subject-scoping them is a valid, idempotent optimization deferred to a
+    later step, not a correctness requirement.
     """
-    global _alias_dispatch
-    if _alias_dispatch is None:
-        _alias_dispatch = {
-            at.claim_field: at.parent_model for at in discover_alias_types()
-        }
-    return _alias_dispatch
+
+    SUBJECTS = auto()
+    FULL_TYPE = auto()
 
 
-_parent_dispatch: dict[str, ParentDispatchSpec] | None = None
+class RegistryEntry(NamedTuple):
+    """A relationship namespace's projection builder and scope policy.
 
-
-def _get_parent_dispatch() -> dict[str, ParentDispatchSpec]:
-    """field_name → ParentDispatchSpec for _resolve_parents()."""
-    global _parent_dispatch
-    if _parent_dispatch is None:
-        from ..models import GameplayFeature, Theme
-
-        _parent_dispatch = {
-            "theme_parent": ParentDispatchSpec(Theme, None),
-            "gameplay_feature_parent": ParentDispatchSpec(
-                GameplayFeature, "gameplay_feature"
-            ),
-        }
-    return _parent_dispatch
-
-
-_relationship_dispatch: dict[RelationshipDispatchKey, RelationshipResolver] | None = (
-    None
-)
-
-
-def _get_relationship_dispatch() -> dict[RelationshipDispatchKey, RelationshipResolver]:
-    """(field_name, entity_model) → bulk resolver for bespoke relationship claims.
-
-    Built lazily post-``ready()`` so it imports the resolver callables directly
-    (no ``getattr`` by name). Keyed explicitly, not introspected — the resolver
-    per namespace is inherently bespoke. ``media_attachment`` is handled
-    separately (content-type keyed, in ``apps.media``), not here.
+    ``build`` constructs a fresh projection on each call so valid-PK sets are
+    current; it returns ``None`` to skip resolution entirely (credits when the
+    ``CreditRole`` vocabulary is unseeded). Its ``Subject`` is always ``int``
+    (the entity ``object_id``) — the composite-``EntityKey`` media projection is
+    content-type keyed and never registered here. ``Member`` and ``Payload``
+    genuinely vary across namespaces, so they stay ``Any``.
     """
-    global _relationship_dispatch
-    if _relationship_dispatch is None:
-        from ..models import CorporateEntity, MachineModel, Series, Title
-        from ._relationships import (
-            resolve_all_corporate_entity_locations,
-            resolve_all_credits,
-            resolve_all_gameplay_features,
-            resolve_all_model_abbreviations,
-            resolve_all_reward_types,
-            resolve_all_series_credits,
-            resolve_all_tags,
-            resolve_all_themes,
-            resolve_all_title_abbreviations,
+
+    build: Callable[[], Projection[int, Any, Any] | None]
+    scope: ScopePolicy
+
+
+_relationship_registry: dict[RelationshipDispatchKey, RegistryEntry] | None = None
+
+
+def _get_relationship_registry() -> dict[RelationshipDispatchKey, RegistryEntry]:
+    """Build the ``(field_name, model) → RegistryEntry`` table lazily.
+
+    Built post-``ready()`` and never snapshotted at module level: this module is
+    imported during ``CatalogConfig.ready`` *before* ``register_alias_types``
+    populates the alias registry, so a module-level ``discover_alias_types()``
+    would freeze an empty result. Holds projection builders (not instances) so
+    each resolve sees fresh valid-PK sets.
+    """
+    global _relationship_registry
+    if _relationship_registry is not None:
+        return _relationship_registry
+
+    from ..models import (
+        CorporateEntity,
+        GameplayFeature,
+        MachineModel,
+        Series,
+        Theme,
+        Title,
+    )
+    from ._relationships import (
+        M2M_FIELDS,
+        _alias_projection,
+        _corporate_entity_location_projection,
+        _credit_projection,
+        _gameplay_projection,
+        _m2m_projection,
+        _model_abbreviation_projection,
+        _parent_projection,
+        _title_abbreviation_projection,
+    )
+
+    registry: dict[RelationshipDispatchKey, RegistryEntry] = {}
+
+    def add(
+        field_name: str,
+        model: type[ClaimControlledModel],
+        build: Callable[[], Projection[int, Any, Any] | None],
+        scope: ScopePolicy = ScopePolicy.SUBJECTS,
+    ) -> None:
+        registry[RelationshipDispatchKey(field_name, model)] = RegistryEntry(
+            build, scope
         )
 
-        _relationship_dispatch = {
-            RelationshipDispatchKey("abbreviation", Title): (
-                resolve_all_title_abbreviations
-            ),
-            RelationshipDispatchKey("location", CorporateEntity): (
-                resolve_all_corporate_entity_locations
-            ),
-            RelationshipDispatchKey("credit", Series): resolve_all_series_credits,
-            # MachineModel relationship namespaces.
-            RelationshipDispatchKey("theme", MachineModel): resolve_all_themes,
-            RelationshipDispatchKey("reward_type", MachineModel): (
-                resolve_all_reward_types
-            ),
-            RelationshipDispatchKey("tag", MachineModel): resolve_all_tags,
-            RelationshipDispatchKey("gameplay_feature", MachineModel): (
-                resolve_all_gameplay_features
-            ),
-            RelationshipDispatchKey("credit", MachineModel): resolve_all_credits,
-            RelationshipDispatchKey("abbreviation", MachineModel): (
-                resolve_all_model_abbreviations
-            ),
-        }
-    return _relationship_dispatch
+    # MachineModel relationship namespaces.
+    for field_name, spec in M2M_FIELDS.items():
+        add(field_name, MachineModel, partial(_m2m_projection, spec))
+    add("gameplay_feature", MachineModel, _gameplay_projection)
+    add("credit", MachineModel, partial(_credit_projection, MachineModel, "model"))
+    add("abbreviation", MachineModel, _model_abbreviation_projection)
+
+    # Other entity types.
+    add("credit", Series, partial(_credit_projection, Series, "series"))
+    add("abbreviation", Title, _title_abbreviation_projection)
+    add("location", CorporateEntity, _corporate_entity_location_projection)
+
+    # Aliases — discovered dynamically; resolve whole-type.
+    for at in discover_alias_types():
+        add(
+            at.claim_field,
+            at.parent_model,
+            partial(_alias_projection, at.parent_model),
+            ScopePolicy.FULL_TYPE,
+        )
+
+    # Parent hierarchies — resolve whole-type.
+    add(
+        "theme_parent", Theme, partial(_parent_projection, Theme), ScopePolicy.FULL_TYPE
+    )
+    add(
+        "gameplay_feature_parent",
+        GameplayFeature,
+        partial(
+            _parent_projection, GameplayFeature, claim_field_prefix="gameplay_feature"
+        ),
+        ScopePolicy.FULL_TYPE,
+    )
+
+    _relationship_registry = registry
+    return _relationship_registry
+
+
+def resolve_relationship(
+    model: type[ClaimControlledModel],
+    field_name: str,
+    *,
+    subject_ids: set[int] | None = None,
+) -> bool:
+    """Resolve one relationship namespace via its registered projection.
+
+    Looks up the ``(field_name, model)`` projection, builds it fresh (so
+    valid-PK sets are current) and runs :func:`reconcile`. ``FULL_TYPE``
+    namespaces (aliases, parent hierarchies) ignore *subject_ids* and resolve
+    their whole type. Returns ``True`` if a projection handled the namespace,
+    ``False`` if none is registered — the caller decides whether that is media,
+    a no-op (per-entity) or an error (bulk).
+    """
+    entry = _get_relationship_registry().get(RelationshipDispatchKey(field_name, model))
+    if entry is None:
+        return False
+    projection = entry.build()
+    if projection is not None:
+        scope = subject_ids if entry.scope is ScopePolicy.SUBJECTS else None
+        # reconcile returns a Delta (for cache scoping, POST1); unused here.
+        reconcile(projection, scope)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -220,64 +270,39 @@ def _resolve_entity_relationships(
     from apps.provenance.validation import get_relationship_namespaces
 
     from ._entities import resolve_entity
-    from ._media import resolve_media_attachments
-    from ._relationships import _resolve_aliases, _resolve_parents
 
     relationship_ns = get_relationship_namespaces()
     entity_type = type(entity)
+    registry = _get_relationship_registry()
 
     if field_names is not None:
         rel_fields = [fn for fn in field_names if fn in relationship_ns]
     else:
         rel_fields = None  # signals "run all applicable"
 
-    # --- Alias resolvers ---
-    alias_dispatch = _get_alias_dispatch()
+    # --- Relationship namespaces (aliases, parents, m2m, credits, …) ---
+    # Unhandled namespaces are a no-op here (lenient per-entity path); the bulk
+    # path fails loudly instead.  media_attachment is not in the registry and is
+    # handled separately below.
     if rel_fields is not None:
         for fn in rel_fields:
-            if fn in alias_dispatch and alias_dispatch[fn] is entity_type:
-                _resolve_aliases(alias_dispatch[fn])
+            resolve_relationship(entity_type, fn, subject_ids={entity.pk})
     else:
-        for parent_model in alias_dispatch.values():
-            if parent_model is entity_type:
-                _resolve_aliases(parent_model)
-
-    # --- Parent hierarchy resolvers ---
-    parent_dispatch = _get_parent_dispatch()
-    if rel_fields is not None:
-        for fn in rel_fields:
-            if fn in parent_dispatch:
-                spec = parent_dispatch[fn]
-                if spec.model is entity_type:
-                    _resolve_parents(
-                        spec.model, claim_field_prefix=spec.claim_field_prefix
-                    )
-    else:
-        for spec in parent_dispatch.values():
-            if spec.model is entity_type:
-                _resolve_parents(spec.model, claim_field_prefix=spec.claim_field_prefix)
-
-    # --- Bespoke relationship resolvers (abbreviation, location, credit, …) ---
-    relationship_dispatch = _get_relationship_dispatch()
-    if rel_fields is not None:
-        for fn in rel_fields:
-            resolver = relationship_dispatch.get(
-                RelationshipDispatchKey(fn, entity_type)
-            )
-            if resolver is not None:
-                resolver(subject_ids={entity.pk})
-    else:
-        for key, resolver in relationship_dispatch.items():
+        for key in registry:
             if key.entity_model is entity_type:
-                resolver(subject_ids={entity.pk})
+                resolve_relationship(
+                    entity_type, key.field_name, subject_ids={entity.pk}
+                )
 
-    # --- Media attachments ---
+    # --- Media attachments (content-type keyed, not in the registry) ---
     from apps.media.models import MediaSupportedModel
 
     if isinstance(entity, MediaSupportedModel) and (
         rel_fields is None or "media_attachment" in rel_fields
     ):
         from django.contrib.contenttypes.models import ContentType
+
+        from ._media import resolve_media_attachments
 
         ct = ContentType.objects.get_for_model(entity_type)
         resolve_media_attachments(content_type_id=ct.id, subject_ids={entity.pk})
@@ -303,41 +328,21 @@ def resolve_relationships_bulk(
     ``resolve_all_entities`` has bulk-resolved scalar/FK fields; this covers
     only the relationship namespaces.
 
-    Reuses the same dispatch tables as :func:`_resolve_entity_relationships`,
-    but invokes each resolver once for the whole subject set instead of per
-    object (alias/parent resolvers resolve their whole type; the bespoke
-    resolvers take the full ``subject_ids``).
-
     Unlike :func:`_per_entity_handler`, this does NOT register an ``on_commit``
     cache invalidation — the caller invalidates once after the run (the
     ``ingest_patches`` command does, as does the apply engine's caller).
 
-    Raises ``ValueError`` for a namespace with no bulk resolver on
+    Raises ``ValueError`` for a namespace with no registered projection on
     *model_class*, so an unhandled relationship fails loudly instead of leaving
     its claims silently unresolved.
     """
     if not subject_ids or not field_names:
         return
-    from ._relationships import _resolve_aliases, _resolve_parents
-
-    alias_dispatch = _get_alias_dispatch()
-    parent_dispatch = _get_parent_dispatch()
-    relationship_dispatch = _get_relationship_dispatch()
 
     for fn in field_names:
-        relationship_resolver_fn = relationship_dispatch.get(
-            RelationshipDispatchKey(fn, model_class)
-        )
         if fn == "media_attachment":
             _resolve_media_bulk(model_class, subject_ids)
-        elif fn in alias_dispatch and alias_dispatch[fn] is model_class:
-            _resolve_aliases(model_class)
-        elif fn in parent_dispatch and parent_dispatch[fn].model is model_class:
-            spec = parent_dispatch[fn]
-            _resolve_parents(spec.model, claim_field_prefix=spec.claim_field_prefix)
-        elif relationship_resolver_fn is not None:
-            relationship_resolver_fn(subject_ids=subject_ids)
-        else:
+        elif not resolve_relationship(model_class, fn, subject_ids=subject_ids):
             raise ValueError(
                 f"No bulk resolver for relationship {fn!r} on {model_class.__name__}"
             )

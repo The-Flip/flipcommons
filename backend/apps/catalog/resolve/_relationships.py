@@ -1,10 +1,11 @@
 """Resolution logic for relationship claims (credits, themes, gameplay features, tags,
 abbreviations, aliases, parent hierarchies, corporate-entity locations).
 
-Every resolver here is a thin wrapper that builds a :class:`Projection` and runs
-the shared :func:`reconcile` loop.  The generic :class:`ThroughRowProjection`
-covers the plain/payload/compound through-row shapes (themes, gameplay features,
-credits, abbreviations, parents, corporate-entity locations); the case-folded
+Each ``_*_projection`` function builds the :class:`Projection` for one claim
+namespace; :mod:`._dispatch` registers them and runs the shared
+:func:`reconcile` loop.  The generic :class:`ThroughRowProjection` covers the
+plain/payload/compound through-row shapes (themes, gameplay features, credits,
+abbreviations, parents, corporate-entity locations); the case-folded
 :class:`AliasProjection` is the one bespoke shape that lives here.  Media is its
 own projection in :mod:`._media`.
 """
@@ -40,7 +41,6 @@ from ..models import (
     ModelAbbreviation,
     Person,
     RewardType,
-    Series,
     Tag,
     Theme,
     Title,
@@ -54,13 +54,11 @@ from ._claim_values import (
     LocationClaimValue,
     ParentClaimValue,
 )
-from ._contracts import relationship_resolver
 from ._engine import (
     Delta,
     ExtractedMember,
     MemberMap,
     RowState,
-    reconcile,
 )
 
 if TYPE_CHECKING:
@@ -299,29 +297,13 @@ def _m2m_projection(spec: M2MFieldSpec) -> ThroughRowProjection[int, None]:
     )
 
 
-@relationship_resolver
-def resolve_all_themes(*, subject_ids: set[int] | None = None) -> None:
-    reconcile(_m2m_projection(M2M_FIELDS["theme"]), subject_ids)
-
-
-@relationship_resolver
-def resolve_all_reward_types(*, subject_ids: set[int] | None = None) -> None:
-    reconcile(_m2m_projection(M2M_FIELDS["reward_type"]), subject_ids)
-
-
-@relationship_resolver
-def resolve_all_tags(*, subject_ids: set[int] | None = None) -> None:
-    reconcile(_m2m_projection(M2M_FIELDS["tag"]), subject_ids)
-
-
 # ------------------------------------------------------------------
 # Gameplay features (M2M with a count payload)
 # ------------------------------------------------------------------
 
 
-@relationship_resolver
-def resolve_all_gameplay_features(*, subject_ids: set[int] | None = None) -> None:
-    """Bulk-resolve gameplay feature claims into through-rows carrying counts."""
+def _gameplay_projection() -> ThroughRowProjection[int, int | None]:
+    """Build the projection for gameplay-feature claims (carries a count)."""
     valid_pks = set(GameplayFeature.objects.values_list("pk", flat=True))
 
     def extract(claim: Claim) -> ExtractedMember[int, int | None] | None:
@@ -336,7 +318,7 @@ def resolve_all_gameplay_features(*, subject_ids: set[int] | None = None) -> Non
             return None
         return ExtractedMember(feature_pk, val.get("count"))
 
-    projection: ThroughRowProjection[int, int | None] = ThroughRowProjection(
+    return ThroughRowProjection(
         subject_model=MachineModel,
         field_name="gameplay_feature",
         through_model=_m2m_through("gameplay_features"),
@@ -349,7 +331,6 @@ def resolve_all_gameplay_features(*, subject_ids: set[int] | None = None) -> Non
         columns_to_payload=_int_or_none_from_column,
         payload_to_columns=_one_column,
     )
-    reconcile(projection, subject_ids)
 
 
 # ------------------------------------------------------------------
@@ -365,18 +346,18 @@ def _credit_columns(member: CreditAssignment) -> tuple[object, ...]:
     return (member.person_id, member.role_id)
 
 
-def _resolve_credits(
+def _credit_projection(
     subject_model: type[ClaimControlledModel],
     fk_field: Literal["model", "series"],
-    *,
-    subject_ids: set[int] | None = None,
-) -> None:
-    """Subject-agnostic core for bulk credit resolution.
+) -> ThroughRowProjection[CreditAssignment, None] | None:
+    """Build the credit projection for a subject, or ``None`` to skip.
 
     Shared by the MachineModel and Series passes. ``fk_field`` is the ``Credit``
     FK attribute for this subject; ``Credit``'s model/series XOR constraint
     guarantees a row belongs to exactly one subject, so the two passes never
-    touch each other's rows.
+    touch each other's rows.  Returns ``None`` when the ``CreditRole`` vocabulary
+    is unseeded — resolving then would drop every credit as invalid and delete
+    the existing rows, so the caller skips resolution entirely.
     """
     valid_person_pks = set(Person.objects.values_list("pk", flat=True))
     valid_role_pks = set(CreditRole.objects.values_list("pk", flat=True))
@@ -385,7 +366,7 @@ def _resolve_credits(
             "CreditRole table is empty — skipping bulk credit resolution. "
             "Apply the data patches that seed credit roles first."
         )
-        return
+        return None
 
     def extract(claim: Claim) -> ExtractedMember[CreditAssignment, None] | None:
         val = cast(CreditClaimValue, claim.value)
@@ -407,7 +388,7 @@ def _resolve_credits(
             return None
         return ExtractedMember(CreditAssignment(person_pk, role_pk), None)
 
-    projection: ThroughRowProjection[CreditAssignment, None] = ThroughRowProjection(
+    return ThroughRowProjection(
         subject_model=subject_model,
         field_name="credit",
         through_model=Credit,
@@ -420,19 +401,6 @@ def _resolve_credits(
         columns_to_payload=_no_payload,
         payload_to_columns=_no_columns,
     )
-    reconcile(projection, subject_ids)
-
-
-@relationship_resolver
-def resolve_all_credits(*, subject_ids: set[int] | None = None) -> None:
-    """Bulk-resolve MachineModel credit claims into Credit rows."""
-    _resolve_credits(MachineModel, "model", subject_ids=subject_ids)
-
-
-@relationship_resolver
-def resolve_all_series_credits(*, subject_ids: set[int] | None = None) -> None:
-    """Bulk-resolve Series credit claims into Credit rows."""
-    _resolve_credits(Series, "series", subject_ids=subject_ids)
 
 
 # ------------------------------------------------------------------
@@ -445,14 +413,17 @@ def _abbreviation_extract(claim: Claim) -> ExtractedMember[str, None]:
     return ExtractedMember(val["value"], None)
 
 
-@relationship_resolver
-def resolve_all_title_abbreviations(*, subject_ids: set[int] | None = None) -> None:
-    """Bulk-resolve abbreviation claims into TitleAbbreviation rows."""
-    projection: ThroughRowProjection[str, None] = ThroughRowProjection(
-        subject_model=Title,
+def _abbreviation_projection(
+    subject_model: type[ClaimControlledModel],
+    through_model: type[Model],
+    subject_column: str,
+) -> ThroughRowProjection[str, None]:
+    """Build an abbreviation projection (string member, no FK target)."""
+    return ThroughRowProjection(
+        subject_model=subject_model,
         field_name="abbreviation",
-        through_model=TitleAbbreviation,
-        subject_column="title_id",
+        through_model=through_model,
+        subject_column=subject_column,
         key_columns=("value",),
         payload_columns=(),
         extract_member=_abbreviation_extract,
@@ -461,32 +432,22 @@ def resolve_all_title_abbreviations(*, subject_ids: set[int] | None = None) -> N
         columns_to_payload=_no_payload,
         payload_to_columns=_no_columns,
     )
-    reconcile(projection, subject_ids)
 
 
-@relationship_resolver
-def resolve_all_model_abbreviations(*, subject_ids: set[int] | None = None) -> None:
-    """Bulk-resolve abbreviation claims into ModelAbbreviation rows.
+def _title_abbreviation_projection() -> ThroughRowProjection[str, None]:
+    """Build the projection for Title abbreviation claims."""
+    return _abbreviation_projection(Title, TitleAbbreviation, "title_id")
+
+
+def _model_abbreviation_projection() -> ThroughRowProjection[str, None]:
+    """Build the projection for MachineModel abbreviation claims.
 
     Claim-local: the model's own winning abbreviations are materialized as-is,
     including any that also belong to its Title. The Title dedup is a read-time
     view (api.helpers.displayed_model_abbreviations), not a write-time
     subtraction — see docs/plans/provenance/ClaimResolutionRefactor.md.
     """
-    projection: ThroughRowProjection[str, None] = ThroughRowProjection(
-        subject_model=MachineModel,
-        field_name="abbreviation",
-        through_model=ModelAbbreviation,
-        subject_column="machine_model_id",
-        key_columns=("value",),
-        payload_columns=(),
-        extract_member=_abbreviation_extract,
-        columns_to_key=_str_from_column,
-        key_to_columns=_one_column,
-        columns_to_payload=_no_payload,
-        payload_to_columns=_no_columns,
-    )
-    reconcile(projection, subject_ids)
+    return _abbreviation_projection(MachineModel, ModelAbbreviation, "machine_model_id")
 
 
 # ------------------------------------------------------------------
@@ -494,16 +455,8 @@ def resolve_all_model_abbreviations(*, subject_ids: set[int] | None = None) -> N
 # ------------------------------------------------------------------
 
 
-@relationship_resolver
-def resolve_all_corporate_entity_locations(
-    *, subject_ids: set[int] | None = None
-) -> None:
-    """Sync CorporateEntityLocation rows from active 'location' claims.
-
-    When *subject_ids* is ``None`` (the default), all CorporateEntity rows are
-    considered so CEs whose claims were all deactivated also have stale rows
-    removed.
-    """
+def _corporate_entity_location_projection() -> ThroughRowProjection[int, None]:
+    """Build the projection for CorporateEntity 'location' claims."""
     valid_loc_pks = set(Location.objects.values_list("pk", flat=True))
 
     def extract(claim: Claim) -> ExtractedMember[int, None] | None:
@@ -513,7 +466,7 @@ def resolve_all_corporate_entity_locations(
             return ExtractedMember(loc_pk, None)
         return None
 
-    projection: ThroughRowProjection[int, None] = ThroughRowProjection(
+    return ThroughRowProjection(
         subject_model=CorporateEntity,
         field_name="location",
         through_model=CorporateEntityLocation,
@@ -526,7 +479,6 @@ def resolve_all_corporate_entity_locations(
         columns_to_payload=_no_payload,
         payload_to_columns=_no_columns,
     )
-    reconcile(projection, subject_ids)
 
 
 # ------------------------------------------------------------------
@@ -595,12 +547,11 @@ class AliasProjection:
             manager.filter(pk=row.pk).update(value=row.payload)
 
 
-def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
-    """Bulk-resolve a parent entity's alias claims into its alias model rows.
+def _alias_projection(parent_model: type[ClaimControlledModel]) -> AliasProjection:
+    """Build the alias projection for a parent entity.
 
     Everything about the alias type comes from the canonical alias registry, so
-    callers supply only the parent model.  Resolves the parent's whole type
-    (no subject scoping today).
+    callers supply only the parent model.
     """
     at = alias_type_for(parent_model)
     assert at is not None, f"{parent_model.__name__} is not a registered alias type"
@@ -608,14 +559,13 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
     assert schema is not None, (
         f"alias namespace {at.claim_field!r} has no registered relationship schema"
     )
-    projection = AliasProjection(
+    return AliasProjection(
         parent_model=parent_model,
         alias_model=at.alias_model,
         fk_column=at.fk_name + "_id",
         claim_field=at.claim_field,
         schema=schema,
     )
-    reconcile(projection, None)
 
 
 # ------------------------------------------------------------------
@@ -623,16 +573,15 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
 # ------------------------------------------------------------------
 
 
-def _resolve_parents(
+def _parent_projection(
     parent_model: type[ClaimControlledModel], *, claim_field_prefix: str | None = None
-) -> None:
-    """Resolve parent hierarchy claims into self-referential M2M rows.
+) -> ThroughRowProjection[int, None]:
+    """Build the parent-hierarchy projection for a self-referential ``parents`` M2M.
 
-    Reads ``{claim_field_prefix}_parent`` claims on *parent_model* instances and
-    materializes the self-referential ``parents`` M2M.  *claim_field_prefix*
-    defaults to the model name but must be overridden when it differs from the
-    claim-field convention (e.g. ``gameplayfeature`` vs ``gameplay_feature``).
-    Resolves the parent's whole type (no subject scoping today).
+    Reads ``{claim_field_prefix}_parent`` claims on *parent_model* instances.
+    *claim_field_prefix* defaults to the model name but must be overridden when
+    it differs from the claim-field convention (e.g. ``gameplayfeature`` vs
+    ``gameplay_feature``).
     """
     model_name = parent_model._meta.model_name
     prefix = claim_field_prefix or model_name
@@ -652,7 +601,7 @@ def _resolve_parents(
             return None
         return ExtractedMember(parent_pk, None)
 
-    projection: ThroughRowProjection[int, None] = ThroughRowProjection(
+    return ThroughRowProjection(
         subject_model=parent_model,
         field_name=claim_field_name,
         through_model=_get_parents_through(parent_model),
@@ -666,4 +615,3 @@ def _resolve_parents(
         payload_to_columns=_no_columns,
         ignore_conflicts=True,
     )
-    reconcile(projection, None)

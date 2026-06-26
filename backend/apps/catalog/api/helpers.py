@@ -65,8 +65,8 @@ def displayed_model_abbreviations(pm: MachineModel) -> list[str]:
     ``ModelAbbreviation`` rows are claim-faithful and may include values the
     Title also owns; this live read-time subtraction hides those so a Model
     never redundantly lists a Title-owned abbreviation. Exact (case-sensitive)
-    match, mirroring the former write-time subtraction in
-    ``resolve_all_model_abbreviations``.
+    match, mirroring the former write-time subtraction in the model-abbreviation
+    resolver.
 
     Expects ``pm.abbreviations`` and ``pm.title__abbreviations`` prefetched
     (``title`` is a non-null FK, so a model always has one).

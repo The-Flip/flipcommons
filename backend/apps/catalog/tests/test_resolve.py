@@ -6,18 +6,14 @@ from apps.catalog.models import (
     CorporateEntity,
     CorporateEntityLocation,
     Location,
+    MachineModel,
     Manufacturer,
     System,
     TechnologyGeneration,
     Theme,
     Title,
 )
-from apps.catalog.resolve import (
-    resolve_all_model_abbreviations,
-    resolve_all_themes,
-    resolve_all_title_abbreviations,
-)
-from apps.catalog.resolve._relationships import resolve_all_corporate_entity_locations
+from apps.catalog.resolve import resolve_relationship
 from apps.catalog.tests.conftest import bulk_resolve, make_machine_model
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Source
@@ -168,8 +164,8 @@ class TestResolveModelAbbreviationsClaimLocal:
         make_claim(title, "abbreviation", abbr_val, source=ipdb, claim_key=abbr_key)
         make_claim(pm, "abbreviation", abbr_val, source=ipdb, claim_key=abbr_key)
 
-        resolve_all_title_abbreviations()
-        resolve_all_model_abbreviations()
+        resolve_relationship(Title, "abbreviation")
+        resolve_relationship(MachineModel, "abbreviation")
 
         # Claim-faithful: the overlapping "MM" is materialized on the model, not
         # suppressed (the old write-time subtraction would leave this empty).
@@ -325,7 +321,7 @@ class TestResolveThemes:
             claim_key, value = build_relationship_claim("theme", {"theme": theme.pk})
             make_claim(pm, "theme", value, source=ipdb, claim_key=claim_key)
 
-        resolve_all_themes(subject_ids={pm.pk})
+        resolve_relationship(MachineModel, "theme", subject_ids={pm.pk})
         assert set(pm.themes.values_list("slug", flat=True)) == {
             "horror",
             "licensed",
@@ -349,7 +345,7 @@ class TestResolveThemes:
         )
         make_claim(pm, "theme", dispute_value, source=editorial, claim_key=claim_key)
 
-        resolve_all_themes(subject_ids={pm.pk})
+        resolve_relationship(MachineModel, "theme", subject_ids={pm.pk})
         assert pm.themes.count() == 0
 
     def test_stale_themes_cleared(self):
@@ -361,12 +357,12 @@ class TestResolveThemes:
 
         claim_key, value = build_relationship_claim("theme", {"theme": horror.pk})
         make_claim(pm, "theme", value, source=ipdb, claim_key=claim_key)
-        resolve_all_themes(subject_ids={pm.pk})
+        resolve_relationship(MachineModel, "theme", subject_ids={pm.pk})
         assert pm.themes.count() == 1
 
         # Deactivate claim, re-resolve — themes should be empty.
         pm.claims.filter(is_active=True).update(is_active=False)
-        resolve_all_themes(subject_ids={pm.pk})
+        resolve_relationship(MachineModel, "theme", subject_ids={pm.pk})
         assert pm.themes.count() == 0
 
     def test_bulk_theme_resolution(self):
@@ -472,7 +468,7 @@ class TestResolveCorporateEntityLocations:
         loc = self._make_location("usa/il/chicago")
         self._assert_location(source, ce, loc)
 
-        resolve_all_corporate_entity_locations()
+        resolve_relationship(CorporateEntity, "location")
 
         assert CorporateEntityLocation.objects.filter(
             corporate_entity=ce, location=loc
@@ -483,11 +479,11 @@ class TestResolveCorporateEntityLocations:
         ce = self._make_ce("williams")
         loc = self._make_location("usa/il/chicago")
         self._assert_location(source, ce, loc)
-        resolve_all_corporate_entity_locations()
+        resolve_relationship(CorporateEntity, "location")
         assert CorporateEntityLocation.objects.filter(corporate_entity=ce).count() == 1
 
         ce.claims.filter(is_active=True).update(is_active=False)
-        resolve_all_corporate_entity_locations()
+        resolve_relationship(CorporateEntity, "location")
 
         assert not CorporateEntityLocation.objects.filter(corporate_entity=ce).exists()
 
@@ -500,7 +496,7 @@ class TestResolveCorporateEntityLocations:
         )
         make_claim(ce, "location", value, source=source, claim_key=claim_key)
 
-        resolve_all_corporate_entity_locations()
+        resolve_relationship(CorporateEntity, "location")
 
         assert not CorporateEntityLocation.objects.filter(
             corporate_entity=ce, location=loc
@@ -511,14 +507,14 @@ class TestResolveCorporateEntityLocations:
         ce = self._make_ce("williams")
         loc = self._make_location("usa/il/chicago")
         self._assert_location(source, ce, loc)
-        resolve_all_corporate_entity_locations()
+        resolve_relationship(CorporateEntity, "location")
         assert CorporateEntityLocation.objects.filter(corporate_entity=ce).count() == 1
 
         claim_key, value = build_relationship_claim(
             "location", {"location": loc.pk}, exists=False
         )
         make_claim(ce, "location", value, source=source, claim_key=claim_key)
-        resolve_all_corporate_entity_locations()
+        resolve_relationship(CorporateEntity, "location")
 
         assert not CorporateEntityLocation.objects.filter(corporate_entity=ce).exists()
 
@@ -531,7 +527,7 @@ class TestResolveCorporateEntityLocations:
         self._assert_location(source, ce1, loc1)
         self._assert_location(source, ce2, loc2)
 
-        resolve_all_corporate_entity_locations()
+        resolve_relationship(CorporateEntity, "location")
 
         assert CorporateEntityLocation.objects.count() == 2
 
@@ -556,7 +552,7 @@ class TestResolveCorporateEntityLocations:
         )
         make_claim(ce, "location", value, source=editorial, claim_key=claim_key)
 
-        resolve_all_corporate_entity_locations()
+        resolve_relationship(CorporateEntity, "location")
 
         assert not CorporateEntityLocation.objects.filter(corporate_entity=ce).exists()
 
