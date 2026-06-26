@@ -556,7 +556,7 @@ Storage infrastructure in `backend/apps/media/storage.py`, upload endpoint in `b
 
 ### Phase 4: Claims Namespace + Resolver + Wire Into Upload + Tests — DONE
 
-`media_attachment` claim namespace in `catalog/claims.py`, generic resolver in `catalog/resolve/_media.py`, wired into upload endpoint, `resolve_model()`, and `resolve_machine_models()`. Things later phases should know:
+`media_attachment` claim namespace in `catalog/claims.py`, generic resolver in `catalog/resolve/_media.py`, wired into upload endpoint, `resolve_model()`, and the generic bulk resolve path. Things later phases should know:
 
 - Category validation lives in `build_media_attachment_claim()` in `catalog/claims.py`. Phase 3's `_validate_category()` was deleted — the helper is now the single validation point. It raises `ValueError`; the upload endpoint catches and converts to `HttpError(400)`.
 - No license on claims or `EntityMedia` — deferred until the legal picture for user-generated content is clearer. Claims are created with `license=None`. Phase 5 should always display uploaded media from `EntityMedia` regardless of the Constance license threshold.

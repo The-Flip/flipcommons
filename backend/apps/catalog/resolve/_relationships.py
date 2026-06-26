@@ -21,7 +21,7 @@ from apps.provenance.validation import (
     get_relationship_schema,
 )
 
-from ..engine.aliases import alias_type_for, discover_alias_types
+from ..engine.aliases import alias_type_for
 from ..models import (
     CatalogModel,
     CorporateEntity,
@@ -32,7 +32,6 @@ from ..models import (
     Location,
     MachineModel,
     MachineModelGameplayFeature,
-    Manufacturer,
     ModelAbbreviation,
     Person,
     RewardType,
@@ -192,12 +191,7 @@ def _resolve_machine_model_m2m(
 
 
 # ------------------------------------------------------------------
-# Public M2M wrappers (single-object)
-# ------------------------------------------------------------------
-
-
-# ------------------------------------------------------------------
-# Public M2M wrappers (bulk)
+# Public M2M wrappers
 # ------------------------------------------------------------------
 
 
@@ -596,19 +590,8 @@ def resolve_all_model_abbreviations(
 
 
 # ------------------------------------------------------------------
-# Alias resolvers (all five alias types)
+# Generic alias resolver
 # ------------------------------------------------------------------
-
-
-def _get_parents_through(parent: type[ClaimControlledModel]) -> type[Model]:
-    """Return the through model for ``parent``'s self-referential ``parents`` M2M.
-
-    ``parent.parents.through`` is a runtime-generated descriptor django-stubs can't
-    see.  Confining the ignore to this helper keeps the category-3 ``Any`` leak out of
-    ``_resolve_parents``.
-    """
-    through: type[Model] = parent.parents.through  # type: ignore[attr-defined]
-    return through
 
 
 def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
@@ -710,50 +693,20 @@ def _resolve_aliases(parent_model: type[ClaimControlledModel]) -> None:
         alias_model._default_manager.filter(pk=pk).update(value=display_val)
 
 
-# ---------------------------------------------------------------------------
-# Alias registry — drives resolve_all_aliases() and dispatch
-# ---------------------------------------------------------------------------
-# No import-time snapshot of the engine alias registry: this module is imported
-# *during* ``CatalogConfig.ready`` (via ``register_catalog_resolve_handlers``),
-# which is before ``register_alias_types`` has populated the registry, so a
-# module-level ``list(discover_alias_types())`` would freeze an empty result.
-# Every consumer reads the live registry via ``discover_alias_types()`` instead
-# (see ``resolve_all_aliases`` below; the alias test suite parametrizes over it).
-
-
-def resolve_theme_aliases() -> None:
-    _resolve_aliases(Theme)
-
-
-def resolve_manufacturer_aliases() -> None:
-    _resolve_aliases(Manufacturer)
-
-
-def resolve_person_aliases() -> None:
-    _resolve_aliases(Person)
-
-
-def resolve_gameplay_feature_aliases() -> None:
-    _resolve_aliases(GameplayFeature)
-
-
-def resolve_reward_type_aliases() -> None:
-    _resolve_aliases(RewardType)
-
-
-def resolve_corporate_entity_aliases() -> None:
-    _resolve_aliases(CorporateEntity)
-
-
-def resolve_all_aliases() -> None:
-    """Resolve all alias types from the auto-discovered registry."""
-    for at in discover_alias_types():
-        _resolve_aliases(at.parent_model)
-
-
 # ------------------------------------------------------------------
 # Parent hierarchy resolvers (Theme and GameplayFeature DAGs)
 # ------------------------------------------------------------------
+
+
+def _get_parents_through(parent: type[ClaimControlledModel]) -> type[Model]:
+    """Return the through model for ``parent``'s self-referential ``parents`` M2M.
+
+    ``parent.parents.through`` is a runtime-generated descriptor django-stubs can't
+    see.  Confining the ignore to this helper keeps the category-3 ``Any`` leak out of
+    ``_resolve_parents``.
+    """
+    through: type[Model] = parent.parents.through  # type: ignore[attr-defined]
+    return through
 
 
 def _resolve_parents(
@@ -848,24 +801,6 @@ def _resolve_parents(
         through._default_manager.bulk_create(
             to_create, batch_size=2000, ignore_conflicts=True
         )
-
-
-def resolve_theme_parents() -> None:
-    _resolve_parents(Theme)
-
-
-def resolve_gameplay_feature_parents() -> None:
-    _resolve_parents(GameplayFeature, claim_field_prefix="gameplay_feature")
-
-
-# ------------------------------------------------------------------
-# Location alias resolver
-# ------------------------------------------------------------------
-
-
-def resolve_all_location_aliases() -> None:
-    """Resolve location_alias claims into LocationAlias rows."""
-    _resolve_aliases(Location)
 
 
 # ------------------------------------------------------------------

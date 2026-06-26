@@ -6,11 +6,9 @@ from django.http import HttpRequest
 from django.http.response import HttpResponseBase
 from django.urls import URLPattern, URLResolver, path, re_path
 
-from .admin_views import resolve_view
 from .api import api, export_api
 
 urlpatterns: list[URLPattern | URLResolver] = [
-    path("djadmin/resolve/", resolve_view, name="admin-resolve"),
     path("djadmin/", admin.site.urls),
     # Export API first — it's the more specific prefix, and its own OpenAPI doc is
     # the public reference. Must precede the internal "api/" catch-all.
