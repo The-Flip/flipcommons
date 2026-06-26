@@ -60,6 +60,8 @@ The owner-registered dispatch inversion **already shipped at the provenance seam
 
 But the inversion landed at the outer boundary and stopped. The `isinstance(MachineModel)` switch still sits _inside_ catalog's single registered per-entity handler ([\_dispatch.py:132](../../../backend/apps/catalog/resolve/_dispatch.py#L132)), because `resolve_model` is still a parallel implementation. The boundary that mattered least was inverted; the type-switch that mattered most remains. Any plan must start from this actual state.
 
+Beneath the per-entity switch sit **four parallel namespace→resolver tables** — `_get_alias_dispatch` (keyed by model), `_get_parent_dispatch` (keyed by spec), `_get_custom_dispatch` (keyed by a **string** method name, resolved via `getattr` — so grep and mypy can't see which function a namespace resolves to), and the MM-only `_get_mm_relationship_resolvers` (MM relationships dispatch through this; non-MM relationships through the other three — itself a divergence). These are four fragments of the one introspected registry [the design](#design) describes; REF unifies them, and the string-`getattr` in `_custom_dispatch` is the most visible symptom of the fragmentation, not a separate wart.
+
 ## <a id="design-patterns"></a> The design patterns and data structures
 
 Naming the load-bearing constructs keeps the redesign honest — it pins which invariants to preserve and lets a reviewer check each pattern against its known failure modes.
@@ -230,6 +232,8 @@ Replace all 13 copies. A ~3-line function (`for row in ranked_claims(...): winne
 ##### <a id="REF3">REF3</a> — Extract `reconcile`
 
 Build it with `{create, delete, update}` and collapse the 9 copy-pasted loops onto it. Each resolver shrinks to: build queryset → `pick_winners` → build `desired_by_subject` (the only genuinely per-shape part, ~5 lines) → `reconcile`. After the Before phase **every** resolver is claim-local — no bespoke `desired()` hook remains, and the two universal filters — `member_is_present` (tombstone-drop) and valid-PK existence (for FK-referencing members) — move into the engine, so `desired()` is a pure per-shape `claim → (key, payload)` function. Deletes ~500 lines. **The typed vocabulary is born here, not in a later pass** — `Projection[K, P]`, `MemberMap[K, P]`, `RowState[P]` and `Delta[K, P]` (see [The design](#design)) are `reconcile`'s signature, so the generics are what make the 9 copies collapse into one; extracting with loose types and tightening afterward would reintroduce the very drift this removes. The scalar instantiation (`Projection[str, <column value>]`) firms up in REF4.
+
+This is also where the four parallel dispatch tables (see [Current dispatch state](#current-dispatch-state--accurate-as-of-this-writing)) collapse into one `namespace → Projection` registry: the bespoke resolvers (`title_abbreviations`, `corporate_entity_locations`, `series_credits`) become escape-hatch Projections referenced **by object**, retiring `_custom_dispatch`'s string-`getattr` (the one stringly-typed edge in the subsystem). REF1 has already merged the MM vs non-MM relationship-dispatch divergence into this same table, so by REF3 there is a single keyed-by-namespace map to turn into the registry — not four.
 
 #### Fold in the holdout
 
