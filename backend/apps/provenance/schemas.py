@@ -357,12 +357,6 @@ class AttributionSchema(Schema):
     license_url: Annotated[
         str | None, Field(description="URL of the license text.")
     ] = None
-    permissiveness_rank: Annotated[
-        int | None,
-        Field(
-            description="Relative permissiveness of the license; higher is more permissive."
-        ),
-    ] = None
     requires_attribution: Annotated[
         bool,
         Field(

@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from apps.core.types import JsonBody
 from apps.provenance.claim_ranking_in_db import ranked_claims
+from apps.provenance.licensing import build_source_field_license_map
 from apps.provenance.models import Claim, ClaimControlledModel
 from apps.provenance.validation import get_relationship_namespaces
 
@@ -24,6 +25,7 @@ from ._helpers import (
     resolve_unique_conflicts,
     validate_check_constraints,
 )
+from ._image_fields import IMAGE_FIELDS, _stamp_image_license
 
 
 def _sync_markdown_references(obj: ClaimControlledModel) -> None:
@@ -62,6 +64,10 @@ def _resolve_single(
     Mutates *obj* in memory; the caller is responsible for saving.
     """
     claims = ranked_claims(obj.claims.all(), "field_name")
+    # Prefetch source.default_license for extra_data models — image-field claims
+    # denormalize their license from it (mirrors the bulk path / resolve_model).
+    if hasattr(obj, "extra_data"):
+        claims = claims.select_related("actor__source__default_license")
 
     winners: dict[str, Claim] = {}
     for claim in claims:
@@ -83,6 +89,13 @@ def _resolve_single(
     has_extra_data = hasattr(obj, "extra_data")
     extra_data: JsonBody | None = {} if has_extra_data else None
     relationship_ns = get_relationship_namespaces()
+    # Image fields denormalize their effective license into extra_data; build
+    # the SourceFieldLicense map once iff a winning claim is an image field.
+    sfl_map = (
+        build_source_field_license_map()
+        if any(fn in IMAGE_FIELDS for fn in winners)
+        else None
+    )
     for field_name, claim in winners.items():
         # Relationship-namespace claims (media_attachment, credit, …) resolve
         # into their own tables, never extra_data — mirrors resolve_model().
@@ -106,6 +119,7 @@ def _resolve_single(
         elif has_extra_data:
             assert extra_data is not None
             extra_data[field_name] = claim.value
+            _stamp_image_license(extra_data, claim, sfl_map)
     if has_extra_data:
         # extra_data lives on a concrete-subclass subset; runtime-guarded above.
         obj.extra_data = extra_data  # type: ignore[attr-defined]
@@ -152,6 +166,11 @@ def _resolve_bulk(
     )
     if object_ids is not None:
         claims_qs = claims_qs.filter(object_id__in=object_ids)
+    # Models with extra_data may carry image-field claims, whose license is
+    # denormalized into extra_data from source.default_license; prefetch it so
+    # the per-claim stamp stays query-free (mirrors the MachineModel bulk path).
+    if hasattr(model_class, "extra_data"):
+        claims_qs = claims_qs.select_related("actor__source__default_license")
 
     # Group by object_id, pick winner per field_name.
     claims_by_obj: dict[int, dict[str, Claim]] = {}
@@ -159,6 +178,14 @@ def _resolve_bulk(
         obj_winners = claims_by_obj.setdefault(claim.object_id, {})
         if claim.field_name not in obj_winners:
             obj_winners[claim.field_name] = claim
+
+    # Image fields denormalize their effective license into extra_data; build
+    # the SourceFieldLicense map once iff a winning claim is an image field.
+    sfl_map = (
+        build_source_field_license_map()
+        if any(fn in IMAGE_FIELDS for w in claims_by_obj.values() for fn in w)
+        else None
+    )
 
     # 2. Load objects.
     objs_qs = model_class.objects.all()  # type: ignore[attr-defined]
@@ -233,6 +260,7 @@ def _resolve_bulk(
             elif has_extra_data:
                 assert extra_data is not None
                 extra_data[field_name] = claim.value
+                _stamp_image_license(extra_data, claim, sfl_map)
         if has_extra_data:
             obj.extra_data = extra_data
 

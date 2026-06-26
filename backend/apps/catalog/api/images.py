@@ -203,7 +203,6 @@ def extract_image_attribution(
             )
             return AttributionSchema(
                 license_slug=license_slug,
-                permissiveness_rank=rank,
             )
 
     return None
