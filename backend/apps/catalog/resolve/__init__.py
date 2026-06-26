@@ -57,12 +57,6 @@ from ._relationships import (
     resolve_all_tags,
     resolve_all_themes,
     resolve_all_title_abbreviations,
-    resolve_corporate_entity_aliases,
-    resolve_gameplay_feature_aliases,
-    resolve_manufacturer_aliases,
-    resolve_person_aliases,
-    resolve_reward_type_aliases,
-    resolve_theme_aliases,
 )
 
 
