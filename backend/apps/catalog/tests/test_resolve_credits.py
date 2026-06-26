@@ -3,7 +3,7 @@
 import pytest
 
 from apps.catalog.models import Credit, CreditRole, MachineModel, Person, Series
-from apps.catalog.resolve import resolve_all_credits, resolve_all_series_credits
+from apps.catalog.resolve import resolve_relationship
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Claim, Source
@@ -57,7 +57,7 @@ def _assert_credit_claim(subject, person_pk, role_slug, source, *, exists=True):
 class TestResolveCredits:
     def test_basic_materialization(self, machine, person, source, credit_roles):
         _assert_credit_claim(machine, person.pk, "design", source)
-        resolve_all_credits(subject_ids={machine.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
 
         assert Credit.objects.filter(
             model=machine, person=person, role__slug="design"
@@ -66,7 +66,7 @@ class TestResolveCredits:
     def test_multiple_credits(self, machine, person, person2, source, credit_roles):
         _assert_credit_claim(machine, person.pk, "design", source)
         _assert_credit_claim(machine, person2.pk, "art", source)
-        resolve_all_credits(subject_ids={machine.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
 
         assert Credit.objects.filter(model=machine).count() == 2
         assert Credit.objects.filter(
@@ -78,8 +78,8 @@ class TestResolveCredits:
 
     def test_idempotent(self, machine, person, source, credit_roles):
         _assert_credit_claim(machine, person.pk, "design", source)
-        resolve_all_credits(subject_ids={machine.pk})
-        resolve_all_credits(subject_ids={machine.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
 
         assert Credit.objects.filter(model=machine).count() == 1
 
@@ -89,14 +89,14 @@ class TestResolveCredits:
         """If a credit claim is deactivated, resolution removes the Credit."""
         _assert_credit_claim(machine, person.pk, "design", source)
         _assert_credit_claim(machine, person2.pk, "art", source)
-        resolve_all_credits(subject_ids={machine.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
         assert Credit.objects.filter(model=machine).count() == 2
 
         # Deactivate the art credit claim.
         Claim.objects.filter(
             field_name="credit", claim_key__contains=str(person2.pk)
         ).update(is_active=False)
-        resolve_all_credits(subject_ids={machine.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
 
         assert Credit.objects.filter(model=machine).count() == 1
         assert not Credit.objects.filter(model=machine, person=person2).exists()
@@ -106,7 +106,7 @@ class TestResolveCredits:
     ):
         """A higher-priority exists=False claim prevents materialization."""
         _assert_credit_claim(machine, person.pk, "design", source)
-        resolve_all_credits(subject_ids={machine.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
         assert Credit.objects.filter(model=machine).count() == 1
 
         # Higher-priority source disputes the credit.
@@ -115,7 +115,7 @@ class TestResolveCredits:
             "credit", {"person": person.pk, "role": design_role.pk}, exists=False
         )
         make_claim(machine, "credit", value, source=high_source, claim_key=claim_key)
-        resolve_all_credits(subject_ids={machine.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
 
         assert Credit.objects.filter(model=machine).count() == 0
 
@@ -129,7 +129,7 @@ class TestResolveCredits:
             "credit", {"person": person2.pk, "role": art_role.pk}
         )
         make_claim(machine, "credit", value, source=high_source, claim_key=claim_key)
-        resolve_all_credits(subject_ids={machine.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
 
         assert Credit.objects.filter(model=machine).count() == 2
 
@@ -140,7 +140,7 @@ class TestResolveCredits:
             "credit", {"person": 99999, "role": design_role.pk}
         )
         make_claim(machine, "credit", value, source=source, claim_key=claim_key)
-        resolve_all_credits(subject_ids={machine.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
 
         assert Credit.objects.filter(model=machine).count() == 0
         assert "Unresolved person" in caplog.text
@@ -151,7 +151,7 @@ class TestResolveSeriesCredits:
 
     def test_basic_materialization(self, series, person, source, credit_roles):
         _assert_credit_claim(series, person.pk, "design", source)
-        resolve_all_series_credits(subject_ids={series.pk})
+        resolve_relationship(Series, "credit", subject_ids={series.pk})
 
         assert Credit.objects.filter(
             series=series, person=person, role__slug="design"
@@ -159,19 +159,19 @@ class TestResolveSeriesCredits:
 
     def test_idempotent(self, series, person, source, credit_roles):
         _assert_credit_claim(series, person.pk, "design", source)
-        resolve_all_series_credits(subject_ids={series.pk})
-        resolve_all_series_credits(subject_ids={series.pk})
+        resolve_relationship(Series, "credit", subject_ids={series.pk})
+        resolve_relationship(Series, "credit", subject_ids={series.pk})
 
         assert Credit.objects.filter(series=series).count() == 1
 
     def test_removes_stale_credits(self, series, person, source, credit_roles):
         """Superseding a credit with exists=False deletes the Credit row."""
         _assert_credit_claim(series, person.pk, "design", source)
-        resolve_all_series_credits(subject_ids={series.pk})
+        resolve_relationship(Series, "credit", subject_ids={series.pk})
         assert Credit.objects.filter(series=series).count() == 1
 
         _assert_credit_claim(series, person.pk, "design", source, exists=False)
-        resolve_all_series_credits(subject_ids={series.pk})
+        resolve_relationship(Series, "credit", subject_ids={series.pk})
         assert Credit.objects.filter(series=series).count() == 0
 
     def test_exists_false_dispute(
@@ -179,11 +179,11 @@ class TestResolveSeriesCredits:
     ):
         """A higher-priority exists=False claim prevents materialization."""
         _assert_credit_claim(series, person.pk, "design", source)
-        resolve_all_series_credits(subject_ids={series.pk})
+        resolve_relationship(Series, "credit", subject_ids={series.pk})
         assert Credit.objects.filter(series=series).count() == 1
 
         _assert_credit_claim(series, person.pk, "design", high_source, exists=False)
-        resolve_all_series_credits(subject_ids={series.pk})
+        resolve_relationship(Series, "credit", subject_ids={series.pk})
         assert Credit.objects.filter(series=series).count() == 0
 
     def test_isolated_from_model_credits(
@@ -192,17 +192,36 @@ class TestResolveSeriesCredits:
         """The model/series XOR means each pass only touches its own rows."""
         _assert_credit_claim(machine, person.pk, "design", source)
         _assert_credit_claim(series, person.pk, "design", source)
-        resolve_all_credits(subject_ids={machine.pk})
-        resolve_all_series_credits(subject_ids={series.pk})
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
+        resolve_relationship(Series, "credit", subject_ids={series.pk})
 
         assert Credit.objects.filter(model=machine, series__isnull=True).count() == 1
         assert Credit.objects.filter(series=series, model__isnull=True).count() == 1
 
+    def test_full_scope_does_not_delete_the_other_namespace(
+        self, series, machine, person, source, credit_roles
+    ):
+        """A full-scope (subject_ids=None) model pass must not treat series
+        credits as stale.  Credit's model/series share one table with nullable
+        XOR FKs, so a model credit has series=None and vice versa; reading all
+        rows would bucket the other namespace under a null subject and delete
+        it."""
+        _assert_credit_claim(machine, person.pk, "design", source)
+        _assert_credit_claim(series, person.pk, "design", source)
+        resolve_relationship(MachineModel, "credit", subject_ids={machine.pk})
+        resolve_relationship(Series, "credit", subject_ids={series.pk})
+
+        # Full-scope passes (no subject_ids) — the bulk/rebuild path.
+        resolve_relationship(MachineModel, "credit")
+        assert Credit.objects.filter(series=series, model__isnull=True).count() == 1
+        resolve_relationship(Series, "credit")
+        assert Credit.objects.filter(model=machine, series__isnull=True).count() == 1
+
 
 class TestSeriesCreditDispatch:
     """Series credits resolve through the public dispatch seam (proves the
-    ``_get_relationship_dispatch`` binding for ``(credit, Series)``, not just
-    the resolver in isolation)."""
+    registry binding for ``(credit, Series)``, not just the resolver in
+    isolation)."""
 
     def test_per_entity_dispatch(self, series, person, source, credit_roles):
         _assert_credit_claim(series, person.pk, "design", source)

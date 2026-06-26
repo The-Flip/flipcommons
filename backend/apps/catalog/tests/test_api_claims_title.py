@@ -8,8 +8,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.catalog.models import Franchise, Title
-from apps.catalog.resolve import resolve_all_entities
-from apps.catalog.resolve._relationships import resolve_all_title_abbreviations
+from apps.catalog.resolve import resolve_all_entities, resolve_relationship
 from apps.citation.models import CitationSource
 from apps.core.types import JsonBody
 from apps.provenance.claims import build_relationship_claim
@@ -73,7 +72,7 @@ def _assert_title_abbreviations(
             claim_key=claim_key,
         )
     resolve_all_entities(Title, object_ids={title.pk})
-    resolve_all_title_abbreviations(subject_ids={title.pk})
+    resolve_relationship(Title, "abbreviation", subject_ids={title.pk})
 
 
 @pytest.mark.django_db

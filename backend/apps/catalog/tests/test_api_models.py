@@ -4,14 +4,12 @@ from django.test.utils import CaptureQueriesContext
 from apps.catalog.models import (
     Credit,
     CreditRole,
+    MachineModel,
     ModelAbbreviation,
     Title,
     TitleAbbreviation,
 )
-from apps.catalog.resolve import (
-    resolve_all_model_abbreviations,
-    resolve_all_title_abbreviations,
-)
+from apps.catalog.resolve import resolve_relationship
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import Source
@@ -313,8 +311,8 @@ class TestModelDetailAbbreviations:
         make_claim(pm, "abbreviation", abbr_val, source=ipdb, claim_key=abbr_key)
         make_claim(pm, "abbreviation", ts4_val, source=ipdb, claim_key=ts4_key)
 
-        resolve_all_title_abbreviations()
-        resolve_all_model_abbreviations()
+        resolve_relationship(Title, "abbreviation")
+        resolve_relationship(MachineModel, "abbreviation")
 
         # Initially "MM" is hidden — the Title owns it.
         data = client.get(f"/api/pages/model/{pm.slug}").json()
@@ -327,7 +325,7 @@ class TestModelDetailAbbreviations:
         make_claim(
             title, "abbreviation", gone_val, source=editorial, claim_key=gone_key
         )
-        resolve_all_title_abbreviations()
+        resolve_relationship(Title, "abbreviation")
 
         # The model now shows "MM" live — no model re-resolve happened.
         data = client.get(f"/api/pages/model/{pm.slug}").json()

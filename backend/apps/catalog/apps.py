@@ -18,7 +18,9 @@ class CatalogConfig(AppConfig):
 
         signals.connect()
         # Push the catalog's concrete AliasModel subclasses into the engine's
-        # neutral registry first: the resolve handlers read it at import time.
+        # neutral registry first: relationship-schema registration reads it
+        # eagerly (one schema per alias namespace), and the lazy resolve registry
+        # reads it later on first resolve.
         register_alias_types(alias_models())
         register_catalog_relationship_schemas()
         register_catalog_resolve_handlers()
