@@ -210,7 +210,6 @@ class TestImageAttribution:
 
         assert attr is not None
         assert attr.license_slug == "cc-by-sa-4-0"
-        assert attr.permissiveness_rank == 50
 
     def test_no_media_returns_none(self):
         attr = extract_image_attribution({}, primary_media=[])

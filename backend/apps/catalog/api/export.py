@@ -543,7 +543,6 @@ def _serialize_description(
                 license_slug=lic.slug if lic else None,
                 license_name=lic.short_name if lic else None,
                 license_url=lic.url if lic else None,
-                permissiveness_rank=lic.permissiveness_rank if lic else None,
                 requires_attribution=lic.requires_attribution if lic else False,
                 source_name=src.name if src else None,
                 source_url=src.url if src else None,

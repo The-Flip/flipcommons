@@ -27,7 +27,6 @@ from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.licensing import (
     SourceFieldLicenseMap,
     build_source_field_license_map,
-    resolve_effective_license,
 )
 from apps.provenance.models import Claim, ClaimControlledModel
 from apps.provenance.validation import get_relationship_namespaces
@@ -53,6 +52,7 @@ from ._helpers import (
     resolve_unique_conflicts,
     validate_check_constraints,
 )
+from ._image_fields import _stamp_image_license
 from ._media import resolve_media_attachments
 from ._relationships import (
     resolve_all_aliases,
@@ -75,11 +75,6 @@ from ._relationships import (
     resolve_theme_aliases,
     resolve_theme_parents,
 )
-
-# Claim field_names whose values are images. License metadata for these
-# fields gets denormalized into extra_data so the API can filter by
-# permissiveness_rank without joining back through claims.
-IMAGE_FIELDS = frozenset({"opdb.images", "ipdb.image_urls", "image_urls"})
 
 
 def resolve_model(machine_model: MachineModel) -> MachineModel:
@@ -365,13 +360,6 @@ def _apply_resolution(
                 setattr(pm, attr, _coerce(MachineModel, attr, claim.value))
         else:
             extra_data[claim.field_name] = claim.value
-            if claim.field_name in IMAGE_FIELDS:
-                lic = resolve_effective_license(claim, sfl_map)
-                extra_data[f"{claim.field_name}.__license_slug"] = (
-                    lic.slug if lic else None
-                )
-                extra_data[f"{claim.field_name}.__permissiveness_rank"] = (
-                    lic.permissiveness_rank if lic else None
-                )
+            _stamp_image_license(extra_data, claim, sfl_map)
 
     pm.extra_data = extra_data
