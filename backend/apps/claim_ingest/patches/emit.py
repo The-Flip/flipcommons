@@ -61,6 +61,7 @@ from apps.provenance.models import (
     Source,
     get_claim_fields,
 )
+from apps.provenance.types import ClaimValueKey
 from apps.provenance.validation import get_relationship_schema
 
 
@@ -107,7 +108,7 @@ class _DeferredSlotRef(NamedTuple):
     :data:`_DeferredMemberKey`.
     """
 
-    value_key: str
+    value_key: ClaimValueKey
     target: int | Handle
 
 
@@ -256,7 +257,7 @@ class _PayloadSlot(NamedTuple):
     ``_relationship_member_spec`` before any slot is built, so this stays singular.
     """
 
-    value_key: str  # the value-dict key carrying the payload (``spec.name``)
+    value_key: ClaimValueKey  # the value-dict key carrying the payload (``spec.name``)
     scalar_type: type  # int/str — the authored value is type-checked against it
     nullable: bool  # whether an explicit ``null`` is allowed (else omit ⇒ NULL)
     # Inclusive lower bound for an int payload (the model field's own
@@ -268,7 +269,7 @@ class _PayloadSlot(NamedTuple):
 class _FkMemberSpec(NamedTuple):
     """Member is a public_id resolving to an FK on another entity (tag, theme, location)."""
 
-    value_key: str  # the value-dict key carrying the member FK (``spec.name``)
+    value_key: ClaimValueKey  # the value-dict key carrying the FK (``spec.name``)
     target_model: type[models.Model]  # what a member public_id resolves to
     # An optional non-identity scalar carried alongside the FK via the one-key
     # ``{public_id: value}`` form (gameplay_feature's ``count``). ``None`` ⇒ the
@@ -280,14 +281,14 @@ class _FkMemberSpec(NamedTuple):
 class _StringMemberSpec(NamedTuple):
     """Member is a bare string (alias, abbreviation)."""
 
-    value_key: str  # the value-dict key carrying the member string (``spec.name``)
+    value_key: ClaimValueKey  # the value-dict key carrying the string (``spec.name``)
     max_length: int  # the target CharField bound; over-length members are rejected
     # ``display_key`` is the either/or *within* string members: a sibling
     # value-key name (alias ⇒ case-fold via ``.lower()`` and carry display) or
     # ``None`` (abbreviation ⇒ stored verbatim). It is also the proxy for "this
     # identity case-folds" — a future string identity needing a different fold
     # must extend ``_member_identity``, not ride the ``.lower()`` default.
-    display_key: str | None
+    display_key: ClaimValueKey | None
 
 
 class _MultiFkMemberSpec(NamedTuple):
@@ -446,7 +447,7 @@ def _unpack_fk_member(
     rel_spec: _FkMemberSpec,
     namespace: Namespace,
     entry: PatchEntry,
-) -> tuple[PublicId, dict[str, IdentityPart]]:
+) -> tuple[PublicId, dict[ClaimValueKey, IdentityPart]]:
     """Split an FK member into its public_id and optional non-identity payload.
 
     A bare ``str`` ⇒ ``(member, {})`` — the universal form (tag, theme, location,
@@ -460,7 +461,7 @@ def _unpack_fk_member(
 
     ``member`` is untyped parsed YAML, so this re-checks the shape at the boundary.
     """
-    empty: dict[str, IdentityPart] = {}
+    empty: dict[ClaimValueKey, IdentityPart] = {}
     if isinstance(member, str):
         return member, empty
     if rel_spec.payload is not None and isinstance(member, dict) and len(member) == 1:
@@ -527,7 +528,7 @@ def _member_identity(
     namespace: Namespace,
     rel_spec: _RelationshipMemberSpec,
     entry: PatchEntry,
-) -> dict[str, IdentityPart]:
+) -> dict[ClaimValueKey, IdentityPart]:
     """Build the value-dict identity for one relationship member, or raise.
 
     Returns the **same** dict for assert and remove — the removal caller passes
@@ -584,7 +585,7 @@ def _member_identity(
             # multi-FK members itself (committed or deferred) and never delegates
             # here. Removal targets committed credits only, so resolve every slot
             # against a committed row.
-            identity: dict[str, IdentityPart] = {}
+            identity: dict[ClaimValueKey, IdentityPart] = {}
             for slot_ref in _unpack_credit_member(member, rel_spec, namespace, entry):
                 identity[slot_ref.slot.value_key] = _resolve_committed_slot(
                     slot_ref.slot, slot_ref.ref, namespace=namespace, entry=entry
@@ -647,8 +648,8 @@ class _ResolvedMember(NamedTuple):
     concretely; a non-empty ``refs`` means at least one slot defers to a create.
     """
 
-    concrete: dict[str, IdentityPart]
-    refs: dict[str, Handle]
+    concrete: dict[ClaimValueKey, IdentityPart]
+    refs: dict[ClaimValueKey, Handle]
     key: _DeferredMemberKey
 
 
@@ -660,8 +661,8 @@ def _resolve_member_slots(
     entry: PatchEntry,
 ) -> _ResolvedMember:
     """Resolve each slot to a committed pk or a same-patch-create handle."""
-    concrete: dict[str, IdentityPart] = {}
-    refs: dict[str, Handle] = {}
+    concrete: dict[ClaimValueKey, IdentityPart] = {}
+    refs: dict[ClaimValueKey, Handle] = {}
     key_parts: list[_DeferredSlotRef] = []
     for slot, ref in slot_refs:
         handle = registry.created_handle(slot.target_model, normalize_fk_value(ref))

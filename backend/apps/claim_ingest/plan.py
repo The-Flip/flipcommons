@@ -26,6 +26,7 @@ from typing import Any, Protocol
 
 from apps.core.types import ContentTypeId, LicenseId
 from apps.provenance.models import ClaimControlledModel, Source
+from apps.provenance.types import ClaimValueKey
 
 
 class PreWriteHook(Protocol):
@@ -210,9 +211,9 @@ class PlannedClaimAssert:
     relationship_namespace: Namespace = ""
     # identity values mix PKs (int) and tag values (str/bool) per the
     # relationship's claim-key schema; truly heterogeneous.
-    identity: dict[str, Any] = field(default_factory=dict)
+    identity: dict[ClaimValueKey, Any] = field(default_factory=dict)
     # value-key → the handle of the planned entity whose PK fills that identity slot.
-    identity_refs: dict[str, Handle] = field(default_factory=dict)
+    identity_refs: dict[ClaimValueKey, Handle] = field(default_factory=dict)
 
 
 @dataclass

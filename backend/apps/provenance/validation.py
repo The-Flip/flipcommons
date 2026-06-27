@@ -28,6 +28,7 @@ from apps.core.types import ClaimFieldMap, ClaimFieldName, ClaimKey
 from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.models import ClaimControlledModel, get_claim_fields
+from apps.provenance.types import ClaimValueKey
 
 if TYPE_CHECKING:
     from apps.provenance.models import Claim
@@ -84,13 +85,13 @@ class ValueKeySpec:
     when the resolver materializes the row. ``None`` for unbounded keys.
     """
 
-    name: str
+    name: ClaimValueKey
     scalar_type: type
     required: bool
     nullable: bool = False
     identity: str | None = None
     fk_target: FkTarget | None = None
-    display_key: str | None = None
+    display_key: ClaimValueKey | None = None
     max_length: int | None = None
     min_value: int | None = None
 
@@ -119,7 +120,7 @@ class RelationshipTargetKey(NamedTuple):
     """Group key for batched relationship target existence checks."""
 
     namespace: str
-    value_key: str
+    value_key: ClaimValueKey
 
 
 class FkTarget(NamedTuple):
@@ -198,8 +199,11 @@ def register_relationship_schema(
     # both the resolver (which stores the override into AliasModel.value) and
     # the display engine (which renders identity slots in edit history). The
     # checks below catch malformed declarations at app-ready time.
-    specs_by_name = {spec.name: spec for spec in value_keys}
-    seen_display_keys: dict[str, str] = {}  # display_key → identity spec name
+    specs_by_name: dict[ClaimValueKey, ValueKeySpec] = {
+        spec.name: spec for spec in value_keys
+    }
+    # display_key → identity spec name
+    seen_display_keys: dict[ClaimValueKey, ClaimValueKey] = {}
     for spec in value_keys:
         if spec.display_key is None:
             continue
@@ -292,7 +296,7 @@ def get_relationship_namespaces() -> frozenset[str]:
 def get_display_override(
     value: Mapping[str, object],
     schema: RelationshipSchema,
-    identity_spec_name: str,
+    identity_spec_name: ClaimValueKey,
 ) -> object | None:
     """Return the user-facing rendering override for one identity slot, or None.
 
@@ -434,7 +438,9 @@ def validate_single_relationship_claim(
     # rather than `isinstance(v, T)` rejects `bool` where `int` is expected
     # (PKs, counts) and rejects enum / numpy scalars that would slip past
     # `isinstance`. For `nullable=True`, accept `None` in addition.
-    specs_by_name = {spec.name: spec for spec in schema.value_keys}
+    specs_by_name: dict[ClaimValueKey, ValueKeySpec] = {
+        spec.name: spec for spec in schema.value_keys
+    }
     for spec in schema.value_keys:
         if spec.name not in value:
             continue

@@ -1,7 +1,6 @@
-"""Named scalar types owned by provenance's own models.
-
-Transparent aliases (``type X = …``) — they document intent at signature sites
-without changing interop with the bare ``int`` the Django ORM returns.
+"""
+The named scalar types are transparent aliases (``type X = …``); they document
+intent without changing interop with the bare ``int``/``str`` the Django ORM returns.
 """
 
 from __future__ import annotations
@@ -17,3 +16,8 @@ claim was written or retracted."""
 type IngestRunId = int
 """The primary key of an IngestRun — the bulk import to which a change belongs,
 which marks it as ingested rather than interactively created by a human."""
+
+type ClaimValueKey = str
+"""Names one slot inside a relationship claim's value — the person and role of a
+credit, the count of a gameplay feature. The schema fixes which slots form member
+identity and which carry payload."""
