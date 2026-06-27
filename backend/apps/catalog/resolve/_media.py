@@ -13,7 +13,7 @@ from apps.media.models import EntityMedia, MediaAsset, MediaSupportedModel
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
 
-from ..cache import invalidate_all
+from ..cache import invalidate_response_cache
 from ._claim_values import MediaAttachmentClaimValue
 from ._engine import Delta, ExtractedMember, MemberMap, RowState, reconcile
 
@@ -193,4 +193,4 @@ def resolve_media_attachments(
     )
     delta = reconcile(projection, None)
     if delta.create or delta.delete or delta.update:
-        transaction.on_commit(invalidate_all)
+        transaction.on_commit(invalidate_response_cache)

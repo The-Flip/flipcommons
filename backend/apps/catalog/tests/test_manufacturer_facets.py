@@ -31,7 +31,7 @@ from apps.catalog.api._manufacturer_facets import (
     query_count,
 )
 from apps.catalog.api._typing import HasModelCount
-from apps.catalog.cache import invalidate_all, manufacturers_facets_key
+from apps.catalog.cache import invalidate_response_cache, manufacturers_facets_key
 from apps.catalog.models import (
     CorporateEntity,
     CorporateEntityAlias,
@@ -847,7 +847,7 @@ class TestPageEndpoint:
         assert cache.get(manufacturers_facets_key()) is None
 
     def test_cache_invalidation_busts_both_audience_slots(self, client, db):
-        """``invalidate_all`` must clear both the ``default`` and ``kiosk`` slots so a
+        """``invalidate_response_cache`` must clear both the ``default`` and ``kiosk`` slots so a
         catalog edit can't leave a stale facet payload behind in either."""
         _tech("solid-state", "Solid State")
         _model(_ce(_mfr("acme", name="Acme"), "acme-ce"))
@@ -858,7 +858,7 @@ class TestPageEndpoint:
         assert cache.get(f"{base}:default") is not None
         assert cache.get(f"{base}:kiosk") is not None
 
-        invalidate_all()
+        invalidate_response_cache()
         assert cache.get(f"{base}:default") is None
         assert cache.get(f"{base}:kiosk") is None
 

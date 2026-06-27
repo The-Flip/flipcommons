@@ -11,7 +11,7 @@ from apps.catalog.api.export import (
     EXPORT_ENTITY_TYPES,
     _relationship_namespaces,
 )
-from apps.catalog.cache import invalidate_all
+from apps.catalog.cache import invalidate_response_cache
 from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.models import MachineModel
 from apps.provenance.test_factories import make_claim
@@ -88,7 +88,7 @@ class TestExportRelations:
 
         role = CreditRole.objects.get(slug="design")
         Credit.objects.create(model=machine_model, person=person, role=role)
-        invalidate_all()
+        invalidate_response_cache()
         row = _row(client, "models", machine_model.slug)
         assert {"person": person.slug, "role": "design"} in row["credits"]
 
@@ -110,7 +110,7 @@ class TestExportAbbreviations:
         TitleAbbreviation.objects.create(title=title, value="MM")
         ModelAbbreviation.objects.create(machine_model=pm, value="MM")
         ModelAbbreviation.objects.create(machine_model=pm, value="TS4LE")
-        invalidate_all()
+        invalidate_response_cache()
 
         row = _row(client, "models", pm.slug)
         assert sorted(row["abbreviations"]) == ["MM", "TS4LE"]
@@ -128,7 +128,7 @@ class TestExportStripsInlineCitations:
         ci = CitationInstance.objects.create(citation_source=src)
         machine_model.description = f"A fact.[[cite:id:{ci.pk}]] More."
         machine_model.save()
-        invalidate_all()
+        invalidate_response_cache()
 
         row = _row(client, "models", machine_model.slug)
         text = row["description"]["text"]
@@ -150,7 +150,7 @@ class TestExportCache:
         assert before.status_code == 200
         machine_model.name = "Renamed Madness"
         machine_model.save()
-        invalidate_all()
+        invalidate_response_cache()
         after = client.get("/api/export/models/")
         row = next(r for r in after.json() if r["public_id"] == machine_model.slug)
         assert row["name"] == "Renamed Madness"
@@ -264,7 +264,7 @@ class TestExportDerivedFields:
 
         make_claim(williams_entity, "operating_status", "ongoing", source=source)
         resolve_entity(williams_entity)
-        invalidate_all()
+        invalidate_response_cache()
         row = _row(client, "manufacturers", "williams")
         assert row["operating_status"] == "ongoing"
 
@@ -285,7 +285,7 @@ class TestExportDerivedFields:
                 operating_status=first
             )
             CorporateEntity.objects.filter(pk=second.pk).update(operating_status=other)
-            invalidate_all()
+            invalidate_response_cache()
             return str(_row(client, "manufacturers", "williams")["operating_status"])
 
         # ENDED only when every entity is known-ended; UNKNOWN outranks it.
@@ -315,10 +315,10 @@ class TestExportMediaGate:
         }
         machine_model.save()
         with override_config(CONTENT_DISPLAY_POLICY="licensed-only"):
-            invalidate_all()
+            invalidate_response_cache()
             assert _row(client, "models", machine_model.slug)["thumbnail_url"] is None
         with override_config(CONTENT_DISPLAY_POLICY="show-all"):
-            invalidate_all()
+            invalidate_response_cache()
             assert (
                 _row(client, "models", machine_model.slug)["thumbnail_url"] is not None
             )

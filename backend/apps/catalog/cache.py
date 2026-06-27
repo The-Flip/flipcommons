@@ -1,11 +1,43 @@
-"""Cache keys and invalidation helpers for the catalog app.
+"""Server-side response cache for the catalog's few whole-catalog read endpoints.
+
+This is a *response* cache, not a page cache: it stores pre-serialized JSON
+(bytes + ETag, indefinite timeout) for a handful of endpoints whose payload is
+expensive to build and identical for every visitor in an audience. It exists
+only to spare those endpoints a full-catalog rebuild on every request, and is
+deliberately small.
+
+What is cached, who reads it, and the cost it avoids:
+
+- Title facet options (``GET /api/pages/titles``) — the /titles browse-page
+  filter sidebar (every theme/year/tag you can filter by). Avoids re-aggregating
+  the option lists across the whole title corpus.
+- Manufacturer facet options (``GET /api/pages/manufacturers``) — the
+  /manufacturers filter sidebar.
+- Locations tree — the locations-page hierarchy.
+- Per-entity-type bulk-export blobs (``GET /api/export/<entity>/``) — a flat,
+  slug-keyed dump of every active entity of a type, for bulk/external consumers
+  (rate-limited, not a per-page UI call). The most expensive payload to rebuild.
+
+What is **not** cached, by design: entity detail pages (a title, model or person
+page). They are the hot path and are serialized live on every request, so they
+never touch this cache — ``invalidate_response_cache()`` has no bearing on them.
+
+Invalidation is wholesale (every slot, both audiences) and correctness-neutral —
+the cache never changes *what* a user sees, only how fast. Three distinct
+triggers fire it: ``signals.py`` on any direct catalog model save/delete and on
+a ``CONTENT_DISPLAY_POLICY`` change; the per-entity claims resolver via
+``transaction.on_commit`` after it writes (``resolve/_dispatch.py``,
+``resolve/_media.py``); and the ``ingest_patches`` command, which calls it once
+directly at the end of a bulk run (the bulk resolve path deliberately does not
+self-invalidate — the command owns the single post-run flush). Wholesale is
+intentional: one edit can ripple across entity types (e.g. a Model edit shifts a
+Manufacturer's ``model_count``), so per-type scoping would risk stale aggregates.
 
 Cache slots are scoped by content audience (``default`` or ``kiosk``) so that
-kiosk requests, which see show-all content, do not share a slot with
-public visitors who must not see unlicensed content. The active audience
-is determined per request by ``apps.core.licensing.current_audience()``,
-which the ``KioskDisplayPolicyMiddleware`` sets from the ``mode=kiosk``
-cookie.
+kiosk requests, which see show-all content, do not share a slot with public
+visitors who must not see unlicensed content. The active audience is determined
+per request by ``apps.core.licensing.current_audience()``, which the
+``KioskDisplayPolicyMiddleware`` sets from the ``mode=kiosk`` cookie.
 """
 
 from __future__ import annotations
@@ -24,23 +56,23 @@ from apps.core.licensing import current_audience
 
 # Bump when a cached payload's JSON shape changes. FileBasedCache writes with
 # ``timeout=None`` and can survive a deploy (its dir is not always wiped), while
-# ``invalidate_all()`` only runs on data mutation — never on deploy. So a shape
-# change without a bump can keep serving old-shaped JSON to the new frontend
-# until the next write; versioning the keys orphans the stale entries instead.
+# ``invalidate_response_cache()`` only runs on data mutation — never on deploy.
+# So a shape change without a bump can keep serving old-shaped JSON to the new
+# frontend until the next write; versioning the keys orphans the stale entries.
 # The version is shared across all bases, so a bump also harmlessly orphans
 # unchanged payloads, which rebuild on first read. (Per-bump history: git blame.)
 _CACHE_VERSION = "v6"
 
 # No-filter facet option lists for the /titles page (GET /api/pages/titles). Static
-# between catalog edits, so cached and cleared by invalidate_all().
+# between catalog edits, so cached and cleared by invalidate_response_cache().
 _TITLES_FACETS_BASE = f"catalog:titles:facets:{_CACHE_VERSION}"
 # Same, for the /manufacturers page (GET /api/pages/manufacturers).
 _MANUFACTURERS_FACETS_BASE = f"catalog:manufacturers:facets:{_CACHE_VERSION}"
 _LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
 # Per-entity bulk-export blobs (GET /api/export/<entity>/). One slot per
-# entity_type × audience; cleared wholesale by invalidate_all() because a single
-# catalog edit can ripple across entities (e.g. a Model edit shifts a
-# Manufacturer's model_count).
+# entity_type × audience; cleared wholesale by invalidate_response_cache()
+# because a single catalog edit can ripple across entities (e.g. a Model edit
+# shifts a Manufacturer's model_count).
 _EXPORT_BASE = f"catalog:export:{_CACHE_VERSION}"
 
 
@@ -128,7 +160,7 @@ def set_cached_response(
     return response
 
 
-def invalidate_all() -> None:
+def invalidate_response_cache() -> None:
     """Delete all cached catalog endpoint data, across every audience slot."""
     for base in _BASES:
         for audience in _AUDIENCES:

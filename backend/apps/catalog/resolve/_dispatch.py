@@ -30,7 +30,7 @@ from django.db import transaction
 from apps.core.types import ClaimFieldName, ClaimSubjectId
 from apps.provenance.models import ClaimControlledModel
 
-from ..cache import invalidate_all
+from ..cache import invalidate_response_cache
 from ..engine.aliases import discover_alias_types
 from ._engine import Projection, reconcile
 
@@ -223,7 +223,7 @@ def _per_entity_handler(
     """
     _resolve_entity_relationships(entity, field_names)
 
-    transaction.on_commit(invalidate_all)
+    transaction.on_commit(invalidate_response_cache)
 
 
 def _bulk_handler(

@@ -37,7 +37,7 @@ from apps.catalog.api._title_facets import (
     filtered_titles,
     ordered_titles,
 )
-from apps.catalog.cache import invalidate_all, titles_facets_key
+from apps.catalog.cache import invalidate_response_cache, titles_facets_key
 from apps.catalog.models import (
     CorporateEntity,
     Credit,
@@ -923,7 +923,7 @@ class TestPageEndpoint:
 
         # A catalog edit adds a new manufacturer and busts the cache.
         _model(_title("Second", "second"), "second-m", manufacturer="stern")
-        invalidate_all()
+        invalidate_response_cache()
 
         after = client.get("/api/pages/titles").json()["filter_options"]
         assert {o["public_id"] for o in after["manufacturer"]} == {"williams", "stern"}
