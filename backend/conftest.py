@@ -97,7 +97,7 @@ def _use_locmem_cache(settings):
     """Use in-memory cache for tests instead of file-based cache.
 
     File-based cache persists across test boundaries and causes flaky
-    failures when other tests call invalidate_all() during their execution.
+    failures when other tests call invalidate_response_cache() during their execution.
 
     LocMemCache instances created with the default ``LOCATION`` share the
     same process-level storage dict, so even though ``settings.CACHES`` is

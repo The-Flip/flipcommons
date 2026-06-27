@@ -123,9 +123,9 @@ class Command(BaseCommand):
         # (apply_plan does not invalidate). Needed even for patches with no
         # relationship claims.
         if applied and not dry_run:
-            from apps.catalog.cache import invalidate_all
+            from apps.catalog.cache import invalidate_response_cache
 
-            invalidate_all()
+            invalidate_response_cache()
 
         self._report(
             applied,

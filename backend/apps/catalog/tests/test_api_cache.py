@@ -38,7 +38,7 @@ from apps.catalog.signals import _cache_invalidating_models
 class TestModelSaveInvalidation:
     """A model ``.save()`` busts the cached facet payload through the ``post_save``
     signal. The facet-endpoint test files exercise hit/miss and call
-    ``invalidate_all()`` directly; only this case proves the signal is actually
+    ``invalidate_response_cache()`` directly; only this case proves the signal is actually
     wired and fires end-to-end (``TestCacheInvalidatingModelsParity`` checks the
     model *set*, not that a save triggers invalidation)."""
 

@@ -123,7 +123,7 @@ class _LocationTree(NamedTuple):
 def _get_location_tree() -> _LocationTree:
     """Build location data from Location + CorporateEntityLocation records.
 
-    Results are cached; invalidated by ``invalidate_all()``.
+    Results are cached; invalidated by ``invalidate_response_cache()``.
     """
     result = cache.get(locations_tree_key())
     if result is not None:

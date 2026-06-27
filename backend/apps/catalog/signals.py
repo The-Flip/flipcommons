@@ -8,14 +8,14 @@ from constance.signals import config_updated
 from django.db import models
 from django.db.models.signals import post_delete, post_save
 
-from .cache import invalidate_all
+from .cache import invalidate_response_cache
 
 
 def _invalidate_cache(
     sender: type[models.Model],
     **kwargs: Any,  # noqa: ANN401 - Django signal kwargs are framework-owned
 ) -> None:
-    invalidate_all()
+    invalidate_response_cache()
 
 
 # Constance's config_updated signal passes arbitrary value types (whatever the
@@ -29,7 +29,7 @@ def _invalidate_cache_on_policy_change(
     **kwargs: Any,  # noqa: ANN401 — Django signal framework passthrough
 ) -> None:
     if key == "CONTENT_DISPLAY_POLICY":
-        invalidate_all()
+        invalidate_response_cache()
 
 
 def _cache_invalidating_models() -> list[type[models.Model]]:
@@ -46,7 +46,7 @@ def _cache_invalidating_models() -> list[type[models.Model]]:
     extras: list[type[models.Model]] = [CorporateEntityLocation, Credit]
     # Not covered here: MachineModel* through-rows (MachineModelTheme, etc.)
     # and AliasModel subclasses. Those are written by the claims resolver,
-    # which calls invalidate_all() directly via transaction.on_commit (see
+    # which calls invalidate_response_cache() directly via transaction.on_commit (see
     # resolve/_dispatch.py). EntityMedia is also written via the resolver
     # (resolve/_media.py uses bulk_create, which doesn't fire post_save), and
     # busts the cache the same way. Direct edits outside the claims pipeline
