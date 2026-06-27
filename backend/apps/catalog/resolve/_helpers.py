@@ -8,7 +8,7 @@ consumer.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
@@ -64,7 +64,7 @@ def _resolve_fk_generic(
     model_class: type[ClaimControlledModel],
     field_name: str,
     value: object,
-    lookup: dict[str, models.Model] | None = None,
+    lookup: Mapping[str, models.Model] | None = None,
 ) -> models.Model | None:
     """Resolve a claim value to an FK instance by introspecting the Django field.
 

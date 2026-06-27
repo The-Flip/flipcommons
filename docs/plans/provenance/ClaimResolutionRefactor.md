@@ -10,12 +10,11 @@ The merge policy itself is **not** the problem and is **not** what this document
 
 A structural goal shapes the end state: the resolution _mechanism_ should live in provenance beside the claim store it operates on, leaving only pinball-specific schema and config in catalog. Flipcommons is also meant to prove out reusable collaborative-encyclopedia software, so a future domain (baseball, medicine) could replace the pinball catalog without rewriting the claim machinery. Keep two horizons distinct. **Relocating the already-domain-agnostic mechanism to provenance is a concrete goal of this effort** (it is what makes the boundary real) and the plan is structured to make it a cheap, mechanical follow-on — see [POST4](#POST4). **Building a declaration DSL so a second domain needs no code at all is speculative generality** and is deferred until a real second domain forces its shape. The pain today is duplication and a privileged entity type, not "can't reuse for medicine" — so the mechanism is extracted and moved, but no DSL is built over it.
 
-## Open Questions
+## Open questions
 
-- **~~Can the scalar column projection share the literal `reconcile()` body, or only its winner-picking?~~ RESOLVED (post-REF3): only the winner-picking.** A scalar field is conceptually the degenerate reconcile where the "table" is the entity row and the member set has cardinality ≤1 keyed by `field_name`. Elegant in the abstract — but having built `reconcile`, the scalar write side is confirmed irreducibly different: reset-to-default-unless-preserved (`get_field_defaults`/`get_preserve_fields`), `_coerce`, FK slug→instance resolution, the `extra_data` catch-all, image-license sidecars, `resolve_unique_conflicts`, `validate_check_constraints` and markdown sync, all riding a `bulk_update` of **columns on the entity row** — not `bulk_create`/`delete` of through-rows. Forcing that through `Projection.write`/`diff` buys nothing the shared `pick_winners` (already shared since REF2) doesn't. So REF4 does **not** force one literal `reconcile`; see [REF4](#REF4) for its narrowed scope.
 - **Ordering as data, or just control flow?** "Ordering" decomposes into two things that want opposite representations: (a) the **batch from-scratch rebuild** needs a global order across entity types (FK targets before dependents — because FK lookups read the target's _resolved_ natural key, [\_helpers.py:120](../../../backend/apps/catalog/resolve/_helpers.py#L120)) plus intra-type DAGs (Location tree, Theme/GameplayFeature parents); this is a ~15-line explicit sequence that runs offline once and should stay plain control flow, not a topological-sort engine. (b) The **incremental path** needs no cross-entity order — targets are already resolved — except for genuine cross-projection _cascade_ edges (projection A reads projection B's materialized output, so a change to B must re-run A). The audit found exactly one such edge (model*abbreviations ← title_abbreviations), and [the decision below](#decision-collapse-the-model-abbreviation-cross-entity-edge) removes it — so after the Before phase (PRE1) the incremental-cascade count is **zero** and no cascade-trigger mechanism is warranted. The one residual output-read anywhere is the FK natural-key lookup, and it is a \_batch-order* concern (target resolved before dependent in the rebuild), not an incremental cascade — the target's pk is stable, so a dependent never needs re-resolving when its target changes. Keep it as control flow. If a future projection ever reads another projection's _output_ incrementally, that violates [Purity](#invariants-to-preserve) and should be redesigned to read claims, not patched with a cascade edge.
 
-## The root cause, stated precisely
+## Root cause
 
 **The subsystem is indexed along the wrong axis, so two primitives that should exist once were instead inlined everywhere.**
 
@@ -62,7 +61,7 @@ But the inversion landed at the outer boundary and stopped. The `isinstance(Mach
 
 Beneath the per-entity switch sit **four parallel namespace→resolver tables** — `_get_alias_dispatch` (keyed by model), `_get_parent_dispatch` (keyed by spec), `_get_custom_dispatch` (keyed by a **string** method name, resolved via `getattr` — so grep and mypy can't see which function a namespace resolves to), and the MM-only `_get_mm_relationship_resolvers` (MM relationships dispatch through this; non-MM relationships through the other three — itself a divergence). These are four fragments of the one introspected registry [the design](#design) describes; REF unifies them, and the string-`getattr` in `_custom_dispatch` is the most visible symptom of the fragmentation, not a separate wart.
 
-## <a id="design-patterns"></a> The design patterns and data structures
+## <a id="design-patterns"></a> Design patterns & data structures
 
 Naming the load-bearing constructs keeps the redesign honest — it pins which invariants to preserve and lets a reviewer check each pattern against its known failure modes.
 
@@ -209,7 +208,7 @@ So the discipline to enforce in review is **stale-tolerant reads**, not backfill
 
 A migration must **not** run the global resolve inline — it is a heavy whole-corpus fold in the migrate window (lock, timeout and ordering risk) and it couples the frozen migration DAG to resolution code the Refactor/After phases are about to move/rename. If a _scoped_ re-resolve is ever wanted, the clean split is: the **migration computes _who_ is stale** (a cheap frozen set-query over historical models — no resolver import, and a safe over-approximation is fine because the resolver is idempotent/level-triggered), while the **live resolver computes _what_ is correct** (the single-sourced winner-pick it owns). Defer that migration→scope→drain plumbing until a second customer (PRE2) forces its shape — [DEFER1](#DEFER1)'s defer-speculative-generality rule applies.
 
-### <a id="REF">REF</a> The refactor
+### ✅ DONE: <a id="REF">REF</a> The refactor
 
 With the Before phase done, this becomes a mechanical extraction: no product decisions, byte-identical materialized claim-view (columns + through-tables) at every step (idempotent) and entirely behind the unchanged dispatch seam, so the existing suite stays green by construction.
 
@@ -235,9 +234,9 @@ Build it with `{create, delete, update}` and collapse the 9 copy-pasted loops on
 
 This is also where the four parallel dispatch tables (see [dispatch state](#dispatch-state)) collapse into one `namespace → Projection` registry: the bespoke resolvers (`title_abbreviations`, `corporate_entity_locations`, `series_credits`) become escape-hatch Projections referenced **by object**, retiring `_custom_dispatch`'s string-`getattr` (the one stringly-typed edge in the subsystem). REF1 has already merged the MM vs non-MM relationship-dispatch divergence into this same table, so by REF3 there is a single keyed-by-namespace map to turn into the registry — not four.
 
-#### Fold in the holdout
+#### ✅ DONE: Fold in the holdout
 
-##### <a id="REF4">REF4</a> — Unify the scalar single/bulk split
+##### ✅ DONE: <a id="REF4">REF4</a> — Unify the scalar single/bulk split
 
 Fold in the holdout: collapse it onto `subject_ids` the way the relationship path already is — collapsing `_resolve_single` / `_resolve_bulk` (and the now-deleted `_apply_resolution`). Share `pick_winners` (already done in REF2); do **not** force the literal `reconcile` write body over columns ([Open Question, RESOLVED](#open-questions) — the scalar write side is irreducibly different). So REF4's scope is narrow: one subject-parameterized apply loop replacing the two near-clones, with the scalar write body kept out of `reconcile`. It is the **lowest-leverage** REF item — the high-value sharing (`pick_winners`) already landed — so do it for the single-mental-model payoff, not for line count.
 
@@ -249,7 +248,7 @@ The Refactor phase alone retires four of the five things that make this subsyste
 
 ### <a id="POST"></a> After the refactor
 
-Each is its own PR on the clean base. None gates the refactor. Each carries behavior change or risk the behavior-preserving core does not.
+Each is its own PR on the clean base. Each carries behavior change or risk the behavior-preserving core does not.
 
 #### <a id="POST1">POST1</a> — Scope cache invalidation
 
