@@ -11,6 +11,7 @@ from django.db.models import Prefetch, Q
 
 from apps.citation.models import CitationSourceLink
 from apps.core.authz import PolicyUser, compute_row_capabilities
+from apps.core.types import ClaimKey
 
 from .attribution import actor_user_id
 from .claim_ranking_in_db import ranked_claims
@@ -33,6 +34,11 @@ from .schemas import (
     FieldChangeSchema,
     RetractionSchema,
 )
+
+type ClaimsByKey = dict[ClaimKey, list[Claim]]
+"""An entity's claims grouped by claim_key into per-slot history chains, each
+ordered newest-first. A chain yields a field's prior value and the full set of
+values a change is displayed against."""
 
 
 def _field_change_citations(claim: Claim) -> list[FieldChangeCitationSchema]:
@@ -88,7 +94,7 @@ def build_changes(
     model: type[ClaimControlledModel],
     own_claims: Iterable[Claim],
     retracted: Iterable[Claim],
-    history_by_key: Mapping[str, Sequence[Claim]],
+    history_by_key: Mapping[ClaimKey, Sequence[Claim]],
     *,
     winning_ids: set[int] | None = None,
     ctx: ClaimDisplayContext | None = None,
@@ -234,7 +240,7 @@ def build_edit_history(
     )
 
     # Build lookup: claim_key → list of claims ordered newest-first.
-    history: dict[str, list[Claim]] = defaultdict(list)
+    history: ClaimsByKey = defaultdict(list)
     for c in all_claims:
         history[c.claim_key].append(c)
 

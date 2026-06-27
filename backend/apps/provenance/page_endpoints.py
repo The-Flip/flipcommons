@@ -37,7 +37,7 @@ from .helpers import (
     citation_instances_prefetch,
     claims_prefetch,
 )
-from .history import build_changes, build_edit_history
+from .history import ClaimsByKey, build_changes, build_edit_history
 from .models import ClaimControlledModel
 from .models.changeset import ChangeSet
 from .schemas import (
@@ -396,7 +396,7 @@ def change_detail(
         history_claims = []
 
     # Group by claim_key for O(1) lookup.
-    by_key: dict[str, list[Claim]] = defaultdict(list)
+    by_key: ClaimsByKey = defaultdict(list)
     for c in history_claims:
         by_key[c.claim_key].append(c)
 
