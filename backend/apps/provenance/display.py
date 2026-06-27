@@ -48,6 +48,7 @@ from .schemas import (
     ClaimValueSchema,
     MarkdownClaimDisplaySchema,
 )
+from .types import ClaimValueKey
 from .validation import (
     RelationshipSchema,
     ValueKeySpec,
@@ -351,7 +352,7 @@ def _build_relationship_display(
     """
     # display_key targets are consumed by their identity spec's rendering;
     # they must not also surface as qualifiers.
-    consumed_by_display: set[str] = {
+    consumed_by_display: set[ClaimValueKey] = {
         s.display_key for s in schema.value_keys if s.display_key is not None
     }
 

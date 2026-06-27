@@ -56,7 +56,7 @@ from apps.provenance.claims import (
 )
 from apps.provenance.models import (
     Claim,
-    IdentityPart,
+    IdentityPartValue,
     LinkableClaimModel,
     Source,
     get_claim_fields,
@@ -358,7 +358,7 @@ def _relationship_member_spec(
     # gameplay_feature (one slot, ``count`` — patch-authorable below) and
     # media_attachment (two slots, ``category`` + ``is_primary`` — rejected by the
     # guards below; media is authored through the media API, not data patches).
-    display_keys = {
+    display_keys: set[ClaimValueKey] = {
         s.display_key for s in schema.value_keys if s.display_key is not None
     }
     payload_specs = [
@@ -447,7 +447,7 @@ def _unpack_fk_member(
     rel_spec: _FkMemberSpec,
     namespace: Namespace,
     entry: PatchEntry,
-) -> tuple[PublicId, dict[ClaimValueKey, IdentityPart]]:
+) -> tuple[PublicId, dict[ClaimValueKey, IdentityPartValue]]:
     """Split an FK member into its public_id and optional non-identity payload.
 
     A bare ``str`` ⇒ ``(member, {})`` — the universal form (tag, theme, location,
@@ -461,7 +461,7 @@ def _unpack_fk_member(
 
     ``member`` is untyped parsed YAML, so this re-checks the shape at the boundary.
     """
-    empty: dict[ClaimValueKey, IdentityPart] = {}
+    empty: dict[ClaimValueKey, IdentityPartValue] = {}
     if isinstance(member, str):
         return member, empty
     if rel_spec.payload is not None and isinstance(member, dict) and len(member) == 1:
@@ -490,7 +490,7 @@ def _coerce_payload_value(
     public_id: str,
     namespace: Namespace,
     entry: PatchEntry,
-) -> IdentityPart:
+) -> IdentityPartValue:
     """Validate one authored payload value against its slot, or raise.
 
     Returns ``None`` for an explicit ``null`` on a nullable slot (the caller omits
@@ -528,7 +528,7 @@ def _member_identity(
     namespace: Namespace,
     rel_spec: _RelationshipMemberSpec,
     entry: PatchEntry,
-) -> dict[ClaimValueKey, IdentityPart]:
+) -> dict[ClaimValueKey, IdentityPartValue]:
     """Build the value-dict identity for one relationship member, or raise.
 
     Returns the **same** dict for assert and remove — the removal caller passes
@@ -585,7 +585,7 @@ def _member_identity(
             # multi-FK members itself (committed or deferred) and never delegates
             # here. Removal targets committed credits only, so resolve every slot
             # against a committed row.
-            identity: dict[ClaimValueKey, IdentityPart] = {}
+            identity: dict[ClaimValueKey, IdentityPartValue] = {}
             for slot_ref in _unpack_credit_member(member, rel_spec, namespace, entry):
                 identity[slot_ref.slot.value_key] = _resolve_committed_slot(
                     slot_ref.slot, slot_ref.ref, namespace=namespace, entry=entry
@@ -648,7 +648,7 @@ class _ResolvedMember(NamedTuple):
     concretely; a non-empty ``refs`` means at least one slot defers to a create.
     """
 
-    concrete: dict[ClaimValueKey, IdentityPart]
+    concrete: dict[ClaimValueKey, IdentityPartValue]
     refs: dict[ClaimValueKey, Handle]
     key: _DeferredMemberKey
 
@@ -661,7 +661,7 @@ def _resolve_member_slots(
     entry: PatchEntry,
 ) -> _ResolvedMember:
     """Resolve each slot to a committed pk or a same-patch-create handle."""
-    concrete: dict[ClaimValueKey, IdentityPart] = {}
+    concrete: dict[ClaimValueKey, IdentityPartValue] = {}
     refs: dict[ClaimValueKey, Handle] = {}
     key_parts: list[_DeferredSlotRef] = []
     for slot, ref in slot_refs:

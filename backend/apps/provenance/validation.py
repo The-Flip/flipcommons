@@ -27,7 +27,12 @@ from django.db import models
 from apps.core.types import ClaimFieldMap, ClaimFieldName, ClaimKey
 from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
 from apps.provenance.claim_presence import member_is_present
-from apps.provenance.models import ClaimControlledModel, get_claim_fields
+from apps.provenance.models import (
+    ClaimControlledModel,
+    IdentityPartName,
+    IdentityPartValue,
+    get_claim_fields,
+)
 from apps.provenance.types import ClaimValueKey
 
 if TYPE_CHECKING:
@@ -89,7 +94,7 @@ class ValueKeySpec:
     scalar_type: type
     required: bool
     nullable: bool = False
-    identity: str | None = None
+    identity: IdentityPartName | None = None
     fk_target: FkTarget | None = None
     display_key: ClaimValueKey | None = None
     max_length: int | None = None
@@ -470,7 +475,7 @@ def validate_single_relationship_claim(
 
     # 7. Non-canonical claim_key. `make_claim_key` sorts its kwargs, so the
     # dict-comprehension order doesn't matter.
-    identity_parts = {
+    identity_parts: dict[IdentityPartName, IdentityPartValue] = {
         spec.identity: value[spec.name]
         for spec in schema.value_keys
         if spec.identity is not None

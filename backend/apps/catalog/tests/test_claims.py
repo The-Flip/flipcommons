@@ -206,11 +206,12 @@ class TestBuildRelationshipClaimCanonicalKey:
     """
 
     def test_every_schema_produces_canonical_claim_key(self, db):
-        from apps.provenance.models import IdentityPart
+        from apps.provenance.models import IdentityPartValue
+        from apps.provenance.types import ClaimValueKey
         from apps.provenance.validation import get_all_relationship_schemas
 
         for namespace, schema in get_all_relationship_schemas().items():
-            identity_kwargs: dict[str, IdentityPart] = {}
+            identity_kwargs: dict[ClaimValueKey, IdentityPartValue] = {}
             for spec in schema.value_keys:
                 if spec.identity is None:
                     continue

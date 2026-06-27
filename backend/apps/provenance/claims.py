@@ -17,7 +17,11 @@ from collections.abc import Mapping
 from typing import NamedTuple
 
 from apps.core.types import ClaimFieldName, ClaimKey, JsonBody, PublicId
-from apps.provenance.models import IdentityPart, make_claim_key
+from apps.provenance.models import (
+    IdentityPartName,
+    IdentityPartValue,
+    make_claim_key,
+)
 from apps.provenance.types import ClaimValueKey
 from apps.provenance.validation import get_relationship_schema
 
@@ -82,7 +86,7 @@ def normalize_fk_value(value: object) -> PublicId | None:
 
 def build_relationship_claim(
     field_name: ClaimFieldName,
-    identity: Mapping[ClaimValueKey, IdentityPart],
+    identity: Mapping[ClaimValueKey, IdentityPartValue],
     exists: bool = True,
 ) -> RelationshipClaim:
     """Return ``(claim_key, value)`` for a relationship claim.
@@ -108,7 +112,7 @@ def build_relationship_claim(
     if schema is None:
         raise ValueError(f"Unknown relationship namespace: {field_name!r}")
 
-    identity_parts: dict[str, IdentityPart] = {}
+    identity_parts: dict[IdentityPartName, IdentityPartValue] = {}
     identity_key_names: list[ClaimValueKey] = []
     for spec in schema.value_keys:
         if spec.identity is None:
