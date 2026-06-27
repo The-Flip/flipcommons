@@ -10,6 +10,7 @@ from django.db import IntegrityError, models, transaction
 from django.db.models.functions import Length, Now
 from django.utils.crypto import get_random_string
 
+from apps.core.types import CitationSourceId
 from apps.core.validators import validate_no_mojibake
 
 CITATION_INSTANCE_LOCATOR_MAX_LENGTH = 200
@@ -109,7 +110,7 @@ class CitationInstance(models.Model):
     uniform column beats a conditional constraint. Assigned at mint, immutable.
     """
 
-    citation_source_id: int
+    citation_source_id: CitationSourceId
     claim_id: int | None
 
     slug = models.CharField(max_length=CITATION_SLUG_LENGTH, unique=True)

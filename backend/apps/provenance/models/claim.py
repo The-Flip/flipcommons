@@ -15,9 +15,12 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models.functions import Now
 
+from apps.actors.types import ActorId
 from apps.core.models import BoundedTextField, field_not_blank
+from apps.core.types import ClaimFieldName, ClaimKey, ContentTypeId, LicenseId
 
 from ..model_bases import ClaimControlledModel
+from ..types import ChangeSetId
 from .changeset import ChangeSet
 
 CLAIM_CITATION_MAX_LENGTH = 2_000
@@ -26,7 +29,13 @@ CLAIM_NEEDS_REVIEW_NOTES_MAX_LENGTH = 2_000
 if TYPE_CHECKING:
     from .citation_instance import CitationInstance
 
-type IdentityPart = str | int | None
+type IdentityPartName = str
+"""One key in a claim_key's identity-parts mapping — the label of an identity
+slot (e.g. ``person``, ``role``, ``alias``). Distinct from the relationship
+value-dict key it derives from: usually equal, occasionally not (``alias`` for
+the ``alias_value`` slot)."""
+
+type IdentityPartValue = str | int | None
 """One value in a claim_key's identity-parts mapping: an entity-reference PK
 (``int``), a literal key like an alias value (``str``), or ``None``
 (serialized as the literal ``"null"`` in the key)."""
@@ -41,7 +50,7 @@ class ExistingClaimRow(NamedTuple):
 
     # ``value`` is the raw JSONField payload — scalar, dict, list, or null.
     value: object
-    license_id: int | None
+    license_id: LicenseId | None
     pk: int
 
 
@@ -50,7 +59,9 @@ def _escape_claim_value(s: str) -> str:
     return s.replace("%", "%25").replace("|", "%7C").replace(":", "%3A")
 
 
-def make_claim_key(field_name: str, **identity_parts: IdentityPart) -> str:
+def make_claim_key(
+    field_name: ClaimFieldName, **identity_parts: IdentityPartValue
+) -> ClaimKey:
     """Build a canonical claim_key from field_name and sorted identity parts.
 
     For scalar claims, call with just field_name (returns field_name unchanged).
@@ -79,11 +90,11 @@ class Claim(models.Model):
     ``changeset.actor``) — set on every row by ``claim_writer._assert_claim``.
     """
 
-    content_type_id: int
-    actor_id: int
-    license_id: int | None
-    changeset_id: int
-    retracted_by_changeset_id: int | None
+    content_type_id: ContentTypeId
+    actor_id: ActorId
+    license_id: LicenseId | None
+    changeset_id: ChangeSetId
+    retracted_by_changeset_id: ChangeSetId | None
     citation_instances: models.Manager[CitationInstance]
 
     content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
@@ -194,9 +205,9 @@ class Claim(models.Model):
         cls,
         obj: ClaimControlledModel,
         *,
-        field_name: str,
+        field_name: ClaimFieldName,
         value: object,
-        claim_key: str = "",
+        claim_key: ClaimKey = "",
         **kwargs: object,
     ) -> Claim:
         """Construct an unsaved Claim for a model instance.

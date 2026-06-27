@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 
+from apps.core.types import ClaimFieldName, ClaimKey
 from apps.provenance.models import Claim, ClaimControlledModel
 from apps.provenance.validation import (
     DIRECT,
@@ -34,12 +35,12 @@ if TYPE_CHECKING:
 
 def _assert_claim(
     subject: ClaimControlledModel,
-    field_name: str,
+    field_name: ClaimFieldName,
     value: object,
     citation: str = "",
     *,
     changeset: ChangeSet,
-    claim_key: str = "",
+    claim_key: ClaimKey = "",
     license: License | None = None,
 ) -> Claim:
     """Create a claim, deactivating any existing active claim for the same claim_key+actor.

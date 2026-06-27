@@ -8,7 +8,10 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models.functions import Now
 
+from apps.actors.types import ActorId
 from apps.core.models import BoundedTextField
+
+from ..types import IngestRunId
 
 if TYPE_CHECKING:
     from .claim import Claim
@@ -40,8 +43,8 @@ class ChangeSet(models.Model):
 
     claims: models.Manager[Claim]
     retracted_claims: models.Manager[Claim]
-    ingest_run_id: int | None
-    actor_id: int
+    ingest_run_id: IngestRunId | None
+    actor_id: ActorId
 
     ingest_run = models.ForeignKey(
         "provenance.IngestRun",

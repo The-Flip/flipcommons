@@ -27,9 +27,7 @@ from apps.citation.source_upsert import (
     validate_root_source,
 )
 from apps.claim_ingest.patches._types import (
-    ClaimKey,
     PatchError,
-    PublicId,
     _CreatedKey,
     _Target,
 )
@@ -72,7 +70,7 @@ from apps.core.models import (
     LinkableModel,
 )
 from apps.core.soft_delete import cascade_targets, require_linkable
-from apps.core.types import EntityKey
+from apps.core.types import ClaimKey, EntityKey, PublicId
 from apps.provenance.claims import normalize_fk_value
 from apps.provenance.models import LinkableClaimModel, Source, get_claim_fields
 from apps.provenance.validation import get_relationship_namespaces

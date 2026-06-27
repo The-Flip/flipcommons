@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 from django.contrib.contenttypes.models import ContentType
 
+from apps.core.types import ClaimFieldName, ClaimKey, ClaimSubjectId
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
@@ -65,7 +66,7 @@ def pick_winners[Subject: Hashable, Group: Hashable](
     return winners
 
 
-def pick_member_winners(ranked: Iterable[Claim]) -> Winners[int, str]:
+def pick_member_winners(ranked: Iterable[Claim]) -> Winners[ClaimSubjectId, ClaimKey]:
     """Membership winner-pick: one winner per ``claim_key`` per entity.
 
     Subject is the entity ``object_id``, group is the ``claim_key`` — a thin
@@ -88,11 +89,10 @@ def pick_member_winners(ranked: Iterable[Claim]) -> Winners[int, str]:
 #   * ``Payload`` — the member's attribute (``None`` for a set; a value for a map)
 
 
-type RowId = int
-"""A materialized through-row's primary key — what a delete/update targets.
-Distinct from ``Subject`` (often the entity ``object_id``): a documentation
-alias so the ``pk`` fields and the delete list read as row identities, not bare
-ints."""
+type MaterializedRowId = int
+"""The primary key of a row in the materialized catalog view — the identity a
+reconcile deletes or updates by. Distinct from the entity ``ClaimSubjectId`` and
+a member's target pk it sits beside."""
 
 
 type MemberMap[Subject: Hashable, Member: Hashable, Payload] = dict[
@@ -105,7 +105,7 @@ member.  A set membership is ``Payload = None``; a map membership carries a valu
 class RowState[Payload](NamedTuple):
     """An existing materialized row: its pk (for delete/update) and payload."""
 
-    pk: RowId
+    pk: MaterializedRowId
     payload: Payload
 
 
@@ -127,7 +127,7 @@ class CreateRow[Subject: Hashable, Member: Hashable, Payload](NamedTuple):
 class UpdateRow[Payload](NamedTuple):
     """An existing row whose payload changed (a map-membership value edit)."""
 
-    pk: RowId
+    pk: MaterializedRowId
     payload: Payload
 
 
@@ -135,7 +135,7 @@ class Delta[Subject: Hashable, Member: Hashable, Payload](NamedTuple):
     """What :func:`reconcile` writes — the create/delete/update partition."""
 
     create: list[CreateRow[Subject, Member, Payload]]
-    delete: list[RowId]
+    delete: list[MaterializedRowId]
     update: list[UpdateRow[Payload]]
 
 
@@ -193,7 +193,7 @@ def reconcile[Subject: Hashable, Member: Hashable, Payload](
 
 def _build_desired[Subject: Hashable, Member: Hashable, Payload](
     projection: Projection[Subject, Member, Payload],
-    winners: Winners[Subject, str],
+    winners: Winners[Subject, ClaimKey],
 ) -> MemberMap[Subject, Member, Payload]:
     """Fold winning claims into the desired member map, dropping tombstones.
 
@@ -227,7 +227,7 @@ def diff[Subject: Hashable, Member: Hashable, Payload](
     differ on), so plain through-rows get ``{create, delete}`` for free.
     """
     create: list[CreateRow[Subject, Member, Payload]] = []
-    delete: list[RowId] = []
+    delete: list[MaterializedRowId] = []
     update: list[UpdateRow[Payload]] = []
     for subject in desired.keys() | existing.keys():
         want = desired.get(subject, {})
@@ -256,38 +256,53 @@ def diff[Subject: Hashable, Member: Hashable, Payload](
 # (composite EntityKey subject) — stay in their domain modules.
 
 
+type ColumnValues = tuple[object, ...]
+"""The values of one materialized row's key or payload columns, in positional
+order."""
+
+type ColumnNames = tuple[str, ...]
+"""The through-table column names that back a member key or a payload, in
+positional order."""
+
+type MemberExtractor[Member: Hashable, Payload] = Callable[
+    [Claim], ExtractedMember[Member, Payload] | None
+]
+"""Derives a through-row's desired key and payload from a winning claim, or
+``None`` to drop it. The single per-shape step in an otherwise uniform reconcile."""
+
+
 # Column <-> Member/Payload converters.  The ``*_to_columns`` direction takes
 # ``object`` (a Member or Payload) — contravariantly assignable to any concrete
 # param type — while the ``columns_to_*`` direction must return the precise type,
 # so the scalar cases are spelled per result type (int / str / int|None).
 
 
-def _int_from_column(columns: tuple[object, ...]) -> int:
+def _int_from_column(columns: ColumnValues) -> int:
     """Single int column → its value (FK target pk)."""
     return cast(int, columns[0])
 
 
-def _str_from_column(columns: tuple[object, ...]) -> str:
+def _str_from_column(columns: ColumnValues) -> str:
     """Single str column → its value (abbreviation string)."""
     return cast(str, columns[0])
 
 
-def _int_or_none_from_column(columns: tuple[object, ...]) -> int | None:
+def _int_or_none_from_column(columns: ColumnValues) -> int | None:
     """Single nullable int column → its value (gameplay count)."""
     return cast(int | None, columns[0])
 
 
-def _one_column(value: object) -> tuple[object, ...]:
+def _one_column(value: object) -> ColumnValues:
     """A scalar Member/Payload → its single column."""
     return (value,)
 
 
-def _no_payload(columns: tuple[object, ...]) -> None:
+def _no_payload(columns: ColumnValues) -> None:
     """Set membership: no payload columns → ``None`` payload."""
     return None
 
 
-def _no_columns(payload: object) -> tuple[object, ...]:
+def _no_columns(payload: object) -> ColumnValues:
     """Set membership: ``None`` payload → no payload columns."""
     return ()
 
@@ -305,34 +320,34 @@ class ThroughRowProjection[Member: Hashable, Payload]:
     """
 
     subject_model: type[ClaimControlledModel]
-    field_name: str
+    field_name: ClaimFieldName
     through_model: type[Model]
     subject_column: str
-    key_columns: tuple[str, ...]
-    payload_columns: tuple[str, ...]
-    extract_member: Callable[[Claim], ExtractedMember[Member, Payload] | None]
-    columns_to_key: Callable[[tuple[object, ...]], Member]
-    key_to_columns: Callable[[Member], tuple[object, ...]]
-    columns_to_payload: Callable[[tuple[object, ...]], Payload]
-    payload_to_columns: Callable[[Payload], tuple[object, ...]]
+    key_columns: ColumnNames
+    payload_columns: ColumnNames
+    extract_member: MemberExtractor[Member, Payload]
+    columns_to_key: Callable[[ColumnValues], Member]
+    key_to_columns: Callable[[Member], ColumnValues]
+    columns_to_payload: Callable[[ColumnValues], Payload]
+    payload_to_columns: Callable[[Payload], ColumnValues]
     ignore_conflicts: bool = False
 
-    def claims(self, subjects: set[int] | None) -> Iterable[Claim]:
+    def claims(self, subjects: set[ClaimSubjectId] | None) -> Iterable[Claim]:
         ct = ContentType.objects.get_for_model(self.subject_model)
         claims_qs = Claim.objects.filter(content_type=ct, field_name=self.field_name)
         if subjects is not None:
             claims_qs = claims_qs.filter(object_id__in=subjects)
         return ranked_claims(claims_qs, "object_id", "claim_key")
 
-    def subject(self, claim: Claim) -> int:
+    def subject(self, claim: Claim) -> ClaimSubjectId:
         return claim.object_id
 
     def extract(self, claim: Claim) -> ExtractedMember[Member, Payload] | None:
         return self.extract_member(claim)
 
     def read(
-        self, subjects: set[int] | None
-    ) -> MemberMap[int, Member, RowState[Payload]]:
+        self, subjects: set[ClaimSubjectId] | None
+    ) -> MemberMap[ClaimSubjectId, Member, RowState[Payload]]:
         manager = self.through_model._default_manager
         if subjects is not None:
             rows_qs = manager.filter(**{f"{self.subject_column}__in": subjects})
@@ -345,7 +360,7 @@ class ThroughRowProjection[Member: Hashable, Payload]:
 
         nkeys = len(self.key_columns)
         columns = ("pk", self.subject_column, *self.key_columns, *self.payload_columns)
-        existing: MemberMap[int, Member, RowState[Payload]] = {}
+        existing: MemberMap[ClaimSubjectId, Member, RowState[Payload]] = {}
         for row in rows_qs.values_list(*columns):
             pk, subject_id = row[0], row[1]
             key = self.columns_to_key(row[2 : 2 + nkeys])
@@ -353,7 +368,7 @@ class ThroughRowProjection[Member: Hashable, Payload]:
             existing.setdefault(subject_id, {})[key] = RowState(pk, payload)
         return existing
 
-    def write(self, delta: Delta[int, Member, Payload]) -> None:
+    def write(self, delta: Delta[ClaimSubjectId, Member, Payload]) -> None:
         manager = self.through_model._default_manager
         if delta.delete:
             manager.filter(pk__in=delta.delete).delete()

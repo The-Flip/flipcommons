@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple, cast
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Model
 
+from apps.core.types import ClaimFieldName, ClaimSubjectId
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim, ClaimControlledModel
 from apps.provenance.validation import (
@@ -112,7 +113,7 @@ def _get_parents_through(parent: type[ClaimControlledModel]) -> type[Model]:
 class M2MFieldSpec:
     """Descriptor for a simple M2M relationship resolved from claims."""
 
-    field_name: str  # claim field_name (also the value dict key): "theme", "tag"
+    field_name: ClaimFieldName  # also the value dict key: "theme", "tag"
     m2m_attr: str  # model attribute: "themes", "tags", "gameplay_features"
     target_model: type[CatalogModel]  # Theme, Tag, GameplayFeature
 
@@ -361,10 +362,10 @@ class AliasProjection:
     parent_model: type[ClaimControlledModel]
     alias_model: type[Model]
     fk_column: str
-    claim_field: str
+    claim_field: ClaimFieldName
     schema: RelationshipSchema
 
-    def claims(self, subjects: set[int] | None) -> Iterable[Claim]:
+    def claims(self, subjects: set[ClaimSubjectId] | None) -> Iterable[Claim]:
         ct = ContentType.objects.get_for_model(self.parent_model)
         claims_qs = Claim.objects.filter(content_type=ct, field_name=self.claim_field)
         if subjects is not None:
@@ -385,17 +386,19 @@ class AliasProjection:
         display = str(override) if override is not None else alias_val
         return ExtractedMember(alias_val, display)  # alias_val is already lowercase
 
-    def read(self, subjects: set[int] | None) -> MemberMap[int, str, RowState[str]]:
+    def read(
+        self, subjects: set[ClaimSubjectId] | None
+    ) -> MemberMap[ClaimSubjectId, str, RowState[str]]:
         manager = self.alias_model._default_manager
         rows_qs = manager.all()
         if subjects is not None:
             rows_qs = rows_qs.filter(**{f"{self.fk_column}__in": subjects})
-        existing: MemberMap[int, str, RowState[str]] = {}
+        existing: MemberMap[ClaimSubjectId, str, RowState[str]] = {}
         for pk, parent_id, value in rows_qs.values_list("pk", self.fk_column, "value"):
             existing.setdefault(parent_id, {})[value.lower()] = RowState(pk, value)
         return existing
 
-    def write(self, delta: Delta[int, str, str]) -> None:
+    def write(self, delta: Delta[ClaimSubjectId, str, str]) -> None:
         manager = self.alias_model._default_manager
         if delta.delete:
             manager.filter(pk__in=delta.delete).delete()

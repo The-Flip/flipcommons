@@ -430,7 +430,7 @@ layers = [
     "engine", # domain-neutral; will eventually be moved out of catalog
 ]
 
-# The generic resolver core — scalar/bulk claim projection (_entities), its
+# The generic resolver core — claim projection (_entities), its
 # coercion/FK/constraint helpers (_helpers), and the read-side payload
 # vocabulary (_claim_values) — is domain-agnostic substrate that merely lives
 # in catalog: it names no concrete model and drives entirely off claim-field
@@ -546,6 +546,7 @@ layers = [
     # since the global tiers would otherwise let it import down into citation /
     # accounts. Together they keep the package lift-out-ready (below citation).
     "model_bases",
+    "types",
 ]
 
 [[tool.importlinter.contracts]]
@@ -623,6 +624,7 @@ containers = ["apps.actors"]
 layers = [
     "admin | registry | checks",
     "models",
+    "types",
 ]
 
 # ----- core -----

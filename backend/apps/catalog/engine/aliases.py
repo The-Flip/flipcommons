@@ -20,6 +20,7 @@ from typing import NamedTuple
 
 from django.db.models import Model
 
+from apps.core.types import ClaimFieldName
 from apps.provenance.models import ClaimControlledModel
 
 from .models import AliasModel
@@ -39,7 +40,7 @@ class AliasType(NamedTuple):
     """
 
     parent_model: type[ClaimControlledModel]
-    claim_field: str
+    claim_field: ClaimFieldName
     alias_model: type[AliasModel]
     fk_name: str
 

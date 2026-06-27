@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from django.db import models
 
 from apps.core.markdown import convert_storage_to_authoring, render_markdown_field
+from apps.core.types import ClaimFieldName
 from apps.provenance.attribution import source_backing
 from apps.provenance.helpers import active_claims
 from apps.provenance.licensing import (
@@ -58,7 +59,7 @@ def _extract_description_attribution(
 
 def build_rich_text(
     obj: models.Model,
-    field_name: str,
+    field_name: ClaimFieldName,
     active_claims: Iterable[Claim] | None = None,
 ) -> RichTextSchema:
     """Build a RichTextSchema for a text field with attribution.

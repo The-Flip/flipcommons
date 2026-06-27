@@ -21,6 +21,7 @@ from typing import Any, ClassVar
 from django.db import models, transaction
 from django.db.models.signals import pre_delete
 
+from ..types import ActorId, ActorResolutionPriority
 from .actor import Actor, ActorResolutionStatus
 
 
@@ -38,7 +39,7 @@ class ActorModel(models.Model):
     is_machine: ClassVar[bool]
 
     # Django sets this descriptor; declared for strong typing of the save() path.
-    actor_id: int | None
+    actor_id: ActorId | None
 
     actor = models.OneToOneField(
         "actors.Actor",
@@ -86,7 +87,7 @@ class ActorModel(models.Model):
     # bulk-mutate a mirrored field without re-syncing its Actor. (Regression-pinned
     # in tests/test_actor_sync.py::test_queryset_update_bypasses_mirror.)
     @property
-    def actor_priority(self) -> int:
+    def actor_priority(self) -> ActorResolutionPriority:
         """Priority for this instance's Actor. Subclass returns its column."""
         raise NotImplementedError(
             f"{type(self).__name__} must implement actor_priority"

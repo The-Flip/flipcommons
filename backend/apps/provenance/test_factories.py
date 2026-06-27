@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from apps.accounts.models import User
+from apps.core.types import ClaimFieldName, ClaimKey
 
 from .changeset_writer import record_changeset
 from .claim_writer import _assert_claim
@@ -27,13 +28,13 @@ if TYPE_CHECKING:
 
 def make_claim(
     subject: ClaimControlledModel,
-    field_name: str,
+    field_name: ClaimFieldName,
     value: object,
     citation: str = "",
     *,
     source: Source | None = None,
     user: User | None = None,
-    claim_key: str = "",
+    claim_key: ClaimKey = "",
     license: License | None = None,
     changeset: ChangeSet | None = None,
 ) -> Claim:

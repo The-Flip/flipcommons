@@ -27,6 +27,8 @@ import re
 from collections.abc import Sequence
 from typing import NamedTuple, NewType
 
+from apps.core.types import CitationSourceId
+
 Host = NewType("Host", str)
 """A recognition host **already normalized** by :func:`normalize_host`.
 
@@ -140,7 +142,7 @@ class RootDomainMatch(NamedTuple):
     :func:`longest_suffix_match` compares it verbatim.
     """
 
-    source_id: int
+    source_id: CitationSourceId
     source_name: str
     host: Host
 

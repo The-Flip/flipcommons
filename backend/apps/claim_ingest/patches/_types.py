@@ -13,21 +13,7 @@ from typing import NamedTuple
 from django.db import models
 
 from apps.claim_ingest.plan import Handle
-
-# The composite key identifying one claim — a scalar/FK field name or a
-# relationship member key from ``build_relationship_claim`` (e.g.
-# ``"location:germany"``). A transparent alias of ``str``: it documents the
-# concept where it recurs across the adapter without changing any interop with
-# the ``str``-typed claim machinery (``apps.catalog.claims``, apply's ClaimIdentity).
-type ClaimKey = str
-
-# A catalog entity's public_id — the URL-identity value of its ``public_id_field``
-# (``slug`` for most entities, ``location_path`` for Location), and what an FK or
-# relationship member names its target by. A transparent alias of ``str`` like
-# ``ClaimKey``: it distinguishes a public_id from the other ``str``s in the adapter
-# (a handle/entry ``ref``, a relationship ``namespace``) at the points where the
-# distinction is otherwise invisible — e.g. a ``dict[str, set[str]]`` adjacency map.
-type PublicId = str
+from apps.core.types import ClaimSubjectId, ContentTypeId, PublicId
 
 
 class PatchError(Exception):
@@ -40,8 +26,8 @@ class PatchError(Exception):
 class _Target(NamedTuple):
     """Where a claim assertion lands: an existing entity or a planned handle."""
 
-    content_type_id: int | None = None
-    object_id: int | None = None
+    content_type_id: ContentTypeId | None = None
+    object_id: ClaimSubjectId | None = None
     handle: Handle | None = None
 
 

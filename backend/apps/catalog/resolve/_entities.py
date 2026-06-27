@@ -15,7 +15,13 @@ from dataclasses import dataclass
 from django.db import models
 from django.utils import timezone
 
-from apps.core.types import JsonBody
+from apps.core.types import (
+    ClaimFieldMap,
+    ClaimFieldName,
+    ClaimSubjectId,
+    JsonBody,
+    PublicId,
+)
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.licensing import (
     SourceFieldLicenseMap,
@@ -56,8 +62,9 @@ def _sync_markdown_references(obj: ClaimControlledModel) -> None:
 # This is shared between bulk and single-object claims resolution.
 # ------------------------------------------------------------------
 
-# Read-only view of FKInfo.lookups — {attr: {slug: instance}}
-type FKLookups = Mapping[str, Mapping[str, models.Model]]
+type FKLookups = Mapping[str, Mapping[PublicId, models.Model]]
+"""Read-only covariant view of ``FKTargetLookups`` — the apply loop only reads
+the prefetched FK index, so the param accepts any mapping shape."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +77,7 @@ class ScalarApplyContext:
     """
 
     model_class: type[ClaimControlledModel]
-    direct_fields: Mapping[str, str]
+    direct_fields: ClaimFieldMap
     field_defaults: Mapping[str, object]
     preserve_when_unclaimed: AbstractSet[str]
     fk_lookups: FKLookups | None
@@ -79,7 +86,7 @@ class ScalarApplyContext:
 
 def _apply_claims(
     obj: ClaimControlledModel,
-    winners: Mapping[str, Claim],
+    winners: Mapping[ClaimFieldName, Claim],
     ctx: ScalarApplyContext,
 ) -> None:
     """Reset *obj*'s resolvable fields to defaults, then apply its winning claims.
@@ -138,7 +145,7 @@ def _apply_claims(
 
 def _resolve_single(
     obj: ClaimControlledModel,
-    direct_fields: dict[str, str],
+    direct_fields: ClaimFieldMap,
 ) -> None:
     """Resolve active claims onto a single object with only direct fields.
 
@@ -185,8 +192,8 @@ def _resolve_single(
 
 def _resolve_bulk(
     model_class: type[ClaimControlledModel],
-    direct_fields: dict[str, str],
-    object_ids: set[int] | None = None,
+    direct_fields: ClaimFieldMap,
+    object_ids: set[ClaimSubjectId] | None = None,
 ) -> int:
     """Bulk-resolve claims for all (or selected) instances of a model class.
 
@@ -346,7 +353,9 @@ def resolve_entity[T: ClaimControlledModel](obj: T) -> T:
 
 
 def resolve_all_entities(
-    model_class: type[ClaimControlledModel], *, object_ids: set[int] | None = None
+    model_class: type[ClaimControlledModel],
+    *,
+    object_ids: set[ClaimSubjectId] | None = None,
 ) -> int:
     """Bulk-resolve all claim-controlled fields for all instances of a model.
 

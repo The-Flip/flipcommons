@@ -284,7 +284,7 @@ The home where the dispatch seam already lives. `git mv` the catalog-free tier (
 
 **The whole catalog-free tier already lives in `_engine.py` — POST4 is a one-file `git mv`.** REF3 introduced a generic `ThroughRowProjection` (plus the `_*_from_column` converters) the plan didn't anticipate as a named class: it covers 7 of the 9 shapes, names no concrete model (through models arrive as constructor args), and a post-REF3 cleanup folded it into `_engine.py` beside `pick_winners`, `reconcile`, the `Projection` Protocol and the typed vocabulary — all import-linter-pinned catalog-free. So the movable tier is exactly `_engine.py`, and POST4 `git mv`s that single module to `provenance/resolution/`. The concrete builders that configure `ThroughRowProjection`, and the two genuinely bespoke projections — `AliasProjection` (case-folded keys) and `MediaProjection` (composite `EntityKey` subject) — name domain models and correctly stay in `_relationships.py` / `_media.py`.
 
-#### <a id="POST5">POST5</a> — Name latent types
+#### ✅ DONE: <a id="POST5">POST5</a> — Name latent types
 
 Name latent types that we found during the refactor, but are too cross-cutting to deal with during the refactor.
 

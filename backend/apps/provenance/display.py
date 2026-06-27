@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -36,6 +36,7 @@ from apps.core.markdown import (
     get_markdown_fields,
     resolve_wikilink_authoring,
 )
+from apps.core.types import ClaimFieldName
 
 from .models import ClaimControlledModel
 from .schemas import (
@@ -47,6 +48,7 @@ from .schemas import (
     ClaimValueSchema,
     MarkdownClaimDisplaySchema,
 )
+from .types import ClaimValueKey, RelationshipClaimValue
 from .validation import (
     RelationshipSchema,
     ValueKeySpec,
@@ -70,13 +72,6 @@ class _LabelResult(NamedTuple):
     state: ClaimDisplayIdentityState
 
 
-# A relationship claim's value payload: a dict with ``exists: bool`` plus
-# the namespace-specific keys declared in :class:`ValueKeySpec`. Per-key
-# types vary by namespace (int pks, optional counts, str literals); schema
-# validation enforces shape at the data-layer boundary.
-RelationshipClaimValue = Mapping[str, object]
-
-
 class FieldValue(NamedTuple):
     """A claim value paired with the field name that interprets it.
 
@@ -85,7 +80,7 @@ class FieldValue(NamedTuple):
     can be collected for batched resolution.
     """
 
-    field_name: str
+    field_name: ClaimFieldName
     value: object
 
 
@@ -307,7 +302,7 @@ def resolve_display_context(items: Iterable[FieldValue]) -> ClaimDisplayContext:
 
 def build_display_value(
     model: type[ClaimControlledModel],
-    field_name: str,
+    field_name: ClaimFieldName,
     value: object,
     ctx: ClaimDisplayContext,
 ) -> ClaimDisplaySchema | None:
@@ -337,7 +332,7 @@ def build_display_value(
 
 
 def _build_relationship_display(
-    value: dict[str, object], schema: RelationshipSchema, labels: LabelLookup
+    value: RelationshipClaimValue, schema: RelationshipSchema, labels: LabelLookup
 ) -> ClaimDisplayValueSchema:
     """Structured rendering for a relationship-claim value.
 
@@ -350,7 +345,7 @@ def _build_relationship_display(
     """
     # display_key targets are consumed by their identity spec's rendering;
     # they must not also surface as qualifiers.
-    consumed_by_display: set[str] = {
+    consumed_by_display: set[ClaimValueKey] = {
         s.display_key for s in schema.value_keys if s.display_key is not None
     }
 
@@ -410,7 +405,7 @@ def _build_relationship_display(
 
 def claim_value(
     model: type[ClaimControlledModel],
-    field_name: str,
+    field_name: ClaimFieldName,
     value: object,
     ctx: ClaimDisplayContext,
 ) -> ClaimValueSchema:

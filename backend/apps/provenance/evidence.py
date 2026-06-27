@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+from apps.actors.types import ActorId
+
 from .attribution import actor_user
 from .helpers import citation_instances
 from .models import Claim
+from .types import ChangeSetId
 
 
 @dataclass(frozen=True)
@@ -28,10 +31,10 @@ class CitedCitation:
 
 @dataclass(frozen=True)
 class CitedChangeset:
-    id: int
+    id: ChangeSetId
     # The changeset's actor id — satisfies ChangeSetPolicyView for the
     # CHANGESET_UNDO capability check. ``user_username`` carries display.
-    actor_id: int
+    actor_id: ActorId
     user_username: str
     note: str
     created_at: str
@@ -43,8 +46,8 @@ class CitedChangeset:
 class _CitedChangesetBuilder:
     """Mutable scratch state while grouping citations per changeset."""
 
-    id: int
-    actor_id: int
+    id: ChangeSetId
+    actor_id: ActorId
     user_username: str
     note: str
     created_at: str

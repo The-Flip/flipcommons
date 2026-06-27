@@ -16,8 +16,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import NamedTuple
 
-from apps.core.types import JsonBody
-from apps.provenance.models import IdentityPart, make_claim_key
+from apps.core.types import ClaimFieldName, ClaimKey, JsonBody, PublicId
+from apps.provenance.models import (
+    IdentityPartName,
+    IdentityPartValue,
+    make_claim_key,
+)
+from apps.provenance.types import ClaimValueKey
 from apps.provenance.validation import get_relationship_schema
 
 
@@ -30,7 +35,7 @@ class RelationshipClaim(NamedTuple):
     type level while staying tuple-unpackable (``claim_key, value = ...``).
     """
 
-    claim_key: str
+    claim_key: ClaimKey
     value: JsonBody
 
 
@@ -60,7 +65,7 @@ def normalize_abbreviation_value(raw: str) -> str:
     return raw.strip()
 
 
-def normalize_fk_value(value: object) -> str | None:
+def normalize_fk_value(value: object) -> PublicId | None:
     """Canonicalize an FK claim value to its public_id lookup key.
 
     The single normalization an FK claim value passes through before it becomes a
@@ -80,8 +85,8 @@ def normalize_fk_value(value: object) -> str | None:
 
 
 def build_relationship_claim(
-    field_name: str,
-    identity: Mapping[str, IdentityPart],
+    field_name: ClaimFieldName,
+    identity: Mapping[ClaimValueKey, IdentityPartValue],
     exists: bool = True,
 ) -> RelationshipClaim:
     """Return ``(claim_key, value)`` for a relationship claim.
@@ -107,8 +112,8 @@ def build_relationship_claim(
     if schema is None:
         raise ValueError(f"Unknown relationship namespace: {field_name!r}")
 
-    identity_parts: dict[str, IdentityPart] = {}
-    identity_key_names: list[str] = []
+    identity_parts: dict[IdentityPartName, IdentityPartValue] = {}
+    identity_key_names: list[ClaimValueKey] = []
     for spec in schema.value_keys:
         if spec.identity is None:
             continue

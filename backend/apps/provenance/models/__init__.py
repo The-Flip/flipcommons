@@ -14,7 +14,8 @@ from .citation_instance import CITATION_INSTANCE_LOCATOR_MAX_LENGTH, CitationIns
 from .claim import (
     Claim,
     ExistingClaimRow,
-    IdentityPart,
+    IdentityPartName,
+    IdentityPartValue,
     make_claim_key,
 )
 from .ingest_run import IngestRun

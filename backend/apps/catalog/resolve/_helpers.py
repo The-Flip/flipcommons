@@ -16,6 +16,7 @@ from typing import Any, cast
 from django.db import models
 
 from apps.core.models import meta_unique_fields
+from apps.core.types import ClaimFieldMap, ClaimFieldName, PublicId
 from apps.provenance.claims import normalize_fk_value
 from apps.provenance.models import ClaimControlledModel
 
@@ -45,14 +46,18 @@ def validate_check_constraints(obj: models.Model) -> None:
             validate(type(obj), obj)
 
 
+type FKTargetLookups = dict[str, dict[PublicId, models.Model]]
+"""Per FK field, a map from a target's public_id (typically slug) to its resolved
+instance — the prefetched index that turns a claimed slug into a foreign key
+without a query per claim."""
+
+
 @dataclass
 class FKInfo:
     """FK field metadata and pre-fetched lookups for bulk resolution."""
 
     fk_fields: set[str] = field(default_factory=set)
-    # {attr: {lookup_value: related_instance}} — inner dict maps the claim's
-    # string payload (typically slug) to the fully-fetched target model row.
-    lookups: dict[str, dict[str, models.Model]] = field(default_factory=dict)
+    lookups: FKTargetLookups = field(default_factory=dict)
 
 
 # ------------------------------------------------------------------
@@ -62,7 +67,7 @@ class FKInfo:
 
 def _resolve_fk_generic(
     model_class: type[ClaimControlledModel],
-    field_name: str,
+    field_name: ClaimFieldName,
     value: object,
     lookup: Mapping[str, models.Model] | None = None,
 ) -> models.Model | None:
@@ -103,7 +108,7 @@ def _resolve_fk_generic(
 
 def build_fk_info(
     model_class: type[ClaimControlledModel],
-    claim_fields: dict[str, str],
+    claim_fields: ClaimFieldMap,
 ) -> FKInfo:
     """Identify FK fields and pre-build slug-to-instance lookups for bulk resolution."""
     info = FKInfo()
@@ -177,7 +182,7 @@ def _coerce(
 
 def get_field_defaults(
     model_class: type[ClaimControlledModel],
-    direct_fields: dict[str, str],
+    direct_fields: ClaimFieldMap,
 ) -> dict[str, Any]:
     """Compute reset values for direct fields by inspecting Django model metadata.
 
@@ -207,7 +212,7 @@ def get_field_defaults(
 
 def get_preserve_fields(
     model_class: type[ClaimControlledModel],
-    direct_fields: dict[str, str],
+    direct_fields: ClaimFieldMap,
 ) -> set[str]:
     """Identify fields that must keep their existing value when no claim exists.
 
@@ -233,7 +238,7 @@ def get_preserve_fields(
 
 def get_nullable_unique_fields(
     model_class: type[ClaimControlledModel],
-    direct_fields: dict[str, str],
+    direct_fields: ClaimFieldMap,
 ) -> list[str]:
     """Claim-controlled fields that are single-column ``unique=True`` AND nullable.
 
@@ -261,7 +266,7 @@ def get_nullable_unique_fields(
 
 def resolve_unique_conflicts(
     all_objs: Sequence[ClaimControlledModel],
-    field_name: str,
+    field_name: ClaimFieldName,
     model_class: type[ClaimControlledModel],
     pre_values: dict[int, Any] | None = None,
 ) -> None:
