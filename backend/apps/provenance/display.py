@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -48,7 +48,7 @@ from .schemas import (
     ClaimValueSchema,
     MarkdownClaimDisplaySchema,
 )
-from .types import ClaimValueKey
+from .types import ClaimValueKey, RelationshipClaimValue
 from .validation import (
     RelationshipSchema,
     ValueKeySpec,
@@ -70,13 +70,6 @@ class _LabelResult(NamedTuple):
 
     label: str | None
     state: ClaimDisplayIdentityState
-
-
-# A relationship claim's value payload: a dict with ``exists: bool`` plus
-# the namespace-specific keys declared in :class:`ValueKeySpec`. Per-key
-# types vary by namespace (int pks, optional counts, str literals); schema
-# validation enforces shape at the data-layer boundary.
-RelationshipClaimValue = Mapping[str, object]
 
 
 class FieldValue(NamedTuple):
@@ -339,7 +332,7 @@ def build_display_value(
 
 
 def _build_relationship_display(
-    value: dict[str, object], schema: RelationshipSchema, labels: LabelLookup
+    value: RelationshipClaimValue, schema: RelationshipSchema, labels: LabelLookup
 ) -> ClaimDisplayValueSchema:
     """Structured rendering for a relationship-claim value.
 

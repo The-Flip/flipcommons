@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -33,7 +33,7 @@ from apps.provenance.models import (
     IdentityPartValue,
     get_claim_fields,
 )
-from apps.provenance.types import ClaimValueKey
+from apps.provenance.types import ClaimValueKey, RelationshipClaimValue
 
 if TYPE_CHECKING:
     from apps.provenance.models import Claim
@@ -299,7 +299,7 @@ def get_relationship_namespaces() -> frozenset[str]:
 
 
 def get_display_override(
-    value: Mapping[str, object],
+    value: RelationshipClaimValue,
     schema: RelationshipSchema,
     identity_spec_name: ClaimValueKey,
 ) -> object | None:
