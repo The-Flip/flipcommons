@@ -43,6 +43,11 @@ column, an FK, or the shared namespace of a relationship's members."""
 type ClaimFieldMap = dict[ClaimFieldName, str]
 """Maps each claim-controlled field name to the model attribute it resolves into."""
 
+type PublicId = str
+"""An entity's URL-identity: the value of its public_id field, by which an FK or
+relationship member names its target. It's usually a slug, but is a path for
+hierarchical entities like Location, whose nesting a flat slug can't express."""
+
 
 # ---------------------------------------------------------------------------
 # Primary keys of models owned by other apps

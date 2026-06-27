@@ -16,7 +16,7 @@ from typing import Any, cast
 from django.db import models
 
 from apps.core.models import meta_unique_fields
-from apps.core.types import ClaimFieldMap, ClaimFieldName
+from apps.core.types import ClaimFieldMap, ClaimFieldName, PublicId
 from apps.provenance.claims import normalize_fk_value
 from apps.provenance.models import ClaimControlledModel
 
@@ -46,10 +46,10 @@ def validate_check_constraints(obj: models.Model) -> None:
             validate(type(obj), obj)
 
 
-type FKTargetLookups = dict[str, dict[str, models.Model]]
-"""Per FK field, a map from a target's lookup value (typically slug) to its
-resolved instance — the prefetched index that turns a claimed slug into a foreign
-key without a query per claim."""
+type FKTargetLookups = dict[str, dict[PublicId, models.Model]]
+"""Per FK field, a map from a target's public_id (typically slug) to its resolved
+instance — the prefetched index that turns a claimed slug into a foreign key
+without a query per claim."""
 
 
 @dataclass

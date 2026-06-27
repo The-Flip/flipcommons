@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import NamedTuple
 
-from apps.core.types import ClaimFieldName, ClaimKey, JsonBody
+from apps.core.types import ClaimFieldName, ClaimKey, JsonBody, PublicId
 from apps.provenance.models import IdentityPart, make_claim_key
 from apps.provenance.validation import get_relationship_schema
 
@@ -60,7 +60,7 @@ def normalize_abbreviation_value(raw: str) -> str:
     return raw.strip()
 
 
-def normalize_fk_value(value: object) -> str | None:
+def normalize_fk_value(value: object) -> PublicId | None:
     """Canonicalize an FK claim value to its public_id lookup key.
 
     The single normalization an FK claim value passes through before it becomes a

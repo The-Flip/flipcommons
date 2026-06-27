@@ -18,9 +18,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models
 
 from apps.claim_ingest.patches._types import (
-    ClaimKey,
     PatchError,
-    PublicId,
     _Target,
 )
 from apps.claim_ingest.patches.entity_registry import PatchEntityRegistry
@@ -48,7 +46,7 @@ from apps.core.soft_delete import (
     require_linkable,
     soft_delete_walk,
 )
-from apps.core.types import EntityKey
+from apps.core.types import ClaimKey, EntityKey, PublicId
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claims import (
     build_relationship_claim,

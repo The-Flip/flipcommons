@@ -32,7 +32,6 @@ from apps.claim_ingest.apply.claims import (
 from apps.claim_ingest.plan import (
     CitationRef,
     CiteHandle,
-    ContentTypeId,
     EntryIndex,
     Handle,
     IngestPlan,
@@ -41,7 +40,7 @@ from apps.claim_ingest.plan import (
     SchemeCitationRef,
     WebCitationRef,
 )
-from apps.core.types import ClaimIdentity, EntityKey
+from apps.core.types import ClaimIdentity, ContentTypeId, EntityKey
 from apps.provenance.models import ChangeSet, Claim, ClaimControlledModel, IngestRun
 
 # Per-entry / per-claim provenance maps produced by ``_collect_plan_provenance``

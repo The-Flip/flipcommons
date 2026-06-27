@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from apps.core.types import LicenseId
+from apps.core.types import ContentTypeId, LicenseId
 from apps.provenance.models import ClaimControlledModel, Source
 
 
@@ -114,11 +114,6 @@ type CiteHandle = str
 # Typed ``| None`` on the carriers only because the front end stamps it in a
 # second pass (see ``planning.build_plan``); it is always set by apply time.
 type EntryIndex = int
-
-# A ``ContentType`` pk — the key of ``IngestPlan.changed_relationship_fields``.
-# A transparent alias of ``int`` (like ``CiteHandle``/``EntryIndex`` above) that
-# names the role so a bare ``int`` isn't mistaken for an object pk or count.
-type ContentTypeId = int
 
 # A plan-local temporary identifier for a not-yet-created entity — the label a
 # ``PlannedClaimAssert`` (or another create's ``handle_refs``) uses to point at a
