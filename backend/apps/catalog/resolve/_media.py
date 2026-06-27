@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, NamedTuple, cast
 from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 
-from apps.core.types import EntityKey
+from apps.core.types import ClaimSubjectId, ContentTypeId, EntityKey
 from apps.media.models import EntityMedia, MediaAsset, MediaSupportedModel
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
@@ -56,7 +56,10 @@ class MediaProjection:
     """
 
     def __init__(
-        self, *, content_type_id: int | None, subject_ids: set[int] | None
+        self,
+        *,
+        content_type_id: ContentTypeId | None,
+        subject_ids: set[ClaimSubjectId] | None,
     ) -> None:
         self.content_type_id = content_type_id
         self.subject_ids = subject_ids
@@ -177,8 +180,8 @@ class MediaProjection:
 
 def resolve_media_attachments(
     *,
-    content_type_id: int | None = None,
-    subject_ids: set[int] | None = None,
+    content_type_id: ContentTypeId | None = None,
+    subject_ids: set[ClaimSubjectId] | None = None,
 ) -> None:
     """Bulk-resolve ``media_attachment`` claims into :class:`EntityMedia` rows.
 

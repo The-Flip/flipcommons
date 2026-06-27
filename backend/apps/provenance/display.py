@@ -36,6 +36,7 @@ from apps.core.markdown import (
     get_markdown_fields,
     resolve_wikilink_authoring,
 )
+from apps.core.types import ClaimFieldName
 
 from .models import ClaimControlledModel
 from .schemas import (
@@ -85,7 +86,7 @@ class FieldValue(NamedTuple):
     can be collected for batched resolution.
     """
 
-    field_name: str
+    field_name: ClaimFieldName
     value: object
 
 
@@ -307,7 +308,7 @@ def resolve_display_context(items: Iterable[FieldValue]) -> ClaimDisplayContext:
 
 def build_display_value(
     model: type[ClaimControlledModel],
-    field_name: str,
+    field_name: ClaimFieldName,
     value: object,
     ctx: ClaimDisplayContext,
 ) -> ClaimDisplaySchema | None:
@@ -410,7 +411,7 @@ def _build_relationship_display(
 
 def claim_value(
     model: type[ClaimControlledModel],
-    field_name: str,
+    field_name: ClaimFieldName,
     value: object,
     ctx: ClaimDisplayContext,
 ) -> ClaimValueSchema:

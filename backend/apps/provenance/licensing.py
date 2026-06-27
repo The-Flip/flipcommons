@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 from apps.core.models import License
+from apps.core.types import ClaimFieldName
 from apps.provenance.attribution import source_backing
 from apps.provenance.models import Claim, SourceFieldLicense
 
@@ -14,7 +15,7 @@ class SourceField(NamedTuple):
     declares a license."""
 
     source_id: int
-    field_name: str
+    field_name: ClaimFieldName
 
 
 # Prefetched SourceField → license lookup, built once per request by

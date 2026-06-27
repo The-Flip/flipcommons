@@ -24,6 +24,7 @@ from django.core.exceptions import (
 )
 from django.db import models
 
+from apps.core.types import ClaimFieldMap, ClaimFieldName, ClaimKey
 from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.models import ClaimControlledModel, get_claim_fields
@@ -321,11 +322,11 @@ def get_display_override(
 
 def classify_claim(
     model_class: type[ClaimControlledModel],
-    field_name: str,
-    claim_key: str,
+    field_name: ClaimFieldName,
+    claim_key: ClaimKey,
     value: Any,  # noqa: ANN401 - signature preserved for call-site stability
     *,
-    claim_fields: dict[str, str] | None = None,
+    claim_fields: ClaimFieldMap | None = None,
 ) -> str:
     """Classify a claim from its ``field_name`` and the registered schemas.
 
@@ -371,8 +372,8 @@ def classify_claim(
 def validate_single_relationship_claim(
     *,
     subject_model: type[ClaimControlledModel],
-    field_name: str,
-    claim_key: str,
+    field_name: ClaimFieldName,
+    claim_key: ClaimKey,
     value: Any,  # noqa: ANN401 - claim value is arbitrary JSON
 ) -> None:
     """Validate one relationship claim's shape. Raises ``ValidationError``.
@@ -495,7 +496,7 @@ def _has_extra_data(model_class: type[ClaimControlledModel]) -> bool:
 
 
 def validate_claim_value(
-    field_name: str,
+    field_name: ClaimFieldName,
     value: Any,  # noqa: ANN401 - claim value is arbitrary JSON (scalar/dict/list/null)
     model_class: type[ClaimControlledModel],
 ) -> Any:  # noqa: ANN401 - returns the (possibly coerced) claim value, same shape as input

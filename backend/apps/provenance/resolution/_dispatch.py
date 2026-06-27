@@ -26,6 +26,7 @@ from typing import NamedTuple, Protocol
 
 from django.core.exceptions import ImproperlyConfigured
 
+from apps.core.types import ClaimFieldName, ClaimSubjectId
 from apps.provenance.models import ClaimControlledModel
 
 
@@ -39,7 +40,9 @@ class PerEntityResolver(Protocol):
     """
 
     def __call__(
-        self, entity: ClaimControlledModel, field_names: list[str] | None = None
+        self,
+        entity: ClaimControlledModel,
+        field_names: list[ClaimFieldName] | None = None,
     ) -> None: ...
 
 
@@ -55,8 +58,8 @@ class BulkResolver(Protocol):
     def __call__(
         self,
         model_class: type[ClaimControlledModel],
-        subject_ids: set[int],
-        field_names: Collection[str],
+        subject_ids: set[ClaimSubjectId],
+        field_names: Collection[ClaimFieldName],
     ) -> None: ...
 
 
@@ -115,7 +118,7 @@ def _handlers_for(concrete_model: type[ClaimControlledModel]) -> ResolveHandlers
 
 
 def resolve_after_mutation(
-    entity: ClaimControlledModel, field_names: list[str] | None = None
+    entity: ClaimControlledModel, field_names: list[ClaimFieldName] | None = None
 ) -> None:
     """Per-entity dispatch: re-resolve a single mutated entity.
 
@@ -129,8 +132,8 @@ def resolve_after_mutation(
 
 def resolve_entities_bulk(
     model_class: type[ClaimControlledModel],
-    subject_ids: set[int],
-    field_names: Collection[str],
+    subject_ids: set[ClaimSubjectId],
+    field_names: Collection[ClaimFieldName],
 ) -> None:
     """Bulk dispatch: re-resolve many subjects of one model class in one pass.
 

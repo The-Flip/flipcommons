@@ -20,6 +20,26 @@ type JsonBody = dict[str, object]
 type JsonData = Mapping[str, object]
 
 
+type ContentTypeId = int
+"""The primary key of a Django ContentType — the entity-type half of a claim's
+polymorphic target."""
+
+type ClaimSubjectId = int
+"""The primary key of the entity a claim is about — the subject its claims are
+grouped and resolved under."""
+
+type ClaimKey = str
+"""Identifies one assertable slot on an entity: a scalar field, or a single
+member of a relationship set. The unit a winner is picked for."""
+
+type ClaimFieldName = str
+"""Identifies which claim-controlled field an assertion targets — a scalar
+column, an FK, or the shared namespace of a relationship's members."""
+
+type ClaimFieldMap = dict[ClaimFieldName, str]
+"""Maps each claim-controlled field name to the model attribute it resolves into."""
+
+
 class EntityKey(NamedTuple):
     """Hashable reference to a catalog entity via content-type + object id.
 
@@ -27,8 +47,8 @@ class EntityKey(NamedTuple):
     across content types (e.g. ``batch_resolve_entities``).
     """
 
-    content_type_id: int
-    object_id: int
+    content_type_id: ContentTypeId
+    object_id: ClaimSubjectId
 
 
 class ClaimTarget(TypedDict):
@@ -38,8 +58,8 @@ class ClaimTarget(TypedDict):
     spread it into dataclass kwargs; NamedTuple doesn't unpack as ``**``.
     """
 
-    content_type_id: int
-    object_id: int
+    content_type_id: ContentTypeId
+    object_id: ClaimSubjectId
 
 
 class ClaimIdentity(NamedTuple):
@@ -50,6 +70,6 @@ class ClaimIdentity(NamedTuple):
     pending claims or joining against existing active rows.
     """
 
-    content_type_id: int
-    object_id: int
-    claim_key: str
+    content_type_id: ContentTypeId
+    object_id: ClaimSubjectId
+    claim_key: ClaimKey

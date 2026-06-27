@@ -16,6 +16,7 @@ from django.db import models
 from django.db.models.functions import Now
 
 from apps.core.models import BoundedTextField, field_not_blank
+from apps.core.types import ClaimFieldName, ClaimKey, ContentTypeId
 
 from ..model_bases import ClaimControlledModel
 from .changeset import ChangeSet
@@ -50,7 +51,9 @@ def _escape_claim_value(s: str) -> str:
     return s.replace("%", "%25").replace("|", "%7C").replace(":", "%3A")
 
 
-def make_claim_key(field_name: str, **identity_parts: IdentityPart) -> str:
+def make_claim_key(
+    field_name: ClaimFieldName, **identity_parts: IdentityPart
+) -> ClaimKey:
     """Build a canonical claim_key from field_name and sorted identity parts.
 
     For scalar claims, call with just field_name (returns field_name unchanged).
@@ -79,7 +82,7 @@ class Claim(models.Model):
     ``changeset.actor``) — set on every row by ``claim_writer._assert_claim``.
     """
 
-    content_type_id: int
+    content_type_id: ContentTypeId
     actor_id: int
     license_id: int | None
     changeset_id: int
@@ -194,9 +197,9 @@ class Claim(models.Model):
         cls,
         obj: ClaimControlledModel,
         *,
-        field_name: str,
+        field_name: ClaimFieldName,
         value: object,
-        claim_key: str = "",
+        claim_key: ClaimKey = "",
         **kwargs: object,
     ) -> Claim:
         """Construct an unsaved Claim for a model instance.

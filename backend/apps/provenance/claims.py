@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import NamedTuple
 
-from apps.core.types import JsonBody
+from apps.core.types import ClaimFieldName, ClaimKey, JsonBody
 from apps.provenance.models import IdentityPart, make_claim_key
 from apps.provenance.validation import get_relationship_schema
 
@@ -30,7 +30,7 @@ class RelationshipClaim(NamedTuple):
     type level while staying tuple-unpackable (``claim_key, value = ...``).
     """
 
-    claim_key: str
+    claim_key: ClaimKey
     value: JsonBody
 
 
@@ -80,7 +80,7 @@ def normalize_fk_value(value: object) -> str | None:
 
 
 def build_relationship_claim(
-    field_name: str,
+    field_name: ClaimFieldName,
     identity: Mapping[str, IdentityPart],
     exists: bool = True,
 ) -> RelationshipClaim:

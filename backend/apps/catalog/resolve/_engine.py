@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 from django.contrib.contenttypes.models import ContentType
 
+from apps.core.types import ClaimFieldName, ClaimKey, ClaimSubjectId
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
@@ -65,7 +66,7 @@ def pick_winners[Subject: Hashable, Group: Hashable](
     return winners
 
 
-def pick_member_winners(ranked: Iterable[Claim]) -> Winners[int, str]:
+def pick_member_winners(ranked: Iterable[Claim]) -> Winners[ClaimSubjectId, ClaimKey]:
     """Membership winner-pick: one winner per ``claim_key`` per entity.
 
     Subject is the entity ``object_id``, group is the ``claim_key`` — a thin
@@ -193,7 +194,7 @@ def reconcile[Subject: Hashable, Member: Hashable, Payload](
 
 def _build_desired[Subject: Hashable, Member: Hashable, Payload](
     projection: Projection[Subject, Member, Payload],
-    winners: Winners[Subject, str],
+    winners: Winners[Subject, ClaimKey],
 ) -> MemberMap[Subject, Member, Payload]:
     """Fold winning claims into the desired member map, dropping tombstones.
 
@@ -305,7 +306,7 @@ class ThroughRowProjection[Member: Hashable, Payload]:
     """
 
     subject_model: type[ClaimControlledModel]
-    field_name: str
+    field_name: ClaimFieldName
     through_model: type[Model]
     subject_column: str
     key_columns: tuple[str, ...]
@@ -317,22 +318,22 @@ class ThroughRowProjection[Member: Hashable, Payload]:
     payload_to_columns: Callable[[Payload], tuple[object, ...]]
     ignore_conflicts: bool = False
 
-    def claims(self, subjects: set[int] | None) -> Iterable[Claim]:
+    def claims(self, subjects: set[ClaimSubjectId] | None) -> Iterable[Claim]:
         ct = ContentType.objects.get_for_model(self.subject_model)
         claims_qs = Claim.objects.filter(content_type=ct, field_name=self.field_name)
         if subjects is not None:
             claims_qs = claims_qs.filter(object_id__in=subjects)
         return ranked_claims(claims_qs, "object_id", "claim_key")
 
-    def subject(self, claim: Claim) -> int:
+    def subject(self, claim: Claim) -> ClaimSubjectId:
         return claim.object_id
 
     def extract(self, claim: Claim) -> ExtractedMember[Member, Payload] | None:
         return self.extract_member(claim)
 
     def read(
-        self, subjects: set[int] | None
-    ) -> MemberMap[int, Member, RowState[Payload]]:
+        self, subjects: set[ClaimSubjectId] | None
+    ) -> MemberMap[ClaimSubjectId, Member, RowState[Payload]]:
         manager = self.through_model._default_manager
         if subjects is not None:
             rows_qs = manager.filter(**{f"{self.subject_column}__in": subjects})
@@ -345,7 +346,7 @@ class ThroughRowProjection[Member: Hashable, Payload]:
 
         nkeys = len(self.key_columns)
         columns = ("pk", self.subject_column, *self.key_columns, *self.payload_columns)
-        existing: MemberMap[int, Member, RowState[Payload]] = {}
+        existing: MemberMap[ClaimSubjectId, Member, RowState[Payload]] = {}
         for row in rows_qs.values_list(*columns):
             pk, subject_id = row[0], row[1]
             key = self.columns_to_key(row[2 : 2 + nkeys])
@@ -353,7 +354,7 @@ class ThroughRowProjection[Member: Hashable, Payload]:
             existing.setdefault(subject_id, {})[key] = RowState(pk, payload)
         return existing
 
-    def write(self, delta: Delta[int, Member, Payload]) -> None:
+    def write(self, delta: Delta[ClaimSubjectId, Member, Payload]) -> None:
         manager = self.through_model._default_manager
         if delta.delete:
             manager.filter(pk__in=delta.delete).delete()

@@ -23,6 +23,7 @@ from apps.catalog.models import (
 )
 from apps.claim_edit.claim_write import ClaimSpec, ValidationErrors, raise_form_error
 from apps.core.models import SluggedModel
+from apps.core.types import ClaimFieldName
 from apps.provenance.claims import (
     build_relationship_claim,
     normalize_abbreviation_value,
@@ -46,7 +47,7 @@ def plan_parent_claims(
     desired_slugs: set[str],
     *,
     model_class: type[_ParentEntity],
-    claim_field_name: str,
+    claim_field_name: ClaimFieldName,
 ) -> list[ClaimSpec]:
     """Validate parent hierarchy changes and return diff-based ClaimSpecs.
 
@@ -118,7 +119,7 @@ def plan_alias_claims(
     entity: _AliasEntity,
     desired_aliases: list[str],
     *,
-    claim_field_name: str,
+    claim_field_name: ClaimFieldName,
 ) -> list[ClaimSpec]:
     """Validate alias changes and return diff-based ClaimSpecs.
 
@@ -169,7 +170,7 @@ def plan_m2m_claims(
     desired_slugs: set[str],
     *,
     target_model: type[SluggedModel],
-    claim_field_name: str,
+    claim_field_name: ClaimFieldName,
     m2m_attr: str,
 ) -> list[ClaimSpec]:
     """Validate and diff a simple slug-set M2M relationship.
@@ -206,7 +207,7 @@ def build_m2m_claim_specs(
     *,
     current: set[int],
     desired: set[int],
-    claim_field_name: str,
+    claim_field_name: ClaimFieldName,
 ) -> list[ClaimSpec]:
     """Build diff-based ClaimSpecs for simple PK-set M2M relationships."""
     specs: list[ClaimSpec] = []

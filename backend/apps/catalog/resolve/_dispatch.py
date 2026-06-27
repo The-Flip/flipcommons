@@ -27,6 +27,7 @@ from typing import Any, NamedTuple
 
 from django.db import transaction
 
+from apps.core.types import ClaimFieldName, ClaimSubjectId
 from apps.provenance.models import ClaimControlledModel
 
 from ..cache import invalidate_all
@@ -48,7 +49,7 @@ class RelationshipDispatchKey(NamedTuple):
     the pair lets both coexist and turns dispatch into a direct lookup.
     """
 
-    field_name: str
+    field_name: ClaimFieldName
     entity_model: type[ClaimControlledModel]
 
 
@@ -121,7 +122,7 @@ def _get_relationship_registry() -> dict[RelationshipDispatchKey, RegistryEntry]
     registry: dict[RelationshipDispatchKey, RegistryEntry] = {}
 
     def add(
-        field_name: str,
+        field_name: ClaimFieldName,
         model: type[ClaimControlledModel],
         build: Callable[[], Projection[int, Any, Any] | None],
         scope: ScopePolicy = ScopePolicy.SUBJECTS,
@@ -170,9 +171,9 @@ def _get_relationship_registry() -> dict[RelationshipDispatchKey, RegistryEntry]
 
 def resolve_relationship(
     model: type[ClaimControlledModel],
-    field_name: str,
+    field_name: ClaimFieldName,
     *,
-    subject_ids: set[int] | None = None,
+    subject_ids: set[ClaimSubjectId] | None = None,
 ) -> bool:
     """Resolve one relationship namespace via its registered projection.
 
@@ -201,7 +202,7 @@ def resolve_relationship(
 
 def _per_entity_handler(
     entity: ClaimControlledModel,
-    field_names: list[str] | None = None,
+    field_names: list[ClaimFieldName] | None = None,
 ) -> None:
     """Per-entity resolve handler — catalog's ``PerEntityResolver``.
 
@@ -224,8 +225,8 @@ def _per_entity_handler(
 
 def _bulk_handler(
     model_class: type[ClaimControlledModel],
-    subject_ids: set[int],
-    field_names: Collection[str],
+    subject_ids: set[ClaimSubjectId],
+    field_names: Collection[ClaimFieldName],
 ) -> None:
     """Bulk resolve handler — catalog's ``BulkResolver``.
 
@@ -264,7 +265,7 @@ def register_catalog_resolve_handlers() -> None:
 
 def _resolve_entity_relationships(
     entity: ClaimControlledModel,
-    field_names: list[str] | None,
+    field_names: list[ClaimFieldName] | None,
 ) -> None:
     """Per-entity path — dispatch relationship resolvers then scalars."""
     from apps.provenance.validation import get_relationship_namespaces
@@ -318,8 +319,8 @@ def _resolve_entity_relationships(
 
 def resolve_relationships_bulk(
     model_class: type[ClaimControlledModel],
-    field_names: Collection[str],
-    subject_ids: set[int],
+    field_names: Collection[ClaimFieldName],
+    subject_ids: set[ClaimSubjectId],
 ) -> None:
     """Bulk re-resolve relationship namespaces for many subjects in one pass.
 

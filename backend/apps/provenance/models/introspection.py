@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from django.db import models
 
+from apps.core.types import ClaimFieldMap
+
 from ..model_bases import ClaimControlledModel
 
 __all__ = ["get_claim_fields"]
@@ -15,7 +17,7 @@ _CLAIMS_EXEMPT_NAMES = frozenset(
 )
 
 
-def get_claim_fields(model_class: type[ClaimControlledModel]) -> dict[str, str]:
+def get_claim_fields(model_class: type[ClaimControlledModel]) -> ClaimFieldMap:
     """Discover claim-controlled fields by introspecting a Django model.
 
     Returns ``{field_name: field_name}`` for every concrete field that is
@@ -29,7 +31,7 @@ def get_claim_fields(model_class: type[ClaimControlledModel]) -> dict[str, str]:
     FK fields are included — the resolver handles slug lookup automatically.
     """
     per_model_exempt = model_class.claims_exempt
-    fields: dict[str, str] = {}
+    fields: ClaimFieldMap = {}
     for f in model_class._meta.get_fields():
         if not isinstance(f, models.Field):
             continue
