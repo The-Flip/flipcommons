@@ -9,6 +9,7 @@ from django.db import models
 from django.db.models.functions import Length, Lower
 
 from apps.actors.models import ActorModel, ActorResolutionStatus
+from apps.actors.types import ActorResolutionPriority
 from apps.core.models import field_not_blank
 
 from .usernames import USERNAME_MAX_LEN, USERNAME_MIN_LEN, validate_username_format
@@ -170,7 +171,7 @@ class User(ActorModel, AbstractUser):
 
     # ActorModel hooks: the user's Actor mirrors these fields for resolution.
     @property
-    def actor_priority(self) -> int:
+    def actor_priority(self) -> ActorResolutionPriority:
         return self.priority
 
     @property

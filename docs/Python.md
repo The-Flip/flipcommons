@@ -31,6 +31,10 @@ The second job is not a smell to remove but a practice to apply: name a value's 
 
 The codebase already does this: `JsonData` / `JsonBody` are preferred over a bare `dict[str, Any]` because the name carries the contract.
 
+**Prefer a transparent `type X = …` alias to `NewType`** for any value that flows through the Django ORM. The ORM hands back bare `int` / `str`, so a `NewType` forces a wrap (`ChangeSetId(row.changeset_id)`) — and the `cast` noise it invites — at every read, for no checker gain the alias doesn't already give as documentation. Reserve `NewType` for values that never touch the ORM and are genuinely dangerous to mix (rare). Don't redeclare the same alias locally in two apps — import the one canonical spelling.
+
+**Keep a semantic scalar alias in a dependency-free leaf module** — `apps/core/types.py`, or an app's own `types.py` — never beside its Django model. `from apps.core.models.license import LicenseId` would drag the `License` model into every annotation-only importer, which is exactly what the alias exists to avoid. Put it in the lowest app that uses it, so even `core` can name its own fields (e.g. `EntityKey.object_id: ClaimSubjectId`).
+
 ### Valid exceptions to strong types
 
 Broad types are acceptable when required by a third party:
@@ -111,6 +115,8 @@ Serialization helpers should usually return Ninja/Pydantic `Schema` instances, n
 Use dict returns only when the dict is the real runtime contract, such as cached JSON-byte hot paths.
 
 When a Ninja response type is a union of schemas with shared fields, make dispatch structurally unambiguous: required distinguishing fields on the richer schema, and `extra="forbid"` on the minimal schema where needed.
+
+**Don't put a semantic scalar alias on the wire.** A transparent alias (`type ChangeSetId = int`) used as a Ninja route param or a `Schema` field surfaces as a _named_ OpenAPI component — `ChangeSetId` lands in the generated schema and the frontend's `schema.d.ts`, and `apps/core/tests/test_openapi_boundaries.py` fails it (component names must end in `Schema` / `Ref` or be allowlisted). Keep route params and `Schema` fields bare `int` / `str`; the alias is for internal Python signatures (`claim.changeset_id`, helper params, `NamedTuple` / dataclass fields). Keeping the wire bare also lets the internal alias be renamed without a frontend-visible schema or codegen diff.
 
 ### Suppressions
 

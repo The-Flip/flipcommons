@@ -5,20 +5,24 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import NamedTuple, TypedDict
 
-# JSON-shaped dict — object keys, arbitrary JSON values. ``object`` (not
-# ``Any``) forces callers to isinstance-narrow before use, which matches
-# the free-form-but-typed nature of JSON.
-#
-# ``JsonBody`` (invariant dict): test-client request/response bodies.
-# ``JsonData`` (covariant Mapping): read-only views of JSON — function
-# params that only read, e.g. ``extra_data`` JSONField contents. A
-# covariant alias is needed because dict literals like
-# ``{"k": [1, 2]}`` have inferred type ``dict[str, list[int]]``, which
-# is not a subtype of ``dict[str, object]`` but is a subtype of
-# ``Mapping[str, object]``.
-type JsonBody = dict[str, object]
-type JsonData = Mapping[str, object]
+# ---------------------------------------------------------------------------
+# JSON payloads
+# ---------------------------------------------------------------------------
 
+type JsonBody = dict[str, object]
+"""A JSON object as an invariant dict — string keys, arbitrary JSON values.
+``object`` (not ``Any``) forces callers to isinstance-narrow before use. For
+read-write payloads, e.g. test-client request/response bodies."""
+
+type JsonData = Mapping[str, object]
+"""A read-only, covariant view of a JSON object — for params that only read it,
+e.g. ``extra_data`` contents. Covariant because a dict literal like
+``{"k": [1, 2]}`` is a ``Mapping[str, object]`` but not a ``dict[str, object]``."""
+
+
+# ---------------------------------------------------------------------------
+# Claim and entity identity scalars
+# ---------------------------------------------------------------------------
 
 type ContentTypeId = int
 """The primary key of a Django ContentType — the entity-type half of a claim's
@@ -38,6 +42,26 @@ column, an FK, or the shared namespace of a relationship's members."""
 
 type ClaimFieldMap = dict[ClaimFieldName, str]
 """Maps each claim-controlled field name to the model attribute it resolves into."""
+
+
+# ---------------------------------------------------------------------------
+# Primary keys of models owned by other apps
+#
+# Parked here (rather than beside their models) so annotation-only importers
+# stay dependency-free: a leaf alias never drags in the owning Django model.
+# ---------------------------------------------------------------------------
+
+type LicenseId = int
+"""The primary key of a License — the reuse terms attached to a claim's value."""
+
+type CitationSourceId = int
+"""The primary key of a Citation Source — a citable work (book, web page) to
+which evidence (aka Citation Instances) attach."""
+
+
+# ---------------------------------------------------------------------------
+# Identity tuples
+# ---------------------------------------------------------------------------
 
 
 class EntityKey(NamedTuple):

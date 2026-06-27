@@ -656,7 +656,9 @@ def update_citation_source(
 )
 @requires(Activity.CITATION_EDIT)
 def create_citation_source_link(
-    request: HttpRequest, source_id: int, data: CitationSourceLinkCreateSchema
+    request: HttpRequest,
+    source_id: int,
+    data: CitationSourceLinkCreateSchema,
 ) -> Status[CitationSourceLinkSchema]:
     """Create a link on a Citation Source."""
     user = authed_user(request)

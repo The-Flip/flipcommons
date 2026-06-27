@@ -7,6 +7,7 @@ from typing import Any, ClassVar
 from django.db import models
 
 from apps.actors.models import ActorModel, ActorResolutionStatus
+from apps.actors.types import ActorResolutionPriority
 from apps.core.models import (
     BoundedTextField,
     SluggedModel,
@@ -17,6 +18,7 @@ from apps.core.models import (
     unique_ci,
     unique_slug,
 )
+from apps.provenance.types import IngestSourceId
 
 SOURCE_DESCRIPTION_MAX_LENGTH = 2_000
 
@@ -87,7 +89,7 @@ class Source(ActorModel, SluggedModel, TimeStampedModel):
 
     # ActorModel hooks: the source's Actor mirrors these fields for resolution.
     @property
-    def actor_priority(self) -> int:
+    def actor_priority(self) -> ActorResolutionPriority:
         return self.priority
 
     @property
@@ -118,7 +120,7 @@ class SourceFieldLicense(models.Model):
     This model captures that relationship without denormalizing to per-claim.
     """
 
-    source_id: int
+    source_id: IngestSourceId
 
     source = models.ForeignKey(
         Source,

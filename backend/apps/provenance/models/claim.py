@@ -15,10 +15,12 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models.functions import Now
 
+from apps.actors.types import ActorId
 from apps.core.models import BoundedTextField, field_not_blank
-from apps.core.types import ClaimFieldName, ClaimKey, ContentTypeId
+from apps.core.types import ClaimFieldName, ClaimKey, ContentTypeId, LicenseId
 
 from ..model_bases import ClaimControlledModel
+from ..types import ChangeSetId
 from .changeset import ChangeSet
 
 CLAIM_CITATION_MAX_LENGTH = 2_000
@@ -42,7 +44,7 @@ class ExistingClaimRow(NamedTuple):
 
     # ``value`` is the raw JSONField payload — scalar, dict, list, or null.
     value: object
-    license_id: int | None
+    license_id: LicenseId | None
     pk: int
 
 
@@ -83,10 +85,10 @@ class Claim(models.Model):
     """
 
     content_type_id: ContentTypeId
-    actor_id: int
-    license_id: int | None
-    changeset_id: int
-    retracted_by_changeset_id: int | None
+    actor_id: ActorId
+    license_id: LicenseId | None
+    changeset_id: ChangeSetId
+    retracted_by_changeset_id: ChangeSetId | None
     citation_instances: models.Manager[CitationInstance]
 
     content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)

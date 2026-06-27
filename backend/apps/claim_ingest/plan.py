@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from apps.core.types import LicenseId
 from apps.provenance.models import ClaimControlledModel, Source
 
 
@@ -209,7 +210,7 @@ class PlannedClaimAssert:
     content_type_id: int | None = None
     object_id: int | None = None
     handle: Handle | None = None
-    license_id: int | None = None
+    license_id: LicenseId | None = None
     # Deferred relationship claim identity:
     relationship_namespace: Namespace = ""
     # identity values mix PKs (int) and tag values (str/bool) per the
