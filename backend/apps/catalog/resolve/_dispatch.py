@@ -45,8 +45,7 @@ class RelationshipDispatchKey(NamedTuple):
     The conceptual identity of a relationship resolver is the *pair*
     ``(field_name, entity_model)``, not the ``field_name`` alone: ``credit``
     resolves differently for ``MachineModel`` and ``Series``, and
-    ``abbreviation`` differently for ``MachineModel`` and ``Title``. Keying by
-    the pair lets both coexist and turns dispatch into a direct lookup.
+    ``abbreviation`` differently for ``MachineModel`` and ``Title``.
     """
 
     field_name: ClaimFieldName
@@ -68,18 +67,22 @@ class ScopePolicy(Enum):
     FULL_TYPE = auto()
 
 
-class RegistryEntry(NamedTuple):
-    """A relationship namespace's projection builder and scope policy.
+type ProjectionBuilder = Callable[[], Projection[ClaimSubjectId, Any, Any] | None]
+"""Builds a fresh projection for a relationship namespace on each resolve (so
+valid-PK sets stay current), or ``None`` to skip the namespace — e.g. credits
+when the ``CreditRole`` vocabulary is unseeded. ``Member`` and ``Payload`` are
+``Any`` because they vary across namespaces; the registry holds heterogeneous
+projections."""
 
-    ``build`` constructs a fresh projection on each call so valid-PK sets are
-    current; it returns ``None`` to skip resolution entirely (credits when the
-    ``CreditRole`` vocabulary is unseeded). Its ``Subject`` is always ``int``
-    (the entity ``object_id``) — the composite-``EntityKey`` media projection is
-    content-type keyed and never registered here. ``Member`` and ``Payload``
-    genuinely vary across namespaces, so they stay ``Any``.
+
+class RegistryEntry(NamedTuple):
+    """A relationship namespace's projection builder paired with its scope policy.
+
+    Only entity-``object_id``-keyed projections are registered here; the
+    content-type-keyed media projection resolves on its own path.
     """
 
-    build: Callable[[], Projection[int, Any, Any] | None]
+    build: ProjectionBuilder
     scope: ScopePolicy
 
 
@@ -124,7 +127,7 @@ def _get_relationship_registry() -> dict[RelationshipDispatchKey, RegistryEntry]
     def add(
         field_name: ClaimFieldName,
         model: type[ClaimControlledModel],
-        build: Callable[[], Projection[int, Any, Any] | None],
+        build: ProjectionBuilder,
         scope: ScopePolicy = ScopePolicy.SUBJECTS,
     ) -> None:
         registry[RelationshipDispatchKey(field_name, model)] = RegistryEntry(
@@ -350,7 +353,7 @@ def resolve_relationships_bulk(
 
 
 def _resolve_media_bulk(
-    model_class: type[ClaimControlledModel], subject_ids: set[int]
+    model_class: type[ClaimControlledModel], subject_ids: set[ClaimSubjectId]
 ) -> None:
     """Bulk-resolve media attachments for a media-supported entity type."""
     from apps.media.models import MediaSupportedModel

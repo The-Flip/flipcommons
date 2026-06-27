@@ -393,12 +393,12 @@ class AliasProjection:
         rows_qs = manager.all()
         if subjects is not None:
             rows_qs = rows_qs.filter(**{f"{self.fk_column}__in": subjects})
-        existing: MemberMap[int, str, RowState[str]] = {}
+        existing: MemberMap[ClaimSubjectId, str, RowState[str]] = {}
         for pk, parent_id, value in rows_qs.values_list("pk", self.fk_column, "value"):
             existing.setdefault(parent_id, {})[value.lower()] = RowState(pk, value)
         return existing
 
-    def write(self, delta: Delta[int, str, str]) -> None:
+    def write(self, delta: Delta[ClaimSubjectId, str, str]) -> None:
         manager = self.alias_model._default_manager
         if delta.delete:
             manager.filter(pk__in=delta.delete).delete()

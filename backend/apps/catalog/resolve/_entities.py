@@ -56,8 +56,9 @@ def _sync_markdown_references(obj: ClaimControlledModel) -> None:
 # This is shared between bulk and single-object claims resolution.
 # ------------------------------------------------------------------
 
-# Read-only view of FKInfo.lookups — {attr: {slug: instance}}
 type FKLookups = Mapping[str, Mapping[str, models.Model]]
+"""Read-only covariant view of ``FKTargetLookups`` — the apply loop only reads
+the prefetched FK index, so the param accepts any mapping shape."""
 
 
 @dataclass(frozen=True, slots=True)

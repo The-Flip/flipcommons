@@ -46,14 +46,18 @@ def validate_check_constraints(obj: models.Model) -> None:
             validate(type(obj), obj)
 
 
+type FKTargetLookups = dict[str, dict[str, models.Model]]
+"""Per FK field, a map from a target's lookup value (typically slug) to its
+resolved instance — the prefetched index that turns a claimed slug into a foreign
+key without a query per claim."""
+
+
 @dataclass
 class FKInfo:
     """FK field metadata and pre-fetched lookups for bulk resolution."""
 
     fk_fields: set[str] = field(default_factory=set)
-    # {attr: {lookup_value: related_instance}} — inner dict maps the claim's
-    # string payload (typically slug) to the fully-fetched target model row.
-    lookups: dict[str, dict[str, models.Model]] = field(default_factory=dict)
+    lookups: FKTargetLookups = field(default_factory=dict)
 
 
 # ------------------------------------------------------------------
