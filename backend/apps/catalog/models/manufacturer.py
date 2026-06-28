@@ -147,7 +147,7 @@ class Manufacturer(
         return self.name
 
 
-class ManufacturerAlias(AliasModel, TimeStampedModel):
+class ManufacturerAlias(AliasModel):
     """An alternate name for a Manufacturer, used to match alternative spellings
     from external sources.
     """
@@ -270,7 +270,7 @@ class CorporateEntity(
         return self.name
 
 
-class CorporateEntityAlias(AliasModel, TimeStampedModel):
+class CorporateEntityAlias(AliasModel):
     """An alternate name for a CorporateEntity, used to match alternative spellings
     from external sources.
     """

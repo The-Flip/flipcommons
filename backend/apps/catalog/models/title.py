@@ -189,7 +189,7 @@ class Title(
         return self.name
 
 
-class TitleAbbreviation(TimeStampedModel):
+class TitleAbbreviation(models.Model):
     """A common abbreviation for a Title, e.g. "MM" for Medieval Madness.
 
     Materialized from provenance claims; each abbreviation is individually

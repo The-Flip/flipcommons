@@ -68,7 +68,7 @@ class Theme(
         return self.name
 
 
-class MachineModelTheme(TimeStampedModel):
+class MachineModelTheme(models.Model):
     """Through model for MachineModel ↔ Theme (materialized from relationship claims)."""
 
     machinemodel = models.ForeignKey("MachineModel", on_delete=models.CASCADE)
@@ -87,7 +87,7 @@ class MachineModelTheme(TimeStampedModel):
         return f"{self.machinemodel} → {self.theme}"
 
 
-class ThemeAlias(AliasModel, TimeStampedModel):
+class ThemeAlias(AliasModel):
     """An alternate name for a Theme, used for matching/search."""
 
     alias_claim_field = "theme_alias"

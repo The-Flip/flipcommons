@@ -157,7 +157,7 @@ class Location(CatalogModel, TimeStampedModel):
         return slug if not parent_path else f"{parent_path}/{slug}"
 
 
-class LocationAlias(AliasModel, TimeStampedModel):
+class LocationAlias(AliasModel):
     """An alternate name for a Location used to match external source strings.
 
     Intentional mojibake aliases exist to match incorrectly encoded strings
@@ -181,7 +181,7 @@ class LocationAlias(AliasModel, TimeStampedModel):
         ]
 
 
-class CorporateEntityLocation(TimeStampedModel):
+class CorporateEntityLocation(models.Model):
     """Associates a CorporateEntity with a canonical Location.
 
     One-to-many: a CE can have multiple locations.

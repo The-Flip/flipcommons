@@ -198,7 +198,7 @@ class Person(
         return self.name
 
 
-class PersonAlias(AliasModel, TimeStampedModel):
+class PersonAlias(AliasModel):
     """An alternate name for a Person, used to match alternative spellings from
     external sources (e.g. "Keith Johnson" → "Keith P. Johnson").
     """
@@ -217,7 +217,7 @@ class PersonAlias(AliasModel, TimeStampedModel):
         ]
 
 
-class Credit(TimeStampedModel):
+class Credit(models.Model):
     """Links a person to a machine model or series with a specific role."""
 
     model_id: int | None

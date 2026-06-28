@@ -324,7 +324,7 @@ class RewardType(
         return self.name
 
 
-class MachineModelRewardType(TimeStampedModel):
+class MachineModelRewardType(models.Model):
     """Through model for MachineModel ↔ RewardType (materialized from relationship claims)."""
 
     machinemodel = models.ForeignKey("MachineModel", on_delete=models.CASCADE)
@@ -343,7 +343,7 @@ class MachineModelRewardType(TimeStampedModel):
         return f"{self.machinemodel} → {self.rewardtype}"
 
 
-class RewardTypeAlias(AliasModel, TimeStampedModel):
+class RewardTypeAlias(AliasModel):
     """An alternate name for a RewardType, used for matching/search."""
 
     alias_claim_field = "reward_type_alias"
@@ -394,7 +394,7 @@ class Tag(
         return self.name
 
 
-class MachineModelTag(TimeStampedModel):
+class MachineModelTag(models.Model):
     """Through model for MachineModel ↔ Tag (materialized from relationship claims)."""
 
     machinemodel = models.ForeignKey("MachineModel", on_delete=models.CASCADE)
