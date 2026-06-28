@@ -28,12 +28,6 @@ CLAIM_CITATION_MAX_LENGTH = 2_000
 if TYPE_CHECKING:
     from .citation_instance import CitationInstance
 
-type IdentityPartName = str
-"""One key in a claim_key's identity-parts mapping — the label of an identity
-slot (e.g. ``person``, ``role``, ``alias``). Distinct from the relationship
-value-dict key it derives from: usually equal, occasionally not (``alias`` for
-the ``alias_value`` slot)."""
-
 type IdentityPartValue = str | int | None
 """One value in a claim_key's identity-parts mapping: an entity-reference PK
 (``int``), a literal key like an alias value (``str``), or ``None``

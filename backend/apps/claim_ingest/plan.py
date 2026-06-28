@@ -24,9 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from apps.core.types import ContentTypeId, LicenseId
+from apps.core.types import ClaimValueKey, ContentTypeId, LicenseId
 from apps.provenance.models import ClaimControlledModel, Source
-from apps.provenance.types import ClaimValueKey
 
 
 class PreWriteHook(Protocol):

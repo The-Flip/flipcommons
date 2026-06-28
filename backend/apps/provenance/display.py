@@ -36,7 +36,7 @@ from apps.core.markdown import (
     get_markdown_fields,
     resolve_wikilink_authoring,
 )
-from apps.core.types import ClaimFieldName
+from apps.core.types import ClaimFieldName, ClaimValueKey
 
 from .models import ClaimControlledModel
 from .schemas import (
@@ -48,7 +48,7 @@ from .schemas import (
     ClaimValueSchema,
     MarkdownClaimDisplaySchema,
 )
-from .types import ClaimValueKey, RelationshipClaimValue
+from .types import RelationshipClaimValue
 from .validation import (
     RelationshipSchema,
     ValueKeySpec,

@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 from django.contrib.contenttypes.models import ContentType
 
-from apps.core.types import ClaimFieldName, ClaimKey, ClaimSubjectId
+from apps.core.types import ClaimFieldName, ClaimKey, ClaimSubjectId, ColumnName
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
@@ -260,7 +260,7 @@ type ColumnValues = tuple[object, ...]
 """The values of one materialized row's key or payload columns, in positional
 order."""
 
-type ColumnNames = tuple[str, ...]
+type ColumnNames = tuple[ColumnName, ...]
 """The through-table column names that back a member key or a payload, in
 positional order."""
 
