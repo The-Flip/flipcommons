@@ -318,6 +318,22 @@ def _no_columns(payload: object) -> ColumnValues:
     return ()
 
 
+def _compound_key(columns: ColumnValues) -> tuple[object, ...]:
+    """Multi-column member key → the column tuple itself (identity).
+
+    A compound ``Member`` (e.g. credit's ``(person_id, role_id)``) is the column
+    tuple unchanged; the values already arrive as a tuple from ``values_list``.
+    A plain tuple keys ``reconcile``'s maps identically to a NamedTuple, so the
+    member type stays internal and never reaches the materialized row.
+    """
+    return columns
+
+
+def _compound_columns(key: object) -> ColumnValues:
+    """A compound (tuple) member key → its columns (identity)."""
+    return cast(ColumnValues, key)
+
+
 @dataclass(frozen=True, slots=True)
 class ThroughRowProjection[Member: Hashable, Payload]:
     """Generic membership projection over a through-table.
