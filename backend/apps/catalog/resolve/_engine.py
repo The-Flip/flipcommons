@@ -80,7 +80,7 @@ def pick_member_winners(ranked: Iterable[Claim]) -> Winners[ClaimSubjectId, Clai
 # ---------------------------------------------------------------------------
 #
 # A membership projection materializes a claim namespace into through-rows.
-# ``reconcile`` is the single loop the 9 (formerly copy-pasted) resolvers share:
+# ``reconcile`` is the single loop every membership resolver shares:
 # pick winners → build desired → read existing → diff → write the delta.
 #
 # Three type params, spelled out and bound to match ``pick_winners``:
@@ -179,7 +179,7 @@ def reconcile[Subject: Hashable, Member: Hashable, Payload](
     what changed, so re-running is idempotent (the second pass writes nothing).
     *subjects* scopes the work — a single pk for an interactive edit, the whole
     affected set for bulk, ``None`` for the entire namespace.  Returns the
-    :class:`Delta` so a caller can scope cache invalidation (POST1).
+    :class:`Delta` so a caller can scope cache invalidation.
     """
     winners = pick_winners(
         projection.claims(subjects), projection.subject, lambda c: c.claim_key

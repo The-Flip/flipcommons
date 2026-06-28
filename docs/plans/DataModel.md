@@ -132,7 +132,7 @@ Unique together: `(model, person, role)`.
 
 The importer splits IPDB's comma-separated credit strings (e.g., `"Larry DeMar, Pat Lawlor"`) into individual Person records via `get_or_create`.
 
-## Resolution logic (`backend/apps/catalog/resolve/` and `backend/apps/provenance/entity_resolution.py`)
+## Resolution logic (`backend/apps/catalog/resolve/` and `backend/apps/provenance/resolution/`)
 
 A `resolve_model(model)` function that:
 

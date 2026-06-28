@@ -77,7 +77,7 @@ class GameplayFeature(
 COUNT_MIN = 1
 
 
-class MachineModelGameplayFeature(TimeStampedModel):
+class MachineModelGameplayFeature(models.Model):
     """Through model for MachineModel ↔ GameplayFeature, carrying optional count."""
 
     machinemodel = models.ForeignKey("MachineModel", on_delete=models.CASCADE)
@@ -108,7 +108,7 @@ class MachineModelGameplayFeature(TimeStampedModel):
         return label
 
 
-class GameplayFeatureAlias(AliasModel, TimeStampedModel):
+class GameplayFeatureAlias(AliasModel):
     """An alternate name for a GameplayFeature, used for matching/search."""
 
     alias_claim_field = "gameplay_feature_alias"

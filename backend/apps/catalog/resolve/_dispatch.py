@@ -193,7 +193,7 @@ def resolve_relationship(
     projection = entry.build()
     if projection is not None:
         scope = subject_ids if entry.scope is ScopePolicy.SUBJECTS else None
-        # reconcile returns a Delta (for cache scoping, POST1); unused here.
+        # reconcile returns a Delta (for cache scoping); unused here.
         reconcile(projection, scope)
     return True
 

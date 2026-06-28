@@ -456,7 +456,7 @@ class MachineModel(
         return " ".join(parts)
 
 
-class ModelAbbreviation(TimeStampedModel):
+class ModelAbbreviation(models.Model):
     """A common abbreviation for a MachineModel, e.g. "TS4LE" for Toy Story 4 LE.
 
     Materialized from provenance claims; each abbreviation is individually

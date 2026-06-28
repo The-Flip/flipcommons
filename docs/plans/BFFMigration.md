@@ -99,7 +99,7 @@ Page endpoints are exercised by existing integration tests — if imports are wi
 Provenance's `page_endpoints.py` is structured differently from catalog's:
 
 - It's a flat module with more inline logic
-- It uses `resolve_entity_type()` and `batch_resolve_entities()` for entity-agnostic routing
+- It uses `resolve_entity_type()` and `build_entity_links()` for entity-agnostic routing
 - It defines schemas inline rather than importing them
 
 The same principle applies — extract composition logic into `provenance/pages/` — but the functions to extract are different. Read the module and apply the same categorization criteria.

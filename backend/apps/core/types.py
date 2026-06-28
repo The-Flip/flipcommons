@@ -73,7 +73,7 @@ class EntityKey(NamedTuple):
     """Hashable reference to a catalog entity via content-type + object id.
 
     Used both as a dict key and as the input shape for helpers that fan out
-    across content types (e.g. ``batch_resolve_entities``).
+    across content types (e.g. ``build_entity_links``).
     """
 
     content_type_id: ContentTypeId

@@ -14,11 +14,8 @@ from apps.catalog.models import (
     Tag,
     Title,
 )
-from apps.catalog.resolve import (
-    _resolve_bulk,
-    _resolve_single,
-    resolve_entity,
-)
+from apps.catalog.resolve import resolve_entity
+from apps.catalog.resolve._entities import _resolve_bulk, _resolve_single
 from apps.catalog.resolve._helpers import get_nullable_unique_fields
 from apps.catalog.tests.conftest import bulk_resolve, make_machine_model
 from apps.core.models import RecordReference

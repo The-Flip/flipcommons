@@ -308,7 +308,7 @@ def _model_abbreviation_projection() -> ThroughRowProjection[str, None]:
     Claim-local: the model's own winning abbreviations are materialized as-is,
     including any that also belong to its Title. The Title dedup is a read-time
     view (api.helpers.displayed_model_abbreviations), not a write-time
-    subtraction — see docs/plans/provenance/ClaimResolutionRefactor.md.
+    subtraction.
     """
     return _abbreviation_projection(MachineModel, ModelAbbreviation, "machine_model_id")
 

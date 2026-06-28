@@ -28,7 +28,7 @@ from apps.core.entity_types import get_linkable_model
 from apps.core.schemas import EntityLinkSchema
 from apps.core.types import EntityKey
 
-from .entity_resolution import batch_resolve_entities
+from .entity_links import build_entity_links
 from .evidence import build_cited_changesets
 from .helpers import (
     active_claims,
@@ -303,7 +303,7 @@ def list_changes(
             cs_entity_map[cs.pk] = key
             entity_keys.append(key)
 
-    resolved = batch_resolve_entities(entity_keys)
+    resolved = build_entity_links(entity_keys)
 
     items: list[ChangeSetSummarySchema] = []
     for cs in changesets:
@@ -377,7 +377,7 @@ def change_detail(
 
     # Resolve entity metadata.
     entity_key = EntityKey(ct_id, obj_id)
-    meta_map = batch_resolve_entities([entity_key])
+    meta_map = build_entity_links([entity_key])
     meta = meta_map.get(entity_key)
     if not meta:
         return Status(404, {"detail": "Entity no longer exists."})

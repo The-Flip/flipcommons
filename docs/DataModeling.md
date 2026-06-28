@@ -30,6 +30,10 @@ When adding an app-enforced uniqueness rule:
 3. State the race behavior in the endpoint's docstring so future readers know what isn't guaranteed.
 4. Prefer a stricter check over a looser one, since relaxing is a one-line change and tightening requires auditing existing rows.
 
+### Don't timestamp derived rows
+
+A table whose rows are _materialized_ from another source — resolver projections from the claim log, denormalized caches — should not carry `created_at`/`updated_at`. The timestamp would record when the materializer last wrote the row, not a meaningful event: it misleads for audit (the real timeline is the source log, e.g. the claim and changeset for claim-materialized tables) and, written through bulk paths like `bulk_create`/`bulk_update`, often isn't even maintained. Reserve `TimeStampedModel` for authoritative input tables; derived rows don't get it. The rule keys on _derived_, not on _through_: a through table carrying genuine user input still gets timestamps.
+
 ## Abstract base classes
 
 We use abstract base classes (you may know them as mixins) to isolate each separate system concern. For example, the wiki linking system only knows about WikilinkableModels; it doesn't have to know about any model info other than that.
