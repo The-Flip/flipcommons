@@ -19,7 +19,6 @@
   import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';
   import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
   import TaxonomyLinkSidebarSection from '$lib/components/pages/record/detail/TaxonomyLinkSidebarSection.svelte';
-  import NeedsReviewBanner from './_components/NeedsReviewBanner.svelte';
   import {
     getMenuItemAction,
     type EditSectionMenuItem,
@@ -243,10 +242,6 @@
 {#if isFocusMode}
   {@render children()}
 {:else}
-  {#if title.needs_review}
-    <NeedsReviewBanner notes={title.needs_review_notes} links={title.review_links} />
-  {/if}
-
   {#snippet actionBar()}
     <PageActionBar
       detailHref={isDetail ? undefined : resolve(`/titles/${slug}`)}

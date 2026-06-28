@@ -1,16 +1,13 @@
 """API endpoints for the provenance app.
 
-Routers: sources, claims, changesets, pages, review, citation-instances.
+Routers: sources, claims, changesets, pages, citation-instances.
 Auto-discovered via the ``routers`` list convention in config/api.py.
 """
 
 from __future__ import annotations
 
-import re
-
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from django.db.models import Q
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
@@ -26,12 +23,9 @@ from apps.core.authz.enforce import enforce
 from apps.core.authz.evaluator import policy_user
 from apps.core.authz.markers import gated_inline, requires
 from apps.core.authz.types import Activity
-from apps.core.models import LinkableModel
 from apps.core.schemas import ErrorDetailSchema
 
-from .attribution import source_backing
-from .display import FieldValue, claim_value, resolve_display_context
-from .models import CitationInstance, Claim, ClaimControlledModel, Source
+from .models import CitationInstance, ClaimControlledModel, Source
 from .page_endpoints import pages_router
 from .schemas import (
     CitationInstanceBatchSchema,
@@ -40,114 +34,17 @@ from .schemas import (
     CitationLinkSchema,
     CitationSourceSchema,
     RevertNoteSchema,
-    ReviewClaimSchema,
-    ReviewLinkSchema,
     UndoChangeSetSchema,
     UndoResultSchema,
 )
 
 sources_router = Router(tags=["sources", "private"])
-review_router = Router(tags=["review", "private"])
 
 
 @sources_router.get("/", response=list[CitationSourceSchema])
 @decorate_view(cache_control(no_cache=True))
 def list_sources(request: HttpRequest) -> list[Source]:
     return list(Source.objects.all())
-
-
-def _subject_entity_type(claim: Claim) -> str:
-    """Return the canonical ``entity_type`` of a Claim's subject model.
-
-    ``ContentType.model_class()`` is typed ``type[Model] | None`` and ``Model``
-    doesn't carry ``entity_type``. By construction every Claim subject is a
-    concrete ``CatalogModel`` (which inherits ``LinkableModel``), so narrow.
-    """
-    model_cls = claim.content_type.model_class()
-    assert model_cls is not None
-    assert issubclass(model_cls, LinkableModel)
-    return model_cls.entity_type
-
-
-def _build_claim_review_context(
-    claim: Claim,
-) -> tuple[list[ReviewLinkSchema], str | None]:
-    """Build review links and title slug for a group claim flagged for review.
-
-    Returns (links, title_slug).
-    """
-    from apps.catalog.models import Title
-
-    links: list[ReviewLinkSchema] = []
-    value = str(claim.value) if claim.value else ""
-
-    # The claim value is a title's public_id (slug, for Title) — look it up.
-    try:
-        title = Title.objects.get(**{Title.public_id_field: value})
-    except Title.DoesNotExist:
-        return links, None
-
-    # Related OPDB-backed titles by name match.
-    base_name = re.sub(r"\s*\([^)]*\)\s*$", "", title.name).strip()
-    related = (
-        Title.objects.filter(Q(name__iexact=title.name) | Q(name__iexact=base_name))
-        .exclude(pk=title.pk)
-        .exclude(opdb_id__isnull=True)
-    )
-    for rt in related:
-        links.append(ReviewLinkSchema(label=rt.name, url=rt.get_absolute_url()))
-
-    return links, title.public_id
-
-
-@review_router.get("/claims/", response=list[ReviewClaimSchema])
-@decorate_view(cache_control(no_cache=True))
-def list_review_claims(request: HttpRequest) -> list[ReviewClaimSchema]:
-    """Return all active claims flagged for review."""
-    claims = list(
-        Claim.objects.filter(is_active=True, needs_review=True)
-        .select_related("actor__source", "content_type")
-        .prefetch_related("subject")
-        .order_by("-created_at")
-    )
-    ctx = resolve_display_context(FieldValue(c.field_name, c.value) for c in claims)
-
-    results: list[ReviewClaimSchema] = []
-    for claim in claims:
-        subject = claim.subject
-        # Claims only target ClaimControlledModel entities by construction; the
-        # generic FK's loose typing is the only reason this needs narrowing.
-        assert subject is None or isinstance(subject, ClaimControlledModel)
-        subject_name = str(subject) if subject else "Unknown"
-        subject_slug = subject.slug if subject is not None else None
-        # Cross-entity loop: the subject model varies per claim and is needed
-        # to dispatch markdown display. content_type is select_related above, so
-        # this is query-free, and it works even when the subject row is deleted.
-        subject_model = claim.content_type.model_class()
-        assert subject_model is not None
-        assert issubclass(subject_model, ClaimControlledModel)
-        if claim.field_name == "title":
-            review_links, title_slug = _build_claim_review_context(claim)
-        else:
-            review_links, title_slug = [], None
-        results.append(
-            ReviewClaimSchema(
-                id=claim.pk,
-                source_name=(
-                    src.name if (src := source_backing(claim.actor)) else "User"
-                ),
-                field_name=claim.field_name,
-                value=claim_value(subject_model, claim.field_name, claim.value, ctx),
-                needs_review_notes=claim.needs_review_notes,
-                created_at=claim.created_at.isoformat(),
-                subject_type=_subject_entity_type(claim),
-                subject_name=subject_name,
-                subject_slug=subject_slug,
-                title_slug=title_slug,
-                review_links=review_links,
-            )
-        )
-    return results
 
 
 # ── Claim and ChangeSet mutations (revert, undo) ───────────────────
@@ -371,6 +268,5 @@ routers = [
     ("/claims/", claims_router),
     ("/changesets/", changesets_router),
     ("/pages/", pages_router),
-    ("/review/", review_router),
     ("/citation-instances/", citation_instances_router),
 ]

@@ -18,14 +18,12 @@ from apps.provenance.test_factories import make_claim
 
 from .conftest import SAMPLE_IMAGES
 
-# Fields the public dump must never expose (internal/moderation/suppressed).
+# Fields the public dump must never expose (internal/suppressed).
 HIDDEN = frozenset(
     {
         "status",
         "ipdb_rating",
         "pinside_rating",
-        "needs_review",
-        "needs_review_notes",
         "extra_data",
     }
 )

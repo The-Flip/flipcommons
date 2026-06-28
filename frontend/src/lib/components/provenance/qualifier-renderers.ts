@@ -10,9 +10,9 @@
  */
 
 export type QualifierValue = boolean | number | string | null | undefined;
-export type QualifierRenderer = (value: QualifierValue) => string;
+type QualifierRenderer = (value: QualifierValue) => string;
 
-export const qualifierRenderers: Record<string, QualifierRenderer> = {
+const qualifierRenderers: Record<string, QualifierRenderer> = {
   count: (v) => (typeof v === 'number' && v > 1 ? ` ×${v}` : ''),
   category: (v) => (v ? ` (${v})` : ''),
   is_primary: (v) => (v === true ? ' [primary]' : ''),
@@ -23,7 +23,7 @@ export const qualifierRenderers: Record<string, QualifierRenderer> = {
  * about. Mirrors `category`'s truthiness skip (null/false/empty → omit)
  * so unknown data with no visible payload silently disappears.
  */
-export function renderDefaultQualifier(key: string, value: QualifierValue): string {
+function renderDefaultQualifier(key: string, value: QualifierValue): string {
   if (value === null || value === undefined || value === false || value === '') return '';
   return ` (${key}: ${value})`;
 }

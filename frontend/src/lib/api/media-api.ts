@@ -25,7 +25,7 @@ export interface UploadOptions {
   category: string;
 }
 
-export class UploadError extends Error {
+class UploadError extends Error {
   constructor(
     message: string,
     public readonly status: number,

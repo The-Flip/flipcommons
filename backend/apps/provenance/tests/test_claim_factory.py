@@ -44,10 +44,8 @@ class TestClaimForObject:
             field_name="name",
             value="Test",
             citation="https://example.com",
-            needs_review=True,
         )
         assert claim.citation == "https://example.com"
-        assert claim.needs_review is True
 
     def test_different_model_types_get_different_content_types(self):
         series = Series.objects.create(slug="test-series", name="Test Series")

@@ -26,7 +26,7 @@ type VirtualElement = {
   contextElement?: Element;
 };
 
-export type FloatingAnchor = Element | VirtualElement;
+type FloatingAnchor = Element | VirtualElement;
 
 export type FloatingOptions = {
   anchor: FloatingAnchor;

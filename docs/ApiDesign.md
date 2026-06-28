@@ -197,8 +197,6 @@ Worked example — `gameplay_features` appears in three places with three differ
 
 Only the third was a real consolidation candidate; it was narrowed to `list[Ref]` because the count field was load-bearing nowhere. The other two look similar but mean different things and stay separate.
 
-A second example: a "review link" (external write-up about a machine) and a "citation link" (source backing a claim) are both `{label, url}` but mean different things. Don't merge them just because the shape matches.
-
 ### When consolidation _is_ the right call
 
 Consolidate when one schema is provably a strict subset of another with identical semantics for the shared fields, and the call sites would benefit from a shared base for OpenAPI clarity or to enforce a shared invariant. The `DeletePreviewBase` hierarchy in [`backend/apps/catalog/api/schemas.py`](../backend/apps/catalog/api/schemas.py) is the pattern: a real shared base (entity ref + blocker info) with per-entity subclasses adding their own fields, not a shape-only parent that subclasses have to fight against. For the lifecycle meaning of delete blockers and cascade impact, see [Cascade Rules](RecordLifecycle.md#cascade-rules).

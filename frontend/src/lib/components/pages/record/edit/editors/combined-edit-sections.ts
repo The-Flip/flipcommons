@@ -20,7 +20,7 @@ import {
   type TitleEditSectionDef,
 } from '$lib/components/pages/record/edit/editors/entity/title/title-edit-sections';
 
-export type SectionTier = 'title' | 'model';
+type SectionTier = 'title' | 'model';
 export type CombinedSectionKey = `${SectionTier}:${string}`;
 
 export type CombinedSectionDef = {

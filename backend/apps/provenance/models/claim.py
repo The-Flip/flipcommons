@@ -24,7 +24,6 @@ from ..types import ChangeSetId
 from .changeset import ChangeSet
 
 CLAIM_CITATION_MAX_LENGTH = 2_000
-CLAIM_NEEDS_REVIEW_NOTES_MAX_LENGTH = 2_000
 
 if TYPE_CHECKING:
     from .citation_instance import CitationInstance
@@ -150,18 +149,6 @@ class Claim(models.Model):
         default=True,
         db_default=True,
         help_text="Current assertion from this author for this claim_key on this subject. False = superseded or retracted.",
-    )
-    needs_review = models.BooleanField(
-        default=False,
-        db_default=False,
-        help_text="Flag for low-confidence claims that need human review.",
-    )
-    needs_review_notes = BoundedTextField(
-        max_length=CLAIM_NEEDS_REVIEW_NOTES_MAX_LENGTH,
-        blank=True,
-        default="",
-        db_default="",
-        help_text="Context for reviewers about why this claim needs attention.",
     )
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
 

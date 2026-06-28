@@ -111,5 +111,3 @@ export function createDeleteSubmitter<E extends DeleteEntity>(entity: E) {
     return { kind: 'ok', data: data as DeleteResponse<E> };
   };
 }
-
-export { submitUndoDelete, type UndoOutcome } from '$lib/undo-delete';

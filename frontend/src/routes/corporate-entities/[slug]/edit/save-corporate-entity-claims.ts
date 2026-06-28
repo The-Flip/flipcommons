@@ -2,12 +2,9 @@ import { invalidateAll } from '$app/navigation';
 import client from '$lib/api/client';
 import type { CorporateEntityClaimPatchSchema } from '$lib/api/schema';
 import { parseApiError } from '$lib/api/parse-api-error';
-import type {
-  SaveMeta,
-  SaveResult,
-} from '$lib/components/pages/record/edit/editors/save-claims-shared';
+import type { SaveResult } from '$lib/components/pages/record/edit/editors/save-claims-shared';
 
-export type { SaveMeta, SaveResult };
+export type { SaveResult };
 
 type CorporateEntityClaimsBody = CorporateEntityClaimPatchSchema;
 

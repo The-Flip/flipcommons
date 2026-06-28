@@ -376,13 +376,6 @@ class AttributionSchema(Schema):
     ] = None
 
 
-class ReviewLinkSchema(Schema):
-    """A link out to an external page relevant to a needs-review item."""
-
-    label: str = Field(description="Human-readable link text.")
-    url: str = Field(description="The link's URL.")
-
-
 class CitationLinkSchema(Schema):
     """A link attached to a citation source."""
 
@@ -472,43 +465,6 @@ class CitationSourceSchema(Schema):
     )
     description: str = Field(
         description="Free-text description of the source, or an empty string."
-    )
-
-
-class ReviewClaimSchema(Schema):
-    """A flagged claim as surfaced in the global review queue."""
-
-    # Self-contains subject context (``subject_*``, ``title_slug``,
-    # ``review_links``) because the review UI displays claims *outside* any
-    # entity page. Distinct from :class:`ClaimSchema`, which assumes the entity
-    # context is already known (Sources page).
-    id: int = Field(description="The claim's identifier.")
-    source_name: str = Field(
-        description="Name of the source or user that authored the claim."
-    )
-    field_name: str = Field(description="The entity field the claim applies to.")
-    value: ClaimValueSchema = Field(description="The claim's asserted value.")
-    needs_review_notes: str = Field(
-        description="Explanation of why the claim needs review."
-    )
-    created_at: str = Field(
-        description="When the claim was created, as an ISO 8601 timestamp."
-    )
-    # Canonical hyphenated CatalogModel.entity_type, e.g. "manufacturer".
-    subject_type: str = Field(
-        description='Entity type of the claim\'s subject (e.g. "manufacturer").'
-    )
-    subject_name: str = Field(description="Display name of the subject entity.")
-    subject_slug: str | None = Field(
-        None,
-        description="URL slug of the subject entity, or null if it no longer exists.",
-    )
-    title_slug: str | None = Field(
-        None,
-        description="For group claims that created a Title, the Title's slug; null otherwise.",
-    )
-    review_links: list[ReviewLinkSchema] = Field(
-        [], description="External links relevant to reviewing the claim."
     )
 
 
