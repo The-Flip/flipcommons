@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import NamedTuple, assert_never
+from typing import assert_never
 
 from django.apps import apps
 from django.db.models import ForeignKey
@@ -141,25 +141,23 @@ type MemberAccessor = str
 M2M field name ("themes") or a reverse-FK accessor ("credits")."""
 
 
-class SubjectAccessor(NamedTuple):
-    """A subject model paired with the accessor reaching its members."""
-
-    subject_model: type[ClaimControlledModel]
-    accessor: MemberAccessor
-
-
 @dataclass(frozen=True, slots=True)
 class ClaimRelationshipBinding:
     """A spec paired with the runtime facts a bare spec can't carry.
 
     The spec is pure data with no model-class reference, so its owning
-    through-model, the concrete subject model and the live reverse/M2M accessor
-    name come from the binding rather than a re-walk or object-identity lookup.
+    through-model, the concrete subject model, the subject FK column on the
+    through-model and the live reverse/M2M accessor name come from the binding
+    rather than a re-walk or object-identity lookup. ``subject_fk`` is the
+    branch-resolved FK name — for an :class:`XorSubject` it identifies *which*
+    branch this binding's subject occupies, so a consumer (e.g. the resolution
+    projection builder) derives ``{subject_fk}_id`` without re-introspecting.
     """
 
     spec: ClaimRelationshipSpec
     through_model: type[ClaimThroughModel]
     subject_model: type[ClaimControlledModel]
+    subject_fk: ColumnName
     accessor: MemberAccessor
 
 
@@ -206,23 +204,17 @@ def _build_bindings() -> BindingsBySubject:
         if not issubclass(model, ClaimThroughModel) or model._meta.abstract:
             continue
         spec = model.claim_relationship_spec
-        for subject_model, accessor in _subjects_and_accessors(model, spec):
-            binding = ClaimRelationshipBinding(
-                spec=spec,
-                through_model=model,
-                subject_model=subject_model,
-                accessor=accessor,
-            )
-            by_subject.setdefault(subject_model, []).append(binding)
+        for binding in _bindings_for_through(model, spec):
+            by_subject.setdefault(binding.subject_model, []).append(binding)
     return {subject: tuple(bindings) for subject, bindings in by_subject.items()}
 
 
-def _subjects_and_accessors(
+def _bindings_for_through(
     through_model: type[ClaimThroughModel], spec: ClaimRelationshipSpec
-) -> list[SubjectAccessor]:
-    """Resolve each subject FK on the through-model to its :class:`SubjectAccessor`.
+) -> list[ClaimRelationshipBinding]:
+    """Every binding a through-model's spec yields — one per subject FK.
 
-    A :class:`SingleSubject` yields one pair; an :class:`XorSubject` yields two.
+    A :class:`SingleSubject` yields one binding; an :class:`XorSubject` yields two.
     """
     fk_names: tuple[ColumnName, ...]
     # Exhaustive dispatch over the closed SubjectSpec union — the sanctioned
@@ -236,13 +228,15 @@ def _subjects_and_accessors(
             fk_names = (left_fk, right_fk)
         case _:
             assert_never(spec.subject)
-    return [_subject_and_accessor(through_model, fk_name) for fk_name in fk_names]
+    return [_binding_for_subject(through_model, spec, fk_name) for fk_name in fk_names]
 
 
-def _subject_and_accessor(
-    through_model: type[ClaimThroughModel], fk_name: ColumnName
-) -> SubjectAccessor:
-    """The subject model and its member-accessor for one subject FK.
+def _binding_for_subject(
+    through_model: type[ClaimThroughModel],
+    spec: ClaimRelationshipSpec,
+    fk_name: ColumnName,
+) -> ClaimRelationshipBinding:
+    """The binding for one subject FK — its subject model and member-accessor.
 
     The subject model is the FK's target. The accessor is the attribute on the
     subject model that reaches the members, which differs by relation shape:
@@ -268,13 +262,21 @@ def _subject_and_accessor(
         f"is not claim-controlled"
     )
 
+    accessor: MemberAccessor | None = None
     for m2m in subject_model._meta.many_to_many:
         if m2m.remote_field.through is through_model:
-            return SubjectAccessor(subject_model, m2m.name)
-
-    accessor = subject_fk.remote_field.get_accessor_name()
+            accessor = m2m.name
+            break
+    else:
+        accessor = subject_fk.remote_field.get_accessor_name()
     assert accessor is not None, (
         f"{through_model.__name__}.{fk_name} suppresses its reverse accessor "
         f"(related_name='+'); cannot reach members"
     )
-    return SubjectAccessor(subject_model, accessor)
+    return ClaimRelationshipBinding(
+        spec=spec,
+        through_model=through_model,
+        subject_model=subject_model,
+        subject_fk=fk_name,
+        accessor=accessor,
+    )

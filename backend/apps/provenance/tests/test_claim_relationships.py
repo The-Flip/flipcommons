@@ -99,8 +99,22 @@ def test_relationships_for_xor_subject_spans_both_subjects() -> None:
     """Credit's ``XorSubject`` expands into one binding per subject model."""
     from apps.catalog.models import Credit, MachineModel, Series
 
-    for model in (MachineModel, Series):
+    for model, expected_fk in ((MachineModel, "model"), (Series, "series")):
         credit = [b for b in relationships_for(model) if b.spec.namespace == "credit"]
         assert len(credit) == 1
         assert credit[0].subject_model is model
         assert credit[0].through_model is Credit
+        # The binding resolves which XOR branch this subject occupies, so the
+        # resolution builder derives ``{subject_fk}_id`` without re-introspecting.
+        assert credit[0].subject_fk == expected_fk
+
+
+def test_binding_subject_fk_matches_single_subject() -> None:
+    """A SingleSubject binding carries the declared subject FK name."""
+    from apps.catalog.models import MachineModel
+
+    by_namespace = {
+        b.spec.namespace: b.subject_fk for b in relationships_for(MachineModel)
+    }
+    assert by_namespace["theme"] == "machinemodel"
+    assert by_namespace["abbreviation"] == "machine_model"
