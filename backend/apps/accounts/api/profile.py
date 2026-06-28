@@ -14,7 +14,7 @@ from apps.accounts.models import User
 from apps.core.authz import compute_row_capabilities, policy_user
 from apps.core.schemas import ErrorDetailSchema
 from apps.core.types import EntityKey
-from apps.provenance.entity_resolution import batch_resolve_entities
+from apps.provenance.entity_links import build_entity_links
 from apps.provenance.models import ChangeSet, Claim
 
 from .profile_schemas import (
@@ -67,7 +67,7 @@ def user_profile_page(request: HttpRequest, username: str) -> UserProfileSchema:
             }
         )
 
-    resolved = batch_resolve_entities(
+    resolved = build_entity_links(
         [EntityKey(row["content_type_id"], row["object_id"]) for row in entity_rows]
     )
 
@@ -103,7 +103,7 @@ def user_profile_page(request: HttpRequest, username: str) -> UserProfileSchema:
             cs_first_claim[cs.pk] = key
             cs_entity_keys.append(key)
 
-    cs_resolved = batch_resolve_entities(cs_entity_keys)
+    cs_resolved = build_entity_links(cs_entity_keys)
 
     recent_edits: list[UserChangeSetSchema] = []
     for cs in recent_changesets:

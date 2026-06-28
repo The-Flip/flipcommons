@@ -1,6 +1,8 @@
-"""Shared helpers for resolving catalog entity metadata from content-type refs.
+"""Shared helpers for building entity-link DTOs from content-type refs.
 
-Used by the user-profile endpoint and the recent-changes feed.
+Dereferences ``EntityKey`` content-type pointers into ``EntityLinkSchema``
+DTOs (href, name, type label) for the frontend. Used by the user-profile
+endpoint and the recent-changes feed.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from apps.core.schemas import EntityLinkSchema
 from apps.core.types import EntityKey
 
 
-def resolve_entity_href(
+def build_entity_href(
     model_class: type[models.Model], entity: models.Model
 ) -> str | None:
     """Build the frontend URL for a catalog entity from its link_url_pattern."""
@@ -26,20 +28,20 @@ def resolve_entity_href(
     return pattern.format(public_id=public_id)
 
 
-def batch_resolve_entities(
+def build_entity_links(
     entity_keys: Sequence[EntityKey],
 ) -> dict[EntityKey, EntityLinkSchema]:
-    """Resolve entity metadata from a sequence of ``EntityKey`` refs.
+    """Build entity-link DTOs from a sequence of ``EntityKey`` refs.
 
     Returns a dict mapping each ``EntityKey`` to its ``EntityLinkSchema``,
-    skipping entries whose content type or object cannot be resolved.
+    skipping entries whose content type or object cannot be dereferenced.
     """
     # Group by content_type_id, deduplicating object_ids
     by_ct: dict[int, set[int]] = defaultdict(set)
     for key in entity_keys:
         by_ct[key.content_type_id].add(key.object_id)
 
-    resolved: dict[EntityKey, EntityLinkSchema] = {}
+    links: dict[EntityKey, EntityLinkSchema] = {}
     for ct_id, obj_ids in by_ct.items():
         ct = ContentType.objects.get_for_id(ct_id)
         model_class = ct.model_class()
@@ -48,13 +50,13 @@ def batch_resolve_entities(
         entities = model_class._default_manager.in_bulk(list(obj_ids))
         type_label = str(model_class._meta.verbose_name).title()
         for obj_id, entity in entities.items():
-            href = resolve_entity_href(model_class, entity)
+            href = build_entity_href(model_class, entity)
             if href is None:
                 continue
             name = getattr(entity, "name", None)
-            resolved[EntityKey(ct_id, obj_id)] = EntityLinkSchema(
+            links[EntityKey(ct_id, obj_id)] = EntityLinkSchema(
                 href=href,
                 name=name if isinstance(name, str) else str(entity),
                 type_label=type_label,
             )
-    return resolved
+    return links
