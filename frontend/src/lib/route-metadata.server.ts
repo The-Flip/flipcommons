@@ -44,7 +44,6 @@ export const SEARCH_ENGINE_NON_INDEXABLE_ROUTE_IDS = [
   // stable profile. Revisit if user pages grow real profile content.
   '/users/[username]',
   '/changesets',
-  '/review',
   '/kiosk',
   '/_sentry_test',
 ] as const satisfies readonly RouteId[];

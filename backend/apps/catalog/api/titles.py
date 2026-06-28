@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Callable, Sequence
 from typing import Annotated, Any
 
@@ -53,10 +52,7 @@ from apps.provenance.rate_limits import (
     EDIT_RATE_LIMIT_SPEC,
     rate_limited,
 )
-from apps.provenance.schemas import (
-    ChangeSetInputSchema,
-    ReviewLinkSchema,
-)
+from apps.provenance.schemas import ChangeSetInputSchema
 
 from ..cache import (
     get_cached_response,
@@ -339,9 +335,6 @@ class TitleDetailSchema(EntityDetailSchema):
     opdb_id: str | None = None
     fandom_page_id: int | None = None
     abbreviations: list[str] = []
-    needs_review: bool = False
-    needs_review_notes: str = ""
-    review_links: list[ReviewLinkSchema] = []
     hero_image_url: str | None = None
     franchise: EntityRef | None = None
     machines: list[TitleModelSchema]
@@ -379,24 +372,6 @@ def _assert_title_name_available(name: str, *, exclude_pk: int | None = None) ->
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _build_review_links(title: Title) -> list[ReviewLinkSchema]:
-    """Build external/internal review links for a needs_review title."""
-    links: list[ReviewLinkSchema] = []
-
-    # Related titles by name match (only OPDB-backed ones).
-    base_name = re.sub(r"\s*\([^)]*\)\s*$", "", title.name).strip()
-    related = (
-        Title.objects.active()
-        .filter(Q(name__iexact=title.name) | Q(name__iexact=base_name))
-        .exclude(pk=title.pk)
-        .exclude(opdb_id__isnull=True)
-    )
-    for rt in related:
-        links.append(ReviewLinkSchema(label=rt.name, url=f"/titles/{rt.slug}"))
-
-    return links
 
 
 def _agreed_value[T](
@@ -610,8 +585,6 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
         if title.series
         else None
     )
-    review_links = _build_review_links(title) if title.needs_review else []
-
     hero_image_url = _select_title_hero_image_url(model_objs, min_rank=min_rank)
 
     # Credits that appear on every model (intersection, not union).
@@ -657,9 +630,6 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
         fandom_page_id=title.fandom_page_id,
         abbreviations=[a.value for a in title.abbreviations.all()],
         description=describe(title),
-        needs_review=title.needs_review,
-        needs_review_notes=title.needs_review_notes,
-        review_links=review_links,
         hero_image_url=hero_image_url,
         franchise=(
             EntityRef(public_id=title.franchise.public_id, name=title.franchise.name)

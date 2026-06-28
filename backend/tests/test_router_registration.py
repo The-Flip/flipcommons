@@ -31,7 +31,6 @@ EXPECTED_PREFIXES = {
     "/sources/",
     "/claims/",
     "/changesets/",
-    "/review/",
     "/media/",
 }
 

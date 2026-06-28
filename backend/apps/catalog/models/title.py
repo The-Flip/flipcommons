@@ -12,7 +12,6 @@ from django.db.models.expressions import Combinable
 from django.db.models.functions import Coalesce, Greatest
 
 from apps.core.models import (
-    BoundedTextField,
     SluggedModel,
     TimeStampedModel,
     field_not_blank,
@@ -30,7 +29,6 @@ from .base import CatalogModel
 __all__ = ["Title", "TitleAbbreviation"]
 
 EXTERNAL_ID_MIN = 1
-TITLE_NEEDS_REVIEW_NOTES_MAX_LENGTH = 2_000
 
 if TYPE_CHECKING:
     from .machine_model import MachineModel
@@ -106,16 +104,6 @@ class Title(
         blank=True,
         help_text="Fandom wiki page ID for deep-linking.",
         validators=[MinValueValidator(EXTERNAL_ID_MIN)],
-    )
-    needs_review = models.BooleanField(
-        default=False,
-        help_text="Title was auto-generated and may need human review.",
-    )
-    needs_review_notes = BoundedTextField(
-        max_length=TITLE_NEEDS_REVIEW_NOTES_MAX_LENGTH,
-        blank=True,
-        help_text="Context for reviewers about why this title needs attention.",
-        validators=[validate_no_mojibake],
     )
 
     # Reverse access to provenance claims for this title.

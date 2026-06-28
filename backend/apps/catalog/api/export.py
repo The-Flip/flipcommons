@@ -87,7 +87,6 @@ export_router = Router(tags=["export"])
 _BASE_HANDLED = frozenset({"name", "slug", "description", "status"})
 
 # Per-entity System-internal / API-suppressed claim fields kept OUT of the dump.
-_MODERATION = frozenset({"needs_review", "needs_review_notes"})  # internal review notes
 _RATINGS = frozenset({"ipdb_rating", "pinside_rating"})  # already cut from the API
 
 
@@ -645,7 +644,6 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
         ),
         ExportSpec(
             model=Title,
-            export_exempt=_MODERATION,
             relations={"abbreviations": _rel("abbreviations", "strings")},
             derived={
                 "year": DerivedField(

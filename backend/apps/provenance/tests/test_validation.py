@@ -91,16 +91,6 @@ class TestValidateClaimValue:
         result = validate_claim_value("manufacturer", "some-slug", System)
         assert result == "some-slug"
 
-    def test_boolean_field_rejects_invalid_string(self):
-        # BooleanField has no validators, but to_python() should still run
-        # and reject non-boolean strings like "maybe".
-        with pytest.raises(ValidationError):
-            validate_claim_value("needs_review", "maybe", Title)
-
-    def test_boolean_field_accepts_valid_value(self):
-        result = validate_claim_value("needs_review", True, Title)
-        assert result is True
-
     # --- Field-specific validators ---
 
     def test_wikidata_id_valid_format_passes(self):
