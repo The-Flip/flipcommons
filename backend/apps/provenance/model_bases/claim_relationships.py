@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import NamedTuple
+from typing import NamedTuple, assert_never
 
 from django.apps import apps
 from django.db.models import ForeignKey
@@ -225,11 +225,17 @@ def _subjects_and_accessors(
     A :class:`SingleSubject` yields one pair; an :class:`XorSubject` yields two.
     """
     fk_names: tuple[ColumnName, ...]
+    # Exhaustive dispatch over the closed SubjectSpec union — the sanctioned
+    # alternative to isinstance-on-model branching. assert_never makes mypy flag
+    # the missing case the moment a variant (e.g. the planned SelfParentSubject)
+    # is added to the union, instead of silently leaving fk_names unbound.
     match spec.subject:
         case SingleSubject(fk_name):
             fk_names = (fk_name,)
         case XorSubject(left_fk, right_fk):
             fk_names = (left_fk, right_fk)
+        case _:
+            assert_never(spec.subject)
     return [_subject_and_accessor(through_model, fk_name) for fk_name in fk_names]
 
 

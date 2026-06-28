@@ -1,8 +1,7 @@
-"""The relationship declaration vocabulary — structure + read-surface smoke tests.
+"""The relationship declaration vocabulary — structure + read-surface tests.
 
-No through-model declares a ``claim_relationship_spec`` yet, so the read surface
-returns nothing for every model. These tests pin that empty contract (guarding
-against an accidental early consumer) and exercise the spec dataclasses.
+Exercises the spec dataclasses and the ``relationships_for`` read surface now
+that the catalog through-models declare their specs (REF2).
 """
 
 from __future__ import annotations
@@ -60,9 +59,48 @@ def test_xor_subject_holds_two_branches() -> None:
     assert (subject.left_fk, subject.right_fk) == ("model", "series")
 
 
-def test_relationships_for_is_empty_until_specs_declared() -> None:
-    """No through-model declares a spec yet, so every subject resolves to ()."""
+def test_relationships_for_returns_declared_specs() -> None:
+    """Each subject resolves to the namespaces its through-models declare."""
     from apps.catalog.models import CorporateEntity, MachineModel, Series, Title
 
-    for model in (MachineModel, Series, Title, CorporateEntity):
-        assert relationships_for(model) == ()
+    def namespaces(model: type) -> set[str]:
+        return {b.spec.namespace for b in relationships_for(model)}
+
+    assert namespaces(MachineModel) == {
+        "theme",
+        "tag",
+        "reward_type",
+        "gameplay_feature",
+        "credit",
+        "abbreviation",
+    }
+    assert namespaces(Title) == {"abbreviation"}
+    assert namespaces(CorporateEntity) == {"location"}
+    # Credit's XorSubject yields a binding on both subjects.
+    assert namespaces(Series) == {"credit"}
+
+
+def test_relationships_for_pairs_specs_with_accessors() -> None:
+    """A binding carries the live accessor: M2M field name or reverse-FK name."""
+    from apps.catalog.models import MachineModel
+
+    by_namespace = {
+        b.spec.namespace: b.accessor for b in relationships_for(MachineModel)
+    }
+    # M2M ``through=`` accessors.
+    assert by_namespace["theme"] == "themes"
+    assert by_namespace["gameplay_feature"] == "gameplay_features"
+    # Reverse-FK accessors (the through rows *are* the members).
+    assert by_namespace["credit"] == "credits"
+    assert by_namespace["abbreviation"] == "abbreviations"
+
+
+def test_relationships_for_xor_subject_spans_both_subjects() -> None:
+    """Credit's ``XorSubject`` expands into one binding per subject model."""
+    from apps.catalog.models import Credit, MachineModel, Series
+
+    for model in (MachineModel, Series):
+        credit = [b for b in relationships_for(model) if b.spec.namespace == "credit"]
+        assert len(credit) == 1
+        assert credit[0].subject_model is model
+        assert credit[0].through_model is Credit

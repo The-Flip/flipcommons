@@ -21,6 +21,13 @@ from apps.core.models import (
 from apps.core.validators import validate_no_mojibake
 from apps.core.wikilinks import WikilinkableModel
 from apps.media.models import MediaSupportedModel
+from apps.provenance.model_bases import (
+    ClaimRelationshipSpec,
+    ClaimThroughModel,
+    MemberField,
+    PayloadField,
+    SingleSubject,
+)
 
 from .base import AliasModel, CatalogModel
 
@@ -77,8 +84,23 @@ class GameplayFeature(
 COUNT_MIN = 1
 
 
-class MachineModelGameplayFeature(models.Model):
+class MachineModelGameplayFeature(ClaimThroughModel):
     """Through model for MachineModel ↔ GameplayFeature, carrying optional count."""
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec] = ClaimRelationshipSpec(
+        namespace="gameplay_feature",
+        subject=SingleSubject("machinemodel"),
+        members=(
+            # FK column squishes the model name; the claim value key keeps the
+            # snake-case namespace.
+            MemberField(
+                "gameplayfeature",
+                value_key="gameplay_feature",
+                identity="gameplay_feature",
+            ),
+        ),
+        payload=(PayloadField("count", nullable=True),),
+    )
 
     machinemodel = models.ForeignKey("MachineModel", on_delete=models.CASCADE)
     gameplayfeature = models.ForeignKey(GameplayFeature, on_delete=models.PROTECT)

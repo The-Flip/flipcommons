@@ -18,6 +18,12 @@ from apps.core.models import (
 )
 from apps.core.validators import validate_no_mojibake
 from apps.core.wikilinks import WikilinkableModel
+from apps.provenance.model_bases import (
+    ClaimRelationshipSpec,
+    ClaimThroughModel,
+    MemberField,
+    SingleSubject,
+)
 
 from .base import AliasModel, CatalogModel
 
@@ -68,8 +74,14 @@ class Theme(
         return self.name
 
 
-class MachineModelTheme(models.Model):
+class MachineModelTheme(ClaimThroughModel):
     """Through model for MachineModel ↔ Theme (materialized from relationship claims)."""
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec] = ClaimRelationshipSpec(
+        namespace="theme",
+        subject=SingleSubject("machinemodel"),
+        members=(MemberField("theme", identity="theme"),),
+    )
 
     machinemodel = models.ForeignKey("MachineModel", on_delete=models.CASCADE)
     theme = models.ForeignKey(Theme, on_delete=models.PROTECT)

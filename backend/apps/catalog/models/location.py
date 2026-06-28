@@ -15,6 +15,12 @@ from apps.core.models import (
     status_valid,
 )
 from apps.core.validators import validate_no_mojibake
+from apps.provenance.model_bases import (
+    ClaimRelationshipSpec,
+    ClaimThroughModel,
+    MemberField,
+    SingleSubject,
+)
 
 from .base import AliasModel, CatalogModel
 from .manufacturer import CorporateEntity
@@ -181,7 +187,7 @@ class LocationAlias(AliasModel):
         ]
 
 
-class CorporateEntityLocation(models.Model):
+class CorporateEntityLocation(ClaimThroughModel):
     """Associates a CorporateEntity with a canonical Location.
 
     One-to-many: a CE can have multiple locations.
@@ -191,6 +197,12 @@ class CorporateEntityLocation(models.Model):
     Existence is controlled by ``"location"`` relationship claims on
     CorporateEntity — do not create or delete rows directly.
     """
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec] = ClaimRelationshipSpec(
+        namespace="location",
+        subject=SingleSubject("corporate_entity"),
+        members=(MemberField("location", identity="location"),),
+    )
 
     corporate_entity_id: int
     location_id: int

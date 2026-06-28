@@ -144,6 +144,17 @@ class Projection[Subject: Hashable, Member: Hashable, Payload](Protocol):
 
     Everything that varies between the membership resolvers lives behind these
     five methods; :func:`reconcile` is the invariant loop over them.
+
+    **Purity invariant.** A projection is a function of *claims* — it reads the
+    claim log (plus its own materialized rows, for the diff) and writes its own
+    view, nothing else. It must **never** read another projection's materialized
+    output: that is what creates cross-entity ordering, cascade edges and
+    staleness (the ``model_abbreviations`` reading ``TitleAbbreviation`` rows
+    that motivated this design). A cross-projection or cross-entity join belongs
+    at *read* time, not here. The one tolerated exception is the FK natural-key
+    lookup (a target's resolved ``slug`` / ``location_path``), safe only because
+    the resolved pk is stable and the dependency is met by batch *order*, not an
+    incremental trigger.
     """
 
     def claims(self, subjects: set[Subject] | None) -> Iterable[Claim]:

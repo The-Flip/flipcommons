@@ -39,6 +39,13 @@ if TYPE_CHECKING:
 # Highest effective_priority, then newest created_at, then highest pk (= last
 # write) — a total, deterministic order.  Private: callers go through
 # ``ranked_claims`` so the tail can never be omitted.
+#
+# Priority dominates; recency is only a tiebreak — a higher-priority source beats
+# a more-recent lower-priority claim. This is a generalized LWW-Register (any
+# total order on writes), NOT wall-clock LWW; plain "last write wins" is the
+# degenerate case where all priorities are equal. Do not reorder these so recency
+# leads — that would silently let a newer low-priority edit override a curated
+# high-priority source.
 _WINNER_ORDER: tuple[str, ...] = ("-effective_priority", "-created_at", "-pk")
 
 

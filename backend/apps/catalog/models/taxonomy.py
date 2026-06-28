@@ -18,6 +18,12 @@ from apps.core.models import (
 )
 from apps.core.validators import validate_no_mojibake
 from apps.core.wikilinks import WikilinkableModel
+from apps.provenance.model_bases import (
+    ClaimRelationshipSpec,
+    ClaimThroughModel,
+    MemberField,
+    SingleSubject,
+)
 
 from .base import AliasModel, CatalogModel
 
@@ -324,8 +330,18 @@ class RewardType(
         return self.name
 
 
-class MachineModelRewardType(models.Model):
+class MachineModelRewardType(ClaimThroughModel):
     """Through model for MachineModel ↔ RewardType (materialized from relationship claims)."""
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec] = ClaimRelationshipSpec(
+        namespace="reward_type",
+        subject=SingleSubject("machinemodel"),
+        members=(
+            # FK column squishes the model name; the claim value key keeps the
+            # snake-case namespace.
+            MemberField("rewardtype", value_key="reward_type", identity="reward_type"),
+        ),
+    )
 
     machinemodel = models.ForeignKey("MachineModel", on_delete=models.CASCADE)
     rewardtype = models.ForeignKey(RewardType, on_delete=models.PROTECT)
@@ -394,8 +410,14 @@ class Tag(
         return self.name
 
 
-class MachineModelTag(models.Model):
+class MachineModelTag(ClaimThroughModel):
     """Through model for MachineModel ↔ Tag (materialized from relationship claims)."""
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec] = ClaimRelationshipSpec(
+        namespace="tag",
+        subject=SingleSubject("machinemodel"),
+        members=(MemberField("tag", identity="tag"),),
+    )
 
     machinemodel = models.ForeignKey("MachineModel", on_delete=models.CASCADE)
     tag = models.ForeignKey(Tag, on_delete=models.PROTECT)

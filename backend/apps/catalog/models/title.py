@@ -22,6 +22,12 @@ from apps.core.models import (
 )
 from apps.core.validators import validate_no_mojibake
 from apps.core.wikilinks import WikilinkableModel
+from apps.provenance.model_bases import (
+    ClaimRelationshipSpec,
+    ClaimThroughModel,
+    MemberField,
+    SingleSubject,
+)
 
 from ._autocomplete import manufacturer_year_sublabel
 from .base import CatalogModel
@@ -189,12 +195,18 @@ class Title(
         return self.name
 
 
-class TitleAbbreviation(models.Model):
+class TitleAbbreviation(ClaimThroughModel):
     """A common abbreviation for a Title, e.g. "MM" for Medieval Madness.
 
     Materialized from provenance claims; each abbreviation is individually
     tracked with source attribution.
     """
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec] = ClaimRelationshipSpec(
+        namespace="abbreviation",
+        subject=SingleSubject("title"),
+        members=(MemberField("value", identity="value"),),
+    )
 
     title = models.ForeignKey(
         Title, on_delete=models.CASCADE, related_name="abbreviations"
