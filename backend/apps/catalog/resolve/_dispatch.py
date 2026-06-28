@@ -13,7 +13,7 @@ not — the bulk caller invalidates once after its run).
 Relationship namespaces resolve through one ``(field_name, model) →
 RegistryEntry`` table (:func:`_get_relationship_registry`): each entry pairs a
 :class:`~apps.catalog.resolve._engine.Projection` builder with a
-:class:`ScopePolicy`, and :func:`resolve_relationship` runs the shared
+:class:`~apps.provenance.model_bases.ScopePolicy`, and :func:`resolve_relationship` runs the shared
 :func:`~apps.catalog.resolve._engine.reconcile` over it. ``media_attachment`` is
 content-type keyed and handled separately (in :mod:`._media`).
 """
@@ -21,13 +21,13 @@ content-type keyed and handled separately (in :mod:`._media`).
 from __future__ import annotations
 
 from collections.abc import Callable, Collection
-from enum import Enum, auto
 from functools import partial
 from typing import Any, NamedTuple
 
 from django.db import transaction
 
 from apps.core.types import ClaimFieldName, ClaimSubjectId
+from apps.provenance.model_bases import ScopePolicy
 from apps.provenance.models import ClaimControlledModel
 
 from ..cache import invalidate_response_cache
@@ -50,21 +50,6 @@ class RelationshipDispatchKey(NamedTuple):
 
     field_name: ClaimFieldName
     entity_model: type[ClaimControlledModel]
-
-
-class ScopePolicy(Enum):
-    """Whether a namespace honors the changed-subject scope or resolves whole-type.
-
-    ``SUBJECTS`` resolvers re-materialize only the passed subjects (the common,
-    efficient case). ``FULL_TYPE`` resolvers (aliases, parent hierarchies) ignore
-    the scope and re-resolve their entire type, preserving the pre-refactor
-    behavior. Their projections *could* be scoped — the reads filter by subject —
-    so subject-scoping them is a valid, idempotent optimization deferred to a
-    later step, not a correctness requirement.
-    """
-
-    SUBJECTS = auto()
-    FULL_TYPE = auto()
 
 
 type ProjectionBuilder = Callable[[], Projection[ClaimSubjectId, Any, Any] | None]
