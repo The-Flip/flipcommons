@@ -23,17 +23,10 @@ dispatched by entity type and changed claim field names in :mod:`._dispatch`.
 from __future__ import annotations
 
 from ._dispatch import register_catalog_resolve_handlers, resolve_relationship
-from ._entities import (
-    _resolve_bulk,
-    _resolve_single,
-    resolve_all_entities,
-    resolve_entity,
-)
+from ._entities import resolve_all_entities, resolve_entity
 from ._media import resolve_media_attachments
 
 __all__ = [
-    "_resolve_bulk",
-    "_resolve_single",
     "register_catalog_resolve_handlers",
     "resolve_all_entities",
     "resolve_entity",

@@ -10,11 +10,8 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
-from apps.catalog.resolve import (
-    _resolve_bulk,
-    resolve_entity,
-    resolve_relationship,
-)
+from apps.catalog.resolve import resolve_entity, resolve_relationship
+from apps.catalog.resolve._entities import _resolve_bulk
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.attribution import source_backing
 from apps.provenance.claims import build_relationship_claim
