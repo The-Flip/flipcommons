@@ -8,7 +8,7 @@ export type TitleEditSectionDef = EditSectionDef<TitleEditSectionKey> & {
   includeInSingleModel: boolean;
 };
 
-export const TITLE_EDIT_SECTIONS: TitleEditSectionDef[] = [
+const TITLE_EDIT_SECTIONS: TitleEditSectionDef[] = [
   {
     key: 'name',
     segment: 'name',

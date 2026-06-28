@@ -25,8 +25,6 @@ const NON_ALNUM_RUN = /[^0-9a-z]+/g;
 const LEADING_ARTICLE = /^(?:the|a|an)\s+/;
 const WHITESPACE_RUN = /\s+/g;
 
-export const MAX_CATALOG_NAME_LENGTH = 300;
-
 export function normalizeCatalogName(raw: string): string {
   const folded = raw.normalize('NFKC').toLowerCase();
   const spaced = folded.replace(NON_ALNUM_RUN, ' ').trim();

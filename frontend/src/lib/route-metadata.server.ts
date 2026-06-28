@@ -301,7 +301,7 @@ const ENTITIES_WITH_LISTING: ReadonlySet<CatalogEntityKey> = new Set(
  * so a detail page's trail names the listing exactly as the listing page does;
  * the URL comes from the model-driven `ENTITY_META` registry.
  */
-export function listingCrumb(entity: CatalogEntityKey): Crumb | null {
+function listingCrumb(entity: CatalogEntityKey): Crumb | null {
   if (!ENTITIES_WITH_LISTING.has(entity)) return null;
   return {
     label: listingMeta(entity).breadcrumb,

@@ -169,27 +169,6 @@ export const IPDB_DETAIL_RESPONSE = {
   updated_at: '2024-01-01T00:00:00Z',
 };
 
-export const JJP_DETAIL_RESPONSE = {
-  id: JJP_SOURCE.id,
-  name: JJP_SOURCE.name,
-  source_type: 'web',
-  author: '',
-  publisher: '',
-  year: null,
-  month: null,
-  day: null,
-  date_note: '',
-  isbn: null,
-  description: '',
-  identifier_key: '',
-  skip_locator: false,
-  parent: null,
-  links: [{ id: 301, link_type: 'homepage', url: 'https://jerseyjackpinball.com/', label: '' }],
-  children: [],
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-01T00:00:00Z',
-};
-
 // ---------------------------------------------------------------------------
 // Mutation responses
 // ---------------------------------------------------------------------------

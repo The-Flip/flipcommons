@@ -3,7 +3,7 @@ import type { LocationChildRef, LocationDetailSchema } from '$lib/api/schema';
 export type LocationDetail = LocationDetailSchema;
 export type LocationChild = LocationChildRef;
 
-export const CHILD_TYPE_LABELS: Record<string, string> = {
+const CHILD_TYPE_LABELS: Record<string, string> = {
   country: 'Countries',
   state: 'States',
   region: 'Regions',
@@ -16,7 +16,7 @@ export const CHILD_TYPE_LABELS: Record<string, string> = {
   city: 'Cities',
 };
 
-export const CHILD_TYPE_SINGULAR: Record<string, string> = {
+const CHILD_TYPE_SINGULAR: Record<string, string> = {
   country: 'Country',
   state: 'State',
   region: 'Region',

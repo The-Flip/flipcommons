@@ -13,7 +13,7 @@ export type LocationEditSectionDef = EditSectionDef<LocationEditSectionKey> & {
 // once `NameEditor` learns a name-only mode (driven by
 // `immutable_after_create`). `parent`, `slug`, and `location_type` are
 // frozen by design and not surfaced in the edit menu.
-export const LOCATION_EDIT_SECTIONS: LocationEditSectionDef[] = [
+const LOCATION_EDIT_SECTIONS: LocationEditSectionDef[] = [
   {
     key: 'description',
     segment: 'description',

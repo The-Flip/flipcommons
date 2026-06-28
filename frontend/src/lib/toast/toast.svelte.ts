@@ -20,9 +20,9 @@
 const MAX_VISIBLE = 3;
 const DEFAULT_DWELL_MS = 5_000;
 
-export type ToastVariant = 'success' | 'info' | 'error';
+type ToastVariant = 'success' | 'info' | 'error';
 
-export type ToastAction = {
+type ToastAction = {
   label: string;
   onAction: () => void | Promise<void>;
 };
