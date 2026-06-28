@@ -184,7 +184,6 @@ ignore_imports = [
     "apps.accounts.api.* -> apps.provenance.**",
     "apps.core.api.admin_dashboard_page -> apps.**",
     # --- BASELINE: existing violations to fix; do NOT add to this list ---
-    "apps.provenance.api -> apps.catalog.models",
     "apps.core.api_helpers -> apps.accounts.models",
     "apps.core.middleware.sentry_scope -> apps.accounts.models",
 ]
