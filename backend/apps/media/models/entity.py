@@ -7,13 +7,11 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from apps.core.models import TimeStampedModel
-
 from .asset import MediaAsset
 from .base import MediaSupportedModel
 
 
-class EntityMedia(TimeStampedModel):
+class EntityMedia(models.Model):
     """Resolved catalog attachment linking an entity to a media asset.
 
     Materialized from claims — not hand-edited.
@@ -33,7 +31,7 @@ class EntityMedia(TimeStampedModel):
     is_primary = models.BooleanField(default=False)
 
     class Meta:
-        ordering = ["content_type", "object_id", "-is_primary", "created_at"]
+        ordering = ["content_type", "object_id", "-is_primary", "asset_id"]
         indexes = [
             models.Index(
                 fields=["content_type", "object_id"],
@@ -65,6 +63,9 @@ class EntityMedia(TimeStampedModel):
             ),
         ]
 
+    def __str__(self) -> str:
+        return f"EntityMedia {self.pk}: asset {self.asset_id} on {self.content_type_id}:{self.object_id}"
+
     def clean(self) -> None:
         model_class = self.content_type.model_class()
         if model_class is None or not issubclass(model_class, MediaSupportedModel):
@@ -73,6 +74,3 @@ class EntityMedia(TimeStampedModel):
                     "content_type": f"Media attachments are not supported for {self.content_type}."
                 }
             )
-
-    def __str__(self) -> str:
-        return f"EntityMedia {self.pk}: asset {self.asset_id} on {self.content_type_id}:{self.object_id}"

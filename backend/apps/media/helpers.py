@@ -48,14 +48,15 @@ def displayed_primary_asset_ids(media: Iterable[EntityMedia]) -> set[int]:
     category may have zero or several primary-claimed rows.  This selects the
     single displayed primary per category:
 
-    - if any row in a category claims ``is_primary``, the **oldest** such row wins;
-    - otherwise the **oldest** row in the category is auto-promoted.
+    - if any row in a category claims ``is_primary``, the **earliest-uploaded**
+      such row wins;
+    - otherwise the **earliest-uploaded** row in the category is auto-promoted.
 
-    "Oldest" is ``(created_at, asset_id)`` — ``created_at`` matches the existing
-    catalog convention, and ``asset_id`` (monotonic with upload) breaks ties
-    deterministically when a from-scratch rebuild bulk-creates rows with
-    near-identical timestamps.  Rows are grouped by ``category`` (``None`` is its
-    own group).
+    "Earliest-uploaded" is the lowest ``asset_id`` (monotonic with upload).  It
+    is a stable, deterministic key that survives a from-scratch rebuild, unlike
+    a materialization timestamp — which collapses when every row is bulk-created
+    in one instant.  Rows are grouped by ``category`` (``None`` is its own
+    group).
     """
     by_category: dict[str | None, list[EntityMedia]] = defaultdict(list)
     for em in media:
@@ -65,7 +66,7 @@ def displayed_primary_asset_ids(media: Iterable[EntityMedia]) -> set[int]:
     for rows in by_category.values():
         claimed = [em for em in rows if em.is_primary]
         pool = claimed or rows
-        winner = min(pool, key=lambda em: (em.created_at, em.asset_id))
+        winner = min(pool, key=lambda em: em.asset_id)
         chosen.add(winner.asset_id)
     return chosen
 

@@ -59,3 +59,27 @@ class TestEntityMediaContentTypeValidation:
         with pytest.raises(ValidationError) as exc_info:
             em.clean()
         assert "content_type" in exc_info.value.message_dict
+
+
+class TestEntityMediaOrdering:
+    def test_default_ordering_follows_local_asset_id(self, user):
+        """Default ordering sorts by the local asset_id column, ascending.
+
+        Ordering by the FK *name* ("asset") would inherit MediaAsset's own
+        Meta.ordering (-created_at) through an implicit join — reintroducing
+        timestamp ordering and reversing the intended lowest-asset_id-first.
+        """
+        from apps.catalog.models import MachineModel
+
+        ct = ContentType.objects.get_for_model(MachineModel)
+        # Created in sequence: ``older`` has both the lower pk and the earlier
+        # created_at, so asset_id-ASC and created_at-DESC yield opposite orders.
+        older = MediaAsset.objects.create(**_asset_kwargs(user))
+        newer = MediaAsset.objects.create(**_asset_kwargs(user))
+        # Insert the rows in reverse so a fallback to EntityMedia.id would also
+        # produce the wrong order.
+        for asset in (newer, older):
+            EntityMedia.objects.create(asset=asset, content_type=ct, object_id=1)
+
+        rows = list(EntityMedia.objects.filter(content_type=ct, object_id=1))
+        assert [em.asset_id for em in rows] == [older.pk, newer.pk]
