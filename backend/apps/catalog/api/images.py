@@ -52,7 +52,7 @@ def fetch_model_media_map(
             asset__status="ready",
         )
         .select_related("asset")
-        .order_by("created_at")
+        .order_by("asset_id")
     ):
         all_rows[em.object_id].append(em)
     grouped: dict[int, list[EntityMedia]] = {}

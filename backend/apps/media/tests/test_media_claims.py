@@ -413,8 +413,8 @@ class TestPrimaryAutoPromotion:
 class TestPrimaryReadTimeSelection:
     """When several attachments in one category each claim primary (the
     multi-source contention case), the resolver stores all of them raw and the
-    read-time selector picks the oldest. Claim priority and recency do not
-    affect the displayed primary — only ``(created_at, asset_id)`` does."""
+    read-time selector picks the earliest-uploaded. Claim priority and recency
+    do not affect the displayed primary — only ``asset_id`` does."""
 
     def test_contending_primaries_oldest_wins(self, machine_model, asset, asset2, user):
         """Two claims both setting primary — both stored; oldest displays."""
