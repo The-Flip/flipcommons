@@ -35,7 +35,7 @@ from apps.citation.models import (
 )
 
 if TYPE_CHECKING:
-    from apps.accounts.models import User
+    from apps.actors.models import Actor
 
 
 @dataclass(frozen=True)
@@ -312,7 +312,7 @@ def create_web_child(
     url: str,
     name: str = "",
     *,
-    created_by: User | None = None,
+    created_by: Actor | None = None,
 ) -> CitationSource:
     """Mint a validated web-page child under *parent_id*, linked at *url*.
 
@@ -350,7 +350,7 @@ def get_or_create_scheme_child(
     root: CitationSource,
     identifier: str,
     *,
-    created_by: User | None = None,
+    created_by: Actor | None = None,
 ) -> CitationSource:
     """Get-or-create the ``(root, identifier)`` scheme child under *root*.
 
@@ -412,13 +412,16 @@ def get_or_create_scheme_child(
     return source
 
 
-def get_or_create_external_source(scheme: str, identifier: str) -> CitationSource:
+def get_or_create_external_source(
+    scheme: str, identifier: str, *, created_by: Actor | None = None
+) -> CitationSource:
     """Get-or-create the child ``CitationSource`` for ``scheme:identifier``.
 
     Resolves the root source owning *scheme* (e.g. the IPDB root), then
     get-or-creates the ``(root, identifier)`` child under it via
     ``get_or_create_scheme_child``.
 
+    ``created_by`` attributes a newly minted child; ``None`` leaves it null.
     Raises ``CitationSource.DoesNotExist`` if no root for *scheme* is seeded,
     and ``ValueError`` if the scheme or identifier is invalid.
     """
@@ -436,10 +439,12 @@ def get_or_create_external_source(scheme: str, identifier: str) -> CitationSourc
             f"No root CitationSource seeded for scheme {scheme!r}; "
             f"seed citation sources before applying a patch that cites it."
         )
-    return get_or_create_scheme_child(root, identifier)
+    return get_or_create_scheme_child(root, identifier, created_by=created_by)
 
 
-def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
+def get_or_create_web_source(
+    url: str, archive_url: str = "", *, created_by: Actor | None = None
+) -> CitationSource:
     """Get-or-create the web ``CitationSource`` a raw ``url`` cites.
 
     When ``archive_url`` is given (e.g. a Wayback permalink), it is additively
@@ -479,6 +484,9 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
     The caller is responsible for rejecting URLs that match a known scheme;
     those must be cited as ``scheme:identifier`` so they dedup through the
     scheme path.
+
+    ``created_by`` attributes a newly minted child and archive link (the citing
+    patch's Source actor); ``None`` leaves them null.
     """
     with transaction.atomic():
         # Children only: a root's own homepage link can equal the cited URL, but
@@ -507,8 +515,11 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
                 source = CitationSource.objects.get(pk=recognition.child.id)
             else:
                 # Domain match: mint a new validated child under the recognized
-                # root, unattributed (created_by stays null).
-                source = create_web_child(recognition.parent_id, url)
+                # root, attributed to ``created_by`` (the citing patch's Source
+                # actor) when given, else null.
+                source = create_web_child(
+                    recognition.parent_id, url, created_by=created_by
+                )
 
         # The durable snapshot (Wayback/archive.today) rides as a second,
         # validated link — not domain-matched, it intentionally lives on a
@@ -524,6 +535,8 @@ def get_or_create_web_source(url: str, archive_url: str = "") -> CitationSource:
                 citation_source=source,
                 url=archive_url,
                 link_type=CitationSourceLink.LinkType.ARCHIVE,
+                created_by=created_by,
+                updated_by=created_by,
             )
             archive.full_clean()
             archive.save()

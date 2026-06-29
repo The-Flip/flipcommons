@@ -2,7 +2,7 @@
 
 Implementation lives in submodules:
 
-- ``mixins`` — abstract bases (TimeStampedModel, AttributedModel,
+- ``mixins`` — abstract bases (TimeStampedModel,
   LastUpdatedModel,
   SluggedModel, LifecycleStatusModel, IdentifiableModel, LabeledModel,
   LabeledIdentityModel, LinkableModel, SitemappedModel), the EntityStatus
@@ -28,7 +28,6 @@ from .fields import BoundedTextField, MarkdownField
 from .license import License
 from .mixins import (
     LIFECYCLE_STATUS_FIELD,
-    AttributedModel,
     DescribedModel,
     EntityStatus,
     IdentifiableModel,
@@ -50,7 +49,6 @@ from .mixins import (
 from .references import RecordReference, register_reference_cleanup
 
 __all__ = [
-    "AttributedModel",
     "BoundedTextField",
     "DescribedModel",
     "EntityStatus",

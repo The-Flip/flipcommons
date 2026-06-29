@@ -37,6 +37,19 @@ def _node(name, source_type="web", links=None, domains=None):
     return node
 
 
+@pytest.fixture
+def actor(db):
+    """A patch ``Source`` actor — the real attributor of `sources:` rows."""
+    from apps.provenance.models import Source
+
+    return Source.objects.create(
+        name="Patch Source",
+        slug="patch-source",
+        source_type="database",
+        priority=50,
+    ).actor
+
+
 class TestDeclaredHomepageHosts:
     """Pure host extraction — no DB."""
 
@@ -66,13 +79,14 @@ class TestDeclaredHomepageHosts:
 
 
 class TestRootDomainMinting:
-    def test_new_root_mints_normalized_domain(self):
+    def test_new_root_mints_normalized_domain(self, actor):
         warnings: list[str] = []
         result = ensure_root_source(
             _node(
                 "American Pinball",
                 links=[_homepage("https://www.American-Pinball.com/")],
             ),
+            actor=actor,
             warnings=warnings,
         )
         assert result.source_created
@@ -81,7 +95,7 @@ class TestRootDomainMinting:
             "american-pinball.com"
         ]
 
-    def test_any_root_type_mints_domain(self):
+    def test_any_root_type_mints_domain(self, actor):
         """Any-root, not web-only: a book root with a homepage link gets one."""
         ensure_root_source(
             _node(
@@ -89,23 +103,25 @@ class TestRootDomainMinting:
                 source_type="book",
                 links=[_homepage("https://pinball-book.example/")],
             ),
+            actor=actor,
             warnings=[],
         )
         root = CitationSource.objects.get(name="A Pinball Book")
         assert root.root_domains.filter(host="pinball-book.example").exists()
 
-    def test_non_homepage_link_mints_no_domain(self):
+    def test_non_homepage_link_mints_no_domain(self, actor):
         ensure_root_source(
             _node(
                 "Catalog Only",
                 links=[{"url": "https://example.com/c", "link_type": "catalog"}],
             ),
+            actor=actor,
             warnings=[],
         )
         root = CitationSource.objects.get(name="Catalog Only")
         assert not root.root_domains.exists()
 
-    def test_new_root_mints_a_domain_per_distinct_host(self):
+    def test_new_root_mints_a_domain_per_distinct_host(self, actor):
         """One root owns many domains — a node may declare several at once."""
         ensure_root_source(
             _node(
@@ -115,6 +131,7 @@ class TestRootDomainMinting:
                     _homepage("https://new-name.example/"),
                 ],
             ),
+            actor=actor,
             warnings=[],
         )
         root = CitationSource.objects.get(name="Rebrand")
@@ -125,14 +142,17 @@ class TestRootDomainMinting:
 
 
 class TestSourceUpsertDedup:
-    def test_redeclare_by_name_with_new_host_adds_domain_no_duplicate(self):
+    def test_redeclare_by_name_with_new_host_adds_domain_no_duplicate(self, actor):
         """A same-named root gaining a new homepage host is found, not duplicated."""
         ensure_root_source(
-            _node("TWIP", links=[_homepage("https://twip.example/")]), warnings=[]
+            _node("TWIP", links=[_homepage("https://twip.example/")]),
+            actor=actor,
+            warnings=[],
         )
         warnings: list[str] = []
         result = ensure_root_source(
             _node("TWIP", links=[_homepage("https://blog.twip.example/")]),
+            actor=actor,
             warnings=warnings,
         )
         assert not result.source_created
@@ -143,16 +163,18 @@ class TestSourceUpsertDedup:
             "blog.twip.example",
         }
 
-    def test_dedup_by_host_under_a_new_name(self):
+    def test_dedup_by_host_under_a_new_name(self, actor):
         """Re-declaring the same host under a different name reuses the host owner."""
         ensure_root_source(
             _node("This Week in Pinball", links=[_homepage("https://twip.example/")]),
+            actor=actor,
             warnings=[],
         )
         before = CitationSource.objects.count()
         warnings: list[str] = []
         result = ensure_root_source(
             _node("TWiP (alt name)", links=[_homepage("https://twip.example/")]),
+            actor=actor,
             warnings=warnings,
         )
         assert not result.source_created
@@ -164,7 +186,7 @@ class TestSourceUpsertDedup:
             "recognition host" in w and "This Week in Pinball" in w for w in warnings
         )
 
-    def test_one_host_owned_plus_one_unowned_mints_only_the_new(self):
+    def test_one_host_owned_plus_one_unowned_mints_only_the_new(self, actor):
         """A single owning root + an unowned host → reuse the root, add the host."""
         root = CitationSource.objects.create(name="Owner", source_type="web")
         CitationSourceRootDomain.objects.create(source=root, host="owned.example")
@@ -176,6 +198,7 @@ class TestSourceUpsertDedup:
                     _homepage("https://fresh.example/"),
                 ],
             ),
+            actor=actor,
             warnings=[],
         )
         assert not result.source_created
@@ -184,7 +207,7 @@ class TestSourceUpsertDedup:
             "fresh.example",
         }
 
-    def test_host_owned_by_a_child_warns_and_does_not_wedge(self):
+    def test_host_owned_by_a_child_warns_and_does_not_wedge(self, actor):
         """A host illegitimately held by a child (a clean() bypass) must not raise.
 
         The root-scoped resolver can't see the child's row, so the node resolves
@@ -201,6 +224,7 @@ class TestSourceUpsertDedup:
         warnings: list[str] = []
         result = ensure_root_source(  # must not raise
             _node("Fresh Root", links=[_homepage("https://squatted.example/")]),
+            actor=actor,
             warnings=warnings,
         )
         # The source was still created; only the taken host was skipped.
@@ -209,7 +233,7 @@ class TestSourceUpsertDedup:
         assert not new_root.root_domains.exists()
         assert any("already owned" in w for w in warnings)
 
-    def test_hosts_spanning_two_roots_warns_and_skips_with_no_writes(self):
+    def test_hosts_spanning_two_roots_warns_and_skips_with_no_writes(self, actor):
         a = CitationSource.objects.create(name="Root A", source_type="web")
         CitationSourceRootDomain.objects.create(source=a, host="a.example")
         b = CitationSource.objects.create(name="Root B", source_type="web")
@@ -226,6 +250,7 @@ class TestSourceUpsertDedup:
                     _homepage("https://b.example/"),
                 ],
             ),
+            actor=actor,
             warnings=warnings,
         )
         assert result.source_created is False
@@ -260,10 +285,10 @@ class TestDeclaredDomainsHosts:
 
 
 class TestDeclaredDomainsMinting:
-    def test_subdomain_is_minted_verbatim_no_rounding(self):
+    def test_subdomain_is_minted_verbatim_no_rounding(self, actor):
         """A declared subdomain stays its own host — declare does not round."""
         result = ensure_root_source(
-            _node("TWIP", domains=["twip.kineticist.com"]), warnings=[]
+            _node("TWIP", domains=["twip.kineticist.com"]), actor=actor, warnings=[]
         )
         assert result.source_created
         root = CitationSource.objects.get(name="TWIP")
@@ -271,13 +296,14 @@ class TestDeclaredDomainsMinting:
             "twip.kineticist.com"
         ]
 
-    def test_homepage_and_domains_union_onto_one_root(self):
+    def test_homepage_and_domains_union_onto_one_root(self, actor):
         ensure_root_source(
             _node(
                 "Pinball Now",
                 links=[_homepage("https://pinballnow.com/")],
                 domains=["oldpin.com"],
             ),
+            actor=actor,
             warnings=[],
         )
         root = CitationSource.objects.get(name="Pinball Now")
@@ -286,16 +312,18 @@ class TestDeclaredDomainsMinting:
             "oldpin.com",
         }
 
-    def test_url_form_domain_normalizes_like_bare_form(self):
+    def test_url_form_domain_normalizes_like_bare_form(self, actor):
         ensure_root_source(
-            _node("Pinball Now", domains=["https://OldPin.com/"]), warnings=[]
+            _node("Pinball Now", domains=["https://OldPin.com/"]),
+            actor=actor,
+            warnings=[],
         )
         root = CitationSource.objects.get(name="Pinball Now")
         assert root.root_domains.filter(host="oldpin.com").exists()
 
 
 class TestRebrandResolution:
-    def test_rebrand_resolves_to_existing_root_via_domains_no_second_root(self):
+    def test_rebrand_resolves_to_existing_root_via_domains_no_second_root(self, actor):
         """``domains:`` declares the old host; the new homepage adds, not forks.
 
         The canonical rebrand: an existing root owns ``oldpin.com``; a node with
@@ -313,6 +341,7 @@ class TestRebrandResolution:
                 links=[_homepage("https://pinballnow.com/")],
                 domains=["oldpin.com"],
             ),
+            actor=actor,
             warnings=[],
         )
         assert not result.source_created
@@ -324,7 +353,7 @@ class TestRebrandResolution:
             "pinballnow.com",
         }
 
-    def test_domains_host_held_by_a_child_warn_skips_no_integrity_error(self):
+    def test_domains_host_held_by_a_child_warn_skips_no_integrity_error(self, actor):
         """A declared domain a *child* squats must warn-skip at mint, not raise.
 
         The root-scoped resolver can't see the child's row, so the node resolves
@@ -341,6 +370,7 @@ class TestRebrandResolution:
         warnings: list[str] = []
         result = ensure_root_source(  # must not raise
             _node("Fresh", domains=["squatted.example", "free.example"]),
+            actor=actor,
             warnings=warnings,
         )
         assert result.source_created
@@ -350,7 +380,7 @@ class TestRebrandResolution:
         ]
         assert any("already owned" in w for w in warnings)
 
-    def test_domains_spanning_two_roots_skips_naming_both(self):
+    def test_domains_spanning_two_roots_skips_naming_both(self, actor):
         a = CitationSource.objects.create(name="Root A", source_type="web")
         CitationSourceRootDomain.objects.create(source=a, host="a.example")
         b = CitationSource.objects.create(name="Root B", source_type="web")
@@ -359,6 +389,7 @@ class TestRebrandResolution:
         warnings: list[str] = []
         result = ensure_root_source(
             _node("Spans Two", domains=["a.example", "b.example"]),
+            actor=actor,
             warnings=warnings,
         )
         assert result.source_created is False
@@ -429,3 +460,32 @@ class TestDetectHostCollision:
 
     def test_unowned_hosts_are_not_a_collision(self):
         assert detect_host_collision(_node("X", domains=["fresh.example"])) is None
+
+
+class TestSourceUpsertAttribution:
+    """Every row a `sources:` upsert creates is attributed to the patch actor.
+
+    Exercises the three create branches in one pass: ``_create_source`` (the
+    root), ``_create_link`` (its homepage link) and ``_ensure_root_domains``
+    (its recognition domain).
+    """
+
+    def test_created_rows_carry_the_actor(self, actor):
+        result = ensure_root_source(
+            _node(
+                "Attributed Site",
+                links=[_homepage("https://attributed.example/")],
+            ),
+            actor=actor,
+            warnings=[],
+        )
+        assert result.source_created
+        root = CitationSource.objects.get(name="Attributed Site")
+        assert root.created_by == actor
+        assert root.updated_by == actor
+        link = root.links.get()
+        assert link.created_by == actor
+        assert link.updated_by == actor
+        domain = root.root_domains.get()
+        assert domain.created_by == actor
+        assert domain.updated_by == actor

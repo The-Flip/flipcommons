@@ -2433,6 +2433,30 @@ def test_sources_only_patch_is_valid_and_applies():
     ).exists()
 
 
+def test_sources_attributed_to_patch_source_actor():
+    """A patch's `sources:` rows are attributed to the patch's Source actor.
+
+    The motivating fix: before editorial attribution moved to ``Actor``, a
+    data patch could not attribute the citation sources it created (no acting
+    user), so they landed with ``created_by``/``updated_by`` null. Now every
+    created row — the source, its link and its recognition domain — carries the
+    attributing ``Source``'s actor.
+    """
+    report = _apply(_WIKIPEDIA, patch_id="0001-wiki-attr")
+    assert report.sources_created == 1
+
+    actor = Source.objects.get(slug="flipcommons-catalog").actor
+    src = CitationSource.objects.get(name="Wikipedia", source_type="web")
+    assert src.created_by == actor
+    assert src.updated_by == actor
+    link = CitationSourceLink.objects.get(citation_source=src)
+    assert link.created_by == actor
+    assert link.updated_by == actor
+    domain = CitationSourceRootDomain.objects.get(source=src)
+    assert domain.created_by == actor
+    assert domain.updated_by == actor
+
+
 def test_empty_patch_rejected():
     with pytest.raises(PatchError, match="non-empty"):
         load_patch("attribution: flipcommons-catalog\nclaims: []\n")

@@ -21,7 +21,7 @@ from ninja.responses import Status
 from ninja.security import django_auth
 from ninja.throttling import AuthRateThrottle
 
-from apps.accounts.models import User
+from apps.actors.models import Actor
 from apps.core.api_helpers import authed_user
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
@@ -310,8 +310,8 @@ def create_citation_source(
         isbn=data.isbn,
         description=data.description,
         parent=parent,
-        created_by=user,
-        updated_by=user,
+        created_by=user.actor,
+        updated_by=user.actor,
     )
     _clean_and_save(source, integrity_msg="A source with this ISBN already exists.")
 
@@ -320,7 +320,7 @@ def create_citation_source(
 
 
 def _mint_web_child(
-    parent_id: int, url: str, page_name: str, user: User
+    parent_id: int, url: str, page_name: str, actor: Actor
 ) -> CitationSource:
     """Mint a page child via ``create_web_child``, mapping its error to a 422.
 
@@ -328,7 +328,7 @@ def _mint_web_child(
     ``ValidationError`` (e.g. a malformed *url*); surface that as a 422.
     """
     try:
-        return create_web_child(parent_id, url, page_name, created_by=user)
+        return create_web_child(parent_id, url, page_name, created_by=actor)
     except ValidationError as exc:
         raise HttpError(422, _validation_detail(exc)) from exc
 
@@ -357,7 +357,7 @@ def _host_error_detail(reason: HostRejection) -> str:
 
 
 def _create_root_and_child(
-    url: str, data: CitationCiteUrlSchema, user: User
+    url: str, data: CitationCiteUrlSchema, actor: Actor
 ) -> CitationSource:
     """Create a new site root (homepage link + recognition domain) and a child.
 
@@ -381,20 +381,20 @@ def _create_root_and_child(
                 name=data.site_name or host,
                 source_type=CitationSource.SourceType.WEB,
                 description=data.site_description,
-                created_by=user,
-                updated_by=user,
+                created_by=actor,
+                updated_by=actor,
             )
             _clean_and_save(root)
             homepage = CitationSourceLink(
                 citation_source=root,
                 link_type=CitationSourceLink.LinkType.HOMEPAGE,
                 url=f"https://{host}/",
-                created_by=user,
-                updated_by=user,
+                created_by=actor,
+                updated_by=actor,
             )
             _clean_and_save(homepage)
             domain = CitationSourceRootDomain(
-                source=root, host=host, created_by=user, updated_by=user
+                source=root, host=host, created_by=actor, updated_by=actor
             )
             # validate_unique=False so the model guards (root-only clean(),
             # CHECK constraints) still fire — as a 422 — while the host-unique
@@ -414,7 +414,7 @@ def _create_root_and_child(
             raise
         parent_id = rec.parent_id
 
-    return _mint_web_child(parent_id, url, data.page_name, user)
+    return _mint_web_child(parent_id, url, data.page_name, actor)
 
 
 @citation_sources_router.post(
@@ -465,9 +465,9 @@ def cite_url(
                 ),
             )
         if rec is not None:
-            child = _mint_web_child(rec.parent_id, url, data.page_name, user)
+            child = _mint_web_child(rec.parent_id, url, data.page_name, user.actor)
         else:
-            child = _create_root_and_child(url, data, user)
+            child = _create_root_and_child(url, data, user.actor)
 
     return Status(201, _serialize_match(child))
 
@@ -571,7 +571,7 @@ def create_citation_source_page(
     """
     user = authed_user(request)
     parent = get_object_or_404(CitationSource, pk=source_id)
-    child = _mint_web_child(parent.pk, data.url, data.page_name, user)
+    child = _mint_web_child(parent.pk, data.url, data.page_name, user.actor)
     return Status(201, _serialize_match(child))
 
 
@@ -593,7 +593,9 @@ def create_citation_source_record(
     user = authed_user(request)
     parent = get_object_or_404(CitationSource, pk=source_id)
     try:
-        child = get_or_create_scheme_child(parent, data.identifier, created_by=user)
+        child = get_or_create_scheme_child(
+            parent, data.identifier, created_by=user.actor
+        )
     except ValidationError as exc:
         raise HttpError(422, _validation_detail(exc)) from exc
     except ValueError as exc:
@@ -632,7 +634,7 @@ def update_citation_source(
 
     for attr, value in fields.items():
         setattr(source, attr, value)
-    source.updated_by = user
+    source.updated_by = user.actor
 
     _clean_and_save(
         source,
@@ -668,8 +670,8 @@ def create_citation_source_link(
         link_type=data.link_type,
         url=data.url,
         label=data.label,
-        created_by=user,
-        updated_by=user,
+        created_by=user.actor,
+        updated_by=user.actor,
     )
     _clean_and_save(link, integrity_msg="This URL is already linked to this source.")
 
@@ -701,7 +703,7 @@ def update_citation_source_link(
 
     for attr, value in fields.items():
         setattr(link, attr, value)
-    link.updated_by = user
+    link.updated_by = user.actor
 
     _clean_and_save(
         link,
