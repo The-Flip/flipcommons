@@ -16,6 +16,7 @@ from apps.provenance.model_bases import (
     ScopePolicy,
     SingleSubject,
     XorSubject,
+    all_relationship_bindings,
     relationships_for,
 )
 
@@ -35,6 +36,7 @@ def test_public_symbols_import_from_model_bases() -> None:
         "SingleSubject",
         "SubjectSpec",
         "XorSubject",
+        "all_relationship_bindings",
         "relationships_for",
     ):
         assert hasattr(model_bases, name), name
@@ -118,3 +120,29 @@ def test_binding_subject_fk_matches_single_subject() -> None:
     }
     assert by_namespace["theme"] == "machinemodel"
     assert by_namespace["abbreviation"] == "machine_model"
+
+
+def test_all_relationship_bindings_is_the_union_of_relationships_for() -> None:
+    """The flat query equals every subject's ``relationships_for`` combined.
+
+    The schema + resolution derivations iterate this set; it must lose nothing.
+    """
+    from apps.catalog._walks import catalog_models
+
+    flat = all_relationship_bindings()
+    per_subject = [b for model in catalog_models() for b in relationships_for(model)]
+    assert set(flat) == set(per_subject)
+    assert len(flat) == len(per_subject)  # no duplicates
+    # Credit's XOR yields two bindings; abbreviation spans two through-models.
+    namespaces = sorted(b.spec.namespace for b in flat)
+    assert namespaces == [
+        "abbreviation",
+        "abbreviation",
+        "credit",
+        "credit",
+        "gameplay_feature",
+        "location",
+        "reward_type",
+        "tag",
+        "theme",
+    ]

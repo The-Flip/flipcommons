@@ -16,6 +16,7 @@ from .claim_relationships import (
     SingleSubject,
     SubjectSpec,
     XorSubject,
+    all_relationship_bindings,
     relationships_for,
 )
 from .models import (
@@ -39,5 +40,6 @@ __all__ = [
     "SingleSubject",
     "SubjectSpec",
     "XorSubject",
+    "all_relationship_bindings",
     "relationships_for",
 ]

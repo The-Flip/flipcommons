@@ -1,13 +1,12 @@
-"""``build_through_projection`` reproduces every hand-written builder exactly.
+"""``build_through_projection`` snapshot + behavior tests.
 
-REF3's proof obligation: the one generic spec-driven builder is byte-for-byte
-equivalent to the nine hand-written ``_*_projection`` builders it will replace in
-REF4. Each case pairs the generic projection (via ``relationships_for`` +
-``build_through_projection``) with its hand-written counterpart and asserts: the
-data ctor args are identical, the scalar shapes reuse the *same* engine
-converter objects, credit's compound key uses the generic tuple codecs, and the
-per-claim ``extract`` drops/keeps members identically (with the documented
-unreachable divergences on a null ``claim.value``).
+The generic spec-driven builder is the sole resolution path for every explicit
+through-model namespace. This suite pins what it produces against explicit
+expected values (the ctor data args + the engine codec objects per shape) and
+exercises the extract-level behavior no higher-level test reaches: invalid/bool
+FK drops, null-value drops, and the ``SKIP_NAMESPACE`` vs ``DROP_INVALID``
+empty-target policies. ``test_cases_cover_every_binding`` keeps the case table
+exhaustive against the live binding set.
 """
 
 from __future__ import annotations
@@ -20,20 +19,18 @@ import pytest
 
 from apps.catalog.models import CorporateEntity, MachineModel, Series, Title
 from apps.catalog.resolve._engine import (
+    ColumnValues,
     Delta,
     ThroughRowProjection,
     _compound_columns,
     _compound_key,
+    _int_from_column,
+    _int_or_none_from_column,
+    _no_columns,
+    _no_payload,
+    _one_column,
+    _str_from_column,
     reconcile,
-)
-from apps.catalog.resolve._relationships import (
-    M2M_FIELDS,
-    _corporate_entity_location_projection,
-    _credit_projection,
-    _gameplay_projection,
-    _m2m_projection,
-    _model_abbreviation_projection,
-    _title_abbreviation_projection,
 )
 from apps.catalog.resolve._through_projection import build_through_projection
 from apps.catalog.tests.conftest import make_machine_model
@@ -89,12 +86,10 @@ def pks(db: None) -> Pks:
 
 
 # ---------------------------------------------------------------------------
-# The nine shapes, each paired with its hand-written builder.
+# The nine shapes, each with its expected ctor data + codecs (snapshot).
 # ---------------------------------------------------------------------------
 
-# How a hand-written builder behaves on a null ``claim.value`` — the generic
-# always drops; the hand-written ones diverge (all unreachable in production).
-type NullBehavior = type[Exception] | None  # exception type, or None = also drops
+type Codec = Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -102,9 +97,17 @@ class _Case:
     id: str
     subject: type[ClaimControlledModel]
     namespace: str
-    hand: Callable[[], ThroughRowProjection[Any, Any] | None]
+    subject_column: str
+    key_columns: tuple[str, ...]
+    payload_columns: tuple[str, ...]
+    columns_to_key: Codec
+    key_to_columns: Codec
+    columns_to_payload: Codec
+    payload_to_columns: Codec
     valid_value: Callable[[Pks], dict[str, object]]
-    null_behavior: NullBehavior
+    valid_member: Callable[[Pks], object]
+    valid_payload: object = None
+    ignore_conflicts: bool = False
     invalid_value: Callable[[Pks], dict[str, object]] | None = None  # None = no FK
     compound: bool = False
 
@@ -113,91 +116,158 @@ def _fk_value(key: str) -> Callable[[Pks], dict[str, object]]:
     return lambda pks: {key: pks[key], "exists": True}
 
 
+def _credit_value(pks: Pks) -> dict[str, object]:
+    return {"person": pks["person"], "role": pks["role"], "exists": True}
+
+
 CASES: list[_Case] = [
     _Case(
         "theme",
         MachineModel,
         "theme",
-        lambda: _m2m_projection(M2M_FIELDS["theme"]),
-        _fk_value("theme"),
-        AttributeError,
-        lambda pks: {"theme": 10**9, "exists": True},
+        subject_column="machinemodel_id",
+        key_columns=("theme_id",),
+        payload_columns=(),
+        columns_to_key=_int_from_column,
+        key_to_columns=_one_column,
+        columns_to_payload=_no_payload,
+        payload_to_columns=_no_columns,
+        valid_value=_fk_value("theme"),
+        valid_member=lambda pks: pks["theme"],
+        invalid_value=lambda pks: {"theme": 10**9, "exists": True},
     ),
     _Case(
         "tag",
         MachineModel,
         "tag",
-        lambda: _m2m_projection(M2M_FIELDS["tag"]),
-        _fk_value("tag"),
-        AttributeError,
-        lambda pks: {"tag": 10**9, "exists": True},
+        subject_column="machinemodel_id",
+        key_columns=("tag_id",),
+        payload_columns=(),
+        columns_to_key=_int_from_column,
+        key_to_columns=_one_column,
+        columns_to_payload=_no_payload,
+        payload_to_columns=_no_columns,
+        valid_value=_fk_value("tag"),
+        valid_member=lambda pks: pks["tag"],
+        invalid_value=lambda pks: {"tag": 10**9, "exists": True},
     ),
     _Case(
         "reward_type",
         MachineModel,
         "reward_type",
-        lambda: _m2m_projection(M2M_FIELDS["reward_type"]),
-        _fk_value("reward_type"),
-        AttributeError,
-        lambda pks: {"reward_type": 10**9, "exists": True},
+        subject_column="machinemodel_id",
+        key_columns=("rewardtype_id",),
+        payload_columns=(),
+        columns_to_key=_int_from_column,
+        key_to_columns=_one_column,
+        columns_to_payload=_no_payload,
+        payload_to_columns=_no_columns,
+        valid_value=_fk_value("reward_type"),
+        valid_member=lambda pks: pks["reward_type"],
+        invalid_value=lambda pks: {"reward_type": 10**9, "exists": True},
     ),
     _Case(
         "gameplay_feature",
         MachineModel,
         "gameplay_feature",
-        _gameplay_projection,
-        lambda pks: {
+        subject_column="machinemodel_id",
+        key_columns=("gameplayfeature_id",),
+        payload_columns=("count",),
+        columns_to_key=_int_from_column,
+        key_to_columns=_one_column,
+        columns_to_payload=_int_or_none_from_column,
+        payload_to_columns=_one_column,
+        valid_value=lambda pks: {
             "gameplay_feature": pks["gameplay_feature"],
             "count": 3,
             "exists": True,
         },
-        AttributeError,
-        lambda pks: {"gameplay_feature": 10**9, "exists": True},
+        valid_member=lambda pks: pks["gameplay_feature"],
+        valid_payload=3,
+        invalid_value=lambda pks: {"gameplay_feature": 10**9, "exists": True},
     ),
     _Case(
         "credit_model",
         MachineModel,
         "credit",
-        lambda: _credit_projection(MachineModel, "model"),
-        lambda pks: {"person": pks["person"], "role": pks["role"], "exists": True},
-        AttributeError,
-        lambda pks: {"person": 10**9, "role": pks["role"], "exists": True},
+        subject_column="model_id",
+        key_columns=("person_id", "role_id"),
+        payload_columns=(),
+        columns_to_key=_compound_key,
+        key_to_columns=_compound_columns,
+        columns_to_payload=_no_payload,
+        payload_to_columns=_no_columns,
+        valid_value=_credit_value,
+        valid_member=lambda pks: (pks["person"], pks["role"]),
+        invalid_value=lambda pks: {
+            "person": 10**9,
+            "role": pks["role"],
+            "exists": True,
+        },
         compound=True,
     ),
     _Case(
         "credit_series",
         Series,
         "credit",
-        lambda: _credit_projection(Series, "series"),
-        lambda pks: {"person": pks["person"], "role": pks["role"], "exists": True},
-        AttributeError,
-        lambda pks: {"person": 10**9, "role": pks["role"], "exists": True},
+        subject_column="series_id",
+        key_columns=("person_id", "role_id"),
+        payload_columns=(),
+        columns_to_key=_compound_key,
+        key_to_columns=_compound_columns,
+        columns_to_payload=_no_payload,
+        payload_to_columns=_no_columns,
+        valid_value=_credit_value,
+        valid_member=lambda pks: (pks["person"], pks["role"]),
+        invalid_value=lambda pks: {
+            "person": 10**9,
+            "role": pks["role"],
+            "exists": True,
+        },
         compound=True,
     ),
     _Case(
         "abbreviation_model",
         MachineModel,
         "abbreviation",
-        _model_abbreviation_projection,
-        lambda pks: {"value": "TS4", "exists": True},
-        TypeError,
+        subject_column="machine_model_id",
+        key_columns=("value",),
+        payload_columns=(),
+        columns_to_key=_str_from_column,
+        key_to_columns=_one_column,
+        columns_to_payload=_no_payload,
+        payload_to_columns=_no_columns,
+        valid_value=lambda pks: {"value": "TS4", "exists": True},
+        valid_member=lambda pks: "TS4",
     ),
     _Case(
         "abbreviation_title",
         Title,
         "abbreviation",
-        _title_abbreviation_projection,
-        lambda pks: {"value": "MM", "exists": True},
-        TypeError,
+        subject_column="title_id",
+        key_columns=("value",),
+        payload_columns=(),
+        columns_to_key=_str_from_column,
+        key_to_columns=_one_column,
+        columns_to_payload=_no_payload,
+        payload_to_columns=_no_columns,
+        valid_value=lambda pks: {"value": "MM", "exists": True},
+        valid_member=lambda pks: "MM",
     ),
     _Case(
         "location",
         CorporateEntity,
         "location",
-        _corporate_entity_location_projection,
-        _fk_value("location"),
-        None,
-        lambda pks: {"location": 10**9, "exists": True},
+        subject_column="corporate_entity_id",
+        key_columns=("location_id",),
+        payload_columns=(),
+        columns_to_key=_int_from_column,
+        key_to_columns=_one_column,
+        columns_to_payload=_no_payload,
+        payload_to_columns=_no_columns,
+        valid_value=_fk_value("location"),
+        valid_member=lambda pks: pks["location"],
+        invalid_value=lambda pks: {"location": 10**9, "exists": True},
     ),
 ]
 CASE_IDS = [c.id for c in CASES]
@@ -206,8 +276,8 @@ CASE_IDS = [c.id for c in CASES]
 def test_cases_cover_every_binding() -> None:
     """The nine cases are *exactly* the bindings the generic builder must cover.
 
-    Guards against a future explicit through-model whose shape the equivalence
-    suite would otherwise silently skip. ``relationships_for`` returns only the
+    Guards against a future explicit through-model whose shape this suite would
+    otherwise silently skip. ``relationships_for`` returns only the
     explicit-ClassVar specs (not parents/aliases/media), which is the generic
     builder's whole domain.
     """
@@ -242,72 +312,66 @@ def _claim(value: object) -> Claim:
 
 
 # ---------------------------------------------------------------------------
-# Ctor args + codecs.
+# Ctor args + codecs (snapshot).
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("case", CASES, ids=CASE_IDS)
-def test_ctor_data_args_match_hand_written(case: _Case, pks: Pks) -> None:
-    """The data ctor args + payload codecs are identical to the hand-written builder."""
+def test_ctor_data_args(case: _Case, pks: Pks) -> None:
+    """The data ctor args match the expected snapshot for each shape.
+
+    ``subject_model`` / ``through_model`` / ``field_name`` are copied from the
+    binding; the columns and conflict flag are the expected literals.
+    """
+    binding = _binding(case)
     g = _generic(case)
-    h = case.hand()
-    assert h is not None
-    assert g.subject_model is h.subject_model
-    assert g.field_name == h.field_name
-    assert g.through_model is h.through_model
-    assert g.subject_column == h.subject_column
-    assert g.key_columns == h.key_columns
-    assert g.payload_columns == h.payload_columns
-    assert g.ignore_conflicts == h.ignore_conflicts
-    # Payload codecs are the same engine objects in every shape.
-    assert g.columns_to_payload is h.columns_to_payload
-    assert g.payload_to_columns is h.payload_to_columns
+    assert g.subject_model is case.subject
+    assert g.subject_model is binding.subject_model
+    assert g.through_model is binding.through_model
+    assert g.field_name == case.namespace
+    assert g.subject_column == case.subject_column
+    assert g.key_columns == case.key_columns
+    assert g.payload_columns == case.payload_columns
+    assert g.ignore_conflicts == case.ignore_conflicts
 
 
-@pytest.mark.parametrize(
-    "case",
-    [c for c in CASES if not c.compound],
-    ids=[c.id for c in CASES if not c.compound],
-)
-def test_scalar_key_codecs_reuse_engine_converters(case: _Case, pks: Pks) -> None:
-    """Single-member shapes reuse the *same* key converter objects (no new closure)."""
+@pytest.mark.parametrize("case", CASES, ids=CASE_IDS)
+def test_codecs_are_the_expected_engine_objects(case: _Case, pks: Pks) -> None:
+    """Each shape selects the expected key/payload codec objects (no new closure)."""
     g = _generic(case)
-    h = case.hand()
-    assert h is not None
-    assert g.columns_to_key is h.columns_to_key
-    assert g.key_to_columns is h.key_to_columns
+    assert g.columns_to_key is case.columns_to_key
+    assert g.key_to_columns is case.key_to_columns
+    assert g.columns_to_payload is case.columns_to_payload
+    assert g.payload_to_columns is case.payload_to_columns
 
 
 @pytest.mark.parametrize(
     "case", [c for c in CASES if c.compound], ids=[c.id for c in CASES if c.compound]
 )
-def test_compound_key_uses_generic_tuple_codecs(case: _Case, pks: Pks) -> None:
-    """Credit's compound key uses the generic tuple codecs (not CreditAssignment)."""
+def test_compound_key_round_trips(case: _Case, pks: Pks) -> None:
+    """Credit's compound key uses the generic tuple codecs and round-trips."""
     g = _generic(case)
     assert g.columns_to_key is _compound_key
     assert g.key_to_columns is _compound_columns
-    # Round-trips a (person_id, role_id) pair both directions.
-    columns = (pks["person"], pks["role"])
+    columns: ColumnValues = (pks["person"], pks["role"])
     assert g.key_to_columns(g.columns_to_key(columns)) == columns
 
 
 # ---------------------------------------------------------------------------
-# extract() equivalence + drop behavior.
+# extract() behavior.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("case", CASES, ids=CASE_IDS)
-def test_extract_matches_on_valid_claim(case: _Case, pks: Pks) -> None:
-    """A well-formed claim extracts to the same member + payload."""
-    g, h = _generic(case), case.hand()
-    assert h is not None
-    claim = _claim(case.valid_value(pks))
-    result = g.extract(claim)
+def test_extract_on_valid_claim(case: _Case, pks: Pks) -> None:
+    """A well-formed claim extracts to the expected member + payload."""
+    g = _generic(case)
+    result = g.extract(_claim(case.valid_value(pks)))
     assert result is not None
-    assert result == h.extract(claim)
+    assert result.key == case.valid_member(pks)
+    assert result.payload == case.valid_payload
     if case.compound:
-        # The deliberate type change: a plain tuple, not the CreditAssignment
-        # NamedTuple (equal to it, but the member type is now generic).
+        # Compound keys are plain tuples, not the old CreditAssignment NamedTuple.
         assert type(result.key) is tuple
 
 
@@ -317,31 +381,15 @@ def test_extract_matches_on_valid_claim(case: _Case, pks: Pks) -> None:
     ids=[c.id for c in CASES if c.invalid_value is not None],
 )
 def test_extract_drops_invalid_fk(case: _Case, pks: Pks) -> None:
-    """An out-of-range FK pk drops the member in both builders."""
+    """An out-of-range FK pk drops the member."""
     assert case.invalid_value is not None
-    g, h = _generic(case), case.hand()
-    assert h is not None
-    claim = _claim(case.invalid_value(pks))
-    assert g.extract(claim) is None
-    assert h.extract(claim) is None
+    assert _generic(case).extract(_claim(case.invalid_value(pks))) is None
 
 
 def test_extract_drops_bool_pk(pks: Pks) -> None:
-    """``True`` is not an int pk: the strict ``type(x) is int`` guard drops it.
-
-    ``_m2m_projection`` uses the same strict guard, so theme agrees; the generic
-    adopts it uniformly. The other hand-written builders use a bare
-    ``x not in valid_pks``, where ``True == 1`` would slip through if pk 1 exists
-    — so on location the generic's drop is a (production-unreachable) divergence
-    the plan called out. Assert the generic drops it on both shapes; the
-    hand-written location result is pk-dependent, so we don't pin it.
-    """
+    """``True`` is not an int pk: the strict ``type(x) is int`` guard drops it."""
     theme = next(c for c in CASES if c.id == "theme")
-    g, h = _generic(theme), theme.hand()
-    assert h is not None
-    claim = _claim({"theme": True, "exists": True})
-    assert g.extract(claim) is None
-    assert h.extract(claim) is None
+    assert _generic(theme).extract(_claim({"theme": True, "exists": True})) is None
 
     location = next(c for c in CASES if c.id == "location")
     assert (
@@ -349,8 +397,15 @@ def test_extract_drops_bool_pk(pks: Pks) -> None:
     )
 
 
+@pytest.mark.parametrize("case", CASES, ids=CASE_IDS)
+def test_extract_drops_null_value(case: _Case, pks: Pks) -> None:
+    """A null ``claim.value`` drops uniformly (unreachable in production — validation
+    and tombstone filtering guarantee a dict with the key before ``extract``)."""
+    assert _generic(case).extract(_claim(None)) is None
+
+
 # ---------------------------------------------------------------------------
-# End-to-end: the generic projection materializes byte-identical through-rows.
+# End-to-end: the generic projection materializes through-rows idempotently.
 # ---------------------------------------------------------------------------
 
 
@@ -363,16 +418,14 @@ def _is_noop(delta: Delta[Any, Any, Any]) -> bool:
     [c for c in CASES if c.subject is MachineModel],
     ids=[c.id for c in CASES if c.subject is MachineModel],
 )
-def test_end_to_end_reconcile_matches_hand_written(case: _Case, pks: Pks) -> None:
-    """The generic projection reconciles to the same rows the hand-written one does.
+def test_end_to_end_reconcile_is_idempotent(case: _Case, pks: Pks) -> None:
+    """The generic projection materializes the rows, then sees them as desired.
 
-    Materializes from scratch via the generic builder, proves it is idempotent —
-    the read↔extract↔diff round-trip is stable, the one interaction the
-    component tests can't reach and where the compound tuple codec matters — then
-    proves the hand-written builder sees those rows as already-desired, so the
-    two materialize byte-identical through-tables. The MachineModel cases cover
-    every shape family: single-FK (theme/tag/reward_type), payload (gameplay),
-    compound (credit), literal (abbreviation).
+    Materializes from scratch, then proves the read↔extract↔diff round-trip is
+    stable — the one interaction the component tests can't reach and where the
+    compound tuple codec matters. The MachineModel cases cover every shape
+    family: single-FK (theme/tag/reward_type), payload (gameplay), compound
+    (credit), literal (abbreviation).
     """
     mm = make_machine_model(name="E2E Model", slug="e2e-model")
     source = Source.objects.create(
@@ -385,36 +438,12 @@ def test_end_to_end_reconcile_matches_hand_written(case: _Case, pks: Pks) -> Non
     claim_key, value = build_relationship_claim(case.namespace, identity)
     make_claim(mm, case.namespace, value, source=source, claim_key=claim_key)
 
-    generic, hand = _generic(case), case.hand()
-    assert hand is not None
-
+    generic = _generic(case)
     created = reconcile(generic, {mm.pk})
     assert created.create  # materialized the new rows
     assert not created.delete
     assert not created.update
-    assert _is_noop(reconcile(generic, {mm.pk}))  # generic idempotent
-    assert _is_noop(reconcile(hand, {mm.pk}))  # hand-written agrees → identical rows
-
-
-@pytest.mark.parametrize("case", CASES, ids=CASE_IDS)
-def test_null_value_generic_drops_handwritten_diverges(case: _Case, pks: Pks) -> None:
-    """A null ``claim.value`` — the generic drops uniformly; the hand-written ones diverge.
-
-    Only location tolerates it (drops too); every other hand-written builder
-    raises (``AttributeError`` from cast-then-``.get``, ``TypeError`` from
-    abbreviation's subscript). All unreachable in production — validation +
-    tombstone filtering guarantee a dict with the key before ``extract`` — so we
-    assert the generic's safe drop and document the old builders' crash.
-    """
-    g, h = _generic(case), case.hand()
-    assert h is not None
-    claim = _claim(None)
-    assert g.extract(claim) is None
-    if case.null_behavior is None:
-        assert h.extract(claim) is None  # location only
-    else:
-        with pytest.raises(case.null_behavior):
-            h.extract(claim)
+    assert _is_noop(reconcile(generic, {mm.pk}))  # idempotent on a second pass
 
 
 # ---------------------------------------------------------------------------

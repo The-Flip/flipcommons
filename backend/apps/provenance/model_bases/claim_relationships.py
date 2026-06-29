@@ -170,6 +170,14 @@ type BindingsBySubject = dict[
 _bindings_by_subject: BindingsBySubject | None = None
 
 
+def _ensure_bindings() -> BindingsBySubject:
+    """Build and cache the subject → bindings index on first access."""
+    global _bindings_by_subject
+    if _bindings_by_subject is None:
+        _bindings_by_subject = _build_bindings()
+    return _bindings_by_subject
+
+
 def relationships_for(
     model: type[ClaimControlledModel],
 ) -> tuple[ClaimRelationshipBinding, ...]:
@@ -184,10 +192,23 @@ def relationships_for(
     (synthesized), aliases (bespoke) or media (content-type keyed). Returns an
     empty tuple for any model with no declared spec.
     """
-    global _bindings_by_subject
-    if _bindings_by_subject is None:
-        _bindings_by_subject = _build_bindings()
-    return _bindings_by_subject.get(model, ())
+    return _ensure_bindings().get(model, ())
+
+
+def all_relationship_bindings() -> tuple[ClaimRelationshipBinding, ...]:
+    """Every claim-relationship binding, across all subjects.
+
+    The flattened form of the per-subject index :func:`relationships_for`
+    queries. The schema and resolution-projection derivations iterate the whole
+    binding set (grouping by namespace, or building one projection per
+    ``(namespace, subject)``), so they read this rather than re-walking
+    :class:`ClaimThroughModel` and re-deriving subject/accessor. Same coverage
+    boundary as :func:`relationships_for`: explicit ClassVar through-model specs
+    only — not parents, aliases or media.
+    """
+    return tuple(
+        binding for bindings in _ensure_bindings().values() for binding in bindings
+    )
 
 
 def _build_bindings() -> BindingsBySubject:

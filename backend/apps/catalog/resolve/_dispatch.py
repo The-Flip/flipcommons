@@ -27,7 +27,7 @@ from typing import Any, NamedTuple
 from django.db import transaction
 
 from apps.core.types import ClaimFieldName, ClaimSubjectId
-from apps.provenance.model_bases import ScopePolicy
+from apps.provenance.model_bases import ScopePolicy, all_relationship_bindings
 from apps.provenance.models import ClaimControlledModel
 
 from ..cache import invalidate_response_cache
@@ -87,25 +87,9 @@ def _get_relationship_registry() -> dict[RelationshipDispatchKey, RegistryEntry]
     if _relationship_registry is not None:
         return _relationship_registry
 
-    from ..models import (
-        CorporateEntity,
-        GameplayFeature,
-        MachineModel,
-        Series,
-        Theme,
-        Title,
-    )
-    from ._relationships import (
-        M2M_FIELDS,
-        _alias_projection,
-        _corporate_entity_location_projection,
-        _credit_projection,
-        _gameplay_projection,
-        _m2m_projection,
-        _model_abbreviation_projection,
-        _parent_projection,
-        _title_abbreviation_projection,
-    )
+    from ..models import GameplayFeature, Theme
+    from ._relationships import _alias_projection, _parent_projection
+    from ._through_projection import build_through_projection
 
     registry: dict[RelationshipDispatchKey, RegistryEntry] = {}
 
@@ -119,17 +103,17 @@ def _get_relationship_registry() -> dict[RelationshipDispatchKey, RegistryEntry]
             build, scope
         )
 
-    # MachineModel relationship namespaces.
-    for field_name, spec in M2M_FIELDS.items():
-        add(field_name, MachineModel, partial(_m2m_projection, spec))
-    add("gameplay_feature", MachineModel, _gameplay_projection)
-    add("credit", MachineModel, partial(_credit_projection, MachineModel, "model"))
-    add("abbreviation", MachineModel, _model_abbreviation_projection)
-
-    # Other entity types.
-    add("credit", Series, partial(_credit_projection, Series, "series"))
-    add("abbreviation", Title, _title_abbreviation_projection)
-    add("location", CorporateEntity, _corporate_entity_location_projection)
+    # Explicit through-model namespaces (theme, tag, reward_type,
+    # gameplay_feature, credit, abbreviation, location) — one entry per
+    # (namespace, subject), driven off the binding's spec. The scope rides the
+    # spec, and credit's XOR subject yields one binding per subject FK.
+    for binding in all_relationship_bindings():
+        add(
+            binding.spec.namespace,
+            binding.subject_model,
+            partial(build_through_projection, binding),
+            binding.spec.scope,
+        )
 
     # Aliases — discovered dynamically; resolve whole-type.
     for at in discover_alias_types():

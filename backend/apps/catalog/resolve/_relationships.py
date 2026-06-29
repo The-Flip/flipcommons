@@ -1,21 +1,27 @@
-"""Resolution logic for relationship claims (credits, themes, gameplay features, tags,
-abbreviations, aliases, parent hierarchies, corporate-entity locations).
+"""The two transitional relationship-resolution shapes the generic builder can't drive yet.
 
-Each ``_*_projection`` function builds the :class:`Projection` for one claim
-namespace; :mod:`._dispatch` registers them and runs the shared
-:func:`reconcile` loop.  The generic :class:`ThroughRowProjection` covers the
-plain/payload/compound through-row shapes (themes, gameplay features, credits,
-abbreviations, parents, corporate-entity locations); the case-folded
-:class:`AliasProjection` is the one bespoke shape that lives here.  Media is its
-own projection in :mod:`._media`.
+The plain/payload/compound through-row shapes (themes, gameplay features,
+credits, abbreviations, corporate-entity locations) resolve through the generic
+:func:`apps.catalog.resolve._through_projection.build_through_projection`, driven
+off each through-model's ``claim_relationship_spec``. Two shapes still live here:
+
+- :class:`AliasProjection` — case-folded membership (the member key is the
+  lowercase alias value, the payload keeps original case), so not a plain
+  :class:`ThroughRowProjection`.
+- :func:`_parent_projection` — self-referential ``parents`` M2Ms whose implicit
+  ``.through`` carries no ClassVar spec.
+
+Both are retired by the parent-promotion and alias-normalization polish steps,
+after which only the content-type-keyed media projection (in :mod:`._media`)
+stays bespoke. :mod:`._dispatch` registers these and runs the shared
+:func:`reconcile` loop.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, NamedTuple, cast
+from typing import TYPE_CHECKING, cast
 
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Model
@@ -30,31 +36,7 @@ from apps.provenance.validation import (
 )
 
 from ..engine.aliases import alias_type_for
-from ..models import (
-    CatalogModel,
-    CorporateEntity,
-    CorporateEntityLocation,
-    Credit,
-    CreditRole,
-    GameplayFeature,
-    Location,
-    MachineModel,
-    ModelAbbreviation,
-    Person,
-    RewardType,
-    Tag,
-    Theme,
-    Title,
-    TitleAbbreviation,
-)
-from ._claim_values import (
-    AbbreviationClaimValue,
-    AliasClaimValue,
-    CreditClaimValue,
-    GameplayFeatureClaimValue,
-    LocationClaimValue,
-    ParentClaimValue,
-)
+from ._claim_values import AliasClaimValue, ParentClaimValue
 from ._engine import (
     Delta,
     ExtractedMember,
@@ -62,11 +44,9 @@ from ._engine import (
     RowState,
     ThroughRowProjection,
     _int_from_column,
-    _int_or_none_from_column,
     _no_columns,
     _no_payload,
     _one_column,
-    _str_from_column,
 )
 
 if TYPE_CHECKING:
@@ -76,272 +56,14 @@ logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------
-# Shared tuple shapes
-# ------------------------------------------------------------------
-
-
-class CreditAssignment(NamedTuple):
-    """A (person, role) pair materialised into a Credit row."""
-
-    person_id: int
-    role_id: int
-
-
-# ------------------------------------------------------------------
 # Through-model accessors (runtime-generated M2M descriptors)
 # ------------------------------------------------------------------
-
-
-def _m2m_through(m2m_attr: str) -> type[Model]:
-    """Return the through model for a MachineModel M2M attribute."""
-    through: type[Model] = getattr(MachineModel, m2m_attr).through
-    return through
 
 
 def _get_parents_through(parent: type[ClaimControlledModel]) -> type[Model]:
     """Return the through model for ``parent``'s self-referential ``parents`` M2M."""
     through: type[Model] = parent.parents.through  # type: ignore[attr-defined]
     return through
-
-
-# ------------------------------------------------------------------
-# Simple M2M relationships (themes, reward types, tags)
-# ------------------------------------------------------------------
-
-
-@dataclass(frozen=True, slots=True)
-class M2MFieldSpec:
-    """Descriptor for a simple M2M relationship resolved from claims."""
-
-    field_name: ClaimFieldName  # also the value dict key: "theme", "tag"
-    m2m_attr: str  # model attribute: "themes", "tags", "gameplay_features"
-    target_model: type[CatalogModel]  # Theme, Tag, GameplayFeature
-
-
-M2M_FIELDS: dict[str, M2MFieldSpec] = {
-    "theme": M2MFieldSpec("theme", "themes", Theme),
-    "reward_type": M2MFieldSpec("reward_type", "reward_types", RewardType),
-    "tag": M2MFieldSpec("tag", "tags", Tag),
-}
-
-
-def _m2m_projection(spec: M2MFieldSpec) -> ThroughRowProjection[int, None]:
-    """Build the projection for a simple MachineModel M2M relationship."""
-    valid_pks = set(spec.target_model._default_manager.values_list("pk", flat=True))
-    target_model_name = spec.target_model._meta.model_name
-    assert target_model_name is not None
-    target_column = target_model_name + "_id"
-
-    def extract(claim: Claim) -> ExtractedMember[int, None] | None:
-        val = cast(Mapping[str, object], claim.value)
-        target_pk = val.get(spec.field_name)
-        if type(target_pk) is not int or target_pk not in valid_pks:
-            logger.warning(
-                "Unresolved %s pk %r in claim (model pk=%s)",
-                spec.field_name,
-                target_pk,
-                claim.object_id,
-            )
-            return None
-        return ExtractedMember(target_pk, None)
-
-    return ThroughRowProjection(
-        subject_model=MachineModel,
-        field_name=spec.field_name,
-        through_model=_m2m_through(spec.m2m_attr),
-        subject_column="machinemodel_id",
-        key_columns=(target_column,),
-        payload_columns=(),
-        extract_member=extract,
-        columns_to_key=_int_from_column,
-        key_to_columns=_one_column,
-        columns_to_payload=_no_payload,
-        payload_to_columns=_no_columns,
-    )
-
-
-# ------------------------------------------------------------------
-# Gameplay features (M2M with a count payload)
-# ------------------------------------------------------------------
-
-
-def _gameplay_projection() -> ThroughRowProjection[int, int | None]:
-    """Build the projection for gameplay-feature claims (carries a count)."""
-    valid_pks = set(GameplayFeature.objects.values_list("pk", flat=True))
-
-    def extract(claim: Claim) -> ExtractedMember[int, int | None] | None:
-        val = cast(GameplayFeatureClaimValue, claim.value)
-        feature_pk = val.get("gameplay_feature")
-        if feature_pk not in valid_pks:
-            logger.warning(
-                "Unresolved gameplay_feature pk %r in claim (model pk=%s)",
-                feature_pk,
-                claim.object_id,
-            )
-            return None
-        return ExtractedMember(feature_pk, val.get("count"))
-
-    return ThroughRowProjection(
-        subject_model=MachineModel,
-        field_name="gameplay_feature",
-        through_model=_m2m_through("gameplay_features"),
-        subject_column="machinemodel_id",
-        key_columns=("gameplayfeature_id",),
-        payload_columns=("count",),
-        extract_member=extract,
-        columns_to_key=_int_from_column,
-        key_to_columns=_one_column,
-        columns_to_payload=_int_or_none_from_column,
-        payload_to_columns=_one_column,
-    )
-
-
-# ------------------------------------------------------------------
-# Credits (compound identity: person + role)
-# ------------------------------------------------------------------
-
-
-def _credit_key(columns: tuple[object, ...]) -> CreditAssignment:
-    return CreditAssignment(cast(int, columns[0]), cast(int, columns[1]))
-
-
-def _credit_columns(member: CreditAssignment) -> tuple[object, ...]:
-    return (member.person_id, member.role_id)
-
-
-def _credit_projection(
-    subject_model: type[ClaimControlledModel],
-    fk_field: Literal["model", "series"],
-) -> ThroughRowProjection[CreditAssignment, None] | None:
-    """Build the credit projection for a subject, or ``None`` to skip.
-
-    Shared by the MachineModel and Series passes. ``fk_field`` is the ``Credit``
-    FK attribute for this subject; ``Credit``'s model/series XOR constraint
-    guarantees a row belongs to exactly one subject, so the two passes never
-    touch each other's rows.  Returns ``None`` when the ``CreditRole`` vocabulary
-    is unseeded — resolving then would drop every credit as invalid and delete
-    the existing rows, so the caller skips resolution entirely.
-    """
-    valid_person_pks = set(Person.objects.values_list("pk", flat=True))
-    valid_role_pks = set(CreditRole.objects.values_list("pk", flat=True))
-    if not valid_role_pks:
-        logger.warning(
-            "CreditRole table is empty — skipping bulk credit resolution. "
-            "Apply the data patches that seed credit roles first."
-        )
-        return None
-
-    def extract(claim: Claim) -> ExtractedMember[CreditAssignment, None] | None:
-        val = cast(CreditClaimValue, claim.value)
-        person_pk = val.get("person")
-        if person_pk not in valid_person_pks:
-            logger.warning(
-                "Unresolved person pk %r in credit claim (subject pk=%s)",
-                person_pk,
-                claim.object_id,
-            )
-            return None
-        role_pk = val.get("role")
-        if role_pk not in valid_role_pks:
-            logger.warning(
-                "Unresolved credit role pk %r in credit claim (subject pk=%s)",
-                role_pk,
-                claim.object_id,
-            )
-            return None
-        return ExtractedMember(CreditAssignment(person_pk, role_pk), None)
-
-    return ThroughRowProjection(
-        subject_model=subject_model,
-        field_name="credit",
-        through_model=Credit,
-        subject_column=f"{fk_field}_id",
-        key_columns=("person_id", "role_id"),
-        payload_columns=(),
-        extract_member=extract,
-        columns_to_key=_credit_key,
-        key_to_columns=_credit_columns,
-        columns_to_payload=_no_payload,
-        payload_to_columns=_no_columns,
-    )
-
-
-# ------------------------------------------------------------------
-# Abbreviations (string-valued membership, no FK target)
-# ------------------------------------------------------------------
-
-
-def _abbreviation_extract(claim: Claim) -> ExtractedMember[str, None]:
-    val = cast(AbbreviationClaimValue, claim.value)
-    return ExtractedMember(val["value"], None)
-
-
-def _abbreviation_projection(
-    subject_model: type[ClaimControlledModel],
-    through_model: type[Model],
-    subject_column: str,
-) -> ThroughRowProjection[str, None]:
-    """Build an abbreviation projection (string member, no FK target)."""
-    return ThroughRowProjection(
-        subject_model=subject_model,
-        field_name="abbreviation",
-        through_model=through_model,
-        subject_column=subject_column,
-        key_columns=("value",),
-        payload_columns=(),
-        extract_member=_abbreviation_extract,
-        columns_to_key=_str_from_column,
-        key_to_columns=_one_column,
-        columns_to_payload=_no_payload,
-        payload_to_columns=_no_columns,
-    )
-
-
-def _title_abbreviation_projection() -> ThroughRowProjection[str, None]:
-    """Build the projection for Title abbreviation claims."""
-    return _abbreviation_projection(Title, TitleAbbreviation, "title_id")
-
-
-def _model_abbreviation_projection() -> ThroughRowProjection[str, None]:
-    """Build the projection for MachineModel abbreviation claims.
-
-    Claim-local: the model's own winning abbreviations are materialized as-is,
-    including any that also belong to its Title. The Title dedup is a read-time
-    view (api.helpers.displayed_model_abbreviations), not a write-time
-    subtraction.
-    """
-    return _abbreviation_projection(MachineModel, ModelAbbreviation, "machine_model_id")
-
-
-# ------------------------------------------------------------------
-# Corporate-entity locations
-# ------------------------------------------------------------------
-
-
-def _corporate_entity_location_projection() -> ThroughRowProjection[int, None]:
-    """Build the projection for CorporateEntity 'location' claims."""
-    valid_loc_pks = set(Location.objects.values_list("pk", flat=True))
-
-    def extract(claim: Claim) -> ExtractedMember[int, None] | None:
-        val = cast(LocationClaimValue, claim.value or {})
-        loc_pk = val.get("location")
-        if loc_pk and loc_pk in valid_loc_pks:
-            return ExtractedMember(loc_pk, None)
-        return None
-
-    return ThroughRowProjection(
-        subject_model=CorporateEntity,
-        field_name="location",
-        through_model=CorporateEntityLocation,
-        subject_column="corporate_entity_id",
-        key_columns=("location_id",),
-        payload_columns=(),
-        extract_member=extract,
-        columns_to_key=_int_from_column,
-        key_to_columns=_one_column,
-        columns_to_payload=_no_payload,
-        payload_to_columns=_no_columns,
-    )
 
 
 # ------------------------------------------------------------------
