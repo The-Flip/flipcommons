@@ -20,6 +20,7 @@ from apps.citation.source_upsert import (
     ensure_root_source,
     validate_root_source,
 )
+from apps.citation.test_factories import make_citation_root_domain, make_citation_source
 
 pytestmark = pytest.mark.django_db
 
@@ -188,8 +189,8 @@ class TestSourceUpsertDedup:
 
     def test_one_host_owned_plus_one_unowned_mints_only_the_new(self, actor):
         """A single owning root + an unowned host → reuse the root, add the host."""
-        root = CitationSource.objects.create(name="Owner", source_type="web")
-        CitationSourceRootDomain.objects.create(source=root, host="owned.example")
+        root = make_citation_source(name="Owner", source_type="web")
+        make_citation_root_domain(source=root, host="owned.example")
         result = ensure_root_source(
             _node(
                 "Owner",
@@ -214,12 +215,10 @@ class TestSourceUpsertDedup:
         by name and reaches the mint — which must warn-and-skip the taken host,
         never trip the ``host`` unique and abort the patch run.
         """
-        parent = CitationSource.objects.create(name="A Root", source_type="web")
-        child = CitationSource.objects.create(
-            name="A Child", source_type="web", parent=parent
-        )
+        parent = make_citation_source(name="A Root", source_type="web")
+        child = make_citation_source(name="A Child", source_type="web", parent=parent)
         # Bypass clean() to plant the pathological child-owned row.
-        CitationSourceRootDomain.objects.create(source=child, host="squatted.example")
+        make_citation_root_domain(source=child, host="squatted.example")
 
         warnings: list[str] = []
         result = ensure_root_source(  # must not raise
@@ -234,10 +233,10 @@ class TestSourceUpsertDedup:
         assert any("already owned" in w for w in warnings)
 
     def test_hosts_spanning_two_roots_warns_and_skips_with_no_writes(self, actor):
-        a = CitationSource.objects.create(name="Root A", source_type="web")
-        CitationSourceRootDomain.objects.create(source=a, host="a.example")
-        b = CitationSource.objects.create(name="Root B", source_type="web")
-        CitationSourceRootDomain.objects.create(source=b, host="b.example")
+        a = make_citation_source(name="Root A", source_type="web")
+        make_citation_root_domain(source=a, host="a.example")
+        b = make_citation_source(name="Root B", source_type="web")
+        make_citation_root_domain(source=b, host="b.example")
 
         sources_before = CitationSource.objects.count()
         domains_before = CitationSourceRootDomain.objects.count()
@@ -331,8 +330,8 @@ class TestRebrandResolution:
         root** (because the unified set feeds resolution) and add the new host —
         never mint a second root.
         """
-        existing = CitationSource.objects.create(name="OldPin", source_type="web")
-        CitationSourceRootDomain.objects.create(source=existing, host="oldpin.com")
+        existing = make_citation_source(name="OldPin", source_type="web")
+        make_citation_root_domain(source=existing, host="oldpin.com")
         before = CitationSource.objects.count()
 
         result = ensure_root_source(
@@ -360,12 +359,10 @@ class TestRebrandResolution:
         by name and reaches the mint; the unified host set flows through the same
         warn-skip the homepage path uses, never tripping the ``host`` unique.
         """
-        parent = CitationSource.objects.create(name="A Root", source_type="web")
-        child = CitationSource.objects.create(
-            name="A Child", source_type="web", parent=parent
-        )
+        parent = make_citation_source(name="A Root", source_type="web")
+        child = make_citation_source(name="A Child", source_type="web", parent=parent)
         # Bypass clean() to plant the pathological child-owned row.
-        CitationSourceRootDomain.objects.create(source=child, host="squatted.example")
+        make_citation_root_domain(source=child, host="squatted.example")
 
         warnings: list[str] = []
         result = ensure_root_source(  # must not raise
@@ -381,10 +378,10 @@ class TestRebrandResolution:
         assert any("already owned" in w for w in warnings)
 
     def test_domains_spanning_two_roots_skips_naming_both(self, actor):
-        a = CitationSource.objects.create(name="Root A", source_type="web")
-        CitationSourceRootDomain.objects.create(source=a, host="a.example")
-        b = CitationSource.objects.create(name="Root B", source_type="web")
-        CitationSourceRootDomain.objects.create(source=b, host="b.example")
+        a = make_citation_source(name="Root A", source_type="web")
+        make_citation_root_domain(source=a, host="a.example")
+        b = make_citation_source(name="Root B", source_type="web")
+        make_citation_root_domain(source=b, host="b.example")
 
         warnings: list[str] = []
         result = ensure_root_source(
@@ -435,10 +432,10 @@ class TestDetectHostCollision:
     """The committed-state collision preview the dry-run path emits."""
 
     def test_hosts_spanning_two_roots_returns_warning_naming_both(self):
-        a = CitationSource.objects.create(name="Root A", source_type="web")
-        CitationSourceRootDomain.objects.create(source=a, host="a.example")
-        b = CitationSource.objects.create(name="Root B", source_type="web")
-        CitationSourceRootDomain.objects.create(source=b, host="b.example")
+        a = make_citation_source(name="Root A", source_type="web")
+        make_citation_root_domain(source=a, host="a.example")
+        b = make_citation_source(name="Root B", source_type="web")
+        make_citation_root_domain(source=b, host="b.example")
 
         warning = detect_host_collision(
             _node("Spans Two", domains=["a.example", "b.example"])
@@ -449,8 +446,8 @@ class TestDetectHostCollision:
 
     def test_single_owning_root_is_not_a_collision(self):
         """One owner means the node resolves to it — normal dedup, no warning."""
-        owner = CitationSource.objects.create(name="Owner", source_type="web")
-        CitationSourceRootDomain.objects.create(source=owner, host="owned.example")
+        owner = make_citation_source(name="Owner", source_type="web")
+        make_citation_root_domain(source=owner, host="owned.example")
         assert (
             detect_host_collision(
                 _node("X", domains=["owned.example", "fresh.example"])

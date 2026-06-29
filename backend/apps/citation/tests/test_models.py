@@ -4,22 +4,24 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 
+from apps.accounts.test_factories import default_actor
 from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.test_factories import make_citation_link, make_citation_source
 
 
 class TestCitationSourceStr:
     def test_name_only(self, db):
-        cs = CitationSource.objects.create(name="IPDB", source_type="web")
+        cs = make_citation_source(name="IPDB", source_type="web")
         assert str(cs) == "IPDB"
 
     def test_name_and_year(self, db):
-        cs = CitationSource.objects.create(
+        cs = make_citation_source(
             name="The Encyclopedia of Pinball", source_type="book", year=1996
         )
         assert str(cs) == "The Encyclopedia of Pinball (1996)"
 
     def test_name_author_year(self, db):
-        cs = CitationSource.objects.create(
+        cs = make_citation_source(
             name="The Encyclopedia of Pinball",
             source_type="book",
             author="Richard Bueschel",
@@ -72,40 +74,62 @@ class TestWebFlatnessGuard:
     """A web source nests one level — root → child, no grandchildren."""
 
     def test_rejects_a_web_grandchild(self, db):
-        root = CitationSource.objects.create(name="Site", source_type="web")
-        child = CitationSource.objects.create(
-            name="Page", source_type="web", parent=root
+        root = make_citation_source(name="Site", source_type="web")
+        child = make_citation_source(name="Page", source_type="web", parent=root)
+        grandchild = CitationSource(
+            name="Sub-page",
+            source_type="web",
+            parent=child,
+            created_by=default_actor(),
+            updated_by=default_actor(),
         )
-        grandchild = CitationSource(name="Sub-page", source_type="web", parent=child)
         with pytest.raises(ValidationError, match="nests only one level"):
             grandchild.full_clean()
 
     def test_accepts_a_web_child_under_a_root(self, db):
-        root = CitationSource.objects.create(name="Site", source_type="web")
-        child = CitationSource(name="Page", source_type="web", parent=root)
+        root = make_citation_source(name="Site", source_type="web")
+        child = CitationSource(
+            name="Page",
+            source_type="web",
+            parent=root,
+            created_by=default_actor(),
+            updated_by=default_actor(),
+        )
         child.full_clean()  # does not raise
 
     def test_dangling_parent_id_defers_to_the_fk_validator(self, db):
         # The guard must not mask the FK field validator: a non-existent
         # parent_id is a ValidationError (the FK field's job), never a raw
         # DoesNotExist leaking out of clean().
-        orphan = CitationSource(name="x", source_type="web", parent_id=999999)
+        orphan = CitationSource(
+            name="x",
+            source_type="web",
+            parent_id=999999,
+            created_by=default_actor(),
+            updated_by=default_actor(),
+        )
         with pytest.raises(ValidationError):
             orphan.full_clean()
 
     def test_accepts_book_three_level_nesting(self, db):
         # Book is not a flat-hierarchy type, so deep nesting stays valid.
-        root = CitationSource.objects.create(name="Book", source_type="book")
-        edition = CitationSource.objects.create(
+        root = make_citation_source(name="Book", source_type="book")
+        edition = make_citation_source(
             name="2nd Edition", source_type="book", parent=root
         )
-        page = CitationSource(name="Page 42", source_type="book", parent=edition)
+        page = CitationSource(
+            name="Page 42",
+            source_type="book",
+            parent=edition,
+            created_by=default_actor(),
+            updated_by=default_actor(),
+        )
         page.full_clean()  # does not raise
 
 
 class TestCitationSourceRelationships:
     def test_children_relationship(self, citation_source):
-        child = CitationSource.objects.create(
+        child = make_citation_source(
             name="Child", source_type="book", parent=citation_source
         )
         assert child in citation_source.children.all()
@@ -131,7 +155,7 @@ class TestCitationSourceLinkStr:
         )
 
     def test_without_label(self, citation_source):
-        link = CitationSourceLink.objects.create(
+        link = make_citation_link(
             citation_source=citation_source,
             link_type="homepage",
             url="https://example.com",

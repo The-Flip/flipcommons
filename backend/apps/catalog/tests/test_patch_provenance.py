@@ -15,6 +15,7 @@ from django.core.exceptions import ValidationError
 from apps.catalog.models import MachineModel, Manufacturer, Tag
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationSource
+from apps.citation.test_factories import make_citation_link, make_citation_source
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import (
     EditEntry,
@@ -716,10 +717,10 @@ def test_url_cite_reuses_preexisting_source(flipcommons_catalog, kineticist_root
     # web source is abstract and never a citation target) — re-citing its URL
     # resolves back to it via the children-only exact-link match.
     url = "https://kineticist.com/reviews/medieval-madness"
-    existing = CitationSource.objects.create(
+    existing = make_citation_source(
         name="Curated", source_type="web", parent=kineticist_root
     )
-    existing.links.create(link_type="reference", url=url)
+    make_citation_link(citation_source=existing, link_type="reference", url=url)
     text = (
         "attribution: flipcommons-catalog\n"
         "claims:\n"

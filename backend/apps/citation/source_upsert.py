@@ -324,8 +324,12 @@ def validate_root_source(node: SourceNode) -> None:
         CitationSourceRootDomain,
     )
 
+    # Validate field/host shape only — ``created_by``/``updated_by`` are stamped
+    # at write time (``ensure_root_source``), not on these throwaway instances,
+    # so exclude them from the non-null check alongside the unset parent FK.
+    attribution = ["created_by", "updated_by"]
     source = CitationSource(**_source_fields(node))
-    source.full_clean(validate_unique=False)
+    source.full_clean(exclude=attribution, validate_unique=False)
 
     seen_urls: set[str] = set()
     for link in node.get("links", []):
@@ -338,11 +342,11 @@ def validate_root_source(node: SourceNode) -> None:
             label=link.get("label", ""),
             link_type=link["link_type"],
         )
-        obj.full_clean(exclude=["citation_source"], validate_unique=False)
+        obj.full_clean(exclude=["citation_source", *attribution], validate_unique=False)
 
     for host in _declared_recognition_hosts(node):
         domain = CitationSourceRootDomain(host=host)
-        domain.full_clean(exclude=["source"], validate_unique=False)
+        domain.full_clean(exclude=["source", *attribution], validate_unique=False)
 
 
 def detect_host_collision(node: SourceNode) -> str | None:

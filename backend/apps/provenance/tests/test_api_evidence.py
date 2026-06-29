@@ -6,7 +6,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.catalog.models import Title
-from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.test_factories import make_citation_link, make_citation_source
 from apps.provenance.models import CitationInstance
 from apps.provenance.test_factories import make_claim, user_changeset
 
@@ -22,8 +22,8 @@ def title(db, bootstrap_source):
 
 @pytest.fixture
 def citation_source(db):
-    source = CitationSource.objects.create(name="Williams Flyer", source_type="web")
-    CitationSourceLink.objects.create(
+    source = make_citation_source(name="Williams Flyer", source_type="web")
+    make_citation_link(
         citation_source=source,
         link_type="homepage",
         url="https://example.com/flyer",

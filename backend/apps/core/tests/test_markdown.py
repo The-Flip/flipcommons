@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from django.core.exceptions import ValidationError
 
+from apps.citation.test_factories import make_citation_link, make_citation_source
 from apps.core.markdown import (
     convert_authoring_to_storage,
     convert_storage_to_authoring,
@@ -35,9 +36,8 @@ def system(db, manufacturer):
 
 @pytest.fixture
 def citation_source(db):
-    from apps.citation.models import CitationSource
 
-    return CitationSource.objects.create(
+    return make_citation_source(
         name="The Encyclopedia of Pinball",
         source_type="book",
         author="Jeff Lawton",
@@ -47,9 +47,8 @@ def citation_source(db):
 
 @pytest.fixture
 def citation_source_with_links(citation_source):
-    from apps.citation.models import CitationSourceLink
 
-    CitationSourceLink.objects.create(
+    make_citation_link(
         citation_source=citation_source,
         url="https://example.com/archive",
         label="Archive scan",
@@ -140,10 +139,9 @@ class TestRenderMarkdownHtml:
 
     @pytest.mark.django_db
     def test_metadata_out_collects_citations(self):
-        from apps.citation.models import CitationSource
         from apps.provenance.models import CitationInstance
 
-        src = CitationSource.objects.create(
+        src = make_citation_source(
             name="Source Book", source_type="book", author="A. Author"
         )
         ci = CitationInstance.objects.create(citation_source=src, locator="ch. 3")
@@ -193,10 +191,9 @@ class TestRenderMarkdownFields:
     @pytest.mark.django_db
     def test_citations_key_included(self):
         from apps.catalog.models import Manufacturer
-        from apps.citation.models import CitationSource
         from apps.provenance.models import CitationInstance
 
-        src = CitationSource.objects.create(name="Book", source_type="book")
+        src = make_citation_source(name="Book", source_type="book")
         ci = CitationInstance.objects.create(citation_source=src, locator="p. 1")
         mfr = Manufacturer(
             name="Test", slug="test", description=f"Info.[[cite:id:{ci.pk}]]"

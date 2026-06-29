@@ -19,7 +19,7 @@ from django.core.management.base import CommandError
 
 from apps.catalog.models import MachineModel
 from apps.catalog.tests.conftest import make_machine_model
-from apps.citation.models import CitationSource
+from apps.citation.test_factories import make_citation_source
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import EditEntry, build_plan, load_patch
 from apps.core.markdown import convert_authoring_to_storage
@@ -78,9 +78,7 @@ def test_round_trip_byte_identity_with_adversarial_text(flipcommons_catalog):
     Byte-identity is style-independent, so correctness survives the readability
     cliff.
     """
-    src = CitationSource.objects.create(
-        name="IPDB", source_type="web", identifier_key="ipdb"
-    )
+    src = make_citation_source(name="IPDB", source_type="web", identifier_key="ipdb")
     ci1 = CitationInstance.objects.create(citation_source=src, claim=None)
     ci2 = CitationInstance.objects.create(citation_source=src, claim=None)
 

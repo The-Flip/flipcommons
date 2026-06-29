@@ -18,7 +18,7 @@ from apps.catalog.models import (
     TitleAbbreviation,
 )
 from apps.catalog.tests.conftest import make_machine_model
-from apps.citation.models import CitationSource
+from apps.citation.test_factories import make_citation_source
 from apps.provenance.models import ChangeSet
 from apps.provenance.test_factories import make_claim, user_changeset
 
@@ -82,7 +82,7 @@ def people(db):
 
 @pytest.fixture
 def citation_source(db):
-    return CitationSource.objects.create(name="Williams Flyer", source_type="web")
+    return make_citation_source(name="Williams Flyer", source_type="web")
 
 
 def _patch(client, slug, body):

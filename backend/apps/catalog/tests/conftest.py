@@ -12,7 +12,11 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
-from apps.citation.models import CitationSource
+from apps.citation.test_factories import (
+    make_citation_link,
+    make_citation_root_domain,
+    make_citation_source,
+)
 from apps.provenance.models import ClaimControlledModel, Source
 from apps.provenance.test_factories import make_claim
 
@@ -121,7 +125,7 @@ def source(db):
 @pytest.fixture
 def ipdb_root(db):
     """The root CitationSource for the ipdb scheme (children hang under it)."""
-    return CitationSource.objects.create(
+    return make_citation_source(
         name="Internet Pinball Database",
         source_type="web",
         identifier_key="ipdb",
@@ -131,9 +135,11 @@ def ipdb_root(db):
 @pytest.fixture
 def kineticist_root(db):
     """A non-scheme root web source with a homepage link, for domain matching."""
-    root = CitationSource.objects.create(name="Kineticist", source_type="web")
-    root.links.create(link_type="homepage", url="https://kineticist.com/")
-    root.root_domains.create(host="kineticist.com")  # the recognition signal
+    root = make_citation_source(name="Kineticist", source_type="web")
+    make_citation_link(
+        citation_source=root, link_type="homepage", url="https://kineticist.com/"
+    )
+    make_citation_root_domain(source=root, host="kineticist.com")  # recognition signal
     return root
 
 

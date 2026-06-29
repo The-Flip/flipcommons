@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
 
-from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.test_factories import make_citation_link, make_citation_source
 
 User = get_user_model()
 
@@ -15,7 +15,7 @@ def client():
 @pytest.fixture
 def citation_source(db):
     """Minimal CitationSource — name + source_type only."""
-    return CitationSource.objects.create(
+    return make_citation_source(
         name="The Encyclopedia of Pinball",
         source_type="book",
     )
@@ -24,7 +24,7 @@ def citation_source(db):
 @pytest.fixture
 def citation_source_full(db):
     """CitationSource with all optional fields populated."""
-    return CitationSource.objects.create(
+    return make_citation_source(
         name="The Encyclopedia of Pinball - Edition 1",
         source_type="book",
         author="Richard Bueschel",
@@ -41,7 +41,7 @@ def citation_source_full(db):
 @pytest.fixture
 def citation_source_with_parent(db, citation_source):
     """A child CitationSource with parent set."""
-    return CitationSource.objects.create(
+    return make_citation_source(
         name="The Encyclopedia of Pinball - Edition 1",
         source_type="book",
         parent=citation_source,
@@ -51,7 +51,7 @@ def citation_source_with_parent(db, citation_source):
 @pytest.fixture
 def citation_source_link(db, citation_source):
     """CitationSourceLink on citation_source."""
-    return CitationSourceLink.objects.create(
+    return make_citation_link(
         citation_source=citation_source,
         link_type="homepage",
         url="https://archive.org/details/encyclopedia-of-pinball",

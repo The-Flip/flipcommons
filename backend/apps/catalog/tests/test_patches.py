@@ -32,6 +32,11 @@ from apps.citation.models import (
     CitationSourceLink,
     CitationSourceRootDomain,
 )
+from apps.citation.test_factories import (
+    make_citation_link,
+    make_citation_root_domain,
+    make_citation_source,
+)
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import (
     EditEntry,
@@ -2615,10 +2620,10 @@ def _spanning_two_roots_patch() -> str:
     """Create two roots owning a.example / b.example and return a patch whose
     node's domains span both — the spans-two-roots collision precondition. NB:
     mutates the DB (the two roots) in addition to returning the patch text."""
-    a = CitationSource.objects.create(name="Root A", source_type="web")
-    CitationSourceRootDomain.objects.create(source=a, host="a.example")
-    b = CitationSource.objects.create(name="Root B", source_type="web")
-    CitationSourceRootDomain.objects.create(source=b, host="b.example")
+    a = make_citation_source(name="Root A", source_type="web")
+    make_citation_root_domain(source=a, host="a.example")
+    b = make_citation_source(name="Root B", source_type="web")
+    make_citation_root_domain(source=b, host="b.example")
     return (
         "attribution: flipcommons-catalog\n"
         "sources:\n"
@@ -2705,10 +2710,10 @@ def test_sources_reapply_identical_is_noop():
 
 def test_sources_preexisting_user_source_left_untouched():
     # A user-created collision must never fail or be overwritten.
-    user = CitationSource.objects.create(
+    user = make_citation_source(
         name="Wikipedia", source_type="web", description="user wrote this"
     )
-    CitationSourceLink.objects.create(
+    make_citation_link(
         citation_source=user,
         url="https://en.wikipedia.org/",
         label="Wikipedia",
@@ -2724,7 +2729,7 @@ def test_sources_preexisting_user_source_left_untouched():
 
 def test_sources_missing_link_backfilled_additively():
     # A bare existing root gets its declared homepage link added (additive).
-    CitationSource.objects.create(name="Wikipedia", source_type="web")
+    make_citation_source(name="Wikipedia", source_type="web")
     report = _apply(_WIKIPEDIA, patch_id="0001-backfill")
     assert report.sources_created == 0
     assert report.source_links_created == 1
@@ -2733,8 +2738,8 @@ def test_sources_missing_link_backfilled_additively():
 
 
 def test_sources_divergent_existing_link_left_and_warned():
-    src = CitationSource.objects.create(name="Wikipedia", source_type="web")
-    CitationSourceLink.objects.create(
+    src = make_citation_source(name="Wikipedia", source_type="web")
+    make_citation_link(
         citation_source=src,
         url="https://en.wikipedia.org/",
         label="Different label",
@@ -2749,8 +2754,8 @@ def test_sources_divergent_existing_link_left_and_warned():
 
 
 def test_sources_ambiguous_match_uses_first_and_warns():
-    CitationSource.objects.create(name="Wikipedia", source_type="web")
-    CitationSource.objects.create(name="Wikipedia", source_type="web")
+    make_citation_source(name="Wikipedia", source_type="web")
+    make_citation_source(name="Wikipedia", source_type="web")
     report = _apply(_WIKIPEDIA, patch_id="0001-ambig")
     assert report.sources_created == 0
     assert any("matched 2 rows" in w for w in report.warnings)
@@ -2761,10 +2766,8 @@ def test_sources_same_named_child_does_not_shadow_root():
     # A child sharing (name, source_type) with the declared root must NOT be
     # adopted: the patch creates the parentless root so later cites can nest
     # (recognize_url only sees homepage links on parentless sources).
-    farm = CitationSource.objects.create(name="Wiki Farm", source_type="web")
-    child = CitationSource.objects.create(
-        name="Wikipedia", source_type="web", parent=farm
-    )
+    farm = make_citation_source(name="Wiki Farm", source_type="web")
+    child = make_citation_source(name="Wikipedia", source_type="web", parent=farm)
     report = _apply(_WIKIPEDIA, patch_id="0001-no-shadow")
     assert report.sources_created == 1
     root = CitationSource.objects.get(
@@ -2778,8 +2781,8 @@ def test_sources_same_named_child_does_not_shadow_root():
 def test_sources_existing_row_passes_read_phase_validation():
     # Guards the validate_unique=False / exclude=citation_source exclusions:
     # a node matching an existing row + an in-memory link must NOT false-reject.
-    src = CitationSource.objects.create(name="Wikipedia", source_type="web")
-    CitationSourceLink.objects.create(
+    src = make_citation_source(name="Wikipedia", source_type="web")
+    make_citation_link(
         citation_source=src,
         url="https://en.wikipedia.org/",
         label="Wikipedia",
@@ -2827,7 +2830,7 @@ def test_sources_only_run_audit_not_zero():
 
 
 def test_link_only_backfill_audit_not_zero():
-    CitationSource.objects.create(name="Wikipedia", source_type="web")
+    make_citation_source(name="Wikipedia", source_type="web")
     _apply(_WIKIPEDIA, patch_id="0001-link-audit")
     run = IngestRun.objects.get(patch_id="0001-link-audit")
     assert run.status == IngestRun.Status.SUCCESS

@@ -8,12 +8,13 @@ from django.db import models
 class ActorAttributedModel(models.Model):
     """Abstract base adding editorial attribution: who created / last updated.
 
-    Two nullable FKs to :class:`~apps.actors.models.actor.Actor`
+    Two required FKs to :class:`~apps.actors.models.actor.Actor`
     (``created_by`` / ``updated_by``), both ``PROTECT`` so the durable
     attribution anchor outlives the rows that reference it, and
     ``related_name="+"`` because no reverse "things this actor authored"
-    accessor is wanted. ``null`` because a row may be authored by no one — an
-    extractor-minted source can stay unattributed.
+    accessor is wanted. Non-null: every write path supplies an actor — the
+    interactive API and admin stamp ``user.actor``, and ingest stamps the
+    patch's ``source.actor`` — so a citation row always records its author.
 
     This is *editorial* attribution for directly-edited, non-claims-controlled
     models (the citation-source family). It is **not** the claims/provenance
@@ -30,15 +31,11 @@ class ActorAttributedModel(models.Model):
 
     created_by = models.ForeignKey(
         "actors.Actor",
-        null=True,
-        blank=True,
         on_delete=models.PROTECT,
         related_name="+",
     )
     updated_by = models.ForeignKey(
         "actors.Actor",
-        null=True,
-        blank=True,
         on_delete=models.PROTECT,
         related_name="+",
     )

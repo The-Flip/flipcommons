@@ -17,6 +17,11 @@ from apps.citation.models import (
     CitationSourceLink,
     CitationSourceRootDomain,
 )
+from apps.citation.test_factories import (
+    make_citation_link,
+    make_citation_root_domain,
+    make_citation_source,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -97,7 +102,7 @@ class TestSearchCitationSources:
 
     def test_search_max_20_results(self, client, user, db):
         for i in range(25):
-            CitationSource.objects.create(name=f"Test Source {i}", source_type="book")
+            make_citation_source(name=f"Test Source {i}", source_type="book")
         client.force_login(user)
         resp = client.get("/api/citation-sources/search/?q=Test Source")
         assert resp.status_code == 200
@@ -126,7 +131,7 @@ class TestSearchCitationSources:
 
     def test_search_returns_identifier_key(self, client, user, db):
         """Search results include identifier_key when set on the source."""
-        CitationSource.objects.create(
+        make_citation_source(
             name="Internet Pinball Database",
             source_type="web",
             identifier_key="ipdb",
@@ -151,16 +156,16 @@ class TestSearchRecognition:
 
     def test_ipdb_url_recognized_with_existing_child(self, client, user, db):
         """Pasting an IPDB URL finds the parent and existing child."""
-        parent = CitationSource.objects.create(
+        parent = make_citation_source(
             name="IPDB", source_type="web", identifier_key="ipdb"
         )
-        child = CitationSource.objects.create(
+        child = make_citation_source(
             name="IPDB #4443",
             source_type="web",
             parent=parent,
             identifier="4443",
         )
-        CitationSourceLink.objects.create(
+        make_citation_link(
             citation_source=child,
             link_type="homepage",
             url="https://www.ipdb.org/machine.cgi?id=4443",
@@ -179,9 +184,7 @@ class TestSearchRecognition:
 
     def test_ipdb_url_recognized_no_child(self, client, user, db):
         """Pasting an IPDB URL for a non-existent child returns parent + identifier."""
-        CitationSource.objects.create(
-            name="IPDB", source_type="web", identifier_key="ipdb"
-        )
+        make_citation_source(name="IPDB", source_type="web", identifier_key="ipdb")
         client.force_login(user)
         resp = client.get(
             "/api/citation-sources/search/?q=https://www.ipdb.org/machine.cgi?id=9999"
@@ -195,12 +198,8 @@ class TestSearchRecognition:
 
     def test_domain_match_jjp_url(self, client, user, db):
         """Pasting a JJP URL domain-matches to the Jersey Jack parent."""
-        jjp = CitationSource.objects.create(
-            name="Jersey Jack Pinball", source_type="web"
-        )
-        CitationSourceRootDomain.objects.create(
-            source=jjp, host="jerseyjackpinball.com"
-        )
+        jjp = make_citation_source(name="Jersey Jack Pinball", source_type="web")
+        make_citation_root_domain(source=jjp, host="jerseyjackpinball.com")
         client.force_login(user)
         resp = client.get(
             "/api/citation-sources/search/"
@@ -215,21 +214,17 @@ class TestSearchRecognition:
 
     def test_full_url_matches_existing_child_link(self, client, user, db):
         """Re-pasting a URL that matches an existing child's link returns it."""
-        parent = CitationSource.objects.create(
-            name="Jersey Jack Pinball", source_type="web"
-        )
-        CitationSourceLink.objects.create(
+        parent = make_citation_source(name="Jersey Jack Pinball", source_type="web")
+        make_citation_link(
             citation_source=parent,
             link_type="homepage",
             url="https://www.jerseyjackpinball.com/",
         )
-        child = CitationSource.objects.create(
+        child = make_citation_source(
             name="Elton John Pinball", source_type="web", parent=parent
         )
         url = "https://jerseyjackpinball.com/products/elton-john"
-        CitationSourceLink.objects.create(
-            citation_source=child, link_type="homepage", url=url
-        )
+        make_citation_link(citation_source=child, link_type="homepage", url=url)
         client.force_login(user)
         resp = client.get(f"/api/citation-sources/search/?q={url}")
         data = resp.json()
@@ -250,10 +245,8 @@ class TestSearchRecognition:
         """A malformed host whose ancestor suffix matches a seeded root still
         yields no recognition — /search/ must not surface a confident-but-wrong
         page for garbage input (the read surface has no write-time URL guard)."""
-        root = CitationSource.objects.create(name="American Pinball", source_type="web")
-        CitationSourceRootDomain.objects.create(
-            source=root, host="american-pinball.com"
-        )
+        root = make_citation_source(name="American Pinball", source_type="web")
+        make_citation_root_domain(source=root, host="american-pinball.com")
         client.force_login(user)
         resp = client.get(
             "/api/citation-sources/search/?q=https://www..american-pinball.com/m.pdf"
@@ -270,12 +263,10 @@ class TestSearchRecognition:
 
     def test_subdomain_resolves_to_most_specific_root(self, client, user, db):
         """twip.kineticist.com resolves to the TWiP root, not kineticist.com."""
-        kineticist = CitationSource.objects.create(name="Kineticist", source_type="web")
-        CitationSourceRootDomain.objects.create(
-            source=kineticist, host="kineticist.com"
-        )
-        twip = CitationSource.objects.create(name="TWiP", source_type="web")
-        CitationSourceRootDomain.objects.create(source=twip, host="twip.kineticist.com")
+        kineticist = make_citation_source(name="Kineticist", source_type="web")
+        make_citation_root_domain(source=kineticist, host="kineticist.com")
+        twip = make_citation_source(name="TWiP", source_type="web")
+        make_citation_root_domain(source=twip, host="twip.kineticist.com")
         client.force_login(user)
         resp = client.get(
             "/api/citation-sources/search/?q=https://twip.kineticist.com/some-article"
@@ -289,8 +280,8 @@ class TestSearchRecognition:
 
         A source with only a reference link (no root-domain row) is not matched.
         """
-        source = CitationSource.objects.create(name="Some Source", source_type="web")
-        CitationSourceLink.objects.create(
+        source = make_citation_source(name="Some Source", source_type="web")
+        make_citation_link(
             citation_source=source,
             link_type="reference",
             url="https://en.wikipedia.org/wiki/Pinball",
@@ -307,7 +298,7 @@ class TestSearchComputedFields:
 
     def test_root_book_no_children(self, client, user, db):
         """A standalone book: not abstract, needs locator."""
-        CitationSource.objects.create(name="Solo Book", source_type="book")
+        make_citation_source(name="Solo Book", source_type="book")
         client.force_login(user)
         resp = client.get("/api/citation-sources/search/?q=Solo Book")
         data = resp.json()["results"][0]
@@ -316,10 +307,8 @@ class TestSearchComputedFields:
 
     def test_root_book_with_children(self, client, user, db):
         """A book with editions: abstract."""
-        parent = CitationSource.objects.create(name="Big Book", source_type="book")
-        CitationSource.objects.create(
-            name="Big Book Ed. 1", source_type="book", parent=parent
-        )
+        parent = make_citation_source(name="Big Book", source_type="book")
+        make_citation_source(name="Big Book Ed. 1", source_type="book", parent=parent)
         client.force_login(user)
         resp = client.get("/api/citation-sources/search/?q=Big Book")
         results = {r["id"]: r for r in resp.json()["results"]}
@@ -329,7 +318,7 @@ class TestSearchComputedFields:
 
     def test_root_web_source(self, client, user, db):
         """A root web source (e.g. IPDB): abstract."""
-        CitationSource.objects.create(
+        make_citation_source(
             name="Internet Pinball Database",
             source_type="web",
             identifier_key="ipdb",
@@ -342,7 +331,7 @@ class TestSearchComputedFields:
 
     def test_root_web_source_without_identifier_key(self, client, user, db):
         """A root web source without an identifier scheme: abstract."""
-        CitationSource.objects.create(name="Jersey Jack Pinball", source_type="web")
+        make_citation_source(name="Jersey Jack Pinball", source_type="web")
         client.force_login(user)
         resp = client.get("/api/citation-sources/search/?q=Jersey Jack")
         data = resp.json()["results"][0]
@@ -351,10 +340,10 @@ class TestSearchComputedFields:
 
     def test_child_web_source(self, client, user, db):
         """A child web source (e.g. IPDB machine page): skip locator."""
-        parent = CitationSource.objects.create(
+        parent = make_citation_source(
             name="Internet Pinball Database", source_type="web"
         )
-        child = CitationSource.objects.create(
+        child = make_citation_source(
             name="IPDB Machine 4836", source_type="web", parent=parent
         )
         client.force_login(user)
@@ -366,7 +355,7 @@ class TestSearchComputedFields:
 
     def test_root_magazine(self, client, user, db):
         """A root magazine: abstract."""
-        CitationSource.objects.create(name="Pinball Magazine", source_type="magazine")
+        make_citation_source(name="Pinball Magazine", source_type="magazine")
         client.force_login(user)
         resp = client.get("/api/citation-sources/search/?q=Pinball Magazine")
         data = resp.json()["results"][0]
@@ -724,8 +713,8 @@ class TestCiteUrl:
 
     def test_domain_match_nests_child_and_ignores_site_fields(self, client, user):
         client.force_login(user)
-        root = CitationSource.objects.create(name="Existing", source_type="web")
-        CitationSourceRootDomain.objects.create(source=root, host="existing.example")
+        root = make_citation_source(name="Existing", source_type="web")
+        make_citation_root_domain(source=root, host="existing.example")
         resp = _post(
             client,
             self.URL,
@@ -759,10 +748,8 @@ class TestCiteUrl:
         # root, so the cite nests a child *under* american-pinball.com rather
         # than minting a second root.
         client.force_login(user)
-        root = CitationSource.objects.create(name="American Pinball", source_type="web")
-        CitationSourceRootDomain.objects.create(
-            source=root, host="american-pinball.com"
-        )
+        root = make_citation_source(name="American Pinball", source_type="web")
+        make_citation_root_domain(source=root, host="american-pinball.com")
         resp = _post(
             client,
             self.URL,
@@ -778,12 +765,10 @@ class TestCiteUrl:
 
     def test_exact_child_is_reused(self, client, user):
         client.force_login(user)
-        root = CitationSource.objects.create(name="Existing", source_type="web")
-        CitationSourceRootDomain.objects.create(source=root, host="existing.example")
-        child = CitationSource.objects.create(
-            name="Page", source_type="web", parent=root
-        )
-        CitationSourceLink.objects.create(
+        root = make_citation_source(name="Existing", source_type="web")
+        make_citation_root_domain(source=root, host="existing.example")
+        child = make_citation_source(name="Page", source_type="web", parent=root)
+        make_citation_link(
             citation_source=child,
             link_type="reference",
             url="https://existing.example/page",
@@ -796,9 +781,7 @@ class TestCiteUrl:
 
     def test_scheme_url_returns_422(self, client, user):
         client.force_login(user)
-        CitationSource.objects.create(
-            name="IPDB", source_type="web", identifier_key="ipdb"
-        )
+        make_citation_source(name="IPDB", source_type="web", identifier_key="ipdb")
         resp = _post(
             client,
             self.URL,
@@ -816,13 +799,13 @@ class TestCiteUrl:
         ``scheme:identifier`` — not silently reuse the child.
         """
         client.force_login(user)
-        root = CitationSource.objects.create(
+        root = make_citation_source(
             name="IPDB", source_type="web", identifier_key="ipdb"
         )
-        child = CitationSource.objects.create(
+        child = make_citation_source(
             name="IPDB #4443", source_type="web", parent=root, identifier="4443"
         )
-        CitationSourceLink.objects.create(
+        make_citation_link(
             citation_source=child,
             link_type="reference",
             url="https://www.ipdb.org/machine.cgi?id=4443",
@@ -871,7 +854,7 @@ class TestCiteUrl:
         the racer committed.
         """
         client.force_login(user)
-        racer = CitationSource.objects.create(name="Racer", source_type="web")
+        racer = make_citation_source(name="Racer", source_type="web")
 
         def raise_integrity(self, *args, **kwargs):
             raise IntegrityError("duplicate key value violates unique constraint")
@@ -938,10 +921,10 @@ class TestGetCitationSourceDetail:
 
     def test_detail_includes_skip_locator(self, client, user, db):
         """Detail response includes skip_locator field."""
-        parent = CitationSource.objects.create(
+        parent = make_citation_source(
             name="Internet Pinball Database", source_type="web"
         )
-        child = CitationSource.objects.create(
+        child = make_citation_source(
             name="IPDB Machine 1000", source_type="web", parent=parent
         )
         client.force_login(user)
@@ -958,12 +941,10 @@ class TestGetCitationSourceDetail:
 
     def test_detail_children_include_skip_locator(self, client, user, db):
         """Children in detail response include skip_locator."""
-        parent = CitationSource.objects.create(
+        parent = make_citation_source(
             name="Internet Pinball Database", source_type="web"
         )
-        CitationSource.objects.create(
-            name="IPDB Machine 2000", source_type="web", parent=parent
-        )
+        make_citation_source(name="IPDB Machine 2000", source_type="web", parent=parent)
         client.force_login(user)
         resp = client.get(f"/api/citation-sources/{parent.pk}/")
         data = resp.json()
@@ -972,13 +953,13 @@ class TestGetCitationSourceDetail:
 
     def test_detail_children_include_urls(self, client, user, db):
         """Children in detail response include their link URLs."""
-        parent = CitationSource.objects.create(
+        parent = make_citation_source(
             name="Internet Pinball Database", source_type="web"
         )
-        child = CitationSource.objects.create(
+        child = make_citation_source(
             name="IPDB Machine 3000", source_type="web", parent=parent
         )
-        CitationSourceLink.objects.create(
+        make_citation_link(
             citation_source=child,
             link_type="homepage",
             url="https://www.ipdb.org/machine.cgi?id=3000",
@@ -993,10 +974,8 @@ class TestGetCitationSourceDetail:
 
     def test_detail_children_urls_empty_when_no_links(self, client, user, db):
         """Children with no links have an empty urls list."""
-        parent = CitationSource.objects.create(name="Big Book", source_type="book")
-        CitationSource.objects.create(
-            name="Edition 1", source_type="book", parent=parent
-        )
+        parent = make_citation_source(name="Big Book", source_type="book")
+        make_citation_source(name="Edition 1", source_type="book", parent=parent)
         client.force_login(user)
         resp = client.get(f"/api/citation-sources/{parent.pk}/")
         data = resp.json()
@@ -1017,27 +996,23 @@ class TestListChildren:
         assert resp.status_code in (401, 403)
 
     def test_empty_q_returns_empty_list(self, client, user, db):
-        parent = CitationSource.objects.create(
+        parent = make_citation_source(
             name="Internet Pinball Database", source_type="web"
         )
-        CitationSource.objects.create(
-            name="IPDB Machine 1000", source_type="web", parent=parent
-        )
+        make_citation_source(name="IPDB Machine 1000", source_type="web", parent=parent)
         client.force_login(user)
         resp = client.get(f"/api/citation-sources/{parent.pk}/children/?q=")
         assert resp.status_code == 200
         assert resp.json() == []
 
     def test_filter_by_child_name(self, client, user, db):
-        parent = CitationSource.objects.create(
+        parent = make_citation_source(
             name="Internet Pinball Database", source_type="web"
         )
-        match = CitationSource.objects.create(
+        match = make_citation_source(
             name="IPDB Machine 4836", source_type="web", parent=parent
         )
-        CitationSource.objects.create(
-            name="IPDB Machine 9999", source_type="web", parent=parent
-        )
+        make_citation_source(name="IPDB Machine 9999", source_type="web", parent=parent)
         client.force_login(user)
         resp = client.get(f"/api/citation-sources/{parent.pk}/children/?q=4836")
         assert resp.status_code == 200
@@ -1046,20 +1021,18 @@ class TestListChildren:
         assert results[0]["id"] == match.pk
 
     def test_filter_by_child_url(self, client, user, db):
-        parent = CitationSource.objects.create(
+        parent = make_citation_source(
             name="Internet Pinball Database", source_type="web"
         )
-        child = CitationSource.objects.create(
+        child = make_citation_source(
             name="IPDB Machine 4836", source_type="web", parent=parent
         )
-        CitationSourceLink.objects.create(
+        make_citation_link(
             citation_source=child,
             link_type="homepage",
             url="https://www.ipdb.org/machine.cgi?id=4836",
         )
-        CitationSource.objects.create(
-            name="IPDB Machine 9999", source_type="web", parent=parent
-        )
+        make_citation_source(name="IPDB Machine 9999", source_type="web", parent=parent)
         client.force_login(user)
         resp = client.get(
             f"/api/citation-sources/{parent.pk}/children/?q=ipdb.org/machine.cgi?id=4836"
@@ -1071,13 +1044,13 @@ class TestListChildren:
         assert results[0]["urls"] == ["https://www.ipdb.org/machine.cgi?id=4836"]
 
     def test_response_shape_matches_child_schema(self, client, user, db):
-        parent = CitationSource.objects.create(
+        parent = make_citation_source(
             name="Internet Pinball Database", source_type="web"
         )
-        child = CitationSource.objects.create(
+        child = make_citation_source(
             name="IPDB Machine 5000", source_type="web", parent=parent, year=2020
         )
-        CitationSourceLink.objects.create(
+        make_citation_link(
             citation_source=child,
             link_type="homepage",
             url="https://www.ipdb.org/machine.cgi?id=5000",
@@ -1096,11 +1069,11 @@ class TestListChildren:
         }
 
     def test_max_20_results(self, client, user, db):
-        parent = CitationSource.objects.create(
+        parent = make_citation_source(
             name="Internet Pinball Database", source_type="web"
         )
         for i in range(25):
-            CitationSource.objects.create(
+            make_citation_source(
                 name=f"IPDB Machine {i}", source_type="web", parent=parent
             )
         client.force_login(user)
@@ -1213,7 +1186,7 @@ class TestUpdateCitationSource:
         assert resp.json()["author"] == ""
 
     def test_duplicate_isbn_returns_422(self, client, user, citation_source_full):
-        other = CitationSource.objects.create(
+        other = make_citation_source(
             name="Other", source_type="book", isbn="9999999999"
         )
         client.force_login(user)
@@ -1238,9 +1211,7 @@ class TestUpdateCitationSource:
 
     def test_day_without_month_after_merge_returns_422(self, client, user):
         """PATCH day on a source with year but no month should fail."""
-        source = CitationSource.objects.create(
-            name="Test", source_type="book", year=1996
-        )
+        source = make_citation_source(name="Test", source_type="book", year=1996)
         client.force_login(user)
         resp = _patch(
             client,
@@ -1367,7 +1338,7 @@ class TestUpdateCitationSourceLink:
         assert citation_source_link.updated_by == user.actor
 
     def test_link_on_wrong_source_returns_404(self, client, user, citation_source_link):
-        other_source = CitationSource.objects.create(name="Other", source_type="web")
+        other_source = make_citation_source(name="Other", source_type="web")
         client.force_login(user)
         resp = _patch(
             client,
@@ -1390,7 +1361,7 @@ class TestUpdateCitationSourceLink:
     def test_duplicate_url_returns_422(
         self, client, user, citation_source, citation_source_link
     ):
-        CitationSourceLink.objects.create(
+        make_citation_link(
             citation_source=citation_source,
             link_type="homepage",
             url="https://other.com",
@@ -1445,7 +1416,7 @@ class TestExtractEndpoint:
 
     def test_extract_finds_existing_source(self, client, user):
         client.force_login(user)
-        src = CitationSource.objects.create(
+        src = make_citation_source(
             name="Learning Python", source_type="book", isbn="9780596517748"
         )
         resp = _post(client, EXTRACT_URL, {"input": "9780596517748"})
@@ -1468,7 +1439,7 @@ class TestExtractEndpoint:
     def test_extract_rate_limit(self, client, user):
         cache.clear()
         client.force_login(user)
-        CitationSource.objects.create(
+        make_citation_source(
             name="Learning Python", source_type="book", isbn="9780596517748"
         )
 
@@ -1560,7 +1531,7 @@ class TestCreateCitationSourcePage:
         return f"/api/citation-sources/{parent_id}/pages/"
 
     def test_anonymous_gets_401(self, client):
-        root = CitationSource.objects.create(name="Site", source_type="web")
+        root = make_citation_source(name="Site", source_type="web")
         resp = _post(client, self._url(root.pk), {"url": "https://site.example/p"})
         assert resp.status_code in (401, 403)
 
@@ -1568,7 +1539,7 @@ class TestCreateCitationSourcePage:
         # pages/ files directly under the chosen parent — no recognition, so the
         # root needs no recognition domain.
         client.force_login(user)
-        root = CitationSource.objects.create(name="Site", source_type="web")
+        root = make_citation_source(name="Site", source_type="web")
         resp = _post(
             client,
             self._url(root.pk),
@@ -1589,7 +1560,7 @@ class TestCreateCitationSourcePage:
 
     def test_blank_page_name_falls_back_to_url(self, client, user):
         client.force_login(user)
-        root = CitationSource.objects.create(name="Site", source_type="web")
+        root = make_citation_source(name="Site", source_type="web")
         resp = _post(client, self._url(root.pk), {"url": "https://site.example/x"})
         assert resp.status_code == 201
         child = CitationSource.objects.get(pk=resp.json()["id"])
@@ -1600,9 +1571,7 @@ class TestCreateCitationSourcePage:
         # magazine/book root is intended (the live "Pinball Magazine" magazine
         # root has web children). Pin it so a future "web-only" guard can't land.
         client.force_login(user)
-        root = CitationSource.objects.create(
-            name="Pinball Magazine", source_type="magazine"
-        )
+        root = make_citation_source(name="Pinball Magazine", source_type="magazine")
         resp = _post(
             client,
             self._url(root.pk),
@@ -1622,22 +1591,20 @@ class TestCreateCitationSourcePage:
         # The web-flatness guard: a web child's parent must be a root, so a
         # page nested under a web child (a grandchild) is rejected by clean().
         client.force_login(user)
-        root = CitationSource.objects.create(name="Site", source_type="web")
-        child = CitationSource.objects.create(
-            name="Page", source_type="web", parent=root
-        )
+        root = make_citation_source(name="Site", source_type="web")
+        child = make_citation_source(name="Page", source_type="web", parent=root)
         resp = _post(client, self._url(child.pk), {"url": "https://site.example/deep"})
         assert resp.status_code == 422
 
     def test_malformed_url_returns_422(self, client, user):
         client.force_login(user)
-        root = CitationSource.objects.create(name="Site", source_type="web")
+        root = make_citation_source(name="Site", source_type="web")
         resp = _post(client, self._url(root.pk), {"url": "not-a-url"})
         assert resp.status_code == 422
 
     def test_extra_field_returns_422(self, client, user):
         client.force_login(user)
-        root = CitationSource.objects.create(name="Site", source_type="web")
+        root = make_citation_source(name="Site", source_type="web")
         resp = _post(
             client,
             self._url(root.pk),
@@ -1654,7 +1621,7 @@ class TestCreateCitationSourceRecord:
         return f"/api/citation-sources/{parent_id}/records/"
 
     def test_anonymous_gets_401(self, client):
-        root = CitationSource.objects.create(
+        root = make_citation_source(
             name="IPDB", source_type="web", identifier_key="ipdb"
         )
         resp = _post(client, self._url(root.pk), {"identifier": "4443"})
@@ -1662,7 +1629,7 @@ class TestCreateCitationSourceRecord:
 
     def test_mints_validated_attributed_child(self, client, user):
         client.force_login(user)
-        root = CitationSource.objects.create(
+        root = make_citation_source(
             name="IPDB", source_type="web", identifier_key="ipdb"
         )
         resp = _post(client, self._url(root.pk), {"identifier": "4443"})
@@ -1678,7 +1645,7 @@ class TestCreateCitationSourceRecord:
 
     def test_recite_existing_identifier_reuses_child(self, client, user):
         client.force_login(user)
-        root = CitationSource.objects.create(
+        root = make_citation_source(
             name="IPDB", source_type="web", identifier_key="ipdb"
         )
         first = _post(client, self._url(root.pk), {"identifier": "4443"})
@@ -1690,7 +1657,7 @@ class TestCreateCitationSourceRecord:
 
     def test_pasted_url_normalized_to_bare_id(self, client, user):
         client.force_login(user)
-        root = CitationSource.objects.create(
+        root = make_citation_source(
             name="IPDB", source_type="web", identifier_key="ipdb"
         )
         resp = _post(
@@ -1711,13 +1678,13 @@ class TestCreateCitationSourceRecord:
         # A parent root that carries no identifier_key has no scheme; the leaf
         # raises ValueError, which must surface as a 422 (not a 500).
         client.force_login(user)
-        root = CitationSource.objects.create(name="Some Site", source_type="web")
+        root = make_citation_source(name="Some Site", source_type="web")
         resp = _post(client, self._url(root.pk), {"identifier": "4443"})
         assert resp.status_code == 422
 
     def test_invalid_identifier_returns_422(self, client, user):
         client.force_login(user)
-        root = CitationSource.objects.create(
+        root = make_citation_source(
             name="IPDB", source_type="web", identifier_key="ipdb"
         )
         resp = _post(client, self._url(root.pk), {"identifier": "abc"})
@@ -1726,7 +1693,7 @@ class TestCreateCitationSourceRecord:
     def test_random_url_as_identifier_returns_422(self, client, user):
         # A non-IPDB URL doesn't match the extractor's format → rejected.
         client.force_login(user)
-        root = CitationSource.objects.create(
+        root = make_citation_source(
             name="IPDB", source_type="web", identifier_key="ipdb"
         )
         resp = _post(
@@ -1738,7 +1705,7 @@ class TestCreateCitationSourceRecord:
         # A max-length root name + identifier overflows the generated child name;
         # the leaf's full_clean ValidationError must map to a 422, not a 500.
         client.force_login(user)
-        root = CitationSource.objects.create(
+        root = make_citation_source(
             name="X" * 500, source_type="web", identifier_key="ipdb"
         )
         resp = _post(client, self._url(root.pk), {"identifier": "1"})
@@ -1746,7 +1713,7 @@ class TestCreateCitationSourceRecord:
 
     def test_extra_field_returns_422(self, client, user):
         client.force_login(user)
-        root = CitationSource.objects.create(
+        root = make_citation_source(
             name="IPDB", source_type="web", identifier_key="ipdb"
         )
         resp = _post(

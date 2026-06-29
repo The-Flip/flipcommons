@@ -14,6 +14,7 @@ from apps.catalog.api.export import (
 from apps.catalog.cache import invalidate_response_cache
 from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.models import MachineModel
+from apps.citation.test_factories import make_citation_source
 from apps.provenance.test_factories import make_claim
 
 from .conftest import SAMPLE_IMAGES
@@ -119,10 +120,9 @@ class TestExportStripsInlineCitations:
         # Guards the export_inline=False decoupling: after cite became a
         # public-id type, the strip must still drop its [[cite:id:N]] storage
         # marker from the public dump (not leak it, not emit a resolved cite).
-        from apps.citation.models import CitationSource
         from apps.provenance.models import CitationInstance
 
-        src = CitationSource.objects.create(name="Book", source_type="book")
+        src = make_citation_source(name="Book", source_type="book")
         ci = CitationInstance.objects.create(citation_source=src)
         machine_model.description = f"A fact.[[cite:id:{ci.pk}]] More."
         machine_model.save()

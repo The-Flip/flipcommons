@@ -313,7 +313,7 @@ def create_web_child(
     url: str,
     name: str = "",
     *,
-    created_by: Actor | None = None,
+    created_by: Actor,
 ) -> CitationSource:
     """Mint a validated web-page child under *parent_id*, linked at *url*.
 
@@ -321,9 +321,9 @@ def create_web_child(
     malformed *url* is rejected by the ``URLField`` format check rather than
     silently stored. The display name follows the ``web_child_name`` rule.
 
-    ``created_by`` attributes both rows; ``None`` leaves ``created_by`` /
-    ``updated_by`` null. Raises ``ValidationError`` on invalid input. Atomic, so
-    a link that fails validation leaves no orphaned child behind.
+    ``created_by`` attributes both rows (required — citation attribution is
+    non-null). Raises ``ValidationError`` on invalid input. Atomic, so a link
+    that fails validation leaves no orphaned child behind.
     """
     with transaction.atomic():
         child = CitationSource(
@@ -351,7 +351,7 @@ def get_or_create_scheme_child(
     root: CitationSource,
     identifier: str,
     *,
-    created_by: Actor | None = None,
+    created_by: Actor,
 ) -> CitationSource:
     """Get-or-create the ``(root, identifier)`` scheme child under *root*.
 
@@ -360,9 +360,9 @@ def get_or_create_scheme_child(
     reuses its child. The child carries the ``{root.name} #{id}`` name and a
     canonical ``reference`` link, ``full_clean``d on first create.
 
-    ``created_by`` attributes the child; ``None`` leaves it null. Raises
-    ``ValueError`` if *root* carries no known ``identifier_key`` scheme or the
-    identifier is invalid for it.
+    ``created_by`` attributes the child (required — citation attribution is
+    non-null). Raises ``ValueError`` if *root* carries no known
+    ``identifier_key`` scheme or the identifier is invalid for it.
     """
     extractor = EXTRACTORS.get(root.identifier_key)
     if extractor is None:
@@ -414,7 +414,7 @@ def get_or_create_scheme_child(
 
 
 def get_or_create_external_source(
-    scheme: str, identifier: str, *, created_by: Actor | None = None
+    scheme: str, identifier: str, *, created_by: Actor
 ) -> CitationSource:
     """Get-or-create the child ``CitationSource`` for ``scheme:identifier``.
 
@@ -422,9 +422,10 @@ def get_or_create_external_source(
     get-or-creates the ``(root, identifier)`` child under it via
     ``get_or_create_scheme_child``.
 
-    ``created_by`` attributes a newly minted child; ``None`` leaves it null.
-    Raises ``CitationSource.DoesNotExist`` if no root for *scheme* is seeded,
-    and ``ValueError`` if the scheme or identifier is invalid.
+    ``created_by`` attributes a newly minted child (required — citation
+    attribution is non-null). Raises ``CitationSource.DoesNotExist`` if no root
+    for *scheme* is seeded, and ``ValueError`` if the scheme or identifier is
+    invalid.
     """
     if scheme not in EXTRACTORS:
         raise ValueError(f"Unknown citation scheme {scheme!r}")
@@ -444,7 +445,7 @@ def get_or_create_external_source(
 
 
 def get_or_create_web_source(
-    url: str, archive_url: str = "", *, created_by: Actor | None = None
+    url: str, archive_url: str = "", *, created_by: Actor
 ) -> CitationSource:
     """Get-or-create the web ``CitationSource`` a raw ``url`` cites.
 
@@ -487,7 +488,7 @@ def get_or_create_web_source(
     scheme path.
 
     ``created_by`` attributes a newly minted child and archive link (the citing
-    patch's Source actor); ``None`` leaves them null.
+    patch's Source actor; required — citation attribution is non-null).
     """
     with transaction.atomic():
         # Children only: a root's own homepage link can equal the cited URL, but
