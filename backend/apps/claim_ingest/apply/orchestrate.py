@@ -91,7 +91,7 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
             # to minted slugs *before* claims are built/validated, so the standard
             # markdown conversion in _validate_fail_fast resolves them to storage
             # form. Existing-slug markers self-resolve and aren't touched here.
-            _materialize_inline_citations(plan.assertions)
+            _materialize_inline_citations(plan.assertions, plan.source.actor)
             # Per-claim provenance (note/citation) carried by the plan, collected
             # once now that handles are resolved (so every assertion carries its
             # real ct/obj). Kept out of _build_claims so that helper's signature —
@@ -128,7 +128,7 @@ def apply_plan(plan: IngestPlan, *, dry_run: bool = False) -> RunReport:
                 entry_notes,
                 claim_entry_index,
             )
-            _attach_plan_citations(to_create, claim_citations)
+            _attach_plan_citations(to_create, claim_citations, plan.source.actor)
             _resolve(to_create, retract_entries, plan.changed_relationship_fields)
 
             # SUCCESS flip inside the transaction — see note above. The

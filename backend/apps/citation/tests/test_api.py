@@ -455,8 +455,8 @@ class TestCreateCitationSource:
             },
         )
         source = CitationSource.objects.get(name="Test")
-        assert source.created_by == user
-        assert source.updated_by == user
+        assert source.created_by == user.actor
+        assert source.updated_by == user.actor
 
     def test_invalid_source_type_returns_422(self, client, user):
         client.force_login(user)
@@ -670,20 +670,20 @@ class TestCiteUrl:
         child = CitationSource.objects.get(pk=resp.json()["id"])
         root = child.parent
         assert root is not None
-        assert child.created_by == user
-        assert child.updated_by == user
-        assert root.created_by == user
-        assert root.updated_by == user
+        assert child.created_by == user.actor
+        assert child.updated_by == user.actor
+        assert root.created_by == user.actor
+        assert root.updated_by == user.actor
         for link in CitationSourceLink.objects.filter(
             citation_source__in=[root, child]
         ):
-            assert link.created_by == user
-            assert link.updated_by == user
+            assert link.created_by == user.actor
+            assert link.updated_by == user.actor
         # The minted recognition domain is attributed too — it is a row the
         # caller's action created, same as the source and its links.
         domain = CitationSourceRootDomain.objects.get(source=root)
-        assert domain.created_by == user
-        assert domain.updated_by == user
+        assert domain.created_by == user.actor
+        assert domain.updated_by == user.actor
 
     def test_blank_site_name_falls_back_to_rounded_host(self, client, user):
         client.force_login(user)
@@ -742,11 +742,11 @@ class TestCiteUrl:
         # The child and its link are attributed to the caller (this path mints
         # via the same _create_web_child helper but isn't covered by the
         # no-match attribution test).
-        assert child.created_by == user
-        assert child.updated_by == user
+        assert child.created_by == user.actor
+        assert child.updated_by == user.actor
         ref = child.links.get(link_type="reference")
-        assert ref.created_by == user
-        assert ref.updated_by == user
+        assert ref.created_by == user.actor
+        assert ref.updated_by == user.actor
         # The root is never renamed/redescribed from here.
         root.refresh_from_db()
         assert root.name == "Existing"
@@ -1169,7 +1169,7 @@ class TestUpdateCitationSource:
             },
         )
         citation_source.refresh_from_db()
-        assert citation_source.updated_by == user
+        assert citation_source.updated_by == user.actor
 
     def test_clear_nullable_field(self, client, user, citation_source_full):
         client.force_login(user)
@@ -1287,8 +1287,8 @@ class TestCreateCitationSourceLink:
             {"link_type": "homepage", "url": "https://example.com"},
         )
         link = CitationSourceLink.objects.get(citation_source=citation_source)
-        assert link.created_by == user
-        assert link.updated_by == user
+        assert link.created_by == user.actor
+        assert link.updated_by == user.actor
 
     def test_duplicate_url_returns_422(
         self, client, user, citation_source, citation_source_link
@@ -1364,7 +1364,7 @@ class TestUpdateCitationSourceLink:
             {"label": "updated"},
         )
         citation_source_link.refresh_from_db()
-        assert citation_source_link.updated_by == user
+        assert citation_source_link.updated_by == user.actor
 
     def test_link_on_wrong_source_returns_404(self, client, user, citation_source_link):
         other_source = CitationSource.objects.create(name="Other", source_type="web")
@@ -1581,11 +1581,11 @@ class TestCreateCitationSourcePage:
         assert data["skip_locator"] is True
         child = CitationSource.objects.get(pk=data["id"])
         assert child.parent_id == root.pk
-        assert child.created_by == user
-        assert child.updated_by == user
+        assert child.created_by == user.actor
+        assert child.updated_by == user.actor
         ref = child.links.get(link_type="reference")
         assert ref.url == "https://site.example/article"
-        assert ref.created_by == user
+        assert ref.created_by == user.actor
 
     def test_blank_page_name_falls_back_to_url(self, client, user):
         client.force_login(user)
@@ -1672,7 +1672,7 @@ class TestCreateCitationSourceRecord:
         child = CitationSource.objects.get(pk=data["id"])
         assert child.parent_id == root.pk
         assert child.identifier == "4443"
-        assert child.created_by == user
+        assert child.created_by == user.actor
         ref = child.links.get(link_type="reference")
         assert ref.url == "https://www.ipdb.org/machine.cgi?id=4443"
 

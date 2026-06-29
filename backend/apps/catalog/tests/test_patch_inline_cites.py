@@ -132,6 +132,32 @@ claims:
     assert f"[[cite:id:{ci.pk}]]" in _description_value(mfr)
 
 
+def test_inline_cite_minted_sources_attributed_to_patch_actor(
+    flipcommons_catalog, ipdb_root, kineticist_root, pm
+):
+    """A cite: that mints a new citation source attributes it to the patch's
+    Source actor — both the scheme path (ipdb child) and the web path
+    (kineticist child) — closing the gap for inline cites as for `sources:`."""
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      description: "Scheme.[[cite:1]] Web.[[cite:2]]"
+      cites:
+        '1': ipdb:4443
+        '2': https://kineticist.com/mm
+"""
+    _apply(text)
+
+    actor = Source.objects.get(slug="flipcommons-catalog").actor
+    minted = list(_floating())
+    assert len(minted) == 2
+    for ci in minted:
+        child = ci.citation_source
+        assert child.created_by == actor, child
+        assert child.updated_by == actor, child
+
+
 def test_url_archive_spec_backfills_archive_link(
     flipcommons_catalog, kineticist_root, pm
 ):

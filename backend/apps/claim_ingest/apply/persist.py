@@ -25,6 +25,7 @@ from typing import assert_never, cast
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 
+from apps.actors.models import Actor
 from apps.claim_ingest.apply.claims import (
     RetractEntry,
     _reject_empty_diff_provenance,
@@ -252,7 +253,9 @@ def _cite_resolution_error(ref: CitationRef, exc: Exception) -> str:
     return f"cite {descriptor}: {detail}"
 
 
-def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> int:
+def _resolve_cite_source_id(
+    ref: CitationRef, cache: dict[CitationRef, int], *, actor: Actor
+) -> int:
     """Resolve a ``CitationRef`` to a ``CitationSource`` pk, memoized via ``cache``.
 
     Shared by the field-level ``cite:`` path (:func:`_attach_plan_citations`) and
@@ -260,7 +263,9 @@ def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> 
     same ``get_or_create_*`` resolvers, so source dedup, web-root matching and
     ``{url, archive}`` backfill come free. Created sources are *uncounted* — the
     resolvers return a bare ``CitationSource``, not created-ness — matching the
-    field-``cite:`` stance (only the ``sources:`` block bumps the counters).
+    field-``cite:`` stance (only the ``sources:`` block bumps the counters). A
+    cite that mints a new source attributes it to ``actor`` (the patch's
+    ``Source`` actor), like the ``sources:`` block.
 
     The resolvers fail three ways — a malformed URL/identifier (``ValidationError``
     from the leaves' ``full_clean``), an unknown scheme or bad identifier
@@ -281,9 +286,13 @@ def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> 
         try:
             match ref:
                 case WebCitationRef(url=url, archive_url=archive_url):
-                    source_id = get_or_create_web_source(url, archive_url).pk
+                    source_id = get_or_create_web_source(
+                        url, archive_url, created_by=actor
+                    ).pk
                 case SchemeCitationRef(scheme=scheme, identifier=identifier):
-                    source_id = get_or_create_external_source(scheme, identifier).pk
+                    source_id = get_or_create_external_source(
+                        scheme, identifier, created_by=actor
+                    ).pk
                 case _:
                     assert_never(ref)
         except (ValidationError, ValueError, ObjectDoesNotExist) as exc:
@@ -295,6 +304,7 @@ def _resolve_cite_source_id(ref: CitationRef, cache: dict[CitationRef, int]) -> 
 def _attach_plan_citations(
     to_create: list[Claim],
     claim_citations: ClaimCitations,
+    actor: Actor,
 ) -> None:
     """Materialize per-claim ``CitationRef``s as ``CitationInstance`` rows.
 
@@ -302,6 +312,9 @@ def _attach_plan_citations(
     a *newly written* claim: a value that diffs as unchanged produces no
     ``to_create`` entry, so re-asserting an already-correct value purely to
     add a ``cite:`` is a documented no-op (see docs/DataPatches.md).
+
+    ``actor`` is the patch's ``Source`` actor — a ``cite:`` URL that mints a new
+    citation source attributes it to the patch, like the ``sources:`` block.
     """
     if not claim_citations:
         return
@@ -315,13 +328,15 @@ def _attach_plan_citations(
         )
         if ref is None:
             continue
-        source_id = _resolve_cite_source_id(ref, source_cache)
+        source_id = _resolve_cite_source_id(ref, source_cache, actor=actor)
         instances.append(CitationInstance(citation_source_id=source_id, claim=claim))
     if instances:
         CitationInstance.objects.mint_many(instances)
 
 
-def _materialize_inline_citations(assertions: list[PlannedClaimAssert]) -> None:
+def _materialize_inline_citations(
+    assertions: list[PlannedClaimAssert], actor: Actor
+) -> None:
     """Mint floating ``CitationInstance`` rows for *new* inline citations.
 
     For each assertion carrying ``inline_cites`` (a ``{numeric-handle:
@@ -356,7 +371,7 @@ def _materialize_inline_citations(assertions: list[PlannedClaimAssert]) -> None:
     owners: list[tuple[PlannedClaimAssert, CiteHandle]] = []
     for pca in cited:
         for handle, ref in pca.inline_cites.items():
-            source_id = _resolve_cite_source_id(ref, source_cache)
+            source_id = _resolve_cite_source_id(ref, source_cache, actor=actor)
             instances.append(CitationInstance(citation_source_id=source_id, claim=None))
             owners.append((pca, handle))
     CitationInstance.objects.mint_many(instances)  # assigns each ``.slug`` in place

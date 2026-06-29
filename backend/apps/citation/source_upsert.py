@@ -16,6 +16,7 @@ from apps.citation.hosts import Host, normalize_host
 from apps.citation.source_node import SourceLinkNode, SourceNode
 
 if TYPE_CHECKING:
+    from apps.actors.models import Actor
     from apps.citation.models import CitationSource
 
 
@@ -127,18 +128,18 @@ def _lookup_source(fields: SourceFields) -> SourceMatch:
 
 
 def _create_source(
-    fields: SourceFields, *, parent: CitationSource | None = None
+    fields: SourceFields, *, actor: Actor, parent: CitationSource | None = None
 ) -> CitationSource:
     """Validate + save a new ``CitationSource`` under ``parent`` (default root)."""
     from apps.citation.models import CitationSource
 
-    obj = CitationSource(**fields, parent=parent)
+    obj = CitationSource(**fields, parent=parent, created_by=actor, updated_by=actor)
     obj.full_clean()
     obj.save()
     return obj
 
 
-def _create_link(source: CitationSource, link: SourceLinkNode) -> None:
+def _create_link(source: CitationSource, link: SourceLinkNode, *, actor: Actor) -> None:
     """Validate + save a single ``CitationSourceLink`` on ``source``."""
     from apps.citation.models import CitationSourceLink
 
@@ -147,6 +148,8 @@ def _create_link(source: CitationSource, link: SourceLinkNode) -> None:
         url=link["url"],
         label=link.get("label", ""),
         link_type=link["link_type"],
+        created_by=actor,
+        updated_by=actor,
     )
     obj.full_clean()
     obj.save()
@@ -255,7 +258,7 @@ def _spans_two_roots_warning(name: str, host_roots: Sequence[CitationSource]) ->
 
 
 def _ensure_root_domains(
-    source: CitationSource, hosts: Sequence[Host], *, warnings: list[str]
+    source: CitationSource, hosts: Sequence[Host], *, warnings: list[str], actor: Actor
 ) -> None:
     """Additively mint a recognition domain on ``source`` for each unowned host.
 
@@ -283,7 +286,9 @@ def _ensure_root_domains(
                     f"{owner.source.name!r}; not minted on {source.name!r}."
                 )
             continue
-        domain = CitationSourceRootDomain(source=source, host=host)
+        domain = CitationSourceRootDomain(
+            source=source, host=host, created_by=actor, updated_by=actor
+        )
         domain.full_clean()
         domain.save()
 
@@ -369,6 +374,7 @@ def detect_host_collision(node: SourceNode) -> str | None:
 def ensure_root_source(
     node: SourceNode,
     *,
+    actor: Actor,
     warnings: list[str],
 ) -> SourceUpsertResult:
     """Additively get-or-create a flat (root) citation source. Never overwrites.
@@ -420,10 +426,10 @@ def ensure_root_source(
             )
 
     if obj is None:
-        obj = _create_source(fields)
+        obj = _create_source(fields, actor=actor)
         for link in links:
-            _create_link(obj, link)
-        _ensure_root_domains(obj, recognition_hosts, warnings=warnings)
+            _create_link(obj, link, actor=actor)
+        _ensure_root_domains(obj, recognition_hosts, warnings=warnings, actor=actor)
         return SourceUpsertResult(source_created=True, links_created=len(links))
 
     # Found: never overwrite the row; warn on any declared-field divergence.
@@ -449,7 +455,7 @@ def ensure_root_source(
         url = link["url"]
         current = existing.get(url)
         if current is None:
-            _create_link(obj, link)
+            _create_link(obj, link, actor=actor)
             links_created += 1
         elif current.link_type != link["link_type"] or current.label != link.get(
             "label", ""
@@ -458,5 +464,5 @@ def ensure_root_source(
                 f"Citation source {name!r} link {url!r} already exists with a "
                 f"different type/label; left unchanged."
             )
-    _ensure_root_domains(obj, recognition_hosts, warnings=warnings)
+    _ensure_root_domains(obj, recognition_hosts, warnings=warnings, actor=actor)
     return SourceUpsertResult(source_created=False, links_created=links_created)

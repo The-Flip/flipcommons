@@ -78,10 +78,10 @@ class CitationSourceAdmin(admin.ModelAdmin[CitationSource]):
         change: bool,
     ) -> None:
         assert request.user.is_authenticated
-        user = request.user
+        actor = request.user.actor
         if not change:
-            obj.created_by = user
-        obj.updated_by = user
+            obj.created_by = actor
+        obj.updated_by = actor
         super().save_model(request, obj, form, change)
 
     def save_formset(
@@ -99,14 +99,14 @@ class CitationSourceAdmin(admin.ModelAdmin[CitationSource]):
         change: bool,
     ) -> None:
         assert request.user.is_authenticated
-        user = request.user
+        actor = request.user.actor
         instances = formset.save(commit=False)
         for instance in instances:
             # Both inline models (links and recognition domains) carry editorial
-            # attribution via AttributedModel.
+            # attribution via ActorAttributedModel.
             if not instance.pk:
-                instance.created_by = user
-            instance.updated_by = user
+                instance.created_by = actor
+            instance.updated_by = actor
             instance.save()
         for obj in formset.deleted_objects:
             obj.delete()

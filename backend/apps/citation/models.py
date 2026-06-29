@@ -6,11 +6,11 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
+from apps.actors.models import ActorAttributedModel
 from apps.citation.hosts import is_dns_host, normalize_host
 from apps.citation.psl import is_public_suffix
 from apps.citation.source_type_traits import SourceType, source_type_traits
 from apps.core.models import (
-    AttributedModel,
     BoundedTextField,
     TimeStampedModel,
     field_lowercase,
@@ -59,7 +59,7 @@ class CitationSourceQuerySet(models.QuerySet["CitationSource"]):
 CitationSourceManager = models.Manager.from_queryset(CitationSourceQuerySet)
 
 
-class CitationSource(TimeStampedModel, AttributedModel):
+class CitationSource(TimeStampedModel, ActorAttributedModel):
     """A work or evidence object that can be cited: book, flyer, web page, etc.
 
     NOT claims-controlled — edited directly through admin or future UI.
@@ -322,7 +322,7 @@ class CitationSource(TimeStampedModel, AttributedModel):
         return self.name
 
 
-class CitationSourceLink(TimeStampedModel, AttributedModel):
+class CitationSourceLink(TimeStampedModel, ActorAttributedModel):
     """A URL where a reader can inspect a CitationSource.
 
     Wholly owned by its parent CitationSource — CASCADE on delete.
@@ -379,7 +379,7 @@ class CitationSourceLink(TimeStampedModel, AttributedModel):
         return self.url
 
 
-class CitationSourceRootDomain(TimeStampedModel, AttributedModel):
+class CitationSourceRootDomain(TimeStampedModel, ActorAttributedModel):
     """A recognition host owned by a root ``CitationSource``.
 
     The signal ``recognize_url`` keys off: a normalized host (lowercased,

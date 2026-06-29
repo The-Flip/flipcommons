@@ -244,10 +244,10 @@ class TestCreateWebChild:
 
     def test_attribution_follows_created_by(self, root, user):
         attributed = create_web_child(
-            root.pk, "https://kineticist.com/a", created_by=user
+            root.pk, "https://kineticist.com/a", created_by=user.actor
         )
-        assert attributed.created_by_id == user.pk
-        assert attributed.links.get().created_by_id == user.pk
+        assert attributed.created_by_id == user.actor_id
+        assert attributed.links.get().created_by_id == user.actor_id
 
         anon = create_web_child(root.pk, "https://kineticist.com/b")
         assert anon.created_by_id is None
@@ -296,9 +296,9 @@ class TestGetOrCreateSchemeChild:
         assert not CitationSource.objects.children().exists()
 
     def test_attribution_follows_created_by(self, root, user):
-        child = get_or_create_scheme_child(root, "4443", created_by=user)
-        assert child.created_by_id == user.pk
-        assert child.links.get().created_by_id == user.pk
+        child = get_or_create_scheme_child(root, "4443", created_by=user.actor)
+        assert child.created_by_id == user.actor_id
+        assert child.links.get().created_by_id == user.actor_id
 
     def test_external_source_helper_resolves_the_same_child(self, root):
         # The patch helper (scheme→root lookup) and the leaf mint one child —

@@ -20,6 +20,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from apps.actors.models import Actor
 from apps.citation.source_node import SourceNode
 from apps.citation.source_upsert import (
     detect_host_collision,
@@ -900,7 +901,7 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
             raise PatchError(
                 f"sources[{i}] ({node['name']!r}): {_format_validation_error(exc)}"
             ) from exc
-    plan.pre_write_hooks.append(_make_sources_hook(sources))
+    plan.pre_write_hooks.append(_make_sources_hook(sources, plan.source.actor))
     plan.dry_run_preview_hooks.append(_make_sources_preview_hook(sources))
 
 
@@ -915,18 +916,19 @@ def _format_validation_error(exc: ValidationError) -> str:
     )
 
 
-def _make_sources_hook(sources: list[SourceNode]) -> PreWriteHook:
+def _make_sources_hook(sources: list[SourceNode], actor: Actor) -> PreWriteHook:
     """Build the pre-write hook that upserts a patch's citation sources.
 
     The closure owns the catalog-side accounting: ``ensure_root_source`` is
     source-agnostic (plain ``list[str]`` sink + a result tuple), and the hook
     folds its result into the ``RunReport`` — keeping the catalog ``RunReport``
-    type out of the citation app.
+    type out of the citation app. ``actor`` is the patch's ``Source`` actor, so
+    the citation rows a patch creates are attributed to it.
     """
 
     def hook(report: RunReport) -> None:
         for node in sources:
-            result = ensure_root_source(node, warnings=report.warnings)
+            result = ensure_root_source(node, actor=actor, warnings=report.warnings)
             if result.source_created:
                 report.sources_created += 1
             else:

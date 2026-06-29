@@ -113,8 +113,8 @@ class TestCitationSourceAdminAttribution:
         request.user = superuser
         obj = CitationSource(name="Test", source_type="book")
         admin_instance.save_model(request, obj, form=None, change=False)
-        assert obj.created_by == superuser
-        assert obj.updated_by == superuser
+        assert obj.created_by == superuser.actor
+        assert obj.updated_by == superuser.actor
 
     def test_updated_by_set_on_change(
         self, admin_instance, request_factory, superuser, citation_source
@@ -122,7 +122,7 @@ class TestCitationSourceAdminAttribution:
         request = request_factory.post("/")
         request.user = superuser
         admin_instance.save_model(request, citation_source, form=None, change=True)
-        assert citation_source.updated_by == superuser
+        assert citation_source.updated_by == superuser.actor
         # created_by should not be overwritten on change
         assert citation_source.created_by is None
 
@@ -148,8 +148,8 @@ class TestCitationSourceLinkInlineAttribution:
         admin_instance.save_formset(request, form=None, formset=formset, change=True)
 
         link = CitationSourceLink.objects.get(citation_source=citation_source)
-        assert link.created_by == superuser
-        assert link.updated_by == superuser
+        assert link.created_by == superuser.actor
+        assert link.updated_by == superuser.actor
 
     def test_updated_by_set_on_existing_link(
         self, admin_instance, request_factory, superuser, citation_source
@@ -178,7 +178,7 @@ class TestCitationSourceLinkInlineAttribution:
         admin_instance.save_formset(request, form=None, formset=formset, change=True)
 
         link.refresh_from_db()
-        assert link.updated_by == superuser
+        assert link.updated_by == superuser.actor
         # created_by should NOT be set on update of existing record
         assert link.created_by is None
 
@@ -208,8 +208,8 @@ class TestCitationSourceRootDomainInline:
         domain = CitationSourceRootDomain.objects.get(source=citation_source)
         assert domain.host == "example.com"
         # The inline stamps editorial attribution like the link inline does.
-        assert domain.created_by == superuser
-        assert domain.updated_by == superuser
+        assert domain.created_by == superuser.actor
+        assert domain.updated_by == superuser.actor
 
     def test_domain_removed_through_admin_form(
         self, admin_instance, request_factory, superuser, citation_source
