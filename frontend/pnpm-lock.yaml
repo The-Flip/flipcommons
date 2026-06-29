@@ -39,8 +39,8 @@ importers:
         specifier: ^1.396.2
         version: 1.396.2
       super-sitemap:
-        specifier: ~1.0.12
-        version: 1.0.12(svelte@5.56.4(@typescript-eslint/types@8.62.1))
+        specifier: ~2.0.4
+        version: 2.0.4
     devDependencies:
       '@sveltejs/adapter-node':
         specifier: ^5.5.7
@@ -2958,10 +2958,8 @@ packages:
     engines: {node: '>=20.19.0'}
     hasBin: true
 
-  super-sitemap@1.0.12:
-    resolution: {integrity: sha512-C3gfAS1RZxL5bbZGtgnIOitMhfqAt8RmhW8AWTia6c8n9RW3Zx7f/SxVeFWZD0I1nUAx2pkxuWazVtev0Nmb5w==}
-    peerDependencies:
-      svelte: '>=4.0.0 <6.0.0'
+  super-sitemap@2.0.4:
+    resolution: {integrity: sha512-GVoa8ZcORd4jjDWl9Tz3MRMXYBnM4q5jX9vaK9LAoWrdXLWjYLB3e5innjul1RS/Ih5+x5vBpIf8bCyoW20yJQ==}
 
   supports-color@10.2.2:
     resolution: {integrity: sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g==}
@@ -6102,9 +6100,7 @@ snapshots:
       - supports-color
       - typescript
 
-  super-sitemap@1.0.12(svelte@5.56.4(@typescript-eslint/types@8.62.1)):
-    dependencies:
-      svelte: 5.56.4(@typescript-eslint/types@8.62.1)
+  super-sitemap@2.0.4: {}
 
   supports-color@10.2.2: {}
 

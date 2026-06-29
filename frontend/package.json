@@ -59,7 +59,7 @@
     "openapi-fetch": "^0.17.0",
     "postcss-jit-props": "^1.0.16",
     "posthog-js": "^1.396.2",
-    "super-sitemap": "~1.0.12"
+    "super-sitemap": "~2.0.4"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
