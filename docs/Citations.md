@@ -39,7 +39,7 @@ A source is a scheme-holder _or_ a value-holder, never both. Children with ident
 
 ### CitationInstance
 
-A `CitationInstance` is a single use of a source in a specific place, usually with a locator (page, timestamp, section, fragment). Instances are **not shared** across usages: changing a locator should produce a new instance plus an ordinary edit, not mutate history in place.
+A `CitationInstance` is a single use of a source in a specific place, usually with a locator (page, timestamp, section, fragment). Instances are **immutable**: changing a locator produces a new citation instance plus an ordinary edit, not mutate history in place.
 
 `CitationInstance` lives in the **provenance app**, not the citation app — it is the join between a claim or passage and the evidence that supports it, so it belongs with the attribution machinery. The citation app owns the source records; provenance owns their _use_.
 
