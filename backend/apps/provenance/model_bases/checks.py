@@ -6,7 +6,7 @@ and whose subject + identity members match a uniqueness constraint. Deliberately
 **DB-free** (no row queries), because system checks run around ``migrate`` on a
 possibly-tableless database; every fact comes from ``_meta`` and the spec.
 
-The spec drives both the validation schema and the resolution projection (REF4);
+The spec drives both the validation schema and the resolution projection;
 this check is the loud startup gate so a missing or drifted spec fails at
 ``manage.py check`` rather than silently at resolve time. Mirrors the
 project idiom of a pure classifier over a facts bundle (see
@@ -67,8 +67,8 @@ class _ThroughModelFacts(NamedTuple):
 def _subject_fks(subject: SubjectSpec) -> tuple[ColumnName, ...]:
     """The subject FK name(s): one for ``SingleSubject``, two for ``XorSubject``."""
     # Exhaustive dispatch over the closed SubjectSpec union; assert_never makes
-    # mypy flag both this site and _classify_uniqueness the moment a variant
-    # (e.g. the planned SelfParentSubject) joins the union.
+    # mypy flag both this site and _classify_uniqueness the moment a new variant
+    # joins the union.
     match subject:
         case SingleSubject(fk_name):
             return (fk_name,)

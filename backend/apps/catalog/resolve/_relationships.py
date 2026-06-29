@@ -1,25 +1,22 @@
-"""The two transitional relationship-resolution shapes the generic builder can't drive yet.
+"""The one transitional relationship-resolution shape the generic builder can't drive yet.
 
-The plain/payload/compound through-row shapes (themes, gameplay features,
-credits, abbreviations, corporate-entity locations) resolve through the generic
+Every explicit ClassVar through-row shape (themes, gameplay features, credits,
+abbreviations, corporate-entity locations, and the self-referential parent
+hierarchies) resolves through the generic
 :func:`apps.catalog.resolve._through_projection.build_through_projection`, driven
-off each through-model's ``claim_relationship_spec``. Two shapes still live here:
+off each through-model's ``claim_relationship_spec``. One shape still lives here:
 
 - :class:`AliasProjection` — case-folded membership (the member key is the
   lowercase alias value, the payload keeps original case), so not a plain
   :class:`ThroughRowProjection`.
-- :func:`_parent_projection` — self-referential ``parents`` M2Ms whose implicit
-  ``.through`` carries no ClassVar spec.
 
-Both are retired by the parent-promotion and alias-normalization polish steps,
-after which only the content-type-keyed media projection (in :mod:`._media`)
-stays bespoke. :mod:`._dispatch` registers these and runs the shared
-:func:`reconcile` loop.
+It is retired by the alias-normalization polish step, after which only the
+content-type-keyed media projection (in :mod:`._media`) stays bespoke.
+:mod:`._dispatch` registers this and runs the shared :func:`reconcile` loop.
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
@@ -36,34 +33,16 @@ from apps.provenance.validation import (
 )
 
 from ..engine.aliases import alias_type_for
-from ._claim_values import AliasClaimValue, ParentClaimValue
+from ._claim_values import AliasClaimValue
 from ._engine import (
     Delta,
     ExtractedMember,
     MemberMap,
     RowState,
-    ThroughRowProjection,
-    _int_from_column,
-    _no_columns,
-    _no_payload,
-    _one_column,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-
-logger = logging.getLogger(__name__)
-
-
-# ------------------------------------------------------------------
-# Through-model accessors (runtime-generated M2M descriptors)
-# ------------------------------------------------------------------
-
-
-def _get_parents_through(parent: type[ClaimControlledModel]) -> type[Model]:
-    """Return the through model for ``parent``'s self-referential ``parents`` M2M."""
-    through: type[Model] = parent.parents.through  # type: ignore[attr-defined]
-    return through
 
 
 # ------------------------------------------------------------------
@@ -152,53 +131,4 @@ def _alias_projection(parent_model: type[ClaimControlledModel]) -> AliasProjecti
         fk_column=at.fk_name + "_id",
         claim_field=at.claim_field,
         schema=schema,
-    )
-
-
-# ------------------------------------------------------------------
-# Parent hierarchy resolvers (Theme and GameplayFeature DAGs)
-# ------------------------------------------------------------------
-
-
-def _parent_projection(
-    parent_model: type[ClaimControlledModel], *, claim_field_prefix: str | None = None
-) -> ThroughRowProjection[int, None]:
-    """Build the parent-hierarchy projection for a self-referential ``parents`` M2M.
-
-    Reads ``{claim_field_prefix}_parent`` claims on *parent_model* instances.
-    *claim_field_prefix* defaults to the model name but must be overridden when
-    it differs from the claim-field convention (e.g. ``gameplayfeature`` vs
-    ``gameplay_feature``).
-    """
-    model_name = parent_model._meta.model_name
-    prefix = claim_field_prefix or model_name
-    claim_field_name = f"{prefix}_parent"
-    valid_pks = set(parent_model._default_manager.values_list("pk", flat=True))
-
-    def extract(claim: Claim) -> ExtractedMember[int, None] | None:
-        val = cast(ParentClaimValue, claim.value)
-        parent_pk = val.get("parent")
-        if parent_pk not in valid_pks:
-            logger.warning(
-                "Unresolved %s parent pk %r for pk=%s",
-                claim_field_name,
-                parent_pk,
-                claim.object_id,
-            )
-            return None
-        return ExtractedMember(parent_pk, None)
-
-    return ThroughRowProjection(
-        subject_model=parent_model,
-        field_name=claim_field_name,
-        through_model=_get_parents_through(parent_model),
-        subject_column=f"from_{model_name}_id",
-        key_columns=(f"to_{model_name}_id",),
-        payload_columns=(),
-        extract_member=extract,
-        columns_to_key=_int_from_column,
-        key_to_columns=_one_column,
-        columns_to_payload=_no_payload,
-        payload_to_columns=_no_columns,
-        ignore_conflicts=True,
     )

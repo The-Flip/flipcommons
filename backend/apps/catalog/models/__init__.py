@@ -8,6 +8,7 @@ from .base import AliasModel, CatalogModel
 from .gameplay_feature import (
     GameplayFeature,
     GameplayFeatureAlias,
+    GameplayFeatureParent,
     MachineModelGameplayFeature,
 )
 from .location import CorporateEntityLocation, Location, LocationAlias
@@ -38,5 +39,5 @@ from .taxonomy import (
     TechnologyGeneration,
     TechnologySubgeneration,
 )
-from .theme import MachineModelTheme, Theme, ThemeAlias
+from .theme import MachineModelTheme, Theme, ThemeAlias, ThemeParent
 from .title import Title, TitleAbbreviation

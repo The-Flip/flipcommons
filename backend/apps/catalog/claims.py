@@ -46,48 +46,19 @@ def register_catalog_relationship_schemas() -> None:
     """Register every catalog relationship namespace. Called from ``ready()``.
 
     The explicit through-model namespaces (theme, tag, reward_type,
-    gameplay_feature, credit, abbreviation, location) are *derived* from the
+    gameplay_feature, credit, abbreviation, location, and the self-referential
+    parents theme_parent/gameplay_feature_parent) are *derived* from the
     ``claim_relationship_spec`` ClassVar on each ``ClaimThroughModel`` — one
-    schema per namespace, see :func:`_register_through_model_schemas`. The three
-    that have no through-model — parents (self-referential, promoted later),
-    aliases (case-folded) and media (content-type keyed) — are still declared by
-    hand here.
+    schema per namespace, see :func:`_register_through_model_schemas`. The two
+    that have no through-model — aliases (case-folded) and media (content-type
+    keyed) — are still declared by hand here.
     """
-    from apps.catalog.models import GameplayFeature, Theme
     from apps.media.models import MediaAsset
 
     from .engine.aliases import discover_alias_types
 
     # Derived from the through-model specs.
     _register_through_model_schemas()
-
-    # Hierarchy parents (self-referential).
-    register_relationship_schema(
-        namespace="theme_parent",
-        value_keys=(
-            ValueKeySpec(
-                name="parent",
-                scalar_type=int,
-                required=True,
-                identity="parent",
-                fk_target=FkTarget(Theme, "pk"),
-            ),
-        ),
-        valid_subjects={Theme},
-    )
-    register_relationship_schema(
-        namespace="gameplay_feature_parent",
-        value_keys=(
-            ValueKeySpec(
-                name="parent",
-                scalar_type=int,
-                required=True,
-                identity="parent",
-                fk_target=FkTarget(GameplayFeature, "pk"),
-            ),
-        ),
-        valid_subjects={GameplayFeature},
-    )
 
     # Alias namespaces — one schema per AliasModel subclass.
     for alias_type in discover_alias_types():

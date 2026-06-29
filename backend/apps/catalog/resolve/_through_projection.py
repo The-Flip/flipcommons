@@ -6,13 +6,13 @@ One data-driven function reads a through-model's :class:`ClaimRelationshipSpec`
 configured :class:`~._engine.ThroughRowProjection` — replacing the hand-written
 ``_*_projection`` builders for every explicit-ClassVar relationship shape
 (themes, tags, reward types, gameplay features, credits, abbreviations,
-corporate-entity locations).
+corporate-entity locations, and the self-referential parent hierarchies).
 
 Catalog-free by construction: it names no concrete catalog model (every domain
 fact comes from the binding + ``_meta``) and imports only the engine kernel and
 the provenance vocabulary, so it belongs to the would-be-movable resolution
-core. The bespoke ``AliasProjection`` (case-folded keys) and the synthesized
-``_parent_projection`` stay hand-written in :mod:`._relationships`.
+core. Only the bespoke ``AliasProjection`` (case-folded keys) stays hand-written
+in :mod:`._relationships`.
 """
 
 from __future__ import annotations

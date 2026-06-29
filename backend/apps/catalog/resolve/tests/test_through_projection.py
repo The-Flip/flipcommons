@@ -17,7 +17,14 @@ from typing import Any, cast
 
 import pytest
 
-from apps.catalog.models import CorporateEntity, MachineModel, Series, Title
+from apps.catalog.models import (
+    CorporateEntity,
+    GameplayFeature,
+    MachineModel,
+    Series,
+    Theme,
+    Title,
+)
 from apps.catalog.resolve._engine import (
     ColumnValues,
     Delta,
@@ -86,7 +93,7 @@ def pks(db: None) -> Pks:
 
 
 # ---------------------------------------------------------------------------
-# The nine shapes, each with its expected ctor data + codecs (snapshot).
+# The eleven shapes, each with its expected ctor data + codecs (snapshot).
 # ---------------------------------------------------------------------------
 
 type Codec = Callable[..., Any]
@@ -118,6 +125,11 @@ def _fk_value(key: str) -> Callable[[Pks], dict[str, object]]:
 
 def _credit_value(pks: Pks) -> dict[str, object]:
     return {"person": pks["person"], "role": pks["role"], "exists": True}
+
+
+def _parent_value(target_key: str) -> Callable[[Pks], dict[str, object]]:
+    """A ``*_parent`` claim value — the member rides the ``parent`` value-key."""
+    return lambda pks: {"parent": pks[target_key], "exists": True}
 
 
 CASES: list[_Case] = [
@@ -269,17 +281,52 @@ CASES: list[_Case] = [
         valid_member=lambda pks: pks["location"],
         invalid_value=lambda pks: {"location": 10**9, "exists": True},
     ),
+    # Self-referential parent hierarchies — SingleSubject("from_<model>") with
+    # the parent FK (to_<model>) as the identity member keyed "parent";
+    # ignore_conflicts=True per the through-model spec.
+    _Case(
+        "theme_parent",
+        Theme,
+        "theme_parent",
+        subject_column="from_theme_id",
+        key_columns=("to_theme_id",),
+        payload_columns=(),
+        columns_to_key=_int_from_column,
+        key_to_columns=_one_column,
+        columns_to_payload=_no_payload,
+        payload_to_columns=_no_columns,
+        valid_value=_parent_value("theme"),
+        valid_member=lambda pks: pks["theme"],
+        ignore_conflicts=True,
+        invalid_value=lambda pks: {"parent": 10**9, "exists": True},
+    ),
+    _Case(
+        "gameplay_feature_parent",
+        GameplayFeature,
+        "gameplay_feature_parent",
+        subject_column="from_gameplayfeature_id",
+        key_columns=("to_gameplayfeature_id",),
+        payload_columns=(),
+        columns_to_key=_int_from_column,
+        key_to_columns=_one_column,
+        columns_to_payload=_no_payload,
+        payload_to_columns=_no_columns,
+        valid_value=_parent_value("gameplay_feature"),
+        valid_member=lambda pks: pks["gameplay_feature"],
+        ignore_conflicts=True,
+        invalid_value=lambda pks: {"parent": 10**9, "exists": True},
+    ),
 ]
 CASE_IDS = [c.id for c in CASES]
 
 
 def test_cases_cover_every_binding() -> None:
-    """The nine cases are *exactly* the bindings the generic builder must cover.
+    """The cases are *exactly* the bindings the generic builder must cover.
 
     Guards against a future explicit through-model whose shape this suite would
-    otherwise silently skip. ``relationships_for`` returns only the
-    explicit-ClassVar specs (not parents/aliases/media), which is the generic
-    builder's whole domain.
+    otherwise silently skip. ``relationships_for`` returns every explicit-ClassVar
+    spec (incl. the self-referential parents) — not aliases or media — which is
+    the generic builder's whole domain.
     """
     from apps.catalog._walks import catalog_models
 

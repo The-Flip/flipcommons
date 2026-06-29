@@ -87,8 +87,7 @@ def _get_relationship_registry() -> dict[RelationshipDispatchKey, RegistryEntry]
     if _relationship_registry is not None:
         return _relationship_registry
 
-    from ..models import GameplayFeature, Theme
-    from ._relationships import _alias_projection, _parent_projection
+    from ._relationships import _alias_projection
     from ._through_projection import build_through_projection
 
     registry: dict[RelationshipDispatchKey, RegistryEntry] = {}
@@ -104,7 +103,8 @@ def _get_relationship_registry() -> dict[RelationshipDispatchKey, RegistryEntry]
         )
 
     # Explicit through-model namespaces (theme, tag, reward_type,
-    # gameplay_feature, credit, abbreviation, location) — one entry per
+    # gameplay_feature, credit, abbreviation, location, and the self-referential
+    # parents theme_parent/gameplay_feature_parent) — one entry per
     # (namespace, subject), driven off the binding's spec. The scope rides the
     # spec, and credit's XOR subject yields one binding per subject FK.
     for binding in all_relationship_bindings():
@@ -123,19 +123,6 @@ def _get_relationship_registry() -> dict[RelationshipDispatchKey, RegistryEntry]
             partial(_alias_projection, at.parent_model),
             ScopePolicy.FULL_TYPE,
         )
-
-    # Parent hierarchies — resolve whole-type.
-    add(
-        "theme_parent", Theme, partial(_parent_projection, Theme), ScopePolicy.FULL_TYPE
-    )
-    add(
-        "gameplay_feature_parent",
-        GameplayFeature,
-        partial(
-            _parent_projection, GameplayFeature, claim_field_prefix="gameplay_feature"
-        ),
-        ScopePolicy.FULL_TYPE,
-    )
 
     _relationship_registry = registry
     return _relationship_registry

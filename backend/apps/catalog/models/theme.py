@@ -22,12 +22,13 @@ from apps.provenance.model_bases import (
     ClaimRelationshipSpec,
     ClaimThroughModel,
     MemberField,
+    ScopePolicy,
     SingleSubject,
 )
 
 from .base import AliasModel, CatalogModel
 
-__all__ = ["MachineModelTheme", "Theme", "ThemeAlias"]
+__all__ = ["MachineModelTheme", "Theme", "ThemeAlias", "ThemeParent"]
 
 
 class Theme(
@@ -38,9 +39,9 @@ class Theme(
 ):
     """A thematic tag for pinball machines (e.g., Sports, Horror, Licensed).
 
-    Supports a DAG hierarchy via the ``parents`` M2M (structural, not
-    claim-controlled).  The MachineModel-Theme relationship is materialized
-    from relationship claims.
+    Supports a DAG hierarchy via the ``parents`` M2M (claim-controlled,
+    materialized through ``ThemeParent``).  The MachineModel-Theme relationship
+    is also materialized from relationship claims.
     """
 
     entity_type = "theme"
@@ -52,8 +53,10 @@ class Theme(
     children: models.Manager[Theme]
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
-    parents = models.ManyToManyField(
+    parents: models.ManyToManyField[Theme, ThemeParent] = models.ManyToManyField(
         "self",
+        through="ThemeParent",
+        through_fields=("from_theme", "to_theme"),
         symmetrical=False,
         related_name="children",
         blank=True,
@@ -97,6 +100,34 @@ class MachineModelTheme(ClaimThroughModel):
 
     def __str__(self) -> str:
         return f"{self.machinemodel} → {self.theme}"
+
+
+class ThemeParent(ClaimThroughModel):
+    """Through model for Theme's self-referential parents DAG (from claims).
+
+    The child (``from_theme``) is the claim subject; the parent (``to_theme``)
+    is the identity member — a plain ``SingleSubject`` shape, no dedicated
+    self-parent variant. Pinned to the auto-M2M's table and columns so the
+    promotion migration is state-only.
+    """
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec] = ClaimRelationshipSpec(
+        namespace="theme_parent",
+        subject=SingleSubject("from_theme"),
+        members=(MemberField("to_theme", value_key="parent", identity="parent"),),
+        ignore_conflicts=True,
+        scope=ScopePolicy.FULL_TYPE,
+    )
+
+    from_theme = models.ForeignKey(Theme, on_delete=models.CASCADE, related_name="+")
+    to_theme = models.ForeignKey(Theme, on_delete=models.CASCADE, related_name="+")
+
+    class Meta:
+        db_table = "catalog_theme_parents"
+        unique_together = (("from_theme", "to_theme"),)
+
+    def __str__(self) -> str:
+        return f"{self.from_theme} → {self.to_theme}"
 
 
 class ThemeAlias(AliasModel):

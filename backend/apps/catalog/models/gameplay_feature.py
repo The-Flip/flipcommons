@@ -26,12 +26,18 @@ from apps.provenance.model_bases import (
     ClaimThroughModel,
     MemberField,
     PayloadField,
+    ScopePolicy,
     SingleSubject,
 )
 
 from .base import AliasModel, CatalogModel
 
-__all__ = ["GameplayFeature", "GameplayFeatureAlias", "MachineModelGameplayFeature"]
+__all__ = [
+    "GameplayFeature",
+    "GameplayFeatureAlias",
+    "GameplayFeatureParent",
+    "MachineModelGameplayFeature",
+]
 
 
 class GameplayFeature(
@@ -43,8 +49,9 @@ class GameplayFeature(
 ):
     """A gameplay mechanism: Flippers, Pop Bumpers, Ramps, Multiball, etc.
 
-    Supports a DAG hierarchy via the ``parents`` M2M (claim-controlled).
-    The MachineModel-GameplayFeature relationship is materialized from claims.
+    Supports a DAG hierarchy via the ``parents`` M2M (claim-controlled,
+    materialized through ``GameplayFeatureParent``).  The
+    MachineModel-GameplayFeature relationship is materialized from claims.
     """
 
     entity_type = "gameplay-feature"
@@ -57,12 +64,16 @@ class GameplayFeature(
     children: models.Manager[GameplayFeature]
 
     name = models.CharField(max_length=200, validators=[validate_no_mojibake])
-    parents = models.ManyToManyField(
-        "self",
-        symmetrical=False,
-        related_name="children",
-        blank=True,
-        help_text="Parent features in the hierarchy (materialized from relationship claims).",
+    parents: models.ManyToManyField[GameplayFeature, GameplayFeatureParent] = (
+        models.ManyToManyField(
+            "self",
+            through="GameplayFeatureParent",
+            through_fields=("from_gameplayfeature", "to_gameplayfeature"),
+            symmetrical=False,
+            related_name="children",
+            blank=True,
+            help_text="Parent features in the hierarchy (materialized from relationship claims).",
+        )
     )
 
     entity_media = GenericRelation("media.EntityMedia")
@@ -128,6 +139,40 @@ class MachineModelGameplayFeature(ClaimThroughModel):
         if self.count is not None:
             label += f" ({self.count})"
         return label
+
+
+class GameplayFeatureParent(ClaimThroughModel):
+    """Through model for GameplayFeature's self-referential parents DAG (from claims).
+
+    The child (``from_gameplayfeature``) is the claim subject; the parent
+    (``to_gameplayfeature``) is the identity member — a plain ``SingleSubject``
+    shape. Pinned to the auto-M2M's table and columns so the promotion
+    migration is state-only.
+    """
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec] = ClaimRelationshipSpec(
+        namespace="gameplay_feature_parent",
+        subject=SingleSubject("from_gameplayfeature"),
+        members=(
+            MemberField("to_gameplayfeature", value_key="parent", identity="parent"),
+        ),
+        ignore_conflicts=True,
+        scope=ScopePolicy.FULL_TYPE,
+    )
+
+    from_gameplayfeature = models.ForeignKey(
+        GameplayFeature, on_delete=models.CASCADE, related_name="+"
+    )
+    to_gameplayfeature = models.ForeignKey(
+        GameplayFeature, on_delete=models.CASCADE, related_name="+"
+    )
+
+    class Meta:
+        db_table = "catalog_gameplayfeature_parents"
+        unique_together = (("from_gameplayfeature", "to_gameplayfeature"),)
+
+    def __str__(self) -> str:
+        return f"{self.from_gameplayfeature} → {self.to_gameplayfeature}"
 
 
 class GameplayFeatureAlias(AliasModel):
