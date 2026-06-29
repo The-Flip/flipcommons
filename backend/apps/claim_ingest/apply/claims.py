@@ -30,6 +30,7 @@ from apps.claim_ingest.plan import (
 from apps.core.models import LIFECYCLE_STATUS_FIELD
 from apps.core.types import ClaimIdentity
 from apps.provenance.models import Claim, ExistingClaimRow, Source
+from apps.provenance.types import ClaimId
 from apps.provenance.validation import validate_claims_batch
 
 
@@ -112,7 +113,7 @@ def _validate_and_collect_errors(
 def _diff_claims(
     valid_claims: list[Claim],
     source: Source,
-) -> tuple[list[Claim], list[int]]:
+) -> tuple[list[Claim], list[ClaimId]]:
     """Compare valid claims against existing active claims from the source.
 
     Returns ``(to_create, superseded_ids)`` where *superseded_ids* are PKs
@@ -145,7 +146,7 @@ def _diff_claims(
             )
 
     to_create: list[Claim] = []
-    superseded_ids: list[int] = []
+    superseded_ids: list[ClaimId] = []
 
     for claim in valid_claims:
         key = ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)

@@ -26,6 +26,7 @@ from apps.core.authz.types import Activity
 from apps.core.entity_types import get_linkable_model
 from apps.core.exceptions import StructuredValidationError
 from apps.core.schemas import ErrorDetailSchema, ValidationErrorSchema
+from apps.core.types import UserId
 from apps.media.constants import (
     ALLOWED_IMAGE_EXTENSIONS,
     DISPLAY_MAX_DIMENSION,
@@ -111,7 +112,7 @@ def _delete_media_storage_after_commit(storage_keys: list[str]) -> None:
         logger.exception("Storage cleanup failed for %d keys", len(storage_keys))
 
 
-def _check_rate_limit(user_id: int) -> None:
+def _check_rate_limit(user_id: UserId) -> None:
     """Best-effort per-user upload rate limiting via cache.
 
     Only checks the limit — does not increment. Call _incr_rate_limit()
@@ -123,7 +124,7 @@ def _check_rate_limit(user_id: int) -> None:
         raise HttpError(429, "Upload limit exceeded. Try again later.")
 
 
-def _incr_rate_limit(user_id: int) -> None:
+def _incr_rate_limit(user_id: UserId) -> None:
     """Increment the upload counter after a successful upload."""
     key = f"media_upload_count:{user_id}"
     try:

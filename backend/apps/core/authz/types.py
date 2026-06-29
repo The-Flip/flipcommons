@@ -42,6 +42,13 @@ class Activity(StrEnum):
     VIEW_ADMIN_AREA = "admin_area.view"
 
 
+type PolicyActivities = tuple[Activity, ...]
+"""The target-aware activities a Ninja Schema embeds row verdicts for, declared
+as its ``policy_activities`` ClassVar. Validated at ``manage.py check`` (see
+``apps.core.authz.checks``). A ClassVar, never a serialized field — so naming it
+stays off the wire."""
+
+
 class DenialCode(StrEnum):
     """Stable wire identifiers for denial reasons.
 

@@ -13,6 +13,8 @@ from django.utils.crypto import get_random_string
 from apps.core.types import CitationSourceId
 from apps.core.validators import validate_no_mojibake
 
+from ..types import ClaimId
+
 CITATION_INSTANCE_LOCATOR_MAX_LENGTH = 200
 
 # Slug alphabet: lowercase consonants only (vowels dropped). Digit-free so a
@@ -111,7 +113,7 @@ class CitationInstance(models.Model):
     """
 
     citation_source_id: CitationSourceId
-    claim_id: int | None
+    claim_id: ClaimId | None
 
     slug = models.CharField(max_length=CITATION_SLUG_LENGTH, unique=True)
     citation_source = models.ForeignKey(

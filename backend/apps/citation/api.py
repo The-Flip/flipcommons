@@ -26,6 +26,7 @@ from apps.core.api_helpers import authed_user
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
+from apps.core.types import CitationSourceId
 
 from .extraction import classify_input, extract_isbn, normalize_isbn
 from .extractors import (
@@ -320,7 +321,7 @@ def create_citation_source(
 
 
 def _mint_web_child(
-    parent_id: int, url: str, page_name: str, actor: Actor
+    parent_id: CitationSourceId, url: str, page_name: str, actor: Actor
 ) -> CitationSource:
     """Mint a page child via ``create_web_child``, mapping its error to a 422.
 

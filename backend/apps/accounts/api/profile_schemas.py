@@ -18,7 +18,7 @@ from django.db.models import Model
 from ninja import Schema
 from pydantic import Field
 
-from apps.core.authz import Activity
+from apps.core.authz import Activity, PolicyActivities
 from apps.core.schemas import EntityLinkSchema
 from apps.provenance.models import ChangeSet
 
@@ -36,7 +36,7 @@ class UserChangeSetSchema(Schema):
     entity: EntityLinkSchema
     capabilities: dict[Activity, bool] = Field(default_factory=dict)
 
-    policy_activities: ClassVar[tuple[Activity, ...]] = (Activity.CHANGESET_UNDO,)
+    policy_activities: ClassVar[PolicyActivities] = (Activity.CHANGESET_UNDO,)
     policy_target_model: ClassVar[type[Model]] = ChangeSet
 
 

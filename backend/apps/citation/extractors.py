@@ -33,6 +33,7 @@ from apps.citation.models import (
     CitationSourceLink,
     CitationSourceRootDomain,
 )
+from apps.core.types import CitationSourceId
 
 if TYPE_CHECKING:
     from apps.actors.models import Actor
@@ -108,7 +109,7 @@ class RecognitionChild:
     per-field ``None`` checks.
     """
 
-    id: int
+    id: CitationSourceId
     name: str
     skip_locator: bool = False
 
@@ -117,7 +118,7 @@ class RecognitionChild:
 class Recognition:
     """Result of recognizing a pasted URL."""
 
-    parent_id: int
+    parent_id: CitationSourceId
     parent_name: str
     child: RecognitionChild | None = None
     identifier: str | None = None
@@ -308,7 +309,7 @@ def web_child_name(url: str, name: str = "") -> str:
 
 
 def create_web_child(
-    parent_id: int,
+    parent_id: CitationSourceId,
     url: str,
     name: str = "",
     *,

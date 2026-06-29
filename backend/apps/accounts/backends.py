@@ -14,6 +14,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
 from django.http import HttpRequest
 
+from apps.core.types import UserId
+
 User = get_user_model()
 
 
@@ -25,7 +27,7 @@ class WorkOSBackend:
     ) -> None:
         return None
 
-    def get_user(self, user_id: int) -> AbstractBaseUser | None:
+    def get_user(self, user_id: UserId) -> AbstractBaseUser | None:
         # is_active filter: a disabled user stops being authenticated on the
         # very next request via AuthenticationMiddleware, no session flush
         # needed. UserBanning.md will tighten this with banned_at__isnull.

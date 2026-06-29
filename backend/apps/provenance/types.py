@@ -21,6 +21,11 @@ type ChangeSetId = int
 """The primary key of a ChangeSet — the atomic, attributed edit in which a
 claim was written or retracted."""
 
+type ClaimId = int
+"""The primary key of a Claim row — one assertion's identity in the provenance
+ledger. Distinct from ``ClaimSubjectId`` (the entity the claim is *about*) and
+``ClaimKey`` (the slot it asserts); this names the assertion record itself."""
+
 type IngestRunId = int
 """The primary key of an IngestRun — the bulk import to which a change belongs,
 which marks it as ingested rather than interactively created by a human."""
