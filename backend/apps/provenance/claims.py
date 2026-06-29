@@ -16,13 +16,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import NamedTuple
 
-from apps.core.types import ClaimFieldName, ClaimKey, JsonBody, PublicId
-from apps.provenance.models import (
+from apps.core.types import (
+    ClaimFieldName,
+    ClaimKey,
+    ClaimValueKey,
     IdentityPartName,
-    IdentityPartValue,
-    make_claim_key,
+    JsonBody,
+    PublicId,
 )
-from apps.provenance.types import ClaimValueKey
+from apps.provenance.models import IdentityPartValue, make_claim_key
 from apps.provenance.validation import get_relationship_schema
 
 

@@ -24,16 +24,21 @@ from django.core.exceptions import (
 )
 from django.db import models
 
-from apps.core.types import ClaimFieldMap, ClaimFieldName, ClaimKey
+from apps.core.types import (
+    ClaimFieldMap,
+    ClaimFieldName,
+    ClaimKey,
+    ClaimValueKey,
+    IdentityPartName,
+)
 from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.models import (
     ClaimControlledModel,
-    IdentityPartName,
     IdentityPartValue,
     get_claim_fields,
 )
-from apps.provenance.types import ClaimValueKey, RelationshipClaimValue
+from apps.provenance.types import RelationshipClaimValue
 
 if TYPE_CHECKING:
     from apps.provenance.models import Claim

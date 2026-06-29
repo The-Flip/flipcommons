@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from django.contrib.contenttypes.fields import GenericRelation
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -22,6 +22,12 @@ from apps.core.models import (
 from apps.core.validators import validate_no_mojibake
 from apps.core.wikilinks import WikilinkableModel
 from apps.media.models import MediaSupportedModel
+from apps.provenance.model_bases import (
+    ClaimRelationshipSpec,
+    ClaimThroughModel,
+    MemberField,
+    SingleSubject,
+)
 
 from ._autocomplete import manufacturer_year_sublabel
 from .base import CatalogModel
@@ -456,12 +462,18 @@ class MachineModel(
         return " ".join(parts)
 
 
-class ModelAbbreviation(models.Model):
+class ModelAbbreviation(ClaimThroughModel):
     """A common abbreviation for a MachineModel, e.g. "TS4LE" for Toy Story 4 LE.
 
     Materialized from provenance claims; each abbreviation is individually
     tracked with source attribution.
     """
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec] = ClaimRelationshipSpec(
+        namespace="abbreviation",
+        subject=SingleSubject("machine_model"),
+        members=(MemberField("value", identity="value"),),
+    )
 
     machine_model = models.ForeignKey(
         MachineModel, on_delete=models.CASCADE, related_name="abbreviations"

@@ -10,6 +10,8 @@ from django.db import IntegrityError, connection
 
 from apps.catalog.models import (
     CorporateEntity,
+    Credit,
+    CreditRole,
     DisplaySubtype,
     DisplayType,
     Franchise,
@@ -540,3 +542,60 @@ class TestValidateCheckConstraints:
         )
         assert resp.status_code == 422
         assert "year_start must be <= year_end" in resp.json()["detail"]["message"]
+
+
+# ---------------------------------------------------------------------------
+# Credit model/series XOR + per-branch uniqueness
+# ---------------------------------------------------------------------------
+
+
+class TestCreditXorConstraint:
+    """The ``credit`` namespace's ``XorSubject`` is backed by DB constraints.
+
+    The ``check_claim_through_models`` system check deliberately does NOT verify
+    the ``model XOR series`` ``CheckConstraint`` (that would mean walking a ``Q``
+    tree or hardcoding a catalog constraint name), so the XOR semantic and the
+    two conditional UCs are pinned by behavior here instead.
+    """
+
+    @pytest.fixture
+    def parts(self, db):
+        person = Person.objects.create(name="Pat Lawlor", slug="xor-pat-lawlor")
+        role = CreditRole.objects.create(name="Design", slug="xor-design")
+        machine = make_machine_model(name="Medieval Madness", slug="xor-mm")
+        series = Series.objects.create(name="World Cup Soccer", slug="xor-wcs")
+        return person, role, machine, series
+
+    def test_neither_subject_rejected(self, parts):
+        person, role, _machine, _series = parts
+        with pytest.raises(IntegrityError):
+            Credit.objects.create(model=None, series=None, person=person, role=role)
+
+    def test_both_subjects_rejected(self, parts):
+        person, role, machine, series = parts
+        with pytest.raises(IntegrityError):
+            Credit.objects.create(
+                model=machine, series=series, person=person, role=role
+            )
+
+    def test_model_only_accepted(self, parts):
+        person, role, machine, _series = parts
+        credit = Credit.objects.create(model=machine, person=person, role=role)
+        assert credit.pk is not None
+
+    def test_series_only_accepted(self, parts):
+        person, role, _machine, series = parts
+        credit = Credit.objects.create(series=series, person=person, role=role)
+        assert credit.pk is not None
+
+    def test_duplicate_model_branch_rejected(self, parts):
+        person, role, machine, _series = parts
+        Credit.objects.create(model=machine, person=person, role=role)
+        with pytest.raises(IntegrityError):
+            Credit.objects.create(model=machine, person=person, role=role)
+
+    def test_duplicate_series_branch_rejected(self, parts):
+        person, role, _machine, series = parts
+        Credit.objects.create(series=series, person=person, role=role)
+        with pytest.raises(IntegrityError):
+            Credit.objects.create(series=series, person=person, role=role)

@@ -1,8 +1,11 @@
 """Read-side TypedDict vocabulary for relationship-claim JSON payloads.
 
-One TypedDict per distinct payload shape consumed by resolvers in this
-package. Each TypedDict mirrors a :class:`RelationshipSchema` registered
-in :mod:`apps.catalog.claims` — the consistency test in
+Only the bespoke shapes keep a read-side TypedDict: case-folded aliases,
+self-referential parents and content-type-keyed media. The explicit
+through-model namespaces (theme, credit, abbreviation, …) carry no TypedDict —
+their payload shape is spec-derived and locked by
+``tests/test_through_model_schemas.py`` instead. Each surviving TypedDict
+mirrors its registered :class:`RelationshipSchema`; the consistency test in
 ``tests/test_claim_values.py`` enforces that mirror.
 
 Resolvers ``cast(<Shape>, claim.value)`` at the top of their loop body;
@@ -15,29 +18,6 @@ through stringified ``Required``/``NotRequired`` wrappers.
 """
 
 from typing import NotRequired, Required, TypedDict
-
-
-class GameplayFeatureClaimValue(TypedDict):
-    """Payload for ``gameplay_feature`` relationship claims on MachineModel."""
-
-    gameplay_feature: Required[int]
-    exists: Required[bool]
-    count: NotRequired[int | None]
-
-
-class CreditClaimValue(TypedDict):
-    """Payload for ``credit`` relationship claims on MachineModel / Series."""
-
-    person: Required[int]
-    role: Required[int]
-    exists: Required[bool]
-
-
-class AbbreviationClaimValue(TypedDict):
-    """Payload for ``abbreviation`` relationship claims on Title / MachineModel."""
-
-    value: Required[str]
-    exists: Required[bool]
 
 
 class AliasClaimValue(TypedDict):
@@ -62,14 +42,3 @@ class MediaAttachmentClaimValue(TypedDict):
     exists: Required[bool]
     category: NotRequired[str | None]
     is_primary: NotRequired[bool]
-
-
-class LocationClaimValue(TypedDict):
-    """Payload for ``location`` relationship claims on CorporateEntity.
-
-    Materializes CorporateEntityLocation rows; CorporateEntity has no
-    ``location`` column. ``exists=False`` retracts the row.
-    """
-
-    location: Required[int]
-    exists: Required[bool]

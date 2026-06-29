@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 from django.contrib.contenttypes.models import ContentType
 
-from apps.core.types import ClaimFieldName, ClaimKey, ClaimSubjectId
+from apps.core.types import ClaimFieldName, ClaimKey, ClaimSubjectId, ColumnName
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Claim
@@ -144,6 +144,17 @@ class Projection[Subject: Hashable, Member: Hashable, Payload](Protocol):
 
     Everything that varies between the membership resolvers lives behind these
     five methods; :func:`reconcile` is the invariant loop over them.
+
+    **Purity invariant.** A projection is a function of *claims* — it reads the
+    claim log (plus its own materialized rows, for the diff) and writes its own
+    view, nothing else. It must **never** read another projection's materialized
+    output: that is what creates cross-entity ordering, cascade edges and
+    staleness (the ``model_abbreviations`` reading ``TitleAbbreviation`` rows
+    that motivated this design). A cross-projection or cross-entity join belongs
+    at *read* time, not here. The one tolerated exception is the FK natural-key
+    lookup (a target's resolved ``slug`` / ``location_path``), safe only because
+    the resolved pk is stable and the dependency is met by batch *order*, not an
+    incremental trigger.
     """
 
     def claims(self, subjects: set[Subject] | None) -> Iterable[Claim]:
@@ -260,7 +271,7 @@ type ColumnValues = tuple[object, ...]
 """The values of one materialized row's key or payload columns, in positional
 order."""
 
-type ColumnNames = tuple[str, ...]
+type ColumnNames = tuple[ColumnName, ...]
 """The through-table column names that back a member key or a payload, in
 positional order."""
 
@@ -305,6 +316,22 @@ def _no_payload(columns: ColumnValues) -> None:
 def _no_columns(payload: object) -> ColumnValues:
     """Set membership: ``None`` payload → no payload columns."""
     return ()
+
+
+def _compound_key(columns: ColumnValues) -> tuple[object, ...]:
+    """Multi-column member key → the column tuple itself (identity).
+
+    A compound ``Member`` (e.g. credit's ``(person_id, role_id)``) is the column
+    tuple unchanged; the values already arrive as a tuple from ``values_list``.
+    A plain tuple keys ``reconcile``'s maps identically to a NamedTuple, so the
+    member type stays internal and never reaches the materialized row.
+    """
+    return columns
+
+
+def _compound_columns(key: object) -> ColumnValues:
+    """A compound (tuple) member key → its columns (identity)."""
+    return cast(ColumnValues, key)
 
 
 @dataclass(frozen=True, slots=True)

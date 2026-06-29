@@ -44,6 +44,14 @@ def member_is_present(claim: PresenceClaim | None) -> bool:
 
     Pass only *member* claims — see the module docstring on why scalar/FK claims
     must not route through here.
+
+    **Why a tombstone wins.** Combined with the ``(priority, recency)`` winner
+    pick in :func:`apps.provenance.claim_ranking_in_db.ranked_claims`, this makes
+    membership a *remove-wins* element-set (a generalized LWW-Element-Set): an
+    ``exists=false`` claim is ranked like any other, so a higher-priority or
+    more-recent removal becomes the selected claim and drops the member. This is
+    deliberate and the opposite of an OR-Set / add-wins set — do not change it so
+    a concurrent add outranks a removal.
     """
     if claim is None:
         return False

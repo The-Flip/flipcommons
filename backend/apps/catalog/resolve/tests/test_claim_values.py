@@ -17,11 +17,7 @@ from typing import Union, get_args, get_origin, get_type_hints
 
 from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.resolve._claim_values import (
-    AbbreviationClaimValue,
     AliasClaimValue,
-    CreditClaimValue,
-    GameplayFeatureClaimValue,
-    LocationClaimValue,
     MediaAttachmentClaimValue,
     ParentClaimValue,
 )
@@ -32,14 +28,14 @@ def _alias_namespaces() -> tuple[str, ...]:
     return tuple(at.claim_field for at in discover_alias_types())
 
 
+# Only the bespoke shapes remain a TypedDict: aliases (case-folded), parents
+# (self-referential) and media (content-type keyed). The explicit through-model
+# namespaces no longer have a read-side TypedDict — their schema is derived from
+# the spec and locked by ``test_through_model_schemas`` instead.
 TYPEDDICT_NAMESPACES: list[tuple[type, tuple[str, ...]]] = [
-    (GameplayFeatureClaimValue, ("gameplay_feature",)),
-    (CreditClaimValue, ("credit",)),
-    (AbbreviationClaimValue, ("abbreviation",)),
     (AliasClaimValue, _alias_namespaces()),
     (ParentClaimValue, ("theme_parent", "gameplay_feature_parent")),
     (MediaAttachmentClaimValue, ("media_attachment",)),
-    (LocationClaimValue, ("location",)),
 ]
 
 

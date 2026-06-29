@@ -43,6 +43,21 @@ column, an FK, or the shared namespace of a relationship's members."""
 type ClaimFieldMap = dict[ClaimFieldName, str]
 """Maps each claim-controlled field name to the model attribute it resolves into."""
 
+type ClaimValueKey = str
+"""Names one slot inside a relationship claim's value — the person and role of a
+credit, the count of a gameplay feature. The schema fixes which slots form member
+identity and which carry payload."""
+
+type IdentityPartName = str
+"""One key in a claim_key's identity-parts mapping — the label of an identity
+slot (e.g. ``person``, ``role``, ``alias``). Distinct from the relationship
+value-dict key it derives from: usually equal, occasionally not (``alias`` for
+the ``alias_value`` slot)."""
+
+type ColumnName = str
+"""A through-table column, FK attribute, or model field name. The element type of
+the resolution engine's ``ColumnNames = tuple[ColumnName, ...]``."""
+
 type PublicId = str
 """An entity's URL-identity: the value of its public_id field, by which an FK or
 relationship member names its target. It's usually a slug, but is a path for

@@ -17,9 +17,17 @@ from collections.abc import Iterable
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.validators import MinValueValidator
+from django.db.models import CharField, ForeignKey, IntegerField, Model
 
+from apps.core.types import ClaimFieldName
 from apps.media.models import MediaSupportedModel
 from apps.provenance.claims import RelationshipClaim, build_relationship_claim
+from apps.provenance.model_bases import (
+    ClaimRelationshipBinding,
+    MemberField,
+    PayloadField,
+    all_relationship_bindings,
+)
 from apps.provenance.models import ClaimControlledModel
 from apps.provenance.validation import (
     FkTarget,
@@ -37,175 +45,21 @@ from apps.provenance.validation import (
 def register_catalog_relationship_schemas() -> None:
     """Register every catalog relationship namespace. Called from ``ready()``.
 
-    Each namespace is declared exactly once with its value-keys and the set
-    of subject models it applies to.
+    The explicit through-model namespaces (theme, tag, reward_type,
+    gameplay_feature, credit, abbreviation, location) are *derived* from the
+    ``claim_relationship_spec`` ClassVar on each ``ClaimThroughModel`` — one
+    schema per namespace, see :func:`_register_through_model_schemas`. The three
+    that have no through-model — parents (self-referential, promoted later),
+    aliases (case-folded) and media (content-type keyed) — are still declared by
+    hand here.
     """
-    from apps.catalog.models import (
-        CorporateEntity,
-        CreditRole,
-        GameplayFeature,
-        Location,
-        MachineModel,
-        MachineModelGameplayFeature,
-        ModelAbbreviation,
-        Person,
-        RewardType,
-        Series,
-        Tag,
-        Theme,
-        Title,
-        TitleAbbreviation,
-    )
+    from apps.catalog.models import GameplayFeature, Theme
     from apps.media.models import MediaAsset
 
     from .engine.aliases import discover_alias_types
 
-    # Credit: Person + CreditRole on MachineModel and Series.
-    register_relationship_schema(
-        namespace="credit",
-        value_keys=(
-            ValueKeySpec(
-                name="person",
-                scalar_type=int,
-                required=True,
-                identity="person",
-                fk_target=FkTarget(Person, "pk"),
-            ),
-            ValueKeySpec(
-                name="role",
-                scalar_type=int,
-                required=True,
-                identity="role",
-                fk_target=FkTarget(CreditRole, "pk"),
-            ),
-        ),
-        valid_subjects={MachineModel, Series},
-    )
-
-    # Gameplay feature M2M on MachineModel — with optional integer count. The
-    # count's lower bound is the through-model field's own explicit
-    # MinValueValidator, so the patch adapter rejects a too-small count (0,
-    # negative) at plan time instead of deferring to the DB CHECK as an opaque
-    # IntegrityError (see ValueKeySpec.min_value). No symmetric upper bound:
-    # PositiveSmallIntegerField declares no explicit MaxValueValidator, only the
-    # backend integer range — which SQLite (the patch author's local DB) reports
-    # as the full 64-bit range, not Postgres's 32767. A meaningful max therefore
-    # isn't model-derivable here (the same reason max_length is the only string
-    # bound we pre-check), so an over-large count falls through to a Postgres range
-    # error in prod.
-    count_field = MachineModelGameplayFeature._meta.get_field("count")
-    count_min = max(
-        (
-            int(v.limit_value)
-            for v in count_field.validators
-            if isinstance(v, MinValueValidator)
-        ),
-        default=None,
-    )
-    assert count_min is not None, (
-        "MachineModelGameplayFeature.count must declare a MinValueValidator"
-    )
-    register_relationship_schema(
-        namespace="gameplay_feature",
-        value_keys=(
-            ValueKeySpec(
-                name="gameplay_feature",
-                scalar_type=int,
-                required=True,
-                identity="gameplay_feature",
-                fk_target=FkTarget(GameplayFeature, "pk"),
-            ),
-            ValueKeySpec(
-                name="count",
-                scalar_type=int,
-                required=False,
-                nullable=True,
-                min_value=count_min,
-            ),
-        ),
-        valid_subjects={MachineModel},
-    )
-
-    # Simple M2Ms on MachineModel — theme / tag / reward_type.
-    register_relationship_schema(
-        namespace="theme",
-        value_keys=(
-            ValueKeySpec(
-                name="theme",
-                scalar_type=int,
-                required=True,
-                identity="theme",
-                fk_target=FkTarget(Theme, "pk"),
-            ),
-        ),
-        valid_subjects={MachineModel},
-    )
-    register_relationship_schema(
-        namespace="tag",
-        value_keys=(
-            ValueKeySpec(
-                name="tag",
-                scalar_type=int,
-                required=True,
-                identity="tag",
-                fk_target=FkTarget(Tag, "pk"),
-            ),
-        ),
-        valid_subjects={MachineModel},
-    )
-    register_relationship_schema(
-        namespace="reward_type",
-        value_keys=(
-            ValueKeySpec(
-                name="reward_type",
-                scalar_type=int,
-                required=True,
-                identity="reward_type",
-                fk_target=FkTarget(RewardType, "pk"),
-            ),
-        ),
-        valid_subjects={MachineModel},
-    )
-
-    # Abbreviation (literal) on Title + MachineModel. The stored value lives on
-    # two separate through-models; read the bound from both and require they
-    # agree so a future divergence fails registration instead of silently
-    # picking one. Drives the data-patch over-length guard (see ValueKeySpec).
-    model_abbr_len = ModelAbbreviation._meta.get_field("value").max_length
-    title_abbr_len = TitleAbbreviation._meta.get_field("value").max_length
-    assert model_abbr_len is not None, "ModelAbbreviation.value must declare max_length"
-    assert model_abbr_len == title_abbr_len, (
-        "ModelAbbreviation.value and TitleAbbreviation.value must declare the "
-        f"same max_length (got {model_abbr_len!r} / {title_abbr_len!r})"
-    )
-    register_relationship_schema(
-        namespace="abbreviation",
-        value_keys=(
-            ValueKeySpec(
-                name="value",
-                scalar_type=str,
-                required=True,
-                identity="value",
-                max_length=model_abbr_len,
-            ),
-        ),
-        valid_subjects={Title, MachineModel},
-    )
-
-    # Location on CorporateEntity.
-    register_relationship_schema(
-        namespace="location",
-        value_keys=(
-            ValueKeySpec(
-                name="location",
-                scalar_type=int,
-                required=True,
-                identity="location",
-                fk_target=FkTarget(Location, "pk"),
-            ),
-        ),
-        valid_subjects={CorporateEntity},
-    )
+    # Derived from the through-model specs.
+    _register_through_model_schemas()
 
     # Hierarchy parents (self-referential).
     register_relationship_schema(
@@ -293,6 +147,132 @@ def register_catalog_relationship_schemas() -> None:
             ),
         ),
         valid_subjects=media_subjects,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Through-model schema derivation
+# ---------------------------------------------------------------------------
+
+
+def _register_through_model_schemas() -> None:
+    """Derive one ``RelationshipSchema`` per namespace from the through-model specs.
+
+    Groups every relationship binding by namespace (spec→schema is many-to-one),
+    derives the value-keys from each binding's through-model + spec by
+    introspecting ``_meta``, requires every binding in a namespace to derive
+    identical value-keys (the cross-model parity check — e.g. ``abbreviation``'s
+    two through-models must agree on ``max_length``), then registers one schema
+    with the union of the group's subjects. The XOR-subject credit namespace
+    yields two bindings on one through-model, so its subjects union to
+    ``{MachineModel, Series}``.
+    """
+    by_namespace: dict[ClaimFieldName, list[ClaimRelationshipBinding]] = {}
+    for binding in all_relationship_bindings():
+        by_namespace.setdefault(binding.spec.namespace, []).append(binding)
+
+    for namespace, bindings in by_namespace.items():
+        value_keys_per_binding = [_value_keys_for(b) for b in bindings]
+        canonical = value_keys_per_binding[0]
+        for other, binding in zip(
+            value_keys_per_binding[1:], bindings[1:], strict=True
+        ):
+            assert other == canonical, (
+                f"namespace {namespace!r}: bindings "
+                f"{bindings[0].through_model.__name__}/"
+                f"{bindings[0].subject_model.__name__} and "
+                f"{binding.through_model.__name__}/{binding.subject_model.__name__} "
+                f"derive different value-keys ({canonical!r} != {other!r})"
+            )
+        register_relationship_schema(
+            namespace=namespace,
+            value_keys=canonical,
+            valid_subjects={b.subject_model for b in bindings},
+        )
+
+
+def _value_keys_for(binding: ClaimRelationshipBinding) -> tuple[ValueKeySpec, ...]:
+    """The value-key specs a binding's spec implies — members then payload."""
+    through = binding.through_model
+    members = tuple(_member_value_key(through, m) for m in binding.spec.members)
+    payload = tuple(_payload_value_key(through, p) for p in binding.spec.payload)
+    return members + payload
+
+
+def _member_value_key(through_model: type[Model], member: MemberField) -> ValueKeySpec:
+    """Derive an identity value-key from a through-model member field.
+
+    The value-key ``name`` is the value-dict key (``member.value_key or
+    member.field``) — *not* the column — so a squished FK column (``rewardtype``
+    keyed as ``reward_type``) keeps its value-dict name. An FK member carries an
+    ``fk_target`` (its target model introspected from the relation, never named
+    in the spec); a literal ``CharField`` member carries its ``max_length``.
+    """
+    field = through_model._meta.get_field(member.field)
+    name = member.value_key or member.field
+    if isinstance(field, ForeignKey):
+        target = field.related_model
+        assert not isinstance(target, str)  # resolved to a class once apps are ready
+        return ValueKeySpec(
+            name=name,
+            scalar_type=int,
+            required=True,
+            identity=member.identity,
+            fk_target=FkTarget(target, member.lookup_field),
+        )
+    assert isinstance(field, CharField), (
+        f"{through_model.__name__}.{member.field} must be a ForeignKey or CharField"
+    )
+    max_length = field.max_length
+    assert max_length is not None, (
+        f"{through_model.__name__}.{member.field} must declare a max_length"
+    )
+    return ValueKeySpec(
+        name=name,
+        scalar_type=str,
+        required=True,
+        identity=member.identity,
+        max_length=max_length,
+    )
+
+
+def _payload_value_key(
+    through_model: type[Model], payload: PayloadField
+) -> ValueKeySpec:
+    """Derive a non-identity payload value-key (today: gameplay ``count``).
+
+    The lower bound is harvested from the field's own ``MinValueValidator`` so
+    the patch adapter rejects a too-small payload at plan time (see
+    ``ValueKeySpec.min_value``). No symmetric *upper* bound is derived:
+    ``PositiveSmallIntegerField`` declares no ``MaxValueValidator``, only the
+    backend integer range — which SQLite (the patch author's local DB) reports
+    as the full 64-bit range, not Postgres's 32767 — so a meaningful max is not
+    model-derivable and an over-large payload falls through to a Postgres range
+    error in prod (the same reason ``max_length`` is the only string bound we
+    pre-check).
+    """
+    field = through_model._meta.get_field(payload.field)
+    name = payload.value_key or payload.field
+    assert isinstance(field, IntegerField), (
+        f"{through_model.__name__}.{payload.field} payload must be an IntegerField"
+    )
+    min_value = max(
+        (
+            int(v.limit_value)
+            for v in field.validators
+            if isinstance(v, MinValueValidator)
+        ),
+        default=None,
+    )
+    assert min_value is not None, (
+        f"{through_model.__name__}.{payload.field} must declare a MinValueValidator"
+    )
+    return ValueKeySpec(
+        name=name,
+        scalar_type=int,
+        required=False,
+        nullable=payload.nullable,
+        min_value=min_value,
     )
 
 

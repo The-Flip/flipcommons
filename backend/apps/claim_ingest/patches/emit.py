@@ -46,7 +46,7 @@ from apps.core.soft_delete import (
     require_linkable,
     soft_delete_walk,
 )
-from apps.core.types import ClaimKey, EntityKey, PublicId
+from apps.core.types import ClaimKey, ClaimValueKey, EntityKey, PublicId
 from apps.provenance.claim_presence import member_is_present
 from apps.provenance.claims import (
     build_relationship_claim,
@@ -61,7 +61,6 @@ from apps.provenance.models import (
     Source,
     get_claim_fields,
 )
-from apps.provenance.types import ClaimValueKey
 from apps.provenance.validation import get_relationship_schema
 
 

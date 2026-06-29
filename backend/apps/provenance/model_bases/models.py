@@ -15,15 +15,19 @@ because every base is abstract.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from django.contrib.contenttypes.fields import GenericRelation
 from django.db import models
 
 from apps.core.models import LifecycleStatusModel, LinkableModel
 
+if TYPE_CHECKING:
+    from .claim_relationships import ClaimRelationshipSpec
+
 __all__ = [
     "ClaimControlledModel",
+    "ClaimThroughModel",
     "LinkableClaimModel",
     "LinkableLifecycleClaimModel",
 ]
@@ -69,6 +73,26 @@ class ClaimControlledModel(models.Model):
     claim_fk_lookups: ClassVar[dict[str, str]] = {}
 
     claims = GenericRelation("provenance.Claim")
+
+    class Meta:
+        abstract = True
+
+
+class ClaimThroughModel(models.Model):
+    """Discovery marker for claim-controlled relationship through-models.
+
+    Defines the universe of materialized relationship tables a
+    :class:`~.claim_relationships.ClaimRelationshipSpec` drives, so the
+    spec-walk can find every one and a through-model missing its spec fails the
+    startup validator loudly rather than being silently skipped. Discovery only:
+    no abstract methods, no fields — it adds no table, column or migration. The
+    ``claim_relationship_spec`` ClassVar is the per-model declaration; the
+    annotation is unevaluated (``from __future__ import annotations``), so the
+    reference to :class:`ClaimRelationshipSpec` stays type-checking-only and the
+    leaf imports nothing from :mod:`.claim_relationships` at runtime.
+    """
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec]
 
     class Meta:
         abstract = True

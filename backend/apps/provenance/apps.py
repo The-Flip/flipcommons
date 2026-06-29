@@ -73,6 +73,7 @@ class ProvenanceConfig(AppConfig):
         )
 
         from . import authz  # noqa: F401  # registers authz rules at startup
+        from .model_bases import checks  # noqa: F401  # registers system checks
 
         register(
             LinkType(

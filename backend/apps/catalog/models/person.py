@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from django.contrib.contenttypes.fields import GenericRelation
 from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
@@ -19,6 +21,13 @@ from apps.core.models import (
 from apps.core.validators import validate_no_mojibake
 from apps.core.wikilinks import WikilinkableModel
 from apps.media.models import MediaSupportedModel
+from apps.provenance.model_bases import (
+    ClaimRelationshipSpec,
+    ClaimThroughModel,
+    EmptyTargetPolicy,
+    MemberField,
+    XorSubject,
+)
 
 from .base import AliasModel, CatalogModel
 
@@ -217,8 +226,21 @@ class PersonAlias(AliasModel):
         ]
 
 
-class Credit(models.Model):
+class Credit(ClaimThroughModel):
     """Links a person to a machine model or series with a specific role."""
+
+    claim_relationship_spec: ClassVar[ClaimRelationshipSpec] = ClaimRelationshipSpec(
+        namespace="credit",
+        subject=XorSubject("model", "series"),
+        members=(
+            MemberField("person", identity="person"),
+            # SKIP_NAMESPACE: an unseeded CreditRole vocabulary would otherwise
+            # drop every credit as invalid and delete the existing rows.
+            MemberField(
+                "role", identity="role", empty_target=EmptyTargetPolicy.SKIP_NAMESPACE
+            ),
+        ),
+    )
 
     model_id: int | None
     series_id: int | None
