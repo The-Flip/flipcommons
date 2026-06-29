@@ -388,7 +388,14 @@ source_modules = [
     "apps.kiosk",
 ]
 forbidden_modules = ["apps.accounts.test_factories"]
-ignore_imports = ["apps.*.tests.** -> apps.accounts.test_factories"]
+# Tests import it freely; the second ignore lets another test factory reuse it
+# (citation's default_actor() delegates here) — both are test-only helpers, not
+# production code. apps.provenance.Source sits a tier above citation, so a
+# user-backed default actor is the one the citation factory can reach.
+ignore_imports = [
+    "apps.*.tests.** -> apps.accounts.test_factories",
+    "apps.**.test_factories -> apps.accounts.test_factories",
+]
 
 [[tool.importlinter.contracts]]
 name = "Production code does not import provenance test factories"
@@ -570,7 +577,7 @@ forbidden_modules = [
 name = "Citation app internal stack"
 type = "layers"
 exhaustive = true # so new submodule left unplaced fails build
-exhaustive_ignores = ["apps", "migrations", "tests", "management"]
+exhaustive_ignores = ["apps", "migrations", "tests", "management", "test_factories"]
 containers = ["apps.citation"]
 layers = [
     "api | admin",

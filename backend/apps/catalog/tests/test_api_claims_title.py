@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 
 from apps.catalog.models import Franchise, Title
 from apps.catalog.resolve import resolve_all_entities, resolve_relationship
-from apps.citation.models import CitationSource
+from apps.citation.test_factories import make_citation_source
 from apps.core.types import JsonBody
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import ChangeSet, Claim, Source
@@ -46,7 +46,7 @@ def source(db):
 
 @pytest.fixture
 def citation_source(db):
-    return CitationSource.objects.create(name="Williams Flyer", source_type="web")
+    return make_citation_source(name="Williams Flyer", source_type="web")
 
 
 def _patch(client, slug: str, body: JsonBody):

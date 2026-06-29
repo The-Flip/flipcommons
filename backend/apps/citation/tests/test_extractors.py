@@ -7,6 +7,7 @@ the regex collapsing them all to one canonical 11-char id is the risky part.
 import pytest
 from django.core.exceptions import ValidationError
 
+from apps.accounts.test_factories import default_actor
 from apps.citation.extractors import (
     EXTRACTORS,
     create_web_child,
@@ -20,6 +21,11 @@ from apps.citation.models import (
     CitationSourceLink,
     CitationSourceRootDomain,
 )
+from apps.citation.test_factories import (
+    make_citation_link,
+    make_citation_root_domain,
+    make_citation_source,
+)
 
 # A real-looking 11-char video id (Rick Astley, "Never Gonna Give You Up").
 VID = "dQw4w9WgXcQ"
@@ -27,7 +33,7 @@ VID = "dQw4w9WgXcQ"
 
 @pytest.fixture
 def youtube_root(db):
-    return CitationSource.objects.create(
+    return make_citation_source(
         name="YouTube", source_type="web", identifier_key="youtube"
     )
 
@@ -92,7 +98,7 @@ class TestYouTubeRecognition:
         assert rec.child is None
 
     def test_url_recognized_with_existing_child(self, youtube_root):
-        child = CitationSource.objects.create(
+        child = make_citation_source(
             name=f"YouTube #{VID}",
             source_type="web",
             parent=youtube_root,
@@ -114,10 +120,8 @@ class TestYouTubeRecognition:
         # seeded youtube.com recognition host still resolves it (parent only, no
         # identifier). A flatten that returned at the first pattern hit would
         # regress this to None.
-        host_root = CitationSource.objects.create(
-            name="YouTube (web root)", source_type="web"
-        )
-        CitationSourceRootDomain.objects.create(source=host_root, host="youtube.com")
+        host_root = make_citation_source(name="YouTube (web root)", source_type="web")
+        make_citation_root_domain(source=host_root, host="youtube.com")
         rec = recognize_url(f"https://www.youtube.com/watch?v={VID}")
         assert rec is not None
         assert rec.parent_id == host_root.id
@@ -133,8 +137,8 @@ class TestRootDomainRecognition:
     """
 
     def _root(self, name: str, host: str) -> CitationSource:
-        root = CitationSource.objects.create(name=name, source_type="web")
-        CitationSourceRootDomain.objects.create(source=root, host=host)
+        root = make_citation_source(name=name, source_type="web")
+        make_citation_root_domain(source=root, host=host)
         return root
 
     def test_subdomain_resolves_to_registrable_root(self, db):
@@ -170,9 +174,15 @@ class TestRootDomainRecognition:
         # would let a bare public-suffix host swallow every site beneath it — but
         # clean() forbids declaring one, so that root can't exist. Declaring "co.uk"
         # is rejected, and an unrelated *.co.uk cite stays unrecognized.
-        root = CitationSource.objects.create(name="Bad", source_type="web")
+        root = make_citation_source(name="Bad", source_type="web")
+        # Attribute it so full_clean's only complaint is the public-suffix host.
         with pytest.raises(ValidationError):
-            CitationSourceRootDomain(source=root, host="co.uk").full_clean()
+            CitationSourceRootDomain(
+                source=root,
+                host="co.uk",
+                created_by=default_actor(),
+                updated_by=default_actor(),
+            ).full_clean()
         assert recognize_url("https://example.co.uk/page") is None
 
     def test_www_prefixed_input_matches(self, db):
@@ -212,11 +222,9 @@ class TestRootDomainRecognition:
         # The source__parent__isnull filter is defense-in-depth for the clean()
         # root-only rule: a domain attached to a child via a bypass (raw create)
         # never drives recognition.
-        parent = CitationSource.objects.create(name="Parent", source_type="web")
-        child = CitationSource.objects.create(
-            name="Child", source_type="web", parent=parent
-        )
-        CitationSourceRootDomain.objects.create(source=child, host="child.example.com")
+        parent = make_citation_source(name="Parent", source_type="web")
+        child = make_citation_source(name="Child", source_type="web", parent=parent)
+        make_citation_root_domain(source=child, host="child.example.com")
         assert recognize_url("https://child.example.com/page") is None
 
 
@@ -225,10 +233,12 @@ class TestCreateWebChild:
 
     @pytest.fixture
     def root(self, db):
-        return CitationSource.objects.create(name="Kineticist", source_type="web")
+        return make_citation_source(name="Kineticist", source_type="web")
 
     def test_mints_validated_child_and_reference_link(self, root):
-        child = create_web_child(root.pk, "https://kineticist.com/article")
+        child = create_web_child(
+            root.pk, "https://kineticist.com/article", created_by=default_actor()
+        )
         assert child.parent_id == root.pk
         assert child.source_type == "web"
         link = child.links.get()
@@ -239,7 +249,7 @@ class TestCreateWebChild:
         # The link's URLField validates only in full_clean — the leaf's whole
         # point (closing the .objects.create bypass). Atomic: no orphaned child.
         with pytest.raises(ValidationError):
-            create_web_child(root.pk, "not a url")
+            create_web_child(root.pk, "not a url", created_by=default_actor())
         assert not CitationSource.objects.children().exists()
 
     def test_attribution_follows_created_by(self, root, user):
@@ -249,22 +259,18 @@ class TestCreateWebChild:
         assert attributed.created_by_id == user.actor_id
         assert attributed.links.get().created_by_id == user.actor_id
 
-        anon = create_web_child(root.pk, "https://kineticist.com/b")
-        assert anon.created_by_id is None
-        assert anon.links.get().created_by_id is None
-
 
 class TestGetOrCreateSchemeChild:
     """The shared scheme-child leaf: one name rule, idempotent, attributed."""
 
     @pytest.fixture
     def root(self, db):
-        return CitationSource.objects.create(
+        return make_citation_source(
             name="IPDB", source_type="web", identifier_key="ipdb"
         )
 
     def test_mints_named_child_with_canonical_link(self, root):
-        child = get_or_create_scheme_child(root, "4443")
+        child = get_or_create_scheme_child(root, "4443", created_by=default_actor())
         assert child.name == "IPDB #4443"
         assert child.identifier == "4443"
         link = child.links.get()
@@ -272,27 +278,27 @@ class TestGetOrCreateSchemeChild:
         assert link.link_type == "reference"
 
     def test_reuses_on_recite_across_url_shapes(self, root):
-        first = get_or_create_scheme_child(root, "4443")
+        first = get_or_create_scheme_child(root, "4443", created_by=default_actor())
         second = get_or_create_scheme_child(
-            root, "https://www.ipdb.org/machine.cgi?id=4443"
+            root, "https://www.ipdb.org/machine.cgi?id=4443", created_by=default_actor()
         )
         assert first.pk == second.pk
         assert first.links.count() == 1
 
     def test_rejects_an_invalid_identifier(self, root):
         with pytest.raises(ValueError, match="Invalid ipdb identifier"):
-            get_or_create_scheme_child(root, "not-an-id")
+            get_or_create_scheme_child(root, "not-an-id", created_by=default_actor())
 
     def test_rejects_a_root_without_a_scheme(self, db):
-        plain = CitationSource.objects.create(name="No scheme", source_type="web")
+        plain = make_citation_source(name="No scheme", source_type="web")
         with pytest.raises(ValueError, match="no known identifier scheme"):
-            get_or_create_scheme_child(plain, "4443")
+            get_or_create_scheme_child(plain, "4443", created_by=default_actor())
 
     def test_rejects_an_over_long_identifier(self, root):
         # The ``\d+`` id regex has no length cap, so an over-long identifier must
         # be caught by field validation, not silently stored or DB-errored.
         with pytest.raises(ValidationError):
-            get_or_create_scheme_child(root, "1" * 250)
+            get_or_create_scheme_child(root, "1" * 250, created_by=default_actor())
         assert not CitationSource.objects.children().exists()
 
     def test_attribution_follows_created_by(self, root, user):
@@ -303,8 +309,10 @@ class TestGetOrCreateSchemeChild:
     def test_external_source_helper_resolves_the_same_child(self, root):
         # The patch helper (scheme→root lookup) and the leaf mint one child —
         # convergence on a single scheme-child home.
-        via_helper = get_or_create_external_source("ipdb", "4443")
-        via_leaf = get_or_create_scheme_child(root, "4443")
+        via_helper = get_or_create_external_source(
+            "ipdb", "4443", created_by=default_actor()
+        )
+        via_leaf = get_or_create_scheme_child(root, "4443", created_by=default_actor())
         assert via_helper.pk == via_leaf.pk
 
 
@@ -312,16 +320,22 @@ class TestYouTubeGetOrCreate:
     """``get_or_create_external_source`` is idempotent and builds canonical URLs."""
 
     def test_creates_child_with_canonical_link(self, youtube_root):
-        child = get_or_create_external_source("youtube", f"https://youtu.be/{VID}")
+        child = get_or_create_external_source(
+            "youtube", f"https://youtu.be/{VID}", created_by=default_actor()
+        )
         assert child.parent_id == youtube_root.id
         assert child.identifier == VID
         link = CitationSourceLink.objects.get(citation_source=child)
         assert link.url == f"https://www.youtube.com/watch?v={VID}"
 
     def test_idempotent_across_url_shapes(self, youtube_root):
-        first = get_or_create_external_source("youtube", f"https://youtu.be/{VID}")
+        first = get_or_create_external_source(
+            "youtube", f"https://youtu.be/{VID}", created_by=default_actor()
+        )
         second = get_or_create_external_source(
-            "youtube", f"https://www.youtube.com/watch?v={VID}&t=10s"
+            "youtube",
+            f"https://www.youtube.com/watch?v={VID}&t=10s",
+            created_by=default_actor(),
         )
         assert first.id == second.id
 
@@ -338,9 +352,9 @@ class TestGetOrCreateWebSourceRootHomepage:
     HOMEPAGE = "https://american-pinball.com/"
 
     def _root(self, db) -> CitationSource:
-        root = CitationSource.objects.create(name="American Pinball", source_type="web")
-        CitationSourceRootDomain.objects.create(source=root, host=self.HOST)
-        CitationSourceLink.objects.create(
+        root = make_citation_source(name="American Pinball", source_type="web")
+        make_citation_root_domain(source=root, host=self.HOST)
+        make_citation_link(
             citation_source=root,
             link_type=CitationSourceLink.LinkType.HOMEPAGE,
             url=self.HOMEPAGE,
@@ -349,14 +363,14 @@ class TestGetOrCreateWebSourceRootHomepage:
 
     def test_citing_root_homepage_creates_child_not_root(self, db):
         root = self._root(db)
-        source = get_or_create_web_source(self.HOMEPAGE)
+        source = get_or_create_web_source(self.HOMEPAGE, created_by=default_actor())
         assert source.id != root.id
         assert source.parent_id == root.id
 
     def test_citing_root_homepage_is_idempotent(self, db):
         self._root(db)
-        first = get_or_create_web_source(self.HOMEPAGE)
-        second = get_or_create_web_source(self.HOMEPAGE)
+        first = get_or_create_web_source(self.HOMEPAGE, created_by=default_actor())
+        second = get_or_create_web_source(self.HOMEPAGE, created_by=default_actor())
         assert first.id == second.id
 
     def test_rejects_a_malformed_archive_url(self, db):
@@ -365,7 +379,9 @@ class TestGetOrCreateWebSourceRootHomepage:
         self._root(db)
         page = "https://american-pinball.com/news/launch"
         with pytest.raises(ValidationError):
-            get_or_create_web_source(page, archive_url="not a url")
+            get_or_create_web_source(
+                page, archive_url="not a url", created_by=default_actor()
+            )
         assert not CitationSource.objects.children().exists()
 
     def test_malformed_subdomain_host_not_recognized_nor_nested(self, db):
@@ -374,5 +390,8 @@ class TestGetOrCreateWebSourceRootHomepage:
         # the URL resolves to no root and nests nothing under the matched domain.
         root = self._root(db)
         with pytest.raises(CitationSource.DoesNotExist):
-            get_or_create_web_source("https://www..american-pinball.com/manual.pdf")
+            get_or_create_web_source(
+                "https://www..american-pinball.com/manual.pdf",
+                created_by=default_actor(),
+            )
         assert not CitationSource.objects.filter(parent=root).exists()

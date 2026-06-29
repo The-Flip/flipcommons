@@ -112,9 +112,9 @@ def test_citation_instance_locator_rejects_overlong_in_full_clean() -> None:
     """``full_clean()`` enforces CharField max_length via Django validators."""
     from django.core.exceptions import ValidationError as DjangoValidationError
 
-    from apps.citation.models import CitationSource
+    from apps.citation.test_factories import make_citation_source
 
-    src = CitationSource.objects.create(name="X", source_type="book")
+    src = make_citation_source(name="X", source_type="book")
     inst = CitationInstance(
         citation_source=src,
         locator="x" * (CITATION_INSTANCE_LOCATOR_MAX_LENGTH + 1),

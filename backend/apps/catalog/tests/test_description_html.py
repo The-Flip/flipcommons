@@ -3,6 +3,7 @@
 import pytest
 
 from apps.catalog.models import Location, Manufacturer, System
+from apps.citation.test_factories import make_citation_link, make_citation_source
 from apps.core.models import RecordReference
 from apps.provenance.test_factories import make_claim
 
@@ -160,16 +161,15 @@ class TestDescriptionCitations:
     """API responses include inline citation metadata alongside rendered HTML."""
 
     def test_citations_present_in_response(self, client, db):
-        from apps.citation.models import CitationSource, CitationSourceLink
         from apps.provenance.models import CitationInstance
 
-        src = CitationSource.objects.create(
+        src = make_citation_source(
             name="The Complete Pinball Book",
             source_type="book",
             author="Marco Rossignoli",
             year=2002,
         )
-        CitationSourceLink.objects.create(
+        make_citation_link(
             citation_source=src,
             url="https://example.com/book",
             label="Publisher",

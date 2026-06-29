@@ -17,7 +17,7 @@ from apps.citation.extraction import (
     extract_isbn,
     normalize_isbn,
 )
-from apps.citation.models import CitationSource
+from apps.citation.test_factories import make_citation_source
 
 pytestmark = pytest.mark.django_db
 
@@ -160,7 +160,7 @@ AUTHOR_DATA = {
 class TestExtractIsbnHappyPaths:
     def test_existing_match(self):
         """DB has a source with that ISBN → returns match, no HTTP."""
-        src = CitationSource.objects.create(
+        src = make_citation_source(
             name="Learning Python",
             source_type="book",
             isbn="9780596517748",

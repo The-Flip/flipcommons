@@ -6,7 +6,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
 
-from apps.citation.models import CitationSource
+from apps.citation.test_factories import make_citation_link, make_citation_source
 from apps.provenance.models import CitationInstance
 from apps.provenance.test_factories import make_claim
 
@@ -22,7 +22,7 @@ def client():
 
 @pytest.fixture
 def citation_source(db):
-    return CitationSource.objects.create(
+    return make_citation_source(
         name="The Encyclopedia of Pinball",
         source_type="book",
     )
@@ -101,12 +101,11 @@ class TestListCitationInstances:
 
 class TestBatchCitationInstances:
     def test_returns_instances_with_source_details(self, client, citation_source):
-        from apps.citation.models import CitationSourceLink
 
         ci = CitationInstance.objects.create(
             citation_source=citation_source, locator="p. 30"
         )
-        CitationSourceLink.objects.create(
+        make_citation_link(
             citation_source=citation_source,
             link_type="archive",
             url="https://archive.org/details/example",

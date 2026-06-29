@@ -21,7 +21,7 @@ from django.test.utils import CaptureQueriesContext
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import Title
 from apps.catalog.tests.conftest import make_machine_model
-from apps.citation.models import CitationSource
+from apps.citation.test_factories import make_citation_source
 from apps.provenance.models import CitationInstance
 from apps.provenance.test_factories import make_claim, user_changeset
 
@@ -120,7 +120,7 @@ def test_sources_page_capabilities_does_not_scale_queries(client, bootstrap_sour
     user = make_user()
     title = Title.objects.create(name="MM3", slug="mm-z")
     make_claim(title, "name", "MM3", source=bootstrap_source)
-    citation_source = CitationSource.objects.create(name="Flyer", source_type="web")
+    citation_source = make_citation_source(name="Flyer", source_type="web")
 
     _seed_cited_changesets(user, title, citation_source, 2)
     base = _q(lambda: client.get("/api/pages/sources/title/mm-z/"))

@@ -7,6 +7,7 @@ from django.contrib import admin
 from django.forms import inlineformset_factory
 from django.test import RequestFactory
 
+from apps.accounts.test_factories import default_actor
 from apps.citation.admin import (
     CitationSourceAdmin,
     CitationSourceRootDomainInline,
@@ -16,6 +17,7 @@ from apps.citation.models import (
     CitationSourceLink,
     CitationSourceRootDomain,
 )
+from apps.citation.test_factories import make_citation_link, make_citation_root_domain
 
 LinkFormSetCreate: Any = inlineformset_factory(
     CitationSource,
@@ -123,8 +125,8 @@ class TestCitationSourceAdminAttribution:
         request.user = superuser
         admin_instance.save_model(request, citation_source, form=None, change=True)
         assert citation_source.updated_by == superuser.actor
-        # created_by should not be overwritten on change
-        assert citation_source.created_by is None
+        # created_by should not be overwritten on change — stays the fixture's actor
+        assert citation_source.created_by == default_actor()
 
 
 class TestCitationSourceLinkInlineAttribution:
@@ -154,13 +156,13 @@ class TestCitationSourceLinkInlineAttribution:
     def test_updated_by_set_on_existing_link(
         self, admin_instance, request_factory, superuser, citation_source
     ):
-        link = CitationSourceLink.objects.create(
+        link = make_citation_link(
             citation_source=citation_source,
             link_type="homepage",
             url="https://example.com",
             label="Old Label",
         )
-        assert link.created_by is None
+        assert link.created_by == default_actor()
 
         data = {
             "links-TOTAL_FORMS": "1",
@@ -179,8 +181,8 @@ class TestCitationSourceLinkInlineAttribution:
 
         link.refresh_from_db()
         assert link.updated_by == superuser.actor
-        # created_by should NOT be set on update of existing record
-        assert link.created_by is None
+        # created_by should NOT be overwritten on update — stays the fixture's actor
+        assert link.created_by == default_actor()
 
 
 class TestCitationSourceRootDomainInline:
@@ -216,9 +218,7 @@ class TestCitationSourceRootDomainInline:
     ):
         # Removing an alias is a first-class use of this inline; exercise the
         # formset.deleted_objects path end to end.
-        domain = CitationSourceRootDomain.objects.create(
-            source=citation_source, host="example.com"
-        )
+        domain = make_citation_root_domain(source=citation_source, host="example.com")
         data = {
             "root_domains-TOTAL_FORMS": "1",
             "root_domains-INITIAL_FORMS": "1",

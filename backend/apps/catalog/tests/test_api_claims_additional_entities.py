@@ -28,7 +28,7 @@ from apps.catalog.models import (
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
-from apps.citation.models import CitationSource
+from apps.citation.test_factories import make_citation_source
 from apps.core.types import JsonBody
 from apps.provenance.attribution import actor_user
 from apps.provenance.models import ChangeSet, CitationInstance, Source
@@ -39,7 +39,7 @@ User = get_user_model()
 
 @pytest.fixture
 def citation_source(db):
-    return CitationSource.objects.create(
+    return make_citation_source(
         name="Replay Flyer",
         source_type="book",
         author="Staff",
