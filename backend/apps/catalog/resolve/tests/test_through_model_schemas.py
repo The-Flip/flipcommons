@@ -1,6 +1,6 @@
 """Snapshot: the spec-derived RelationshipSchema for each through-model namespace.
 
-REF4 derives one ``RelationshipSchema`` per explicit through-model namespace from
+One ``RelationshipSchema`` per explicit through-model namespace is derived from
 the ``claim_relationship_spec`` ClassVars (see
 ``apps.catalog.claims._register_through_model_schemas``). This locks the
 derivation against explicit expected values — every ``ValueKeySpec`` field plus
@@ -83,6 +83,13 @@ EXPECTED: dict[
         {MachineModel, Title},
     ),
     "location": ((_fk("location", Location),), {CorporateEntity}),
+    # Self-referential parent hierarchies: the member is the parent FK keyed
+    # "parent"; the subject is the entity itself.
+    "theme_parent": ((_fk("parent", Theme),), {Theme}),
+    "gameplay_feature_parent": (
+        (_fk("parent", GameplayFeature),),
+        {GameplayFeature},
+    ),
 }
 
 

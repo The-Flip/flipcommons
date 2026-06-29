@@ -713,9 +713,10 @@ def _existing_parent_edges(
 ) -> dict[PublicId, set[PublicId]]:
     """Current resolved child→parent public_id edges for a hierarchy model.
 
-    ``parents`` is a runtime-generated self-M2M descriptor django-stubs can't
-    see; the two ignores are confined to this boundary helper (same rationale as
-    ``resolve._get_parents_through``). Only called for models that actually have
+    ``parents`` is declared only on the concrete hierarchy models
+    (``Theme``/``GameplayFeature``), not the ``LinkableClaimModel`` base this
+    helper is typed against, so django-stubs can't see it; the two ignores are
+    confined to this boundary helper. Only called for models that actually have
     the hierarchy ``parents`` M2M (those with a self-referential FK relationship).
     """
     edges: dict[PublicId, set[PublicId]] = {}

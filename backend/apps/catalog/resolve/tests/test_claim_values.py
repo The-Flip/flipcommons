@@ -4,7 +4,7 @@ Proves that for each TypedDict in :mod:`apps.catalog.resolve._claim_values`,
 the registered :class:`RelationshipSchema` for its namespace(s) agrees on
 key set, scalar type, required/optional flag, and nullability.
 
-Limit — see CatalogResolveTyping.md Phase A: this test does NOT prove
+Limit — this test does NOT prove
 that every resolver uses the right TypedDict for the namespace it's
 resolving. A resolver casting to the wrong shape passes mypy and passes
 this test. The cast site itself is the editorial checkpoint.
@@ -19,7 +19,6 @@ from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.resolve._claim_values import (
     AliasClaimValue,
     MediaAttachmentClaimValue,
-    ParentClaimValue,
 )
 from apps.provenance.validation import RelationshipSchema, get_relationship_schema
 
@@ -28,13 +27,12 @@ def _alias_namespaces() -> tuple[str, ...]:
     return tuple(at.claim_field for at in discover_alias_types())
 
 
-# Only the bespoke shapes remain a TypedDict: aliases (case-folded), parents
-# (self-referential) and media (content-type keyed). The explicit through-model
-# namespaces no longer have a read-side TypedDict — their schema is derived from
-# the spec and locked by ``test_through_model_schemas`` instead.
+# Only the bespoke shapes remain a TypedDict: aliases (case-folded) and media
+# (content-type keyed). The explicit through-model namespaces — including the
+# self-referential parents — no longer have a read-side TypedDict; their schema
+# is derived from the spec and locked by ``test_through_model_schemas`` instead.
 TYPEDDICT_NAMESPACES: list[tuple[type, tuple[str, ...]]] = [
     (AliasClaimValue, _alias_namespaces()),
-    (ParentClaimValue, ("theme_parent", "gameplay_feature_parent")),
     (MediaAttachmentClaimValue, ("media_attachment",)),
 ]
 

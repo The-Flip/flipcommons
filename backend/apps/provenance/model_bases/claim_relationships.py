@@ -84,10 +84,9 @@ class XorSubject:
 
 
 type SubjectSpec = SingleSubject | XorSubject
-# A SelfParentSubject(from_fk, to_fk) variant is added by the parent-promotion
-# step, when Theme/GameplayFeature parents become explicit ClassVar
-# through-models. Until then parents ride the synthesized parent projection, so
-# this vocabulary needs no self-parent variant.
+# Self-referential parent hierarchies (Theme/GameplayFeature ``parents``) ride
+# SingleSubject: the child FK is the subject and the parent FK is the identity
+# member, so the two-FK self-parent through-model needs no dedicated variant.
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,9 +187,10 @@ def relationships_for(
     subject (an :class:`XorSubject` yields two), and returns those whose subject
     is ``model``.
 
-    Coverage boundary: explicit ClassVar through-model specs only — not parents
-    (synthesized), aliases (bespoke) or media (content-type keyed). Returns an
-    empty tuple for any model with no declared spec.
+    Coverage boundary: explicit ClassVar through-model specs only (incl. the
+    self-referential parent hierarchies) — not aliases (bespoke) or media
+    (content-type keyed). Returns an empty tuple for any model with no declared
+    spec.
     """
     return _ensure_bindings().get(model, ())
 
@@ -204,7 +204,7 @@ def all_relationship_bindings() -> tuple[ClaimRelationshipBinding, ...]:
     ``(namespace, subject)``), so they read this rather than re-walking
     :class:`ClaimThroughModel` and re-deriving subject/accessor. Same coverage
     boundary as :func:`relationships_for`: explicit ClassVar through-model specs
-    only — not parents, aliases or media.
+    only (incl. parent hierarchies) — not aliases or media.
     """
     return tuple(
         binding for bindings in _ensure_bindings().values() for binding in bindings
@@ -240,8 +240,8 @@ def _bindings_for_through(
     fk_names: tuple[ColumnName, ...]
     # Exhaustive dispatch over the closed SubjectSpec union — the sanctioned
     # alternative to isinstance-on-model branching. assert_never makes mypy flag
-    # the missing case the moment a variant (e.g. the planned SelfParentSubject)
-    # is added to the union, instead of silently leaving fk_names unbound.
+    # the missing case the moment a new variant is added to the union, instead of
+    # silently leaving fk_names unbound.
     match spec.subject:
         case SingleSubject(fk_name):
             fk_names = (fk_name,)

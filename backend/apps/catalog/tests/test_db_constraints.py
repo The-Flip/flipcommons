@@ -23,6 +23,8 @@ from apps.catalog.models import (
     Series,
     TechnologyGeneration,
     TechnologySubgeneration,
+    Theme,
+    ThemeParent,
 )
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.models import Claim, IngestRun, Source
@@ -599,3 +601,42 @@ class TestCreditXorConstraint:
         Credit.objects.create(series=series, person=person, role=role)
         with pytest.raises(IntegrityError):
             Credit.objects.create(series=series, person=person, role=role)
+
+
+# ---------------------------------------------------------------------------
+# Promoted parent through-models — CASCADE + (from, to) uniqueness
+# ---------------------------------------------------------------------------
+
+
+class TestParentThroughConstraints:
+    """``ThemeParent`` preserves the delete + uniqueness behavior of the M2M.
+
+    ``on_delete=CASCADE`` does no DDL (Django enforces it in the ORM collector,
+    not a DB ``ON DELETE`` clause), so it is justified solely by delete behavior:
+    deleting either endpoint reaps the edge and leaves the other endpoint. The
+    ``unique_together`` over the two FKs is the auto-M2M's unnamed unique index.
+    """
+
+    @pytest.fixture
+    def edge(self, db):
+        child = Theme.objects.create(name="2-Ball Multiball", slug="tp-child")
+        parent = Theme.objects.create(name="Multiball", slug="tp-parent")
+        ThemeParent.objects.create(from_theme=child, to_theme=parent)
+        return child, parent
+
+    def test_duplicate_edge_rejected(self, edge):
+        child, parent = edge
+        with pytest.raises(IntegrityError):
+            ThemeParent.objects.create(from_theme=child, to_theme=parent)
+
+    def test_deleting_child_reaps_edge_keeps_parent(self, edge):
+        child, parent = edge
+        child.delete()
+        assert not ThemeParent.objects.filter(to_theme=parent).exists()
+        assert Theme.objects.filter(pk=parent.pk).exists()
+
+    def test_deleting_parent_reaps_edge_keeps_child(self, edge):
+        child, parent = edge
+        parent.delete()
+        assert not ThemeParent.objects.filter(from_theme=child).exists()
+        assert Theme.objects.filter(pk=child.pk).exists()

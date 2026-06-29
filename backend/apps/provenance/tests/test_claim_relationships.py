@@ -1,7 +1,7 @@
 """The relationship declaration vocabulary — structure + read-surface tests.
 
 Exercises the spec dataclasses and the ``relationships_for`` read surface now
-that the catalog through-models declare their specs (REF2).
+that the catalog through-models declare their specs.
 """
 
 from __future__ import annotations
@@ -63,9 +63,17 @@ def test_xor_subject_holds_two_branches() -> None:
 
 def test_relationships_for_returns_declared_specs() -> None:
     """Each subject resolves to the namespaces its through-models declare."""
-    from apps.catalog.models import CorporateEntity, MachineModel, Series, Title
+    from apps.catalog.models import (
+        CorporateEntity,
+        GameplayFeature,
+        MachineModel,
+        Series,
+        Theme,
+        Title,
+    )
+    from apps.provenance.models import ClaimControlledModel
 
-    def namespaces(model: type) -> set[str]:
+    def namespaces(model: type[ClaimControlledModel]) -> set[str]:
         return {b.spec.namespace for b in relationships_for(model)}
 
     assert namespaces(MachineModel) == {
@@ -80,6 +88,10 @@ def test_relationships_for_returns_declared_specs() -> None:
     assert namespaces(CorporateEntity) == {"location"}
     # Credit's XorSubject yields a binding on both subjects.
     assert namespaces(Series) == {"credit"}
+    # Self-referential parent hierarchies: the subject is the entity itself, via
+    # the ThemeParent / GameplayFeatureParent through-models.
+    assert namespaces(Theme) == {"theme_parent"}
+    assert namespaces(GameplayFeature) == {"gameplay_feature_parent"}
 
 
 def test_relationships_for_pairs_specs_with_accessors() -> None:
@@ -95,6 +107,32 @@ def test_relationships_for_pairs_specs_with_accessors() -> None:
     # Reverse-FK accessors (the through rows *are* the members).
     assert by_namespace["credit"] == "credits"
     assert by_namespace["abbreviation"] == "abbreviations"
+
+
+def test_relationships_for_self_parent_binding() -> None:
+    """A promoted parent through-model resolves as a plain SingleSubject binding.
+
+    The child FK is the subject, the parent FK is the identity member, and the
+    accessor is the repointed ``parents`` M2M — no dedicated self-parent variant.
+    """
+    from apps.catalog.models import (
+        GameplayFeature,
+        GameplayFeatureParent,
+        Theme,
+        ThemeParent,
+    )
+
+    for model, through, subject_fk in (
+        (Theme, ThemeParent, "from_theme"),
+        (GameplayFeature, GameplayFeatureParent, "from_gameplayfeature"),
+    ):
+        bindings = relationships_for(model)
+        assert len(bindings) == 1
+        binding = bindings[0]
+        assert binding.subject_model is model
+        assert binding.through_model is through
+        assert binding.subject_fk == subject_fk
+        assert binding.accessor == "parents"
 
 
 def test_relationships_for_xor_subject_spans_both_subjects() -> None:
@@ -133,7 +171,8 @@ def test_all_relationship_bindings_is_the_union_of_relationships_for() -> None:
     per_subject = [b for model in catalog_models() for b in relationships_for(model)]
     assert set(flat) == set(per_subject)
     assert len(flat) == len(per_subject)  # no duplicates
-    # Credit's XOR yields two bindings; abbreviation spans two through-models.
+    # Credit's XOR yields two bindings; abbreviation spans two through-models;
+    # the two self-referential parent hierarchies add one binding each.
     namespaces = sorted(b.spec.namespace for b in flat)
     assert namespaces == [
         "abbreviation",
@@ -141,8 +180,10 @@ def test_all_relationship_bindings_is_the_union_of_relationships_for() -> None:
         "credit",
         "credit",
         "gameplay_feature",
+        "gameplay_feature_parent",
         "location",
         "reward_type",
         "tag",
         "theme",
+        "theme_parent",
     ]
