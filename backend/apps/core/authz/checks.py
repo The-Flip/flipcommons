@@ -5,7 +5,7 @@ mispairing crashes early instead of producing a wrong verdict on the
 wire — which is the worst place for it.
 
 A schema declares the target-aware activities whose verdicts it embeds
-via a ``ClassVar[tuple[Activity, ...]]`` named ``policy_activities``
+via a ``ClassVar[PolicyActivities]`` named ``policy_activities``
 (``list`` is also accepted, but ``tuple`` is the convention — the
 declaration is static and immutable in spirit). This check walks every
 ninja ``Schema`` subclass and asserts:

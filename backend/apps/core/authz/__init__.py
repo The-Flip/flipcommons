@@ -11,6 +11,7 @@ from .types import (
     Decision,
     DenialCode,
     Deny,
+    PolicyActivities,
     PolicyContext,
     PolicyUser,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "Decision",
     "DenialCode",
     "Deny",
+    "PolicyActivities",
     "PolicyContext",
     "PolicyDeniedError",
     "PolicyUser",

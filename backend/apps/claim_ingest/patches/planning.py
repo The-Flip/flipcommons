@@ -33,6 +33,7 @@ from apps.claim_ingest.patches._types import (
     _Target,
 )
 from apps.claim_ingest.patches.emit import (
+    RelFieldsByModel,
     _add_create,
     _add_delete,
     _add_removals,
@@ -143,7 +144,7 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
         records_parsed=len(doc.claims),
     )
     rel_namespaces = get_relationship_namespaces()
-    rel_fields_by_model: dict[type[LinkableClaimModel], set[str]] = defaultdict(set)
+    rel_fields_by_model: RelFieldsByModel = defaultdict(set)
     # The patch's symbol table: what entity each reference names — a committed
     # entity, a same-patch create, or neither. Replaces the three reference-
     # resolution paths the front end used to thread separately (a create→handle
@@ -423,7 +424,7 @@ def _process_entry(
     *,
     source: Source,
     rel_namespaces: frozenset[Namespace],
-    rel_fields_by_model: dict[type[LinkableClaimModel], set[str]],
+    rel_fields_by_model: RelFieldsByModel,
     registry: PatchEntityRegistry,
     all_created_ids: AbstractSet[_CreatedKey],
 ) -> _EntryResult:

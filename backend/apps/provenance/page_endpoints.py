@@ -23,7 +23,12 @@ from ninja import Field, Router, Schema
 from ninja.decorators import decorate_view
 from ninja.responses import Status
 
-from apps.core.authz import Activity, compute_row_capabilities, policy_user
+from apps.core.authz import (
+    Activity,
+    PolicyActivities,
+    compute_row_capabilities,
+    policy_user,
+)
 from apps.core.entity_types import get_linkable_model
 from apps.core.schemas import EntityLinkSchema
 from apps.core.types import EntityKey
@@ -63,7 +68,7 @@ class ChangeSetSummarySchema(ChangeSetWithEntitySchema):
     retractions_count: int
     capabilities: dict[Activity, bool] = Field(default_factory=dict)
 
-    policy_activities: ClassVar[tuple[Activity, ...]] = (Activity.CHANGESET_UNDO,)
+    policy_activities: ClassVar[PolicyActivities] = (Activity.CHANGESET_UNDO,)
     policy_target_model: ClassVar[type[Model]] = ChangeSet
 
 
@@ -77,7 +82,7 @@ class ChangeSetDetailSchema(ChangeSetWithEntitySchema):
     retractions: list[RetractionSchema]
     capabilities: dict[Activity, bool] = Field(default_factory=dict)
 
-    policy_activities: ClassVar[tuple[Activity, ...]] = (Activity.CHANGESET_UNDO,)
+    policy_activities: ClassVar[PolicyActivities] = (Activity.CHANGESET_UNDO,)
     policy_target_model: ClassVar[type[Model]] = ChangeSet
 
 
@@ -95,7 +100,7 @@ class CitedChangeSetSchema(ChangeSetBaseSchema):
     citations: list[CitedChangeSetCitationSchema]
     capabilities: dict[Activity, bool] = Field(default_factory=dict)
 
-    policy_activities: ClassVar[tuple[Activity, ...]] = (Activity.CHANGESET_UNDO,)
+    policy_activities: ClassVar[PolicyActivities] = (Activity.CHANGESET_UNDO,)
     policy_target_model: ClassVar[type[Model]] = ChangeSet
 
 

@@ -134,6 +134,12 @@ type Handle = str
 # ``frozenset[str]`` of valid namespaces.
 type Namespace = str
 
+# Per-content-type set of relationship namespaces a plan touched, keyed by the
+# affected entity's ``ContentTypeId``. The apply engine's ``_resolve`` hands each
+# set to the provenance bulk resolver to scope the relationship re-resolution pass
+# (scalars/FKs re-resolve regardless). Namespaces only — never scalar field names.
+type ChangedRelationshipFields = dict[ContentTypeId, frozenset[Namespace]]
+
 
 @dataclass
 class PlannedEntityCreate:
@@ -243,14 +249,7 @@ class IngestPlan:
     retractions: list[PlannedClaimRetract] = field(default_factory=list)
     records_parsed: int = 0
     records_matched: int = 0
-    # Per-content-type changed relationship namespaces, consumed by the apply
-    # engine's ``_resolve``: it dispatches each affected model to the provenance
-    # bulk resolver, passing this set so only the relationships a patch touched
-    # re-resolve (scalars re-resolve regardless). Relationship namespaces only —
-    # the bulk resolver rejects a scalar field name.
-    changed_relationship_fields: dict[ContentTypeId, frozenset[str]] = field(
-        default_factory=dict
-    )
+    changed_relationship_fields: ChangedRelationshipFields = field(default_factory=dict)
     # Side writes run first inside the apply transaction (before any entity
     # create), each handed the RunReport. Patch-only: citation source upserts.
     pre_write_hooks: list[PreWriteHook] = field(default_factory=list)

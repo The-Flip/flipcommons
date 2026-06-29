@@ -31,6 +31,7 @@ from apps.claim_ingest.apply.claims import (
     _reject_empty_diff_provenance,
 )
 from apps.claim_ingest.plan import (
+    ChangedRelationshipFields,
     CitationRef,
     CiteHandle,
     EntryIndex,
@@ -41,22 +42,42 @@ from apps.claim_ingest.plan import (
     SchemeCitationRef,
     WebCitationRef,
 )
-from apps.core.types import ClaimIdentity, ContentTypeId, EntityKey
+from apps.core.types import (
+    CitationSourceId,
+    ClaimIdentity,
+    ContentTypeId,
+    EntityKey,
+)
 from apps.provenance.models import ChangeSet, Claim, ClaimControlledModel, IngestRun
+from apps.provenance.types import ClaimId
 
-# Per-entry / per-claim provenance maps produced by ``_collect_plan_provenance``
-# and consumed by ``_persist`` / ``_attach_plan_citations``. ``EntryNotes`` keys
-# each entry's note by its ``EntryIndex`` (one ChangeSet, one note per patch
-# entry); ``ClaimEntryIndex`` resolves a built claim back to its entry for
-# per-entry ChangeSet grouping; ``ClaimCitations`` keys per claim identity.
 type EntryNotes = dict[EntryIndex, str]
+"""Each patch entry's note keyed by its ``EntryIndex`` — one ChangeSet, one note
+per entry. Produced by ``_collect_plan_provenance``, consumed by ``_persist``."""
+
 type ClaimCitations = dict[ClaimIdentity, CitationRef]
+"""Per-claim ``CitationRef`` keyed by claim identity — never per entry, so a
+citation never bleeds onto unrelated claims sharing the entity. Produced by
+``_collect_plan_provenance``, consumed by ``_attach_plan_citations``."""
+
 type ClaimEntryIndex = dict[ClaimIdentity, EntryIndex]
+"""Resolves a built claim back to its authoring entry, for per-entry ChangeSet
+grouping. Produced by ``_collect_plan_provenance``, consumed by ``_persist``."""
+
+type CiteSourceCache = dict[CitationRef, CitationSourceId]
+"""Memoizes ``CitationRef`` → resolved ``CitationSource`` pk within one apply, so a
+cite reused across claims/footnotes resolves (and dedups) once. Threaded through
+``_resolve_cite_source_id`` by both the field-``cite:`` and inline-footnote paths."""
+
+type HandleMap = dict[Handle, EntityKey]
+"""Resolves each ``create:``'s temporary ``Handle`` to its real ``EntityKey``
+(ct_id, pk) after bulk-create. Produced by ``_create_entities``, threaded into
+``_patch_handles`` to patch handle-targeted assertions and identity refs."""
 
 
 def _create_entities(
     entities: list[PlannedEntityCreate],
-) -> dict[Handle, EntityKey]:
+) -> HandleMap:
     """Bulk-create entities.  Returns ``{handle: EntityKey(ct_id, pk)}``.
 
     Processes entities in list order, batching consecutive entries of the
@@ -70,7 +91,7 @@ def _create_entities(
     if not entities:
         return {}
 
-    handle_map: dict[Handle, EntityKey] = {}
+    handle_map: HandleMap = {}
 
     # Group consecutive entities of the same model class into batches.
     # A batch is flushed when the model class changes OR when an entity's
@@ -114,7 +135,7 @@ def _create_entities(
 
 def _patch_handles(
     assertions: list[PlannedClaimAssert],
-    handle_map: dict[Handle, EntityKey],
+    handle_map: HandleMap,
 ) -> None:
     """Resolve temporary handles to real PKs after entity creation.
 
@@ -254,8 +275,8 @@ def _cite_resolution_error(ref: CitationRef, exc: Exception) -> str:
 
 
 def _resolve_cite_source_id(
-    ref: CitationRef, cache: dict[CitationRef, int], *, actor: Actor
-) -> int:
+    ref: CitationRef, cache: CiteSourceCache, *, actor: Actor
+) -> CitationSourceId:
     """Resolve a ``CitationRef`` to a ``CitationSource`` pk, memoized via ``cache``.
 
     Shared by the field-level ``cite:`` path (:func:`_attach_plan_citations`) and
@@ -320,7 +341,7 @@ def _attach_plan_citations(
         return
     from apps.provenance.models import CitationInstance
 
-    source_cache: dict[CitationRef, int] = {}
+    source_cache: CiteSourceCache = {}
     instances: list[CitationInstance] = []
     for claim in to_create:
         ref = claim_citations.get(
@@ -366,7 +387,7 @@ def _materialize_inline_citations(
     # fields of one entry would mint one instance per field — the design's
     # per-field footnote semantics, not a shared one. Moot while every entity has
     # a single markdown field; intentional if that ever changes.
-    source_cache: dict[CitationRef, int] = {}
+    source_cache: CiteSourceCache = {}
     instances: list[CitationInstance] = []
     owners: list[tuple[PlannedClaimAssert, CiteHandle]] = []
     for pca in cited:
@@ -386,7 +407,7 @@ def _materialize_inline_citations(
 def _persist(
     run: IngestRun,
     to_create: list[Claim],
-    superseded_ids: list[int],
+    superseded_ids: list[ClaimId],
     retract_entries: list[RetractEntry],
     entry_notes: EntryNotes,
     claim_entry_index: ClaimEntryIndex,
@@ -489,7 +510,7 @@ def _persist_per_entry(
 def _resolve(
     to_create: list[Claim],
     retract_entries: list[RetractEntry],
-    changed_relationship_fields: dict[ContentTypeId, frozenset[str]],
+    changed_relationship_fields: ChangedRelationshipFields,
 ) -> None:
     """Materialise resolved values on affected entities.
 

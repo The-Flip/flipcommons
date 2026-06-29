@@ -78,6 +78,11 @@ type CitationSourceId = int
 """The primary key of a Citation Source — a citable work (book, web page) to
 which evidence (aka Citation Instances) attach."""
 
+type UserId = int
+"""The primary key of a User — the human account behind an interactive action.
+Distinct from an ``Actor`` (the provenance attribution); a claim's author is a
+User, but ingest-authored claims have a null one."""
+
 
 # ---------------------------------------------------------------------------
 # Identity tuples

@@ -63,6 +63,12 @@ from apps.provenance.models import (
 )
 from apps.provenance.validation import get_relationship_schema
 
+type RelFieldsByModel = dict[type[LinkableClaimModel], set[Namespace]]
+"""Mutable accumulator of relationship namespaces touched per model class, built
+up across a patch's entries during emission. Keyed by model (not ``ContentTypeId``)
+because emission works in model space; ``build_plan`` converts it to the ct_id-keyed
+``ChangedRelationshipFields`` it stamps on the ``IngestPlan``."""
+
 
 class _RemovalResult(NamedTuple):
     """Outcome of ``_add_removals`` for one entry.
@@ -838,7 +844,7 @@ def _add_removals(
     ct_id: int,
     source: Source,
     rel_namespaces: frozenset[Namespace],
-    rel_fields_by_model: dict[type[LinkableClaimModel], set[str]],
+    rel_fields_by_model: RelFieldsByModel,
     *,
     note: str = "",
     citation_ref: CitationRef | None = None,

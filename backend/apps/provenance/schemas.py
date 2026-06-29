@@ -17,7 +17,7 @@ from typing import Annotated, ClassVar, Literal
 from django.db.models import Model
 from ninja import Field, Schema
 
-from apps.core.authz import Activity
+from apps.core.authz import Activity, PolicyActivities
 
 from .models import (
     CHANGESET_NOTE_MAX_LENGTH,
@@ -296,7 +296,7 @@ class ChangeSetSchema(ChangeSetBaseSchema):
     # Declared on each concrete row variant (not on the base) — the
     # ``authz.E101–E106`` system check reads these from ``__dict__``, so
     # inherited declarations don't trigger the structural check.
-    policy_activities: ClassVar[tuple[Activity, ...]] = (Activity.CHANGESET_UNDO,)
+    policy_activities: ClassVar[PolicyActivities] = (Activity.CHANGESET_UNDO,)
     policy_target_model: ClassVar[type[Model]] = ChangeSet
 
 

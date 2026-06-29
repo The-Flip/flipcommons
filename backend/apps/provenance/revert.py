@@ -31,6 +31,7 @@ from .changeset_writer import record_changeset
 from .constants import REVERT_OTHERS_MIN_EDITS
 from .models import ChangeSet, ChangeSetAction, Claim, ClaimControlledModel
 from .resolution import resolve_after_mutation
+from .types import ClaimId
 
 
 class RevertError(Exception):
@@ -46,7 +47,7 @@ class RevertError(Exception):
 
 
 def execute_revert(
-    entity: ClaimControlledModel, *, claim_id: int, user: User, note: str
+    entity: ClaimControlledModel, *, claim_id: ClaimId, user: User, note: str
 ) -> None:
     """Deactivate a single user claim and re-resolve the entity.
 

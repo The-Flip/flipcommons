@@ -47,7 +47,7 @@ from django.core.cache import cache
 
 from apps.core.authz import Activity, Allow, check, policy_user
 from apps.core.exceptions import StructuredApiError
-from apps.core.types import JsonBody
+from apps.core.types import JsonBody, UserId
 
 from .constants import (
     CREATE_RATE_LIMIT,
@@ -121,7 +121,7 @@ DELETE_RATE_LIMIT_SPEC = RateLimitSpec(
 )
 
 
-def _cache_key(user_id: int, bucket: str) -> str:
+def _cache_key(user_id: UserId, bucket: str) -> str:
     return f"ratelimit:{bucket}:user:{user_id}"
 
 
