@@ -17,6 +17,7 @@ from .claim import (
     IdentityPartValue,
     make_claim_key,
 )
+from .claim_citation_instance import ClaimCitationInstance
 from .ingest_run import IngestRun
 from .introspection import get_claim_fields
 from .source import Source, SourceFieldLicense

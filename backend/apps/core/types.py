@@ -78,6 +78,10 @@ type CitationSourceId = int
 """The primary key of a Citation Source — a citable work (book, web page) to
 which evidence (aka Citation Instances) attach."""
 
+type CitationInstanceId = int
+"""The primary key of a CitationInstance — one use of a CitationSource at a
+point in text. Distinct from ``CitationSourceId`` (the cited work itself)."""
+
 type UserId = int
 """The primary key of a User — the human account behind an interactive action.
 Distinct from an ``Actor`` (the provenance attribution); a claim's author is a

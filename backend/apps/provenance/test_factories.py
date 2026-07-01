@@ -18,12 +18,12 @@ from apps.core.types import ClaimFieldName, ClaimKey
 
 from .changeset_writer import record_changeset
 from .claim_writer import _assert_claim
-from .models import ChangeSet, ChangeSetAction, IngestRun
+from .models import ChangeSet, ChangeSetAction, ClaimCitationInstance, IngestRun
 
 if TYPE_CHECKING:
     from apps.core.models import License
 
-    from .models import Claim, ClaimControlledModel, Source
+    from .models import CitationInstance, Claim, ClaimControlledModel, Source
 
 
 def make_claim(
@@ -72,6 +72,15 @@ def make_claim(
         changeset=changeset,
         claim_key=claim_key,
         license=license,
+    )
+
+
+def claim_citation_instance(
+    claim: Claim, citation_instance: CitationInstance
+) -> ClaimCitationInstance:
+    """Create a claim <-> citation-instance support edge for tests."""
+    return ClaimCitationInstance.objects.create(
+        claim=claim, citation_instance=citation_instance
     )
 
 
