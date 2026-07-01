@@ -22,7 +22,11 @@ from apps.provenance.test_factories import make_claim, make_ingest_source
 
 
 def make_machine_model(
-    *, title=None, name="Test Machine", slug=None, **kwargs
+    *,
+    title: Title | None = None,
+    name: str = "Test Machine",
+    slug: str | None = None,
+    **kwargs,
 ) -> MachineModel:
     """Create a MachineModel for tests, auto-providing a Title when omitted.
 
