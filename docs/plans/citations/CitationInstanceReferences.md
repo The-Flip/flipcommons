@@ -148,15 +148,17 @@ Our model already shares at the source level: many `CitationInstance`s point at 
 
 Each section below is its own commit. We review on commit boundaries, not PRs. 🛑 STOP for user review before committing. Each commit is independently shippable and the user will make a call as we go on when to cut a PR.
 
+In code comments and commit/PR messages, do not reference ephemera like EXP2 or plan docs or system state that no longer exists.
+
 The three phases follow the expand/contract (parallel-change) migration pattern: **Expand** adds the new structure and writes both representations, **Migrate** moves data and readers across, **Contract** removes the old. Old and new coexist until Contract — so every commit is green and the schema is consistent at each boundary.
 
-### <a id="#exp">EXP</a> - Expand
+### ✅ DONE: <a id="#exp">EXP</a> - Expand
 
-#### <a id="#exp1">EXP1</a> - Add ClaimCitationInstance
+#### ✅ DONE: <a id="#exp1">EXP1</a> - Add ClaimCitationInstance
 
 Add the ClaimCitationInstance join model — table, constraints, PROTECT/CASCADE, test factories, constraint tests. Pure additive, nothing uses it yet.
 
-#### <a id="#exp2">EXP2</a> - Write scalar joins
+#### ✅ DONE: <a id="#exp2">EXP2</a> - Write scalar joins
 
 Dual-write scalar join rows, while keeping today's clone-per-claim + claim FK. `_attach_citations` (edit/scalar) fans a join row to every claim in the save. Inline cites get **no** join row — they stay marker-native — so `_materialize_inline_citations` is unchanged (it keeps minting instances from numeric handles; inline instances remain `claim=None` until the column is dropped in Contract). Behavior unchanged; new scalar data now carries join rows. (Transitional — the clone/FK half is removed in [Switch writes](#con1---switch-writes).)
 

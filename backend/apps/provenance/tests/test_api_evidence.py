@@ -7,7 +7,9 @@ from django.contrib.auth import get_user_model
 
 from apps.catalog.models import Title
 from apps.citation.test_factories import make_citation_link, make_citation_source
-from apps.provenance.models import CitationInstance
+from apps.claim_edit.claim_write import ClaimSpec, execute_claims
+from apps.provenance.models import CitationInstance, ClaimCitationInstance
+from apps.provenance.schemas import CitationReferenceInputSchema
 from apps.provenance.test_factories import make_claim, user_changeset
 
 User = get_user_model()
@@ -126,3 +128,40 @@ class TestCitedEditEvidence:
         assert len(body["sources"]) >= 1
         assert len(body["evidence"]) == 1
         assert body["evidence"][0]["note"] == "Documented the flyer"
+
+
+@pytest.mark.django_db
+class TestScalarCitationJoin:
+    def test_execute_claims_fans_a_join_row_to_every_claim(
+        self, user, title, citation_source
+    ):
+        # The engine's scalar-cite path records a ClaimCitationInstance support
+        # edge for each per-claim instance it mints. The input schema references
+        # a pre-existing *template* instance by id; the join rows must land on the
+        # per-claim instances the engine mints, not on the template.
+        template = CitationInstance.objects.create(
+            citation_source=citation_source, locator="p. 9"
+        )
+        execute_claims(
+            title,
+            [
+                ClaimSpec(field_name="name", value="Medieval Madness (1997)"),
+                ClaimSpec(field_name="description", value="Updated copy"),
+            ],
+            user=user,
+            citation=CitationReferenceInputSchema(citation_instance_id=template.pk),
+        )
+
+        links = ClaimCitationInstance.objects.select_related(
+            "citation_instance", "claim"
+        )
+        assert links.count() == 2
+        fields = set()
+        for link in links:
+            instance = link.citation_instance
+            assert instance.pk != template.pk  # a per-claim instance, not template
+            assert instance.citation_source_id == citation_source.pk
+            # The join and the FK point at the same per-claim instance.
+            assert instance.claim_id == link.claim_id
+            fields.add(link.claim.field_name)
+        assert fields == {"name", "description"}

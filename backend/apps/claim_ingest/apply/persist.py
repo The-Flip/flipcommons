@@ -339,7 +339,7 @@ def _attach_plan_citations(
     """
     if not claim_citations:
         return
-    from apps.provenance.models import CitationInstance
+    from apps.provenance.models import CitationInstance, ClaimCitationInstance
 
     source_cache: CiteSourceCache = {}
     instances: list[CitationInstance] = []
@@ -353,6 +353,17 @@ def _attach_plan_citations(
         instances.append(CitationInstance(citation_source_id=source_id, claim=claim))
     if instances:
         CitationInstance.objects.mint_many(instances)
+        # Link each claim to its citation instance through the support edge.
+        links: list[ClaimCitationInstance] = []
+        for inst in instances:
+            # This path only builds scalar instances (claim set above); inline
+            # claim=None instances are minted by _materialize_inline_citations and
+            # never reach here. Assert so claim_id narrows ClaimId|None -> ClaimId.
+            assert inst.claim_id is not None
+            links.append(
+                ClaimCitationInstance(claim_id=inst.claim_id, citation_instance=inst)
+            )
+        ClaimCitationInstance.objects.bulk_create(links, batch_size=2000)
 
 
 def _materialize_inline_citations(

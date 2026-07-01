@@ -77,6 +77,10 @@ claims:
     instances = list(_floating())
     assert len(instances) == 2
     assert all(_is_slug(ci.slug) for ci in instances)
+    # Inline cites stay marker-native: each minted instance is reached only by
+    # its marker, never through the scalar join. Assert per-instance rather than a
+    # global count so a fixture adding an unrelated scalar cite can't mask it.
+    assert all(ci.claim_links.exists() is False for ci in instances)
     # One per source — scheme dedups through ipdb, the URL through kineticist.
     source_ids = {ci.citation_source_id for ci in instances}
     assert len(source_ids) == 2

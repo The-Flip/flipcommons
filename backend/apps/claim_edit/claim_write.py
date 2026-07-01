@@ -32,6 +32,7 @@ from apps.provenance.models import (
     ChangeSetAction,
     CitationInstance,
     Claim,
+    ClaimCitationInstance,
     ClaimControlledModel,
     get_claim_fields,
 )
@@ -262,6 +263,8 @@ def _attach_citation(
         # validation, which runs first and would otherwise see it blank.
         instance.full_clean(exclude=["slug"])
         instance.save()
+        # Link the claim to its citation instance through the support edge.
+        ClaimCitationInstance.objects.create(claim=claim, citation_instance=instance)
 
 
 def execute_claims(

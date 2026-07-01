@@ -644,6 +644,12 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
     assert year_claim.citation_instances.exists()
     assert not qty_claim.citation_instances.exists()
 
+    # The scalar cite also carries a support-edge join row, pointing at the same
+    # instance the FK does, and only on the cited claim.
+    link = year_claim.citation_links.get()
+    assert link.citation_instance_id == year_claim.citation_instances.get().pk
+    assert not qty_claim.citation_links.exists()
+
 
 def test_patch_plan_missing_entry_index_raises(flipcommons_catalog, pm):
     # Structural guard: a patch_id plan whose assertion lacks an entry_index would
