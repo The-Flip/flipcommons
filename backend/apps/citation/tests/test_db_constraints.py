@@ -12,6 +12,7 @@ from django.db import IntegrityError, connection
 from apps.accounts.test_factories import default_actor
 from apps.citation.models import (
     CitationSource,
+    CitationSourceLink,
     CitationSourceRootDomain,
 )
 from apps.citation.test_factories import (
@@ -19,6 +20,14 @@ from apps.citation.test_factories import (
     make_citation_root_domain,
     make_citation_source,
 )
+
+
+def _attr():
+    """Attribution kwargs a raw ``objects.create`` needs (the factories stamp
+    these). Used by the tests below that deliberately feed an invalid choice
+    value, which the type-checked factories reject at their keyword."""
+    actor = default_actor()
+    return {"created_by": actor, "updated_by": actor}
 
 
 def _raw_update(model, pk, **fields):
@@ -43,7 +52,7 @@ class TestCitationSourceNonBlank:
 
     def test_empty_source_type_rejected(self, db):
         with pytest.raises(IntegrityError):
-            make_citation_source(name="Test", source_type="")
+            CitationSource.objects.create(name="Test", source_type="", **_attr())
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +63,7 @@ class TestCitationSourceNonBlank:
 class TestCitationSourceType:
     def test_invalid_source_type_rejected(self, db):
         with pytest.raises(IntegrityError):
-            make_citation_source(name="Test", source_type="invalid")
+            CitationSource.objects.create(name="Test", source_type="invalid", **_attr())
 
     @pytest.mark.parametrize("source_type", ["book", "magazine", "web"])
     def test_valid_source_type_accepted(self, db, source_type):
@@ -70,7 +79,9 @@ class TestCitationSourceType:
 class TestCitationSourceIdentifierKey:
     def test_invalid_identifier_key_rejected(self, db):
         with pytest.raises(IntegrityError):
-            make_citation_source(name="Test", source_type="web", identifier_key="bogus")
+            CitationSource.objects.create(
+                name="Test", source_type="web", identifier_key="bogus", **_attr()
+            )
 
     def test_empty_identifier_key_accepted(self, db):
         cs = make_citation_source(name="Test", source_type="web")
@@ -276,18 +287,20 @@ class TestCitationSourceLinkConstraints:
 
     def test_invalid_link_type_rejected(self, citation_source):
         with pytest.raises(IntegrityError):
-            make_citation_link(
+            CitationSourceLink.objects.create(
                 citation_source=citation_source,
                 link_type="bogus",
                 url="https://example.com",
+                **_attr(),
             )
 
     def test_empty_link_type_rejected(self, citation_source):
         with pytest.raises(IntegrityError):
-            make_citation_link(
+            CitationSourceLink.objects.create(
                 citation_source=citation_source,
                 link_type="",
                 url="https://example.com",
+                **_attr(),
             )
 
 

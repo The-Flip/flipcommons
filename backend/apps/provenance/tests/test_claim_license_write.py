@@ -6,13 +6,13 @@ from django.contrib.contenttypes.models import ContentType
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.plan import IngestPlan, PlannedClaimAssert
 from apps.core.models import License
-from apps.provenance.models import Claim, Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.models import Claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 
 @pytest.fixture
 def source():
-    return Source.objects.create(name="Test", slug="test", priority=100)
+    return make_ingest_source(name="Test", slug="test", priority=100)
 
 
 @pytest.fixture
@@ -43,14 +43,16 @@ class TestAssertClaimLicense:
         from apps.catalog.models import Manufacturer
 
         mfr = Manufacturer.objects.create(name="Test", slug="test")
-        claim = make_claim(mfr, "description", "text", source=source, license=cc_by_sa)
+        claim = make_claim(
+            mfr, "description", "text", ingest_source=source, license=cc_by_sa
+        )
         assert claim.license == cc_by_sa
 
     def test_assert_claim_without_license(self, source):
         from apps.catalog.models import Manufacturer
 
         mfr = Manufacturer.objects.create(name="Test", slug="test")
-        claim = make_claim(mfr, "description", "text", source=source)
+        claim = make_claim(mfr, "description", "text", ingest_source=source)
         assert claim.license is None
 
 

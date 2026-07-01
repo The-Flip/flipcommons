@@ -8,9 +8,14 @@ from django.contrib.auth import get_user_model
 from apps.catalog.models import Title
 from apps.citation.test_factories import make_citation_link, make_citation_source
 from apps.claim_edit.claim_write import ClaimSpec, execute_claims
-from apps.provenance.models import CitationInstance, ClaimCitationInstance
+from apps.provenance.models import ClaimCitationInstance
 from apps.provenance.schemas import CitationReferenceInputSchema
-from apps.provenance.test_factories import make_claim, user_changeset
+from apps.provenance.test_factories import (
+    cite_claim,
+    make_citation_instance,
+    make_claim,
+    user_changeset,
+)
 
 User = get_user_model()
 
@@ -18,7 +23,7 @@ User = get_user_model()
 @pytest.fixture
 def title(db, bootstrap_source):
     title = Title.objects.create(name="Medieval Madness", slug="medieval-madness")
-    make_claim(title, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(title, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return title
 
 
@@ -34,14 +39,6 @@ def citation_source(db):
     return source
 
 
-def _attach_citation(claim, citation_source, locator="p. 2"):
-    return CitationInstance.objects.create(
-        citation_source=citation_source,
-        claim=claim,
-        locator=locator,
-    )
-
-
 @pytest.mark.django_db
 class TestCitedEditEvidence:
     def test_returns_cited_changesets_with_fields_and_citation_details(
@@ -54,8 +51,8 @@ class TestCitedEditEvidence:
         desc_claim = make_claim(
             title, "description", "Updated copy", user=user, changeset=changeset
         )
-        _attach_citation(year_claim, citation_source)
-        _attach_citation(desc_claim, citation_source)
+        cite_claim(year_claim, citation_source=citation_source, locator="p. 2")
+        cite_claim(desc_claim, citation_source=citation_source, locator="p. 2")
 
         resp = client.get("/api/pages/sources/title/medieval-madness/")
 
@@ -81,8 +78,8 @@ class TestCitedEditEvidence:
         second_claim = make_claim(
             title, "description", "Updated copy", user=user, changeset=changeset
         )
-        _attach_citation(first_claim, citation_source, locator="p. 3")
-        _attach_citation(second_claim, citation_source, locator="p. 3")
+        cite_claim(first_claim, citation_source=citation_source, locator="p. 3")
+        cite_claim(second_claim, citation_source=citation_source, locator="p. 3")
 
         resp = client.get("/api/pages/sources/title/medieval-madness/")
 
@@ -96,7 +93,7 @@ class TestCitedEditEvidence:
         cited_claim = make_claim(
             title, "name", "Medieval Madness (1997)", user=user, changeset=cited
         )
-        _attach_citation(cited_claim, citation_source)
+        cite_claim(cited_claim, citation_source=citation_source)
 
         resp = client.get("/api/pages/sources/title/medieval-madness/")
 
@@ -117,7 +114,7 @@ class TestCitedEditEvidence:
         cited_claim = make_claim(
             title, "name", "Medieval Madness (1997)", user=user, changeset=changeset
         )
-        _attach_citation(cited_claim, citation_source)
+        cite_claim(cited_claim, citation_source=citation_source)
 
         title.status = "deleted"
         title.save(update_fields=["status"])
@@ -139,7 +136,7 @@ class TestScalarCitationJoin:
         # edge for each per-claim instance it mints. The input schema references
         # a pre-existing *template* instance by id; the join rows must land on the
         # per-claim instances the engine mints, not on the template.
-        template = CitationInstance.objects.create(
+        template = make_citation_instance(
             citation_source=citation_source, locator="p. 9"
         )
         execute_claims(

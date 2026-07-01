@@ -4,13 +4,18 @@ import pytest
 from django.utils import timezone
 
 from apps.catalog.models import Manufacturer
-from apps.provenance.models import ChangeSet, IngestRun, Source
-from apps.provenance.test_factories import ingest_changeset, make_claim, user_changeset
+from apps.provenance.models import ChangeSet, IngestRun
+from apps.provenance.test_factories import (
+    ingest_changeset,
+    make_claim,
+    make_ingest_source,
+    user_changeset,
+)
 
 
 @pytest.fixture
 def source(db):
-    return Source.objects.create(name="TestSource", slug="test-source", priority=10)
+    return make_ingest_source(name="TestSource", slug="test-source", priority=10)
 
 
 @pytest.fixture
@@ -147,7 +152,7 @@ class TestChangeSetIngestRunFK:
 class TestClaimRetractedByChangeset:
     def test_retracted_by_changeset_set(self, source, mfr):
         run = IngestRun.objects.create(source=source, input_fingerprint="sha256:abc")
-        claim = make_claim(mfr, "name", "Williams", source=source)
+        claim = make_claim(mfr, "name", "Williams", ingest_source=source)
         cs = ingest_changeset(run)
         claim.retracted_by_changeset = cs
         claim.is_active = False
@@ -159,7 +164,7 @@ class TestClaimRetractedByChangeset:
         assert cs.retracted_claims.count() == 1
 
     def test_retracted_by_changeset_null_by_default(self, source, mfr):
-        claim = make_claim(mfr, "name", "Williams", source=source)
+        claim = make_claim(mfr, "name", "Williams", ingest_source=source)
         assert claim.retracted_by_changeset is None
 
     def test_delete_changeset_blocked_by_retracted_claims(self, source, mfr):
@@ -167,7 +172,7 @@ class TestClaimRetractedByChangeset:
         from django.db.models import ProtectedError
 
         run = IngestRun.objects.create(source=source, input_fingerprint="sha256:ret")
-        claim = make_claim(mfr, "name", "Williams", source=source)
+        claim = make_claim(mfr, "name", "Williams", ingest_source=source)
         cs = ingest_changeset(run)
         claim.retracted_by_changeset = cs
         claim.is_active = False

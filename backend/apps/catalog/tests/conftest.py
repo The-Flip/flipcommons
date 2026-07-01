@@ -18,7 +18,7 @@ from apps.citation.test_factories import (
     make_citation_source,
 )
 from apps.provenance.models import ClaimControlledModel, Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 
 def make_machine_model(
@@ -51,14 +51,14 @@ def make_machine_model(
             slug=t_slug, defaults={"name": name}
         )
         if created:
-            make_claim(title, "name", name, source=src)
+            make_claim(title, "name", name, ingest_source=src)
     mm = MachineModel.objects.create(
         title=title,
         name=name,
         slug=resolved_slug,
         **kwargs,
     )
-    make_claim(mm, "name", name, source=src)
+    make_claim(mm, "name", name, ingest_source=src)
     return mm
 
 
@@ -119,7 +119,7 @@ def client():
 
 @pytest.fixture
 def source(db):
-    return Source.objects.create(name="IPDB", source_type="database", priority=10)
+    return make_ingest_source(name="IPDB", source_type="database", priority=10)
 
 
 @pytest.fixture
@@ -168,14 +168,14 @@ def flipcommons_catalog(db):
 @pytest.fixture
 def manufacturer(db, bootstrap_source):
     mfr = Manufacturer.objects.create(name="Williams", slug="williams")
-    make_claim(mfr, "name", "Williams", source=bootstrap_source)
+    make_claim(mfr, "name", "Williams", ingest_source=bootstrap_source)
     return mfr
 
 
 @pytest.fixture
 def stern(db, bootstrap_source):
     mfr = Manufacturer.objects.create(name="Stern", slug="stern")
-    make_claim(mfr, "name", "Stern", source=bootstrap_source)
+    make_claim(mfr, "name", "Stern", ingest_source=bootstrap_source)
     return mfr
 
 
@@ -207,7 +207,7 @@ def credit_roles(db):
 @pytest.fixture
 def person(db, bootstrap_source):
     p = Person.objects.create(name="Pat Lawlor", slug="pat-lawlor")
-    make_claim(p, "name", "Pat Lawlor", source=bootstrap_source)
+    make_claim(p, "name", "Pat Lawlor", ingest_source=bootstrap_source)
     return p
 
 
@@ -223,7 +223,7 @@ def williams_entity(db, manufacturer, bootstrap_source):
         slug="williams-electronics",
         manufacturer=manufacturer,
     )
-    make_claim(ce, "name", "Williams Electronics", source=bootstrap_source)
+    make_claim(ce, "name", "Williams Electronics", ingest_source=bootstrap_source)
     return ce
 
 
@@ -234,14 +234,14 @@ def stern_entity(db, stern, bootstrap_source):
         slug="stern-pinball-inc",
         manufacturer=stern,
     )
-    make_claim(ce, "name", "Stern Pinball, Inc.", source=bootstrap_source)
+    make_claim(ce, "name", "Stern Pinball, Inc.", ingest_source=bootstrap_source)
     return ce
 
 
 @pytest.fixture
 def machine_model(db, williams_entity, solid_state, bootstrap_source):
     title = Title.objects.create(name="Medieval Madness", slug="medieval-madness-title")
-    make_claim(title, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(title, "name", "Medieval Madness", ingest_source=bootstrap_source)
     pm = MachineModel.objects.create(
         name="Medieval Madness",
         slug="medieval-madness",
@@ -250,7 +250,7 @@ def machine_model(db, williams_entity, solid_state, bootstrap_source):
         year=1997,
         technology_generation=solid_state,
     )
-    make_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
     t = Theme.objects.create(name="Medieval", slug="medieval")
     pm.themes.add(t)
     return pm
@@ -259,7 +259,7 @@ def machine_model(db, williams_entity, solid_state, bootstrap_source):
 @pytest.fixture
 def another_model(db, stern_entity, solid_state, bootstrap_source):
     title = Title.objects.create(name="The Mandalorian", slug="the-mandalorian-title")
-    make_claim(title, "name", "The Mandalorian", source=bootstrap_source)
+    make_claim(title, "name", "The Mandalorian", ingest_source=bootstrap_source)
     pm = MachineModel.objects.create(
         name="The Mandalorian",
         slug="the-mandalorian",
@@ -268,5 +268,5 @@ def another_model(db, stern_entity, solid_state, bootstrap_source):
         year=2021,
         technology_generation=solid_state,
     )
-    make_claim(pm, "name", "The Mandalorian", source=bootstrap_source)
+    make_claim(pm, "name", "The Mandalorian", ingest_source=bootstrap_source)
     return pm

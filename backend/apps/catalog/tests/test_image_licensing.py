@@ -7,9 +7,9 @@ from apps.catalog.models import Title
 from apps.catalog.tests.conftest import bulk_resolve, make_machine_model
 from apps.core.models import License
 from apps.provenance.licensing import resolve_effective_license
-from apps.provenance.models import Source, SourceFieldLicense
+from apps.provenance.models import SourceFieldLicense
 from apps.provenance.resolution import resolve_after_mutation
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 
 @pytest.fixture
@@ -36,7 +36,7 @@ def not_allowed(db):
 
 @pytest.fixture
 def opdb(cc_by_sa):
-    return Source.objects.create(
+    return make_ingest_source(
         name="OPDB",
         slug="opdb",
         source_type="database",
@@ -47,7 +47,7 @@ def opdb(cc_by_sa):
 
 @pytest.fixture
 def ipdb(not_allowed):
-    return Source.objects.create(
+    return make_ingest_source(
         name="IPDB",
         slug="ipdb",
         source_type="database",
@@ -61,7 +61,7 @@ class TestEffectiveLicenseResolution:
     def test_claim_license_overrides_all(self, opdb, cc_by_sa):
         """Per-claim license takes precedence over source defaults."""
         title = Title.objects.create(name="Test Title", slug="t1")
-        claim = make_claim(title, "description", "text", source=opdb)
+        claim = make_claim(title, "description", "text", ingest_source=opdb)
         claim.license = cc_by_sa
         claim.save()
         claim.refresh_from_db()
@@ -77,7 +77,7 @@ class TestEffectiveLicenseResolution:
             source=opdb, field_name="description", license=cc_by_sa
         )
         title = Title.objects.create(name="Test Title", slug="t1")
-        claim = make_claim(title, "description", "text", source=opdb)
+        claim = make_claim(title, "description", "text", ingest_source=opdb)
         claim.actor = opdb.actor
 
         from apps.provenance.licensing import build_source_field_license_map
@@ -89,7 +89,7 @@ class TestEffectiveLicenseResolution:
     def test_source_default_license_fallback(self, ipdb, not_allowed):
         """Falls back to source.default_license when no overrides exist."""
         title = Title.objects.create(name="Test Title", slug="t1")
-        claim = make_claim(title, "description", "text", source=ipdb)
+        claim = make_claim(title, "description", "text", ingest_source=ipdb)
         claim.actor = ipdb.actor
 
         lic = resolve_effective_license(claim)
@@ -98,7 +98,7 @@ class TestEffectiveLicenseResolution:
     def test_all_null_returns_none(self, opdb):
         """Returns None when no license is set anywhere."""
         title = Title.objects.create(name="Test Title", slug="t1")
-        claim = make_claim(title, "description", "text", source=opdb)
+        claim = make_claim(title, "description", "text", ingest_source=opdb)
         claim.actor = opdb.actor
 
         lic = resolve_effective_license(claim)
@@ -124,12 +124,12 @@ class TestImageLicenseDenormalization:
         opdb.save()
         for i in range(6):
             pm = make_machine_model(name=f"M{i}", slug=f"m{i}")
-            make_claim(pm, "name", f"M{i}", source=opdb)
+            make_claim(pm, "name", f"M{i}", ingest_source=opdb)
             make_claim(
                 pm,
                 "opdb.images",
                 [{"primary": True, "urls": {"large": f"https://img/{i}.jpg"}}],
-                source=opdb,
+                ingest_source=opdb,
                 claim_key=f"opdb.images|x:{i}",
             )
 
@@ -142,7 +142,7 @@ class TestImageLicenseDenormalization:
         opdb.save()
 
         pm = make_machine_model(name="Test", slug="test-pm")
-        make_claim(pm, "name", "Test", source=opdb)
+        make_claim(pm, "name", "Test", ingest_source=opdb)
         make_claim(
             pm,
             "opdb.images",
@@ -156,7 +156,7 @@ class TestImageLicenseDenormalization:
                     },
                 }
             ],
-            source=opdb,
+            ingest_source=opdb,
         )
 
         resolve_after_mutation(pm)
@@ -168,7 +168,7 @@ class TestImageLicenseDenormalization:
     def test_null_license_stores_null_rank(self, opdb):
         """Null license should store null rank in extra_data."""
         pm = make_machine_model(name="Test", slug="test-pm")
-        make_claim(pm, "name", "Test", source=opdb)
+        make_claim(pm, "name", "Test", ingest_source=opdb)
         make_claim(
             pm,
             "opdb.images",
@@ -182,7 +182,7 @@ class TestImageLicenseDenormalization:
                     },
                 }
             ],
-            source=opdb,
+            ingest_source=opdb,
         )
 
         resolve_after_mutation(pm)
@@ -211,12 +211,12 @@ class TestImageLicenseDenormalization:
         opdb.save()
         for i in range(6):
             pm = make_machine_model(name=f"G{i}", slug=f"g{i}")
-            make_claim(pm, "name", f"G{i}", source=opdb)
+            make_claim(pm, "name", f"G{i}", ingest_source=opdb)
             make_claim(
                 pm,
                 "opdb.images",
                 [{"primary": True, "urls": {"large": f"https://img/{i}.jpg"}}],
-                source=opdb,
+                ingest_source=opdb,
                 claim_key=f"opdb.images|x:{i}",
             )
 

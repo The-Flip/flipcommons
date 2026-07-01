@@ -11,19 +11,29 @@ at constraint time.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import uuid
+from typing import TYPE_CHECKING, Literal
 
 from apps.accounts.models import User
+from apps.citation.test_factories import make_citation_source
 from apps.core.types import ClaimFieldName, ClaimKey
 
 from .changeset_writer import record_changeset
 from .claim_writer import _assert_claim
-from .models import ChangeSet, ChangeSetAction, ClaimCitationInstance, IngestRun
+from .models import (
+    ChangeSet,
+    ChangeSetAction,
+    CitationInstance,
+    ClaimCitationInstance,
+    IngestRun,
+    Source,
+)
 
 if TYPE_CHECKING:
+    from apps.citation.models import CitationSource
     from apps.core.models import License
 
-    from .models import CitationInstance, Claim, ClaimControlledModel, Source
+    from .models import Claim, ClaimControlledModel
 
 
 def make_claim(
@@ -32,7 +42,7 @@ def make_claim(
     value: object,
     citation: str = "",
     *,
-    source: Source | None = None,
+    ingest_source: Source | None = None,
     user: User | None = None,
     claim_key: ClaimKey = "",
     license: License | None = None,
@@ -41,25 +51,27 @@ def make_claim(
     """Mint a claim through the single write primitive, for tests.
 
     A drop-in for the old ``Claim.objects.assert_claim``: same ``user=`` /
-    ``source=`` signature. Attribution now rides on a ChangeSet's actor, so when
+    ingest ``source=`` signature. Attribution now rides on a ChangeSet's actor, so when
     no ``changeset`` is supplied this auto-creates the attributing one (user →
     ``user_changeset``; source → ``source_changeset``) and threads it into the
     actor-first primitive. The factory is the single seam the call sites target.
     """
+    if user is not None and ingest_source is not None:
+        raise ValueError("make_claim: pass at most one of user= or source=.")
     if changeset is None:
-        if user is not None and source is None:
+        if user is not None:
             changeset = user_changeset(user)
-        elif source is not None and user is None:
-            changeset = source_changeset(source)
+        elif ingest_source is not None:
+            changeset = source_changeset(ingest_source)
         else:
-            raise ValueError("Provide exactly one of source or user (or a changeset).")
+            raise ValueError("Provide a source, a user, or a changeset.")
     else:
         # A user=/source= passed alongside an explicit changeset is redundant —
-        # attribution rides on changeset.actor, not these args. Guard that they
-        # agree so a mismatched pair fails loudly here (the cross-check the old
-        # assert_claim enforced) instead of silently attributing to the
-        # changeset's actor.
-        attributed = user if user is not None else source
+        # attribution rides on changeset.actor, not these args. Guard that the
+        # one supplied (if any) agrees, so a mismatched pair fails loudly here
+        # (the cross-check the old assert_claim enforced) instead of silently
+        # attributing to the changeset's actor.
+        attributed = user if user is not None else ingest_source
         if attributed is not None and changeset.actor_id != attributed.actor_id:
             raise ValueError(
                 "make_claim: changeset.actor does not match the given user=/source=."
@@ -73,6 +85,92 @@ def make_claim(
         claim_key=claim_key,
         license=license,
     )
+
+
+# Mirrors the ingest Source model's SourceType choices — a Literal so a bad source_type
+# fails at type-check. Constraint tests that need an invalid value build an ingest Source
+# directly.
+type IngestSourceTypeValue = Literal["database", "wiki", "book", "editorial", "other"]
+
+
+def make_ingest_source(
+    *,
+    name: str | None = None,
+    source_type: IngestSourceTypeValue = "database",
+    priority: int = 0,
+    slug: str = "",
+    url: str = "",
+    description: str = "",
+    is_enabled: bool = True,
+    default_license: License | None = None,
+) -> Source:
+    """Create a provenance ingest ``Source`` for tests, defaulting the name.
+
+    Every field mirrors the model's own default (``priority=0`` included), so
+    this is a faithful drop-in for ``Source.objects.create`` — it injects no
+    opinion the model doesn't. ``slug`` auto-fills from ``name`` when left blank;
+    the backing ``Actor`` is minted by ``ActorModel.save()``. The default name is
+    uuid-suffixed so repeated bare calls don't trip the case-insensitive
+    unique-name constraint — pass ``name=`` when a test asserts on a specific
+    name or priority ordering.
+    """
+    if name is None:
+        name = f"Test Source {uuid.uuid4().hex[:8]}"
+    return Source.objects.create(
+        name=name,
+        source_type=source_type,
+        priority=priority,
+        slug=slug,
+        url=url,
+        description=description,
+        is_enabled=is_enabled,
+        default_license=default_license,
+    )
+
+
+def make_citation_instance(
+    *,
+    citation_source: CitationSource | None = None,
+    locator: str = "",
+    claim: Claim | None = None,
+    slug: str = "",
+) -> CitationInstance:
+    """Create a ``CitationInstance`` for tests, auto-providing a citation source.
+
+    A bare call yields a floating instance (``claim=None``) — the inline/shared
+    shape. ``slug`` auto-fills when left blank. Pass ``claim=`` to set the
+    per-claim FK directly, as the model's own constraint tests do; to attach
+    evidence to a claim as production does, prefer :func:`cite_claim`, which also
+    writes the join row.
+    """
+    return CitationInstance.objects.create(
+        citation_source=citation_source or make_citation_source(),
+        locator=locator,
+        claim=claim,
+        slug=slug,
+    )
+
+
+def cite_claim(
+    claim: Claim,
+    *,
+    citation_source: CitationSource | None = None,
+    locator: str = "",
+) -> CitationInstance:
+    """Attach a citation instance to *claim* as supporting evidence.
+
+    The intent-revealing "this claim is backed by this evidence" helper: it mints
+    the instance and links it to the claim through a ``ClaimCitationInstance``
+    join row. Mirrors the scalar write path, so it also sets the per-claim FK for
+    now — both the FK-based and join-based read paths see the result. Call sites
+    stay stable when the FK is dropped: only this helper changes. Returns the
+    created instance.
+    """
+    instance = make_citation_instance(
+        citation_source=citation_source, locator=locator, claim=claim
+    )
+    claim_citation_instance(claim, instance)
+    return instance
 
 
 def claim_citation_instance(
@@ -103,7 +201,7 @@ def ingest_run(
 def user_changeset(
     user: User,
     *,
-    action: ChangeSetAction | str = ChangeSetAction.EDIT,
+    action: ChangeSetAction = ChangeSetAction.EDIT,
     note: str = "",
 ) -> ChangeSet:
     """Create a user-attributed ChangeSet for tests.
@@ -113,7 +211,7 @@ def user_changeset(
     paths pass the matching action explicitly. Routed through
     ``record_changeset`` so every fixture ChangeSet carries an actor.
     """
-    return record_changeset(actor=user.actor, action=ChangeSetAction(action), note=note)
+    return record_changeset(actor=user.actor, action=action, note=note)
 
 
 def ingest_changeset(ingest_run: IngestRun, *, note: str = "") -> ChangeSet:

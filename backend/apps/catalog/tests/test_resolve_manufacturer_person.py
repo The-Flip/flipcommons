@@ -4,20 +4,17 @@ import pytest
 
 from apps.catalog.models import Manufacturer, Person
 from apps.catalog.resolve import resolve_entity
-from apps.provenance.models import Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 
 @pytest.fixture
 def ipdb(db):
-    return Source.objects.create(name="IPDB", source_type="database", priority=10)
+    return make_ingest_source(name="IPDB", source_type="database", priority=10)
 
 
 @pytest.fixture
 def editorial(db):
-    return Source.objects.create(
-        name="Editorial", source_type="editorial", priority=100
-    )
+    return make_ingest_source(name="Editorial", source_type="editorial", priority=100)
 
 
 @pytest.fixture
@@ -32,22 +29,22 @@ def person(db):
 
 class TestResolveManufacturer:
     def test_basic_resolution(self, mfr, ipdb):
-        make_claim(mfr, "name", "Williams", source=ipdb)
+        make_claim(mfr, "name", "Williams", ingest_source=ipdb)
 
         resolved = resolve_entity(mfr)
         assert resolved.name == "Williams"
 
     def test_higher_priority_wins(self, mfr, ipdb, editorial):
-        make_claim(mfr, "name", "Williams Low", source=ipdb)
-        make_claim(mfr, "name", "Williams High", source=editorial)
+        make_claim(mfr, "name", "Williams Low", ingest_source=ipdb)
+        make_claim(mfr, "name", "Williams High", ingest_source=editorial)
 
         resolved = resolve_entity(mfr)
         assert resolved.name == "Williams High"
 
     def test_deactivated_claim_is_not_applied(self, mfr, ipdb):
-        make_claim(mfr, "description", "Old desc", source=ipdb)
+        make_claim(mfr, "description", "Old desc", ingest_source=ipdb)
         # Supersede it.
-        make_claim(mfr, "description", "New desc", source=ipdb)
+        make_claim(mfr, "description", "New desc", ingest_source=ipdb)
 
         resolved = resolve_entity(mfr)
         assert resolved.description == "New desc"
@@ -63,7 +60,7 @@ class TestResolveManufacturer:
 
     def test_all_claims_removed_field_blanked(self, mfr, ipdb):
         """Deactivating all claims for a field blanks it on the next resolve."""
-        make_claim(mfr, "description", "Old bio", source=ipdb)
+        make_claim(mfr, "description", "Old bio", ingest_source=ipdb)
         resolve_entity(mfr)
         assert mfr.description == "Old bio"
 
@@ -74,7 +71,7 @@ class TestResolveManufacturer:
         assert mfr.description == ""  # blanked — no active claims remain
 
     def test_saves_to_db(self, mfr, ipdb):
-        make_claim(mfr, "name", "Bally", source=ipdb)
+        make_claim(mfr, "name", "Bally", ingest_source=ipdb)
         resolve_entity(mfr)
         mfr.refresh_from_db()
         assert mfr.name == "Bally"
@@ -82,17 +79,17 @@ class TestResolveManufacturer:
 
 class TestResolvePerson:
     def test_basic_resolution(self, person, ipdb):
-        make_claim(person, "name", "Pat Lawlor", source=ipdb)
-        make_claim(person, "description", "Designer of TAF.", source=ipdb)
+        make_claim(person, "name", "Pat Lawlor", ingest_source=ipdb)
+        make_claim(person, "description", "Designer of TAF.", ingest_source=ipdb)
 
         resolved = resolve_entity(person)
         assert resolved.name == "Pat Lawlor"
         assert resolved.description == "Designer of TAF."
 
     def test_higher_priority_wins(self, person, ipdb, editorial):
-        make_claim(person, "name", "Pat Lawlor", source=ipdb)
-        make_claim(person, "description", "Short bio.", source=ipdb)
-        make_claim(person, "description", "Better bio.", source=editorial)
+        make_claim(person, "name", "Pat Lawlor", ingest_source=ipdb)
+        make_claim(person, "description", "Short bio.", ingest_source=ipdb)
+        make_claim(person, "description", "Better bio.", ingest_source=editorial)
 
         resolved = resolve_entity(person)
         assert resolved.description == "Better bio."
@@ -103,12 +100,12 @@ class TestResolvePerson:
         person.save()
 
         # Name claim required to satisfy the non-blank constraint.
-        make_claim(person, "name", "Placeholder Person", source=ipdb)
+        make_claim(person, "name", "Placeholder Person", ingest_source=ipdb)
         resolved = resolve_entity(person)
         assert resolved.description == ""
 
     def test_saves_to_db(self, person, ipdb):
-        make_claim(person, "name", "Steve Ritchie", source=ipdb)
+        make_claim(person, "name", "Steve Ritchie", ingest_source=ipdb)
         resolve_entity(person)
         person.refresh_from_db()
         assert person.name == "Steve Ritchie"

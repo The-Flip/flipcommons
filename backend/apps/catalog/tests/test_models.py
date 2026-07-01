@@ -13,18 +13,18 @@ from apps.catalog.models import (
 )
 from apps.catalog.tests.conftest import make_machine_model
 from apps.core.validators import validate_no_mojibake
-from apps.provenance.models import Claim, Source, get_claim_fields
-from apps.provenance.test_factories import make_claim
+from apps.provenance.models import Claim, get_claim_fields
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 
 @pytest.fixture
 def source(db):
-    return Source.objects.create(name="IPDB", source_type="database", priority=10)
+    return make_ingest_source(name="IPDB", source_type="database", priority=10)
 
 
 @pytest.fixture
 def editorial_source(db):
-    return Source.objects.create(
+    return make_ingest_source(
         name="The Flip Editorial", source_type="editorial", priority=100
     )
 
@@ -70,7 +70,7 @@ class TestSource:
 
     def test_unique_name(self, db, source):
         with pytest.raises(IntegrityError):
-            Source.objects.create(name="IPDB")
+            make_ingest_source(name="IPDB")
 
 
 # --- Manufacturer ---
@@ -212,13 +212,15 @@ class TestCredit:
 
 class TestClaim:
     def test_assert_claim_creates(self, machine_model, source):
-        claim = make_claim(machine_model, "name", "Medieval Madness", source=source)
+        claim = make_claim(
+            machine_model, "name", "Medieval Madness", ingest_source=source
+        )
         assert claim.is_active is True
         assert claim.value == "Medieval Madness"
 
     def test_assert_claim_supersedes(self, machine_model, source):
-        c1 = make_claim(machine_model, "year", 1997, source=source)
-        c2 = make_claim(machine_model, "year", 1998, source=source)
+        c1 = make_claim(machine_model, "year", 1997, ingest_source=source)
+        c2 = make_claim(machine_model, "year", 1998, ingest_source=source)
         c1.refresh_from_db()
         assert c1.is_active is False
         assert c2.is_active is True
@@ -226,8 +228,8 @@ class TestClaim:
     def test_assert_claim_different_sources_coexist(
         self, machine_model, source, editorial_source
     ):
-        c1 = make_claim(machine_model, "year", 1997, source=source)
-        c2 = make_claim(machine_model, "year", 1997, source=editorial_source)
+        c1 = make_claim(machine_model, "year", 1997, ingest_source=source)
+        c2 = make_claim(machine_model, "year", 1997, ingest_source=editorial_source)
         c1.refresh_from_db()
         assert c1.is_active is True
         assert c2.is_active is True
@@ -235,7 +237,7 @@ class TestClaim:
     def test_unique_active_constraint(self, machine_model, source):
         from django.contrib.contenttypes.models import ContentType
 
-        first = make_claim(machine_model, "name", "V1", source=source)
+        first = make_claim(machine_model, "name", "V1", ingest_source=source)
         ct = ContentType.objects.get_for_model(machine_model)
         # Direct create (bypassing the dedupe primitive) of a second active claim
         # for the same author+claim_key should violate the unique-active index.
@@ -253,7 +255,7 @@ class TestClaim:
             )
 
     def test_str(self, machine_model, source):
-        claim = make_claim(machine_model, "year", 1997, source=source)
+        claim = make_claim(machine_model, "year", 1997, ingest_source=source)
         assert "IPDB" in str(claim)
         assert "year" in str(claim)
 

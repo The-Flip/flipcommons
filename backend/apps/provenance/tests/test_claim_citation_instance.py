@@ -40,13 +40,13 @@ def citation_source():
 @pytest.fixture
 def claim(source):
     mfr = Manufacturer.objects.create(name="Williams", slug="williams")
-    return make_claim(mfr, "name", "Williams", source=source)
+    return make_claim(mfr, "name", "Williams", ingest_source=source)
 
 
 @pytest.fixture
 def claim2(source):
     mfr = Manufacturer.objects.create(name="Gottlieb", slug="gottlieb")
-    return make_claim(mfr, "name", "Gottlieb", source=source)
+    return make_claim(mfr, "name", "Gottlieb", ingest_source=source)
 
 
 def _instance(citation_source, locator=""):

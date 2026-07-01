@@ -34,15 +34,15 @@ def _clear_cache():
 def _make_person(bootstrap_source, slug: str, name: str | None = None) -> Person:
     label = name or slug.replace("-", " ").title()
     p = Person.objects.create(name=label, slug=slug, status="active")
-    make_claim(p, "name", label, source=bootstrap_source)
-    make_claim(p, "status", "active", source=bootstrap_source)
+    make_claim(p, "name", label, ingest_source=bootstrap_source)
+    make_claim(p, "status", "active", ingest_source=bootstrap_source)
     return p
 
 
 def _make_title(bootstrap_source, slug: str) -> Title:
     label = slug.replace("-", " ").title()
     t = Title.objects.create(name=label, slug=slug, status="active")
-    make_claim(t, "name", label, source=bootstrap_source)
+    make_claim(t, "name", label, ingest_source=bootstrap_source)
     return t
 
 
@@ -51,7 +51,7 @@ def _make_model(
 ) -> MachineModel:
     label = slug.replace("-", " ").title()
     m = MachineModel.objects.create(title=title, name=label, slug=slug, status=status)
-    make_claim(m, "name", label, source=bootstrap_source)
+    make_claim(m, "name", label, ingest_source=bootstrap_source)
     return m
 
 
@@ -194,7 +194,7 @@ class TestDeleteCreditBlocker:
         series = Series.objects.create(
             name="Star Wars Series", slug="star-wars-series", status="active"
         )
-        make_claim(series, "name", "Star Wars Series", source=bootstrap_source)
+        make_claim(series, "name", "Star Wars Series", ingest_source=bootstrap_source)
         Credit.objects.create(person=p, series=series, role=design_role)
         client.force_login(user)
 

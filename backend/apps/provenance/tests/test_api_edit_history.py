@@ -6,8 +6,7 @@ import pytest
 
 from apps.accounts.test_factories import make_user
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.models import Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 
 def _user_changesets(resp) -> list[dict[str, Any]]:
@@ -22,13 +21,13 @@ def _user_changesets(resp) -> list[dict[str, Any]]:
 
 @pytest.fixture
 def source(db):
-    return Source.objects.create(name="IPDB", source_type="database", priority=10)
+    return make_ingest_source(name="IPDB", source_type="database", priority=10)
 
 
 @pytest.fixture
 def pm(db, bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    make_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return pm
 
 
@@ -45,7 +44,7 @@ class TestEditHistoryEmpty:
 
     def test_source_claims_not_included(self, client, pm, source):
         """Source-attributed claims should not appear in *user* edit history."""
-        make_claim(pm, "year", 1998, source=source)
+        make_claim(pm, "year", 1998, ingest_source=source)
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         assert resp.status_code == 200
         assert _user_changesets(resp) == []
@@ -168,7 +167,7 @@ class TestEditHistoryMultiUser:
 
     def test_old_value_uses_source_claim(self, client, user, pm, source):
         """A user edit shows the prior source/ingest claim's value as old."""
-        make_claim(pm, "year", 1997, source=source)
+        make_claim(pm, "year", 1997, ingest_source=source)
 
         client.force_login(user)
         client.patch(

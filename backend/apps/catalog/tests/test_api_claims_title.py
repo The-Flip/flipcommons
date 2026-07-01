@@ -13,7 +13,11 @@ from apps.citation.test_factories import make_citation_source
 from apps.core.types import JsonBody
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.models import ChangeSet, Claim, Source
-from apps.provenance.test_factories import make_claim, user_changeset
+from apps.provenance.test_factories import (
+    make_claim,
+    make_ingest_source,
+    user_changeset,
+)
 
 User = get_user_model()
 
@@ -23,7 +27,7 @@ def title(db, bootstrap_source):
     t = Title.objects.create(
         name="Medieval Madness", slug="medieval-madness", opdb_id="G5pe4"
     )
-    make_claim(t, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(t, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return t
 
 
@@ -39,7 +43,7 @@ def other_franchise(db):
 
 @pytest.fixture
 def source(db):
-    return Source.objects.create(
+    return make_ingest_source(
         name="IPDB", slug="ipdb", source_type="database", priority=10
     )
 
@@ -68,7 +72,7 @@ def _assert_title_abbreviations(
             title,
             "abbreviation",
             claim_value,
-            source=source,
+            ingest_source=source,
             claim_key=claim_key,
         )
     resolve_all_entities(Title, object_ids={title.pk})

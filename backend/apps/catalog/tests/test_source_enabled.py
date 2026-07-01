@@ -16,20 +16,24 @@ from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.attribution import source_backing
 from apps.provenance.claims import build_relationship_claim
 from apps.provenance.helpers import active_claims
-from apps.provenance.models import Source, get_claim_fields
-from apps.provenance.test_factories import make_claim, user_changeset
+from apps.provenance.models import get_claim_fields
+from apps.provenance.test_factories import (
+    make_claim,
+    make_ingest_source,
+    user_changeset,
+)
 
 
 @pytest.fixture
 def source_a():
-    return Source.objects.create(
+    return make_ingest_source(
         name="Source A", slug="source-a", source_type="database", priority=100
     )
 
 
 @pytest.fixture
 def source_b():
-    return Source.objects.create(
+    return make_ingest_source(
         name="Source B", slug="source-b", source_type="editorial", priority=200
     )
 
@@ -39,7 +43,7 @@ class TestIsEnabledResolveSingle:
     def test_disabled_source_excluded_from_resolution(self, source_a):
         """Claims from a disabled source should not participate in resolution."""
         mfr = Manufacturer.objects.create(name="Test Mfr", slug="test-mfr")
-        make_claim(mfr, "name", "From Disabled", source=source_a)
+        make_claim(mfr, "name", "From Disabled", ingest_source=source_a)
 
         source_a.is_enabled = False
         source_a.save()
@@ -51,8 +55,8 @@ class TestIsEnabledResolveSingle:
     def test_disabled_source_fallback_to_enabled(self, source_a, source_b):
         """When the higher-priority source is disabled, the lower-priority one wins."""
         mfr = Manufacturer.objects.create(name="Test Mfr", slug="test-mfr")
-        make_claim(mfr, "name", "Low Priority", source=source_a)
-        make_claim(mfr, "name", "High Priority", source=source_b)
+        make_claim(mfr, "name", "Low Priority", ingest_source=source_a)
+        make_claim(mfr, "name", "High Priority", ingest_source=source_b)
 
         # With both enabled, source_b wins (priority 200 > 100).
         resolve_entity(mfr)
@@ -74,8 +78,8 @@ class TestIsEnabledResolveBulk:
         """Bulk resolution should skip claims from disabled sources."""
         t = Title.objects.create(opdb_id="G1", name="Test Title", slug="t1")
         # Name claim from source_b (stays enabled) so name satisfies constraint.
-        make_claim(t, "name", "Test Title", source=source_b)
-        make_claim(t, "description", "From Disabled", source=source_a)
+        make_claim(t, "name", "Test Title", ingest_source=source_b)
+        make_claim(t, "description", "From Disabled", ingest_source=source_a)
 
         source_a.is_enabled = False
         source_a.save()
@@ -88,8 +92,8 @@ class TestIsEnabledResolveBulk:
     def test_bulk_fallback_when_winner_disabled(self, source_a, source_b):
         """Bulk resolution falls back to enabled source when winner is disabled."""
         t = Title.objects.create(opdb_id="G1", name="Test Title", slug="t1")
-        make_claim(t, "name", "Low Priority", source=source_a)
-        make_claim(t, "name", "High Priority", source=source_b)
+        make_claim(t, "name", "Low Priority", ingest_source=source_a)
+        make_claim(t, "name", "High Priority", ingest_source=source_b)
 
         source_b.is_enabled = False
         source_b.save()
@@ -128,7 +132,7 @@ class TestIsEnabledRelationshipResolution:
             pm,
             "theme",
             value,
-            source=source_a,
+            ingest_source=source_a,
             claim_key=claim_key,
         )
 
@@ -156,7 +160,7 @@ class TestIsEnabledRelationshipResolution:
             pm,
             "credit",
             value,
-            source=source_a,
+            ingest_source=source_a,
             claim_key=claim_key,
         )
 
@@ -179,8 +183,8 @@ class TestIsEnabledSourcesPrefetch:
         from apps.provenance.helpers import claims_prefetch
 
         mfr = Manufacturer.objects.create(name="Test Mfr", slug="test-mfr")
-        make_claim(mfr, "name", "From A", source=source_a)
-        make_claim(mfr, "description", "From B", source=source_b)
+        make_claim(mfr, "name", "From A", ingest_source=source_a)
+        make_claim(mfr, "description", "From B", ingest_source=source_b)
 
         source_a.is_enabled = False
         source_a.save()

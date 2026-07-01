@@ -21,6 +21,7 @@ from apps.citation.source_upsert import (
     validate_root_source,
 )
 from apps.citation.test_factories import make_citation_root_domain, make_citation_source
+from apps.provenance.test_factories import make_ingest_source
 
 pytestmark = pytest.mark.django_db
 
@@ -41,9 +42,8 @@ def _node(name, source_type="web", links=None, domains=None):
 @pytest.fixture
 def actor(db):
     """A patch ``Source`` actor — the real attributor of `sources:` rows."""
-    from apps.provenance.models import Source
 
-    return Source.objects.create(
+    return make_ingest_source(
         name="Patch Source",
         slug="patch-source",
         source_type="database",

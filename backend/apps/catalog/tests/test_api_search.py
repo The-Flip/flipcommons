@@ -25,13 +25,13 @@ CARD_KEYS = {
 
 def _make_manufacturer(name: str, slug: str, source: Source) -> Manufacturer:
     mfr = Manufacturer.objects.create(name=name, slug=slug)
-    make_claim(mfr, "name", name, source=source)
+    make_claim(mfr, "name", name, ingest_source=source)
     return mfr
 
 
 def _make_person(name: str, slug: str, source: Source) -> Person:
     p = Person.objects.create(name=name, slug=slug)
-    make_claim(p, "name", name, source=source)
+    make_claim(p, "name", name, ingest_source=source)
     return p
 
 

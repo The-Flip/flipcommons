@@ -15,7 +15,7 @@ from apps.catalog.cache import invalidate_response_cache
 from apps.catalog.engine.aliases import discover_alias_types
 from apps.catalog.models import MachineModel
 from apps.citation.test_factories import make_citation_source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_citation_instance, make_claim
 
 from .conftest import SAMPLE_IMAGES
 
@@ -120,10 +120,8 @@ class TestExportStripsInlineCitations:
         # Guards the export_inline=False decoupling: after cite became a
         # public-id type, the strip must still drop its [[cite:id:N]] storage
         # marker from the public dump (not leak it, not emit a resolved cite).
-        from apps.provenance.models import CitationInstance
-
         src = make_citation_source(name="Book", source_type="book")
-        ci = CitationInstance.objects.create(citation_source=src)
+        ci = make_citation_instance(citation_source=src)
         machine_model.description = f"A fact.[[cite:id:{ci.pk}]] More."
         machine_model.save()
         invalidate_response_cache()
@@ -260,7 +258,7 @@ class TestExportDerivedFields:
     ):
         from apps.catalog.resolve import resolve_entity
 
-        make_claim(williams_entity, "operating_status", "ongoing", source=source)
+        make_claim(williams_entity, "operating_status", "ongoing", ingest_source=source)
         resolve_entity(williams_entity)
         invalidate_response_cache()
         row = _row(client, "manufacturers", "williams")

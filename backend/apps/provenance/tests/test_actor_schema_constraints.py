@@ -69,7 +69,7 @@ def test_distinct_actors_coexist_on_same_field(mfr, user, source):
     """An active source claim and an active user claim on the same
     (subject, claim_key) both survive — they are different keys under the
     unified index, exactly as the two legacy per-author indexes allowed."""
-    src_claim = make_claim(mfr, "name", "From source", source=source)
+    src_claim = make_claim(mfr, "name", "From source", ingest_source=source)
     user_claim = make_claim(mfr, "name", "From user", user=user)
 
     src_claim.refresh_from_db()

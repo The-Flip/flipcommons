@@ -522,7 +522,7 @@ class TestQueryCountDoesNotScale:
         """
         user = make_user()
         pm = make_machine_model(name="MM", slug="mm-credits", year=1997)
-        make_claim(pm, "name", "MM", source=bootstrap_source)
+        make_claim(pm, "name", "MM", ingest_source=bootstrap_source)
         CreditRole.objects.create(name="Design", slug="design")
 
         counter = 0

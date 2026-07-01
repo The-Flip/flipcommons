@@ -15,8 +15,11 @@ from apps.catalog.models import MachineModel
 from apps.catalog.tests.conftest import make_machine_model
 from apps.media.helpers import displayed_primary_asset_ids
 from apps.media.models import EntityMedia, MediaAsset
-from apps.provenance.models import Source
-from apps.provenance.test_factories import make_claim, user_changeset
+from apps.provenance.test_factories import (
+    make_claim,
+    make_ingest_source,
+    user_changeset,
+)
 
 User = get_user_model()
 
@@ -36,7 +39,7 @@ def _assert_claim(subject, field_name, value, *, user=None, source=None, claim_k
         field_name,
         value,
         user=user,
-        source=source,
+        ingest_source=source,
         claim_key=claim_key,
         changeset=changeset,
     )
@@ -49,14 +52,12 @@ def _assert_claim(subject, field_name, value, *, user=None, source=None, claim_k
 
 @pytest.fixture
 def source(db):
-    return Source.objects.create(name="IPDB", source_type="database", priority=10)
+    return make_ingest_source(name="IPDB", source_type="database", priority=10)
 
 
 @pytest.fixture
 def high_source(db):
-    return Source.objects.create(
-        name="Editorial", source_type="editorial", priority=100
-    )
+    return make_ingest_source(name="Editorial", source_type="editorial", priority=100)
 
 
 @pytest.fixture

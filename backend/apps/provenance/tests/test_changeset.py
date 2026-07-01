@@ -7,11 +7,12 @@ from apps.accounts.test_factories import make_user
 from apps.catalog.models import Manufacturer
 from apps.core.models import License
 from apps.provenance.changeset_writer import record_changeset
-from apps.provenance.models import ChangeSet, ChangeSetAction, Source
+from apps.provenance.models import ChangeSet, ChangeSetAction
 from apps.provenance.test_factories import (
     ingest_changeset,
     ingest_run,
     make_claim,
+    make_ingest_source,
     user_changeset,
 )
 
@@ -23,7 +24,7 @@ def mfr(db):
 
 @pytest.fixture
 def source(db):
-    return Source.objects.create(name="TestSource", slug="test-source", priority=10)
+    return make_ingest_source(name="TestSource", slug="test-source", priority=10)
 
 
 @pytest.mark.django_db
@@ -78,7 +79,7 @@ class TestChangeSetClaimGrouping:
         """A source claim rides on an ingest ChangeSet's actor."""
         run = ingest_run(source)
         cs = ingest_changeset(run)
-        claim = make_claim(mfr, "name", "Williams", source=source, changeset=cs)
+        claim = make_claim(mfr, "name", "Williams", ingest_source=source, changeset=cs)
         assert claim.changeset == cs
         assert claim.actor_id == source.actor_id
 
@@ -122,7 +123,7 @@ class TestRecordChangeset:
             )
 
     def test_ingest_actor_must_match_run_source(self, source):
-        other = Source.objects.create(name="Other", slug="other", priority=5)
+        other = make_ingest_source(name="Other", slug="other", priority=5)
         run = ingest_run(source)
         with pytest.raises(ValueError, match="source actor"):
             record_changeset(actor=other.actor, ingest_run=run)
@@ -166,7 +167,7 @@ class TestClaimConstraints:
         """DB-level CHECK constraint rejects empty claim_key."""
         from django.db import IntegrityError, connection
 
-        claim = make_claim(mfr, "name", "Williams", source=source)
+        claim = make_claim(mfr, "name", "Williams", ingest_source=source)
         with connection.cursor() as cursor, pytest.raises(IntegrityError):
             cursor.execute(
                 "UPDATE provenance_claim SET claim_key = '' WHERE id = %s",
@@ -203,7 +204,7 @@ class TestBackingRecordDeleteGuard:
 
         from apps.actors.models.base import _protect_backing_with_history
 
-        make_claim(mfr, "name", "Williams", source=source)
+        make_claim(mfr, "name", "Williams", ingest_source=source)
         with pytest.raises(ProtectedError):
             _protect_backing_with_history(type(source), source)
 
@@ -243,7 +244,7 @@ class TestClaimProtect:
         from django.db.models import ProtectedError
 
         lic = License.objects.create(name="Test License", short_name="test-lic")
-        make_claim(mfr, "name", "Williams", source=source, license=lic)
+        make_claim(mfr, "name", "Williams", ingest_source=source, license=lic)
         with pytest.raises(ProtectedError):
             lic.delete()
 
