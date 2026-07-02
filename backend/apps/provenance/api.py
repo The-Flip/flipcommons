@@ -181,6 +181,7 @@ def list_citation_instances(
             citation_source_id=ci.citation_source_id,
             citation_source_name=ci.citation_source.name,
             locator=ci.locator,
+            quote=ci.quote,
             created_at=ci.created_at.isoformat(),
         )
         for ci in qs
@@ -256,6 +257,7 @@ def create_citation_instance(
             citation_source_id=instance.citation_source_id,
             citation_source_name=source.name,
             locator=instance.locator,
+            quote=instance.quote,
             created_at=instance.created_at.isoformat(),
         ),
     )

@@ -174,7 +174,7 @@ claims:
       description: "Archived fact.[[cite:1]]"
       cites:
         '1':
-          url: https://kineticist.com/mm
+          ref: https://kineticist.com/mm
           archive: https://web.archive.org/web/2020/https://kineticist.com/mm
 """
     _apply(text)
@@ -200,7 +200,7 @@ claims:
       description: "Bad cite.[[cite:1]]"
       cites:
         '1':
-          url: "https://kineticist.com/m m"
+          ref: "https://kineticist.com/m m"
 """
     with pytest.raises(ValidationError) as exc_info:
         _apply(text)
@@ -222,7 +222,7 @@ claims:
       description: "Archived fact.[[cite:1]]"
       cites:
         '1':
-          url: https://kineticist.com/mm
+          ref: https://kineticist.com/mm
           archive: "https://web.archive.org/web/2020/https://kineticist.com/m m"
 """
     with pytest.raises(ValidationError) as exc_info:
@@ -245,7 +245,7 @@ claims:
       description: "Cite under no root.[[cite:1]]"
       cites:
         '1':
-          url: "https://no-such-domain.example/page"
+          ref: "https://no-such-domain.example/page"
 """
     with pytest.raises(ValidationError) as exc_info:
         _apply(text)

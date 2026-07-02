@@ -196,3 +196,47 @@ class TestScalarCitationJoin:
         links = ClaimCitationInstance.objects.select_related("citation_instance")
         assert len({link.claim_id for link in links}) == 1
         assert {link.citation_instance.locator for link in links} == {"p. 9", "p. 12"}
+
+    def test_execute_claims_persists_the_quote(self, user, title, citation_source):
+        execute_claims(
+            title,
+            [ClaimSpec(field_name="name", value="Medieval Madness (1997)")],
+            user=user,
+            citations=[
+                CitationInstanceCreateSchema(
+                    citation_source_id=citation_source.pk,
+                    locator="p. 9",
+                    quote="Released in 1997.",
+                )
+            ],
+        )
+        link = ClaimCitationInstance.objects.select_related("citation_instance").get()
+        assert link.citation_instance.quote == "Released in 1997."
+
+    def test_execute_claims_splits_specs_differing_only_by_quote(
+        self, user, title, citation_source
+    ):
+        # A differing quote is a distinct piece of evidence: same source and
+        # locator, two quotes → two instances, not one collapsed row.
+        execute_claims(
+            title,
+            [ClaimSpec(field_name="name", value="Medieval Madness (1997)")],
+            user=user,
+            citations=[
+                CitationInstanceCreateSchema(
+                    citation_source_id=citation_source.pk,
+                    locator="p. 9",
+                    quote="Released in 1997.",
+                ),
+                CitationInstanceCreateSchema(
+                    citation_source_id=citation_source.pk,
+                    locator="p. 9",
+                    quote="Designed by Brian Eddy.",
+                ),
+            ],
+        )
+        links = ClaimCitationInstance.objects.select_related("citation_instance")
+        assert {link.citation_instance.quote for link in links} == {
+            "Released in 1997.",
+            "Designed by Brian Eddy.",
+        }

@@ -277,10 +277,22 @@ claims:
 
 `note:` is the entity's ChangeSet note, shown on its Edit History page.
 
-`cite:` is external evidence, attached to each of the entry's authored claims and shown beside the field on the edit-history page, in one of two forms:
+`cite:` is external evidence, attached to each of the entry's authored claims and shown beside the field on the edit-history page. Its ref is one of two forms:
 
 - **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`, `youtube:O-2BXTXLXIY`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
 - **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's host must fall under a **seeded website root**'s _recognition domain_ — a root's homepage host becomes its recognition domain when the root is declared in a `sources:` block, and a cite on that host **or any subdomain of it** (`static.example.com` under `example.com`) nests here. The cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no recognition domain matches, the patch errors — declare the website root in this patch's `sources:` block (processed before claims) or an earlier patch. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
+
+`cite:` takes either a bare ref string (as above), or a **mapping** that widens the ref with fields of the minted citation:
+
+```yaml
+cite:
+  ref: ipdb:4443 # same grammar as the bare string form
+  locator: Notes section # optional: where in the source
+  quote: "exists only as a prototype machine" # optional: verbatim excerpt
+  archive: https://web.archive.org/... # optional: durable snapshot; http(s) refs only
+```
+
+`quote` is a **verbatim** excerpt: only exact source text and `[...]` ellipses belong in it — a reviewer should be able to follow the citation and ctrl-F find it. Interpretation, translation and rationale go in `note:` instead. Claims in the entry share one citation instance only when the whole citation matches — a differing quote is a distinct piece of evidence even against the same source and locator.
 
 As noted under [File format](#file-format), each `changesets:` item (and each flat entry) is its own ChangeSet, so one record can take **several** corrections in a patch — each with its own `note`/`cite`. Two rules keep that unambiguous:
 
@@ -309,7 +321,7 @@ claims:
       note: "Narrative compiled from IPDB and Pinside."
 ```
 
-`cites:` declares **only new** citations. Each key is a **numeric handle quoted as a string** (`"1":`, never bare `1:` — an unquoted integer key is a hard parse error) and each value is a cite-spec in the **same v1 grammar as `cite:`** — `scheme:identifier`, an `http(s)://` URL or a `{ url, archive }` map (per-citation locators are deferred to v2). The spec resolves through the same source get-or-create as `cite:`, so a URL still needs its [website root seeded](#citation-sources).
+`cites:` declares **only new** citations. Each key is a **numeric handle quoted as a string** (`"1":`, never bare `1:` — an unquoted integer key is a hard parse error) and each value is a cite ref in the **same grammar as `cite:`'s ref** — `scheme:identifier`, an `http(s)://` URL or a `{ ref, archive }` map (an inline footnote takes no `locator`/`quote` — those belong on the entry-level `cite:`). The spec resolves through the same source get-or-create as `cite:`, so a URL still needs its [website root seeded](#citation-sources).
 
 **Marker ↔ map correspondence is enforced** (a structural error, no DB lookup): every numeric-handle marker must have a `cites:` entry, and every `cites:` key must be a numeric handle referenced by at least one marker. A `cites:` entry keyed by a slug, or one no marker references, is a misuse. A marker that is neither all-digits nor a bare slug — notably a raw `[[cite:id:1]]` (storage form) — is rejected.
 

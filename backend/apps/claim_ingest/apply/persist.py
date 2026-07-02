@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
-from typing import assert_never, cast
+from typing import NamedTuple, assert_never, cast
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
@@ -34,6 +34,7 @@ from apps.claim_ingest.plan import (
     ChangedRelationshipFields,
     CitationRef,
     CiteHandle,
+    CiteSpec,
     EntryIndex,
     Handle,
     IngestPlan,
@@ -55,8 +56,8 @@ type EntryNotes = dict[EntryIndex, str]
 """Each patch entry's note keyed by its ``EntryIndex`` — one ChangeSet, one note
 per entry. Produced by ``_collect_plan_provenance``, consumed by ``_persist``."""
 
-type ClaimCitations = dict[ClaimIdentity, CitationRef]
-"""Per-claim ``CitationRef`` keyed by claim identity — never per entry, so a
+type ClaimCitations = dict[ClaimIdentity, CiteSpec]
+"""Per-claim ``CiteSpec`` keyed by claim identity — never per entry, so a
 citation never bleeds onto unrelated claims sharing the entity. Produced by
 ``_collect_plan_provenance``, consumed by ``_attach_plan_citations``."""
 
@@ -171,7 +172,7 @@ def _patch_handles(
 def _collect_plan_provenance(
     plan: IngestPlan,
 ) -> tuple[EntryNotes, ClaimCitations, ClaimEntryIndex]:
-    """Gather per-entry ``note``/``citation_ref`` and the claim→entry grouping map.
+    """Gather per-entry ``note``/``cite_spec`` and the claim→entry grouping map.
 
     Source-agnostic — any plan may set these; today only the patch adapter does
     (from a patch entry's ``note:``/``cite:``). Runs after ``_patch_handles``,
@@ -206,12 +207,12 @@ def _collect_plan_provenance(
         # Every assertion is stamped by the front end's second pass.
         assert pca.entry_index is not None
         claim_entry_index[ident] = pca.entry_index
-        if not pca.note and pca.citation_ref is None:
+        if not pca.note and pca.cite_spec is None:
             continue  # the common case: a plain assertion with no note/cite
         if pca.note:
             entry_notes[pca.entry_index] = pca.note
-        if pca.citation_ref is not None:
-            claim_citations[ident] = pca.citation_ref
+        if pca.cite_spec is not None:
+            claim_citations[ident] = pca.cite_spec
     for pcr in plan.retractions:
         if pcr.note:
             assert pcr.entry_index is not None
@@ -322,12 +323,26 @@ def _resolve_cite_source_id(
     return source_id
 
 
+class _SharedCiteKey(NamedTuple):
+    """Identity of one shared ``CitationInstance`` within an apply.
+
+    A changeset's claims share one instance only when the *whole* citation
+    content matches — same source, locator and quote. A differing quote is a
+    distinct piece of evidence even against the same source and locator.
+    """
+
+    changeset_id: ChangeSetId
+    source_id: CitationSourceId
+    locator: str
+    quote: str
+
+
 def _attach_plan_citations(
     to_create: list[Claim],
     claim_citations: ClaimCitations,
     actor: Actor,
 ) -> None:
-    """Materialize per-claim ``CitationRef``s as ``CitationInstance`` rows.
+    """Materialize per-claim ``CiteSpec``s as ``CitationInstance`` rows.
 
     Runs after ``_persist`` so created claims have PKs. A citation only rides
     a *newly written* claim: a value that diffs as unchanged produces no
@@ -343,22 +358,25 @@ def _attach_plan_citations(
     from apps.provenance.models import ClaimCitationInstance
 
     # One shared instance per distinct citation per ChangeSet: claims in the
-    # same entry citing the same source reach one row through join fan-out
-    # rather than minting a clone each. Ingest cites carry no locator, so the
-    # source alone identifies the citation within a changeset.
+    # same entry citing the same evidence reach one row through join fan-out
+    # rather than minting a clone each.
     source_cache: CiteSourceCache = {}
-    shared: dict[tuple[ChangeSetId, CitationSourceId], CitationInstance] = {}
-    cited: list[tuple[Claim, tuple[ChangeSetId, CitationSourceId]]] = []
+    shared: dict[_SharedCiteKey, CitationInstance] = {}
+    cited: list[tuple[Claim, _SharedCiteKey]] = []
     for claim in to_create:
-        ref = claim_citations.get(
+        spec = claim_citations.get(
             ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)
         )
-        if ref is None:
+        if spec is None:
             continue
-        source_id = _resolve_cite_source_id(ref, source_cache, actor=actor)
-        key = (claim.changeset_id, source_id)
+        source_id = _resolve_cite_source_id(spec.ref, source_cache, actor=actor)
+        key = _SharedCiteKey(claim.changeset_id, source_id, spec.locator, spec.quote)
         if key not in shared:
-            shared[key] = CitationInstance(citation_source_id=source_id)
+            shared[key] = CitationInstance(
+                citation_source_id=source_id,
+                locator=spec.locator,
+                quote=spec.quote,
+            )
         cited.append((claim, key))
     if shared:
         CitationInstance.objects.mint_many(list(shared.values()))

@@ -99,6 +99,22 @@ class SchemeCitationRef:
 type CitationRef = WebCitationRef | SchemeCitationRef
 
 
+@dataclass(frozen=True)
+class CiteSpec:
+    """A parsed entry-level ``cite:``: the source ref plus per-instance fields.
+
+    ``ref`` identifies the *source* (and is what the apply-side source
+    resolution memoizes on); ``locator`` and ``quote`` are fields of the
+    ``CitationInstance`` minted from it — where in the source, and the verbatim
+    excerpt. Inline footnotes (``cites:``) carry a bare :data:`CitationRef`
+    instead: they don't support locator/quote.
+    """
+
+    ref: CitationRef
+    locator: str = ""
+    quote: str = ""
+
+
 # A patch-local citation handle: the ephemeral label wiring a ``[[cite:N]]``
 # authoring marker to its ``cites:`` source spec. A transparent alias of ``str``
 # (like the adapter's ``ClaimKey``/``PublicId``) that names the role where a bare
@@ -191,11 +207,11 @@ class PlannedClaimAssert:
     value: Any = None
     claim_key: str = ""
     # Per-entry patch provenance. ``note`` flows to the entity's ChangeSet
-    # note; ``citation_ref`` (set only on explicit-field assertions, never the
+    # note; ``cite_spec`` (set only on explicit-field assertions, never the
     # create-owned slug/status scaffolding) is materialized as a
     # CitationInstance on the resulting claim at apply time.
     note: str = ""
-    citation_ref: CitationRef | None = None
+    cite_spec: CiteSpec | None = None
     # Inline-citation footnotes referenced by ``[[cite:<numeric-handle>]]`` markers
     # in a markdown field's value, keyed by the patch-local numeric handle. Each
     # is a *new* citation minted at apply time (a floating CitationInstance,
@@ -229,7 +245,7 @@ class PlannedClaimRetract:
     object_id: int
     claim_key: str
     # Per-entry patch note → the entry's ChangeSet note. A retraction has no
-    # new claim, so it carries no ``citation_ref``.
+    # new claim, so it carries no ``cite_spec``.
     note: str = ""
     # The file-order index of the authoring patch entry (see
     # ``PlannedClaimAssert.entry_index``); stamped in the same second pass.

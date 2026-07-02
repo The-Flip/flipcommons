@@ -274,6 +274,7 @@ describe('MarkdownTextArea citation integration', () => {
       body: {
         citation_source_id: MOCK_SOURCES[0].id,
         locator: 'p. 42',
+        quote: '',
       },
     });
   });
@@ -300,6 +301,7 @@ describe('MarkdownTextArea citation integration', () => {
       body: {
         citation_source_id: MOCK_SOURCES[0].id,
         locator: '',
+        quote: '',
       },
     });
   });
@@ -434,6 +436,7 @@ describe('MarkdownTextArea citation integration', () => {
       body: {
         citation_source_id: IPDB_CHILD.id,
         locator: '',
+        quote: '',
       },
     });
   });

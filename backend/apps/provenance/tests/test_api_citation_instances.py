@@ -105,6 +105,7 @@ class TestListCitationInstances:
             "citation_source_id",
             "citation_source_name",
             "locator",
+            "quote",
             "created_at",
         }
 

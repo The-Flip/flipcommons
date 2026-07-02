@@ -54,8 +54,10 @@
     isSubmitting = true;
     submitError = '';
 
+    // Inline cites carry no quote — the quote field lives on the edit-cite
+    // panel (EditCitationField), which takes the content-spec branch above.
     const { data, error } = await client.POST('/api/citation-instances/', {
-      body: { citation_source_id: draft.sourceId, locator: draft.locator },
+      body: { citation_source_id: draft.sourceId, locator: draft.locator, quote: '' },
     });
 
     isSubmitting = false;

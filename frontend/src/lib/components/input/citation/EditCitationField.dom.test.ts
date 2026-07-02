@@ -80,11 +80,35 @@ describe('EditCitationField', () => {
         citationSourceId: 7,
         sourceName: 'Williams Flyer',
         locator: 'p. 2',
+        quote: '',
       },
     });
 
     expect(screen.getByText('Williams Flyer, p. 2')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Remove citation' }));
     expect(screen.queryByText('Williams Flyer, p. 2')).not.toBeInTheDocument();
+  });
+
+  it('binds the quote textarea to the selected citation', async () => {
+    const user = userEvent.setup();
+    const citation = {
+      citationSourceId: 7,
+      sourceName: 'Williams Flyer',
+      locator: 'p. 2',
+      quote: '',
+    };
+
+    render(EditCitationField, { citation });
+
+    const quoteInput = screen.getByRole('textbox', { name: /quote from the source/i });
+    await user.type(quoteInput, 'Released in 1997.');
+    expect(quoteInput).toHaveValue('Released in 1997.');
+  });
+
+  it('shows no quote textarea before a citation is selected', () => {
+    render(EditCitationField, { citation: null });
+    expect(
+      screen.queryByRole('textbox', { name: /quote from the source/i }),
+    ).not.toBeInTheDocument();
   });
 });

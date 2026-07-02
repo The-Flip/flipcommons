@@ -26,6 +26,7 @@ class CitedCitation:
     author: str
     year: int | None
     locator: str
+    quote: str
     links: list[EvidenceLink]
 
 
@@ -53,7 +54,7 @@ class _CitedChangesetBuilder:
     created_at: str
     fields: list[str] = field(default_factory=list)
     field_set: set[str] = field(default_factory=set)
-    citations: dict[tuple[int, str], CitedCitation] = field(default_factory=dict)
+    citations: dict[tuple[int, str, str], CitedCitation] = field(default_factory=dict)
 
 
 def build_cited_changesets(claims: Iterable[Claim]) -> list[CitedChangeset]:
@@ -92,7 +93,7 @@ def build_cited_changesets(claims: Iterable[Claim]) -> list[CitedChangeset]:
             entry.fields.append(claim.field_name)
 
         for citation in claim_citations:
-            signature = (citation.citation_source_id, citation.locator)
+            signature = (citation.citation_source_id, citation.locator, citation.quote)
             if signature in entry.citations:
                 continue
             entry.citations[signature] = CitedCitation(
@@ -101,6 +102,7 @@ def build_cited_changesets(claims: Iterable[Claim]) -> list[CitedChangeset]:
                 author=citation.citation_source.author,
                 year=citation.citation_source.year,
                 locator=citation.locator,
+                quote=citation.quote,
                 links=[
                     EvidenceLink(url=link.url, label=link.label)
                     for link in citation.citation_source.links.all()

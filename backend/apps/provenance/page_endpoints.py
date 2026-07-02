@@ -92,6 +92,7 @@ class CitedChangeSetCitationSchema(Schema):
     author: str
     year: int | None = None
     locator: str
+    quote: str
     links: list[CitationLinkSchema] = []
 
 
@@ -210,6 +211,7 @@ def sources_page(
                         author=c.author,
                         year=c.year,
                         locator=c.locator,
+                        quote=c.quote,
                         links=[
                             CitationLinkSchema(url=link.url, label=link.label)
                             for link in c.links
