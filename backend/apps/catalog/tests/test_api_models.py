@@ -105,7 +105,7 @@ class TestModelsAPI:
     ):
         role = CreditRole.objects.get(slug="design")
         Credit.objects.create(model=machine_model, person=person, role=role)
-        make_claim(machine_model, "year", 1997, "IPDB entry", ingest_source=source)
+        make_claim(machine_model, "year", 1997, ingest_source=source)
 
         resp = client.get(f"/api/pages/model/{machine_model.slug}")
         assert resp.status_code == 200

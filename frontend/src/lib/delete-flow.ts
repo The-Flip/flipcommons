@@ -87,8 +87,7 @@ export function createDeleteSubmitter<E extends DeleteEntity>(entity: E) {
         .clone()
         .json()
         .catch(() => null)) as
-        | ({ blocked_by?: BlockingReferrer[]; detail?: unknown } & Record<string, unknown>)
-        | null;
+        ({ blocked_by?: BlockingReferrer[]; detail?: unknown } & Record<string, unknown>) | null;
       if (body && Array.isArray(body.blocked_by)) {
         const { blocked_by, detail, ...extra } = body;
         return {
