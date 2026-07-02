@@ -11,8 +11,7 @@
     initialFocus?: HTMLElement;
     children: Snippet;
   } & (
-    | { ariaLabel: string; ariaLabelledBy?: never }
-    | { ariaLabelledBy: string; ariaLabel?: never }
+    { ariaLabel: string; ariaLabelledBy?: never } | { ariaLabelledBy: string; ariaLabel?: never }
   );
 
   let {

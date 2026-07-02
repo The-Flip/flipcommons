@@ -75,7 +75,7 @@ describe('saveSimpleTaxonomyClaims', () => {
     await saveSimpleTaxonomyClaims('/api/franchises/{public_id}/claims/', 'foo', {
       fields: { name: 'Foo' },
       note: 'rename',
-      citations: [{ citation_source_id: 7, locator: 'p. 2' }],
+      citations: [{ citation_source_id: 7, locator: 'p. 2', quote: '' }],
     });
 
     expect(PATCH).toHaveBeenCalledWith('/api/franchises/{public_id}/claims/', {
@@ -83,7 +83,7 @@ describe('saveSimpleTaxonomyClaims', () => {
       body: {
         fields: { name: 'Foo' },
         note: 'rename',
-        citations: [{ citation_source_id: 7, locator: 'p. 2' }],
+        citations: [{ citation_source_id: 7, locator: 'p. 2', quote: '' }],
       },
     });
   });

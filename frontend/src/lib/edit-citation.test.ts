@@ -12,12 +12,13 @@ const citation: EditCitationSelection = {
   citationSourceId: 7,
   sourceName: 'Williams Flyer',
   locator: 'p. 2',
+  quote: 'Released in 1997.',
 };
 
 describe('buildEditCitationsRequest', () => {
   it('serializes the selected citation as a content spec', () => {
     expect(buildEditCitationsRequest(citation)).toEqual([
-      { citation_source_id: 7, locator: 'p. 2' },
+      { citation_source_id: 7, locator: 'p. 2', quote: 'Released in 1997.' },
     ]);
   });
 
@@ -33,7 +34,7 @@ describe('withEditMetadata', () => {
     ).toEqual({
       fields: { description: 'Updated' },
       note: 'cleanup',
-      citations: [{ citation_source_id: 7, locator: 'p. 2' }],
+      citations: [{ citation_source_id: 7, locator: 'p. 2', quote: 'Released in 1997.' }],
     });
   });
 
@@ -53,7 +54,7 @@ describe('countPendingChanges', () => {
         fields: { year: 1998, description: 'Updated' },
         themes: ['medieval'],
         note: 'ignored',
-        citations: [{ citation_source_id: 7, locator: 'p. 2' }],
+        citations: [{ citation_source_id: 7, locator: 'p. 2', quote: 'Released in 1997.' }],
       }),
     ).toBe(3);
   });

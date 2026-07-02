@@ -10,11 +10,7 @@ export const USERNAME_MIN_LEN = 3;
 export const USERNAME_MAX_LEN = 20;
 
 export type UsernameFormatRejectReason =
-  | 'too_short'
-  | 'too_long'
-  | 'bad_charset'
-  | 'leading_or_trailing_hyphen'
-  | 'consecutive_hyphens';
+  'too_short' | 'too_long' | 'bad_charset' | 'leading_or_trailing_hyphen' | 'consecutive_hyphens';
 // `reserved` is server-side only (the reserved list lives in Python). Local
 // pre-check never returns "reserved" or "taken".
 

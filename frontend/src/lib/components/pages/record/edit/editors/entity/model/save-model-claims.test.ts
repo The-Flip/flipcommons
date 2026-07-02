@@ -159,7 +159,7 @@ describe('saveModelClaims', () => {
     PATCH.mockResolvedValue({ data: {}, error: undefined });
     invalidateAll.mockResolvedValue(undefined);
 
-    const citations = [{ citation_source_id: 7, locator: 'p. 2' }];
+    const citations = [{ citation_source_id: 7, locator: 'p. 2', quote: '' }];
     await saveModelClaims('medieval-madness', {
       fields: { year: 1997 },
       citations,

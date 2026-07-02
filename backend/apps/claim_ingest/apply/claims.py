@@ -242,7 +242,7 @@ def _reject_empty_diff_provenance(plan: IngestPlan, changed: set[EntryIndex]) ->
     for pca in plan.assertions:
         idx = pca.entry_index
         assert idx is not None  # patch assertions are always stamped
-        if pca.note or pca.citation_ref is not None or pca.inline_cites:
+        if pca.note or pca.cite_spec is not None or pca.inline_cites:
             has_provenance.add(idx)
         is_status = pca.field_name == LIFECYCLE_STATUS_FIELD
         only_status[idx] = only_status.get(idx, True) and is_status

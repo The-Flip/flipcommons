@@ -1,12 +1,13 @@
 import type { CitationInstanceCreateSchema } from '$lib/api/schema';
 
 /** A citation the user attached to an edit: the content spec the save payload
- * sends (source + locator — the backend mints the shared instance at save
- * time) plus the source name for display. */
+ * sends (source + locator + quote — the backend mints the shared instance at
+ * save time) plus the source name for display. */
 export type EditCitationSelection = {
   citationSourceId: number;
   sourceName: string;
   locator: string;
+  quote: string;
 };
 
 type PatchBody = Record<string, unknown>;
@@ -17,7 +18,13 @@ export function buildEditCitationsRequest(
   citation: EditCitationSelection | null,
 ): CitationInstanceCreateSchema[] {
   if (!citation) return [];
-  return [{ citation_source_id: citation.citationSourceId, locator: citation.locator }];
+  return [
+    {
+      citation_source_id: citation.citationSourceId,
+      locator: citation.locator,
+      quote: citation.quote,
+    },
+  ];
 }
 
 export function withEditMetadata<T extends PatchBody>(

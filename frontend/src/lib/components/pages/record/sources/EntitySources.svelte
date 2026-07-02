@@ -78,6 +78,9 @@
                     {#if citation.locator}
                       <div class="locator">{citation.locator}</div>
                     {/if}
+                    {#if citation.quote}
+                      <blockquote class="quote">{citation.quote}</blockquote>
+                    {/if}
                     {#if citation.links.length > 0}
                       <div class="links">
                         {#each citation.links as link (link.url)}
@@ -322,6 +325,15 @@
     flex-direction: column;
     gap: var(--size-1);
     padding-top: var(--size-2);
+  }
+
+  .quote {
+    margin: 0;
+    padding-left: var(--size-3);
+    border-left: 2px solid var(--color-border-soft);
+    font-size: var(--font-size-0);
+    font-style: italic;
+    color: var(--color-text-muted);
   }
 
   .links {

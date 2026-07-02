@@ -36,12 +36,10 @@
     { key: 'year', label: 'Year: 1980–1995' },
   ]);
   let filterChips = $derived(
-    demoChips.map(
-      (chip): FilterChipSpec => ({
-        ...chip,
-        remove: () => (demoChips = demoChips.filter((c) => c.key !== chip.key)),
-      }),
-    ),
+    demoChips.map((chip): FilterChipSpec => ({
+      ...chip,
+      remove: () => (demoChips = demoChips.filter((c) => c.key !== chip.key)),
+    })),
   );
 </script>
 

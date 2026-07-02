@@ -24,6 +24,7 @@ from apps.claim_ingest.patches import (
     load_patch,
 )
 from apps.claim_ingest.plan import (
+    CiteSpec,
     IngestPlan,
     PlannedClaimAssert,
     SchemeCitationRef,
@@ -611,7 +612,7 @@ def test_dry_run_invalid_value_reports_validation_not_empty_diff(
 
 def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
     # Direct IngestPlan: two assertions on one entity, only one carries a
-    # citation_ref. The citation must ride only that claim — never bleed onto
+    # cite_spec. The citation must ride only that claim — never bleed onto
     # the other claim that merely shares the entity.
     ct = ContentType.objects.get_for_model(MachineModel)
     plan = IngestPlan(
@@ -623,7 +624,7 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
             value=1998,
             content_type_id=ct.pk,
             object_id=pm.pk,
-            citation_ref=SchemeCitationRef("ipdb", "4443"),
+            cite_spec=CiteSpec(ref=SchemeCitationRef("ipdb", "4443")),
             entry_index=0,
         )
     )
@@ -824,7 +825,7 @@ def test_url_cite_under_root_dedups_and_separates(
 def test_url_cite_with_archive_attaches_both_links(
     flipcommons_catalog, kineticist_root, pm
 ):
-    # cite: {url, archive} → the child carries BOTH a 'reference' link (the live
+    # cite: {ref, archive} → the child carries BOTH a 'reference' link (the live
     # page) and an 'archive' link (the Wayback snapshot): one citation, two links.
     url = "https://kineticist.com/reviews/medieval-madness"
     archive = "https://web.archive.org/web/20240101000000/" + url
@@ -833,7 +834,7 @@ def test_url_cite_with_archive_attaches_both_links(
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
-        f"        url: {url}\n"
+        f"        ref: {url}\n"
         f"        archive: {archive}\n"
         "      year: 1998\n"
     )
@@ -848,7 +849,7 @@ def test_url_cite_with_archive_attaches_both_links(
 
 
 def test_url_cite_archive_idempotent(flipcommons_catalog, kineticist_root, pm):
-    # Re-applying the same {url, archive} cite never duplicates the archive link.
+    # Re-applying the same {ref, archive} cite never duplicates the archive link.
     url = "https://kineticist.com/x"
     archive = "https://web.archive.org/web/20240101000000/" + url
     base = (
@@ -856,7 +857,7 @@ def test_url_cite_archive_idempotent(flipcommons_catalog, kineticist_root, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
-        f"        url: {url}\n"
+        f"        ref: {url}\n"
         f"        archive: {archive}\n"
         "      year: {year}\n"
     )
@@ -882,7 +883,7 @@ def test_archive_added_to_preexisting_child(flipcommons_catalog, kineticist_root
     _apply(
         "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n"
         "      cite:\n"
-        f"        url: {url}\n        archive: {archive}\n"
+        f"        ref: {url}\n        archive: {archive}\n"
         "      year: 1999\n",
         patch_id="0002-b",
     )
@@ -900,7 +901,7 @@ def test_cite_archive_with_scheme_cite_rejected(flipcommons_catalog, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
-        "        url: ipdb:4443\n"
+        "        ref: ipdb:4443\n"
         "        archive: https://web.archive.org/web/2024/x\n"
         "      year: 1998\n"
     )
@@ -914,7 +915,7 @@ def test_cite_mapping_unknown_key_rejected(flipcommons_catalog, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
-        "        url: https://kineticist.com/x\n"
+        "        ref: https://kineticist.com/x\n"
         "        wayback: https://web.archive.org/x\n"
         "      year: 1998\n"
     )
@@ -928,11 +929,119 @@ def test_invalid_archive_url_rejected(flipcommons_catalog, kineticist_root, pm):
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
-        "        url: https://kineticist.com/x\n"
+        "        ref: https://kineticist.com/x\n"
         "        archive: not-a-url\n"
         "      year: 1998\n"
     )
     with pytest.raises(PatchError, match="not a valid"):
+        _apply(text)
+
+
+def test_cite_mapping_locator_and_quote_land_on_instance(
+    flipcommons_catalog, ipdb_root, pm
+):
+    # The mapping form's locator/quote are CitationInstance fields: one shared
+    # instance carries them to every claim in the entry.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        ref: ipdb:4443\n"
+        "        locator: Notes section\n"
+        '        quote: "This game was never produced."\n'
+        "      year: 1998\n"
+        "      production_quantity: 4000\n"
+    )
+    _apply(text)
+
+    year_claim = pm.claims.get(field_name="year", is_active=True)
+    qty_claim = pm.claims.get(field_name="production_quantity", is_active=True)
+    instance = year_claim.citation_instances.get()
+    assert instance.locator == "Notes section"
+    assert instance.quote == "This game was never produced."
+    # Same evidence, same entry → the same shared instance, not a clone.
+    assert qty_claim.citation_instances.get().pk == instance.pk
+
+
+def test_cite_scalar_form_mints_empty_locator_and_quote(
+    flipcommons_catalog, ipdb_root, pm
+):
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite: ipdb:4443\n"
+        "      year: 1998\n"
+    )
+    _apply(text)
+
+    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    assert instance.locator == ""
+    assert instance.quote == ""
+
+
+def test_cite_quote_overlong_rejected(flipcommons_catalog, pm):
+    long_quote = "x" * 2_001
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        ref: ipdb:4443\n"
+        f"        quote: {long_quote}\n"
+        "      year: 1998\n"
+    )
+    with pytest.raises(PatchError, match="cite quote exceeds"):
+        _apply(text)
+
+
+def test_cite_locator_overlong_rejected(flipcommons_catalog, pm):
+    long_locator = "x" * 201
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        ref: ipdb:4443\n"
+        f"        locator: {long_locator}\n"
+        "      year: 1998\n"
+    )
+    with pytest.raises(PatchError, match="cite locator exceeds"):
+        _apply(text)
+
+
+def test_cite_quote_mojibake_rejected(flipcommons_catalog, pm):
+    # The bulk mint path skips model validators, so the parser must catch
+    # encoding corruption itself.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        ref: ipdb:4443\n"
+        '        quote: "It doesnâ€™t work"\n'
+        "      year: 1998\n"
+    )
+    with pytest.raises(PatchError, match="cite quote"):
+        _apply(text)
+
+
+def test_inline_cite_locator_and_quote_rejected(flipcommons_catalog, pm):
+    # Inline footnotes carry a bare source ref; locator/quote belong on the
+    # entry-level cite only.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      description: |\n"
+        "        Widely praised.[[cite:1]]\n"
+        "      cites:\n"
+        '        "1":\n'
+        "          ref: ipdb:4443\n"
+        '          quote: "Widely praised"\n'
+    )
+    with pytest.raises(PatchError, match="takes no 'locator'/'quote'"):
         _apply(text)
 
 
@@ -1044,7 +1153,7 @@ def test_url_cite_with_archive_surfaces_live_link_in_edit_history(
         "claims:\n"
         "  - model.medieval-madness:\n"
         "      cite:\n"
-        f"        url: {url}\n"
+        f"        ref: {url}\n"
         f"        archive: {archive}\n"
         "      year: 1998\n"
     )

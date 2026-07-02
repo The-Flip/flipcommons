@@ -22,11 +22,15 @@
 
   // The picker hands back a content spec, not a minted instance — the spec
   // rides the save payload and the backend mints the shared instance then.
+  // A quote already typed survives a source re-pick: clearing user-entered
+  // text on "Change citation" would be worse than a stale quote the user can
+  // see and edit.
   function handleComplete(draft: CompletedCitationDraft) {
     citation = {
       citationSourceId: draft.sourceId,
       sourceName: draft.sourceName,
       locator: draft.locator,
+      quote: citation?.quote ?? '',
     };
     pickerOpen = false;
   }
@@ -48,6 +52,12 @@
         <div id={inputId} class="citation-summary">
           {formatCitationSummary(citation)}
         </div>
+        <textarea
+          aria-label="Quote from the source"
+          placeholder="Optional: exact text quoted from the source"
+          rows="3"
+          maxlength="2000"
+          bind:value={citation.quote}></textarea>
       {/if}
 
       <div class="citation-actions">

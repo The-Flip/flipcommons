@@ -89,19 +89,18 @@
   });
 
   let editSections: EditSectionMenuItem[] = $derived([
-    ...PERSON_EDIT_SECTIONS.map(
-      (section): EditSectionMenuItem =>
-        isMobile
-          ? {
-              key: section.key,
-              label: section.label,
-              href: resolve(`/people/${slug}/edit/${section.segment}`),
-            }
-          : {
-              key: section.key,
-              label: section.label,
-              onclick: () => (editing = section.key),
-            },
+    ...PERSON_EDIT_SECTIONS.map((section): EditSectionMenuItem =>
+      isMobile
+        ? {
+            key: section.key,
+            label: section.label,
+            href: resolve(`/people/${slug}/edit/${section.segment}`),
+          }
+        : {
+            key: section.key,
+            label: section.label,
+            onclick: () => (editing = section.key),
+          },
     ),
     // "Delete Person" is the last item in the menu (destructive action).
     // Navigates to a focus-mode confirmation page; auth gating rides on

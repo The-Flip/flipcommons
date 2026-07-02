@@ -31,6 +31,7 @@ from apps.claim_ingest.patches.parsing import (
 from apps.claim_ingest.plan import (
     CitationRef,
     CiteHandle,
+    CiteSpec,
     Handle,
     IngestPlan,
     Namespace,
@@ -206,7 +207,7 @@ def _emit_assert(
     value: object = None,
     claim_key: ClaimKey = "",
     note: str = "",
-    citation_ref: CitationRef | None = None,
+    cite_spec: CiteSpec | None = None,
     inline_cites: dict[CiteHandle, CitationRef] | None = None,
 ) -> None:
     plan.assertions.append(
@@ -215,7 +216,7 @@ def _emit_assert(
             value=value,
             claim_key=claim_key,
             note=note,
-            citation_ref=citation_ref,
+            cite_spec=cite_spec,
             inline_cites=dict(inline_cites) if inline_cites else {},
             content_type_id=target.content_type_id,
             object_id=target.object_id,
@@ -231,7 +232,7 @@ def _emit_direct(
     target: _Target,
     *,
     note: str = "",
-    citation_ref: CitationRef | None = None,
+    cite_spec: CiteSpec | None = None,
     inline_cites: dict[CiteHandle, CitationRef] | None = None,
 ) -> None:
     """Emit a scalar or FK claim assertion (FK value is the target public_id).
@@ -246,7 +247,7 @@ def _emit_direct(
         field_name=field_name,
         value=value,
         note=note,
-        citation_ref=citation_ref,
+        cite_spec=cite_spec,
         inline_cites=inline_cites,
     )
 
@@ -691,7 +692,7 @@ def _emit_relationship(
     *,
     registry: PatchEntityRegistry,
     note: str = "",
-    citation_ref: CitationRef | None = None,
+    cite_spec: CiteSpec | None = None,
 ) -> _MemberEmitResult:
     """Emit ``exists=true`` member assertions; return their clash keys + carrier flag.
 
@@ -761,7 +762,7 @@ def _emit_relationship(
                         identity=resolved.concrete,
                         identity_refs=resolved.refs,
                         note=note,
-                        citation_ref=citation_ref,
+                        cite_spec=cite_spec,
                         content_type_id=target.content_type_id,
                         object_id=target.object_id,
                         handle=target.handle,
@@ -795,7 +796,7 @@ def _emit_relationship(
                         identity=payload,
                         identity_refs={rel_spec.value_key: handle},
                         note=note,
-                        citation_ref=citation_ref,
+                        cite_spec=cite_spec,
                         content_type_id=target.content_type_id,
                         object_id=target.object_id,
                         handle=target.handle,
@@ -824,7 +825,7 @@ def _emit_relationship(
             value=claim_value,
             claim_key=claim_key,
             note=note,
-            citation_ref=citation_ref,
+            cite_spec=cite_spec,
         )
         clash_keys.append(claim_key)
         carrier_written = True
@@ -847,7 +848,7 @@ def _add_removals(
     rel_fields_by_model: RelFieldsByModel,
     *,
     note: str = "",
-    citation_ref: CitationRef | None = None,
+    cite_spec: CiteSpec | None = None,
 ) -> _RemovalResult:
     """Emit ``exists=false`` member supersedes for each ``remove:`` member.
 
@@ -912,7 +913,7 @@ def _add_removals(
                 value=claim_value,
                 claim_key=claim_key,
                 note=note,
-                citation_ref=citation_ref,
+                cite_spec=cite_spec,
             )
             rel_fields_by_model[model_class].add(namespace)
             carrier_written = True
@@ -1112,7 +1113,7 @@ def _add_delete(
     entry: DeleteEntry,
     *,
     note: str = "",
-    citation_ref: CitationRef | None = None,
+    cite_spec: CiteSpec | None = None,
 ) -> list[EntityKey]:
     """Emit ``status=deleted`` assertions to soft-delete *existing* and its cascade.
 
@@ -1161,7 +1162,7 @@ def _add_delete(
             field_name=LIFECYCLE_STATUS_FIELD,
             value="deleted",
             note=note,
-            citation_ref=citation_ref,
+            cite_spec=cite_spec,
         )
         affected.append(EntityKey(ct_id, target_entity.pk))
     cascaded = [require_linkable(e) for e in walk.cascade if e.pk != existing.pk]

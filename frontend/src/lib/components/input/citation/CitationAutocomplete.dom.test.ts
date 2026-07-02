@@ -1080,7 +1080,7 @@ describe('CitationAutocomplete (component-level)', () => {
         },
       });
       expect(mockPOST).toHaveBeenCalledWith('/api/citation-instances/', {
-        body: { citation_source_id: 99, locator: '' },
+        body: { citation_source_id: 99, locator: '', quote: '' },
       });
       // No bare-root create.
       expect(mockPOST).not.toHaveBeenCalledWith('/api/citation-sources/', expect.anything());

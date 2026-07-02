@@ -479,6 +479,9 @@ class CitationSourceRootDomain(TimeStampedModel, ActorAttributedModel):
 # ---------------------------------------------------------------------------
 
 CITATION_INSTANCE_LOCATOR_MAX_LENGTH = 200
+# Must clear the longest historical note-quote the backfill moves here (831
+# chars measured); matches the old Claim.citation cap.
+CITATION_INSTANCE_QUOTE_MAX_LENGTH = 2_000
 
 # Slug alphabet: lowercase consonants only (vowels dropped). Digit-free so a
 # slug can never collide with a numeric same-patch cite handle, and vowel-free
@@ -560,7 +563,7 @@ class CitationInstanceManager(models.Manager["CitationInstance"]):
 
 
 class CitationInstance(models.Model):
-    """A specific use of a CitationSource at a point in text, with a locator.
+    """A specific use of a CitationSource, with a locator and a verbatim quote.
 
     Immutable: corrections create a new instance (old one becomes orphaned).
     Only has created_at, no updated_at — matching the Claim immutability pattern.
@@ -586,6 +589,17 @@ class CitationInstance(models.Model):
     )
     locator = models.CharField(
         max_length=CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
+        blank=True,
+        default="",
+        db_default="",
+        validators=[validate_no_mojibake],
+    )
+    # A verbatim excerpt from the source: only exact source text and "[...]"
+    # ellipses belong here — a reviewer should be able to follow the citation's
+    # URL and ctrl-F find each span. Interpretation, translation and rationale
+    # go in ChangeSet.note instead.
+    quote = BoundedTextField(
+        max_length=CITATION_INSTANCE_QUOTE_MAX_LENGTH,
         blank=True,
         default="",
         db_default="",

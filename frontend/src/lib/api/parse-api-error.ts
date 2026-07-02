@@ -27,9 +27,7 @@ type ParsedError = { message: string; fieldErrors: FieldErrors };
  * `message` alone fall through and need no addition.
  */
 type StructuredErrorBody =
-  | ValidationErrorBodySchema
-  | RateLimitErrorBodySchema
-  | PolicyDeniedBodySchema;
+  ValidationErrorBodySchema | RateLimitErrorBodySchema | PolicyDeniedBodySchema;
 
 function isStructuredErrorBody(value: unknown): value is StructuredErrorBody {
   if (typeof value !== 'object' || value === null) return false;

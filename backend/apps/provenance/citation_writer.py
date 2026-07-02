@@ -25,6 +25,7 @@ def create_citation_instance(spec: CitationInstanceCreateSchema) -> CitationInst
     instance = CitationInstance(
         citation_source_id=spec.citation_source_id,
         locator=spec.locator,
+        quote=spec.quote,
     )
     # slug is assigned in CitationInstance.save(); exclude it from validation,
     # which runs first and would otherwise see it blank.

@@ -17,7 +17,10 @@ from typing import Annotated, ClassVar, Literal
 from django.db.models import Model
 from ninja import Field, Schema
 
-from apps.citation.models import CITATION_INSTANCE_LOCATOR_MAX_LENGTH
+from apps.citation.models import (
+    CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
+    CITATION_INSTANCE_QUOTE_MAX_LENGTH,
+)
 from apps.core.authz import Activity, PolicyActivities
 
 from .models import (
@@ -336,6 +339,16 @@ class CitationInstanceCreateSchema(Schema):
             description="Specific location within the source, such as a page or section.",
         ),
     ] = ""
+    quote: Annotated[
+        str,
+        Field(
+            max_length=CITATION_INSTANCE_QUOTE_MAX_LENGTH,
+            description=(
+                "Verbatim excerpt from the source: exact source text and "
+                "'[...]' ellipses only."
+            ),
+        ),
+    ] = ""
 
 
 class ChangeSetInputSchema(Schema):
@@ -532,6 +545,9 @@ class CitationInstanceSchema(Schema):
     citation_source_name: str = Field(description="Display name of the cited source.")
     locator: str = Field(
         description="Specific location within the source, such as a page or section, or an empty string."
+    )
+    quote: str = Field(
+        description="Verbatim excerpt from the source, or an empty string."
     )
     created_at: str = Field(
         description="When the instance was created, as an ISO 8601 timestamp."

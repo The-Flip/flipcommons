@@ -252,10 +252,13 @@ def _attach_citations(
     the mint's ``full_clean``, which the ``execute_*`` wrappers map to a
     structured 422.
     """
-    # Dedupe by content: the same (source, locator) entered twice is one
-    # piece of evidence, and duplicate join rows would trip the unique
-    # (claim, citation_instance) constraint.
-    distinct = {(spec.citation_source_id, spec.locator): spec for spec in citations}
+    # Dedupe by content: the same (source, locator, quote) entered twice is
+    # one piece of evidence, and duplicate join rows would trip the unique
+    # (claim, citation_instance) constraint. A differing quote is distinct
+    # evidence even against the same source and locator.
+    distinct = {
+        (spec.citation_source_id, spec.locator, spec.quote): spec for spec in citations
+    }
     for spec in distinct.values():
         instance = create_citation_instance(spec)
         ClaimCitationInstance.objects.bulk_create(
