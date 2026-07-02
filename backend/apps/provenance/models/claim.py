@@ -16,14 +16,12 @@ from django.db import models
 from django.db.models.functions import Now
 
 from apps.actors.types import ActorId
-from apps.core.models import BoundedTextField, field_not_blank
+from apps.core.models import field_not_blank
 from apps.core.types import ClaimFieldName, ClaimKey, ContentTypeId, LicenseId
 
 from ..model_bases import ClaimControlledModel
 from ..types import ChangeSetId
 from .changeset import ChangeSet
-
-CLAIM_CITATION_MAX_LENGTH = 2_000
 
 type IdentityPartValue = str | int | None
 """One value in a claim_key's identity-parts mapping: an entity-reference PK
@@ -121,12 +119,6 @@ class Claim(models.Model):
         help_text="The changeset that deactivated this claim (user revert or full_sync retraction).",
     )
     value = models.JSONField()
-    citation = BoundedTextField(
-        max_length=CLAIM_CITATION_MAX_LENGTH,
-        blank=True,
-        default="",
-        db_default="",
-    )
     # Read-only convenience over the explicit ClaimCitationInstance join (the
     # write path creates join rows directly, never .add()/.set() here). Inline
     # [[cite:...]] instances carry no join row, so they never appear in it.

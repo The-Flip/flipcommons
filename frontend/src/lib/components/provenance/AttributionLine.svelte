@@ -8,7 +8,6 @@
       source_url?: string | null;
       license_name?: string | null;
       license_url?: string | null;
-      attribution_text?: string | null;
     } | null;
   } = $props();
 
@@ -17,9 +16,7 @@
 
 {#if show}
   <p class="attribution">
-    {#if attribution?.attribution_text}
-      {attribution.attribution_text}
-    {:else if attribution?.source_url}
+    {#if attribution?.source_url}
       Source: <a href={attribution.source_url} target="_blank" rel="noopener"
         >{attribution.source_name}</a
       >

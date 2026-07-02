@@ -161,7 +161,6 @@ def build_sources(
                 ),
                 field_name=claim.field_name,
                 value=claim_value(model, claim.field_name, claim.value, ctx),
-                citation=claim.citation,
                 is_winner=is_winner,
                 changeset_note=claim.changeset.note if claim.changeset else None,
             )

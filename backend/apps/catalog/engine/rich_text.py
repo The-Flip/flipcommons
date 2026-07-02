@@ -52,7 +52,6 @@ def _extract_description_attribution(
                 requires_attribution=lic.requires_attribution if lic else False,
                 source_name=src.name if src else None,
                 source_url=src.url if src else None,
-                attribution_text=claim.citation or None,
             )
     return None
 

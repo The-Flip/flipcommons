@@ -311,9 +311,6 @@ class ClaimSchema(Schema):
     )
     field_name: str = Field(description="The entity field the claim applies to.")
     value: ClaimValueSchema = Field(description="The claim's asserted value.")
-    citation: str = Field(
-        description="The citation backing the claim, or an empty string when none."
-    )
     is_winner: bool = Field(
         description="Whether this claim currently wins resolution for its field."
     )
@@ -395,12 +392,6 @@ class AttributionSchema(Schema):
         Field(description="Name of the source this content was derived from."),
     ] = None
     source_url: Annotated[str | None, Field(description="URL of that source.")] = None
-    attribution_text: Annotated[
-        str | None,
-        Field(
-            description="Ready-to-use attribution string for this content, when provided."
-        ),
-    ] = None
 
 
 class CitationLinkSchema(Schema):
