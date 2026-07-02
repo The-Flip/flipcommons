@@ -4,8 +4,7 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.catalog.models import Manufacturer, Person
-from apps.provenance.models import Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 User = get_user_model()
 
@@ -13,14 +12,14 @@ User = get_user_model()
 @pytest.fixture
 def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Williams", slug="williams")
-    make_claim(m, "name", "Williams", source=bootstrap_source)
+    make_claim(m, "name", "Williams", ingest_source=bootstrap_source)
     return m
 
 
 @pytest.fixture
 def person(db, bootstrap_source):
     p = Person.objects.create(name="Pat Lawlor", slug="pat-lawlor")
-    make_claim(p, "name", "Pat Lawlor", source=bootstrap_source)
+    make_claim(p, "name", "Pat Lawlor", ingest_source=bootstrap_source)
     return p
 
 
@@ -166,10 +165,8 @@ class TestPatchManufacturerClaimsPersistence:
         assert active.first().value == "Second"
 
     def test_user_claim_beats_lower_priority_source(self, client, user, mfr):
-        source = Source.objects.create(
-            name="LowPri", source_type="database", priority=10
-        )
-        make_claim(mfr, "description", "Source Name", source=source)
+        source = make_ingest_source(name="LowPri", source_type="database", priority=10)
+        make_claim(mfr, "description", "Source Name", ingest_source=source)
         from apps.catalog.resolve import resolve_entity
 
         resolve_entity(mfr)

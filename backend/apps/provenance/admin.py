@@ -1,32 +1,15 @@
 from django.contrib import admin
-from django.db.models import Model
-from django.http import HttpRequest
+
+from apps.core.admin import ReadOnlyAdminMixin
 
 from .models import (
     ChangeSet,
-    CitationInstance,
     Claim,
+    ClaimCitationInstance,
     IngestRun,
     Source,
     SourceFieldLicense,
 )
-
-
-class ReadOnlyAdminMixin:
-    """Disallow add / change / delete so the admin is view-only."""
-
-    def has_add_permission(self, request: HttpRequest) -> bool:
-        return False
-
-    def has_change_permission(
-        self, request: HttpRequest, obj: Model | None = None
-    ) -> bool:
-        return False
-
-    def has_delete_permission(
-        self, request: HttpRequest, obj: Model | None = None
-    ) -> bool:
-        return False
 
 
 class SourceFieldLicenseInline(admin.TabularInline[SourceFieldLicense, Source]):
@@ -111,16 +94,16 @@ class ClaimAdmin(ReadOnlyAdminMixin, admin.ModelAdmin[Claim]):
         return s
 
 
-@admin.register(CitationInstance)
-class CitationInstanceAdmin(ReadOnlyAdminMixin, admin.ModelAdmin[CitationInstance]):
-    """Read-only inspection view. CitationInstances are immutable."""
+@admin.register(ClaimCitationInstance)
+class ClaimCitationInstanceAdmin(
+    ReadOnlyAdminMixin, admin.ModelAdmin[ClaimCitationInstance]
+):
+    """Read-only inspection view of the claim ↔ citation-instance support edges."""
 
-    list_display = ("citation_source", "claim", "locator_truncated", "created_at")
-    list_select_related = ("citation_source", "claim")
-    readonly_fields = ("citation_source", "claim", "locator", "created_at")
-
-    @admin.display(description="Locator")
-    def locator_truncated(self, obj: CitationInstance) -> str:
-        if len(obj.locator) > 60:
-            return obj.locator[:60] + "..."
-        return obj.locator
+    list_display = ("claim", "citation_instance")
+    list_select_related = (
+        "claim__actor__user",
+        "claim__actor__source",
+        "citation_instance__citation_source",
+    )
+    readonly_fields = ("claim", "citation_instance")

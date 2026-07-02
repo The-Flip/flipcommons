@@ -13,7 +13,7 @@ import client from '$lib/api/client';
 import { parseApiError } from '$lib/api/parse-api-error';
 import type { BlockingReferrerSchema, paths } from '$lib/api/schema';
 import type { EditCitationSelection } from '$lib/edit-citation';
-import { buildEditCitationRequest } from '$lib/edit-citation';
+import { buildEditCitationsRequest } from '$lib/edit-citation';
 
 export type BlockingReferrer = BlockingReferrerSchema;
 
@@ -67,7 +67,7 @@ export function createDeleteSubmitter<E extends DeleteEntity>(entity: E) {
         params: { path: { public_id } },
         body: {
           note: opts.note ?? '',
-          citation: buildEditCitationRequest(opts.citation ?? null),
+          citations: buildEditCitationsRequest(opts.citation ?? null),
         },
       } as never,
     );

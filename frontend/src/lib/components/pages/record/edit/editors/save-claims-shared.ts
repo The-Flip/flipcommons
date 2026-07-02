@@ -7,7 +7,7 @@ import client from '$lib/api/client';
 import { parseApiError, type FieldErrors } from '$lib/api/parse-api-error';
 import type {
   ClaimPatchSchema,
-  CitationReferenceInputSchema,
+  CitationInstanceCreateSchema,
   HierarchyClaimPatchSchema,
   paths,
 } from '$lib/api/schema';
@@ -15,7 +15,7 @@ import type {
 /** Metadata that the modal passes through to an editor's save(). */
 export type SaveMeta = {
   note?: string;
-  citation?: CitationReferenceInputSchema;
+  citations?: CitationInstanceCreateSchema[];
 };
 
 export type SaveResult =
@@ -26,11 +26,11 @@ type ClaimsBody = ClaimPatchSchema;
 type HierarchyClaimsBody = HierarchyClaimPatchSchema;
 
 export type SimpleTaxonomySectionPatchBody = Partial<
-  Pick<ClaimsBody, 'fields' | 'note' | 'citation'>
+  Pick<ClaimsBody, 'fields' | 'note' | 'citations'>
 >;
 
 export type HierarchicalTaxonomySectionPatchBody = Partial<
-  Pick<HierarchyClaimsBody, 'fields' | 'parents' | 'aliases' | 'note' | 'citation'>
+  Pick<HierarchyClaimsBody, 'fields' | 'parents' | 'aliases' | 'note' | 'citations'>
 >;
 
 /**
@@ -54,7 +54,7 @@ export type SimpleTaxonomyClaimsPath = {
 /**
  * Save handler for any simple-taxonomy claims endpoint. Callers supply the
  * literal API path so the typed openapi-fetch client can validate it; the body
- * is the flat `ClaimPatchSchema` shape (`fields` / `note` / `citation`).
+ * is the flat `ClaimPatchSchema` shape (`fields` / `note` / `citations`).
  */
 export async function saveSimpleTaxonomyClaims(
   path: SimpleTaxonomyClaimsPath,
@@ -63,7 +63,7 @@ export async function saveSimpleTaxonomyClaims(
 ): Promise<SaveResult> {
   const { data, error } = await client.PATCH(path, {
     params: { path: { public_id: slug } },
-    body: { fields: {}, note: '', ...body },
+    body: { fields: {}, note: '', citations: [], ...body },
   });
 
   if (error) {
@@ -102,7 +102,7 @@ export async function saveHierarchicalTaxonomyClaims(
 ): Promise<SaveResult> {
   const { data, error } = await client.PATCH(path, {
     params: { path: { public_id: slug } },
-    body: { fields: {}, note: '', ...body },
+    body: { fields: {}, note: '', citations: [], ...body },
   });
 
   if (error) {

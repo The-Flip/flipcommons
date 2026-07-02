@@ -56,7 +56,7 @@ def _assert_429_edit(resp) -> None:
 @pytest.fixture
 def title(db, bootstrap_source):
     t = Title.objects.create(name="Medieval Madness", slug="medieval-madness")
-    make_claim(t, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(t, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return t
 
 

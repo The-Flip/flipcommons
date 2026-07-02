@@ -29,8 +29,8 @@ def _clear_cache():
 def _make_title(bootstrap_source, slug: str, name: str | None = None) -> Title:
     label = name or slug.replace("-", " ").title()
     t = Title.objects.create(name=label, slug=slug, status="active")
-    make_claim(t, "name", label, source=bootstrap_source)
-    make_claim(t, "status", "active", source=bootstrap_source)
+    make_claim(t, "name", label, ingest_source=bootstrap_source)
+    make_claim(t, "status", "active", ingest_source=bootstrap_source)
     return t
 
 
@@ -53,8 +53,8 @@ def _make_model(
         converted_from=converted_from,
         remake_of=remake_of,
     )
-    make_claim(m, "name", label, source=bootstrap_source)
-    make_claim(m, "status", "active", source=bootstrap_source)
+    make_claim(m, "name", label, ingest_source=bootstrap_source)
+    make_claim(m, "status", "active", ingest_source=bootstrap_source)
     return m
 
 

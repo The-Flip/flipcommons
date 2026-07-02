@@ -1,12 +1,12 @@
 <!-- @component Orchestrates the citation create/cite flow across its stages. -->
 <script lang="ts">
   import client from '$lib/api/client';
-  import type { CitationInstanceSchema } from '$lib/api/schema';
   import {
     transition,
     isDraftSubmittable,
     isWebSeed,
     emptyDraft,
+    type CitationCompletion,
     type CiteState,
     type CiteAction,
     type CitationInstanceDraft,
@@ -20,13 +20,12 @@
   import CitationLocatorStage from './CitationLocatorStage.svelte';
 
   let {
-    oncomplete,
+    completion,
     oncancel,
     onback,
   }: {
-    /** Receives the freshly-minted instance; consumers format the marker
-     * (`[[cite:<slug>]]`) or read its fields directly. */
-    oncomplete: (instance: CitationInstanceSchema) => void;
+    /** What happens when the flow completes — see {@link CitationCompletion}. */
+    completion: CitationCompletion;
     oncancel: () => void;
     onback: () => void;
   } = $props();
@@ -36,11 +35,22 @@
   let submitError = $state('');
 
   // -------------------------------------------------------------------
-  // Submission — single place that creates the citation instance
+  // Submission — hands the completed draft to the consumer, minting the
+  // instance first only for the inline flow (it needs the slug now)
   // -------------------------------------------------------------------
 
   async function submit(draft: CitationInstanceDraft) {
     if (isSubmitting || draft.sourceId === null) return;
+
+    if (completion.kind === 'content-spec') {
+      completion.oncomplete({
+        sourceId: draft.sourceId,
+        sourceName: draft.sourceName,
+        locator: draft.locator,
+      });
+      return;
+    }
+
     isSubmitting = true;
     submitError = '';
 
@@ -55,7 +65,7 @@
       return;
     }
 
-    oncomplete(data);
+    completion.oncomplete(data);
   }
 
   /** Dispatch an action, then auto-submit if the draft is ready. */

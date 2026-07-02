@@ -19,12 +19,18 @@ from django.core.management.base import CommandError
 
 from apps.catalog.models import MachineModel
 from apps.catalog.tests.conftest import make_machine_model
+from apps.citation.models import CitationInstance
 from apps.citation.test_factories import make_citation_source
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import EditEntry, build_plan, load_patch
 from apps.core.markdown import convert_authoring_to_storage
-from apps.provenance.models import CitationInstance, Source
-from apps.provenance.test_factories import make_claim, user_changeset
+from apps.provenance.models import Source
+from apps.provenance.test_factories import (
+    make_citation_instance,
+    make_claim,
+    make_ingest_source,
+    user_changeset,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -79,8 +85,8 @@ def test_round_trip_byte_identity_with_adversarial_text(flipcommons_catalog):
     cliff.
     """
     src = make_citation_source(name="IPDB", source_type="web", identifier_key="ipdb")
-    ci1 = CitationInstance.objects.create(citation_source=src, claim=None)
-    ci2 = CitationInstance.objects.create(citation_source=src, claim=None)
+    ci1 = make_citation_instance(citation_source=src)
+    ci2 = make_citation_instance(citation_source=src)
 
     stored = (
         f"Gegründet by Günter — a café prototype.[[cite:id:{ci1.pk}]]\n"
@@ -90,7 +96,7 @@ def test_round_trip_byte_identity_with_adversarial_text(flipcommons_catalog):
         f"End with no trailing newline.[[cite:id:{ci2.pk}]]"
     )
     pm = make_machine_model(name="Adversarial", slug="adversarial", description=stored)
-    make_claim(pm, "description", stored, source=flipcommons_catalog)
+    make_claim(pm, "description", stored, ingest_source=flipcommons_catalog)
 
     dumped = _dump("model.adversarial")
     authoring = _description_of(dumped)
@@ -132,18 +138,18 @@ claims:
 
 def test_attribution_defaults_to_owning_source(flipcommons_catalog):
     pm = make_machine_model(name="Attar", slug="attar", description="Just text.")
-    make_claim(pm, "description", "Just text.", source=flipcommons_catalog)
+    make_claim(pm, "description", "Just text.", ingest_source=flipcommons_catalog)
 
     doc = yaml.safe_load(_dump("model.attar"))
     assert doc["attribution"] == "flipcommons-catalog"
 
 
 def test_attribution_override(flipcommons_catalog):
-    other = Source.objects.create(
+    other = make_ingest_source(
         slug="flipcommons-ai-desc-model", name="AI Desc", source_type="editorial"
     )
     pm = make_machine_model(name="Override", slug="override", description="Text.")
-    make_claim(pm, "description", "Text.", source=flipcommons_catalog)
+    make_claim(pm, "description", "Text.", ingest_source=flipcommons_catalog)
 
     doc = yaml.safe_load(_dump("model.override", attribution=other.slug))
     assert doc["attribution"] == "flipcommons-ai-desc-model"

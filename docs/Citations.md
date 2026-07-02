@@ -14,10 +14,11 @@ Consequently, citation sources are **not claims-controlled**. Unlike user-inputt
 ## Data model
 
 ```text
-Markdown passage or scalar claim
-  └── `CitationInstance`        (one use of a source, with a locator)
-        └── `CitationSource`    (the work or evidence object)
-              └── `CitationSourceLink`(s)   (ways to inspect the source)
+Scalar/edit claim ──── `ClaimCitationInstance` join ────┐   (provenance app)
+                                                        ▼
+Markdown passage ──── `[[cite:…]]` marker ────▶ `CitationInstance`   (one use of a source, with a locator)
+                                                        └── `CitationSource`    (the work or evidence object)
+                                                              └── `CitationSourceLink`(s)   (ways to inspect the source)
 ```
 
 ### CitationSource
@@ -39,9 +40,9 @@ A source is a scheme-holder _or_ a value-holder, never both. Children with ident
 
 ### CitationInstance
 
-A `CitationInstance` is a single use of a source in a specific place, usually with a locator (page, timestamp, section, fragment). Instances are **not shared** across usages: changing a locator should produce a new instance plus an ordinary edit, not mutate history in place.
+A `CitationInstance` is a single use of a source in a specific place, usually with a locator (page, timestamp, section, fragment). It is **shared evidence** with no single owning claim, reached through two channels: a scalar/edit citation is attached to claims through the `ClaimCitationInstance` join (one instance per distinct citation in a save, fanned out to every claim the save wrote), while an inline footnote is reached only by its `[[cite:…]]` marker and carries no join rows. Instances are **immutable**: changing a locator produces a new citation instance plus an ordinary edit, not mutated history in place — that copy-on-write rule, not per-use duplication, is the invariant.
 
-`CitationInstance` lives in the **provenance app**, not the citation app — it is the join between a claim or passage and the evidence that supports it, so it belongs with the attribution machinery. The citation app owns the source records; provenance owns their _use_.
+`CitationInstance` lives in the **citation app**, beside `CitationSource` — the citation app owns the whole evidence domain, the work and the uses drawn from it. The one thing that must know about both `Claim` and `CitationInstance` — the claim ↔ evidence edge — is the `ClaimCitationInstance` join, which lives in the **provenance app** beside `Claim` and imports citation downward.
 
 The text uses **point citations**, not text ranges. An inline marker sits at a position and means "this source supports the nearby claim", usually the preceding sentence. Ranges look more precise but demand discipline contributors won't sustain and produce misleadingly precise markup.
 

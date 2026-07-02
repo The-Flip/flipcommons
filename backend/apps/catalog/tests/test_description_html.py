@@ -5,7 +5,11 @@ import pytest
 from apps.catalog.models import Location, Manufacturer, System
 from apps.citation.test_factories import make_citation_link, make_citation_source
 from apps.core.models import RecordReference
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import (
+    make_citation_instance,
+    make_claim,
+    make_ingest_source,
+)
 
 
 @pytest.fixture
@@ -161,8 +165,6 @@ class TestDescriptionCitations:
     """API responses include inline citation metadata alongside rendered HTML."""
 
     def test_citations_present_in_response(self, client, db):
-        from apps.provenance.models import CitationInstance
-
         src = make_citation_source(
             name="The Complete Pinball Book",
             source_type="book",
@@ -175,7 +177,7 @@ class TestDescriptionCitations:
             label="Publisher",
             link_type="publisher",
         )
-        ci = CitationInstance.objects.create(citation_source=src, locator="p. 150")
+        ci = make_citation_instance(citation_source=src, locator="p. 150")
 
         Manufacturer.objects.create(
             name="Williams",
@@ -251,16 +253,15 @@ class TestReferenceSync:
         from django.contrib.contenttypes.models import ContentType
 
         from apps.catalog.resolve import resolve_entity
-        from apps.provenance.models import Source
 
         mfr = Manufacturer.objects.create(name="Williams", slug="williams")
         system = System.objects.create(name="WPC-95", slug="wpc-95", manufacturer=mfr)
-        source = Source.objects.create(name="test", priority=100)
+        source = make_ingest_source(name="test", priority=100)
         make_claim(
             mfr,
             "description",
             f"Uses [[system:id:{system.pk}]].",
-            source=source,
+            ingest_source=source,
         )
         resolve_entity(mfr)
 
@@ -278,18 +279,18 @@ class TestReferenceSync:
         from django.contrib.contenttypes.models import ContentType
 
         from apps.catalog.resolve import resolve_entity
-        from apps.provenance.models import Claim, Source
+        from apps.provenance.models import Claim
 
         mfr = Manufacturer.objects.create(name="Williams", slug="williams")
         system = System.objects.create(name="WPC-95", slug="wpc-95", manufacturer=mfr)
-        source = Source.objects.create(name="test", priority=100)
+        source = make_ingest_source(name="test", priority=100)
 
         # Create a reference via description with a link
         make_claim(
             mfr,
             "description",
             f"Uses [[system:id:{system.pk}]].",
-            source=source,
+            ingest_source=source,
         )
         resolve_entity(mfr)
         mfr_ct = ContentType.objects.get_for_model(Manufacturer)
@@ -320,7 +321,7 @@ class TestReferenceSync:
         """
         from django.contrib.contenttypes.models import ContentType
 
-        from apps.provenance.models import Claim, Source
+        from apps.provenance.models import Claim
         from apps.provenance.resolution import resolve_after_mutation
 
         from .conftest import make_machine_model
@@ -328,12 +329,12 @@ class TestReferenceSync:
         mfr = Manufacturer.objects.create(name="Williams", slug="williams")
         system = System.objects.create(name="WPC-95", slug="wpc-95", manufacturer=mfr)
         mm = make_machine_model(name="Medieval Madness", slug="mm")
-        source = Source.objects.create(name="test", priority=100)
+        source = make_ingest_source(name="test", priority=100)
         make_claim(
             mm,
             "description",
             f"Runs on [[system:id:{system.pk}]].",
-            source=source,
+            ingest_source=source,
         )
 
         resolve_after_mutation(mm, ["description"])

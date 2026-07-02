@@ -149,7 +149,7 @@ def register_entity_create[ModelT: LinkableLifecycleClaimModel, SchemaT: Schema]
 
     *body_schema* replaces ``EntityCreateInputSchema`` as the request
     body type. Constrained to subclasses (the factory reads ``data.name``,
-    ``data.slug``, ``data.note``, ``data.citation``) so a non-conforming
+    ``data.slug``, ``data.note``, ``data.citations``) so a non-conforming
     schema fails at registration. Used by Location's top-level country
     create to accept ``divisions`` alongside the standard fields.
 
@@ -184,7 +184,7 @@ def register_entity_create[ModelT: LinkableLifecycleClaimModel, SchemaT: Schema]
         )
     if body_schema is not None and not issubclass(body_schema, EntityCreateInputSchema):
         # The factory's pipeline reads ``data.name``, ``data.slug``,
-        # ``data.note``, ``data.citation``. mypy enforces this at the
+        # ``data.note``, ``data.citations``. mypy enforces this at the
         # type level via the ``type[EntityCreateInputSchema]`` annotation,
         # but bypassing the type checker (e.g. dynamic dispatch in tests)
         # would silently register a route that 500s on the first request.
@@ -259,7 +259,7 @@ def register_entity_create[ModelT: LinkableLifecycleClaimModel, SchemaT: Schema]
             claim_specs=claim_specs,
             user=request.user,
             note=data.note,
-            citation=data.citation,
+            citations=data.citations,
         )
 
         # Refetch via the prefetch-rich ``detail_qs`` for serialization.

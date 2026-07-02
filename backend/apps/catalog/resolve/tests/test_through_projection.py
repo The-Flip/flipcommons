@@ -47,8 +47,8 @@ from apps.provenance.model_bases import (
     ClaimRelationshipBinding,
     relationships_for,
 )
-from apps.provenance.models import Claim, Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.models import Claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 pytestmark = pytest.mark.django_db
 
@@ -475,7 +475,7 @@ def test_end_to_end_reconcile_is_idempotent(case: _Case, pks: Pks) -> None:
     (credit), literal (abbreviation).
     """
     mm = make_machine_model(name="E2E Model", slug="e2e-model")
-    source = Source.objects.create(
+    source = make_ingest_source(
         name="IPDB", slug="ipdb", source_type="database", priority=10
     )
     identity = cast(
@@ -483,7 +483,7 @@ def test_end_to_end_reconcile_is_idempotent(case: _Case, pks: Pks) -> None:
         {k: v for k, v in case.valid_value(pks).items() if k != "exists"},
     )
     claim_key, value = build_relationship_claim(case.namespace, identity)
-    make_claim(mm, case.namespace, value, source=source, claim_key=claim_key)
+    make_claim(mm, case.namespace, value, ingest_source=source, claim_key=claim_key)
 
     generic = _generic(case)
     created = reconcile(generic, {mm.pk})

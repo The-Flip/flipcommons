@@ -356,7 +356,7 @@ class TestGetOrCreateWebSourceRootHomepage:
         make_citation_root_domain(source=root, host=self.HOST)
         make_citation_link(
             citation_source=root,
-            link_type=CitationSourceLink.LinkType.HOMEPAGE,
+            link_type="homepage",
             url=self.HOMEPAGE,
         )
         return root

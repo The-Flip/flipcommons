@@ -13,6 +13,7 @@ catalog-typed shapes the delete API serializes — :class:`SoftDeletePlan` /
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from django.contrib.auth.models import AbstractBaseUser, AnonymousUser
@@ -32,7 +33,7 @@ from apps.provenance.models import (
     LinkableClaimModel,
     LinkableLifecycleClaimModel,
 )
-from apps.provenance.schemas import CitationReferenceInputSchema
+from apps.provenance.schemas import CitationInstanceCreateSchema
 
 from .schemas import BlockingReferrerSchema
 
@@ -179,7 +180,7 @@ def execute_soft_delete(
     *,
     user: _UserLike,
     note: str = "",
-    citation: CitationReferenceInputSchema | None = None,
+    citations: Sequence[CitationInstanceCreateSchema] = (),
 ) -> tuple[ChangeSet | None, list[LinkableLifecycleClaimModel]]:
     """Soft-delete *root* and all cascade children in one ChangeSet.
 
@@ -206,6 +207,6 @@ def execute_soft_delete(
         user=user,
         action=ChangeSetAction.DELETE,
         note=note,
-        citation=citation,
+        citations=citations,
     )
     return changeset, active_entities

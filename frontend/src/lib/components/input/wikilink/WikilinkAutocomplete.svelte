@@ -271,7 +271,10 @@
     </div>
   {:else if stage === 'cite'}
     <CitationAutocomplete
-      oncomplete={(instance) => oncomplete(`[[cite:${instance.slug}]]`)}
+      completion={{
+        kind: 'mint-instance',
+        oncomplete: (instance) => oncomplete(`[[cite:${instance.slug}]]`),
+      }}
       oncancel={() => oncancel()}
       onback={() => goBack()}
     />

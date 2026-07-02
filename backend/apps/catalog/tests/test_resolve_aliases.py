@@ -21,8 +21,8 @@ from apps.catalog.models import (
 )
 from apps.catalog.resolve import resolve_relationship
 from apps.provenance.claims import build_relationship_claim
-from apps.provenance.models import Claim, Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.models import Claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 _ALIAS_TYPES = discover_alias_types()
 
@@ -58,7 +58,7 @@ def _assert_alias_claims(source, parent_obj, claim_field, aliases: list[str]) ->
             parent_obj,
             claim_field,
             value,
-            source=source,
+            ingest_source=source,
             claim_key=claim_key,
         )
 
@@ -96,9 +96,7 @@ def _create_parent(parent_model):
 
 @pytest.fixture
 def source(db):
-    return Source.objects.create(
-        name="Flipcommons", source_type="editorial", priority=300
-    )
+    return make_ingest_source(name="Flipcommons", source_type="editorial", priority=300)
 
 
 # Build pytest parametrize IDs from claim field names.

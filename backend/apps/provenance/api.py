@@ -17,7 +17,7 @@ from ninja.errors import HttpError
 from ninja.responses import Status
 from ninja.security import django_auth
 
-from apps.citation.models import CitationSource
+from apps.citation.models import CitationInstance, CitationSource
 from apps.core.api_helpers import authed_user
 from apps.core.authz.enforce import enforce
 from apps.core.authz.evaluator import policy_user
@@ -25,7 +25,8 @@ from apps.core.authz.markers import gated_inline, requires
 from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 
-from .models import CitationInstance, ClaimControlledModel, Source
+from . import citation_writer
+from .models import ClaimControlledModel, Source
 from .page_endpoints import pages_router
 from .schemas import (
     CitationInstanceBatchSchema,
@@ -156,7 +157,13 @@ citation_instances_router = Router(tags=["citation-instances", "private"])
 def list_citation_instances(
     request: HttpRequest, source: int | None = None, claim: int | None = None
 ) -> list[CitationInstanceSchema]:
-    """List Citation Instances, filtered by source and/or claim."""
+    """List Citation Instances, filtered by source and/or citing claim.
+
+    ``?claim=`` resolves through the ``ClaimCitationInstance`` join — the
+    instances attached to that claim as supporting evidence. Inline
+    ``[[cite:...]]`` instances carry no join rows, so they only surface via
+    ``?source=``.
+    """
     if source is None and claim is None:
         raise HttpError(422, "Provide ?source= or ?claim= filter.")
 
@@ -164,7 +171,7 @@ def list_citation_instances(
     if source is not None:
         qs = qs.filter(citation_source_id=source)
     if claim is not None:
-        qs = qs.filter(claim_id=claim)
+        qs = qs.filter(claims=claim)
     qs = qs.order_by("-created_at")
 
     return [
@@ -173,7 +180,6 @@ def list_citation_instances(
             slug=ci.slug,
             citation_source_id=ci.citation_source_id,
             citation_source_name=ci.citation_source.name,
-            claim_id=ci.claim_id,
             locator=ci.locator,
             created_at=ci.created_at.isoformat(),
         )
@@ -235,15 +241,8 @@ def create_citation_instance(
     """Create a new CitationInstance for use in ``[[cite:N]]`` markers."""
     source = get_object_or_404(CitationSource, pk=data.citation_source_id)
 
-    instance = CitationInstance(
-        citation_source_id=data.citation_source_id,
-        locator=data.locator,
-    )
     try:
-        # slug is assigned in CitationInstance.save(); exclude it from
-        # validation, which runs first and would otherwise see it blank.
-        instance.full_clean(exclude=["slug"])
-        instance.save()
+        instance = citation_writer.create_citation_instance(data)
     except ValidationError as exc:
         raise HttpError(422, str(exc)) from exc
     except IntegrityError as exc:
@@ -256,7 +255,6 @@ def create_citation_instance(
             slug=instance.slug,
             citation_source_id=instance.citation_source_id,
             citation_source_name=source.name,
-            claim_id=None,
             locator=instance.locator,
             created_at=instance.created_at.isoformat(),
         ),

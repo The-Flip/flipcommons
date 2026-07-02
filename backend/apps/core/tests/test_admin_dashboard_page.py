@@ -15,10 +15,11 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.accounts.test_factories import make_user
 from apps.media.models import MediaAsset
-from apps.provenance.models import ChangeSet, Source
+from apps.provenance.models import ChangeSet
 from apps.provenance.test_factories import (
     ingest_changeset,
     ingest_run,
+    make_ingest_source,
     user_changeset,
 )
 
@@ -131,9 +132,7 @@ class TestEditsMetric:
         assert m["total"] == 3
 
     def test_ingest_changesets_excluded(self, client: Client, staff: User) -> None:
-        source = Source.objects.create(
-            name="TestSource", slug="test-source", priority=10
-        )
+        source = make_ingest_source(name="TestSource", slug="test-source", priority=10)
         run = ingest_run(source)
         ingest_changeset(run)
         ingest_changeset(run)

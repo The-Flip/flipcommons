@@ -120,7 +120,7 @@ def _invoke(handler, user, **body_overrides):
     at the route layer, but the inner ``_do_create`` only needs an
     authenticated ``request.user`` for the rate limiter.
     """
-    body = {"name": "T", "slug": "t", "note": "", "citation": None}
+    body = {"name": "T", "slug": "t", "note": "", "citations": []}
     body.update(body_overrides)
     request = RequestFactory().post("/")
     request.user = user

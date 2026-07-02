@@ -3,13 +3,12 @@ import pytest
 from apps.catalog.models import GameplayFeature
 from apps.catalog.resolve import resolve_relationship
 from apps.provenance.claims import build_relationship_claim
-from apps.provenance.models import Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 
 @pytest.fixture
 def pindata_source(db):
-    return Source.objects.create(
+    return make_ingest_source(
         name="Flipcommons Catalog", source_type="editorial", priority=300
     )
 
@@ -33,7 +32,7 @@ class TestResolveGameplayFeatureParents:
             child,
             "gameplay_feature_parent",
             value,
-            source=pindata_source,
+            ingest_source=pindata_source,
             claim_key=claim_key,
         )
 

@@ -33,7 +33,7 @@ describe('saveManufacturerClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/manufacturers/{public_id}/claims/', {
       params: { path: { public_id: 'williams' } },
-      body: { fields: { name: 'Bally', slug: 'bally' }, note: '' },
+      body: { fields: { name: 'Bally', slug: 'bally' }, note: '', citations: [] },
     });
     expect(invalidateAll).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ ok: true, updatedSlug: 'bally' });

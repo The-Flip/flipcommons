@@ -27,8 +27,9 @@ from django.test import Client
 
 from apps.catalog.models import Manufacturer
 from apps.catalog.tests.conftest import make_machine_model
+from apps.citation.models import CitationInstance
 from apps.media.models import EntityMedia, MediaAsset
-from apps.provenance.models import CitationInstance, Source
+from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim
 
 _TEST_STORAGE = {
@@ -97,9 +98,9 @@ def target(request, db) -> MediaTarget:
     src = _bootstrap_source()
     mfr = Manufacturer.objects.create(name="Char Mfr", slug="char-mfr", status="active")
     # Back every scalar that re-resolution would otherwise normalize away.
-    make_claim(mfr, "name", "Char Mfr", source=src)
-    make_claim(mfr, "slug", "char-mfr", source=src)
-    make_claim(mfr, "status", "active", source=src)
+    make_claim(mfr, "name", "Char Mfr", ingest_source=src)
+    make_claim(mfr, "slug", "char-mfr", ingest_source=src)
+    make_claim(mfr, "status", "active", ingest_source=src)
     return MediaTarget(mfr, "manufacturer", mfr.public_id, "logo", "other")
 
 
@@ -171,7 +172,7 @@ class TestMediaSinglePathCharacterization:
         # A media mutation never attaches a citation.
         assert (
             CitationInstance.objects.filter(
-                claim__field_name="media_attachment"
+                claim_links__claim__field_name="media_attachment"
             ).count()
             == 0
         )

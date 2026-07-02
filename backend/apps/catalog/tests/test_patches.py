@@ -28,6 +28,7 @@ from apps.catalog.models import (
 )
 from apps.catalog.resolve import resolve_relationship
 from apps.citation.models import (
+    CitationInstance,
     CitationSource,
     CitationSourceLink,
     CitationSourceRootDomain,
@@ -60,8 +61,13 @@ from apps.provenance.claims import (
     normalize_abbreviation_value,
     normalize_alias_identity,
 )
-from apps.provenance.models import ChangeSet, CitationInstance, Claim, IngestRun, Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.models import (
+    ChangeSet,
+    Claim,
+    IngestRun,
+    Source,
+)
+from apps.provenance.test_factories import make_claim, make_ingest_source
 from apps.provenance.validation import (
     FkTarget,
     RelationshipSchema,
@@ -673,7 +679,7 @@ sources:
     claim = _location_claim("munich")
     assert claim.changeset is not None
     assert claim.changeset.note == "flipcommons-catalog places it in Munich."
-    assert CitationInstance.objects.filter(claim=claim).exists()
+    assert claim.citation_instances.exists()
 
 
 def test_backward_duplicate_deferred_member_rejected(bally_wulff):
@@ -977,7 +983,7 @@ def test_retract_fk_falls_through_to_remaining_source(
     # Two sources claim the manufacturer FK; retracting the winning source's
     # claim makes resolution fall through to the remaining source's value.
     catalog = flipcommons_catalog
-    ipdb = Source.objects.create(
+    ipdb = make_ingest_source(
         name="IPDB", slug="ipdb", source_type="database", priority=100
     )
     ce = CorporateEntity.objects.create(
@@ -985,9 +991,9 @@ def test_retract_fk_falls_through_to_remaining_source(
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    make_claim(ce, "name", "Western Products, Inc.", source=catalog)
-    make_claim(ce, "manufacturer", "williams", source=catalog)
-    make_claim(ce, "manufacturer", "stern", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", ingest_source=catalog)
+    make_claim(ce, "manufacturer", "williams", ingest_source=catalog)
+    make_claim(ce, "manufacturer", "stern", ingest_source=ipdb)
 
     text = """
 attribution: flipcommons-catalog
@@ -1014,7 +1020,7 @@ def test_retract_sole_required_fk_claim_preserves_value(stern):
     # The safety net: retracting the only claim for a non-nullable FK leaves no
     # active claim, but resolution preserves the current value (the FK is in
     # preserve_when_unclaimed) rather than nulling it — no IntegrityError.
-    ipdb = Source.objects.create(
+    ipdb = make_ingest_source(
         name="IPDB", slug="ipdb", source_type="database", priority=100
     )
     ce = CorporateEntity.objects.create(
@@ -1022,8 +1028,8 @@ def test_retract_sole_required_fk_claim_preserves_value(stern):
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
-    make_claim(ce, "manufacturer", "stern", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", ingest_source=ipdb)
+    make_claim(ce, "manufacturer", "stern", ingest_source=ipdb)
 
     text = """
 attribution: ipdb
@@ -1042,7 +1048,7 @@ claims:
 def test_retract_idempotent_when_claim_absent(stern):
     # An already-gone retract target warns (not errors), so re-running a patch
     # whose claim was already removed is a no-op.
-    ipdb = Source.objects.create(
+    ipdb = make_ingest_source(
         name="IPDB", slug="ipdb", source_type="database", priority=100
     )
     ce = CorporateEntity.objects.create(
@@ -1050,7 +1056,7 @@ def test_retract_idempotent_when_claim_absent(stern):
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", ingest_source=ipdb)
 
     text = """
 attribution: ipdb
@@ -1068,7 +1074,7 @@ def test_retract_noop_with_note_rejected(stern):
     # carrier: the retraction is a no-op, so _persist writes no ChangeSet and the
     # note would vanish silently on a reported success. Reject it — symmetric
     # with remove:'s no-op-with-note behavior — rather than drop provenance.
-    ipdb = Source.objects.create(
+    ipdb = make_ingest_source(
         name="IPDB", slug="ipdb", source_type="database", priority=100
     )
     ce = CorporateEntity.objects.create(
@@ -1078,7 +1084,7 @@ def test_retract_noop_with_note_rejected(stern):
     )
     # ipdb claims `name` but not `manufacturer`, so retracting manufacturer is a
     # no-op for this source.
-    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", ingest_source=ipdb)
 
     text = """
 attribution: ipdb
@@ -1094,7 +1100,7 @@ claims:
 def test_retract_real_with_note_records_changeset(stern):
     # The complement: a retract that DOES deactivate a claim carries its note
     # onto the resulting ChangeSet (the fix must not break the happy path).
-    ipdb = Source.objects.create(
+    ipdb = make_ingest_source(
         name="IPDB", slug="ipdb", source_type="database", priority=100
     )
     ce = CorporateEntity.objects.create(
@@ -1102,8 +1108,8 @@ def test_retract_real_with_note_records_changeset(stern):
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
-    make_claim(ce, "manufacturer", "stern", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", ingest_source=ipdb)
+    make_claim(ce, "manufacturer", "stern", ingest_source=ipdb)
 
     text = """
 attribution: ipdb
@@ -1164,7 +1170,7 @@ claims:
 def test_retract_one_field_assert_another_in_same_entry(stern, flipcommons_catalog):
     # An entry may retract one field and assert a different one.
     catalog = flipcommons_catalog
-    ipdb = Source.objects.create(
+    ipdb = make_ingest_source(
         name="IPDB", slug="ipdb", source_type="database", priority=100
     )
     ce = CorporateEntity.objects.create(
@@ -1172,9 +1178,9 @@ def test_retract_one_field_assert_another_in_same_entry(stern, flipcommons_catal
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
-    make_claim(ce, "manufacturer", "stern", source=ipdb)
-    make_claim(ce, "manufacturer", "stern", source=catalog)
+    make_claim(ce, "name", "Western Products, Inc.", ingest_source=ipdb)
+    make_claim(ce, "manufacturer", "stern", ingest_source=ipdb)
+    make_claim(ce, "manufacturer", "stern", ingest_source=catalog)
 
     text = """
 attribution: ipdb
@@ -1196,7 +1202,7 @@ claims:
 
 
 def test_retract_and_assert_same_field_rejected(stern):
-    ipdb = Source.objects.create(
+    ipdb = make_ingest_source(
         name="IPDB", slug="ipdb", source_type="database", priority=100
     )
     ce = CorporateEntity.objects.create(
@@ -1204,7 +1210,7 @@ def test_retract_and_assert_same_field_rejected(stern):
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", ingest_source=ipdb)
     text = """
 attribution: ipdb
 claims:
@@ -1220,7 +1226,7 @@ def test_retract_and_assert_same_field_across_entries_rejected(stern):
     # The conflict is rejected even when the retract and the assert live in
     # separate entries for the same entity — the retract would otherwise be a
     # silent no-op (the assert always wins).
-    ipdb = Source.objects.create(
+    ipdb = make_ingest_source(
         name="IPDB", slug="ipdb", source_type="database", priority=100
     )
     ce = CorporateEntity.objects.create(
@@ -1228,7 +1234,7 @@ def test_retract_and_assert_same_field_across_entries_rejected(stern):
         slug="western-products-incorporated",
         manufacturer=stern,
     )
-    make_claim(ce, "name", "Western Products, Inc.", source=ipdb)
+    make_claim(ce, "name", "Western Products, Inc.", ingest_source=ipdb)
     text = """
 attribution: ipdb
 claims:
@@ -1458,9 +1464,9 @@ def bally_wulff(db, flipcommons_catalog):
     ce = CorporateEntity.objects.create(
         name="Bally Wulff", slug="bally-wulff", manufacturer=mfr
     )
-    make_claim(ce, "name", "Bally Wulff", source=catalog)
+    make_claim(ce, "name", "Bally Wulff", ingest_source=catalog)
     claim_key, value = build_relationship_claim("location", {"location": germany.pk})
-    make_claim(ce, "location", value, source=catalog, claim_key=claim_key)
+    make_claim(ce, "location", value, ingest_source=catalog, claim_key=claim_key)
     resolve_relationship(CorporateEntity, "location", subject_ids={ce.pk})
     return ce
 
@@ -1543,7 +1549,7 @@ sources:
         tombstone.changeset.note
         == 'flipcommons-catalog says "headquartered in Berlin".'
     )
-    assert CitationInstance.objects.filter(claim=tombstone).exists()
+    assert tombstone.citation_instances.exists()
 
 
 def test_remove_must_be_a_mapping():
@@ -1847,11 +1853,14 @@ def test_losing_fk_reassign_onto_deleted_still_rejected(machine_model, stern_ent
     # resolution — yet because the patch still asserts corporate_entity=stern and
     # deletes stern, the guard rejects it. Rejecting a pointless point-at-X-and-
     # delete-X claim is the strict, defensible choice.
-    authority = Source.objects.create(
+    authority = make_ingest_source(
         name="Authority", slug="authority", source_type="editorial", priority=900
     )
     make_claim(
-        machine_model, "corporate_entity", "williams-electronics", source=authority
+        machine_model,
+        "corporate_entity",
+        "williams-electronics",
+        ingest_source=authority,
     )
     text = f"""
 attribution: flipcommons-catalog
@@ -1896,7 +1905,7 @@ def test_reassign_fk_onto_deleted_normalizes_numeric(machine_model, manufacturer
         doomed,
         "name",
         "Numbered",
-        source=Source.objects.get(slug="flipcommons-catalog"),
+        ingest_source=Source.objects.get(slug="flipcommons-catalog"),
     )
     text = f"""
 attribution: flipcommons-catalog
@@ -2113,7 +2122,7 @@ sources:
     changeset = status_claim.changeset
     assert changeset is not None
     assert changeset.note == 'flipcommons-catalog says "this firm never existed".'
-    assert CitationInstance.objects.filter(claim=status_claim).exists()
+    assert status_claim.citation_instances.exists()
 
 
 # ── Empty directives on an incompatible kind (strict parse) ────────
@@ -3210,9 +3219,7 @@ sources:
         model=machine_model, person=person, role__slug="design"
     ).exists()
     # The entry-level cite: rides the credit claim like any scalar/FK claim.
-    assert CitationInstance.objects.filter(
-        claim=_credit_claim(person.pk, "design")
-    ).exists()
+    assert _credit_claim(person.pk, "design").citation_instances.exists()
 
 
 def test_credit_on_series(person, credit_roles):

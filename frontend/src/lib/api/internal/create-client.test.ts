@@ -81,14 +81,14 @@ describe('createApiClient', () => {
         const { fetch, apiClient } = makeClient();
         await apiClient.POST('/api/corporate-entities/{public_id}/delete/', {
           params: { path: { public_id: 'usa/il/chicago' } },
-          body: { note: 'hello' },
+          body: { note: 'hello', citations: [] },
         });
         const request = fetch.mock.calls[0]?.[0] as Request;
         expect(new URL(request.url).pathname).toBe(
           '/api/corporate-entities/usa/il/chicago/delete/',
         );
         expect(request.headers.get('X-CSRFToken')).toBe('abc123');
-        expect(await request.text()).toBe(JSON.stringify({ note: 'hello' }));
+        expect(await request.text()).toBe(JSON.stringify({ note: 'hello', citations: [] }));
       } finally {
         vi.unstubAllGlobals();
       }

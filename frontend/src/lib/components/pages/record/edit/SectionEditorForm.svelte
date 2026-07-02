@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { type EditCitationSelection, buildEditCitationRequest } from '$lib/edit-citation';
+  import { type EditCitationSelection, buildEditCitationsRequest } from '$lib/edit-citation';
   import type { SaveMeta } from '$lib/components/pages/record/edit/editors/entity/model/save-model-claims';
   import Button from '$lib/components/ui/Button.svelte';
   import NotesAndCitationsDetails from '$lib/components/input/citation/NotesAndCitationsDetails.svelte';
@@ -32,7 +32,7 @@
   function buildMeta(): SaveMeta {
     return {
       note: note || undefined,
-      citation: buildEditCitationRequest(citation),
+      citations: buildEditCitationsRequest(citation),
     };
   }
 </script>

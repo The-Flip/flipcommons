@@ -935,7 +935,7 @@ def patch_title_claims(
         user=request.user,
         action=ChangeSetAction.EDIT,
         note=data.note,
-        citation=data.citation,
+        citations=data.citations,
     )
 
     title = get_object_or_404(_detail_qs(), **{Title.public_id_field: title.public_id})
@@ -981,7 +981,7 @@ def create_title(
         ],
         user=request.user,
         note=data.note,
-        citation=data.citation,
+        citations=data.citations,
     )
 
     created = get_object_or_404(_detail_qs(), **{Title.public_id_field: slug})
@@ -1050,7 +1050,7 @@ def create_model(
         ],
         user=request.user,
         note=data.note,
-        citation=data.citation,
+        citations=data.citations,
     )
 
     pm = get_object_or_404(_model_detail_qs(), **{MachineModel.public_id_field: slug})
@@ -1126,7 +1126,7 @@ def delete_title(
     )
     try:
         changeset, deleted = execute_soft_delete(
-            title, user=request.user, note=data.note, citation=data.citation
+            title, user=request.user, note=data.note, citations=data.citations
         )
     except SoftDeleteBlockedError as exc:
         return Status(
@@ -1186,7 +1186,7 @@ def restore_title(
         user=request.user,
         action=ChangeSetAction.EDIT,
         note=data.note,
-        citation=data.citation,
+        citations=data.citations,
     )
 
     refreshed = get_object_or_404(_detail_qs(), **{Title.public_id_field: public_id})

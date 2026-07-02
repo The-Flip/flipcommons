@@ -31,7 +31,7 @@ describe('savePersonClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/people/{public_id}/claims/', {
       params: { path: { public_id: 'john' } },
-      body: { fields: { name: 'Jane' }, note: '' },
+      body: { fields: { name: 'Jane' }, note: '', citations: [] },
     });
     expect(invalidateAll).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ ok: true, updatedSlug: 'jane' });

@@ -36,7 +36,7 @@ def _title(
     label = name or slug.replace("-", " ").title()
     t = Title.objects.create(name=label, slug=slug, status=status)
     if source is not None:
-        make_claim(t, "name", label, source=source)
+        make_claim(t, "name", label, ingest_source=source)
     return t
 
 
@@ -57,7 +57,7 @@ def _model(
         variant_of=variant_of,
     )
     if source is not None:
-        make_claim(m, "name", label, source=source)
+        make_claim(m, "name", label, ingest_source=source)
     return m
 
 

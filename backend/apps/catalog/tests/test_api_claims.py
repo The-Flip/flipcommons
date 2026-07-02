@@ -4,22 +4,25 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.models import Source
 from apps.provenance.resolution import resolve_after_mutation
-from apps.provenance.test_factories import make_claim, user_changeset
+from apps.provenance.test_factories import (
+    make_claim,
+    make_ingest_source,
+    user_changeset,
+)
 
 User = get_user_model()
 
 
 @pytest.fixture
 def low_priority_source(db):
-    return Source.objects.create(name="IPDB", source_type="database", priority=10)
+    return make_ingest_source(name="IPDB", source_type="database", priority=10)
 
 
 @pytest.fixture
 def pm(db, bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    make_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return pm
 
 
@@ -172,8 +175,8 @@ class TestPatchClaimsPersistence:
     def test_user_claim_beats_lower_priority_source(
         self, client, user, pm, low_priority_source
     ):
-        make_claim(pm, "name", "Medieval Madness", source=low_priority_source)
-        make_claim(pm, "year", 1997, source=low_priority_source)
+        make_claim(pm, "name", "Medieval Madness", ingest_source=low_priority_source)
+        make_claim(pm, "year", 1997, ingest_source=low_priority_source)
         resolve_after_mutation(pm)
         pm.refresh_from_db()
         assert pm.year == 1997
@@ -198,8 +201,8 @@ class TestUserClaimResolution:
     def test_user_claim_wins_over_lower_priority_source(
         self, user, pm, low_priority_source
     ):
-        make_claim(pm, "name", "Medieval Madness", source=low_priority_source)
-        make_claim(pm, "year", 1990, source=low_priority_source)
+        make_claim(pm, "name", "Medieval Madness", ingest_source=low_priority_source)
+        make_claim(pm, "year", 1990, ingest_source=low_priority_source)
         make_claim(
             pm, "year", 2000, user=user, changeset=user_changeset(user)
         )  # priority 10000 > 10
@@ -208,11 +211,11 @@ class TestUserClaimResolution:
         assert pm.year == 2000
 
     def test_source_wins_over_lower_priority_user(self, user, pm):
-        high_source = Source.objects.create(
+        high_source = make_ingest_source(
             name="HighPri", source_type="editorial", priority=50000
         )
-        make_claim(pm, "name", "Medieval Madness", source=high_source)
-        make_claim(pm, "year", 1990, source=high_source)
+        make_claim(pm, "name", "Medieval Madness", ingest_source=high_source)
+        make_claim(pm, "year", 1990, ingest_source=high_source)
         make_claim(
             pm, "year", 2000, user=user, changeset=user_changeset(user)
         )  # priority 10000 < 50000

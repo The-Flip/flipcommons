@@ -32,7 +32,7 @@ User = get_user_model()
 @pytest.fixture
 def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Stern", slug="stern", status="active")
-    make_claim(m, "name", "Stern", source=bootstrap_source)
+    make_claim(m, "name", "Stern", ingest_source=bootstrap_source)
     return m
 
 
@@ -44,8 +44,8 @@ def ce(db, bootstrap_source, mfr):
         manufacturer=mfr,
         status="active",
     )
-    make_claim(c, "name", c.name, source=bootstrap_source)
-    make_claim(c, "status", "active", source=bootstrap_source)
+    make_claim(c, "name", c.name, ingest_source=bootstrap_source)
+    make_claim(c, "status", "active", ingest_source=bootstrap_source)
     return c
 
 
@@ -57,7 +57,7 @@ def _make_model(
         slug=f"{slug}-title",
         status="active",
     )
-    make_claim(title, "name", title.name, source=bootstrap_source)
+    make_claim(title, "name", title.name, ingest_source=bootstrap_source)
     m = MachineModel.objects.create(
         title=title,
         name=slug.replace("-", " ").title(),
@@ -65,7 +65,7 @@ def _make_model(
         corporate_entity=ce,
         status=status,
     )
-    make_claim(m, "name", m.name, source=bootstrap_source)
+    make_claim(m, "name", m.name, ingest_source=bootstrap_source)
     return m
 
 

@@ -135,7 +135,7 @@ describe('TechnologyEditor', () => {
     expect(PATCH).toHaveBeenCalledOnce();
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { system: 'spike-2' }, note: '' },
+      body: { fields: { system: 'spike-2' }, note: '', citations: [] },
     });
     expect(screen.getByTestId('saved-count')).toHaveTextContent('1');
   });
@@ -157,7 +157,7 @@ describe('TechnologyEditor', () => {
       body: {
         fields: { display_type: 'lcd' },
         note: 'Corrected per flyer',
-        citation: { citation_instance_id: 42 },
+        citations: [{ citation_source_id: 7, locator: 'p. 2' }],
       },
     });
   });

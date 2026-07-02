@@ -12,8 +12,7 @@ from apps.catalog.models import (
 from apps.catalog.resolve import resolve_relationship
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.claims import build_relationship_claim
-from apps.provenance.models import Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 from .conftest import SAMPLE_IMAGES
 
@@ -106,7 +105,7 @@ class TestModelsAPI:
     ):
         role = CreditRole.objects.get(slug="design")
         Credit.objects.create(model=machine_model, person=person, role=role)
-        make_claim(machine_model, "year", 1997, "IPDB entry", source=source)
+        make_claim(machine_model, "year", 1997, "IPDB entry", ingest_source=source)
 
         resp = client.get(f"/api/pages/model/{machine_model.slug}")
         assert resp.status_code == 200
@@ -298,8 +297,8 @@ class TestModelDetailAbbreviations:
     def test_title_abbreviation_removal_is_live(self, client):
         """The headline staleness fix: removing a Title's abbreviation surfaces
         on its models immediately, without re-resolving each model."""
-        ipdb = Source.objects.create(name="IPDB", source_type="database", priority=10)
-        editorial = Source.objects.create(
+        ipdb = make_ingest_source(name="IPDB", source_type="database", priority=10)
+        editorial = make_ingest_source(
             name="Editorial", source_type="editorial", priority=100
         )
         title = Title.objects.create(name="Medieval Madness", slug="mm-title")
@@ -307,9 +306,11 @@ class TestModelDetailAbbreviations:
 
         abbr_key, abbr_val = build_relationship_claim("abbreviation", {"value": "MM"})
         ts4_key, ts4_val = build_relationship_claim("abbreviation", {"value": "TS4LE"})
-        make_claim(title, "abbreviation", abbr_val, source=ipdb, claim_key=abbr_key)
-        make_claim(pm, "abbreviation", abbr_val, source=ipdb, claim_key=abbr_key)
-        make_claim(pm, "abbreviation", ts4_val, source=ipdb, claim_key=ts4_key)
+        make_claim(
+            title, "abbreviation", abbr_val, ingest_source=ipdb, claim_key=abbr_key
+        )
+        make_claim(pm, "abbreviation", abbr_val, ingest_source=ipdb, claim_key=abbr_key)
+        make_claim(pm, "abbreviation", ts4_val, ingest_source=ipdb, claim_key=ts4_key)
 
         resolve_relationship(Title, "abbreviation")
         resolve_relationship(MachineModel, "abbreviation")
@@ -323,7 +324,7 @@ class TestModelDetailAbbreviations:
             "abbreviation", {"value": "MM"}, exists=False
         )
         make_claim(
-            title, "abbreviation", gone_val, source=editorial, claim_key=gone_key
+            title, "abbreviation", gone_val, ingest_source=editorial, claim_key=gone_key
         )
         resolve_relationship(Title, "abbreviation")
 

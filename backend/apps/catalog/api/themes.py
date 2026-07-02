@@ -248,7 +248,7 @@ def patch_theme_claims(
         raise_form_error("No changes provided.")
 
     execute_claims(
-        theme, specs, user=request.user, note=data.note, citation=data.citation
+        theme, specs, user=request.user, note=data.note, citations=data.citations
     )
 
     theme = get_object_or_404(_detail_qs(), slug=theme.slug)

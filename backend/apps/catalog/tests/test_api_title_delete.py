@@ -27,8 +27,8 @@ def _make_title(bootstrap_source, slug: str, name: str | None = None) -> Title:
     # Seed name + status claims from a low-priority source so the resolver
     # has something to fall back to after an undo deactivates the user's
     # status claim. Mirrors what ingest would provide in production.
-    make_claim(t, "name", label, source=bootstrap_source)
-    make_claim(t, "status", "active", source=bootstrap_source)
+    make_claim(t, "name", label, ingest_source=bootstrap_source)
+    make_claim(t, "status", "active", ingest_source=bootstrap_source)
     return t
 
 
@@ -40,8 +40,8 @@ def _make_model(bootstrap_source, title: Title, slug: str) -> MachineModel:
         slug=slug,
         status="active",
     )
-    make_claim(m, "name", label, source=bootstrap_source)
-    make_claim(m, "status", "active", source=bootstrap_source)
+    make_claim(m, "name", label, ingest_source=bootstrap_source)
+    make_claim(m, "status", "active", ingest_source=bootstrap_source)
     return m
 
 

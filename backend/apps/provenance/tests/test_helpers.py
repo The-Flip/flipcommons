@@ -10,14 +10,14 @@ from apps.provenance.helpers import (
     citation_instances,
     claims_prefetch,
 )
-from apps.provenance.models import Claim, Source
+from apps.provenance.models import Claim
 from apps.provenance.schemas import ClaimDisplayValueSchema
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 
 @pytest.fixture
 def source():
-    return Source.objects.create(
+    return make_ingest_source(
         name="Test", slug="test", source_type="database", priority=100
     )
 
@@ -26,7 +26,7 @@ def source():
 class TestActiveClaims:
     def test_returns_list_when_prefetched(self, source):
         series = Series.objects.create(slug="s", name="S")
-        make_claim(series, "name", "S", source=source)
+        make_claim(series, "name", "S", ingest_source=source)
 
         loaded = Series.objects.prefetch_related(claims_prefetch()).get(pk=series.pk)
 
@@ -45,7 +45,7 @@ class TestActiveClaims:
 class TestCitationInstances:
     def test_returns_list_when_prefetched(self, source):
         series = Series.objects.create(slug="s", name="S")
-        make_claim(series, "name", "S", source=source)
+        make_claim(series, "name", "S", ingest_source=source)
 
         loaded = Series.objects.prefetch_related(claims_prefetch()).get(pk=series.pk)
         claim = active_claims(loaded)[0]
@@ -55,7 +55,7 @@ class TestCitationInstances:
 
     def test_raises_when_claim_not_prefetched(self, source):
         series = Series.objects.create(slug="s", name="S")
-        make_claim(series, "name", "S", source=source)
+        make_claim(series, "name", "S", ingest_source=source)
         bare_claim = Claim.objects.get(object_id=series.pk, field_name="name")
 
         with pytest.raises(AssertionError, match="claims_prefetch"):
@@ -76,7 +76,7 @@ class TestBuildSources:
             pm,
             "credit",
             {"person": person.pk, "role": role.pk, "exists": True},
-            source=source,
+            ingest_source=source,
             claim_key=f"credit|person:{person.pk}|role:{role.pk}",
         )
 
@@ -92,7 +92,7 @@ class TestBuildSources:
 
     def test_scalar_claim_value_has_null_display(self, source):
         series = Series.objects.create(slug="s", name="S")
-        make_claim(series, "name", "S", source=source)
+        make_claim(series, "name", "S", ingest_source=source)
 
         loaded = Series.objects.prefetch_related(claims_prefetch()).get(pk=series.pk)
         sources = build_sources(type(loaded), active_claims(loaded))

@@ -5,44 +5,14 @@ from django.contrib import admin
 from django.db.models import ProtectedError
 from django.test import RequestFactory
 
-from apps.citation.models import CitationSource
+from apps.citation.admin import CitationInstanceAdmin
+from apps.citation.models import CitationInstance
 from apps.citation.test_factories import make_citation_source
-from apps.provenance.admin import CitationInstanceAdmin
-from apps.provenance.models import CitationInstance, Claim, Source
-from apps.provenance.test_factories import source_changeset
 
 
 @pytest.fixture
 def citation_source(db):
     return make_citation_source(name="The Encyclopedia of Pinball", source_type="book")
-
-
-@pytest.fixture
-def provenance_source(db):
-    return Source.objects.create(
-        name="Test Source", slug="test-source", source_type="editorial"
-    )
-
-
-@pytest.fixture
-def claim(db, provenance_source):
-    from django.contrib.contenttypes.models import ContentType
-
-    # Use CitationSource as a convenient target — any model works. This target
-    # isn't claim-controlled, so we create the row directly (not via make_claim);
-    # actor + changeset are NOT NULL, so supply a source changeset and its actor.
-    ct = ContentType.objects.get_for_model(CitationSource)
-    cs = make_citation_source(name="Target", source_type="web")
-    changeset = source_changeset(provenance_source)
-    return Claim.objects.create(
-        content_type=ct,
-        object_id=cs.pk,
-        actor=provenance_source.actor,
-        changeset=changeset,
-        field_name="name",
-        claim_key="name",
-        value="Target",
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -51,23 +21,13 @@ def claim(db, provenance_source):
 
 
 class TestCitationInstanceCreation:
-    def test_valid_with_claim(self, citation_source, claim):
+    def test_valid(self, citation_source):
         ci = CitationInstance.objects.create(
             citation_source=citation_source,
-            claim=claim,
             locator="p. 30",
         )
         assert ci.pk is not None
-        assert ci.claim == claim
         assert ci.locator == "p. 30"
-
-    def test_valid_without_claim(self, citation_source):
-        ci = CitationInstance.objects.create(
-            citation_source=citation_source,
-            locator="front",
-        )
-        assert ci.pk is not None
-        assert ci.claim is None
 
     def test_valid_with_empty_locator(self, citation_source):
         ci = CitationInstance.objects.create(
@@ -156,7 +116,7 @@ class TestCitationInstanceSlug:
         # TransactionManagementError.
         from django.db import transaction
 
-        from apps.provenance.models import citation_instance as ci_mod
+        from apps.citation import models as ci_mod
 
         existing = CitationInstance.objects.create(
             citation_source=citation_source, slug="bcdbcdbc"
@@ -201,15 +161,13 @@ class TestCitationInstanceImmutability:
 
 
 class TestCitationInstanceProtect:
+    # Claim-side lifecycle lives on the join: deleting a claim cascades its
+    # ClaimCitationInstance links and deleting a linked instance is blocked by
+    # the join's PROTECT — both covered in test_claim_citation_instance.py.
     def test_protect_prevents_source_delete(self, citation_source):
         CitationInstance.objects.create(citation_source=citation_source)
         with pytest.raises(ProtectedError):
             citation_source.delete()
-
-    def test_protect_prevents_claim_delete(self, citation_source, claim):
-        CitationInstance.objects.create(citation_source=citation_source, claim=claim)
-        with pytest.raises(ProtectedError):
-            claim.delete()
 
 
 # ---------------------------------------------------------------------------
@@ -243,12 +201,6 @@ class TestCitationInstanceReverseRelations:
             citation_source=citation_source, locator="p. 30"
         )
         assert ci in citation_source.instances.all()
-
-    def test_claim_citation_instances(self, citation_source, claim):
-        ci = CitationInstance.objects.create(
-            citation_source=citation_source, claim=claim
-        )
-        assert ci in claim.citation_instances.all()
 
 
 # ---------------------------------------------------------------------------

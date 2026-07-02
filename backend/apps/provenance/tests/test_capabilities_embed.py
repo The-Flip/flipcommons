@@ -22,8 +22,7 @@ from apps.accounts.test_factories import make_user
 from apps.catalog.models import Title
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.test_factories import make_citation_source
-from apps.provenance.models import CitationInstance
-from apps.provenance.test_factories import make_claim, user_changeset
+from apps.provenance.test_factories import cite_claim, make_claim, user_changeset
 
 pytestmark = pytest.mark.django_db
 
@@ -56,7 +55,7 @@ def test_edit_history_capabilities_does_not_scale_queries(client, bootstrap_sour
     """GET /api/pages/edit-history/... query count must not grow with N rows."""
     user = make_user()
     pm = make_machine_model(name="MM", slug="mm-x", year=1997)
-    make_claim(pm, "name", "MM", source=bootstrap_source)
+    make_claim(pm, "name", "MM", ingest_source=bootstrap_source)
 
     _seed_changesets(client, user, pm, 2)
     # Fetch anonymously so we don't tangle with session refresh side-effects.
@@ -82,7 +81,7 @@ def test_global_changes_feed_capabilities_does_not_scale_queries(
     """GET /api/pages/changesets/ query count must not grow with N rows."""
     user = make_user()
     pm = make_machine_model(name="MM2", slug="mm-y", year=1997)
-    make_claim(pm, "name", "MM2", source=bootstrap_source)
+    make_claim(pm, "name", "MM2", ingest_source=bootstrap_source)
 
     _seed_changesets(client, user, pm, 2)
     client.logout()
@@ -104,9 +103,7 @@ def _seed_cited_changesets(user, title: Title, citation_source, n: int) -> None:
         claim = make_claim(
             title, "description", f"Updated copy {i}", user=user, changeset=cs
         )
-        CitationInstance.objects.create(
-            citation_source=citation_source, claim=claim, locator=f"p. {i}"
-        )
+        cite_claim(claim, citation_source=citation_source, locator=f"p. {i}")
 
 
 def test_sources_page_capabilities_does_not_scale_queries(client, bootstrap_source):
@@ -119,7 +116,7 @@ def test_sources_page_capabilities_does_not_scale_queries(client, bootstrap_sour
     """
     user = make_user()
     title = Title.objects.create(name="MM3", slug="mm-z")
-    make_claim(title, "name", "MM3", source=bootstrap_source)
+    make_claim(title, "name", "MM3", ingest_source=bootstrap_source)
     citation_source = make_citation_source(name="Flyer", source_type="web")
 
     _seed_cited_changesets(user, title, citation_source, 2)
@@ -139,7 +136,7 @@ def test_user_profile_recent_edits_capabilities_does_not_scale_queries(
     """GET /api/pages/user/{username}/ recent_edits embed must not scale queries."""
     user = make_user()
     pm = make_machine_model(name="MM4", slug="mm-w", year=1997)
-    make_claim(pm, "name", "MM4", source=bootstrap_source)
+    make_claim(pm, "name", "MM4", ingest_source=bootstrap_source)
 
     _seed_changesets(client, user, pm, 2)
     client.logout()

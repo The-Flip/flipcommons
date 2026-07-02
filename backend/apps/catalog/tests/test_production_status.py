@@ -150,7 +150,7 @@ class TestProductionStatusClaimResolution:
         model = make_machine_model(name="Cancelled Project")
         src = Source.objects.get(slug="bootstrap")
 
-        make_claim(model, "production_status", "unreleased", source=src)
+        make_claim(model, "production_status", "unreleased", ingest_source=src)
         bulk_resolve()
 
         model.refresh_from_db()

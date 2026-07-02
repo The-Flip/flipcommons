@@ -31,8 +31,11 @@ from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.test_factories import make_citation_source
 from apps.core.types import JsonBody
 from apps.provenance.attribution import actor_user
-from apps.provenance.models import ChangeSet, CitationInstance, Source
-from apps.provenance.test_factories import make_claim, user_changeset
+from apps.provenance.models import ChangeSet, Source
+from apps.provenance.test_factories import (
+    make_claim,
+    make_ingest_source,
+)
 
 User = get_user_model()
 
@@ -66,7 +69,7 @@ def _get_bootstrap_source():
 
 def _assert_name_claim(entity):
     """Assert a bootstrap name claim for entities with non-unique name fields."""
-    make_claim(entity, "name", entity.name, source=_get_bootstrap_source())
+    make_claim(entity, "name", entity.name, ingest_source=_get_bootstrap_source())
     return entity
 
 
@@ -489,7 +492,7 @@ class TestPatchSystemResponseShape:
     def test_patch_preserves_manufacturer_titles_and_siblings(
         self, client, user, manufacturer, williams_entity, solid_state
     ):
-        source = Source.objects.create(
+        source = make_ingest_source(
             name="Test", slug="test", source_type="editorial", priority=100
         )
         system = System.objects.create(
@@ -500,8 +503,8 @@ class TestPatchSystemResponseShape:
         )
         # Manufacturer is now claim-controlled on System — assert claims so
         # resolution preserves the FK when description is PATCHed.
-        make_claim(system, "manufacturer", manufacturer.slug, source=source)
-        make_claim(sibling, "manufacturer", manufacturer.slug, source=source)
+        make_claim(system, "manufacturer", manufacturer.slug, ingest_source=source)
+        make_claim(sibling, "manufacturer", manufacturer.slug, ingest_source=source)
         title = Title.objects.create(name="Medieval Madness", slug="medieval-madness")
         make_machine_model(
             name="Medieval Madness",
@@ -578,22 +581,10 @@ class TestPatchRewardTypeResponseShape:
             }
         ]
 
-    def test_patch_can_copy_edit_citation_to_reward_type_claim(
+    def test_patch_can_attach_edit_citation_to_reward_type_claim(
         self, client, user, citation_source
     ):
         reward_type = RewardType.objects.create(name="Replay", slug="replay")
-        template_claim = make_claim(
-            reward_type,
-            field_name="description",
-            value="Template citation",
-            user=user,
-            changeset=user_changeset(user, note="seed"),
-        )
-        template_citation = CitationInstance.objects.create(
-            claim=template_claim,
-            citation_source=citation_source,
-            locator="p. 2",
-        )
 
         client.force_login(user)
         resp = _patch(
@@ -601,7 +592,9 @@ class TestPatchRewardTypeResponseShape:
             f"/api/reward-types/{reward_type.slug}/claims/",
             {
                 "fields": {"description": "Updated reward type copy"},
-                "citation": {"citation_instance_id": template_citation.pk},
+                "citations": [
+                    {"citation_source_id": citation_source.pk, "locator": "p. 2"}
+                ],
             },
         )
 
@@ -613,9 +606,9 @@ class TestPatchRewardTypeResponseShape:
             value="Updated reward type copy",
             is_active=True,
         )
-        copied = created_claim.citation_instances.get()
-        assert copied.citation_source == citation_source
-        assert copied.locator == "p. 2"
+        attached = created_claim.citation_instances.get()
+        assert attached.citation_source == citation_source
+        assert attached.locator == "p. 2"
 
 
 UNIQUE_NAME_CASES = [
