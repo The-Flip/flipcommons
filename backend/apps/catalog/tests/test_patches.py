@@ -673,7 +673,7 @@ sources:
     claim = _location_claim("munich")
     assert claim.changeset is not None
     assert claim.changeset.note == "flipcommons-catalog places it in Munich."
-    assert CitationInstance.objects.filter(claim=claim).exists()
+    assert claim.citation_instances.exists()
 
 
 def test_backward_duplicate_deferred_member_rejected(bally_wulff):
@@ -1543,7 +1543,7 @@ sources:
         tombstone.changeset.note
         == 'flipcommons-catalog says "headquartered in Berlin".'
     )
-    assert CitationInstance.objects.filter(claim=tombstone).exists()
+    assert tombstone.citation_instances.exists()
 
 
 def test_remove_must_be_a_mapping():
@@ -2116,7 +2116,7 @@ sources:
     changeset = status_claim.changeset
     assert changeset is not None
     assert changeset.note == 'flipcommons-catalog says "this firm never existed".'
-    assert CitationInstance.objects.filter(claim=status_claim).exists()
+    assert status_claim.citation_instances.exists()
 
 
 # ── Empty directives on an incompatible kind (strict parse) ────────
@@ -3213,9 +3213,7 @@ sources:
         model=machine_model, person=person, role__slug="design"
     ).exists()
     # The entry-level cite: rides the credit claim like any scalar/FK claim.
-    assert CitationInstance.objects.filter(
-        claim=_credit_claim(person.pk, "design")
-    ).exists()
+    assert _credit_claim(person.pk, "design").citation_instances.exists()
 
 
 def test_credit_on_series(person, credit_roles):

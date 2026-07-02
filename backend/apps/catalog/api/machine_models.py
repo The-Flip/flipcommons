@@ -868,7 +868,9 @@ def patch_model_claims(
     if not specs:
         raise_form_error("No changes provided.")
 
-    execute_claims(pm, specs, user=request.user, note=data.note, citation=data.citation)
+    execute_claims(
+        pm, specs, user=request.user, note=data.note, citations=data.citations
+    )
 
     pm = get_object_or_404(
         _model_detail_qs(), **{MachineModel.public_id_field: pm.public_id}
@@ -935,7 +937,7 @@ def delete_model(
     )
     try:
         changeset, deleted = execute_soft_delete(
-            pm, user=request.user, note=data.note, citation=data.citation
+            pm, user=request.user, note=data.note, citations=data.citations
         )
     except SoftDeleteBlockedError as exc:
         return Status(
@@ -988,7 +990,7 @@ def restore_model(
         user=request.user,
         action=ChangeSetAction.EDIT,
         note=data.note,
-        citation=data.citation,
+        citations=data.citations,
     )
 
     refreshed = get_object_or_404(

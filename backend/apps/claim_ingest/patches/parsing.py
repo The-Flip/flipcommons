@@ -249,7 +249,7 @@ class _PatchEntry:
     # Inline-citation specs for *new* footnotes referenced by numeric-handle
     # ``[[cite:1]]`` markers in this entry's markdown fields, keyed by the
     # patch-local handle (``"1"``). Each value is a parsed CitationRef minted at
-    # apply time as a floating ``claim=None`` CitationInstance. Existing-slug
+    # apply time as a floating CitationInstance (reached only by its marker). Existing-slug
     # markers (``[[cite:<slug>]]``) need no entry here — they self-resolve. Empty
     # when unset; only ``CreateEntry``/``EditEntry`` ever populate it (a
     # ``DeleteEntry`` with ``cites:`` is rejected — no markdown claim to bind to).

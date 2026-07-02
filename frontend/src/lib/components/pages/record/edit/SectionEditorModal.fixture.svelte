@@ -14,7 +14,7 @@
   let closeCount = $state(0);
   let saveCount = $state(0);
   let lastNote = $state('');
-  let lastCitationId = $state('');
+  let lastCitationSourceId = $state('');
   let lastSwitched = $state('');
 
   function openModal() {
@@ -29,7 +29,9 @@
   function saveModal(meta: SaveMeta) {
     saveCount++;
     lastNote = meta.note ?? '';
-    lastCitationId = meta.citation ? String(meta.citation.citation_instance_id) : '';
+    lastCitationSourceId = meta.citations?.length
+      ? String(meta.citations[0].citation_source_id)
+      : '';
     open = false;
   }
 
@@ -63,5 +65,5 @@
 <p data-testid="close-count">{closeCount}</p>
 <p data-testid="save-count">{saveCount}</p>
 <p data-testid="last-note">{lastNote}</p>
-<p data-testid="last-citation">{lastCitationId}</p>
+<p data-testid="last-citation">{lastCitationSourceId}</p>
 <p data-testid="last-switched">{lastSwitched}</p>

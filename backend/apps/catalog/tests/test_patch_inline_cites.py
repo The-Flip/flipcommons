@@ -2,8 +2,8 @@
 
 A patch may carry rich markdown descriptions whose facts are backed by inline
 ``[[cite:<handle>]]`` footnotes. A *new* footnote uses a numeric handle declared
-in a ``cites:`` map (minted to a floating ``claim=None`` CitationInstance at apply
-time); an *existing* footnote uses the instance's durable slug and needs no
+in a ``cites:`` map (minted to a floating CitationInstance at apply time,
+reached only by its marker); an *existing* footnote uses the instance's durable slug and needs no
 ``cites:`` entry (it self-resolves through standard conversion). Covers parse +
 correspondence guards, apply-time minting + marker rewrite, the re-edit
 round-trip, and the new-cite dry-run carve-out.
@@ -42,8 +42,9 @@ def _apply(text: str, *, patch_id: str = "0001-test", dry_run: bool = False):
 
 
 def _floating():
-    """Floating (inline) CitationInstances — minted with ``claim=None``."""
-    return CitationInstance.objects.filter(claim__isnull=True)
+    """Floating (inline) CitationInstances — reached only by their markers,
+    so they carry no ClaimCitationInstance join rows."""
+    return CitationInstance.objects.filter(claim_links__isnull=True)
 
 
 def _is_slug(value: str) -> bool:

@@ -2,7 +2,7 @@
 
 Shared wire shapes should be *defined* in the app that owns the domain
 concept, not in `catalog.api.schemas`. Catalog may still import and compose
-them (e.g. `ClaimPatchSchema.citation: CitationReferenceInputSchema | None`), so we
+them (e.g. `ClaimPatchSchema.citations: list[CitationInstanceCreateSchema]`), so we
 check definition site via `__module__` rather than re-export presence.
 """
 
@@ -15,7 +15,7 @@ from config.api import api
 class TestSharedSchemaOwnership:
     def test_provenance_owned_shapes_are_defined_in_provenance(self):
         for name in (
-            "CitationReferenceInputSchema",
+            "CitationInstanceCreateSchema",
             "AttributionSchema",
             "CitationLinkSchema",
             "InlineCitationSchema",
@@ -47,16 +47,16 @@ class TestSharedSchemaOwnership:
 
     def test_openapi_changeset_input_consolidation(self):
         """Pin the dedup structurally: any component whose property set is
-        exactly ``{note, citation}`` must be ``ChangeSetInputSchema``, and
-        any whose set is exactly ``{name, slug, note, citation}`` must be
+        exactly ``{note, citations}`` must be ``ChangeSetInputSchema``, and
+        any whose set is exactly ``{name, slug, note, citations}`` must be
         ``CreateSchema``. A name-blocklist would silently rot the moment
         someone added e.g. ``FranchiseDeleteSchema``; the property-set
         check catches the fork regardless of name.
         """
         components = api.get_openapi_schema()["components"]["schemas"]
 
-        delete_input_shape = frozenset({"note", "citation"})
-        create_input_shape = frozenset({"name", "slug", "note", "citation"})
+        delete_input_shape = frozenset({"note", "citations"})
+        create_input_shape = frozenset({"name", "slug", "note", "citations"})
 
         delete_matches = {
             name
@@ -64,7 +64,7 @@ class TestSharedSchemaOwnership:
             if frozenset(comp.get("properties", {})) == delete_input_shape
         }
         assert delete_matches == {"ChangeSetInputSchema"}, (
-            "Expected only ChangeSetInputSchema to have shape {note, citation}; "
+            "Expected only ChangeSetInputSchema to have shape {note, citations}; "
             f"found {sorted(delete_matches)}"
         )
 
@@ -82,14 +82,14 @@ class TestSharedSchemaOwnership:
         }
         assert create_matches == {"EntityCreateInputSchema"}, (
             "Expected only EntityCreateInputSchema to have shape "
-            "{name, slug, note, citation}; "
+            "{name, slug, note, citations}; "
             f"found {sorted(create_matches)}"
         )
 
     def test_catalog_schemas_does_not_redefine_shared_shapes(self):
         # Catalog may import and compose these, but must not define them.
         shared_names = (
-            "CitationReferenceInputSchema",
+            "CitationInstanceCreateSchema",
             "AttributionSchema",
             "CitationLinkSchema",
             "InlineCitationSchema",

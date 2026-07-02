@@ -159,16 +159,13 @@ def cite_claim(
 ) -> CitationInstance:
     """Attach a citation instance to *claim* as supporting evidence.
 
-    The intent-revealing "this claim is backed by this evidence" helper: it mints
-    the instance and links it to the claim through a ``ClaimCitationInstance``
-    join row — the channel every read path resolves. Mirrors the scalar write
-    path, so it also sets the legacy per-claim FK for now (unread, dropped once
-    the write paths stop setting it). Call sites stay stable when the FK is
-    dropped: only this helper changes. Returns the created instance.
+    The intent-revealing "this claim is backed by this evidence" helper: it
+    mints the instance and links it to the claim through a
+    ``ClaimCitationInstance`` join row — the channel every read path resolves,
+    and (as of the shared-evidence write path) the only tie a scalar cite has
+    to its claims. Returns the created instance.
     """
-    instance = make_citation_instance(
-        citation_source=citation_source, locator=locator, claim=claim
-    )
+    instance = make_citation_instance(citation_source=citation_source, locator=locator)
     claim_citation_instance(claim, instance)
     return instance
 

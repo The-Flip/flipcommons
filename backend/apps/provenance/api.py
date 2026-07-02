@@ -25,6 +25,7 @@ from apps.core.authz.markers import gated_inline, requires
 from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 
+from . import citation_writer
 from .models import CitationInstance, ClaimControlledModel, Source
 from .page_endpoints import pages_router
 from .schemas import (
@@ -240,15 +241,8 @@ def create_citation_instance(
     """Create a new CitationInstance for use in ``[[cite:N]]`` markers."""
     source = get_object_or_404(CitationSource, pk=data.citation_source_id)
 
-    instance = CitationInstance(
-        citation_source_id=data.citation_source_id,
-        locator=data.locator,
-    )
     try:
-        # slug is assigned in CitationInstance.save(); exclude it from
-        # validation, which runs first and would otherwise see it blank.
-        instance.full_clean(exclude=["slug"])
-        instance.save()
+        instance = citation_writer.create_citation_instance(data)
     except ValidationError as exc:
         raise HttpError(422, str(exc)) from exc
     except IntegrityError as exc:

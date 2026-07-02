@@ -319,12 +319,23 @@ class ClaimSchema(Schema):
     )
 
 
-class CitationReferenceInputSchema(Schema):
-    """Reference an existing CitationInstance to clone onto a user edit."""
+class CitationInstanceCreateSchema(Schema):
+    """Content spec for a citation: what to cite and where in it.
 
-    citation_instance_id: int = Field(
-        description="Identifier of the existing citation instance to reuse."
-    )
+    The single input shape for minting a ``CitationInstance``: inline cites
+    POST it to the standalone create endpoint (the editor needs the slug
+    immediately for its ``[[cite:slug]]`` marker); edit cites ride the save
+    payload's ``citations`` list and the save handler mints from it.
+    """
+
+    citation_source_id: int = Field(description="Identifier of the source to cite.")
+    locator: Annotated[
+        str,
+        Field(
+            max_length=CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
+            description="Specific location within the source, such as a page or section.",
+        ),
+    ] = ""
 
 
 class ChangeSetInputSchema(Schema):
@@ -337,12 +348,15 @@ class ChangeSetInputSchema(Schema):
             description="Optional note explaining the edit.",
         ),
     ] = ""
-    citation: Annotated[
-        CitationReferenceInputSchema | None,
+    citations: Annotated[
+        list[CitationInstanceCreateSchema],
         Field(
-            description="An existing citation instance to attach to the edit, if any."
+            description=(
+                "Evidence supporting this edit. Each entry mints one shared "
+                "citation instance, attached to every claim in the save."
+            )
         ),
-    ] = None
+    ] = []
 
 
 class AttributionSchema(Schema):
@@ -547,16 +561,3 @@ class CitationInstanceBatchSchema(Schema):
     links: list[CitationLinkSchema] = Field(
         [], description="External links for the cited source."
     )
-
-
-class CitationInstanceCreateSchema(Schema):
-    """Input for creating a new CitationInstance against an existing source."""
-
-    citation_source_id: int = Field(description="Identifier of the source to cite.")
-    locator: Annotated[
-        str,
-        Field(
-            max_length=CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
-            description="Specific location within the source, such as a page or section.",
-        ),
-    ] = ""

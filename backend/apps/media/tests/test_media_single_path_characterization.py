@@ -171,7 +171,7 @@ class TestMediaSinglePathCharacterization:
         # A media mutation never attaches a citation.
         assert (
             CitationInstance.objects.filter(
-                claim__field_name="media_attachment"
+                claim_links__claim__field_name="media_attachment"
             ).count()
             == 0
         )

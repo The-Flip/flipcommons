@@ -293,7 +293,7 @@ def patch_system_claims(
     specs = plan_scalar_field_claims(System, data.fields, entity=system)
 
     execute_claims(
-        system, specs, user=request.user, note=data.note, citation=data.citation
+        system, specs, user=request.user, note=data.note, citations=data.citations
     )
 
     system = get_object_or_404(_system_detail_qs(), slug=system.slug)
@@ -385,7 +385,7 @@ def create_system(
         ],
         user=request.user,
         note=data.note,
-        citation=data.citation,
+        citations=data.citations,
     )
 
     created = get_object_or_404(_system_detail_qs(), slug=slug)

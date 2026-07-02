@@ -4,7 +4,7 @@
   import Button from '$lib/components/ui/Button.svelte';
   import NotesAndCitationsDetails from '$lib/components/input/citation/NotesAndCitationsDetails.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
-  import { buildEditCitationRequest, type EditCitationSelection } from '$lib/edit-citation';
+  import { buildEditCitationsRequest, type EditCitationSelection } from '$lib/edit-citation';
   import { pageTitle } from '$lib/constants';
   import { resolveHref } from '$lib/utils';
   import { classifyCreateResponse, reconcileSlug, slugifyForCatalog } from '$lib/create-form';
@@ -14,7 +14,7 @@
     name: string;
     slug: string;
     note: string;
-    citation: ReturnType<typeof buildEditCitationRequest>;
+    citations: ReturnType<typeof buildEditCitationsRequest>;
     [extra: string]: unknown;
   };
 
@@ -141,7 +141,7 @@
         // never trips.
         slug: slug.trim().toLowerCase(),
         note: note || '',
-        citation: buildEditCitationRequest(citation),
+        citations: buildEditCitationsRequest(citation),
         ...extras,
       });
 

@@ -10,7 +10,7 @@
       name: string;
       slug: string;
       note: string;
-      citation: unknown;
+      citations: unknown;
     }) => Promise<{ data: Created | undefined; error: unknown; response: Response }>;
   }>;
 

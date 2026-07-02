@@ -12,7 +12,7 @@ export type { SaveMeta, SaveResult };
 type ManufacturerClaimsBody = ClaimPatchSchema;
 
 type ManufacturerSectionPatchBody = Partial<
-  Pick<ManufacturerClaimsBody, 'fields' | 'note' | 'citation'>
+  Pick<ManufacturerClaimsBody, 'fields' | 'note' | 'citations'>
 >;
 
 export async function saveManufacturerClaims(
@@ -21,7 +21,7 @@ export async function saveManufacturerClaims(
 ): Promise<SaveResult> {
   const { data, error } = await client.PATCH('/api/manufacturers/{public_id}/claims/', {
     params: { path: { public_id: slug } },
-    body: { fields: {}, note: '', ...body },
+    body: { fields: {}, note: '', citations: [], ...body },
   });
 
   if (error) {

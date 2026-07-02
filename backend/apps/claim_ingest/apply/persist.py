@@ -49,7 +49,7 @@ from apps.core.types import (
     EntityKey,
 )
 from apps.provenance.models import ChangeSet, Claim, ClaimControlledModel, IngestRun
-from apps.provenance.types import ClaimId
+from apps.provenance.types import ChangeSetId, ClaimId
 
 type EntryNotes = dict[EntryIndex, str]
 """Each patch entry's note keyed by its ``EntryIndex`` — one ChangeSet, one note
@@ -341,8 +341,13 @@ def _attach_plan_citations(
         return
     from apps.provenance.models import CitationInstance, ClaimCitationInstance
 
+    # One shared instance per distinct citation per ChangeSet: claims in the
+    # same entry citing the same source reach one row through join fan-out
+    # rather than minting a clone each. Ingest cites carry no locator, so the
+    # source alone identifies the citation within a changeset.
     source_cache: CiteSourceCache = {}
-    instances: list[CitationInstance] = []
+    shared: dict[tuple[ChangeSetId, CitationSourceId], CitationInstance] = {}
+    cited: list[tuple[Claim, tuple[ChangeSetId, CitationSourceId]]] = []
     for claim in to_create:
         ref = claim_citations.get(
             ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)
@@ -350,20 +355,19 @@ def _attach_plan_citations(
         if ref is None:
             continue
         source_id = _resolve_cite_source_id(ref, source_cache, actor=actor)
-        instances.append(CitationInstance(citation_source_id=source_id, claim=claim))
-    if instances:
-        CitationInstance.objects.mint_many(instances)
-        # Link each claim to its citation instance through the support edge.
-        links: list[ClaimCitationInstance] = []
-        for inst in instances:
-            # This path only builds scalar instances (claim set above); inline
-            # claim=None instances are minted by _materialize_inline_citations and
-            # never reach here. Assert so claim_id narrows ClaimId|None -> ClaimId.
-            assert inst.claim_id is not None
-            links.append(
-                ClaimCitationInstance(claim_id=inst.claim_id, citation_instance=inst)
-            )
-        ClaimCitationInstance.objects.bulk_create(links, batch_size=2000)
+        key = (claim.changeset_id, source_id)
+        if key not in shared:
+            shared[key] = CitationInstance(citation_source_id=source_id)
+        cited.append((claim, key))
+    if shared:
+        CitationInstance.objects.mint_many(list(shared.values()))
+        ClaimCitationInstance.objects.bulk_create(
+            (
+                ClaimCitationInstance(claim=claim, citation_instance=shared[key])
+                for claim, key in cited
+            ),
+            batch_size=2000,
+        )
 
 
 def _materialize_inline_citations(
@@ -372,8 +376,9 @@ def _materialize_inline_citations(
     """Mint floating ``CitationInstance`` rows for *new* inline citations.
 
     For each assertion carrying ``inline_cites`` (a ``{numeric-handle:
-    CitationRef}`` map populated by the patch adapter), mints one
-    ``claim=None`` ``CitationInstance`` per handle, then rewrites that handle's
+    CitationRef}`` map populated by the patch adapter), mints one floating
+    ``CitationInstance`` per handle (no join rows — an inline instance is
+    reached only by its marker), then rewrites that handle's
     ``[[cite:<handle>]]`` markers in the assertion value to the minted
     ``[[cite:<slug>]]``. Existing-slug markers are left untouched.
 
@@ -404,7 +409,7 @@ def _materialize_inline_citations(
     for pca in cited:
         for handle, ref in pca.inline_cites.items():
             source_id = _resolve_cite_source_id(ref, source_cache, actor=actor)
-            instances.append(CitationInstance(citation_source_id=source_id, claim=None))
+            instances.append(CitationInstance(citation_source_id=source_id))
             owners.append((pca, handle))
     CitationInstance.objects.mint_many(instances)  # assigns each ``.slug`` in place
 

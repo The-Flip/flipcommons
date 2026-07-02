@@ -174,7 +174,7 @@ Switch scalar reads to the join. First the name handoff: the old `CitationInstan
 
 ### <a id="con">CON</a> - Contract
 
-#### <a id="con1">CON1</a> - Switch writes
+#### ✅ DONE: <a id="con1">CON1</a> - Switch writes
 
 Rework writes + API to the shared model — request schema citation → citations: list[content-spec] (source_id, locator), \_attach_citations mints one instance per distinct citation and fans join rows, stop cloning, stop setting claim. Codegen + the frontend send-site. The fan-out is what makes the FK un-settable, which is why [Switch reads](#mig2) had to go first.
 

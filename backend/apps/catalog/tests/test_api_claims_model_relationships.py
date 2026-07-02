@@ -20,7 +20,7 @@ from apps.catalog.models import (
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.test_factories import make_citation_source
 from apps.provenance.models import ChangeSet
-from apps.provenance.test_factories import make_claim, user_changeset
+from apps.provenance.test_factories import make_claim
 
 User = get_user_model()
 
@@ -319,7 +319,7 @@ class TestCombinedEdits:
         assert "credit" in field_names
         assert "abbreviation" in field_names
 
-    def test_citation_is_copied_to_each_created_claim(
+    def test_one_shared_citation_reaches_each_created_claim(
         self,
         client,
         user,
@@ -330,18 +330,6 @@ class TestCombinedEdits:
         credit_roles,
         citation_source,
     ):
-        seed_claim = make_claim(
-            pm,
-            "description",
-            "Template citation seed",
-            user=user,
-            changeset=user_changeset(user, note="seed"),
-        )
-        template_instance = citation_source.instances.create(
-            claim=seed_claim,
-            locator="p. 3",
-        )
-
         client.force_login(user)
         resp = _patch(
             client,
@@ -352,26 +340,27 @@ class TestCombinedEdits:
                 "gameplay_features": [{"slug": "ramps", "count": 2}],
                 "credits": [{"person_slug": "pat-lawlor", "role": "design"}],
                 "abbreviations": ["MM"],
-                "citation": {"citation_instance_id": template_instance.pk},
+                "citations": [
+                    {"citation_source_id": citation_source.pk, "locator": "p. 3"}
+                ],
             },
         )
         assert resp.status_code == 200, resp.json()
 
-        assert seed_claim.changeset_id is not None
-        # Restrict to the editing user's changesets (the pm fixture's seed name
-        # claim is ingest) and exclude the citation-template seed changeset.
-        changeset = (
-            ChangeSet.objects.filter(actor=user.actor)
-            .exclude(pk=seed_claim.changeset_id)
-            .get()
-        )
+        # Restrict to the editing user's changeset (the pm fixture's seed name
+        # claim is ingest).
+        changeset = ChangeSet.objects.filter(actor=user.actor).get()
         claims = list(changeset.claims.order_by("pk"))
         assert claims
+        instances = set()
         for claim in claims:
             claim_citations = list(claim.citation_instances.all())
             assert len(claim_citations) == 1
             assert claim_citations[0].citation_source_id == citation_source.pk
             assert claim_citations[0].locator == "p. 3"
+            instances.add(claim_citations[0].pk)
+        # The whole save shares ONE instance — evidence is not cloned per claim.
+        assert len(instances) == 1
 
     def test_no_changes_returns_422(self, client, user, pm):
         client.force_login(user)

@@ -198,9 +198,9 @@ class PlannedClaimAssert:
     citation_ref: CitationRef | None = None
     # Inline-citation footnotes referenced by ``[[cite:<numeric-handle>]]`` markers
     # in a markdown field's value, keyed by the patch-local numeric handle. Each
-    # is a *new* citation minted at apply time (a floating ``claim=None``
-    # CitationInstance), after which the handle markers are rewritten to the
-    # minted slug. Existing-slug markers (``[[cite:<slug>]]``) carry nothing here —
+    # is a *new* citation minted at apply time (a floating CitationInstance,
+    # reached only by its marker), after which the handle markers are rewritten
+    # to the minted slug. Existing-slug markers (``[[cite:<slug>]]``) carry nothing here —
     # they self-resolve through standard conversion. Empty for non-cited fields.
     inline_cites: dict[CiteHandle, CitationRef] = field(default_factory=dict)
     # The file-order index of the authoring patch entry, so ``_persist`` can mint

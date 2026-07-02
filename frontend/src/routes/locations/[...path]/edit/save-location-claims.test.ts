@@ -42,6 +42,7 @@ describe('saveLocationClaims', () => {
     expect(options.body).toEqual({
       fields: { description: 'Windy City' },
       note: '',
+      citations: [],
     });
     expect(invalidateAll).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ ok: true, updatedSlug: 'usa/il/chicago' });
@@ -56,7 +57,7 @@ describe('saveLocationClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/locations/{public_id}/claims/', {
       params: { path: { public_id: 'usa' } },
-      body: { fields: {}, note: '', aliases: ['United States', 'America'] },
+      body: { fields: {}, note: '', citations: [], aliases: ['United States', 'America'] },
     });
     expect(result).toEqual({ ok: true, updatedSlug: 'usa' });
   });
@@ -70,7 +71,7 @@ describe('saveLocationClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/locations/{public_id}/claims/', {
       params: { path: { public_id: 'usa' } },
-      body: { fields: {}, note: '', divisions: ['state', 'city'] },
+      body: { fields: {}, note: '', citations: [], divisions: ['state', 'city'] },
     });
     expect(result).toEqual({ ok: true, updatedSlug: 'usa' });
   });

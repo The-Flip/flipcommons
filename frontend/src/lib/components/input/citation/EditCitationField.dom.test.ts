@@ -77,7 +77,7 @@ describe('EditCitationField', () => {
 
     render(EditCitationField, {
       citation: {
-        citationInstanceId: 42,
+        citationSourceId: 7,
         sourceName: 'Williams Flyer',
         locator: 'p. 2',
       },

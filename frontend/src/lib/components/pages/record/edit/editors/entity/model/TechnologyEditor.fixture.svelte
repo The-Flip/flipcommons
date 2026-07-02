@@ -56,7 +56,7 @@
   onclick={() =>
     editorRef?.save({
       note: 'Corrected per flyer',
-      citation: { citation_instance_id: 42 },
+      citations: [{ citation_source_id: 7, locator: 'p. 2' }],
     })}
 >
   Save with meta

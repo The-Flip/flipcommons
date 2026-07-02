@@ -12,7 +12,7 @@ export type { SaveMeta, SaveResult };
 type LocationPatchBody = LocationPatchClaimSchema;
 
 type LocationSectionPatchBody = Partial<
-  Pick<LocationPatchBody, 'fields' | 'aliases' | 'divisions' | 'note' | 'citation'>
+  Pick<LocationPatchBody, 'fields' | 'aliases' | 'divisions' | 'note' | 'citations'>
 >;
 
 export async function saveLocationClaims(
@@ -21,7 +21,7 @@ export async function saveLocationClaims(
 ): Promise<SaveResult> {
   const { data, error } = await client.PATCH('/api/locations/{public_id}/claims/', {
     params: { path: { public_id: publicId } },
-    body: { fields: {}, note: '', ...body },
+    body: { fields: {}, note: '', citations: [], ...body },
   });
 
   if (error) {

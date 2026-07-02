@@ -22,7 +22,7 @@ machinery itself (see :mod:`apps.claim_edit.claim_write`).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from django.contrib.auth.models import AbstractBaseUser, AnonymousUser
@@ -42,7 +42,7 @@ from apps.provenance.models import (
     LinkableClaimModel,
     LinkableLifecycleClaimModel,
 )
-from apps.provenance.schemas import CitationReferenceInputSchema
+from apps.provenance.schemas import CitationInstanceCreateSchema
 
 from ...models import AliasModel
 from ...naming import normalize_catalog_name
@@ -343,7 +343,7 @@ def create_entity_with_claims[M: LinkableClaimModel](
     claim_specs: list[ClaimSpec],
     user: _UserLike,
     note: str = "",
-    citation: CitationReferenceInputSchema | None = None,
+    citations: Sequence[CitationInstanceCreateSchema] = (),
 ) -> M:
     """Create a new catalog row + its initial claims atomically.
 
@@ -391,7 +391,7 @@ def create_entity_with_claims[M: LinkableClaimModel](
                 user=user,
                 action=ChangeSetAction.CREATE,
                 note=note,
-                citation=citation,
+                citations=citations,
             )
     except IntegrityError as err:
         raise StructuredValidationError(

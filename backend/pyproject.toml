@@ -540,7 +540,7 @@ layers = [
     "page_endpoints",
     "evidence | history",
     "helpers",
-    "claims | claim_writer | display | revert",
+    "claims | claim_writer | citation_writer | display | revert",
     "changeset_writer",
     "validation | schemas | claim_ranking_in_db | licensing | resolution | rate_limits",
     "attribution",

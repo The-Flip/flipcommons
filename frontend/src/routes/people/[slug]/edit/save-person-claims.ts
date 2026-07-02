@@ -11,7 +11,7 @@ export type { SaveMeta, SaveResult };
 
 type PersonClaimsBody = ClaimPatchSchema;
 
-type PersonSectionPatchBody = Partial<Pick<PersonClaimsBody, 'fields' | 'note' | 'citation'>>;
+type PersonSectionPatchBody = Partial<Pick<PersonClaimsBody, 'fields' | 'note' | 'citations'>>;
 
 export async function savePersonClaims(
   slug: string,
@@ -19,7 +19,7 @@ export async function savePersonClaims(
 ): Promise<SaveResult> {
   const { data, error } = await client.PATCH('/api/people/{public_id}/claims/', {
     params: { path: { public_id: slug } },
-    body: { fields: {}, note: '', ...body },
+    body: { fields: {}, note: '', citations: [], ...body },
   });
 
   if (error) {

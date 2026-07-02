@@ -33,10 +33,8 @@ from apps.core.types import JsonBody
 from apps.provenance.attribution import actor_user
 from apps.provenance.models import ChangeSet, Source
 from apps.provenance.test_factories import (
-    make_citation_instance,
     make_claim,
     make_ingest_source,
-    user_changeset,
 )
 
 User = get_user_model()
@@ -583,22 +581,10 @@ class TestPatchRewardTypeResponseShape:
             }
         ]
 
-    def test_patch_can_copy_edit_citation_to_reward_type_claim(
+    def test_patch_can_attach_edit_citation_to_reward_type_claim(
         self, client, user, citation_source
     ):
         reward_type = RewardType.objects.create(name="Replay", slug="replay")
-        template_claim = make_claim(
-            reward_type,
-            field_name="description",
-            value="Template citation",
-            user=user,
-            changeset=user_changeset(user, note="seed"),
-        )
-        template_citation = make_citation_instance(
-            claim=template_claim,
-            citation_source=citation_source,
-            locator="p. 2",
-        )
 
         client.force_login(user)
         resp = _patch(
@@ -606,7 +592,9 @@ class TestPatchRewardTypeResponseShape:
             f"/api/reward-types/{reward_type.slug}/claims/",
             {
                 "fields": {"description": "Updated reward type copy"},
-                "citation": {"citation_instance_id": template_citation.pk},
+                "citations": [
+                    {"citation_source_id": citation_source.pk, "locator": "p. 2"}
+                ],
             },
         )
 
@@ -618,9 +606,9 @@ class TestPatchRewardTypeResponseShape:
             value="Updated reward type copy",
             is_active=True,
         )
-        copied = created_claim.citation_instances.get()
-        assert copied.citation_source == citation_source
-        assert copied.locator == "p. 2"
+        attached = created_claim.citation_instances.get()
+        assert attached.citation_source == citation_source
+        assert attached.locator == "p. 2"
 
 
 UNIQUE_NAME_CASES = [

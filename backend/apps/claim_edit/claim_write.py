@@ -26,18 +26,18 @@ from django.db import IntegrityError, transaction
 from apps.accounts.models import User
 from apps.core.exceptions import StructuredValidationError
 from apps.provenance.changeset_writer import record_changeset
+from apps.provenance.citation_writer import create_citation_instance
 from apps.provenance.claim_writer import _assert_claim
 from apps.provenance.models import (
     ChangeSet,
     ChangeSetAction,
-    CitationInstance,
     Claim,
     ClaimCitationInstance,
     ClaimControlledModel,
     get_claim_fields,
 )
 from apps.provenance.resolution import resolve_after_mutation
-from apps.provenance.schemas import CitationReferenceInputSchema
+from apps.provenance.schemas import CitationInstanceCreateSchema
 from apps.provenance.validation import validate_claim_value
 
 __all__ = [
@@ -239,32 +239,29 @@ def _write_claims_in_changeset(
     return created_claims
 
 
-def _attach_citation(
+def _attach_citations(
     claims: list[Claim],
-    citation: CitationReferenceInputSchema | None,
+    citations: Sequence[CitationInstanceCreateSchema],
 ) -> None:
-    """Link each claim in *claims* to a copy of the referenced citation instance."""
-    if citation is None:
-        return
-    try:
-        template = CitationInstance.objects.select_related("citation_source").get(
-            pk=citation.citation_instance_id
-        )
-    except CitationInstance.DoesNotExist:
-        raise_form_error("Unknown citation instance.")
+    """Attach the save's evidence to every claim it backs.
 
-    for claim in claims:
-        instance = CitationInstance(
-            citation_source=template.citation_source,
-            claim=claim,
-            locator=template.locator,
+    A citation entered on save is evidence for the whole save, so each
+    distinct spec mints **one** shared ``CitationInstance`` and fans a
+    ``ClaimCitationInstance`` join row out to every claim in *claims*.
+    An unknown ``citation_source_id`` surfaces as ``ValidationError`` from
+    the mint's ``full_clean``, which the ``execute_*`` wrappers map to a
+    structured 422.
+    """
+    # Dedupe by content: the same (source, locator) entered twice is one
+    # piece of evidence, and duplicate join rows would trip the unique
+    # (claim, citation_instance) constraint.
+    distinct = {(spec.citation_source_id, spec.locator): spec for spec in citations}
+    for spec in distinct.values():
+        instance = create_citation_instance(spec)
+        ClaimCitationInstance.objects.bulk_create(
+            ClaimCitationInstance(claim=claim, citation_instance=instance)
+            for claim in claims
         )
-        # slug is assigned in CitationInstance.save(); exclude it from
-        # validation, which runs first and would otherwise see it blank.
-        instance.full_clean(exclude=["slug"])
-        instance.save()
-        # Link the claim to its citation instance through the support edge.
-        ClaimCitationInstance.objects.create(claim=claim, citation_instance=instance)
 
 
 def execute_claims(
@@ -274,7 +271,7 @@ def execute_claims(
     user: _RequestUser,
     action: ChangeSetAction = ChangeSetAction.EDIT,
     note: str = "",
-    citation: CitationReferenceInputSchema | None = None,
+    citations: Sequence[CitationInstanceCreateSchema] = (),
 ) -> None:
     """Create a ChangeSet + claims atomically, resolve, and invalidate cache.
 
@@ -289,7 +286,7 @@ def execute_claims(
         with transaction.atomic():
             cs = record_changeset(actor=auth_user.actor, action=action, note=note)
             created_claims = _write_claims_in_changeset(entity, specs, changeset=cs)
-            _attach_citation(created_claims, citation)
+            _attach_citations(created_claims, citations)
             field_names = list({s.field_name for s in specs})
             resolve_after_mutation(entity, field_names=field_names)
     except ValidationError as exc:
@@ -304,7 +301,7 @@ def execute_multi_entity_claims(
     user: _RequestUser,
     action: ChangeSetAction,
     note: str = "",
-    citation: CitationReferenceInputSchema | None = None,
+    citations: Sequence[CitationInstanceCreateSchema] = (),
 ) -> ChangeSet:
     """Write claims spanning multiple entities inside a single ChangeSet.
 
@@ -313,7 +310,7 @@ def execute_multi_entity_claims(
     in edit history and be inverted as one unit by Undo.
 
     One ChangeSet is created with the given *action*; each entry's claims are
-    asserted within that changeset; the *citation* (if any) is attached to
+    asserted within that changeset; the *citations* (if any) are attached to
     every created claim across all entities; finally ``resolve_after_mutation``
     is invoked per entity for just the fields that entity touched.
 
@@ -332,7 +329,7 @@ def execute_multi_entity_claims(
                 created = _write_claims_in_changeset(entity, specs, changeset=cs)
                 all_created.extend(created)
                 per_entity_fields.append((entity, list({s.field_name for s in specs})))
-            _attach_citation(all_created, citation)
+            _attach_citations(all_created, citations)
             for entity, field_names in per_entity_fields:
                 resolve_after_mutation(entity, field_names=field_names)
     except ValidationError as exc:

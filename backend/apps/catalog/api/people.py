@@ -369,7 +369,7 @@ def patch_person_claims(
     specs = plan_scalar_field_claims(Person, data.fields, entity=person)
 
     execute_claims(
-        person, specs, user=request.user, note=data.note, citation=data.citation
+        person, specs, user=request.user, note=data.note, citations=data.citations
     )
 
     person = get_object_or_404(_person_qs(), slug=person.slug)
@@ -435,7 +435,7 @@ def create_person(
         ],
         user=request.user,
         note=data.note,
-        citation=data.citation,
+        citations=data.citations,
     )
 
     created = get_object_or_404(_person_qs(), **{Person.public_id_field: slug})
@@ -543,7 +543,7 @@ def delete_person(
 
     try:
         changeset, deleted = execute_soft_delete(
-            person, user=request.user, note=data.note, citation=data.citation
+            person, user=request.user, note=data.note, citations=data.citations
         )
     except SoftDeleteBlockedError as exc:
         return Status(
@@ -596,7 +596,7 @@ def restore_person(
         user=request.user,
         action=ChangeSetAction.EDIT,
         note=data.note,
-        citation=data.citation,
+        citations=data.citations,
     )
 
     refreshed = get_object_or_404(_person_qs(), **{Person.public_id_field: public_id})

@@ -16,7 +16,6 @@ from apps.provenance.models import ChangeSet, Claim, Source
 from apps.provenance.test_factories import (
     make_claim,
     make_ingest_source,
-    user_changeset,
 )
 
 User = get_user_model()
@@ -250,44 +249,29 @@ class TestPatchTitleClaims:
             for claim in sources_resp.json()["sources"]
         )
 
-    def test_scalar_edit_with_citation_clones_to_created_claim(
+    def test_scalar_edit_with_citation_attaches_to_created_claim(
         self, client, user, title, citation_source
     ):
         client.force_login(user)
-        template_claim = make_claim(
-            title,
-            "description",
-            "Template citation seed",
-            user=user,
-            changeset=user_changeset(user, note="seed"),
-        )
-        template_instance = citation_source.instances.create(
-            claim=template_claim,
-            locator="p. 2",
-        )
 
         resp = _patch(
             client,
             title.slug,
             {
                 "fields": {"description": "Updated"},
-                "citation": {"citation_instance_id": template_instance.pk},
+                "citations": [
+                    {"citation_source_id": citation_source.pk, "locator": "p. 2"}
+                ],
             },
         )
 
         assert resp.status_code == 200, resp.json()
-        assert template_claim.changeset_id is not None
-        # Restrict to the editing user's changesets (the title fixture's seed name
-        # claim is ingest) and exclude the citation-template seed changeset.
-        changeset = (
-            ChangeSet.objects.filter(actor=user.actor)
-            .exclude(pk=template_claim.changeset_id)
-            .get()
-        )
+        # Restrict to the editing user's changeset (the title fixture's seed
+        # name claim is ingest).
+        changeset = ChangeSet.objects.filter(actor=user.actor).get()
         created_claim = changeset.claims.get(field_name="description")
         claim_citations = list(created_claim.citation_instances.all())
         assert len(claim_citations) == 1
-        assert claim_citations[0].claim_id == created_claim.pk
         assert claim_citations[0].citation_source_id == citation_source.pk
         assert claim_citations[0].locator == "p. 2"
 
@@ -301,7 +285,7 @@ class TestPatchTitleClaims:
             title.slug,
             {
                 "fields": {"description": "Updated"},
-                "citation": {"citation_instance_id": 999999},
+                "citations": [{"citation_source_id": 999999}],
             },
         )
 
