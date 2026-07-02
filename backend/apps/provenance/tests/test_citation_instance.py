@@ -51,23 +51,13 @@ def claim(db, provenance_source):
 
 
 class TestCitationInstanceCreation:
-    def test_valid_with_claim(self, citation_source, claim):
+    def test_valid(self, citation_source):
         ci = CitationInstance.objects.create(
             citation_source=citation_source,
-            claim=claim,
             locator="p. 30",
         )
         assert ci.pk is not None
-        assert ci.claim == claim
         assert ci.locator == "p. 30"
-
-    def test_valid_without_claim(self, citation_source):
-        ci = CitationInstance.objects.create(
-            citation_source=citation_source,
-            locator="front",
-        )
-        assert ci.pk is not None
-        assert ci.claim is None
 
     def test_valid_with_empty_locator(self, citation_source):
         ci = CitationInstance.objects.create(
@@ -201,15 +191,13 @@ class TestCitationInstanceImmutability:
 
 
 class TestCitationInstanceProtect:
+    # Claim-side lifecycle lives on the join: deleting a claim cascades its
+    # ClaimCitationInstance links and deleting a linked instance is blocked by
+    # the join's PROTECT — both covered in test_claim_citation_instance.py.
     def test_protect_prevents_source_delete(self, citation_source):
         CitationInstance.objects.create(citation_source=citation_source)
         with pytest.raises(ProtectedError):
             citation_source.delete()
-
-    def test_protect_prevents_claim_delete(self, citation_source, claim):
-        CitationInstance.objects.create(citation_source=citation_source, claim=claim)
-        with pytest.raises(ProtectedError):
-            claim.delete()
 
 
 # ---------------------------------------------------------------------------
@@ -245,17 +233,14 @@ class TestCitationInstanceReverseRelations:
         assert ci in citation_source.instances.all()
 
     def test_claim_citation_instances(self, citation_source, claim):
-        """``claim.citation_instances`` resolves through the join, not the
-        legacy FK: a join-linked floating instance appears; an instance that
-        only sets the FK does not."""
+        """``claim.citation_instances`` resolves through the join: a linked
+        instance appears in it; an unlinked one does not."""
         linked = CitationInstance.objects.create(citation_source=citation_source)
         claim_citation_instance(claim, linked)
-        fk_only = CitationInstance.objects.create(
-            citation_source=citation_source, claim=claim
-        )
+        unlinked = CitationInstance.objects.create(citation_source=citation_source)
 
         assert linked in claim.citation_instances.all()
-        assert fk_only not in claim.citation_instances.all()
+        assert unlinked not in claim.citation_instances.all()
         assert claim in linked.claims.all()
 
 

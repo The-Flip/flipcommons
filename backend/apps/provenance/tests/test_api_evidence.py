@@ -133,7 +133,7 @@ class TestScalarCitationJoin:
     ):
         # The engine's scalar-cite path mints ONE shared instance per distinct
         # content spec and fans a ClaimCitationInstance support edge to every
-        # claim in the save — no per-claim clones, no legacy claim FK.
+        # claim in the save — no per-claim clones.
         execute_claims(
             title,
             [
@@ -157,7 +157,6 @@ class TestScalarCitationJoin:
         instance = instances.pop()
         assert instance.citation_source_id == citation_source.pk
         assert instance.locator == "p. 9"
-        assert instance.claim_id is None  # the legacy FK is no longer written
         assert {link.claim.field_name for link in links} == {"name", "description"}
 
     def test_execute_claims_dedupes_identical_citation_specs(

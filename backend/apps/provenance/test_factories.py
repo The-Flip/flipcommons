@@ -132,21 +132,17 @@ def make_citation_instance(
     *,
     citation_source: CitationSource | None = None,
     locator: str = "",
-    claim: Claim | None = None,
     slug: str = "",
 ) -> CitationInstance:
     """Create a ``CitationInstance`` for tests, auto-providing a citation source.
 
-    A bare call yields a floating instance (``claim=None``) — the inline/shared
-    shape. ``slug`` auto-fills when left blank. Pass ``claim=`` to set the
-    per-claim FK directly, as the model's own constraint tests do; to attach
-    evidence to a claim as production does, prefer :func:`cite_claim`, which also
-    writes the join row.
+    Yields a floating instance — shared evidence nothing references yet.
+    ``slug`` auto-fills when left blank. To attach it to a claim as supporting
+    evidence, prefer :func:`cite_claim`, which also writes the join row.
     """
     return CitationInstance.objects.create(
         citation_source=citation_source or make_citation_source(),
         locator=locator,
-        claim=claim,
         slug=slug,
     )
 

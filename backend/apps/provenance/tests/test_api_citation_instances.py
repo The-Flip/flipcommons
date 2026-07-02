@@ -71,8 +71,7 @@ class TestListCitationInstances:
 
     def test_filter_by_claim_reads_the_join(self, client, user, citation_source):
         """``?claim=`` resolves through the ClaimCitationInstance join: a
-        join-linked floating instance is returned; an instance that only sets
-        the legacy FK is not."""
+        linked instance is returned; an unlinked one is not."""
         from apps.catalog.models import Manufacturer
 
         mfr = Manufacturer.objects.create(name="Williams", slug="williams")
@@ -82,9 +81,7 @@ class TestListCitationInstances:
             citation_source=citation_source, locator="p. 42"
         )
         claim_citation_instance(claim, linked)
-        make_citation_instance(
-            citation_source=citation_source, locator="p. 7", claim=claim
-        )
+        make_citation_instance(citation_source=citation_source, locator="p. 7")
 
         client.force_login(user)
         resp = client.get(f"/api/citation-instances/?claim={claim.pk}")

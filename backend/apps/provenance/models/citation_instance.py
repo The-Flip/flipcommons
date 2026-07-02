@@ -13,8 +13,6 @@ from django.utils.crypto import get_random_string
 from apps.core.types import CitationSourceId
 from apps.core.validators import validate_no_mojibake
 
-from ..types import ClaimId
-
 CITATION_INSTANCE_LOCATOR_MAX_LENGTH = 200
 
 # Slug alphabet: lowercase consonants only (vowels dropped). Digit-free so a
@@ -66,7 +64,7 @@ class CitationInstanceManager(models.Manager["CitationInstance"]):
 
     Single-row creates (``save()``/``objects.create()``) get their slug from
     ``CitationInstance.save()``. ``bulk_create`` skips ``save()``, so the bulk
-    paths (ingest's per-claim attach, and step 2's inline materialize) must go
+    paths (ingest's scalar attach, and step 2's inline materialize) must go
     through here to populate the NOT NULL/unique ``slug`` column.
     """
 
@@ -106,34 +104,20 @@ class CitationInstance(models.Model):
     ``ClaimCitationInstance`` join, and inline markdown citations
     (``[[cite:id:...]]``) reach it through their marker alone.
 
-    ``claim`` is a legacy single-owner column on its way out: the scalar write
-    paths still set it (null for inline cites), but nothing reads it — the
-    reverse accessor is disabled (``related_name="+"``) so every read goes
-    through the join or the marker. It is dropped once the write paths stop
-    setting it.
-
     ``slug`` is a globally-unique, digit-free, author-stable handle. It is the
     authoring key for the ``cite`` wikilink type (``[[cite:<slug>]]`` authoring
     ↔ ``[[cite:id:<pk>]]`` storage). Every instance carries one, including
-    field-level (``claim != null``) cites whose slug simply goes unused — a
-    uniform column beats a conditional constraint. Assigned at mint, immutable.
+    scalar/edit cites whose slug simply goes unused — a uniform column beats a
+    conditional constraint. Assigned at mint, immutable.
     """
 
     citation_source_id: CitationSourceId
-    claim_id: ClaimId | None
 
     slug = models.CharField(max_length=CITATION_SLUG_LENGTH, unique=True)
     citation_source = models.ForeignKey(
         "citation.CitationSource",
         on_delete=models.PROTECT,
         related_name="instances",
-    )
-    claim = models.ForeignKey(
-        "provenance.Claim",
-        on_delete=models.PROTECT,
-        related_name="+",
-        null=True,
-        blank=True,
     )
     locator = models.CharField(
         max_length=CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
@@ -161,10 +145,6 @@ class CitationInstance(models.Model):
             models.Index(
                 fields=["citation_source"],
                 name="prov_citinst_source_idx",
-            ),
-            models.Index(
-                fields=["claim"],
-                name="prov_citinst_claim_idx",
             ),
         ]
 

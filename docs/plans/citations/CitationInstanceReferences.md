@@ -178,7 +178,7 @@ Switch scalar reads to the join. First the name handoff: the old `CitationInstan
 
 Rework writes + API to the shared model — request schema citation → citations: list[content-spec] (source_id, locator), \_attach_citations mints one instance per distinct citation and fans join rows, stop cloning, stop setting claim. Codegen + the frontend send-site. The fan-out is what makes the FK un-settable, which is why [Switch reads](#mig2) had to go first.
 
-#### <a id="con2">CON2</a> - Drop CitationInstance.claim
+#### ✅ DONE: <a id="con2">CON2</a> - Drop CitationInstance.claim
 
 Drop CitationInstance.claim — schema migration. The column is now unused (scalar cites reach the instance through the join; inline cites through their marker).
 
