@@ -17,8 +17,8 @@
     citation = $bindable(null),
     showCitation = true,
     showMixedEditWarning = false,
-    noteLabel = 'Edit note',
-    notePlaceholder = 'Why are you making this change?',
+    noteLabel = 'Edit summary',
+    notePlaceholder = 'Optional: rationale beyond the evidence — put source quotes on the citation',
   }: Props = $props();
 </script>
 
