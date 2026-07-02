@@ -38,18 +38,28 @@ Delete this field.
 
 Source picker + locator + quote. The quote field is the missing piece.
 
+Adding `quote` to the citation input spec widens the write paths' identity tuple: both the interactive save (`_attach_citations` dedupes specs by `(source_id, locator)`) and ingest (one shared instance per distinct cite per changeset) must treat quotes as part of citation identity — same source and locator with different quotes is two pieces of evidence, not one. This is the same tuple the [References plan's interning](CitationInstanceReferences.md#global-dedup) later hashes.
+
+### Display
+
+The Sources page renders the quote alongside the citation's locator (`EntitySources.svelte` already shows `citation.locator`; the quote joins it). Shipping the field without a reader would defeat the point — the quote exists so a reviewer can follow the citation's URL and ctrl-F it.
+
 ### Data patches
 
 [DataPatchAuthoring.md](../../DataPatchAuthoring.md)
 — `note:` stops being `'<source> says "<quote>"'`. The quote moves to a `quote:` on the `cite:`; `note:` becomes a real (rarely-needed) edit summary.
 
+`cite:` widens from a scalar to _scalar-or-mapping_: the mapping's `ref:` key takes the exact scalar grammar (`scheme:identifier` or `http(s)://` URL — most quote-bearing cites in the corpus are `ipdb:NNNN`, so the mapping can't be URL-only), plus optional `locator:` and `quote:`. The scalar form stays valid when there's nothing to attach:
+
 ```yaml
 note: Optional edit summary, rarely needed
 cite:
-  url: https://example.com/source-page
+  ref: ipdb:4443 # same grammar as the scalar form
   locator: Optional section or page
   quote: Exact quoted source text
 ```
+
+The inline `cites:` map (description footnotes, `{url, archive}`) does **not** gain `quote` in this plan — descriptions cite whole articles and per-footnote quoting is a different authoring burden; widen it later if the need materializes.
 
 ## Migration
 
@@ -68,7 +78,7 @@ extract_quote(note) -> (quote, residual) | None
 
 All the real risk lives here, and the corpus is messier than `<source> says "…"`. Measured across the full patch directory (~487 quoted notes): `says` covers 410; the rest use _lists, dates, gives, credits, records, describes, attributes, places, reports_ or no verb at all; ~20% quote **multiple spans** with connective paraphrase between them; and the single most frequent quote-note (46 rows) contains **nested unescaped quotes** (`IPDB says "Also called a "flasher type" slot machine."` — match to the outermost closing quote). So it's the first thing to build (pure, buildable ahead of the field) and is honed on real data before either consumer is wired up. It can't cross the repo boundary (flipcommons ⊥ flippatch), so the ~30-line function is **duplicated** in each rather than shared via a runtime dependency.
 
-The corpus is also _small_ — 302 distinct DB notes, ~590 patch notes — so the recognizer doesn't need to be complete, only conservative (`None` on any doubt): **every proposed rewrite gets human review** via a generated before/after diff, and the unrecognized tail is fixed by hand. Eyeballing ~300 strings is cheaper and safer than perfecting a grammar.
+The corpus is also _small_ — ~450 distinct DB notes, ~590 patch notes — so the recognizer doesn't need to be complete, only conservative (`None` on any doubt): **every proposed rewrite gets human review** via a generated before/after diff, and the unrecognized tail is fixed by hand. Eyeballing ~300 strings is cheaper and safer than perfecting a grammar.
 
 **Hone on the patches, then reuse on the DB — they're the same strings.** Ingest stores `note:` verbatim (`_parse_provenance` length-checks it but never transforms it), so for every ingest-origin changeset `ChangeSet.note` is byte-identical to its patch file's `note:`. The characterization corpus is therefore the **full** flippatch `patches/` directory, shipped _and_ unshipped: the shipped notes are exactly what the DB migration will encounter, and the ~50 unshipped are just the subset that also gets rewritten at source. Two caveats: the DB additionally holds **interactive** edit notes that no patch sampled (freeform, rarely `says "…"`), so the migration wants a final validation pass against a real DB note dump — low-risk, since `None`-on-no-match leaves an unrecognized note alone rather than mangling it. And the two consumers share a correctness oracle: a rewritten-then-ingested unshipped patch and a migrated shipped patch must reach the **identical** end state — same quote on the instance, same residual note — so `rewrite-then-ingest ≡ ingest-then-migrate` is a property test that catches any strip-rule or transform divergence between the two paths.
 
@@ -81,7 +91,7 @@ Per entry, `note:` and `cite:` are co-located, so there's no source-matching: fo
 A data migration over already-ingested notes:
 
 - For each `ChangeSet` with a non-empty note, run the transform; skip on `None`.
-- Write the quote to the changeset's field-level `CitationInstance`s (`claim__changeset=cs` — inline `claim=null` rows are naturally excluded). One changeset carries one citation today (ingest clones a single `cite:` across the entry's claims; interactive attaches one citation to every claim), so the quote lands on all of them with **no disambiguation needed** — and since the migration only ever touches _historical_ changesets, this holds regardless of when it runs relative to the References plan's multi-citation writes.
+- Write the quote to the changeset's field-level `CitationInstance`s (`claims__changeset=cs` through the `ClaimCitationInstance` join — inline description instances have no join rows, so they're naturally excluded). An instance is shared _within_ a changeset (both write paths mint one instance per distinct cite and fan join rows across the save's claims) but never _across_ changesets — verified on the dev DB: no instance's claims span two changesets, let alone two notes — so the quote lands on the changeset's instances with **no disambiguation needed**. The migration only ever touches _historical_ changesets, so this holds regardless of when it runs relative to the References plan's multi-citation writes; it should still assert the invariant (skip + report any changeset whose instances resolve to more than one source) rather than assume it.
 - **Write via `QuerySet.update()`, not `save()`** — `CitationInstance` is immutable and its `save()` rejects a row that already has a pk. Retro-filling a newly-added column on immutable rows is a fine one-time migration; superseding instances instead would break their slugs and inline markers.
 - Quote-notes with no instance, and unparseable `says`-notes, are **reported, not silently dropped**.
 - Measured on the dev DB, the scary cases are empty: all 414 quote-shaped notes have field-level instances, every one resolves to exactly one distinct source, and the longest note is 831 chars — so the no-instance and disambiguation paths should report nothing and the 2,000 cap can't truncate.
@@ -108,8 +118,8 @@ Wikipedia and Wikidata both keep two things separate, and we should too:
 
 Mostly additive — a new field, a backfill, and the removal of a field nothing writes — so this needs no expand/contract cutover. The ordering that matters is small:
 
-1. **Add `CitationInstance.quote`.** New field; widen the citation input spec (`CitationReferenceInputSchema`, `cite:`) with an optional `quote`. Additive, unused.
-2. **Write quotes.** The editor "Add citation" panel gains the quote field, the write path persists it, and data patches accept `quote:` on `cite:`. _(Needs 1.)_
+1. **Add `CitationInstance.quote`.** New field; widen the citation input spec (`CitationInstanceCreateSchema`, `cite:`'s new mapping form) with an optional `quote`. Additive, unused.
+2. **Write quotes.** The editor "Add citation" panel gains the quote field, the write paths persist it and widen their dedup keys to include it (see [Editor "Add citation" panel](#editor-add-citation-panel)), data patches accept the `cite:` mapping form, and the Sources page displays it. _(Needs 1. Must **deploy** before any rewritten patch reaches R2 — a flipcommons without the widened parser can't ingest the mapping form.)_
 3. **Backfill historical quotes.** Move quotes out of `ChangeSet.note` into `CitationInstance.quote`, delete the seed-import boilerplate notes, and rewrite the unshipped flippatch patches — the quote moves driven by one shared recognizer. See [Migration](#migration) for the transform, the immutability gotcha, and the phased strip (must land before public launch). _(Needs 1; independent of 2. This is the backfill [CitationInstanceReferences.md](CitationInstanceReferences.md#interning-must-come-after-quote-is-populated)'s interning waits on.)_
-4. **Retire `note`-as-quote.** Once authors have the quote field (2) and history is migrated (3), `note` becomes the edit summary: update its editor label and [DataPatchAuthoring.md](../../DataPatchAuthoring.md), optionally with a flippatch lint rejecting quote-shaped notes so it can't regress. The lint needs a patch-number cutoff: patches already shipped to prod keep their historical `note:` text as-authored (their DB rows are fixed by the migration, not the files).
+4. **Retire `note`-as-quote.** Once authors have the quote field (2) and history is migrated (3), `note` becomes the edit summary: update its editor label and [DataPatchAuthoring.md](../../DataPatchAuthoring.md), optionally with a flippatch lint rejecting quote-shaped notes so it can't regress. The lint slots into flippatch's existing `RULE_SINCE` per-rule cutoff: patches already shipped to prod keep their historical `note:` text as-authored (their DB rows are fixed by the migration, not the files). Two existing lint rules move with it: `note-required` must accept a cite-with-quote as the unit's explanation (else authors are forced to keep writing notes), and `note-typography` (straight quotes, `…` → `[...]`) extends to `quote:` values.
 5. **Delete `Claim.citation`** — independent of 1–4, shippable on its own. Nothing writes it and nothing needs preserving: the attribution line falls back to `Source: <name>` (still honouring `requires_attribution`) once `rich_text.py` stops passing it, and the other two readers (`ClaimSchema.citation` in `helpers.py`, `export.py`) are unused. Remove the three references and drop the column.
