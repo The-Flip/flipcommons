@@ -37,7 +37,6 @@ def _assert_claim(
     subject: ClaimControlledModel,
     field_name: ClaimFieldName,
     value: object,
-    citation: str = "",
     *,
     changeset: ChangeSet,
     claim_key: ClaimKey = "",
@@ -99,7 +98,6 @@ def _assert_claim(
             field_name=field_name,
             claim_key=claim_key,
             value=value,
-            citation=citation,
             license=license,
             changeset=changeset,
         )

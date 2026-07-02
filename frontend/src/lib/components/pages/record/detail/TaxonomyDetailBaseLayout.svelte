@@ -156,19 +156,18 @@
   });
 
   let editSections: EditSectionMenuItem[] = $derived([
-    ...sections.map(
-      (section): EditSectionMenuItem =>
-        isMobile
-          ? {
-              key: section.key,
-              label: section.label,
-              href: resolveHref(`${basePath}/${slug}/edit/${section.segment}`),
-            }
-          : {
-              key: section.key,
-              label: section.label,
-              onclick: () => (editing = section.key),
-            },
+    ...sections.map((section): EditSectionMenuItem =>
+      isMobile
+        ? {
+            key: section.key,
+            label: section.label,
+            href: resolveHref(`${basePath}/${slug}/edit/${section.segment}`),
+          }
+        : {
+            key: section.key,
+            label: section.label,
+            onclick: () => (editing = section.key),
+          },
     ),
     // Trailing items — always hrefs, mode-agnostic. Create-child before
     // Delete so the destructive action is last.

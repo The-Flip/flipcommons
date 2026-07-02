@@ -545,7 +545,6 @@ def _serialize_description(
                 requires_attribution=lic.requires_attribution if lic else False,
                 source_name=src.name if src else None,
                 source_url=src.url if src else None,
-                attribution_text=claim.citation or None,
             )
             break
     return {

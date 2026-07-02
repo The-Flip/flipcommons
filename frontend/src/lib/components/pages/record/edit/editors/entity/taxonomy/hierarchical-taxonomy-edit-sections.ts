@@ -1,11 +1,7 @@
 import type { EditSectionDef } from '$lib/components/pages/record/edit/editors/edit-section-def';
 
 export type HierarchicalTaxonomyEditSectionKey =
-  | 'name'
-  | 'description'
-  | 'aliases'
-  | 'parents'
-  | 'media';
+  'name' | 'description' | 'aliases' | 'parents' | 'media';
 
 export type HierarchicalTaxonomyEditSectionDef =
   EditSectionDef<HierarchicalTaxonomyEditSectionKey> & {

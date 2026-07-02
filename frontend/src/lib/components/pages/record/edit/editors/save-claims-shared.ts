@@ -19,8 +19,7 @@ export type SaveMeta = {
 };
 
 export type SaveResult =
-  | { ok: true; updatedSlug?: string }
-  | { ok: false; error: string; fieldErrors: FieldErrors };
+  { ok: true; updatedSlug?: string } | { ok: false; error: string; fieldErrors: FieldErrors };
 
 type ClaimsBody = ClaimPatchSchema;
 type HierarchyClaimsBody = HierarchyClaimPatchSchema;
