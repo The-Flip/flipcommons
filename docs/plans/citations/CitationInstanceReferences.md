@@ -146,47 +146,47 @@ Our model already shares at the source level: many `CitationInstance`s point at 
 
 ## Phasing
 
-Each section below is its own commit. We review on commit boundaries, not PRs. 🛑 STOP for user review before committing. Each commit is independently shippable and the user will make a call as we go on when to cut a PR.
+Each section below is its own commit. We review on commit boundaries, not PRs. Stage the files then 🛑 STOP for user review before committing. Each commit is independently shippable; the user will make a call as we go on when to cut a PR.
 
 In code comments and commit/PR messages, do not reference ephemera like EXP2 or plan docs or system state that no longer exists.
 
 The three phases follow the expand/contract (parallel-change) migration pattern: **Expand** adds the new structure and writes both representations, **Migrate** moves data and readers across, **Contract** removes the old. Old and new coexist until Contract — so every commit is green and the schema is consistent at each boundary.
 
-### ✅ DONE: <a id="#exp">EXP</a> - Expand
+### ✅ DONE: <a id="exp">EXP</a> - Expand
 
-#### ✅ DONE: <a id="#exp1">EXP1</a> - Add ClaimCitationInstance
+#### ✅ DONE: <a id="exp1">EXP1</a> - Add ClaimCitationInstance
 
 Add the ClaimCitationInstance join model — table, constraints, PROTECT/CASCADE, test factories, constraint tests. Pure additive, nothing uses it yet.
 
-#### ✅ DONE: <a id="#exp2">EXP2</a> - Write scalar joins
+#### ✅ DONE: <a id="exp2">EXP2</a> - Write scalar joins
 
-Dual-write scalar join rows, while keeping today's clone-per-claim + claim FK. `_attach_citations` (edit/scalar) fans a join row to every claim in the save. Inline cites get **no** join row — they stay marker-native — so `_materialize_inline_citations` is unchanged (it keeps minting instances from numeric handles; inline instances remain `claim=None` until the column is dropped in Contract). Behavior unchanged; new scalar data now carries join rows. (Transitional — the clone/FK half is removed in [Switch writes](#con1---switch-writes).)
+Dual-write scalar join rows, while keeping today's clone-per-claim + claim FK. `_attach_citations` (edit/scalar) fans a join row to every claim in the save. Inline cites get **no** join row — they stay marker-native — so `_materialize_inline_citations` is unchanged (it keeps minting instances from numeric handles; inline instances remain `claim=None` until the column is dropped in Contract). Behavior unchanged; new scalar data now carries join rows. (Transitional — the clone/FK half is removed in [Switch writes](#con1).)
 
-### <a id="#mig">MIG</a> - Migrate
+### <a id="mig">MIG</a> - Migrate
 
-#### <a id="#mig1">MIG1</a> - Backfill scalar joins
+#### ✅ DONE: <a id="mig1">MIG1</a> - Backfill scalar joins
 
-Backfill scalar join rows from the old `CitationInstance.claim` FK — a direct, lossless 1:1 synthesis. Inline cites are `claim=None` today, get no join and need no backfill (no `RecordReference` synthesis, no markdown parsing, no winner-mapping). Must be idempotent — re-running creates no duplicate join rows (the unique `(claim, citation_instance)` constraint backstops it). Also collapse the historical per-ChangeSet scalar clones the old write path made: group instances by `(changeset, source, locator)`, keep one survivor and repoint every affected claim's join row at it — within a changeset those clones are identical by construction, so the merge is safe, and it makes problem #2 fixed retroactively rather than only for new writes. Only claim-linked scalar clones collapse; inline instances are pinned by their `[[cite:id:pk]]` markers and are left alone. Wants characterization tests against real patch data.
+Backfill scalar join rows from the old `CitationInstance.claim` FK — a direct, lossless 1:1 synthesis. Inline cites are `claim=None` today, get no join and need no backfill (no `RecordReference` synthesis, no markdown parsing, no winner-mapping). Must be idempotent — re-running creates no duplicate join rows (the unique `(claim, citation_instance)` constraint backstops it). Also collapse the historical per-ChangeSet scalar clones the old write path made: group instances by `(changeset, source, locator)`, keep one survivor and repoint every affected claim's join row at it — within a changeset those clones are identical by construction, so the merge is safe, and it makes problem #2 fixed retroactively rather than only for new writes. Only claim-linked scalar clones collapse; inline instances are pinned by their `[[cite:id:pk]]` markers and are left alone. Tested at the frozen migration state — backfill synthesis, clone collapse, inline (`claim=NULL`) instances untouched, idempotent re-run — with the clone fan-out reproduced through the ingest apply path rather than literal patch files.
 
-#### <a id="#mig2">MIG2</a> - Switch reads
+#### <a id="mig2">MIG2</a> - Switch reads
 
-Switch scalar reads to the join. First the name handoff: the old `CitationInstance.claim` FK still owns the `citation_instances` related_name (it isn't dropped until [Drop CitationInstance.claim](#con2---drop-citationinstanceclaim)), so this commit does a **state-only migration renaming that reverse accessor**, then **adds the `through` M2M** under `citation_instances`. With that, `claim.citation_instances` (and the prefetch string in [helpers.py](../../../backend/apps/provenance/helpers.py)) now resolves through the join, so most read sites — evidence assembly, history.\_field_change_citations, API response builders, the citation_instances(claim) helper, admin — need no change; inline cites don't appear there, exactly as today (they carry no join). What actually moves is any site that traversed the old FK directly. Also reshape the citation-instance API: `CitationInstanceSchema.claim_id` (singular) is meaningless once an instance has 0..N claims — drop or replace it, and switch the `/api/citation-instances/?claim=` filter ([api.py](../../../backend/apps/provenance/api.py)) to query through the join. Codegen + frontend/test updates follow. claim FK still present but no longer the source.
+Switch scalar reads to the join. First the name handoff: the old `CitationInstance.claim` FK still owns the `citation_instances` related_name (it isn't dropped until [Drop CitationInstance.claim](#con2)), so this commit does a **state-only migration renaming that reverse accessor**, then **adds the `through` M2M** under `citation_instances`. With that, `claim.citation_instances` (and the prefetch string in [helpers.py](../../../backend/apps/provenance/helpers.py)) now resolves through the join, so most read sites — evidence assembly, history.\_field_change_citations, API response builders, the citation_instances(claim) helper, admin — need no change; inline cites don't appear there, exactly as today (they carry no join). What actually moves is any site that traversed the old FK directly. Also reshape the citation-instance API: `CitationInstanceSchema.claim_id` (singular) is meaningless once an instance has 0..N claims — drop or replace it, and switch the `/api/citation-instances/?claim=` filter ([api.py](../../../backend/apps/provenance/api.py)) to query through the join. Codegen + frontend/test updates follow. claim FK still present but no longer the source.
 
-### <a id="#con">CON</a> - Contract
+### <a id="con">CON</a> - Contract
 
-#### <a id="#con1">CON1</a> - Switch writes
+#### <a id="con1">CON1</a> - Switch writes
 
-Rework writes + API to the shared model — request schema citation → citations: list[content-spec] (source_id, locator), \_attach_citations mints one instance per distinct citation and fans join rows, stop cloning, stop setting claim. Codegen + the frontend send-site. The fan-out is what makes the FK un-settable, which is why [Switch reads](##mig2) had to go first.
+Rework writes + API to the shared model — request schema citation → citations: list[content-spec] (source_id, locator), \_attach_citations mints one instance per distinct citation and fans join rows, stop cloning, stop setting claim. Codegen + the frontend send-site. The fan-out is what makes the FK un-settable, which is why [Switch reads](#mig2) had to go first.
 
-#### <a id="#con2">CON2</a> - Drop CitationInstance.claim
+#### <a id="con2">CON2</a> - Drop CitationInstance.claim
 
 Drop CitationInstance.claim — schema migration. The column is now unused (scalar cites reach the instance through the join; inline cites through their marker).
 
-#### <a id="#con3">CON3</a> - Relocate CitationInstance
+#### <a id="con3">CON3</a> - Relocate CitationInstance
 
 Relocate CitationInstance → citation app — move the model (Django SeparateDatabaseAndState to preserve db_table), retarget ~7 prod + ~17 test imports, update the join's FK string ref (and `Claim`'s `citation_instances` M2M `through`/target) to citation.CitationInstance, confirm import-linter. **Not purely mechanical — two hidden data dependencies.** (1) `CitationInstance`'s Django ContentType identity is `(app_label, model)`, so the migration must **rename the `django_content_type` row in place** (`provenance` → `citation`), not let Django mint a fresh one — otherwise every inline wikilink's `RecordReference.target_type` FK dangles and "what links here" goes split-brain (the reference graph is described in [Markdown.md](../../Markdown.md)). (2) The `cite` LinkType registration (`model_path="provenance.CitationInstance"`, today in [provenance/apps.py](../../../backend/apps/provenance/apps.py)) moves to the citation app config and retargets to `citation.CitationInstance`.
 
-#### <a id="#doc1">DOC1</a> - Update docs
+#### <a id="doc1">DOC1</a> - Update docs
 
 Update the documentation:
 
