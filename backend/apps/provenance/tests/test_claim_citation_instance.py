@@ -18,8 +18,9 @@ from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 
 from apps.catalog.models import Manufacturer
+from apps.citation.models import CitationInstance
 from apps.citation.test_factories import make_citation_source
-from apps.provenance.models import CitationInstance, ClaimCitationInstance, Source
+from apps.provenance.models import ClaimCitationInstance, Source
 from apps.provenance.test_factories import claim_citation_instance, make_claim
 
 pytestmark = pytest.mark.django_db
@@ -126,3 +127,16 @@ class TestOnDelete:
 
         assert not ClaimCitationInstance.objects.filter(citation_instance=inst).exists()
         assert CitationInstance.objects.filter(pk=inst.pk).exists()
+
+
+class TestClaimCitationInstancesM2M:
+    def test_claim_citation_instances(self, citation_source, claim):
+        """``claim.citation_instances`` resolves through the join: a linked
+        instance appears in it; an unlinked one does not."""
+        linked = CitationInstance.objects.create(citation_source=citation_source)
+        claim_citation_instance(claim, linked)
+        unlinked = CitationInstance.objects.create(citation_source=citation_source)
+
+        assert linked in claim.citation_instances.all()
+        assert unlinked not in claim.citation_instances.all()
+        assert claim in linked.claims.all()

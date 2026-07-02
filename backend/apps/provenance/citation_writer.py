@@ -9,7 +9,8 @@ ingest minting stays on ``CitationInstance.objects.mint_many``.
 
 from __future__ import annotations
 
-from .models import CitationInstance
+from apps.citation.models import CitationInstance
+
 from .schemas import CitationInstanceCreateSchema
 
 

@@ -15,13 +15,14 @@ from django.db.models.constraints import CheckConstraint
 
 from apps.accounts.models import User
 from apps.catalog.models import Title
+from apps.citation.models import (
+    CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
+    CitationInstance,
+)
 from apps.core.models import BoundedTextField
 from apps.core.models.fields import DEFAULT_MARKDOWN_MAX_LENGTH, MarkdownField
-from apps.provenance.models import ChangeSet, ChangeSetAction, CitationInstance
+from apps.provenance.models import ChangeSet, ChangeSetAction
 from apps.provenance.models.changeset import CHANGESET_NOTE_MAX_LENGTH
-from apps.provenance.models.citation_instance import (
-    CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
-)
 from apps.provenance.schemas import ChangeSetInputSchema
 
 # ---------------------------------------------------------------------------

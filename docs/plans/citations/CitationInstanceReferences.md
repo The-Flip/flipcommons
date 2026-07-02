@@ -182,7 +182,7 @@ Rework writes + API to the shared model — request schema citation → citation
 
 Drop CitationInstance.claim — schema migration. The column is now unused (scalar cites reach the instance through the join; inline cites through their marker).
 
-#### <a id="con3">CON3</a> - Relocate CitationInstance
+#### ✅ DONE: <a id="con3">CON3</a> - Relocate CitationInstance
 
 Relocate CitationInstance → citation app — move the model (Django SeparateDatabaseAndState to preserve db_table), retarget ~7 prod + ~17 test imports, update the join's FK string ref (and `Claim`'s `citation_instances` M2M `through`/target) to citation.CitationInstance, confirm import-linter. **Not purely mechanical — two hidden data dependencies.** (1) `CitationInstance`'s Django ContentType identity is `(app_label, model)`, so the migration must **rename the `django_content_type` row in place** (`provenance` → `citation`), not let Django mint a fresh one — otherwise every inline wikilink's `RecordReference.target_type` FK dangles and "what links here" goes split-brain (the reference graph is described in [Markdown.md](../../Markdown.md)). (2) The `cite` LinkType registration (`model_path="provenance.CitationInstance"`, today in [provenance/apps.py](../../../backend/apps/provenance/apps.py)) moves to the citation app config and retargets to `citation.CitationInstance`.
 

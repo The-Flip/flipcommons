@@ -17,7 +17,7 @@ from ninja.errors import HttpError
 from ninja.responses import Status
 from ninja.security import django_auth
 
-from apps.citation.models import CitationSource
+from apps.citation.models import CitationInstance, CitationSource
 from apps.core.api_helpers import authed_user
 from apps.core.authz.enforce import enforce
 from apps.core.authz.evaluator import policy_user
@@ -26,7 +26,7 @@ from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 
 from . import citation_writer
-from .models import CitationInstance, ClaimControlledModel, Source
+from .models import ClaimControlledModel, Source
 from .page_endpoints import pages_router
 from .schemas import (
     CitationInstanceBatchSchema,

@@ -131,7 +131,7 @@ class Claim(models.Model):
     # write path creates join rows directly, never .add()/.set() here). Inline
     # [[cite:...]] instances carry no join row, so they never appear in it.
     citation_instances = models.ManyToManyField(
-        "provenance.CitationInstance",
+        "citation.CitationInstance",
         through="provenance.ClaimCitationInstance",
         related_name="claims",
     )

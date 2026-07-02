@@ -30,7 +30,7 @@ class ClaimCitationInstance(models.Model):
         related_name="citation_links",
     )
     citation_instance = models.ForeignKey(
-        "provenance.CitationInstance",
+        "citation.CitationInstance",
         on_delete=models.PROTECT,
         related_name="claim_links",
     )

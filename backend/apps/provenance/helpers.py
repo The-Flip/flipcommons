@@ -8,11 +8,12 @@ from typing import cast
 from django.db.models import Prefetch, QuerySet
 
 from apps.actors.models import Actor
+from apps.citation.models import CitationInstance
 
 from .attribution import actor_user, source_backing
 from .claim_ranking_in_db import ranked_claims
 from .display import FieldValue, claim_value, resolve_display_context
-from .models import ChangeSet, CitationInstance, Claim, ClaimControlledModel
+from .models import ChangeSet, Claim, ClaimControlledModel
 from .schemas import (
     ClaimAttributionSchema,
     ClaimAuthorSchema,

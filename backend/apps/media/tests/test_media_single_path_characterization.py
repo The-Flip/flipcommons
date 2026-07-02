@@ -27,8 +27,9 @@ from django.test import Client
 
 from apps.catalog.models import Manufacturer
 from apps.catalog.tests.conftest import make_machine_model
+from apps.citation.models import CitationInstance
 from apps.media.models import EntityMedia, MediaAsset
-from apps.provenance.models import CitationInstance, Source
+from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim
 
 _TEST_STORAGE = {

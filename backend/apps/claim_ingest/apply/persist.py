@@ -339,7 +339,8 @@ def _attach_plan_citations(
     """
     if not claim_citations:
         return
-    from apps.provenance.models import CitationInstance, ClaimCitationInstance
+    from apps.citation.models import CitationInstance
+    from apps.provenance.models import ClaimCitationInstance
 
     # One shared instance per distinct citation per ChangeSet: claims in the
     # same entry citing the same source reach one row through join fan-out
@@ -395,7 +396,7 @@ def _materialize_inline_citations(
     cited = [pca for pca in assertions if pca.inline_cites]
     if not cited:
         return
-    from apps.provenance.models import CitationInstance
+    from apps.citation.models import CitationInstance
 
     # Mint every new instance in one batch, tracking the (assertion, handle) each
     # belongs to so we can read its assigned slug back after mint_many. Minting is

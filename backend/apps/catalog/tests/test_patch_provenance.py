@@ -14,7 +14,7 @@ from django.core.exceptions import ValidationError
 
 from apps.catalog.models import MachineModel, Manufacturer, Tag
 from apps.catalog.tests.conftest import make_machine_model
-from apps.citation.models import CitationSource
+from apps.citation.models import CitationInstance, CitationSource
 from apps.citation.test_factories import make_citation_link, make_citation_source
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import (
@@ -30,7 +30,6 @@ from apps.claim_ingest.plan import (
 )
 from apps.provenance.models import (
     ChangeSet,
-    CitationInstance,
     IngestRun,
     Source,
 )

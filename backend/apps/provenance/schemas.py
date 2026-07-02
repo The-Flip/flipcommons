@@ -17,11 +17,11 @@ from typing import Annotated, ClassVar, Literal
 from django.db.models import Model
 from ninja import Field, Schema
 
+from apps.citation.models import CITATION_INSTANCE_LOCATOR_MAX_LENGTH
 from apps.core.authz import Activity, PolicyActivities
 
 from .models import (
     CHANGESET_NOTE_MAX_LENGTH,
-    CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
     ChangeSet,
 )
 

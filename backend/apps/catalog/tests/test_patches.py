@@ -28,6 +28,7 @@ from apps.catalog.models import (
 )
 from apps.catalog.resolve import resolve_relationship
 from apps.citation.models import (
+    CitationInstance,
     CitationSource,
     CitationSourceLink,
     CitationSourceRootDomain,
@@ -60,7 +61,12 @@ from apps.provenance.claims import (
     normalize_abbreviation_value,
     normalize_alias_identity,
 )
-from apps.provenance.models import ChangeSet, CitationInstance, Claim, IngestRun, Source
+from apps.provenance.models import (
+    ChangeSet,
+    Claim,
+    IngestRun,
+    Source,
+)
 from apps.provenance.test_factories import make_claim, make_ingest_source
 from apps.provenance.validation import (
     FkTarget,

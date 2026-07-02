@@ -6,8 +6,8 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
 
+from apps.citation.models import CitationInstance
 from apps.citation.test_factories import make_citation_link, make_citation_source
-from apps.provenance.models import CitationInstance
 from apps.provenance.test_factories import (
     cite_claim,
     claim_citation_instance,

@@ -15,6 +15,7 @@ import uuid
 from typing import TYPE_CHECKING, Literal
 
 from apps.accounts.models import User
+from apps.citation.models import CitationInstance
 from apps.citation.test_factories import make_citation_source
 from apps.core.types import ClaimFieldName, ClaimKey
 
@@ -23,7 +24,6 @@ from .claim_writer import _assert_claim
 from .models import (
     ChangeSet,
     ChangeSetAction,
-    CitationInstance,
     ClaimCitationInstance,
     IngestRun,
     Source,

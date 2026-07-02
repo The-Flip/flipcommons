@@ -19,11 +19,12 @@ from django.core.management.base import CommandError
 
 from apps.catalog.models import MachineModel
 from apps.catalog.tests.conftest import make_machine_model
+from apps.citation.models import CitationInstance
 from apps.citation.test_factories import make_citation_source
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import EditEntry, build_plan, load_patch
 from apps.core.markdown import convert_authoring_to_storage
-from apps.provenance.models import CitationInstance, Source
+from apps.provenance.models import Source
 from apps.provenance.test_factories import (
     make_citation_instance,
     make_claim,
