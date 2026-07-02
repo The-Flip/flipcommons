@@ -162,7 +162,7 @@ Add the ClaimCitationInstance join model — table, constraints, PROTECT/CASCADE
 
 Dual-write scalar join rows, while keeping today's clone-per-claim + claim FK. `_attach_citations` (edit/scalar) fans a join row to every claim in the save. Inline cites get **no** join row — they stay marker-native — so `_materialize_inline_citations` is unchanged (it keeps minting instances from numeric handles; inline instances remain `claim=None` until the column is dropped in Contract). Behavior unchanged; new scalar data now carries join rows. (Transitional — the clone/FK half is removed in [Switch writes](#con1).)
 
-### <a id="mig">MIG</a> - Migrate
+### ✅ DONE: <a id="mig">MIG</a> - Migrate
 
 #### ✅ DONE: <a id="mig1">MIG1</a> - Backfill scalar joins
 
@@ -172,7 +172,7 @@ Backfill scalar join rows from the old `CitationInstance.claim` FK — a direct,
 
 Switch scalar reads to the join. First the name handoff: the old `CitationInstance.claim` FK still owns the `citation_instances` related_name (it isn't dropped until [Drop CitationInstance.claim](#con2)), so this commit does a **state-only migration renaming that reverse accessor**, then **adds the `through` M2M** under `citation_instances`. With that, `claim.citation_instances` (and the prefetch string in [helpers.py](../../../backend/apps/provenance/helpers.py)) now resolves through the join, so most read sites — evidence assembly, history.\_field_change_citations, API response builders, the citation_instances(claim) helper, admin — need no change; inline cites don't appear there, exactly as today (they carry no join). What actually moves is any site that traversed the old FK directly. Also reshape the citation-instance API: `CitationInstanceSchema.claim_id` (singular) is meaningless once an instance has 0..N claims — drop or replace it, and switch the `/api/citation-instances/?claim=` filter ([api.py](../../../backend/apps/provenance/api.py)) to query through the join. Codegen + frontend/test updates follow. claim FK still present but no longer the source.
 
-### <a id="con">CON</a> - Contract
+### ✅ DONE: <a id="con">CON</a> - Contract
 
 #### ✅ DONE: <a id="con1">CON1</a> - Switch writes
 
@@ -186,7 +186,7 @@ Drop CitationInstance.claim — schema migration. The column is now unused (scal
 
 Relocate CitationInstance → citation app — move the model (Django SeparateDatabaseAndState to preserve db_table), retarget ~7 prod + ~17 test imports, update the join's FK string ref (and `Claim`'s `citation_instances` M2M `through`/target) to citation.CitationInstance, confirm import-linter. **Not purely mechanical — two hidden data dependencies.** (1) `CitationInstance`'s Django ContentType identity is `(app_label, model)`, so the migration must **rename the `django_content_type` row in place** (`provenance` → `citation`), not let Django mint a fresh one — otherwise every inline wikilink's `RecordReference.target_type` FK dangles and "what links here" goes split-brain (the reference graph is described in [Markdown.md](../../Markdown.md)). (2) The `cite` LinkType registration (`model_path="provenance.CitationInstance"`, today in [provenance/apps.py](../../../backend/apps/provenance/apps.py)) moves to the citation app config and retargets to `citation.CitationInstance`.
 
-#### <a id="doc1">DOC1</a> - Update docs
+#### ✅ DONE: <a id="doc1">DOC1</a> - Update docs
 
 Update the documentation:
 

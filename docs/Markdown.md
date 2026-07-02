@@ -42,7 +42,7 @@ Rendering and authoring are registered separately. A `LinkType` makes a marker r
 Two registration paths exist today:
 
 - **Catalog** (`apps/catalog/apps.py`) walks every concrete `LinkableModel` and registers one type per model, named by its `entity_type` (`manufacturer`, `title`, `model`, …). This is model-driven — adding a linkable entity registers its wikilink automatically.
-- **Provenance** (`apps/provenance/apps.py`) registers `cite` explicitly for `CitationInstance` (`public_id_field="slug"`), with a custom `format_link` that renders a footnote and a `collect_metadata` that builds the reference entry. Citations are the one type with no URL.
+- **Citation** (`apps/citation/apps.py`) registers `cite` explicitly for `CitationInstance` (`public_id_field="slug"`), with a custom `format_link` that renders a footnote and a `collect_metadata` that builds the reference entry. Citations are the one type with no URL.
 
 ## Rendering
 
