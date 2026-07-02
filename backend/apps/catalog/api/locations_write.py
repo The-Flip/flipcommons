@@ -350,7 +350,7 @@ def patch_location_claims(
         raise_form_error("No changes provided.")
 
     execute_claims(
-        loc, specs, user=request.user, note=data.note, citation=data.citation
+        loc, specs, user=request.user, note=data.note, citations=data.citations
     )
 
     return _get_location_detail(loc.location_path)

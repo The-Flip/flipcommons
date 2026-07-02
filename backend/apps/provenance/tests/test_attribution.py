@@ -13,8 +13,8 @@ import pytest
 from apps.accounts.test_factories import make_user
 from apps.provenance.attribution import actor_user, actor_user_id, source_backing
 from apps.provenance.helpers import actor_author
-from apps.provenance.models import Source
 from apps.provenance.schemas import ClaimSourceAuthorSchema, ClaimUserAuthorSchema
+from apps.provenance.test_factories import make_ingest_source
 
 pytestmark = pytest.mark.django_db
 
@@ -26,7 +26,7 @@ def user():
 
 @pytest.fixture
 def source():
-    return Source.objects.create(name="OPDB", source_type="database", priority=5)
+    return make_ingest_source(name="OPDB", source_type="database", priority=5)
 
 
 def test_actor_author_user(user):

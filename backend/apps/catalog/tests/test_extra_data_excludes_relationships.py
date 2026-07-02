@@ -19,15 +19,14 @@ from apps.catalog.claims import build_media_attachment_claim
 from apps.catalog.models import Manufacturer
 from apps.catalog.resolve._entities import resolve_all_entities, resolve_entity
 from apps.media.models import MediaAsset
-from apps.provenance.models import Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
 def source(db):
-    return Source.objects.create(
+    return make_ingest_source(
         name="Bootstrap", slug="bootstrap", source_type="editorial", priority=1
     )
 
@@ -36,9 +35,9 @@ def source(db):
 def manufacturer_with_media(db, source, user) -> Manufacturer:
     """A Manufacturer whose only relationship claim is a media attachment."""
     mfr = Manufacturer.objects.create(name="Acme", slug="acme", status="active")
-    make_claim(mfr, "name", "Acme", source=source)
-    make_claim(mfr, "slug", "acme", source=source)
-    make_claim(mfr, "status", "active", source=source)
+    make_claim(mfr, "name", "Acme", ingest_source=source)
+    make_claim(mfr, "slug", "acme", ingest_source=source)
+    make_claim(mfr, "status", "active", ingest_source=source)
     asset = MediaAsset.objects.create(
         kind=MediaAsset.Kind.IMAGE,
         status=MediaAsset.Status.READY,
@@ -52,7 +51,9 @@ def manufacturer_with_media(db, source, user) -> Manufacturer:
     claim_key, value = build_media_attachment_claim(
         mfr, asset.pk, category="logo", is_primary=True
     )
-    make_claim(mfr, "media_attachment", value, source=source, claim_key=claim_key)
+    make_claim(
+        mfr, "media_attachment", value, ingest_source=source, claim_key=claim_key
+    )
     return mfr
 
 

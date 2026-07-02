@@ -8,18 +8,16 @@ Use these instead of constructing the models directly. ``created_by`` /
 :func:`default_actor` by default — encoding the attribution invariant in one
 place so a forgotten actor can't slip into ``.objects.create``. Pass
 ``created_by=`` to attribute to a specific actor. Required FKs/fields default to
-disposable values (mirroring ``make_machine_model``), so a bare
-``make_citation_*()`` is a valid row.
+disposable values, so a bare ``make_citation_*()`` is a valid row.
 
-The attribution fields are typed (``Actor``); the long-tail model fields ride
-through ``**overrides`` typed by the model itself (its columns are the source of
-truth — re-declaring them in a ``TypedDict`` here would only drift from it).
+Every column is an explicit, typed keyword with a default, so a mistyped kwarg
+fails at type-check rather than at ``.objects.create`` runtime.
 """
 
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Literal
 
 from apps.accounts.test_factories import default_actor
 from apps.actors.models import Actor
@@ -29,23 +27,50 @@ from apps.citation.models import (
     CitationSourceRootDomain,
 )
 
+# Literal aliases mirroring each model's choices, so a bad choice value fails at
+# type-check. Constraint tests that need an invalid value build the model
+# directly. ``identifier_key`` also permits "" (blank = a root without a scheme).
+type CitationSourceTypeValue = Literal["book", "magazine", "web"]
+type LinkTypeValue = Literal["homepage", "catalog", "publisher", "reference", "archive"]
+type IdentifierKeyValue = Literal["", "ipdb", "opdb", "youtube"]
+
 
 def make_citation_source(
     *,
     name: str = "Test Citation Source",
-    source_type: str = CitationSource.SourceType.WEB,
+    source_type: CitationSourceTypeValue = "web",
+    author: str = "",
+    publisher: str = "",
+    year: int | None = None,
+    month: int | None = None,
+    day: int | None = None,
+    date_note: str = "",
+    isbn: str | None = None,
+    parent: CitationSource | None = None,
+    description: str = "",
+    identifier_key: IdentifierKeyValue = "",
+    identifier: str = "",
     created_by: Actor | None = None,
     updated_by: Actor | None = None,
-    **overrides: Any,  # noqa: ANN401 - long-tail CitationSource fields, typed by the model.
 ) -> CitationSource:
     """Create a ``CitationSource`` for tests, defaulting name/source_type/actor."""
     created_by = created_by or default_actor()
     return CitationSource.objects.create(
         name=name,
         source_type=source_type,
+        author=author,
+        publisher=publisher,
+        year=year,
+        month=month,
+        day=day,
+        date_note=date_note,
+        isbn=isbn,
+        parent=parent,
+        description=description,
+        identifier_key=identifier_key,
+        identifier=identifier,
         created_by=created_by,
         updated_by=updated_by or created_by,
-        **overrides,
     )
 
 
@@ -53,10 +78,10 @@ def make_citation_link(
     *,
     citation_source: CitationSource | None = None,
     url: str | None = None,
-    link_type: str = CitationSourceLink.LinkType.HOMEPAGE,
+    link_type: LinkTypeValue = "homepage",
+    label: str = "",
     created_by: Actor | None = None,
     updated_by: Actor | None = None,
-    **overrides: Any,  # noqa: ANN401 - long-tail CitationSourceLink fields, typed by the model.
 ) -> CitationSourceLink:
     """Create a ``CitationSourceLink`` for tests, auto-providing a source and url."""
     created_by = created_by or default_actor()
@@ -66,9 +91,9 @@ def make_citation_link(
         citation_source=citation_source or make_citation_source(),
         url=url,
         link_type=link_type,
+        label=label,
         created_by=created_by,
         updated_by=updated_by or created_by,
-        **overrides,
     )
 
 
@@ -78,7 +103,6 @@ def make_citation_root_domain(
     host: str | None = None,
     created_by: Actor | None = None,
     updated_by: Actor | None = None,
-    **overrides: Any,  # noqa: ANN401 - long-tail CitationSourceRootDomain fields, typed by the model.
 ) -> CitationSourceRootDomain:
     """Create a ``CitationSourceRootDomain`` for tests, auto-providing a root and host."""
     created_by = created_by or default_actor()
@@ -89,5 +113,4 @@ def make_citation_root_domain(
         host=host,
         created_by=created_by,
         updated_by=updated_by or created_by,
-        **overrides,
     )

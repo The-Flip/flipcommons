@@ -21,15 +21,15 @@ from apps.provenance.test_factories import make_claim, user_changeset
 @pytest.fixture
 def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Stern", slug="stern", status="active")
-    make_claim(m, "name", "Stern", source=bootstrap_source)
+    make_claim(m, "name", "Stern", ingest_source=bootstrap_source)
     return m
 
 
 def _make_system(bootstrap_source, mfr, slug: str, name: str | None = None) -> System:
     label = name or slug.replace("-", " ").title()
     s = System.objects.create(name=label, slug=slug, manufacturer=mfr, status="active")
-    make_claim(s, "name", label, source=bootstrap_source)
-    make_claim(s, "status", "active", source=bootstrap_source)
+    make_claim(s, "name", label, ingest_source=bootstrap_source)
+    make_claim(s, "status", "active", ingest_source=bootstrap_source)
     return s
 
 
@@ -39,7 +39,7 @@ def _make_model(
     title = Title.objects.create(
         name=slug.replace("-", " ").title(), slug=f"{slug}-title", status="active"
     )
-    make_claim(title, "name", title.name, source=bootstrap_source)
+    make_claim(title, "name", title.name, ingest_source=bootstrap_source)
     m = MachineModel.objects.create(
         title=title,
         name=slug.replace("-", " ").title(),
@@ -47,7 +47,7 @@ def _make_model(
         system=system,
         status=status,
     )
-    make_claim(m, "name", m.name, source=bootstrap_source)
+    make_claim(m, "name", m.name, ingest_source=bootstrap_source)
     return m
 
 

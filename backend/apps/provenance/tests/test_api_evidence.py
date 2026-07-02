@@ -7,8 +7,14 @@ from django.contrib.auth import get_user_model
 
 from apps.catalog.models import Title
 from apps.citation.test_factories import make_citation_link, make_citation_source
-from apps.provenance.models import CitationInstance
-from apps.provenance.test_factories import make_claim, user_changeset
+from apps.claim_edit.claim_write import ClaimSpec, execute_claims
+from apps.provenance.models import ClaimCitationInstance
+from apps.provenance.schemas import CitationInstanceCreateSchema
+from apps.provenance.test_factories import (
+    cite_claim,
+    make_claim,
+    user_changeset,
+)
 
 User = get_user_model()
 
@@ -16,7 +22,7 @@ User = get_user_model()
 @pytest.fixture
 def title(db, bootstrap_source):
     title = Title.objects.create(name="Medieval Madness", slug="medieval-madness")
-    make_claim(title, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(title, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return title
 
 
@@ -32,14 +38,6 @@ def citation_source(db):
     return source
 
 
-def _attach_citation(claim, citation_source, locator="p. 2"):
-    return CitationInstance.objects.create(
-        citation_source=citation_source,
-        claim=claim,
-        locator=locator,
-    )
-
-
 @pytest.mark.django_db
 class TestCitedEditEvidence:
     def test_returns_cited_changesets_with_fields_and_citation_details(
@@ -52,8 +50,8 @@ class TestCitedEditEvidence:
         desc_claim = make_claim(
             title, "description", "Updated copy", user=user, changeset=changeset
         )
-        _attach_citation(year_claim, citation_source)
-        _attach_citation(desc_claim, citation_source)
+        cite_claim(year_claim, citation_source=citation_source, locator="p. 2")
+        cite_claim(desc_claim, citation_source=citation_source, locator="p. 2")
 
         resp = client.get("/api/pages/sources/title/medieval-madness/")
 
@@ -79,8 +77,8 @@ class TestCitedEditEvidence:
         second_claim = make_claim(
             title, "description", "Updated copy", user=user, changeset=changeset
         )
-        _attach_citation(first_claim, citation_source, locator="p. 3")
-        _attach_citation(second_claim, citation_source, locator="p. 3")
+        cite_claim(first_claim, citation_source=citation_source, locator="p. 3")
+        cite_claim(second_claim, citation_source=citation_source, locator="p. 3")
 
         resp = client.get("/api/pages/sources/title/medieval-madness/")
 
@@ -94,7 +92,7 @@ class TestCitedEditEvidence:
         cited_claim = make_claim(
             title, "name", "Medieval Madness (1997)", user=user, changeset=cited
         )
-        _attach_citation(cited_claim, citation_source)
+        cite_claim(cited_claim, citation_source=citation_source)
 
         resp = client.get("/api/pages/sources/title/medieval-madness/")
 
@@ -115,7 +113,7 @@ class TestCitedEditEvidence:
         cited_claim = make_claim(
             title, "name", "Medieval Madness (1997)", user=user, changeset=changeset
         )
-        _attach_citation(cited_claim, citation_source)
+        cite_claim(cited_claim, citation_source=citation_source)
 
         title.status = "deleted"
         title.save(update_fields=["status"])
@@ -126,3 +124,75 @@ class TestCitedEditEvidence:
         assert len(body["sources"]) >= 1
         assert len(body["evidence"]) == 1
         assert body["evidence"][0]["note"] == "Documented the flyer"
+
+
+@pytest.mark.django_db
+class TestScalarCitationJoin:
+    def test_execute_claims_fans_a_join_row_to_every_claim(
+        self, user, title, citation_source
+    ):
+        # The engine's scalar-cite path mints ONE shared instance per distinct
+        # content spec and fans a ClaimCitationInstance support edge to every
+        # claim in the save — no per-claim clones.
+        execute_claims(
+            title,
+            [
+                ClaimSpec(field_name="name", value="Medieval Madness (1997)"),
+                ClaimSpec(field_name="description", value="Updated copy"),
+            ],
+            user=user,
+            citations=[
+                CitationInstanceCreateSchema(
+                    citation_source_id=citation_source.pk, locator="p. 9"
+                )
+            ],
+        )
+
+        links = ClaimCitationInstance.objects.select_related(
+            "citation_instance", "claim"
+        )
+        assert links.count() == 2
+        instances = {link.citation_instance for link in links}
+        assert len(instances) == 1  # shared evidence, not a clone per claim
+        instance = instances.pop()
+        assert instance.citation_source_id == citation_source.pk
+        assert instance.locator == "p. 9"
+        assert {link.claim.field_name for link in links} == {"name", "description"}
+
+    def test_execute_claims_dedupes_identical_citation_specs(
+        self, user, title, citation_source
+    ):
+        # The same (source, locator) entered twice is one piece of evidence:
+        # one instance, one join row per claim.
+        spec = CitationInstanceCreateSchema(
+            citation_source_id=citation_source.pk, locator="p. 9"
+        )
+        execute_claims(
+            title,
+            [ClaimSpec(field_name="name", value="Medieval Madness (1997)")],
+            user=user,
+            citations=[spec, spec.model_copy()],
+        )
+        assert ClaimCitationInstance.objects.count() == 1
+
+    def test_execute_claims_attaches_multiple_citations(
+        self, user, title, citation_source
+    ):
+        # Distinct specs each mint their own shared instance — a save can
+        # carry several pieces of evidence.
+        execute_claims(
+            title,
+            [ClaimSpec(field_name="name", value="Medieval Madness (1997)")],
+            user=user,
+            citations=[
+                CitationInstanceCreateSchema(
+                    citation_source_id=citation_source.pk, locator="p. 9"
+                ),
+                CitationInstanceCreateSchema(
+                    citation_source_id=citation_source.pk, locator="p. 12"
+                ),
+            ],
+        )
+        links = ClaimCitationInstance.objects.select_related("citation_instance")
+        assert len({link.claim_id for link in links}) == 1
+        assert {link.citation_instance.locator for link in links} == {"p. 9", "p. 12"}

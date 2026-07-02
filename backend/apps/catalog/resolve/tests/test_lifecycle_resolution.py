@@ -31,7 +31,7 @@ from apps.core.models import (
 )
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.models import Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 
 pytestmark = pytest.mark.django_db
 
@@ -101,10 +101,8 @@ def test_active_status_q_relation_gates_the_related_row() -> None:
 @pytest.fixture
 def sources() -> dict[str, Source]:
     return {
-        "low": Source.objects.create(name="Low", source_type="database", priority=10),
-        "high": Source.objects.create(
-            name="High", source_type="editorial", priority=100
-        ),
+        "low": make_ingest_source(name="Low", source_type="database", priority=10),
+        "high": make_ingest_source(name="High", source_type="editorial", priority=100),
     }
 
 
@@ -130,15 +128,15 @@ def test_delete_drops_referrer_only_when_the_delete_wins(
     """A ``status=deleted`` claim makes the entity not-live iff it wins the pick."""
     # Delete wins: high-priority source deletes, low-priority keeps it active.
     winning = Manufacturer.objects.create(name="Del Wins", slug="del-wins")
-    make_claim(winning, "status", "active", source=sources["low"])
-    make_claim(winning, "status", "deleted", source=sources["high"])
+    make_claim(winning, "status", "active", ingest_source=sources["low"])
+    make_claim(winning, "status", "deleted", ingest_source=sources["high"])
     assert _resolved_status(winning) == "deleted"
     assert not is_live(_resolved_status(winning))
 
     # Delete loses: a lower-priority delete must not unblock — entity stays live.
     losing = Manufacturer.objects.create(name="Del Loses", slug="del-loses")
-    make_claim(losing, "status", "active", source=sources["high"])
-    make_claim(losing, "status", "deleted", source=sources["low"])
+    make_claim(losing, "status", "active", ingest_source=sources["high"])
+    make_claim(losing, "status", "deleted", ingest_source=sources["low"])
     assert _resolved_status(losing) == "active"
     assert is_live(_resolved_status(losing))
 

@@ -35,7 +35,7 @@ export type SectionPatchBody = Partial<
     | 'credits'
     | 'abbreviations'
     | 'note'
-    | 'citation'
+    | 'citations'
   >
 >;
 
@@ -46,7 +46,7 @@ export type SectionPatchBody = Partial<
 export async function saveModelClaims(slug: string, body: SectionPatchBody): Promise<SaveResult> {
   const { error } = await client.PATCH('/api/models/{public_id}/claims/', {
     params: { path: { public_id: slug } },
-    body: { fields: {}, note: '', ...body },
+    body: { fields: {}, note: '', citations: [], ...body },
   });
 
   if (error) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildEditCitationRequest,
+  buildEditCitationsRequest,
   countPendingChanges,
   shouldShowMixedEditCitationWarning,
   withEditMetadata,
@@ -9,38 +9,39 @@ import {
 } from './edit-citation';
 
 const citation: EditCitationSelection = {
-  citationInstanceId: 42,
+  citationSourceId: 7,
   sourceName: 'Williams Flyer',
   locator: 'p. 2',
 };
 
-describe('buildEditCitationRequest', () => {
-  it('serializes the selected citation instance id', () => {
-    expect(buildEditCitationRequest(citation)).toEqual({
-      citation_instance_id: 42,
-    });
+describe('buildEditCitationsRequest', () => {
+  it('serializes the selected citation as a content spec', () => {
+    expect(buildEditCitationsRequest(citation)).toEqual([
+      { citation_source_id: 7, locator: 'p. 2' },
+    ]);
   });
 
-  it('omits citation when none is selected', () => {
-    expect(buildEditCitationRequest(null)).toBeUndefined();
+  it('sends an empty list when none is selected', () => {
+    expect(buildEditCitationsRequest(null)).toEqual([]);
   });
 });
 
 describe('withEditMetadata', () => {
-  it('adds trimmed note and citation to an existing patch body', () => {
+  it('adds trimmed note and citations to an existing patch body', () => {
     expect(
       withEditMetadata({ fields: { description: 'Updated' } }, '  cleanup  ', citation),
     ).toEqual({
       fields: { description: 'Updated' },
       note: 'cleanup',
-      citation: { citation_instance_id: 42 },
+      citations: [{ citation_source_id: 7, locator: 'p. 2' }],
     });
   });
 
-  it('preserves bodies without a citation', () => {
+  it('sends empty citations for bodies without a citation', () => {
     expect(withEditMetadata({ fields: { description: 'Updated' } }, '', null)).toEqual({
       fields: { description: 'Updated' },
       note: '',
+      citations: [],
     });
   });
 });
@@ -52,7 +53,7 @@ describe('countPendingChanges', () => {
         fields: { year: 1998, description: 'Updated' },
         themes: ['medieval'],
         note: 'ignored',
-        citation: { citation_instance_id: 42 },
+        citations: [{ citation_source_id: 7, locator: 'p. 2' }],
       }),
     ).toBe(3);
   });

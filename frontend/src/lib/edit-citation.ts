@@ -1,32 +1,34 @@
+import type { CitationInstanceCreateSchema } from '$lib/api/schema';
+
+/** A citation the user attached to an edit: the content spec the save payload
+ * sends (source + locator — the backend mints the shared instance at save
+ * time) plus the source name for display. */
 export type EditCitationSelection = {
-  citationInstanceId: number;
+  citationSourceId: number;
   sourceName: string;
   locator: string;
 };
 
-export type EditCitationRequest = {
-  citation_instance_id: number;
-};
-
 type PatchBody = Record<string, unknown>;
 
-export function buildEditCitationRequest(
+/** Build the save payload's `citations` list from the user's selection
+ * (empty when no citation was attached). */
+export function buildEditCitationsRequest(
   citation: EditCitationSelection | null,
-): EditCitationRequest | undefined {
-  if (!citation) return undefined;
-  return { citation_instance_id: citation.citationInstanceId };
+): CitationInstanceCreateSchema[] {
+  if (!citation) return [];
+  return [{ citation_source_id: citation.citationSourceId, locator: citation.locator }];
 }
 
 export function withEditMetadata<T extends PatchBody>(
   body: T,
   note: string,
   citation: EditCitationSelection | null,
-): T & { note: string; citation?: EditCitationRequest } {
-  const citationRequest = buildEditCitationRequest(citation);
+): T & { note: string; citations: CitationInstanceCreateSchema[] } {
   return {
     ...body,
     note: note.trim(),
-    ...(citationRequest ? { citation: citationRequest } : {}),
+    citations: buildEditCitationsRequest(citation),
   };
 }
 
@@ -35,7 +37,7 @@ export function countPendingChanges(body: PatchBody | null): number {
 
   let count = 0;
   for (const [key, value] of Object.entries(body)) {
-    if (key === 'note' || key === 'citation' || value == null) continue;
+    if (key === 'note' || key === 'citations' || value == null) continue;
 
     if (key === 'fields' && typeof value === 'object' && !Array.isArray(value)) {
       count += Object.keys(value as Record<string, unknown>).length;

@@ -5,7 +5,14 @@ from django.contrib.admin.options import InlineModelAdmin
 from django.forms import BaseInlineFormSet, ModelForm
 from django.http import HttpRequest
 
-from .models import CitationSource, CitationSourceLink, CitationSourceRootDomain
+from apps.core.admin import ReadOnlyAdminMixin
+
+from .models import (
+    CitationInstance,
+    CitationSource,
+    CitationSourceLink,
+    CitationSourceRootDomain,
+)
 
 
 class CitationSourceLinkInline(admin.TabularInline[CitationSourceLink, CitationSource]):
@@ -111,3 +118,22 @@ class CitationSourceAdmin(admin.ModelAdmin[CitationSource]):
         for obj in formset.deleted_objects:
             obj.delete()
         formset.save_m2m()
+
+
+@admin.register(CitationInstance)
+class CitationInstanceAdmin(ReadOnlyAdminMixin, admin.ModelAdmin[CitationInstance]):
+    """Read-only inspection view. CitationInstances are immutable.
+
+    An instance is shared evidence with no single owning claim; the claims
+    citing it are inspected through provenance's ClaimCitationInstance admin.
+    """
+
+    list_display = ("citation_source", "slug", "locator_truncated", "created_at")
+    list_select_related = ("citation_source",)
+    readonly_fields = ("citation_source", "slug", "locator", "created_at")
+
+    @admin.display(description="Locator")
+    def locator_truncated(self, obj: CitationInstance) -> str:
+        if len(obj.locator) > 60:
+            return obj.locator[:60] + "..."
+        return obj.locator

@@ -81,7 +81,7 @@ A citation instance is a single use of a source in a specific place.
 - Markdown citations point to a citation instance inline.
 - Scalar claims can attach citation instances through the edit form.
 
-Instances are not shared across usages. Changing a locator should produce a new citation instance and an ordinary text or claim edit, not mutate history in place.
+Instances are **immutable**: changing a locator produces a new citation instance plus an ordinary edit, not mutate history in place.
 
 ### Citation Source Link
 

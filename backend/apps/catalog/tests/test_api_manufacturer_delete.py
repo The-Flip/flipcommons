@@ -24,8 +24,8 @@ User = get_user_model()
 @pytest.fixture
 def mfr(db, bootstrap_source):
     m = Manufacturer.objects.create(name="Stern", slug="stern", status="active")
-    make_claim(m, "name", "Stern", source=bootstrap_source)
-    make_claim(m, "status", "active", source=bootstrap_source)
+    make_claim(m, "name", "Stern", ingest_source=bootstrap_source)
+    make_claim(m, "status", "active", ingest_source=bootstrap_source)
     return m
 
 
@@ -38,7 +38,7 @@ def _make_ce(
         manufacturer=mfr,
         status=status,
     )
-    make_claim(ce, "name", ce.name, source=bootstrap_source)
+    make_claim(ce, "name", ce.name, ingest_source=bootstrap_source)
     return ce
 
 
@@ -49,7 +49,7 @@ def _make_system(bootstrap_source, mfr, slug: str, *, status: str = "active") ->
         manufacturer=mfr,
         status=status,
     )
-    make_claim(s, "name", s.name, source=bootstrap_source)
+    make_claim(s, "name", s.name, ingest_source=bootstrap_source)
     return s
 
 

@@ -1,5 +1,6 @@
 /** Types, pure helpers and the state-machine reducer for the citation flow. */
 import type {
+  CitationInstanceSchema,
   CitationSourceChildSchema,
   CitationSourceSearchSchema,
   CitationExtractDraftSchema,
@@ -55,6 +56,24 @@ export type CitationInstanceDraft = {
   locator: string;
   skipLocator: boolean;
 };
+
+/** A finished draft: the source is chosen (non-null) and the locator entered.
+ * The content-spec completion hands this to the consumer instead of a minted
+ * instance. */
+export type CompletedCitationDraft = {
+  sourceId: number;
+  sourceName: string;
+  locator: string;
+};
+
+/** What the citation flow does on completion. Inline `[[cite:slug]]` cites
+ * mint the instance eagerly — the editor needs its slug for the marker — and
+ * receive it (`mint-instance`). Edit cites need no instance yet: the content
+ * spec rides the save payload's `citations` list and the backend mints at
+ * save time (`content-spec`). */
+export type CitationCompletion =
+  | { kind: 'mint-instance'; oncomplete: (instance: CitationInstanceSchema) => void }
+  | { kind: 'content-spec'; oncomplete: (draft: CompletedCitationDraft) => void };
 
 /** Which stage the citation flow is in. Each variant carries only the context that stage needs. */
 export type CiteState =

@@ -8,11 +8,12 @@ from typing import cast
 from django.db.models import Prefetch, QuerySet
 
 from apps.actors.models import Actor
+from apps.citation.models import CitationInstance
 
 from .attribution import actor_user, source_backing
 from .claim_ranking_in_db import ranked_claims
 from .display import FieldValue, claim_value, resolve_display_context
-from .models import ChangeSet, CitationInstance, Claim, ClaimControlledModel
+from .models import ChangeSet, Claim, ClaimControlledModel
 from .schemas import (
     ClaimAttributionSchema,
     ClaimAuthorSchema,
@@ -59,6 +60,9 @@ def changeset_author(cs: ChangeSet) -> ClaimAuthorSchema:
 def citation_instances_prefetch() -> Prefetch[str, QuerySet[CitationInstance], str]:
     """Prefetch citation instances (+ source links) onto each claim.
 
+    Traverses ``Claim.citation_instances`` — the M2M over the
+    ``ClaimCitationInstance`` join — so only instances attached as supporting
+    evidence appear; inline ``[[cite:...]]`` instances carry no join rows.
     Lands them on ``prefetched_citation_instances`` — the attribute
     :func:`citation_instances` reads — so callers that build field-change
     citations (edit history, changeset detail) avoid a per-claim query.

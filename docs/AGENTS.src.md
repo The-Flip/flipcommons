@@ -225,9 +225,9 @@ For predicate design (purity, target Protocols, denial messages), see [docs/Auth
 
 The test is "could a user input this field?" If yes, claim it. If no, it's system-generated. There is no third category. See [docs/Provenance.md](Provenance.md) for the architecture.
 
-#### Writing ChangeSets — `action` is required on user ChangeSets
+#### Writing ChangeSets — `action` is required on interactive ChangeSets
 
-Every `ChangeSet` attributed to a user must carry an `action` value (`create`, `edit`, `delete`, or `revert`). Ingest ChangeSets never do — they're identified by the `ingest_run` FK. The DB enforces this via the `provenance_changeset_action_iff_user` check constraint, so forgetting means an `IntegrityError`, not a code-review catch. For catalog record lifecycle semantics, see [docs/RecordLifecycle.md](RecordLifecycle.md#record-lifecycle).
+Every interactive `ChangeSet` must carry an `action` value (`create`, `edit`, `delete`, or `revert`). Ingest ChangeSets never do — they're identified by the `ingest_run` FK. The DB enforces this via the `provenance_changeset_action_iff_interactive` check constraint, so forgetting means an `IntegrityError`, not a code-review catch. For catalog record lifecycle semantics, see [docs/RecordLifecycle.md](RecordLifecycle.md#record-lifecycle).
 
 Prefer the factories over `ChangeSet.objects.create` in new code:
 

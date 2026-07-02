@@ -540,7 +540,7 @@ def patch_manufacturer_claims(
     specs = plan_scalar_field_claims(Manufacturer, data.fields, entity=mfr)
 
     execute_claims(
-        mfr, specs, user=request.user, note=data.note, citation=data.citation
+        mfr, specs, user=request.user, note=data.note, citations=data.citations
     )
 
     mfr = get_object_or_404(_manufacturer_qs(), slug=mfr.slug)

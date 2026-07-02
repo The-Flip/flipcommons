@@ -9,9 +9,14 @@ from django.utils import timezone
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import Manufacturer
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.models import ChangeSet, IngestRun, Source
+from apps.provenance.models import ChangeSet, IngestRun
 from apps.provenance.pagination import cursor_paginate
-from apps.provenance.test_factories import ingest_changeset, make_claim, user_changeset
+from apps.provenance.test_factories import (
+    ingest_changeset,
+    make_claim,
+    make_ingest_source,
+    user_changeset,
+)
 
 
 @pytest.fixture
@@ -26,20 +31,20 @@ def user_b(db):
 
 @pytest.fixture
 def source(db):
-    return Source.objects.create(name="IPDB", source_type="database", priority=10)
+    return make_ingest_source(name="IPDB", source_type="database", priority=10)
 
 
 @pytest.fixture
 def pm(db, bootstrap_source):
     pm = make_machine_model(name="Medieval Madness", slug="medieval-madness", year=1997)
-    make_claim(pm, "name", "Medieval Madness", source=bootstrap_source)
+    make_claim(pm, "name", "Medieval Madness", ingest_source=bootstrap_source)
     return pm
 
 
 @pytest.fixture
 def mfr(db, bootstrap_source):
     mfr = Manufacturer.objects.create(name="Williams", slug="williams")
-    make_claim(mfr, "name", "Williams", source=bootstrap_source)
+    make_claim(mfr, "name", "Williams", ingest_source=bootstrap_source)
     return mfr
 
 
@@ -142,7 +147,7 @@ class TestChangesList:
             finished_at=timezone.now(),
         )
         cs = ingest_changeset(run)
-        make_claim(pm, "year", 1999, source=source, changeset=cs)
+        make_claim(pm, "year", 1999, ingest_source=source, changeset=cs)
 
         resp = client.get("/api/pages/changesets/")
         assert resp.status_code == 200

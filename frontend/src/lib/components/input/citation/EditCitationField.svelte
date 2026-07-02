@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { CitationInstanceSchema } from '$lib/api/schema';
   import { type EditCitationSelection } from '$lib/edit-citation';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import CitationAutocomplete from './CitationAutocomplete.svelte';
+  import type { CompletedCitationDraft } from './citation-types';
 
   let {
     citation = $bindable<EditCitationSelection | null>(null),
@@ -20,13 +20,13 @@
       : selectedCitation.sourceName;
   }
 
-  // The instance is already minted by CitationAutocomplete; read its fields
-  // directly — no pk-keyed refetch. Mint failures surface inside the picker.
-  function handleComplete(instance: CitationInstanceSchema) {
+  // The picker hands back a content spec, not a minted instance — the spec
+  // rides the save payload and the backend mints the shared instance then.
+  function handleComplete(draft: CompletedCitationDraft) {
     citation = {
-      citationInstanceId: instance.id,
-      sourceName: instance.citation_source_name,
-      locator: instance.locator,
+      citationSourceId: draft.sourceId,
+      sourceName: draft.sourceName,
+      locator: draft.locator,
     };
     pickerOpen = false;
   }
@@ -75,7 +75,7 @@
       {#if pickerOpen}
         <div class="citation-picker">
           <CitationAutocomplete
-            oncomplete={handleComplete}
+            completion={{ kind: 'content-spec', oncomplete: handleComplete }}
             oncancel={closePicker}
             onback={closePicker}
           />

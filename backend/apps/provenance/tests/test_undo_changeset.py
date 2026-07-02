@@ -35,8 +35,8 @@ def _title(slug: str, source: Source) -> Title:
     t = Title.objects.create(name=label, slug=slug, status="active")
     # Seed name + status claims so the resolver has something to fall
     # back to after an undo deactivates the user's claim.
-    make_claim(t, "name", label, source=source)
-    make_claim(t, "status", "active", source=source)
+    make_claim(t, "name", label, ingest_source=source)
+    make_claim(t, "status", "active", ingest_source=source)
     return t
 
 
@@ -64,8 +64,8 @@ class TestInverseBehavior:
         m = MachineModel.objects.create(
             title=t, name="MM Pro", slug="mm-pro", status="active"
         )
-        make_claim(m, "name", "MM Pro", source=bootstrap_source)
-        make_claim(m, "status", "active", source=bootstrap_source)
+        make_claim(m, "name", "MM Pro", ingest_source=bootstrap_source)
+        make_claim(m, "status", "active", ingest_source=bootstrap_source)
         delete_cs, _ = execute_soft_delete(t, user=author)
 
         t.refresh_from_db()

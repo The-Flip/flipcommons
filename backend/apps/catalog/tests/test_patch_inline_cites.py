@@ -2,8 +2,8 @@
 
 A patch may carry rich markdown descriptions whose facts are backed by inline
 ``[[cite:<handle>]]`` footnotes. A *new* footnote uses a numeric handle declared
-in a ``cites:`` map (minted to a floating ``claim=None`` CitationInstance at apply
-time); an *existing* footnote uses the instance's durable slug and needs no
+in a ``cites:`` map (minted to a floating CitationInstance at apply time,
+reached only by its marker); an *existing* footnote uses the instance's durable slug and needs no
 ``cites:`` entry (it self-resolves through standard conversion). Covers parse +
 correspondence guards, apply-time minting + marker rewrite, the re-edit
 round-trip, and the new-cite dry-run carve-out.
@@ -16,13 +16,14 @@ from django.core.exceptions import ValidationError
 
 from apps.catalog.models import Manufacturer
 from apps.catalog.tests.conftest import make_machine_model
+from apps.citation.models import CitationInstance
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import PatchError, build_plan, load_patch
 from apps.core.markdown import (
     convert_storage_to_authoring,
     render_all_links,
 )
-from apps.provenance.models import CitationInstance, Source
+from apps.provenance.models import Source
 
 pytestmark = pytest.mark.django_db
 
@@ -42,8 +43,9 @@ def _apply(text: str, *, patch_id: str = "0001-test", dry_run: bool = False):
 
 
 def _floating():
-    """Floating (inline) CitationInstances — minted with ``claim=None``."""
-    return CitationInstance.objects.filter(claim__isnull=True)
+    """Floating (inline) CitationInstances — reached only by their markers,
+    so they carry no ClaimCitationInstance join rows."""
+    return CitationInstance.objects.filter(claim_links__isnull=True)
 
 
 def _is_slug(value: str) -> bool:
@@ -77,6 +79,10 @@ claims:
     instances = list(_floating())
     assert len(instances) == 2
     assert all(_is_slug(ci.slug) for ci in instances)
+    # Inline cites stay marker-native: each minted instance is reached only by
+    # its marker, never through the scalar join. Assert per-instance rather than a
+    # global count so a fixture adding an unrelated scalar cite can't mask it.
+    assert all(ci.claim_links.exists() is False for ci in instances)
     # One per source — scheme dedups through ipdb, the URL through kineticist.
     source_ids = {ci.citation_source_id for ci in instances}
     assert len(source_ids) == 2

@@ -16,8 +16,8 @@ from apps.catalog.models import (
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.models import Claim, Source
-from apps.provenance.test_factories import make_claim
+from apps.provenance.models import Claim
+from apps.provenance.test_factories import make_claim, make_ingest_source
 from apps.provenance.validation import (
     DIRECT,
     EXTRA,
@@ -379,7 +379,7 @@ class TestClassifyClaim:
 class TestAssertClaimValidation:
     @pytest.fixture
     def source(self):
-        return Source.objects.create(
+        return make_ingest_source(
             name="test-source", source_type="database", priority=10
         )
 
@@ -387,11 +387,11 @@ class TestAssertClaimValidation:
         """assert_claim should reject invalid scalar values."""
         model = make_machine_model(name="Test", slug="test")
         with pytest.raises(ValidationError, match="must be an integer"):
-            make_claim(model, "ipdb_id", "not-a-number", source=source)
+            make_claim(model, "ipdb_id", "not-a-number", ingest_source=source)
 
     def test_allows_valid_direct_claim(self, source):
         model = make_machine_model(name="Test", slug="test")
-        claim = make_claim(model, "ipdb_id", 42, source=source)
+        claim = make_claim(model, "ipdb_id", 42, ingest_source=source)
         assert claim.value == 42
 
     def test_allows_relationship_claim(self, source):
@@ -401,7 +401,7 @@ class TestAssertClaimValidation:
             model,
             "credit",
             {"person": 1, "role": 2, "exists": True},
-            source=source,
+            ingest_source=source,
             claim_key="credit|person:1|role:2",
         )
         assert claim.field_name == "credit"
@@ -409,14 +409,16 @@ class TestAssertClaimValidation:
     def test_allows_extra_data_claim(self, source):
         """Extra-data claims should pass through without validation."""
         model = make_machine_model(name="Test", slug="test")
-        claim = make_claim(model, "opdb.description", "A great game", source=source)
+        claim = make_claim(
+            model, "opdb.description", "A great game", ingest_source=source
+        )
         assert claim.value == "A great game"
 
     def test_rejects_unrecognized_claim(self, source):
         """Unrecognized field on a model without extra_data is rejected."""
         theme = Theme.objects.create(name="Medieval", slug="medieval")
         with pytest.raises(ValueError, match="Unrecognized claim field_name"):
-            make_claim(theme, "nonexistent_field", "whatever", source=source)
+            make_claim(theme, "nonexistent_field", "whatever", ingest_source=source)
 
 
 # ---------------------------------------------------------------------------
@@ -960,7 +962,7 @@ class TestAssertClaimRelationshipShape:
 
     @pytest.fixture
     def source(self):
-        return Source.objects.create(
+        return make_ingest_source(
             name="Test Source", source_type="database", priority=50
         )
 
@@ -973,7 +975,7 @@ class TestAssertClaimRelationshipShape:
                 model,
                 "credit",
                 {"person": 1, "role": 1},  # no "exists"
-                source=source,
+                ingest_source=source,
                 claim_key="credit|person:1|role:1",
             )
 
@@ -986,7 +988,7 @@ class TestAssertClaimRelationshipShape:
                 model,
                 "credit",
                 {"person": pat_pk, "role": design_pk, "exists": True},
-                source=source,
+                ingest_source=source,
             )
 
     def test_wrong_subject_rejected(self, source):
@@ -996,7 +998,7 @@ class TestAssertClaimRelationshipShape:
                 title,
                 "credit",
                 {"person": 1, "role": 1, "exists": True},
-                source=source,
+                ingest_source=source,
                 claim_key="credit|person:1|role:1",
             )
 

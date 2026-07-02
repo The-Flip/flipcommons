@@ -37,7 +37,7 @@ describe('saveModelClaims', () => {
     expect(result).toEqual({ ok: true });
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { description: 'new text' }, note: '' },
+      body: { fields: { description: 'new text' }, note: '', citations: [] },
     });
     expect(invalidateAll).toHaveBeenCalledOnce();
   });
@@ -136,7 +136,7 @@ describe('saveModelClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: {}, note: '', credits },
+      body: { fields: {}, note: '', citations: [], credits },
     });
   });
 
@@ -151,7 +151,7 @@ describe('saveModelClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { year: 1997 }, note: 'Corrected per IPDB' },
+      body: { fields: { year: 1997 }, note: 'Corrected per IPDB', citations: [] },
     });
   });
 
@@ -159,15 +159,15 @@ describe('saveModelClaims', () => {
     PATCH.mockResolvedValue({ data: {}, error: undefined });
     invalidateAll.mockResolvedValue(undefined);
 
-    const citation = { citation_instance_id: 42 };
+    const citations = [{ citation_source_id: 7, locator: 'p. 2' }];
     await saveModelClaims('medieval-madness', {
       fields: { year: 1997 },
-      citation,
+      citations,
     });
 
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { year: 1997 }, note: '', citation },
+      body: { fields: { year: 1997 }, note: '', citations },
     });
   });
 });

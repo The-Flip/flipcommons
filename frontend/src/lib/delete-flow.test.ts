@@ -7,7 +7,7 @@ vi.mock('$lib/api/client', () => ({
 }));
 
 vi.mock('$lib/edit-citation', () => ({
-  buildEditCitationRequest: () => null,
+  buildEditCitationsRequest: () => [],
 }));
 
 // Import after mocks so the module closes over the mocked client.

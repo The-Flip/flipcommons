@@ -16,6 +16,7 @@ from apps.core.markdown import (
 )
 from apps.core.markdown.references import sync_references
 from apps.core.models import RecordReference
+from apps.provenance.test_factories import make_citation_instance
 
 
 @pytest.fixture
@@ -36,7 +37,6 @@ def system(db, manufacturer):
 
 @pytest.fixture
 def citation_source(db):
-
     return make_citation_source(
         name="The Encyclopedia of Pinball",
         source_type="book",
@@ -47,7 +47,6 @@ def citation_source(db):
 
 @pytest.fixture
 def citation_source_with_links(citation_source):
-
     make_citation_link(
         citation_source=citation_source,
         url="https://example.com/archive",
@@ -59,11 +58,7 @@ def citation_source_with_links(citation_source):
 
 @pytest.fixture
 def citation_instance(citation_source):
-    from apps.provenance.models import CitationInstance
-
-    return CitationInstance.objects.create(
-        citation_source=citation_source, locator="p. 30"
-    )
+    return make_citation_instance(citation_source=citation_source, locator="p. 30")
 
 
 class TestRenderMarkdownHtml:
@@ -139,12 +134,10 @@ class TestRenderMarkdownHtml:
 
     @pytest.mark.django_db
     def test_metadata_out_collects_citations(self):
-        from apps.provenance.models import CitationInstance
-
         src = make_citation_source(
             name="Source Book", source_type="book", author="A. Author"
         )
-        ci = CitationInstance.objects.create(citation_source=src, locator="ch. 3")
+        ci = make_citation_instance(citation_source=src, locator="ch. 3")
         metadata: list[dict[str, Any]] = []
         html = render_markdown_html(f"Fact.[[cite:id:{ci.pk}]]", metadata_out=metadata)
         assert "data-cite-id" in html
@@ -191,10 +184,9 @@ class TestRenderMarkdownFields:
     @pytest.mark.django_db
     def test_citations_key_included(self):
         from apps.catalog.models import Manufacturer
-        from apps.provenance.models import CitationInstance
 
         src = make_citation_source(name="Book", source_type="book")
-        ci = CitationInstance.objects.create(citation_source=src, locator="p. 1")
+        ci = make_citation_instance(citation_source=src, locator="p. 1")
         mfr = Manufacturer(
             name="Test", slug="test", description=f"Info.[[cite:id:{ci.pk}]]"
         )
@@ -380,14 +372,8 @@ class TestCitationLinkType:
         assert "[[cite:" not in result
 
     def test_render_multiple_citations(self, citation_source):
-        from apps.provenance.models import CitationInstance
-
-        ci1 = CitationInstance.objects.create(
-            citation_source=citation_source, locator="p. 30"
-        )
-        ci2 = CitationInstance.objects.create(
-            citation_source=citation_source, locator="p. 83"
-        )
+        ci1 = make_citation_instance(citation_source=citation_source, locator="p. 30")
+        ci2 = make_citation_instance(citation_source=citation_source, locator="p. 83")
         text = f"First fact.[[cite:id:{ci1.pk}]] Second fact.[[cite:id:{ci2.pk}]]"
         result = render_all_links(text)
         assert (
@@ -495,9 +481,7 @@ class TestMetadataCollection:
     """Tests for render_all_links metadata_out collection."""
 
     def test_collects_citation_metadata(self, citation_source_with_links):
-        from apps.provenance.models import CitationInstance
-
-        ci = CitationInstance.objects.create(
+        ci = make_citation_instance(
             citation_source=citation_source_with_links, locator="p. 42"
         )
         text = f"Cited.[[cite:id:{ci.pk}]]"
@@ -525,14 +509,8 @@ class TestMetadataCollection:
         assert metadata[0]["id"] == pk
 
     def test_metadata_ordered_by_first_appearance(self, citation_source):
-        from apps.provenance.models import CitationInstance
-
-        ci1 = CitationInstance.objects.create(
-            citation_source=citation_source, locator="p. 10"
-        )
-        ci2 = CitationInstance.objects.create(
-            citation_source=citation_source, locator="p. 20"
-        )
+        ci1 = make_citation_instance(citation_source=citation_source, locator="p. 10")
+        ci2 = make_citation_instance(citation_source=citation_source, locator="p. 20")
         text = f"First.[[cite:id:{ci1.pk}]] Second.[[cite:id:{ci2.pk}]]"
         metadata: list[dict[str, Any]] = []
         render_all_links(text, metadata_out=metadata)

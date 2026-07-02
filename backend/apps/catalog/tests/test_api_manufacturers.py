@@ -155,7 +155,7 @@ class TestManufacturersAPI:
     ):
         from apps.catalog.resolve import resolve_entity
 
-        make_claim(williams_entity, "operating_status", "ongoing", source=source)
+        make_claim(williams_entity, "operating_status", "ongoing", ingest_source=source)
         resolve_entity(williams_entity)
         resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
         data = resp.json()

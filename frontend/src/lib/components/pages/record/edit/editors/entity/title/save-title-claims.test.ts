@@ -35,7 +35,7 @@ describe('saveTitleClaims', () => {
     expect(result).toEqual({ ok: true });
     expect(PATCH).toHaveBeenCalledWith('/api/titles/{public_id}/claims/', {
       params: { path: { public_id: 'addams-family' } },
-      body: { fields: { description: 'new text' }, note: '' },
+      body: { fields: { description: 'new text' }, note: '', citations: [] },
     });
     expect(invalidateAll).toHaveBeenCalledOnce();
   });
@@ -67,7 +67,7 @@ describe('saveTitleClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/titles/{public_id}/claims/', {
       params: { path: { public_id: 'addams-family' } },
-      body: { fields: {}, note: '', abbreviations },
+      body: { fields: {}, note: '', citations: [], abbreviations },
     });
   });
 });

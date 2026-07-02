@@ -445,7 +445,7 @@ class TestProvenanceConstraints:
     def test_claim_retracted_while_active_rejected(self, user):
         source = Source.objects.create(name="Test", source_type="database")
         mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
-        claim = make_claim(mfr, "name", "Test", source=source)
+        claim = make_claim(mfr, "name", "Test", ingest_source=source)
 
         cs = user_changeset(user)
         with pytest.raises(IntegrityError):
@@ -506,8 +506,8 @@ class TestValidateCheckConstraints:
         mm = make_machine_model(
             name="Test Machine", slug="test-mm", corporate_entity=ce, year=1992
         )
-        make_claim(mm, "name", "Test Machine", source=source)
-        make_claim(mm, "month", 6, source=source)
+        make_claim(mm, "name", "Test Machine", ingest_source=source)
+        make_claim(mm, "month", 6, ingest_source=source)
         # No year claim — resolver will reset year to None, month stays 6.
         # validate_check_constraints should catch this before save().
         from apps.provenance.resolution import resolve_after_mutation
@@ -530,9 +530,9 @@ class TestValidateCheckConstraints:
             year_start=1985,
             year_end=2000,
         )
-        make_claim(ce, "name", "Williams Corp", source=source)
-        make_claim(ce, "year_start", 1985, source=source)
-        make_claim(ce, "year_end", 2000, source=source)
+        make_claim(ce, "name", "Williams Corp", ingest_source=source)
+        make_claim(ce, "year_start", 1985, ingest_source=source)
+        make_claim(ce, "year_end", 2000, ingest_source=source)
 
         client = Client()
         client.force_login(user)

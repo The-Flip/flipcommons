@@ -36,6 +36,7 @@ describe('saveCorporateEntityClaims', () => {
       body: {
         fields: { name: 'Williams Electronics', slug: 'williams-electronics' },
         note: '',
+        citations: [],
       },
     });
     expect(invalidateAll).toHaveBeenCalledTimes(1);
@@ -51,7 +52,7 @@ describe('saveCorporateEntityClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/corporate-entities/{public_id}/claims/', {
       params: { path: { public_id: 'williams' } },
-      body: { fields: {}, note: '', aliases: ['WMS', 'Williams Inc'] },
+      body: { fields: {}, note: '', citations: [], aliases: ['WMS', 'Williams Inc'] },
     });
     expect(result).toEqual({ ok: true, updatedSlug: 'williams' });
   });

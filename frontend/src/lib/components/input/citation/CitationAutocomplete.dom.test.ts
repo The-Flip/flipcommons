@@ -39,7 +39,11 @@ function renderAutocomplete() {
   const oncancel = vi.fn();
   const onback = vi.fn();
 
-  render(CitationAutocomplete, { oncomplete, oncancel, onback });
+  render(CitationAutocomplete, {
+    completion: { kind: 'mint-instance', oncomplete },
+    oncancel,
+    onback,
+  });
 
   return { oncomplete, oncancel, onback };
 }

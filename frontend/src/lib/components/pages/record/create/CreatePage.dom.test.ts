@@ -19,7 +19,7 @@ type Submit = (body: {
   name: string;
   slug: string;
   note: string;
-  citation: unknown;
+  citations: unknown;
 }) => Promise<{ data: Created | undefined; error: unknown; response: Response }>;
 
 type Overrides = {
@@ -149,7 +149,7 @@ describe('CreatePage', () => {
       name: 'Ada Lovelace',
       slug: 'ada-lovelace',
       note: '',
-      citation: undefined,
+      citations: [],
     });
   });
 

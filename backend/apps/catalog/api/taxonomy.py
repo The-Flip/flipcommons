@@ -283,7 +283,7 @@ def _patch_taxonomy(  # noqa: UP047
     specs = plan_scalar_field_claims(model_class, data.fields, entity=obj)
 
     execute_claims(
-        obj, specs, user=request.user, note=data.note, citation=data.citation
+        obj, specs, user=request.user, note=data.note, citations=data.citations
     )
 
     obj = get_object_or_404(_taxonomy_detail_qs(model_class), slug=obj.slug)
@@ -784,7 +784,7 @@ def patch_reward_type(
     specs = plan_scalar_field_claims(RewardType, data.fields, entity=obj)
 
     execute_claims(
-        obj, specs, user=request.user, note=data.note, citation=data.citation
+        obj, specs, user=request.user, note=data.note, citations=data.citations
     )
 
     rt = get_object_or_404(_reward_type_detail_qs(), slug=obj.slug)
@@ -990,7 +990,7 @@ def patch_credit_role(
     specs = plan_scalar_field_claims(CreditRole, data.fields, entity=obj)
 
     execute_claims(
-        obj, specs, user=request.user, note=data.note, citation=data.citation
+        obj, specs, user=request.user, note=data.note, citations=data.citations
     )
 
     cr = get_object_or_404(_credit_role_detail_qs(), slug=obj.slug)

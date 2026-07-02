@@ -162,7 +162,7 @@ def register_entity_delete_restore[
 
         try:
             changeset, deleted = execute_soft_delete(
-                obj, user=request.user, note=data.note, citation=data.citation
+                obj, user=request.user, note=data.note, citations=data.citations
             )
         except SoftDeleteBlockedError as exc:
             return Status(
@@ -225,7 +225,7 @@ def register_entity_delete_restore[
             user=request.user,
             action=ChangeSetAction.EDIT,
             note=data.note,
-            citation=data.citation,
+            citations=data.citations,
         )
 
         refreshed = get_object_or_404(detail_qs(), **{public_id_field: public_id})

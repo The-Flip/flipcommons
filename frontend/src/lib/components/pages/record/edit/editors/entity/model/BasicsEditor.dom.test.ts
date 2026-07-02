@@ -125,7 +125,7 @@ describe('BasicsEditor dirty-state contract', () => {
     expect(PATCH).toHaveBeenCalledOnce();
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { title: 'attack-from-mars' }, note: '' },
+      body: { fields: { title: 'attack-from-mars' }, note: '', citations: [] },
     });
   });
 
@@ -147,7 +147,7 @@ describe('BasicsEditor dirty-state contract', () => {
     expect(PATCH).toHaveBeenCalledOnce();
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { production_status: 'unreleased' }, note: '' },
+      body: { fields: { production_status: 'unreleased' }, note: '', citations: [] },
     });
   });
 
@@ -168,7 +168,7 @@ describe('BasicsEditor dirty-state contract', () => {
     expect(PATCH).toHaveBeenCalledOnce();
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { year: 1998 }, note: '' },
+      body: { fields: { year: 1998 }, note: '', citations: [] },
     });
   });
 });

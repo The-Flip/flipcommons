@@ -20,7 +20,7 @@ If citation-source gardening becomes contributor-facing, recognition-host attrib
 
 Web child reuse is keyed by exact raw URL string. The recognizer's child-link step and the web-source helper match `CitationSourceLink.url` exactly, so variants such as `http` vs `https`, trailing slash differences, and tracking parameters can mint separate children under the same root.
 
-The likely fix is a normalized child identity-URL table, analogous to `CitationSourceRootDomain` at the root level. That work is described at a higher level in [CitationInstanceModel.md](CitationInstanceModel.md) and [CitationUrlModel.md](CitationUrlModel.md).
+The likely fix is a normalized child identity-URL table, analogous to `CitationSourceRootDomain` at the root level. That work is described at a higher level in [CitationInstanceUrls.md](CitationInstanceUrls.md).
 
 ### D11 — Exact child-link recognition can be nondeterministic
 
@@ -54,4 +54,4 @@ If direct citation-instance creation is a public authoring surface, it should re
 
 ## Related Future Work
 
-The larger `CitationInstance` migration is tracked in [CitationInstanceModel.md](CitationInstanceModel.md): `quote`, `access_url`, changeset ownership, inline-footnote ownership, and retiring `Claim.citation`. That work overlaps with D10/D11 if it chooses to introduce a normalized child identity-URL table, but it is broader than this write-layer debt list.
+The larger `CitationInstance` rework is split across three docs: [CitationInstanceQuotes.md](CitationInstanceQuotes.md) (`quote`, retiring `Claim.citation`), [CitationInstanceReferences.md](CitationInstanceReferences.md) (content-addressed identity and how claims reach evidence) and [CitationInstanceUrls.md](CitationInstanceUrls.md) (`access_url` and the normalized child identity-URL table). That work overlaps with D10/D11 if it introduces the identity-URL table, but it is broader than this write-layer debt list.

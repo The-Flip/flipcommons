@@ -236,7 +236,7 @@ def patch_series_claims(
     specs = plan_scalar_field_claims(Series, data.fields, entity=series)
 
     execute_claims(
-        series, specs, user=request.user, note=data.note, citation=data.citation
+        series, specs, user=request.user, note=data.note, citations=data.citations
     )
 
     series = get_object_or_404(_series_detail_qs(), slug=series.slug)

@@ -17,14 +17,15 @@ from apps.claim_ingest.plan import (
     PlannedEntityCreate,
     RunReport,
 )
-from apps.provenance.models import ChangeSet, Claim, IngestRun, Source
+from apps.provenance.models import ChangeSet, Claim, IngestRun
+from apps.provenance.test_factories import make_ingest_source
 
 pytestmark = pytest.mark.django_db
 
 
 @pytest.fixture
 def test_source(db):
-    return Source.objects.create(
+    return make_ingest_source(
         name="TestSource",
         slug="test-source",
         source_type="database",
