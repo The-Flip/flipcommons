@@ -501,11 +501,13 @@ class UndoResultSchema(Schema):
 
 
 class CitationInstanceSchema(Schema):
-    """One use of a CitationSource on a specific claim, with a locator.
+    """One use of a CitationSource at a specific location, with a locator.
 
     The "instance" half of source/instance: a :class:`CitationSourceSchema`
-    is the source itself; a CitationInstance attaches it to a claim with a
-    page number, URL fragment, or other locator.
+    is the source itself; a CitationInstance pins it to a page number, URL
+    fragment, or other locator. An instance is shared evidence — claims
+    reference it through the claim↔instance join, and inline markdown cites
+    reference it through their ``[[cite:...]]`` marker.
     """
 
     id: int = Field(description="The citation instance's identifier.")
@@ -514,10 +516,6 @@ class CitationInstanceSchema(Schema):
     )
     citation_source_id: int = Field(description="Identifier of the cited source.")
     citation_source_name: str = Field(description="Display name of the cited source.")
-    claim_id: int | None = Field(
-        None,
-        description="Identifier of the claim this instance cites, or null when unattached.",
-    )
     locator: str = Field(
         description="Specific location within the source, such as a page or section, or an empty string."
     )

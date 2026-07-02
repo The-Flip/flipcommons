@@ -190,7 +190,6 @@ export const CREATED_INSTANCE = {
   slug: 'bqntvkrs',
   citation_source_id: 1,
   citation_source_name: 'The Encyclopedia of Pinball',
-  claim_id: null,
   locator: 'p. 42',
   created_at: '2024-01-01T00:00:00Z',
 };

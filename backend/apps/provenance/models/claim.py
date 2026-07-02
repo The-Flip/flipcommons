@@ -7,7 +7,7 @@ see that module and ``tests/test_single_claim_write_path.py``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from typing import NamedTuple
 
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
@@ -24,9 +24,6 @@ from ..types import ChangeSetId
 from .changeset import ChangeSet
 
 CLAIM_CITATION_MAX_LENGTH = 2_000
-
-if TYPE_CHECKING:
-    from .citation_instance import CitationInstance
 
 type IdentityPartValue = str | int | None
 """One value in a claim_key's identity-parts mapping: an entity-reference PK
@@ -88,7 +85,6 @@ class Claim(models.Model):
     license_id: LicenseId | None
     changeset_id: ChangeSetId
     retracted_by_changeset_id: ChangeSetId | None
-    citation_instances: models.Manager[CitationInstance]
 
     content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT)
     object_id = models.PositiveBigIntegerField()
@@ -130,6 +126,14 @@ class Claim(models.Model):
         blank=True,
         default="",
         db_default="",
+    )
+    # Read-only convenience over the explicit ClaimCitationInstance join (the
+    # write path creates join rows directly, never .add()/.set() here). Inline
+    # [[cite:...]] instances carry no join row, so they never appear in it.
+    citation_instances = models.ManyToManyField(
+        "provenance.CitationInstance",
+        through="provenance.ClaimCitationInstance",
+        related_name="claims",
     )
     license = models.ForeignKey(
         "core.License",

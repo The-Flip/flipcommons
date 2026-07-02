@@ -6,6 +6,7 @@ from .models import (
     ChangeSet,
     CitationInstance,
     Claim,
+    ClaimCitationInstance,
     IngestRun,
     Source,
     SourceFieldLicense,
@@ -113,14 +114,33 @@ class ClaimAdmin(ReadOnlyAdminMixin, admin.ModelAdmin[Claim]):
 
 @admin.register(CitationInstance)
 class CitationInstanceAdmin(ReadOnlyAdminMixin, admin.ModelAdmin[CitationInstance]):
-    """Read-only inspection view. CitationInstances are immutable."""
+    """Read-only inspection view. CitationInstances are immutable.
 
-    list_display = ("citation_source", "claim", "locator_truncated", "created_at")
-    list_select_related = ("citation_source", "claim")
-    readonly_fields = ("citation_source", "claim", "locator", "created_at")
+    An instance is shared evidence with no single owning claim; the claims
+    citing it are inspected through the ClaimCitationInstance admin.
+    """
+
+    list_display = ("citation_source", "slug", "locator_truncated", "created_at")
+    list_select_related = ("citation_source",)
+    readonly_fields = ("citation_source", "slug", "locator", "created_at")
 
     @admin.display(description="Locator")
     def locator_truncated(self, obj: CitationInstance) -> str:
         if len(obj.locator) > 60:
             return obj.locator[:60] + "..."
         return obj.locator
+
+
+@admin.register(ClaimCitationInstance)
+class ClaimCitationInstanceAdmin(
+    ReadOnlyAdminMixin, admin.ModelAdmin[ClaimCitationInstance]
+):
+    """Read-only inspection view of the claim ↔ citation-instance support edges."""
+
+    list_display = ("claim", "citation_instance")
+    list_select_related = (
+        "claim__actor__user",
+        "claim__actor__source",
+        "citation_instance__citation_source",
+    )
+    readonly_fields = ("claim", "citation_instance")

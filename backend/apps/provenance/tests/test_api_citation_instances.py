@@ -10,6 +10,7 @@ from apps.citation.test_factories import make_citation_link, make_citation_sourc
 from apps.provenance.models import CitationInstance
 from apps.provenance.test_factories import (
     cite_claim,
+    claim_citation_instance,
     make_citation_instance,
     make_claim,
     make_ingest_source,
@@ -53,7 +54,6 @@ class TestListCitationInstances:
         assert data[0]["id"] == ci.pk
         assert data[0]["locator"] == "p. 30"
         assert data[0]["citation_source_name"] == citation_source.name
-        assert data[0]["claim_id"] is None
 
     def test_filter_by_claim(self, client, user, citation_source):
         from apps.catalog.models import Manufacturer
@@ -68,7 +68,28 @@ class TestListCitationInstances:
         data = resp.json()
         assert len(data) == 1
         assert data[0]["id"] == ci.pk
-        assert data[0]["claim_id"] == claim.pk
+
+    def test_filter_by_claim_reads_the_join(self, client, user, citation_source):
+        """``?claim=`` resolves through the ClaimCitationInstance join: a
+        join-linked floating instance is returned; an instance that only sets
+        the legacy FK is not."""
+        from apps.catalog.models import Manufacturer
+
+        mfr = Manufacturer.objects.create(name="Williams", slug="williams")
+        claim = make_claim(mfr, "name", "Williams", ingest_source=make_ingest_source())
+
+        linked = make_citation_instance(
+            citation_source=citation_source, locator="p. 42"
+        )
+        claim_citation_instance(claim, linked)
+        make_citation_instance(
+            citation_source=citation_source, locator="p. 7", claim=claim
+        )
+
+        client.force_login(user)
+        resp = client.get(f"/api/citation-instances/?claim={claim.pk}")
+        assert resp.status_code == 200
+        assert [item["id"] for item in resp.json()] == [linked.pk]
 
     def test_empty_result(self, client, user, citation_source):
         client.force_login(user)
@@ -86,7 +107,6 @@ class TestListCitationInstances:
             "slug",
             "citation_source_id",
             "citation_source_name",
-            "claim_id",
             "locator",
             "created_at",
         }
@@ -177,7 +197,6 @@ class TestCreateCitationInstance:
         assert data["citation_source_id"] == citation_source.pk
         assert data["citation_source_name"] == citation_source.name
         assert data["locator"] == "p. 30"
-        assert data["claim_id"] is None
         assert CitationInstance.objects.filter(pk=data["id"]).exists()
 
     def test_create_without_locator(self, client, user, citation_source):

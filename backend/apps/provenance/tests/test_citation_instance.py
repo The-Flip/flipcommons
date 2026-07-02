@@ -9,7 +9,7 @@ from apps.citation.models import CitationSource
 from apps.citation.test_factories import make_citation_source
 from apps.provenance.admin import CitationInstanceAdmin
 from apps.provenance.models import CitationInstance, Claim, Source
-from apps.provenance.test_factories import source_changeset
+from apps.provenance.test_factories import claim_citation_instance, source_changeset
 
 
 @pytest.fixture
@@ -245,10 +245,18 @@ class TestCitationInstanceReverseRelations:
         assert ci in citation_source.instances.all()
 
     def test_claim_citation_instances(self, citation_source, claim):
-        ci = CitationInstance.objects.create(
+        """``claim.citation_instances`` resolves through the join, not the
+        legacy FK: a join-linked floating instance appears; an instance that
+        only sets the FK does not."""
+        linked = CitationInstance.objects.create(citation_source=citation_source)
+        claim_citation_instance(claim, linked)
+        fk_only = CitationInstance.objects.create(
             citation_source=citation_source, claim=claim
         )
-        assert ci in claim.citation_instances.all()
+
+        assert linked in claim.citation_instances.all()
+        assert fk_only not in claim.citation_instances.all()
+        assert claim in linked.claims.all()
 
 
 # ---------------------------------------------------------------------------

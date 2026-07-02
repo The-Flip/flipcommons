@@ -102,8 +102,15 @@ class CitationInstance(models.Model):
     Immutable: corrections create a new instance (old one becomes orphaned).
     Only has created_at, no updated_at — matching the Claim immutability pattern.
 
-    claim is nullable: null for inline markdown citations (``[[cite:id:...]]``),
-    set for scalar claim citations.
+    An instance is shared evidence: scalar/edit claims reach it through the
+    ``ClaimCitationInstance`` join, and inline markdown citations
+    (``[[cite:id:...]]``) reach it through their marker alone.
+
+    ``claim`` is a legacy single-owner column on its way out: the scalar write
+    paths still set it (null for inline cites), but nothing reads it — the
+    reverse accessor is disabled (``related_name="+"``) so every read goes
+    through the join or the marker. It is dropped once the write paths stop
+    setting it.
 
     ``slug`` is a globally-unique, digit-free, author-stable handle. It is the
     authoring key for the ``cite`` wikilink type (``[[cite:<slug>]]`` authoring
@@ -124,7 +131,7 @@ class CitationInstance(models.Model):
     claim = models.ForeignKey(
         "provenance.Claim",
         on_delete=models.PROTECT,
-        related_name="citation_instances",
+        related_name="+",
         null=True,
         blank=True,
     )

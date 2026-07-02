@@ -59,6 +59,9 @@ def changeset_author(cs: ChangeSet) -> ClaimAuthorSchema:
 def citation_instances_prefetch() -> Prefetch[str, QuerySet[CitationInstance], str]:
     """Prefetch citation instances (+ source links) onto each claim.
 
+    Traverses ``Claim.citation_instances`` — the M2M over the
+    ``ClaimCitationInstance`` join — so only instances attached as supporting
+    evidence appear; inline ``[[cite:...]]`` instances carry no join rows.
     Lands them on ``prefetched_citation_instances`` — the attribute
     :func:`citation_instances` reads — so callers that build field-change
     citations (edit history, changeset detail) avoid a per-claim query.

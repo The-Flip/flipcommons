@@ -51,7 +51,6 @@ describe('EditCitationField', () => {
         id: 42,
         citation_source_id: 7,
         citation_source_name: 'Williams Flyer',
-        claim_id: null,
         locator: 'p. 2',
         created_at: '2026-04-08T00:00:00Z',
       },

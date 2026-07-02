@@ -156,7 +156,13 @@ citation_instances_router = Router(tags=["citation-instances", "private"])
 def list_citation_instances(
     request: HttpRequest, source: int | None = None, claim: int | None = None
 ) -> list[CitationInstanceSchema]:
-    """List Citation Instances, filtered by source and/or claim."""
+    """List Citation Instances, filtered by source and/or citing claim.
+
+    ``?claim=`` resolves through the ``ClaimCitationInstance`` join — the
+    instances attached to that claim as supporting evidence. Inline
+    ``[[cite:...]]`` instances carry no join rows, so they only surface via
+    ``?source=``.
+    """
     if source is None and claim is None:
         raise HttpError(422, "Provide ?source= or ?claim= filter.")
 
@@ -164,7 +170,7 @@ def list_citation_instances(
     if source is not None:
         qs = qs.filter(citation_source_id=source)
     if claim is not None:
-        qs = qs.filter(claim_id=claim)
+        qs = qs.filter(claims=claim)
     qs = qs.order_by("-created_at")
 
     return [
@@ -173,7 +179,6 @@ def list_citation_instances(
             slug=ci.slug,
             citation_source_id=ci.citation_source_id,
             citation_source_name=ci.citation_source.name,
-            claim_id=ci.claim_id,
             locator=ci.locator,
             created_at=ci.created_at.isoformat(),
         )
@@ -256,7 +261,6 @@ def create_citation_instance(
             slug=instance.slug,
             citation_source_id=instance.citation_source_id,
             citation_source_name=source.name,
-            claim_id=None,
             locator=instance.locator,
             created_at=instance.created_at.isoformat(),
         ),
