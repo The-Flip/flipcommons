@@ -38,7 +38,7 @@ describe('SectionEditorForm', () => {
 
     await user.click(screen.getByText('Notes & Citations'));
 
-    const noteInput = screen.getByLabelText(/Edit note/);
+    const noteInput = screen.getByLabelText(/Edit summary/);
     await user.type(noteInput, 'Corrected per IPDB');
 
     await user.click(screen.getByRole('button', { name: 'Save' }));

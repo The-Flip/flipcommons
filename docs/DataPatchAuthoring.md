@@ -35,7 +35,7 @@ These principles apply whether you hand-author or generate.
 
 ### Attribution of the overall patch
 
-**Attribute the overall patch to the `flipcommons-catalog` source by default.** It's Flipcommons' own attribution for values we research, scrape and classify ourselves, and it owns the overwhelming majority of patches. Anything web-scraped where we apply editorial judgment is `flipcommons-catalog`; scraping a fact off IPDB or Kineticist does **not** mean attributing the patch to them. Deriving a structured value by classifying a source's free text (parsing IPDB notes into a `game_format`, say) is this same default case, not an exception: `flipcommons-catalog`, with `cite:` to the source text as evidence and `note:` quoting it — there's no source claim to supersede, because the source never had that field.
+**Attribute the overall patch to the `flipcommons-catalog` source by default.** It's Flipcommons' own attribution for values we research, scrape and classify ourselves, and it owns the overwhelming majority of patches. Anything web-scraped where we apply editorial judgment is `flipcommons-catalog`; scraping a fact off IPDB or Kineticist does **not** mean attributing the patch to them. Deriving a structured value by classifying a source's free text (parsing IPDB notes into a `game_format`, say) is this same default case, not an exception: `flipcommons-catalog`, with `cite:` to the source text as evidence, its `quote:` carrying the excerpt you classified — there's no source claim to supersede, because the source never had that field.
 
 Reach for a different attribution only in these cases:
 
@@ -48,15 +48,19 @@ Reach for a different attribution only in these cases:
 
 **Each entry targets exactly one record.** By default keep that record's fields together in the one entry under a single `note`/`cite`. When the fields have **distinct evidence**, you may instead split them across several entries on the same record — each its own `ChangeSet` with its own `note`/`cite`, as long as the fields are disjoint (see [DataPatches.md](DataPatches.md#notes--citations)).
 
-### Note every entry
+### Quote the evidence on the cite
 
-**Explain every change with `note:`**, written as `<source> says "<verbatim quote>"`. Quote the source _verbatim_ and mark your own omissions with `[...]`. **Preserve the source's own characters**, including non-ASCII letters in foreign-language quotes (e.g. `Günter`, `gegründet`) — notes are stored as UTF-8, so don't strip or transliterate them. Only normalize stray _typography_ that's a copy-paste artifact rather than part of the quote: straighten smart quotes (`“ ”` → `"`) and spell out an ellipsis `…` as `[...]`.
+**Put the verbatim source excerpt in `quote:` on the `cite:` mapping** — see the mapping form in [DataPatches.md](DataPatches.md#notes--citations). Quote the source _verbatim_ and mark your own omissions with `[...]`; when quoting several passages, join the spans with `[...]` in source order. **Preserve the source's own characters**, including non-ASCII letters in foreign-language quotes (e.g. `Günter`, `gegründet`) — quotes are stored as UTF-8, so don't strip or transliterate them. Only normalize stray _typography_ that's a copy-paste artifact rather than part of the quote: straighten smart quotes (`“ ”` → `"`) and spell out an ellipsis `…` as `[...]`. A reviewer should be able to follow the citation and ctrl-F find each span.
+
+### Note only when there's something to explain
+
+**`note:` is the edit summary — rationale beyond the evidence.** Uncertainty, cleanup comments, merge explanations, disambiguations and paraphrased source facts ("what the source states, in my words, and why the value follows") belong here; a verbatim excerpt does NOT — that's the `quote:`. A cite with a quote usually needs no note at all. Do not write the legacy `<source> says "<quote>"` scaffolding: the citation already names the source and the quote carries the evidence.
 
 ### Cite most entries
 
 **Cite external evidence with `cite:` on every substantive claim.** Skip the cite only when the evidence _is_ the entity's own data — then state it in the `note:` instead ("Its name contains the word 'prototype'"). The other exemptions are scaffolding entries (below) and aliases/abbreviations (see [Aliases and abbreviations](#aliases-and-abbreviations)).
 
-**Pick the cite form by source:** `scheme:identifier` for IPDB/OPDB records, or a raw `http(s)://` URL for any other web page (a forum thread, an archive scan, a manufacturer's page). Reach for the scheme form whenever one exists; the URL form is the escape hatch for sources without a scheme. A URL cite needs its **website root seeded first** — see [Citation sources](#citation-sources).
+**Pick the cite ref form by source:** `scheme:identifier` for IPDB/OPDB records, or a raw `http(s)://` URL for any other web page (a forum thread, an archive scan, a manufacturer's page). Reach for the scheme form whenever one exists; the URL form is the escape hatch for sources without a scheme. A URL cite needs its **website root seeded first** — see [Citation sources](#citation-sources).
 
 **The cite can target a different record than the claim.** When the evidence lives in a _different_ record's note (a cross-reference — "‹other game› is not a pinball"), `cite:` the record that contains the statement.
 
