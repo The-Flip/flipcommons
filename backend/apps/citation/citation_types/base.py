@@ -46,40 +46,44 @@ class SourceType(models.TextChoices):
     VIDEO = "video", "Video"
 
 
-# The wire-type twin of ``SourceType``: a Literal for API schema fields so the
-# OpenAPI document (and the generated frontend types) carry the value union
-# instead of a bare string. A Literal can't be derived from the enum, so the
-# import-time assertion below keeps the hand-mirrored list honest.
-SourceTypeValue = Literal["book", "magazine", "web", "video"]
+# The Literal twin of ``SourceType``, for **internal** Python contracts
+# (TypedDicts, test factories, helper signatures). Deliberately NOT used on
+# Ninja ``Schema`` fields — wire scalars stay bare ``str`` per
+# ``docs/Python.md`` so internal renames never surface as schema diffs. A
+# Literal can't be derived from the enum, so the import-time assertion below
+# keeps the hand-mirrored list honest.
+CitationSourceTypeValue = Literal["book", "magazine", "web", "video"]
 
 
-def _assert_source_type_literal_current() -> None:
-    """Raise at import if ``SourceTypeValue`` drifts from ``SourceType``."""
-    literal = set(get_args(SourceTypeValue))
+def _assert_citation_source_type_literal_current() -> None:
+    """Raise at import if ``CitationSourceTypeValue`` drifts from ``SourceType``."""
+    literal = set(get_args(CitationSourceTypeValue))
     if literal != set(SourceType.values):
         raise AssertionError(
-            f"SourceTypeValue {sorted(literal)} != SourceType {sorted(SourceType.values)}"
+            f"CitationSourceTypeValue {sorted(literal)} != SourceType {sorted(SourceType.values)}"
         )
 
 
-_assert_source_type_literal_current()
+_assert_citation_source_type_literal_current()
 
-_SOURCE_TYPE_VALUES: frozenset[str] = frozenset(get_args(SourceTypeValue))
-
-
-def _is_source_type_value(raw: str) -> TypeGuard[SourceTypeValue]:
-    return raw in _SOURCE_TYPE_VALUES
+_CITATION_SOURCE_TYPE_VALUES: frozenset[str] = frozenset(
+    get_args(CitationSourceTypeValue)
+)
 
 
-def source_type_value(raw: str) -> SourceTypeValue:
-    """Coerce a model's raw ``source_type`` field to the wire Literal.
+def _is_citation_source_type(raw: str) -> TypeGuard[CitationSourceTypeValue]:
+    return raw in _CITATION_SOURCE_TYPE_VALUES
 
-    The serializer-side twin of ``citation_type_spec``'s coercion: a stored
+
+def citation_source_type(raw: str) -> CitationSourceTypeValue:
+    """Coerce a model's raw ``source_type`` field to the typed Literal.
+
+    The typed-contract twin of ``citation_type_spec``'s coercion: a stored
     value outside the registered types (impossible under the CHECK constraint,
     reachable only via raw SQL) raises ``ValueError`` instead of leaking an
-    unvalidated string onto the wire.
+    unvalidated string into a typed structure (e.g. ``ExtractionMatch``).
     """
-    if _is_source_type_value(raw):
+    if _is_citation_source_type(raw):
         return raw
     raise ValueError(f"Unknown source_type {raw!r}")
 

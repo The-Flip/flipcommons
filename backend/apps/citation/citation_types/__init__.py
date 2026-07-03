@@ -6,14 +6,14 @@ for the architecture and ``base.py`` for the contracts.
 """
 
 from apps.citation.citation_types.base import (
+    CitationSourceTypeValue,
     CitationTypeSpec,
     LocatorContract,
     RootSeed,
     SchemeMatch,
     SchemeSpec,
     SourceType,
-    SourceTypeValue,
-    source_type_value,
+    citation_source_type,
 )
 from apps.citation.citation_types.registry import (
     CITATION_TYPE_SPECS,
@@ -33,10 +33,10 @@ __all__ = [
     "SchemeMatch",
     "SchemeSpec",
     "SourceType",
-    "SourceTypeValue",
+    "CitationSourceTypeValue",
     "citation_type_spec",
     "identifier_key_choices",
     "identifier_key_values",
     "scheme_source_type_pairs",
-    "source_type_value",
+    "citation_source_type",
 ]

@@ -28,7 +28,6 @@ from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 from apps.core.types import CitationSourceId
 
-from .citation_types import source_type_value
 from .extraction import classify_input, extract_isbn, normalize_isbn
 from .extractors import (
     Recognition,
@@ -140,7 +139,7 @@ def _serialize_match(source: CitationSource) -> CitationSourceMatchSchema:
     return CitationSourceMatchSchema(
         id=source.pk,
         name=source.name,
-        source_type=source_type_value(source.source_type),
+        source_type=source.source_type,
         skip_locator=source.skip_locator,
     )
 
@@ -149,7 +148,7 @@ def _serialize_child(child: CitationSource) -> CitationSourceChildSchema:
     return CitationSourceChildSchema(
         id=child.pk,
         name=child.name,
-        source_type=source_type_value(child.source_type),
+        source_type=child.source_type,
         year=child.year,
         isbn=child.isbn,
         skip_locator=child.skip_locator,
@@ -162,7 +161,7 @@ def _serialize_search_row(s: CitationSource) -> CitationSourceSearchSchema:
     return CitationSourceSearchSchema(
         id=s.pk,
         name=s.name,
-        source_type=source_type_value(s.source_type),
+        source_type=s.source_type,
         author=s.author,
         publisher=s.publisher,
         year=s.year,
@@ -184,7 +183,7 @@ def _serialize_detail(source: CitationSource) -> CitationSourceDetailSchema:
     return CitationSourceDetailSchema(
         id=source.pk,
         name=source.name,
-        source_type=source_type_value(source.source_type),
+        source_type=source.source_type,
         author=source.author,
         publisher=source.publisher,
         year=source.year,
@@ -222,7 +221,7 @@ def _build_recognition(rec: Recognition) -> CitationRecognitionSchema:
         child = CitationSourceMatchSchema(
             id=rec.child.id,
             name=rec.child.name,
-            source_type=source_type_value(rec.child.source_type),
+            source_type=rec.child.source_type,
             skip_locator=rec.child.skip_locator,
         )
     return CitationRecognitionSchema(
@@ -468,7 +467,7 @@ def cite_url(
                 CitationSourceMatchSchema(
                     id=rec.child.id,
                     name=rec.child.name,
-                    source_type=source_type_value(rec.child.source_type),
+                    source_type=rec.child.source_type,
                     skip_locator=rec.child.skip_locator,
                 ),
             )

@@ -18,7 +18,7 @@ from urllib.request import Request, urlopen
 
 from django.core.cache import cache
 
-from apps.citation.citation_types import SourceTypeValue, source_type_value
+from apps.citation.citation_types import CitationSourceTypeValue, citation_source_type
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class ExtractionDraft:
 class ExtractionMatch(TypedDict):
     id: int
     name: str
-    source_type: SourceTypeValue
+    source_type: CitationSourceTypeValue
     skip_locator: bool
 
 
@@ -125,7 +125,7 @@ def extract_isbn(isbn: str) -> ExtractionResult:
             match={
                 "id": existing.pk,
                 "name": existing.name,
-                "source_type": source_type_value(existing.source_type),
+                "source_type": citation_source_type(existing.source_type),
                 "skip_locator": existing.skip_locator,
             }
         )

@@ -32,7 +32,6 @@ from typing import Annotated, Literal
 from ninja import Field, Schema
 from pydantic import ConfigDict, field_validator
 
-from .citation_types import SourceTypeValue
 from .models import (
     CITATION_SOURCE_AUTHOR_MAX_LENGTH,
     CITATION_SOURCE_DATE_NOTE_MAX_LENGTH,
@@ -78,7 +77,9 @@ class CitationSourceSearchSchema(Schema):
 
     id: int = Field(description="The source's identifier.")
     name: str = Field(description="The source's display name.")
-    source_type: SourceTypeValue = Field(description="Kind of source.")
+    source_type: str = Field(
+        description='Kind of citation source: "book", "magazine", "web" or "video".'
+    )
     author: str = Field(description="Author or creator, or an empty string.")
     publisher: str = Field(description="Publisher, or an empty string.")
     year: int | None = Field(None, description="Publication year, if known.")
@@ -121,10 +122,10 @@ class CitationSourceMatchSchema(Schema):
 
     id: int = Field(description="The matched source's identifier.")
     name: str = Field(description="The matched source's display name.")
-    source_type: SourceTypeValue = Field(
+    source_type: str = Field(
         description=(
-            "The matched source's citation type — the frontend's key into "
-            "the per-type locator behavior."
+            "The matched citation source's type (book/magazine/web/video) — "
+            "the frontend's key into the per-type locator behavior."
         ),
     )
     skip_locator: bool = Field(
@@ -293,7 +294,10 @@ class CitationSourceUpdateSchema(Schema):
     """
 
     name: NameStr | None = Field(None, description="New display name.")
-    source_type: SourceTypeValue | None = Field(None, description="New source type.")
+    source_type: str | None = Field(
+        None,
+        description='New citation source type: "book", "magazine", "web" or "video".',
+    )
     author: AuthorStr | None = Field(None, description="New author or creator.")
     publisher: PublisherStr | None = Field(None, description="New publisher.")
     year: int | None = Field(None, description="New publication year.")
@@ -327,7 +331,9 @@ class CitationSourceChildSchema(Schema):
 
     id: int = Field(description="The child source's identifier.")
     name: str = Field(description="The child source's display name.")
-    source_type: SourceTypeValue = Field(description="Kind of source.")
+    source_type: str = Field(
+        description='Kind of citation source: "book", "magazine", "web" or "video".'
+    )
     year: int | None = Field(None, description="Publication year, if known.")
     isbn: str | None = Field(None, description="ISBN, if known.")
     skip_locator: bool = Field(
@@ -356,7 +362,9 @@ class CitationSourceDetailSchema(Schema):
 
     id: int = Field(description="The source's identifier.")
     name: str = Field(description="The source's display name.")
-    source_type: SourceTypeValue = Field(description="Kind of source.")
+    source_type: str = Field(
+        description='Kind of citation source: "book", "magazine", "web" or "video".'
+    )
     author: str = Field(description="Author or creator, or an empty string.")
     publisher: str = Field(description="Publisher, or an empty string.")
     year: int | None = Field(None, description="Publication year, if known.")
@@ -433,8 +441,8 @@ class CitationExtractDraftSchema(Schema):
     """Metadata scraped from an external lookup, to prefill the create form."""
 
     name: str = Field(description="The extracted title.")
-    source_type: SourceTypeValue = Field(
-        description='Inferred source type: "book" for an ISBN, "web" for a URL.'
+    source_type: str = Field(
+        description='Inferred citation source type: "book" for an ISBN, "web" for a URL.'
     )
     author: str = Field(description="Extracted author, or an empty string.")
     publisher: str = Field(

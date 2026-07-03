@@ -21,16 +21,17 @@ from typing import Literal
 
 from apps.accounts.test_factories import default_actor
 from apps.actors.models import Actor
+from apps.citation.citation_types import CitationSourceTypeValue
 from apps.citation.models import (
     CitationSource,
     CitationSourceLink,
     CitationSourceRootDomain,
 )
 
-# Literal aliases mirroring each model's choices, so a bad choice value fails at
+# CitationSourceTypeValue is the canonical wire Literal (citation_types);
+# the remaining aliases mirror each model's choices, so a bad choice value fails at
 # type-check. Constraint tests that need an invalid value build the model
 # directly. ``identifier_key`` also permits "" (blank = a root without a scheme).
-type CitationSourceTypeValue = Literal["book", "magazine", "web", "video"]
 type LinkTypeValue = Literal["homepage", "catalog", "publisher", "reference", "archive"]
 type IdentifierKeyValue = Literal["", "ipdb", "opdb", "youtube"]
 
