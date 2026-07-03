@@ -46,11 +46,20 @@ Reach for a different attribution only in these cases:
 
 ### One record per entry
 
-**Each entry targets exactly one record.** By default keep that record's fields together in the one entry under a single `note`/`cite`. When the fields have **distinct evidence**, you may instead split them across several entries on the same record — each its own `ChangeSet` with its own `note`/`cite`, as long as the fields are disjoint (see [DataPatches.md](DataPatches.md#notes--citations)).
+**Each entry targets exactly one record.** By default keep that record's fields together in the one entry under a single `note`/`cite`. When the fields have **distinct evidence**, split them instead — each piece of evidence its own `ChangeSet` with its own `note`/`cite`, either as separate entries on the same record or as `changesets:` items under one entry, as long as the fields are disjoint (see [DataPatches.md](DataPatches.md#notes--citations)).
+
+### One quote supports one fact
+
+**Each quote should support exactly one fact, so it can be checked — or challenged — on its own.** Fields share a changeset only when they share the evidence: a catalog row stating year, name and maker in one line is a single fact cluster; a machine's format tag two lines below it is a separate fact and gets its own `changesets:` item with its own cite and quote. The `[...]` join is for one statement whose text spans several passages — never for gluing unrelated sentences together so one quote can blanket-cover an entry's fields.
+
+Two boundaries:
+
+- **A fact with no quotable evidence rides the header.** An inference the patch is allowed to make (a 1960s machine's `technology_generation`, a theme read off the name) has no span of its own; it stays on the entry header rather than getting an evidence-free item.
+- **A reassertion that changes nothing can't carry its own changeset.** The apply engine rejects a provenance-carrying unit whose value already matches the record ("changes nothing"), so a field you're re-stating purely to add evidence must ride a unit that changes something — or be dropped.
 
 ### Quote the evidence on the cite
 
-**Put the verbatim source excerpt in `quote:` on the `cite:` mapping** — see the mapping form in [DataPatches.md](DataPatches.md#notes--citations). Quote the source _verbatim_ and mark your own omissions with `[...]`; when quoting several passages, join the spans with `[...]` in source order. **Preserve the source's own characters**, including non-ASCII letters in foreign-language quotes (e.g. `Günter`, `gegründet`) — quotes are stored as UTF-8, so don't strip or transliterate them. Only normalize stray _typography_ that's a copy-paste artifact rather than part of the quote: straighten smart quotes (`“ ”` → `"`) and spell out an ellipsis `…` as `[...]`. A reviewer should be able to follow the citation and ctrl-F find each span.
+**Put the verbatim source excerpt in `quote:` on the `cite:` mapping** — see the mapping form in [DataPatches.md](DataPatches.md#notes--citations). Quote the source _verbatim_ and mark your own omissions with `[...]` — that's a literal square-bracket pair around three ASCII periods, not the `…` character; when a statement spans several passages, join the spans with `[...]` in source order. **Preserve the source's own characters**, including non-ASCII letters in foreign-language quotes (e.g. `Günter`, `gegründet`) — quotes are stored as UTF-8, so don't strip or transliterate them. **Quotes stay in the source's own language**: never translate a quote and don't add any language designation — display-side translation is the reader's tooling's job, and a translation or gloss you want to record is interpretation, which belongs in the `note:`. Only normalize stray _typography_ that's a copy-paste artifact rather than part of the quote: straighten smart quotes (`“ ”` → `"`) and spell out an ellipsis `…` as `[...]`. A reviewer should be able to follow the citation and ctrl-F find each span.
 
 ### Note only when there's something to explain
 
@@ -67,6 +76,17 @@ Reach for a different attribution only in these cases:
 **Only assert what a source supports.** If you can't point to evidence, leave the field unset rather than guess: an unset value reads as "unknown", a wrong claim reads as fact.
 
 Target-creating entries can be **scaffolding** — obvious records like Titles before Models or Locations before corporate-entity claims — and may omit per-entry `note:`/`cite:` when the patch `description:` says why they're needed. The substantive assignment that uses them still needs normal evidence.
+
+### Prefer primary sources
+
+**Cite primary sources over secondary ones.** A maker's own site, a period magazine scan, a government registry, an interview in the subject's own words, an original-research catalog hosting its own artifacts — these beat any site that compiles facts from elsewhere. Encyclopedias, databases and aggregators are **secondary**: Wikipedia, weblio, IPDB, OPDB, Kineticist, Pinside, company-registry aggregators (b2bhint, bisprofiles) and the like.
+
+Before quoting a secondary source, do both of these:
+
+1. **Web-search for the same fact from a primary source** and cite that instead.
+2. **Follow the secondary source's own citations** (a Wikipedia article's references, an IPDB note naming the magazine it read) to the primary material and cite that instead.
+
+Prioritize, don't forbid: when the primary is unreachable — a script-rendered page the cache can't capture, an unlinkable registry, trade press that would take issue-by-issue reading to locate — cite the secondary with a quote and say in the `note:` what the true primary is, so a later pass can upgrade the cite.
 
 ## Patch description
 
@@ -150,7 +170,7 @@ claims:
         - dan-forden: sound # one person, two roles → two credits
 ```
 
-- **Cite the credit.** Unlike aliases, credits are substantive facts and should carry evidence. An entry-level `cite:` attaches to every credit in the entry; if different credits come from different sources, split them across `changesets:` items, each with its own `cite:`. The pinball cataloguing standard is IPDB's credit block — cite it (`ipdb:NNNN`).
+- **Cite the credit.** Unlike aliases, credits are substantive facts and should carry evidence. An entry-level `cite:` attaches to every credit in the entry; if different credits come from different sources, split them across `changesets:` items, each with its own `cite:`. The pinball cataloguing standard is IPDB's credit block — cite it (`ipdb:NNNN`); credits are a deliberate exception to [Prefer primary sources](#prefer-primary-sources), since IPDB's credit blocks are the field's accepted reference.
 - **Person and role must resolve.** Both are public_ids that must already exist — in the seed, an earlier patch, or earlier in this same patch. A new `credit-role` is creatable with `create: true` (like `tag`/`theme`); create unfamiliar people the same way before crediting them.
 - **One person, many roles.** Repeat the person across list items — `dan-forden: software` and `dan-forden: sound` are two distinct credits, not a duplicate. The duplicate guard only rejects the _same_ `{person, role}` pair twice in one entry.
 - **Series vs model.** Put a credit on the `series.*` entry only when it genuinely applies to the series as a whole (e.g. an original designer credited across the line); a credit specific to one machine belongs on its `model.*` entry.
