@@ -17,7 +17,7 @@ from apps.citation.citation_types import (
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
-    scheme_bearing_source_types,
+    scheme_source_type_pairs,
 )
 from apps.citation.hosts import is_dns_host, normalize_host
 from apps.citation.psl import is_public_suffix
@@ -59,6 +59,19 @@ CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH = 253  # RFC 1035 DNS hostname limit
 CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG = (
     "That domain is already recognized by another citation source."
 )
+
+
+def _identifier_key_matches_scheme_type() -> models.Q:
+    """The CHECK condition pairing each ``identifier_key`` with its owning type.
+
+    Blank (a root without a scheme) or one of the registry's
+    ``(key, source_type)`` pairs — built in stable registration order so the
+    serialized constraint only changes when the registry does.
+    """
+    condition = models.Q(identifier_key="")
+    for key, source_type in scheme_source_type_pairs():
+        condition |= models.Q(identifier_key=key, source_type=source_type)
+    return condition
 
 
 class CitationSourceQuerySet(models.QuerySet["CitationSource"]):
@@ -244,12 +257,12 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
                 condition=models.Q(identifier_key="") | models.Q(parent__isnull=True),
                 name="citation_citationsource_identifier_key_requires_root",
             ),
-            # identifier_key only on scheme-bearing types (types with at least
-            # one registered scheme). Derived from the scheme registry, so a
-            # scheme for a new type flows into makemigrations.
+            # A scheme root's own type is its scheme's owning type
+            # (identifier_key='youtube' implies source_type='video'), so a
+            # hierarchy stays uniformly typed. Derived per key from the scheme
+            # registry, so a new scheme flows into makemigrations.
             models.CheckConstraint(
-                condition=models.Q(identifier_key="")
-                | models.Q(source_type__in=scheme_bearing_source_types()),
+                condition=_identifier_key_matches_scheme_type(),
                 name="citation_citationsource_identifier_key_scheme_type",
             ),
             # identifier lives on children only

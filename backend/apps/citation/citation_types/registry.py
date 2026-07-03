@@ -116,13 +116,14 @@ def identifier_key_choices() -> list[tuple[str, str]]:
     return [(spec.key, spec.label) for spec in SCHEME_SPECS.values()]
 
 
-def scheme_bearing_source_types() -> list[str]:
-    """The source types that own at least one registered scheme.
+def scheme_source_type_pairs() -> list[tuple[str, str]]:
+    """``(identifier_key, owning source_type)`` per scheme, registration order.
 
-    In ``SourceType`` definition order (stable, so the derived CHECK
-    constraint doesn't churn a migration when a scheme is added to an
-    already-bearing type). The value list behind the model's
-    "``identifier_key`` only on scheme-bearing types" CHECK.
+    The fact list behind the model's "a scheme root's type is its scheme's
+    owning type" CHECK: ``identifier_key='youtube'`` implies
+    ``source_type='video'``, so a hierarchy stays uniformly typed (a video
+    platform root can't be a web source minting video children). Ordering is
+    stable registration order so the derived constraint doesn't churn a
+    migration on unrelated edits.
     """
-    bearing = {spec.source_type for spec in SCHEME_SPECS.values()}
-    return [st.value for st in SourceType if st in bearing]
+    return [(spec.key, spec.source_type.value) for spec in SCHEME_SPECS.values()]

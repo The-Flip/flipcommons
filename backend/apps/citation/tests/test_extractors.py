@@ -34,7 +34,7 @@ VID = "dQw4w9WgXcQ"
 @pytest.fixture
 def youtube_root(db):
     return make_citation_source(
-        name="YouTube", source_type="web", identifier_key="youtube"
+        name="YouTube", source_type="video", identifier_key="youtube"
     )
 
 
@@ -100,7 +100,7 @@ class TestYouTubeRecognition:
     def test_url_recognized_with_existing_child(self, youtube_root):
         child = make_citation_source(
             name=f"YouTube #{VID}",
-            source_type="web",
+            source_type="video",
             parent=youtube_root,
             identifier=VID,
         )

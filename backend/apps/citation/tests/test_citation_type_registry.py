@@ -14,6 +14,7 @@ from apps.citation.citation_types import (
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
+    scheme_source_type_pairs,
 )
 from apps.citation.citation_types.registry import _assert_registry_coherent
 
@@ -57,6 +58,13 @@ class TestSchemeRegistry:
     def test_mapping_keys_match_spec_keys(self):
         for key, spec in SCHEME_SPECS.items():
             assert key == spec.key
+
+    def test_scheme_source_type_pairs_bind_key_to_owning_type(self):
+        assert scheme_source_type_pairs() == [
+            ("ipdb", "web"),
+            ("opdb", "web"),
+            ("youtube", "video"),
+        ]
 
 
 class TestCoherenceHelper:

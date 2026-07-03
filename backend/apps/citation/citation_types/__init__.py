@@ -19,7 +19,7 @@ from apps.citation.citation_types.registry import (
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
-    scheme_bearing_source_types,
+    scheme_source_type_pairs,
 )
 
 __all__ = [
@@ -34,5 +34,5 @@ __all__ = [
     "citation_type_spec",
     "identifier_key_choices",
     "identifier_key_values",
-    "scheme_bearing_source_types",
+    "scheme_source_type_pairs",
 ]
