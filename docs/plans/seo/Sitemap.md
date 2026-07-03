@@ -289,11 +289,11 @@ The sitemap endpoint reads `STATIC_LASTMOD` directly (see §3) and emits one `<u
 
 ## 3. Frontend — super-sitemap
 
-The frontend uses [`super-sitemap`](https://github.com/jasongitmail/super-sitemap) for XML rendering. It handles escaping, `lastmod` formatting, and sitemap-index splitting (when total URLs cross 50k, an index document points at `/sitemap1.xml`, `/sitemap2.xml`, etc. — which only works if the route file is named `sitemap[[page=integer]].xml` and passes `page: params.page`, per the super-sitemap README). Pin to `super-sitemap@^1.0.12` — zero runtime dependencies, healthy maintenance (~40k downloads/month, single-maintainer with consistent cadence over 18+ months).
+The frontend uses [`super-sitemap`](https://github.com/jasongitmail/super-sitemap) for XML rendering. It handles escaping, `lastmod` formatting, and sitemap-index splitting (when total URLs cross 50k, an index document points at `/sitemap1.xml`, `/sitemap2.xml`, etc. — which only works if the route file is named `sitemap[[page=integer]].xml` and passes `page: params.page`, per the super-sitemap README). Pin to `super-sitemap@^2.0.4`, imported through its SvelteKit adapter subpath (`super-sitemap/sveltekit`) — v2 dropped the bare package entry point in favor of per-framework adapters. Still zero runtime dependencies, healthy maintenance (~40k downloads/month, single-maintainer with consistent cadence over 18+ months).
 
 ### Route file: `sitemap[[page=integer]].xml`
 
-The route lives at `frontend/src/routes/sitemap[[page=integer]].xml/+server.ts` from day one, even though today's URL count is well under 50k. The optional `[[page=integer]]` rest-param lets the same endpoint serve `/sitemap.xml` (the index or single urlset) and `/sitemap1.xml`, `/sitemap2.xml`, etc. (per-page urlsets) without a second file. Renaming later when we cross 50k would mean either breaking the canonical `/sitemap.xml` URL or adding a redirect — both avoidable by getting the route shape right upfront. The `=integer` matcher (in `src/params/integer.ts`, pattern `^[1-9]\d*$` to match super-sitemap's own page validation at sitemap.js:105) keeps `/sitemapfoo.xml`, `/sitemap0.xml`, and `/sitemap007.xml` 404ing at the router instead of routing through and getting 400 from super-sitemap.
+The route lives at `frontend/src/routes/sitemap[[page=integer]].xml/+server.ts` from day one, even though today's URL count is well under 50k. The optional `[[page=integer]]` rest-param lets the same endpoint serve `/sitemap.xml` (the index or single urlset) and `/sitemap1.xml`, `/sitemap2.xml`, etc. (per-page urlsets) without a second file. Renaming later when we cross 50k would mean either breaking the canonical `/sitemap.xml` URL or adding a redirect — both avoidable by getting the route shape right upfront. The `=integer` matcher (in `src/params/integer.ts`, pattern `^[1-9]\d*$` to match super-sitemap's own page validation, `/^[1-9]\d*$/` in `core/internal/pagination.js`) keeps `/sitemapfoo.xml`, `/sitemap0.xml`, and `/sitemap007.xml` 404ing at the router instead of routing through and getting 400 from super-sitemap.
 
 ### Listed-indexable routes that consume a catalog entity's slug
 
@@ -314,7 +314,7 @@ The `satisfies` clause forces every key to be a real route ID and every value to
 
 ```ts
 // frontend/src/routes/sitemap[[page=integer]].xml/+server.ts
-import * as sitemap from "super-sitemap";
+import * as sitemap from "super-sitemap/sveltekit";
 import { SITE_ORIGIN } from "$env/static/private";
 import {
   allRoutes,
@@ -413,9 +413,11 @@ export const GET = async ({ fetch, url, request, params }) => {
 
 That's the whole endpoint. Adding a new entity type requires zero changes here — `GET /api/sitemap/` reports the new feed, `catalogRoutesByEntity()` finds its route IDs, the loop wires them into `paramValues`. Adding a new static page requires one line: an entry in `STATIC_LASTMOD`. Adding a new listed-indexable route that consumes a catalog entity's slug requires one line in `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE`.
 
+**super-sitemap v2 deltas (the shipped `+server.ts` is authoritative; this sketch is a simplified skeleton).** The v2 upgrade tightened several rules the sketch above glosses over, all handled in the real endpoint: (a) import from `super-sitemap/sveltekit`, not the bare package; (b) `excludeRoutePatterns` takes `RegExp` objects, not strings (see `routeIdToRegex` below); (c) v2 rejects a `paramValues` key on a param-less route, so the `directRoutesByEntity` predicate also drops `catalog-listing` routes (`/titles`, `/cabinets`, … stay static-discovered, with `<lastmod>` attached via a `listingLastmodByUrl` map keyed off each feed's `max_lastmod`); (d) v2 rejects both a missing key AND an empty array for a discovered dynamic route, so the loop sets `paramValues` only for routes that have entries and adds every zero-entry indexable dynamic route to `excludeRoutePatterns` for that request instead of seeding an empty array.
+
 ### Rest-param routes (`Location`)
 
-`Location.public_id_field = "location_path"` — a slash-separated path like `"manufacturer/title/region/site"` — and its SvelteKit route is `/locations/[...path]` (rest segment). The frontend passes `values: [e.slug]` to super-sitemap regardless of whether the route uses `[slug]` or `[...path]`. Verified against super-sitemap@1.0.12: the library substitutes via `String.prototype.replace` with no URL-encoding, so `values: ["a/b/c"]` produces `/locations/a/b/c` (literal slashes). No per-route shape branch is needed. A targeted regression test (Location with multi-segment path → expect `/locations/foo/bar`, not `/locations/foo%2Fbar`) belongs in §7 to catch a future library change.
+`Location.public_id_field = "location_path"` — a slash-separated path like `"manufacturer/title/region/site"` — and its SvelteKit route is `/locations/[...path]` (rest segment). The frontend passes `values: [e.slug]` to super-sitemap regardless of whether the route uses `[slug]` or `[...path]`. Verified against super-sitemap@2.0.4: the library substitutes without URL-encoding, so `values: ["a/b/c"]` produces `/locations/a/b/c` (literal slashes). No per-route shape branch is needed. A targeted regression test (Location with multi-segment path → expect `/locations/foo/bar`, not `/locations/foo%2Fbar`) belongs in §7 to catch a future library change.
 
 ### Tolerating unclassified routes
 
@@ -439,7 +441,7 @@ and call `safeIsIndexable` at both sites. Returning `false` is the safer default
 
 ### `routeIdToRegex` helper
 
-`excludeRoutePatterns` expects regex strings. SvelteKit route IDs include `[slug]`, `[...path]`, `[[optional]]`, and `(group)` shapes. super-sitemap matches `excludeRoutePatterns` against URLs (not route IDs), so the helper must (a) escape `/`, `.`, `[`, `]` literals, (b) translate dynamic segments to wildcard patterns, and (c) **strip `(group)` segments entirely** — the same transform `stripRouteGroups` applies when building `STATIC_LASTMOD_BY_URL`. Both consumers must agree on group handling, or a static route's exclusion regex won't line up with the URL super-sitemap emits for it from auto-discovery. Unit-test the helper directly with each shape and against the full `allRoutes()` snapshot — accidentally over- or under-matching here silently drops correct URLs from the sitemap or leaks non-indexable ones in.
+`excludeRoutePatterns` expects an array of `RegExp` objects — super-sitemap@2 throws on plain strings. SvelteKit route IDs include `[slug]`, `[...path]`, `[[optional]]`, and `(group)` shapes. Crucially, v2 matches `excludeRoutePatterns` against the route **key** — after `(group)` segments are stripped but _before_ dynamic params are interpolated — not against resolved URLs (this changed from v1). So the helper (a) **strips `(group)` segments** (the same `stripRouteGroups` transform used to build `STATIC_LASTMOD_BY_URL`), then (b) escapes regex metacharacters and (c) anchors both ends, leaving `[slug]`/`[...path]` literal — no wildcard translation, because super-sitemap feeds the un-interpolated key. Both consumers must agree on group handling, or a static route's exclusion pattern won't line up with the key super-sitemap emits for it from auto-discovery. Unit-test the helper directly with each shape and against the full `allRoutes()` snapshot (matching against `stripRouteGroups(id)`, as super-sitemap does) — accidentally over- or under-matching here silently drops correct URLs from the sitemap or leaks non-indexable ones in. (One gap: optional-param `[[x]]` routes are expanded into variants by super-sitemap before filtering, which `routeIdToRegex` does not mirror; harmless today because the only `[[…]]` route is this `+server` endpoint, which super-sitemap never discovers.)
 
 ### Why super-sitemap
 
@@ -449,7 +451,7 @@ and call `safeIsIndexable` at both sites. Returning `false` is the safer default
 
 ### Response caching
 
-The SvelteKit `/sitemap.xml` response sets `Cache-Control: public, max-age=3600` by passing explicit `headers` to `sitemap.response()` — super-sitemap@1.0.12's default is `max-age=0, s-maxage=3600` (sitemap.js:117), which we override because (a) we want clients/crawlers to actually cache, not re-validate every hit, and (b) `s-maxage` is a no-op today (Caddy isn't a caching reverse proxy and there's no CDN in front of it). The Django `/api/sitemap/` response sets the same TTL and is also cached in-process for an hour, so the staleness budget is bounded by the longer-lived layer. The two cache lifetimes don't compose multiplicatively — both are wall-clock from the moment each layer warms — but they make repeated crawler hits cheap regardless of layer.
+The SvelteKit `/sitemap.xml` response sets `Cache-Control: public, max-age=3600` by passing explicit `headers` to `sitemap.response()` — super-sitemap's default is `max-age=0, s-maxage=3600` (`getHeaders` in `core/internal/sitemap.js`), which we override because (a) we want clients/crawlers to actually cache, not re-validate every hit, and (b) `s-maxage` is a no-op today (Caddy isn't a caching reverse proxy and there's no CDN in front of it). The Django `/api/sitemap/` response sets the same TTL and is also cached in-process for an hour, so the staleness budget is bounded by the longer-lived layer. The two cache lifetimes don't compose multiplicatively — both are wall-clock from the moment each layer warms — but they make repeated crawler hits cheap regardless of layer.
 
 Add `s-maxage` back the same diff that introduces a shared cache layer.
 
@@ -559,7 +561,7 @@ Sitemap frontend endpoint + robots line (Commit D steps). `LISTED_INDEXABLE_ENTI
 #### Commit D — sitemap endpoint + robots line
 
 1. `frontend/src/lib/route-metadata.server.ts` — add `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE` with `/manufacturers/[slug]/systems → manufacturer`. Add parity test (key ∈ `SEARCH_ENGINE_INDEXABLE_ROUTE_IDS`; value ∈ `CatalogEntityKey`; key NOT a `catalog-*` route).
-2. `pnpm add super-sitemap@~1.0.12`.
+2. `pnpm add super-sitemap@~2.0.4` (import via the `super-sitemap/sveltekit` adapter subpath).
 3. `frontend/src/routes/sitemap[[page=integer]].xml/+server.ts` — note the optional-param route shape (sitemap-index support from day one). Wire super-sitemap to `/api/sitemap/` via `createServerClient` for catalog URLs, expand to route IDs via `catalogRoutesByEntity()` + `LISTED_INDEXABLE_ENTITY_SLUG_SOURCE`, apply `detail_excluded_slugs` only to `catalog-detail` classifications, attach static `lastmod` via `processPaths` reading `STATIC_LASTMOD_BY_URL`. Pass `page: params.page` to `sitemap.response()`. Use `safeIsIndexable` (per §3 "Tolerating unclassified routes"). Set `Cache-Control` on responses. Gate on `ALLOW_SEARCH_ENGINE_INDEXING` via `isDeploymentSearchEngineIndexable()`. Return 502 if the Django client returns an error.
 4. Implement and unit-test the `routeIdToRegex` helper plus `stripRouteGroups` (per §3).
 5. Append the `Sitemap:` line to `frontend/src/routes/robots.txt/+server.ts` (indexable-mode only, pointing to `${SITE_ORIGIN}/sitemap.xml` — the canonical entry point even with the `[[page]]` route shape). Extend the existing robots test.

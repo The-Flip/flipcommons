@@ -14,7 +14,7 @@
  */
 
 import { env } from '$env/dynamic/private';
-import * as sitemap from 'super-sitemap';
+import * as sitemap from 'super-sitemap/sveltekit';
 import type { RequestHandler } from './$types';
 import type { RouteId } from '$app/types';
 import {
@@ -64,17 +64,23 @@ function safeIsIndexable(id: RouteId): boolean {
 // requests. Compute the derived structures once at module load rather than
 // rebuilding inside every GET.
 
-// Route IDs that super-sitemap auto-discovers but must NOT emit. Matched
-// against route-ID form (with `[slug]` / `(group)` still present) per
-// super-sitemap's `filterRoutes` semantics — NOT URL form.
-const EXCLUDE_ROUTE_PATTERNS: readonly string[] = allRoutes()
+// Route IDs that super-sitemap auto-discovers but must NOT emit. In v2 these
+// are matched against the route key with `(group)` segments stripped but
+// dynamic params (`[slug]` / `[...path]`) still present — `routeIdToRegex`
+// builds a `RegExp` in exactly that shape. NOT URL form.
+const EXCLUDE_ROUTE_PATTERNS: readonly RegExp[] = allRoutes()
   .filter((id) => !safeIsIndexable(id))
   .map(routeIdToRegex);
 
 // catalog-* detail/edit-history/sources route IDs, grouped by entity.
-// `safeIsIndexable` filters to exactly the indexable catalog kinds.
+// `safeIsIndexable` filters to the indexable catalog kinds; the `catalog-listing`
+// exclusion drops the param-less listing routes (`/cabinets`, `/titles`, …) —
+// they carry no `[slug]`, so they belong in super-sitemap's static-route
+// auto-discovery, not `paramValues`. (super-sitemap@2 throws on a `paramValues`
+// key for a route that expects no params; v1 silently ignored it.) Listing
+// `<lastmod>` is still attached separately via `listingLastmodByUrl` below.
 const DIRECT_ROUTES_BY_ENTITY: ReadonlyMap<CatalogEntityKey, readonly RouteId[]> =
-  catalogRoutesByEntity((_cls, id) => safeIsIndexable(id));
+  catalogRoutesByEntity((cls, id) => cls.kind !== 'catalog-listing' && safeIsIndexable(id));
 
 // LISTED_INDEXABLE_ENTITY_SLUG_SOURCE inverted: kind → route IDs.
 const LISTED_ROUTES_BY_ENTITY: ReadonlyMap<CatalogEntityKey, readonly RouteId[]> = (() => {
@@ -97,6 +103,18 @@ const STATIC_LASTMOD_BY_URL: ReadonlyMap<string, string> = new Map(
   Object.entries(STATIC_LASTMOD).map(([routeId, lastmod]) => [stripRouteGroups(routeId), lastmod]),
 );
 
+// Every indexable dynamic catalog route (detail/edit-history/sources plus the
+// listed-slug-source routes), flattened. super-sitemap@2 requires each
+// discovered dynamic route to carry ≥1 `paramValue` — so any route in this set
+// that a given request produces no entries for must be excluded from discovery
+// instead (see GET). This is the complete set of indexable dynamic routes: the
+// static `EXCLUDE_ROUTE_PATTERNS` removes every non-indexable route, so any
+// dynamic route super-sitemap still discovers is one of these.
+const ALL_INDEXABLE_DYNAMIC_ROUTES: readonly RouteId[] = [
+  ...DIRECT_ROUTES_BY_ENTITY.values(),
+  ...LISTED_ROUTES_BY_ENTITY.values(),
+].flat();
+
 // ----------------------------------------------------------------------------
 
 export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
@@ -110,19 +128,12 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
     return new Response('Sitemap unavailable', { status: 502 });
   }
 
-  // Initialize every indexable dynamic route to an empty paramValues entry
-  // FIRST, then overlay feed data. super-sitemap throws on any dynamic route
-  // it discovers in the file tree that lacks a paramValues key — and a
-  // catalog kind with zero active rows produces no Django feed (the backend
-  // skips empty feeds), so the route would otherwise crash the response.
-  // Empty arrays are accepted and produce zero URLs.
+  // Populate `paramValues` from the feed, one entry per slug. super-sitemap@2
+  // rejects both a missing key AND an empty array for any dynamic route it
+  // discovers — so a route with zero entries this request (entity absent from
+  // the feed, or every slug excluded) is left OUT of `paramValues` here and
+  // excluded from discovery below, rather than seeded with an empty array.
   const paramValues: sitemap.ParamValues = {};
-  for (const routes of DIRECT_ROUTES_BY_ENTITY.values()) {
-    for (const id of routes) paramValues[id] = [];
-  }
-  for (const routes of LISTED_ROUTES_BY_ENTITY.values()) {
-    for (const id of routes) paramValues[id] = [];
-  }
 
   // Catalog listing pages (`/titles`, `/manufacturers`, …) are static routes,
   // so super-sitemap auto-discovers them but can't know their freshness. Key
@@ -149,12 +160,22 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
         isDetail && excluded.size
           ? feed.entries.filter((e) => !excluded.has(e.slug))
           : feed.entries;
+      // Leave zero-entry routes unset; they're excluded from discovery below.
+      if (entries.length === 0) continue;
       paramValues[id] = entries.map((e) => ({
         values: [e.slug],
         lastmod: e.lastmod,
       }));
     }
   }
+
+  // super-sitemap@2 throws on any discovered dynamic route without a
+  // (non-empty) `paramValue`. Every indexable dynamic route we didn't populate
+  // has zero URLs this request, so exclude it from discovery — matched, like
+  // EXCLUDE_ROUTE_PATTERNS, against the group-stripped route key.
+  const emptyRouteExclusions: RegExp[] = ALL_INDEXABLE_DYNAMIC_ROUTES.filter(
+    (id) => !(id in paramValues),
+  ).map(routeIdToRegex);
 
   // Same fallback pattern as `frontend/src/lib/api/server.ts`. Railway
   // builds enforce SITE_ORIGIN at build time via svelte.config.js; the
@@ -164,7 +185,7 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
   return sitemap.response({
     origin,
     page: params.page,
-    excludeRoutePatterns: [...EXCLUDE_ROUTE_PATTERNS],
+    excludeRoutePatterns: [...EXCLUDE_ROUTE_PATTERNS, ...emptyRouteExclusions],
     paramValues,
     // Static routes are auto-discovered by super-sitemap walking the routes
     // tree; `processPaths` attaches `<lastmod>` to each one from
@@ -175,7 +196,7 @@ export const GET: RequestHandler = async ({ fetch, url, request, params }) => {
         const lastmod = listingLastmodByUrl.get(p.path) ?? STATIC_LASTMOD_BY_URL.get(p.path);
         return lastmod ? { ...p, lastmod } : p;
       }),
-    // super-sitemap@1.0.12 defaults to `max-age=0, s-maxage=3600`. We
+    // super-sitemap defaults to `max-age=0, s-maxage=3600`. We
     // override because (a) there is no shared cache today (Caddy isn't a
     // caching reverse proxy, no CDN), so `s-maxage` is a no-op; (b) we want
     // clients/crawlers to actually cache the response for the TTL.
