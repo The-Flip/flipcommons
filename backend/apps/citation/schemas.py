@@ -10,7 +10,8 @@ citation types (``book`` / ``magazine`` / ``web`` / ``video``).
 Two derived notions recur across these schemas:
 
 - **abstract** — a source that is a container rather than a directly-citable
-  work: any source that has children, or a root ``web`` / ``magazine`` source.
+  work: any source that has children, or a parentless source of a container
+  type (``magazine`` / ``web`` / ``video`` — a publication, a site, a platform).
   The UI offers such a source's children for citation instead of the source
   itself.
 - **skip_locator** — a web *child* needs no locator (page/section/fragment)
@@ -96,7 +97,8 @@ class CitationSourceSearchSchema(Schema):
         False,
         description=(
             "Whether this source is a container rather than a directly-citable "
-            "work (it has children, or is a root web/magazine source); the UI "
+            "work (it has children, or is a parentless source of a container "
+            "type — magazine, web or video); the UI "
             "cites its children instead."
         ),
     )
@@ -107,7 +109,7 @@ class CitationSourceSearchSchema(Schema):
     identifier_key: str = Field(
         "",
         description=(
-            "For a root web source, the identifier scheme its children use "
+            "For a scheme root, the identifier scheme its children use "
             '("ipdb", "opdb" or "youtube"); an empty string otherwise.'
         ),
     )
@@ -377,7 +379,7 @@ class CitationSourceDetailSchema(Schema):
     description: str = Field(description="Free-text description, or an empty string.")
     identifier_key: str = Field(
         "",
-        description='For a root web source, the identifier scheme its children use ("ipdb", "opdb" or "youtube"); an empty string otherwise.',
+        description='For a scheme root, the identifier scheme its children use ("ipdb", "opdb" or "youtube"); an empty string otherwise.',
     )
     skip_locator: bool = Field(
         False,

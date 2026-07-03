@@ -29,7 +29,6 @@ from dataclasses import dataclass
 
 from apps.citation.citation_types.base import (
     CitationTypeSpec,
-    DeepLinkBuilder,
     LocatorContract,
     SchemeSpec,
     SourceType,
@@ -113,15 +112,27 @@ def normalize_start_time(raw: str) -> str | None:
 class VideoSchemeSpec(SchemeSpec):
     """The contract a video-platform scheme implements.
 
-    Narrows :class:`SchemeSpec` by *requiring* ``deep_link`` — a video scheme
-    must be able to jump to a start position ((identifier, start_seconds) →
-    URL); ``start_seconds_from_url`` stays optional for platforms whose URLs
-    carry no time parameter.
-    """
+    Adds no fields over :class:`SchemeSpec` today — real platforms diverge on
+    the time capabilities, so both stay optional. YouTube and Vimeo URLs can
+    seek (``deep_link`` + ``start_seconds_from_url``); TikTok URLs cannot,
+    and a video child without a jump URL still wants its timestamp locator —
+    the reader sees the ``(1:35)`` text beside the plain video link and
+    scrubs by hand. What must pair up is enforced by the conformance
+    harness: a scheme that *extracts* start-time hints from URLs must also
+    *build* them.
 
-    # Redeclared without a default: constructing a video scheme without a
-    # deep-link builder is a type error, not a registry-time surprise.
-    deep_link: DeepLinkBuilder
+    A video scheme may only recognize URL shapes that are **guaranteed to be
+    videos** (the type-homogeneity rule): recognition is syntactic, so a
+    shape that can hold other media would mint wrong-typed children. TikTok
+    qualifies because its paths discriminate (``/video/`` vs ``/photo/``);
+    X's ``/status/`` does not, which is why X is a *web* scheme.
+
+    The subclass survives as the registered per-type contract
+    (``scheme_spec_type``): a video scheme declares itself one by constructing
+    this type — so the registry's isinstance backstop still catches a spec
+    registered under the wrong type — and a future video-only requirement
+    lands here without touching :class:`SchemeSpec`.
+    """
 
 
 VIDEO = CitationTypeSpec(

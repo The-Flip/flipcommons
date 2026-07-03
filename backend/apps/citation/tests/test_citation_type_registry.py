@@ -65,6 +65,11 @@ class TestSchemeRegistry:
             ("ipdb", "web"),
             ("opdb", "web"),
             ("youtube", "video"),
+            ("vimeo", "video"),
+            ("tiktok", "video"),
+            # Web, not video: X is mixed media, and a scheme may only
+            # recognize URL shapes guaranteed to be its owning type.
+            ("x", "web"),
         ]
         # Named fields, not positional guessing — the point of the NamedTuple.
         assert bindings[2].identifier_key == "youtube"

@@ -109,18 +109,20 @@ class TestSchemeConformance:
     def test_scheme_implements_its_types_contract(self, spec):
         assert isinstance(spec, citation_type_spec(spec.source_type).scheme_spec_type)
 
-    def test_deep_link_present_iff_type_has_a_structured_locator(self, spec):
-        """A scheme of a value-carrying type (video) must be able to jump.
+    def test_start_seconds_extraction_implies_deep_link(self, spec):
+        """A scheme that reads seek positions from URLs must also build them.
 
-        The registry's isinstance check enforces the class contract; this pins
-        the semantic pairing so a future type/scheme combination can't ship a
-        parseable locator with nowhere to send it.
+        ``deep_link`` is optional overall — some platforms' URLs cannot seek
+        (TikTok) and their citations degrade to locator text beside the
+        plain canonical link. But a scheme whose URLs *carry* start times has
+        proven the platform can jump, so extracting the hint without a
+        ``deep_link`` builder would collect locators it then never honors at
+        read time.
         """
-        contract = citation_type_spec(spec.source_type).locator
-        if contract.parse_value is not None:
+        if spec.start_seconds_from_url is not None:
             assert spec.deep_link is not None, (
-                f"{spec.key}: its type parses locator values but the scheme "
-                f"has no deep_link builder"
+                f"{spec.key}: extracts start-time hints but has no deep_link "
+                f"builder to honor them"
             )
 
     def test_deep_link_output_is_well_formed_on_the_schemes_host(self, spec):

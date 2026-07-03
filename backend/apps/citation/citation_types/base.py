@@ -195,11 +195,15 @@ class SchemeSpec:
     value (see ``LocatorContract``), never locator text:
 
     - ``deep_link`` builds the URL that jumps to a structured position
-      (video: ``(identifier, start_seconds) -> watch URL with t=``). Types
-      whose locator carries a value require it via their ``scheme_spec_type``.
+      (video: ``(identifier, start_seconds) -> watch URL with t=``). Optional
+      even on value-carrying types — some platforms' URLs simply cannot seek
+      (TikTok); their citations render the locator text beside the plain
+      canonical link.
     - ``start_seconds_from_url`` pulls the structured position hint out of a
       recognized URL (``?t=95``), surfaced by ``extract`` as
-      ``SchemeMatch.start_seconds``.
+      ``SchemeMatch.start_seconds``. A scheme providing this must also provide
+      ``deep_link`` (conformance-enforced): URLs that carry seek positions
+      prove the platform can jump.
     """
 
     key: SchemeKey

@@ -25,7 +25,7 @@ from apps.citation.citation_types.base import (
     SchemeSpec,
     SourceType,
 )
-from apps.citation.citation_types.schemes import ipdb, opdb, youtube
+from apps.citation.citation_types.schemes import ipdb, opdb, tiktok, vimeo, x, youtube
 
 _CITATION_TYPES: Final[tuple[CitationTypeSpec, ...]] = (
     book.BOOK,
@@ -41,6 +41,9 @@ _SCHEMES: Final[tuple[SchemeSpec, ...]] = (
     ipdb.IPDB,
     opdb.OPDB,
     youtube.YOUTUBE,
+    vimeo.VIMEO,
+    tiktok.TIKTOK,
+    x.X_TWITTER,
 )
 
 CITATION_TYPE_SPECS: Final[Mapping[SourceType, CitationTypeSpec]] = {
@@ -78,10 +81,10 @@ def _assert_registry_coherent(
     orphaned = [spec.key for spec in schemes.values() if spec.source_type not in types]
     if orphaned:
         raise AssertionError(f"Scheme(s) with an unregistered source_type: {orphaned}")
-    # Each scheme implements its owning type's contract — the per-type Protocol
-    # (a video scheme must be a VideoSchemeSpec, which requires deep_link).
-    # mypy enforces this statically inside each scheme module; this is the
-    # runtime backstop for a spec registered under the wrong type.
+    # Each scheme implements its owning type's contract — the per-type spec
+    # class (a video scheme must be a VideoSchemeSpec). mypy enforces this
+    # statically inside each scheme module; this is the runtime backstop for a
+    # spec registered under the wrong type.
     nonconforming = [
         spec.key
         for spec in schemes.values()

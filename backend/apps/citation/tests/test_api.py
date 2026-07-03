@@ -393,6 +393,33 @@ class TestCreateCitationSource:
         assert data["links"] == []
         assert data["children"] == []
 
+    def test_cross_type_authored_child_rejected(self, client, user):
+        # Authored children extend their own work's hierarchy (an edition
+        # under its book, an issue under its magazine) — a book "edition"
+        # under a video or web root has no meaning and would bypass the
+        # parent type's minting rules.
+        client.force_login(user)
+        root = make_citation_source(
+            name="YouTube", source_type="video", identifier_key="youtube"
+        )
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "Bogus Edition", "source_type": "book", "parent_id": root.pk},
+        )
+        assert resp.status_code == 422
+        assert "hierarchy" in resp.json()["detail"]
+
+    def test_same_type_authored_child_accepted(self, client, user):
+        client.force_login(user)
+        book = make_citation_source(name="The Work", source_type="book")
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "Second Edition", "source_type": "book", "parent_id": book.pk},
+        )
+        assert resp.status_code == 201
+
     def test_full_create(self, client, user):
         client.force_login(user)
         resp = _post(
@@ -1570,6 +1597,39 @@ class TestCreateCitationSourcePage:
         assert resp.status_code == 201
         child = CitationSource.objects.get(pk=resp.json()["id"])
         assert child.name == "https://site.example/x"
+
+    def test_scheme_record_url_rejected(self, client, user):
+        # A video URL through pages/ would fork the video's identity into a
+        # plain web child, bypassing the scheme's dedup, canonical URL and
+        # locator behavior — same rule as cite-url. Registry-based, so it
+        # holds even when the scheme's root isn't the chosen parent.
+        client.force_login(user)
+        root = make_citation_source(
+            name="YouTube", source_type="video", identifier_key="youtube"
+        )
+        resp = _post(
+            client,
+            self._url(root.pk),
+            {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+        )
+        assert resp.status_code == 422
+        assert "scheme identifier" in resp.json()["detail"]
+
+    def test_non_record_page_under_scheme_root_is_fine(self, client, user):
+        # Type-blind nesting doctrine: a youtube.com *page* (a channel, terms,
+        # a playlist) is a web page, not a video — it nests as a web child
+        # under the platform root, URL-as-locator.
+        client.force_login(user)
+        root = make_citation_source(
+            name="YouTube", source_type="video", identifier_key="youtube"
+        )
+        resp = _post(
+            client,
+            self._url(root.pk),
+            {"url": "https://www.youtube.com/t/terms", "page_name": "Terms"},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["skip_locator"] is True
 
     def test_accepts_page_under_magazine_root(self, client, user):
         # pages/ doesn't restrict the parent's type — a web page under a

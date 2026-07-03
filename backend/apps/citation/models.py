@@ -305,10 +305,11 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
 
         A **per-request display hint, not an enforced write invariant**:
         abstract when it has children (prefer a specific child) or it's a
-        parentless web/magazine root (a site/publication container). "Don't
+        parentless root of a container type — magazine, web or video (a
+        publication, a site, a platform). "Don't
         cite a web root" is handled structurally, not by a citation-time guard:
         URL recognition always resolves to a child under the matched root, so an
-        abstract web/magazine root is never the cited record. A standalone book
+        abstract container root is never the cited record. A standalone book
         stays a valid cite target whether or not it gains editions, so
         abstractness is deliberately *not* used to reject a target.
 

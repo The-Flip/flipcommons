@@ -17,11 +17,11 @@ fails at type-check rather than at ``.objects.create`` runtime.
 from __future__ import annotations
 
 import uuid
-from typing import Literal
+from typing import Literal, get_args
 
 from apps.accounts.test_factories import default_actor
 from apps.actors.models import Actor
-from apps.citation.citation_types import CitationSourceTypeValue
+from apps.citation.citation_types import CitationSourceTypeValue, identifier_key_values
 from apps.citation.models import (
     CitationSource,
     CitationSourceLink,
@@ -33,7 +33,26 @@ from apps.citation.models import (
 # type-check. Constraint tests that need an invalid value build the model
 # directly. ``identifier_key`` also permits "" (blank = a root without a scheme).
 type LinkTypeValue = Literal["homepage", "catalog", "publisher", "reference", "archive"]
-type IdentifierKeyValue = Literal["", "ipdb", "opdb", "youtube"]
+type IdentifierKeyValue = Literal["", "ipdb", "opdb", "youtube", "vimeo", "tiktok", "x"]
+
+
+def _assert_identifier_key_literal_current() -> None:
+    """Raise at import if ``IdentifierKeyValue`` drifts from the scheme registry.
+
+    A Literal can't be derived from the registry, so this hand-mirrored list
+    needs the same import-time honesty check ``CitationSourceTypeValue`` gets
+    in ``citation_types.base`` — otherwise a newly registered scheme is
+    unusable in test factories until someone trips over the arg-type error.
+    """
+    literal = set(get_args(IdentifierKeyValue.__value__))
+    if literal != {"", *identifier_key_values()}:
+        raise AssertionError(
+            f"IdentifierKeyValue {sorted(literal)} != scheme registry "
+            f"{sorted(identifier_key_values())} + ''"
+        )
+
+
+_assert_identifier_key_literal_current()
 
 
 def make_citation_source(

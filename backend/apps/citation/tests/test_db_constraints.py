@@ -89,7 +89,14 @@ class TestCitationSourceIdentifierKey:
 
     @pytest.mark.parametrize(
         ("key", "source_type"),
-        [("ipdb", "web"), ("opdb", "web"), ("youtube", "video")],
+        [
+            ("ipdb", "web"),
+            ("opdb", "web"),
+            ("youtube", "video"),
+            ("vimeo", "video"),
+            ("tiktok", "video"),
+            ("x", "web"),  # mixed-media platform — posts mint as web pages
+        ],
     )
     def test_key_on_its_owning_type_accepted(self, db, key, source_type):
         cs = make_citation_source(
