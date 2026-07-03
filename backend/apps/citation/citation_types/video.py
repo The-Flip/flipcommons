@@ -25,14 +25,15 @@ units two-digit, hours segment only when ≥ 1 hour — ``0:57``, ``1:35``,
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
 
 from apps.citation.citation_types.base import (
     CitationTypeSpec,
+    DeepLinkBuilder,
     LocatorContract,
     SchemeSpec,
     SourceType,
+    StartSeconds,
 )
 
 # The deliberate cap on a start time: 100 hours. Beyond it a bare-seconds
@@ -48,7 +49,7 @@ _UNITS_RE = re.compile(r"\A(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?\Z", re.IGNORECASE)
 _BARE_SECONDS_RE = re.compile(r"\A\d+\Z")
 
 
-def parse_start_time(raw: str) -> int | None:
+def parse_start_time(raw: str) -> StartSeconds | None:
     """Parse a start-time locator input into whole seconds, or ``None``.
 
     The single grammar for every accepted form; surrounding whitespace is
@@ -65,7 +66,7 @@ def parse_start_time(raw: str) -> int | None:
     return seconds
 
 
-def _parse_bare_or_colon(text: str) -> int | None:
+def _parse_bare_or_colon(text: str) -> StartSeconds | None:
     if _BARE_SECONDS_RE.match(text):
         return int(text)
     m = _COLON_RE.match(text)
@@ -83,7 +84,7 @@ def _parse_bare_or_colon(text: str) -> int | None:
     return hours * 3600 + minutes * 60 + secs
 
 
-def _parse_units(text: str) -> int | None:
+def _parse_units(text: str) -> StartSeconds | None:
     m = _UNITS_RE.match(text)
     if m is None or not any(m.groups()):
         return None
@@ -91,7 +92,7 @@ def _parse_units(text: str) -> int | None:
     return hours * 3600 + minutes * 60 + secs
 
 
-def format_start_time(seconds: int) -> str:
+def format_start_time(seconds: StartSeconds) -> str:
     """Format whole *seconds* as the canonical human-readable start time."""
     hours, remainder = divmod(seconds, 3600)
     minutes, secs = divmod(remainder, 60)
@@ -120,7 +121,7 @@ class VideoSchemeSpec(SchemeSpec):
 
     # Redeclared without a default: constructing a video scheme without a
     # deep-link builder is a type error, not a registry-time surprise.
-    deep_link: Callable[[str, int], str]
+    deep_link: DeepLinkBuilder
 
 
 VIDEO = CitationTypeSpec(

@@ -14,7 +14,7 @@ from apps.citation.citation_types import (
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
-    scheme_source_type_pairs,
+    scheme_bindings,
 )
 from apps.citation.citation_types.registry import _assert_registry_coherent
 
@@ -59,12 +59,16 @@ class TestSchemeRegistry:
         for key, spec in SCHEME_SPECS.items():
             assert key == spec.key
 
-    def test_scheme_source_type_pairs_bind_key_to_owning_type(self):
-        assert scheme_source_type_pairs() == [
+    def test_scheme_bindings_bind_key_to_owning_type(self):
+        bindings = scheme_bindings()
+        assert bindings == [
             ("ipdb", "web"),
             ("opdb", "web"),
             ("youtube", "video"),
         ]
+        # Named fields, not positional guessing — the point of the NamedTuple.
+        assert bindings[2].identifier_key == "youtube"
+        assert bindings[2].source_type is SourceType.VIDEO
 
 
 class TestCoherenceHelper:

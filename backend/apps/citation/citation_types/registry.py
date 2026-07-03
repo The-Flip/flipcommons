@@ -16,10 +16,15 @@ that was written but never registered as soon as its key is used anywhere.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Final
+from typing import Final, NamedTuple
 
 from apps.citation.citation_types import book, magazine, video, web
-from apps.citation.citation_types.base import CitationTypeSpec, SchemeSpec, SourceType
+from apps.citation.citation_types.base import (
+    CitationTypeSpec,
+    SchemeKey,
+    SchemeSpec,
+    SourceType,
+)
 from apps.citation.citation_types.schemes import ipdb, opdb, youtube
 
 _CITATION_TYPES: Final[tuple[CitationTypeSpec, ...]] = (
@@ -42,7 +47,9 @@ CITATION_TYPE_SPECS: Final[Mapping[SourceType, CitationTypeSpec]] = {
     spec.source_type: spec for spec in _CITATION_TYPES
 }
 
-SCHEME_SPECS: Final[Mapping[str, SchemeSpec]] = {spec.key: spec for spec in _SCHEMES}
+SCHEME_SPECS: Final[Mapping[SchemeKey, SchemeSpec]] = {
+    spec.key: spec for spec in _SCHEMES
+}
 
 
 def _assert_registry_coherent(
@@ -102,7 +109,7 @@ def citation_type_spec(source_type: str | SourceType) -> CitationTypeSpec:
     return CITATION_TYPE_SPECS[SourceType(source_type)]
 
 
-def identifier_key_values() -> list[str]:
+def identifier_key_values() -> list[SchemeKey]:
     """The registered scheme keys, in registration order.
 
     The value list behind the ``identifier_key`` CHECK constraint (with ``""``
@@ -111,13 +118,28 @@ def identifier_key_values() -> list[str]:
     return list(SCHEME_SPECS)
 
 
-def identifier_key_choices() -> list[tuple[str, str]]:
-    """``(value, label)`` choices for the ``identifier_key`` field."""
-    return [(spec.key, spec.label) for spec in SCHEME_SPECS.values()]
+class SchemeChoice(NamedTuple):
+    """One ``choices`` entry for the ``identifier_key`` field."""
+
+    value: SchemeKey
+    label: str
 
 
-def scheme_source_type_pairs() -> list[tuple[str, str]]:
-    """``(identifier_key, owning source_type)`` per scheme, registration order.
+def identifier_key_choices() -> list[SchemeChoice]:
+    """Choices for the ``identifier_key`` field (a ``SchemeChoice`` is a
+    2-tuple, so Django's ``choices=`` accepts the list as-is)."""
+    return [SchemeChoice(spec.key, spec.label) for spec in SCHEME_SPECS.values()]
+
+
+class SchemeBinding(NamedTuple):
+    """A scheme key bound to its owning citation type."""
+
+    identifier_key: SchemeKey
+    source_type: SourceType
+
+
+def scheme_bindings() -> list[SchemeBinding]:
+    """Each scheme's ``(identifier_key, owning source_type)``, registration order.
 
     The fact list behind the model's "a scheme root's type is its scheme's
     owning type" CHECK: ``identifier_key='youtube'`` implies
@@ -126,4 +148,4 @@ def scheme_source_type_pairs() -> list[tuple[str, str]]:
     stable registration order so the derived constraint doesn't churn a
     migration on unrelated edits.
     """
-    return [(spec.key, spec.source_type.value) for spec in SCHEME_SPECS.values()]
+    return [SchemeBinding(spec.key, spec.source_type) for spec in SCHEME_SPECS.values()]

@@ -10,18 +10,22 @@ from apps.citation.citation_types.base import (
     CitationTypeSpec,
     LocatorContract,
     RootSeed,
+    SchemeKey,
     SchemeMatch,
     SchemeSpec,
     SourceType,
+    StartSeconds,
     citation_source_type,
 )
 from apps.citation.citation_types.registry import (
     CITATION_TYPE_SPECS,
     SCHEME_SPECS,
+    SchemeBinding,
+    SchemeChoice,
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
-    scheme_source_type_pairs,
+    scheme_bindings,
 )
 
 __all__ = [
@@ -30,13 +34,17 @@ __all__ = [
     "CitationTypeSpec",
     "LocatorContract",
     "RootSeed",
+    "SchemeBinding",
+    "SchemeChoice",
+    "SchemeKey",
     "SchemeMatch",
     "SchemeSpec",
     "SourceType",
+    "StartSeconds",
     "CitationSourceTypeValue",
     "citation_type_spec",
     "identifier_key_choices",
     "identifier_key_values",
-    "scheme_source_type_pairs",
+    "scheme_bindings",
     "citation_source_type",
 ]

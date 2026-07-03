@@ -17,7 +17,7 @@ from apps.citation.citation_types import (
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
-    scheme_source_type_pairs,
+    scheme_bindings,
 )
 from apps.citation.hosts import is_dns_host, normalize_host
 from apps.citation.psl import is_public_suffix
@@ -69,8 +69,10 @@ def _identifier_key_matches_scheme_type() -> models.Q:
     serialized constraint only changes when the registry does.
     """
     condition = models.Q(identifier_key="")
-    for key, source_type in scheme_source_type_pairs():
-        condition |= models.Q(identifier_key=key, source_type=source_type)
+    for binding in scheme_bindings():
+        condition |= models.Q(
+            identifier_key=binding.identifier_key, source_type=binding.source_type
+        )
     return condition
 
 

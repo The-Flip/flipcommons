@@ -32,11 +32,19 @@ queries, instance writes) stays in core code that consumes these specs.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, TypeGuard, get_args
+from typing import Literal, Protocol, TypeGuard, get_args
 
 from django.db import models
+
+# Semantic aliases (intent only, no checker safety — the ``Slug = str``
+# pattern from docs/Python.md). ``SchemeKey`` is a scheme's ``identifier_key``
+# value ("youtube"); ``StartSeconds`` is a video start position in whole
+# seconds — the one structured locator value that currently exists, shared by
+# the locator bridge (parse/format) and scheme deep links so the "type owns
+# the value, scheme consumes it" symmetry is visible in the signatures.
+SchemeKey = str
+StartSeconds = int
 
 
 class SourceType(models.TextChoices):
@@ -88,6 +96,50 @@ def citation_source_type(raw: str) -> CitationSourceTypeValue:
     raise ValueError(f"Unknown source_type {raw!r}")
 
 
+# ---------------------------------------------------------------------------
+# Callback contracts. Named Protocols (not bare ``Callable[...]``) so a plugin
+# author sees what each argument means in the signature itself — these fields
+# ARE the third-party API. Params are positional-only, so implementations may
+# use their own semantic names (``video_id``, ``machine_id``).
+# ---------------------------------------------------------------------------
+
+
+class CanonicalUrlBuilder(Protocol):
+    """Builds the one URL every recognized shape of an identifier collapses to."""
+
+    def __call__(self, identifier: str, /) -> str: ...
+
+
+class DeepLinkBuilder(Protocol):
+    """Builds the URL that jumps to a structured position within a work."""
+
+    def __call__(self, identifier: str, start_seconds: StartSeconds, /) -> str: ...
+
+
+class StartSecondsExtractor(Protocol):
+    """Pulls the structured start-position hint out of a recognized URL."""
+
+    def __call__(self, url: str, /) -> StartSeconds | None: ...
+
+
+class LocatorNormalizer(Protocol):
+    """Validates + canonicalizes a non-empty locator; ``None`` means invalid."""
+
+    def __call__(self, locator: str, /) -> str | None: ...
+
+
+class LocatorValueParser(Protocol):
+    """Parses canonical locator text to the type's structured value."""
+
+    def __call__(self, locator: str, /) -> StartSeconds | None: ...
+
+
+class LocatorValueFormatter(Protocol):
+    """Formats the type's structured value as canonical locator text."""
+
+    def __call__(self, value: StartSeconds, /) -> str: ...
+
+
 @dataclass(frozen=True, slots=True)
 class SchemeMatch:
     """A URL recognized by a scheme: the identifier, plus structured hints.
@@ -99,7 +151,7 @@ class SchemeMatch:
     """
 
     identifier: str
-    start_seconds: int | None = None
+    start_seconds: StartSeconds | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,16 +202,16 @@ class SchemeSpec:
       ``SchemeMatch.start_seconds``.
     """
 
-    key: str
+    key: SchemeKey
     label: str
     source_type: SourceType
     url_pattern: re.Pattern[str]
     id_pattern: re.Pattern[str]
-    canonical_url: Callable[[str], str]
+    canonical_url: CanonicalUrlBuilder
     example_identifier: str
     root_seed: RootSeed
-    deep_link: Callable[[str, int], str] | None = None
-    start_seconds_from_url: Callable[[str], int | None] | None = None
+    deep_link: DeepLinkBuilder | None = None
+    start_seconds_from_url: StartSecondsExtractor | None = None
 
     def extract(self, url: str) -> SchemeMatch | None:
         """Recognize *url* as one of this scheme's shapes, or ``None``."""
@@ -221,9 +273,9 @@ class LocatorContract:
 
     kind: LocatorKind
     placeholder: str
-    normalize: Callable[[str], str | None] = _freeform_normalize
-    parse_value: Callable[[str], int | None] | None = None
-    format_value: Callable[[int], str] | None = None
+    normalize: LocatorNormalizer = _freeform_normalize
+    parse_value: LocatorValueParser | None = None
+    format_value: LocatorValueFormatter | None = None
     invalid_message: str = ""
 
 
