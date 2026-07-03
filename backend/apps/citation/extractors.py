@@ -1,24 +1,25 @@
-"""Backend extractor registry for citation source URL recognition.
-
-Each extractor is keyed by an ``identifier_key`` value and knows how to
-parse a URL into a structured identifier and build a canonical URL from
-an identifier.
+"""Citation source URL recognition and get-or-create write helpers.
 
 The ``recognize_url`` function is the main entry point: given a raw URL
-it tries extractors first, then checks for an exact child-link match,
-then falls back to recognition-host matching via ``CitationSourceRootDomain``.
+it tries the registered identifier schemes first, then checks for an exact
+child-link match, then falls back to recognition-host matching via
+``CitationSourceRootDomain``.
+
+The schemes themselves (URL patterns, id grammars, canonical URLs) are
+plugins — see ``apps.citation.citation_types``. This module is the core
+consumer: it owns every DB touch (lookups, child minting) so scheme specs
+stay pure.
 """
 
 from __future__ import annotations
 
-import re
-from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from django.db import transaction
 
+from apps.citation.citation_types import SCHEME_SPECS
 from apps.citation.hosts import (
     Host,
     RootDomainMatch,
@@ -36,67 +37,9 @@ from apps.citation.models import (
 from apps.core.types import CitationSourceId
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from apps.actors.models import Actor
-
-
-@dataclass(frozen=True)
-class Extractor:
-    """Knows how to parse and build URLs for one identifier scheme."""
-
-    source_name: str
-    url_pattern: re.Pattern[str]
-    id_pattern: re.Pattern[str]
-    build_url: Callable[[str], str]
-
-    def extract(self, url: str) -> str | None:
-        """Return the identifier from *url*, or ``None``."""
-        m = self.url_pattern.search(url)
-        return m.group(1) if m else None
-
-    def normalize(self, raw: str) -> str | None:
-        """Extract a valid identifier from a URL or bare value, or ``None``.
-
-        Tries the URL pattern first, then validates as a bare identifier.
-        """
-        m = self.url_pattern.search(raw)
-        if m:
-            return m.group(1)
-        return raw if self.id_pattern.fullmatch(raw) else None
-
-
-EXTRACTORS: dict[str, Extractor] = {
-    "ipdb": Extractor(
-        source_name="IPDB",
-        url_pattern=re.compile(r"https?://(?:www\.)?ipdb\.org/machine\.cgi\?id=(\d+)"),
-        id_pattern=re.compile(r"\d+"),
-        build_url=lambda id: f"https://www.ipdb.org/machine.cgi?id={id}",
-    ),
-    "opdb": Extractor(
-        source_name="OPDB",
-        url_pattern=re.compile(
-            r"https?://(?:www\.)?opdb\.org/machines/([A-Za-z0-9_-]+)"
-        ),
-        id_pattern=re.compile(r"[A-Za-z0-9_-]+"),
-        build_url=lambda id: f"https://opdb.org/machines/{id}",
-    ),
-    "youtube": Extractor(
-        source_name="YouTube",
-        # YouTube's one 11-char video id, reached through any URL shape
-        # (watch?v=, youtu.be/, /shorts/, /embed/, /live/, mobile `m.`) plus
-        # trailing params — all collapse to one canonical child. Host-bound on
-        # `https?://<host>` like the others so `notyoutube.com` can't match, and
-        # `(?![A-Za-z0-9_-])` pins the id to 11 chars so a 12-char typo fails
-        # instead of truncating to a wrong-but-valid-looking id.
-        url_pattern=re.compile(
-            r"https?://(?:"
-            r"(?:www\.|m\.)?youtube\.com/(?:watch\?(?:[^\s]*&)?v=|embed/|shorts/|live/)"
-            r"|(?:www\.)?youtu\.be/"
-            r")([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])"
-        ),
-        id_pattern=re.compile(r"[A-Za-z0-9_-]{11}"),
-        build_url=lambda id: f"https://www.youtube.com/watch?v={id}",
-    ),
-}
 
 
 @dataclass
@@ -130,22 +73,23 @@ class Recognition:
 type Recognizer = Callable[[str], Recognition | None]
 
 
-def _recognize_by_extractor(url: str) -> Recognition | None:
-    """Recognizer 1 — scheme-extractor match.
+def _recognize_by_scheme(url: str) -> Recognition | None:
+    """Recognizer 1 — identifier-scheme match.
 
-    Try every extractor: the first whose pattern extracts an identifier
-    *and* whose scheme has a seeded root wins — identify the scheme parent,
-    then look up an existing child by that identifier. An extractor that
+    Try every registered scheme: the first whose pattern extracts an
+    identifier *and* that has a seeded root wins — identify the scheme parent,
+    then look up an existing child by that identifier. A scheme that
     matches but whose root isn't seeded is skipped (``continue``), not a
-    miss: a later extractor may still own a seeded root. Returns parent +
+    miss: a later scheme may still own a seeded root. Returns parent +
     identifier, with the child when one already exists.
     """
-    for key, extractor in EXTRACTORS.items():
-        extracted_id = extractor.extract(url)
-        if extracted_id is None:
+    for key, spec in SCHEME_SPECS.items():
+        match = spec.extract(url)
+        if match is None:
             continue
+        extracted_id = match.identifier
 
-        # Find the parent source that uses this extractor.
+        # Find the parent source that uses this scheme.
         parent = (
             CitationSource.objects.filter(identifier_key=key)
             .roots()
@@ -269,12 +213,12 @@ def _recognize_by_host(url: str) -> Recognition | None:
 
 
 # The ordered recognizer pipeline: each tries one resolution mechanism over the
-# shared EXTRACTORS + host machinery; the first to return a Recognition wins.
-# Resolution order is load-bearing (scheme identity before exact link before
-# host suffix) — see each recognizer's docstring. A new pre-processing step
-# (archive-peel, DOI) becomes one more entry here.
+# shared scheme-registry + host machinery; the first to return a Recognition
+# wins. Resolution order is load-bearing (scheme identity before exact link
+# before host suffix) — see each recognizer's docstring. A new pre-processing
+# step (archive-peel, DOI) becomes one more entry here.
 _RECOGNIZERS: tuple[Recognizer, ...] = (
-    _recognize_by_extractor,
+    _recognize_by_scheme,
     _recognize_by_child_link,
     _recognize_by_host,
 )
@@ -283,7 +227,7 @@ _RECOGNIZERS: tuple[Recognizer, ...] = (
 def recognize_url(url: str) -> Recognition | None:
     """Try to recognize a pasted URL against known sources.
 
-    Runs the ordered ``_RECOGNIZERS`` pipeline — scheme extractor, then exact
+    Runs the ordered ``_RECOGNIZERS`` pipeline — identifier scheme, then exact
     child-link, then host suffix — and returns the first non-``None``
     ``Recognition``, or ``None`` if every recognizer abstains.
     """
@@ -355,7 +299,7 @@ def get_or_create_scheme_child(
 ) -> CitationSource:
     """Get-or-create the ``(root, identifier)`` scheme child under *root*.
 
-    *identifier* is normalized through the root's extractor, so a raw URL and a
+    *identifier* is normalized through the root's scheme spec, so a raw URL and a
     bare id resolve to the same child. Idempotent — re-citing an identifier
     reuses its child. The child carries the ``{root.name} #{id}`` name and a
     canonical ``reference`` link, ``full_clean``d on first create.
@@ -364,13 +308,13 @@ def get_or_create_scheme_child(
     non-null). Raises ``ValueError`` if *root* carries no known
     ``identifier_key`` scheme or the identifier is invalid for it.
     """
-    extractor = EXTRACTORS.get(root.identifier_key)
-    if extractor is None:
+    spec = SCHEME_SPECS.get(root.identifier_key)
+    if spec is None:
         raise ValueError(
             f"Root source {root.pk} has no known identifier scheme "
             f"({root.identifier_key!r})"
         )
-    normalized = extractor.normalize(identifier)
+    normalized = spec.normalize(identifier)
     if normalized is None:
         raise ValueError(f"Invalid {root.identifier_key} identifier {identifier!r}")
 
@@ -383,7 +327,9 @@ def get_or_create_scheme_child(
     with transaction.atomic():
         candidate = CitationSource(
             name=f"{root.name} #{normalized}",
-            source_type=CitationSource.SourceType.WEB,
+            # The scheme declares what its children mint as — a web scheme
+            # mints web pages, a (future) video scheme mints videos.
+            source_type=spec.source_type,
             parent=root,
             identifier=normalized,
             created_by=created_by,
@@ -404,7 +350,7 @@ def get_or_create_scheme_child(
             link = CitationSourceLink(
                 citation_source=source,
                 link_type=CitationSourceLink.LinkType.REFERENCE,
-                url=extractor.build_url(normalized),
+                url=spec.canonical_url(normalized),
                 created_by=created_by,
                 updated_by=created_by,
             )
@@ -427,7 +373,7 @@ def get_or_create_external_source(
     for *scheme* is seeded, and ``ValueError`` if the scheme or identifier is
     invalid.
     """
-    if scheme not in EXTRACTORS:
+    if scheme not in SCHEME_SPECS:
         raise ValueError(f"Unknown citation scheme {scheme!r}")
 
     root = (
@@ -457,7 +403,7 @@ def get_or_create_web_source(
     empty or equal to ``url``.
 
     For citing a web page (forum post, archive scan, manufacturer page) that no
-    extractor scheme covers. Routes through ``recognize_url`` so the URL
+    identifier scheme covers. Routes through ``recognize_url`` so the URL
     resolves to a *known* source:
 
     * an existing *child* that already covers the URL (exact link or scheme

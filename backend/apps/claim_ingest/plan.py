@@ -76,7 +76,7 @@ class WebCitationRef:
 class SchemeCitationRef:
     """The scheme form of a :data:`CitationRef`.
 
-    ``scheme`` is an ``apps.citation.extractors.EXTRACTORS`` key (e.g.
+    ``scheme`` is a registered ``apps.citation.citation_types`` scheme key (e.g.
     ``"ipdb"``) and ``identifier`` is the normalized in-scheme id (e.g.
     ``"4443"``); resolved to a ``CitationSource`` at apply time via
     ``get_or_create_external_source`` (no DB access to construct one).

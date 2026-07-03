@@ -1,4 +1,4 @@
-"""Tests for the identifier-scheme extractors (``EXTRACTORS`` registry).
+"""Tests for URL recognition against the registered identifier schemes.
 
 Focused on YouTube, whose video id is reachable through many URL shapes —
 the regex collapsing them all to one canonical 11-char id is the risky part.
@@ -8,8 +8,8 @@ import pytest
 from django.core.exceptions import ValidationError
 
 from apps.accounts.test_factories import default_actor
+from apps.citation.citation_types import SCHEME_SPECS
 from apps.citation.extractors import (
-    EXTRACTORS,
     create_web_child,
     get_or_create_external_source,
     get_or_create_scheme_child,
@@ -41,7 +41,7 @@ def youtube_root(db):
 class TestYouTubeNormalize:
     """``normalize`` accepts any URL shape or a bare id, returning the id."""
 
-    yt = EXTRACTORS["youtube"]
+    yt = SCHEME_SPECS["youtube"]
 
     @pytest.mark.parametrize(
         "raw",
@@ -84,7 +84,7 @@ class TestYouTubeNormalize:
         assert self.yt.normalize(raw) is None
 
     def test_build_url_is_canonical_watch(self):
-        assert self.yt.build_url(VID) == f"https://www.youtube.com/watch?v={VID}"
+        assert self.yt.canonical_url(VID) == f"https://www.youtube.com/watch?v={VID}"
 
 
 class TestYouTubeRecognition:

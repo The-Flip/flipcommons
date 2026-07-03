@@ -12,9 +12,14 @@ from django.db.models.functions import Length, Now
 from django.utils.crypto import get_random_string
 
 from apps.actors.models import ActorAttributedModel
+from apps.citation.citation_types import (
+    SourceType,
+    citation_type_spec,
+    identifier_key_choices,
+    identifier_key_values,
+)
 from apps.citation.hosts import is_dns_host, normalize_host
 from apps.citation.psl import is_public_suffix
-from apps.citation.source_type_traits import SourceType, source_type_traits
 from apps.core.models import (
     BoundedTextField,
     TimeStampedModel,
@@ -84,10 +89,10 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
     root_domains: models.Manager[CitationSourceRootDomain]
     parent_id: int | None
 
-    # ``SourceType`` and its per-type trait table live in
-    # ``source_type_traits.py`` (a dependency-free leaf, so ``models`` imports it
-    # without a cycle); re-exported here so ``CitationSource.SourceType`` stays
-    # the canonical handle.
+    # ``SourceType`` and the per-type/per-scheme specs live in the
+    # ``citation_types`` package (a dependency-free leaf, so ``models`` imports
+    # it without a cycle); re-exported here so ``CitationSource.SourceType``
+    # stays the canonical handle.
     SourceType = SourceType
 
     name = models.CharField(
@@ -146,17 +151,14 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         validators=[validate_no_mojibake],
     )
 
-    class IdentifierKey(models.TextChoices):
-        IPDB = "ipdb", "IPDB"
-        OPDB = "opdb", "OPDB"
-        YOUTUBE = "youtube", "YouTube"
-
     identifier_key = models.CharField(
         max_length=50,
         blank=True,
         default="",
         db_default="",
-        choices=IdentifierKey.choices,
+        # Derived from the scheme registry — registering a scheme is what makes
+        # its key legal here; there is no hand-listed enum to keep in sync.
+        choices=identifier_key_choices(),
         help_text=(
             "Identifies which URL/ID parsing convention applies to this source's "
             "children (e.g. 'ipdb' → numeric machine IDs, 'opdb' → slug IDs). "
@@ -181,9 +183,11 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         constraints = [
             field_not_blank("name"),
             field_not_blank("source_type"),
-            # Belt-and-suspenders: source_type must be a valid enum value
+            # Belt-and-suspenders: source_type must be a registered citation
+            # type. Derived from ``SourceType`` so a new type flows into
+            # makemigrations instead of a hand-edit.
             models.CheckConstraint(
-                condition=models.Q(source_type__in=["book", "magazine", "web"]),
+                condition=models.Q(source_type__in=list(SourceType.values)),
                 name="citation_citationsource_source_type_valid",
             ),
             # Prevent self-referencing
@@ -227,9 +231,11 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
             ),
             # ISBN: nullable unique, prevent empty string
             nullable_id_not_empty("isbn"),
-            # identifier_key must be blank or a valid enum value
+            # identifier_key must be blank or a registered scheme key. Derived
+            # from the scheme registry so a new scheme flows into
+            # makemigrations instead of a hand-edit.
             models.CheckConstraint(
-                condition=models.Q(identifier_key__in=["", "ipdb", "opdb", "youtube"]),
+                condition=models.Q(identifier_key__in=["", *identifier_key_values()]),
                 name="citation_citationsource_identifier_key_valid",
             ),
             # identifier_key lives on roots only
@@ -271,7 +277,7 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
     def skip_locator(self) -> bool:
         """Web children skip the locator stage — their URL is the locator."""
         return (
-            source_type_traits(self.source_type).child_skips_locator
+            citation_type_spec(self.source_type).child_skips_locator
             and not self.is_root
         )
 
@@ -292,7 +298,7 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         — this method issues no query of its own.
         """
         return has_children or (
-            self.is_root and source_type_traits(self.source_type).parentless_abstract
+            self.is_root and citation_type_spec(self.source_type).parentless_abstract
         )
 
     def clean(self) -> None:
@@ -312,7 +318,7 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         if (
             self.parent_id is not None
             and self.source_type in SourceType.values
-            and source_type_traits(self.source_type).flat_hierarchy
+            and citation_type_spec(self.source_type).flat_hierarchy
             and CitationSource.objects.children().filter(pk=self.parent_id).exists()
         ):
             raise ValidationError(

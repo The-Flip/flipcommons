@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 import yaml
 from django.core.exceptions import ValidationError
 
-from apps.citation.extractors import EXTRACTORS
+from apps.citation.citation_types import SCHEME_SPECS
 from apps.citation.models import (
     CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
     CITATION_INSTANCE_QUOTE_MAX_LENGTH,
@@ -693,7 +693,7 @@ def _parse_provenance(entry: PatchEntry) -> tuple[str, CiteSpec | None]:
     mint path (``mint_many`` → ``bulk_create``) would otherwise never validate.
     ``cite``'s ref is one of two forms:
 
-    * ``scheme:identifier`` — the scheme must be a known extractor and the
+    * ``scheme:identifier`` — the scheme must be a registered scheme and the
       identifier must normalize (``ipdb:4443``).
     * a ``http(s)://`` URL — a standalone web source. A URL that matches a
       known scheme's record pattern is rejected: cite it as ``scheme:identifier``
@@ -748,7 +748,7 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
 
     * a ``http(s)://`` URL — a standalone web source; an optional ``archive``
       durable-snapshot URL rides along;
-    * ``scheme:identifier`` — the scheme must be a known extractor and the
+    * ``scheme:identifier`` — the scheme must be a registered scheme and the
       identifier must normalize (``ipdb:4443``).
 
     The empty-cite short-circuit and (for the entry path) the archive-without-URL
@@ -767,13 +767,13 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
         raise PatchError(
             f"{ref}: cite {cite!r} must be 'scheme:identifier' (e.g. 'ipdb:4443')"
         )
-    extractor = EXTRACTORS.get(scheme)
-    if extractor is None:
+    spec = SCHEME_SPECS.get(scheme)
+    if spec is None:
         raise PatchError(
             f"{ref}: unknown cite scheme {scheme!r} "
-            f"(known: {', '.join(sorted(EXTRACTORS))})"
+            f"(known: {', '.join(sorted(SCHEME_SPECS))})"
         )
-    normalized = extractor.normalize(raw_id)
+    normalized = spec.normalize(raw_id)
     if normalized is None:
         raise PatchError(f"{ref}: invalid {scheme} identifier {raw_id!r}")
     if len(normalized) > CITATION_SOURCE_IDENTIFIER_MAX_LENGTH:
@@ -791,12 +791,12 @@ def _parse_cite_url(url: str, archive_url: str, ref: str) -> WebCitationRef:
     canonical ``scheme:identifier`` form that dedups correctly), a malformed
     URL, and one too long for the link column.
     """
-    for scheme, extractor in EXTRACTORS.items():
-        identifier = extractor.extract(url)
-        if identifier is not None:
+    for scheme, spec in SCHEME_SPECS.items():
+        match = spec.extract(url)
+        if match is not None:
             raise PatchError(
                 f"{ref}: cite URL matches the {scheme} scheme — "
-                f"cite it as {scheme}:{identifier} instead"
+                f"cite it as {scheme}:{match.identifier} instead"
             )
     # The caller guarantees an http(s):// scheme, so a host is all that's left
     # to validate (``https://`` alone has none).
