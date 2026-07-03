@@ -76,14 +76,14 @@
             bind:this={locatorInput}
             type="text"
             aria-label="Citation locator"
-            placeholder="Optional: where in the source (p. 42, 1:35)"
+            placeholder="Where in the source (p. 42, 1:35)"
             maxlength="200"
             bind:value={citation.locator}
           />
         {/if}
         <textarea
           aria-label="Quote from the source"
-          placeholder="Optional: exact text quoted from the source"
+          placeholder="Exact text quoted from the source"
           rows="3"
           maxlength="2000"
           bind:value={citation.quote}></textarea>
