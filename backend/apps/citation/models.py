@@ -294,7 +294,14 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
 
     @property
     def skip_locator(self) -> bool:
-        """Web children skip the locator stage — their URL is the locator."""
+        """Whether the cite picker skips this source's locator prompt.
+
+        True for a web child — its URL usually pins the evidence, so the
+        picker cites it one-click. Unprompted, not unavailable: the
+        edit-evidence panel keeps a collapsed "Add a locator" affordance, and
+        a stored locator on such a child is legal on every write path (a
+        video post's ``1:35``, a long article's section heading).
+        """
         return (
             citation_type_spec(self.source_type).child_skips_locator
             and not self.is_root

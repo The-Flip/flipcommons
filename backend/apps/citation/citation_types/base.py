@@ -251,8 +251,9 @@ class SchemeSpec:
 # ``freeform`` renders a plain text input with no validation; ``timestamp``
 # adds the type's inline validation. It does NOT gate whether a locator may be
 # *stored* — that is the contract's ``normalize``. (``skip_locator`` — whether
-# the UI offers the stage at all — is the separate ``child_skips_locator``
-# trait; a web child's stored locator stays legal, per the patch grammar.)
+# the cite picker prompts for a locator at all — is the separate
+# ``child_skips_locator`` trait; a web child's stored locator is legal either
+# way, per the patch grammar and the edit panel's collapsed affordance.)
 type LocatorKind = Literal["freeform", "timestamp"]
 
 
@@ -301,7 +302,9 @@ class CitationTypeSpec:
       away from citing it directly. A parentless *book* is the work itself, so
       it is citable.
     - ``child_skips_locator``: a child of this type carries its own locator
-      (its URL), so the cite flow skips the locator stage.
+      (its URL), so the cite picker skips the locator prompt and cites it
+      one-click. Unprompted, not unavailable: the edit-evidence panel keeps a
+      collapsed affordance and patches may store one.
     - ``locator``: the type's locator contract (grammar, prompt, structured
       value bridge).
     - ``scheme_spec_type``: the spec class this type's schemes implement — the

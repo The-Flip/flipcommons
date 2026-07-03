@@ -14,9 +14,11 @@ Two derived notions recur across these schemas:
   type (``magazine`` / ``web`` / ``video`` — a publication, a site, a platform).
   The UI offers such a source's children for citation instead of the source
   itself.
-- **skip_locator** — a web *child* needs no locator (page/section/fragment)
-  because its URL already pins the exact evidence; every other source needs a
-  locator when cited.
+- **skip_locator** — citing a web *child* doesn't prompt for a locator: its
+  URL already pins the evidence, so the picker cites it one-click. Unprompted,
+  not unavailable — the edit-evidence panel keeps a collapsed "Add a locator"
+  affordance (a video post's ``1:35``, an article's section heading), and
+  patches may store one. Other types prompt at the picker's locator stage.
 
 Sources are NOT claims-controlled: unlike catalog entities they are edited
 directly through admin / the Sources UI. Citation *search* additionally
@@ -104,13 +106,16 @@ class CitationSourceSearchSchema(Schema):
     )
     skip_locator: bool = Field(
         False,
-        description="Whether citing this source needs no locator — true for a web child, whose URL is the locator.",
+        description=(
+            "Whether the cite picker skips the locator prompt — true for a web "
+            "child, whose URL is usually locator enough."
+        ),
     )
     identifier_key: str = Field(
         "",
         description=(
             "For a scheme root, the identifier scheme its children use "
-            '("ipdb", "opdb" or "youtube"); an empty string otherwise.'
+            '(e.g. "ipdb", "youtube"); an empty string otherwise.'
         ),
     )
 
@@ -132,7 +137,7 @@ class CitationSourceMatchSchema(Schema):
     )
     skip_locator: bool = Field(
         False,
-        description="Whether citing the matched source needs no locator (true for a web child).",
+        description="Whether the cite picker skips the locator prompt (true for a web child).",
     )
 
 
@@ -340,7 +345,10 @@ class CitationSourceChildSchema(Schema):
     isbn: str | None = Field(None, description="ISBN, if known.")
     skip_locator: bool = Field(
         False,
-        description="Whether citing this child needs no locator — true for a web child, whose URL is the locator.",
+        description=(
+            "Whether the cite picker skips the locator prompt — true for a web "
+            "child, whose URL is usually locator enough."
+        ),
     )
     urls: list[str] = Field(
         [],
@@ -379,11 +387,11 @@ class CitationSourceDetailSchema(Schema):
     description: str = Field(description="Free-text description, or an empty string.")
     identifier_key: str = Field(
         "",
-        description='For a scheme root, the identifier scheme its children use ("ipdb", "opdb" or "youtube"); an empty string otherwise.',
+        description='For a scheme root, the identifier scheme its children use (e.g. "ipdb", "youtube"); an empty string otherwise.',
     )
     skip_locator: bool = Field(
         False,
-        description="Whether citing this source needs no locator (true for a web child).",
+        description="Whether the cite picker skips the locator prompt (true for a web child).",
     )
     parent: CitationSourceParentSchema | None = Field(
         None, description="The root source this is a child of, or null if it is a root."
