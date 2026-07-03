@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Final
 
-from apps.citation.citation_types import book, magazine, web
+from apps.citation.citation_types import book, magazine, video, web
 from apps.citation.citation_types.base import CitationTypeSpec, SchemeSpec, SourceType
 from apps.citation.citation_types.schemes import ipdb, opdb, youtube
 
@@ -26,6 +26,7 @@ _CITATION_TYPES: Final[tuple[CitationTypeSpec, ...]] = (
     book.BOOK,
     magazine.MAGAZINE,
     web.WEB,
+    video.VIDEO,
 )
 
 # Ordering is load-bearing twice over: recognition tries schemes in this order,
@@ -70,6 +71,20 @@ def _assert_registry_coherent(
     orphaned = [spec.key for spec in schemes.values() if spec.source_type not in types]
     if orphaned:
         raise AssertionError(f"Scheme(s) with an unregistered source_type: {orphaned}")
+    # Each scheme implements its owning type's contract — the per-type Protocol
+    # (a video scheme must be a VideoSchemeSpec, which requires deep_link).
+    # mypy enforces this statically inside each scheme module; this is the
+    # runtime backstop for a spec registered under the wrong type.
+    nonconforming = [
+        spec.key
+        for spec in schemes.values()
+        if spec.source_type in types
+        and not isinstance(spec, types[spec.source_type].scheme_spec_type)
+    ]
+    if nonconforming:
+        raise AssertionError(
+            f"Scheme(s) not implementing their type's scheme_spec_type: {nonconforming}"
+        )
 
 
 _assert_registry_coherent(CITATION_TYPE_SPECS, SCHEME_SPECS)
@@ -99,3 +114,15 @@ def identifier_key_values() -> list[str]:
 def identifier_key_choices() -> list[tuple[str, str]]:
     """``(value, label)`` choices for the ``identifier_key`` field."""
     return [(spec.key, spec.label) for spec in SCHEME_SPECS.values()]
+
+
+def scheme_bearing_source_types() -> list[str]:
+    """The source types that own at least one registered scheme.
+
+    In ``SourceType`` definition order (stable, so the derived CHECK
+    constraint doesn't churn a migration when a scheme is added to an
+    already-bearing type). The value list behind the model's
+    "``identifier_key`` only on scheme-bearing types" CHECK.
+    """
+    bearing = {spec.source_type for spec in SCHEME_SPECS.values()}
+    return [st.value for st in SourceType if st in bearing]

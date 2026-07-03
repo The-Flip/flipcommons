@@ -7,6 +7,7 @@ for the architecture and ``base.py`` for the contracts.
 
 from apps.citation.citation_types.base import (
     CitationTypeSpec,
+    LocatorContract,
     RootSeed,
     SchemeMatch,
     SchemeSpec,
@@ -18,12 +19,14 @@ from apps.citation.citation_types.registry import (
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
+    scheme_bearing_source_types,
 )
 
 __all__ = [
     "CITATION_TYPE_SPECS",
     "SCHEME_SPECS",
     "CitationTypeSpec",
+    "LocatorContract",
     "RootSeed",
     "SchemeMatch",
     "SchemeSpec",
@@ -31,4 +34,5 @@ __all__ = [
     "citation_type_spec",
     "identifier_key_choices",
     "identifier_key_values",
+    "scheme_bearing_source_types",
 ]

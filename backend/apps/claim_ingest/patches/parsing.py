@@ -21,6 +21,7 @@ import yaml
 from django.core.exceptions import ValidationError
 
 from apps.citation.citation_types import SCHEME_SPECS
+from apps.citation.locators import normalized_locator
 from apps.citation.models import (
     CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
     CITATION_INSTANCE_QUOTE_MAX_LENGTH,
@@ -733,11 +734,34 @@ def _parse_provenance(entry: PatchEntry) -> tuple[str, CiteSpec | None]:
             raise PatchError(
                 f"{entry.ref}: cite {label}: {'; '.join(exc.messages)}"
             ) from exc
+    cite_ref = _parse_cite_value(entry.cite, entry.cite_archive, entry.ref)
     return note, CiteSpec(
-        ref=_parse_cite_value(entry.cite, entry.cite_archive, entry.ref),
-        locator=entry.cite_locator,
+        ref=cite_ref,
+        locator=_normalized_cite_locator(cite_ref, entry.cite_locator, entry.ref),
         quote=entry.cite_quote,
     )
+
+
+def _normalized_cite_locator(cite_ref: CitationRef, locator: str, ref: str) -> str:
+    """Validate + canonicalize a cite's locator against its citation type.
+
+    A scheme cite's citation type is known at parse time (the scheme declares
+    what its children mint as), so a malformed video timestamp fails the patch
+    here — with the entry ref in the message — rather than at apply. A URL
+    cite always resolves to a web child (a URL matching a scheme's pattern was
+    already rejected in favor of its ``scheme:identifier`` form), and web is
+    freeform, so it passes through unchanged.
+    """
+    if not isinstance(cite_ref, SchemeCitationRef):
+        return locator
+    source_type = SCHEME_SPECS[cite_ref.scheme].source_type
+    try:
+        return normalized_locator(source_type, locator)
+    except ValidationError as exc:
+        raise PatchError(
+            f"{ref}: cite locator {locator!r}: "
+            f"{'; '.join(exc.message_dict.get('locator', exc.messages))}"
+        ) from exc
 
 
 def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:

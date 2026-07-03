@@ -292,6 +292,8 @@ cite:
   archive: https://web.archive.org/... # optional: durable snapshot; http(s) refs only
 ```
 
+A `locator:` on a **video** cite (`youtube:<id>`) must be a start time — `95`, `1:35`, `1:02:03` or `1h2m3s` — validated against the video type's timestamp grammar at apply and stored canonical; a malformed one fails the patch loudly. Other types' locators stay freeform.
+
 `quote` is a **verbatim** excerpt: only exact source text and `[...]` ellipses belong in it — a reviewer should be able to follow the citation and ctrl-F find it. Interpretation, translation and rationale go in `note:` instead. Claims in the entry share one citation instance only when the whole citation matches — a differing quote is a distinct piece of evidence even against the same source and locator.
 
 As noted under [File format](#file-format), each `changesets:` item (and each flat entry) is its own ChangeSet, so one record can take **several** corrections in a patch — each with its own `note`/`cite`. Two rules keep that unambiguous:
@@ -358,7 +360,7 @@ A patch can create **citation sources** — the reference works (`ipdb`, `pinsid
 attribution: flipcommons-catalog # owns the IngestRun; does NOT attribute the sources
 sources: # processed before claims, so a cite: below can nest under a root created here
   - name: Wikipedia
-    source_type: web # book | magazine | web
+    source_type: web # book | magazine | web | video
     description: Free collaborative encyclopedia.
     links: # a source may carry several
       - {

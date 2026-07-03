@@ -30,7 +30,7 @@ from apps.citation.models import (
 # Literal aliases mirroring each model's choices, so a bad choice value fails at
 # type-check. Constraint tests that need an invalid value build the model
 # directly. ``identifier_key`` also permits "" (blank = a root without a scheme).
-type CitationSourceTypeValue = Literal["book", "magazine", "web"]
+type CitationSourceTypeValue = Literal["book", "magazine", "web", "video"]
 type LinkTypeValue = Literal["homepage", "catalog", "publisher", "reference", "archive"]
 type IdentifierKeyValue = Literal["", "ipdb", "opdb", "youtube"]
 

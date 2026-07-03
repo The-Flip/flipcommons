@@ -9,14 +9,20 @@ handle.
 Two plugin units live behind these contracts (see
 ``docs/plans/citations/VideoCitations.md``):
 
-- A **citation type** (:class:`CitationTypeSpec`) — book, magazine, web —
-  owns the per-type behavior shared code would otherwise branch on: hierarchy
-  shape, abstractness, locator handling.
+- A **citation type** (:class:`CitationTypeSpec`) — book, magazine, web,
+  video — owns the per-type behavior shared code would otherwise branch on:
+  hierarchy shape, abstractness, and the locator contract (grammar, prompt,
+  structured value).
 - A **scheme** (:class:`SchemeSpec`) — ipdb, opdb, youtube — owns one
   platform's URL recognition: how to pull an identifier out of any of the
   platform's URL shapes, validate a bare identifier, and build the canonical
   URL every shape collapses to. A scheme belongs to exactly one citation type
-  (``source_type``), which is what its children mint as.
+  (``source_type``), which is what its children mint as, and implements that
+  type's ``scheme_spec_type`` contract.
+
+The layering rule that keeps schemes small: **the type owns locator
+semantics; a scheme speaks only structured values.** A video scheme is handed
+an identifier and start seconds — never locator text.
 
 Specs are **pure**: declarative facts plus stateless functions. No model
 imports, no DB access, no I/O — all DB work (child minting, recognition
@@ -28,6 +34,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 from django.db import models
 
@@ -36,32 +43,7 @@ class SourceType(models.TextChoices):
     BOOK = "book", "Book"
     MAGAZINE = "magazine", "Magazine"
     WEB = "web", "Web"
-
-
-@dataclass(frozen=True, slots=True)
-class CitationTypeSpec:
-    """One citation type's behavior facts, read by shared code via the registry.
-
-    - ``flat_hierarchy``: the type nests exactly one level (root → child). A
-      grandchild is rejected (see ``CitationSource.clean``) so recognition can
-      always resolve a host to the root and mint a child directly under it.
-    - ``parentless_abstract``: a parentless source of this type is a container
-      (a website, a publication), not directly-citable evidence — the UI steers
-      away from citing it directly. A parentless *book* is the work itself, so
-      it is citable.
-    - ``child_skips_locator``: a child of this type carries its own locator
-      (its URL), so the cite flow skips the locator stage.
-    """
-
-    source_type: SourceType
-    flat_hierarchy: bool
-    parentless_abstract: bool
-    child_skips_locator: bool
-
-    @property
-    def label(self) -> str:
-        """The human-facing type label (the ``SourceType`` choice label)."""
-        return self.source_type.label
+    VIDEO = "video", "Video"
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +92,16 @@ class SchemeSpec:
       ``extract(canonical_url(id))`` must round-trip.
     - ``example_identifier`` is a real, well-formed identifier; it seeds the
       harness's round-trip checks and doubles as documentation.
+
+    The two optional capabilities speak the owning type's structured locator
+    value (see ``LocatorContract``), never locator text:
+
+    - ``deep_link`` builds the URL that jumps to a structured position
+      (video: ``(identifier, start_seconds) -> watch URL with t=``). Types
+      whose locator carries a value require it via their ``scheme_spec_type``.
+    - ``start_seconds_from_url`` pulls the structured position hint out of a
+      recognized URL (``?t=95``), surfaced by ``extract`` as
+      ``SchemeMatch.start_seconds``.
     """
 
     key: str
@@ -120,13 +112,18 @@ class SchemeSpec:
     canonical_url: Callable[[str], str]
     example_identifier: str
     root_seed: RootSeed
+    deep_link: Callable[[str, int], str] | None = None
+    start_seconds_from_url: Callable[[str], int | None] | None = None
 
     def extract(self, url: str) -> SchemeMatch | None:
         """Recognize *url* as one of this scheme's shapes, or ``None``."""
         m = self.url_pattern.search(url)
         if m is None:
             return None
-        return SchemeMatch(identifier=m.group(1))
+        seconds = (
+            self.start_seconds_from_url(url) if self.start_seconds_from_url else None
+        )
+        return SchemeMatch(identifier=m.group(1), start_seconds=seconds)
 
     def validate_identifier(self, raw: str) -> str | None:
         """Return *raw* when it is a well-formed bare identifier, else ``None``."""
@@ -141,3 +138,79 @@ class SchemeSpec:
         if match is not None:
             return match.identifier
         return self.validate_identifier(raw)
+
+
+# The frontend input behavior key for a locator, exported via codegen:
+# ``freeform`` renders a plain text input with no validation; ``timestamp``
+# adds the type's inline validation. It does NOT gate whether a locator may be
+# *stored* — that is the contract's ``normalize``. (``skip_locator`` — whether
+# the UI offers the stage at all — is the separate ``child_skips_locator``
+# trait; a web child's stored locator stays legal, per the patch grammar.)
+type LocatorKind = Literal["freeform", "timestamp"]
+
+
+def _freeform_normalize(raw: str) -> str:
+    return raw
+
+
+@dataclass(frozen=True, slots=True)
+class LocatorContract:
+    """How one citation type's locators behave.
+
+    - ``normalize`` validates and canonicalizes a non-empty locator string,
+      returning ``None`` for an invalid one. Empty locators never reach it —
+      a locator is optional on every type.
+    - ``parse_value`` / ``format_value`` bridge locator text and the type's
+      structured value, present only when the type has one (video: start
+      seconds): ``parse_value`` feeds scheme ``deep_link`` builders,
+      ``format_value`` renders a scheme's ``SchemeMatch`` hint as locator text.
+    - ``invalid_message`` is the contributor-facing error for a failed
+      ``normalize``.
+    """
+
+    kind: LocatorKind
+    placeholder: str
+    normalize: Callable[[str], str | None] = _freeform_normalize
+    parse_value: Callable[[str], int | None] | None = None
+    format_value: Callable[[int], str] | None = None
+    invalid_message: str = ""
+
+
+FREEFORM_LOCATOR = LocatorContract(
+    kind="freeform",
+    placeholder="p. 42, Chapter 3, timestamp...",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CitationTypeSpec:
+    """One citation type's behavior facts, read by shared code via the registry.
+
+    - ``flat_hierarchy``: the type nests exactly one level (root → child). A
+      grandchild is rejected (see ``CitationSource.clean``) so recognition can
+      always resolve a host to the root and mint a child directly under it.
+    - ``parentless_abstract``: a parentless source of this type is a container
+      (a website, a publication), not directly-citable evidence — the UI steers
+      away from citing it directly. A parentless *book* is the work itself, so
+      it is citable.
+    - ``child_skips_locator``: a child of this type carries its own locator
+      (its URL), so the cite flow skips the locator stage.
+    - ``locator``: the type's locator contract (grammar, prompt, structured
+      value bridge).
+    - ``scheme_spec_type``: the spec class this type's schemes implement — the
+      per-type Protocol (video schemes must be ``VideoSchemeSpec``, which
+      requires ``deep_link``). The registry enforces it at import; mypy
+      enforces it on each scheme module's constructor call.
+    """
+
+    source_type: SourceType
+    flat_hierarchy: bool
+    parentless_abstract: bool
+    child_skips_locator: bool
+    locator: LocatorContract = FREEFORM_LOCATOR
+    scheme_spec_type: type[SchemeSpec] = SchemeSpec
+
+    @property
+    def label(self) -> str:
+        """The human-facing type label (the ``SourceType`` choice label)."""
+        return self.source_type.label

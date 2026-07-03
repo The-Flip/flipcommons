@@ -14,7 +14,11 @@ from urllib.parse import urlparse
 
 import pytest
 
-from apps.citation.citation_types import SCHEME_SPECS, SchemeSpec
+from apps.citation.citation_types import (
+    SCHEME_SPECS,
+    SchemeSpec,
+    citation_type_spec,
+)
 from apps.citation.hosts import is_dns_host, normalize_host
 from apps.citation.psl import is_public_suffix
 
@@ -101,3 +105,47 @@ class TestSchemeConformance:
         assert spec.key
         assert spec.key == spec.key.lower()
         assert spec.label
+
+    def test_scheme_implements_its_types_contract(self, spec):
+        assert isinstance(spec, citation_type_spec(spec.source_type).scheme_spec_type)
+
+    def test_deep_link_present_iff_type_has_a_structured_locator(self, spec):
+        """A scheme of a value-carrying type (video) must be able to jump.
+
+        The registry's isinstance check enforces the class contract; this pins
+        the semantic pairing so a future type/scheme combination can't ship a
+        parseable locator with nowhere to send it.
+        """
+        contract = citation_type_spec(spec.source_type).locator
+        if contract.parse_value is not None:
+            assert spec.deep_link is not None, (
+                f"{spec.key}: its type parses locator values but the scheme "
+                f"has no deep_link builder"
+            )
+
+    def test_deep_link_output_is_well_formed_on_the_schemes_host(self, spec):
+        if spec.deep_link is None:
+            pytest.skip("scheme has no deep_link")
+        canonical_host = urlparse(spec.canonical_url(spec.example_identifier)).hostname
+        for seconds in (0, 95, 3723):
+            url = spec.deep_link(spec.example_identifier, seconds)
+            parsed = urlparse(url)
+            assert parsed.scheme == "https"
+            assert parsed.hostname == canonical_host, (
+                f"{spec.key}: deep link left the scheme's host: {url}"
+            )
+
+    def test_start_seconds_hint_round_trips_the_type_grammar(self, spec):
+        """A scheme's structured hint must be expressible as locator text.
+
+        ``extract`` may surface ``start_seconds``; the owning type formats it
+        to prefill the locator stage, and that text must re-parse to the same
+        value — otherwise the prefill would fail the type's own validation.
+        """
+        if spec.start_seconds_from_url is None:
+            pytest.skip("scheme extracts no start-time hints")
+        contract = citation_type_spec(spec.source_type).locator
+        assert contract.format_value is not None
+        assert contract.parse_value is not None
+        for seconds in (1, 95, 3723):
+            assert contract.parse_value(contract.format_value(seconds)) == seconds

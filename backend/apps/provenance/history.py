@@ -9,6 +9,7 @@ from itertools import chain
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Prefetch, Q
 
+from apps.citation.deep_links import deep_linked_url
 from apps.citation.models import CitationSourceLink
 from apps.core.authz import PolicyUser, compute_row_capabilities
 from apps.core.types import ClaimKey
@@ -68,7 +69,11 @@ def _field_change_citations(claim: Claim) -> list[FieldChangeCitationSchema]:
         result.append(
             FieldChangeCitationSchema(
                 source_name=inst.citation_source.name,
-                url=live.url if live else None,
+                url=(
+                    deep_linked_url(inst.citation_source, inst.locator, live.url)
+                    if live
+                    else None
+                ),
             )
         )
     return result

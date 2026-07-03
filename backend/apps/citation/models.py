@@ -17,6 +17,7 @@ from apps.citation.citation_types import (
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
+    scheme_bearing_source_types,
 )
 from apps.citation.hosts import is_dns_host, normalize_host
 from apps.citation.psl import is_public_suffix
@@ -243,10 +244,13 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
                 condition=models.Q(identifier_key="") | models.Q(parent__isnull=True),
                 name="citation_citationsource_identifier_key_requires_root",
             ),
-            # identifier_key is for web sources only
+            # identifier_key only on scheme-bearing types (types with at least
+            # one registered scheme). Derived from the scheme registry, so a
+            # scheme for a new type flows into makemigrations.
             models.CheckConstraint(
-                condition=models.Q(identifier_key="") | models.Q(source_type="web"),
-                name="citation_citationsource_identifier_key_requires_web",
+                condition=models.Q(identifier_key="")
+                | models.Q(source_type__in=scheme_bearing_source_types()),
+                name="citation_citationsource_identifier_key_scheme_type",
             ),
             # identifier lives on children only
             models.CheckConstraint(

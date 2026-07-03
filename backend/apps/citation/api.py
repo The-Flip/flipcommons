@@ -224,6 +224,7 @@ def _build_recognition(rec: Recognition) -> CitationRecognitionSchema:
         parent=CitationSourceParentSchema(id=rec.parent_id, name=rec.parent_name),
         child=child,
         identifier=rec.identifier,
+        locator_hint=rec.locator_hint,
     )
 
 

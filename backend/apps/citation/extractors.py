@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 
 from django.db import transaction
 
-from apps.citation.citation_types import SCHEME_SPECS
+from apps.citation.citation_types import SCHEME_SPECS, citation_type_spec
 from apps.citation.hosts import (
     Host,
     RootDomainMatch,
@@ -59,12 +59,19 @@ class RecognitionChild:
 
 @dataclass
 class Recognition:
-    """Result of recognizing a pasted URL."""
+    """Result of recognizing a pasted URL.
+
+    ``locator_hint`` prefills the cite flow's locator stage: a pasted video
+    URL carrying a start time (``?t=95``) yields the canonical locator text
+    (``"1:35"``), formatted through the owning type's locator contract. Empty
+    when the URL carries no usable hint.
+    """
 
     parent_id: CitationSourceId
     parent_name: str
     child: RecognitionChild | None = None
     identifier: str | None = None
+    locator_hint: str = ""
 
 
 # A recognizer tries one URL-resolution mechanism against a raw URL, returning a
@@ -99,6 +106,14 @@ def _recognize_by_scheme(url: str) -> Recognition | None:
         if parent is None:
             continue
 
+        # A structured start-time hint (a pasted ``?t=95``) becomes locator
+        # text via the owning type's contract — the scheme extracts seconds,
+        # the type formats them; recognition just carries the result.
+        locator_hint = ""
+        format_value = citation_type_spec(spec.source_type).locator.format_value
+        if match.start_seconds is not None and format_value is not None:
+            locator_hint = format_value(match.start_seconds)
+
         # Look for an existing child with this identifier.
         child = (
             CitationSource.objects.filter(parent=parent, identifier=extracted_id)
@@ -115,11 +130,13 @@ def _recognize_by_scheme(url: str) -> Recognition | None:
                     skip_locator=child.skip_locator,
                 ),
                 identifier=extracted_id,
+                locator_hint=locator_hint,
             )
         return Recognition(
             parent_id=parent.id,
             parent_name=parent.name,
             identifier=extracted_id,
+            locator_hint=locator_hint,
         )
     return None
 

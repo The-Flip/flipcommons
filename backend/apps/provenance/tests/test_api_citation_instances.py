@@ -34,6 +34,24 @@ def citation_source(db):
     )
 
 
+VIDEO_ID = "dQw4w9WgXcQ"
+VIDEO_CANONICAL = f"https://www.youtube.com/watch?v={VIDEO_ID}"
+
+
+@pytest.fixture
+def video_source(db):
+    """A youtube video child under its scheme root."""
+    root = make_citation_source(
+        name="YouTube", source_type="video", identifier_key="youtube"
+    )
+    return make_citation_source(
+        name=f"YouTube #{VIDEO_ID}",
+        source_type="video",
+        parent=root,
+        identifier=VIDEO_ID,
+    )
+
+
 class TestListCitationInstances:
     def test_anonymous_gets_401(self, client):
         resp = client.get("/api/citation-instances/?source=1")
@@ -181,6 +199,17 @@ class TestBatchCitationInstances:
         resp = client.get(f"/api/citation-instances/batch/?ids={ids}")
         assert resp.status_code == 422
 
+    def test_video_link_is_deep_linked_to_the_locator(self, client, video_source):
+        # Server-computed deep links: the canonical video link ships pointing
+        # at the cited moment; the frontend renders, never builds.
+        make_citation_link(
+            citation_source=video_source, link_type="reference", url=VIDEO_CANONICAL
+        )
+        ci = make_citation_instance(citation_source=video_source, locator="1:35")
+        resp = client.get(f"/api/citation-instances/batch/?ids={ci.pk}")
+        assert resp.status_code == 200
+        assert resp.json()[0]["links"][0]["url"] == f"{VIDEO_CANONICAL}&t=95s"
+
 
 class TestCreateCitationInstance:
     def test_create(self, client, user, citation_source):
@@ -215,6 +244,40 @@ class TestCreateCitationInstance:
             content_type="application/json",
         )
         assert resp.status_code == 404
+
+    def test_video_locator_is_normalized(self, client, user, video_source):
+        # The mint validates the locator against the cited source's
+        # citation-type contract: a video timestamp is stored canonical.
+        client.force_login(user)
+        resp = client.post(
+            "/api/citation-instances/",
+            {"citation_source_id": video_source.pk, "locator": "1h2m3s"},
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        assert resp.json()["locator"] == "1:02:03"
+
+    def test_video_locator_invalid_returns_422(self, client, user, video_source):
+        client.force_login(user)
+        resp = client.post(
+            "/api/citation-instances/",
+            {"citation_source_id": video_source.pk, "locator": "p. 42"},
+            content_type="application/json",
+        )
+        assert resp.status_code == 422
+        assert "start time" in resp.json()["detail"]
+
+    def test_video_without_locator_is_fine(self, client, user, video_source):
+        # A locator stays optional on every type — citing a whole video is
+        # legitimate.
+        client.force_login(user)
+        resp = client.post(
+            "/api/citation-instances/",
+            {"citation_source_id": video_source.pk},
+            content_type="application/json",
+        )
+        assert resp.status_code == 201
+        assert resp.json()["locator"] == ""
 
     def test_anonymous_gets_401(self, client, citation_source):
         resp = client.post(

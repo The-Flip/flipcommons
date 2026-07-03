@@ -27,7 +27,7 @@ A `CitationSource` is the shared work or evidence object — a book, a magazine,
 
 Sources may be **hierarchical** via a self-referential parent, when the domain needs it: work → edition, publication → issue → article, web root → child page. The hierarchy represents source _identity_, not locator position. Children do not inherit fields from their parent — prefill in the UI is fine, inheritance in the data is not.
 
-A source carries a pragmatic `source_type` (book / magazine / web). Its job is to drive product behavior — search, edit fields, locator prompts, rendering — not to be a bibliography ontology, so the taxonomy stays small and grows only when a new type needs distinct behavior.
+A source carries a pragmatic `source_type` (book / magazine / web / video). Its job is to drive product behavior — search, edit fields, locator prompts, rendering — not to be a bibliography ontology, so the taxonomy stays small and grows only when a new type needs distinct behavior. Each type is a plugin spec in `apps/citation/citation_types/` — traits, locator contract and identifier schemes live behind one registry; see [plans/citations/VideoCitations.md](plans/citations/VideoCitations.md) for the architecture.
 
 Some sources are **abstract** — a container rather than citable evidence: any source with children, or a parentless web or magazine root (a site, a publication). Contributors cite a concrete child instead — a page under a web root, an edition under a book; a parentless book with no children is itself the work, so it stays citable. `is_abstract` is a computed display hint (on the search API) that steers the authoring UI toward children. For web roots it is also structural: the cite paths resolve a URL to a child under the matched root (described below), so the abstract root is never the cited record.
 
@@ -36,7 +36,7 @@ For source families with structured identifiers, two paired fields express the s
 - `identifier_key` — the scheme, set on a **root** source only (e.g. an IPDB or OPDB root). A root is a scheme-holder.
 - `identifier` — the structured value within that scheme, set on a **child** only (e.g. IPDB machine `4443`). A child is a value-holder.
 
-A source is a scheme-holder _or_ a value-holder, never both. Children with identifiers are unique within their parent. A web child sets `skip_locator` — its URL _is_ the locator, so the authoring UI skips the locator step.
+A source is a scheme-holder _or_ a value-holder, never both. Children with identifiers are unique within their parent. A web child sets `skip_locator` — its URL _is_ the locator, so the authoring UI skips the locator step. A **video** child (a YouTube video under the platform root) is the opposite: its URL identifies the work but the evidence lives at a moment in it, so the locator stage prompts for an optional start time, validated against a timestamp grammar and stored canonical (`0:57`, `1:35`, `1:02:03`). On read, the canonical video link deep-links to that moment (`watch?v=<id>&t=95s`) — computed server-side at serialization.
 
 ### CitationInstance
 
@@ -78,7 +78,7 @@ Recognition maps input to **existing data** using local DB queries only, with no
 
 The read path is deliberately PSL-free: it suffix-matches only against stored, validated recognition hosts. Public Suffix List logic is write-time only, where it guards stored hosts and rounds an unrecognized pasted URL to the registrable domain before creating a new root.
 
-The schemes live in an extractor registry keyed by `identifier_key` (currently IPDB, OPDB and YouTube). Each `Extractor` knows how to pull an identifier from a URL, validate a bare identifier and build the canonical URL. YouTube accepts any of its URL shapes — `watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/` — and collapses them to the canonical `watch?v=<id>`, so the same video cited through different shapes resolves to one child.
+The schemes live in the plugin registry keyed by `identifier_key` (currently IPDB, OPDB and YouTube — one module each under `apps/citation/citation_types/schemes/`). Each `SchemeSpec` knows how to pull an identifier from a URL, validate a bare identifier and build the canonical URL; its children mint as the scheme's owning source type (IPDB/OPDB → web pages, YouTube → videos). YouTube accepts any of its URL shapes — `watch?v=`, `youtu.be/`, `/shorts/`, `/embed/`, `/live/` — and collapses them to the canonical `watch?v=<id>`, so the same video cited through different shapes resolves to one child; a pasted `?t=`/`?start=` start time surfaces as a `locator_hint` that prefills the locator stage. A registry-parametrized conformance harness holds every scheme to the contract automatically.
 
 Two idempotent helpers, `get_or_create_external_source` (scheme + identifier) and `get_or_create_web_source` (raw URL), are the entry points ingestion uses to attach evidence. The web helper runs the same `recognize_url`, so a URL reuses an existing **child** or nests a new child — with a `reference` link, never `homepage` — under a domain-matched root; even a URL equal to a root's own homepage nests a child, never returning the abstract root. A URL whose domain matches no seeded root **raises** rather than minting a parentless source: a root web source is an abstract container, not directly-citable evidence, so the website root must exist first.
 

@@ -69,8 +69,10 @@ def citation_instances_prefetch() -> Prefetch[str, QuerySet[CitationInstance], s
     """
     return Prefetch(
         "citation_instances",
+        # The parent ride-along feeds deep_linked_url (scheme lookup via the
+        # root's identifier_key) without a per-instance query.
         queryset=CitationInstance.objects.select_related(
-            "citation_source"
+            "citation_source", "citation_source__parent"
         ).prefetch_related("citation_source__links"),
         to_attr="prefetched_citation_instances",
     )

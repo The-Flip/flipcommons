@@ -158,6 +158,14 @@ class CitationRecognitionSchema(Schema):
             "machine id), or null when only the source's domain matched."
         ),
     )
+    locator_hint: str = Field(
+        "",
+        description=(
+            "Canonical locator text extracted from the input, to prefill the "
+            "locator stage — e.g. '1:35' from a video URL's t= start time. "
+            "Empty when the input carries no usable hint."
+        ),
+    )
 
 
 class CitationSourceSearchResponseSchema(Schema):

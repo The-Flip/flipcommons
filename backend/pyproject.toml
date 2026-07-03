@@ -587,7 +587,7 @@ containers = ["apps.citation"]
 layers = [
     "api | admin",
     "url_extraction",
-    "extractors | extraction | source_upsert | schemas",
+    "extractors | extraction | source_upsert | schemas | deep_links | locators",
     "models",
     "psl",
     "hosts | citation_types | safe_fetch | authz | source_node",
