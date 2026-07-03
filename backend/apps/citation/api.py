@@ -137,7 +137,10 @@ def _detail_qs() -> QuerySet[CitationSource]:
 def _serialize_match(source: CitationSource) -> CitationSourceMatchSchema:
     """The minimal "re-cite this source" shape every child-mint endpoint returns."""
     return CitationSourceMatchSchema(
-        id=source.pk, name=source.name, skip_locator=source.skip_locator
+        id=source.pk,
+        name=source.name,
+        source_type=source.source_type,
+        skip_locator=source.skip_locator,
     )
 
 
@@ -218,6 +221,7 @@ def _build_recognition(rec: Recognition) -> CitationRecognitionSchema:
         child = CitationSourceMatchSchema(
             id=rec.child.id,
             name=rec.child.name,
+            source_type=rec.child.source_type,
             skip_locator=rec.child.skip_locator,
         )
     return CitationRecognitionSchema(
@@ -463,6 +467,7 @@ def cite_url(
                 CitationSourceMatchSchema(
                     id=rec.child.id,
                     name=rec.child.name,
+                    source_type=rec.child.source_type,
                     skip_locator=rec.child.skip_locator,
                 ),
             )

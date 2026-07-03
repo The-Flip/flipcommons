@@ -95,7 +95,9 @@
   function handleSourceIdentified(child: {
     sourceId: number;
     sourceName: string;
+    sourceType: string;
     skipLocator: boolean;
+    locatorHint?: string;
   }) {
     dispatch({ type: 'source_identified', ...child });
   }
@@ -107,6 +109,7 @@
   function handleSourceCreated(result: {
     sourceId: number;
     sourceName: string;
+    sourceType: string;
     skipLocator: boolean;
   }) {
     dispatch({ type: 'source_created', ...result });

@@ -1484,7 +1484,12 @@ class TestExtractEndpoint:
         cache.clear()
         client.force_login(user)
         mock_extract.return_value = ExtractionResult(
-            match={"id": 42, "name": "IPDB #4836", "skip_locator": True}
+            match={
+                "id": 42,
+                "name": "IPDB #4836",
+                "source_type": "web",
+                "skip_locator": True,
+            }
         )
         resp = _post(
             client, EXTRACT_URL, {"input": "https://www.ipdb.org/machine.cgi?id=4836"}

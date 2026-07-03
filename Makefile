@@ -22,7 +22,8 @@ agent-docs:
 codegen:
 	cd backend && uv run python manage.py export_openapi_schema
 	cd backend && uv run python manage.py export_entity_meta
-	cd frontend && pnpm exec prettier --write src/lib/entities/entity-meta.ts
+	cd backend && uv run python manage.py export_citation_type_meta
+	cd frontend && pnpm exec prettier --write src/lib/entities/entity-meta.ts src/lib/citation-types/citation-type-meta.ts
 	cd frontend && pnpm api:gen
 
 # Apply pending data patches — the bulk write path for catalog data.

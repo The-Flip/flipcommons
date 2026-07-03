@@ -202,31 +202,66 @@ describe('parentContextFromSource', () => {
 describe('isDraftSubmittable', () => {
   it('returns true when sourceId is set and locator is non-empty', () => {
     expect(
-      isDraftSubmittable({ sourceId: 1, sourceName: 'X', locator: 'p.5', skipLocator: false }),
+      isDraftSubmittable({
+        sourceId: 1,
+        sourceName: 'X',
+        sourceType: 'book',
+        locator: 'p.5',
+        locatorHint: '',
+        skipLocator: false,
+      }),
     ).toBe(true);
   });
 
   it('returns true when sourceId is set and skipLocator is true', () => {
     expect(
-      isDraftSubmittable({ sourceId: 1, sourceName: 'X', locator: '', skipLocator: true }),
+      isDraftSubmittable({
+        sourceId: 1,
+        sourceName: 'X',
+        sourceType: 'web',
+        locator: '',
+        locatorHint: '',
+        skipLocator: true,
+      }),
     ).toBe(true);
   });
 
   it('returns false when sourceId is null', () => {
     expect(
-      isDraftSubmittable({ sourceId: null, sourceName: '', locator: 'p.5', skipLocator: false }),
+      isDraftSubmittable({
+        sourceId: null,
+        sourceName: '',
+        sourceType: '',
+        locator: 'p.5',
+        locatorHint: '',
+        skipLocator: false,
+      }),
     ).toBe(false);
   });
 
   it('returns false when sourceId is set but locator empty and skipLocator false', () => {
     expect(
-      isDraftSubmittable({ sourceId: 1, sourceName: 'X', locator: '', skipLocator: false }),
+      isDraftSubmittable({
+        sourceId: 1,
+        sourceName: 'X',
+        sourceType: 'book',
+        locator: '',
+        locatorHint: '',
+        skipLocator: false,
+      }),
     ).toBe(false);
   });
 
   it('returns true when both locator and skipLocator are set', () => {
     expect(
-      isDraftSubmittable({ sourceId: 1, sourceName: 'X', locator: 'p.5', skipLocator: true }),
+      isDraftSubmittable({
+        sourceId: 1,
+        sourceName: 'X',
+        sourceType: 'web',
+        locator: 'p.5',
+        locatorHint: '',
+        skipLocator: true,
+      }),
     ).toBe(true);
   });
 });
@@ -240,7 +275,9 @@ describe('emptyDraft', () => {
     expect(emptyDraft()).toEqual({
       sourceId: null,
       sourceName: '',
+      sourceType: '',
       locator: '',
+      locatorHint: '',
       skipLocator: false,
     });
   });
@@ -307,6 +344,7 @@ describe('transition', () => {
       const state = identifyState(makeParent({ id: 10 }), { sourceId: 10, sourceName: 'Parent' });
       const next = transition(state, {
         type: 'source_identified',
+        sourceType: 'web',
         sourceId: 11,
         sourceName: 'Child Edition',
         skipLocator: false,
@@ -318,10 +356,31 @@ describe('transition', () => {
       expect(next.draft.skipLocator).toBe(false);
     });
 
+    it('threads sourceType and locatorHint into the draft', () => {
+      const state = identifyState();
+      const next = transition(state, {
+        type: 'source_identified',
+        sourceType: 'video',
+        sourceId: 13,
+        sourceName: 'YouTube #dQw4w9WgXcQ',
+        skipLocator: false,
+        locatorHint: '1:35',
+      });
+
+      expect(next.stage).toBe('locator');
+      expect(next.draft.sourceType).toBe('video');
+      expect(next.draft.locatorHint).toBe('1:35');
+      // The hint is a prefill, not a submitted locator — it must not make the
+      // draft auto-submittable past the locator stage.
+      expect(next.draft.locator).toBe('');
+      expect(isDraftSubmittable(next.draft)).toBe(false);
+    });
+
     it('from identify with skipLocator true → locator stage with skipLocator set', () => {
       const state = identifyState();
       const next = transition(state, {
         type: 'source_identified',
+        sourceType: 'web',
         sourceId: 12,
         sourceName: 'IPDB Machine 4836',
         skipLocator: true,
@@ -335,6 +394,7 @@ describe('transition', () => {
       const state = searchState();
       const next = transition(state, {
         type: 'source_identified',
+        sourceType: 'web',
         sourceId: 21,
         sourceName: 'IPDB #4836',
         skipLocator: true,
@@ -430,6 +490,7 @@ describe('transition', () => {
       };
       const next = transition(state, {
         type: 'source_created',
+        sourceType: 'web',
         sourceId: 50,
         sourceName: 'New Source',
         skipLocator: false,
@@ -450,6 +511,7 @@ describe('transition', () => {
       };
       const next = transition(state, {
         type: 'source_created',
+        sourceType: 'web',
         sourceId: 51,
         sourceName: 'Web Child',
         skipLocator: true,
@@ -487,6 +549,7 @@ describe('transition', () => {
       const state = searchState();
       const next = transition(state, {
         type: 'source_created',
+        sourceType: 'web',
         sourceId: 1,
         sourceName: 'X',
         skipLocator: false,
@@ -522,7 +585,14 @@ describe('transition', () => {
     it('from locator → same stage with draft.locator updated', () => {
       const state: CiteState = {
         stage: 'locator',
-        draft: { sourceId: 5, sourceName: 'X', locator: '', skipLocator: false },
+        draft: {
+          sourceId: 5,
+          sourceName: 'X',
+          sourceType: 'book',
+          locator: '',
+          locatorHint: '',
+          skipLocator: false,
+        },
       };
       const next = transition(state, { type: 'locator_submitted', locator: 'p. 42' });
 
@@ -534,7 +604,14 @@ describe('transition', () => {
     it('from locator with empty locator → works (skip path)', () => {
       const state: CiteState = {
         stage: 'locator',
-        draft: { sourceId: 5, sourceName: 'X', locator: '', skipLocator: false },
+        draft: {
+          sourceId: 5,
+          sourceName: 'X',
+          sourceType: 'book',
+          locator: '',
+          locatorHint: '',
+          skipLocator: false,
+        },
       };
       const next = transition(state, { type: 'locator_submitted', locator: '' });
 

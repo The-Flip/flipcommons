@@ -55,6 +55,7 @@ class RecognitionChild:
     id: CitationSourceId
     name: str
     skip_locator: bool = False
+    source_type: str = ""
 
 
 @dataclass
@@ -128,6 +129,7 @@ def _recognize_by_scheme(url: str) -> Recognition | None:
                     id=child.id,
                     name=child.name,
                     skip_locator=child.skip_locator,
+                    source_type=child.source_type,
                 ),
                 identifier=extracted_id,
                 locator_hint=locator_hint,
@@ -171,6 +173,7 @@ def _recognize_by_child_link(url: str) -> Recognition | None:
             id=child.pk,
             name=child.name,
             skip_locator=child.skip_locator,
+            source_type=child.source_type,
         ),
     )
 

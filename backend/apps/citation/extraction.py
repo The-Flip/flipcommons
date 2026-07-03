@@ -40,6 +40,7 @@ class ExtractionDraft:
 class ExtractionMatch(TypedDict):
     id: int
     name: str
+    source_type: str
     skip_locator: bool
 
 
@@ -122,12 +123,13 @@ def extract_isbn(isbn: str) -> ExtractionResult:
             match={
                 "id": existing.pk,
                 "name": existing.name,
+                "source_type": existing.source_type,
                 "skip_locator": existing.skip_locator,
             }
         )
 
     # 2. Cache check
-    cache_key = f"extract:v2:isbn:{isbn}"
+    cache_key = f"extract:v3:isbn:{isbn}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cast(ExtractionResult, cached)

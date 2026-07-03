@@ -262,10 +262,17 @@ class TestExtractUrlRecognition:
         mock_rec.return_value = Recognition(
             parent_id=20,
             parent_name="IPDB",
-            child=RecognitionChild(id=42, name="IPDB #4836", skip_locator=True),
+            child=RecognitionChild(
+                id=42, name="IPDB #4836", skip_locator=True, source_type="web"
+            ),
         )
         result = extract_url("https://www.ipdb.org/machine.cgi?id=4836")
-        assert result.match == {"id": 42, "name": "IPDB #4836", "skip_locator": True}
+        assert result.match == {
+            "id": 42,
+            "name": "IPDB #4836",
+            "source_type": "web",
+            "skip_locator": True,
+        }
         assert result.draft is None
 
     @patch("apps.citation.url_extraction.safe_fetch")

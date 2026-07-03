@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CitationInstanceDraft } from './citation-types';
+  import { citationTypeFrontend, citationTypeMeta } from '$lib/citation-types';
   import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
 
@@ -15,7 +16,18 @@
     onback: () => void;
   } = $props();
 
+  // The source's citation type drives the prompt and the inline validation —
+  // a video child asks for a start time; books and pages stay freeform.
+  let meta = $derived(citationTypeMeta(draft.sourceType));
+  let frontend = $derived(citationTypeFrontend(draft.sourceType));
+
+  // A pasted URL's start time (?t=95) arrives as a prefill, not as a
+  // submitted locator — the contributor still confirms or edits it here.
   let locator = $state('');
+  $effect.pre(() => {
+    if (draft.locatorHint && !locator) locator = draft.locatorHint;
+  });
+  let validationError = $state('');
   let inputEl: HTMLInputElement | undefined = $state();
 
   $effect(() => {
@@ -24,11 +36,27 @@
     }
   });
 
+  /** Validate against the type's grammar (UX mirror; the backend re-validates)
+   *  and submit the canonical form. An empty locator is always a valid skip. */
+  function trySubmit() {
+    const trimmed = locator.trim();
+    if (!trimmed) {
+      onsubmit('');
+      return;
+    }
+    const normalized = frontend.normalizeLocator(trimmed);
+    if (normalized === null) {
+      validationError = meta.locatorInvalidMessage;
+      return;
+    }
+    onsubmit(normalized);
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     switch (e.key) {
       case 'Enter':
         e.preventDefault();
-        onsubmit(locator);
+        trySubmit();
         break;
       case 'Escape':
         e.preventDefault();
@@ -56,15 +84,20 @@
     bind:this={inputEl}
     type="text"
     aria-label="Citation locator"
-    placeholder="p. 42, Chapter 3, timestamp..."
+    aria-invalid={validationError ? 'true' : undefined}
+    placeholder={meta.locatorPlaceholder}
     bind:value={locator}
+    oninput={() => (validationError = '')}
     onkeydown={handleKeydown}
   />
+  {#if validationError}
+    <div class="validation-error" role="alert">{validationError}</div>
+  {/if}
   <div class="locator-actions">
     <DropdownButton
       onpointerdown={(e) => {
         e.preventDefault();
-        onsubmit(locator);
+        trySubmit();
       }}
     >
       Insert
@@ -87,6 +120,11 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
+  }
+
+  .validation-error {
+    color: var(--color-error-text);
+    font-size: var(--font-size-0);
   }
 
   .locator-actions {

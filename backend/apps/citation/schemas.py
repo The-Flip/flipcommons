@@ -120,6 +120,13 @@ class CitationSourceMatchSchema(Schema):
 
     id: int = Field(description="The matched source's identifier.")
     name: str = Field(description="The matched source's display name.")
+    source_type: str = Field(
+        "",
+        description=(
+            "The matched source's citation type (book/magazine/web/video) — "
+            "the frontend's key into the per-type locator behavior."
+        ),
+    )
     skip_locator: bool = Field(
         False,
         description="Whether citing the matched source needs no locator (true for a web child).",
