@@ -4,8 +4,8 @@ A :class:`~apps.citation.models.CitationSource` is a work or evidence object
 that can be cited: a book, magazine or web page. Sources form a one-level
 hierarchy through a self FK — a *root* source (e.g. the IPDB website, or a
 magazine title) groups *child* sources (e.g. one IPDB machine page, or a
-single issue/article). ``source_type`` is one of ``book`` / ``magazine`` /
-``web``.
+single issue/article). ``source_type`` is one of the registered
+citation types (``book`` / ``magazine`` / ``web`` / ``video``).
 
 Two derived notions recur across these schemas:
 
@@ -32,6 +32,7 @@ from typing import Annotated, Literal
 from ninja import Field, Schema
 from pydantic import ConfigDict, field_validator
 
+from .citation_types import SourceTypeValue
 from .models import (
     CITATION_SOURCE_AUTHOR_MAX_LENGTH,
     CITATION_SOURCE_DATE_NOTE_MAX_LENGTH,
@@ -77,7 +78,7 @@ class CitationSourceSearchSchema(Schema):
 
     id: int = Field(description="The source's identifier.")
     name: str = Field(description="The source's display name.")
-    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    source_type: SourceTypeValue = Field(description="Kind of source.")
     author: str = Field(description="Author or creator, or an empty string.")
     publisher: str = Field(description="Publisher, or an empty string.")
     year: int | None = Field(None, description="Publication year, if known.")
@@ -120,11 +121,10 @@ class CitationSourceMatchSchema(Schema):
 
     id: int = Field(description="The matched source's identifier.")
     name: str = Field(description="The matched source's display name.")
-    source_type: str = Field(
-        "",
+    source_type: SourceTypeValue = Field(
         description=(
-            "The matched source's citation type (book/magazine/web/video) — "
-            "the frontend's key into the per-type locator behavior."
+            "The matched source's citation type — the frontend's key into "
+            "the per-type locator behavior."
         ),
     )
     skip_locator: bool = Field(
@@ -293,9 +293,7 @@ class CitationSourceUpdateSchema(Schema):
     """
 
     name: NameStr | None = Field(None, description="New display name.")
-    source_type: str | None = Field(
-        None, description='New source type: "book", "magazine" or "web".'
-    )
+    source_type: SourceTypeValue | None = Field(None, description="New source type.")
     author: AuthorStr | None = Field(None, description="New author or creator.")
     publisher: PublisherStr | None = Field(None, description="New publisher.")
     year: int | None = Field(None, description="New publication year.")
@@ -329,7 +327,7 @@ class CitationSourceChildSchema(Schema):
 
     id: int = Field(description="The child source's identifier.")
     name: str = Field(description="The child source's display name.")
-    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    source_type: SourceTypeValue = Field(description="Kind of source.")
     year: int | None = Field(None, description="Publication year, if known.")
     isbn: str | None = Field(None, description="ISBN, if known.")
     skip_locator: bool = Field(
@@ -358,7 +356,7 @@ class CitationSourceDetailSchema(Schema):
 
     id: int = Field(description="The source's identifier.")
     name: str = Field(description="The source's display name.")
-    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    source_type: SourceTypeValue = Field(description="Kind of source.")
     author: str = Field(description="Author or creator, or an empty string.")
     publisher: str = Field(description="Publisher, or an empty string.")
     year: int | None = Field(None, description="Publication year, if known.")
@@ -435,7 +433,7 @@ class CitationExtractDraftSchema(Schema):
     """Metadata scraped from an external lookup, to prefill the create form."""
 
     name: str = Field(description="The extracted title.")
-    source_type: str = Field(
+    source_type: SourceTypeValue = Field(
         description='Inferred source type: "book" for an ISBN, "web" for a URL.'
     )
     author: str = Field(description="Extracted author, or an empty string.")

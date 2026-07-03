@@ -34,7 +34,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeGuard, get_args
 
 from django.db import models
 
@@ -44,6 +44,44 @@ class SourceType(models.TextChoices):
     MAGAZINE = "magazine", "Magazine"
     WEB = "web", "Web"
     VIDEO = "video", "Video"
+
+
+# The wire-type twin of ``SourceType``: a Literal for API schema fields so the
+# OpenAPI document (and the generated frontend types) carry the value union
+# instead of a bare string. A Literal can't be derived from the enum, so the
+# import-time assertion below keeps the hand-mirrored list honest.
+SourceTypeValue = Literal["book", "magazine", "web", "video"]
+
+
+def _assert_source_type_literal_current() -> None:
+    """Raise at import if ``SourceTypeValue`` drifts from ``SourceType``."""
+    literal = set(get_args(SourceTypeValue))
+    if literal != set(SourceType.values):
+        raise AssertionError(
+            f"SourceTypeValue {sorted(literal)} != SourceType {sorted(SourceType.values)}"
+        )
+
+
+_assert_source_type_literal_current()
+
+_SOURCE_TYPE_VALUES: frozenset[str] = frozenset(get_args(SourceTypeValue))
+
+
+def _is_source_type_value(raw: str) -> TypeGuard[SourceTypeValue]:
+    return raw in _SOURCE_TYPE_VALUES
+
+
+def source_type_value(raw: str) -> SourceTypeValue:
+    """Coerce a model's raw ``source_type`` field to the wire Literal.
+
+    The serializer-side twin of ``citation_type_spec``'s coercion: a stored
+    value outside the registered types (impossible under the CHECK constraint,
+    reachable only via raw SQL) raises ``ValueError`` instead of leaking an
+    unvalidated string onto the wire.
+    """
+    if _is_source_type_value(raw):
+        return raw
+    raise ValueError(f"Unknown source_type {raw!r}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +125,9 @@ class SchemeSpec:
     ``normalize`` methods drive them, so every scheme resolves input the same
     way. Conventions the conformance harness enforces:
 
-    - ``url_pattern`` captures the identifier as **group 1** and is anchored on
+    - ``url_pattern`` captures the identifier in **exactly one participating
+      group** (alternation branches may each carry their own capture, so each
+      URL shape can enforce its own boundary) and is anchored on
       ``https?://<host>`` so a look-alike host (``notyoutube.com``) can't match.
     - ``id_pattern`` fullmatches a bare identifier.
     - ``canonical_url`` builds the one URL every shape collapses to —
@@ -122,10 +162,15 @@ class SchemeSpec:
         m = self.url_pattern.search(url)
         if m is None:
             return None
+        # Exactly one alternation branch participates, so its capture is the
+        # highest-numbered matched group — per-branch captures let each URL
+        # shape carry its own boundary (a query id may be followed by ``&``,
+        # a path id may not grow extra path segments).
+        assert m.lastindex is not None, "url_pattern must capture the identifier"
         seconds = (
             self.start_seconds_from_url(url) if self.start_seconds_from_url else None
         )
-        return SchemeMatch(identifier=m.group(1), start_seconds=seconds)
+        return SchemeMatch(identifier=m.group(m.lastindex), start_seconds=seconds)
 
     def validate_identifier(self, raw: str) -> str | None:
         """Return *raw* when it is a well-formed bare identifier, else ``None``."""

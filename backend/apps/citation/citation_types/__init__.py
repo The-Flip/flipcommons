@@ -12,6 +12,8 @@ from apps.citation.citation_types.base import (
     SchemeMatch,
     SchemeSpec,
     SourceType,
+    SourceTypeValue,
+    source_type_value,
 )
 from apps.citation.citation_types.registry import (
     CITATION_TYPE_SPECS,
@@ -31,8 +33,10 @@ __all__ = [
     "SchemeMatch",
     "SchemeSpec",
     "SourceType",
+    "SourceTypeValue",
     "citation_type_spec",
     "identifier_key_choices",
     "identifier_key_values",
     "scheme_source_type_pairs",
+    "source_type_value",
 ]

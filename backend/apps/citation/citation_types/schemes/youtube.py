@@ -4,8 +4,15 @@ YouTube's one video id is reachable through many URL shapes (``watch?v=``,
 ``youtu.be/``, ``/shorts/``, ``/embed/``, ``/live/``, mobile ``m.``) plus
 trailing params — all collapse to one canonical child. The pattern is
 host-bound on ``https?://<host>`` like the others so ``notyoutube.com`` can't
-match, and ``(?![A-Za-z0-9_-])`` pins the id to 11 chars so a 12-char typo
-fails instead of truncating to a wrong-but-valid-looking id.
+match, and each shape carries its own boundary so a malformed URL fails
+instead of collapsing to a wrong-but-valid-looking id:
+
+- the ``watch`` shape reads ``v=`` from the **query only** (the param scan
+  can't cross ``#`` into the fragment), and the 11-char id can't continue
+  into a longer token;
+- the path shapes (``youtu.be/``, ``/embed/``, ``/shorts/``, ``/live/``)
+  accept end/query/fragment or a single trailing slash after the id, but not
+  extra path segments.
 
 A video scheme (:class:`~apps.citation.citation_types.video.VideoSchemeSpec`):
 children mint as ``video`` sources, a pasted ``?t=``/``?start=`` start time
@@ -14,10 +21,33 @@ builds the watch URL that jumps to a cited moment.
 """
 
 import re
+from typing import Final
 from urllib.parse import parse_qs, urlparse
 
 from apps.citation.citation_types.base import RootSeed, SourceType
 from apps.citation.citation_types.video import VideoSchemeSpec, parse_start_time
+
+# Path-shape boundary: the id may be followed by a single trailing slash and
+# then only a query, a fragment, or the end — never more path.
+_PATH_ID = r"([A-Za-z0-9_-]{11})(?=/?(?:[?#]|$))"
+
+_URL_PATTERN = re.compile(
+    r"https?://(?:"
+    r"(?:www\.|m\.)?youtube\.com/watch\?(?:[^\s#]*&)?v=([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])"
+    rf"|(?:www\.|m\.)?youtube\.com/(?:embed|shorts|live)/{_PATH_ID}"
+    rf"|(?:www\.)?youtu\.be/{_PATH_ID}"
+    r")"
+)
+
+
+def _canonical_url(video_id: str) -> str:
+    """The one URL every YouTube shape collapses to."""
+    return f"https://www.youtube.com/watch?v={video_id}"
+
+
+def _deep_link(video_id: str, start_seconds: int) -> str:
+    """The watch URL that starts playback at *start_seconds*."""
+    return f"https://www.youtube.com/watch?v={video_id}&t={start_seconds}s"
 
 
 def _start_seconds_from_url(url: str) -> int | None:
@@ -40,18 +70,13 @@ def _start_seconds_from_url(url: str) -> int | None:
     return None
 
 
-YOUTUBE = VideoSchemeSpec(
+YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="youtube",
     label="YouTube",
     source_type=SourceType.VIDEO,
-    url_pattern=re.compile(
-        r"https?://(?:"
-        r"(?:www\.|m\.)?youtube\.com/(?:watch\?(?:[^\s]*&)?v=|embed/|shorts/|live/)"
-        r"|(?:www\.)?youtu\.be/"
-        r")([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])"
-    ),
+    url_pattern=_URL_PATTERN,
     id_pattern=re.compile(r"[A-Za-z0-9_-]{11}"),
-    canonical_url=lambda id: f"https://www.youtube.com/watch?v={id}",
+    canonical_url=_canonical_url,
     example_identifier="dQw4w9WgXcQ",
     root_seed=RootSeed(
         name="YouTube",
@@ -61,6 +86,6 @@ YOUTUBE = VideoSchemeSpec(
         # matching, so the root owns only its homepage-derived host.
         recognition_hosts=("youtube.com",),
     ),
-    deep_link=lambda id, seconds: f"https://www.youtube.com/watch?v={id}&t={seconds}s",
+    deep_link=_deep_link,
     start_seconds_from_url=_start_seconds_from_url,
 )

@@ -60,6 +60,8 @@ class TestYouTubeNormalize:
             f"https://www.youtube.com/watch?v={VID}&t=42s",
             f"https://www.youtube.com/watch?list=PL123&v={VID}",
             f"https://www.youtube.com/shorts/{VID}?feature=share",
+            f"https://youtu.be/{VID}/",  # single trailing slash is tolerated
+            f"https://www.youtube.com/watch?v={VID}#t=30",  # fragment after the id
         ],
     )
     def test_every_shape_normalizes_to_the_id(self, raw):
@@ -77,6 +79,9 @@ class TestYouTubeNormalize:
             f"https://youtube.com.evil.com/watch?v={VID}",  # host as a prefix label
             "https://www.ipdb.org/machine.cgi?id=4443",  # wrong site
             "https://example.com/dQw4w9WgXcQ",  # bare id buried in a foreign URL
+            f"https://www.youtube.com/watch?foo=bar#&v={VID}",  # v= only in the fragment
+            f"https://youtu.be/{VID}/extra",  # extra path segment after the id
+            f"https://www.youtube.com/embed/{VID}/extra",  # ditto, embed shape
             "not a url or id",
         ],
     )

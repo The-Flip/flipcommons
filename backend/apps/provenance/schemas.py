@@ -17,6 +17,7 @@ from typing import Annotated, ClassVar, Literal
 from django.db.models import Model
 from ninja import Field, Schema
 
+from apps.citation.citation_types import SourceTypeValue
 from apps.citation.models import (
     CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
     CITATION_INSTANCE_QUOTE_MAX_LENGTH,
@@ -411,7 +412,7 @@ class InlineCitationSchema(Schema):
         description="The citation's sequential number in the text, shown as ``[1]``, ``[2]``, …"
     )
     source_name: str = Field(description="Name of the cited source.")
-    source_type: str = Field(
+    source_type: SourceTypeValue = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
     )
     author: str = Field(description="Author of the cited source, if recorded.")
@@ -472,6 +473,9 @@ class CitationSourceSchema(Schema):
     # :class:`CitationInstanceSchema`, which is one use of a source on a claim.
     name: str = Field(description="The source's display name.")
     slug: str = Field(description="The source's URL slug.")
+    # Deliberately NOT SourceTypeValue: this schema serializes the ingest
+    # `Source` model (provenance attribution), whose source_type enum
+    # (database/wiki/book/editorial/other) is unrelated to citation types.
     source_type: str = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
     )
@@ -555,7 +559,7 @@ class CitationInstanceBatchSchema(Schema):
 
     id: int = Field(description="The citation instance's identifier.")
     source_name: str = Field(description="Name of the cited source.")
-    source_type: str = Field(
+    source_type: SourceTypeValue = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
     )
     author: str = Field(description="Author of the cited source, or an empty string.")
