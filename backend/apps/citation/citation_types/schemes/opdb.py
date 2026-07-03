@@ -13,7 +13,9 @@ OPDB = SchemeSpec(
     canonical_url=lambda id: f"https://opdb.org/machines/{id}",
     example_identifier="GRhX5",
     root_seed=RootSeed(
-        name="OPDB",
+        # Mirrors the root as it actually shipped in the seed data — the
+        # ingest conformance check holds patch declarations to these facts.
+        name="Online Pinball Database (OPDB)",
         homepage_url="https://opdb.org/",
         recognition_hosts=("opdb.org",),
     ),

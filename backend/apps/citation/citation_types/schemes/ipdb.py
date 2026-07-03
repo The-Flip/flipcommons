@@ -13,7 +13,9 @@ IPDB = SchemeSpec(
     canonical_url=lambda id: f"https://www.ipdb.org/machine.cgi?id={id}",
     example_identifier="4443",
     root_seed=RootSeed(
-        name="IPDB",
+        # Mirrors the root as it actually shipped in the seed data — the
+        # ingest conformance check holds patch declarations to these facts.
+        name="Internet Pinball Database (IPDB)",
         homepage_url="https://www.ipdb.org/",
         recognition_hosts=("ipdb.org",),
     ),

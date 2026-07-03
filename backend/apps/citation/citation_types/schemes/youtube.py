@@ -56,7 +56,10 @@ YOUTUBE = VideoSchemeSpec(
     root_seed=RootSeed(
         name="YouTube",
         homepage_url="https://www.youtube.com/",
-        recognition_hosts=("youtube.com", "youtu.be"),
+        # youtu.be is deliberately NOT a recognition host: every youtu.be
+        # video URL resolves through the scheme extractor before host
+        # matching, so the root owns only its homepage-derived host.
+        recognition_hosts=("youtube.com",),
     ),
     deep_link=lambda id, seconds: f"https://www.youtube.com/watch?v={id}&t={seconds}s",
     start_seconds_from_url=_start_seconds_from_url,

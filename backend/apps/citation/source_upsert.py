@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, NamedTuple, NotRequired, TypedDict
 from urllib.parse import urlparse
 
+from apps.citation.citation_types import SCHEME_SPECS
 from apps.citation.hosts import Host, normalize_host
 from apps.citation.source_node import SourceLinkNode, SourceNode
 
@@ -347,6 +348,54 @@ def validate_root_source(node: SourceNode) -> None:
     for host in _declared_recognition_hosts(node):
         domain = CitationSourceRootDomain(host=host)
         domain.full_clean(exclude=["source", *attribution], validate_unique=False)
+
+    _validate_scheme_root_seed(node)
+
+
+def _validate_scheme_root_seed(node: SourceNode) -> None:
+    """Hold a scheme root's declaration to its registered ``root_seed`` facts.
+
+    A ``sources:`` node carrying an ``identifier_key`` is declaring a scheme's
+    platform root, and the scheme registry is operationally authoritative for
+    those: the declared name, homepage URL and recognition-host set must match
+    the spec's ``root_seed`` exactly, so the registry and the seeded row can't
+    silently disagree (a mistyped root would mint children that never match
+    the spec's canonical facts). Non-scheme nodes are unconstrained. Unknown
+    keys are the field validator's error (choices), checked before this runs.
+    """
+    from django.core.exceptions import ValidationError
+
+    key = node.get("identifier_key", "")
+    spec = SCHEME_SPECS.get(key) if key else None
+    if spec is None:
+        return
+    seed = spec.root_seed
+    problems: list[str] = []
+    if node["name"] != seed.name:
+        problems.append(f"name must be {seed.name!r} (declared {node['name']!r})")
+    homepage_urls = [
+        link["url"] for link in node.get("links", []) if link["link_type"] == "homepage"
+    ]
+    if seed.homepage_url not in homepage_urls:
+        problems.append(
+            f"homepage link {seed.homepage_url!r} must be declared "
+            f"(declared homepages: {homepage_urls!r})"
+        )
+    declared_hosts = set(_declared_recognition_hosts(node))
+    if declared_hosts != set(seed.recognition_hosts):
+        problems.append(
+            f"recognition hosts must be {sorted(seed.recognition_hosts)!r} "
+            f"(declared {sorted(declared_hosts)!r})"
+        )
+    if problems:
+        raise ValidationError(
+            {
+                "identifier_key": (
+                    f"scheme root {key!r} must match its registered root_seed: "
+                    + "; ".join(problems)
+                )
+            }
+        )
 
 
 def detect_host_collision(node: SourceNode) -> str | None:

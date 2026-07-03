@@ -65,8 +65,10 @@ class RootSeed:
     """Declarative facts about a scheme's platform root ``CitationSource``.
 
     The root row is still created by a data patch — a scheme is live only once
-    its root is seeded — but the patch is authored from these facts, and
-    conformance checks assert spec and seed can't silently disagree.
+    its root is seeded — but the patch is authored from these facts, and the
+    ingest validation (``source_upsert._validate_scheme_root_seed``) rejects a
+    ``sources:`` declaration that disagrees with them, so the registry stays
+    operationally authoritative.
     ``recognition_hosts`` are the ``CitationSourceRootDomain`` hosts the root
     should own (normalized: lowercase, no ``www.``).
     """
