@@ -19,7 +19,12 @@ from urllib.parse import urlparse
 
 from django.db import transaction
 
-from apps.citation.citation_types import SCHEME_SPECS, citation_type_spec
+from apps.citation.citation_types import (
+    SCHEME_SPECS,
+    CitationSourceTypeValue,
+    citation_source_type,
+    citation_type_spec,
+)
 from apps.citation.hosts import (
     Host,
     RootDomainMatch,
@@ -46,16 +51,18 @@ if TYPE_CHECKING:
 class RecognitionChild:
     """Child-source portion of a :class:`Recognition`.
 
-    Grouping ``id`` / ``name`` / ``skip_locator`` here encodes the runtime
-    invariant that they're either all present or all absent — callers can
-    narrow with ``if rec.child is not None`` and access fields without
-    per-field ``None`` checks.
+    Grouping ``id`` / ``name`` / ``source_type`` / ``skip_locator`` here
+    encodes the runtime invariant that they're either all present or all
+    absent — callers can narrow with ``if rec.child is not None`` and access
+    fields without per-field ``None`` checks. ``source_type`` is the typed
+    Literal, coerced from the model's raw field at construction, so consumers
+    read a validated value rather than a bare ``str``.
     """
 
     id: CitationSourceId
     name: str
+    source_type: CitationSourceTypeValue
     skip_locator: bool = False
-    source_type: str = ""
 
 
 @dataclass
@@ -129,7 +136,7 @@ def _recognize_by_scheme(url: str) -> Recognition | None:
                     id=child.id,
                     name=child.name,
                     skip_locator=child.skip_locator,
-                    source_type=child.source_type,
+                    source_type=citation_source_type(child.source_type),
                 ),
                 identifier=extracted_id,
                 locator_hint=locator_hint,
@@ -173,7 +180,7 @@ def _recognize_by_child_link(url: str) -> Recognition | None:
             id=child.pk,
             name=child.name,
             skip_locator=child.skip_locator,
-            source_type=child.source_type,
+            source_type=citation_source_type(child.source_type),
         ),
     )
 

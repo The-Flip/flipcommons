@@ -82,9 +82,11 @@ def _assert_registry_coherent(
     if orphaned:
         raise AssertionError(f"Scheme(s) with an unregistered source_type: {orphaned}")
     # Each scheme implements its owning type's contract — the per-type spec
-    # class (a video scheme must be a VideoSchemeSpec). mypy enforces this
-    # statically inside each scheme module; this is the runtime backstop for a
-    # spec registered under the wrong type.
+    # class (a video scheme must be a VideoSchemeSpec). This isinstance check
+    # and the conformance harness are what enforce it: VideoSchemeSpec adds no
+    # fields today, so a plain SchemeSpec under a video source_type type-checks,
+    # making this import-time check the earliest catch. It becomes statically
+    # enforced for free once the subclass gains a required field.
     nonconforming = [
         spec.key
         for spec in schemes.values()

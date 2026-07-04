@@ -308,9 +308,13 @@ class CitationTypeSpec:
     - ``locator``: the type's locator contract (grammar, prompt, structured
       value bridge).
     - ``scheme_spec_type``: the spec class this type's schemes implement — the
-      per-type Protocol (video schemes must be ``VideoSchemeSpec``, which
-      requires ``deep_link``). The registry enforces it at import; mypy
-      enforces it on each scheme module's constructor call.
+      per-type contract (a video scheme must be a ``VideoSchemeSpec``).
+      Enforced at import by the registry's ``isinstance`` check and by the
+      conformance harness, **not** statically: ``VideoSchemeSpec`` adds no
+      fields over ``SchemeSpec`` today, so a plain ``SchemeSpec`` built under a
+      video ``source_type`` still type-checks. Static enforcement arrives for
+      free once the subclass carries a required field a plain ``SchemeSpec``
+      would be missing.
     """
 
     source_type: SourceType

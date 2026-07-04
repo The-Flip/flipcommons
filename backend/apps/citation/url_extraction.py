@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 from django.core.cache import cache
 
-from .citation_types import citation_source_type
 from .extraction import ExtractionDraft, ExtractionResult
 from .extractors import recognize_url
 from .safe_fetch import SSRFBlockedError, safe_fetch
@@ -151,7 +150,7 @@ def extract_url(url: str) -> ExtractionResult:
             match={
                 "id": rec.child.id,
                 "name": rec.child.name,
-                "source_type": citation_source_type(rec.child.source_type),
+                "source_type": rec.child.source_type,
                 "skip_locator": rec.child.skip_locator,
             }
         )
