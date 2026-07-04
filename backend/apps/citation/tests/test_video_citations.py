@@ -1,9 +1,10 @@
-"""Tests for video citations: the youtube scheme, recognition hints, deep links.
+"""Tests for video citations: recognition hints and deep links, DB-side.
 
-The grammar itself is covered by ``test_video_locators.py`` and the generic
-scheme contract by ``schemes/test_conformance.py``; this file covers the
-youtube scheme's platform-specific behavior and the read-side composition
-(recognition ``locator_hint``, ``deep_linked_url``).
+The grammar itself is covered by ``test_video_locators.py``, the generic
+scheme contract by ``schemes/test_conformance.py`` and the youtube URL/hint
+shapes by its example table in ``schemes/test_youtube.py``; this file covers
+the read-side composition against real rows (recognition ``locator_hint``,
+``deep_linked_url``).
 """
 
 import pytest
@@ -26,41 +27,6 @@ def youtube_root(db):
     return make_citation_source(
         name="YouTube", source_type="video", identifier_key="youtube"
     )
-
-
-class TestStartSecondsHint:
-    """``extract`` surfaces a pasted start time as structured seconds."""
-
-    @pytest.mark.parametrize(
-        ("url", "seconds"),
-        [
-            (f"{CANONICAL}&t=95", 95),
-            (f"{CANONICAL}&t=95s", 95),
-            (f"{CANONICAL}&t=1h2m3s", 3723),
-            (f"https://youtu.be/{VID}?t=95", 95),
-            (f"https://www.youtube.com/embed/{VID}?start=95", 95),
-            (f"https://www.youtube.com/shorts/{VID}?t=2m", 120),
-        ],
-    )
-    def test_start_time_params_extract(self, url, seconds):
-        match = YOUTUBE.extract(url)
-        assert match is not None
-        assert match.identifier == VID
-        assert match.start_seconds == seconds
-
-    @pytest.mark.parametrize(
-        "url",
-        [
-            CANONICAL,  # no param at all
-            f"{CANONICAL}&t=0",  # "from the beginning" — not a hint
-            f"{CANONICAL}&t=banana",  # malformed — abstain, don't guess
-            f"https://youtu.be/{VID}?si=AbCdEf",  # unrelated param
-        ],
-    )
-    def test_no_usable_hint_yields_none(self, url):
-        match = YOUTUBE.extract(url)
-        assert match is not None
-        assert match.start_seconds is None
 
 
 class TestRecognitionLocatorHint:

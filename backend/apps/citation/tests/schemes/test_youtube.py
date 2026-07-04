@@ -55,6 +55,8 @@ EXAMPLES = SchemeExamples(
         StartTimeCase(f"https://www.youtube.com/watch?v={VID}", None),  # no time
         StartTimeCase(f"https://www.youtube.com/watch?v={VID}&t=0", None),  # 0 = start
         StartTimeCase(f"https://www.youtube.com/watch?v={VID}#t=30", None),  # fragment
+        StartTimeCase(f"https://www.youtube.com/watch?v={VID}&t=banana", None),  # junk
+        StartTimeCase(f"https://youtu.be/{VID}?si=AbCdEf", None),  # unrelated param
     ),
     # Seeks via the t= query param, seconds-suffixed.
     deep_link_case=DeepLinkCase(3723, f"https://www.youtube.com/watch?v={VID}&t=3723s"),

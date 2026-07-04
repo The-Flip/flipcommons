@@ -189,6 +189,38 @@ class SchemeRecognition(NamedTuple):
     start_seconds: StartSeconds | None
 
 
+def _start_seconds_hint(spec: SchemeSpec, url: str) -> StartSeconds | None:
+    """Evaluate a scheme's declared ``start_seconds_source`` against *url*.
+
+    The inbound half of the composition contract, mirroring
+    ``scheme_deep_link``'s outbound weave: the scheme's source says *where*
+    the hint rides in the URL, the owning type's ``locator.parse_value``
+    grammar says *what the values mean* — neither layer sees the other's
+    vocabulary, and the spec classes carry no parsing at all. First
+    parseable, nonzero value wins (``t=0`` means "from the start" — no
+    hint); a source on a type with no value grammar is inert.
+    """
+    source = spec.start_seconds_source
+    if source is None:
+        return None
+    parse_value = CITATION_TYPE_SPECS[spec.source_type].locator.parse_value
+    if parse_value is None:
+        return None
+    for raw in source.raw_values(url):
+        seconds = parse_value(raw)
+        if seconds:
+            return seconds
+    return None
+
+
+def scheme_start_seconds_hint(key: SchemeKey, url: str) -> StartSeconds | None:
+    """The structured start-time hint *url* carries for scheme *key*, if any.
+
+    ``ValueError`` for an unregistered key.
+    """
+    return _start_seconds_hint(_scheme_spec(key), url)
+
+
 def recognize_scheme(url: str) -> SchemeRecognition | None:
     """Which scheme + identifier *url* yields, by pattern match alone.
 
@@ -198,13 +230,13 @@ def recognize_scheme(url: str) -> SchemeRecognition | None:
     page) regardless of whether the scheme's root is seeded yet.
     """
     for key, spec in SCHEME_SPECS.items():
-        match = spec.extract(url)
-        if match is not None:
+        identifier = spec.extract(url)
+        if identifier is not None:
             return SchemeRecognition(
                 scheme=key,
                 label=spec.label,
-                identifier=match.identifier,
-                start_seconds=match.start_seconds,
+                identifier=identifier,
+                start_seconds=_start_seconds_hint(spec, url),
             )
     return None
 

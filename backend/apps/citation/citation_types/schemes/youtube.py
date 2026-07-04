@@ -16,7 +16,7 @@ instead of collapsing to a wrong-but-valid-looking id:
 
 A video scheme (:class:`~apps.citation.citation_types.video.VideoSchemeSpec`):
 children mint as ``video`` sources, a pasted ``?t=``/``?start=`` start time
-surfaces as a structured ``SchemeMatch.start_seconds`` hint, and the deep-link
+surfaces as a structured start-seconds hint at recognition, and the deep-link
 template builds the watch URL that jumps to a cited moment.
 """
 

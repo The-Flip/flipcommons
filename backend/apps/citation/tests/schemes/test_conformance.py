@@ -47,9 +47,9 @@ class TestSchemeConformance:
     def test_canonical_url_round_trips_through_extract(self, spec, example_id):
         """The canonical URL is one of the scheme's own recognized shapes."""
         url = spec.canonical_url(example_id)
-        match = spec.extract(url)
-        assert match is not None, f"{spec.key}: canonical URL not recognized: {url}"
-        assert match.identifier == example_id
+        assert spec.extract(url) == example_id, (
+            f"{spec.key}: canonical URL not recognized: {url}"
+        )
 
     def test_example_identifier_is_valid_bare(self, spec, example_id):
         assert spec.validate_identifier(example_id) == example_id
@@ -82,16 +82,6 @@ class TestSchemeConformance:
         assert parsed.scheme == "https"
         assert parsed.hostname
         assert is_dns_host(normalize_host(parsed.hostname))
-
-    def test_extract_never_returns_locator_text(self, spec, example_id):
-        """A scheme hint is a structured value, never a preformatted string.
-
-        ``start_seconds`` is ``int | None`` by contract; this pins the runtime
-        shape for schemes whose ``extract`` is hand-written.
-        """
-        match = spec.extract(spec.canonical_url(example_id))
-        assert match is not None
-        assert match.start_seconds is None or isinstance(match.start_seconds, int)
 
     def test_root_citation_source_info_is_well_formed(self, spec):
         info = spec.root_citation_source_info

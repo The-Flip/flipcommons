@@ -20,7 +20,7 @@ class StartTimeCase(NamedTuple):
 
     ``seconds`` is ``None`` when the URL is recognized but carries no usable
     start-time hint (``t=0``, a malformed value, or no time param at all) — the
-    harness asserts ``extract(url).start_seconds`` equals it either way.
+    harness asserts the recognized URL's start-seconds hint equals it either way.
     """
 
     url: str

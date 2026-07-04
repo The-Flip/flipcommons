@@ -136,9 +136,10 @@ class StartSecondsSource:
 
     A scheme declares only the *location*: named parameters read from the URL
     query (YouTube's ``?t=``/``?start=``) or fragment (Vimeo's ``#t=``). The
-    parameter *values* are parsed by the owning type's URL-value grammar (the
-    ``_parse_url_seconds`` hook on its scheme-spec subclass) — the scheme says
-    where, the type says what it means.
+    parameter *values* are parsed framework-side through the owning type's
+    value grammar (``LocatorContract.parse_value``, woven in the registry) —
+    the scheme says where, the type says what the values mean, and neither
+    this class nor the spec ever parses anything.
     """
 
     location: Literal["query", "fragment"]
@@ -156,20 +157,6 @@ class StartSecondsSource:
         text = parsed.query if self.location == "query" else parsed.fragment
         found = parse_qs(text)
         return [value for name in self.params for value in found.get(name, [])]
-
-
-@dataclass(frozen=True, slots=True)
-class SchemeMatch:
-    """A URL recognized by a scheme: the identifier, plus structured hints.
-
-    ``start_seconds`` is the start-time hint a video-platform URL may carry
-    (``?t=95``); schemes without time semantics always leave it ``None``. It is
-    a structured value — the owning *type* formats it to a locator string; a
-    scheme never produces locator text.
-    """
-
-    identifier: str
-    start_seconds: StartSeconds | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,9 +209,9 @@ class SchemeSpec:
       platforms' URLs simply cannot seek (TikTok); their citations render the
       locator text beside the plain canonical link.
     - ``start_seconds_source`` declares where a recognized URL carries the
-      structured position hint (``?t=95``), surfaced by ``extract`` as
-      ``SchemeMatch.start_seconds``; the owning type's spec subclass parses
-      the values (``_parse_url_seconds``). A scheme declaring this must also
+      structured position hint (``?t=95``). The values are parsed
+      framework-side, in the registry, through the owning type's value
+      grammar — this class never sees them. A scheme declaring this must also
       provide ``deep_link_template`` (conformance-enforced): URLs that carry
       seek positions prove the platform can jump.
     """
@@ -241,11 +228,13 @@ class SchemeSpec:
 
     # -- Framework surface. The methods below are defined once, here, and
     # invoked by the citation framework ON the fields above — a scheme author
-    # fills in the fields and never writes or overrides these (the one
-    # exception is ``_parse_url_seconds``, overridden per owning *type*, not
-    # per scheme). The single shared implementation is what guarantees every
-    # scheme resolves input identically; the conformance harness exercises
-    # them against every registered scheme. --
+    # fills in the fields and never writes, overrides or even sees these in
+    # action. Each method reads only this spec's own data; anything that
+    # needs the owning *type's* contracts (the start-seconds hint, the
+    # deep-link weave) lives in the registry, not here. The single shared
+    # implementation is what guarantees every scheme resolves input
+    # identically; the conformance harness exercises them against every
+    # registered scheme. --
 
     def canonical_url(self, identifier: str) -> str:
         """The one URL every recognized shape of *identifier* collapses to."""
@@ -263,33 +252,8 @@ class SchemeSpec:
             identifier=identifier, start_seconds=start_seconds
         )
 
-    def _parse_url_seconds(self, value: str) -> StartSeconds | None:
-        """Parse one raw ``start_seconds_source`` param value into seconds.
-
-        The composition contract's hook: the scheme declares *where* the hint
-        lives, the owning type's scheme-spec subclass declares *what the
-        values mean* by overriding this with its grammar (video accepts
-        ``95``, ``95s``, ``1h2m3s``). The base scheme has no value grammar,
-        so a ``start_seconds_source`` on a plain ``SchemeSpec`` is inert.
-        """
-        return None
-
-    def _start_seconds_hint(self, url: str) -> StartSeconds | None:
-        """Evaluate ``start_seconds_source`` against *url*.
-
-        First parseable, nonzero value wins (``t=0`` means "from the start" —
-        no hint); ``None`` when the scheme declares no source.
-        """
-        if self.start_seconds_source is None:
-            return None
-        for raw in self.start_seconds_source.raw_values(url):
-            seconds = self._parse_url_seconds(raw)
-            if seconds:
-                return seconds
-        return None
-
-    def extract(self, url: str) -> SchemeMatch | None:
-        """Recognize *url* as one of this scheme's shapes, or ``None``."""
+    def extract(self, url: str) -> str | None:
+        """The identifier when *url* is one of this scheme's shapes, else ``None``."""
         m = self.url_pattern.search(url)
         if m is None:
             return None
@@ -298,10 +262,7 @@ class SchemeSpec:
         # shape carry its own boundary (a query id may be followed by ``&``,
         # a path id may not grow extra path segments).
         assert m.lastindex is not None, "url_pattern must capture the identifier"
-        return SchemeMatch(
-            identifier=m.group(m.lastindex),
-            start_seconds=self._start_seconds_hint(url),
-        )
+        return m.group(m.lastindex)
 
     def validate_identifier(self, raw: str) -> str | None:
         """Return *raw* when it is a well-formed bare identifier, else ``None``."""
@@ -312,9 +273,9 @@ class SchemeSpec:
 
         Tries the URL shapes first, then validates as a bare identifier.
         """
-        match = self.extract(raw)
-        if match is not None:
-            return match.identifier
+        identifier = self.extract(raw)
+        if identifier is not None:
+            return identifier
         return self.validate_identifier(raw)
 
 
@@ -339,10 +300,13 @@ class LocatorContract:
     - ``normalize`` validates and canonicalizes a non-empty locator string,
       returning ``None`` for an invalid one. Empty locators never reach it —
       a locator is optional on every type.
-    - ``parse_value`` / ``format_value`` bridge locator text and the type's
+    - ``parse_value`` / ``format_value`` bridge value text and the type's
       structured value, present only when the type has one (video: start
-      seconds): ``parse_value`` feeds scheme ``deep_link`` builders,
-      ``format_value`` renders a scheme's ``SchemeMatch`` hint as locator text.
+      seconds). ``parse_value`` is the type's whole value grammar: it parses
+      stored locator text for the deep-link weave *and* the raw param values
+      a scheme's ``start_seconds_source`` yields (``95``, ``1h2m3s``) — both
+      woven framework-side in the registry. ``format_value`` renders a URL
+      hint as locator text.
     - ``invalid_message`` is the contributor-facing error for a failed
       ``normalize``.
     """

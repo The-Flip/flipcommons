@@ -24,6 +24,7 @@ from apps.citation.citation_types import (
     CitationSourceTypeValue,
     citation_source_type,
     citation_type_spec,
+    scheme_start_seconds_hint,
 )
 from apps.citation.hosts import (
     Host,
@@ -99,10 +100,9 @@ def _recognize_by_scheme(url: str) -> Recognition | None:
     identifier, with the child when one already exists.
     """
     for key, spec in SCHEME_SPECS.items():
-        match = spec.extract(url)
-        if match is None:
+        extracted_id = spec.extract(url)
+        if extracted_id is None:
             continue
-        extracted_id = match.identifier
 
         # Find the parent source that uses this scheme.
         parent = (
@@ -115,12 +115,14 @@ def _recognize_by_scheme(url: str) -> Recognition | None:
             continue
 
         # A structured start-time hint (a pasted ``?t=95``) becomes locator
-        # text via the owning type's contract — the scheme extracts seconds,
-        # the type formats them; recognition just carries the result.
+        # text via the owning type's contract — the scheme declares where the
+        # hint rides, the type parses and formats it; recognition just
+        # carries the result.
         locator_hint = ""
+        start_seconds = scheme_start_seconds_hint(key, url)
         format_value = citation_type_spec(spec.source_type).locator.format_value
-        if match.start_seconds is not None and format_value is not None:
-            locator_hint = format_value(match.start_seconds)
+        if start_seconds is not None and format_value is not None:
+            locator_hint = format_value(start_seconds)
 
         # Look for an existing child with this identifier.
         child = (

@@ -121,26 +121,20 @@ class VideoSchemeSpec(SchemeSpec):
     harness: a scheme that *extracts* start-time hints from URLs must also
     *build* them.
 
-    What it adds is the type's half of the composition contract for URL
-    hints: a scheme's ``start_seconds_source`` declares *where* a start time
-    rides in a URL; this subclass declares *what the values mean* by parsing
-    them through the video timestamp grammar (``95``, ``95s``, ``1h2m3s``,
-    with ``t=0`` and junk abstaining).
-
     A video scheme may only recognize URL shapes that are **guaranteed to be
     videos** (the type-homogeneity rule): recognition is syntactic, so a
     shape that can hold other media would mint wrong-typed children. TikTok
     qualifies because its paths discriminate (``/video/`` vs ``/photo/``);
     X's ``/status/`` does not, which is why X is a *web* scheme.
 
-    The subclass is also the registered per-type contract
-    (``scheme_spec_type``): a video scheme declares itself one by constructing
-    this type, so the registry's isinstance backstop catches a spec
-    registered under the wrong type.
+    The subclass is the registered per-type contract (``scheme_spec_type``)
+    and nothing more: a video scheme declares itself one by constructing this
+    type, so the registry's isinstance backstop catches a spec registered
+    under the wrong type. It deliberately carries no fields and no behavior —
+    even the URL start-time values are parsed framework-side through this
+    type's ``locator.parse_value`` grammar, not here — so a scheme author
+    sees only what they fill in.
     """
-
-    def _parse_url_seconds(self, value: str) -> StartSeconds | None:
-        return parse_start_time(value)
 
 
 VIDEO = CitationTypeSpec(

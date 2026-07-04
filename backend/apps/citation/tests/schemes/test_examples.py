@@ -13,7 +13,7 @@ platform-specific shapes only a scheme's author knows. Pure — no database.
 
 import pytest
 
-from apps.citation.citation_types import SCHEME_SPECS, SchemeSpec
+from apps.citation.citation_types import SCHEME_SPECS, SchemeSpec, recognize_scheme
 
 from .example_data import SchemeUrlCase, StartTimeCase
 from .example_registry import SCHEME_EXAMPLES
@@ -71,9 +71,10 @@ def test_start_time_case_extracts_expected_seconds(
     key: str, case: StartTimeCase
 ) -> None:
     """A recognized URL surfaces the declared ``start_seconds`` (or ``None``)."""
-    match = _spec(key).extract(case.url)
-    assert match is not None, f"{key}: example URL not recognized: {case.url}"
-    assert match.start_seconds == case.seconds
+    rec = recognize_scheme(case.url)
+    assert rec is not None, f"{key}: example URL not recognized: {case.url}"
+    assert rec.scheme == key, f"{case.url} recognized by {rec.scheme}, not {key}"
+    assert rec.start_seconds == case.seconds
 
 
 @pytest.mark.parametrize("key", list(SCHEME_EXAMPLES))
