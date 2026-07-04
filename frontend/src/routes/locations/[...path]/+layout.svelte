@@ -3,7 +3,9 @@
   import { resolve } from '$app/paths';
   import { page } from '$app/state';
   import { auth } from '$lib/auth.svelte';
-  import { WIDE_BREAKPOINT, pageTitle } from '$lib/constants';
+  import { WIDE_BREAKPOINT } from '$lib/constants';
+  import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
+  import { metaDescriptionFor } from '$lib/components/layout/page/head/meta-tags';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';
@@ -33,6 +35,15 @@
   let isRoot = $derived(profile.location_type === null);
   let path = $derived(profile.public_id);
   let displayName = $derived(profile.name || 'Locations');
+
+  let metaDescription = $derived.by(() => {
+    if (isRoot) return 'Browse pinball manufacturers by country, region, and city.';
+    // Geographic fallback lists ancestors nearest-first ("Chicago, Illinois,
+    // United States") so near-identical sibling/parent pages still get
+    // distinct descriptions.
+    const place = [profile.name, ...profile.ancestors.map((a) => a.name).reverse()].join(', ');
+    return metaDescriptionFor(profile, `Pinball manufacturers in ${place}.`);
+  });
 
   let breadcrumbs = $derived<Crumb[] | null>(
     isRoot
@@ -135,9 +146,12 @@
   locationEditActionContext.set(editAction);
 </script>
 
-<svelte:head>
-  <title>{pageTitle(displayName)}</title>
-</svelte:head>
+<MetaTags
+  title={displayName}
+  description={metaDescription}
+  url={page.url.href}
+  ogType={isRoot ? 'website' : 'article'}
+/>
 
 {#snippet actionBar()}
   {#if isRoot}

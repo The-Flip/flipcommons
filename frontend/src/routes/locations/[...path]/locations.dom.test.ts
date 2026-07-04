@@ -1,17 +1,20 @@
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { authMock } = vi.hoisted(() => ({
+const { authMock, pageState } = vi.hoisted(() => ({
   authMock: { isAuthenticated: true, load: () => Promise.resolve() },
+  pageState: { url: new URL('http://localhost/locations') },
 }));
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$app/paths', () => ({ resolve: (p: string) => p }));
+vi.mock('$app/paths', () => ({ resolve: (p: string) => p, asset: (p: string) => p }));
 vi.mock('$app/state', () => ({
   page: {
     params: {},
-    url: new URL('http://localhost/locations'),
+    get url() {
+      return pageState.url;
+    },
   },
 }));
 vi.mock('$lib/auth.svelte', () => ({ auth: authMock }));
@@ -39,11 +42,14 @@ type Profile = {
   slug: string;
   public_id: string;
   location_type: string | null;
+  description: { text: string; html: string; plain: string };
   manufacturer_count: number;
   ancestors: AncestorRef[];
   children: ChildRef[];
   manufacturers: Manufacturer[];
 };
+
+const EMPTY_DESCRIPTION = { text: '', html: '', plain: '' };
 
 function renderLayout(profile: Profile) {
   render(Layout, {
@@ -57,6 +63,7 @@ const ROOT: Profile = {
   slug: '',
   public_id: '',
   location_type: null,
+  description: EMPTY_DESCRIPTION,
   manufacturer_count: 4,
   ancestors: [],
   children: [
@@ -81,6 +88,7 @@ const COUNTRY: Profile = {
   slug: 'usa',
   public_id: 'usa',
   location_type: 'country',
+  description: EMPTY_DESCRIPTION,
   manufacturer_count: 3,
   ancestors: [],
   children: [
@@ -99,6 +107,7 @@ const CITY: Profile = {
   slug: 'chicago',
   public_id: 'usa/il/chicago',
   location_type: 'city',
+  description: EMPTY_DESCRIPTION,
   manufacturer_count: 2,
   ancestors: [
     { name: 'United States', public_id: 'usa' },
@@ -180,6 +189,67 @@ describe('locations layout — country', () => {
     expect(screen.getByRole('link', { name: 'History' })).toHaveAttribute(
       'href',
       '/locations/usa/edit-history',
+    );
+  });
+});
+
+describe('locations layout — meta tags', () => {
+  const defaultUrl = pageState.url;
+
+  afterEach(() => {
+    pageState.url = defaultUrl;
+  });
+
+  it('emits canonical, description, and og tags for a location page', () => {
+    pageState.url = new URL('http://localhost/locations/usa/il/chicago');
+    renderLayout(CITY);
+    expect(document.title).toBe('Chicago — Flipcommons Pinball Encyclopedia');
+    expect(document.head.querySelector('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      'http://localhost/locations/usa/il/chicago',
+    );
+    // No entity description on the fixture, so the geographic fallback —
+    // ancestors nearest-first — keeps sibling pages' descriptions distinct.
+    expect(document.head.querySelector('meta[name="description"]')).toHaveAttribute(
+      'content',
+      'Pinball manufacturers in Chicago, Illinois, United States.',
+    );
+    expect(document.head.querySelector('meta[property="og:type"]')).toHaveAttribute(
+      'content',
+      'article',
+    );
+  });
+
+  it('prefers the entity description over the geographic fallback', () => {
+    pageState.url = new URL('http://localhost/locations/usa/il/chicago');
+    renderLayout({
+      ...CITY,
+      description: {
+        text: 'Home of pinball.',
+        html: '<p>Home of pinball.</p>',
+        plain: 'Home of pinball.',
+      },
+    });
+    expect(document.head.querySelector('meta[name="description"]')).toHaveAttribute(
+      'content',
+      'Home of pinball.',
+    );
+  });
+
+  it('emits listing-flavored tags at the global root', () => {
+    renderLayout(ROOT);
+    expect(document.title).toBe('Locations — Flipcommons Pinball Encyclopedia');
+    expect(document.head.querySelector('link[rel="canonical"]')).toHaveAttribute(
+      'href',
+      'http://localhost/locations',
+    );
+    expect(document.head.querySelector('meta[property="og:type"]')).toHaveAttribute(
+      'content',
+      'website',
+    );
+    expect(document.head.querySelector('meta[name="description"]')).toHaveAttribute(
+      'content',
+      'Browse pinball manufacturers by country, region, and city.',
     );
   });
 });
