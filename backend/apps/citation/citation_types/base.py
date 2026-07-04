@@ -20,9 +20,13 @@ Two plugin units live behind these contracts (see
   (``source_type``), which is what its children mint as, and implements that
   type's ``scheme_spec_type`` contract.
 
-The layering rule that keeps schemes small: **the type owns locator
-semantics; a scheme speaks only structured values.** A video scheme is handed
-an identifier and start seconds — never locator text.
+The layering rule that keeps schemes small — the **composition contract**
+binding the two axes: **the type owns locator semantics; a scheme speaks only
+structured values.** A video scheme is handed an identifier and start seconds
+— never locator text. Its reference implementation is
+``registry.scheme_deep_link``: the owning type's ``parse_value`` turns locator
+text into the structured value, the scheme's ``deep_link`` turns the value
+into a seek URL, and neither layer sees the other's vocabulary.
 
 Specs are **pure**: declarative facts plus stateless functions. No model
 imports, no DB access, no I/O — all DB work (child minting, recognition

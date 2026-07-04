@@ -49,6 +49,8 @@ from apps.citation.citation_types.registry import (
     normalize_scheme_identifier,
     recognize_scheme,
     scheme_bindings,
+    scheme_canonical_url,
+    scheme_deep_link,
     scheme_root_seed,
     scheme_source_type,
 )
@@ -72,6 +74,8 @@ __all__ = [
     "SchemeRecognition",
     "scheme_source_type",
     "normalize_scheme_identifier",
+    "scheme_canonical_url",
+    "scheme_deep_link",
     "scheme_root_seed",
     "is_known_scheme",
     "known_scheme_keys",

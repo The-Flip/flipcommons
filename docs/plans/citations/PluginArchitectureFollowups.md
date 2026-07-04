@@ -13,7 +13,7 @@ Tracking doc for work surfaced while reviewing the citation type/scheme plugin f
 
 ## Stream C — Three contract surfaces × two frameworks
 
-The C0 design note grew into [CitationPluginSystem.md](CitationPluginSystem.md), which is now the authoritative statement of the surfaces, decisions and acceptance criteria; the C-items below are tracked there as "the C-stream". The findings that motivated them:
+**Done.** The C0 design note grew into [CitationPluginSystem.md](CitationPluginSystem.md), which is the authoritative statement of the surfaces, decisions and acceptance criteria; C1–C5 landed on this branch and are recorded there with their outcomes. The findings that motivated them, kept for the record:
 
 The plugin system has two extension axes (first-party **types**; third-party **schemes**), and each should expose three distinct surfaces: (1) author-facing, (2) framework-facing, (3) consumer-facing. Findings, held up to that grid:
 
@@ -42,7 +42,7 @@ Simple schemes (ipdb/opdb, ~29 lines, mostly docstring) are at the floor already
 The 153-line conformance harness tests every scheme's invariants for free. But each scheme _also_ carries a hand-written test module (x 81, vimeo 97, tiktok 116 lines) that is ~70% structural boilerplate — a test class, `@pytest.mark.parametrize`, a "these URLs → the id" list, a "these junk URLs → None" list. That is data wearing a code costume. (Tell: youtube, the reference scheme, has no dedicated scheme test at all — coverage scattered across three pre-refactor files; the testing story isn't even uniform.)
 
 - **E1 (done — `tests/schemes/`). Data-driven example harness.** Schemes declare `valid_urls` / `invalid_urls` / `start_time_cases` as data in a test-side `SchemeExamples` table; one shared parametrized harness (`test_examples.py`) runs them across all schemes, and the conformance harness reads each scheme's `example_identifier` as its round-trip seed. Landed test-side (not on the production spec) in `tests/schemes/`.
-- **E2. Squeeze the remaining bespoke tests into the tables.** What's left per scheme after E1 is still ~70% restatement: exact-canonical and exact-deep-link assertions repeated in every module (declare them as `SchemeExamples` expectation fields the harness asserts), bespoke tests that merely re-assert declared spec fields (`deep_link is None`, `source_type is WEB` — the reasoning belongs in the scheme docstring, which already has it) or duplicate the URL table (X's two-host collapse is implied by every `valid_urls` row normalizing to the example id), and TikTok's three DB tests, which exercise generic framework paths (`get_or_create_scheme_child`, `recognize_url`, `deep_linked_url` fallback) with TikTok as the stress input — generalize into a DB round-trip conformance test parametrized over every scheme. End state: a per-scheme test module is a pure data table; hand-written test functions only for what a table genuinely can't express.
+- **E2 (done). Squeeze the remaining bespoke tests into the tables.** What's left per scheme after E1 is still ~70% restatement: exact-canonical and exact-deep-link assertions repeated in every module (declare them as `SchemeExamples` expectation fields the harness asserts), bespoke tests that merely re-assert declared spec fields (`deep_link is None`, `source_type is WEB` — the reasoning belongs in the scheme docstring, which already has it) or duplicate the URL table (X's two-host collapse is implied by every `valid_urls` row normalizing to the example id), and TikTok's three DB tests, which exercise generic framework paths (`get_or_create_scheme_child`, `recognize_url`, `deep_linked_url` fallback) with TikTok as the stress input — generalize into a DB round-trip conformance test parametrized over every scheme. End state: a per-scheme test module is a pure data table; hand-written test functions only for what a table genuinely can't express.
 
 ## Stream F — Source misclassification / deliverer hosts (separate product plan)
 
@@ -60,7 +60,7 @@ The "how do we keep classification clean" question (Amazon book/movie mis-filed 
 
 1. ~~**A1 + A2** on this branch~~ — done. **B1** recorded as a known deferral.
 2. ~~**C0 design note**~~ — done: [CitationPluginSystem.md](CitationPluginSystem.md).
-3. **Scheme-tightness epic** — the coherent focused effort: **C1–C3 + E2** (facade + audience split + the remaining test squeeze; D1/E1 already landed). This is where a new scheme becomes cheap. **C4/C5** ride along.
+3. ~~**Scheme-tightness epic** (C1–C5 + E2)~~ — done on this branch: facade + audience split + the remaining test squeeze.
 4. **Stream F** — separate product-design plan; **F2/F4** can ship as near-term guardrails independent of the rest; the structural pieces (F1/F3/F5/F6/F7) sequence after instance access URLs.
 
 ## Open decisions

@@ -19,6 +19,8 @@ from apps.citation.citation_types import (
     normalize_scheme_identifier,
     recognize_scheme,
     scheme_bindings,
+    scheme_canonical_url,
+    scheme_deep_link,
     scheme_root_seed,
     scheme_source_type,
 )
@@ -132,6 +134,25 @@ class TestExternalCustomerAccessors:
         # None, not ValueError: ingest validation queries with a
         # patch-declared key before the field validator reports it.
         assert scheme_root_seed("betamax") is None
+
+    def test_scheme_canonical_url_builds_the_collapse_target(self):
+        url = scheme_canonical_url("ipdb", "4443")
+        assert url == "https://www.ipdb.org/machine.cgi?id=4443"
+        with pytest.raises(ValueError, match="Unknown scheme"):
+            scheme_canonical_url("betamax", "4443")
+
+    def test_scheme_deep_link_weaves_type_grammar_into_scheme_url(self):
+        # The composition contract: "1:02:03" is parsed by the video *type*,
+        # the youtube *scheme* renders the resulting seconds as a seek URL.
+        url = scheme_deep_link("youtube", "dQw4w9WgXcQ", "1:02:03")
+        assert url == "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=3723s"
+
+    def test_scheme_deep_link_declines_when_a_layer_declines(self):
+        # No deep_link builder (TikTok can't seek), no structured locator
+        # value (web is freeform), or an unparseable locator.
+        assert scheme_deep_link("tiktok", "user/video/1", "1:35") is None
+        assert scheme_deep_link("ipdb", "4443", "p. 42") is None
+        assert scheme_deep_link("youtube", "dQw4w9WgXcQ", "not a time") is None
 
 
 class TestCoherenceHelper:

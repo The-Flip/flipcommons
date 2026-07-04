@@ -246,3 +246,36 @@ def scheme_root_seed(key: str) -> RootSeed | None:
     """
     spec = SCHEME_SPECS.get(key)
     return spec.root_seed if spec is not None else None
+
+
+def scheme_canonical_url(key: SchemeKey, identifier: str) -> str:
+    """The one URL every recognized shape of *identifier* collapses to.
+
+    ``ValueError`` for an unregistered key: callers holding untrusted input
+    gate on ``is_known_scheme`` first.
+    """
+    return _scheme_spec(key).canonical_url(identifier)
+
+
+def scheme_deep_link(key: SchemeKey, identifier: str, locator: str) -> str | None:
+    """The URL that jumps to *locator* within scheme *key*'s *identifier*.
+
+    The reference implementation of the composition contract (the type owns
+    the locator value; a scheme speaks only the structured value): the
+    scheme's owning *type* parses the locator text into its structured value,
+    then the *scheme* builds the seek URL from that value — neither layer
+    sees the other's vocabulary. ``None`` when either layer declines: the
+    scheme has no ``deep_link`` builder (TikTok URLs can't seek), the type
+    has no structured locator value (web's freeform locators), or the locator
+    doesn't parse. ``ValueError`` for an unregistered key.
+    """
+    spec = _scheme_spec(key)
+    if spec.deep_link is None:
+        return None
+    parse_value = CITATION_TYPE_SPECS[spec.source_type].locator.parse_value
+    if parse_value is None:
+        return None
+    value = parse_value(locator)
+    if value is None:
+        return None
+    return spec.deep_link(identifier, value)

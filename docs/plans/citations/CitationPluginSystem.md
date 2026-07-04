@@ -21,7 +21,7 @@ Each of the two axes exposes a surface to each audience. The rest of the doc wal
 Resolved in design review; recorded so the C-stream inherits them.
 
 1. **Sub-layer `citation_types` with a dependency-DAG contract — not an audience-enforcement one.** The package's internal imports already form a clean DAG (`registry` → `schemes` → type modules → `url_patterns`/`base`), so an ~8-line nested `layers` contract makes cycles impossible and forces every new submodule to be placed. That is the growth insurance worth buying. It does **not** enforce the plugin-author / framework / external-customer split, because the external-customer accessors live in `registry` (top), which must import every plugin to build `SCHEME_SPECS`. Enforcing that split would need the accessors pulled into their own layer plus a forbidden-contract — real machinery for a marginal gain — so it stays `__all__` + convention, made legible by C3.
-2. **The type external-customer surface (C4) is governed by a read-better test, per-trait.** `models.py` already funnels type-trait reads through one accessor, `citation_type_spec(self.source_type).child_skips_locator` (and `.parentless_abstract`, `.flat_hierarchy`). A named accessor on top (`is_abstract_root(source_type)`, …) earns its place **only if it reads better at the call site than the trait read it replaces** — `is_abstract_root` may clear that bar; a pure rename like `nests_flat` may not. Decide per-trait at C4.
+2. **The type external-customer surface (C4) is governed by a read-better test, per-trait.** `models.py` already funnels type-trait reads through one accessor, `citation_type_spec(self.source_type).child_skips_locator` (and `.parentless_abstract`, `.flat_hierarchy`). A named accessor on top (`is_abstract_root(source_type)`, …) earns its place **only if it reads better at the call site than the trait read it replaces**. Decided at C4: **no accessors added** — each read sits inside a documented method whose surrounding logic already carries the meaning, and the sharpest candidate would read worse: `self.is_root and …parentless_abstract` keeps the type-level fact visibly distinct from the row-level `is_root` test, where `is_abstract_root(self.source_type)` would look like a row query and blur exactly that split.
 3. **Scheme functions split into pure registry queries and DB operations — a real boundary, not a facade to consolidate.** The pure queries live in the `citation_types` leaf; the DB operations live with the DB code. Nothing needs them merged (only `api.py` uses both, importing each by name), so there is no `scheme_api.py`. See [Where the scheme functions live](#where-the-scheme-functions-live).
 
 ## The two extension axes
@@ -47,8 +47,8 @@ Both axes are **pure**: a spec is declarative facts plus stateless functions —
 
 Two homes, for two needs:
 
-- **Pure registry queries** — `recognize_scheme`, `scheme_source_type`, `normalize_scheme_identifier`, `scheme_root_seed`, `is_known_scheme`, `known_scheme_keys`. Read-only over `SCHEME_SPECS`, no DB. This is the scheme surface an external customer wants in one discoverable place, and the only part that could ever move to another repo (it is `models`-free), so it lives in the `citation_types` package root — in `registry.py`, since they are registry queries.
-- **DB operations** — `recognize_url`, `deep_linked_url`, `get_or_create_scheme_child`, `get_or_create_external_source`. They resolve a seeded root or mint rows, so they touch `models` and live with the DB code, in `extractors`/`deep_links`.
+- **Pure registry queries** — `recognize_scheme`, `scheme_source_type`, `normalize_scheme_identifier`, `scheme_root_seed`, `scheme_canonical_url`, `scheme_deep_link`, `is_known_scheme`, `known_scheme_keys`. Read-only over `SCHEME_SPECS`, no DB. This is the scheme surface an external customer wants in one discoverable place, and the only part that could ever move to another repo (it is `models`-free), so it lives in the `citation_types` package root — in `registry.py`, since they are registry queries.
+- **DB operations** — `recognize_url`, `deep_linked_url`, `get_or_create_scheme_child`, `get_or_create_external_source`. They resolve a seeded root, mint rows or unwrap model instances, so they touch `models` and live with the DB code, in `extractors`/`deep_links`. `deep_linked_url` is a thin adapter: the weave itself is the pure `scheme_deep_link`, so `deep_links.py` reads no spec fields at all.
 
 Keeping them apart keeps a real boundary visible: `recognize_scheme` is a pure predicate; `recognize_url` hits the database and creates rows. No caller needs the two homes merged — only `api.py` uses both, and it simply imports the two functions it needs. There is no consolidated `scheme_api.py` because nothing asked for one. (The import-linter layer stack, with `citation_types` at the bottom and the DB code in the middle, would forbid a module spanning both anyway — that is confirmation, not the reason.)
 
@@ -67,7 +67,7 @@ psl
 hosts | citation_types | safe_fetch | authz | source_node
 ```
 
-Today it treats `citation_types` as one node. C1 adds a nested `layers` contract so the package's internal DAG (`registry` → `schemes` → type modules → `url_patterns`/`base`) is enforced too — no cycles, every submodule placed (Decision 1). The plugin-author / framework / external-customer split _inside_ the package stays convention (`__all__` + C3), because the external-customer accessors live in `registry`, which must import every plugin.
+That stack treats `citation_types` as one node; the nested "Citation types plugin-package stack" contract (C1) enforces the package's internal DAG too (`registry` → `schemes` → type modules → `url_patterns`/`base`) — no cycles, every submodule placed (Decision 1). The plugin-author / framework / external-customer split _inside_ the package stays convention (`__all__` + C3), because the external-customer accessors live in `registry`, which must import every plugin.
 
 ## Surface-by-surface
 
@@ -87,6 +87,7 @@ Today it treats `citation_types` as one node. C1 adds a nested `layers` contract
 - `recognize_scheme(url)` — "which scheme + identifier does this URL yield?", by pattern match alone. For `api.py` and `parsing.py`, which reject a scheme URL cited the wrong way.
 - `recognize_url(url)` — the same, but resolved against the seeded root; the entry point that mints children.
 - `scheme_source_type(key)`, `normalize_scheme_identifier(key, raw)`, `scheme_root_seed(key)`, `is_known_scheme(key)`, `known_scheme_keys()` — for `parsing.py` and `source_upsert.py`.
+- `scheme_canonical_url(key, id)`, `scheme_deep_link(key, id, locator)` — the canonical-collapse target and the locator weave, consumed by `deep_links.py` (which is thereby a customer of this surface, not a spec-field reader).
 
 C1 routes the three bypassers (`api.py`, `claim_ingest/patches/parsing.py`, `source_upsert.py`) through these functions so nothing outside the leaf reaches into `SCHEME_SPECS` fields. C3 splits the package `__all__` so plugin-author exports (spec types, Protocols, helpers) and external-customer exports (the accessors) are separate import surfaces.
 
@@ -111,14 +112,15 @@ The most load-bearing contract in the system, and today the most implicit:
 
 A video _type_ parses and normalizes `1:02:03` and owns the `StartSeconds` value; a video _scheme_ is handed `(identifier, start_seconds)` and never sees locator text. This is what lets `deep_linked_url` weave a type's `parse_value` into a scheme's `deep_link` — the type turns stored locator text into `start_seconds`, the scheme turns `start_seconds` into a seek URL. It is what keeps a scheme small: its author writes URL patterns and a parameter syntax, not a timestamp parser.
 
-Enforced today by three mechanisms with no single name: the registry's `isinstance` check, the `identifier_key_scheme_type` CHECK constraint (a scheme root's type is its scheme's owning type), and the conformance harness's round-trip invariant. C5 states the contract explicitly in `base.py` and here, with `deep_linked_url` named as its reference implementation, so the seam is a designed surface rather than an emergent property.
+Enforced by three mechanisms: the registry's `isinstance` check, the `identifier_key_scheme_type` CHECK constraint (a scheme root's type is its scheme's owning type), and the conformance harness's round-trip invariant. C5 states the contract in `base.py` and here, and gives the seam a reference implementation that is itself pure: `scheme_deep_link(key, identifier, locator)` in `registry.py` — the type's `parse_value` turns locator text into the structured value, the scheme's `deep_link` turns the value into a seek URL, neither layer sees the other's vocabulary. `deep_linked_url` (`deep_links.py`) is the model adapter around it; the DB round-trip harness proves the weave end-to-end for every registered scheme.
 
 ## The framework does the testing
 
 A structured interface is only as strong as its enforcement, and third-party code arrives without house context — so testing is largely the framework's job, not the author's.
 
 - **The conformance harness** is a parametrized suite every registered scheme passes just by being registered: `extract(canonical_url(id))` round-trips; `validate_identifier` rejects junk (empty, overlong, wrong charset, embedded whitespace); URL patterns are host-anchored so a look-alike host can't match; `deep_link` output is a well-formed URL on the scheme's own host for zero and nonzero start times; a `start_seconds` hint round-trips through the owning type's locator grammar.
-- **Data-driven examples (E1, built).** Each scheme declares its real URL shapes as _data_ — an example table living test-side in `tests/schemes/`, not on the production spec — and one shared harness runs them across every scheme. A per-scheme test module is that small table plus any genuinely bespoke assertions (X's dual host families, TikTok's composite id), not a hand-rolled parametrize skeleton.
+- **Data-driven examples (E1+E2, built).** Each scheme declares its real URL shapes _and its exact canonical/deep-link output_ as _data_ — an example table living test-side in `tests/schemes/`, not on the production spec — and the shared harnesses run them across every scheme. The `deep_link_case` pairing is enforced both ways (a scheme that can seek must pin its seek syntax; a declared case on a no-seek scheme is a stale table). A per-scheme test module is **just the table**; hand-written assertions exist only for what a table genuinely can't express.
+- **The DB round-trip harness** (`test_db_roundtrip.py`) is the same idea at the integration layer, parametrized over the registry: seed the scheme's root from its `root_seed` facts, mint a child from an alternate URL shape, re-recognize and reuse it, and weave — or decline — the deep link. Every scheme gets the core-write-path coverage by being registered; the composite-identifier and no-seek stress cases ride along without a scheme-named test.
 
 End state: a new scheme is one module (declarative spec + composed helpers) + one registry line + `makemigrations` + a seeding patch + one test-side example table (plus its example-registry line) — the framework does the driving _and_ the testing.
 
@@ -129,18 +131,18 @@ Stated so reviews can hold the line:
 - **Adding a scheme:** one backend module + one registry line + `makemigrations` + a seeding patch + one test-side example table + its example-registry line. **Zero** frontend code, **zero** core edits, **zero** edits to the owning type's module. More than that means the seam leaked.
 - **Adding a type:** one backend module + one frontend module + registry entries + a codegen run.
 - A grep for a type or scheme key (`"video"`, `"youtube"`) outside its module, the registry and generated output returns nothing — the framework and its customers name no plugin.
-- A grep for `SCHEME_SPECS[` or `spec.<field>` outside the `citation_types` leaf, the framework's two DB-operation modules (`extractors.py`, `deep_links.py`), the codegen command and tests returns nothing — external customers go through the package-root accessors. The two DB-op modules are the citation framework itself (audience 2) driving the specs, not customers; they are the exhaustive exemption list, and a third module joining it should raise eyebrows.
+- A grep for `SCHEME_SPECS[` or `spec.<field>` outside the `citation_types` leaf, the framework's recognition module (`extractors.py`), the codegen command and tests returns nothing — external customers go through the package-root accessors. `extractors.py` is the citation framework itself (audience 2) driving every spec through recognition and minting; it is the exhaustive exemption list, and a second module joining it should raise eyebrows.
 - The `citation_types` package exposes separate plugin-author and external-customer import surfaces.
 - The framework surface (2) and the composition contract (5) are named where an author or reader first meets them.
 
-## Realization: the C-stream
+## Realization: the C-stream — landed
 
-The refactors that bring the code up to this design. Tracked in [PluginArchitectureFollowups.md](PluginArchitectureFollowups.md); listed against the surfaces they build.
+The refactors that brought the code up to this design, all on this branch. Tracked in [PluginArchitectureFollowups.md](PluginArchitectureFollowups.md); listed against the surfaces they built.
 
-- **C1 — scheme accessors in the leaf + nested layer contract.** Add the pure registry queries to the `citation_types` package root (`registry.py`); route the three bypassers through them; add the ~8-line nested `layers` contract (Decision 1). No new app module.
-- **C2 — name the scheme framework surface.** Make `extract`/`validate_identifier`/`normalize` legible as framework-invoked, not author-written.
-- **C3 — split the scheme package `__all__` by audience.** Plugin-author exports vs external-customer exports.
-- **C4 — type backend external-customer surface.** Apply the read-better test per-trait (Decision 2).
-- **C5 — name the composition contract** in `base.py`, with `deep_linked_url` as reference impl.
+- **C1 (done) — scheme accessors in the leaf + nested layer contract.** The pure registry queries live in the `citation_types` package root (`registry.py`); the three bypassers (`api.py`, `parsing.py`, `source_upsert.py`) route through them; the nested `layers` contract ("Citation types plugin-package stack") enforces the internal DAG (Decision 1).
+- **C2 (done) — name the scheme framework surface.** `extract`/`validate_identifier`/`normalize` are marked in `base.py` as framework-invoked on the author's fields, never authored.
+- **C3 (done) — split the scheme package `__all__` by audience.** Plugin-author, external-customer and framework-channel sections, with the audiences named in the package docstring.
+- **C4 (done) — type backend external-customer surface.** Read-better test applied per-trait; no accessors added (Decision 2).
+- **C5 (done) — the composition contract named** in `base.py`, with the pure `scheme_deep_link` as reference impl and `deep_linked_url` as its model adapter.
 
 Tracked separately, not part of the C-stream: source misclassification / deliverer hosts (the Amazon-book-as-web problem) is a domain-modeling boundary, not a plugin-contract question — see Stream F in the follow-ups doc and the rejected-platform reasoning in [VideoCitations.md](VideoCitations.md).
