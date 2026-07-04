@@ -28,7 +28,7 @@ from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 from apps.core.types import CitationSourceId
 
-from .citation_types import SCHEME_SPECS
+from .citation_types import recognize_scheme
 from .extraction import classify_input, extract_isbn, normalize_isbn
 from .extractors import (
     Recognition,
@@ -348,13 +348,13 @@ def _reject_scheme_record_url(url: str) -> None:
     registry-based (pattern match, no recognition), so it holds regardless of
     which parent was chosen and before the scheme's root is seeded.
     """
-    for spec in SCHEME_SPECS.values():
-        if spec.extract(url) is not None:
-            raise HttpError(
-                422,
-                f"This URL is a {spec.label} record; cite it via its scheme "
-                f"identifier (scheme:identifier), not as a web page.",
-            )
+    rec = recognize_scheme(url)
+    if rec is not None:
+        raise HttpError(
+            422,
+            f"This URL is a {rec.label} record; cite it via its scheme "
+            f"identifier (scheme:identifier), not as a web page.",
+        )
 
 
 def _mint_web_child(

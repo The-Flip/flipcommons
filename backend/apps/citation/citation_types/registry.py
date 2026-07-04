@@ -21,9 +21,11 @@ from typing import Final, NamedTuple
 from apps.citation.citation_types import book, magazine, video, web
 from apps.citation.citation_types.base import (
     CitationTypeSpec,
+    RootSeed,
     SchemeKey,
     SchemeSpec,
     SourceType,
+    StartSeconds,
 )
 from apps.citation.citation_types.schemes import ipdb, opdb, tiktok, vimeo, x, youtube
 
@@ -154,3 +156,93 @@ def scheme_bindings() -> list[SchemeBinding]:
     migration on unrelated edits.
     """
     return [SchemeBinding(spec.key, spec.source_type) for spec in SCHEME_SPECS.values()]
+
+
+# ---------------------------------------------------------------------------
+# External-customer scheme queries. Pure, read-only over ``SCHEME_SPECS`` —
+# what code outside this package calls instead of reaching into spec fields,
+# so a customer is coupled to these six names, never to the spec's field
+# vocabulary. Their DB-resolving counterparts (``recognize_url``,
+# ``deep_linked_url``, child minting) live with the DB code in
+# ``extractors``/``deep_links``.
+# ---------------------------------------------------------------------------
+
+
+def _scheme_spec(key: SchemeKey) -> SchemeSpec:
+    spec = SCHEME_SPECS.get(key)
+    if spec is None:
+        raise ValueError(f"Unknown scheme {key!r}")
+    return spec
+
+
+class SchemeRecognition(NamedTuple):
+    """A URL recognized by a registered scheme, by pattern match alone.
+
+    ``label`` rides along for customer-facing messages ("This URL is a
+    YouTube record…"); ``start_seconds`` is the structured start-time hint
+    the URL carried, when the scheme extracts one.
+    """
+
+    scheme: SchemeKey
+    label: str
+    identifier: str
+    start_seconds: StartSeconds | None
+
+
+def recognize_scheme(url: str) -> SchemeRecognition | None:
+    """Which scheme + identifier *url* yields, by pattern match alone.
+
+    Registration order, first match wins — the same order the DB-resolving
+    ``recognize_url`` tries. Pure: no seeded-root lookup, no minting. For
+    callers that reject a scheme URL cited the wrong way (as a plain web
+    page) regardless of whether the scheme's root is seeded yet.
+    """
+    for key, spec in SCHEME_SPECS.items():
+        match = spec.extract(url)
+        if match is not None:
+            return SchemeRecognition(
+                scheme=key,
+                label=spec.label,
+                identifier=match.identifier,
+                start_seconds=match.start_seconds,
+            )
+    return None
+
+
+def is_known_scheme(key: str) -> bool:
+    """Whether *key* is a registered scheme key."""
+    return key in SCHEME_SPECS
+
+
+def known_scheme_keys() -> list[SchemeKey]:
+    """The registered scheme keys, in registration order."""
+    return list(SCHEME_SPECS)
+
+
+def scheme_source_type(key: SchemeKey) -> SourceType:
+    """The citation type owning the scheme *key* — what its children mint as.
+
+    ``ValueError`` for an unregistered key: callers holding untrusted input
+    gate on ``is_known_scheme`` first.
+    """
+    return _scheme_spec(key).source_type
+
+
+def normalize_scheme_identifier(key: SchemeKey, raw: str) -> str | None:
+    """Extract a valid *key* identifier from a URL or bare value, or ``None``.
+
+    ``None`` means *raw* is neither a recognized URL shape nor a well-formed
+    bare identifier; ``ValueError`` for an unregistered key.
+    """
+    return _scheme_spec(key).normalize(raw)
+
+
+def scheme_root_seed(key: str) -> RootSeed | None:
+    """The declared platform-root facts for *key*, or ``None`` if unregistered.
+
+    ``None`` (not ``ValueError``) because the caller is ingest validation
+    holding a patch-declared key: an unknown key is the field validator's
+    error to report, and this query must stay usable on the way there.
+    """
+    spec = SCHEME_SPECS.get(key)
+    return spec.root_seed if spec is not None else None

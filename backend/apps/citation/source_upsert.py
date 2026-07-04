@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, NamedTuple, NotRequired, TypedDict
 from urllib.parse import urlparse
 
-from apps.citation.citation_types import SCHEME_SPECS
+from apps.citation.citation_types import scheme_root_seed
 from apps.citation.hosts import Host, normalize_host
 from apps.citation.source_node import SourceLinkNode, SourceNode
 
@@ -366,10 +366,9 @@ def _validate_scheme_root_seed(node: SourceNode) -> None:
     from django.core.exceptions import ValidationError
 
     key = node.get("identifier_key", "")
-    spec = SCHEME_SPECS.get(key) if key else None
-    if spec is None:
+    seed = scheme_root_seed(key) if key else None
+    if seed is None:
         return
-    seed = spec.root_seed
     problems: list[str] = []
     if node["name"] != seed.name:
         problems.append(f"name must be {seed.name!r} (declared {node['name']!r})")

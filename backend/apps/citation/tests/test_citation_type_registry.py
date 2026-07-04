@@ -14,7 +14,13 @@ from apps.citation.citation_types import (
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
+    is_known_scheme,
+    known_scheme_keys,
+    normalize_scheme_identifier,
+    recognize_scheme,
     scheme_bindings,
+    scheme_root_seed,
+    scheme_source_type,
 )
 from apps.citation.citation_types.registry import _assert_registry_coherent
 
@@ -74,6 +80,58 @@ class TestSchemeRegistry:
         # Named fields, not positional guessing — the point of the NamedTuple.
         assert bindings[2].identifier_key == "youtube"
         assert bindings[2].source_type is SourceType.VIDEO
+
+
+class TestExternalCustomerAccessors:
+    """The pure scheme queries customers call instead of reading spec fields."""
+
+    def test_recognize_scheme_yields_key_label_and_identifier(self):
+        rec = recognize_scheme("https://www.ipdb.org/machine.cgi?id=4443")
+        assert rec is not None
+        assert rec.scheme == "ipdb"
+        assert rec.label == "IPDB"
+        assert rec.identifier == "4443"
+        assert rec.start_seconds is None
+
+    def test_recognize_scheme_carries_the_start_time_hint(self):
+        rec = recognize_scheme("https://youtu.be/dQw4w9WgXcQ?t=95")
+        assert rec is not None
+        assert rec.scheme == "youtube"
+        assert rec.start_seconds == 95
+
+    def test_recognize_scheme_abstains_on_an_unrecognized_url(self):
+        assert recognize_scheme("https://example.com/article") is None
+
+    def test_known_scheme_keys_and_membership(self):
+        assert known_scheme_keys() == list(SCHEME_SPECS)
+        assert is_known_scheme("youtube")
+        assert not is_known_scheme("betamax")
+
+    def test_scheme_source_type_is_the_owning_type(self):
+        assert scheme_source_type("youtube") is SourceType.VIDEO
+        assert scheme_source_type("x") is SourceType.WEB
+
+    def test_scheme_source_type_rejects_an_unknown_key(self):
+        with pytest.raises(ValueError, match="Unknown scheme"):
+            scheme_source_type("betamax")
+
+    def test_normalize_scheme_identifier_accepts_url_and_bare_forms(self):
+        assert normalize_scheme_identifier("ipdb", "4443") == "4443"
+        url = "https://www.ipdb.org/machine.cgi?id=4443"
+        assert normalize_scheme_identifier("ipdb", url) == "4443"
+        assert normalize_scheme_identifier("ipdb", "not-a-number") is None
+
+    def test_normalize_scheme_identifier_rejects_an_unknown_key(self):
+        with pytest.raises(ValueError, match="Unknown scheme"):
+            normalize_scheme_identifier("betamax", "4443")
+
+    def test_scheme_root_seed_returns_facts_or_none(self):
+        seed = scheme_root_seed("youtube")
+        assert seed is not None
+        assert seed.name == "YouTube"
+        # None, not ValueError: ingest validation queries with a
+        # patch-declared key before the field validator reports it.
+        assert scheme_root_seed("betamax") is None
 
 
 class TestCoherenceHelper:

@@ -20,7 +20,13 @@ from urllib.parse import urlparse
 import yaml
 from django.core.exceptions import ValidationError
 
-from apps.citation.citation_types import SCHEME_SPECS
+from apps.citation.citation_types import (
+    is_known_scheme,
+    known_scheme_keys,
+    normalize_scheme_identifier,
+    recognize_scheme,
+    scheme_source_type,
+)
 from apps.citation.locators import normalized_locator
 from apps.citation.models import (
     CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
@@ -754,7 +760,7 @@ def _normalized_cite_locator(cite_ref: CitationRef, locator: str, ref: str) -> s
     """
     if not isinstance(cite_ref, SchemeCitationRef):
         return locator
-    source_type = SCHEME_SPECS[cite_ref.scheme].source_type
+    source_type = scheme_source_type(cite_ref.scheme)
     try:
         return normalized_locator(source_type, locator)
     except ValidationError as exc:
@@ -791,13 +797,12 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
         raise PatchError(
             f"{ref}: cite {cite!r} must be 'scheme:identifier' (e.g. 'ipdb:4443')"
         )
-    spec = SCHEME_SPECS.get(scheme)
-    if spec is None:
+    if not is_known_scheme(scheme):
         raise PatchError(
             f"{ref}: unknown cite scheme {scheme!r} "
-            f"(known: {', '.join(sorted(SCHEME_SPECS))})"
+            f"(known: {', '.join(sorted(known_scheme_keys()))})"
         )
-    normalized = spec.normalize(raw_id)
+    normalized = normalize_scheme_identifier(scheme, raw_id)
     if normalized is None:
         raise PatchError(f"{ref}: invalid {scheme} identifier {raw_id!r}")
     if len(normalized) > CITATION_SOURCE_IDENTIFIER_MAX_LENGTH:
@@ -815,13 +820,12 @@ def _parse_cite_url(url: str, archive_url: str, ref: str) -> WebCitationRef:
     canonical ``scheme:identifier`` form that dedups correctly), a malformed
     URL, and one too long for the link column.
     """
-    for scheme, spec in SCHEME_SPECS.items():
-        match = spec.extract(url)
-        if match is not None:
-            raise PatchError(
-                f"{ref}: cite URL matches the {scheme} scheme — "
-                f"cite it as {scheme}:{match.identifier} instead"
-            )
+    rec = recognize_scheme(url)
+    if rec is not None:
+        raise PatchError(
+            f"{ref}: cite URL matches the {rec.scheme} scheme — "
+            f"cite it as {rec.scheme}:{rec.identifier} instead"
+        )
     # The caller guarantees an http(s):// scheme, so a host is all that's left
     # to validate (``https://`` alone has none).
     if not urlparse(url).hostname:

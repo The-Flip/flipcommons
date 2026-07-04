@@ -593,6 +593,25 @@ layers = [
     "hosts | citation_types | safe_fetch | authz | source_node",
 ]
 
+# Inside the citation_types plugin package: registry aggregates the plugins,
+# scheme modules implement their owning type's contract, type modules build on
+# the shared contracts and authoring helpers. Exhaustive, so a new submodule
+# must be placed — the package's internal DAG stays cycle-free by construction.
+# (The plugin-author / framework / external-customer split is __all__ +
+# convention, not a layer: the external-customer accessors live in registry,
+# which must import every plugin to build SCHEME_SPECS.)
+[[tool.importlinter.contracts]]
+name = "Citation types plugin-package stack"
+type = "layers"
+exhaustive = true
+containers = ["apps.citation.citation_types"]
+layers = [
+    "registry",
+    "schemes",
+    "book | magazine | video | web",
+    "url_patterns | base",
+]
+
 # psl.py is the lone Public Suffix List gateway. The pure hosts module must stay
 # dependency-free, and the recognition read path (extractors) must resolve by
 # exact-stored-host suffix match only — never by consulting the PSL. So neither

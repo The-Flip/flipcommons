@@ -22,10 +22,17 @@ from apps.citation.citation_types.registry import (
     SCHEME_SPECS,
     SchemeBinding,
     SchemeChoice,
+    SchemeRecognition,
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
+    is_known_scheme,
+    known_scheme_keys,
+    normalize_scheme_identifier,
+    recognize_scheme,
     scheme_bindings,
+    scheme_root_seed,
+    scheme_source_type,
 )
 
 __all__ = [
@@ -38,6 +45,7 @@ __all__ = [
     "SchemeChoice",
     "SchemeKey",
     "SchemeMatch",
+    "SchemeRecognition",
     "SchemeSpec",
     "SourceType",
     "StartSeconds",
@@ -45,6 +53,12 @@ __all__ = [
     "citation_type_spec",
     "identifier_key_choices",
     "identifier_key_values",
+    "is_known_scheme",
+    "known_scheme_keys",
+    "normalize_scheme_identifier",
+    "recognize_scheme",
     "scheme_bindings",
+    "scheme_root_seed",
+    "scheme_source_type",
     "citation_source_type",
 ]
