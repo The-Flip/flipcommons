@@ -2,7 +2,7 @@
 
 Pure data plus a coercing accessor and coherence assertions — no database.
 The per-scheme behavioral contract is covered separately by
-``test_scheme_conformance.py``.
+``schemes/test_conformance.py``.
 """
 
 import pytest

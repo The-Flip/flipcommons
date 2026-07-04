@@ -1,7 +1,7 @@
 """Tests for video citations: the youtube scheme, recognition hints, deep links.
 
 The grammar itself is covered by ``test_video_locators.py`` and the generic
-scheme contract by ``test_scheme_conformance.py``; this file covers the
+scheme contract by ``schemes/test_conformance.py``; this file covers the
 youtube scheme's platform-specific behavior and the read-side composition
 (recognition ``locator_hint``, ``deep_linked_url``).
 """
