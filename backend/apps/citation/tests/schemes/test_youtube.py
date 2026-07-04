@@ -18,6 +18,7 @@ VID = "dQw4w9WgXcQ"
 youtube = SCHEME_SPECS["youtube"]
 
 EXAMPLES = SchemeExamples(
+    example_identifier=VID,
     valid_urls=(
         f"https://youtube.com/watch?v={VID}",  # no www
         f"http://www.youtube.com/watch?v={VID}",

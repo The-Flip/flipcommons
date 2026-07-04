@@ -62,7 +62,6 @@ YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(_ID),
     canonical_url=_canonical_url,
-    example_identifier="dQw4w9WgXcQ",
     root_seed=RootSeed(
         name="YouTube",
         homepage_url="https://www.youtube.com/",

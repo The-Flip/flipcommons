@@ -19,7 +19,6 @@ OPDB: Final[SchemeSpec] = SchemeSpec(
     url_pattern=re.compile(host_prefix("opdb.org") + r"/machines/([A-Za-z0-9_-]+)"),
     id_pattern=re.compile(r"[A-Za-z0-9_-]+"),
     canonical_url=_canonical_url,
-    example_identifier="GRhX5",
     root_seed=RootSeed(
         # Mirrors the root as it actually shipped in the seed data — the
         # ingest conformance check holds patch declarations to these facts.

@@ -26,6 +26,7 @@ IDENTIFIER = f"{USER}/video/{POST}"
 tiktok = SCHEME_SPECS["tiktok"]
 
 EXAMPLES = SchemeExamples(
+    example_identifier=IDENTIFIER,
     valid_urls=(
         f"https://tiktok.com/@{USER}/video/{POST}",  # no www
         f"http://www.tiktok.com/@{USER}/video/{POST}",

@@ -63,7 +63,6 @@ TIKTOK: Final[VideoSchemeSpec] = VideoSchemeSpec(
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(_IDENTIFIER),
     canonical_url=_canonical_url,
-    example_identifier="scottdanesi/video/7106594312292453675",
     root_seed=RootSeed(
         name="TikTok",
         homepage_url="https://www.tiktok.com/",

@@ -14,6 +14,7 @@ MID = "4443"
 ipdb = SCHEME_SPECS["ipdb"]
 
 EXAMPLES = SchemeExamples(
+    example_identifier=MID,
     valid_urls=(
         f"https://ipdb.org/machine.cgi?id={MID}",  # no www
         f"http://www.ipdb.org/machine.cgi?id={MID}",

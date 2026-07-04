@@ -1,11 +1,10 @@
 """The data-driven scheme example harness.
 
 Each scheme declares a ``SchemeExamples`` table in its ``test_<scheme>`` module
-(real-platform URL shapes: valid, invalid look-alikes, start-time cases). This
-harness collects them through the explicit ``SCHEME_EXAMPLES`` registry below —
-greppable like the production ``_SCHEMES`` tuple — and parametrizes over every
-declared case, so a scheme's platform coverage is *data*, not a hand-written
-test module.
+(real-platform URL shapes: valid, invalid look-alikes, start-time cases),
+collected in the shared ``example_registry``. This harness parametrizes over
+every declared case, so a scheme's platform coverage is *data*, not a
+hand-written test module.
 
 Division of labor: ``test_conformance`` owns the generic invariants shared code
 relies on (round-trip, host anchoring, junk rejection); this owns the
@@ -16,27 +15,8 @@ import pytest
 
 from apps.citation.citation_types import SCHEME_SPECS, SchemeSpec
 
-from . import test_ipdb, test_opdb, test_tiktok, test_vimeo, test_x, test_youtube
-from .example_data import SchemeExamples, SchemeUrlCase, StartTimeCase
-
-# Explicit examples registry — one line per scheme, mirroring the production
-# _SCHEMES registration. The guard below holds it to exactly the registered
-# scheme set: every scheme declares an example table, and no entry names an
-# unregistered scheme.
-SCHEME_EXAMPLES: dict[str, SchemeExamples] = {
-    "ipdb": test_ipdb.EXAMPLES,
-    "opdb": test_opdb.EXAMPLES,
-    "youtube": test_youtube.EXAMPLES,
-    "vimeo": test_vimeo.EXAMPLES,
-    "tiktok": test_tiktok.EXAMPLES,
-    "x": test_x.EXAMPLES,
-}
-
-assert SCHEME_EXAMPLES.keys() == set(SCHEME_SPECS), (
-    "SCHEME_EXAMPLES must cover exactly the registered schemes; "
-    f"missing={sorted(set(SCHEME_SPECS) - SCHEME_EXAMPLES.keys())}, "
-    f"unregistered={sorted(SCHEME_EXAMPLES.keys() - set(SCHEME_SPECS))}"
-)
+from .example_data import SchemeUrlCase, StartTimeCase
+from .example_registry import SCHEME_EXAMPLES
 
 
 def _spec(key: str) -> SchemeSpec:
@@ -69,8 +49,7 @@ _START_TIME_CASES: list[tuple[str, StartTimeCase]] = [
 )
 def test_valid_url_normalizes_to_the_example_identifier(key: str, url: str) -> None:
     """Every declared valid shape resolves to the scheme's example identifier."""
-    spec = _spec(key)
-    assert spec.normalize(url) == spec.example_identifier
+    assert _spec(key).normalize(url) == SCHEME_EXAMPLES[key].example_identifier
 
 
 @pytest.mark.parametrize(

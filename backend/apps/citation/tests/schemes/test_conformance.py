@@ -22,6 +22,8 @@ from apps.citation.citation_types import (
 from apps.citation.hosts import is_dns_host, normalize_host
 from apps.citation.psl import is_public_suffix
 
+from .example_registry import SCHEME_EXAMPLES
+
 # Junk no scheme's identifier grammar should accept. Deliberately generic —
 # per-scheme wrongness (a 12-char YouTube id) lives in the scheme's own tests.
 JUNK_IDENTIFIERS = ["", " ", "has space", "new\nline", "!!!", "a/b?c=d"]
@@ -34,55 +36,60 @@ def spec(request: pytest.FixtureRequest) -> SchemeSpec:
     return SCHEME_SPECS[request.param]
 
 
+@pytest.fixture
+def example_id(spec: SchemeSpec) -> str:
+    """The scheme's round-trip seed — one known-good identifier, from its
+    test-side example table rather than the production spec."""
+    return SCHEME_EXAMPLES[spec.key].example_identifier
+
+
 class TestSchemeConformance:
-    def test_canonical_url_round_trips_through_extract(self, spec):
+    def test_canonical_url_round_trips_through_extract(self, spec, example_id):
         """The canonical URL is one of the scheme's own recognized shapes."""
-        url = spec.canonical_url(spec.example_identifier)
+        url = spec.canonical_url(example_id)
         match = spec.extract(url)
         assert match is not None, f"{spec.key}: canonical URL not recognized: {url}"
-        assert match.identifier == spec.example_identifier
+        assert match.identifier == example_id
 
-    def test_example_identifier_is_valid_bare(self, spec):
-        assert spec.validate_identifier(spec.example_identifier) == (
-            spec.example_identifier
-        )
+    def test_example_identifier_is_valid_bare(self, spec, example_id):
+        assert spec.validate_identifier(example_id) == example_id
 
-    def test_normalize_accepts_url_and_bare_forms(self, spec):
-        url = spec.canonical_url(spec.example_identifier)
-        assert spec.normalize(url) == spec.example_identifier
-        assert spec.normalize(spec.example_identifier) == spec.example_identifier
+    def test_normalize_accepts_url_and_bare_forms(self, spec, example_id):
+        url = spec.canonical_url(example_id)
+        assert spec.normalize(url) == example_id
+        assert spec.normalize(example_id) == example_id
 
     @pytest.mark.parametrize("junk", JUNK_IDENTIFIERS)
     def test_junk_identifiers_are_rejected(self, spec, junk):
         assert spec.validate_identifier(junk) is None
 
-    def test_url_pattern_is_host_anchored(self, spec):
+    def test_url_pattern_is_host_anchored(self, spec, example_id):
         """A look-alike host must not match (``notyoutube.com`` spoof).
 
         Prefixing the canonical host with a label fragment must break
         recognition — the pattern anchors on ``https?://<host>``, not on the
         host appearing anywhere in the URL.
         """
-        url = spec.canonical_url(spec.example_identifier)
+        url = spec.canonical_url(example_id)
         host = urlparse(url).hostname
         assert host, f"{spec.key}: canonical URL has no host: {url}"
         spoofed = url.replace(f"://{host}", f"://not{host}", 1)
         assert spec.extract(spoofed) is None, f"{spec.key}: matched {spoofed}"
 
-    def test_canonical_url_is_https_on_a_real_host(self, spec):
-        url = spec.canonical_url(spec.example_identifier)
+    def test_canonical_url_is_https_on_a_real_host(self, spec, example_id):
+        url = spec.canonical_url(example_id)
         parsed = urlparse(url)
         assert parsed.scheme == "https"
         assert parsed.hostname
         assert is_dns_host(normalize_host(parsed.hostname))
 
-    def test_extract_never_returns_locator_text(self, spec):
+    def test_extract_never_returns_locator_text(self, spec, example_id):
         """A scheme hint is a structured value, never a preformatted string.
 
         ``start_seconds`` is ``int | None`` by contract; this pins the runtime
         shape for schemes whose ``extract`` is hand-written.
         """
-        match = spec.extract(spec.canonical_url(spec.example_identifier))
+        match = spec.extract(spec.canonical_url(example_id))
         assert match is not None
         assert match.start_seconds is None or isinstance(match.start_seconds, int)
 
@@ -125,12 +132,14 @@ class TestSchemeConformance:
                 f"builder to honor them"
             )
 
-    def test_deep_link_output_is_well_formed_on_the_schemes_host(self, spec):
+    def test_deep_link_output_is_well_formed_on_the_schemes_host(
+        self, spec, example_id
+    ):
         if spec.deep_link is None:
             pytest.skip("scheme has no deep_link")
-        canonical_host = urlparse(spec.canonical_url(spec.example_identifier)).hostname
+        canonical_host = urlparse(spec.canonical_url(example_id)).hostname
         for seconds in (0, 95, 3723):
-            url = spec.deep_link(spec.example_identifier, seconds)
+            url = spec.deep_link(example_id, seconds)
             parsed = urlparse(url)
             assert parsed.scheme == "https"
             assert parsed.hostname == canonical_host, (

@@ -51,7 +51,6 @@ X_TWITTER: Final[SchemeSpec] = SchemeSpec(
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(r"\d+"),
     canonical_url=_canonical_url,
-    example_identifier="1585341984679469056",
     root_seed=RootSeed(
         name="X (Twitter)",
         homepage_url="https://x.com/",

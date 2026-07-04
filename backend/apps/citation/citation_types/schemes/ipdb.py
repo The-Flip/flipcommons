@@ -19,7 +19,6 @@ IPDB: Final[SchemeSpec] = SchemeSpec(
     url_pattern=re.compile(host_prefix("ipdb.org") + r"/machine\.cgi\?id=(\d+)"),
     id_pattern=re.compile(r"\d+"),
     canonical_url=_canonical_url,
-    example_identifier="4443",
     root_seed=RootSeed(
         # Mirrors the root as it actually shipped in the seed data — the
         # ingest conformance check holds patch declarations to these facts.

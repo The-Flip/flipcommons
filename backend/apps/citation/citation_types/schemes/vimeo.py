@@ -65,7 +65,6 @@ VIMEO: Final[VideoSchemeSpec] = VideoSchemeSpec(
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(r"\d+"),
     canonical_url=_canonical_url,
-    example_identifier="347119375",
     root_seed=RootSeed(
         name="Vimeo",
         homepage_url="https://vimeo.com/",

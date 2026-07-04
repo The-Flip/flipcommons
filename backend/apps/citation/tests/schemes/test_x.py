@@ -18,6 +18,7 @@ SID = "1585341984679469056"
 x = SCHEME_SPECS["x"]
 
 EXAMPLES = SchemeExamples(
+    example_identifier=SID,
     valid_urls=(
         f"https://x.com/PinballNews/status/{SID}",
         f"https://twitter.com/PinballNews/status/{SID}",

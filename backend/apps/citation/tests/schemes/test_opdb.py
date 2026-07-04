@@ -14,6 +14,7 @@ MID = "GRhX5"
 opdb = SCHEME_SPECS["opdb"]
 
 EXAMPLES = SchemeExamples(
+    example_identifier=MID,
     valid_urls=(
         f"https://www.opdb.org/machines/{MID}",  # www
         f"http://opdb.org/machines/{MID}",

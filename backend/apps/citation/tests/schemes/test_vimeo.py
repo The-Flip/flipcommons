@@ -17,6 +17,7 @@ VID = "347119375"
 vimeo = SCHEME_SPECS["vimeo"]
 
 EXAMPLES = SchemeExamples(
+    example_identifier=VID,
     valid_urls=(
         f"https://www.vimeo.com/{VID}",
         f"http://vimeo.com/{VID}",

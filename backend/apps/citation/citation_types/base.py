@@ -188,8 +188,6 @@ class SchemeSpec:
     - ``id_pattern`` fullmatches a bare identifier.
     - ``canonical_url`` builds the one URL every shape collapses to —
       ``extract(canonical_url(id))`` must round-trip.
-    - ``example_identifier`` is a real, well-formed identifier; it seeds the
-      harness's round-trip checks and doubles as documentation.
 
     The two optional capabilities speak the owning type's structured locator
     value (see ``LocatorContract``), never locator text:
@@ -212,7 +210,6 @@ class SchemeSpec:
     url_pattern: re.Pattern[str]
     id_pattern: re.Pattern[str]
     canonical_url: CanonicalUrlBuilder
-    example_identifier: str
     root_seed: RootSeed
     deep_link: DeepLinkBuilder | None = None
     start_seconds_from_url: StartSecondsExtractor | None = None

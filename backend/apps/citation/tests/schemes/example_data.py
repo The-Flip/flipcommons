@@ -41,12 +41,17 @@ class SchemeUrlCase(NamedTuple):
 
 @dataclass(frozen=True, slots=True)
 class SchemeExamples:
-    """A scheme's real-platform URL examples, declared in its test module.
+    """A scheme's test material, declared in its test module.
 
-    - ``valid_urls``: alternate URL shapes of the scheme's ``example_identifier``
-      — each must ``normalize`` to it. The bare id and canonical URL round-trip
-      is already covered by the conformance harness, so these are the platform's
-      *other* shapes (mobile, embed, trailing params, ...).
+    - ``example_identifier``: one real, well-formed identifier — the conformance
+      harness's round-trip seed (``extract(canonical_url(id))``,
+      ``deep_link(id, …)``) and the value every ``valid_urls`` entry normalizes
+      to. Lives here, not on the production ``SchemeSpec``, because it is test
+      data.
+    - ``valid_urls``: alternate URL shapes of ``example_identifier`` — each must
+      ``normalize`` to it. The bare id and canonical URL round-trip is already
+      covered by the conformance harness, so these are the platform's *other*
+      shapes (mobile, embed, trailing params, ...).
     - ``invalid_urls``: look-alikes and near-misses that must ``normalize`` to
       ``None`` (wrong host, host-as-prefix label, an id past its boundary, a
       foreign path that merely contains the id).
@@ -54,6 +59,7 @@ class SchemeExamples:
       recognized URL with no usable hint). Empty for schemes with no time axis.
     """
 
+    example_identifier: str
     valid_urls: tuple[str, ...] = ()
     invalid_urls: tuple[str, ...] = ()
     start_time_cases: tuple[StartTimeCase, ...] = ()
