@@ -1,13 +1,30 @@
 """Citation-type and scheme plugins, behind one registry.
 
-Public surface of the plugin system: consumers import from this package, not
-from individual plugin modules. See ``docs/plans/citations/VideoCitations.md``
-for the architecture and ``base.py`` for the contracts.
+The package root is the plugin system's public surface, and it serves two
+audiences with two distinct import surfaces (the sections in ``__all__``
+below; see ``docs/plans/citations/CitationPluginSystem.md``):
+
+- **Plugin authors** — writing one scheme or type — import the contract
+  types, callback Protocols and authoring helpers, and see only what they
+  must fill in.
+- **External customers** — code that uses the citation system without
+  knowing a plugin exists — import the named registry accessors
+  (``citation_type_spec``, ``recognize_scheme``, …) and never read a spec's
+  fields.
+
+The third surface, the **citation framework** itself (the shared
+``SchemeSpec`` driver methods, the registry coherence checks, the
+conformance harness), is not an import surface: it is documented where it
+lives, in ``base.py`` and ``registry.py``. The raw spec mappings exported
+last are its channel — consumed only by the framework's own DB operations
+(``extractors``/``deep_links``), the codegen commands and tests.
 """
 
 from apps.citation.citation_types.base import (
+    CanonicalUrlBuilder,
     CitationSourceTypeValue,
     CitationTypeSpec,
+    DeepLinkBuilder,
     LocatorContract,
     RootSeed,
     SchemeKey,
@@ -15,6 +32,7 @@ from apps.citation.citation_types.base import (
     SchemeSpec,
     SourceType,
     StartSeconds,
+    StartSecondsExtractor,
     citation_source_type,
 )
 from apps.citation.citation_types.registry import (
@@ -34,31 +52,42 @@ from apps.citation.citation_types.registry import (
     scheme_root_seed,
     scheme_source_type,
 )
+from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
 
 __all__ = [
-    "CITATION_TYPE_SPECS",
-    "SCHEME_SPECS",
+    # ----- Plugin-author surface: what a scheme or type author fills in -----
+    "SchemeSpec",
+    "RootSeed",
+    "SchemeMatch",
+    "CanonicalUrlBuilder",
+    "DeepLinkBuilder",
+    "StartSecondsExtractor",
+    "host_prefix",
+    "ID_BOUNDARY",
     "CitationTypeSpec",
     "LocatorContract",
-    "RootSeed",
-    "SchemeBinding",
-    "SchemeChoice",
-    "SchemeKey",
-    "SchemeMatch",
-    "SchemeRecognition",
-    "SchemeSpec",
-    "SourceType",
-    "StartSeconds",
-    "CitationSourceTypeValue",
+    # ----- External-customer surface: named queries, never spec fields -----
     "citation_type_spec",
-    "identifier_key_choices",
-    "identifier_key_values",
+    "recognize_scheme",
+    "SchemeRecognition",
+    "scheme_source_type",
+    "normalize_scheme_identifier",
+    "scheme_root_seed",
     "is_known_scheme",
     "known_scheme_keys",
-    "normalize_scheme_identifier",
-    "recognize_scheme",
-    "scheme_bindings",
-    "scheme_root_seed",
-    "scheme_source_type",
     "citation_source_type",
+    # ----- Shared vocabulary: semantic aliases and the type enum -----
+    "SourceType",
+    "CitationSourceTypeValue",
+    "SchemeKey",
+    "StartSeconds",
+    # ----- Framework channel: constraint derivation (models) and the raw
+    # spec mappings (extractors/deep_links, codegen, tests only) -----
+    "identifier_key_values",
+    "identifier_key_choices",
+    "SchemeChoice",
+    "scheme_bindings",
+    "SchemeBinding",
+    "CITATION_TYPE_SPECS",
+    "SCHEME_SPECS",
 ]

@@ -214,6 +214,13 @@ class SchemeSpec:
     deep_link: DeepLinkBuilder | None = None
     start_seconds_from_url: StartSecondsExtractor | None = None
 
+    # -- Framework surface. The methods below are defined once, here, and
+    # invoked by the citation framework ON the fields above — a scheme author
+    # fills in the fields and never writes or overrides these. The single
+    # shared implementation is what guarantees every scheme resolves input
+    # identically; the conformance harness exercises them against every
+    # registered scheme. --
+
     def extract(self, url: str) -> SchemeMatch | None:
         """Recognize *url* as one of this scheme's shapes, or ``None``."""
         m = self.url_pattern.search(url)
