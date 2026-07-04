@@ -33,7 +33,7 @@ def spec(request: pytest.FixtureRequest) -> SchemeSpec:
 def root(spec: SchemeSpec, db: None) -> CitationSource:
     """The scheme's seeded platform root, built from its declared facts."""
     return make_citation_source(
-        name=spec.root_seed.name,
+        name=spec.root_citation_source_info.name,
         source_type=citation_source_type(spec.source_type),
         identifier_key=identifier_key_value(spec.key),
     )

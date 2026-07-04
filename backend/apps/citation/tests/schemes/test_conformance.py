@@ -93,13 +93,13 @@ class TestSchemeConformance:
         assert match is not None
         assert match.start_seconds is None or isinstance(match.start_seconds, int)
 
-    def test_root_seed_is_well_formed(self, spec):
-        seed = spec.root_seed
-        assert seed.name, f"{spec.key}: root_seed.name is blank"
-        parsed = urlparse(seed.homepage_url)
+    def test_root_citation_source_info_is_well_formed(self, spec):
+        info = spec.root_citation_source_info
+        assert info.name, f"{spec.key}: root_citation_source_info.name is blank"
+        parsed = urlparse(info.homepage_url)
         assert parsed.scheme == "https", f"{spec.key}: homepage_url is not https"
         assert parsed.hostname, f"{spec.key}: homepage_url has no host"
-        for host in seed.recognition_hosts:
+        for host in info.recognition_hosts:
             assert host == normalize_host(host), (
                 f"{spec.key}: recognition host {host!r} is not normalized"
             )

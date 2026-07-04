@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, NamedTuple, NotRequired, TypedDict
 from urllib.parse import urlparse
 
-from apps.citation.citation_types import scheme_root_seed
+from apps.citation.citation_types import scheme_root_citation_source_info
 from apps.citation.hosts import Host, normalize_host
 from apps.citation.source_node import SourceLinkNode, SourceNode
 
@@ -349,48 +349,49 @@ def validate_root_source(node: SourceNode) -> None:
         domain = CitationSourceRootDomain(host=host)
         domain.full_clean(exclude=["source", *attribution], validate_unique=False)
 
-    _validate_scheme_root_seed(node)
+    _validate_scheme_root_citation_source_info(node)
 
 
-def _validate_scheme_root_seed(node: SourceNode) -> None:
-    """Hold a scheme root's declaration to its registered ``root_seed`` facts.
+def _validate_scheme_root_citation_source_info(node: SourceNode) -> None:
+    """Hold a scheme root's declaration to its registered root facts.
 
     A ``sources:`` node carrying an ``identifier_key`` is declaring a scheme's
     platform root, and the scheme registry is operationally authoritative for
     those: the declared name, homepage URL and recognition-host set must match
-    the spec's ``root_seed`` exactly, so the registry and the seeded row can't
-    silently disagree (a mistyped root would mint children that never match
-    the spec's canonical facts). Non-scheme nodes are unconstrained. Unknown
-    keys are the field validator's error (choices), checked before this runs.
+    the spec's ``root_citation_source_info`` exactly, so the registry and the
+    seeded row can't silently disagree (a mistyped root would mint children
+    that never match the spec's canonical facts). Non-scheme nodes are
+    unconstrained. Unknown keys are the field validator's error (choices),
+    checked before this runs.
     """
     from django.core.exceptions import ValidationError
 
     key = node.get("identifier_key", "")
-    seed = scheme_root_seed(key) if key else None
-    if seed is None:
+    info = scheme_root_citation_source_info(key) if key else None
+    if info is None:
         return
     problems: list[str] = []
-    if node["name"] != seed.name:
-        problems.append(f"name must be {seed.name!r} (declared {node['name']!r})")
+    if node["name"] != info.name:
+        problems.append(f"name must be {info.name!r} (declared {node['name']!r})")
     homepage_urls = [
         link["url"] for link in node.get("links", []) if link["link_type"] == "homepage"
     ]
-    if seed.homepage_url not in homepage_urls:
+    if info.homepage_url not in homepage_urls:
         problems.append(
-            f"homepage link {seed.homepage_url!r} must be declared "
+            f"homepage link {info.homepage_url!r} must be declared "
             f"(declared homepages: {homepage_urls!r})"
         )
     declared_hosts = set(_declared_recognition_hosts(node))
-    if declared_hosts != set(seed.recognition_hosts):
+    if declared_hosts != set(info.recognition_hosts):
         problems.append(
-            f"recognition hosts must be {sorted(seed.recognition_hosts)!r} "
+            f"recognition hosts must be {sorted(info.recognition_hosts)!r} "
             f"(declared {sorted(declared_hosts)!r})"
         )
     if problems:
         raise ValidationError(
             {
                 "identifier_key": (
-                    f"scheme root {key!r} must match its registered root_seed: "
+                    f"scheme root {key!r} must match its registered root info: "
                     + "; ".join(problems)
                 )
             }

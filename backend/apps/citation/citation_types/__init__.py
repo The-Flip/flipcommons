@@ -26,9 +26,9 @@ from apps.citation.citation_types.base import (
     CitationTypeSpec,
     DeepLinkBuilder,
     LocatorContract,
-    RootSeed,
     SchemeKey,
     SchemeMatch,
+    SchemeRootCitationSourceInfo,
     SchemeSpec,
     SourceType,
     StartSeconds,
@@ -51,7 +51,7 @@ from apps.citation.citation_types.registry import (
     scheme_bindings,
     scheme_canonical_url,
     scheme_deep_link,
-    scheme_root_seed,
+    scheme_root_citation_source_info,
     scheme_source_type,
 )
 from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
@@ -59,7 +59,7 @@ from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
 __all__ = [
     # ----- Plugin-author surface: what a scheme or type author fills in -----
     "SchemeSpec",
-    "RootSeed",
+    "SchemeRootCitationSourceInfo",
     "SchemeMatch",
     "CanonicalUrlBuilder",
     "DeepLinkBuilder",
@@ -76,7 +76,7 @@ __all__ = [
     "normalize_scheme_identifier",
     "scheme_canonical_url",
     "scheme_deep_link",
-    "scheme_root_seed",
+    "scheme_root_citation_source_info",
     "is_known_scheme",
     "known_scheme_keys",
     "citation_source_type",

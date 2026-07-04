@@ -159,14 +159,14 @@ class SchemeMatch:
 
 
 @dataclass(frozen=True, slots=True)
-class RootSeed:
+class SchemeRootCitationSourceInfo:
     """Declarative facts about a scheme's platform root ``CitationSource``.
 
     The root row is still created by a data patch — a scheme is live only once
     its root is seeded — but the patch is authored from these facts, and the
-    ingest validation (``source_upsert._validate_scheme_root_seed``) rejects a
-    ``sources:`` declaration that disagrees with them, so the registry stays
-    operationally authoritative.
+    ingest validation (``_validate_scheme_root_citation_source_info`` in
+    ``source_upsert``) rejects a ``sources:`` declaration that disagrees with
+    them, so the registry stays operationally authoritative.
     ``recognition_hosts`` are the ``CitationSourceRootDomain`` hosts the root
     should own (normalized: lowercase, no ``www.``).
     """
@@ -214,7 +214,7 @@ class SchemeSpec:
     url_pattern: re.Pattern[str]
     id_pattern: re.Pattern[str]
     canonical_url: CanonicalUrlBuilder
-    root_seed: RootSeed
+    root_citation_source_info: SchemeRootCitationSourceInfo
     deep_link: DeepLinkBuilder | None = None
     start_seconds_from_url: StartSecondsExtractor | None = None
 

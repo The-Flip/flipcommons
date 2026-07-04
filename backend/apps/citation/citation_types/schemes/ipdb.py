@@ -3,7 +3,11 @@
 import re
 from typing import Final
 
-from apps.citation.citation_types.base import RootSeed, SchemeSpec, SourceType
+from apps.citation.citation_types.base import (
+    SchemeRootCitationSourceInfo,
+    SchemeSpec,
+    SourceType,
+)
 from apps.citation.citation_types.url_patterns import host_prefix
 
 
@@ -19,7 +23,7 @@ IPDB: Final[SchemeSpec] = SchemeSpec(
     url_pattern=re.compile(host_prefix("ipdb.org") + r"/machine\.cgi\?id=(\d+)"),
     id_pattern=re.compile(r"\d+"),
     canonical_url=_canonical_url,
-    root_seed=RootSeed(
+    root_citation_source_info=SchemeRootCitationSourceInfo(
         # Mirrors the root as it actually shipped in the seed data — the
         # ingest conformance check holds patch declarations to these facts.
         name="Internet Pinball Database (IPDB)",

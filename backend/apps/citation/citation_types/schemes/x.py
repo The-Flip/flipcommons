@@ -12,7 +12,8 @@ pays the honest price of losing the start-time locator.
 What the scheme still buys over bare host recognition is identity: one
 platform, two full host families (``x.com`` and the legacy ``twitter.com``,
 plus ``www.``/``mobile.`` prefixes), recognized identically and collapsing
-to one child per numeric status id. The ``root_seed`` declares **both** apex
+to one child per numeric status id. The ``root_citation_source_info``
+declares **both** apex
 hosts — the first multi-host root. The username path segment is vanity, not
 identity: any handle in the URL resolves to the same post, and handles get
 renamed, so the identifier is the status id alone and the canonical URL is
@@ -24,7 +25,11 @@ a recognized shape, so the canonical round-trips). Trailing ``/photo/1`` /
 import re
 from typing import Final
 
-from apps.citation.citation_types.base import RootSeed, SchemeSpec, SourceType
+from apps.citation.citation_types.base import (
+    SchemeRootCitationSourceInfo,
+    SchemeSpec,
+    SourceType,
+)
 from apps.citation.citation_types.url_patterns import host_prefix
 
 _URL_PATTERN = re.compile(
@@ -51,7 +56,7 @@ X_TWITTER: Final[SchemeSpec] = SchemeSpec(
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(r"\d+"),
     canonical_url=_canonical_url,
-    root_seed=RootSeed(
+    root_citation_source_info=SchemeRootCitationSourceInfo(
         name="X (Twitter)",
         homepage_url="https://x.com/",
         recognition_hosts=("x.com", "twitter.com"),

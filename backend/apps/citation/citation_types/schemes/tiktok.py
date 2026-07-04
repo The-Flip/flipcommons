@@ -35,7 +35,7 @@ watch link — the case that made the video contract's ``deep_link`` optional.
 import re
 from typing import Final
 
-from apps.citation.citation_types.base import RootSeed, SourceType
+from apps.citation.citation_types.base import SchemeRootCitationSourceInfo, SourceType
 from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
 from apps.citation.citation_types.video import VideoSchemeSpec
 
@@ -63,7 +63,7 @@ TIKTOK: Final[VideoSchemeSpec] = VideoSchemeSpec(
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(_IDENTIFIER),
     canonical_url=_canonical_url,
-    root_seed=RootSeed(
+    root_citation_source_info=SchemeRootCitationSourceInfo(
         name="TikTok",
         homepage_url="https://www.tiktok.com/",
         # vm./vt. short-link hosts are subdomains of tiktok.com, so

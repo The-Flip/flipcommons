@@ -21,8 +21,8 @@ from typing import Final, NamedTuple
 from apps.citation.citation_types import book, magazine, video, web
 from apps.citation.citation_types.base import (
     CitationTypeSpec,
-    RootSeed,
     SchemeKey,
+    SchemeRootCitationSourceInfo,
     SchemeSpec,
     SourceType,
     StartSeconds,
@@ -237,7 +237,7 @@ def normalize_scheme_identifier(key: SchemeKey, raw: str) -> str | None:
     return _scheme_spec(key).normalize(raw)
 
 
-def scheme_root_seed(key: str) -> RootSeed | None:
+def scheme_root_citation_source_info(key: str) -> SchemeRootCitationSourceInfo | None:
     """The declared platform-root facts for *key*, or ``None`` if unregistered.
 
     ``None`` (not ``ValueError``) because the caller is ingest validation
@@ -245,7 +245,7 @@ def scheme_root_seed(key: str) -> RootSeed | None:
     error to report, and this query must stay usable on the way there.
     """
     spec = SCHEME_SPECS.get(key)
-    return spec.root_seed if spec is not None else None
+    return spec.root_citation_source_info if spec is not None else None
 
 
 def scheme_canonical_url(key: SchemeKey, identifier: str) -> str:

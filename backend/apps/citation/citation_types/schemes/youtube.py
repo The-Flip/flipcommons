@@ -23,7 +23,7 @@ builds the watch URL that jumps to a cited moment.
 import re
 from typing import Final
 
-from apps.citation.citation_types.base import RootSeed, SourceType
+from apps.citation.citation_types.base import SchemeRootCitationSourceInfo, SourceType
 from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
 from apps.citation.citation_types.video import VideoSchemeSpec, seconds_from_query
 
@@ -62,7 +62,7 @@ YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(_ID),
     canonical_url=_canonical_url,
-    root_seed=RootSeed(
+    root_citation_source_info=SchemeRootCitationSourceInfo(
         name="YouTube",
         homepage_url="https://www.youtube.com/",
         # youtu.be is deliberately NOT a recognition host: every youtu.be

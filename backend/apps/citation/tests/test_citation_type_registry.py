@@ -21,7 +21,7 @@ from apps.citation.citation_types import (
     scheme_bindings,
     scheme_canonical_url,
     scheme_deep_link,
-    scheme_root_seed,
+    scheme_root_citation_source_info,
     scheme_source_type,
 )
 from apps.citation.citation_types.registry import _assert_registry_coherent
@@ -127,13 +127,13 @@ class TestExternalCustomerAccessors:
         with pytest.raises(ValueError, match="Unknown scheme"):
             normalize_scheme_identifier("betamax", "4443")
 
-    def test_scheme_root_seed_returns_facts_or_none(self):
-        seed = scheme_root_seed("youtube")
-        assert seed is not None
-        assert seed.name == "YouTube"
+    def test_scheme_root_citation_source_info_returns_facts_or_none(self):
+        info = scheme_root_citation_source_info("youtube")
+        assert info is not None
+        assert info.name == "YouTube"
         # None, not ValueError: ingest validation queries with a
         # patch-declared key before the field validator reports it.
-        assert scheme_root_seed("betamax") is None
+        assert scheme_root_citation_source_info("betamax") is None
 
     def test_scheme_canonical_url_builds_the_collapse_target(self):
         url = scheme_canonical_url("ipdb", "4443")
