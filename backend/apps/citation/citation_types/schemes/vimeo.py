@@ -24,22 +24,23 @@ the fragment form; ``start_seconds_from_url`` reads it.
 
 import re
 from typing import Final
-from urllib.parse import parse_qs, urlparse
 
 from apps.citation.citation_types.base import RootSeed, SourceType
-from apps.citation.citation_types.video import VideoSchemeSpec, parse_start_time
+from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
+from apps.citation.citation_types.video import VideoSchemeSpec, seconds_from_fragment
 
-# Watch-shape boundary: the id may be followed by an unlisted hex hash
-# segment and/or a single trailing slash, then only query/fragment/end.
+# Watch-shape boundary: the id may be followed by an unlisted hex hash segment
+# and/or a single trailing slash, then only query/fragment/end. Custom (not
+# ID_BOUNDARY) because of the optional hash segment.
 _WATCH_ID = r"(\d+)(?=(?:/[0-9a-f]{6,16})?/?(?:[?#]|$))"
-# Embed-shape boundary: no hash segment on player URLs (the hash rides as a
-# ``?h=`` query param there, which the boundary already tolerates).
-_EMBED_ID = r"(\d+)(?=/?(?:[?#]|$))"
+# Embed URLs carry no hash segment (it rides as a ``?h=`` query param, which
+# ID_BOUNDARY already tolerates), so the standard boundary applies.
+_EMBED_ID = rf"(\d+){ID_BOUNDARY}"
 
 _URL_PATTERN = re.compile(
-    r"https?://(?:"
-    rf"(?:www\.)?vimeo\.com/{_WATCH_ID}"
-    rf"|player\.vimeo\.com/video/{_EMBED_ID}"
+    r"(?:"
+    rf"{host_prefix('vimeo.com')}/{_WATCH_ID}"
+    rf"|{host_prefix('player.vimeo.com', subdomains=())}/video/{_EMBED_ID}"
     r")"
 )
 
@@ -55,24 +56,6 @@ def _deep_link(video_id: str, start_seconds: int) -> str:
     Vimeo's seek syntax is a fragment, not a query param: ``#t=95s``.
     """
     return f"https://vimeo.com/{video_id}#t={start_seconds}s"
-
-
-def _start_seconds_from_url(url: str) -> int | None:
-    """The start-time hint in a Vimeo URL's ``#t=`` fragment.
-
-    Vimeo writes ``#t=90s`` and ``#t=1m30s`` — the video type's unit/bare
-    grammar covers both. ``t=0`` means "from the beginning" — no hint. A
-    malformed value abstains rather than guessing.
-    """
-    try:
-        fragment = urlparse(url).fragment
-    except ValueError:
-        return None
-    for value in parse_qs(fragment).get("t", []):
-        seconds = parse_start_time(value)
-        if seconds:
-            return seconds
-    return None
 
 
 VIMEO: Final[VideoSchemeSpec] = VideoSchemeSpec(
@@ -91,5 +74,6 @@ VIMEO: Final[VideoSchemeSpec] = VideoSchemeSpec(
         recognition_hosts=("vimeo.com",),
     ),
     deep_link=_deep_link,
-    start_seconds_from_url=_start_seconds_from_url,
+    # Vimeo's start time rides in the ``#t=`` fragment (``#t=90s``, ``#t=1m30s``).
+    start_seconds_from_url=seconds_from_fragment("t"),
 )

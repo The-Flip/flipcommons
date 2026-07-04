@@ -25,16 +25,17 @@ import re
 from typing import Final
 
 from apps.citation.citation_types.base import RootSeed, SchemeSpec, SourceType
+from apps.citation.citation_types.url_patterns import host_prefix
 
 _URL_PATTERN = re.compile(
-    r"https?://(?:www\.|mobile\.)?(?:x|twitter)\.com/"
+    host_prefix("x.com", "twitter.com", subdomains=("www", "mobile"))
     # The handle-free ``/i/status`` + ``/i/web/status`` shapes, or a vanity
     # handle (1–15 word chars, X's own grammar); ``statuses`` is the legacy
     # path form, which also appeared bare (``twitter.com/statuses/<id>``), so
     # the leading segment is optional. Boundary: the digits must end at a
     # path/query/fragment break — a ``/photo/1`` tail is fine but
     # ``…/status/123abc`` is not.
-    r"(?:i/web/|i/|[A-Za-z0-9_]{1,15}/)?status(?:es)?/(\d+)(?=[/?#]|$)"
+    + r"/(?:i/web/|i/|[A-Za-z0-9_]{1,15}/)?status(?:es)?/(\d+)(?=[/?#]|$)"
 )
 
 

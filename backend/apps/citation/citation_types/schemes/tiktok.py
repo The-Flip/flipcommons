@@ -36,6 +36,7 @@ import re
 from typing import Final
 
 from apps.citation.citation_types.base import RootSeed, SourceType
+from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
 from apps.citation.citation_types.video import VideoSchemeSpec
 
 # The composite identifier grammar: username, the literal ``/video/``
@@ -43,10 +44,10 @@ from apps.citation.citation_types.video import VideoSchemeSpec
 # bare-identifier fullmatch so the two can never drift.
 _IDENTIFIER = r"[a-z0-9_.]{2,24}/video/\d+"
 
+# ID_BOUNDARY: the id may be followed by a single trailing slash and then only a
+# query, a fragment, or the end — never more path (``/duet`` is rejected).
 _URL_PATTERN = re.compile(
-    # Boundary: the id may be followed by a single trailing slash and then
-    # only a query, a fragment, or the end — never more path.
-    rf"https?://(?:www\.)?tiktok\.com/@({_IDENTIFIER})(?=/?(?:[?#]|$))"
+    host_prefix("tiktok.com") + rf"/@({_IDENTIFIER}){ID_BOUNDARY}"
 )
 
 

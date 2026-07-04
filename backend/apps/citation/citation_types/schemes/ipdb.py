@@ -4,6 +4,7 @@ import re
 from typing import Final
 
 from apps.citation.citation_types.base import RootSeed, SchemeSpec, SourceType
+from apps.citation.citation_types.url_patterns import host_prefix
 
 
 def _canonical_url(machine_id: str) -> str:
@@ -15,7 +16,7 @@ IPDB: Final[SchemeSpec] = SchemeSpec(
     key="ipdb",
     label="IPDB",
     source_type=SourceType.WEB,
-    url_pattern=re.compile(r"https?://(?:www\.)?ipdb\.org/machine\.cgi\?id=(\d+)"),
+    url_pattern=re.compile(host_prefix("ipdb.org") + r"/machine\.cgi\?id=(\d+)"),
     id_pattern=re.compile(r"\d+"),
     canonical_url=_canonical_url,
     example_identifier="4443",

@@ -22,20 +22,25 @@ builds the watch URL that jumps to a cited moment.
 
 import re
 from typing import Final
-from urllib.parse import parse_qs, urlparse
 
 from apps.citation.citation_types.base import RootSeed, SourceType
-from apps.citation.citation_types.video import VideoSchemeSpec, parse_start_time
+from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
+from apps.citation.citation_types.video import VideoSchemeSpec, seconds_from_query
 
-# Path-shape boundary: the id may be followed by a single trailing slash and
-# then only a query, a fragment, or the end — never more path.
-_PATH_ID = r"([A-Za-z0-9_-]{11})(?=/?(?:[?#]|$))"
+_ID = r"[A-Za-z0-9_-]{11}"
+# The path shapes end at a trailing-slash/query/fragment/end (ID_BOUNDARY), so a
+# malformed URL fails instead of collapsing to a wrong-but-valid-looking id.
+_PATH_ID = rf"({_ID}){ID_BOUNDARY}"
+_YOUTUBE = host_prefix("youtube.com", subdomains=("www", "m"))
+_YOUTU_BE = host_prefix("youtu.be")
 
 _URL_PATTERN = re.compile(
-    r"https?://(?:"
-    r"(?:www\.|m\.)?youtube\.com/watch\?(?:[^\s#]*&)?v=([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])"
-    rf"|(?:www\.|m\.)?youtube\.com/(?:embed|shorts|live)/{_PATH_ID}"
-    rf"|(?:www\.)?youtu\.be/{_PATH_ID}"
+    r"(?:"
+    # watch?v=: read v= from the query only (the param scan can't cross # into
+    # the fragment), and the 11-char id can't continue into a longer token.
+    rf"{_YOUTUBE}/watch\?(?:[^\s#]*&)?v=({_ID})(?![A-Za-z0-9_-])"
+    rf"|{_YOUTUBE}/(?:embed|shorts|live)/{_PATH_ID}"
+    rf"|{_YOUTU_BE}/{_PATH_ID}"
     r")"
 )
 
@@ -50,32 +55,12 @@ def _deep_link(video_id: str, start_seconds: int) -> str:
     return f"https://www.youtube.com/watch?v={video_id}&t={start_seconds}s"
 
 
-def _start_seconds_from_url(url: str) -> int | None:
-    """The start-time hint in a YouTube URL's ``t=`` or ``start=`` param.
-
-    YouTube writes ``t=95``, ``t=95s`` and ``t=1h2m3s`` (and embeds use
-    ``start=95``); all are covered by the video type's unit/bare-seconds
-    grammar. ``t=0`` means "from the beginning" — no hint. A malformed value
-    abstains rather than guessing.
-    """
-    try:
-        query = parse_qs(urlparse(url).query)
-    except ValueError:
-        return None
-    for param in ("t", "start"):
-        for value in query.get(param, []):
-            seconds = parse_start_time(value)
-            if seconds:
-                return seconds
-    return None
-
-
 YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="youtube",
     label="YouTube",
     source_type=SourceType.VIDEO,
     url_pattern=_URL_PATTERN,
-    id_pattern=re.compile(r"[A-Za-z0-9_-]{11}"),
+    id_pattern=re.compile(_ID),
     canonical_url=_canonical_url,
     example_identifier="dQw4w9WgXcQ",
     root_seed=RootSeed(
@@ -87,5 +72,7 @@ YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
         recognition_hosts=("youtube.com",),
     ),
     deep_link=_deep_link,
-    start_seconds_from_url=_start_seconds_from_url,
+    # YouTube writes ``t=95``, ``t=95s``, ``t=1h2m3s`` and embeds use
+    # ``start=95``; all pass through the video type's grammar. ``t=0`` abstains.
+    start_seconds_from_url=seconds_from_query("t", "start"),
 )
