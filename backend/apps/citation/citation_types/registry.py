@@ -265,12 +265,12 @@ def scheme_deep_link(key: SchemeKey, identifier: str, locator: str) -> str | Non
     scheme's owning *type* parses the locator text into its structured value,
     then the *scheme* builds the seek URL from that value — neither layer
     sees the other's vocabulary. ``None`` when either layer declines: the
-    scheme has no ``deep_link`` builder (TikTok URLs can't seek), the type
+    scheme has no ``deep_link_template`` (TikTok URLs can't seek), the type
     has no structured locator value (web's freeform locators), or the locator
     doesn't parse. ``ValueError`` for an unregistered key.
     """
     spec = _scheme_spec(key)
-    if spec.deep_link is None:
+    if spec.deep_link_template is None:
         return None
     parse_value = CITATION_TYPE_SPECS[spec.source_type].locator.parse_value
     if parse_value is None:

@@ -78,7 +78,7 @@ class TestSchemeDbRoundTrip:
             root, ex.example_identifier, created_by=default_actor()
         )
         contract = citation_type_spec(child.source_type).locator
-        if spec.deep_link is None or contract.format_value is None:
+        if spec.deep_link_template is None or contract.format_value is None:
             # "1:35" parses on a value-carrying type (TikTok: no builder) and
             # is freeform noise on the rest — the URL must survive either way.
             assert deep_linked_url(child, "1:35", ex.canonical_url) == ex.canonical_url

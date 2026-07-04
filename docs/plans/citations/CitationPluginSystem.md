@@ -39,7 +39,7 @@ Two axes, sharply different audiences and change-rates. Everything else follows 
 
 A scheme belongs to one type and speaks that type's structured locator value; a type stands alone.
 
-Both axes are **pure**: a spec is declarative facts plus stateless functions — no model imports, no DB, no I/O. They live in `apps/citation/citation_types/`, a dependency-free leaf `models.py` imports one-way. That purity is what makes the specs testable in isolation, movable to another repo, and (eventually) plausible as uploaded plugin code.
+Both axes are **pure** — no model imports, no DB, no I/O — and schemes go further: a type spec is declarative facts plus stateless functions (the locator grammar), while a scheme spec is **pure configuration** — patterns, templates and declarative facts, no code at all (G1). They live in `apps/citation/citation_types/`, a dependency-free leaf `models.py` imports one-way. That purity is what makes the specs testable in isolation, movable to another repo, and (eventually) plausible as UI-built, DB-stored plugin rows.
 
 **Invest asymmetrically.** Schemes get all three surfaces sharpened — they are where strangers write code and the boundary is weakest. Types get a lighter touch — first-party and rare, and their real customer-facing channel (frontend codegen) is already excellent. The _why_ differs: schemes are isolated for **decoupling** (third-party, growing — the spec's shape must change without rippling); types for **consistency** (first-party, stable — the value is a tidy chokepoint). One named seam binds the axes (the composition contract, below).
 
@@ -75,8 +75,7 @@ That stack treats `citation_types` as one node; the nested "Citation types plugi
 
 **Plugin-author surface (1).** Everything a scheme author fills in, and nothing more:
 
-- The `SchemeSpec` fields: `key`, `label`, `source_type`, `url_pattern`, `id_pattern`, `canonical_url`, `root_citation_source_info`, and the optional `deep_link` / `start_seconds_from_url`.
-- The callback Protocols they implement: `CanonicalUrlBuilder`, `DeepLinkBuilder`, `StartSecondsExtractor` — named Protocols, not bare `Callable`, so argument meanings show up in the signature. These fields _are_ the third-party API.
+- The `SchemeSpec` fields: `key`, `label`, `source_type`, `url_pattern`, `id_pattern`, `canonical_url_template`, `root_citation_source_info`, and the optional `deep_link_template` / `start_seconds_source`. **Every field is data** (G1): the URL builders are `str.format` templates over `{identifier}` / `{start_seconds}`, and the start-time hint is a declarative source (query-vs-fragment + param names) whose values the owning type's spec subclass parses. A scheme carries no code, which is what bounds its capabilities and makes UI-built, DB-stored schemes plausible later (Stream G). Template substitution suffices by construction — the single-capture recognition contract already forces the identifier to be one contiguous URL substring.
 - `SchemeRootCitationSourceInfo` (platform-root facts) and the per-type spec class they subclass (`VideoSchemeSpec`).
 - The authoring helpers that hide the security-sensitive regex plumbing: `host_prefix(*hosts)` (the anchored `https?://<host>` prefix, so a look-alike host can't match), `ID_BOUNDARY` (the shared end-of-identifier lookahead), `seconds_from_query(*params)` / `seconds_from_fragment(*params)` (the near-identical start-seconds extractors). A raw-regex escape hatch stays for genuinely weird shapes (TikTok composite path, Vimeo unlisted hash).
 

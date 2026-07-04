@@ -91,9 +91,9 @@ def test_deep_link_case_matches_the_capability_and_its_output(key: str) -> None:
     declared case on a scheme that can't seek is a stale table.
     """
     ex, spec = SCHEME_EXAMPLES[key], _spec(key)
-    if spec.deep_link is None:
-        assert ex.deep_link_case is None, f"{key}: deep_link_case but no builder"
+    if spec.deep_link_template is None:
+        assert ex.deep_link_case is None, f"{key}: deep_link_case but no template"
     else:
-        assert ex.deep_link_case is not None, f"{key}: builder but no deep_link_case"
+        assert ex.deep_link_case is not None, f"{key}: template but no deep_link_case"
         built = spec.deep_link(ex.example_identifier, ex.deep_link_case.seconds)
         assert built == ex.deep_link_case.url

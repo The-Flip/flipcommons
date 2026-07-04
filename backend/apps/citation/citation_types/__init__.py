@@ -5,8 +5,8 @@ audiences with two distinct import surfaces (the sections in ``__all__``
 below; see ``docs/plans/citations/CitationPluginSystem.md``):
 
 - **Plugin authors** — writing one scheme or type — import the contract
-  types, callback Protocols and authoring helpers, and see only what they
-  must fill in.
+  types and authoring helpers, and see only what they must fill in. A scheme
+  is pure configuration: patterns, templates and declarative facts, no code.
 - **External customers** — code that uses the citation system without
   knowing a plugin exists — import the named registry accessors
   (``citation_type_spec``, ``recognize_scheme``, …) and never read a spec's
@@ -21,10 +21,8 @@ last are its channel — consumed only by the framework's own DB operations
 """
 
 from apps.citation.citation_types.base import (
-    CanonicalUrlBuilder,
     CitationSourceTypeValue,
     CitationTypeSpec,
-    DeepLinkBuilder,
     LocatorContract,
     SchemeKey,
     SchemeMatch,
@@ -32,7 +30,7 @@ from apps.citation.citation_types.base import (
     SchemeSpec,
     SourceType,
     StartSeconds,
-    StartSecondsExtractor,
+    StartSecondsSource,
     citation_source_type,
 )
 from apps.citation.citation_types.registry import (
@@ -61,9 +59,7 @@ __all__ = [
     "SchemeSpec",
     "SchemeRootCitationSourceInfo",
     "SchemeMatch",
-    "CanonicalUrlBuilder",
-    "DeepLinkBuilder",
-    "StartSecondsExtractor",
+    "StartSecondsSource",
     "host_prefix",
     "ID_BOUNDARY",
     "CitationTypeSpec",

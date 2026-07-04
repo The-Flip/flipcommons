@@ -18,16 +18,20 @@ fails instead of collapsing to a wrong-but-valid-looking id:
 
 The time axis is what makes Vimeo worth its scheme slot next to YouTube: the
 start position rides in the URL **fragment** (``#t=1m30s``), not the query,
-in the same unit grammar the video type already parses. ``deep_link`` builds
-the fragment form; ``start_seconds_from_url`` reads it.
+in the same unit grammar the video type already parses. The deep-link
+template builds the fragment form; ``start_seconds_source`` reads it.
 """
 
 import re
 from typing import Final
 
-from apps.citation.citation_types.base import SchemeRootCitationSourceInfo, SourceType
+from apps.citation.citation_types.base import (
+    SchemeRootCitationSourceInfo,
+    SourceType,
+    StartSecondsSource,
+)
 from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
-from apps.citation.citation_types.video import VideoSchemeSpec, seconds_from_fragment
+from apps.citation.citation_types.video import VideoSchemeSpec
 
 # Watch-shape boundary: the id may be followed by an unlisted hex hash segment
 # and/or a single trailing slash, then only query/fragment/end. Custom (not
@@ -45,26 +49,13 @@ _URL_PATTERN = re.compile(
 )
 
 
-def _canonical_url(video_id: str) -> str:
-    """The one URL every Vimeo shape collapses to."""
-    return f"https://vimeo.com/{video_id}"
-
-
-def _deep_link(video_id: str, start_seconds: int) -> str:
-    """The watch URL that starts playback at *start_seconds*.
-
-    Vimeo's seek syntax is a fragment, not a query param: ``#t=95s``.
-    """
-    return f"https://vimeo.com/{video_id}#t={start_seconds}s"
-
-
 VIMEO: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="vimeo",
     label="Vimeo",
     source_type=SourceType.VIDEO,
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(r"\d+"),
-    canonical_url=_canonical_url,
+    canonical_url_template="https://vimeo.com/{identifier}",
     root_citation_source_info=SchemeRootCitationSourceInfo(
         name="Vimeo",
         homepage_url="https://vimeo.com/",
@@ -72,7 +63,8 @@ VIMEO: Final[VideoSchemeSpec] = VideoSchemeSpec(
         # vimeo.com, so host-suffix recognition already resolves it.
         recognition_hosts=("vimeo.com",),
     ),
-    deep_link=_deep_link,
-    # Vimeo's start time rides in the ``#t=`` fragment (``#t=90s``, ``#t=1m30s``).
-    start_seconds_from_url=seconds_from_fragment("t"),
+    # Vimeo's seek syntax is a fragment, not a query param: ``#t=95s``.
+    deep_link_template="https://vimeo.com/{identifier}#t={start_seconds}s",
+    # The start time rides the same way (``#t=90s``, ``#t=1m30s``).
+    start_seconds_source=StartSecondsSource("fragment", ("t",)),
 )

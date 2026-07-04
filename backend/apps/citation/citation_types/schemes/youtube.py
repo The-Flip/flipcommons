@@ -16,16 +16,20 @@ instead of collapsing to a wrong-but-valid-looking id:
 
 A video scheme (:class:`~apps.citation.citation_types.video.VideoSchemeSpec`):
 children mint as ``video`` sources, a pasted ``?t=``/``?start=`` start time
-surfaces as a structured ``SchemeMatch.start_seconds`` hint, and ``deep_link``
-builds the watch URL that jumps to a cited moment.
+surfaces as a structured ``SchemeMatch.start_seconds`` hint, and the deep-link
+template builds the watch URL that jumps to a cited moment.
 """
 
 import re
 from typing import Final
 
-from apps.citation.citation_types.base import SchemeRootCitationSourceInfo, SourceType
+from apps.citation.citation_types.base import (
+    SchemeRootCitationSourceInfo,
+    SourceType,
+    StartSecondsSource,
+)
 from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
-from apps.citation.citation_types.video import VideoSchemeSpec, seconds_from_query
+from apps.citation.citation_types.video import VideoSchemeSpec
 
 _ID = r"[A-Za-z0-9_-]{11}"
 # The path shapes end at a trailing-slash/query/fragment/end (ID_BOUNDARY), so a
@@ -45,23 +49,13 @@ _URL_PATTERN = re.compile(
 )
 
 
-def _canonical_url(video_id: str) -> str:
-    """The one URL every YouTube shape collapses to."""
-    return f"https://www.youtube.com/watch?v={video_id}"
-
-
-def _deep_link(video_id: str, start_seconds: int) -> str:
-    """The watch URL that starts playback at *start_seconds*."""
-    return f"https://www.youtube.com/watch?v={video_id}&t={start_seconds}s"
-
-
 YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="youtube",
     label="YouTube",
     source_type=SourceType.VIDEO,
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(_ID),
-    canonical_url=_canonical_url,
+    canonical_url_template="https://www.youtube.com/watch?v={identifier}",
     root_citation_source_info=SchemeRootCitationSourceInfo(
         name="YouTube",
         homepage_url="https://www.youtube.com/",
@@ -70,8 +64,8 @@ YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
         # matching, so the root owns only its homepage-derived host.
         recognition_hosts=("youtube.com",),
     ),
-    deep_link=_deep_link,
+    deep_link_template="https://www.youtube.com/watch?v={identifier}&t={start_seconds}s",
     # YouTube writes ``t=95``, ``t=95s``, ``t=1h2m3s`` and embeds use
-    # ``start=95``; all pass through the video type's grammar. ``t=0`` abstains.
-    start_seconds_from_url=seconds_from_query("t", "start"),
+    # ``start=95``; the video type's grammar parses them. ``t=0`` abstains.
+    start_seconds_source=StartSecondsSource("query", ("t", "start")),
 )

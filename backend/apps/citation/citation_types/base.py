@@ -28,9 +28,11 @@ structured values.** A video scheme is handed an identifier and start seconds
 text into the structured value, the scheme's ``deep_link`` turns the value
 into a seek URL, and neither layer sees the other's vocabulary.
 
-Specs are **pure**: declarative facts plus stateless functions. No model
-imports, no DB access, no I/O — all DB work (child minting, recognition
-queries, instance writes) stays in core code that consumes these specs.
+Specs are **pure**: no model imports, no DB access, no I/O — all DB work
+(child minting, recognition queries, instance writes) stays in core code
+that consumes these specs. Scheme specs are purer still — **pure
+configuration**: patterns, templates and declarative facts, no code, so a
+scheme's capabilities are bounded by construction.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Literal, Protocol, TypeGuard, get_args
+from urllib.parse import parse_qs, urlparse
 
 from django.db import models
 
@@ -101,29 +104,12 @@ def citation_source_type(raw: str) -> CitationSourceTypeValue:
 
 
 # ---------------------------------------------------------------------------
-# Callback contracts. Named Protocols (not bare ``Callable[...]``) so a plugin
-# author sees what each argument means in the signature itself — these fields
-# ARE the third-party API. Params are positional-only, so implementations may
-# use their own semantic names (``video_id``, ``machine_id``).
+# Locator callback contracts (type-side). Named Protocols (not bare
+# ``Callable[...]``) so a type author sees what each argument means in the
+# signature itself. Params are positional-only, so implementations may use
+# their own semantic names. Scheme-side capabilities carry no callbacks at
+# all — a scheme is pure configuration (templates + declarative sources).
 # ---------------------------------------------------------------------------
-
-
-class CanonicalUrlBuilder(Protocol):
-    """Builds the one URL every recognized shape of an identifier collapses to."""
-
-    def __call__(self, identifier: str, /) -> str: ...
-
-
-class DeepLinkBuilder(Protocol):
-    """Builds the URL that jumps to a structured position within a work."""
-
-    def __call__(self, identifier: str, start_seconds: StartSeconds, /) -> str: ...
-
-
-class StartSecondsExtractor(Protocol):
-    """Pulls the structured start-position hint out of a recognized URL."""
-
-    def __call__(self, url: str, /) -> StartSeconds | None: ...
 
 
 class LocatorNormalizer(Protocol):
@@ -142,6 +128,34 @@ class LocatorValueFormatter(Protocol):
     """Formats the type's structured value as canonical locator text."""
 
     def __call__(self, value: StartSeconds, /) -> str: ...
+
+
+@dataclass(frozen=True, slots=True)
+class StartSecondsSource:
+    """Where a platform's URLs carry a start-time hint — declarative, no code.
+
+    A scheme declares only the *location*: named parameters read from the URL
+    query (YouTube's ``?t=``/``?start=``) or fragment (Vimeo's ``#t=``). The
+    parameter *values* are parsed by the owning type's URL-value grammar (the
+    ``_parse_url_seconds`` hook on its scheme-spec subclass) — the scheme says
+    where, the type says what it means.
+    """
+
+    location: Literal["query", "fragment"]
+    params: tuple[str, ...]
+
+    def raw_values(self, url: str) -> list[str]:
+        """The declared parameters' raw string values in *url*, params-major.
+
+        A URL too malformed for ``urlparse`` yields ``[]`` rather than raising.
+        """
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return []
+        text = parsed.query if self.location == "query" else parsed.fragment
+        found = parse_qs(text)
+        return [value for name in self.params for value in found.get(name, [])]
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,32 +194,39 @@ class SchemeRootCitationSourceInfo:
 class SchemeSpec:
     """One platform's identifier scheme: URL recognition + canonical URL.
 
-    The third-party plugin unit. An author supplies host-anchored patterns and
-    a canonical-URL builder; the shared ``extract``/``validate_identifier``/
-    ``normalize`` methods drive them, so every scheme resolves input the same
-    way. Conventions the conformance harness enforces:
+    The third-party plugin unit, and **pure configuration**: every field is
+    data (patterns, templates, declarative facts) — a scheme carries no code,
+    which is what makes its capabilities bounded and (eventually) plausible
+    as UI-built, DB-stored rows. The shared ``extract``/``validate_identifier``
+    /``normalize`` methods drive the fields, so every scheme resolves input
+    the same way. Conventions the conformance harness enforces:
 
     - ``url_pattern`` captures the identifier in **exactly one participating
       group** (alternation branches may each carry their own capture, so each
       URL shape can enforce its own boundary) and is anchored on
       ``https?://<host>`` so a look-alike host (``notyoutube.com``) can't match.
     - ``id_pattern`` fullmatches a bare identifier.
-    - ``canonical_url`` builds the one URL every shape collapses to —
-      ``extract(canonical_url(id))`` must round-trip.
+    - ``canonical_url_template`` is a ``str.format`` template with exactly one
+      placeholder, ``{identifier}``, building the one URL every shape
+      collapses to — ``extract(canonical_url(id))`` must round-trip. Template
+      substitution suffices by construction: the recognition contract already
+      requires the identifier to be one contiguous substring of the URL
+      (TikTok's composite ``user/video/id`` identity is designed around it).
 
     The two optional capabilities speak the owning type's structured locator
     value (see ``LocatorContract``), never locator text:
 
-    - ``deep_link`` builds the URL that jumps to a structured position
-      (video: ``(identifier, start_seconds) -> watch URL with t=``). Optional
-      even on value-carrying types — some platforms' URLs simply cannot seek
-      (TikTok); their citations render the locator text beside the plain
-      canonical link.
-    - ``start_seconds_from_url`` pulls the structured position hint out of a
-      recognized URL (``?t=95``), surfaced by ``extract`` as
-      ``SchemeMatch.start_seconds``. A scheme providing this must also provide
-      ``deep_link`` (conformance-enforced): URLs that carry seek positions
-      prove the platform can jump.
+    - ``deep_link_template`` adds ``{start_seconds}`` to the placeholders and
+      builds the URL that jumps to a structured position (video: the watch
+      URL with ``t=``). Optional even on value-carrying types — some
+      platforms' URLs simply cannot seek (TikTok); their citations render the
+      locator text beside the plain canonical link.
+    - ``start_seconds_source`` declares where a recognized URL carries the
+      structured position hint (``?t=95``), surfaced by ``extract`` as
+      ``SchemeMatch.start_seconds``; the owning type's spec subclass parses
+      the values (``_parse_url_seconds``). A scheme declaring this must also
+      provide ``deep_link_template`` (conformance-enforced): URLs that carry
+      seek positions prove the platform can jump.
     """
 
     key: SchemeKey
@@ -213,17 +234,59 @@ class SchemeSpec:
     source_type: SourceType
     url_pattern: re.Pattern[str]
     id_pattern: re.Pattern[str]
-    canonical_url: CanonicalUrlBuilder
+    canonical_url_template: str
     root_citation_source_info: SchemeRootCitationSourceInfo
-    deep_link: DeepLinkBuilder | None = None
-    start_seconds_from_url: StartSecondsExtractor | None = None
+    deep_link_template: str | None = None
+    start_seconds_source: StartSecondsSource | None = None
 
     # -- Framework surface. The methods below are defined once, here, and
     # invoked by the citation framework ON the fields above — a scheme author
-    # fills in the fields and never writes or overrides these. The single
-    # shared implementation is what guarantees every scheme resolves input
-    # identically; the conformance harness exercises them against every
-    # registered scheme. --
+    # fills in the fields and never writes or overrides these (the one
+    # exception is ``_parse_url_seconds``, overridden per owning *type*, not
+    # per scheme). The single shared implementation is what guarantees every
+    # scheme resolves input identically; the conformance harness exercises
+    # them against every registered scheme. --
+
+    def canonical_url(self, identifier: str) -> str:
+        """The one URL every recognized shape of *identifier* collapses to."""
+        return self.canonical_url_template.format(identifier=identifier)
+
+    def deep_link(self, identifier: str, start_seconds: StartSeconds) -> str | None:
+        """The URL that jumps to *start_seconds* within *identifier*.
+
+        ``None`` when the scheme declares no ``deep_link_template`` — the
+        platform's URLs cannot seek.
+        """
+        if self.deep_link_template is None:
+            return None
+        return self.deep_link_template.format(
+            identifier=identifier, start_seconds=start_seconds
+        )
+
+    def _parse_url_seconds(self, value: str) -> StartSeconds | None:
+        """Parse one raw ``start_seconds_source`` param value into seconds.
+
+        The composition contract's hook: the scheme declares *where* the hint
+        lives, the owning type's scheme-spec subclass declares *what the
+        values mean* by overriding this with its grammar (video accepts
+        ``95``, ``95s``, ``1h2m3s``). The base scheme has no value grammar,
+        so a ``start_seconds_source`` on a plain ``SchemeSpec`` is inert.
+        """
+        return None
+
+    def _start_seconds_hint(self, url: str) -> StartSeconds | None:
+        """Evaluate ``start_seconds_source`` against *url*.
+
+        First parseable, nonzero value wins (``t=0`` means "from the start" —
+        no hint); ``None`` when the scheme declares no source.
+        """
+        if self.start_seconds_source is None:
+            return None
+        for raw in self.start_seconds_source.raw_values(url):
+            seconds = self._parse_url_seconds(raw)
+            if seconds:
+                return seconds
+        return None
 
     def extract(self, url: str) -> SchemeMatch | None:
         """Recognize *url* as one of this scheme's shapes, or ``None``."""
@@ -235,10 +298,10 @@ class SchemeSpec:
         # shape carry its own boundary (a query id may be followed by ``&``,
         # a path id may not grow extra path segments).
         assert m.lastindex is not None, "url_pattern must capture the identifier"
-        seconds = (
-            self.start_seconds_from_url(url) if self.start_seconds_from_url else None
+        return SchemeMatch(
+            identifier=m.group(m.lastindex),
+            start_seconds=self._start_seconds_hint(url),
         )
-        return SchemeMatch(identifier=m.group(m.lastindex), start_seconds=seconds)
 
     def validate_identifier(self, raw: str) -> str | None:
         """Return *raw* when it is a well-formed bare identifier, else ``None``."""

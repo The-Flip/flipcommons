@@ -27,9 +27,10 @@ child under the TikTok root, no dedup with the canonical video):
   username, so the composite identifier cannot be built from it;
 - photo posts (``/@user/photo/<id>``): not video evidence.
 
-No ``deep_link`` and no ``start_seconds_from_url``: TikTok URLs have no seek
-parameter, so a cited timestamp renders as locator text beside the plain
-watch link — the case that made the video contract's ``deep_link`` optional.
+No ``deep_link_template`` and no ``start_seconds_source``: TikTok URLs have
+no seek parameter, so a cited timestamp renders as locator text beside the
+plain watch link — the case that made the video contract's deep link
+optional.
 """
 
 import re
@@ -51,18 +52,15 @@ _URL_PATTERN = re.compile(
 )
 
 
-def _canonical_url(identifier: str) -> str:
-    """The one URL every TikTok shape collapses to."""
-    return f"https://www.tiktok.com/@{identifier}"
-
-
 TIKTOK: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="tiktok",
     label="TikTok",
     source_type=SourceType.VIDEO,
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(_IDENTIFIER),
-    canonical_url=_canonical_url,
+    # The composite identifier is the contiguous path tail, so the watch URL
+    # rebuilds by plain substitution.
+    canonical_url_template="https://www.tiktok.com/@{identifier}",
     root_citation_source_info=SchemeRootCitationSourceInfo(
         name="TikTok",
         homepage_url="https://www.tiktok.com/",

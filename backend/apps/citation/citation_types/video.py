@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import parse_qs, urlparse
 
 from apps.citation.citation_types.base import (
     CitationTypeSpec,
@@ -34,7 +33,6 @@ from apps.citation.citation_types.base import (
     SchemeSpec,
     SourceType,
     StartSeconds,
-    StartSecondsExtractor,
 )
 
 # The deliberate cap on a start time: 100 hours. Beyond it a bare-seconds
@@ -110,61 +108,24 @@ def normalize_start_time(raw: str) -> str | None:
     return format_start_time(seconds)
 
 
-def seconds_from_query(*params: str) -> StartSecondsExtractor:
-    """A ``start_seconds_from_url`` reading the first usable *params* from the
-    URL query (YouTube's ``?t=``/``?start=``).
-
-    Values pass through this type's timestamp grammar, so ``95``, ``95s`` and
-    ``1h2m3s`` all resolve; ``t=0`` and malformed values abstain (``None``). A
-    URL too malformed for ``urlparse`` abstains rather than raising.
-    """
-
-    def extract(url: str) -> StartSeconds | None:
-        try:
-            query = parse_qs(urlparse(url).query)
-        except ValueError:
-            return None
-        for name in params:
-            for value in query.get(name, []):
-                seconds = parse_start_time(value)
-                if seconds:
-                    return seconds
-        return None
-
-    return extract
-
-
-def seconds_from_fragment(*params: str) -> StartSecondsExtractor:
-    """As :func:`seconds_from_query`, but reads *params* from the URL fragment
-    (Vimeo's ``#t=``) rather than the query."""
-
-    def extract(url: str) -> StartSeconds | None:
-        try:
-            fragment = urlparse(url).fragment
-        except ValueError:
-            return None
-        for name in params:
-            for value in parse_qs(fragment).get(name, []):
-                seconds = parse_start_time(value)
-                if seconds:
-                    return seconds
-        return None
-
-    return extract
-
-
 @dataclass(frozen=True, slots=True)
 class VideoSchemeSpec(SchemeSpec):
     """The contract a video-platform scheme implements.
 
-    Adds no fields over :class:`SchemeSpec` today — real platforms diverge on
-    the time capabilities, so both stay optional. YouTube and Vimeo URLs can
-    seek (``deep_link`` + ``start_seconds_from_url``); TikTok URLs cannot,
+    Adds no fields over :class:`SchemeSpec` — real platforms diverge on the
+    time capabilities, so both stay optional. YouTube and Vimeo URLs can seek
+    (``deep_link_template`` + ``start_seconds_source``); TikTok URLs cannot,
     and a video child without a jump URL still wants its timestamp locator —
     the reader sees the ``(1:35)`` text beside the plain video link and
     scrubs by hand. What must pair up is enforced by the conformance
     harness: a scheme that *extracts* start-time hints from URLs must also
     *build* them.
+
+    What it adds is the type's half of the composition contract for URL
+    hints: a scheme's ``start_seconds_source`` declares *where* a start time
+    rides in a URL; this subclass declares *what the values mean* by parsing
+    them through the video timestamp grammar (``95``, ``95s``, ``1h2m3s``,
+    with ``t=0`` and junk abstaining).
 
     A video scheme may only recognize URL shapes that are **guaranteed to be
     videos** (the type-homogeneity rule): recognition is syntactic, so a
@@ -172,12 +133,14 @@ class VideoSchemeSpec(SchemeSpec):
     qualifies because its paths discriminate (``/video/`` vs ``/photo/``);
     X's ``/status/`` does not, which is why X is a *web* scheme.
 
-    The subclass survives as the registered per-type contract
+    The subclass is also the registered per-type contract
     (``scheme_spec_type``): a video scheme declares itself one by constructing
-    this type — so the registry's isinstance backstop still catches a spec
-    registered under the wrong type — and a future video-only requirement
-    lands here without touching :class:`SchemeSpec`.
+    this type, so the registry's isinstance backstop catches a spec
+    registered under the wrong type.
     """
+
+    def _parse_url_seconds(self, value: str) -> StartSeconds | None:
+        return parse_start_time(value)
 
 
 VIDEO = CitationTypeSpec(

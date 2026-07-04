@@ -44,18 +44,14 @@ _URL_PATTERN = re.compile(
 )
 
 
-def _canonical_url(status_id: str) -> str:
-    """The one URL every X/Twitter shape collapses to (handle-free form)."""
-    return f"https://x.com/i/status/{status_id}"
-
-
 X_TWITTER: Final[SchemeSpec] = SchemeSpec(
     key="x",
     label="X (Twitter)",
     source_type=SourceType.WEB,
     url_pattern=_URL_PATTERN,
     id_pattern=re.compile(r"\d+"),
-    canonical_url=_canonical_url,
+    # The handle-free, rename-stable form every X/Twitter shape collapses to.
+    canonical_url_template="https://x.com/i/status/{identifier}",
     root_citation_source_info=SchemeRootCitationSourceInfo(
         name="X (Twitter)",
         homepage_url="https://x.com/",

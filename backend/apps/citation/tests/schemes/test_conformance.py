@@ -119,27 +119,28 @@ class TestSchemeConformance:
     def test_start_seconds_extraction_implies_deep_link(self, spec):
         """A scheme that reads seek positions from URLs must also build them.
 
-        ``deep_link`` is optional overall — some platforms' URLs cannot seek
-        (TikTok) and their citations degrade to locator text beside the
-        plain canonical link. But a scheme whose URLs *carry* start times has
-        proven the platform can jump, so extracting the hint without a
-        ``deep_link`` builder would collect locators it then never honors at
-        read time.
+        ``deep_link_template`` is optional overall — some platforms' URLs
+        cannot seek (TikTok) and their citations degrade to locator text
+        beside the plain canonical link. But a scheme whose URLs *carry*
+        start times has proven the platform can jump, so declaring a
+        ``start_seconds_source`` without a ``deep_link_template`` would
+        collect locators it then never honors at read time.
         """
-        if spec.start_seconds_from_url is not None:
-            assert spec.deep_link is not None, (
-                f"{spec.key}: extracts start-time hints but has no deep_link "
-                f"builder to honor them"
+        if spec.start_seconds_source is not None:
+            assert spec.deep_link_template is not None, (
+                f"{spec.key}: extracts start-time hints but has no deep-link "
+                f"template to honor them"
             )
 
     def test_deep_link_output_is_well_formed_on_the_schemes_host(
         self, spec, example_id
     ):
-        if spec.deep_link is None:
-            pytest.skip("scheme has no deep_link")
+        if spec.deep_link_template is None:
+            pytest.skip("scheme has no deep_link_template")
         canonical_host = urlparse(spec.canonical_url(example_id)).hostname
         for seconds in (0, 95, 3723):
             url = spec.deep_link(example_id, seconds)
+            assert url is not None
             parsed = urlparse(url)
             assert parsed.scheme == "https"
             assert parsed.hostname == canonical_host, (
@@ -153,7 +154,7 @@ class TestSchemeConformance:
         to prefill the locator stage, and that text must re-parse to the same
         value — otherwise the prefill would fail the type's own validation.
         """
-        if spec.start_seconds_from_url is None:
+        if spec.start_seconds_source is None:
             pytest.skip("scheme extracts no start-time hints")
         contract = citation_type_spec(spec.source_type).locator
         assert contract.format_value is not None
