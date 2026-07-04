@@ -8,13 +8,15 @@ from apps.citation.citation_types.base import (
     SchemeSpec,
     SourceType,
 )
-from apps.citation.citation_types.url_patterns import host_prefix
+from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
 
 OPDB: Final[SchemeSpec] = SchemeSpec(
     key="opdb",
     label="OPDB",
     source_type=SourceType.WEB,
-    url_pattern=re.compile(host_prefix("opdb.org") + r"/machines/([A-Za-z0-9_-]+)"),
+    url_pattern=re.compile(
+        host_prefix("opdb.org") + r"/machines/([A-Za-z0-9_-]+)" + ID_BOUNDARY
+    ),
     id_pattern=re.compile(r"[A-Za-z0-9_-]+"),
     canonical_url_template="https://opdb.org/machines/{identifier}",
     root_citation_source_info=SchemeRootCitationSourceInfo(

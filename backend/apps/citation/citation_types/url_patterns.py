@@ -1,9 +1,12 @@
 """Reusable URL-pattern fragments for scheme authors.
 
-Pure regex helpers that factor the two error-prone, repeated pieces of a
-scheme's ``url_pattern``: the anchored, dot-escaped host prefix and the path-id
-boundary. A scheme composes them with its own path grammar; genuinely weird
-shapes (Vimeo's unlisted-hash tail, X's media tails) still spell out raw regex.
+Pure regex helpers that factor the error-prone, repeated pieces of a scheme's
+``url_pattern``: the anchored, dot-escaped host prefix and the two identifier
+boundaries. A scheme composes them with its own path grammar; genuinely weird
+shapes (Vimeo's unlisted-hash tail, X's media tails) still spell out raw
+regex. The boundary discipline is not merely a convention: the conformance
+harness's extended-identifier invariant fails any scheme whose pattern lets a
+corrupted identifier truncate back to a clean one.
 
 A dependency-free leaf like ``base.py`` — imported by scheme modules, imports
 no app code.
@@ -15,11 +18,18 @@ import re
 from collections.abc import Sequence
 
 # The path-id boundary shared by path-style schemes (YouTube's
-# /embed//shorts//live/, Vimeo's embed, TikTok): the captured id may be followed
-# by a single trailing slash, then only a query, a fragment, or the end — never
-# more path, so ``/<id>/extra`` fails instead of collapsing to a valid-looking
-# id. Append it directly after a capture group.
+# /embed//shorts//live/, Vimeo's embed, TikTok, OPDB): the captured id may be
+# followed by a single trailing slash, then only a query, a fragment, or the
+# end — never more path, so ``/<id>/extra`` fails instead of collapsing to a
+# valid-looking id. Append it directly after a capture group.
 ID_BOUNDARY = r"(?=/?(?:[?#]|$))"
+
+# The query-id boundary for ids read from a query parameter (YouTube's
+# ``watch?v=``, IPDB's ``machine.cgi?id=``): the id must not continue into a
+# longer identifier-charset token, so ``id=4443abc`` fails instead of
+# truncating to ``4443``. A following ``&``, ``#`` or end passes. Append it
+# directly after a capture group.
+QUERY_ID_BOUNDARY = r"(?![A-Za-z0-9_-])"
 
 
 def host_prefix(*hosts: str, subdomains: Sequence[str] = ("www",)) -> str:

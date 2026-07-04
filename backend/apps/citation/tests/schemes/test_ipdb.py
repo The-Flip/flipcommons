@@ -20,6 +20,8 @@ EXAMPLES = SchemeExamples(
         f"https://notipdb.org/machine.cgi?id={MID}",  # look-alike host
         f"https://ipdb.org.evil.com/machine.cgi?id={MID}",  # host as a prefix label
         "https://www.ipdb.org/machine.cgi?id=",  # no id
+        f"https://www.ipdb.org/machine.cgi?id={MID}abc",  # id must not truncate
+        f"https://www.ipdb.org/machine.cgi?id={MID}-",  # ditto, id-like tail char
         f"https://opdb.org/machines/{MID}",  # wrong site
         f"https://example.com/{MID}",  # bare id buried in a foreign URL
     ),

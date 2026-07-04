@@ -63,6 +63,22 @@ class TestSchemeConformance:
     def test_junk_identifiers_are_rejected(self, spec, junk):
         assert spec.validate_identifier(junk) is None
 
+    @pytest.mark.parametrize("junk_char", ["a", "9", "-"])
+    def test_extended_identifier_never_truncates_back(
+        self, spec, example_id, junk_char
+    ):
+        """A corrupted identifier must not round-trip to the clean one.
+
+        Append an id-charset-plausible character to the identifier inside the
+        canonical URL: extraction may reject it or read a *different* id, but
+        must never truncate back to the real one — otherwise a mangled paste
+        silently mints or dedups to the wrong child. This is the boundary
+        discipline (``ID_BOUNDARY`` / ``QUERY_ID_BOUNDARY``) enforced
+        generically, not just where an author remembered it.
+        """
+        url = spec.canonical_url(example_id + junk_char)
+        assert spec.extract(url) != example_id, f"{spec.key}: truncated {url}"
+
     def test_url_pattern_is_host_anchored(self, spec, example_id):
         """A look-alike host must not match (``notyoutube.com`` spoof).
 

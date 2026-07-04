@@ -28,7 +28,11 @@ from apps.citation.citation_types.base import (
     SourceType,
     StartSecondsSource,
 )
-from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
+from apps.citation.citation_types.url_patterns import (
+    ID_BOUNDARY,
+    QUERY_ID_BOUNDARY,
+    host_prefix,
+)
 from apps.citation.citation_types.video import VideoSchemeSpec
 
 _ID = r"[A-Za-z0-9_-]{11}"
@@ -42,7 +46,7 @@ _URL_PATTERN = re.compile(
     r"(?:"
     # watch?v=: read v= from the query only (the param scan can't cross # into
     # the fragment), and the 11-char id can't continue into a longer token.
-    rf"{_YOUTUBE}/watch\?(?:[^\s#]*&)?v=({_ID})(?![A-Za-z0-9_-])"
+    rf"{_YOUTUBE}/watch\?(?:[^\s#]*&)?v=({_ID}){QUERY_ID_BOUNDARY}"
     rf"|{_YOUTUBE}/(?:embed|shorts|live)/{_PATH_ID}"
     rf"|{_YOUTU_BE}/{_PATH_ID}"
     r")"
