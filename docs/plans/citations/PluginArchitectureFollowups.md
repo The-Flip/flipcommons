@@ -56,6 +56,14 @@ The "how do we keep classification clean" question (Amazon book/movie mis-filed 
 - **F6. Source merge tool.** Repoint `CitationInstance` rows (PROTECT blocks deletion while cited), move links/domains, absorb the duplicate — the "citation gardening" the upsert warnings already reference as the merge backlog.
 - **F7. Thread the pasted URL through as future `access_url`.** The paste flow already holds the exact string (`?t=` and all) and currently discards it after extracting identifier + hint; thread it when instance URLs land.
 
+## Stream G — Fully declarative schemes (recorded direction)
+
+Observed after the C/E streams landed: every callable on every registered spec is a single-substitution template — `canonical_url` is `literal + {identifier} + literal` on all six schemes, `deep_link` is `{identifier}` + `{start_seconds}` on both schemes that have one, and `start_seconds_from_url` is always a shared factory over data (`query`/`fragment` + param names). No scheme carries scheme-specific _logic_ anywhere. This is structural, not luck: the single-capture recognition contract requires the identifier to be one contiguous URL substring (TikTok's composite identity was designed around exactly that), and any platform that would break URL templates already breaks that contract — so going declarative imposes no ceiling the system doesn't already have.
+
+- **G1. Template fields instead of builder callables.** `canonical_url: str` (with `{identifier}`), `deep_link: str | None` (adds `{start_seconds}`), `start_seconds_source` as data (`location` + param names) driving one shared extractor. Deletes the `CanonicalUrlBuilder`/`DeepLinkBuilder`/`StartSecondsExtractor` Protocols; a scheme becomes pure configuration. Prerequisite for everything below.
+- **G2. Constrained URL-shape grammar instead of raw regex.** The remaining code-shaped surface after G1 is the two regexes — from an untrusted author that means ReDoS and missed-anchor risk. `host_prefix`/`ID_BOUNDARY` are already a proto-DSL; the full version is hosts + path-shape declarations the framework compiles to anchored regex, with the conformance harness as the registration gate.
+- **G3. Storage/authoring futures unlocked (not planned):** schemes as DB rows rather than modules, a UI authoring surface, per-scheme review by non-programmers. Each is its own product decision; G1/G2 are what make them _possible_.
+
 ## Suggested sequencing
 
 1. ~~**A1 + A2** on this branch~~ — done. **B1** recorded as a known deferral.
