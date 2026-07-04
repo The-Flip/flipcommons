@@ -58,6 +58,8 @@ The "how do we keep classification clean" question (Amazon book/movie mis-filed 
 
 ## Stream G — Fully declarative schemes (recorded direction)
 
+The vision these items serve — schemes as UI-authored, DB-stored configuration — is stated in [CitationPluginSystem.md](CitationPluginSystem.md)'s "The long-term vision" section; this stream tracks the concrete steps.
+
 Observed after the C/E streams landed: every callable on every registered spec is a single-substitution template — `canonical_url` is `literal + {identifier} + literal` on all six schemes, `deep_link` is `{identifier}` + `{start_seconds}` on both schemes that have one, and `start_seconds_from_url` is always a shared factory over data (`query`/`fragment` + param names). No scheme carries scheme-specific _logic_ anywhere. This is structural, not luck: the single-capture recognition contract requires the identifier to be one contiguous URL substring (TikTok's composite identity was designed around exactly that), and any platform that would break URL templates already breaks that contract — so going declarative imposes no ceiling the system doesn't already have.
 
 - **G1 (done). Template fields instead of builder callables.** `canonical_url_template: str` (with `{identifier}`), `deep_link_template: str | None` (adds `{start_seconds}`), `start_seconds_source` as data (`query`/`fragment` + param names). The three builder Protocols are gone; a scheme is pure configuration. The one code hook is per-_type_, not per-scheme: `VideoSchemeSpec._parse_url_seconds` gives the scheme's declared source its value grammar — the scheme says where the hint lives, the type says what the values mean, which is the composition contract restated at the URL layer. Prerequisite for everything below.

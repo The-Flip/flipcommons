@@ -4,7 +4,7 @@ How the citation subsystem is extended: the two plugin axes (**citation types** 
 
 This doc obsoletes the plugin-architecture design in [VideoCitations.md](VideoCitations.md) (its `## The citation-type plugin architecture` section). VideoCitations.md keeps what is genuinely video-specific — the product spec, the stretch-test batch (Vimeo/TikTok/X), the type-homogeneity rule, the movies/audio roadmap, the rejected-platform reasoning and the rollout — and points up here for the general architecture. The work list stays in [PluginArchitectureFollowups.md](PluginArchitectureFollowups.md); this doc is the design those items realize.
 
-The system is real and mostly built. This records the design as it stands and states the contracts precisely enough that a review can hold the line as the system grows.
+The system is real and mostly built. This records the design as it stands, states the contracts precisely enough that a review can hold the line as the system grows, and names the long-term destination the scheme axis is built to reach (schemes as UI-authored, DB-stored configuration — [the vision section](#the-long-term-vision--schemes-as-stored-configuration)).
 
 ## The three audiences
 
@@ -77,7 +77,7 @@ That stack treats `citation_types` as one node; the nested "Citation types plugi
 
 - The `SchemeSpec` fields: `key`, `label`, `source_type`, `url_pattern`, `id_pattern`, `canonical_url_template`, `root_citation_source_info`, and the optional `deep_link_template` / `start_seconds_source`. **Every field is data** (G1): the URL builders are `str.format` templates over `{identifier}` / `{start_seconds}`, and the start-time hint is a declarative source (query-vs-fragment + param names) whose values the owning type's spec subclass parses. A scheme carries no code, which is what bounds its capabilities and makes UI-built, DB-stored schemes plausible later (Stream G). Template substitution suffices by construction — the single-capture recognition contract already forces the identifier to be one contiguous URL substring.
 - `SchemeRootCitationSourceInfo` (platform-root facts) and the per-type spec class they subclass (`VideoSchemeSpec`).
-- The authoring helpers that hide the security-sensitive regex plumbing: `host_prefix(*hosts)` (the anchored `https?://<host>` prefix, so a look-alike host can't match), `ID_BOUNDARY` (the shared end-of-identifier lookahead), `seconds_from_query(*params)` / `seconds_from_fragment(*params)` (the near-identical start-seconds extractors). A raw-regex escape hatch stays for genuinely weird shapes (TikTok composite path, Vimeo unlisted hash).
+- The authoring helpers that hide the security-sensitive regex plumbing: `host_prefix(*hosts)` (the anchored `https?://<host>` prefix, so a look-alike host can't match) and `ID_BOUNDARY` (the shared end-of-identifier lookahead). A raw-regex escape hatch stays for genuinely weird shapes (TikTok composite path, Vimeo unlisted hash).
 
 **Citation-framework surface (2) — C2.** `extract` / `validate_identifier` / `normalize` are defined once on `SchemeSpec` and are what the framework calls _on_ the author's fields, so every scheme resolves input identically. Today they sit on the same class as the author fields, conflating (1) and (2). The conflation is defensible — a single non-overridable `extract` is _why_ every scheme extracts the same way — but must be **legible**: an author needs to see these are invoked on their spec, not written by them. C2 names them as the framework surface (a docstring section, or a `SchemeDriver` Protocol the spec satisfies), without splitting the class.
 
@@ -133,6 +133,19 @@ Stated so reviews can hold the line:
 - A grep for `SCHEME_SPECS[` or `spec.<field>` outside the `citation_types` leaf, the framework's recognition module (`extractors.py`), the codegen command and tests returns nothing — external customers go through the package-root accessors. `extractors.py` is the citation framework itself (audience 2) driving every spec through recognition and minting; it is the exhaustive exemption list, and a second module joining it should raise eyebrows.
 - The `citation_types` package exposes separate plugin-author and external-customer import surfaces.
 - The framework surface (2) and the composition contract (5) are named where an author or reader first meets them.
+
+## The long-term vision — schemes as stored configuration
+
+Where the scheme axis is ultimately headed, stated here so near-term decisions keep facing it (tracked as Stream G in the follow-ups doc):
+
+A citation type is and remains **first-party code** — locator grammars, reader UX, a frontend codegen channel. A scheme is ultimately **not code at all**: a stored row of configuration, authored in a product UI rather than an IDE, held in the database rather than the filesystem, validated by the conformance harness at save time and live without a deploy. G1 (landed) made every spec field data — patterns, templates, declared facts — so the remaining distance is bounded and known:
+
+- **The regex surface (G2).** `url_pattern`/`id_pattern` are still raw regex: acceptable from first-party authors, not from strangers (ReDoS, a missed host anchor). The constrained URL-shape grammar — hosts + path shapes the framework compiles to anchored regex — replaces them before any untrusted authoring surface opens.
+- **Registration and constraint derivation.** The explicit `_SCHEMES` list and the registry-derived `identifier_key` CHECK constraint assume schemes ship with the code ("greppable beats magic" was decided for in-repo modules). Stored schemes supersede both deliberately: registry-over-rows, and the constraint relaxed to an FK or revalidated on scheme save.
+- **The example tables move with the scheme.** Today a scheme's URL examples are test-side data; a stored scheme carries them as part of its own configuration, and the conformance + example harnesses become its save-time validation gate rather than a CI suite.
+- **The composition contract is what makes this safe.** A stored scheme can only declare _where_ things live (patterns, templates, param names) — never how anything is parsed. All parsing stays in first-party type code (the locator grammar, `_parse_url_seconds`), so a broken or hostile scheme's blast radius is bounded to its own URLs.
+
+None of this is scheduled. It is the direction the architecture is built to allow — pure configuration that could be authored in a UI and stored as rows — and the acceptance criteria above are what keep it reachable.
 
 ## Realization: the C-stream — landed
 
