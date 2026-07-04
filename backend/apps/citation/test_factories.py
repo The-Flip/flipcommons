@@ -17,7 +17,7 @@ fails at type-check rather than at ``.objects.create`` runtime.
 from __future__ import annotations
 
 import uuid
-from typing import Literal, get_args
+from typing import Literal, TypeGuard, get_args
 
 from apps.accounts.test_factories import default_actor
 from apps.actors.models import Actor
@@ -53,6 +53,21 @@ def _assert_identifier_key_literal_current() -> None:
 
 
 _assert_identifier_key_literal_current()
+
+
+def _is_identifier_key(raw: str) -> TypeGuard[IdentifierKeyValue]:
+    return raw in get_args(IdentifierKeyValue.__value__)
+
+
+def identifier_key_value(raw: str) -> IdentifierKeyValue:
+    """Coerce a registered scheme key to the factory Literal.
+
+    For registry-parametrized tests, whose keys arrive as plain ``str``; an
+    unregistered key raises rather than leaking past the Literal.
+    """
+    if _is_identifier_key(raw):
+        return raw
+    raise ValueError(f"Unknown identifier_key {raw!r}")
 
 
 def make_citation_source(

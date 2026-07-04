@@ -39,6 +39,13 @@ class SchemeUrlCase(NamedTuple):
     url: str
 
 
+class DeepLinkCase(NamedTuple):
+    """One deep-link example: a start position and the exact URL it builds."""
+
+    seconds: StartSeconds
+    url: str
+
+
 @dataclass(frozen=True, slots=True)
 class SchemeExamples:
     """A scheme's test material, declared in its test module.
@@ -48,6 +55,10 @@ class SchemeExamples:
       ``deep_link(id, …)``) and the value every ``valid_urls`` entry normalizes
       to. Lives here, not on the production ``SchemeSpec``, because it is test
       data.
+    - ``canonical_url``: the exact URL ``canonical_url(example_identifier)``
+      must build. The conformance harness only round-trips the canonical form;
+      this pins the string itself, so a self-consistent-but-wrong canonical
+      can't slip by.
     - ``valid_urls``: alternate URL shapes of ``example_identifier`` — each must
       ``normalize`` to it. The bare id and canonical URL round-trip is already
       covered by the conformance harness, so these are the platform's *other*
@@ -57,9 +68,15 @@ class SchemeExamples:
       foreign path that merely contains the id).
     - ``start_time_cases``: URL → extracted ``start_seconds`` (or ``None`` for a
       recognized URL with no usable hint). Empty for schemes with no time axis.
+    - ``deep_link_case``: the exact URL ``deep_link(example_identifier,
+      seconds)`` must build. Required exactly when the scheme has a
+      ``deep_link`` builder (harness-enforced both ways), so the platform's
+      seek syntax is pinned as data.
     """
 
     example_identifier: str
+    canonical_url: str
     valid_urls: tuple[str, ...] = ()
     invalid_urls: tuple[str, ...] = ()
     start_time_cases: tuple[StartTimeCase, ...] = ()
+    deep_link_case: DeepLinkCase | None = None

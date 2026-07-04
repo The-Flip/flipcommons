@@ -74,3 +74,26 @@ def test_start_time_case_extracts_expected_seconds(
     match = _spec(key).extract(case.url)
     assert match is not None, f"{key}: example URL not recognized: {case.url}"
     assert match.start_seconds == case.seconds
+
+
+@pytest.mark.parametrize("key", list(SCHEME_EXAMPLES))
+def test_canonical_url_builds_exactly_the_declared_form(key: str) -> None:
+    """The canonical URL is the exact declared string, not just a round-tripper."""
+    ex = SCHEME_EXAMPLES[key]
+    assert _spec(key).canonical_url(ex.example_identifier) == ex.canonical_url
+
+
+@pytest.mark.parametrize("key", list(SCHEME_EXAMPLES))
+def test_deep_link_case_matches_the_capability_and_its_output(key: str) -> None:
+    """A ``deep_link`` builder and a declared example imply each other.
+
+    A scheme that can seek must pin its platform's seek syntax as data; a
+    declared case on a scheme that can't seek is a stale table.
+    """
+    ex, spec = SCHEME_EXAMPLES[key], _spec(key)
+    if spec.deep_link is None:
+        assert ex.deep_link_case is None, f"{key}: deep_link_case but no builder"
+    else:
+        assert ex.deep_link_case is not None, f"{key}: builder but no deep_link_case"
+        built = spec.deep_link(ex.example_identifier, ex.deep_link_case.seconds)
+        assert built == ex.deep_link_case.url

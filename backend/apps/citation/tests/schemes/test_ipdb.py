@@ -1,20 +1,16 @@
-"""IPDB scheme tests: its declared example table plus the canonical form.
+"""IPDB scheme examples: the minimal scheme — one numeric-id URL shape.
 
-IPDB is the minimal scheme — one numeric-id URL shape. ``EXAMPLES`` covers the
-host/scheme variants; the generic invariants live in ``test_conformance``. Pure
-— no database.
+Pure data; the shared harnesses (``test_examples``, ``test_conformance``,
+``test_db_roundtrip``) do all the driving.
 """
-
-from apps.citation.citation_types import SCHEME_SPECS
 
 from .example_data import SchemeExamples
 
 MID = "4443"
 
-ipdb = SCHEME_SPECS["ipdb"]
-
 EXAMPLES = SchemeExamples(
     example_identifier=MID,
+    canonical_url=f"https://www.ipdb.org/machine.cgi?id={MID}",
     valid_urls=(
         f"https://ipdb.org/machine.cgi?id={MID}",  # no www
         f"http://www.ipdb.org/machine.cgi?id={MID}",
@@ -28,7 +24,3 @@ EXAMPLES = SchemeExamples(
         f"https://example.com/{MID}",  # bare id buried in a foreign URL
     ),
 )
-
-
-def test_canonical_url_is_the_machine_cgi_page() -> None:
-    assert ipdb.canonical_url(MID) == f"https://www.ipdb.org/machine.cgi?id={MID}"

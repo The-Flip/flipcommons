@@ -1,24 +1,22 @@
-"""X (Twitter) scheme tests: its declared example table plus identity bespoke.
+"""X (Twitter) scheme examples: two host families collapsing to one status id.
 
-X is the multi-host stress case: two full host families (x.com and legacy
-twitter.com) collapse to one child per status id, and the vanity handle is
-excluded from identity so the canonical URL survives renames. It is a **web**
-scheme — a /status/ URL entails nothing about the post's media. ``EXAMPLES``
-pins the recognized shapes; the bespoke tests cover the handle-free canonical,
-the two-host collapse, the web owning type and the absent time capabilities.
-Generic invariants live in ``test_conformance``. Pure — no database.
+X is the multi-host stress case: x.com and legacy twitter.com shapes all
+normalize to one child per status id (the table proves the collapse — every
+valid row must yield the same identifier). The canonical is the handle-free
+``/i/status/`` form, so the stored link survives vanity-handle renames. It is
+a **web** scheme — a ``/status/`` URL entails nothing about the post's media
+(the type-homogeneity rule), so it declares no time capabilities. Pure data;
+the shared harnesses do all the driving.
 """
-
-from apps.citation.citation_types import SCHEME_SPECS, SourceType
 
 from .example_data import SchemeExamples
 
 SID = "1585341984679469056"
 
-x = SCHEME_SPECS["x"]
-
 EXAMPLES = SchemeExamples(
     example_identifier=SID,
+    # Rename-stable: no vanity handle baked into the stored link.
+    canonical_url=f"https://x.com/i/status/{SID}",
     valid_urls=(
         f"https://x.com/PinballNews/status/{SID}",
         f"https://twitter.com/PinballNews/status/{SID}",
@@ -44,26 +42,3 @@ EXAMPLES = SchemeExamples(
         f"https://example.com/status/{SID}",  # wrong site
     ),
 )
-
-
-def test_canonical_url_is_the_handle_free_form() -> None:
-    # Rename-stable: no vanity handle baked into the stored link.
-    assert x.canonical_url(SID) == f"https://x.com/i/status/{SID}"
-
-
-def test_both_host_families_collapse_to_one_identifier() -> None:
-    via_x = x.normalize(f"https://x.com/PinballNews/status/{SID}")
-    via_twitter = x.normalize(f"https://twitter.com/PinballNews/status/{SID}")
-    assert via_x == via_twitter == SID
-
-
-def test_children_mint_as_web_pages() -> None:
-    # The type-homogeneity rule: a /status/ URL may hold text, photos or video,
-    # so the scheme's owning type is web — a post cites as a whole page.
-    assert x.source_type is SourceType.WEB
-
-
-def test_no_time_capabilities() -> None:
-    # X URLs have no seek parameter — the scheme honestly declares neither.
-    assert x.deep_link is None
-    assert x.start_seconds_from_url is None

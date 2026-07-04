@@ -1,24 +1,19 @@
-"""YouTube scheme tests: its declared example table plus bespoke assertions.
+"""YouTube scheme examples: many URL shapes collapsing to one 11-char id.
 
-YouTube's video id is reachable through many URL shapes (``watch?v=``,
-``youtu.be``, ``/shorts/``, ``/embed/``, ``/live/``, mobile), all collapsing to
-one canonical 11-char id — the regex doing that collapse is the risky part, so
-``EXAMPLES`` pins the shapes as data. Start times ride in the ``t=``/``start=``
-query params. The generic invariants live in ``test_conformance``; the exact
-canonical and deep-link strings a URL table can't express stay here. Pure — no
-database.
+YouTube's video id is reachable through ``watch?v=``, ``youtu.be``,
+``/shorts/``, ``/embed/``, ``/live/`` and mobile shapes — the regex doing
+that collapse is the risky part, so the shapes are pinned as data. Start
+times ride in the ``t=``/``start=`` query params; the deep link seeks via
+``&t=<n>s``. Pure data; the shared harnesses do all the driving.
 """
 
-from apps.citation.citation_types import SCHEME_SPECS
-
-from .example_data import SchemeExamples, StartTimeCase
+from .example_data import DeepLinkCase, SchemeExamples, StartTimeCase
 
 VID = "dQw4w9WgXcQ"
 
-youtube = SCHEME_SPECS["youtube"]
-
 EXAMPLES = SchemeExamples(
     example_identifier=VID,
+    canonical_url=f"https://www.youtube.com/watch?v={VID}",
     valid_urls=(
         f"https://youtube.com/watch?v={VID}",  # no www
         f"http://www.youtube.com/watch?v={VID}",
@@ -61,15 +56,6 @@ EXAMPLES = SchemeExamples(
         StartTimeCase(f"https://www.youtube.com/watch?v={VID}&t=0", None),  # 0 = start
         StartTimeCase(f"https://www.youtube.com/watch?v={VID}#t=30", None),  # fragment
     ),
+    # Seeks via the t= query param, seconds-suffixed.
+    deep_link_case=DeepLinkCase(3723, f"https://www.youtube.com/watch?v={VID}&t=3723s"),
 )
-
-
-def test_canonical_url_is_the_watch_page() -> None:
-    assert youtube.canonical_url(VID) == f"https://www.youtube.com/watch?v={VID}"
-
-
-def test_deep_link_uses_the_t_query_param() -> None:
-    assert youtube.deep_link is not None
-    assert (
-        youtube.deep_link(VID, 3723) == f"https://www.youtube.com/watch?v={VID}&t=3723s"
-    )

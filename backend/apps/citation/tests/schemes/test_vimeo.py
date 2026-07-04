@@ -1,23 +1,18 @@
-"""Vimeo scheme tests: its declared example table plus bespoke assertions.
+"""Vimeo scheme examples: numeric ids, unlisted-hash tails, fragment seeks.
 
-``EXAMPLES`` is Vimeo's platform-specific URL coverage as data — the shared
-example harness (``test_examples``) drives it through the same assertions every
-scheme's table gets. What stays here as hand-written tests is only what a
-URL-shape table can't express: the exact canonical form and the fragment
-deep-link syntax. The generic invariants live in ``test_conformance``. Pure —
-no database.
+The unlisted-access hash is an access token, not identity, so it drops out
+of the identifier; start times ride in the ``#t=`` fragment (not the query),
+and the deep link seeks the same way. Pure data; the shared harnesses do all
+the driving.
 """
 
-from apps.citation.citation_types import SCHEME_SPECS
-
-from .example_data import SchemeExamples, StartTimeCase
+from .example_data import DeepLinkCase, SchemeExamples, StartTimeCase
 
 VID = "347119375"
 
-vimeo = SCHEME_SPECS["vimeo"]
-
 EXAMPLES = SchemeExamples(
     example_identifier=VID,
+    canonical_url=f"https://vimeo.com/{VID}",  # bare watch page, no www
     valid_urls=(
         f"https://www.vimeo.com/{VID}",
         f"http://vimeo.com/{VID}",
@@ -53,14 +48,6 @@ EXAMPLES = SchemeExamples(
         StartTimeCase(f"https://vimeo.com/{VID}#t=junk", None),  # malformed
         StartTimeCase(f"https://vimeo.com/{VID}?t=90s", None),  # query not Vimeo's
     ),
+    # Seeks via the #t= fragment, not a query param.
+    deep_link_case=DeepLinkCase(3723, f"https://vimeo.com/{VID}#t=3723s"),
 )
-
-
-def test_canonical_url_is_the_bare_watch_page() -> None:
-    assert vimeo.canonical_url(VID) == f"https://vimeo.com/{VID}"
-
-
-def test_deep_link_uses_the_fragment_syntax() -> None:
-    # Vimeo seeks via a URL fragment (#t=), not a query param.
-    assert vimeo.deep_link is not None
-    assert vimeo.deep_link(VID, 3723) == f"https://vimeo.com/{VID}#t=3723s"
