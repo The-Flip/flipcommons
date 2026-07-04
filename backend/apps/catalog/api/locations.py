@@ -140,15 +140,13 @@ def _get_location_tree() -> _LocationTree:
     )
 
     # Accumulate manufacturer PKs at each location and all its ancestors.
+    # Every active CorporateEntity contributes: ``manufacturer`` is a
+    # non-null FK, so a corporate entity at a location implies a
+    # manufacturer (same invariant ``Location.sitemap_queryset()`` relies on).
     mfr_pks_by_path: dict[str, set[int]] = {}
-    for cel in (
-        CorporateEntityLocation.objects.select_related(
-            "location__parent__parent__parent__parent",
-            "corporate_entity__manufacturer",
-        )
-        .filter(corporate_entity__manufacturer__isnull=False)
-        .filter(active_status_q("corporate_entity"))
-    ):
+    for cel in CorporateEntityLocation.objects.select_related(
+        "location__parent__parent__parent__parent", "corporate_entity"
+    ).filter(active_status_q("corporate_entity")):
         mfr_pk = cel.corporate_entity.manufacturer_id
         cur: Location | None = cel.location
         while cur is not None:

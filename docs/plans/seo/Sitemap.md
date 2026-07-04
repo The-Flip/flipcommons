@@ -109,7 +109,7 @@ class SitemappedModel(LinkableModel, LastUpdatedModel):
         return ()
 ```
 
-The two overrides today:
+The overrides today:
 
 ```python
 # apps/catalog/models/machine_model.py
@@ -153,6 +153,26 @@ class Title(CatalogModel, ...):
                 F("updated_at"),
             ),
         )
+```
+
+```python
+# apps/catalog/models/location.py
+class Location(CatalogModel, ...):
+    @classmethod
+    def sitemap_queryset(cls):
+        # Membership-narrowing override (the documented "narrow membership"
+        # case): only locations with ≥1 manufacturer at or below them. A
+        # location page's primary content is its aggregated manufacturer grid
+        # (manufacturers propagate up the ancestor chain), so a
+        # zero-manufacturer location renders an empty page that search
+        # engines cluster as duplicate content ("Duplicate without
+        # user-selected canonical" in Search Console). Excluded rows drop ALL
+        # their URLs (detail, /edit-history, /sources) — unlike
+        # `non_canonical_detail_slugs()`, which is for canonical-URL reasons
+        # and keeps the ancillary pages. Implemented as an `Exists` over
+        # CorporateEntityLocation with a `location_path` prefix match; see
+        # the model for the shipped queryset.
+        ...
 ```
 
 Note `machine_models` (not `models`) — that's the `related_name` on `MachineModel.title` and `MachineModel.title` is the only FK from `MachineModel` to `Title`. `active_status_q("relation")` (from `apps/core/models/mixins.py`) builds the active-or-null `Q` filter for child rows reached through a relation, mirroring `LifecycleQuerySet.active()`'s null-inclusive shape for ingest compatibility. Read directly off `type[LinkableModel]` — no `getattr` fallback (per the [field-on-model antipattern](../model_driven_metadata/ModelDrivenMetadata.md#antipattern-field-on-model)).
@@ -485,6 +505,7 @@ One-line additive change. Update the existing robots vitest to assert the line i
 - Anything auth-gated — recognized by `requireCapability` in the layout chain; non-indexable routes are excluded by `isSearchEngineIndexable(routeId)`; never enumerated by hand.
 - Soft-deleted catalog rows (`status='deleted'`) — excluded by `.active()` at every queryset entry point.
 - The `catalog-detail` URL for Models whose parent Title has exactly one active Model (see above); their `/edit-history` and `/sources` URLs are still in.
+- Locations with zero manufacturers at or below them — excluded entirely (detail, `/edit-history`, and `/sources`) via `Location.sitemap_queryset()`, since their pages render an empty manufacturer grid that search engines cluster as duplicate content.
 
 ## 6. `SITE_ORIGIN` build + deploy checks
 

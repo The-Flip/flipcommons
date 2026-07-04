@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import ClassVar
+from typing import ClassVar, Self
 
 from django.db import models
-from django.db.models.functions import Lower
+from django.db.models import Exists, OuterRef, Q, Value
+from django.db.models.functions import Concat, Lower
 
 from apps.core.models import (
     TimeStampedModel,
+    active_status_q,
     field_lowercase,
     field_not_blank,
     status_valid,
@@ -148,6 +150,28 @@ class Location(CatalogModel, TimeStampedModel):
 
     def __str__(self) -> str:
         return self.name or self.location_path
+
+    @classmethod
+    def sitemap_queryset(cls) -> models.QuerySet[Self]:
+        # Narrow sitemap membership to locations with at least one
+        # manufacturer at or below them. A location page's primary content is
+        # its aggregated manufacturer grid (manufacturers propagate up the
+        # ancestor chain — see ``apps.catalog.api.locations``), so a
+        # zero-manufacturer location renders an empty page that search
+        # engines cluster as duplicate content. An active CorporateEntity at
+        # a location implies a manufacturer (non-null FK). "At or below" is a
+        # ``location_path`` prefix match: the path encodes the full ancestry,
+        # and the trailing ``/`` keeps a shared string prefix (``nl`` vs
+        # ``nl2``) from counting as ancestry.
+        has_manufacturer_at_or_below = CorporateEntityLocation.objects.filter(
+            Q(location__location_path=OuterRef("location_path"))
+            | Q(
+                location__location_path__startswith=Concat(
+                    OuterRef("location_path"), Value("/")
+                )
+            )
+        ).filter(active_status_q("corporate_entity"))
+        return super().sitemap_queryset().filter(Exists(has_manufacturer_at_or_below))
 
     @classmethod
     def compose_public_id(cls, authored_fields: Mapping[str, object]) -> str:
