@@ -41,3 +41,15 @@ export function citationTypeMeta(sourceType: string): CitationTypeMeta {
 export function citationTypeFrontend(sourceType: string): CitationTypeFrontend {
   return isCitationTypeKey(sourceType) ? CITATION_TYPE_FRONTENDS[sourceType] : freeformType;
 }
+
+/**
+ * The locator as a *reader* should see it: the type's display prefix applied,
+ * so a video's bare `1:02:03` reads as "starting at 1:02:03" (a start point,
+ * not the runtime). Freeform types have no prefix, so their user-typed locators
+ * ("p. 42") pass through unchanged. Empty in, empty out.
+ */
+export function displayLocator(sourceType: string, locator: string): string {
+  if (!locator) return '';
+  const prefix = citationTypeMeta(sourceType).locatorDisplayPrefix;
+  return prefix ? `${prefix} ${locator}` : locator;
+}

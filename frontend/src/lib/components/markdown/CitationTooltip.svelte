@@ -9,6 +9,7 @@
     type TooltipState,
   } from './citation-tooltip';
   import { buildCitationMap } from './citation-refs';
+  import { displayLocator } from '$lib/citation-types';
 
   let {
     container,
@@ -214,7 +215,9 @@
       </div>
     {/if}
     {#if activeCitation.locator}
-      <div class="locator">{activeCitation.locator}</div>
+      <div class="locator">
+        {displayLocator(activeCitation.source_type, activeCitation.locator)}
+      </div>
     {/if}
     {#if activeCitation.links.length > 0}
       <div class="links">

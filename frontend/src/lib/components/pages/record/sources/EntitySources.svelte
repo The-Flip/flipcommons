@@ -6,6 +6,7 @@
   import FocusContentShell from '$lib/components/layout/page/FocusContentShell.svelte';
   import { getEntityContext } from '$lib/entity-context';
   import { groupSourcesByField } from './entity-sources';
+  import { displayLocator } from '$lib/citation-types';
 
   type Claim = ClaimSchema;
   type CitedChangeSet = CitedChangeSetSchema;
@@ -76,7 +77,9 @@
                       </div>
                     {/if}
                     {#if citation.locator}
-                      <div class="locator">{citation.locator}</div>
+                      <div class="locator">
+                        {displayLocator(citation.source_type, citation.locator)}
+                      </div>
                     {/if}
                     {#if citation.quote}
                       <blockquote class="quote">{citation.quote}</blockquote>

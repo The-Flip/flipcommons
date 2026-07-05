@@ -210,6 +210,26 @@ describe('CitationTooltip', () => {
       expect(tooltip).toHaveTextContent('Prop Book');
       expect(tooltip).toHaveTextContent('Prop Author, 2020');
     });
+
+    it("prefixes a video locator so it reads as a start point, not the film's runtime", async () => {
+      const videoCite: InlineCitation[] = [
+        {
+          id: 1,
+          index: 1,
+          source_name: 'Tommy',
+          source_type: 'video',
+          author: 'Ken Russell (director)',
+          year: 1975,
+          locator: '1:02:03',
+          links: [],
+        },
+      ];
+      renderTooltip('<p>Cited <sup data-cite-id="1" tabindex="0">[1]</sup>.</p>', videoCite);
+
+      await fireEvent.mouseEnter(getCitation('1'));
+      const tooltip = await screen.findByRole('tooltip');
+      expect(tooltip).toHaveTextContent('starting at 1:02:03');
+    });
   });
 
   describe('fallback fetch (no citations prop)', () => {

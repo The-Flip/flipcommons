@@ -154,6 +154,7 @@ VIDEO = CitationTypeSpec(
         placeholder="e.g. 1:02:03",
         label="Start time",
         help="Where to begin watching — e.g. 1:02:03, 95, or 1h2m3s",
+        display_prefix="starting at",
         normalize=normalize_start_time,
         parse_value=parse_start_time,
         format_value=format_start_time,

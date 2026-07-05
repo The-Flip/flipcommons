@@ -78,6 +78,11 @@ class LocatorContract:
     - ``help`` is persistent format guidance shown under the label. Distinct
       from ``placeholder`` (a ghost example that disappears on input) and from
       ``invalid_message`` (shown only after a failed ``normalize``).
+    - ``display_prefix`` prefixes the locator when a *reader* sees it (the
+      citation tooltip, references list). A video's bare ``1:02:03`` reads as
+      the runtime; ``"starting at"`` makes it "starting at 1:02:03" — a start
+      point. Empty for freeform types, whose user-typed locators ("p. 42")
+      self-describe.
     - ``normalize`` validates and canonicalizes a non-empty locator string,
       returning ``None`` for an invalid one. Empty locators never reach it —
       a locator is optional on every type.
@@ -100,6 +105,7 @@ class LocatorContract:
     format_value: LocatorValueFormatter | None = None
     invalid_message: str = ""
     help: str = ""
+    display_prefix: str = ""
 
 
 FREEFORM_LOCATOR = LocatorContract(

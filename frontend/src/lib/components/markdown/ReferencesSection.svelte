@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { InlineCitation } from './citation-tooltip';
   import { deduplicateCitations } from './citation-refs';
+  import { displayLocator } from '$lib/citation-types';
 
   let {
     citations,
@@ -39,7 +40,7 @@
             </span>
           {/if}
           {#if cite.locator}
-            <span class="locator">({cite.locator})</span>
+            <span class="locator">({displayLocator(cite.source_type, cite.locator)})</span>
           {/if}
           {#if cite.links.length > 0}
             <span class="links">

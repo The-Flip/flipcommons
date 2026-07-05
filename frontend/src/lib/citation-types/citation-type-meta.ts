@@ -8,7 +8,9 @@ export type CitationTypeKey = 'book' | 'magazine' | 'video' | 'web';
  * `locatorKind` is the frontend input behavior: `freeform` is a plain
  * text input; `timestamp` adds the type's inline validation.
  * `locatorLabel`/`locatorHelp` are the field label and persistent
- * format guidance the cite picker shows (not placeholder text). */
+ * format guidance the cite picker shows (not placeholder text).
+ * `locatorDisplayPrefix` prefixes the locator on the read side
+ * (tooltip, references) — e.g. video's `starting at` prefix. */
 export interface CitationTypeMeta {
   key: CitationTypeKey;
   label: string;
@@ -16,6 +18,7 @@ export interface CitationTypeMeta {
   locatorLabel: string;
   locatorPlaceholder: string;
   locatorHelp: string;
+  locatorDisplayPrefix: string;
   locatorInvalidMessage: string;
   childSkipsLocator: boolean;
 }
@@ -28,6 +31,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorLabel: 'Location in source',
     locatorPlaceholder: 'p. 42, Chapter 3, timestamp...',
     locatorHelp: 'e.g. p. 42, Chapter 3, a timestamp',
+    locatorDisplayPrefix: '',
     locatorInvalidMessage: '',
     childSkipsLocator: false,
   },
@@ -38,6 +42,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorLabel: 'Location in source',
     locatorPlaceholder: 'p. 42, Chapter 3, timestamp...',
     locatorHelp: 'e.g. p. 42, Chapter 3, a timestamp',
+    locatorDisplayPrefix: '',
     locatorInvalidMessage: '',
     childSkipsLocator: false,
   },
@@ -48,6 +53,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorLabel: 'Start time',
     locatorPlaceholder: 'e.g. 1:02:03',
     locatorHelp: 'Where to begin watching \u2014 e.g. 1:02:03, 95, or 1h2m3s',
+    locatorDisplayPrefix: 'starting at',
     locatorInvalidMessage:
       'Enter a start time like 1:02:03, 95, or 1h2m3s (where to start watching).',
     childSkipsLocator: false,
@@ -59,6 +65,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorLabel: 'Location in source',
     locatorPlaceholder: 'p. 42, Chapter 3, timestamp...',
     locatorHelp: 'e.g. p. 42, Chapter 3, a timestamp',
+    locatorDisplayPrefix: '',
     locatorInvalidMessage: '',
     childSkipsLocator: true,
   },
