@@ -106,7 +106,7 @@ A movie is the missing third shape: a **parentless video that is itself the evid
 - **No recognition host, no identifier scheme.** Nothing to paste; you reach a movie by **searching** the source list, not by recognizing a URL. Its `identifier_key` is blank.
 - **Only an access URL** — the specific copy consulted (an `amazon.com/gp/video/detail/…` link) — which is P854 "reference URL", **access, not identity**. We don't model access URLs yet ([CitationInstanceUrls.md](CitationInstanceUrls.md)); until we do, a seeded movie carries its metadata and no URL, and the timestamp locator alone tells the reader where to look.
 
-The model change this forces is small and mirrors the book rule exactly: **relax `video`'s `parentless_abstract` so it is keyed on `identifier_key`** — set = platform root (abstract, as today); blank = a citable work (a movie). This is [F3 in CitationSourceMisclassification.md](CitationSourceMisclassification.md). A scheme-holding root stays abstract (a platform is always a container); a schemeless parentless video becomes citable evidence (a movie). No new type, no new locator grammar, no frontend module — one behavioral relaxation on the existing type.
+The model change this forces is small and mirrors the book rule exactly: **relax `video`'s `parentless_abstract` so it is keyed on `identifier_key`** — set = platform root (abstract, as today); blank = a citable work (a movie). This is [F3 in CitationSourceMisclassification.md](CitationSourceMisclassification.md). (The implementation §1 renames the field to `schemeless_parentless_abstract` so the narrowed bool documents itself.) A scheme-holding root stays abstract (a platform is always a container); a schemeless parentless video becomes citable evidence (a movie). No new type, no new locator grammar, no frontend module — one behavioral relaxation on the existing type.
 
 ## Why the streaming platforms are not schemes (and why that matters here)
 
@@ -151,7 +151,7 @@ We are shipping the first and leaving the second sequenced-after, exactly as bef
 - **A movie is a `video`, not a new citation type.** The type axis encodes behavior; a movie behaves exactly like a video (timestamp locator, work-level identity). Its film-ness (year, director, distributor) is source-row metadata, not citation behavior.
 - **The type keeps the wire value and label `video`.** A movie is video; the medium distinction lives in data, not the type name.
 - **Prior art agrees.** Wikipedia folded `{{cite film}}` into `{{cite AV media}}` (film is `medium=` data); Wikidata types the work (P31), not the citation, and records the copy consulted as P854.
-- **A movie enters as a parentless-citable video work** — the missing third video shape beside platform-root and child. One model change: relax `video`'s `parentless_abstract` to key on `identifier_key` (blank = movie, citable; set = platform, abstract), mirroring the book rule ([F3](CitationSourceMisclassification.md)).
+- **A movie enters as a parentless-citable video work** — the missing third video shape beside platform-root and child. One model change: key parentless abstractness on `identifier_key` (blank = movie, citable; set = platform, abstract), mirroring the book rule ([F3](CitationSourceMisclassification.md)); the per-type bool is renamed `schemeless_parentless_abstract` so it documents its own narrowed meaning (strongest-typing per `docs/Python.md`).
 - **Streaming platforms are not schemes.** A streaming URL is access, not identity; a scheme would fragment one film into per-platform children. The link is a future access URL on the instance, not the movie's identity.
 - **Audio is different** — it earns its own behaviorally-distinct type (`podcast`) when demand appears; a movie does not, precisely because a movie is behaviorally a video.
 - **People/roles: free-text `author` with a parenthetical role** (`Ken Russell (director)`), matching Wikipedia/APA/Chicago. A structured contributor table is YAGNI'd until a surface needs to _query_ credits — see [People and roles](#people-and-roles).
@@ -169,10 +169,12 @@ Today abstractness is computed in `CitationSource.is_abstract` (`apps/citation/m
 return has_children or (self.is_root and citation_type_spec(self.source_type).parentless_abstract)
 ```
 
-`parentless_abstract` is a plain per-type bool (`book=False`, `magazine=True`, `web=True`, `video=True`). The relaxation reinterprets that field and adds one universal rule, so nothing branches on `"video"` — it stays model-driven:
+Today `parentless_abstract` is a plain per-type bool (`book=False`, `magazine=True`, `web=True`, `video=True`), read at `is_abstract` as "a parentless source of this type is a container." The relaxation splits that into a universal rule plus a per-type bool whose meaning **narrows** — and because the narrowed bool must document its own contract (`docs/Python.md`'s second job of typing: a reader sees what a value _is_), the field is **renamed** so the type carries the intent instead of the method hiding it:
 
-- **`parentless_abstract` now means "is a _schemeless_ parentless root of this type abstract?"** — i.e. when the parentless form is _not_ a platform root, is it still a container? Book `False` (the book is the work), magazine `True` (a publication), web `True` (a site), and **video flips `True → False`** (the schemeless parentless video is a **movie** — the work itself). This is the only edit to `video.py`.
+- **Rename `parentless_abstract` → `schemeless_parentless_abstract`** (the F3 field — one line in each of `book.py` / `magazine.py` / `web.py` / `video.py`). It now means precisely "is a _schemeless_ parentless root of this type abstract?"; the platform-root case is handled universally below, so this bool governs only the no-scheme case. Book `False` (the work), magazine `True` (a publication), web `True` (a site), and **video flips to `False`** (a schemeless parentless video is a **movie** — the work itself). The rename is what stops `video → …=False` from reading as the false claim "a parentless video is never abstract" — a YouTube root still is.
 - **A scheme-holding root (`identifier_key` set) is abstract universally**, added to `is_abstract`. A scheme root _is_ a platform/site container by definition — recognition resolves to its children, never the root — so this holds for every type and needs no per-type flag. It is what keeps the YouTube (and X) root abstract after video's field flips.
+
+The bool **stays** a bool: the only per-type degree of freedom is the schemeless-parentless case, and that is genuinely binary, so an enum here would fake structure the domain doesn't have (`docs/Python.md` warns against that as much as against under-typing). Nor does the abstractness _logic_ move onto `CitationTypeSpec` — that record is deliberately fields-only — so it stays in `is_abstract`. The strengthening is the field **name**, not a richer shape.
 
 New body:
 
@@ -189,14 +191,14 @@ def is_abstract(self, *, has_children: bool) -> bool:
     # A schemeless parentless root: abstract only when the type's schemeless
     # parentless form is a container (a magazine, a site) and not the work
     # itself (a book, a movie).
-    return citation_type_spec(self.source_type).parentless_abstract
+    return citation_type_spec(self.source_type).schemeless_parentless_abstract
 ```
 
 The behavior delta is **exactly one case**: a parentless `video` with a blank `identifier_key` (a movie) goes from abstract → citable. Every other row is unchanged — the YouTube root stays abstract via the `identifier_key` branch, schemeless web/magazine roots stay abstract via their unchanged field, book is untouched. Because `is_abstract` is a **display hint, not a write invariant** (its docstring), no constraint or write path needs touching; the flip simply routes the cite picker differently (§3).
 
 ### 2. Tests (TDD — failing test first, per CLAUDE.md)
 
-- **Close the pre-existing gap**: `test_citation_type_registry.py::test_traits_per_type` parametrizes only book/magazine/web — add the `VIDEO` row (`flat=True, abstract=False, skips_locator=False` after the flip). It fails before the change, passes after.
+- **Close the pre-existing gap**: `test_citation_type_registry.py::test_traits_per_type` parametrizes only book/magazine/web and asserts `spec.parentless_abstract` — add the `VIDEO` row and point the assertion at the renamed `spec.schemeless_parentless_abstract` (video `False` after the flip). It fails before the change, passes after.
 - **`is_abstract` unit cases** (no DB — the method reads only `self` fields and takes `has_children`): a parentless video with `identifier_key="youtube"` is abstract; a parentless video with blank `identifier_key` (a movie) is **not** abstract; a movie _with_ children is abstract (the `has_children` short-circuit); a schemeless parentless web/magazine root stays abstract (no regression).
 - **End-to-end cite-target** (extends `test_api.py::TestSearchComputedFields`, which already covers a web root): a seeded movie surfaces in `search_citation_sources` with `is_abstract=false`, and the frontend reducer's existing "not abstract → locator stage" path (`citation-types.test.ts`) already covers the routing, so a movie is directly citable with a timestamp locator.
 
@@ -214,7 +216,7 @@ What a contributor **gains**: typing a movie's title in `[[cite:` now finds it, 
 
 ### 4. No migration, no codegen
 
-`parentless_abstract` is read only by `is_abstract` — it is **not** a DB column, **not** in any CHECK constraint (those derive from `SourceType.values` and the scheme registry, not this field), and **not** exported by `export_citation_type_meta`. Flipping it and editing a pure Python method touches no schema and no generated file. The `year` a movie needs already exists on `CitationSource` (`models.py:128`).
+`schemeless_parentless_abstract` (the renamed `parentless_abstract`) is read only by `is_abstract` — it is **not** a DB column, **not** in any CHECK constraint (those derive from `SourceType.values` and the scheme registry, not this field), and **not** exported by `export_citation_type_meta`. Renaming it, flipping video's value, and editing a pure Python method touch no schema and no generated file. The `year` a movie needs already exists on `CitationSource` (`models.py:128`).
 
 ### 5. Seed the popular pinball movies
 
