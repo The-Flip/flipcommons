@@ -49,11 +49,19 @@ export type ParentContext = {
   identifier_key: string;
 };
 
-/** An unsaved draft of a CitationInstance.  Accumulates across stages: search sets sourceId, identify may change it, locator sets locator. */
+/** An unsaved draft of a CitationInstance.  Accumulates across stages: search sets sourceId, identify may change it, locator sets locator.
+ *
+ * `sourceType` keys the locator stage into the per-type behavior registry
+ * (`$lib/citation-types`): placeholder, inline validation, canonical form.
+ * `locatorHint` prefills the locator input (a pasted video URL's `t=` start
+ * time, already formatted canonically by the backend) — it is deliberately
+ * NOT `locator` so a hint never auto-submits the draft past the stage. */
 export type CitationInstanceDraft = {
   sourceId: number | null;
   sourceName: string;
+  sourceType: string;
   locator: string;
+  locatorHint: string;
   skipLocator: boolean;
 };
 
@@ -103,11 +111,24 @@ export type CiteAction =
   /** User picked a source from search results. Abstract → identify; concrete → locator. */
   | { type: 'source_selected'; source: CitationSourceResult }
   /** The exact citable CitationSource is known (via URL recognition, child selection, etc.). → locator. */
-  | { type: 'source_identified'; sourceId: number; sourceName: string; skipLocator: boolean }
+  | {
+      type: 'source_identified';
+      sourceId: number;
+      sourceName: string;
+      sourceType: string;
+      skipLocator: boolean;
+      locatorHint?: string;
+    }
   /** User wants to create a new CitationSource. The seed says what prefill we have. → create. */
   | { type: 'create_started'; seed: CreateSeed }
   /** New CitationSource was created via API. → locator. */
-  | { type: 'source_created'; sourceId: number; sourceName: string; skipLocator: boolean }
+  | {
+      type: 'source_created';
+      sourceId: number;
+      sourceName: string;
+      sourceType: string;
+      skipLocator: boolean;
+    }
   /** User submitted or skipped the locator. */
   | { type: 'locator_submitted'; locator: string };
 
@@ -156,7 +177,14 @@ export function isDraftSubmittable(draft: CitationInstanceDraft): boolean {
 }
 
 export function emptyDraft(): CitationInstanceDraft {
-  return { sourceId: null, sourceName: '', locator: '', skipLocator: false };
+  return {
+    sourceId: null,
+    sourceName: '',
+    sourceType: '',
+    locator: '',
+    locatorHint: '',
+    skipLocator: false,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +192,7 @@ export function emptyDraft(): CitationInstanceDraft {
 // ---------------------------------------------------------------------------
 
 export type CreateByIdentifierResult =
-  | { ok: true; sourceId: number; sourceName: string; skipLocator: boolean }
+  | { ok: true; sourceId: number; sourceName: string; sourceType: string; skipLocator: boolean }
   | { ok: false; error: string };
 
 /** Create (or reuse) a scheme child under a parent root using a structured
@@ -182,7 +210,13 @@ export async function createChildByIdentifier(
   if (error) {
     return { ok: false, error: typeof error === 'string' ? error : 'Invalid identifier.' };
   }
-  return { ok: true, sourceId: data.id, sourceName: data.name, skipLocator: data.skip_locator };
+  return {
+    ok: true,
+    sourceId: data.id,
+    sourceName: data.name,
+    sourceType: data.source_type,
+    skipLocator: data.skip_locator,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +245,12 @@ export function transition(state: CiteState, action: CiteAction): CiteState {
   switch (action.type) {
     case 'source_selected': {
       if (state.stage !== 'search') return state;
-      const draft = { ...state.draft, sourceId: action.source.id, sourceName: action.source.name };
+      const draft = {
+        ...state.draft,
+        sourceId: action.source.id,
+        sourceName: action.source.name,
+        sourceType: action.source.source_type,
+      };
       if (action.source.is_abstract) {
         return {
           stage: 'identify',
@@ -233,7 +272,9 @@ export function transition(state: CiteState, action: CiteAction): CiteState {
           ...state.draft,
           sourceId: action.sourceId,
           sourceName: action.sourceName,
+          sourceType: action.sourceType,
           skipLocator: action.skipLocator,
+          locatorHint: action.locatorHint ?? '',
         },
       };
     }
@@ -256,6 +297,7 @@ export function transition(state: CiteState, action: CiteAction): CiteState {
           ...state.draft,
           sourceId: action.sourceId,
           sourceName: action.sourceName,
+          sourceType: action.sourceType,
           skipLocator: action.skipLocator,
         },
       };

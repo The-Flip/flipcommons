@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection
 
 from apps.accounts.test_factories import default_actor
+from apps.citation.citation_types import SCHEME_SPECS
 from apps.citation.models import (
     CitationSource,
     CitationSourceLink,
@@ -87,10 +88,31 @@ class TestCitationSourceIdentifierKey:
         cs = make_citation_source(name="Test", source_type="web")
         assert cs.identifier_key == ""
 
-    @pytest.mark.parametrize("key", ["ipdb", "opdb", "youtube"])
-    def test_valid_identifier_key_accepted(self, db, key):
-        cs = make_citation_source(name="Test", source_type="web", identifier_key=key)
+    @pytest.mark.parametrize(
+        ("key", "source_type"),
+        [(spec.key, spec.source_type.value) for spec in SCHEME_SPECS.values()],
+    )
+    def test_key_on_its_owning_type_accepted(self, db, key, source_type):
+        cs = make_citation_source(
+            name="Test", source_type=source_type, identifier_key=key
+        )
         assert cs.identifier_key == key
+
+    @pytest.mark.parametrize(
+        ("key", "source_type"),
+        [
+            ("youtube", "web"),  # the drift that bit us: web root minting video kids
+            ("ipdb", "video"),
+            ("ipdb", "book"),
+        ],
+    )
+    def test_key_on_a_foreign_type_rejected(self, db, key, source_type):
+        # A scheme root's own type must be the scheme's owning type — the
+        # hierarchy stays uniformly typed (video platform → video children).
+        with pytest.raises(IntegrityError):
+            CitationSource.objects.create(
+                name="Test", source_type=source_type, identifier_key=key, **_attr()
+            )
 
 
 # ---------------------------------------------------------------------------

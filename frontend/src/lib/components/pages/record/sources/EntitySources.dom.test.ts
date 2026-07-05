@@ -36,7 +36,9 @@ describe('EntitySources', () => {
                 author: '',
                 year: 1993,
                 locator: 'p. 2',
-                links: [{ url: 'https://example.com/flyer', label: 'Scan' }],
+                links: [
+                  { url: 'https://example.com/flyer', link_type: 'homepage', display_name: 'Scan' },
+                ],
               },
             ],
           },

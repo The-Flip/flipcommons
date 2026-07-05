@@ -22,6 +22,7 @@
     onsourceidentified: (child: {
       sourceId: number;
       sourceName: string;
+      sourceType: string;
       skipLocator: boolean;
     }) => void;
     oncreatestarted: (seed: CreateSeed) => void;
@@ -154,6 +155,7 @@
     onsourceidentified({
       sourceId: child.id,
       sourceName: child.name,
+      sourceType: child.source_type,
       skipLocator: child.skip_locator,
     });
   }
@@ -190,6 +192,7 @@
     onsourceidentified({
       sourceId: result.sourceId,
       sourceName: result.sourceName,
+      sourceType: result.sourceType,
       skipLocator: result.skipLocator,
     });
   }

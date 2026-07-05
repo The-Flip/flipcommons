@@ -21,6 +21,7 @@
     onsourcecreated: (result: {
       sourceId: number;
       sourceName: string;
+      sourceType: string;
       skipLocator: boolean;
     }) => void;
     oncancel: () => void;
@@ -104,6 +105,7 @@
     onsourcecreated({
       sourceId: data.id,
       sourceName: data.name,
+      sourceType: data.source_type,
       skipLocator: data.skip_locator,
     });
   }

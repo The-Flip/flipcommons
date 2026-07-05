@@ -1,7 +1,9 @@
-"""Tests for the identifier-scheme extractors (``EXTRACTORS`` registry).
+"""Tests for URL recognition against the registered identifier schemes.
 
-Focused on YouTube, whose video id is reachable through many URL shapes —
-the regex collapsing them all to one canonical 11-char id is the risky part.
+Focused on YouTube recognition and host-suffix resolution through the core DB
+paths. YouTube's URL-shape grammar (the many shapes collapsing to one canonical
+id) is exercised as data by ``schemes/youtube_examples.py`` + the shared example
+harness; this file owns the recognition/root-domain integration.
 """
 
 import pytest
@@ -9,7 +11,6 @@ from django.core.exceptions import ValidationError
 
 from apps.accounts.test_factories import default_actor
 from apps.citation.extractors import (
-    EXTRACTORS,
     create_web_child,
     get_or_create_external_source,
     get_or_create_scheme_child,
@@ -34,57 +35,8 @@ VID = "dQw4w9WgXcQ"
 @pytest.fixture
 def youtube_root(db):
     return make_citation_source(
-        name="YouTube", source_type="web", identifier_key="youtube"
+        name="YouTube", source_type="video", identifier_key="youtube"
     )
-
-
-class TestYouTubeNormalize:
-    """``normalize`` accepts any URL shape or a bare id, returning the id."""
-
-    yt = EXTRACTORS["youtube"]
-
-    @pytest.mark.parametrize(
-        "raw",
-        [
-            VID,  # bare id
-            f"https://www.youtube.com/watch?v={VID}",
-            f"https://youtube.com/watch?v={VID}",
-            f"http://www.youtube.com/watch?v={VID}",
-            f"https://m.youtube.com/watch?v={VID}",
-            f"https://youtu.be/{VID}",
-            f"https://www.youtube.com/shorts/{VID}",
-            f"https://www.youtube.com/embed/{VID}",
-            f"https://www.youtube.com/live/{VID}",
-            # Trailing/extra params are ignored.
-            f"https://youtu.be/{VID}?si=AbCdEf",
-            f"https://www.youtube.com/watch?v={VID}&t=42s",
-            f"https://www.youtube.com/watch?list=PL123&v={VID}",
-            f"https://www.youtube.com/shorts/{VID}?feature=share",
-        ],
-    )
-    def test_every_shape_normalizes_to_the_id(self, raw):
-        assert self.yt.normalize(raw) == VID
-
-    @pytest.mark.parametrize(
-        "raw",
-        [
-            "dQw4w9WgXc",  # 10 chars — too short for a bare id
-            "dQw4w9WgXcQX",  # 12 chars — too long
-            f"https://youtu.be/{VID}X",  # 12-char URL id must not truncate to 11
-            f"https://www.youtube.com/watch?v={VID}X",  # ditto, watch shape
-            f"https://notyoutube.com/watch?v={VID}",  # look-alike host
-            f"https://www.notyoutube.com/watch?v={VID}",  # look-alike host + www
-            f"https://youtube.com.evil.com/watch?v={VID}",  # host as a prefix label
-            "https://www.ipdb.org/machine.cgi?id=4443",  # wrong site
-            "https://example.com/dQw4w9WgXcQ",  # bare id buried in a foreign URL
-            "not a url or id",
-        ],
-    )
-    def test_invalid_inputs_return_none(self, raw):
-        assert self.yt.normalize(raw) is None
-
-    def test_build_url_is_canonical_watch(self):
-        assert self.yt.build_url(VID) == f"https://www.youtube.com/watch?v={VID}"
 
 
 class TestYouTubeRecognition:
@@ -100,7 +52,7 @@ class TestYouTubeRecognition:
     def test_url_recognized_with_existing_child(self, youtube_root):
         child = make_citation_source(
             name=f"YouTube #{VID}",
-            source_type="web",
+            source_type="video",
             parent=youtube_root,
             identifier=VID,
         )

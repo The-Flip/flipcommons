@@ -30,7 +30,9 @@
     onsourceidentified: (child: {
       sourceId: number;
       sourceName: string;
+      sourceType: string;
       skipLocator: boolean;
+      locatorHint?: string;
     }) => void;
     oncreatestarted: (seed: CreateSeed) => void;
     oncancel: () => void;
@@ -136,7 +138,9 @@
         type: 'exact_match' as const,
         label: recognition.child.name,
         id: recognition.child.id,
+        sourceType: recognition.child.source_type,
         skipLocator: recognition.child.skip_locator,
+        locatorHint: recognition.locator_hint,
       };
     }
     if (recognition.identifier) {
@@ -145,6 +149,7 @@
         label: `${recognition.parent.name} #${recognition.identifier}`,
         parentId: recognition.parent.id,
         identifier: recognition.identifier,
+        locatorHint: recognition.locator_hint,
       };
     }
     // Domain-only match — the site is known but this page isn't a child yet.
@@ -219,7 +224,9 @@
       onsourceidentified({
         sourceId: recognitionItem.id,
         sourceName: recognitionItem.label,
+        sourceType: recognitionItem.sourceType,
         skipLocator: recognitionItem.skipLocator,
+        locatorHint: recognitionItem.locatorHint,
       });
       return;
     }
@@ -250,7 +257,11 @@
     onsourceidentified({
       sourceId: result.sourceId,
       sourceName: result.sourceName,
+      sourceType: result.sourceType,
       skipLocator: result.skipLocator,
+      // The pasted URL's start time (?t=95) rides the recognition response;
+      // the newly minted child inherits it as the locator prefill.
+      locatorHint: recognitionItem.locatorHint,
     });
   }
 
@@ -290,6 +301,7 @@
       onsourceidentified({
         sourceId: data.match.id,
         sourceName: data.match.name,
+        sourceType: data.match.source_type,
         skipLocator: data.match.skip_locator,
       });
       return;

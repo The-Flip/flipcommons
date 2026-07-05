@@ -18,7 +18,7 @@
     showCitation = true,
     showMixedEditWarning = false,
     noteLabel = 'Edit summary',
-    notePlaceholder = 'Optional: rationale beyond the evidence — put source quotes on the citation',
+    notePlaceholder = 'Why are you making this change?',
   }: Props = $props();
 </script>
 

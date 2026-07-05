@@ -28,6 +28,7 @@ from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 from apps.core.types import CitationSourceId
 
+from .citation_types import recognize_scheme
 from .extraction import classify_input, extract_isbn, normalize_isbn
 from .extractors import (
     Recognition,
@@ -137,7 +138,10 @@ def _detail_qs() -> QuerySet[CitationSource]:
 def _serialize_match(source: CitationSource) -> CitationSourceMatchSchema:
     """The minimal "re-cite this source" shape every child-mint endpoint returns."""
     return CitationSourceMatchSchema(
-        id=source.pk, name=source.name, skip_locator=source.skip_locator
+        id=source.pk,
+        name=source.name,
+        source_type=source.source_type,
+        skip_locator=source.skip_locator,
     )
 
 
@@ -218,12 +222,14 @@ def _build_recognition(rec: Recognition) -> CitationRecognitionSchema:
         child = CitationSourceMatchSchema(
             id=rec.child.id,
             name=rec.child.name,
+            source_type=rec.child.source_type,
             skip_locator=rec.child.skip_locator,
         )
     return CitationRecognitionSchema(
         parent=CitationSourceParentSchema(id=rec.parent_id, name=rec.parent_name),
         child=child,
         identifier=rec.identifier,
+        locator_hint=rec.locator_hint,
     )
 
 
@@ -298,6 +304,18 @@ def create_citation_source(
     parent = None
     if data.parent_id is not None:
         parent = get_object_or_404(CitationSource, pk=data.parent_id)
+        # Authored children extend their own work's hierarchy — an edition
+        # under its book, an issue under its magazine. A cross-type authored
+        # child (a book "edition" under a video or web root) has no meaning
+        # and would sidestep the parent type's minting rules.
+        if parent.source_type != data.source_type:
+            raise HttpError(
+                422,
+                f"A {data.source_type} child can't nest under a "
+                f"{parent.source_type} source — an authored child belongs to "
+                f"its own work's hierarchy (an edition under its book, an "
+                f"issue under its magazine).",
+            )
 
     source = CitationSource(
         name=data.name,
@@ -318,6 +336,25 @@ def create_citation_source(
 
     source = get_object_or_404(_detail_qs(), pk=source.pk)
     return Status(201, _serialize_detail(source))
+
+
+def _reject_scheme_record_url(url: str) -> None:
+    """422 a URL matching a registered scheme's record pattern.
+
+    Scheme records mint through ``records/`` / ``scheme:identifier`` so the
+    same record always dedups to one child with the scheme's canonical URL,
+    owning type and locator behavior; minting one as a plain web page would
+    fork its identity. Same rule as ``cite-url`` and the patch parser, but
+    registry-based (pattern match, no recognition), so it holds regardless of
+    which parent was chosen and before the scheme's root is seeded.
+    """
+    rec = recognize_scheme(url)
+    if rec is not None:
+        raise HttpError(
+            422,
+            f"This URL is a {rec.label} record; cite it via its scheme "
+            f"identifier (scheme:identifier), not as a web page.",
+        )
 
 
 def _mint_web_child(
@@ -462,6 +499,7 @@ def cite_url(
                 CitationSourceMatchSchema(
                     id=rec.child.id,
                     name=rec.child.name,
+                    source_type=rec.child.source_type,
                     skip_locator=rec.child.skip_locator,
                 ),
             )
@@ -566,12 +604,14 @@ def create_citation_source_page(
 
     The contributor already chose the parent (the identify path), so the URL is
     not re-recognized — the page nests directly under *source_id*. The parent may
-    be any root type (a web page under a magazine/book root is intended); the
-    only structural rule is the web-flatness guard, which 422s a page under a
-    web *child* parent via ``clean()``.
+    be any root type (a web page under a magazine/book/video root is intended —
+    a platform's terms or channel page is a page, not a record); the structural
+    rules are the scheme-record rejection below and the web-flatness guard,
+    which 422s a page under a web *child* parent via ``clean()``.
     """
     user = authed_user(request)
     parent = get_object_or_404(CitationSource, pk=source_id)
+    _reject_scheme_record_url(data.url)
     child = _mint_web_child(parent.pk, data.url, data.page_name, user.actor)
     return Status(201, _serialize_match(child))
 

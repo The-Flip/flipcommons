@@ -1205,3 +1205,87 @@ def test_changeset_detail_exposes_citation(client, flipcommons_catalog, ipdb_roo
     year_change = next(c for c in resp.json()["changes"] if c["field_name"] == "year")
     (citation,) = year_change["citations"]
     assert citation["source_name"] == "Internet Pinball Database #4443"
+
+
+# ---------------------------------------------------------------------------
+# Video cites: locator validation + normalization at parse, video child mint
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def youtube_root(db):
+    """The root CitationSource for the youtube scheme (a video platform)."""
+    return make_citation_source(
+        name="YouTube",
+        source_type="video",
+        identifier_key="youtube",
+    )
+
+
+def test_video_cite_locator_normalized_and_child_minted_as_video(
+    flipcommons_catalog, youtube_root, pm
+):
+    # A video cite's locator is validated against the video type's timestamp
+    # grammar at parse and stored canonical; the scheme child mints as a
+    # video source under the platform root.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        ref: youtube:dQw4w9WgXcQ\n"
+        "        locator: 1h2m3s\n"
+        "      year: 1998\n"
+    )
+    _apply(text)
+
+    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    assert instance.locator == "1:02:03"
+    child = instance.citation_source
+    assert child.source_type == "video"
+    assert child.parent_id == youtube_root.pk
+
+
+def test_video_cite_locator_invalid_rejected(flipcommons_catalog, youtube_root, pm):
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        ref: youtube:dQw4w9WgXcQ\n"
+        "        locator: p. 42\n"
+        "      year: 1998\n"
+    )
+    with pytest.raises(PatchError, match="cite locator"):
+        _apply(text)
+
+
+def test_video_cite_without_locator_is_fine(flipcommons_catalog, youtube_root, pm):
+    # A locator stays optional — citing a whole video is legitimate.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite: youtube:dQw4w9WgXcQ\n"
+        "      year: 1998\n"
+    )
+    _apply(text)
+    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    assert instance.locator == ""
+
+
+def test_web_scheme_cite_locator_stays_freeform(flipcommons_catalog, ipdb_root, pm):
+    # Web cites keep their freeform locators untouched — the timestamp
+    # grammar applies only to types that declare one.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        ref: ipdb:4443\n"
+        "        locator: Notes section\n"
+        "      year: 1998\n"
+    )
+    _apply(text)
+    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    assert instance.locator == "Notes section"

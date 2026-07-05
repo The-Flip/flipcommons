@@ -4,6 +4,8 @@
  * Positioning is handled by the `floating` action.
  */
 
+import type { CitationLink } from '$lib/components/citation/citation-links';
+
 // ── Types ───────────────────────────────────────────────────────
 
 /** Citation data for tooltip display. Shared by both the batch endpoint
@@ -15,7 +17,7 @@ export interface CitationInfo {
   author: string;
   year?: number | null;
   locator: string;
-  links: Array<{ url: string; label: string }>;
+  links: CitationLink[];
 }
 
 /** Citation data from the page API, which includes the display index

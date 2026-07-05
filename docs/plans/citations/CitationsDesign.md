@@ -1,6 +1,6 @@
 # Citations Design
 
-This document describes the current high-level design for this project citations. It is intentionally about product shape and system boundaries, not implementation detail.
+This document describes the high-level design for this project citations. It is intentionally about product shape and system boundaries, not implementation detail.
 
 ## Goals
 
@@ -17,7 +17,7 @@ The design therefore aims for Wikipedia's verification loop without Wikipedia's 
 Long-form markdown content uses inline citation markers:
 
 ```markdown
-The production run was 4,000 units.[[cite:12345]]
+The production run was 4,000 units.[[cite]]
 ```
 
 `12345` is a `Citation Instance`. The marker means "this source supports the nearby claim," usually the preceding sentence or clause. This project uses point citations rather than text ranges.
@@ -105,6 +105,8 @@ Citation source types are pragmatic product categories, not a grand bibliography
 
 The taxonomy should stay small and expand only when a new type clearly needs distinct behavior. A broad fallback type remains important.
 
+Source types — and the per-platform identifier schemes under them (IPDB, YouTube, …) — are implemented as two plugin frameworks; their contracts, module walls and testing story are specified in [CitationPluginSystem.md](CitationPluginSystem.md).
+
 ## Search, Creation, and Extraction
 
 The system should always try to reuse an existing source first. When that fails and the input looks like evidence rather than ordinary text, this project can help create a new source draft automatically.
@@ -117,9 +119,9 @@ That extraction layer should follow a simple principle:
 
 This keeps extraction useful without making contributors trust opaque automation.
 
-## Seeding and Reuse
+## Pre-population and Reuse
 
-For heavily reused source families, this project should pre-seed citation sources where practical. Pre-seeding improves autocomplete quality, reduces duplicate creation, and makes shared-source reuse feel natural from the start.
+For heavily reused source families, this project should pre-populate citation sources where practical. Pre-population improves autocomplete quality, reduces duplicate creation, and makes shared-source reuse feel natural from the start.
 
 Shared sources still need pragmatic governance:
 
@@ -146,5 +148,6 @@ At the system level:
 - citation authoring integrates with the existing `[[` autocomplete workflow
 - extraction belongs on the backend, where server-side HTTP, rate limiting, and external integrations live
 - the citation model is shared across markdown content and scalar claims
+- per-type and per-platform knowledge lives behind two plugin frameworks — see [CitationPluginSystem.md](CitationPluginSystem.md)
 
 Implementation details such as reducer structure, refactor steps, or extractor module layout are intentionally out of scope for this document.

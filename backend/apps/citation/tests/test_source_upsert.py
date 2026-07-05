@@ -486,3 +486,60 @@ class TestSourceUpsertAttribution:
         domain = root.root_domains.get()
         assert domain.created_by == actor
         assert domain.updated_by == actor
+
+
+class TestValidateSchemeRootCitationSourceInfo:
+    """A ``sources:`` node declaring an ``identifier_key`` must match the
+    scheme's registered ``root_citation_source_info`` facts — the registry is
+    operationally authoritative for scheme roots, so spec and seeded row can't
+    silently disagree."""
+
+    def _scheme_node(
+        self,
+        *,
+        name="YouTube",
+        source_type="video",
+        homepage="https://www.youtube.com/",
+        key="youtube",
+    ):
+        return {
+            "name": name,
+            "source_type": source_type,
+            "identifier_key": key,
+            "links": [_homepage(homepage)],
+        }
+
+    def test_matching_declaration_passes(self):
+        validate_root_source(self._scheme_node())  # does not raise
+
+    def test_wrong_name_rejected(self):
+        with pytest.raises(ValidationError, match="registered root info"):
+            validate_root_source(self._scheme_node(name="You Tube"))
+
+    def test_wrong_homepage_rejected(self):
+        with pytest.raises(ValidationError, match="registered root info"):
+            validate_root_source(self._scheme_node(homepage="https://videos.example/"))
+
+    def test_extra_recognition_host_rejected(self):
+        node = self._scheme_node()
+        node["domains"] = ["youtube-nocookie.com"]
+        with pytest.raises(ValidationError, match="registered root info"):
+            validate_root_source(node)
+
+    def test_ipdb_declaration_matches_its_seeded_reality(self):
+        # The registered facts mirror the root as it actually shipped (≤0038),
+        # not an idealized short name.
+        validate_root_source(
+            {
+                "name": "Internet Pinball Database (IPDB)",
+                "source_type": "web",
+                "identifier_key": "ipdb",
+                "links": [_homepage("https://www.ipdb.org/")],
+            }
+        )
+
+    def test_non_scheme_node_is_unconstrained(self):
+        # No identifier_key → no registered root info to conform to.
+        validate_root_source(
+            _node("Any Site", links=[_homepage("https://any.example/")])
+        )

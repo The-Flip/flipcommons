@@ -1,4 +1,6 @@
+<!-- @component The "Evidence for this edit" panel: pick a citation, then refine its locator and quote until save. -->
 <script lang="ts">
+  import { tick } from 'svelte';
   import { type EditCitationSelection } from '$lib/edit-citation';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import CitationAutocomplete from './CitationAutocomplete.svelte';
@@ -14,10 +16,19 @@
 
   let pickerOpen = $state(false);
 
-  function formatCitationSummary(selectedCitation: EditCitationSelection): string {
-    return selectedCitation.locator
-      ? `${selectedCitation.sourceName}, ${selectedCitation.locator}`
-      : selectedCitation.sourceName;
+  // The locator is unprompted but reachable: nothing mints until save, so
+  // this panel — not an extra picker stage — is where a skip_locator cite
+  // picks up its rare locator (a video post's 1:35, an article's § heading).
+  // The input stays visible once it has ever held text this session, so a
+  // cleared value doesn't yank the field out from under the contributor.
+  let locatorAdded = $state(false);
+  let locatorInput: HTMLInputElement | undefined = $state();
+  let locatorVisible = $derived(!!citation?.locator || locatorAdded);
+
+  async function addLocator() {
+    locatorAdded = true;
+    await tick();
+    locatorInput?.focus();
   }
 
   // The picker hands back a content spec, not a minted instance — the spec
@@ -32,7 +43,15 @@
       locator: draft.locator,
       quote: citation?.quote ?? '',
     };
+    // Collapse back down for a fresh locator-less pick; a locator entered at
+    // the picker's own stage (book/video) keeps the field open via `derived`.
+    locatorAdded = false;
     pickerOpen = false;
+  }
+
+  function removeCitation() {
+    citation = null;
+    locatorAdded = false;
   }
 
   function openPicker() {
@@ -50,11 +69,21 @@
     <div class="citation-field">
       {#if citation}
         <div id={inputId} class="citation-summary">
-          {formatCitationSummary(citation)}
+          {citation.sourceName}
         </div>
+        {#if locatorVisible}
+          <input
+            bind:this={locatorInput}
+            type="text"
+            aria-label="Citation locator"
+            placeholder="Where in the source (p. 42, 1:35)"
+            maxlength="200"
+            bind:value={citation.locator}
+          />
+        {/if}
         <textarea
           aria-label="Quote from the source"
-          placeholder="Optional: exact text quoted from the source"
+          placeholder="Exact text quoted from the source"
           rows="3"
           maxlength="2000"
           bind:value={citation.quote}></textarea>
@@ -64,11 +93,20 @@
         <button type="button" class="citation-button" onclick={openPicker}>
           {citation ? 'Change citation' : 'Add citation'}
         </button>
+        {#if citation && !locatorVisible}
+          <button
+            type="button"
+            class="citation-button citation-button-secondary"
+            onclick={addLocator}
+          >
+            Add a locator
+          </button>
+        {/if}
         {#if citation}
           <button
             type="button"
             class="citation-button citation-button-secondary"
-            onclick={() => (citation = null)}
+            onclick={removeCitation}
           >
             Remove citation
           </button>

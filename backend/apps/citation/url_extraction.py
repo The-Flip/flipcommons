@@ -150,6 +150,7 @@ def extract_url(url: str) -> ExtractionResult:
             match={
                 "id": rec.child.id,
                 "name": rec.child.name,
+                "source_type": rec.child.source_type,
                 "skip_locator": rec.child.skip_locator,
             }
         )

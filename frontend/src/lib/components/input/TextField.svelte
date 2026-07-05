@@ -9,6 +9,7 @@
     id = '',
     placeholder = '',
     optional = false,
+    hint = '',
     error = '',
     readonly = false,
     noAutofill = false,
@@ -21,6 +22,8 @@
     id?: string;
     placeholder?: string;
     optional?: boolean;
+    /** Persistent format guidance shown under the label (see FieldGroup). */
+    hint?: string;
     error?: string;
     /** Render the input read-only (shown for confirmation, not editing). */
     readonly?: boolean;
@@ -40,8 +43,8 @@
   );
 </script>
 
-<FieldGroup {label} {id} {optional} {error}>
-  {#snippet children(inputId, errorId)}
+<FieldGroup {label} {id} {optional} {hint} {error}>
+  {#snippet children(inputId, describedBy)}
     <input
       {...rest}
       {...autofillOff}
@@ -52,7 +55,7 @@
       {placeholder}
       {readonly}
       aria-invalid={error ? true : undefined}
-      aria-describedby={error ? errorId : undefined}
+      aria-describedby={describedBy}
     />
   {/snippet}
 </FieldGroup>

@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from apps.actors.types import ActorId
+from apps.citation.deep_links import deep_linked_url
 
 from .attribution import actor_user
 from .helpers import citation_instances
@@ -16,7 +17,8 @@ from .types import ChangeSetId
 @dataclass(frozen=True)
 class EvidenceLink:
     url: str
-    label: str
+    link_type: str
+    display_name: str
 
 
 @dataclass(frozen=True)
@@ -104,7 +106,13 @@ def build_cited_changesets(claims: Iterable[Claim]) -> list[CitedChangeset]:
                 locator=citation.locator,
                 quote=citation.quote,
                 links=[
-                    EvidenceLink(url=link.url, label=link.label)
+                    EvidenceLink(
+                        url=deep_linked_url(
+                            citation.citation_source, citation.locator, link.url
+                        ),
+                        link_type=link.link_type,
+                        display_name=link.display_name,
+                    )
                     for link in citation.citation_source.links.all()
                 ],
             )

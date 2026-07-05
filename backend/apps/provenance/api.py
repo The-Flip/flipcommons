@@ -17,6 +17,7 @@ from ninja.errors import HttpError
 from ninja.responses import Status
 from ninja.security import django_auth
 
+from apps.citation.deep_links import deep_linked_url
 from apps.citation.models import CitationInstance, CitationSource
 from apps.core.api_helpers import authed_user
 from apps.core.authz.enforce import enforce
@@ -209,7 +210,7 @@ def batch_citation_instances(
 
     qs = (
         CitationInstance.objects.filter(pk__in=id_list)
-        .select_related("citation_source")
+        .select_related("citation_source", "citation_source__parent")
         .prefetch_related("citation_source__links")
     )
 
@@ -222,7 +223,11 @@ def batch_citation_instances(
             year=ci.citation_source.year,
             locator=ci.locator,
             links=[
-                CitationLinkSchema(url=link.url, label=link.label)
+                CitationLinkSchema(
+                    url=deep_linked_url(ci.citation_source, ci.locator, link.url),
+                    link_type=link.link_type,
+                    display_name=link.display_name,
+                )
                 for link in ci.citation_source.links.all()
             ],
         )

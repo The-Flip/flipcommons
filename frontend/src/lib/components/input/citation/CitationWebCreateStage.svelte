@@ -23,6 +23,7 @@
     onsourcecreated: (result: {
       sourceId: number;
       sourceName: string;
+      sourceType: string;
       skipLocator: boolean;
     }) => void;
     oncancel: () => void;
@@ -170,7 +171,7 @@
   /** Shared tail of both finalize paths: clear the spinner, surface an error, or
    *  emit the created web child for the orchestrator to cite. */
   function finish(
-    data: { id: number; name: string; skip_locator: boolean } | undefined,
+    data: { id: number; name: string; source_type: string; skip_locator: boolean } | undefined,
     apiError: unknown,
   ) {
     submitting = false;
@@ -178,7 +179,12 @@
       error = typeof apiError === 'string' ? apiError : 'Failed to create source.';
       return;
     }
-    onsourcecreated({ sourceId: data.id, sourceName: data.name, skipLocator: data.skip_locator });
+    onsourcecreated({
+      sourceId: data.id,
+      sourceName: data.name,
+      sourceType: data.source_type,
+      skipLocator: data.skip_locator,
+    });
   }
 </script>
 

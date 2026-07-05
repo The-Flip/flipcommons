@@ -169,6 +169,7 @@ class TestExtractIsbnHappyPaths:
         assert result.match == {
             "id": src.id,
             "name": "Learning Python",
+            "source_type": "book",
             "skip_locator": False,
         }
         assert result.draft is None
@@ -193,7 +194,7 @@ class TestExtractIsbnHappyPaths:
         draft = _draft(result)
         assert draft.name == "Learning Python"
         assert draft.author == "Mark Lutz"
-        mock_cache.get.assert_called_once_with("extract:v2:isbn:9780596517748")
+        mock_cache.get.assert_called_once_with("extract:v3:isbn:9780596517748")
 
     @patch("apps.citation.extraction.cache")
     @patch("apps.citation.extraction.urlopen")
@@ -228,7 +229,7 @@ class TestExtractIsbnHappyPaths:
         extract_isbn("9780596517748")
         mock_cache.set.assert_called_once()
         call_args = mock_cache.set.call_args
-        assert call_args[0][0] == "extract:v2:isbn:9780596517748"
+        assert call_args[0][0] == "extract:v3:isbn:9780596517748"
         assert call_args[0][2] == 60 * 60 * 24 * 7  # 7 days
 
 

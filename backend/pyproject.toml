@@ -587,10 +587,69 @@ containers = ["apps.citation"]
 layers = [
     "api | admin",
     "url_extraction",
-    "extractors | extraction | source_upsert | schemas",
+    "extractors | extraction | source_upsert | schemas | deep_links | locators",
     "models",
+    "scheme_validation",
     "psl",
-    "hosts | source_type_traits | safe_fetch | authz | source_node",
+    "hosts | citation_types | safe_fetch | authz | source_node",
+]
+
+# Inside the citation_types package, the layers ARE the audience walls of
+# the two plugin frameworks. Bottom-up: vocabulary (shared enum/aliases) and
+# plugin_discovery (the generic module-export discovery helper), both importing
+# nothing from the package; citation_scheme_specs (scheme-author declarations, pure
+# configuration); citation_type_specs (type-author declarations; imports
+# scheme specs only for the scheme_spec_type cross-reference — the
+# composition contract's static face); the type modules (first-party type
+# programming); then the two framework modules (citation_scheme_driver,
+# citation_type_driver) beside the scheme modules; registry aggregates and
+# weaves at the top. Exhaustive, so a new submodule must be placed.
+[[tool.importlinter.contracts]]
+name = "Citation types plugin-package stack"
+type = "layers"
+exhaustive = true
+containers = ["apps.citation.citation_types"]
+layers = [
+    "registry",
+    "schemes | citation_scheme_driver | citation_type_driver",
+    "book | magazine | video | web",
+    "citation_type_specs",
+    "citation_scheme_specs",
+    "vocabulary | plugin_discovery",
+]
+
+# The audience walls, enforced. Plugin modules — what an author writes — may
+# import only declarations, never the framework machinery that drives them;
+# and a citation-scheme author never sees citation-type authoring (a scheme
+# module importing citation_type_specs directly fails the build). Direct-only,
+# because the sanctioned door exists: a scheme imports its owning type's
+# module for the per-type scheme contract (video's VideoSchemeSpec), and that
+# module legitimately imports the type declarations.
+[[tool.importlinter.contracts]]
+name = "Citation scheme modules see only declarations"
+type = "forbidden"
+allow_indirect_imports = "true"
+source_modules = ["apps.citation.citation_types.schemes"]
+forbidden_modules = [
+    "apps.citation.citation_types.citation_scheme_driver",
+    "apps.citation.citation_types.citation_type_driver",
+    "apps.citation.citation_types.citation_type_specs",
+    "apps.citation.citation_types.registry",
+]
+
+[[tool.importlinter.contracts]]
+name = "Citation type modules see only declarations"
+type = "forbidden"
+source_modules = [
+    "apps.citation.citation_types.book",
+    "apps.citation.citation_types.magazine",
+    "apps.citation.citation_types.video",
+    "apps.citation.citation_types.web",
+]
+forbidden_modules = [
+    "apps.citation.citation_types.citation_scheme_driver",
+    "apps.citation.citation_types.citation_type_driver",
+    "apps.citation.citation_types.registry",
 ]
 
 # psl.py is the lone Public Suffix List gateway. The pure hosts module must stay

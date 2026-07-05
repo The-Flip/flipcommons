@@ -21,18 +21,32 @@ from typing import Literal
 
 from apps.accounts.test_factories import default_actor
 from apps.actors.models import Actor
+from apps.citation.citation_types import CitationSourceTypeValue, identifier_key_values
 from apps.citation.models import (
     CitationSource,
     CitationSourceLink,
     CitationSourceRootDomain,
 )
 
-# Literal aliases mirroring each model's choices, so a bad choice value fails at
-# type-check. Constraint tests that need an invalid value build the model
-# directly. ``identifier_key`` also permits "" (blank = a root without a scheme).
-type CitationSourceTypeValue = Literal["book", "magazine", "web"]
+# CitationSourceTypeValue is the canonical wire Literal (citation_types);
+# LinkTypeValue mirrors the model choices, so a bad link type fails at type-check.
+# Constraint tests that need an invalid value build the model directly.
+# ``identifier_key`` values are discovered plugin keys, so the factory validates
+# them at runtime against the registry rather than mirroring a hand-maintained
+# Literal.
 type LinkTypeValue = Literal["homepage", "catalog", "publisher", "reference", "archive"]
-type IdentifierKeyValue = Literal["", "ipdb", "opdb", "youtube"]
+type IdentifierKeyValue = str
+
+
+def identifier_key_value(raw: str) -> IdentifierKeyValue:
+    """Validate and return a registered scheme key for factory calls.
+
+    For registry-parametrized tests, whose keys arrive as plain ``str``; an
+    unregistered key raises rather than leaking into a model create.
+    """
+    if raw == "" or raw in identifier_key_values():
+        return raw
+    raise ValueError(f"Unknown identifier_key {raw!r}")
 
 
 def make_citation_source(
@@ -55,6 +69,7 @@ def make_citation_source(
 ) -> CitationSource:
     """Create a ``CitationSource`` for tests, defaulting name/source_type/actor."""
     created_by = created_by or default_actor()
+    identifier_key = identifier_key_value(identifier_key)
     return CitationSource.objects.create(
         name=name,
         source_type=source_type,

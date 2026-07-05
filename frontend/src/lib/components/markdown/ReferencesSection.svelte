@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { InlineCitation } from './citation-tooltip';
   import { deduplicateCitations } from './citation-refs';
+  import { displayLocator } from '$lib/citation-types';
+  import { citationLinkDisplay } from '$lib/components/citation/citation-links';
 
   let {
     citations,
@@ -26,25 +28,32 @@
   {#if open || !showToggle}
     <ol>
       {#each uniqueCitations as cite (cite.index)}
+        {@const links = citationLinkDisplay(cite.links)}
         <li data-ref-index={cite.index}>
           <button
             class="back-link"
             onclick={() => onBackLink(cite.index)}
             aria-label="Back to citation {cite.index}">&#x21A9;</button
           >
-          <strong>{cite.source_name}</strong>
+          <strong>
+            {#if links.titleHref}
+              <a href={links.titleHref} target="_blank">{cite.source_name}</a>
+            {:else}
+              {cite.source_name}
+            {/if}
+          </strong>
           {#if cite.author || cite.year}
             <span class="meta">
               &mdash; {[cite.author, cite.year].filter(Boolean).join(', ')}
             </span>
           {/if}
           {#if cite.locator}
-            <span class="locator">({cite.locator})</span>
+            <span class="locator">({displayLocator(cite.source_type, cite.locator)})</span>
           {/if}
-          {#if cite.links.length > 0}
+          {#if links.chips.length > 0}
             <span class="links">
-              {#each cite.links as link (link.url)}
-                <a href={link.url} target="_blank" rel="noopener">{link.label || link.url}</a>
+              {#each links.chips as link (link.url)}
+                <a href={link.url} target="_blank">{link.display_name}</a>
               {/each}
             </span>
           {/if}
@@ -103,6 +112,15 @@
   }
 
   .back-link:hover {
+    text-decoration: underline;
+  }
+
+  strong a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  strong a:hover {
     text-decoration: underline;
   }
 

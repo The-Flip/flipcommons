@@ -213,7 +213,11 @@ def sources_page(
                         locator=c.locator,
                         quote=c.quote,
                         links=[
-                            CitationLinkSchema(url=link.url, label=link.label)
+                            CitationLinkSchema(
+                                url=link.url,
+                                link_type=link.link_type,
+                                display_name=link.display_name,
+                            )
                             for link in c.links
                         ],
                     )

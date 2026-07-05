@@ -70,6 +70,46 @@ class TestCitationSourceRootChild:
         assert CitationSource.objects.filter(name=parent.name).roots().get() == parent
 
 
+class TestIsAbstract:
+    """``is_abstract`` — the cite-target display hint. Pure over ``self`` fields
+    (no query of its own), so these run on unsaved instances."""
+
+    def test_children_short_circuit_abstract(self):
+        # Anything with children is abstract regardless of type — even a movie.
+        movie = CitationSource(name="Tommy", source_type="video")
+        assert movie.is_abstract(has_children=True) is True
+
+    def test_schemeless_parentless_video_is_a_citable_movie(self):
+        movie = CitationSource(name="Tommy", source_type="video", year=1975)
+        assert movie.is_abstract(has_children=False) is False
+
+    def test_scheme_video_root_is_an_abstract_platform(self):
+        # A video root with an identifier_key (YouTube) is a platform container:
+        # abstract via the universal scheme-root rule, not the per-type flag.
+        youtube = CitationSource(
+            name="YouTube", source_type="video", identifier_key="youtube"
+        )
+        assert youtube.is_abstract(has_children=False) is True
+
+    def test_standalone_book_is_citable(self):
+        book = CitationSource(name="The Pinball Compendium", source_type="book")
+        assert book.is_abstract(has_children=False) is False
+
+    @pytest.mark.parametrize("source_type", ["magazine", "web"])
+    def test_schemeless_container_roots_stay_abstract(self, source_type):
+        root = CitationSource(name="Container", source_type=source_type)
+        assert root.is_abstract(has_children=False) is True
+
+    def test_scheme_web_root_is_abstract(self):
+        x = CitationSource(name="X", source_type="web", identifier_key="x")
+        assert x.is_abstract(has_children=False) is True
+
+    def test_any_childless_child_is_not_abstract(self):
+        # A non-root (parent_id set) is never abstract when it has no children.
+        child = CitationSource(name="A video", source_type="video", parent_id=1)
+        assert child.is_abstract(has_children=False) is False
+
+
 class TestWebFlatnessGuard:
     """A web source nests one level — root → child, no grandchildren."""
 

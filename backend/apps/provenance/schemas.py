@@ -395,10 +395,17 @@ class AttributionSchema(Schema):
 
 
 class CitationLinkSchema(Schema):
-    """A link attached to a citation source."""
+    """A link attached to a citation source, ready for display."""
 
-    url: str = Field(description="The link's URL.")
-    label: str = Field(description="Human-readable link text.")
+    url: str = Field(
+        description="The link's URL, deep-linked to the locator when possible."
+    )
+    link_type: str = Field(
+        description="Kind of link: one of ``homepage``, ``catalog``, ``publisher``, ``reference`` or ``archive``."
+    )
+    display_name: str = Field(
+        description="Human-readable link text — the link's label, or its link-type name when unlabeled. Never blank."
+    )
 
 
 class InlineCitationSchema(Schema):
@@ -466,12 +473,17 @@ class RichTextSchema(Schema):
 
 
 class CitationSourceSchema(Schema):
-    """A reusable citation source — a database, wiki, book, editorial team, etc."""
+    """A reusable ingest source — a database, wiki, book, editorial team, etc.
+
+    Despite the legacy name, this serializes the provenance ``Source`` model
+    (who asserted data into the project), NOT a citation source; its
+    ``source_type`` enum is unrelated to citation types.
+    """
 
     # The source itself — not an individual reference *to* it. Distinct from
-    # :class:`CitationInstanceSchema`, which is one use of a source on a claim.
-    name: str = Field(description="The source's display name.")
-    slug: str = Field(description="The source's URL slug.")
+    # :class:`CitationInstanceSchema`, which is one use of a citation source on a claim.
+    name: str = Field(description="The ingest source's display name.")
+    slug: str = Field(description="The ingest source's URL slug.")
     source_type: str = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
     )

@@ -112,7 +112,7 @@ async function selectFirstCitationResult() {
   fireEvent.pointerDown(screen.getByRole('option', { name: new RegExp(MOCK_SOURCES[0].name) }));
 
   return (await screen.findByRole('textbox', {
-    name: /citation locator/i,
+    name: /location in source/i,
   })) as HTMLInputElement;
 }
 
@@ -364,7 +364,7 @@ describe('MarkdownTextArea citation integration', () => {
 
     // Should transition to locator stage with the child's name in the header
     await vi.waitFor(() => {
-      expect(screen.getByRole('textbox', { name: /citation locator/i })).toBeInTheDocument();
+      expect(screen.getByRole('textbox', { name: /location in source/i })).toBeInTheDocument();
       expect(screen.getByText(`Citing: ${BOOK_CHILDREN[0].name}`)).toBeInTheDocument();
     });
   });
@@ -385,7 +385,7 @@ describe('MarkdownTextArea citation integration', () => {
     await vi.waitFor(() => {
       expect(textarea).toHaveValue(`[[cite:${CREATED_INSTANCE.slug}]]`);
     });
-    expect(screen.queryByRole('textbox', { name: /citation locator/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /location in source/i })).not.toBeInTheDocument();
     expectDropdownClosed();
   });
 

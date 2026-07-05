@@ -12,9 +12,15 @@ from django.db.models.functions import Length, Now
 from django.utils.crypto import get_random_string
 
 from apps.actors.models import ActorAttributedModel
+from apps.citation.citation_types import (
+    SourceType,
+    citation_type_spec,
+    identifier_key_choices,
+    identifier_key_values,
+    scheme_bindings,
+)
 from apps.citation.hosts import is_dns_host, normalize_host
 from apps.citation.psl import is_public_suffix
-from apps.citation.source_type_traits import SourceType, source_type_traits
 from apps.core.models import (
     BoundedTextField,
     TimeStampedModel,
@@ -55,6 +61,21 @@ CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG = (
 )
 
 
+def _identifier_key_matches_scheme_type() -> models.Q:
+    """The CHECK condition pairing each ``identifier_key`` with its owning type.
+
+    Blank (a root without a scheme) or one of the registry's
+    ``(key, source_type)`` pairs — built in stable registration order so the
+    serialized constraint only changes when the registry does.
+    """
+    condition = models.Q(identifier_key="")
+    for binding in scheme_bindings():
+        condition |= models.Q(
+            identifier_key=binding.identifier_key, source_type=binding.source_type
+        )
+    return condition
+
+
 class CitationSourceQuerySet(models.QuerySet["CitationSource"]):
     """Adds the root/child split the whole citation hierarchy turns on."""
 
@@ -84,10 +105,10 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
     root_domains: models.Manager[CitationSourceRootDomain]
     parent_id: int | None
 
-    # ``SourceType`` and its per-type trait table live in
-    # ``source_type_traits.py`` (a dependency-free leaf, so ``models`` imports it
-    # without a cycle); re-exported here so ``CitationSource.SourceType`` stays
-    # the canonical handle.
+    # ``SourceType`` and the per-type/per-scheme specs live in the
+    # ``citation_types`` package (a dependency-free leaf, so ``models`` imports
+    # it without a cycle); re-exported here so ``CitationSource.SourceType``
+    # stays the canonical handle.
     SourceType = SourceType
 
     name = models.CharField(
@@ -146,17 +167,14 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         validators=[validate_no_mojibake],
     )
 
-    class IdentifierKey(models.TextChoices):
-        IPDB = "ipdb", "IPDB"
-        OPDB = "opdb", "OPDB"
-        YOUTUBE = "youtube", "YouTube"
-
     identifier_key = models.CharField(
         max_length=50,
         blank=True,
         default="",
         db_default="",
-        choices=IdentifierKey.choices,
+        # Derived from the scheme registry — registering a scheme is what makes
+        # its key legal here; there is no hand-listed enum to keep in sync.
+        choices=identifier_key_choices(),
         help_text=(
             "Identifies which URL/ID parsing convention applies to this source's "
             "children (e.g. 'ipdb' → numeric machine IDs, 'opdb' → slug IDs). "
@@ -181,9 +199,11 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         constraints = [
             field_not_blank("name"),
             field_not_blank("source_type"),
-            # Belt-and-suspenders: source_type must be a valid enum value
+            # Belt-and-suspenders: source_type must be a registered citation
+            # type. Derived from ``SourceType`` so a new type flows into
+            # makemigrations instead of a hand-edit.
             models.CheckConstraint(
-                condition=models.Q(source_type__in=["book", "magazine", "web"]),
+                condition=models.Q(source_type__in=list(SourceType.values)),
                 name="citation_citationsource_source_type_valid",
             ),
             # Prevent self-referencing
@@ -227,9 +247,11 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
             ),
             # ISBN: nullable unique, prevent empty string
             nullable_id_not_empty("isbn"),
-            # identifier_key must be blank or a valid enum value
+            # identifier_key must be blank or a registered scheme key. Derived
+            # from the scheme registry so a new scheme flows into
+            # makemigrations instead of a hand-edit.
             models.CheckConstraint(
-                condition=models.Q(identifier_key__in=["", "ipdb", "opdb", "youtube"]),
+                condition=models.Q(identifier_key__in=["", *identifier_key_values()]),
                 name="citation_citationsource_identifier_key_valid",
             ),
             # identifier_key lives on roots only
@@ -237,10 +259,13 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
                 condition=models.Q(identifier_key="") | models.Q(parent__isnull=True),
                 name="citation_citationsource_identifier_key_requires_root",
             ),
-            # identifier_key is for web sources only
+            # A scheme root's own type is its scheme's owning type
+            # (identifier_key='youtube' implies source_type='video'), so a
+            # hierarchy stays uniformly typed. Derived per key from the scheme
+            # registry, so a new scheme flows into makemigrations.
             models.CheckConstraint(
-                condition=models.Q(identifier_key="") | models.Q(source_type="web"),
-                name="citation_citationsource_identifier_key_requires_web",
+                condition=_identifier_key_matches_scheme_type(),
+                name="citation_citationsource_identifier_key_scheme_type",
             ),
             # identifier lives on children only
             models.CheckConstraint(
@@ -269,9 +294,16 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
 
     @property
     def skip_locator(self) -> bool:
-        """Web children skip the locator stage — their URL is the locator."""
+        """Whether the cite picker skips this source's locator prompt.
+
+        True for a web child — its URL usually pins the evidence, so the
+        picker cites it one-click. Unprompted, not unavailable: the
+        edit-evidence panel keeps a collapsed "Add a locator" affordance, and
+        a stored locator on such a child is legal on every write path (a
+        video post's ``1:35``, a long article's section heading).
+        """
         return (
-            source_type_traits(self.source_type).child_skips_locator
+            citation_type_spec(self.source_type).child_skips_locator
             and not self.is_root
         )
 
@@ -279,21 +311,34 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         """Whether the UI should steer away from citing this directly.
 
         A **per-request display hint, not an enforced write invariant**:
-        abstract when it has children (prefer a specific child) or it's a
-        parentless web/magazine root (a site/publication container). "Don't
-        cite a web root" is handled structurally, not by a citation-time guard:
-        URL recognition always resolves to a child under the matched root, so an
-        abstract web/magazine root is never the cited record. A standalone book
-        stays a valid cite target whether or not it gains editions, so
-        abstractness is deliberately *not* used to reject a target.
+        abstract when it has children (prefer a specific child), or it's a
+        platform/site root carrying an ``identifier_key`` (recognition resolves
+        a URL to a child under it, so the root is never the cited record), or
+        it's a schemeless parentless root of a container type — a magazine or a
+        website. A standalone book and a movie (a schemeless parentless video)
+        are the work themselves, so they stay valid cite targets; abstractness
+        is deliberately *not* used to reject a target.
+
+        The ``identifier_key`` case is universal (every scheme root is a
+        container), so it lives here rather than as a per-type flag; the type's
+        ``schemeless_parentless_abstract`` decides only the no-scheme case.
 
         ``has_children`` is supplied by the caller so a bulk lister can pass a
         queryset annotation while a single-row caller passes ``children.exists()``
         — this method issues no query of its own.
         """
-        return has_children or (
-            self.is_root and source_type_traits(self.source_type).parentless_abstract
-        )
+        if has_children:
+            return True
+        if not self.is_root:
+            return False
+        # A scheme-holding root is a platform/site container — recognition
+        # resolves to its children, never the root. Abstract regardless of type.
+        if self.identifier_key:
+            return True
+        # A schemeless parentless root: abstract only when this type's
+        # schemeless parentless form is a container (a magazine, a site) and
+        # not the work itself (a book, a movie).
+        return citation_type_spec(self.source_type).schemeless_parentless_abstract
 
     def clean(self) -> None:
         super().clean()
@@ -312,7 +357,7 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         if (
             self.parent_id is not None
             and self.source_type in SourceType.values
-            and source_type_traits(self.source_type).flat_hierarchy
+            and citation_type_spec(self.source_type).flat_hierarchy
             and CitationSource.objects.children().filter(pk=self.parent_id).exists()
         ):
             raise ValidationError(
@@ -333,19 +378,39 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         return self.name
 
 
+# Short glosses for each link type, joined into the ``link_type`` field's
+# help text so the admin dropdown and the API schema explain the choices.
+CITATION_LINK_TYPE_HELP = {
+    "homepage": "the source's own front page",
+    "catalog": "a third-party catalog or database entry (e.g. IPDB)",
+    "publisher": "the publisher's page for the work",
+    "reference": "the canonical URL of this exact source",
+    "archive": "a preserved snapshot such as a Wayback capture",
+}
+
+
 class CitationSourceLink(TimeStampedModel, ActorAttributedModel):
     """A URL where a reader can inspect a CitationSource.
 
-    Wholly owned by its parent CitationSource — CASCADE on delete.
-    A source may have zero, one, or many links (e.g., archive.org
-    scan, publisher page, Google Books preview).
+    Wholly owned by its parent CitationSource — CASCADE on delete. A source
+    may have zero, one, or many links, distinguished by ``link_type`` — an
+    official homepage, a catalog entry, an archive snapshot. Only the URL is
+    unique per source; a source may hold several links of the same type.
     """
 
     class LinkType(models.TextChoices):
+        # The source's own front page. Display only — never the recognition
+        # signal (recognition keys off CitationSourceRootDomain). Set on roots.
         HOMEPAGE = "homepage", "Homepage"
+        # A third-party catalog or database entry for the work (e.g. IPDB).
         CATALOG = "catalog", "Catalog"
+        # The publisher's or manufacturer's page for the work.
         PUBLISHER = "publisher", "Publisher"
+        # The canonical URL of this exact source — the page or video it *is*.
+        # The link the reader UI titles and deep-links.
         REFERENCE = "reference", "Reference"
+        # A preserved snapshot: a Wayback capture, an archive.today page, an
+        # uploaded scan.
         ARCHIVE = "archive", "Archive"
 
     citation_source = models.ForeignKey(
@@ -353,8 +418,18 @@ class CitationSourceLink(TimeStampedModel, ActorAttributedModel):
         on_delete=models.CASCADE,
         related_name="links",
     )
-    link_type = models.CharField(max_length=20, choices=LinkType.choices)
+    link_type = models.CharField(
+        max_length=20,
+        choices=LinkType.choices,
+        help_text="; ".join(
+            f"{label}: {CITATION_LINK_TYPE_HELP[value]}"
+            for value, label in LinkType.choices
+        ),
+    )
     url = models.URLField(max_length=CITATION_SOURCE_LINK_URL_MAX_LENGTH)
+    # Optional. Blank is normal: a link's display name falls back to its
+    # link-type name, so a link is never nameless. Set a label only to override
+    # that with something more specific ("Google Books preview").
     label = models.CharField(
         max_length=CITATION_SOURCE_LINK_LABEL_MAX_LENGTH,
         blank=True,
@@ -383,6 +458,11 @@ class CitationSourceLink(TimeStampedModel, ActorAttributedModel):
                 name="citation_citationsourcelink_unique_source_url",
             ),
         ]
+
+    @property
+    def display_name(self) -> str:
+        """The link's human text: its label, or its link-type name when blank."""
+        return self.label or self.get_link_type_display()
 
     def __str__(self) -> str:
         if self.label:

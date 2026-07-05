@@ -31,6 +31,8 @@ def _collect_citation_metadata(obj: CitationInstance, index: int) -> dict[str, A
     Called by core's render pipeline via the collect_metadata callback.
     Core never inspects the returned dict — this is citation-owned logic.
     """
+    from apps.citation.deep_links import deep_linked_url
+
     return {
         "id": obj.pk,
         "index": index,
@@ -40,7 +42,11 @@ def _collect_citation_metadata(obj: CitationInstance, index: int) -> dict[str, A
         "year": obj.citation_source.year,
         "locator": obj.locator,
         "links": [
-            {"url": link.url, "label": link.label}
+            {
+                "url": deep_linked_url(obj.citation_source, obj.locator, link.url),
+                "link_type": link.link_type,
+                "display_name": link.display_name,
+            }
             for link in obj.citation_source.links.all()
         ],
     }
@@ -72,7 +78,10 @@ class CitationConfig(AppConfig):
             register_picker,
         )
 
-        from . import authz  # noqa: F401  # registers authz rules at startup
+        from . import (
+            authz,  # noqa: F401  # registers authz rules at startup
+            scheme_validation,  # noqa: F401  # registers the scheme check
+        )
 
         register(
             LinkType(
@@ -89,7 +98,9 @@ class CitationConfig(AppConfig):
                 get_url=_citation_authoring_url,
                 format_link=_format_citation_link,
                 collect_metadata=_collect_citation_metadata,
-                select_related=("citation_source",),
+                # The parent ride-along feeds deep_linked_url (scheme lookup
+                # via the root's identifier_key) without a per-cite query.
+                select_related=("citation_source", "citation_source__parent"),
                 prefetch_related=("citation_source__links",),
             )
         )

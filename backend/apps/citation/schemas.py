@@ -4,18 +4,21 @@ A :class:`~apps.citation.models.CitationSource` is a work or evidence object
 that can be cited: a book, magazine or web page. Sources form a one-level
 hierarchy through a self FK — a *root* source (e.g. the IPDB website, or a
 magazine title) groups *child* sources (e.g. one IPDB machine page, or a
-single issue/article). ``source_type`` is one of ``book`` / ``magazine`` /
-``web``.
+single issue/article). ``source_type`` is one of the registered
+citation types (``book`` / ``magazine`` / ``web`` / ``video``).
 
 Two derived notions recur across these schemas:
 
 - **abstract** — a source that is a container rather than a directly-citable
-  work: any source that has children, or a root ``web`` / ``magazine`` source.
+  work: any source that has children, or a parentless source of a container
+  type (``magazine`` / ``web`` / ``video`` — a publication, a site, a platform).
   The UI offers such a source's children for citation instead of the source
   itself.
-- **skip_locator** — a web *child* needs no locator (page/section/fragment)
-  because its URL already pins the exact evidence; every other source needs a
-  locator when cited.
+- **skip_locator** — citing a web *child* doesn't prompt for a locator: its
+  URL already pins the evidence, so the picker cites it one-click. Unprompted,
+  not unavailable — the edit-evidence panel keeps a collapsed "Add a locator"
+  affordance (a video post's ``1:35``, an article's section heading), and
+  patches may store one. Other types prompt at the picker's locator stage.
 
 Sources are NOT claims-controlled: unlike catalog entities they are edited
 directly through admin / the Sources UI. Citation *search* additionally
@@ -77,7 +80,9 @@ class CitationSourceSearchSchema(Schema):
 
     id: int = Field(description="The source's identifier.")
     name: str = Field(description="The source's display name.")
-    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    source_type: str = Field(
+        description='Kind of citation source: "book", "magazine", "web" or "video".'
+    )
     author: str = Field(description="Author or creator, or an empty string.")
     publisher: str = Field(description="Publisher, or an empty string.")
     year: int | None = Field(None, description="Publication year, if known.")
@@ -94,19 +99,23 @@ class CitationSourceSearchSchema(Schema):
         False,
         description=(
             "Whether this source is a container rather than a directly-citable "
-            "work (it has children, or is a root web/magazine source); the UI "
+            "work (it has children, or is a parentless source of a container "
+            "type — magazine, web or video); the UI "
             "cites its children instead."
         ),
     )
     skip_locator: bool = Field(
         False,
-        description="Whether citing this source needs no locator — true for a web child, whose URL is the locator.",
+        description=(
+            "Whether the cite picker skips the locator prompt — true for a web "
+            "child, whose URL is usually locator enough."
+        ),
     )
     identifier_key: str = Field(
         "",
         description=(
-            "For a root web source, the identifier scheme its children use "
-            '("ipdb", "opdb" or "youtube"); an empty string otherwise.'
+            "For a scheme root, the identifier scheme its children use "
+            '(e.g. "ipdb", "youtube"); an empty string otherwise.'
         ),
     )
 
@@ -120,9 +129,15 @@ class CitationSourceMatchSchema(Schema):
 
     id: int = Field(description="The matched source's identifier.")
     name: str = Field(description="The matched source's display name.")
+    source_type: str = Field(
+        description=(
+            "The matched citation source's type (book/magazine/web/video) — "
+            "the frontend's key into the per-type locator behavior."
+        ),
+    )
     skip_locator: bool = Field(
         False,
-        description="Whether citing the matched source needs no locator (true for a web child).",
+        description="Whether the cite picker skips the locator prompt (true for a web child).",
     )
 
 
@@ -156,6 +171,14 @@ class CitationRecognitionSchema(Schema):
         description=(
             "The structured identifier extracted from the input (e.g. an IPDB "
             "machine id), or null when only the source's domain matched."
+        ),
+    )
+    locator_hint: str = Field(
+        "",
+        description=(
+            "Canonical locator text extracted from the input, to prefill the "
+            "locator stage — e.g. '1:35' from a video URL's t= start time. "
+            "Empty when the input carries no usable hint."
         ),
     )
 
@@ -279,7 +302,8 @@ class CitationSourceUpdateSchema(Schema):
 
     name: NameStr | None = Field(None, description="New display name.")
     source_type: str | None = Field(
-        None, description='New source type: "book", "magazine" or "web".'
+        None,
+        description='New citation source type: "book", "magazine", "web" or "video".',
     )
     author: AuthorStr | None = Field(None, description="New author or creator.")
     publisher: PublisherStr | None = Field(None, description="New publisher.")
@@ -314,12 +338,17 @@ class CitationSourceChildSchema(Schema):
 
     id: int = Field(description="The child source's identifier.")
     name: str = Field(description="The child source's display name.")
-    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    source_type: str = Field(
+        description='Kind of citation source: "book", "magazine", "web" or "video".'
+    )
     year: int | None = Field(None, description="Publication year, if known.")
     isbn: str | None = Field(None, description="ISBN, if known.")
     skip_locator: bool = Field(
         False,
-        description="Whether citing this child needs no locator — true for a web child, whose URL is the locator.",
+        description=(
+            "Whether the cite picker skips the locator prompt — true for a web "
+            "child, whose URL is usually locator enough."
+        ),
     )
     urls: list[str] = Field(
         [],
@@ -343,7 +372,9 @@ class CitationSourceDetailSchema(Schema):
 
     id: int = Field(description="The source's identifier.")
     name: str = Field(description="The source's display name.")
-    source_type: str = Field(description='Kind of source: "book", "magazine" or "web".')
+    source_type: str = Field(
+        description='Kind of citation source: "book", "magazine", "web" or "video".'
+    )
     author: str = Field(description="Author or creator, or an empty string.")
     publisher: str = Field(description="Publisher, or an empty string.")
     year: int | None = Field(None, description="Publication year, if known.")
@@ -356,11 +387,11 @@ class CitationSourceDetailSchema(Schema):
     description: str = Field(description="Free-text description, or an empty string.")
     identifier_key: str = Field(
         "",
-        description='For a root web source, the identifier scheme its children use ("ipdb", "opdb" or "youtube"); an empty string otherwise.',
+        description='For a scheme root, the identifier scheme its children use (e.g. "ipdb", "youtube"); an empty string otherwise.',
     )
     skip_locator: bool = Field(
         False,
-        description="Whether citing this source needs no locator (true for a web child).",
+        description="Whether the cite picker skips the locator prompt (true for a web child).",
     )
     parent: CitationSourceParentSchema | None = Field(
         None, description="The root source this is a child of, or null if it is a root."
@@ -421,7 +452,7 @@ class CitationExtractDraftSchema(Schema):
 
     name: str = Field(description="The extracted title.")
     source_type: str = Field(
-        description='Inferred source type: "book" for an ISBN, "web" for a URL.'
+        description='Inferred citation source type: "book" for an ISBN, "web" for a URL.'
     )
     author: str = Field(description="Extracted author, or an empty string.")
     publisher: str = Field(
