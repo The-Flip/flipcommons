@@ -112,7 +112,13 @@ repos:
         files: ^(CLAUDE|AGENTS)\.md$
         pass_filenames: false
 
-      # Frontend lint + type check
+      # Frontend, split across two git stages like the backend tests:
+      #   commit -> lint only. It autofixes formatting/style (prettier --write),
+      #             which is exactly what you want applied before a commit.
+      #   push   -> type check + vitest. svelte-check has no daemon (unlike
+      #             backend mypy/dmypy) so it's a ~40s cold check, and vitest's
+      #             jsdom setup dominates the ~85s suite. Both are expensive
+      #             comprehensive verification -> run once per push, not per commit.
       - id: frontend-lint
         name: frontend lint
         entry: bash -c 'cd frontend && pnpm lint'
@@ -125,12 +131,14 @@ repos:
         language: system
         files: ^frontend/
         pass_filenames: false
+        stages: [pre-push]
       - id: frontend-test
         name: frontend tests
         entry: bash -c 'cd frontend && pnpm test'
         language: system
         files: ^frontend/
         pass_filenames: false
+        stages: [pre-push]
       # Backend tests, split across two git stages:
       #   commit -> fast set (excludes the `migration` marker); parallelized by
       #             `-n auto` in backend/pytest.ini. Keeps each commit quick.
