@@ -2,9 +2,9 @@
 
 Product spec and design justification for citing **movies** — feature films, documentaries, and other released audiovisual works — as evidence. The one question this document answers: **is a movie a new citation type, or is it a `video`?** The conclusion is that a movie is a `video`, and the rest of this document is the argument for why, the one small model change it forces, and what a movie adds that a born-digital video doesn't.
 
-## Status: 📝 PROPOSED
+## Status: 🚧 Code shipped; data seed pending
 
-The decision (movie = `video`) was settled while working the movie case through in [VideoCitations.md](VideoCitations.md#movies-audio-and-what-sequences-after); this document promotes that paragraph to a full justification and specs the change. The enabling model change is **F3** in [CitationSourceMisclassification.md](CitationSourceMisclassification.md). Not built yet.
+The decision (movie = `video`) was settled while working the movie case through in [VideoCitations.md](VideoCitations.md#movies-audio-and-what-sequences-after); this document promotes that paragraph to a full justification and specs the change. The enabling model change is **F3** in [CitationSourceMisclassification.md](CitationSourceMisclassification.md). **The code has shipped** — the abstractness relaxation (§1), tests, and the seed proof are built. What remains is the movie **data** itself: the pinball-movie seed lands as a [flippatch](https://github.com/deanmoses/flippatch) patch (that repo, not this one), drafted below and pending final list sign-off.
 
 ## The question
 
