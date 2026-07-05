@@ -1,3 +1,11 @@
+# Wire both hook types on `pre-commit install`. `default_stages` keeps every
+# hook below on the commit stage unless it opts into pre-push explicitly, so
+# nothing runs twice: fast checks gate each commit, the full test suite gates
+# each push. After pulling this change, run `pre-commit install` once to
+# register the pre-push hook.
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
 repos:
   # Security + basic file checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -104,7 +112,13 @@ repos:
         files: ^(CLAUDE|AGENTS)\.md$
         pass_filenames: false
 
-      # Frontend lint + type check
+      # Frontend, split across two git stages like the backend tests:
+      #   commit -> lint only. It autofixes formatting/style (prettier --write),
+      #             which is exactly what you want applied before a commit.
+      #   push   -> type check + vitest. svelte-check has no daemon (unlike
+      #             backend mypy/dmypy) so it's a ~40s cold check, and vitest's
+      #             jsdom setup dominates the ~85s suite. Both are expensive
+      #             comprehensive verification -> run once per push, not per commit.
       - id: frontend-lint
         name: frontend lint
         entry: bash -c 'cd frontend && pnpm lint'
@@ -117,15 +131,30 @@ repos:
         language: system
         files: ^frontend/
         pass_filenames: false
+        stages: [pre-push]
       - id: frontend-test
         name: frontend tests
         entry: bash -c 'cd frontend && pnpm test'
         language: system
         files: ^frontend/
         pass_filenames: false
+        stages: [pre-push]
+      # Backend tests, split across two git stages:
+      #   commit -> fast set (excludes the `migration` marker); parallelized by
+      #             `-n auto` in backend/pytest.ini. Keeps each commit quick.
+      #   push   -> full suite, including the migration-machinery tests that
+      #             rewind + replay migrations (seconds apiece). The safety net
+      #             runs once per push instead of on every commit.
       - id: backend-test
-        name: backend tests
+        name: backend tests (fast; excludes migration tests)
+        entry: uv run --directory backend pytest -m "not migration"
+        language: system
+        files: ^backend/
+        pass_filenames: false
+      - id: backend-test-full
+        name: backend tests (full, incl. migrations)
         entry: uv run --directory backend pytest
         language: system
         files: ^backend/
         pass_filenames: false
+        stages: [pre-push]

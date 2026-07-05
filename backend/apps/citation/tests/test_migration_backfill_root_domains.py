@@ -24,7 +24,7 @@ _migration = importlib.import_module(
 backfill_root_domains = _migration.backfill_root_domains
 remove_root_domains = _migration.remove_root_domains
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.migration]
 
 
 @pytest.fixture

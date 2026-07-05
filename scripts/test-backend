@@ -3,4 +3,5 @@ set -e
 cd "$(dirname "$0")/../backend"
 
 echo "==> Backend tests..."
-uv run pytest -n auto
+# -n auto lives in backend/pytest.ini addopts, so a bare invocation is parallel.
+uv run pytest
