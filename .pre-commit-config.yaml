@@ -116,9 +116,14 @@ repos:
       #   commit -> lint only. It autofixes formatting/style (prettier --write),
       #             which is exactly what you want applied before a commit.
       #   push   -> type check + vitest. svelte-check has no daemon (unlike
-      #             backend mypy/dmypy) so it's a ~40s cold check, and vitest's
-      #             jsdom setup dominates the ~85s suite. Both are expensive
-      #             comprehensive verification -> run once per push, not per commit.
+      #             backend mypy/dmypy), so it rebuilds the whole TS program
+      #             (our ~1080 src files + generated route/API types + the
+      #             node_modules .d.ts it references) on every run -- cost
+      #             tracks that type graph, not the component count. ~40s on a
+      #             4-core cloud box, ~14s on a MacBook Air M3. vitest's jsdom
+      #             setup dominates its ~85s suite (cloud box). Both are
+      #             expensive comprehensive verification -> run once per push,
+      #             not per commit.
       - id: frontend-lint
         name: frontend lint
         entry: bash -c 'cd frontend && pnpm lint'
