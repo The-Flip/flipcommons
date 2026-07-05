@@ -88,15 +88,11 @@ The only gaps that matter are the **access URL** (already sequenced after) and t
 
 So the dominant convention is: **the credited person(s) go in the author/creator slot, as free text, with the role annotated in parentheses.** That is not a workaround for a book-shaped field — it is how film citations are actually written, and it is exactly what our free-text `author` can already hold.
 
-### The options
+### Decision: free-text `author` with a parenthetical role
 
-1. **Reuse `author` with a parenthetical-role convention** (recommended). Store `Ken Russell (director)`; multiple credits semicolon-separated, `Ken Russell (director); Pete Townshend (writer)`. Zero schema change, zero movie-specific machinery — consistent with the doc's whole thesis — and it matches Wikipedia + APA + Chicago verbatim. Costs: the field is still _named_ `author` (a mild semantic wart), the parenthetical role is a convention not a constraint, and the credits aren't independently queryable ("all films directed by X" is a substring search, not a join).
-2. **A structured people/role model** — a `CitationSourceContributor(source, name, role)` child table. First-class roles, queryable, and it would also serve book **editors/translators** (which Wikipedia has dedicated params for), so it is not movie-only machinery. But it is real weight: a new model, patch grammar, API surface, admin/UI — and citations are deliberately lightweight evidence pointers (`CitationSource` isn't even claims-controlled), so this is a lot of structure for data no current surface queries. It is the right escalation _when a real need appears_ (a "films by director" view, or credited-role display in the reader), not for a seed that proves the video type.
-3. **A dedicated free-text `credits` / `people` column**, role-neutral, distinct from `author`. Fixes the field-name wart without a join table. But it adds a column that is essentially "`author`, but honest about non-authors" — a half-measure that neither reuses what exists (option 1) nor buys structure (option 2), and it nudges toward a movie-specific field the thesis warns against.
+**Settled.** Store the principal credited person(s) in the existing `author` field, with the role in parentheses when it isn't self-evident: `Ken Russell (director)`, multiple credits semicolon-separated (`Ken Russell (director); Pete Townshend (writer)`). This is Wikipedia + APA + Chicago verbatim, needs zero schema change and zero movie-specific machinery, and keeps the whole feature to the one abstractness relaxation.
 
-### Recommendation (for confirmation)
-
-Go with **option 1** now: adopt `author` as "the principal credited person(s), with role in parentheses when the role isn't self-evident," and record **option 2 as the named future escalation** (shared contributor model, triggered by a real query/display need, not by movies alone). This keeps the seed to zero new machinery, aligns us with the citation-style mainstream, and leaves a clean upgrade path. Two things to confirm: (a) that overloading the field _named_ `author` is acceptable versus renaming it to a role-neutral `creator`/`credits` (a broader, cross-type rename worth its own discussion), and (b) whether the seed should populate directors at all or ship title+year+description only and add credits later. **This is the open decision the doc is flagged for — not yet settled.**
+We explicitly **YAGNI the two heavier options**: a separate role-neutral `credits`/`people` column (a half-measure — `author` with a nicer name), and a structured `contributor(name, role)` child table (queryable credits, first-class roles). The structured table only earns its weight if a surface ever needs to _query_ credits — a "films directed by X" view or credited-role display in the reader — and no such surface is planned. Until one is, "all films by X" is a substring search and that is fine. The field being _named_ `author` while holding a director is a mild wart we accept; a cross-type rename to `creator` would be its own, unrelated discussion, not warranted by movies. If the structured need ever materializes, migrating free-text `author` strings into a contributor table is a mechanical backfill, not a rework — so nothing here paints us into a corner.
 
 ## What a movie _is_, structurally: a parentless-citable video work
 
@@ -126,6 +122,30 @@ So the movie decision and the "Amazon is not a video source" decision are the sa
 
 Recorded audio (a podcast, a commentary track) shares the timestamp locator, so the instinct to reuse `video` recurs. The call there is the opposite, and it is instructive for why: audio, when it earns a slot, gets **its own product-named type** — likely `podcast` — because podcasts _do_ diverge behaviorally (episodic show → episode nesting, the magazine shape, with an RSS/Apple/Spotify identifier story of their own). Audio would be a new type not for its medium but for its **behavior**. A movie would be a new type _only_ for its medium — which is the distinction this whole document rests on. (The one refactor audio triggers: lift the timestamp grammar out of `video.py` into a shared `citation_types/timestamps.py` so both types share one `LocatorContract`.)
 
+## Is it safe to ship movies before access URLs?
+
+A fair worry, because a movie's defining property is that it has **no URL of its own** — only an access URL, which we don't model yet ([CitationInstanceUrls.md](CitationInstanceUrls.md)). And [VideoCitations.md](VideoCitations.md#movies-audio-and-what-sequences-after) sequenced "movies … come after and depend on instance access URLs." So does seeding movies now jump the gun?
+
+**No — because that sequencing was about the wrong half of "movie".** There are two separable pieces:
+
+- **The citable movie _work_** — a parentless `video` source with a year, reached by **search**, cited with a **timestamp** locator. This is the F3 relaxation and it depends on **nothing else**. It is what proves the video citation type.
+- **Streaming-URL recognition** — paste an `amazon.com/gp/video/detail/…` link, have it recognized as _access to_ a movie and recorded as such. _This_ is what depends on access URLs (and on the F1 deliverer-host recognizer). It is not in this plan.
+
+We are shipping the first and leaving the second sequenced-after, exactly as before. The dependency the old note recorded is real, but it lands on the streaming-URL half, not on the movie work.
+
+**Why the movie work is safe to ship early — three concrete checks:**
+
+1. **No migration, no rework when access URLs arrive.** The access URL is an _additive_ `0..1` field on `CitationInstance` (the use), not on the movie source. A movie cited today mints an instance with a timestamp and no access URL; when access URLs land, that instance is simply _incomplete_, never _wrong_, and new instances can fill it in. The movie **source** never wanted a URL, so it needs no backfill. Nothing stored now becomes invalid later. (The one courtesy already on record: when access URLs land, thread the pasted URL through as `access_url` — F7. That is additive too.)
+2. **It validates and stores today.** Confirmed against the write path: a parentless `video` node carrying only `name`/`year`/`description` passes `validate_root_source` → `full_clean` and every model CHECK — the scheme-root conformance check fires only when `identifier_key` is set, which a movie's isn't (`apps/citation/source_upsert.py`). No "a video root must have a domain/scheme" rule exists to trip on.
+3. **A URL-less reference renders fine.** A movie citation with no link renders as plain text — `Tommy (1975) @ 1:02:03` — exactly as a book citation with no URL does today. Degraded, not broken; the timestamp locator carries the "where to look" on its own.
+
+**The honest rough edges (real, but not "trouble" — and none worsened by movies):**
+
+- **Movies are search-only to cite, with no paste guardrail.** A contributor who pastes a streaming URL instead of searching gets today's behavior — no recognition, and the web-create path could still mint a stray `amazon.com` web source. That misclassification is **pre-existing** (it happens with or without movies); seeding movies doesn't worsen it, it adds the _correct_ target — one just not yet easy to reach until the F2 guardrail steers pasters to it. For a proof-of-concept seed (search → cite → timestamp) this is a non-issue; for broad contributor use it is the first follow-up worth doing.
+- **Re-host duplicates stay tolerable.** A YouTube upload of a seeded movie can still be cited as its own YouTube child — two sources, one work. This is the same duplication web children already carry ([VideoCitations.md](VideoCitations.md)), a later gardening/merge concern (F6), not a blocker.
+
+**The one thing that _would_ be trouble** is the opposite move — giving movies a canonical URL now via a Prime/Apple scheme. That is the fragmentation trap the section above rejects. Not doing it is precisely what keeps identity on the work and access on the instance, and what makes shipping before access URLs safe rather than risky.
+
 ## Decision summary
 
 - **A movie is a `video`, not a new citation type.** The type axis encodes behavior; a movie behaves exactly like a video (timestamp locator, work-level identity). Its film-ness (year, director, distributor) is source-row metadata, not citation behavior.
@@ -134,7 +154,8 @@ Recorded audio (a podcast, a commentary track) shares the timestamp locator, so 
 - **A movie enters as a parentless-citable video work** — the missing third video shape beside platform-root and child. One model change: relax `video`'s `parentless_abstract` to key on `identifier_key` (blank = movie, citable; set = platform, abstract), mirroring the book rule ([F3](CitationSourceMisclassification.md)).
 - **Streaming platforms are not schemes.** A streaming URL is access, not identity; a scheme would fragment one film into per-platform children. The link is a future access URL on the instance, not the movie's identity.
 - **Audio is different** — it earns its own behaviorally-distinct type (`podcast`) when demand appears; a movie does not, precisely because a movie is behaviorally a video.
-- **Open: how to record people/roles.** The one unsettled question. Leaning toward reusing free-text `author` with a parenthetical role (matching Wikipedia/APA/Chicago), with a structured contributor table as the future escalation — see [People and roles](#people-and-roles). Needs your call.
+- **People/roles: free-text `author` with a parenthetical role** (`Ken Russell (director)`), matching Wikipedia/APA/Chicago. A structured contributor table is YAGNI'd until a surface needs to _query_ credits — see [People and roles](#people-and-roles).
+- **Safe to ship before access URLs.** The citable movie _work_ (search + timestamp) depends on nothing else; only streaming-URL recognition depends on access URLs, and that stays sequenced-after. The access URL is additive on the instance, so nothing seeded now needs migration or rework — see [Is it safe to ship movies before access URLs?](#is-it-safe-to-ship-movies-before-access-urls).
 
 ## Implementation plan
 
@@ -248,6 +269,6 @@ The relaxation (§1) is self-contained and ships first; it is inert until a movi
 ## Not in this document
 
 - **Access URLs / deliverer-host recognition.** Additive and sequenced after ([CitationInstanceUrls.md](CitationInstanceUrls.md), F1/F7). A movie is usable before they land — its timestamp locator stands alone, and the eventual access URL attaches to the citing _instance_, not the movie.
-- **A structured contributor/role model.** The [People and roles](#people-and-roles) escalation (option 2) — a shared `name`+`role` child table serving film credits and book editors/translators — is recorded there as a future step, not specced here.
+- **A structured contributor/role model.** YAGNI'd (see [People and roles](#people-and-roles)) — revisit only if a surface needs to query or role-render credits; free-text `author` migrates into it mechanically if so.
 - **Other movie metadata we don't model.** Runtime, language, and production location have no home today and the seed doesn't need them; add them only when a surface asks for them.
 - **A non-URL path to mint video _children_.** Movies are cited as parentless works, so they need none; this is orthogonal and unbuilt.
