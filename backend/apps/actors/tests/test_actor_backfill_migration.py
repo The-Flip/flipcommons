@@ -18,6 +18,8 @@ import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
+pytestmark = pytest.mark.migration
+
 _BEFORE = [
     ("accounts", "0003_alter_user_username"),
     ("provenance", "0011_backfill_seed_changesets"),

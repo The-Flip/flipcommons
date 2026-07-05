@@ -15,6 +15,8 @@ import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
+pytestmark = pytest.mark.migration
+
 # Pin accounts/actors at their leaves so ``project_state`` materializes those
 # apps too — citation 0007 predates the actors dependency (added in 0008), so a
 # citation-only target would leave ``actors``/``accounts`` out of the state.

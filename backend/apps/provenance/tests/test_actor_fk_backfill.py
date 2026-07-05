@@ -22,6 +22,8 @@ import pytest
 
 from apps.provenance.test_migration_state import historical_apps
 
+pytestmark = pytest.mark.migration
+
 _migration = importlib.import_module(
     "apps.provenance.migrations.0013_backfill_actor_fks"
 )
