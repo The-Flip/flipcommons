@@ -119,7 +119,7 @@ async function enterLocatorStage(user: ReturnType<typeof userEvent.setup>) {
   await selectSource(MOCK_SOURCES[0]);
 
   await vi.waitFor(() => {
-    expect(screen.getByRole('textbox', { name: /citation locator/i })).toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toBeInTheDocument();
   });
 }
 
@@ -183,7 +183,7 @@ describe('CitationAutocomplete (component-level)', () => {
       // Error clears and flow continues (to locator, since CREATED_SOURCE has skip_locator: false)
       await vi.waitFor(() => {
         expect(screen.queryByText('Failed to create source.')).not.toBeInTheDocument();
-        expect(screen.getByRole('textbox', { name: /citation locator/i })).toBeInTheDocument();
+        expect(screen.getByRole('textbox')).toBeInTheDocument();
       });
     });
 
@@ -256,7 +256,7 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await enterLocatorStage(user);
 
-      const locatorInput = screen.getByRole('textbox', { name: /citation locator/i });
+      const locatorInput = screen.getByRole('textbox');
       locatorInput.focus();
       fireEvent.keyDown(locatorInput, { key: 'Backspace' });
 
@@ -307,7 +307,7 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await enterLocatorStage(user);
 
-      const locatorInput = screen.getByRole('textbox', { name: /citation locator/i });
+      const locatorInput = screen.getByRole('textbox');
       locatorInput.focus();
       fireEvent.keyDown(locatorInput, { key: 'Escape' });
 
@@ -908,7 +908,7 @@ describe('CitationAutocomplete (component-level)', () => {
 
       // Match path → locator stage (source has skip_locator: false, so locator input appears)
       await vi.waitFor(() => {
-        expect(screen.getByRole('textbox', { name: /citation locator/i })).toBeInTheDocument();
+        expect(screen.getByRole('textbox')).toBeInTheDocument();
       });
     });
 

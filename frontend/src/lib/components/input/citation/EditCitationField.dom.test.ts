@@ -67,7 +67,7 @@ describe('EditCitationField', () => {
 
     const sourceResult = await screen.findByRole('option', { name: /williams flyer/i });
     await fireEvent.pointerDown(sourceResult);
-    await user.type(screen.getByRole('textbox', { name: /citation locator/i }), 'p. 2');
+    await user.type(screen.getByRole('textbox', { name: /location in source/i }), 'p. 2');
     await fireEvent.pointerDown(screen.getByRole('button', { name: 'Insert' }));
 
     // A locator entered at the picker's own stage lands in the panel's

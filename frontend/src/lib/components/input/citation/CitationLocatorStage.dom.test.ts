@@ -19,30 +19,34 @@ function makeDraft(overrides: Partial<CitationInstanceDraft> = {}): CitationInst
 }
 
 describe('CitationLocatorStage', () => {
-  it('shows the freeform placeholder for a book', () => {
+  it('shows the freeform label, hint and placeholder for a book', () => {
     render(CitationLocatorStage, {
       draft: makeDraft({ sourceType: 'book' }),
       onsubmit: noop,
       oncancel: noop,
       onback: noop,
     });
-    expect(screen.getByLabelText('Citation locator')).toHaveAttribute(
+    expect(screen.getByRole('textbox', { name: /location in source/i })).toHaveAttribute(
       'placeholder',
       'p. 42, Chapter 3, timestamp...',
     );
+    expect(screen.getByText('e.g. p. 42, Chapter 3, a timestamp')).toBeInTheDocument();
   });
 
-  it('shows the timestamp placeholder for a video', () => {
+  it('shows the timestamp label, hint and placeholder for a video', () => {
     render(CitationLocatorStage, {
       draft: makeDraft({ sourceType: 'video' }),
       onsubmit: noop,
       oncancel: noop,
       onback: noop,
     });
-    expect(screen.getByLabelText('Citation locator')).toHaveAttribute(
+    expect(screen.getByRole('textbox', { name: /start time/i })).toHaveAttribute(
       'placeholder',
       'e.g. 1:02:03',
     );
+    expect(
+      screen.getByText('Where to begin watching — e.g. 1:02:03, 95, or 1h2m3s'),
+    ).toBeInTheDocument();
   });
 
   it('prefills the input from the locator hint but requires confirmation', async () => {
@@ -54,7 +58,7 @@ describe('CitationLocatorStage', () => {
       oncancel: noop,
       onback: noop,
     });
-    const input = screen.getByLabelText('Citation locator');
+    const input = screen.getByRole('textbox');
     expect(input).toHaveValue('1:35');
     expect(onsubmit).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Insert' }));
@@ -70,7 +74,7 @@ describe('CitationLocatorStage', () => {
       oncancel: noop,
       onback: noop,
     });
-    await user.type(screen.getByLabelText('Citation locator'), '1h2m3s{Enter}');
+    await user.type(screen.getByRole('textbox'), '1h2m3s{Enter}');
     expect(onsubmit).toHaveBeenCalledWith('1:02:03');
   });
 
@@ -83,11 +87,11 @@ describe('CitationLocatorStage', () => {
       oncancel: noop,
       onback: noop,
     });
-    await user.type(screen.getByLabelText('Citation locator'), 'p. 42{Enter}');
+    await user.type(screen.getByRole('textbox'), 'p. 42{Enter}');
     expect(onsubmit).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toHaveTextContent(/start time/);
     // Typing again clears the error.
-    await user.type(screen.getByLabelText('Citation locator'), '5');
+    await user.type(screen.getByRole('textbox'), '5');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
@@ -100,7 +104,7 @@ describe('CitationLocatorStage', () => {
       oncancel: noop,
       onback: noop,
     });
-    await user.type(screen.getByLabelText('Citation locator'), 'p. 42{Enter}');
+    await user.type(screen.getByRole('textbox'), 'p. 42{Enter}');
     expect(onsubmit).toHaveBeenCalledWith('p. 42');
   });
 

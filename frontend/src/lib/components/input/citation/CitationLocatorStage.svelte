@@ -3,6 +3,7 @@
   import { citationTypeFrontend, citationTypeMeta } from '$lib/citation-types';
   import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
+  import FieldGroup from '$lib/components/input/FieldGroup.svelte';
 
   let {
     draft,
@@ -80,19 +81,21 @@
 
 <DropdownHeader {onback}>Citing: {draft.sourceName}</DropdownHeader>
 <div class="locator-form">
-  <input
-    bind:this={inputEl}
-    type="text"
-    aria-label="Citation locator"
-    aria-invalid={validationError ? 'true' : undefined}
-    placeholder={meta.locatorPlaceholder}
-    bind:value={locator}
-    oninput={() => (validationError = '')}
-    onkeydown={handleKeydown}
-  />
-  {#if validationError}
-    <div class="validation-error" role="alert">{validationError}</div>
-  {/if}
+  <FieldGroup label={meta.locatorLabel} hint={meta.locatorHelp} optional error={validationError}>
+    {#snippet children(inputId, describedBy)}
+      <input
+        bind:this={inputEl}
+        id={inputId}
+        type="text"
+        aria-invalid={validationError ? 'true' : undefined}
+        aria-describedby={describedBy}
+        placeholder={meta.locatorPlaceholder}
+        bind:value={locator}
+        oninput={() => (validationError = '')}
+        onkeydown={handleKeydown}
+      />
+    {/snippet}
+  </FieldGroup>
   <div class="locator-actions">
     <DropdownButton
       onpointerdown={(e) => {
@@ -120,11 +123,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
-  }
-
-  .validation-error {
-    color: var(--color-error-text);
-    font-size: var(--font-size-0);
   }
 
   .locator-actions {

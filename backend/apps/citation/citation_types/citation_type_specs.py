@@ -72,6 +72,12 @@ def _freeform_normalize(raw: str) -> str:
 class LocatorContract:
     """How one citation type's locators behave.
 
+    - ``label`` is the contributor-facing field label in the cite picker
+      (video: "Start time"; freeform: "Location in source"). A visible label,
+      not a placeholder — the guidance must survive the user typing.
+    - ``help`` is persistent format guidance shown under the label. Distinct
+      from ``placeholder`` (a ghost example that disappears on input) and from
+      ``invalid_message`` (shown only after a failed ``normalize``).
     - ``normalize`` validates and canonicalizes a non-empty locator string,
       returning ``None`` for an invalid one. Empty locators never reach it —
       a locator is optional on every type.
@@ -88,15 +94,19 @@ class LocatorContract:
 
     kind: LocatorKind
     placeholder: str
+    label: str
     normalize: LocatorNormalizer = _freeform_normalize
     parse_value: LocatorValueParser | None = None
     format_value: LocatorValueFormatter | None = None
     invalid_message: str = ""
+    help: str = ""
 
 
 FREEFORM_LOCATOR = LocatorContract(
     kind="freeform",
     placeholder="p. 42, Chapter 3, timestamp...",
+    label="Location in source",
+    help="e.g. p. 42, Chapter 3, a timestamp",
 )
 
 

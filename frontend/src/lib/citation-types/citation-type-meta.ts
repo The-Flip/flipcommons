@@ -6,12 +6,16 @@ export type CitationTypeKey = 'book' | 'magazine' | 'video' | 'web';
 
 /** Declarative per-type facts, exported from the backend registry.
  * `locatorKind` is the frontend input behavior: `freeform` is a plain
- * text input; `timestamp` adds the type's inline validation. */
+ * text input; `timestamp` adds the type's inline validation.
+ * `locatorLabel`/`locatorHelp` are the field label and persistent
+ * format guidance the cite picker shows (not placeholder text). */
 export interface CitationTypeMeta {
   key: CitationTypeKey;
   label: string;
   locatorKind: 'freeform' | 'timestamp';
+  locatorLabel: string;
   locatorPlaceholder: string;
+  locatorHelp: string;
   locatorInvalidMessage: string;
   childSkipsLocator: boolean;
 }
@@ -21,7 +25,9 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     key: 'book',
     label: 'Book',
     locatorKind: 'freeform',
+    locatorLabel: 'Location in source',
     locatorPlaceholder: 'p. 42, Chapter 3, timestamp...',
+    locatorHelp: 'e.g. p. 42, Chapter 3, a timestamp',
     locatorInvalidMessage: '',
     childSkipsLocator: false,
   },
@@ -29,7 +35,9 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     key: 'magazine',
     label: 'Magazine',
     locatorKind: 'freeform',
+    locatorLabel: 'Location in source',
     locatorPlaceholder: 'p. 42, Chapter 3, timestamp...',
+    locatorHelp: 'e.g. p. 42, Chapter 3, a timestamp',
     locatorInvalidMessage: '',
     childSkipsLocator: false,
   },
@@ -37,7 +45,9 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     key: 'video',
     label: 'Video',
     locatorKind: 'timestamp',
+    locatorLabel: 'Start time',
     locatorPlaceholder: 'e.g. 1:02:03',
+    locatorHelp: 'Where to begin watching \u2014 e.g. 1:02:03, 95, or 1h2m3s',
     locatorInvalidMessage:
       'Enter a start time like 1:02:03, 95, or 1h2m3s (where to start watching).',
     childSkipsLocator: false,
@@ -46,7 +56,9 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     key: 'web',
     label: 'Web',
     locatorKind: 'freeform',
+    locatorLabel: 'Location in source',
     locatorPlaceholder: 'p. 42, Chapter 3, timestamp...',
+    locatorHelp: 'e.g. p. 42, Chapter 3, a timestamp',
     locatorInvalidMessage: '',
     childSkipsLocator: true,
   },
