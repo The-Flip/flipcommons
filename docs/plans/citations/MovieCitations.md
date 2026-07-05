@@ -37,7 +37,7 @@ Writing `movie.py` would produce a `CitationTypeSpec` **field-for-field identica
 
 ### The type keeps the name `video`
 
-`video` stays the wire value and the label. It passes the plain-language dropdown test — a contributor citing _Tommy_ choosing "Video" is not confused, because a movie **is** video — and renaming it to something more taxonomically precise (`audiovisual`) buys precision no reader consumes while churning the enum, the CHECK constraints, and every stored row. Movie-vs-video is a _medium_ distinction one level below the behavioral axis, and the behavioral axis is what the type is for.
+`video` stays the wire value and the label. A contributor citing _Tommy_ and choosing "Video" is not confused, because a movie **is** video; movie-vs-video is a _medium_ distinction one level below the behavioral axis, and the behavioral axis is what the type is for.
 
 ## Prior art: nobody else types film separately either
 
@@ -79,14 +79,123 @@ Recorded audio (a podcast, a commentary track) shares the timestamp locator, so 
 ## Decision summary
 
 - **A movie is a `video`, not a new citation type.** The type axis encodes behavior; a movie behaves exactly like a video (timestamp locator, work-level identity). Its film-ness (year, director, distributor) is source-row metadata, not citation behavior.
-- **The type keeps the wire value and label `video`.** Passes the dropdown test; a rename buys unconsumed precision.
+- **The type keeps the wire value and label `video`.** A movie is video; the medium distinction lives in data, not the type name.
 - **Prior art agrees.** Wikipedia folded `{{cite film}}` into `{{cite AV media}}` (film is `medium=` data); Wikidata types the work (P31), not the citation, and records the copy consulted as P854.
 - **A movie enters as a parentless-citable video work** — the missing third video shape beside platform-root and child. One model change: relax `video`'s `parentless_abstract` to key on `identifier_key` (blank = movie, citable; set = platform, abstract), mirroring the book rule ([F3](CitationSourceMisclassification.md)).
 - **Streaming platforms are not schemes.** A streaming URL is access, not identity; a scheme would fragment one film into per-platform children. The link is a future access URL on the instance, not the movie's identity.
 - **Audio is different** — it earns its own behaviorally-distinct type (`podcast`) when demand appears; a movie does not, precisely because a movie is behaviorally a video.
 
+## Implementation plan
+
+The whole feature is one behavioral relaxation plus a seed. There is **no new type, no new locator grammar, no new column, no migration, no codegen run, and no frontend change** — the sections below say why for each. What changes is a single method's logic, one spec field, and a data patch.
+
+### 1. The abstractness relaxation (backend, the whole code change)
+
+Today abstractness is computed in `CitationSource.is_abstract` (`apps/citation/models.py:310-329`):
+
+```python
+return has_children or (self.is_root and citation_type_spec(self.source_type).parentless_abstract)
+```
+
+`parentless_abstract` is a plain per-type bool (`book=False`, `magazine=True`, `web=True`, `video=True`). The relaxation reinterprets that field and adds one universal rule, so nothing branches on `"video"` — it stays model-driven:
+
+- **`parentless_abstract` now means "is a _schemeless_ parentless root of this type abstract?"** — i.e. when the parentless form is _not_ a platform root, is it still a container? Book `False` (the book is the work), magazine `True` (a publication), web `True` (a site), and **video flips `True → False`** (the schemeless parentless video is a **movie** — the work itself). This is the only edit to `video.py`.
+- **A scheme-holding root (`identifier_key` set) is abstract universally**, added to `is_abstract`. A scheme root _is_ a platform/site container by definition — recognition resolves to its children, never the root — so this holds for every type and needs no per-type flag. It is what keeps the YouTube (and X) root abstract after video's field flips.
+
+New body:
+
+```python
+def is_abstract(self, *, has_children: bool) -> bool:
+    if has_children:
+        return True
+    if not self.is_root:
+        return False
+    # A scheme-holding root is a platform/site container — recognition
+    # resolves to its children, never the root. Abstract regardless of type.
+    if self.identifier_key:
+        return True
+    # A schemeless parentless root: abstract only when the type's schemeless
+    # parentless form is a container (a magazine, a site) and not the work
+    # itself (a book, a movie).
+    return citation_type_spec(self.source_type).parentless_abstract
+```
+
+The behavior delta is **exactly one case**: a parentless `video` with a blank `identifier_key` (a movie) goes from abstract → citable. Every other row is unchanged — the YouTube root stays abstract via the `identifier_key` branch, schemeless web/magazine roots stay abstract via their unchanged field, book is untouched. Because `is_abstract` is a **display hint, not a write invariant** (its docstring), no constraint or write path needs touching; the flip simply routes the cite picker differently (§3).
+
+### 2. Tests (TDD — failing test first, per CLAUDE.md)
+
+- **Close the pre-existing gap**: `test_citation_type_registry.py::test_traits_per_type` parametrizes only book/magazine/web — add the `VIDEO` row (`flat=True, abstract=False, skips_locator=False` after the flip). It fails before the change, passes after.
+- **`is_abstract` unit cases** (no DB — the method reads only `self` fields and takes `has_children`): a parentless video with `identifier_key="youtube"` is abstract; a parentless video with blank `identifier_key` (a movie) is **not** abstract; a movie _with_ children is abstract (the `has_children` short-circuit); a schemeless parentless web/magazine root stays abstract (no regression).
+- **End-to-end cite-target** (extends `test_api.py::TestSearchComputedFields`, which already covers a web root): a seeded movie surfaces in `search_citation_sources` with `is_abstract=false`, and the frontend reducer's existing "not abstract → locator stage" path (`citation-types.test.ts`) already covers the routing, so a movie is directly citable with a timestamp locator.
+
+### 3. Frontend: no change required
+
+The cite picker already does the right thing once the flag flips. The reducer (`frontend/src/lib/components/input/citation/citation-types.ts:254`) routes an **abstract** source to the _identify_ stage (hunt for a child) and a **non-abstract** source straight to the _locator_ stage. A movie, now non-abstract, lands on the locator stage — which for a `video` source renders the timestamp prompt from the generated citation-type meta. No component, reducer, or codegen change; the abstractness that drives the routing is served per-row on `CitationSourceSearchSchema.is_abstract` (`apps/citation/schemas.py`), computed by the method we changed.
+
+### 4. No migration, no codegen
+
+`parentless_abstract` is read only by `is_abstract` — it is **not** a DB column, **not** in any CHECK constraint (those derive from `SourceType.values` and the scheme registry, not this field), and **not** exported by `export_citation_type_meta`. Flipping it and editing a pure Python method touches no schema and no generated file. The `year` a movie needs already exists on `CitationSource` (`models.py:128`).
+
+### 5. Seed the popular pinball movies
+
+The seed is the proof: a handful of real pinball films declared as parentless `video` works with a year and no `identifier_key`/`domains`/`links` (no access URL yet). My exploration confirmed such a row passes every gate — `validate_root_source` → `ensure_root_source` (`apps/citation/source_upsert.py`) and the model CHECKs — today; the relaxation is only what makes it _citable_ once stored.
+
+A `sources:` patch entry (grammar in [DataPatches.md](../../DataPatches.md), parsed by `SourceNode` in `apps/citation/source_node.py`) for a movie — the shape is `name` + `source_type: video` + `year` + `description`, no `identifier_key`/`domains`/`links`:
+
+```yaml
+sources:
+  - name: Tommy
+    source_type: video
+    year: 1975
+    description: The Who's rock opera; its "Pinball Wizard" is the sport's signature anthem.
+  - name: "Pinball: The Man Who Saved the Game"
+    source_type: video
+    year: 2022
+    description: Dramatization of Roger Sharpe's 1976 demonstration that overturned New York's pinball ban.
+```
+
+(A director, if wanted, rides the existing `author` field — but see "Not in this document".)
+
+#### Proposed seed list (expansive)
+
+Deliberately broad — everything where pinball is the subject or a load-bearing element, to give the type a real workout. Grouped only for readability; all seed as `source_type: video`. Years marked _(verify)_ are ones I couldn't confirm to a release date and must be checked before ingest; the whole list is finalized with you before it ships.
+
+**Documentaries — pinball as the subject**
+
+| Title                                                      | Year            | What it is                                                   |
+| ---------------------------------------------------------- | --------------- | ------------------------------------------------------------ |
+| Pleasure Machines: The History of Pinball                  | 1998 _(verify)_ | Early broadcast history-of-pinball documentary.              |
+| Tilt: The Battle to Save Pinball                           | 2006            | Williams' Pinball 2000 gambit and the industry's near-death. |
+| Pinball Passion                                            | 2008            | Collector/culture portrait.                                  |
+| Special When Lit                                           | 2009            | Pinball's rise, fall and revival, ending at PAPA 8.          |
+| Wizard Mode                                                | 2016            | Autistic champion Robert Gagno's competitive run.            |
+| Shoot Again: The Resurgence of Pinball                     | 2017 _(verify)_ | The modern comeback wave.                                    |
+| The History of Pinball                                     | 2018 _(verify)_ | Survey documentary.                                          |
+| Things That Go Bump in the Night: The Spooky Pinball Story | _(verify)_      | Portrait of boutique maker Spooky Pinball.                   |
+| A World Under Glass                                        | _(verify)_      | Design/artistry-focused documentary.                         |
+| Ball Runnings: A Pinball Story                             | _(verify)_      | Competitive-scene documentary.                               |
+| Road to Pinball (a.k.a. Gladbeck Freaks Out)               | _(verify)_      | European scene documentary.                                  |
+| Token Taverns                                              | _(verify)_      | Barcade/arcade-culture documentary touching pinball.         |
+| Pinball: The Man Who Saved the Game                        | 2022            | Dramatized Roger Sharpe / 1976 NYC ban story.                |
+
+**Narrative films — pinball central or iconic**
+
+| Title                                  | Year | What it is                                                  |
+| -------------------------------------- | ---- | ----------------------------------------------------------- |
+| Tommy                                  | 1975 | Ken Russell's Who rock opera; the "Pinball Wizard" ur-text. |
+| Tilt                                   | 1979 | Brooke Shields as a teen pinball hustler.                   |
+| Pinball Summer (a.k.a. Pick-Up Summer) | 1980 | Canadian teen film climaxing in a pinball tournament.       |
+
+Sources for the list: [Pinball Passion documentaries list (Letterboxd)](https://letterboxd.com/lroy/list/pinball-passion-documentaries-about-the-wonderful/), [Tilt (1979) — Wikipedia](<https://en.wikipedia.org/wiki/Tilt_(1979_film)>), [Pinball Summer — Canuxploitation](https://www.canuxploitation.com/review/pinballsummer.htm), [TILT: The Battle to Save Pinball — Netflix](https://www.netflix.com/title/70103653).
+
+**Where it lands.** The real `NNNN-slug.yaml` patches live in the sister **flippatch** repo and are pulled from R2 (`make pull-patches`); they are not committed here. So the seed is delivered two ways: (a) the drafted patch YAML above, ready to drop into flippatch as the next-numbered patch, and (b) a backend test in this repo that declares the same movies through the upsert path and asserts each is stored, surfaces in cite-target search as non-abstract, and accepts a timestamp-locator citation — the in-repo proof that "prove or disprove the video citation type" asks for.
+
+### 6. Ordering
+
+The relaxation (§1) is self-contained and ships first; it is inert until a movie exists, so it is safe to deploy ahead of any data. The flippatch seed (§5) is authored against the deployed relaxation, mirroring the deploy-before-publish rule the video work already followed. No access-URL dependency: a movie is fully usable with its timestamp locator alone (§below).
+
 ## Not in this document
 
-- **Seeding the popular pinball movies.** The proof-of-concept seed (a data patch declaring parentless `video` works with years) is specced and delivered separately; this document only justifies the type decision it rests on.
-- **Access URLs / deliverer-host recognition.** Additive and sequenced after ([CitationInstanceUrls.md](CitationInstanceUrls.md), F1/F7). A movie is usable before they land — its timestamp locator stands alone.
-- **Movie-specific metadata beyond what `CitationSource` already carries.** Year/author/publisher/description exist today; a director role or runtime, if wanted, is a later source-schema question, not a citation-type one.
+- **Access URLs / deliverer-host recognition.** Additive and sequenced after ([CitationInstanceUrls.md](CitationInstanceUrls.md), F1/F7). A movie is usable before they land — its timestamp locator stands alone, and the eventual access URL attaches to the citing _instance_, not the movie.
+- **Movie-specific metadata beyond what `CitationSource` already carries.** Year/author/publisher/description exist today; a dedicated director role or runtime, if wanted, is a later source-schema question, not a citation-type one.
+- **A non-URL path to mint video _children_.** Movies are cited as parentless works, so they need none; this is orthogonal and unbuilt.
