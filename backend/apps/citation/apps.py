@@ -44,7 +44,8 @@ def _collect_citation_metadata(obj: CitationInstance, index: int) -> dict[str, A
         "links": [
             {
                 "url": deep_linked_url(obj.citation_source, obj.locator, link.url),
-                "label": link.label,
+                "link_type": link.link_type,
+                "display_name": link.display_name,
             }
             for link in obj.citation_source.links.all()
         ],

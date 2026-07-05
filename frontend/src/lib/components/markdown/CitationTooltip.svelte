@@ -9,7 +9,7 @@
     type TooltipState,
   } from './citation-tooltip';
   import { buildCitationMap } from './citation-refs';
-  import { displayLocator } from '$lib/citation-types';
+  import CitationBody from '$lib/components/citation/CitationBody.svelte';
 
   let {
     container,
@@ -208,24 +208,14 @@
     onfocusin={() => dispatch({ type: 'tooltip-mouseenter' })}
     onfocusout={() => dispatch({ type: 'tooltip-mouseleave' })}
   >
-    <div class="source-name">{activeCitation.source_name}</div>
-    {#if activeCitation.author || activeCitation.year}
-      <div class="meta">
-        {[activeCitation.author, activeCitation.year].filter(Boolean).join(', ')}
-      </div>
-    {/if}
-    {#if activeCitation.locator}
-      <div class="locator">
-        {displayLocator(activeCitation.source_type, activeCitation.locator)}
-      </div>
-    {/if}
-    {#if activeCitation.links.length > 0}
-      <div class="links">
-        {#each activeCitation.links as link (link.url)}
-          <a href={link.url} target="_blank" rel="noopener">{link.label || link.url}</a>
-        {/each}
-      </div>
-    {/if}
+    <CitationBody
+      sourceName={activeCitation.source_name}
+      sourceType={activeCitation.source_type}
+      author={activeCitation.author}
+      year={activeCitation.year}
+      locator={activeCitation.locator}
+      links={activeCitation.links}
+    />
   </div>
 {/if}
 
@@ -241,31 +231,5 @@
     font-size: var(--font-size-1);
     line-height: var(--font-lineheight-3);
     color: var(--color-text);
-  }
-
-  .source-name {
-    font-weight: 600;
-  }
-
-  .meta,
-  .locator {
-    color: var(--color-text-muted);
-  }
-
-  .links {
-    margin-top: var(--size-1);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .links a {
-    color: var(--color-link);
-    text-decoration: none;
-    font-size: var(--font-size-0);
-  }
-
-  .links a:hover {
-    text-decoration: underline;
   }
 </style>

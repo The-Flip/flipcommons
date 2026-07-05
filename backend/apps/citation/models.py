@@ -378,19 +378,39 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         return self.name
 
 
+# Short glosses for each link type, joined into the ``link_type`` field's
+# help text so the admin dropdown and the API schema explain the choices.
+CITATION_LINK_TYPE_HELP = {
+    "homepage": "the source's own front page",
+    "catalog": "a third-party catalog or database entry (e.g. IPDB)",
+    "publisher": "the publisher's page for the work",
+    "reference": "the canonical URL of this exact source",
+    "archive": "a preserved snapshot such as a Wayback capture",
+}
+
+
 class CitationSourceLink(TimeStampedModel, ActorAttributedModel):
     """A URL where a reader can inspect a CitationSource.
 
-    Wholly owned by its parent CitationSource — CASCADE on delete.
-    A source may have zero, one, or many links (e.g., archive.org
-    scan, publisher page, Google Books preview).
+    Wholly owned by its parent CitationSource — CASCADE on delete. A source
+    may have zero, one, or many links, distinguished by ``link_type`` — an
+    official homepage, a catalog entry, an archive snapshot. Only the URL is
+    unique per source; a source may hold several links of the same type.
     """
 
     class LinkType(models.TextChoices):
+        # The source's own front page. Display only — never the recognition
+        # signal (recognition keys off CitationSourceRootDomain). Set on roots.
         HOMEPAGE = "homepage", "Homepage"
+        # A third-party catalog or database entry for the work (e.g. IPDB).
         CATALOG = "catalog", "Catalog"
+        # The publisher's or manufacturer's page for the work.
         PUBLISHER = "publisher", "Publisher"
+        # The canonical URL of this exact source — the page or video it *is*.
+        # The link the reader UI titles and deep-links.
         REFERENCE = "reference", "Reference"
+        # A preserved snapshot: a Wayback capture, an archive.today page, an
+        # uploaded scan.
         ARCHIVE = "archive", "Archive"
 
     citation_source = models.ForeignKey(
@@ -398,8 +418,18 @@ class CitationSourceLink(TimeStampedModel, ActorAttributedModel):
         on_delete=models.CASCADE,
         related_name="links",
     )
-    link_type = models.CharField(max_length=20, choices=LinkType.choices)
+    link_type = models.CharField(
+        max_length=20,
+        choices=LinkType.choices,
+        help_text="; ".join(
+            f"{label}: {CITATION_LINK_TYPE_HELP[value]}"
+            for value, label in LinkType.choices
+        ),
+    )
     url = models.URLField(max_length=CITATION_SOURCE_LINK_URL_MAX_LENGTH)
+    # Optional. Blank is normal: a link's display name falls back to its
+    # link-type name, so a link is never nameless. Set a label only to override
+    # that with something more specific ("Google Books preview").
     label = models.CharField(
         max_length=CITATION_SOURCE_LINK_LABEL_MAX_LENGTH,
         blank=True,
@@ -428,6 +458,11 @@ class CitationSourceLink(TimeStampedModel, ActorAttributedModel):
                 name="citation_citationsourcelink_unique_source_url",
             ),
         ]
+
+    @property
+    def display_name(self) -> str:
+        """The link's human text: its label, or its link-type name when blank."""
+        return self.label or self.get_link_type_display()
 
     def __str__(self) -> str:
         if self.label:

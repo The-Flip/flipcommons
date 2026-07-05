@@ -498,7 +498,8 @@ class TestMetadataCollection:
         assert entry["locator"] == "p. 42"
         assert len(entry["links"]) == 1
         assert entry["links"][0]["url"] == "https://example.com/archive"
-        assert entry["links"][0]["label"] == "Archive scan"
+        assert entry["links"][0]["link_type"] == "archive"
+        assert entry["links"][0]["display_name"] == "Archive scan"
 
     def test_metadata_deduplicated_by_pk(self, citation_instance):
         pk = citation_instance.pk

@@ -225,7 +225,8 @@ def batch_citation_instances(
             links=[
                 CitationLinkSchema(
                     url=deep_linked_url(ci.citation_source, ci.locator, link.url),
-                    label=link.label,
+                    link_type=link.link_type,
+                    display_name=link.display_name,
                 )
                 for link in ci.citation_source.links.all()
             ],

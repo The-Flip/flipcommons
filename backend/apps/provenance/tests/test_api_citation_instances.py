@@ -148,7 +148,21 @@ class TestBatchCitationInstances:
         assert item["locator"] == "p. 30"
         assert len(item["links"]) == 1
         assert item["links"][0]["url"] == "https://archive.org/details/example"
-        assert item["links"][0]["label"] == "archive.org scan"
+        assert item["links"][0]["link_type"] == "archive"
+        assert item["links"][0]["display_name"] == "archive.org scan"
+
+    def test_link_display_name_falls_back_to_link_type(self, client, citation_source):
+        ci = make_citation_instance(citation_source=citation_source, locator="p. 30")
+        make_citation_link(
+            citation_source=citation_source,
+            link_type="reference",
+            url="https://example.com/unlabeled",
+            label="",
+        )
+        resp = client.get(f"/api/citation-instances/batch/?ids={ci.pk}")
+        assert resp.status_code == 200
+        link = resp.json()[0]["links"][0]
+        assert link["display_name"] == "Reference"
 
     def test_multiple_ids(self, client, citation_source):
         ci1 = make_citation_instance(citation_source=citation_source, locator="p. 30")

@@ -6,7 +6,7 @@
   import FocusContentShell from '$lib/components/layout/page/FocusContentShell.svelte';
   import { getEntityContext } from '$lib/entity-context';
   import { groupSourcesByField } from './entity-sources';
-  import { displayLocator } from '$lib/citation-types';
+  import CitationBody from '$lib/components/citation/CitationBody.svelte';
 
   type Claim = ClaimSchema;
   type CitedChangeSet = CitedChangeSetSchema;
@@ -70,27 +70,16 @@
                 <p class="changeset-fields">Applies to: {changeset.fields.join(', ')}</p>
                 {#each changeset.citations as citation, i (i)}
                   <div class="evidence-citation">
-                    <div class="source-name">{citation.source_name}</div>
-                    {#if citation.author || citation.year}
-                      <div class="meta">
-                        {[citation.author, citation.year].filter(Boolean).join(', ')}
-                      </div>
-                    {/if}
-                    {#if citation.locator}
-                      <div class="locator">
-                        {displayLocator(citation.source_type, citation.locator)}
-                      </div>
-                    {/if}
-                    {#if citation.quote}
-                      <blockquote class="quote">{citation.quote}</blockquote>
-                    {/if}
-                    {#if citation.links.length > 0}
-                      <div class="links">
-                        {#each citation.links as link (link.url)}
-                          <a href={link.url} target="_blank" rel="noopener">{link.label}</a>
-                        {/each}
-                      </div>
-                    {/if}
+                    <CitationBody
+                      sourceName={citation.source_name}
+                      sourceType={citation.source_type}
+                      author={citation.author}
+                      year={citation.year}
+                      locator={citation.locator}
+                      quote={citation.quote}
+                      links={citation.links}
+                      linkLayout="row"
+                    />
                   </div>
                 {/each}
               </li>
@@ -328,25 +317,6 @@
     flex-direction: column;
     gap: var(--size-1);
     padding-top: var(--size-2);
-  }
-
-  .quote {
-    margin: 0;
-    padding-left: var(--size-3);
-    border-left: 2px solid var(--color-border-soft);
-    font-size: var(--font-size-0);
-    font-style: italic;
-    color: var(--color-text-muted);
-  }
-
-  .links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-2);
-  }
-
-  .links a {
-    font-size: var(--font-size-0);
   }
 
   .source-list {

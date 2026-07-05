@@ -17,7 +17,8 @@ from .types import ChangeSetId
 @dataclass(frozen=True)
 class EvidenceLink:
     url: str
-    label: str
+    link_type: str
+    display_name: str
 
 
 @dataclass(frozen=True)
@@ -109,7 +110,8 @@ def build_cited_changesets(claims: Iterable[Claim]) -> list[CitedChangeset]:
                         url=deep_linked_url(
                             citation.citation_source, citation.locator, link.url
                         ),
-                        label=link.label,
+                        link_type=link.link_type,
+                        display_name=link.display_name,
                     )
                     for link in citation.citation_source.links.all()
                 ],

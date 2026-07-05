@@ -50,7 +50,9 @@ beforeEach(() => {
         author: 'Jane Doe',
         year: 1992,
         locator: 'p. 42',
-        links: [{ url: 'https://example.com/book', label: 'Source link' }],
+        links: [
+          { url: 'https://example.com/book', link_type: 'homepage', display_name: 'Source link' },
+        ],
       },
       {
         id: 2,
@@ -229,6 +231,36 @@ describe('CitationTooltip', () => {
       await fireEvent.mouseEnter(getCitation('1'));
       const tooltip = await screen.findByRole('tooltip');
       expect(tooltip).toHaveTextContent('starting at 1:02:03');
+    });
+
+    it('hyperlinks the source name to its reference link, with no bare URL', async () => {
+      const videoCite: InlineCitation[] = [
+        {
+          id: 1,
+          index: 1,
+          source_name: 'YouTube #gbEss0hMAlU',
+          source_type: 'video',
+          author: '',
+          year: null,
+          locator: '1:35',
+          links: [
+            {
+              url: 'https://www.youtube.com/watch?v=gbEss0hMAlU&t=95s',
+              link_type: 'reference',
+              display_name: 'Reference',
+            },
+          ],
+        },
+      ];
+      renderTooltip('<p>Cited <sup data-cite-id="1" tabindex="0">[1]</sup>.</p>', videoCite);
+
+      await fireEvent.mouseEnter(getCitation('1'));
+      const tooltip = await screen.findByRole('tooltip');
+      // The name is the link to the (deep-linked) reference URL...
+      const nameLink = screen.getByRole('link', { name: 'YouTube #gbEss0hMAlU' });
+      expect(nameLink).toHaveAttribute('href', 'https://www.youtube.com/watch?v=gbEss0hMAlU&t=95s');
+      // ...and the reference URL is not repeated as a bare-URL chip.
+      expect(tooltip).not.toHaveTextContent('https://www.youtube.com');
     });
   });
 

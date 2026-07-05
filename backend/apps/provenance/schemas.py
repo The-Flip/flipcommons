@@ -395,10 +395,17 @@ class AttributionSchema(Schema):
 
 
 class CitationLinkSchema(Schema):
-    """A link attached to a citation source."""
+    """A link attached to a citation source, ready for display."""
 
-    url: str = Field(description="The link's URL.")
-    label: str = Field(description="Human-readable link text.")
+    url: str = Field(
+        description="The link's URL, deep-linked to the locator when possible."
+    )
+    link_type: str = Field(
+        description="Kind of link: one of ``homepage``, ``catalog``, ``publisher``, ``reference`` or ``archive``."
+    )
+    display_name: str = Field(
+        description="Human-readable link text — the link's label, or its link-type name when unlabeled. Never blank."
+    )
 
 
 class InlineCitationSchema(Schema):

@@ -64,7 +64,11 @@ class TestCitedEditEvidence:
         assert evidence[0]["citations"][0]["source_name"] == "Williams Flyer"
         assert evidence[0]["citations"][0]["locator"] == "p. 2"
         assert evidence[0]["citations"][0]["links"] == [
-            {"url": "https://example.com/flyer", "label": "Scan"}
+            {
+                "url": "https://example.com/flyer",
+                "link_type": "homepage",
+                "display_name": "Scan",
+            }
         ]
 
     def test_coalesces_repeated_copied_claim_citations(
