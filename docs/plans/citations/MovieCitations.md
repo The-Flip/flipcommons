@@ -1,20 +1,20 @@
 # Movie Citations
 
-Product spec and design justification for citing **movies** — feature films, documentaries, and other released audiovisual works — as evidence. The one question this document answers: **is a movie a new citation type, or is it a `video`?** The conclusion is that a movie is a `video`, and the rest of this document is the argument for why, the one small model change it forces, and what a movie adds that a born-digital video doesn't.
+This doc is about supporting **movie** citations: feature films, documentaries, and other released audiovisual works.
 
 ## Status: ✅ DONE
 
-The decision (movie = `video`) was settled while working the movie case through in [VideoCitations.md](VideoCitations.md#movies-audio-and-what-sequences-after); this document promotes that paragraph to a full justification and specs the change. The enabling model change is **F3** in [CitationSourceMisclassification.md](CitationSourceMisclassification.md). Everything this repo owns is shipped: the abstractness relaxation (§1), the tests, and the seed proof. Populating the actual pinball-movie data is a [flippatch](https://github.com/deanmoses/flippatch) patch — a separate repo whose state this doc deliberately does not track; the list drafted below is the starting point for that patch, not a deliverable owed here.
+Support for movies has been implemented.
 
 ## The question
 
-A movie feels like it wants its own citation type. It has a year, a director, a runtime; it is a "film", not a "video"; the dropdown a contributor picks from would read more honestly with a `Movie` row than by asking them to file _Tommy_ under `Video`. So the instinct is: add `SourceType.MOVIE` beside book, magazine, web, video.
+A movie feels like it might want its own citation type. It has a year, a director, a runtime; it is a "film", not a "video"; the dropdown a contributor picks from would read more honestly with a `Movie` row than by asking them to file _Tommy_ under `Video`. So the instinct is: add `SourceType.MOVIE` beside book, magazine, web, video.
 
-That instinct is wrong, and it is worth being precise about why, because the citation-type axis is the expensive one — a new type is a first-party product decision that ripples into the frontend, the codegen channel, the reader components, and the CHECK constraints ([CitationPluginSystem.md](CitationPluginSystem.md)). We should pay that cost only when a candidate **behaves** differently, not when it merely **reads** differently.
+That instinct is wrong. Creating a new citation type is expensive: a new type is a first-party product decision that ripples into the frontend, the codegen channel, the reader components, and the CHECK constraints ([CitationPluginSystem.md](CitationPluginSystem.md)). We should pay that cost only when a candidate **behaves** differently, not when it merely **reads** differently.
 
-## The answer: a movie is a `video`
+## A movie is a `video`
 
-Our type axis encodes **behavior**, not **medium**. A `CitationTypeSpec` declares exactly four behavioral facts (`apps/citation/citation_types/citation_type_specs.py`):
+Citation types encode **behavior**, not **medium**. A `CitationTypeSpec` declares exactly four behavioral facts (`apps/citation/citation_types/citation_type_specs.py`):
 
 - `flat_hierarchy` — how deep the source nests
 - `parentless_abstract` — whether a parentless source is a container or citable evidence
@@ -34,10 +34,6 @@ Run a movie down that list and it is a video in every position:
 Everything that distinguishes a movie from a YouTube clip — a release year, a director, a distributor — is **metadata on the source row**, not behavior the citation system branches on. `CitationSource` already carries `year`/`month`/`day`, `author`, `publisher`, `description` for exactly this. A movie is a video with its year filled in.
 
 Writing `movie.py` would produce a `CitationTypeSpec` **field-for-field identical** to `video.py`'s — same timestamp grammar, same work-level identity, same locator contract. A type whose only differentiator is the label it shows in a dropdown is not a behavioral type; it is a medium tag, and a medium tag belongs in **data**, not in the type axis. Compare: we don't have separate `hardcover` and `paperback` citation types — edition is data on a book.
-
-### The type keeps the name `video`
-
-`video` stays the wire value and the label. A contributor citing _Tommy_ and choosing "Video" is not confused, because a movie **is** video; movie-vs-video is a _medium_ distinction one level below the behavioral axis, and the behavioral axis is what the type is for.
 
 ## Prior art: nobody else types film separately either
 
