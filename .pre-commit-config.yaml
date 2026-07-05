@@ -139,22 +139,37 @@ repos:
         files: ^frontend/
         pass_filenames: false
         stages: [pre-push]
-      # Backend tests, split across two git stages:
+      # Backend tests, split across git stages and file scope:
       #   commit -> fast set (excludes the `migration` marker); parallelized by
       #             `-n auto` in backend/pytest.ini. Keeps each commit quick.
-      #   push   -> full suite, including the migration-machinery tests that
-      #             rewind + replay migrations (seconds apiece). The safety net
-      #             runs once per push instead of on every commit.
+      #   push   -> same fast set again, as the comprehensive gate for the code
+      #             being pushed (pre-commit-stage hooks don't re-run on push).
+      #   push, but ONLY when a migration or migration-test file changed ->
+      #             the migration-machinery tests. They rewind + replay
+      #             migrations (seconds apiece) and pin already-shipped, frozen
+      #             migrations, so ordinary code can't break them -- only
+      #             editing/adding a migration can, and that's always a
+      #             `migrations/` (or migration-test) file change. Scoping them
+      #             here keeps ~40s of rewind churn off the vast majority of
+      #             pushes. CI still runs the full suite (incl. migrations)
+      #             unconditionally, so nothing is ungated at merge.
       - id: backend-test
         name: backend tests (fast; excludes migration tests)
         entry: uv run --directory backend pytest -m "not migration"
         language: system
         files: ^backend/
         pass_filenames: false
-      - id: backend-test-full
-        name: backend tests (full, incl. migrations)
-        entry: uv run --directory backend pytest
+      - id: backend-test-push
+        name: backend tests (excludes migration tests)
+        entry: uv run --directory backend pytest -m "not migration"
         language: system
         files: ^backend/
+        pass_filenames: false
+        stages: [pre-push]
+      - id: backend-test-migrations
+        name: backend migration tests (only when migrations change)
+        entry: uv run --directory backend pytest -m migration
+        language: system
+        files: ^backend/.*(migration|_backfill).*\.py$
         pass_filenames: false
         stages: [pre-push]
