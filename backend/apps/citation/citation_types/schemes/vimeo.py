@@ -55,3 +55,4 @@ VIMEO: Final[VideoSchemeSpec] = VideoSchemeSpec(
     # The start time rides the same way (``#t=90s``, ``#t=1m30s``).
     start_seconds_source=StartSecondsSource("fragment", ("t",)),
 )
+SCHEME: Final[VideoSchemeSpec] = VIMEO

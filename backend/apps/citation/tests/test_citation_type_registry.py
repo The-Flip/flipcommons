@@ -5,12 +5,15 @@ The per-scheme behavioral contract is covered separately by
 ``schemes/test_conformance.py``.
 """
 
+import dataclasses
+
 import pytest
 
 from apps.citation.citation_types import (
     CITATION_TYPE_SPECS,
     SCHEME_SPECS,
     SourceType,
+    UrlShape,
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
@@ -24,7 +27,10 @@ from apps.citation.citation_types import (
     scheme_root_citation_source_info,
     scheme_source_type,
 )
-from apps.citation.citation_types.registry import _assert_registry_coherent
+from apps.citation.citation_types.registry import (
+    _assert_registry_coherent,
+    _discover_scheme_specs,
+)
 
 
 class TestCitationTypeSpecs:
@@ -67,21 +73,20 @@ class TestSchemeRegistry:
         for key, spec in SCHEME_SPECS.items():
             assert key == spec.key
 
+    def test_schemes_are_auto_discovered_in_key_order(self):
+        assert list(SCHEME_SPECS.values()) == list(_discover_scheme_specs())
+        assert list(SCHEME_SPECS) == sorted(SCHEME_SPECS)
+
     def test_scheme_bindings_bind_key_to_owning_type(self):
         bindings = scheme_bindings()
         assert bindings == [
-            ("ipdb", "web"),
-            ("opdb", "web"),
-            ("youtube", "video"),
-            ("vimeo", "video"),
-            ("tiktok", "video"),
-            # Web, not video: X is mixed media, and a scheme may only
-            # recognize URL shapes guaranteed to be its owning type.
-            ("x", "web"),
+            (spec.key, spec.source_type) for spec in SCHEME_SPECS.values()
         ]
         # Named fields, not positional guessing — the point of the NamedTuple.
-        assert bindings[2].identifier_key == "youtube"
-        assert bindings[2].source_type is SourceType.VIDEO
+        youtube = next(
+            binding for binding in bindings if binding.identifier_key == "youtube"
+        )
+        assert youtube.source_type is SourceType.VIDEO
 
 
 class TestExternalCustomerAccessors:
@@ -157,9 +162,22 @@ class TestExternalCustomerAccessors:
 
 class TestCoherenceHelper:
     def test_passes_on_the_real_registry(self):
-        _assert_registry_coherent(CITATION_TYPE_SPECS, SCHEME_SPECS)  # does not raise
+        _assert_registry_coherent(
+            CITATION_TYPE_SPECS, tuple(SCHEME_SPECS.values())
+        )  # does not raise
 
     def test_raises_on_a_missing_type(self):
         incomplete = {SourceType.BOOK: CITATION_TYPE_SPECS[SourceType.BOOK]}
         with pytest.raises(AssertionError, match="missing a type spec"):
-            _assert_registry_coherent(incomplete, SCHEME_SPECS)
+            _assert_registry_coherent(incomplete, tuple(SCHEME_SPECS.values()))
+
+    def test_raises_on_overlapping_recognition_hosts(self):
+        """Two schemes claiming one host would make recognition order-dependent."""
+        youtube = SCHEME_SPECS["youtube"]
+        clash = dataclasses.replace(
+            youtube,
+            key="clash",
+            url_shapes=(UrlShape(hosts=("youtube.com",), path="/x/{id}"),),
+        )
+        with pytest.raises(AssertionError, match="share URL-shape hosts"):
+            _assert_registry_coherent(CITATION_TYPE_SPECS, (youtube, clash))

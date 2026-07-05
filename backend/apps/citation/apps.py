@@ -77,7 +77,10 @@ class CitationConfig(AppConfig):
             register_picker,
         )
 
-        from . import authz  # noqa: F401  # registers authz rules at startup
+        from . import (
+            authz,  # noqa: F401  # registers authz rules at startup
+            scheme_validation,  # noqa: F401  # registers the scheme check
+        )
 
         register(
             LinkType(

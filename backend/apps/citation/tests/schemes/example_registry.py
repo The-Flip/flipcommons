@@ -2,25 +2,41 @@
 
 Shared by both harnesses — ``test_examples`` drives the URL tables, and
 ``test_conformance`` reads each scheme's ``example_identifier`` as its
-round-trip seed. Lives in its own (non-test) module so neither harness has to
-import the other, and mirrors the production ``_SCHEMES`` registration: one
-line per scheme, greppable, held to the registered scheme set by the assert
-below (every scheme has a table; no table names an unregistered scheme).
+round-trip seed. Discovers ``<scheme>_examples.py`` modules that export
+``EXAMPLES``; adding a production scheme therefore needs a matching example
+module, not an edit here. The convention is two-part — example data is a
+``_examples``-suffixed, non-``test_`` module — so the harnesses (``test_*``,
+including ``test_examples`` itself) are excluded by rule, not by a
+hand-maintained list.
 """
 
 from apps.citation.citation_types import SCHEME_SPECS
+from apps.citation.citation_types.plugin_discovery import discover_package_exports
+from apps.citation.tests import schemes as _schemes_package
 
-from . import test_ipdb, test_opdb, test_tiktok, test_vimeo, test_x, test_youtube
 from .example_data import SchemeExamples
 
-SCHEME_EXAMPLES: dict[str, SchemeExamples] = {
-    "ipdb": test_ipdb.EXAMPLES,
-    "opdb": test_opdb.EXAMPLES,
-    "youtube": test_youtube.EXAMPLES,
-    "vimeo": test_vimeo.EXAMPLES,
-    "tiktok": test_tiktok.EXAMPLES,
-    "x": test_x.EXAMPLES,
-}
+_EXAMPLES_EXPORT = "EXAMPLES"
+_EXAMPLES_SUFFIX = "_examples"
+
+
+def _discover_scheme_examples() -> dict[str, SchemeExamples]:
+    """Import every ``<scheme>_examples`` module, keyed by scheme (suffix stripped)."""
+    discovered = discover_package_exports(
+        _schemes_package,
+        _EXAMPLES_EXPORT,
+        SchemeExamples,
+        include_module=lambda name: (
+            name.endswith(_EXAMPLES_SUFFIX) and not name.startswith("test_")
+        ),
+    )
+    return {
+        item.module_name.removesuffix(_EXAMPLES_SUFFIX): item.value
+        for item in sorted(discovered, key=lambda item: item.module_name)
+    }
+
+
+SCHEME_EXAMPLES: dict[str, SchemeExamples] = _discover_scheme_examples()
 
 assert SCHEME_EXAMPLES.keys() == set(SCHEME_SPECS), (
     "SCHEME_EXAMPLES must cover exactly the registered schemes; "

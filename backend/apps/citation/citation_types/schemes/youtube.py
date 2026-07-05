@@ -56,3 +56,4 @@ YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
     # ``start=95``; the video type's grammar parses them. ``t=0`` abstains.
     start_seconds_source=StartSecondsSource("query", ("t", "start")),
 )
+SCHEME: Final[VideoSchemeSpec] = YOUTUBE

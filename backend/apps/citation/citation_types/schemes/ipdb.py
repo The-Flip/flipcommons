@@ -26,3 +26,4 @@ IPDB: Final[SchemeSpec] = SchemeSpec(
         recognition_hosts=("ipdb.org",),
     ),
 )
+SCHEME: Final[SchemeSpec] = IPDB

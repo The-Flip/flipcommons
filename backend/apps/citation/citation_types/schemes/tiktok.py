@@ -62,3 +62,4 @@ TIKTOK: Final[VideoSchemeSpec] = VideoSchemeSpec(
         recognition_hosts=("tiktok.com",),
     ),
 )
+SCHEME: Final[VideoSchemeSpec] = TIKTOK

@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection
 
 from apps.accounts.test_factories import default_actor
+from apps.citation.citation_types import SCHEME_SPECS
 from apps.citation.models import (
     CitationSource,
     CitationSourceLink,
@@ -89,14 +90,7 @@ class TestCitationSourceIdentifierKey:
 
     @pytest.mark.parametrize(
         ("key", "source_type"),
-        [
-            ("ipdb", "web"),
-            ("opdb", "web"),
-            ("youtube", "video"),
-            ("vimeo", "video"),
-            ("tiktok", "video"),
-            ("x", "web"),  # mixed-media platform — posts mint as web pages
-        ],
+        [(spec.key, spec.source_type.value) for spec in SCHEME_SPECS.values()],
     )
     def test_key_on_its_owning_type_accepted(self, db, key, source_type):
         cs = make_citation_source(

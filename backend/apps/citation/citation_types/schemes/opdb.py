@@ -24,3 +24,4 @@ OPDB: Final[SchemeSpec] = SchemeSpec(
         recognition_hosts=("opdb.org",),
     ),
 )
+SCHEME: Final[SchemeSpec] = OPDB

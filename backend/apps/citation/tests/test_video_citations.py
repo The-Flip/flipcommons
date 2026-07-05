@@ -2,7 +2,7 @@
 
 The grammar itself is covered by ``test_video_locators.py``, the generic
 scheme contract by ``schemes/test_conformance.py`` and the youtube URL/hint
-shapes by its example table in ``schemes/test_youtube.py``; this file covers
+shapes by its example table in ``schemes/youtube_examples.py``; this file covers
 the read-side composition against real rows (recognition ``locator_hint``,
 ``deep_linked_url``).
 """

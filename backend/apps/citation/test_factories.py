@@ -17,7 +17,7 @@ fails at type-check rather than at ``.objects.create`` runtime.
 from __future__ import annotations
 
 import uuid
-from typing import Literal, TypeGuard, get_args
+from typing import Literal
 
 from apps.accounts.test_factories import default_actor
 from apps.actors.models import Actor
@@ -29,43 +29,22 @@ from apps.citation.models import (
 )
 
 # CitationSourceTypeValue is the canonical wire Literal (citation_types);
-# the remaining aliases mirror each model's choices, so a bad choice value fails at
-# type-check. Constraint tests that need an invalid value build the model
-# directly. ``identifier_key`` also permits "" (blank = a root without a scheme).
+# LinkTypeValue mirrors the model choices, so a bad link type fails at type-check.
+# Constraint tests that need an invalid value build the model directly.
+# ``identifier_key`` values are discovered plugin keys, so the factory validates
+# them at runtime against the registry rather than mirroring a hand-maintained
+# Literal.
 type LinkTypeValue = Literal["homepage", "catalog", "publisher", "reference", "archive"]
-type IdentifierKeyValue = Literal["", "ipdb", "opdb", "youtube", "vimeo", "tiktok", "x"]
-
-
-def _assert_identifier_key_literal_current() -> None:
-    """Raise at import if ``IdentifierKeyValue`` drifts from the scheme registry.
-
-    A Literal can't be derived from the registry, so this hand-mirrored list
-    needs the same import-time honesty check ``CitationSourceTypeValue`` gets
-    in ``citation_types.vocabulary`` — otherwise a newly registered scheme is
-    unusable in test factories until someone trips over the arg-type error.
-    """
-    literal = set(get_args(IdentifierKeyValue.__value__))
-    if literal != {"", *identifier_key_values()}:
-        raise AssertionError(
-            f"IdentifierKeyValue {sorted(literal)} != scheme registry "
-            f"{sorted(identifier_key_values())} + ''"
-        )
-
-
-_assert_identifier_key_literal_current()
-
-
-def _is_identifier_key(raw: str) -> TypeGuard[IdentifierKeyValue]:
-    return raw in get_args(IdentifierKeyValue.__value__)
+type IdentifierKeyValue = str
 
 
 def identifier_key_value(raw: str) -> IdentifierKeyValue:
-    """Coerce a registered scheme key to the factory Literal.
+    """Validate and return a registered scheme key for factory calls.
 
     For registry-parametrized tests, whose keys arrive as plain ``str``; an
-    unregistered key raises rather than leaking past the Literal.
+    unregistered key raises rather than leaking into a model create.
     """
-    if _is_identifier_key(raw):
+    if raw == "" or raw in identifier_key_values():
         return raw
     raise ValueError(f"Unknown identifier_key {raw!r}")
 
@@ -90,6 +69,7 @@ def make_citation_source(
 ) -> CitationSource:
     """Create a ``CitationSource`` for tests, defaulting name/source_type/actor."""
     created_by = created_by or default_actor()
+    identifier_key = identifier_key_value(identifier_key)
     return CitationSource.objects.create(
         name=name,
         source_type=source_type,

@@ -32,7 +32,7 @@ from apps.citation.citation_types import (
 )
 from apps.citation.citation_types.video import VideoSchemeSpec
 from apps.citation.hosts import is_dns_host, normalize_host
-from apps.citation.psl import is_public_suffix
+from apps.citation.scheme_validation import validate_scheme
 
 from .example_registry import SCHEME_EXAMPLES
 
@@ -193,58 +193,20 @@ class TestSchemeConformance:
         assert parsed.hostname
         assert is_dns_host(normalize_host(parsed.hostname))
 
-    def test_recognition_hosts_are_covered_by_declared_shapes(self, spec):
-        """Every recognition host is one of the scheme's shape hosts.
+    def test_declaration_is_valid(self, spec):
+        """The scheme's declaration passes the shared semantic validator.
 
-        The two host sets are declared separately (a recognition host may
-        also cover shape hosts that are its subdomains, and a redirect-style
-        shape host like ``youtu.be`` is deliberately *not* a recognition
-        host), but a recognition host matching none of the shapes is a typo.
+        Key/label presence, root-info well-formedness, host validity (real DNS
+        hosts, no bare public suffix), recognition-host coverage and the
+        start-seconds→deep-link pairing all live in ``validate_scheme`` — one
+        pure check shared by this harness, the ``manage.py check`` system check
+        and (eventually) the UI scheme-creation path. Asserting per-spec here
+        keeps the scheme name in the test id.
         """
-        shape_hosts = {h for shape in spec.url_shapes for h in shape.hosts}
-        for rh in spec.root_citation_source_info.recognition_hosts:
-            assert any(sh == rh or sh.endswith("." + rh) for sh in shape_hosts), (
-                f"{spec.key}: recognition host {rh!r} matches no declared shape"
-            )
-
-    def test_root_citation_source_info_is_well_formed(self, spec):
-        info = spec.root_citation_source_info
-        assert info.name, f"{spec.key}: root_citation_source_info.name is blank"
-        parsed = urlparse(info.homepage_url)
-        assert parsed.scheme == "https", f"{spec.key}: homepage_url is not https"
-        assert parsed.hostname, f"{spec.key}: homepage_url has no host"
-        for host in info.recognition_hosts:
-            assert host == normalize_host(host), (
-                f"{spec.key}: recognition host {host!r} is not normalized"
-            )
-            assert is_dns_host(host), f"{spec.key}: bad recognition host {host!r}"
-            assert not is_public_suffix(host), (
-                f"{spec.key}: recognition host {host!r} is a bare public suffix"
-            )
-
-    def test_key_and_label_are_present(self, spec):
-        assert spec.key
-        assert spec.key == spec.key.lower()
-        assert spec.label
+        assert validate_scheme(spec) == []
 
     def test_scheme_implements_its_types_contract(self, spec):
         assert isinstance(spec, citation_type_spec(spec.source_type).scheme_spec_type)
-
-    def test_start_seconds_extraction_implies_deep_link(self, spec):
-        """A scheme that reads seek positions from URLs must also build them.
-
-        ``deep_link_template`` is optional overall — some platforms' URLs
-        cannot seek (TikTok) and their citations degrade to locator text
-        beside the plain canonical link. But a scheme whose URLs *carry*
-        start times has proven the platform can jump, so declaring a
-        ``start_seconds_source`` without a ``deep_link_template`` would
-        collect locators it then never honors at read time.
-        """
-        if spec.start_seconds_source is not None:
-            assert spec.deep_link_template is not None, (
-                f"{spec.key}: extracts start-time hints but has no deep-link "
-                f"template to honor them"
-            )
 
     def test_deep_link_output_is_well_formed_on_the_schemes_host(
         self, spec, driver, example_id

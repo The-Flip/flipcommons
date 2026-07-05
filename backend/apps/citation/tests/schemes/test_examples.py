@@ -1,7 +1,7 @@
 """The data-driven scheme example harness.
 
-Each scheme declares a ``SchemeExamples`` table in its ``test_<scheme>`` module
-(real-platform URL shapes: valid, invalid look-alikes, start-time cases),
+Each scheme declares a ``SchemeExamples`` table in its ``<scheme>_examples``
+module (real-platform URL shapes: valid, invalid look-alikes, start-time cases),
 collected in the shared ``example_registry``. This harness parametrizes over
 every declared case, so a scheme's platform coverage is *data*, not a
 hand-written test module.

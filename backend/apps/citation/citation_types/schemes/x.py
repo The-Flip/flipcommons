@@ -56,3 +56,4 @@ X_TWITTER: Final[SchemeSpec] = SchemeSpec(
         recognition_hosts=("x.com", "twitter.com"),
     ),
 )
+SCHEME: Final[SchemeSpec] = X_TWITTER

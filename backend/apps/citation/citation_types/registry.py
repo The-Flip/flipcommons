@@ -1,16 +1,12 @@
 """The aggregating registry for citation types and schemes.
 
-The single place that names the registered plugins. Core code (models,
-recognition, ingest, API) reads types and schemes from here — never from a
-plugin module directly and never via a hand-listed enum — so adding a scheme
-is one module under ``schemes/`` plus one line in ``_SCHEMES`` below, and
-adding a type is one module plus one line in ``_CITATION_TYPES``. The model's
-CHECK-constraint value lists derive from these registrations, so a new entry
-flows into ``makemigrations`` instead of a hand-edit.
-
-Registration is deliberately an explicit list, not directory auto-discovery:
-greppable beats magic, and the import-time assertions below catch a module
-that was written but never registered as soon as its key is used anywhere.
+The single place core code (models, recognition, ingest, API) reads types and
+schemes from. Citation types remain explicitly registered first-party product
+concepts. Schemes are auto-discovered plugin declarations: a module under
+``schemes/`` exports one conventional ``SCHEME`` value, and the registry imports
+those modules in deterministic key order. The model's CHECK-constraint value
+lists derive from these registrations, so a new scheme flows into
+``makemigrations`` instead of a hand-edit.
 """
 
 from __future__ import annotations
@@ -19,6 +15,7 @@ from collections.abc import Mapping
 from typing import Final, NamedTuple
 
 from apps.citation.citation_types import book, magazine, video, web
+from apps.citation.citation_types import schemes as scheme_package
 from apps.citation.citation_types.citation_scheme_driver import (
     SchemeDriver,
     start_seconds_hint_values,
@@ -30,7 +27,7 @@ from apps.citation.citation_types.citation_scheme_specs import (
 )
 from apps.citation.citation_types.citation_type_driver import CitationTypeDriver
 from apps.citation.citation_types.citation_type_specs import CitationTypeSpec
-from apps.citation.citation_types.schemes import ipdb, opdb, tiktok, vimeo, x, youtube
+from apps.citation.citation_types.plugin_discovery import discover_package_exports
 from apps.citation.citation_types.vocabulary import SourceType, StartSeconds
 
 _CITATION_TYPES: Final[tuple[CitationTypeSpec, ...]] = (
@@ -40,17 +37,30 @@ _CITATION_TYPES: Final[tuple[CitationTypeSpec, ...]] = (
     video.VIDEO,
 )
 
-# Ordering is load-bearing twice over: recognition tries schemes in this order,
-# and the derived CHECK value list serializes in this order (reordering would
-# churn a migration).
-_SCHEMES: Final[tuple[SchemeSpec, ...]] = (
-    ipdb.IPDB,
-    opdb.OPDB,
-    youtube.YOUTUBE,
-    vimeo.VIMEO,
-    tiktok.TIKTOK,
-    x.X_TWITTER,
-)
+_SCHEME_EXPORT: Final = "SCHEME"
+
+
+def _discover_scheme_specs() -> tuple[SchemeSpec, ...]:
+    """Import every scheme module and return its conventional ``SCHEME`` value.
+
+    Discovery is deliberately narrow: only immediate, non-private modules in
+    ``citation_types/schemes`` participate; each must export exactly one
+    ``SchemeSpec`` under ``SCHEME``. Sorting by scheme key gives stable
+    recognition and migration ordering independent of filesystem order — safe
+    because ``_assert_registry_coherent`` requires the schemes' URL-shape hosts
+    to be disjoint, so first-match recognition can't depend on which scheme
+    happens to sort first.
+    """
+    discovered = discover_package_exports(
+        scheme_package,
+        _SCHEME_EXPORT,
+        SchemeSpec,
+        include_module=lambda name: not name.startswith("_"),
+    )
+    return tuple(sorted((d.value for d in discovered), key=lambda spec: spec.key))
+
+
+_SCHEMES: Final[tuple[SchemeSpec, ...]] = _discover_scheme_specs()
 
 CITATION_TYPE_SPECS: Final[Mapping[SourceType, CitationTypeSpec]] = {
     spec.source_type: spec for spec in _CITATION_TYPES
@@ -63,7 +73,7 @@ SCHEME_SPECS: Final[Mapping[SchemeKey, SchemeSpec]] = {
 
 def _assert_registry_coherent(
     types: Mapping[SourceType, CitationTypeSpec],
-    schemes: Mapping[str, SchemeSpec],
+    schemes: tuple[SchemeSpec, ...],
 ) -> None:
     """Raise if the registry is incomplete or inconsistent.
 
@@ -75,16 +85,19 @@ def _assert_registry_coherent(
     - every ``SourceType`` member has a type spec;
     - no two type specs or scheme specs claimed one key (a dict-comprehension
       collision drops a row silently — compare against the source tuples);
-    - every scheme's ``source_type`` is a registered type.
+    - every scheme's ``source_type`` is a registered type;
+    - no two schemes share a URL-shape host, so ``recognize_scheme``'s
+      first-match-wins order is irrelevant to the result.
     """
     missing = set(SourceType) - types.keys()
     if missing:
         raise AssertionError(f"SourceType(s) missing a type spec: {sorted(missing)}")
     if len(types) != len(_CITATION_TYPES):
         raise AssertionError("Two citation type specs registered one source_type.")
-    if len(schemes) != len(_SCHEMES):
+    scheme_map = {spec.key: spec for spec in schemes}
+    if len(scheme_map) != len(schemes):
         raise AssertionError("Two scheme specs registered one key.")
-    orphaned = [spec.key for spec in schemes.values() if spec.source_type not in types]
+    orphaned = [spec.key for spec in schemes if spec.source_type not in types]
     if orphaned:
         raise AssertionError(f"Scheme(s) with an unregistered source_type: {orphaned}")
     # Each scheme implements its owning type's contract — the per-type spec
@@ -95,7 +108,7 @@ def _assert_registry_coherent(
     # enforced for free once the subclass gains a required field.
     nonconforming = [
         spec.key
-        for spec in schemes.values()
+        for spec in schemes
         if spec.source_type in types
         and not isinstance(spec, types[spec.source_type].scheme_spec_type)
     ]
@@ -103,9 +116,24 @@ def _assert_registry_coherent(
         raise AssertionError(
             f"Scheme(s) not implementing their type's scheme_spec_type: {nonconforming}"
         )
+    # Recognition is first-match-wins over schemes in key order (see
+    # ``recognize_scheme``), which is only order-independent if no URL can match
+    # two schemes. Every shape is host-anchored, so disjoint URL-shape hosts
+    # across schemes are sufficient — and enforced here at import, so a host
+    # collision fails the build rather than resolving to whichever scheme sorts
+    # first.
+    host_owners: dict[str, list[SchemeKey]] = {}
+    for spec in schemes:
+        for host in {host for shape in spec.url_shapes for host in shape.hosts}:
+            host_owners.setdefault(host, []).append(spec.key)
+    collisions = {
+        host: sorted(keys) for host, keys in host_owners.items() if len(keys) > 1
+    }
+    if collisions:
+        raise AssertionError(f"Schemes share URL-shape hosts: {collisions}")
 
 
-_assert_registry_coherent(CITATION_TYPE_SPECS, SCHEME_SPECS)
+_assert_registry_coherent(CITATION_TYPE_SPECS, _SCHEMES)
 
 # One framework driver per registered plugin, in registration order.
 # Building the scheme drivers here compiles every scheme's declarations at

@@ -2,7 +2,7 @@
 
 Test-side support: a scheme's platform-specific URL examples are *data*, not
 hand-written test code. These types hold that data; the harness
-(``test_examples``) drives it and each ``test_<scheme>`` module declares it.
+(``test_examples``) drives it and each ``<scheme>_examples`` module declares it.
 Deliberately outside the production spec — examples are test fixtures and never
 ship on ``SchemeSpec``.
 """
@@ -48,7 +48,7 @@ class DeepLinkCase(NamedTuple):
 
 @dataclass(frozen=True, slots=True)
 class SchemeExamples:
-    """A scheme's test material, declared in its test module.
+    """A scheme's test material, declared in its ``<scheme>_examples`` module.
 
     - ``example_identifier``: one real, well-formed identifier — the conformance
       harness's round-trip seed (``extract(canonical_url(id))``,

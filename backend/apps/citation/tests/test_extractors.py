@@ -2,7 +2,7 @@
 
 Focused on YouTube recognition and host-suffix resolution through the core DB
 paths. YouTube's URL-shape grammar (the many shapes collapsing to one canonical
-id) is exercised as data by ``schemes/test_youtube.py`` + the shared example
+id) is exercised as data by ``schemes/youtube_examples.py`` + the shared example
 harness; this file owns the recognition/root-domain integration.
 """
 
