@@ -18,7 +18,7 @@ from apps.citation.citation_types.citation_scheme_specs import (
 from apps.citation.citation_types.video import VideoSchemeSpec
 from apps.citation.citation_types.vocabulary import SourceType
 
-INSTAGRAM: Final[VideoSchemeSpec] = VideoSchemeSpec(
+SCHEME: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="instagram",
     label="Instagram Reels",
     source_type=SourceType.VIDEO,
@@ -37,4 +37,3 @@ INSTAGRAM: Final[VideoSchemeSpec] = VideoSchemeSpec(
         recognition_hosts=("instagram.com",),
     ),
 )
-SCHEME: Final[VideoSchemeSpec] = INSTAGRAM

@@ -42,7 +42,7 @@ from apps.citation.citation_types.citation_scheme_specs import (
 from apps.citation.citation_types.video import VideoSchemeSpec
 from apps.citation.citation_types.vocabulary import SourceType
 
-TIKTOK: Final[VideoSchemeSpec] = VideoSchemeSpec(
+SCHEME: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="tiktok",
     label="TikTok",
     source_type=SourceType.VIDEO,
@@ -62,4 +62,3 @@ TIKTOK: Final[VideoSchemeSpec] = VideoSchemeSpec(
         recognition_hosts=("tiktok.com",),
     ),
 )
-SCHEME: Final[VideoSchemeSpec] = TIKTOK

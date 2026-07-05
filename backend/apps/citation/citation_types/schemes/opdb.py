@@ -9,7 +9,7 @@ from apps.citation.citation_types.citation_scheme_specs import (
 )
 from apps.citation.citation_types.vocabulary import SourceType
 
-OPDB: Final[SchemeSpec] = SchemeSpec(
+SCHEME: Final[SchemeSpec] = SchemeSpec(
     key="opdb",
     label="OPDB",
     source_type=SourceType.WEB,
@@ -24,4 +24,3 @@ OPDB: Final[SchemeSpec] = SchemeSpec(
         recognition_hosts=("opdb.org",),
     ),
 )
-SCHEME: Final[SchemeSpec] = OPDB

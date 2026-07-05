@@ -9,7 +9,7 @@ from apps.citation.citation_types.citation_scheme_specs import (
 )
 from apps.citation.citation_types.vocabulary import SourceType
 
-IPDB: Final[SchemeSpec] = SchemeSpec(
+SCHEME: Final[SchemeSpec] = SchemeSpec(
     key="ipdb",
     label="IPDB",
     source_type=SourceType.WEB,
@@ -26,4 +26,3 @@ IPDB: Final[SchemeSpec] = SchemeSpec(
         recognition_hosts=("ipdb.org",),
     ),
 )
-SCHEME: Final[SchemeSpec] = IPDB

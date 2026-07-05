@@ -23,7 +23,7 @@ from apps.citation.citation_types.citation_scheme_specs import (
 from apps.citation.citation_types.video import VideoSchemeSpec
 from apps.citation.citation_types.vocabulary import SourceType
 
-YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
+SCHEME: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="youtube",
     label="YouTube",
     source_type=SourceType.VIDEO,
@@ -56,4 +56,3 @@ YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
     # ``start=95``; the video type's grammar parses them. ``t=0`` abstains.
     start_seconds_source=StartSecondsSource("query", ("t", "start")),
 )
-SCHEME: Final[VideoSchemeSpec] = YOUTUBE

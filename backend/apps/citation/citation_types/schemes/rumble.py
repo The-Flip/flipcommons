@@ -18,7 +18,7 @@ from apps.citation.citation_types.citation_scheme_specs import (
 from apps.citation.citation_types.video import VideoSchemeSpec
 from apps.citation.citation_types.vocabulary import SourceType
 
-RUMBLE: Final[VideoSchemeSpec] = VideoSchemeSpec(
+SCHEME: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="rumble",
     label="Rumble",
     source_type=SourceType.VIDEO,
@@ -31,4 +31,3 @@ RUMBLE: Final[VideoSchemeSpec] = VideoSchemeSpec(
         recognition_hosts=("rumble.com",),
     ),
 )
-SCHEME: Final[VideoSchemeSpec] = RUMBLE

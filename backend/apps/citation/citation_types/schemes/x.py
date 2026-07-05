@@ -30,7 +30,7 @@ from apps.citation.citation_types.citation_scheme_specs import (
 )
 from apps.citation.citation_types.vocabulary import SourceType
 
-X_TWITTER: Final[SchemeSpec] = SchemeSpec(
+SCHEME: Final[SchemeSpec] = SchemeSpec(
     key="x",
     label="X (Twitter)",
     source_type=SourceType.WEB,
@@ -56,4 +56,3 @@ X_TWITTER: Final[SchemeSpec] = SchemeSpec(
         recognition_hosts=("x.com", "twitter.com"),
     ),
 )
-SCHEME: Final[SchemeSpec] = X_TWITTER

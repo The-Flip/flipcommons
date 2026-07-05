@@ -32,7 +32,7 @@ from apps.citation.citation_types.citation_scheme_specs import (
 from apps.citation.citation_types.video import VideoSchemeSpec
 from apps.citation.citation_types.vocabulary import SourceType
 
-VIMEO: Final[VideoSchemeSpec] = VideoSchemeSpec(
+SCHEME: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="vimeo",
     label="Vimeo",
     source_type=SourceType.VIDEO,
@@ -55,4 +55,3 @@ VIMEO: Final[VideoSchemeSpec] = VideoSchemeSpec(
     # The start time rides the same way (``#t=90s``, ``#t=1m30s``).
     start_seconds_source=StartSecondsSource("fragment", ("t",)),
 )
-SCHEME: Final[VideoSchemeSpec] = VIMEO
