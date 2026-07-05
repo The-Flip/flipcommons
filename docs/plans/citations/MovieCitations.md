@@ -48,6 +48,56 @@ Two reference systems that have lived with this question far longer both collaps
 
 Both put the film-ness on the **work** and keep the **citation** generic. That is the shape we already have: `source_type = video` is the generic citation behavior; the year/director/etc. on the `CitationSource` row are the work's film-ness.
 
+## What a movie citation captures (and where each field lives)
+
+Wikipedia's `{{cite AV media}}` is the most complete field inventory for a film citation, so it is the useful checklist. Mapping its parameters onto our model shows the substantive ones already have homes — and separates the fields that describe the **work** (they live on `CitationSource`) from the fields that describe **this use of it** (they live on `CitationInstance`).
+
+Work-level fields — on `CitationSource`:
+
+| Wikipedia (`cite AV media`)          | Meaning                                | Our field                | Status                                       |
+| ------------------------------------ | -------------------------------------- | ------------------------ | -------------------------------------------- |
+| `title`                              | the work's name                        | `name`                   | ✅                                           |
+| `date` / `year`                      | release date (full or year)            | `year` / `month` / `day` | ✅                                           |
+| `publisher`                          | producing studio                       | `publisher`              | ✅                                           |
+| `type`                               | medium label ("Motion picture", "DVD") | `source_type = video`    | ✅ (the medium tag itself)                   |
+| `people` / `last`+`first`            | credited person(s) with role           | `author`                 | ⚠️ see [People and roles](#people-and-roles) |
+| `location`                           | where produced/published               | —                        | ❌ not modeled (not needed for the seed)     |
+| `language`, `series`/`work`/`volume` | language; containing collection        | —                        | ❌ not modeled                               |
+
+Instance-level fields — on `CitationInstance` (the specific use, not the film):
+
+| Wikipedia                            | Meaning                       | Our field | Status                                                                    |
+| ------------------------------------ | ----------------------------- | --------- | ------------------------------------------------------------------------- |
+| `time` (+ `time-caption`, `minutes`) | timestamp of the cited moment | `locator` | ✅ the video-type timestamp locator                                       |
+| `url` + `access-date`                | the copy consulted, and when  | —         | ❌ future access URL ([CitationInstanceUrls.md](CitationInstanceUrls.md)) |
+| `quote`                              | the cited passage             | `quote`   | ✅                                                                        |
+| `isbn`/`doi`/`oclc`/…                | identifiers                   | —         | ❌ rarely used for film; not needed                                       |
+
+The only gaps that matter are the **access URL** (already sequenced after) and the **people/role** question below. Everything else Wikipedia captures is either already stored or metadata the pinball-movie seed doesn't need.
+
+## People and roles
+
+`CitationSource.author` is a single free-text `CharField`, and for a book "author" is exactly right. For a film it is uncomfortable in two ways: a film's principal credited person is usually a **director**, not an author, and a film often has **several** relevant roles (director, writer, narrator) where a book has one. Storing a bare `Ken Russell` in a field named `author` both mislabels the role and can't hold more than one. So "director = author" is too glib — this section works the options.
+
+**What the reference systems actually do** — and they converge:
+
+- **Wikipedia** puts everyone in one free-text `people=` field with the **role in parentheses**: `people=Russell, Ken (Director)`, semicolon-separated for multiple credits.
+- **APA** lists the director in the author position with a parenthetical role: `Russell, K. (Director). (1975). Tommy [Film]. Robert Stigwood Organisation.`
+- **Chicago** likewise puts the director in the author position with a role label: `Russell, Ken, director. Tommy. …`
+- (Only **MLA** leads with the title instead — the outlier.)
+
+So the dominant convention is: **the credited person(s) go in the author/creator slot, as free text, with the role annotated in parentheses.** That is not a workaround for a book-shaped field — it is how film citations are actually written, and it is exactly what our free-text `author` can already hold.
+
+### The options
+
+1. **Reuse `author` with a parenthetical-role convention** (recommended). Store `Ken Russell (director)`; multiple credits semicolon-separated, `Ken Russell (director); Pete Townshend (writer)`. Zero schema change, zero movie-specific machinery — consistent with the doc's whole thesis — and it matches Wikipedia + APA + Chicago verbatim. Costs: the field is still _named_ `author` (a mild semantic wart), the parenthetical role is a convention not a constraint, and the credits aren't independently queryable ("all films directed by X" is a substring search, not a join).
+2. **A structured people/role model** — a `CitationSourceContributor(source, name, role)` child table. First-class roles, queryable, and it would also serve book **editors/translators** (which Wikipedia has dedicated params for), so it is not movie-only machinery. But it is real weight: a new model, patch grammar, API surface, admin/UI — and citations are deliberately lightweight evidence pointers (`CitationSource` isn't even claims-controlled), so this is a lot of structure for data no current surface queries. It is the right escalation _when a real need appears_ (a "films by director" view, or credited-role display in the reader), not for a seed that proves the video type.
+3. **A dedicated free-text `credits` / `people` column**, role-neutral, distinct from `author`. Fixes the field-name wart without a join table. But it adds a column that is essentially "`author`, but honest about non-authors" — a half-measure that neither reuses what exists (option 1) nor buys structure (option 2), and it nudges toward a movie-specific field the thesis warns against.
+
+### Recommendation (for confirmation)
+
+Go with **option 1** now: adopt `author` as "the principal credited person(s), with role in parentheses when the role isn't self-evident," and record **option 2 as the named future escalation** (shared contributor model, triggered by a real query/display need, not by movies alone). This keeps the seed to zero new machinery, aligns us with the citation-style mainstream, and leaves a clean upgrade path. Two things to confirm: (a) that overloading the field _named_ `author` is acceptable versus renaming it to a role-neutral `creator`/`credits` (a broader, cross-type rename worth its own discussion), and (b) whether the seed should populate directors at all or ship title+year+description only and add credits later. **This is the open decision the doc is flagged for — not yet settled.**
+
 ## What a movie _is_, structurally: a parentless-citable video work
 
 Here is the one place a movie genuinely differs from today's videos — and it is a difference in **abstractness**, which is already a behavioral fact we model, not a new axis.
@@ -84,6 +134,7 @@ Recorded audio (a podcast, a commentary track) shares the timestamp locator, so 
 - **A movie enters as a parentless-citable video work** — the missing third video shape beside platform-root and child. One model change: relax `video`'s `parentless_abstract` to key on `identifier_key` (blank = movie, citable; set = platform, abstract), mirroring the book rule ([F3](CitationSourceMisclassification.md)).
 - **Streaming platforms are not schemes.** A streaming URL is access, not identity; a scheme would fragment one film into per-platform children. The link is a future access URL on the instance, not the movie's identity.
 - **Audio is different** — it earns its own behaviorally-distinct type (`podcast`) when demand appears; a movie does not, precisely because a movie is behaviorally a video.
+- **Open: how to record people/roles.** The one unsettled question. Leaning toward reusing free-text `author` with a parenthetical role (matching Wikipedia/APA/Chicago), with a structured contributor table as the future escalation — see [People and roles](#people-and-roles). Needs your call.
 
 ## Implementation plan
 
@@ -154,7 +205,7 @@ sources:
     description: Dramatization of Roger Sharpe's 1976 demonstration that overturned New York's pinball ban.
 ```
 
-(A director, if wanted, rides the existing `author` field — but see "Not in this document".)
+(Whether to populate a director — and if so, in `author` with a parenthetical role or elsewhere — is the open question in [People and roles](#people-and-roles); the illustration above ships title+year+description, which is safe either way.)
 
 #### Proposed seed list (expansive)
 
@@ -197,5 +248,6 @@ The relaxation (§1) is self-contained and ships first; it is inert until a movi
 ## Not in this document
 
 - **Access URLs / deliverer-host recognition.** Additive and sequenced after ([CitationInstanceUrls.md](CitationInstanceUrls.md), F1/F7). A movie is usable before they land — its timestamp locator stands alone, and the eventual access URL attaches to the citing _instance_, not the movie.
-- **Movie-specific metadata beyond what `CitationSource` already carries.** Year/author/publisher/description exist today; a dedicated director role or runtime, if wanted, is a later source-schema question, not a citation-type one.
+- **A structured contributor/role model.** The [People and roles](#people-and-roles) escalation (option 2) — a shared `name`+`role` child table serving film credits and book editors/translators — is recorded there as a future step, not specced here.
+- **Other movie metadata we don't model.** Runtime, language, and production location have no home today and the seed doesn't need them; add them only when a surface asks for them.
 - **A non-URL path to mint video _children_.** Movies are cited as parentless works, so they need none; this is orthogonal and unbuilt.
