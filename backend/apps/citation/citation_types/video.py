@@ -1,10 +1,13 @@
-"""The video citation type: platform roots with video children.
+"""The video citation type: platform roots with video children, plus movies.
 
-A parentless video source is a platform (YouTube) — abstract, never cited
-directly; recognition resolves a video URL to a video child under the
-platform root, exactly like web. Unlike web, a video child *wants* a locator:
-the URL identifies the work, but the evidence lives at a moment in it, so the
-locator is an optional **start time** — where to begin watching.
+A parentless video source with an ``identifier_key`` is a platform (YouTube)
+— abstract, never cited directly; recognition resolves a video URL to a video
+child under the platform root, exactly like web. A *schemeless* parentless
+video is a **movie** — a work available through many channels, so it has no
+canonical URL and is cited directly (the parentless-citable shape a standalone
+book has). Either way a video *wants* a locator: the work identifies the
+video, but the evidence lives at a moment in it, so the locator is an optional
+**start time** — where to begin watching.
 
 This module owns the timestamp grammar. It is the authoritative validator on
 every write path (API mint, patch apply); schemes and the frontend only ever
@@ -139,7 +142,12 @@ class VideoSchemeSpec(SchemeSpec):
 VIDEO = CitationTypeSpec(
     source_type=SourceType.VIDEO,
     flat_hierarchy=True,
-    parentless_abstract=True,
+    # A schemeless parentless video is a **movie** — a work available through
+    # many channels, so it has no canonical URL and is cited directly (the
+    # parentless-citable shape a standalone book has). A video root *with* an
+    # ``identifier_key`` (a platform like YouTube) is still abstract, kept so
+    # universally by ``CitationSource.is_abstract``, not by this field.
+    schemeless_parentless_abstract=False,
     child_skips_locator=False,
     locator=LocatorContract(
         kind="timestamp",

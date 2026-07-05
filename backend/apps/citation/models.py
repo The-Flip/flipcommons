@@ -311,22 +311,34 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         """Whether the UI should steer away from citing this directly.
 
         A **per-request display hint, not an enforced write invariant**:
-        abstract when it has children (prefer a specific child) or it's a
-        parentless root of a container type — magazine, web or video (a
-        publication, a site, a platform). "Don't
-        cite a web root" is handled structurally, not by a citation-time guard:
-        URL recognition always resolves to a child under the matched root, so an
-        abstract container root is never the cited record. A standalone book
-        stays a valid cite target whether or not it gains editions, so
-        abstractness is deliberately *not* used to reject a target.
+        abstract when it has children (prefer a specific child), or it's a
+        platform/site root carrying an ``identifier_key`` (recognition resolves
+        a URL to a child under it, so the root is never the cited record), or
+        it's a schemeless parentless root of a container type — a magazine or a
+        website. A standalone book and a movie (a schemeless parentless video)
+        are the work themselves, so they stay valid cite targets; abstractness
+        is deliberately *not* used to reject a target.
+
+        The ``identifier_key`` case is universal (every scheme root is a
+        container), so it lives here rather than as a per-type flag; the type's
+        ``schemeless_parentless_abstract`` decides only the no-scheme case.
 
         ``has_children`` is supplied by the caller so a bulk lister can pass a
         queryset annotation while a single-row caller passes ``children.exists()``
         — this method issues no query of its own.
         """
-        return has_children or (
-            self.is_root and citation_type_spec(self.source_type).parentless_abstract
-        )
+        if has_children:
+            return True
+        if not self.is_root:
+            return False
+        # A scheme-holding root is a platform/site container — recognition
+        # resolves to its children, never the root. Abstract regardless of type.
+        if self.identifier_key:
+            return True
+        # A schemeless parentless root: abstract only when this type's
+        # schemeless parentless form is a container (a magazine, a site) and
+        # not the work itself (a book, a movie).
+        return citation_type_spec(self.source_type).schemeless_parentless_abstract
 
     def clean(self) -> None:
         super().clean()

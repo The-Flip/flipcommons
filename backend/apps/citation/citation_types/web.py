@@ -11,6 +11,6 @@ from apps.citation.citation_types.vocabulary import SourceType
 WEB = CitationTypeSpec(
     source_type=SourceType.WEB,
     flat_hierarchy=True,
-    parentless_abstract=True,
+    schemeless_parentless_abstract=True,
     child_skips_locator=True,
 )

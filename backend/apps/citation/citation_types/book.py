@@ -10,6 +10,6 @@ from apps.citation.citation_types.vocabulary import SourceType
 BOOK = CitationTypeSpec(
     source_type=SourceType.BOOK,
     flat_hierarchy=False,
-    parentless_abstract=False,
+    schemeless_parentless_abstract=False,
     child_skips_locator=False,
 )

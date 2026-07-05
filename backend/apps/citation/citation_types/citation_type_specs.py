@@ -111,10 +111,16 @@ class CitationTypeSpec:
     - ``flat_hierarchy``: the type nests exactly one level (root → child). A
       grandchild is rejected (see ``CitationSource.clean``) so recognition can
       always resolve a host to the root and mint a child directly under it.
-    - ``parentless_abstract``: a parentless source of this type is a container
-      (a website, a publication), not directly-citable evidence — the UI steers
-      away from citing it directly. A parentless *book* is the work itself, so
-      it is citable.
+    - ``schemeless_parentless_abstract``: whether a *schemeless* parentless
+      source of this type is a container (a website, a publication), not
+      directly-citable evidence — the UI steers away from citing it directly.
+      Read only for the no-scheme case: a parentless source *with* an
+      ``identifier_key`` is a platform/site root, always abstract (recognition
+      resolves to its children), handled universally in
+      ``CitationSource.is_abstract`` rather than per type. So this governs only
+      the schemeless form: a parentless *book* is the work itself (citable), a
+      schemeless parentless *video* is a **movie** (citable), while a magazine
+      or a site is a container (abstract).
     - ``child_skips_locator``: a child of this type carries its own locator
       (its URL), so the cite picker skips the locator prompt and cites it
       one-click. Unprompted, not unavailable: the edit-evidence panel keeps a
@@ -133,7 +139,7 @@ class CitationTypeSpec:
 
     source_type: SourceType
     flat_hierarchy: bool
-    parentless_abstract: bool
+    schemeless_parentless_abstract: bool
     child_skips_locator: bool
     locator: LocatorContract = FREEFORM_LOCATOR
     scheme_spec_type: type[SchemeSpec] = SchemeSpec

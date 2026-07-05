@@ -35,17 +35,23 @@ from apps.citation.citation_types.registry import (
 
 class TestCitationTypeSpecs:
     @pytest.mark.parametrize(
-        ("source_type", "flat", "abstract", "skips_locator"),
+        ("source_type", "flat", "schemeless_abstract", "skips_locator"),
         [
             (SourceType.BOOK, False, False, False),
             (SourceType.MAGAZINE, False, True, False),
             (SourceType.WEB, True, True, True),
+            # A schemeless parentless video is a movie — a citable work, not a
+            # container — so it is NOT abstract; a scheme'd video root (YouTube)
+            # is kept abstract universally by ``identifier_key``, not this field.
+            (SourceType.VIDEO, True, False, False),
         ],
     )
-    def test_traits_per_type(self, source_type, flat, abstract, skips_locator):
+    def test_traits_per_type(
+        self, source_type, flat, schemeless_abstract, skips_locator
+    ):
         spec = citation_type_spec(source_type)
         assert spec.flat_hierarchy is flat
-        assert spec.parentless_abstract is abstract
+        assert spec.schemeless_parentless_abstract is schemeless_abstract
         assert spec.child_skips_locator is skips_locator
 
     def test_accessor_coerces_a_raw_field_string(self):

@@ -362,6 +362,28 @@ class TestSearchComputedFields:
         assert data["is_abstract"] is True
         assert data["skip_locator"] is False
 
+    def test_root_video_platform(self, client, user, db):
+        """A video platform root (YouTube): abstract — recognition resolves a
+        URL to a video child under it, so the root is never cited directly."""
+        make_citation_source(
+            name="YouTube", source_type="video", identifier_key="youtube"
+        )
+        client.force_login(user)
+        resp = client.get("/api/citation-sources/search/?q=YouTube")
+        data = resp.json()["results"][0]
+        assert data["is_abstract"] is True
+        assert data["skip_locator"] is False
+
+    def test_movie_is_citable(self, client, user, db):
+        """A movie — a parentless video work with no scheme: citable directly,
+        the parentless-citable video shape (like a standalone book)."""
+        make_citation_source(name="Tommy", source_type="video", year=1975)
+        client.force_login(user)
+        resp = client.get("/api/citation-sources/search/?q=Tommy")
+        data = resp.json()["results"][0]
+        assert data["is_abstract"] is False
+        assert data["skip_locator"] is False
+
 
 # ---------------------------------------------------------------------------
 # Create
