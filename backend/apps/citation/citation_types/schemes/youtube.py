@@ -1,18 +1,11 @@
 """The YouTube scheme: videos on youtube.com, keyed by 11-char video id.
 
-YouTube's one video id is reachable through many URL shapes (``watch?v=``,
-``youtu.be/``, ``/shorts/``, ``/embed/``, ``/live/``, mobile ``m.``) plus
-trailing params — all collapse to one canonical child. The pattern is
-host-bound on ``https?://<host>`` like the others so ``notyoutube.com`` can't
-match, and each shape carries its own boundary so a malformed URL fails
-instead of collapsing to a wrong-but-valid-looking id:
-
-- the ``watch`` shape reads ``v=`` from the **query only** (the param scan
-  can't cross ``#`` into the fragment), and the 11-char id can't continue
-  into a longer token;
-- the path shapes (``youtu.be/``, ``/embed/``, ``/shorts/``, ``/live/``)
-  accept end/query/fragment or a single trailing slash after the id, but not
-  extra path segments.
+YouTube's one video id is reachable through many URL shapes — ``watch?v=``,
+``youtu.be/``, ``/shorts/``, ``/embed/``, ``/live/``, mobile ``m.`` — all
+collapsing to one canonical child, declared here as three ``UrlShape`` rows.
+``youtu.be`` is a redirect-style share host: its URLs resolve through the
+scheme extractor, but it is deliberately NOT a recognition host, so the
+platform root owns only its homepage-derived host.
 
 A video scheme (:class:`~apps.citation.citation_types.video.VideoSchemeSpec`):
 children mint as ``video`` sources, a pasted ``?t=``/``?start=`` start time
@@ -20,45 +13,35 @@ surfaces as a structured start-seconds hint at recognition, and the deep-link
 template builds the watch URL that jumps to a cited moment.
 """
 
-import re
 from typing import Final
 
-from apps.citation.citation_types.base import (
+from apps.citation.citation_types.citation_scheme_specs import (
     SchemeRootCitationSourceInfo,
-    SourceType,
     StartSecondsSource,
-)
-from apps.citation.citation_types.url_patterns import (
-    ID_BOUNDARY,
-    QUERY_ID_BOUNDARY,
-    host_prefix,
+    UrlShape,
 )
 from apps.citation.citation_types.video import VideoSchemeSpec
-
-_ID = r"[A-Za-z0-9_-]{11}"
-# The path shapes end at a trailing-slash/query/fragment/end (ID_BOUNDARY), so a
-# malformed URL fails instead of collapsing to a wrong-but-valid-looking id.
-_PATH_ID = rf"({_ID}){ID_BOUNDARY}"
-_YOUTUBE = host_prefix("youtube.com", subdomains=("www", "m"))
-_YOUTU_BE = host_prefix("youtu.be")
-
-_URL_PATTERN = re.compile(
-    r"(?:"
-    # watch?v=: read v= from the query only (the param scan can't cross # into
-    # the fragment), and the 11-char id can't continue into a longer token.
-    rf"{_YOUTUBE}/watch\?(?:[^\s#]*&)?v=({_ID}){QUERY_ID_BOUNDARY}"
-    rf"|{_YOUTUBE}/(?:embed|shorts|live)/{_PATH_ID}"
-    rf"|{_YOUTU_BE}/{_PATH_ID}"
-    r")"
-)
-
+from apps.citation.citation_types.vocabulary import SourceType
 
 YOUTUBE: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="youtube",
     label="YouTube",
     source_type=SourceType.VIDEO,
-    url_pattern=_URL_PATTERN,
-    id_pattern=re.compile(_ID),
+    url_shapes=(
+        UrlShape(
+            hosts=("youtube.com",),
+            subdomains=("www", "m"),
+            path=r"/watch",
+            query_id_param="v",
+        ),
+        UrlShape(
+            hosts=("youtube.com",),
+            subdomains=("www", "m"),
+            path=r"/(?:embed|shorts|live)/{id}",
+        ),
+        UrlShape(hosts=("youtu.be",), path=r"/{id}"),
+    ),
+    id_pattern=r"[A-Za-z0-9_-]{11}",
     canonical_url_template="https://www.youtube.com/watch?v={identifier}",
     root_citation_source_info=SchemeRootCitationSourceInfo(
         name="YouTube",

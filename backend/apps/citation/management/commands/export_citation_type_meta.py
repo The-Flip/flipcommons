@@ -43,7 +43,7 @@ class Command(BaseCommand):
             body = json.dumps(
                 {
                     "key": spec.source_type.value,
-                    "label": spec.label,
+                    "label": spec.source_type.label,
                     "locatorKind": spec.locator.kind,
                     "locatorPlaceholder": spec.locator.placeholder,
                     "locatorInvalidMessage": spec.locator.invalid_message,

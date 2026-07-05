@@ -15,6 +15,7 @@ EXAMPLES = SchemeExamples(
         f"https://ipdb.org/machine.cgi?id={MID}",  # no www
         f"http://www.ipdb.org/machine.cgi?id={MID}",
         f"https://www.ipdb.org/machine.cgi?id={MID}&more=1",  # trailing param
+        f"https://www.ipdb.org/machine.cgi?more=1&id={MID}",  # id after another param
     ),
     invalid_urls=(
         f"https://notipdb.org/machine.cgi?id={MID}",  # look-alike host

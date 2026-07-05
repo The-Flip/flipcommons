@@ -4,14 +4,14 @@ TikTok is the composite-identity stress case for the scheme contract. A
 TikTok watch URL is addressed by *username and* numeric video id
 (``tiktok.com/@scottdanesi/video/7106…``) — the id alone cannot rebuild a
 watch URL — so the identifier is the whole contiguous path tail after ``@``:
-``scottdanesi/video/7106594312292453675``. That keeps the ``url_pattern``
-single-capture contract intact (the identifier must be one contiguous
-substring of the URL) at the cost of encoding the platform's path structure
-into the identifier; the ``id_pattern`` enforces that structure on bare
-identifiers and ``cite: tiktok:<user>/video/<id>`` specs. Known caveat: a
-creator rename changes the composite, so the same video re-cited after a
-rename mints a second child — accepted, since the pure-spec alternative (id
-only) cannot build a canonical URL at all.
+``scottdanesi/video/7106594312292453675``. That keeps the single-``{id}``
+shape contract intact (the identifier must be one contiguous substring of
+the URL) at the cost of encoding the platform's path structure into the
+identifier; the ``id_pattern`` enforces that structure on bare identifiers
+and ``cite: tiktok:<user>/video/<id>`` specs. Known caveat: a creator rename
+changes the composite, so the same video re-cited after a rename mints a
+second child — accepted, since the pure-spec alternative (id only) cannot
+build a canonical URL at all.
 
 Usernames are 2–24 chars of lowercase letters, digits, ``_`` and ``.`` —
 TikTok's own grammar. An uppercase paste fails extraction and degrades to a
@@ -33,31 +33,24 @@ plain watch link — the case that made the video contract's deep link
 optional.
 """
 
-import re
 from typing import Final
 
-from apps.citation.citation_types.base import SchemeRootCitationSourceInfo, SourceType
-from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
-from apps.citation.citation_types.video import VideoSchemeSpec
-
-# The composite identifier grammar: username, the literal ``/video/``
-# separator, then the numeric post id. Shared by the URL capture and the
-# bare-identifier fullmatch so the two can never drift.
-_IDENTIFIER = r"[a-z0-9_.]{2,24}/video/\d+"
-
-# ID_BOUNDARY: the id may be followed by a single trailing slash and then only a
-# query, a fragment, or the end — never more path (``/duet`` is rejected).
-_URL_PATTERN = re.compile(
-    host_prefix("tiktok.com") + rf"/@({_IDENTIFIER}){ID_BOUNDARY}"
+from apps.citation.citation_types.citation_scheme_specs import (
+    SchemeRootCitationSourceInfo,
+    UrlShape,
 )
-
+from apps.citation.citation_types.video import VideoSchemeSpec
+from apps.citation.citation_types.vocabulary import SourceType
 
 TIKTOK: Final[VideoSchemeSpec] = VideoSchemeSpec(
     key="tiktok",
     label="TikTok",
     source_type=SourceType.VIDEO,
-    url_pattern=_URL_PATTERN,
-    id_pattern=re.compile(_IDENTIFIER),
+    url_shapes=(UrlShape(hosts=("tiktok.com",), path=r"/@{id}"),),
+    # The composite identifier grammar: username, the literal ``/video/``
+    # separator, then the numeric post id — shared by the URL shape's ``{id}``
+    # slot and the bare-identifier fullmatch, so the two can never drift.
+    id_pattern=r"[a-z0-9_.]{2,24}/video/\d+",
     # The composite identifier is the contiguous path tail, so the watch URL
     # rebuilds by plain substitution.
     canonical_url_template="https://www.tiktok.com/@{identifier}",

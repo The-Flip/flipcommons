@@ -1,23 +1,22 @@
 """The IPDB scheme: machine records on ipdb.org, keyed by numeric id."""
 
-import re
 from typing import Final
 
-from apps.citation.citation_types.base import (
+from apps.citation.citation_types.citation_scheme_specs import (
     SchemeRootCitationSourceInfo,
     SchemeSpec,
-    SourceType,
+    UrlShape,
 )
-from apps.citation.citation_types.url_patterns import QUERY_ID_BOUNDARY, host_prefix
+from apps.citation.citation_types.vocabulary import SourceType
 
 IPDB: Final[SchemeSpec] = SchemeSpec(
     key="ipdb",
     label="IPDB",
     source_type=SourceType.WEB,
-    url_pattern=re.compile(
-        host_prefix("ipdb.org") + r"/machine\.cgi\?id=(\d+)" + QUERY_ID_BOUNDARY
+    url_shapes=(
+        UrlShape(hosts=("ipdb.org",), path=r"/machine\.cgi", query_id_param="id"),
     ),
-    id_pattern=re.compile(r"\d+"),
+    id_pattern=r"\d+",
     canonical_url_template="https://www.ipdb.org/machine.cgi?id={identifier}",
     root_citation_source_info=SchemeRootCitationSourceInfo(
         # Mirrors the root as it actually shipped in the seed data — the

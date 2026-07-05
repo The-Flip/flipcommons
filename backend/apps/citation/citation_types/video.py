@@ -27,13 +27,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from apps.citation.citation_types.base import (
+from apps.citation.citation_types.citation_scheme_specs import SchemeSpec
+from apps.citation.citation_types.citation_type_specs import (
     CitationTypeSpec,
     LocatorContract,
-    SchemeSpec,
-    SourceType,
-    StartSeconds,
 )
+from apps.citation.citation_types.vocabulary import SourceType, StartSeconds
 
 # The deliberate cap on a start time: 100 hours. Beyond it a bare-seconds
 # input is far more likely a typo than a real start position; relaxing is a

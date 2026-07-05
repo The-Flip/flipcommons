@@ -20,10 +20,11 @@ from urllib.parse import urlparse
 from django.db import transaction
 
 from apps.citation.citation_types import (
-    SCHEME_SPECS,
+    SCHEME_DRIVERS,
     CitationSourceTypeValue,
     citation_source_type,
-    citation_type_spec,
+    citation_type_driver,
+    is_known_scheme,
     scheme_start_seconds_hint,
 )
 from apps.citation.hosts import (
@@ -99,8 +100,8 @@ def _recognize_by_scheme(url: str) -> Recognition | None:
     miss: a later scheme may still own a seeded root. Returns parent +
     identifier, with the child when one already exists.
     """
-    for key, spec in SCHEME_SPECS.items():
-        extracted_id = spec.extract(url)
+    for key, driver in SCHEME_DRIVERS.items():
+        extracted_id = driver.extract(url)
         if extracted_id is None:
             continue
 
@@ -115,14 +116,14 @@ def _recognize_by_scheme(url: str) -> Recognition | None:
             continue
 
         # A structured start-time hint (a pasted ``?t=95``) becomes locator
-        # text via the owning type's contract — the scheme declares where the
+        # text via the owning type's driver — the scheme declares where the
         # hint rides, the type parses and formats it; recognition just
         # carries the result.
         locator_hint = ""
         start_seconds = scheme_start_seconds_hint(key, url)
-        format_value = citation_type_spec(spec.source_type).locator.format_value
-        if start_seconds is not None and format_value is not None:
-            locator_hint = format_value(start_seconds)
+        if start_seconds is not None:
+            type_driver = citation_type_driver(driver.spec.source_type)
+            locator_hint = type_driver.format_locator_value(start_seconds) or ""
 
         # Look for an existing child with this identifier.
         child = (
@@ -337,13 +338,13 @@ def get_or_create_scheme_child(
     non-null). Raises ``ValueError`` if *root* carries no known
     ``identifier_key`` scheme or the identifier is invalid for it.
     """
-    spec = SCHEME_SPECS.get(root.identifier_key)
-    if spec is None:
+    driver = SCHEME_DRIVERS.get(root.identifier_key)
+    if driver is None:
         raise ValueError(
             f"Root source {root.pk} has no known identifier scheme "
             f"({root.identifier_key!r})"
         )
-    normalized = spec.normalize(identifier)
+    normalized = driver.normalize(identifier)
     if normalized is None:
         raise ValueError(f"Invalid {root.identifier_key} identifier {identifier!r}")
 
@@ -357,8 +358,8 @@ def get_or_create_scheme_child(
         candidate = CitationSource(
             name=f"{root.name} #{normalized}",
             # The scheme declares what its children mint as — a web scheme
-            # mints web pages, a (future) video scheme mints videos.
-            source_type=spec.source_type,
+            # mints web pages, a video scheme mints videos.
+            source_type=driver.spec.source_type,
             parent=root,
             identifier=normalized,
             created_by=created_by,
@@ -379,7 +380,7 @@ def get_or_create_scheme_child(
             link = CitationSourceLink(
                 citation_source=source,
                 link_type=CitationSourceLink.LinkType.REFERENCE,
-                url=spec.canonical_url(normalized),
+                url=driver.canonical_url(normalized),
                 created_by=created_by,
                 updated_by=created_by,
             )
@@ -402,7 +403,7 @@ def get_or_create_external_source(
     for *scheme* is seeded, and ``ValueError`` if the scheme or identifier is
     invalid.
     """
-    if scheme not in SCHEME_SPECS:
+    if not is_known_scheme(scheme):
         raise ValueError(f"Unknown citation scheme {scheme!r}")
 
     root = (

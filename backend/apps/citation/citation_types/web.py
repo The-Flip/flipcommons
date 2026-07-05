@@ -5,7 +5,8 @@ recognition resolves a URL to a page child under the matched root. Web
 children skip the locator stage: their URL *is* the locator.
 """
 
-from apps.citation.citation_types.base import CitationTypeSpec, SourceType
+from apps.citation.citation_types.citation_type_specs import CitationTypeSpec
+from apps.citation.citation_types.vocabulary import SourceType
 
 WEB = CitationTypeSpec(
     source_type=SourceType.WEB,

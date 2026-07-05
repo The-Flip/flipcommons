@@ -19,15 +19,19 @@ from collections.abc import Mapping
 from typing import Final, NamedTuple
 
 from apps.citation.citation_types import book, magazine, video, web
-from apps.citation.citation_types.base import (
-    CitationTypeSpec,
+from apps.citation.citation_types.citation_scheme_driver import (
+    SchemeDriver,
+    start_seconds_hint_values,
+)
+from apps.citation.citation_types.citation_scheme_specs import (
     SchemeKey,
     SchemeRootCitationSourceInfo,
     SchemeSpec,
-    SourceType,
-    StartSeconds,
 )
+from apps.citation.citation_types.citation_type_driver import CitationTypeDriver
+from apps.citation.citation_types.citation_type_specs import CitationTypeSpec
 from apps.citation.citation_types.schemes import ipdb, opdb, tiktok, vimeo, x, youtube
+from apps.citation.citation_types.vocabulary import SourceType, StartSeconds
 
 _CITATION_TYPES: Final[tuple[CitationTypeSpec, ...]] = (
     book.BOOK,
@@ -103,6 +107,19 @@ def _assert_registry_coherent(
 
 _assert_registry_coherent(CITATION_TYPE_SPECS, SCHEME_SPECS)
 
+# One framework driver per registered plugin, in registration order.
+# Building the scheme drivers here compiles every scheme's declarations at
+# import, so a malformed spec fails the build, not the first recognition.
+# The specs stay pure data on both axes; all behavior runs through these.
+SCHEME_DRIVERS: Final[Mapping[SchemeKey, SchemeDriver]] = {
+    key: SchemeDriver(spec) for key, spec in SCHEME_SPECS.items()
+}
+
+CITATION_TYPE_DRIVERS: Final[Mapping[SourceType, CitationTypeDriver]] = {
+    source_type: CitationTypeDriver(spec)
+    for source_type, spec in CITATION_TYPE_SPECS.items()
+}
+
 
 def citation_type_spec(source_type: str | SourceType) -> CitationTypeSpec:
     """The type spec for *source_type*, coercing a raw field value.
@@ -114,6 +131,16 @@ def citation_type_spec(source_type: str | SourceType) -> CitationTypeSpec:
     bare field value.
     """
     return CITATION_TYPE_SPECS[SourceType(source_type)]
+
+
+def citation_type_driver(source_type: str | SourceType) -> CitationTypeDriver:
+    """The framework driver for *source_type*, coercing a raw field value.
+
+    The behavioral twin of :func:`citation_type_spec`: consumers that need to
+    *run* a type's locator grammar (validate, parse, format) get the driver;
+    consumers that read behavior facts get the spec.
+    """
+    return CITATION_TYPE_DRIVERS[SourceType(source_type)]
 
 
 def identifier_key_values() -> list[SchemeKey]:
@@ -175,6 +202,13 @@ def _scheme_spec(key: SchemeKey) -> SchemeSpec:
     return spec
 
 
+def _scheme_driver(key: SchemeKey) -> SchemeDriver:
+    driver = SCHEME_DRIVERS.get(key)
+    if driver is None:
+        raise ValueError(f"Unknown scheme {key!r}")
+    return driver
+
+
 class SchemeRecognition(NamedTuple):
     """A URL recognized by a registered scheme, by pattern match alone.
 
@@ -203,11 +237,9 @@ def _start_seconds_hint(spec: SchemeSpec, url: str) -> StartSeconds | None:
     source = spec.start_seconds_source
     if source is None:
         return None
-    parse_value = CITATION_TYPE_SPECS[spec.source_type].locator.parse_value
-    if parse_value is None:
-        return None
-    for raw in source.raw_values(url):
-        seconds = parse_value(raw)
+    type_driver = CITATION_TYPE_DRIVERS[spec.source_type]
+    for raw in start_seconds_hint_values(source, url):
+        seconds = type_driver.parse_locator_value(raw)
         if seconds:
             return seconds
     return None
@@ -229,14 +261,14 @@ def recognize_scheme(url: str) -> SchemeRecognition | None:
     callers that reject a scheme URL cited the wrong way (as a plain web
     page) regardless of whether the scheme's root is seeded yet.
     """
-    for key, spec in SCHEME_SPECS.items():
-        identifier = spec.extract(url)
+    for key, driver in SCHEME_DRIVERS.items():
+        identifier = driver.extract(url)
         if identifier is not None:
             return SchemeRecognition(
                 scheme=key,
-                label=spec.label,
+                label=driver.spec.label,
                 identifier=identifier,
-                start_seconds=_start_seconds_hint(spec, url),
+                start_seconds=_start_seconds_hint(driver.spec, url),
             )
     return None
 
@@ -266,7 +298,7 @@ def normalize_scheme_identifier(key: SchemeKey, raw: str) -> str | None:
     ``None`` means *raw* is neither a recognized URL shape nor a well-formed
     bare identifier; ``ValueError`` for an unregistered key.
     """
-    return _scheme_spec(key).normalize(raw)
+    return _scheme_driver(key).normalize(raw)
 
 
 def scheme_root_citation_source_info(key: str) -> SchemeRootCitationSourceInfo | None:
@@ -286,7 +318,7 @@ def scheme_canonical_url(key: SchemeKey, identifier: str) -> str:
     ``ValueError`` for an unregistered key: callers holding untrusted input
     gate on ``is_known_scheme`` first.
     """
-    return _scheme_spec(key).canonical_url(identifier)
+    return _scheme_driver(key).canonical_url(identifier)
 
 
 def scheme_deep_link(key: SchemeKey, identifier: str, locator: str) -> str | None:
@@ -301,13 +333,10 @@ def scheme_deep_link(key: SchemeKey, identifier: str, locator: str) -> str | Non
     has no structured locator value (web's freeform locators), or the locator
     doesn't parse. ``ValueError`` for an unregistered key.
     """
-    spec = _scheme_spec(key)
-    if spec.deep_link_template is None:
+    driver = _scheme_driver(key)
+    if driver.spec.deep_link_template is None:
         return None
-    parse_value = CITATION_TYPE_SPECS[spec.source_type].locator.parse_value
-    if parse_value is None:
-        return None
-    value = parse_value(locator)
+    value = CITATION_TYPE_DRIVERS[driver.spec.source_type].parse_locator_value(locator)
     if value is None:
         return None
-    return spec.deep_link(identifier, value)
+    return driver.deep_link(identifier, value)

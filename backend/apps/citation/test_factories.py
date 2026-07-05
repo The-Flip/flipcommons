@@ -41,7 +41,7 @@ def _assert_identifier_key_literal_current() -> None:
 
     A Literal can't be derived from the registry, so this hand-mirrored list
     needs the same import-time honesty check ``CitationSourceTypeValue`` gets
-    in ``citation_types.base`` — otherwise a newly registered scheme is
+    in ``citation_types.vocabulary`` — otherwise a newly registered scheme is
     unusable in test factories until someone trips over the arg-type error.
     """
     literal = set(get_args(IdentifierKeyValue.__value__))

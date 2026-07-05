@@ -2,6 +2,10 @@
 
 Product spec and design for a **video citation type** — citing a moment in a video as evidence — and the **citation-type plugin architecture** it forces. The two travel together: video is the first citation type whose locator has real semantics (a timestamp that validates, normalizes and deep-links), so it is the forcing function for isolating per-type knowledge behind one crisp API instead of scattering a fourth type across the codebase.
 
+## Status: ✅ DONE
+
+The video citation type is done and the plug-in architecture has evolved beyond this doc; see [CitationPluginSystem.md](CitationPluginSystem.md).
+
 ## Context
 
 ### The problem with the current YouTube support

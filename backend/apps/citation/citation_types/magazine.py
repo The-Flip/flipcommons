@@ -4,7 +4,8 @@ A parentless magazine is a publication — abstract, cite a child instead.
 Locators are freeform (page, column).
 """
 
-from apps.citation.citation_types.base import CitationTypeSpec, SourceType
+from apps.citation.citation_types.citation_type_specs import CitationTypeSpec
+from apps.citation.citation_types.vocabulary import SourceType
 
 MAGAZINE = CitationTypeSpec(
     source_type=SourceType.MAGAZINE,

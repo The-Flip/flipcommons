@@ -4,7 +4,8 @@ A parentless book is the work itself — citable directly — and may nest
 editions beneath it. Locators are freeform (page, chapter).
 """
 
-from apps.citation.citation_types.base import CitationTypeSpec, SourceType
+from apps.citation.citation_types.citation_type_specs import CitationTypeSpec
+from apps.citation.citation_types.vocabulary import SourceType
 
 BOOK = CitationTypeSpec(
     source_type=SourceType.BOOK,

@@ -10,7 +10,6 @@ the read-side composition against real rows (recognition ``locator_hint``,
 import pytest
 
 from apps.accounts.test_factories import default_actor
-from apps.citation.citation_types import SCHEME_SPECS
 from apps.citation.deep_links import deep_linked_url
 from apps.citation.extractors import get_or_create_external_source, recognize_url
 from apps.citation.test_factories import make_citation_link, make_citation_source
@@ -18,8 +17,6 @@ from apps.citation.test_factories import make_citation_link, make_citation_sourc
 # The id used throughout (Rick Astley, "Never Gonna Give You Up").
 VID = "dQw4w9WgXcQ"
 CANONICAL = f"https://www.youtube.com/watch?v={VID}"
-
-YOUTUBE = SCHEME_SPECS["youtube"]
 
 
 @pytest.fixture

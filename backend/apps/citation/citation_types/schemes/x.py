@@ -12,44 +12,42 @@ pays the honest price of losing the start-time locator.
 What the scheme still buys over bare host recognition is identity: one
 platform, two full host families (``x.com`` and the legacy ``twitter.com``,
 plus ``www.``/``mobile.`` prefixes), recognized identically and collapsing
-to one child per numeric status id. The ``root_citation_source_info``
-declares **both** apex
-hosts — the first multi-host root. The username path segment is vanity, not
-identity: any handle in the URL resolves to the same post, and handles get
-renamed, so the identifier is the status id alone and the canonical URL is
-the handle-free, rename-stable ``https://x.com/i/status/<id>`` form (itself
-a recognized shape, so the canonical round-trips). Trailing ``/photo/1`` /
-``/video/1`` segments on pasted URLs are tolerated after the id.
+to one child per numeric status id — declared as one shape spanning both
+apex hosts. The username path segment is vanity, not identity: any handle in
+the URL resolves to the same post, and handles get renamed, so the
+identifier is the status id alone and the canonical URL is the handle-free,
+rename-stable ``https://x.com/i/status/<id>`` form (itself a recognized
+shape, so the canonical round-trips). ``allow_path_tail`` tolerates the
+``/photo/1`` / ``/video/1`` media tails on pasted URLs.
 """
 
-import re
 from typing import Final
 
-from apps.citation.citation_types.base import (
+from apps.citation.citation_types.citation_scheme_specs import (
     SchemeRootCitationSourceInfo,
     SchemeSpec,
-    SourceType,
+    UrlShape,
 )
-from apps.citation.citation_types.url_patterns import host_prefix
-
-_URL_PATTERN = re.compile(
-    host_prefix("x.com", "twitter.com", subdomains=("www", "mobile"))
-    # The handle-free ``/i/status`` + ``/i/web/status`` shapes, or a vanity
-    # handle (1–15 word chars, X's own grammar); ``statuses`` is the legacy
-    # path form, which also appeared bare (``twitter.com/statuses/<id>``), so
-    # the leading segment is optional. Boundary: the digits must end at a
-    # path/query/fragment break — a ``/photo/1`` tail is fine but
-    # ``…/status/123abc`` is not.
-    + r"/(?:i/web/|i/|[A-Za-z0-9_]{1,15}/)?status(?:es)?/(\d+)(?=[/?#]|$)"
-)
-
+from apps.citation.citation_types.vocabulary import SourceType
 
 X_TWITTER: Final[SchemeSpec] = SchemeSpec(
     key="x",
     label="X (Twitter)",
     source_type=SourceType.WEB,
-    url_pattern=_URL_PATTERN,
-    id_pattern=re.compile(r"\d+"),
+    url_shapes=(
+        UrlShape(
+            hosts=("x.com", "twitter.com"),
+            subdomains=("www", "mobile"),
+            # The handle-free ``/i/status`` + ``/i/web/status`` shapes, or a
+            # vanity handle (1–15 word chars, X's own grammar); ``statuses``
+            # is the legacy path form, which also appeared bare
+            # (``twitter.com/statuses/<id>``), so the leading segment is
+            # optional.
+            path=r"/(?:i/web/|i/|[A-Za-z0-9_]{1,15}/)?status(?:es)?/{id}",
+            allow_path_tail=True,
+        ),
+    ),
+    id_pattern=r"\d+",
     # The handle-free, rename-stable form every X/Twitter shape collapses to.
     canonical_url_template="https://x.com/i/status/{identifier}",
     root_citation_source_info=SchemeRootCitationSourceInfo(

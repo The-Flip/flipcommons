@@ -13,14 +13,14 @@ platform-specific shapes only a scheme's author knows. Pure — no database.
 
 import pytest
 
-from apps.citation.citation_types import SCHEME_SPECS, SchemeSpec, recognize_scheme
+from apps.citation.citation_types import SCHEME_DRIVERS, SchemeDriver, recognize_scheme
 
 from .example_data import SchemeUrlCase, StartTimeCase
 from .example_registry import SCHEME_EXAMPLES
 
 
-def _spec(key: str) -> SchemeSpec:
-    return SCHEME_SPECS[key]
+def _driver(key: str) -> SchemeDriver:
+    return SCHEME_DRIVERS[key]
 
 
 # Flattened tables, built once at import; the paired ids lists give per-URL
@@ -49,7 +49,7 @@ _START_TIME_CASES: list[tuple[str, StartTimeCase]] = [
 )
 def test_valid_url_normalizes_to_the_example_identifier(key: str, url: str) -> None:
     """Every declared valid shape resolves to the scheme's example identifier."""
-    assert _spec(key).normalize(url) == SCHEME_EXAMPLES[key].example_identifier
+    assert _driver(key).normalize(url) == SCHEME_EXAMPLES[key].example_identifier
 
 
 @pytest.mark.parametrize(
@@ -59,7 +59,7 @@ def test_valid_url_normalizes_to_the_example_identifier(key: str, url: str) -> N
 )
 def test_invalid_url_is_rejected(key: str, url: str) -> None:
     """Every declared look-alike / near-miss normalizes to ``None``."""
-    assert _spec(key).normalize(url) is None
+    assert _driver(key).normalize(url) is None
 
 
 @pytest.mark.parametrize(
@@ -81,7 +81,7 @@ def test_start_time_case_extracts_expected_seconds(
 def test_canonical_url_builds_exactly_the_declared_form(key: str) -> None:
     """The canonical URL is the exact declared string, not just a round-tripper."""
     ex = SCHEME_EXAMPLES[key]
-    assert _spec(key).canonical_url(ex.example_identifier) == ex.canonical_url
+    assert _driver(key).canonical_url(ex.example_identifier) == ex.canonical_url
 
 
 @pytest.mark.parametrize("key", list(SCHEME_EXAMPLES))
@@ -91,10 +91,10 @@ def test_deep_link_case_matches_the_capability_and_its_output(key: str) -> None:
     A scheme that can seek must pin its platform's seek syntax as data; a
     declared case on a scheme that can't seek is a stale table.
     """
-    ex, spec = SCHEME_EXAMPLES[key], _spec(key)
-    if spec.deep_link_template is None:
+    ex, driver = SCHEME_EXAMPLES[key], _driver(key)
+    if driver.spec.deep_link_template is None:
         assert ex.deep_link_case is None, f"{key}: deep_link_case but no template"
     else:
         assert ex.deep_link_case is not None, f"{key}: template but no deep_link_case"
-        built = spec.deep_link(ex.example_identifier, ex.deep_link_case.seconds)
+        built = driver.deep_link(ex.example_identifier, ex.deep_link_case.seconds)
         assert built == ex.deep_link_case.url

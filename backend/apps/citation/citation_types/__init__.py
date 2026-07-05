@@ -1,43 +1,51 @@
-"""Citation-type and scheme plugins, behind one registry.
+"""The two citation plugin frameworks — types and schemes — behind one registry.
 
-The package root is the plugin system's public surface, and it serves two
-audiences with two distinct import surfaces (the sections in ``__all__``
-below; see ``docs/plans/citations/CitationPluginSystem.md``):
+The package root is the plugin systems' public surface. Two plugin axes live
+here, each with its own author module and its own framework module, meeting
+only at the registry's composition weaves (see
+``docs/plans/citations/CitationPluginSystem.md``):
 
-- **Plugin authors** — writing one scheme or type — import the contract
-  types and authoring helpers, and see only what they must fill in. A scheme
-  is pure configuration: patterns, templates and declarative facts, no code.
-- **External customers** — code that uses the citation system without
-  knowing a plugin exists — import the named registry accessors
-  (``citation_type_spec``, ``recognize_scheme``, …) and never read a spec's
-  fields.
+- **Citation types** (book, magazine, web, video — first-party, allowed real
+  programming): authors declare in ``citation_type_specs`` and write their
+  grammar code in their type module; the framework runs it via
+  ``citation_type_driver``.
+- **Citation schemes** (ipdb, youtube, … — third-party, pure configuration):
+  authors declare in ``citation_scheme_specs`` and nothing else; the
+  framework compiles and runs the declarations via
+  ``citation_scheme_driver``.
 
-The third surface, the **citation framework** itself (the shared
-``SchemeSpec`` driver methods, the registry coherence checks, the
-conformance harness), is not an import surface: it is documented where it
-lives, in ``base.py`` and ``registry.py``. The raw spec mappings exported
-last are its channel — consumed only by the framework's own DB operations
-(``extractors``/``deep_links``), the codegen commands and tests.
+Import-linter contracts make the walls structural: plugin modules import
+only declarations, never a framework module, and scheme authoring never
+sees type authoring. External customers — code using the citation system
+without knowing a plugin exists — import the named registry accessors and
+never read a spec's fields. The framework-channel exports at the end of
+``__all__`` are consumed only by the framework's own DB operations
+(``extractors``/``deep_links``/``locators``), the codegen commands and
+tests.
 """
 
-from apps.citation.citation_types.base import (
-    CitationSourceTypeValue,
-    CitationTypeSpec,
-    LocatorContract,
+from apps.citation.citation_types.citation_scheme_driver import SchemeDriver
+from apps.citation.citation_types.citation_scheme_specs import (
     SchemeKey,
     SchemeRootCitationSourceInfo,
     SchemeSpec,
-    SourceType,
-    StartSeconds,
     StartSecondsSource,
-    citation_source_type,
+    UrlShape,
+)
+from apps.citation.citation_types.citation_type_driver import CitationTypeDriver
+from apps.citation.citation_types.citation_type_specs import (
+    CitationTypeSpec,
+    LocatorContract,
 )
 from apps.citation.citation_types.registry import (
+    CITATION_TYPE_DRIVERS,
     CITATION_TYPE_SPECS,
+    SCHEME_DRIVERS,
     SCHEME_SPECS,
     SchemeBinding,
     SchemeChoice,
     SchemeRecognition,
+    citation_type_driver,
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
@@ -52,15 +60,20 @@ from apps.citation.citation_types.registry import (
     scheme_source_type,
     scheme_start_seconds_hint,
 )
-from apps.citation.citation_types.url_patterns import ID_BOUNDARY, host_prefix
+from apps.citation.citation_types.vocabulary import (
+    CitationSourceTypeValue,
+    SourceType,
+    StartSeconds,
+    citation_source_type,
+)
 
 __all__ = [
-    # ----- Plugin-author surface: what a scheme or type author fills in -----
+    # ----- Scheme-author surface: pure configuration, nothing else -----
     "SchemeSpec",
     "SchemeRootCitationSourceInfo",
+    "UrlShape",
     "StartSecondsSource",
-    "host_prefix",
-    "ID_BOUNDARY",
+    # ----- Type-author surface: declarations for first-party type code -----
     "CitationTypeSpec",
     "LocatorContract",
     # ----- External-customer surface: named queries, never spec fields -----
@@ -81,8 +94,9 @@ __all__ = [
     "CitationSourceTypeValue",
     "SchemeKey",
     "StartSeconds",
-    # ----- Framework channel: constraint derivation (models) and the raw
-    # spec mappings (extractors/deep_links, codegen, tests only) -----
+    # ----- Framework channel: constraint derivation (models), the drivers
+    # and raw spec mappings (extractors/deep_links/locators, codegen, tests
+    # only) -----
     "identifier_key_values",
     "identifier_key_choices",
     "SchemeChoice",
@@ -90,4 +104,9 @@ __all__ = [
     "SchemeBinding",
     "CITATION_TYPE_SPECS",
     "SCHEME_SPECS",
+    "SCHEME_DRIVERS",
+    "SchemeDriver",
+    "CITATION_TYPE_DRIVERS",
+    "CitationTypeDriver",
+    "citation_type_driver",
 ]

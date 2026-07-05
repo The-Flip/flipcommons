@@ -51,7 +51,7 @@ class TestCitationTypeSpecs:
             citation_type_spec("podcast")
 
     def test_label_comes_from_the_choice(self):
-        assert citation_type_spec("web").label == "Web"
+        assert citation_type_spec("web").source_type.label == "Web"
 
 
 class TestSchemeRegistry:
