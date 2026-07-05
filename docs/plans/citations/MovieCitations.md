@@ -200,9 +200,17 @@ The behavior delta is **exactly one case**: a parentless `video` with a blank `i
 - **`is_abstract` unit cases** (no DB — the method reads only `self` fields and takes `has_children`): a parentless video with `identifier_key="youtube"` is abstract; a parentless video with blank `identifier_key` (a movie) is **not** abstract; a movie _with_ children is abstract (the `has_children` short-circuit); a schemeless parentless web/magazine root stays abstract (no regression).
 - **End-to-end cite-target** (extends `test_api.py::TestSearchComputedFields`, which already covers a web root): a seeded movie surfaces in `search_citation_sources` with `is_abstract=false`, and the frontend reducer's existing "not abstract → locator stage" path (`citation-types.test.ts`) already covers the routing, so a movie is directly citable with a timestamp locator.
 
-### 3. Frontend: no change required
+### 3. Frontend: no change required, and non-movie flows are untouched
 
-The cite picker already does the right thing once the flag flips. The reducer (`frontend/src/lib/components/input/citation/citation-types.ts:254`) routes an **abstract** source to the _identify_ stage (hunt for a child) and a **non-abstract** source straight to the _locator_ stage. A movie, now non-abstract, lands on the locator stage — which for a `video` source renders the timestamp prompt from the generated citation-type meta. No component, reducer, or codegen change; the abstractness that drives the routing is served per-row on `CitationSourceSearchSchema.is_abstract` (`apps/citation/schemas.py`), computed by the method we changed.
+The cite picker (and the inline `[[cite:` autocomplete, which shares this state machine) already does the right thing once the flag flips. The reducer (`frontend/src/lib/components/input/citation/citation-types.ts:254`) routes on one server-computed flag per search row: an **abstract** source goes to the _identify_ stage (hunt for a child), a **non-abstract** source straight to the _locator_ stage. A movie, now non-abstract, lands on the locator stage — which for a `video` source renders the same timestamp prompt a YouTube child already uses (from the generated citation-type meta). No component, reducer, field, stage, or codegen change; the abstractness that drives the routing is served per-row on `CitationSourceSearchSchema.is_abstract` (`apps/citation/schemas.py`), computed by the method we changed.
+
+**The change is purely additive — it cannot make non-movie video (or any other type) worse:**
+
+- **No existing row flips.** Every parentless video today is a scheme platform root, which always carries an `identifier_key` (YouTube, etc.), so the new `identifier_key` branch keeps it abstract exactly as before. Video children are cited via URL recognition (`source_identified`), never touched by the `is_abstract` path. The only row that computes differently is a **new** kind of row that didn't exist before: a movie.
+- **No new clicks or fields for anyone.** A contributor citing a YouTube video, a web page, or a book sees byte-for-byte the same flow. The locator is one optional field with a Skip affordance on every type; a movie reuses it with a timestamp placeholder — it adds nothing to the other flows.
+- **Search stays relevance-filtered.** `search_citation_sources` matches on text (`name`/`author`/`publisher`/`isbn`/links) with no type filtering (`apps/citation/api.py`), so a movie surfaces exactly like a book already does — only when the query matches it — not as new clutter in unrelated searches.
+
+What a contributor **gains**: typing a movie's title in `[[cite:` now finds it, and selecting it goes straight to the optional timestamp — the shortest possible path (no child-hunt stage, because a movie isn't a container). That is strictly one new capability, zero cost to the existing ones.
 
 ### 4. No migration, no codegen
 
