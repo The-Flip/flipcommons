@@ -13,7 +13,10 @@
     type CreateSeed,
     type ExtractionDraft,
   } from './citation-types';
-  import type { CitationSourceSearchResponseSchema } from '$lib/api/schema';
+  import type {
+    CitationExtractDelivererSchema,
+    CitationSourceSearchResponseSchema,
+  } from '$lib/api/schema';
   import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
   import DropdownItem from '$lib/components/input/dropdown/DropdownItem.svelte';
@@ -53,6 +56,14 @@
   let createError = $state('');
   let extracting = $state(false);
   let extractError = $state('');
+  /** The deliverer teaching notice: the pasted URL is a store/streaming copy
+   *  of a work, so web-create is never offered — the CTA hands off to the
+   *  authored-work form instead. `url` rides along so the handoff seed can
+   *  carry the pasted string through flow state (the access-URL hedge). */
+  let delivererNotice = $state<{
+    notice: CitationExtractDelivererSchema;
+    url: string;
+  } | null>(null);
 
   // -----------------------------------------------------------------------
   // ISBN detection
@@ -120,6 +131,7 @@
     creating = false;
     createError = '';
     extractError = '';
+    delivererNotice = null;
     // Send the normalized URL (scheme prepended) so the backend recognizes a
     // scheme-less host the same as a schemed one — otherwise a domain match is
     // missed and the URL wrongly creates a new root instead of a child.
@@ -279,10 +291,12 @@
     {
       errorMessages = {},
       onDraft,
+      onDeliverer = null,
       onFailure = null,
     }: {
       errorMessages?: Record<string, string>;
       onDraft: (draft: ExtractionDraft) => void;
+      onDeliverer?: ((notice: CitationExtractDelivererSchema) => void) | null;
       onFailure?: ((errorCode: string | null) => void) | null;
     },
   ) {
@@ -304,6 +318,13 @@
         sourceType: data.match.source_type,
         skipLocator: data.match.skip_locator,
       });
+      return;
+    }
+
+    if (!error && data?.deliverer && onDeliverer) {
+      // A deliverer verdict: the URL is a store/streaming copy of a work, so
+      // web-create must never be offered. Stay on this stage and teach.
+      onDeliverer(data.deliverer);
       return;
     }
 
@@ -338,14 +359,26 @@
     });
   }
 
-  /** Scrape a web URL, then enter the web create flow. `siteName` is the
-   *  recognized site (existing — Create Site is skipped) or null (a new site). A
-   *  successful scrape prefills the page (and, for a new site, the site name); a
+  /** Scrape a web URL, then route by the backend's verdict: a web draft enters
+   *  the web create flow; a book draft (a deliverer URL whose ISBN resolved)
+   *  belongs in the authored-work form, prefilled — same as an ISBN paste; a
+   *  deliverer notice stays here and teaches. `siteName` is the recognized site
+   *  (existing — Create Site is skipped) or null (a new site). A successful web
+   *  scrape prefills the page (and, for a new site, the site name); a
    *  recoverable failure advances with nothing prefilled. A `blocked` host (SSRF
    *  guard: internal/private address) must NOT become a citation — dead-end it. */
   function startWebCite(url: string, siteName: string | null) {
     lookupExtraction(url, {
-      onDraft: (draft) => oncreatestarted({ kind: 'web', url, siteName, draft }),
+      onDraft: (draft) => {
+        if (draft.source_type === 'web') {
+          oncreatestarted({ kind: 'web', url, siteName, draft });
+        } else {
+          oncreatestarted({ kind: 'extraction', draft });
+        }
+      },
+      onDeliverer: (notice) => {
+        delivererNotice = { notice, url };
+      },
       onFailure: (code) => {
         if (code === 'blocked') {
           extractError = "That URL can't be cited — it points to a disallowed or internal address.";
@@ -353,6 +386,20 @@
         }
         oncreatestarted({ kind: 'web', url, siteName, draft: null });
       },
+    });
+  }
+
+  /** The deliverer CTA: hand off to the authored-work form with the suggested
+   *  type preselected, carrying the pasted URL through the seed (unused today
+   *  — the access-URL hedge). */
+  function startDelivererCreate() {
+    if (!delivererNotice) return;
+    debouncedSearch.cancel();
+    oncreatestarted({
+      kind: 'name',
+      name: '',
+      sourceType: delivererNotice.notice.suggested_source_type ?? undefined,
+      url: delivererNotice.url,
     });
   }
 
@@ -483,6 +530,25 @@
       {/if}
     </DropdownItem>
   {/if}
+  {#if delivererNotice}
+    <!-- The teaching moment: a deliverer URL never advances to web-create.
+         The CTA is the only forward action; searching stays available. -->
+    <div class="deliverer-notice">
+      <div class="deliverer-message">{delivererNotice.notice.message}</div>
+      <div class="recognition-action">
+        <DropdownButton
+          onpointerdown={(e) => {
+            e.preventDefault();
+            startDelivererCreate();
+          }}
+        >
+          {delivererNotice.notice.suggested_source_type
+            ? `Cite the ${delivererNotice.notice.suggested_source_type} instead`
+            : 'Cite the work instead'}
+        </DropdownButton>
+      </div>
+    </div>
+  {/if}
   {#if extractError}
     <div class="create-error">{extractError}</div>
   {/if}
@@ -571,6 +637,18 @@
     color: var(--color-error-text);
     font-size: var(--font-size-0);
     text-align: center;
+  }
+
+  .deliverer-notice {
+    padding: var(--size-2) var(--size-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+  }
+
+  .deliverer-message {
+    font-size: var(--font-size-0);
+    color: var(--color-text-muted);
   }
 
   .no-results {
