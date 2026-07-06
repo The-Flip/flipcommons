@@ -416,6 +416,41 @@ class TestCreateCitationSource:
         assert data["links"] == []
         assert data["children"] == []
 
+    def test_create_video_root_is_a_movie(self, client, user):
+        """A parentless video create is a movie — the F3 citable-work shape."""
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "Special When Lit",
+                "source_type": "video",
+                "year": 2009,
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["source_type"] == "video"
+        assert data["year"] == 2009
+        created = CitationSource.objects.get(pk=data["id"])
+        assert created.parent_id is None
+        assert created.identifier_key == ""
+
+    def test_create_video_child_rejected(self, client, user):
+        """Video creates are root-only: platform videos mint via records/."""
+        client.force_login(user)
+        root = make_citation_source(
+            name="YouTube", source_type="video", identifier_key="youtube"
+        )
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "Hand Video", "source_type": "video", "parent_id": root.pk},
+        )
+        assert resp.status_code == 422
+        assert "created standalone" in resp.json()["detail"]
+        assert not CitationSource.objects.filter(parent=root).exists()
+
     def test_cross_type_authored_child_rejected(self, client, user):
         # Authored children extend their own work's hierarchy (an edition
         # under its book, an issue under its magazine) — a book "edition"

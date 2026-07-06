@@ -28,6 +28,7 @@ from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 from apps.core.types import CitationSourceId
 
+from .citation_types import citation_type_spec
 from .deliverers import deliverer_notice_message
 from .extraction import classify_input, extract_isbn, normalize_isbn
 from .extractors import (
@@ -313,7 +314,7 @@ def search_citation_sources(
 def create_citation_source(
     request: HttpRequest, data: CitationSourceCreateSchema
 ) -> Status[CitationSourceDetailSchema]:
-    """Create a book/magazine root or a linkless authored child.
+    """Create an authored root (book/magazine/movie) or a linkless child.
 
     This endpoint owns neither URLs nor links: web roots/children are minted by
     ``cite-url``/``pages/`` and scheme children by ``records/``. It creates a
@@ -322,6 +323,18 @@ def create_citation_source(
     user = authed_user(request)
     parent = None
     if data.parent_id is not None:
+        # A flat-hierarchy type's children (a platform's videos, a site's
+        # pages) mint from URLs/identifiers through recognition, never by
+        # hand — an authored child would sidestep dedup and fabricate a
+        # sibling shape recognition can't reach. So a video create is a
+        # **movie**, root-only.
+        if citation_type_spec(data.source_type).flat_hierarchy:
+            raise HttpError(
+                422,
+                f"A {data.source_type} source is created standalone — its "
+                f"children are minted from URLs or identifiers, not authored "
+                f"here.",
+            )
         parent = get_object_or_404(CitationSource, pk=data.parent_id)
         # Authored children extend their own work's hierarchy — an edition
         # under its book, an issue under its magazine. A cross-type authored

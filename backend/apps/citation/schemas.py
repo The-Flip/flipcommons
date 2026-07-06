@@ -196,19 +196,22 @@ class CitationSourceSearchResponseSchema(Schema):
 
 
 class CitationSourceCreateSchema(Schema):
-    """Input to create a book/magazine root or a linkless authored child.
+    """Input to create an authored root (book/magazine/movie) or a linkless child.
 
     This endpoint creates plain authored sources only. Web roots/children are
     minted by ``cite-url``/``pages/`` and scheme children by ``records/``, so
     ``source_type`` excludes ``web`` and no ``url``/``identifier``/link fields
-    are accepted; ``extra='forbid'`` turns a stray one into a loud 422.
+    are accepted; ``extra='forbid'`` turns a stray one into a loud 422. A
+    ``video`` create is a **movie** — a parentless-citable work — and is
+    root-only (the endpoint 422s a video ``parent_id``: a flat-hierarchy
+    type's children mint from URLs/identifiers, never by hand).
     """
 
     model_config = ConfigDict(extra="forbid")
 
     name: NameStr = Field(description="The source's display name.")
-    source_type: Literal["book", "magazine"] = Field(
-        description='Kind of source: "book" or "magazine".'
+    source_type: Literal["book", "magazine", "video"] = Field(
+        description='Kind of source: "book", "magazine", or "video" (a movie).'
     )
     author: AuthorStr = Field("", description="Author or creator.")
     publisher: PublisherStr = Field("", description="Publisher.")

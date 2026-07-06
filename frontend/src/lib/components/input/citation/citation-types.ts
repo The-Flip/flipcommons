@@ -21,15 +21,19 @@ export type ExtractionDraft = CitationExtractDraftSchema;
 /** What seeds a create flow. The orchestrator routes a `web` seed (see
  *  `isWebSeed`) to the describe-site → page web flow and everything else to the
  *  authored-work form:
- *  - `name`: manual text — the authored-work form (book/magazine type picker), unless a parent locks the type.
- *  - `extraction`: a scraped book/magazine draft (from an ISBN) — the authored-work form, fields prefilled.
+ *  - `name`: manual text — the authored-work form (type picker), unless a parent locks the type.
+ *    `sourceType` preselects the picker (any citation-type key — the deliverer handoff sets it from
+ *    the backend's `suggested_source_type`); `url` carries the pasted URL through flow state,
+ *    deliberately unused today — the access-URL hedge, so threading it later is plumbing.
+ *  - `extraction`: a scraped book draft (from an ISBN, pasted or extracted from a deliverer URL) —
+ *    the authored-work form, fields prefilled.
  *  - `web`: a pasted web URL — the web flow. `siteName` non-null means the site already exists
  *    (Create Site is skipped, it names that site); null means a new site (Create Site shown). `draft`
  *    is the page scrape (page name + site name prefill, URL confirmed read-only) or null when the
  *    scrape failed/was skipped (URL stays editable, nothing prefilled). `pageName` prefills the page
  *    name when there's no scrape — used by the manual "add a page under a known site" path. */
 export type CreateSeed =
-  | { kind: 'name'; name: string }
+  | { kind: 'name'; name: string; sourceType?: string; url?: string }
   | { kind: 'extraction'; draft: ExtractionDraft }
   | {
       kind: 'web';

@@ -1,4 +1,4 @@
-<!-- @component New-source form for a book or magazine (a root, or an edition under a parent). -->
+<!-- @component New-source form for an authored work — book, magazine, or video/movie (a root, or an edition under a parent). -->
 <script lang="ts">
   import client from '$lib/api/client';
   import type { ParentContext, CreateSeed } from './citation-types';
@@ -7,7 +7,7 @@
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
 
-  type SourceType = 'book' | 'magazine';
+  type SourceType = 'book' | 'magazine' | 'video';
 
   let {
     parentContext,
@@ -30,21 +30,27 @@
 
   // These props are intentionally captured once at mount — the orchestrator
   // creates a fresh component for each stage transition, so they won't change.
-  // This stage creates authored works (book/magazine) — a root, or an edition
-  // under a parent. All web creation goes through CitationWebCreateStage, so a
-  // `web` seed never arrives here and an `extraction` seed is always a book.
+  // This stage creates authored works (book/magazine/video) — a root, or an
+  // edition under a parent. All web creation goes through
+  // CitationWebCreateStage, so a `web` seed never arrives here and an
+  // `extraction` seed is always a book.
   // svelte-ignore state_referenced_locally
   const draft = seed.kind === 'extraction' ? seed.draft : null;
 
   // svelte-ignore state_referenced_locally
   let name = $state(seed.kind === 'name' ? seed.name : (draft?.name ?? ''));
+  // A `name` seed may carry a preselected type — the deliverer handoff sets it
+  // from the backend's suggested_source_type ("cite the movie itself" →
+  // video preselected); the picker stays visible so the user can override.
   // svelte-ignore state_referenced_locally
   let sourceType = $state<SourceType>(
     draft
       ? (draft.source_type as SourceType)
       : parentContext
         ? (parentContext.source_type as SourceType)
-        : 'book',
+        : seed.kind === 'name' && seed.sourceType
+          ? (seed.sourceType as SourceType)
+          : 'book',
   );
   // svelte-ignore state_referenced_locally
   let author = $state(draft?.author ?? parentContext?.author ?? '');
@@ -59,6 +65,9 @@
   let showTypePicker = $derived(seed.kind === 'name' && !parentContext);
   // Publisher and Year come only from a (book) extraction draft.
   let showExtractedFields = $derived(seed.kind === 'extraction');
+  // Year is also prompted for a manually-created video: a movie's year is its
+  // main disambiguator across remakes.
+  let showYear = $derived(showExtractedFields || sourceType === 'video');
 
   $effect(() => {
     if (nameInputEl) {
@@ -123,9 +132,10 @@
 >
   {#if showTypePicker}
     <div class="type-chips">
-      <!-- Books and magazines only — web sources are created by pasting a URL
-           (CitationWebCreateStage), never typed in here. -->
-      {#each ['book', 'magazine'] as t (t)}
+      <!-- Authored works only — web sources are created by pasting a URL
+           (CitationWebCreateStage), never typed in here. A video here is a
+           movie (a standalone work); platform videos mint from their URLs. -->
+      {#each ['book', 'magazine', 'video'] as t (t)}
         <button
           type="button"
           class="type-chip"
@@ -145,7 +155,7 @@
   {#if showExtractedFields}
     <TextField label="Publisher" optional bind:value={publisher} noAutofill />
   {/if}
-  {#if showExtractedFields}
+  {#if showYear}
     <!-- Custom (not NumberField): a nullable, optional integer with no spinner. -->
     <FieldGroup label="Year" optional>
       {#snippet children(inputId)}
