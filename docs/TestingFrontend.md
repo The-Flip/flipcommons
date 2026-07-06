@@ -121,7 +121,7 @@ beforeEach(() => {
 });
 ```
 
-When `POST` serves multiple endpoints (e.g. `/api/citation-sources/` and `/api/citation-instances/`), `mockResolvedValueOnce` is consumed in call order, not by path. Set the mock immediately before the action that triggers the call so the pairing is obvious:
+When `POST` serves multiple endpoints (e.g. `/api/citation-sources/` and `/api/citation-instances/reservations/`), `mockResolvedValueOnce` is consumed in call order, not by path. Set the mock immediately before the action that triggers the call so the pairing is obvious:
 
 ```typescript
 mockPOST.mockResolvedValueOnce({ data: { id: 42 } });

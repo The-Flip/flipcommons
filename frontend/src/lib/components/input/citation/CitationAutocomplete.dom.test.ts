@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CitationAutocomplete from './CitationAutocomplete.svelte';
 import {
   MOCK_SOURCES,
-  CREATED_INSTANCE,
   CREATED_IPDB_CHILD,
   ABSTRACT_BOOK_SOURCE,
   IPDB_SOURCE,
@@ -34,16 +33,11 @@ vi.mock('$lib/api/client', () => ({
 // Helpers
 // ---------------------------------------------------------------------------
 
-function renderAutocomplete() {
-  const oncomplete = vi.fn();
+function renderAutocomplete(oncomplete = vi.fn()) {
   const oncancel = vi.fn();
   const onback = vi.fn();
 
-  render(CitationAutocomplete, {
-    completion: { kind: 'mint-instance', oncomplete },
-    oncancel,
-    onback,
-  });
+  render(CitationAutocomplete, { oncomplete, oncancel, onback });
 
   return { oncomplete, oncancel, onback };
 }
@@ -115,10 +109,6 @@ function getLocatorInput() {
   return screen.getByRole('textbox', { name: /location in source/i }) as HTMLInputElement;
 }
 
-function getQuoteInput() {
-  return screen.getByRole('textbox', { name: /quote/i }) as HTMLTextAreaElement;
-}
-
 /**
  * Navigate from search to the locator stage by selecting a non-abstract source.
  */
@@ -129,17 +119,6 @@ async function enterLocatorStage(user: ReturnType<typeof userEvent.setup>) {
   await vi.waitFor(() => {
     expect(getLocatorInput()).toBeInTheDocument();
   });
-}
-
-/**
- * The inline flow always shows the refine screen — quote-only for
- * skip-locator sources — before minting. Complete it by skipping.
- */
-async function skipQuoteScreen() {
-  await vi.waitFor(() => {
-    expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
-  });
-  fireEvent.pointerDown(screen.getByRole('button', { name: 'Skip' }));
 }
 
 // ---------------------------------------------------------------------------
@@ -194,9 +173,7 @@ describe('CitationAutocomplete (component-level)', () => {
       });
 
       // Retry: POST succeeds
-      mockPOST
-        .mockResolvedValueOnce({ data: CREATED_SOURCE })
-        .mockResolvedValueOnce({ data: CREATED_INSTANCE });
+      mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
       await user.click(screen.getByRole('button', { name: /continue/i }));
 
       // Error clears and flow continues (to locator, since CREATED_SOURCE has skip_locator: false)
@@ -206,19 +183,20 @@ describe('CitationAutocomplete (component-level)', () => {
       });
     });
 
-    it('shows error when citation instance POST fails at locator stage', async () => {
+    it('shows error in place when the completion handler rejects', async () => {
+      // The handler can be async (the inline flow reserves a slug); a
+      // rejection must keep the populated screen rendered with the error.
       const user = userEvent.setup();
-      renderAutocomplete();
+      renderAutocomplete(vi.fn().mockRejectedValue(new Error('reserve failed')));
 
       await enterLocatorStage(user);
 
-      // POST fails
-      mockPOST.mockResolvedValueOnce({ error: 'Server error' });
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Insert' }));
 
       await vi.waitFor(() => {
-        expect(screen.getByText('Failed to create citation.')).toBeInTheDocument();
+        expect(screen.getByText('Failed to insert citation.')).toBeInTheDocument();
       });
+      expect(getLocatorInput()).toBeInTheDocument();
     });
   });
 
@@ -332,66 +310,36 @@ describe('CitationAutocomplete (component-level)', () => {
 
       expect(oncancel).toHaveBeenCalledOnce();
     });
-
-    it('fires oncancel on Escape from the quote textarea', async () => {
-      const user = userEvent.setup();
-      const { oncancel } = renderAutocomplete();
-
-      await enterLocatorStage(user);
-
-      const quoteInput = getQuoteInput();
-      quoteInput.focus();
-      fireEvent.keyDown(quoteInput, { key: 'Escape' });
-
-      expect(oncancel).toHaveBeenCalledOnce();
-    });
   });
 
   // -----------------------------------------------------------------------
-  // Quote collection (inline flow)
+  // Completion — the picker hands back a content spec, never a minted row
   // -----------------------------------------------------------------------
 
-  describe('quote collection', () => {
-    it('sends the typed locator and quote in the mint POST', async () => {
+  describe('completion spec', () => {
+    it('completes with the chosen source and typed locator; no quote surface, no mint POST', async () => {
       const user = userEvent.setup();
       const { oncomplete } = renderAutocomplete();
 
       await enterLocatorStage(user);
 
-      mockPOST.mockResolvedValueOnce({ data: CREATED_INSTANCE });
+      // Quote entry lives on the consumers' revisitable surfaces now.
+      expect(screen.queryByRole('textbox', { name: /quote/i })).toBeNull();
 
       const locatorInput = getLocatorInput();
       locatorInput.focus();
       await user.keyboard('p. 42');
-      const quoteInput = getQuoteInput();
-      quoteInput.focus();
-      await user.keyboard('The flippers were revolutionary.');
 
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Insert' }));
 
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
-      });
-      expect(mockPOST).toHaveBeenCalledWith('/api/citation-instances/', {
-        body: {
-          citation_source_id: MOCK_SOURCES[0].id,
+        expect(oncomplete).toHaveBeenCalledWith({
+          sourceId: MOCK_SOURCES[0].id,
+          sourceName: MOCK_SOURCES[0].name,
+          sourceType: MOCK_SOURCES[0].source_type,
           locator: 'p. 42',
-          quote: 'The flippers were revolutionary.',
-        },
+        });
       });
-    });
-
-    it('Enter in the quote textarea inserts a newline instead of submitting', async () => {
-      const user = userEvent.setup();
-      renderAutocomplete();
-
-      await enterLocatorStage(user);
-
-      const quoteInput = getQuoteInput();
-      quoteInput.focus();
-      await user.keyboard('line one{Enter}line two');
-
-      expect(quoteInput.value).toBe('line one\nline two');
       expect(mockPOST).not.toHaveBeenCalled();
     });
   });
@@ -401,27 +349,28 @@ describe('CitationAutocomplete (component-level)', () => {
   // -----------------------------------------------------------------------
 
   describe('orchestrator guards', () => {
-    it('prevents duplicate citation submission on rapid double-click', async () => {
+    it('prevents duplicate completion on rapid double-click', async () => {
       const user = userEvent.setup();
-      renderAutocomplete();
+
+      // A completion handler that resolves slowly (a slug reservation POST).
+      let resolveComplete!: () => void;
+      const oncomplete = vi.fn().mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveComplete = resolve;
+        }),
+      );
+      renderAutocomplete(oncomplete);
 
       await enterLocatorStage(user);
-
-      // Mock a POST that resolves slowly
-      let resolvePost!: (value: { data: typeof CREATED_INSTANCE }) => void;
-      const slowPost = new Promise<{ data: typeof CREATED_INSTANCE }>((resolve) => {
-        resolvePost = resolve;
-      });
-      mockPOST.mockReturnValue(slowPost);
 
       const insertBtn = screen.getByRole('button', { name: 'Insert' });
       fireEvent.pointerDown(insertBtn);
       fireEvent.pointerDown(insertBtn);
 
-      resolvePost({ data: CREATED_INSTANCE });
+      resolveComplete();
 
       await vi.waitFor(() => {
-        expect(mockPOST).toHaveBeenCalledTimes(1);
+        expect(oncomplete).toHaveBeenCalledTimes(1);
       });
     });
   });
@@ -442,6 +391,7 @@ describe('CitationAutocomplete (component-level)', () => {
             child: {
               id: IPDB_CHILD.id,
               name: IPDB_CHILD.name,
+              source_type: 'web',
               skip_locator: true,
             },
             identifier: '4836',
@@ -449,7 +399,6 @@ describe('CitationAutocomplete (component-level)', () => {
         }
         return Promise.resolve({ data: [] });
       });
-      mockPOST.mockResolvedValueOnce({ data: CREATED_INSTANCE });
 
       const input = getSearchInput();
       input.focus();
@@ -463,11 +412,14 @@ describe('CitationAutocomplete (component-level)', () => {
       // Click the Cite button
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Cite' }));
 
-      // skip_locator=true → the quote-only refine screen (no locator input),
-      // then skipping completes the mint.
-      await skipQuoteScreen();
+      // skip_locator=true → completes immediately, no refine screen.
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+        expect(oncomplete).toHaveBeenCalledWith({
+          sourceId: IPDB_CHILD.id,
+          sourceName: IPDB_CHILD.name,
+          sourceType: 'web',
+          locator: '',
+        });
       });
       expect(screen.queryByRole('textbox', { name: /location in source/i })).toBeNull();
     });
@@ -486,9 +438,7 @@ describe('CitationAutocomplete (component-level)', () => {
         }
         return Promise.resolve({ data: [] });
       });
-      mockPOST
-        .mockResolvedValueOnce({ data: CREATED_IPDB_CHILD })
-        .mockResolvedValueOnce({ data: CREATED_INSTANCE });
+      mockPOST.mockResolvedValueOnce({ data: CREATED_IPDB_CHILD });
 
       const input = getSearchInput();
       input.focus();
@@ -502,9 +452,13 @@ describe('CitationAutocomplete (component-level)', () => {
       // Click the recognition panel's quick-create button
       fireEvent.pointerDown(screen.getByRole('button', { name: /Continue/ }));
 
-      await skipQuoteScreen();
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+        expect(oncomplete).toHaveBeenCalledWith({
+          sourceId: CREATED_IPDB_CHILD.id,
+          sourceName: CREATED_IPDB_CHILD.name,
+          sourceType: CREATED_IPDB_CHILD.source_type,
+          locator: '',
+        });
       });
 
       expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/{source_id}/records/', {
@@ -548,9 +502,11 @@ describe('CitationAutocomplete (component-level)', () => {
           });
         }
         if (url === '/api/citation-sources/cite-url/') {
-          return Promise.resolve({ data: { id: 31, name: recognizedUrl, skip_locator: true } });
+          return Promise.resolve({
+            data: { id: 31, name: recognizedUrl, source_type: 'web', skip_locator: true },
+          });
         }
-        return Promise.resolve({ data: CREATED_INSTANCE });
+        return Promise.resolve({ data: [] });
       });
 
       const input = getSearchInput();
@@ -577,9 +533,13 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await user.click(screen.getByRole('button', { name: /Continue/ }));
 
-      await skipQuoteScreen();
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+        expect(oncomplete).toHaveBeenCalledWith({
+          sourceId: 31,
+          sourceName: recognizedUrl,
+          sourceType: 'web',
+          locator: '',
+        });
       });
 
       // Routed through cite-url — which re-recognizes server-side and nests the
@@ -612,9 +572,11 @@ describe('CitationAutocomplete (component-level)', () => {
           return Promise.resolve({ data: { draft: null, match: null, error: 'timeout' } });
         }
         if (url === '/api/citation-sources/cite-url/') {
-          return Promise.resolve({ data: { id: 31, name: 'x', skip_locator: true } });
+          return Promise.resolve({
+            data: { id: 31, name: 'x', source_type: 'web', skip_locator: true },
+          });
         }
-        return Promise.resolve({ data: CREATED_INSTANCE });
+        return Promise.resolve({ data: [] });
       });
 
       const input = getSearchInput();
@@ -635,9 +597,13 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await user.click(screen.getByRole('button', { name: /Continue/ }));
 
-      await skipQuoteScreen();
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+        expect(oncomplete).toHaveBeenCalledWith({
+          sourceId: 31,
+          sourceName: 'x',
+          sourceType: 'web',
+          locator: '',
+        });
       });
 
       // cite-url receives the URL normalized to https://.
@@ -716,15 +682,19 @@ describe('CitationAutocomplete (component-level)', () => {
       // Finalize files the page DIRECTLY under the chosen root (the explicit
       // parent the user navigated into) via create_citation_source — not cite-url,
       // which would re-recognize the typed URL and could land it elsewhere.
-      mockPOST
-        .mockResolvedValueOnce({ data: { id: 31, name: 'Elton John', skip_locator: true } })
-        .mockResolvedValueOnce({ data: CREATED_INSTANCE });
+      mockPOST.mockResolvedValueOnce({
+        data: { id: 31, name: 'Elton John', source_type: 'web', skip_locator: true },
+      });
       await user.type(urlInput, 'https://jerseyjackpinball.com/products/elton-john');
       await user.click(screen.getByRole('button', { name: /Continue/ }));
 
-      await skipQuoteScreen();
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+        expect(oncomplete).toHaveBeenCalledWith({
+          sourceId: 31,
+          sourceName: 'Elton John',
+          sourceType: 'web',
+          locator: '',
+        });
       });
       expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/{source_id}/pages/', {
         params: { path: { source_id: JJP_SOURCE.id } },
@@ -802,17 +772,19 @@ describe('CitationAutocomplete (component-level)', () => {
         ).toBeInTheDocument();
       });
 
-      mockPOST
-        .mockResolvedValueOnce({ data: CREATED_IPDB_CHILD })
-        .mockResolvedValueOnce({ data: CREATED_INSTANCE });
+      mockPOST.mockResolvedValueOnce({ data: CREATED_IPDB_CHILD });
 
       fireEvent.pointerDown(
         screen.getByRole('option', { name: /Internet Pinball Database #4443/ }),
       );
 
-      await skipQuoteScreen();
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+        expect(oncomplete).toHaveBeenCalledWith({
+          sourceId: CREATED_IPDB_CHILD.id,
+          sourceName: CREATED_IPDB_CHILD.name,
+          sourceType: CREATED_IPDB_CHILD.source_type,
+          locator: '',
+        });
       });
 
       expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/{source_id}/records/', {
@@ -895,6 +867,7 @@ describe('CitationAutocomplete (component-level)', () => {
             child: {
               id: IPDB_CHILD.id,
               name: IPDB_CHILD.name,
+              source_type: 'web',
               skip_locator: true,
             },
             identifier: '4836',
@@ -948,7 +921,7 @@ describe('CitationAutocomplete (component-level)', () => {
         if (url === '/api/citation-sources/extract/')
           return Promise.resolve({ data: EXTRACT_ISBN_DRAFT });
         if (url === '/api/citation-sources/') return Promise.resolve({ data: CREATED_SOURCE });
-        return Promise.resolve({ data: CREATED_INSTANCE });
+        return Promise.resolve({ data: [] });
       });
 
       const input = getSearchInput();
@@ -982,7 +955,7 @@ describe('CitationAutocomplete (component-level)', () => {
       mockPOST.mockImplementation((url: string) => {
         if (url === '/api/citation-sources/extract/')
           return Promise.resolve({ data: EXTRACT_ISBN_MATCH });
-        return Promise.resolve({ data: CREATED_INSTANCE });
+        return Promise.resolve({ data: [] });
       });
 
       const input = getSearchInput();
@@ -1123,9 +1096,9 @@ describe('CitationAutocomplete (component-level)', () => {
           return Promise.resolve({ data: EXTRACT_URL_DRAFT });
         if (url === '/api/citation-sources/cite-url/')
           return Promise.resolve({
-            data: { id: 99, name: 'Wikipedia', skip_locator: true },
+            data: { id: 99, name: 'Wikipedia', source_type: 'web', skip_locator: true },
           });
-        return Promise.resolve({ data: CREATED_INSTANCE });
+        return Promise.resolve({ data: [] });
       });
 
       const input = getSearchInput();
@@ -1155,12 +1128,16 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await user.click(screen.getByRole('button', { name: /Continue/ }));
 
-      // Finalize fires cite-url, then the quote-only refine screen (the child
-      // is skip_locator=true); skipping mints the instance — citing the child,
-      // not a root.
-      await skipQuoteScreen();
+      // Finalize fires cite-url; the child is skip_locator=true so the flow
+      // completes immediately with the child's content spec — citing the
+      // child, not a root, and minting nothing.
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+        expect(oncomplete).toHaveBeenCalledWith({
+          sourceId: 99,
+          sourceName: 'Wikipedia',
+          sourceType: 'web',
+          locator: '',
+        });
       });
       expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/cite-url/', {
         body: {
@@ -1170,22 +1147,19 @@ describe('CitationAutocomplete (component-level)', () => {
           page_name: 'Pinball - Wikipedia',
         },
       });
-      expect(mockPOST).toHaveBeenCalledWith('/api/citation-instances/', {
-        body: { citation_source_id: 99, locator: '', quote: '' },
-      });
       // No bare-root create.
       expect(mockPOST).not.toHaveBeenCalledWith('/api/citation-sources/', expect.anything());
     });
 
     it('abandoning the describe-site flow before finalize issues no writes', async () => {
       const user = userEvent.setup();
-      const { oncancel } = renderAutocomplete();
+      const { oncomplete, oncancel } = renderAutocomplete();
 
       mockGET.mockReturnValue(mockSearchReturning([]));
       mockPOST.mockImplementation((url: string) => {
         if (url === '/api/citation-sources/extract/')
           return Promise.resolve({ data: EXTRACT_URL_DRAFT });
-        return Promise.resolve({ data: CREATED_INSTANCE });
+        return Promise.resolve({ data: [] });
       });
 
       const input = getSearchInput();
@@ -1204,12 +1178,12 @@ describe('CitationAutocomplete (component-level)', () => {
       await user.keyboard('{Escape}');
 
       expect(oncancel).toHaveBeenCalled();
-      // Only the search GET and extract POST ran; no source/instance write.
+      // Only the search GET and extract POST ran; no source write, no completion.
       expect(mockPOST).not.toHaveBeenCalledWith(
         '/api/citation-sources/cite-url/',
         expect.anything(),
       );
-      expect(mockPOST).not.toHaveBeenCalledWith('/api/citation-instances/', expect.anything());
+      expect(oncomplete).not.toHaveBeenCalled();
     });
 
     it('URL lookup returns match → auto-completes (skip_locator)', async () => {
@@ -1220,7 +1194,7 @@ describe('CitationAutocomplete (component-level)', () => {
       mockPOST.mockImplementation((url: string) => {
         if (url === '/api/citation-sources/extract/')
           return Promise.resolve({ data: EXTRACT_URL_MATCH });
-        return Promise.resolve({ data: CREATED_INSTANCE });
+        return Promise.resolve({ data: [] });
       });
 
       const input = getSearchInput();
@@ -1233,10 +1207,14 @@ describe('CitationAutocomplete (component-level)', () => {
 
       fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
 
-      // Match has skip_locator=true → quote-only refine screen, then complete
-      await skipQuoteScreen();
+      // Match has skip_locator=true → completes immediately with its spec
       await vi.waitFor(() => {
-        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+        expect(oncomplete).toHaveBeenCalledWith({
+          sourceId: 42,
+          sourceName: 'IPDB #4836',
+          sourceType: 'web',
+          locator: '',
+        });
       });
     });
 

@@ -17,6 +17,7 @@ Layout:
 """
 
 from apps.core.markdown.field import (
+    DeferredWikilinkKeys,
     WikilinkAuthoringLookup,
     apply_storage_to_authoring,
     convert_authoring_to_storage,
@@ -36,6 +37,7 @@ from apps.core.markdown.render import (
 )
 
 __all__ = [
+    "DeferredWikilinkKeys",
     "RenderedField",
     "WikilinkAuthoringLookup",
     "apply_storage_to_authoring",

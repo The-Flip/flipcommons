@@ -280,10 +280,17 @@ def _patch_taxonomy(  # noqa: UP047
     obj = get_object_or_404(
         model_class.objects.active(), **{model_class.public_id_field: public_id}
     )
-    specs = plan_scalar_field_claims(model_class, data.fields, entity=obj)
+    specs = plan_scalar_field_claims(
+        model_class, data.fields, entity=obj, inline_citations=data.inline_citations
+    )
 
     execute_claims(
-        obj, specs, user=request.user, note=data.note, citations=data.citations
+        obj,
+        specs,
+        user=request.user,
+        note=data.note,
+        citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     obj = get_object_or_404(_taxonomy_detail_qs(model_class), slug=obj.slug)
@@ -781,10 +788,17 @@ def patch_reward_type(
     obj = get_object_or_404(
         RewardType.objects.active(), **{RewardType.public_id_field: public_id}
     )
-    specs = plan_scalar_field_claims(RewardType, data.fields, entity=obj)
+    specs = plan_scalar_field_claims(
+        RewardType, data.fields, entity=obj, inline_citations=data.inline_citations
+    )
 
     execute_claims(
-        obj, specs, user=request.user, note=data.note, citations=data.citations
+        obj,
+        specs,
+        user=request.user,
+        note=data.note,
+        citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     rt = get_object_or_404(_reward_type_detail_qs(), slug=obj.slug)
@@ -987,10 +1001,17 @@ def patch_credit_role(
     obj = get_object_or_404(
         CreditRole.objects.active(), **{CreditRole.public_id_field: public_id}
     )
-    specs = plan_scalar_field_claims(CreditRole, data.fields, entity=obj)
+    specs = plan_scalar_field_claims(
+        CreditRole, data.fields, entity=obj, inline_citations=data.inline_citations
+    )
 
     execute_claims(
-        obj, specs, user=request.user, note=data.note, citations=data.citations
+        obj,
+        specs,
+        user=request.user,
+        note=data.note,
+        citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     cr = get_object_or_404(_credit_role_detail_qs(), slug=obj.slug)

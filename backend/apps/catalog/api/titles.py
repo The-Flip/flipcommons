@@ -918,7 +918,9 @@ def patch_title_claims(
         _assert_title_name_available(data.fields["name"], exclude_pk=title.pk)
 
     specs = (
-        plan_scalar_field_claims(Title, data.fields, entity=title)
+        plan_scalar_field_claims(
+            Title, data.fields, entity=title, inline_citations=data.inline_citations
+        )
         if data.fields
         else []
     )
@@ -936,6 +938,7 @@ def patch_title_claims(
         action=ChangeSetAction.EDIT,
         note=data.note,
         citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     title = get_object_or_404(_detail_qs(), **{Title.public_id_field: title.public_id})

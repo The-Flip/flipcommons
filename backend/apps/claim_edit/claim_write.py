@@ -15,8 +15,9 @@ reusable across domains. See docs/AppBoundaries.md.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, NamedTuple, NoReturn, cast
 
 from django.contrib.auth.models import AbstractBaseUser, AnonymousUser
@@ -24,7 +25,10 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
 from apps.accounts.models import User
+from apps.citation.models import CitationInstance, ReservedCitationSlug
 from apps.core.exceptions import StructuredValidationError
+from apps.core.markdown import get_markdown_fields
+from apps.core.wikilinks import get_link_type, get_patterns
 from apps.provenance.changeset_writer import record_changeset
 from apps.provenance.citation_writer import create_citation_instance
 from apps.provenance.claim_writer import _assert_claim
@@ -37,7 +41,10 @@ from apps.provenance.models import (
     get_claim_fields,
 )
 from apps.provenance.resolution import resolve_after_mutation
-from apps.provenance.schemas import CitationInstanceCreateSchema
+from apps.provenance.schemas import (
+    CitationInstanceCreateSchema,
+    InlineCitationSpecSchema,
+)
 from apps.provenance.validation import validate_claim_value
 
 __all__ = [
@@ -145,15 +152,21 @@ def plan_scalar_field_claims[M: ClaimControlledModel](
     fields: dict[str, Any],
     *,
     entity: M | None = None,
+    inline_citations: Sequence[InlineCitationSpecSchema] = (),
 ) -> list[ClaimSpec]:
     """Validate scalar fields and reject empty/no-op field payloads.
 
     Shared by PATCH endpoints that only accept scalar ``fields`` payloads.
+    Pass the request's *inline_citations* so pending ``[[cite:slug]]``
+    markers validate (their instances don't exist yet — ``execute_claims``
+    mints them; pass the same list there).
     """
     if not fields:
         raise_form_error("No changes provided.")
 
-    specs = validate_scalar_fields(model_class, fields, entity=entity)
+    specs = validate_scalar_fields(
+        model_class, fields, entity=entity, inline_citations=inline_citations
+    )
     if not specs:
         raise_form_error("No changes provided.")
     return specs
@@ -164,6 +177,7 @@ def validate_scalar_fields[M: ClaimControlledModel](
     fields: dict[str, Any],
     *,
     entity: M | None = None,
+    inline_citations: Sequence[InlineCitationSpecSchema] = (),
 ) -> list[ClaimSpec]:
     """Validate scalar fields and return ClaimSpecs.
 
@@ -171,6 +185,11 @@ def validate_scalar_fields[M: ClaimControlledModel](
     the request, even if the value matches the current state. Reasserting
     the same value is meaningful (e.g., a user confirming a machine-sourced
     value). The frontend is responsible for only sending changed fields.
+
+    Pending ``[[cite:slug]]`` markers — those whose slug appears in
+    *inline_citations* — are left in authoring form instead of failing the
+    unknown-target check; ``execute_claims`` mints their instances and
+    rewrites them to storage form inside the save transaction.
 
     Collects all field-level errors and raises them together so the
     frontend can display every problem at once.
@@ -182,6 +201,7 @@ def validate_scalar_fields[M: ClaimControlledModel](
     if unknown:
         raise_form_error(f"Unknown or non-editable fields: {sorted(unknown)}")
 
+    deferred_wikilinks = {"cite": frozenset(c.slug for c in inline_citations)}
     errors = ValidationErrors()
     specs: list[ClaimSpec] = []
     for field_name, value in fields.items():
@@ -195,7 +215,9 @@ def validate_scalar_fields[M: ClaimControlledModel](
                 continue
             value = ""
         try:
-            value = validate_claim_value(field_name, value, model_class)
+            value = validate_claim_value(
+                field_name, value, model_class, deferred_wikilinks
+            )
         except ValidationError as exc:
             errors.add_field(field_name, "; ".join(exc.messages))
             continue
@@ -239,6 +261,113 @@ def _write_claims_in_changeset(
     return created_claims
 
 
+def _mint_inline_citations(
+    inline_citations: Sequence[InlineCitationSpecSchema],
+    *,
+    user: User,
+) -> dict[str, int]:
+    """Mint the save's pending inline cites, consuming their reservations.
+
+    Returns minted-instance pks by slug, for the marker rewrite. Each spec's
+    slug must be a live ``ReservedCitationSlug`` held by *user*: strict on
+    purpose — a consumed slug (the instance already exists) means a stale or
+    replayed payload, and a foreign reservation would let one user squat
+    another's draft slug. Rows are locked (``select_for_update``) so two
+    concurrent saves of the same draft can't both consume a reservation.
+    Runs inside the caller's save transaction; no join rows are created —
+    inline instances are reachable through their marker alone.
+    """
+    if not inline_citations:
+        return {}
+    slugs = [spec.slug for spec in inline_citations]
+    if len(set(slugs)) != len(slugs):
+        raise ValidationError("Duplicate inline citation slugs in payload.")
+    reservations = {
+        r.slug: r
+        for r in ReservedCitationSlug.objects.select_for_update().filter(slug__in=slugs)
+    }
+    minted: dict[str, int] = {}
+    for spec in inline_citations:
+        reservation = reservations.get(spec.slug)
+        if reservation is None:
+            if CitationInstance.objects.filter(slug=spec.slug).exists():
+                raise ValidationError(
+                    f"Inline citation '{spec.slug}' has already been saved."
+                )
+            raise ValidationError(
+                f"Inline citation slug '{spec.slug}' is not a reserved slug."
+            )
+        if reservation.created_by_id != user.pk:
+            raise ValidationError(
+                f"Inline citation slug '{spec.slug}' was reserved by another user."
+            )
+        minted[spec.slug] = create_citation_instance(spec, slug=spec.slug).pk
+    ReservedCitationSlug.objects.filter(slug__in=minted).delete()
+    return minted
+
+
+def _rewrite_pending_cite_markers(
+    model_class: type[ClaimControlledModel],
+    specs: list[ClaimSpec],
+    minted: dict[str, int],
+    referenced: set[str],
+) -> list[ClaimSpec]:
+    """Rewrite freshly minted ``[[cite:slug]]`` markers to storage form.
+
+    The planning pass left pending markers in authoring form (see
+    ``validate_scalar_fields``); now that their instances exist, rewrite them
+    to ``[[cite:id:N]]`` in every markdown-field spec value. Slugs actually
+    rewritten are added to *referenced* (the caller rejects unreferenced
+    specs). Also the belt for a mis-threaded endpoint: any *other* authoring
+    cite marker surviving to this point means planning deferred a slug the
+    execute call never received a spec for.
+    """
+    cite_type = get_link_type("cite")
+    if cite_type is None:
+        # No cite wikilink support registered (isolated tests): planning
+        # neither converted nor deferred anything, so there is nothing to
+        # rewrite and nothing to check.
+        return specs
+    pattern = get_patterns(cite_type)["authoring"]
+    markdown_fields = set(get_markdown_fields(model_class))
+
+    def substitute(match: re.Match[str]) -> str:
+        slug = match.group(1)
+        pk = minted.get(slug)
+        if pk is None:
+            raise ValidationError(
+                f"Unresolved inline citation marker [[cite:{slug}]]: no "
+                "matching inline_citations spec was provided."
+            )
+        referenced.add(slug)
+        return f"[[cite:id:{pk}]]"
+
+    rewritten: list[ClaimSpec] = []
+    for spec in specs:
+        if spec.field_name in markdown_fields and isinstance(spec.value, str):
+            rewritten.append(replace(spec, value=pattern.sub(substitute, spec.value)))
+        else:
+            rewritten.append(spec)
+    return rewritten
+
+
+def _check_all_inline_citations_referenced(
+    minted: dict[str, int], referenced: set[str]
+) -> None:
+    """Reject specs whose marker appears in no saved field value.
+
+    A spec without a marker means the user deleted the marker text before
+    saving (and the client failed to prune) — minting it would create exactly
+    the orphan instance this design exists to prevent.
+    """
+    unreferenced = sorted(set(minted) - referenced)
+    if unreferenced:
+        raise ValidationError(
+            "Inline citation spec(s) not referenced by any [[cite:...]] "
+            f"marker in the saved fields: {', '.join(unreferenced)}."
+        )
+
+
 def _attach_citations(
     claims: list[Claim],
     citations: Sequence[CitationInstanceCreateSchema],
@@ -275,8 +404,15 @@ def execute_claims(
     action: ChangeSetAction = ChangeSetAction.EDIT,
     note: str = "",
     citations: Sequence[CitationInstanceCreateSchema] = (),
+    inline_citations: Sequence[InlineCitationSpecSchema] = (),
 ) -> None:
     """Create a ChangeSet + claims atomically, resolve, and invalidate cache.
+
+    *inline_citations* are the save's pending inline cites: each is minted
+    under its reserved slug (consuming the reservation) and its
+    ``[[cite:slug]]`` markers are rewritten to storage form, all inside the
+    same transaction as the claims that reference them — a failed save leaves
+    no orphan instance and keeps the reservation intact.
 
     Resolution is handled by :func:`resolve_after_mutation` which routes
     to the correct resolver(s) based on entity type and the claim field
@@ -288,6 +424,12 @@ def execute_claims(
     try:
         with transaction.atomic():
             cs = record_changeset(actor=auth_user.actor, action=action, note=note)
+            minted = _mint_inline_citations(inline_citations, user=auth_user)
+            referenced: set[str] = set()
+            specs = _rewrite_pending_cite_markers(
+                type(entity), specs, minted, referenced
+            )
+            _check_all_inline_citations_referenced(minted, referenced)
             created_claims = _write_claims_in_changeset(entity, specs, changeset=cs)
             _attach_citations(created_claims, citations)
             field_names = list({s.field_name for s in specs})
@@ -305,6 +447,7 @@ def execute_multi_entity_claims(
     action: ChangeSetAction,
     note: str = "",
     citations: Sequence[CitationInstanceCreateSchema] = (),
+    inline_citations: Sequence[InlineCitationSpecSchema] = (),
 ) -> ChangeSet:
     """Write claims spanning multiple entities inside a single ChangeSet.
 
@@ -314,8 +457,10 @@ def execute_multi_entity_claims(
 
     One ChangeSet is created with the given *action*; each entry's claims are
     asserted within that changeset; the *citations* (if any) are attached to
-    every created claim across all entities; finally ``resolve_after_mutation``
-    is invoked per entity for just the fields that entity touched.
+    every created claim across all entities; *inline_citations* are minted
+    and their markers rewritten across every entry's specs (see
+    :func:`execute_claims`); finally ``resolve_after_mutation`` is invoked
+    per entity for just the fields that entity touched.
 
     Returns the created ChangeSet so callers can thread its id into the
     response (Undo needs it).
@@ -324,14 +469,20 @@ def execute_multi_entity_claims(
     try:
         with transaction.atomic():
             cs = record_changeset(actor=auth_user.actor, action=action, note=note)
+            minted = _mint_inline_citations(inline_citations, user=auth_user)
+            referenced: set[str] = set()
             all_created: list[Claim] = []
             per_entity_fields: list[tuple[ClaimControlledModel, list[str]]] = []
             for entity, specs in entries:
                 if not specs:
                     continue
+                specs = _rewrite_pending_cite_markers(
+                    type(entity), specs, minted, referenced
+                )
                 created = _write_claims_in_changeset(entity, specs, changeset=cs)
                 all_created.extend(created)
                 per_entity_fields.append((entity, list({s.field_name for s in specs})))
+            _check_all_inline_citations_referenced(minted, referenced)
             _attach_citations(all_created, citations)
             for entity, field_names in per_entity_fields:
                 resolve_after_mutation(entity, field_names=field_names)

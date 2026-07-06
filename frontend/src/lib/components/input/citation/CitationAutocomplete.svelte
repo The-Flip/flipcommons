@@ -1,12 +1,10 @@
 <!-- @component Orchestrates the citation create/cite flow across its stages. -->
 <script lang="ts">
-  import client from '$lib/api/client';
   import {
     transition,
     isWebSeed,
     emptyDraft,
-    type CitationCompletion,
-    type CiteFlowConfig,
+    type CitationCompletionHandler,
     type CiteState,
     type CiteAction,
     type CitationInstanceDraft,
@@ -20,12 +18,14 @@
   import CitationLocatorStage from './CitationLocatorStage.svelte';
 
   let {
-    completion,
+    oncomplete,
     oncancel,
     onback,
   }: {
-    /** What happens when the flow completes — see {@link CitationCompletion}. */
-    completion: CitationCompletion;
+    /** Receives the finished content spec — see {@link CitationCompletionHandler}.
+     *  Nothing mints here: the spec rides the save payload and the backend
+     *  mints at save time. */
+    oncomplete: CitationCompletionHandler;
     oncancel: () => void;
     onback: () => void;
   } = $props();
@@ -34,50 +34,35 @@
   let isSubmitting = $state(false);
   let submitError = $state('');
 
-  // Only the inline (mint-instance) flow collects a quote on the locator
-  // stage — see CiteFlowConfig.
-  let flowConfig: CiteFlowConfig = $derived({
-    collectsQuote: completion.kind === 'mint-instance',
-  });
-
   // -------------------------------------------------------------------
-  // Submission — hands the completed draft to the consumer, minting the
-  // instance first only for the inline flow (it needs the slug now)
+  // Submission — hands the completed content spec to the consumer. The
+  // handler can be async (the inline flow reserves a slug); a rejection
+  // shows in place so the user can retry.
   // -------------------------------------------------------------------
 
   async function submit(draft: CitationInstanceDraft) {
     if (isSubmitting || draft.sourceId === null) return;
 
-    if (completion.kind === 'content-spec') {
-      completion.oncomplete({
-        sourceId: draft.sourceId,
-        sourceName: draft.sourceName,
-        locator: draft.locator,
-      });
-      return;
-    }
-
     isSubmitting = true;
     submitError = '';
-
-    const { data, error } = await client.POST('/api/citation-instances/', {
-      body: { citation_source_id: draft.sourceId, locator: draft.locator, quote: draft.quote },
-    });
-
-    isSubmitting = false;
-
-    if (error) {
-      submitError = 'Failed to create citation.';
-      return;
+    try {
+      await oncomplete({
+        sourceId: draft.sourceId,
+        sourceName: draft.sourceName,
+        sourceType: draft.sourceType,
+        locator: draft.locator,
+      });
+    } catch {
+      submitError = 'Failed to insert citation.';
+    } finally {
+      isSubmitting = false;
     }
-
-    completion.oncomplete(data);
   }
 
   /** Dispatch an action; submit exactly when the machine marks itself ready. */
   function dispatch(action: CiteAction) {
     if (isSubmitting) return;
-    flow = transition(flow, action, flowConfig);
+    flow = transition(flow, action);
     if (flow.stage === 'locator' && flow.ready) {
       submit(flow.draft);
     }
@@ -119,8 +104,8 @@
     dispatch({ type: 'source_created', ...result });
   }
 
-  function handleLocatorSubmit(locator: string, quote: string) {
-    dispatch({ type: 'locator_submitted', locator, quote });
+  function handleLocatorSubmit(locator: string) {
+    dispatch({ type: 'locator_submitted', locator });
   }
 
   function handleBack() {
@@ -181,13 +166,11 @@
       />
     {/if}
   {:else if flow.stage === 'locator'}
-    <!-- Stays rendered when flow.ready: the mint POST can fail, and the
-         populated screen must show submitError in place, not go blank. The
-         edit flow's instant-complete path (skip-locator source, ready with no
-         render) completes synchronously, so this never visibly flashes. -->
+    <!-- Stays rendered when flow.ready: the completion handler can fail (the
+         inline flow's slug reservation POST), and the populated screen must
+         show submitError in place, not go blank. -->
     <CitationLocatorStage
       draft={flow.draft}
-      showQuote={flowConfig.collectsQuote}
       onsubmit={handleLocatorSubmit}
       {oncancel}
       onback={goBackToSearch}

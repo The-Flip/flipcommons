@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MarkdownTextArea from './MarkdownTextArea.svelte';
 import {
   MOCK_SOURCES,
-  CREATED_INSTANCE,
   ABSTRACT_BOOK_SOURCE,
   IPDB_SOURCE,
   IPDB_CHILD,
@@ -33,8 +32,12 @@ vi.mock('$lib/api/client', () => ({
 // Helpers
 // ---------------------------------------------------------------------------
 
+const RESERVED_SLUG = 'bqntvkrs';
+
 function renderTextArea(label = 'Description') {
-  return render(MarkdownTextArea, { label });
+  const onpendingcitation = vi.fn();
+  const utils = render(MarkdownTextArea, { label, onpendingcitation });
+  return { ...utils, onpendingcitation };
 }
 
 /**
@@ -258,10 +261,10 @@ describe('MarkdownTextArea citation integration', () => {
     locatorInput.focus();
     await user.keyboard('p. 42');
 
-    mockPOST.mockResolvedValueOnce({ data: CREATED_INSTANCE });
+    mockPOST.mockResolvedValueOnce({ data: { slug: RESERVED_SLUG } });
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Insert' }));
 
-    const expectedCitation = `[[cite:${CREATED_INSTANCE.slug}]]`;
+    const expectedCitation = `[[cite:${RESERVED_SLUG}]]`;
     await vi.waitFor(() => {
       expect(textarea).toHaveValue(`See ${expectedCitation} after`);
     });
@@ -270,39 +273,36 @@ describe('MarkdownTextArea citation integration', () => {
     expect(textarea.selectionEnd).toBe('See '.length + expectedCitation.length);
     expect(document.activeElement).toBe(textarea);
     expectDropdownClosed();
-    expect(mockPOST).toHaveBeenCalledWith('/api/citation-instances/', {
-      body: {
-        citation_source_id: MOCK_SOURCES[0].id,
-        locator: 'p. 42',
-        quote: '',
-      },
-    });
+    // Only a slug reservation is POSTed — nothing mints until save.
+    expect(mockPOST).toHaveBeenCalledWith('/api/citation-instances/reservations/', {});
   });
 
-  it('inserts a citation with an empty locator when skip is used', async () => {
+  it('inserts a citation with an empty locator when skip is used, and reports the pending spec', async () => {
     const user = userEvent.setup();
-    renderTextArea();
+    const { onpendingcitation } = renderTextArea();
     const textarea = screen.getByRole('textbox', { name: /description/i }) as HTMLTextAreaElement;
 
     const searchInput = await enterCitationFlow(textarea, 'Ref ');
     await searchCitation(user, searchInput);
     await selectFirstCitationResult();
 
-    mockPOST.mockResolvedValueOnce({ data: CREATED_INSTANCE });
+    mockPOST.mockResolvedValueOnce({ data: { slug: RESERVED_SLUG } });
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Skip' }));
 
     await vi.waitFor(() => {
-      expect(textarea).toHaveValue(`Ref [[cite:${CREATED_INSTANCE.slug}]]`);
+      expect(textarea).toHaveValue(`Ref [[cite:${RESERVED_SLUG}]]`);
     });
 
     expect(document.activeElement).toBe(textarea);
     expectDropdownClosed();
-    expect(mockPOST).toHaveBeenCalledWith('/api/citation-instances/', {
-      body: {
-        citation_source_id: MOCK_SOURCES[0].id,
-        locator: '',
-        quote: '',
-      },
+    // The host receives the marker's content spec, editable until save.
+    expect(onpendingcitation).toHaveBeenCalledWith({
+      slug: RESERVED_SLUG,
+      sourceId: MOCK_SOURCES[0].id,
+      sourceName: MOCK_SOURCES[0].name,
+      sourceType: MOCK_SOURCES[0].source_type,
+      locator: '',
+      quote: '',
     });
   });
 
@@ -376,21 +376,14 @@ describe('MarkdownTextArea citation integration', () => {
 
     await enterIpdbIdentifyStage(user, textarea, [IPDB_CHILD]);
 
-    mockPOST.mockResolvedValueOnce({ data: CREATED_INSTANCE });
+    mockPOST.mockResolvedValueOnce({ data: { slug: RESERVED_SLUG } });
 
-    // Select the child from the identify stage list
+    // Select the child from the identify stage list — skip_locator=true, so
+    // the flow completes and inserts immediately, no refine screen.
     fireEvent.pointerDown(screen.getByRole('option', { name: new RegExp(IPDB_CHILD.name) }));
 
-    // skip_locator=true — the quote-only refine screen shows (no locator
-    // input); skipping mints and inserts the citation.
     await vi.waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
-    });
-    expect(screen.queryByRole('textbox', { name: /location in source/i })).not.toBeInTheDocument();
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Skip' }));
-
-    await vi.waitFor(() => {
-      expect(textarea).toHaveValue(`[[cite:${CREATED_INSTANCE.slug}]]`);
+      expect(textarea).toHaveValue(`[[cite:${RESERVED_SLUG}]]`);
     });
     expectDropdownClosed();
   });
@@ -416,7 +409,7 @@ describe('MarkdownTextArea citation integration', () => {
       }
       return Promise.resolve({ data: [] });
     });
-    mockPOST.mockResolvedValueOnce({ data: CREATED_INSTANCE });
+    mockPOST.mockResolvedValueOnce({ data: { slug: RESERVED_SLUG } });
 
     // Enter citation flow and paste the IPDB URL
     const searchInput = await enterCitationFlow(textarea);
@@ -429,26 +422,16 @@ describe('MarkdownTextArea citation integration', () => {
       expect(screen.getByRole('button', { name: 'Cite' })).toBeInTheDocument();
     });
 
-    // Click the Cite button — advances to the quote-only refine screen
+    // Click the Cite button — skip_locator child completes and inserts
+    // immediately, no refine screen.
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Cite' }));
-    await vi.waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
-    });
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Skip' }));
 
-    // Citation inserted — no identify stage, no locator input
     await vi.waitFor(() => {
-      expect(textarea).toHaveValue(`[[cite:${CREATED_INSTANCE.slug}]]`);
+      expect(textarea).toHaveValue(`[[cite:${RESERVED_SLUG}]]`);
     });
 
     expectDropdownClosed();
-    expect(mockPOST).toHaveBeenCalledWith('/api/citation-instances/', {
-      body: {
-        citation_source_id: IPDB_CHILD.id,
-        locator: '',
-        quote: '',
-      },
-    });
+    expect(mockPOST).toHaveBeenCalledWith('/api/citation-instances/reservations/', {});
   });
 
   it('wires aria-activedescendant on the citation search combobox', async () => {

@@ -6,10 +6,7 @@ Auto-discovered via the ``routers`` list convention in config/api.py.
 
 from __future__ import annotations
 
-from django.core.exceptions import ValidationError
-from django.db import IntegrityError
 from django.http import HttpRequest
-from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
 from ninja import Router
 from ninja.decorators import decorate_view
@@ -18,22 +15,22 @@ from ninja.responses import Status
 from ninja.security import django_auth
 
 from apps.citation.deep_links import deep_linked_url
-from apps.citation.models import CitationInstance, CitationSource
+from apps.citation.models import CitationInstance, reserve_citation_slug
 from apps.core.api_helpers import authed_user
 from apps.core.authz.enforce import enforce
 from apps.core.authz.evaluator import policy_user
 from apps.core.authz.markers import gated_inline, requires
+from apps.core.authz.schemas import PolicyDeniedSchema
 from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 
-from . import citation_writer
 from .models import ClaimControlledModel, Source
 from .page_endpoints import pages_router
 from .schemas import (
     CitationInstanceBatchSchema,
-    CitationInstanceCreateSchema,
     CitationInstanceSchema,
     CitationLinkSchema,
+    CitationSlugReservationSchema,
     CitationSourceSchema,
     RevertNoteSchema,
     UndoChangeSetSchema,
@@ -237,36 +234,25 @@ def batch_citation_instances(
 
 
 @citation_instances_router.post(
-    "/",
-    response={201: CitationInstanceSchema, 422: ErrorDetailSchema},
+    "/reservations/",
+    # 403 is the @requires gate (no body to fail validation otherwise).
+    response={201: CitationSlugReservationSchema, 403: PolicyDeniedSchema},
     auth=django_auth,
 )
 @requires(Activity.CITATION_EDIT)
-def create_citation_instance(
-    request: HttpRequest, data: CitationInstanceCreateSchema
-) -> Status[CitationInstanceSchema]:
-    """Create a new CitationInstance for use in ``[[cite:N]]`` markers."""
-    source = get_object_or_404(CitationSource, pk=data.citation_source_id)
+def reserve_citation_instance_slug(
+    request: HttpRequest,
+) -> Status[CitationSlugReservationSchema]:
+    """Reserve a citation slug for a pending inline ``[[cite:slug]]`` cite.
 
-    try:
-        instance = citation_writer.create_citation_instance(data)
-    except ValidationError as exc:
-        raise HttpError(422, str(exc)) from exc
-    except IntegrityError as exc:
-        raise HttpError(422, str(exc)) from exc
-
-    return Status(
-        201,
-        CitationInstanceSchema(
-            id=instance.pk,
-            slug=instance.slug,
-            citation_source_id=instance.citation_source_id,
-            citation_source_name=source.name,
-            locator=instance.locator,
-            quote=instance.quote,
-            created_at=instance.created_at.isoformat(),
-        ),
-    )
+    The editor places the returned slug in a marker immediately; the
+    ``CitationInstance`` itself is minted at save time from the save payload's
+    ``inline_citations`` spec, which consumes the reservation. An abandoned
+    reservation (draft never saved) is inert and is never swept — see
+    ``ReservedCitationSlug``.
+    """
+    reservation = reserve_citation_slug(authed_user(request))
+    return Status(201, CitationSlugReservationSchema(slug=reservation.slug))
 
 
 routers = [

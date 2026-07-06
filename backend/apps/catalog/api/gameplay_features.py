@@ -215,7 +215,12 @@ def patch_gameplay_feature_claims(
         **{GameplayFeature.public_id_field: public_id},
     )
 
-    specs = validate_scalar_fields(GameplayFeature, data.fields, entity=feature)
+    specs = validate_scalar_fields(
+        GameplayFeature,
+        data.fields,
+        entity=feature,
+        inline_citations=data.inline_citations,
+    )
 
     if data.parents is not None:
         specs.extend(
@@ -245,6 +250,7 @@ def patch_gameplay_feature_claims(
         user=request.user,
         note=data.note,
         citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     feature = get_object_or_404(_detail_qs(), slug=feature.slug)

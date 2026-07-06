@@ -3,6 +3,7 @@
   import { fetchLinkTypes, searchLinkTargets } from '$lib/api/link-types';
   import type { LinkType, LinkTarget } from '$lib/api/link-types';
   import { formatLinkText } from './wikilink-helpers';
+  import { reserveCitationSlug, type PendingInlineCitation } from '$lib/pending-citations';
   import { createDebouncedSearch } from '$lib/components/input/dropdown/search-helpers';
   import CitationAutocomplete from '$lib/components/input/citation/CitationAutocomplete.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
@@ -11,11 +12,16 @@
 
   let {
     oncomplete,
+    onpendingcitation,
     oncancel,
     onfocusreturn,
     initialType,
   }: {
     oncomplete: (linkText: string) => void;
+    /** Called alongside `oncomplete` when a citation flow finishes: the
+     *  inserted `[[cite:slug]]` marker's content spec, which the host keeps
+     *  (editable) until save — nothing mints until then. */
+    onpendingcitation?: (pending: PendingInlineCitation) => void;
     oncancel: () => void;
     onfocusreturn?: () => void;
     /** When set, skip the type picker and jump directly to this link type. */
@@ -270,10 +276,14 @@
       {/each}
     </div>
   {:else if stage === 'cite'}
+    <!-- The picker hands back a content spec; a slug is reserved (never an
+         instance minted) so the marker can be placed. A failed reservation
+         rejects, and the picker shows the error in place. -->
     <CitationAutocomplete
-      completion={{
-        kind: 'mint-instance',
-        oncomplete: (instance) => oncomplete(`[[cite:${instance.slug}]]`),
+      oncomplete={async (draft) => {
+        const slug = await reserveCitationSlug();
+        oncomplete(`[[cite:${slug}]]`);
+        onpendingcitation?.({ slug, ...draft, quote: '' });
       }}
       oncancel={() => oncancel()}
       onback={() => goBack()}

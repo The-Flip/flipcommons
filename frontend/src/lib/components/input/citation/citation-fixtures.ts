@@ -174,12 +174,18 @@ export const IPDB_DETAIL_RESPONSE = {
 // ---------------------------------------------------------------------------
 
 /** Minimal response from POST /api/citation-sources/ — component reads id, name, skip_locator. */
-export const CREATED_SOURCE = { id: 3, name: 'New Source', skip_locator: false };
+export const CREATED_SOURCE = {
+  id: 3,
+  name: 'New Source',
+  source_type: 'book',
+  skip_locator: false,
+};
 
 /** Response from POST /api/citation-sources/ when creating a new IPDB child. */
 export const CREATED_IPDB_CHILD = {
   id: 22,
   name: 'Internet Pinball Database #9999',
+  source_type: 'web',
   skip_locator: true,
 };
 
@@ -218,7 +224,7 @@ export const EXTRACT_ISBN_DRAFT = {
 /** ISBN matched an existing source in the database. */
 export const EXTRACT_ISBN_MATCH = {
   draft: null,
-  match: { id: 1, name: 'The Encyclopedia of Pinball', skip_locator: false },
+  match: { id: 1, name: 'The Encyclopedia of Pinball', source_type: 'book', skip_locator: false },
   error: null,
   confidence: '',
   source_api: '',
@@ -244,7 +250,7 @@ export const EXTRACT_URL_DRAFT = {
 /** URL extraction matched an existing child source. */
 export const EXTRACT_URL_MATCH = {
   draft: null,
-  match: { id: 42, name: 'IPDB #4836', skip_locator: true },
+  match: { id: 42, name: 'IPDB #4836', source_type: 'web', skip_locator: true },
   error: null,
   confidence: '',
   source_api: '',

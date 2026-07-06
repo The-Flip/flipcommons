@@ -9,7 +9,7 @@ export type { SaveResult };
 type CorporateEntityClaimsBody = CorporateEntityClaimPatchSchema;
 
 type CorporateEntitySectionPatchBody = Partial<
-  Pick<CorporateEntityClaimsBody, 'fields' | 'aliases' | 'note' | 'citations'>
+  Pick<CorporateEntityClaimsBody, 'fields' | 'aliases' | 'note' | 'citations' | 'inline_citations'>
 >;
 
 export async function saveCorporateEntityClaims(
@@ -18,7 +18,7 @@ export async function saveCorporateEntityClaims(
 ): Promise<SaveResult> {
   const { data, error } = await client.PATCH('/api/corporate-entities/{public_id}/claims/', {
     params: { path: { public_id: slug } },
-    body: { fields: {}, note: '', citations: [], ...body },
+    body: { fields: {}, note: '', citations: [], inline_citations: [], ...body },
   });
 
   if (error) {

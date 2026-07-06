@@ -223,7 +223,9 @@ def patch_theme_claims(
         Theme.objects.active(), **{Theme.public_id_field: public_id}
     )
 
-    specs = validate_scalar_fields(Theme, data.fields, entity=theme)
+    specs = validate_scalar_fields(
+        Theme, data.fields, entity=theme, inline_citations=data.inline_citations
+    )
 
     if data.parents is not None:
         specs.extend(
@@ -248,7 +250,12 @@ def patch_theme_claims(
         raise_form_error("No changes provided.")
 
     execute_claims(
-        theme, specs, user=request.user, note=data.note, citations=data.citations
+        theme,
+        specs,
+        user=request.user,
+        note=data.note,
+        citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     theme = get_object_or_404(_detail_qs(), slug=theme.slug)

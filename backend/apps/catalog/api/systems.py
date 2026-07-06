@@ -290,10 +290,17 @@ def patch_system_claims(
     system = get_object_or_404(
         System.objects.active(), **{System.public_id_field: public_id}
     )
-    specs = plan_scalar_field_claims(System, data.fields, entity=system)
+    specs = plan_scalar_field_claims(
+        System, data.fields, entity=system, inline_citations=data.inline_citations
+    )
 
     execute_claims(
-        system, specs, user=request.user, note=data.note, citations=data.citations
+        system,
+        specs,
+        user=request.user,
+        note=data.note,
+        citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     system = get_object_or_404(_system_detail_qs(), slug=system.slug)

@@ -151,7 +151,7 @@ describe('FeaturesEditor dirty-state contract', () => {
     expect(PATCH).toHaveBeenCalledOnce();
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { player_count: 6 }, note: '', citations: [] },
+      body: { fields: { player_count: 6 }, note: '', citations: [], inline_citations: [] },
     });
   });
 
@@ -170,7 +170,7 @@ describe('FeaturesEditor dirty-state contract', () => {
     expect(PATCH).toHaveBeenCalledOnce();
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { themes: ['medieval', 'fantasy'], note: '', citations: [] },
+      body: { themes: ['medieval', 'fantasy'], note: '', citations: [], inline_citations: [] },
     });
   });
 });

@@ -233,10 +233,17 @@ def patch_series_claims(
     series = get_object_or_404(
         Series.objects.active(), **{Series.public_id_field: public_id}
     )
-    specs = plan_scalar_field_claims(Series, data.fields, entity=series)
+    specs = plan_scalar_field_claims(
+        Series, data.fields, entity=series, inline_citations=data.inline_citations
+    )
 
     execute_claims(
-        series, specs, user=request.user, note=data.note, citations=data.citations
+        series,
+        specs,
+        user=request.user,
+        note=data.note,
+        citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     series = get_object_or_404(_series_detail_qs(), slug=series.slug)

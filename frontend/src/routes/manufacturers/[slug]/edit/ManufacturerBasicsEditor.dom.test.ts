@@ -56,7 +56,12 @@ describe('ManufacturerBasicsEditor dirty-state contract', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/manufacturers/{public_id}/claims/', {
       params: { path: { public_id: 'williams' } },
-      body: { fields: { website: null, logo_url: null }, note: '', citations: [] },
+      body: {
+        fields: { website: null, logo_url: null },
+        note: '',
+        citations: [],
+        inline_citations: [],
+      },
     });
     expect(screen.getByTestId('saved-count')).toHaveTextContent('1');
   });

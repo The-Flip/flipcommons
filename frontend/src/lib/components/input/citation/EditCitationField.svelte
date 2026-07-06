@@ -123,7 +123,7 @@
       {#if pickerOpen}
         <div class="citation-picker">
           <CitationAutocomplete
-            completion={{ kind: 'content-spec', oncomplete: handleComplete }}
+            oncomplete={handleComplete}
             oncancel={closePicker}
             onback={closePicker}
           />

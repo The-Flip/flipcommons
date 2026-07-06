@@ -240,7 +240,9 @@ def patch_corporate_entity_claims(
         CorporateEntity.objects.active(), **{CorporateEntity.public_id_field: public_id}
     )
 
-    specs = validate_scalar_fields(CorporateEntity, data.fields, entity=ce)
+    specs = validate_scalar_fields(
+        CorporateEntity, data.fields, entity=ce, inline_citations=data.inline_citations
+    )
 
     if data.aliases is not None:
         specs.extend(
@@ -255,7 +257,12 @@ def patch_corporate_entity_claims(
         raise_form_error("No changes provided.")
 
     execute_claims(
-        ce, specs, user=request.user, note=data.note, citations=data.citations
+        ce,
+        specs,
+        user=request.user,
+        note=data.note,
+        citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     ce = get_object_or_404(_detail_qs(), slug=ce.slug)

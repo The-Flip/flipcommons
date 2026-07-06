@@ -15,7 +15,11 @@ from ninja import Schema
 from pydantic import Field
 
 from apps.media.schemas import UploadedMediaSchema
-from apps.provenance.schemas import ChangeSetInputSchema, RichTextSchema
+from apps.provenance.schemas import (
+    ChangeSetInputSchema,
+    InlineCitationsInputSchema,
+    RichTextSchema,
+)
 
 __all__ = [
     "ClaimPatchSchema",
@@ -139,7 +143,7 @@ class EntityCreateInputSchema(ChangeSetInputSchema):
     slug: str
 
 
-class ClaimPatchSchema(ChangeSetInputSchema):
+class ClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
     """Generic claim-patch body for entity types with no list-shaped
     payloads beyond ``fields``. Entity types that own M2M/list relations
     (parents, aliases, themes, credits, …) use per-entity subclasses instead.
@@ -151,7 +155,7 @@ class ClaimPatchSchema(ChangeSetInputSchema):
     fields: dict[str, Any]
 
 
-class HierarchyClaimPatchSchema(ChangeSetInputSchema):
+class HierarchyClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
     """Patch body for hierarchy-shaped taxonomies (themes, locations,
     technology generations, …) whose claims include parent links and aliases.
     """
