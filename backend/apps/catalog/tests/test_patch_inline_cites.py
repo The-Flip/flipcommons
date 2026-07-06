@@ -17,6 +17,7 @@ from django.core.exceptions import ValidationError
 from apps.catalog.models import Manufacturer
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.models import CitationInstance
+from apps.citation.test_factories import make_citation_source
 from apps.claim_ingest.apply import apply_plan
 from apps.claim_ingest.patches import PatchError, build_plan, load_patch
 from apps.core.markdown import (
@@ -504,3 +505,125 @@ def test_dry_run_existing_slug_validates_normally(flipcommons_catalog, ipdb_root
         dry_run=True,
     )
     assert not report.errors
+
+
+# ── inline cites carry locator/quote ───────────────────────────────
+
+
+@pytest.fixture
+def youtube_root(db):
+    """The root CitationSource for the youtube scheme (a video platform)."""
+    return make_citation_source(
+        name="YouTube",
+        source_type="video",
+        identifier_key="youtube",
+    )
+
+
+def test_inline_cite_mapping_quote_and_locator_land_on_instance(
+    flipcommons_catalog, ipdb_root, pm
+):
+    # The mapping form's locator/quote ride the minted floating instance,
+    # exactly like the entry-level cite's.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      description: "Widely praised.[[cite:1]]"
+      cites:
+        '1':
+          ref: ipdb:4443
+          locator: Notes section
+          quote: "Widely praised by players and collectors"
+"""
+    _apply(text)
+
+    (ci,) = list(_floating())
+    assert ci.locator == "Notes section"
+    assert ci.quote == "Widely praised by players and collectors"
+
+
+def test_inline_cite_video_locator_normalized(flipcommons_catalog, youtube_root, pm):
+    # Locator canonicalization is shared with the entry-level path: a video
+    # cite's timestamp is validated and stored canonical.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      description: "Demonstrated on stream.[[cite:1]]"
+      cites:
+        '1':
+          ref: youtube:dQw4w9WgXcQ
+          locator: 1h2m3s
+"""
+    _apply(text)
+
+    (ci,) = list(_floating())
+    assert ci.locator == "1:02:03"
+    assert ci.citation_source.source_type == "video"
+
+
+def test_inline_cite_video_locator_invalid_rejected(
+    flipcommons_catalog, youtube_root, pm
+):
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      description: "Demonstrated on stream.[[cite:1]]"
+      cites:
+        '1':
+          ref: youtube:dQw4w9WgXcQ
+          locator: p. 42
+"""
+    with pytest.raises(PatchError, match="cite locator"):
+        _apply(text)
+
+
+def test_inline_cite_locator_overlong_rejected(flipcommons_catalog, pm):
+    long_locator = "x" * 201
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        '      description: "Widely praised.[[cite:1]]"\n'
+        "      cites:\n"
+        "        '1':\n"
+        "          ref: ipdb:4443\n"
+        f"          locator: {long_locator}\n"
+    )
+    with pytest.raises(PatchError, match="cite locator exceeds"):
+        _apply(text)
+
+
+def test_inline_cite_quote_overlong_rejected(flipcommons_catalog, pm):
+    long_quote = "x" * 2001
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        '      description: "Widely praised.[[cite:1]]"\n'
+        "      cites:\n"
+        "        '1':\n"
+        "          ref: ipdb:4443\n"
+        f"          quote: {long_quote}\n"
+    )
+    with pytest.raises(PatchError, match="cite quote exceeds"):
+        _apply(text)
+
+
+def test_inline_cite_quote_mojibake_rejected(flipcommons_catalog, pm):
+    # The bulk mint path skips model validators, so the parser must catch
+    # encoding corruption itself — on the inline path too.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        '      description: "Widely praised.[[cite:1]]"\n'
+        "      cites:\n"
+        "        '1':\n"
+        "          ref: ipdb:4443\n"
+        '          quote: "It doesnâ€™t work"\n'
+    )
+    with pytest.raises(PatchError, match="cite quote"):
+        _apply(text)

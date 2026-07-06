@@ -130,6 +130,7 @@ def make_citation_instance(
     *,
     citation_source: CitationSource | None = None,
     locator: str = "",
+    quote: str = "",
     slug: str = "",
 ) -> CitationInstance:
     """Create a ``CitationInstance`` for tests, auto-providing a citation source.
@@ -141,6 +142,7 @@ def make_citation_instance(
     return CitationInstance.objects.create(
         citation_source=citation_source or make_citation_source(),
         locator=locator,
+        quote=quote,
         slug=slug,
     )
 

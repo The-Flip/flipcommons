@@ -323,7 +323,17 @@ claims:
       note: "Narrative compiled from IPDB and Pinside."
 ```
 
-`cites:` declares **only new** citations. Each key is a **numeric handle quoted as a string** (`"1":`, never bare `1:` — an unquoted integer key is a hard parse error) and each value is a cite ref in the **same grammar as `cite:`'s ref** — `scheme:identifier`, an `http(s)://` URL or a `{ ref, archive }` map (an inline footnote takes no `locator`/`quote` — those belong on the entry-level `cite:`). The spec resolves through the same source get-or-create as `cite:`, so a URL still needs its [website root seeded](#citation-sources).
+`cites:` declares **only new** citations. Each key is a **numeric handle quoted as a string** (`"1":`, never bare `1:` — an unquoted integer key is a hard parse error) and each value is a cite spec in the **same grammar as `cite:`** — `scheme:identifier`, an `http(s)://` URL or a `{ ref, archive, locator, quote }` mapping. `locator` and `quote` land on the minted footnote instance with the same validation as the entry-level `cite:` (video locators canonicalized, the verbatim-quote rule above applies verbatim):
+
+```yaml
+cites:
+  "1":
+    ref: ipdb:4443
+    locator: Notes section
+    quote: "exists only as a prototype machine"
+```
+
+The spec resolves through the same source get-or-create as `cite:`, so a URL still needs its [website root seeded](#citation-sources).
 
 **Marker ↔ map correspondence is enforced** (a structural error, no DB lookup): every numeric-handle marker must have a `cites:` entry, and every `cites:` key must be a numeric handle referenced by at least one marker. A `cites:` entry keyed by a slug, or one no marker references, is a misuse. A marker that is neither all-digits nor a bare slug — notably a raw `[[cite:id:1]]` (storage form) — is rejected.
 

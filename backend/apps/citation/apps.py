@@ -41,6 +41,7 @@ def _collect_citation_metadata(obj: CitationInstance, index: int) -> dict[str, A
         "author": obj.citation_source.author,
         "year": obj.citation_source.year,
         "locator": obj.locator,
+        "quote": obj.quote,
         "links": [
             {
                 "url": deep_linked_url(obj.citation_source, obj.locator, link.url),

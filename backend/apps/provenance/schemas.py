@@ -452,6 +452,9 @@ class InlineCitationSchema(Schema):
     locator: str = Field(
         description="Specific location within the source, such as a page or section."
     )
+    quote: str = Field(
+        description="Verbatim excerpt from the source backing the citation, or an empty string."
+    )
     links: Annotated[
         list[CitationLinkSchema],
         Field(description="External links for the cited source."),
@@ -600,6 +603,9 @@ class CitationInstanceBatchSchema(Schema):
     )
     locator: str = Field(
         description="Specific location within the source, or an empty string."
+    )
+    quote: str = Field(
+        description="Verbatim excerpt from the source backing the citation, or an empty string."
     )
     links: list[CitationLinkSchema] = Field(
         [], description="External links for the cited source."

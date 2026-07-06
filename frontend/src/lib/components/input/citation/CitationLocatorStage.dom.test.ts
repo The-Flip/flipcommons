@@ -14,6 +14,7 @@ function makeDraft(overrides: Partial<CitationInstanceDraft> = {}): CitationInst
     locator: '',
     locatorHint: '',
     skipLocator: false,
+    quote: '',
     ...overrides,
   };
 }
@@ -62,7 +63,7 @@ describe('CitationLocatorStage', () => {
     expect(input).toHaveValue('1:35');
     expect(onsubmit).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Insert' }));
-    expect(onsubmit).toHaveBeenCalledWith('1:35');
+    expect(onsubmit).toHaveBeenCalledWith('1:35', '');
   });
 
   it('normalizes a video locator to the canonical form on submit', async () => {
@@ -75,7 +76,7 @@ describe('CitationLocatorStage', () => {
       onback: noop,
     });
     await user.type(screen.getByRole('textbox'), '1h2m3s{Enter}');
-    expect(onsubmit).toHaveBeenCalledWith('1:02:03');
+    expect(onsubmit).toHaveBeenCalledWith('1:02:03', '');
   });
 
   it('blocks an invalid video locator and shows the type message', async () => {
@@ -105,10 +106,10 @@ describe('CitationLocatorStage', () => {
       onback: noop,
     });
     await user.type(screen.getByRole('textbox'), 'p. 42{Enter}');
-    expect(onsubmit).toHaveBeenCalledWith('p. 42');
+    expect(onsubmit).toHaveBeenCalledWith('p. 42', '');
   });
 
-  it('skip always submits an empty locator, even for video', async () => {
+  it('skip always submits an empty locator and quote, even for video', async () => {
     const user = userEvent.setup();
     const onsubmit = vi.fn();
     render(CitationLocatorStage, {
@@ -118,6 +119,50 @@ describe('CitationLocatorStage', () => {
       onback: noop,
     });
     await user.click(screen.getByRole('button', { name: 'Skip' }));
-    expect(onsubmit).toHaveBeenCalledWith('');
+    expect(onsubmit).toHaveBeenCalledWith('', '');
+  });
+
+  it('shows no quote textarea by default (edit flow)', () => {
+    render(CitationLocatorStage, {
+      draft: makeDraft(),
+      onsubmit: noop,
+      oncancel: noop,
+      onback: noop,
+    });
+    expect(screen.queryByRole('textbox', { name: /quote/i })).toBeNull();
+  });
+
+  it('showQuote renders the quote textarea and submits its trimmed value', async () => {
+    const user = userEvent.setup();
+    const onsubmit = vi.fn();
+    render(CitationLocatorStage, {
+      draft: makeDraft({ sourceType: 'book' }),
+      showQuote: true,
+      onsubmit,
+      oncancel: noop,
+      onback: noop,
+    });
+    await user.type(screen.getByRole('textbox', { name: /location in source/i }), 'p. 42');
+    await user.type(screen.getByRole('textbox', { name: /quote/i }), '  A quoted excerpt. ');
+    await user.click(screen.getByRole('button', { name: 'Insert' }));
+    expect(onsubmit).toHaveBeenCalledWith('p. 42', 'A quoted excerpt.');
+  });
+
+  it('skip-locator source with showQuote renders quote-only and focuses the textarea', async () => {
+    const user = userEvent.setup();
+    const onsubmit = vi.fn();
+    render(CitationLocatorStage, {
+      draft: makeDraft({ sourceType: 'web', skipLocator: true }),
+      showQuote: true,
+      onsubmit,
+      oncancel: noop,
+      onback: noop,
+    });
+    expect(screen.queryByRole('textbox', { name: /location in source/i })).toBeNull();
+    const quoteInput = screen.getByRole('textbox', { name: /quote/i });
+    expect(quoteInput).toHaveFocus();
+    await user.keyboard('Verbatim.');
+    await user.click(screen.getByRole('button', { name: 'Insert' }));
+    expect(onsubmit).toHaveBeenCalledWith('', 'Verbatim.');
   });
 });

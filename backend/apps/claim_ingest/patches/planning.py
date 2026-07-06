@@ -56,7 +56,6 @@ from apps.claim_ingest.patches.parsing import (
     _parse_provenance,
 )
 from apps.claim_ingest.plan import (
-    CitationRef,
     CiteHandle,
     CiteSpec,
     DryRunPreviewHook,
@@ -308,13 +307,13 @@ def _reject_reassign_onto_delete(doc: PatchDoc, registry: PatchEntityRegistry) -
 def _classify_inline_cites(
     entry: CreateEntry | EditEntry,
     model_class: type[LinkableClaimModel],
-) -> dict[str, dict[CiteHandle, CitationRef]]:
+) -> dict[str, dict[CiteHandle, CiteSpec]]:
     """Validate this entry's inline ``[[cite:...]]`` markers against its ``cites:`` map.
 
     Scans **every** markdown field of the entry (the gate — a marker with no
     backing never survives), classifies each handle by strict grammar, enforces
     marker↔map correspondence, and returns ``{field_name: {numeric_handle:
-    CitationRef}}`` for each markdown field carrying ≥1 *new*-cite marker (the
+    CiteSpec}}`` for each markdown field carrying ≥1 *new*-cite marker (the
     minting payload :func:`_emit_direct` attaches to its assertion). All checks
     are DB-free; existing-slug validity is enforced downstream by
     ``convert_authoring_to_storage`` (raises ``Cite not found`` on a bad slug).

@@ -381,11 +381,17 @@ describe('MarkdownTextArea citation integration', () => {
     // Select the child from the identify stage list
     fireEvent.pointerDown(screen.getByRole('option', { name: new RegExp(IPDB_CHILD.name) }));
 
-    // skip_locator=true — citation inserted directly, no locator stage
+    // skip_locator=true — the quote-only refine screen shows (no locator
+    // input); skipping mints and inserts the citation.
+    await vi.waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('textbox', { name: /location in source/i })).not.toBeInTheDocument();
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Skip' }));
+
     await vi.waitFor(() => {
       expect(textarea).toHaveValue(`[[cite:${CREATED_INSTANCE.slug}]]`);
     });
-    expect(screen.queryByRole('textbox', { name: /location in source/i })).not.toBeInTheDocument();
     expectDropdownClosed();
   });
 
@@ -423,10 +429,14 @@ describe('MarkdownTextArea citation integration', () => {
       expect(screen.getByRole('button', { name: 'Cite' })).toBeInTheDocument();
     });
 
-    // Click the Cite button — should auto-complete citation
+    // Click the Cite button — advances to the quote-only refine screen
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Cite' }));
+    await vi.waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
+    });
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Skip' }));
 
-    // Citation should be inserted directly — no identify stage, no manual clicks
+    // Citation inserted — no identify stage, no locator input
     await vi.waitFor(() => {
       expect(textarea).toHaveValue(`[[cite:${CREATED_INSTANCE.slug}]]`);
     });

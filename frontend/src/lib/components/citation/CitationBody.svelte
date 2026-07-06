@@ -13,6 +13,7 @@
     locator,
     links,
     quote = '',
+    clampQuote = false,
     linkLayout = 'column',
   }: {
     sourceName: string;
@@ -23,6 +24,9 @@
     links: CitationLink[];
     /** Optional supporting quote, shown between the locator and the links. */
     quote?: string;
+    /** Clamp a long quote to a few lines (for tight surfaces like the
+     *  tooltip). Off by default so the sources panel shows it in full. */
+    clampQuote?: boolean;
     /** How to lay out the supporting-link chips. */
     linkLayout?: 'column' | 'row';
   } = $props();
@@ -45,7 +49,7 @@
   <div class="locator">{displayLocator(sourceType, locator)}</div>
 {/if}
 {#if quote}
-  <blockquote class="quote">{quote}</blockquote>
+  <blockquote class="quote" class:clamped={clampQuote}>{quote}</blockquote>
 {/if}
 {#if display.chips.length > 0}
   <div class="links" class:row={linkLayout === 'row'}>
@@ -81,6 +85,14 @@
     font-size: var(--font-size-0);
     font-style: italic;
     color: var(--color-text-muted);
+  }
+
+  .quote.clamped {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
   }
 
   .links {

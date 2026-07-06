@@ -214,6 +214,8 @@
       author={activeCitation.author}
       year={activeCitation.year}
       locator={activeCitation.locator}
+      quote={activeCitation.quote}
+      clampQuote
       links={activeCitation.links}
     />
   </div>

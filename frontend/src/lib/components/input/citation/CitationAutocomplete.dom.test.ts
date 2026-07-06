@@ -111,6 +111,14 @@ async function enterCreateStage(user: ReturnType<typeof userEvent.setup>, query 
   });
 }
 
+function getLocatorInput() {
+  return screen.getByRole('textbox', { name: /location in source/i }) as HTMLInputElement;
+}
+
+function getQuoteInput() {
+  return screen.getByRole('textbox', { name: /quote/i }) as HTMLTextAreaElement;
+}
+
 /**
  * Navigate from search to the locator stage by selecting a non-abstract source.
  */
@@ -119,8 +127,19 @@ async function enterLocatorStage(user: ReturnType<typeof userEvent.setup>) {
   await selectSource(MOCK_SOURCES[0]);
 
   await vi.waitFor(() => {
-    expect(screen.getByRole('textbox')).toBeInTheDocument();
+    expect(getLocatorInput()).toBeInTheDocument();
   });
+}
+
+/**
+ * The inline flow always shows the refine screen — quote-only for
+ * skip-locator sources — before minting. Complete it by skipping.
+ */
+async function skipQuoteScreen() {
+  await vi.waitFor(() => {
+    expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
+  });
+  fireEvent.pointerDown(screen.getByRole('button', { name: 'Skip' }));
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +202,7 @@ describe('CitationAutocomplete (component-level)', () => {
       // Error clears and flow continues (to locator, since CREATED_SOURCE has skip_locator: false)
       await vi.waitFor(() => {
         expect(screen.queryByText('Failed to create source.')).not.toBeInTheDocument();
-        expect(screen.getByRole('textbox')).toBeInTheDocument();
+        expect(getLocatorInput()).toBeInTheDocument();
       });
     });
 
@@ -256,7 +275,7 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await enterLocatorStage(user);
 
-      const locatorInput = screen.getByRole('textbox');
+      const locatorInput = getLocatorInput();
       locatorInput.focus();
       fireEvent.keyDown(locatorInput, { key: 'Backspace' });
 
@@ -307,11 +326,73 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await enterLocatorStage(user);
 
-      const locatorInput = screen.getByRole('textbox');
+      const locatorInput = getLocatorInput();
       locatorInput.focus();
       fireEvent.keyDown(locatorInput, { key: 'Escape' });
 
       expect(oncancel).toHaveBeenCalledOnce();
+    });
+
+    it('fires oncancel on Escape from the quote textarea', async () => {
+      const user = userEvent.setup();
+      const { oncancel } = renderAutocomplete();
+
+      await enterLocatorStage(user);
+
+      const quoteInput = getQuoteInput();
+      quoteInput.focus();
+      fireEvent.keyDown(quoteInput, { key: 'Escape' });
+
+      expect(oncancel).toHaveBeenCalledOnce();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Quote collection (inline flow)
+  // -----------------------------------------------------------------------
+
+  describe('quote collection', () => {
+    it('sends the typed locator and quote in the mint POST', async () => {
+      const user = userEvent.setup();
+      const { oncomplete } = renderAutocomplete();
+
+      await enterLocatorStage(user);
+
+      mockPOST.mockResolvedValueOnce({ data: CREATED_INSTANCE });
+
+      const locatorInput = getLocatorInput();
+      locatorInput.focus();
+      await user.keyboard('p. 42');
+      const quoteInput = getQuoteInput();
+      quoteInput.focus();
+      await user.keyboard('The flippers were revolutionary.');
+
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Insert' }));
+
+      await vi.waitFor(() => {
+        expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
+      });
+      expect(mockPOST).toHaveBeenCalledWith('/api/citation-instances/', {
+        body: {
+          citation_source_id: MOCK_SOURCES[0].id,
+          locator: 'p. 42',
+          quote: 'The flippers were revolutionary.',
+        },
+      });
+    });
+
+    it('Enter in the quote textarea inserts a newline instead of submitting', async () => {
+      const user = userEvent.setup();
+      renderAutocomplete();
+
+      await enterLocatorStage(user);
+
+      const quoteInput = getQuoteInput();
+      quoteInput.focus();
+      await user.keyboard('line one{Enter}line two');
+
+      expect(quoteInput.value).toBe('line one\nline two');
+      expect(mockPOST).not.toHaveBeenCalled();
     });
   });
 
@@ -382,10 +463,13 @@ describe('CitationAutocomplete (component-level)', () => {
       // Click the Cite button
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Cite' }));
 
-      // Should auto-complete (skip_locator=true for web children)
+      // skip_locator=true → the quote-only refine screen (no locator input),
+      // then skipping completes the mint.
+      await skipQuoteScreen();
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
+      expect(screen.queryByRole('textbox', { name: /location in source/i })).toBeNull();
     });
 
     it('creates child when recognition returns identifier but no child', async () => {
@@ -412,12 +496,13 @@ describe('CitationAutocomplete (component-level)', () => {
 
       await vi.waitFor(() => {
         expect(screen.getByText(/Internet Pinball Database #9999/)).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Create Citation/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Continue/ })).toBeInTheDocument();
       });
 
-      // Click the "Create Citation" button
-      fireEvent.pointerDown(screen.getByRole('button', { name: /Create Citation/ }));
+      // Click the recognition panel's quick-create button
+      fireEvent.pointerDown(screen.getByRole('button', { name: /Continue/ }));
 
+      await skipQuoteScreen();
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
@@ -490,8 +575,9 @@ describe('CitationAutocomplete (component-level)', () => {
       expect((screen.getByLabelText(/Page name/i) as HTMLInputElement).value).toBe('Elton John');
       expect((screen.getByLabelText('URL') as HTMLInputElement).value).toBe(recognizedUrl);
 
-      await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+      await user.click(screen.getByRole('button', { name: /Continue/ }));
 
+      await skipQuoteScreen();
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
@@ -547,8 +633,9 @@ describe('CitationAutocomplete (component-level)', () => {
         expect(screen.getByText('New page')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+      await user.click(screen.getByRole('button', { name: /Continue/ }));
 
+      await skipQuoteScreen();
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
@@ -633,8 +720,9 @@ describe('CitationAutocomplete (component-level)', () => {
         .mockResolvedValueOnce({ data: { id: 31, name: 'Elton John', skip_locator: true } })
         .mockResolvedValueOnce({ data: CREATED_INSTANCE });
       await user.type(urlInput, 'https://jerseyjackpinball.com/products/elton-john');
-      await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+      await user.click(screen.getByRole('button', { name: /Continue/ }));
 
+      await skipQuoteScreen();
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
@@ -693,7 +781,7 @@ describe('CitationAutocomplete (component-level)', () => {
         expect(
           screen.getByRole('option', { name: /Internet Pinball Database #4443/ }),
         ).toBeInTheDocument();
-        expect(screen.getByText('Create Citation')).toBeInTheDocument();
+        expect(screen.getByText('Cite')).toBeInTheDocument();
       });
 
       // No generic create should appear alongside quick create
@@ -722,6 +810,7 @@ describe('CitationAutocomplete (component-level)', () => {
         screen.getByRole('option', { name: /Internet Pinball Database #4443/ }),
       );
 
+      await skipQuoteScreen();
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
@@ -908,7 +997,7 @@ describe('CitationAutocomplete (component-level)', () => {
 
       // Match path → locator stage (source has skip_locator: false, so locator input appears)
       await vi.waitFor(() => {
-        expect(screen.getByRole('textbox')).toBeInTheDocument();
+        expect(getLocatorInput()).toBeInTheDocument();
       });
     });
 
@@ -1064,10 +1153,12 @@ describe('CitationAutocomplete (component-level)', () => {
         'https://en.wikipedia.org/wiki/Pinball',
       );
 
-      await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+      await user.click(screen.getByRole('button', { name: /Continue/ }));
 
-      // Finalize fires cite-url, then the instance endpoint auto-submits the
-      // returned web child (skip_locator=true) — citing the child, not a root.
+      // Finalize fires cite-url, then the quote-only refine screen (the child
+      // is skip_locator=true); skipping mints the instance — citing the child,
+      // not a root.
+      await skipQuoteScreen();
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });
@@ -1142,7 +1233,8 @@ describe('CitationAutocomplete (component-level)', () => {
 
       fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
 
-      // Match has skip_locator=true → auto-completes citation
+      // Match has skip_locator=true → quote-only refine screen, then complete
+      await skipQuoteScreen();
       await vi.waitFor(() => {
         expect(oncomplete).toHaveBeenCalledWith(CREATED_INSTANCE);
       });

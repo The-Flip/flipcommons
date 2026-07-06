@@ -53,7 +53,7 @@
 
   // For parents with identifier_key, the filter input doubles as identifier
   // entry. When the input doesn't match any existing children, offer a
-  // direct "Create Citation" that posts with the identifier.
+  // direct quick-create row that posts with the identifier.
   let canQuickCreate = $derived(
     !loading &&
       !loadError &&
@@ -290,7 +290,7 @@
         onhover={() => (activeIndex = quickCreateIndex)}
       >
         <span class="item-label">{parentContext.name} #{filterQuery.trim()}</span>
-        <span class="item-desc">{creatingIdentifier ? 'Creating…' : 'Create Citation'}</span>
+        <span class="item-desc">{creatingIdentifier ? 'Creating…' : 'Cite'}</span>
       </DropdownItem>
     {/if}
     {#if createError}

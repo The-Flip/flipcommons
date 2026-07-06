@@ -130,7 +130,7 @@
   // Recognition-derived items
   // -----------------------------------------------------------------------
 
-  // Recognition can produce a top item: exact child match, or identifier-based "Create Citation"
+  // Recognition can produce a top item: exact child match, or identifier-based quick create
   let recognitionItem = $derived.by(() => {
     if (!recognition) return null;
     if (recognition.child) {
@@ -446,7 +446,7 @@
           {:else if creating}
             Creating…
           {:else}
-            Create Citation
+            Continue
           {/if}
         </DropdownButton>
       </div>

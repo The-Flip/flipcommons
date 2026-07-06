@@ -57,6 +57,7 @@ describe('location detail SSR route', () => {
                   author: 'Jane Example',
                   year: 2020,
                   locator: 'p. 12',
+                  quote: '',
                   links: [],
                 },
               ],

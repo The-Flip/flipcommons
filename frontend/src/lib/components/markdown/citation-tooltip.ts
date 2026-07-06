@@ -17,6 +17,7 @@ export interface CitationInfo {
   author: string;
   year?: number | null;
   locator: string;
+  quote: string;
   links: CitationLink[];
 }
 

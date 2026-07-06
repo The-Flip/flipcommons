@@ -1027,24 +1027,6 @@ def test_cite_quote_mojibake_rejected(flipcommons_catalog, pm):
         _apply(text)
 
 
-def test_inline_cite_locator_and_quote_rejected(flipcommons_catalog, pm):
-    # Inline footnotes carry a bare source ref; locator/quote belong on the
-    # entry-level cite only.
-    text = (
-        "attribution: flipcommons-catalog\n"
-        "claims:\n"
-        "  - model.medieval-madness:\n"
-        "      description: |\n"
-        "        Widely praised.[[cite:1]]\n"
-        "      cites:\n"
-        '        "1":\n'
-        "          ref: ipdb:4443\n"
-        '          quote: "Widely praised"\n'
-    )
-    with pytest.raises(PatchError, match="takes no 'locator'/'quote'"):
-        _apply(text)
-
-
 def test_ipdb_url_cite_rejected(flipcommons_catalog, pm):
     # A known-scheme record URL must be cited via scheme:identifier so it dedups.
     text = (

@@ -24,6 +24,7 @@ export const MOCK_MANUFACTURER = {
         author: 'Jane Example',
         year: 1999,
         locator: 'p. 42',
+        quote: '',
         links: [],
       },
       {
@@ -34,6 +35,7 @@ export const MOCK_MANUFACTURER = {
         author: 'Jane Example',
         year: 1999,
         locator: 'p. 42',
+        quote: '',
         links: [],
       },
     ],

@@ -482,7 +482,9 @@ class TestMetadataCollection:
 
     def test_collects_citation_metadata(self, citation_source_with_links):
         ci = make_citation_instance(
-            citation_source=citation_source_with_links, locator="p. 42"
+            citation_source=citation_source_with_links,
+            locator="p. 42",
+            quote="The flippers were revolutionary.",
         )
         text = f"Cited.[[cite:id:{ci.pk}]]"
         metadata: list[dict[str, Any]] = []
@@ -496,6 +498,7 @@ class TestMetadataCollection:
         assert entry["author"] == "Jeff Lawton"
         assert entry["year"] == 2001
         assert entry["locator"] == "p. 42"
+        assert entry["quote"] == "The flippers were revolutionary."
         assert len(entry["links"]) == 1
         assert entry["links"][0]["url"] == "https://example.com/archive"
         assert entry["links"][0]["link_type"] == "archive"

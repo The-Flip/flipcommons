@@ -236,8 +236,11 @@
     {#if error}
       <div class="form-error">{error}</div>
     {/if}
+    <!-- "Continue", not a final-sounding label: this creates the source (the
+         page record), never the citation instance — the picker's refine
+         screen (locator/quote) or the flow's completion comes after. -->
     <DropdownButton type="submit" disabled={submitting}>
-      {submitting ? 'Creating…' : 'Create Citation'}
+      {submitting ? 'Creating…' : 'Continue'}
     </DropdownButton>
   {/if}
 </form>
