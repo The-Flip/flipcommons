@@ -467,13 +467,36 @@ class CitationExtractDraftSchema(Schema):
     )
 
 
+class CitationExtractDelivererSchema(Schema):
+    """A deliverer verdict: the URL points at a copy of a work, not a work.
+
+    A structured signal, never an error string — the frontend renders
+    ``message`` as the teaching notice and uses ``suggested_source_type`` to
+    preselect the authored-work form's type.
+    """
+
+    label: str = Field(description='The platform name ("Amazon", "Netflix").')
+    suggested_source_type: str | None = Field(
+        None,
+        description=(
+            "The citation source type to preselect in the create form "
+            '("book", "video", …), or null for a mixed storefront where the '
+            "user picks."
+        ),
+    )
+    message: str = Field(
+        description="The teaching notice to render, composed server-side."
+    )
+
+
 class CitationExtractResultSchema(Schema):
     """Result of looking up a pasted URL/ISBN via an external API.
 
-    Exactly one of ``match``, ``draft`` or ``error`` is the meaningful outcome:
-    ``match`` when a source already exists (re-cite it), ``draft`` when metadata
-    was fetched for a new source (prefill the create form), ``error`` when the
-    lookup failed.
+    Exactly one of ``match``, ``draft``, ``deliverer`` or ``error`` is the
+    meaningful outcome: ``match`` when a source already exists (re-cite it),
+    ``draft`` when metadata was fetched for a new source (prefill the create
+    form), ``deliverer`` when the URL is a deliverer copy with no extractable
+    work (teach; never web-create), ``error`` when the lookup failed.
     """
 
     draft: CitationExtractDraftSchema | None = Field(
@@ -483,6 +506,13 @@ class CitationExtractResultSchema(Schema):
     match: CitationSourceMatchSchema | None = Field(
         None,
         description="An existing source with the same ISBN or identifier, when one was found.",
+    )
+    deliverer: CitationExtractDelivererSchema | None = Field(
+        None,
+        description=(
+            "Deliverer verdict when the URL is a store/streaming copy of a "
+            "work: render the notice and hand off to the authored-work form."
+        ),
     )
     error: str | None = Field(
         None,

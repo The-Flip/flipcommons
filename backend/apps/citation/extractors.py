@@ -25,7 +25,14 @@ from apps.citation.citation_types import (
     citation_source_type,
     citation_type_driver,
     is_known_scheme,
+    recognize_scheme,
     scheme_start_seconds_hint,
+)
+from apps.citation.deliverers import (
+    DelivererSpec,
+    deliverer_for_url,
+    embedded_isbn,
+    suggested_work_kind,
 )
 from apps.citation.hosts import (
     Host,
@@ -266,6 +273,115 @@ def recognize_url(url: str) -> Recognition | None:
         if recognition is not None:
             return recognition
     return None
+
+
+# ---------------------------------------------------------------------------
+# Classification: the exhaustive verdict every interactive surface switches on.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class UrlDeliverer:
+    """A deliverer copy — teach / auto-classify; never web-create.
+
+    ``isbn`` is the URL-embedded work ISBN when the spec's declared shapes
+    yield one (checksum-gated); ``kind`` is the suggested work kind (path
+    hint, else the spec default) driving message wording and the create
+    form's preselect.
+    """
+
+    spec: DelivererSpec
+    isbn: str | None
+    kind: CitationSourceTypeValue | None
+
+
+@dataclass(frozen=True)
+class UrlSchemeRecord:
+    """A scheme record — cite via ``scheme:identifier``, never as a web page.
+
+    ``recognition`` is present when the scheme's root is seeded (and then may
+    carry an existing child for instant reuse); ``None`` for a URL matching a
+    registered-but-unseeded scheme's pattern, which is still rejected as a
+    web page so identity can't fork before the root lands.
+    """
+
+    label: str
+    identifier: str
+    recognition: Recognition | None
+
+
+@dataclass(frozen=True)
+class UrlIdentified:
+    """An existing child covers this URL — reuse it.
+
+    ``child`` restates ``recognition.child`` non-optionally, encoding the
+    variant's invariant at the type level so consumers don't re-narrow.
+    """
+
+    recognition: Recognition
+    child: RecognitionChild
+
+
+@dataclass(frozen=True)
+class UrlSiteOf:
+    """A known site's page — mint a web child under ``recognition.parent_id``."""
+
+    recognition: Recognition
+
+
+@dataclass(frozen=True)
+class UrlUnrecognized:
+    """No verdict — the web-create funnel (new site root) applies."""
+
+
+type UrlVerdict = (
+    UrlDeliverer | UrlSchemeRecord | UrlIdentified | UrlSiteOf | UrlUnrecognized
+)
+
+
+def classify_url(url: str) -> UrlVerdict:
+    """Classify a pasted URL into the verdict every interactive surface obeys.
+
+    The design spine of CitationSourceMisclassification.md: one exhaustive
+    sum type instead of per-endpoint pre-checks, so a surface *cannot* skip a
+    verb. Ordering is load-bearing:
+
+    1. **Deliverer first, before any recognition** — prod data may already
+       hold a misclassified deliverer root (an interactively-minted
+       ``amazon.com`` site); a domain match must not short-circuit past the
+       guardrail and mint another child under it.
+    2. ``recognize_url`` — the existing identity pipeline (seeded scheme,
+       exact child link, host suffix), re-named into explicit variants.
+    3. ``recognize_scheme`` — a URL matching a registered-but-unseeded
+       scheme's pattern is still a scheme record (the ``pages/`` rule),
+       never a web page.
+    """
+    spec = deliverer_for_url(url)
+    if spec is not None:
+        return UrlDeliverer(
+            spec=spec,
+            isbn=embedded_isbn(url, spec),
+            kind=suggested_work_kind(url, spec),
+        )
+    recognition = recognize_url(url)
+    if recognition is not None:
+        if recognition.identifier is not None:
+            return UrlSchemeRecord(
+                label=recognition.parent_name,
+                identifier=recognition.identifier,
+                recognition=recognition,
+            )
+        if recognition.child is not None:
+            return UrlIdentified(recognition=recognition, child=recognition.child)
+        return UrlSiteOf(recognition=recognition)
+    scheme_recognition = recognize_scheme(url)
+    if scheme_recognition is not None:
+        return UrlSchemeRecord(
+            label=scheme_recognition.label,
+            identifier=scheme_recognition.identifier,
+            recognition=None,
+        )
+    return UrlUnrecognized()
 
 
 def web_child_name(url: str, name: str = "") -> str:

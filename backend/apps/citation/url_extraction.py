@@ -12,8 +12,17 @@ from dataclasses import dataclass
 
 from django.core.cache import cache
 
-from .extraction import ExtractionDraft, ExtractionResult
-from .extractors import recognize_url
+from .deliverers import deliverer_notice_message
+from .extraction import DelivererNotice, ExtractionDraft, ExtractionResult, extract_isbn
+from .extractors import (
+    UrlDeliverer,
+    UrlIdentified,
+    UrlSchemeRecord,
+    UrlSiteOf,
+    UrlUnrecognized,
+    classify_url,
+)
+from .isbn import isbn_checksum_ok, normalize_isbn
 from .safe_fetch import SSRFBlockedError, safe_fetch
 
 logger = logging.getLogger(__name__)
@@ -32,6 +41,10 @@ class PageMeta:
     title: str = ""
     og_title: str = ""
     og_site_name: str = ""
+    # The work's ISBN when the page declares it machine-readably (Open Graph
+    # book namespace or a schema.org itemprop meta). Raw as declared —
+    # normalization/checksum happens at the consumer.
+    isbn: str = ""
 
 
 class _MetaParser(html.parser.HTMLParser):
@@ -58,11 +71,20 @@ class _MetaParser(html.parser.HTMLParser):
             attr_dict = {k.lower(): (v or "") for k, v in attrs}
             prop = attr_dict.get("property", "")
             name = attr_dict.get("name", "")
+            itemprop = attr_dict.get("itemprop", "")
             content = attr_dict.get("content", "")
             if prop == "og:title" or name == "og:title":
                 self.meta.og_title = content
             elif prop == "og:site_name" or name == "og:site_name":
                 self.meta.og_site_name = content
+            # The Open Graph book namespace appears both prefixed and bare in
+            # the wild; schema.org Book pages use itemprop. Head-level meta
+            # only — JSON-LD in the body is deliberately out of scope.
+            elif (
+                prop in ("og:book:isbn", "book:isbn", "books:isbn")
+                or itemprop == "isbn"
+            ):
+                self.meta.isbn = content
 
     def handle_endtag(self, tag: str) -> None:
         if self._done:
@@ -141,26 +163,98 @@ def _fetch_page_meta(url: str) -> PageMeta:
 # ---------------------------------------------------------------------------
 
 
-def extract_url(url: str) -> ExtractionResult:
-    """Look up *url* — check recognition first, then cache, then fetch."""
-    # 1. Match check — does recognition find a specific child?
-    rec = recognize_url(url)
-    if rec is not None and rec.child is not None:
-        return ExtractionResult(
-            match={
-                "id": rec.child.id,
-                "name": rec.child.name,
-                "source_type": rec.child.source_type,
-                "skip_locator": rec.child.skip_locator,
-            }
-        )
-    # Domain-only matches are intentionally ignored here: extraction needs a
-    # specific child source so it knows which locator rules apply.
+def _page_meta_isbn(url: str) -> str | None:
+    """Fetch *url* and return a checksum-valid ISBN its head metadata declares.
 
-    # 2. Cache check. The ``v2`` namespace pins cached drafts to the current
-    # name-fallback semantics; bump it when those change so stale-semantics
-    # drafts are abandoned rather than served.
-    cache_key = f"extract:v2:url:{url}"
+    The Zotero lesson: the page often carries the identifier the URL doesn't
+    (``og:book:isbn``, schema.org ``itemprop="isbn"``). Server-side, so some
+    deliverers bot-block it (Amazon 503s; Zotero escapes that only by running
+    in the user's browser) — any failure returns ``None`` and the caller
+    degrades to the notice, never to an error.
+    """
+    try:
+        meta = _fetch_page_meta(url)
+    except SSRFBlockedError, TimeoutError, OSError, _NotFoundError, _HttpStatusError:
+        return None
+    if not meta.isbn:
+        return None
+    isbn = normalize_isbn(meta.isbn)
+    if isbn is None or not isbn_checksum_ok(isbn):
+        return None
+    return isbn
+
+
+def _extract_deliverer(url: str, verdict: UrlDeliverer) -> ExtractionResult:
+    """The F4 flow for a deliverer URL: auto-classify the work, else teach.
+
+    URL-embedded ISBN first (already checksum-gated by classification), then
+    the page-metadata fallback — attempted only when the suggested kind could
+    plausibly be a book (book or mixed; fetching a streaming page for an ISBN
+    is pointless). Any ISBN routes through ``extract_isbn`` (Open Library +
+    its existing-source match check). A lookup yielding neither match nor
+    draft falls back to the teaching notice, never to a raw error.
+
+    Uncached at this level by design: classification is pure, ``extract_isbn``
+    caches its own lookups, and caching a transient fetch failure's notice
+    for hours would hide a recoverable auto-classify.
+    """
+    isbn = verdict.isbn
+    if isbn is None and verdict.kind in (None, "book"):
+        isbn = _page_meta_isbn(url)
+    if isbn is not None:
+        result = extract_isbn(isbn)
+        if result.match is not None or result.draft is not None:
+            return result
+    return ExtractionResult(
+        deliverer=DelivererNotice(
+            label=verdict.spec.label,
+            suggested_source_type=verdict.kind,
+            message=deliverer_notice_message(verdict.spec, verdict.kind),
+        )
+    )
+
+
+def extract_url(url: str) -> ExtractionResult:
+    """Look up *url* — classify first, then cache, then fetch."""
+    # 1. Classification. A deliverer URL never reaches the scrape path — its
+    # page must not become a web draft (and prod may hold a legacy
+    # misclassified root its host would match). An existing child is returned
+    # as a match; every other verdict falls through to the scrape, preserving
+    # the pre-classification behavior (domain-only matches are intentionally
+    # ignored: extraction needs a specific child so it knows which locator
+    # rules apply).
+    verdict = classify_url(url)
+    match verdict:
+        case UrlDeliverer():
+            return _extract_deliverer(url, verdict)
+        case UrlIdentified(child=child):
+            return ExtractionResult(
+                match={
+                    "id": child.id,
+                    "name": child.name,
+                    "source_type": child.source_type,
+                    "skip_locator": child.skip_locator,
+                }
+            )
+        case UrlSchemeRecord(recognition=rec) if (
+            rec is not None and rec.child is not None
+        ):
+            return ExtractionResult(
+                match={
+                    "id": rec.child.id,
+                    "name": rec.child.name,
+                    "source_type": rec.child.source_type,
+                    "skip_locator": rec.child.skip_locator,
+                }
+            )
+        case UrlSchemeRecord() | UrlSiteOf() | UrlUnrecognized():
+            pass
+
+    # 2. Cache check. The ``v3`` namespace pins cached drafts to the current
+    # semantics (v3: deliverer URLs classify instead of scraping, so a v2
+    # amazon web draft must not be served); bump it when semantics change so
+    # stale drafts are abandoned rather than served.
+    cache_key = f"extract:v3:url:{url}"
     cached: ExtractionResult | None = cache.get(cache_key)
     if cached is not None:
         return cached

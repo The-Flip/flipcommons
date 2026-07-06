@@ -28,10 +28,16 @@ from apps.core.authz.types import Activity
 from apps.core.schemas import ErrorDetailSchema
 from apps.core.types import CitationSourceId
 
-from .citation_types import recognize_scheme
+from .deliverers import deliverer_notice_message
 from .extraction import classify_input, extract_isbn, normalize_isbn
 from .extractors import (
     Recognition,
+    UrlDeliverer,
+    UrlIdentified,
+    UrlSchemeRecord,
+    UrlSiteOf,
+    UrlUnrecognized,
+    classify_url,
     create_web_child,
     get_or_create_scheme_child,
     recognize_url,
@@ -44,6 +50,7 @@ from .models import (
 from .psl import HostError, HostRejection, root_host_from_url
 from .schemas import (
     CitationCiteUrlSchema,
+    CitationExtractDelivererSchema,
     CitationExtractDraftSchema,
     CitationExtractInputSchema,
     CitationExtractResultSchema,
@@ -251,11 +258,23 @@ def search_citation_sources(
         return CitationSourceSearchResponseSchema(results=[], recognition=None)
 
     # --- Recognition (URL or ISBN) -----------------------------------------
+    # Classification, not raw recognition: a deliverer URL yields no
+    # recognition row even where legacy prod data holds a misclassified root
+    # for its host — the UI must never offer "Cite a page under Amazon.com"
+    # (the paste's extract call surfaces the teaching notice instead). An
+    # unseeded scheme-record match likewise surfaces nothing here; the
+    # create paths own that rejection.
     recognition: CitationRecognitionSchema | None = None
     if _is_url(q):
-        rec = recognize_url(q)
-        if rec is not None:
-            recognition = _build_recognition(rec)
+        match classify_url(q):
+            case (
+                UrlSchemeRecord(recognition=Recognition() as rec)
+                | UrlIdentified(recognition=rec)
+                | UrlSiteOf(recognition=rec)
+            ):
+                recognition = _build_recognition(rec)
+            case UrlDeliverer() | UrlSchemeRecord() | UrlUnrecognized():
+                recognition = None
 
     # --- Text search -------------------------------------------------------
     text_filter = (
@@ -338,23 +357,31 @@ def create_citation_source(
     return Status(201, _serialize_detail(source))
 
 
-def _reject_scheme_record_url(url: str) -> None:
-    """422 a URL matching a registered scheme's record pattern.
+def _reject_uncitable_page_url(url: str) -> None:
+    """422 a URL that must never become a web page child, per classification.
 
-    Scheme records mint through ``records/`` / ``scheme:identifier`` so the
-    same record always dedups to one child with the scheme's canonical URL,
-    owning type and locator behavior; minting one as a plain web page would
-    fork its identity. Same rule as ``cite-url`` and the patch parser, but
-    registry-based (pattern match, no recognition), so it holds regardless of
-    which parent was chosen and before the scheme's root is seeded.
+    Two verdicts are uncitable as pages regardless of which parent was
+    chosen: a **deliverer** copy (cite the work it delivers, never the store/
+    streaming page) and a **scheme record** (mints through ``records/`` /
+    ``scheme:identifier`` so the same record always dedups to one child with
+    the scheme's canonical URL, owning type and locator behavior — enforced
+    even before the scheme's root is seeded, via the registry-only match).
+    The identity verdicts pass through: the caller owns the explicit parent
+    choice.
     """
-    rec = recognize_scheme(url)
-    if rec is not None:
-        raise HttpError(
-            422,
-            f"This URL is a {rec.label} record; cite it via its scheme "
-            f"identifier (scheme:identifier), not as a web page.",
-        )
+    match classify_url(url):
+        case UrlDeliverer(spec=spec, kind=kind):
+            raise HttpError(422, deliverer_notice_message(spec, kind))
+        case UrlSchemeRecord(label=label):
+            raise HttpError(
+                422,
+                f"This URL is a {label} record; cite it via its scheme "
+                f"identifier (scheme:identifier), not as a web page.",
+            )
+        case UrlIdentified() | UrlSiteOf() | UrlUnrecognized():
+            return
+        case unreachable:
+            assert_never(unreachable)
 
 
 def _mint_web_child(
@@ -467,15 +494,19 @@ def cite_url(
     """Cite a web page, creating its site root and page child as needed.
 
     The interactive web-create flow's finalize call. The pasted URL is
-    re-recognized server-side and routed to one of four outcomes, all returning
-    the **web child** to cite (never the abstract root):
+    classified server-side (``classify_url``) and every verdict is handled,
+    the success arms all returning the **web child** to cite (never the
+    abstract root):
 
-    * **no match** → create the site root (at the URL's registrable domain, or
-      422 if the host can't root a site) and a page child;
-    * **domain match** → create a page child under the existing root, ignoring
+    * **deliverer** (Amazon, Netflix, …) → 422 with the teaching message;
+      cite the work the URL delivers, never a page for its copy;
+    * **scheme record** (IPDB/OPDB/…) → 422; cite it as ``scheme:identifier``
+      (rejected even before the scheme's root is seeded);
+    * **identified** (exact child) → reuse it;
+    * **site match** → create a page child under the existing root, ignoring
       ``site_*`` (the root already exists and is never renamed from here);
-    * **exact child** → reuse it;
-    * **scheme identifier** (IPDB/OPDB/…) → 422; cite it as ``scheme:identifier``.
+    * **unrecognized** → create the site root (at the URL's registrable
+      domain, or 422 if the host can't root a site) and a page child.
 
     One transaction; every created row is attributed to the caller.
     """
@@ -483,30 +514,34 @@ def cite_url(
     url = data.url
 
     with transaction.atomic():
-        rec = recognize_url(url)
-        if rec is not None and rec.identifier is not None:
-            raise HttpError(
-                422,
-                f"This URL is a {rec.parent_name} record; cite it via its "
-                f"scheme identifier (scheme:identifier), not the web flow.",
-            )
-        if rec is not None and rec.child is not None:
-            # An exact child already covers this URL — reuse it. recognize_url
-            # already loaded the three fields the response needs, so there's
-            # nothing left to create or fetch.
-            return Status(
-                201,
-                CitationSourceMatchSchema(
-                    id=rec.child.id,
-                    name=rec.child.name,
-                    source_type=rec.child.source_type,
-                    skip_locator=rec.child.skip_locator,
-                ),
-            )
-        if rec is not None:
-            child = _mint_web_child(rec.parent_id, url, data.page_name, user.actor)
-        else:
-            child = _create_root_and_child(url, data, user.actor)
+        match classify_url(url):
+            case UrlDeliverer(spec=spec, kind=kind):
+                raise HttpError(422, deliverer_notice_message(spec, kind))
+            case UrlSchemeRecord(label=label):
+                raise HttpError(
+                    422,
+                    f"This URL is a {label} record; cite it via its "
+                    f"scheme identifier (scheme:identifier), not the web flow.",
+                )
+            case UrlIdentified(child=existing):
+                # An exact child already covers this URL — reuse it.
+                # Classification already loaded the fields the response
+                # needs, so there's nothing left to create or fetch.
+                return Status(
+                    201,
+                    CitationSourceMatchSchema(
+                        id=existing.id,
+                        name=existing.name,
+                        source_type=existing.source_type,
+                        skip_locator=existing.skip_locator,
+                    ),
+                )
+            case UrlSiteOf(recognition=rec):
+                child = _mint_web_child(rec.parent_id, url, data.page_name, user.actor)
+            case UrlUnrecognized():
+                child = _create_root_and_child(url, data, user.actor)
+            case unreachable:
+                assert_never(unreachable)
 
     return Status(201, _serialize_match(child))
 
@@ -551,6 +586,9 @@ def extract_citation_source(
         match=CitationSourceMatchSchema(**result.match) if result.match else None,
         draft=CitationExtractDraftSchema(**asdict(result.draft))
         if result.draft
+        else None,
+        deliverer=CitationExtractDelivererSchema(**result.deliverer._asdict())
+        if result.deliverer
         else None,
         error=result.error,
         confidence=result.confidence,
@@ -606,12 +644,13 @@ def create_citation_source_page(
     not re-recognized — the page nests directly under *source_id*. The parent may
     be any root type (a web page under a magazine/book/video root is intended —
     a platform's terms or channel page is a page, not a record); the structural
-    rules are the scheme-record rejection below and the web-flatness guard,
-    which 422s a page under a web *child* parent via ``clean()``.
+    rules are the uncitable-URL classification below (deliverer copies and
+    scheme records never mint as pages) and the web-flatness guard, which 422s
+    a page under a web *child* parent via ``clean()``.
     """
     user = authed_user(request)
     parent = get_object_or_404(CitationSource, pk=source_id)
-    _reject_scheme_record_url(data.url)
+    _reject_uncitable_page_url(data.url)
     child = _mint_web_child(parent.pk, data.url, data.page_name, user.actor)
     return Status(201, _serialize_match(child))
 

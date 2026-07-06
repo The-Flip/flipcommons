@@ -19,6 +19,18 @@ from urllib.request import Request, urlopen
 from django.core.cache import cache
 
 from apps.citation.citation_types import CitationSourceTypeValue, citation_source_type
+from apps.citation.isbn import normalize_isbn
+
+__all__ = [
+    "ClassifiedInput",
+    "DelivererNotice",
+    "ExtractionDraft",
+    "ExtractionMatch",
+    "ExtractionResult",
+    "classify_input",
+    "extract_isbn",
+    "normalize_isbn",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +58,22 @@ class ExtractionMatch(TypedDict):
     skip_locator: bool
 
 
+class DelivererNotice(NamedTuple):
+    """The structured deliverer verdict an extract response carries.
+
+    Never an error string — the frontend branches on it: ``message`` renders
+    as the teaching notice, ``suggested_source_type`` preselects the
+    authored-work form's type (``None`` = mixed storefront, let the user
+    pick). ``suggested_source_type`` is a citation-type key — deliberately
+    open vocabulary, not a book/video Literal (see the plan's podcast
+    stress test).
+    """
+
+    label: str
+    suggested_source_type: CitationSourceTypeValue | None
+    message: str
+
+
 @dataclass
 class ExtractionResult:
     draft: ExtractionDraft | None = None
@@ -53,21 +81,12 @@ class ExtractionResult:
     error: str | None = None  # "not_found" | "timeout" | "api_error" | "parse_error"
     confidence: str = ""  # "high" | "low"
     source_api: str = ""  # "openlibrary"
+    deliverer: DelivererNotice | None = None
 
 
 # ---------------------------------------------------------------------------
 # Classification
 # ---------------------------------------------------------------------------
-
-
-def normalize_isbn(raw: str) -> str | None:
-    """Strip hyphens/spaces and return a 10- or 13-digit ISBN, or None."""
-    stripped = raw.replace("-", "").replace(" ", "").upper()
-    if len(stripped) == 13 and stripped.isdigit():
-        return stripped
-    if len(stripped) == 10 and stripped[:9].isdigit() and stripped[9] in "0123456789X":
-        return stripped
-    return None
 
 
 class ClassifiedInput(NamedTuple):

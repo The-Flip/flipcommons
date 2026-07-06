@@ -6,7 +6,13 @@ from unittest.mock import patch
 
 import pytest
 
-from apps.citation.extractors import Recognition, RecognitionChild
+from apps.citation.extractors import (
+    Recognition,
+    RecognitionChild,
+    UrlIdentified,
+    UrlSiteOf,
+    UrlUnrecognized,
+)
 from apps.citation.safe_fetch import FetchResponse, SSRFBlockedError
 from apps.citation.url_extraction import PageMeta, extract_url, parse_page_meta
 
@@ -119,7 +125,7 @@ class TestMetaParser:
 
 class TestEncoding:
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_explicit_charset(self, mock_cache, mock_rec, mock_fetch):
         """Content-Type with explicit charset is respected."""
@@ -135,7 +141,7 @@ class TestEncoding:
         assert _draft_name(result).name == "Gewürzträger"
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_no_charset_defaults_to_utf8(self, mock_cache, mock_rec, mock_fetch):
         """Content-Type with no charset falls back to UTF-8."""
@@ -150,7 +156,7 @@ class TestEncoding:
         assert _draft_name(result).name == "Ünïcödé"
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_decode_error_falls_back_to_latin1(self, mock_cache, mock_rec, mock_fetch):
         """Body that fails declared charset falls back to latin-1."""
@@ -166,7 +172,7 @@ class TestEncoding:
         assert _draft_name(result).name == "Café"
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_bogus_charset_falls_back_to_latin1(self, mock_cache, mock_rec, mock_fetch):
         """Unrecognized charset name triggers LookupError → latin-1 fallback."""
@@ -188,7 +194,7 @@ class TestEncoding:
 
 class TestExtractUrlErrors:
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_ssrf_blocked(self, mock_cache, mock_rec, mock_fetch):
         mock_cache.get.return_value = None
@@ -197,7 +203,7 @@ class TestExtractUrlErrors:
         assert result.error == "blocked"
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_timeout(self, mock_cache, mock_rec, mock_fetch):
         mock_cache.get.return_value = None
@@ -206,7 +212,7 @@ class TestExtractUrlErrors:
         assert result.error == "timeout"
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_connection_error(self, mock_cache, mock_rec, mock_fetch):
         mock_cache.get.return_value = None
@@ -215,7 +221,7 @@ class TestExtractUrlErrors:
         assert result.error == "timeout"
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_dns_failure(self, mock_cache, mock_rec, mock_fetch):
         mock_cache.get.return_value = None
@@ -224,7 +230,7 @@ class TestExtractUrlErrors:
         assert result.error == "timeout"
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_404_not_found(self, mock_cache, mock_rec, mock_fetch):
         mock_cache.get.return_value = None
@@ -237,7 +243,7 @@ class TestExtractUrlErrors:
         assert result.error == "not_found"
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_server_error(self, mock_cache, mock_rec, mock_fetch):
         mock_cache.get.return_value = None
@@ -256,15 +262,15 @@ class TestExtractUrlErrors:
 
 
 class TestExtractUrlRecognition:
-    @patch("apps.citation.url_extraction.recognize_url")
-    def test_child_match_returns_match(self, mock_rec):
-        """Recognition finds a specific child → return match directly."""
-        mock_rec.return_value = Recognition(
-            parent_id=20,
-            parent_name="IPDB",
-            child=RecognitionChild(
-                id=42, name="IPDB #4836", skip_locator=True, source_type="web"
-            ),
+    @patch("apps.citation.url_extraction.classify_url")
+    def test_child_match_returns_match(self, mock_classify):
+        """Classification finds a specific child → return match directly."""
+        child = RecognitionChild(
+            id=42, name="IPDB #4836", skip_locator=True, source_type="web"
+        )
+        mock_classify.return_value = UrlIdentified(
+            recognition=Recognition(parent_id=20, parent_name="IPDB", child=child),
+            child=child,
         )
         result = extract_url("https://www.ipdb.org/machine.cgi?id=4836")
         assert result.match == {
@@ -276,13 +282,12 @@ class TestExtractUrlRecognition:
         assert result.draft is None
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url")
+    @patch("apps.citation.url_extraction.classify_url")
     @patch("apps.citation.url_extraction.cache")
-    def test_domain_only_match_ignored(self, mock_cache, mock_rec, mock_fetch):
+    def test_domain_only_match_ignored(self, mock_cache, mock_classify, mock_fetch):
         """Domain-only recognition (no child) proceeds to fetch."""
-        mock_rec.return_value = Recognition(
-            parent_id=30,
-            parent_name="Jersey Jack",
+        mock_classify.return_value = UrlSiteOf(
+            recognition=Recognition(parent_id=30, parent_name="Jersey Jack")
         )
         mock_cache.get.return_value = None
         mock_fetch.return_value = FetchResponse(
@@ -302,7 +307,7 @@ class TestExtractUrlRecognition:
 
 
 class TestExtractUrlCache:
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_cache_hit(self, mock_cache, mock_rec):
         from apps.citation.extraction import ExtractionDraft, ExtractionResult
@@ -322,10 +327,10 @@ class TestExtractUrlCache:
         mock_cache.get.return_value = cached
         result = extract_url("https://example.com")
         assert _draft_name(result).name == "Cached"
-        mock_cache.get.assert_called_once_with("extract:v2:url:https://example.com")
+        mock_cache.get.assert_called_once_with("extract:v3:url:https://example.com")
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_caches_result_with_4h_ttl(self, mock_cache, mock_rec, mock_fetch):
         mock_cache.get.return_value = None
@@ -346,7 +351,7 @@ class TestExtractUrlCache:
 
 class TestExtractUrlSuccess:
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_og_title_and_site_name(self, mock_cache, mock_rec, mock_fetch):
         mock_cache.get.return_value = None
@@ -369,7 +374,7 @@ class TestExtractUrlSuccess:
         assert result.source_api == "og_meta"
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_fallback_to_title_tag(self, mock_cache, mock_rec, mock_fetch):
         mock_cache.get.return_value = None
@@ -384,7 +389,7 @@ class TestExtractUrlSuccess:
         assert draft.publisher == ""
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_no_title_leaves_name_empty(self, mock_cache, mock_rec, mock_fetch):
         # No og:title and no <title>: name is empty (not the URL), so the create
@@ -399,7 +404,7 @@ class TestExtractUrlSuccess:
         assert _draft_name(result).name == ""
 
     @patch("apps.citation.url_extraction.safe_fetch")
-    @patch("apps.citation.url_extraction.recognize_url", return_value=None)
+    @patch("apps.citation.url_extraction.classify_url", return_value=UrlUnrecognized())
     @patch("apps.citation.url_extraction.cache")
     def test_non_html_content_type(self, mock_cache, mock_rec, mock_fetch):
         mock_cache.get.return_value = None
