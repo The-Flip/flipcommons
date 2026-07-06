@@ -6,7 +6,11 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.test import Client
 
-from apps.citation.models import CitationInstance
+from apps.citation.models import (
+    CitationInstance,
+    ReservedCitationSlug,
+    validate_citation_slug,
+)
 from apps.citation.test_factories import make_citation_link, make_citation_source
 from apps.provenance.test_factories import (
     cite_claim,
@@ -231,78 +235,23 @@ class TestBatchCitationInstances:
         assert resp.json()[0]["links"][0]["url"] == f"{VIDEO_CANONICAL}&t=95s"
 
 
-class TestCreateCitationInstance:
-    def test_create(self, client, user, citation_source):
+class TestReserveCitationSlug:
+    def test_reserve(self, client, user):
         client.force_login(user)
-        resp = client.post(
-            "/api/citation-instances/",
-            {"citation_source_id": citation_source.pk, "locator": "p. 30"},
-            content_type="application/json",
-        )
+        resp = client.post("/api/citation-instances/reservations/")
         assert resp.status_code == 201
-        data = resp.json()
-        assert data["citation_source_id"] == citation_source.pk
-        assert data["citation_source_name"] == citation_source.name
-        assert data["locator"] == "p. 30"
-        assert CitationInstance.objects.filter(pk=data["id"]).exists()
+        slug = resp.json()["slug"]
+        validate_citation_slug(slug)
+        reservation = ReservedCitationSlug.objects.get(slug=slug)
+        assert reservation.created_by == user
 
-    def test_create_without_locator(self, client, user, citation_source):
+    def test_each_reservation_is_fresh(self, client, user):
         client.force_login(user)
-        resp = client.post(
-            "/api/citation-instances/",
-            {"citation_source_id": citation_source.pk},
-            content_type="application/json",
-        )
-        assert resp.status_code == 201
-        assert resp.json()["locator"] == ""
+        first = client.post("/api/citation-instances/reservations/").json()["slug"]
+        second = client.post("/api/citation-instances/reservations/").json()["slug"]
+        assert first != second
+        assert ReservedCitationSlug.objects.count() == 2
 
-    def test_invalid_source_returns_404(self, client, user):
-        client.force_login(user)
-        resp = client.post(
-            "/api/citation-instances/",
-            {"citation_source_id": 99999},
-            content_type="application/json",
-        )
-        assert resp.status_code == 404
-
-    def test_video_locator_is_normalized(self, client, user, video_source):
-        # The mint validates the locator against the cited source's
-        # citation-type contract: a video timestamp is stored canonical.
-        client.force_login(user)
-        resp = client.post(
-            "/api/citation-instances/",
-            {"citation_source_id": video_source.pk, "locator": "1h2m3s"},
-            content_type="application/json",
-        )
-        assert resp.status_code == 201
-        assert resp.json()["locator"] == "1:02:03"
-
-    def test_video_locator_invalid_returns_422(self, client, user, video_source):
-        client.force_login(user)
-        resp = client.post(
-            "/api/citation-instances/",
-            {"citation_source_id": video_source.pk, "locator": "p. 42"},
-            content_type="application/json",
-        )
-        assert resp.status_code == 422
-        assert "start time" in resp.json()["detail"]
-
-    def test_video_without_locator_is_fine(self, client, user, video_source):
-        # A locator stays optional on every type — citing a whole video is
-        # legitimate.
-        client.force_login(user)
-        resp = client.post(
-            "/api/citation-instances/",
-            {"citation_source_id": video_source.pk},
-            content_type="application/json",
-        )
-        assert resp.status_code == 201
-        assert resp.json()["locator"] == ""
-
-    def test_anonymous_gets_401(self, client, citation_source):
-        resp = client.post(
-            "/api/citation-instances/",
-            {"citation_source_id": citation_source.pk},
-            content_type="application/json",
-        )
+    def test_anonymous_gets_401(self, client):
+        resp = client.post("/api/citation-instances/reservations/")
         assert resp.status_code in (401, 403)

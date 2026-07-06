@@ -11,7 +11,7 @@ import type { SaveResult } from '$lib/components/pages/record/edit/editors/save-
 type TitleClaimsBody = TitleClaimPatchSchema;
 
 export type TitleSectionPatchBody = Partial<
-  Pick<TitleClaimsBody, 'fields' | 'abbreviations' | 'note' | 'citations'>
+  Pick<TitleClaimsBody, 'fields' | 'abbreviations' | 'note' | 'citations' | 'inline_citations'>
 >;
 
 export async function saveTitleClaims(
@@ -20,7 +20,7 @@ export async function saveTitleClaims(
 ): Promise<SaveResult> {
   const { error } = await client.PATCH('/api/titles/{public_id}/claims/', {
     params: { path: { public_id: slug } },
-    body: { fields: {}, note: '', citations: [], ...body },
+    body: { fields: {}, note: '', citations: [], inline_citations: [], ...body },
   });
 
   if (error) {

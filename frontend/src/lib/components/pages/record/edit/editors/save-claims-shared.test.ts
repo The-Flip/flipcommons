@@ -37,7 +37,7 @@ describe('saveSimpleTaxonomyClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/cabinets/{public_id}/claims/', {
       params: { path: { public_id: 'wide-body' } },
-      body: { fields: { slug: 'widebody' }, note: '', citations: [] },
+      body: { fields: { slug: 'widebody' }, note: '', citations: [], inline_citations: [] },
     });
     expect(invalidateAll).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ ok: true, updatedSlug: 'widebody' });
@@ -76,6 +76,7 @@ describe('saveSimpleTaxonomyClaims', () => {
       fields: { name: 'Foo' },
       note: 'rename',
       citations: [{ citation_source_id: 7, locator: 'p. 2', quote: '' }],
+      inline_citations: [],
     });
 
     expect(PATCH).toHaveBeenCalledWith('/api/franchises/{public_id}/claims/', {
@@ -84,6 +85,7 @@ describe('saveSimpleTaxonomyClaims', () => {
         fields: { name: 'Foo' },
         note: 'rename',
         citations: [{ citation_source_id: 7, locator: 'p. 2', quote: '' }],
+        inline_citations: [],
       },
     });
   });
@@ -109,7 +111,7 @@ describe('saveHierarchicalTaxonomyClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/themes/{public_id}/claims/', {
       params: { path: { public_id: 'medieval' } },
-      body: { fields: { name: 'Medieval' }, note: '', citations: [] },
+      body: { fields: { name: 'Medieval' }, note: '', citations: [], inline_citations: [] },
     });
     expect(invalidateAll).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ ok: true, updatedSlug: 'medieval' });
@@ -134,6 +136,7 @@ describe('saveHierarchicalTaxonomyClaims', () => {
         fields: {},
         note: 'rationale',
         citations: [],
+        inline_citations: [],
         parents: ['physical-feature'],
         aliases: ['Pop'],
       },

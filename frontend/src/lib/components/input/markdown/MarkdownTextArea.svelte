@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import WikilinkAutocomplete from '$lib/components/input/wikilink/WikilinkAutocomplete.svelte';
+  import type { PendingInlineCitation } from '$lib/pending-citations';
   import { fetchLinkTypes } from '$lib/api/link-types';
   import { detectTrigger, spliceLink } from '$lib/components/input/wikilink/wikilink-helpers';
   import { floating } from '$lib/actions/floating';
@@ -27,12 +28,16 @@
     id = '',
     rows = 4,
     error = '',
+    onpendingcitation,
   }: {
     label: string;
     value?: string;
     id?: string;
     rows?: number;
     error?: string;
+    /** Forwarded to the wikilink picker: receives the content spec of each
+     *  inserted `[[cite:slug]]` marker, held by the host until save. */
+    onpendingcitation?: (pending: PendingInlineCitation) => void;
   } = $props();
 
   // -----------------------------------------------------------------------
@@ -374,6 +379,7 @@
         bind:this={autocompleteRef}
         {initialType}
         oncomplete={(linkText) => insertWikilink(linkText)}
+        {onpendingcitation}
         oncancel={() => {
           closeDropdown();
           textareaEl?.focus();

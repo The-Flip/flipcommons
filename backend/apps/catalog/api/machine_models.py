@@ -816,7 +816,12 @@ def patch_model_claims(
     )
 
     specs = (
-        plan_scalar_field_claims(MachineModel, data.fields, entity=pm)
+        plan_scalar_field_claims(
+            MachineModel,
+            data.fields,
+            entity=pm,
+            inline_citations=data.inline_citations,
+        )
         if data.fields
         else []
     )
@@ -869,7 +874,12 @@ def patch_model_claims(
         raise_form_error("No changes provided.")
 
     execute_claims(
-        pm, specs, user=request.user, note=data.note, citations=data.citations
+        pm,
+        specs,
+        user=request.user,
+        note=data.note,
+        citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     pm = get_object_or_404(

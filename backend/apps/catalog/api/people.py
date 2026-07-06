@@ -366,10 +366,17 @@ def patch_person_claims(
         Person.objects.active(), **{Person.public_id_field: public_id}
     )
 
-    specs = plan_scalar_field_claims(Person, data.fields, entity=person)
+    specs = plan_scalar_field_claims(
+        Person, data.fields, entity=person, inline_citations=data.inline_citations
+    )
 
     execute_claims(
-        person, specs, user=request.user, note=data.note, citations=data.citations
+        person,
+        specs,
+        user=request.user,
+        note=data.note,
+        citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     person = get_object_or_404(_person_qs(), slug=person.slug)

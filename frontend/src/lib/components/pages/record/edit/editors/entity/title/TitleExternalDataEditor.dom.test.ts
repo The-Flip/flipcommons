@@ -81,7 +81,7 @@ describe('TitleExternalDataEditor dirty-state contract', () => {
     expect(PATCH).toHaveBeenCalledOnce();
     expect(PATCH).toHaveBeenCalledWith('/api/titles/{public_id}/claims/', {
       params: { path: { public_id: 'addams-family' } },
-      body: { fields: { opdb_id: 'G9abc' }, note: '', citations: [] },
+      body: { fields: { opdb_id: 'G9abc' }, note: '', citations: [], inline_citations: [] },
     });
   });
 });

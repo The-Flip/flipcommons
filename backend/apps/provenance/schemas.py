@@ -360,10 +360,10 @@ class ClaimSchema(Schema):
 class CitationInstanceCreateSchema(Schema):
     """Content spec for a citation: what to cite and where in it.
 
-    The single input shape for minting a ``CitationInstance``: inline cites
-    POST it to the standalone create endpoint (the editor needs the slug
-    immediately for its ``[[cite:slug]]`` marker); edit cites ride the save
-    payload's ``citations`` list and the save handler mints from it.
+    The single input shape for minting a ``CitationInstance``, always at save
+    time: edit cites ride the save payload's ``citations`` list, and inline
+    cites ride ``inline_citations`` (as :class:`InlineCitationSpecSchema`,
+    which adds the reserved slug the marker already carries).
     """
 
     citation_source_id: int = Field(description="Identifier of the source to cite.")
@@ -386,6 +386,35 @@ class CitationInstanceCreateSchema(Schema):
     ] = ""
 
 
+class InlineCitationSpecSchema(CitationInstanceCreateSchema):
+    """Content spec for a pending inline cite, keyed by its reserved slug.
+
+    The editor reserved *slug* up front (so its ``[[cite:slug]]`` marker could
+    be placed) and the save handler mints the instance under that slug,
+    consuming the reservation in the same transaction as the claims whose
+    content references it.
+    """
+
+    slug: str = Field(
+        description=(
+            "The reserved citation slug this spec mints under — must match a "
+            "live slug reservation held by the requesting user, and must be "
+            "referenced by a [[cite:slug]] marker in the save's field values."
+        )
+    )
+
+
+class CitationSlugReservationSchema(Schema):
+    """A freshly reserved citation slug for a pending inline cite."""
+
+    slug: str = Field(
+        description=(
+            "The reserved slug: place it in a [[cite:slug]] marker and send "
+            "its content spec in the save payload's inline_citations list."
+        )
+    )
+
+
 class ChangeSetInputSchema(Schema):
     """Base shape for any user-attributed mutation that produces a ChangeSet."""
 
@@ -402,6 +431,29 @@ class ChangeSetInputSchema(Schema):
             description=(
                 "Evidence supporting this edit. Each entry mints one shared "
                 "citation instance, attached to every claim in the save."
+            )
+        ),
+    ] = []
+
+
+class InlineCitationsInputSchema(Schema):
+    """Mixin for save bodies whose field values may carry pending inline cites.
+
+    Mixed into the ``fields``-carrying claim-patch schemas (the only bodies
+    whose values can contain markdown with ``[[cite:slug]]`` markers), not
+    into ``ChangeSetInputSchema`` — a create or delete body has no field
+    value a marker could live in, so accepting specs there would only create
+    unreferencable payloads.
+    """
+
+    inline_citations: Annotated[
+        list[InlineCitationSpecSchema],
+        Field(
+            description=(
+                "Pending inline cites: content specs for the [[cite:slug]] "
+                "markers this save introduces. Each is minted under its "
+                "reserved slug in the save transaction; every spec must be "
+                "referenced by a marker in the saved field values."
             )
         ),
     ] = []

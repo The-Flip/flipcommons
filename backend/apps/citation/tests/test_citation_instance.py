@@ -2,11 +2,17 @@
 
 import pytest
 from django.contrib import admin
+from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 from django.test import RequestFactory
 
+from apps.accounts.test_factories import make_user
 from apps.citation.admin import CitationInstanceAdmin
-from apps.citation.models import CitationInstance
+from apps.citation.models import (
+    CitationInstance,
+    ReservedCitationSlug,
+    reserve_citation_slug,
+)
 from apps.citation.test_factories import make_citation_source
 
 
@@ -137,6 +143,108 @@ class TestCitationInstanceSlug:
         assert minted.slug == "dfgdfgdf"
         assert minted.slug != existing.slug
         assert calls["n"] >= 2  # collided once, regenerated
+
+    def test_mint_many_dodges_live_reservations(self, citation_source, monkeypatch):
+        # A reservation and an instance live in separate tables, so the unique
+        # constraint can't arbitrate — mint_many must skip a reserved slug
+        # explicitly or it would break the reservation-holding draft's save.
+        from apps.citation import models as ci_mod
+
+        make_user_reservation(slug="bcdbcdbc")
+        calls = {"n": 0}
+
+        def fake_slug() -> str:
+            calls["n"] += 1
+            return "bcdbcdbc" if calls["n"] == 1 else "dfgdfgdf"
+
+        monkeypatch.setattr(ci_mod, "generate_citation_slug", fake_slug)
+
+        (minted,) = CitationInstance.objects.mint_many(
+            [CitationInstance(citation_source=citation_source)]
+        )
+        assert minted.slug == "dfgdfgdf"
+
+    def test_save_autogen_dodges_live_reservations(self, citation_source, monkeypatch):
+        from apps.citation import models as ci_mod
+
+        make_user_reservation(slug="bcdbcdbc")
+        calls = {"n": 0}
+
+        def fake_slug() -> str:
+            calls["n"] += 1
+            return "bcdbcdbc" if calls["n"] == 1 else "dfgdfgdf"
+
+        monkeypatch.setattr(ci_mod, "generate_citation_slug", fake_slug)
+
+        ci = CitationInstance.objects.create(citation_source=citation_source)
+        assert ci.slug == "dfgdfgdf"
+
+    def test_save_explicit_slug_may_match_a_reservation(self, citation_source):
+        # An explicit slug IS a reservation being consumed by the save-time
+        # mint — the dodge applies only to auto-generated slugs.
+        make_user_reservation(slug="bcdbcdbc")
+        ci = CitationInstance(citation_source=citation_source, slug="bcdbcdbc")
+        ci.save()
+        assert ci.slug == "bcdbcdbc"
+
+
+# ---------------------------------------------------------------------------
+# Slug reservations
+# ---------------------------------------------------------------------------
+
+
+def make_user_reservation(slug: str) -> ReservedCitationSlug:
+    return ReservedCitationSlug.objects.create(slug=slug, created_by=make_user())
+
+
+class TestReservedCitationSlug:
+    def test_reserve_creates_row(self, user):
+        reservation = reserve_citation_slug(user)
+        assert reservation.created_by == user
+        assert ReservedCitationSlug.objects.filter(slug=reservation.slug).exists()
+
+    def test_reserve_dodges_existing_instance_slug(
+        self, citation_source, user, monkeypatch
+    ):
+        from apps.citation import models as ci_mod
+
+        CitationInstance.objects.create(
+            citation_source=citation_source, slug="bcdbcdbc"
+        )
+        calls = {"n": 0}
+
+        def fake_slug() -> str:
+            calls["n"] += 1
+            return "bcdbcdbc" if calls["n"] == 1 else "dfgdfgdf"
+
+        monkeypatch.setattr(ci_mod, "generate_citation_slug", fake_slug)
+
+        reservation = reserve_citation_slug(user)
+        assert reservation.slug == "dfgdfgdf"
+
+    def test_reserve_retries_on_reservation_collision_under_outer_atomic(
+        self, user, monkeypatch
+    ):
+        from django.db import transaction
+
+        from apps.citation import models as ci_mod
+
+        make_user_reservation(slug="bcdbcdbc")
+        calls = {"n": 0}
+
+        def fake_slug() -> str:
+            calls["n"] += 1
+            return "bcdbcdbc" if calls["n"] == 1 else "dfgdfgdf"
+
+        monkeypatch.setattr(ci_mod, "generate_citation_slug", fake_slug)
+
+        with transaction.atomic():
+            reservation = reserve_citation_slug(user)
+        assert reservation.slug == "dfgdfgdf"
+
+    def test_save_rejects_invalid_slug(self, user):
+        with pytest.raises(ValidationError):
+            ReservedCitationSlug.objects.create(slug="not-valid", created_by=user)
 
 
 # ---------------------------------------------------------------------------

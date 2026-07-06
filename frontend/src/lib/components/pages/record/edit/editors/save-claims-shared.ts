@@ -25,11 +25,14 @@ type ClaimsBody = ClaimPatchSchema;
 type HierarchyClaimsBody = HierarchyClaimPatchSchema;
 
 export type SimpleTaxonomySectionPatchBody = Partial<
-  Pick<ClaimsBody, 'fields' | 'note' | 'citations'>
+  Pick<ClaimsBody, 'fields' | 'note' | 'citations' | 'inline_citations'>
 >;
 
 export type HierarchicalTaxonomySectionPatchBody = Partial<
-  Pick<HierarchyClaimsBody, 'fields' | 'parents' | 'aliases' | 'note' | 'citations'>
+  Pick<
+    HierarchyClaimsBody,
+    'fields' | 'parents' | 'aliases' | 'note' | 'citations' | 'inline_citations'
+  >
 >;
 
 /**
@@ -62,7 +65,7 @@ export async function saveSimpleTaxonomyClaims(
 ): Promise<SaveResult> {
   const { data, error } = await client.PATCH(path, {
     params: { path: { public_id: slug } },
-    body: { fields: {}, note: '', citations: [], ...body },
+    body: { fields: {}, note: '', citations: [], inline_citations: [], ...body },
   });
 
   if (error) {
@@ -101,7 +104,7 @@ export async function saveHierarchicalTaxonomyClaims(
 ): Promise<SaveResult> {
   const { data, error } = await client.PATCH(path, {
     params: { path: { public_id: slug } },
-    body: { fields: {}, note: '', citations: [], ...body },
+    body: { fields: {}, note: '', citations: [], inline_citations: [], ...body },
   });
 
   if (error) {

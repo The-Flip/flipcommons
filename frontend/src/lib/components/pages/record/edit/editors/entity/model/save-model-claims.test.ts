@@ -37,7 +37,7 @@ describe('saveModelClaims', () => {
     expect(result).toEqual({ ok: true });
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { description: 'new text' }, note: '', citations: [] },
+      body: { fields: { description: 'new text' }, note: '', citations: [], inline_citations: [] },
     });
     expect(invalidateAll).toHaveBeenCalledOnce();
   });
@@ -136,7 +136,7 @@ describe('saveModelClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: {}, note: '', citations: [], credits },
+      body: { fields: {}, note: '', citations: [], inline_citations: [], credits },
     });
   });
 
@@ -151,7 +151,12 @@ describe('saveModelClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { year: 1997 }, note: 'Corrected per IPDB', citations: [] },
+      body: {
+        fields: { year: 1997 },
+        note: 'Corrected per IPDB',
+        citations: [],
+        inline_citations: [],
+      },
     });
   });
 
@@ -167,7 +172,7 @@ describe('saveModelClaims', () => {
 
     expect(PATCH).toHaveBeenCalledWith('/api/models/{public_id}/claims/', {
       params: { path: { public_id: 'medieval-madness' } },
-      body: { fields: { year: 1997 }, note: '', citations },
+      body: { fields: { year: 1997 }, note: '', citations, inline_citations: [] },
     });
   });
 });

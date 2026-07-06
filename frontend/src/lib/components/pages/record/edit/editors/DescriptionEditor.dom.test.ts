@@ -38,7 +38,10 @@ describe('DescriptionEditor', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(screen.getByTestId('last-save-body')).toHaveTextContent(
-      JSON.stringify({ fields: { description: 'Original description updated' } }),
+      JSON.stringify({
+        fields: { description: 'Original description updated' },
+        inline_citations: [],
+      }),
     );
     expect(screen.getByTestId('saved-count')).toHaveTextContent('1');
   });

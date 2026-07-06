@@ -13,7 +13,7 @@ from typing import Any
 from ninja import Schema
 from pydantic import Field
 
-from apps.provenance.schemas import ChangeSetInputSchema
+from apps.provenance.schemas import ChangeSetInputSchema, InlineCitationsInputSchema
 
 from ..engine.entity_api.delete.schemas import (
     AlreadyDeletedSchema,
@@ -56,7 +56,7 @@ __all__ = [
 ]
 
 
-class CorporateEntityClaimPatchSchema(ChangeSetInputSchema):
+class CorporateEntityClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
     """Patch body for manufacturer/operator/etc. — aliases, but no parents
     (corporate entities are flat, not hierarchical)."""
 
@@ -83,7 +83,7 @@ class CreditInputSchema(Schema):
     role: str
 
 
-class ModelClaimPatchSchema(ChangeSetInputSchema):
+class ModelClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
     """Patch body for Model — the widest entity, with several list payloads
     on top of the generic ``fields`` bag.
     """
@@ -98,7 +98,7 @@ class ModelClaimPatchSchema(ChangeSetInputSchema):
     abbreviations: list[str] | None = None
 
 
-class TitleClaimPatchSchema(ChangeSetInputSchema):
+class TitleClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
     """Patch body for Title — narrow because most attributes live on Model
     (see [docs/SingleModelTitles.md] for the asymmetric split).
     """

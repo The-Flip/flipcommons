@@ -5,12 +5,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import IntegrityError, models, transaction
 from django.db.models.functions import Length, Now
 from django.utils.crypto import get_random_string
 
+from apps.accounts.models import User
 from apps.actors.models import ActorAttributedModel
 from apps.citation.citation_types import (
     SourceType,
@@ -36,6 +38,8 @@ __all__ = [
     "CitationSource",
     "CitationSourceLink",
     "CitationSourceRootDomain",
+    "ReservedCitationSlug",
+    "reserve_citation_slug",
 ]
 
 YEAR_MIN, YEAR_MAX = 1800, 2100
@@ -625,12 +629,21 @@ class CitationInstanceManager(models.Manager["CitationInstance"]):
         caller may already be inside ``transaction.atomic()`` (the ingest apply
         path is), where an ``IntegrityError`` poisons the outer transaction —
         the savepoint lets the failed insert roll back and the retry run clean.
+
+        A generated slug must also dodge live ``ReservedCitationSlug`` rows —
+        a separate table, so the instance unique constraint can't catch the
+        clash and minting one would break the reservation-holding draft's
+        save. One existence query per attempt covers the whole batch.
         """
         if not instances:
             return []
         for attempt in range(_MINT_MAX_ATTEMPTS):
             for inst in instances:
                 inst.slug = generate_citation_slug()
+            if ReservedCitationSlug.objects.filter(
+                slug__in=[inst.slug for inst in instances]
+            ).exists():
+                continue
             try:
                 with transaction.atomic():
                     self.bulk_create(instances)
@@ -638,8 +651,9 @@ class CitationInstanceManager(models.Manager["CitationInstance"]):
             except IntegrityError:
                 if attempt == _MINT_MAX_ATTEMPTS - 1:
                     raise
-        # Unreachable: the final attempt either returns or re-raises.
-        raise AssertionError("mint retry loop exited without result")
+        raise IntegrityError(
+            f"Could not mint unique citation slugs after {_MINT_MAX_ATTEMPTS} attempts."
+        )
 
 
 class CitationInstance(models.Model):
@@ -729,8 +743,20 @@ class CitationInstance(models.Model):
         # skips save(), so those paths must use the manager's mint_many() — see
         # CitationInstanceManager. A (vanishingly rare) collision here surfaces
         # as IntegrityError; the bulk path additionally retries under a savepoint.
+        # A generated slug must dodge live reservations (separate table, so the
+        # unique constraint can't catch it); an explicit slug is exempt — it IS
+        # a reservation being consumed by the save-time mint.
         if not self.slug:
-            self.slug = generate_citation_slug()
+            for _ in range(_MINT_MAX_ATTEMPTS):
+                candidate = generate_citation_slug()
+                if not ReservedCitationSlug.objects.filter(slug=candidate).exists():
+                    self.slug = candidate
+                    break
+            else:
+                raise IntegrityError(
+                    "Could not generate a citation slug clear of reservations "
+                    f"after {_MINT_MAX_ATTEMPTS} attempts."
+                )
         # save() is the one chokepoint that sees every explicit slug: the API and
         # field-evidence paths call full_clean(exclude=["slug"]) (slug isn't set
         # yet there) and bulk_create skips save() entirely, so a field-level
@@ -739,3 +765,84 @@ class CitationInstance(models.Model):
         # the DB length CHECK.
         validate_citation_slug(self.slug)
         super().save(*args, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# ReservedCitationSlug: a slug held for a pending inline cite in a draft.
+# ---------------------------------------------------------------------------
+
+
+class ReservedCitationSlug(models.Model):
+    """A citation slug reserved for a draft's pending inline cite.
+
+    The interactive editor reserves a slug the moment the citation picker
+    completes, places a ``[[cite:<slug>]]`` marker in the draft, and defers
+    minting the immutable ``CitationInstance`` to save time (the save handler
+    consumes the reservation in the ChangeSet transaction). The row is a bare
+    slug on purpose: the moment it carries source/locator/quote it has rebuilt
+    the eager mint with its immutability and orphan problems.
+
+    No TTL, no sweep, ever. A reservation may be held by a long-lived draft
+    (autosave recovery, a tab open for weeks); expiry would break that draft's
+    save. An abandoned reservation is inert junk — a burned random string —
+    unlike an orphaned instance, which is wrong data.
+    """
+
+    slug = models.CharField(max_length=CITATION_SLUG_LENGTH, unique=True)
+    # CASCADE: a reservation is wholly owned by the drafting user — their
+    # drafts (and thus any save that could consume it) die with the account.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="reserved_citation_slugs",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
+
+    class Meta:
+        constraints = [
+            # Same cross-backend length belt as CitationInstance.slug; the
+            # charset half stays app-layer (validate_citation_slug in save()).
+            models.CheckConstraint(
+                condition=models.Q(slug__length=CITATION_SLUG_LENGTH),
+                name="citation_reserved_slug_length",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Reserved citation slug: {self.slug}"
+
+    # Django's Model.save signature is owned by the framework; the override
+    # only validates the slug grammar before delegating upstream.
+    def save(
+        self,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
+    ) -> None:
+        validate_citation_slug(self.slug)
+        super().save(*args, **kwargs)
+
+
+def reserve_citation_slug(user: User) -> ReservedCitationSlug:
+    """Reserve a fresh citation slug for *user* and return the row.
+
+    The insert is the uniqueness guarantee (no concurrent-draft race): each
+    attempt generates a candidate, skips it if an instance already holds it,
+    and lets the reservation table's unique constraint arbitrate concurrent
+    reservers. Each insert runs in its own savepoint so a collision doesn't
+    poison a caller's open transaction.
+    """
+    for attempt in range(_MINT_MAX_ATTEMPTS):
+        candidate = generate_citation_slug()
+        if CitationInstance.objects.filter(slug=candidate).exists():
+            continue
+        try:
+            with transaction.atomic():
+                return ReservedCitationSlug.objects.create(
+                    slug=candidate, created_by=user
+                )
+        except IntegrityError:
+            if attempt == _MINT_MAX_ATTEMPTS - 1:
+                raise
+    raise IntegrityError(
+        f"Could not reserve a unique citation slug after {_MINT_MAX_ATTEMPTS} attempts."
+    )

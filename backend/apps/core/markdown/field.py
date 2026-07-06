@@ -12,7 +12,8 @@ model never drags in the reference graph.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from collections.abc import Set as AbstractSet
 from typing import TYPE_CHECKING, NamedTuple
 
 from django.core.exceptions import ValidationError
@@ -29,18 +30,30 @@ def get_markdown_fields(model: type[models.Model]) -> list[str]:
     return [f.name for f in model._meta.get_fields() if isinstance(f, MarkdownField)]
 
 
+# Authoring keys assumed to materialize later, by link type name (e.g.
+# ``{"cite": {"bqntvkrs"}}``). Conversion leaves their markers in authoring
+# form instead of erroring, so a save handler can mint the targets and rewrite
+# the markers inside its own transaction.
+type DeferredWikilinkKeys = Mapping[str, AbstractSet[str]]
+
+
 # ---------------------------------------------------------------------------
 # Authoring <-> Storage conversion
 # ---------------------------------------------------------------------------
 
 
-def convert_authoring_to_storage(content: str) -> str:
+def convert_authoring_to_storage(
+    content: str, deferred_keys: DeferredWikilinkKeys | None = None
+) -> str:
     """Convert authoring format links to storage format.
 
     Only affects public-id-based types; ID-based types are already in storage format.
+    Markers whose authoring key appears in *deferred_keys* are left in authoring
+    form without erroring — the caller has promised to materialize and rewrite
+    them later (see :data:`DeferredWikilinkKeys`).
 
     Raises:
-        ValidationError: If any linked target doesn't exist
+        ValidationError: If any linked target doesn't exist (and isn't deferred)
     """
     if not content:
         return content
@@ -50,7 +63,8 @@ def convert_authoring_to_storage(content: str) -> str:
     errors: list[str] = []
     for lt in get_enabled_public_id_types():
         pats = get_patterns(lt)
-        content = _convert_to_storage(content, lt, pats["authoring"], errors)
+        deferred = (deferred_keys or {}).get(lt.name, frozenset())
+        content = _convert_to_storage(content, lt, pats["authoring"], errors, deferred)
 
     if errors:
         raise ValidationError(errors)
@@ -62,6 +76,7 @@ def _convert_to_storage(
     lt: LinkType,
     pattern: re.Pattern[str],
     errors: list[str],
+    deferred: AbstractSet[str],
 ) -> str:
     """Convert ``[[type:public_id]]`` to ``[[type:id:N]]`` for one link type."""
     matches = list(pattern.finditer(content))
@@ -91,7 +106,8 @@ def _convert_to_storage(
                 + result[match.end() :]
             )
         else:
-            errors.append(f"{lt.name.title()} not found: [[{lt.name}:{key}]]")
+            if key not in deferred:
+                errors.append(f"{lt.name.title()} not found: [[{lt.name}:{key}]]")
             result = result[: match.start()] + match.group(0) + result[match.end() :]
     return result
 
@@ -219,7 +235,10 @@ def convert_storage_to_authoring(content: str) -> str:
 
 
 def prepare_markdown_claim_value(
-    field_name: str, value: object, model_class: type[models.Model]
+    field_name: str,
+    value: object,
+    model_class: type[models.Model],
+    deferred_keys: DeferredWikilinkKeys | None = None,
 ) -> object:
     """Convert authoring-format links to storage format if the field is a MarkdownField.
 
@@ -230,12 +249,13 @@ def prepare_markdown_claim_value(
     the value is not a non-empty string.
 
     Raises :exc:`~django.core.exceptions.ValidationError` if any linked
-    targets don't exist.
+    targets don't exist — unless deferred via *deferred_keys* (see
+    :data:`DeferredWikilinkKeys`).
     """
     if (
         isinstance(value, str)
         and value
         and field_name in get_markdown_fields(model_class)
     ):
-        return convert_authoring_to_storage(value)
+        return convert_authoring_to_storage(value, deferred_keys)
     return value

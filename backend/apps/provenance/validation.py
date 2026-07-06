@@ -24,6 +24,7 @@ from django.core.exceptions import (
 )
 from django.db import models
 
+from apps.core.markdown.field import DeferredWikilinkKeys
 from apps.core.types import (
     ClaimFieldMap,
     ClaimFieldName,
@@ -515,6 +516,7 @@ def validate_claim_value(
     field_name: ClaimFieldName,
     value: Any,  # noqa: ANN401 - claim value is arbitrary JSON (scalar/dict/list/null)
     model_class: type[ClaimControlledModel],
+    deferred_wikilinks: DeferredWikilinkKeys | None = None,
 ) -> Any:  # noqa: ANN401 - returns the (possibly coerced) claim value, same shape as input
     """Validate and possibly transform a scalar claim value.
 
@@ -523,7 +525,9 @@ def validate_claim_value(
 
     Validates:
     - Mojibake (encoding corruption)
-    - Markdown cross-reference links
+    - Markdown cross-reference links — except markers deferred via
+      *deferred_wikilinks* (pending inline cites the save handler will mint
+      and rewrite inside its transaction; see ``DeferredWikilinkKeys``)
     - Type coercion via ``field.to_python()``
     - Django field validator chain (range, URL format, etc.)
 
@@ -558,7 +562,9 @@ def validate_claim_value(
 
     # Markdown cross-ref conversion (authoring → storage format).
     # Returns value unchanged for non-markdown fields.
-    value = prepare_markdown_claim_value(field_name, value, model_class)
+    value = prepare_markdown_claim_value(
+        field_name, value, model_class, deferred_wikilinks
+    )
 
     # Type coercion + Django field validators.
     # Always run to_python() for type checking (e.g. BooleanField rejects

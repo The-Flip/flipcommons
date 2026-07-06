@@ -48,7 +48,7 @@ from apps.core.exceptions import StructuredValidationError
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.models import LinkableLifecycleClaimModel
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
-from apps.provenance.schemas import ChangeSetInputSchema
+from apps.provenance.schemas import ChangeSetInputSchema, InlineCitationsInputSchema
 
 from ..engine.entity_api.create import CreateExtras, register_entity_create
 from ..engine.entity_api.delete import register_entity_delete_restore
@@ -134,7 +134,7 @@ class LocationChildCreateSchema(EntityCreateInputSchema):
     model_config = ConfigDict(extra="forbid")
 
 
-class LocationPatchClaimSchema(ChangeSetInputSchema):
+class LocationPatchClaimSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
     """PATCH body for Location claim edits.
 
     ``divisions`` is only meaningful on country rows; the handler rejects
@@ -332,7 +332,9 @@ def patch_location_claims(
             },
         )
 
-    specs = validate_scalar_fields(Location, fields, entity=loc)
+    specs = validate_scalar_fields(
+        Location, fields, entity=loc, inline_citations=data.inline_citations
+    )
 
     if data.aliases is not None:
         specs.extend(
@@ -350,7 +352,12 @@ def patch_location_claims(
         raise_form_error("No changes provided.")
 
     execute_claims(
-        loc, specs, user=request.user, note=data.note, citations=data.citations
+        loc,
+        specs,
+        user=request.user,
+        note=data.note,
+        citations=data.citations,
+        inline_citations=data.inline_citations,
     )
 
     return _get_location_detail(loc.location_path)
