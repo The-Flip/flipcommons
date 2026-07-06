@@ -1138,14 +1138,17 @@ def test_url_cite_surfaced_in_edit_history(
     year_change = next(c for c in cs["changes"] if c["field_name"] == "year")
     (citation,) = year_change["citations"]
     assert citation["source_name"] == url
-    assert citation["url"] == url
+    (link,) = citation["links"]
+    assert link["url"] == url
+    assert link["link_type"] == "reference"
 
 
 def test_url_cite_with_archive_surfaces_live_link_in_edit_history(
     client, flipcommons_catalog, kineticist_root, pm
 ):
-    # Compact field history shows the live page, NOT its Wayback snapshot — even
-    # though "archive" sorts before "reference" in the default link ordering.
+    # Field history must lead with the live page, NOT its Wayback snapshot.
+    # All links now cross the wire; the client titles the citation with the
+    # ``reference`` link (see citationLinkDisplay), so that's the invariant.
     url = "https://kineticist.com/reviews/mm"
     archive = "https://web.archive.org/web/20240101000000/" + url
     text = (
@@ -1168,7 +1171,9 @@ def test_url_cite_with_archive_surfaces_live_link_in_edit_history(
     )
     year_change = next(c for c in cs["changes"] if c["field_name"] == "year")
     (citation,) = year_change["citations"]
-    assert citation["url"] == url  # the live page, not the archive snapshot
+    by_type = {link["link_type"]: link["url"] for link in citation["links"]}
+    assert by_type["reference"] == url  # the live page leads
+    assert by_type["archive"] == archive  # the snapshot rides along as a chip
 
 
 # ── edit-history surfacing ─────────────────────────────────────────
@@ -1188,7 +1193,9 @@ def test_edit_history_exposes_citation(client, flipcommons_catalog, ipdb_root, p
     year_change = next(c for c in cs["changes"] if c["field_name"] == "year")
     (citation,) = year_change["citations"]
     assert citation["source_name"] == "Internet Pinball Database #4443"
-    assert citation["url"] == "https://www.ipdb.org/machine.cgi?id=4443"
+    assert "https://www.ipdb.org/machine.cgi?id=4443" in [
+        link["url"] for link in citation["links"]
+    ]
 
 
 def test_changeset_detail_exposes_citation(client, flipcommons_catalog, ipdb_root, pm):

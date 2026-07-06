@@ -1,7 +1,18 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import { computeWordDiff } from '$lib/diff';
 
-  let { oldValue, newValue }: { oldValue: string; newValue: string } = $props();
+  let {
+    oldValue,
+    newValue,
+    renderText,
+  }: {
+    oldValue: string;
+    newValue: string;
+    /** Optional renderer for each diff segment's text, so callers can style
+     *  sub-runs (e.g. superscript cite markers) without the diff knowing. */
+    renderText?: Snippet<[string]>;
+  } = $props();
 
   let segments = $derived(computeWordDiff(oldValue, newValue));
 
@@ -20,14 +31,18 @@
   });
 </script>
 
+{#snippet segText(text: string)}
+  {#if renderText}{@render renderText(text)}{:else}{text}{/if}
+{/snippet}
+
 <div class="diff-container" class:collapsed={needsExpansion && !expanded} bind:this={container}>
   {#each segments as seg, i (i)}
     {#if seg.type === 'added'}
-      <ins>{seg.text}</ins>
+      <ins>{@render segText(seg.text)}</ins>
     {:else if seg.type === 'removed'}
-      <del>{seg.text}</del>
+      <del>{@render segText(seg.text)}</del>
     {:else}
-      <span>{seg.text}</span>
+      <span>{@render segText(seg.text)}</span>
     {/if}
   {/each}
 </div>

@@ -6,9 +6,16 @@
   import { resolveHref } from '$lib/utils';
   import ClaimAttribution from '$lib/components/provenance/ClaimAttribution.svelte';
   import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
+  import ChangeValue from '$lib/components/provenance/ChangeValue.svelte';
+  import ChangeCitations from '$lib/components/provenance/ChangeCitations.svelte';
+  import CiteMarkedText from '$lib/components/provenance/CiteMarkedText.svelte';
   import InlineDiff from '$lib/components/ui/InlineDiff.svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { diffText, isDiffable } from '$lib/components/provenance/change-display';
+  import {
+    citeIndexesForChange,
+    substituteCiteMarkers,
+  } from '$lib/components/provenance/cite-markers';
   import { changesLabel } from './changes';
 
   type ChangeSetSummary = ChangeSetSummarySchema;
@@ -158,6 +165,10 @@
   <title>Changelog &mdash; {SITE_TITLE}</title>
 </svelte:head>
 
+{#snippet markedText(text: string)}
+  <CiteMarkedText {text} />
+{/snippet}
+
 <div class="changes-page">
   <header class="page-header">
     <h1>Changelog</h1>
@@ -232,15 +243,24 @@
               {#if detail.changes.length > 0}
                 <dl class="field-list">
                   {#each detail.changes as change (change.claim_key)}
+                    {@const citeIndexes = citeIndexesForChange(change)}
                     {#if isDiffable(change)}
                       <div class="field-row field-row-diff">
                         <dt>{change.field_name}</dt>
                         <dd>
                           <InlineDiff
-                            oldValue={diffText(change.old_value)}
-                            newValue={diffText(change.new_value)}
+                            oldValue={substituteCiteMarkers(
+                              diffText(change.old_value),
+                              citeIndexes,
+                            )}
+                            newValue={substituteCiteMarkers(
+                              diffText(change.new_value),
+                              citeIndexes,
+                            )}
+                            renderText={citeIndexes.size > 0 ? markedText : undefined}
                           />
                         </dd>
+                        <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
                       </div>
                     {:else}
                       <div class="field-row">
@@ -248,14 +268,15 @@
                         <dd>
                           {#if change.old_value != null}
                             <span class="old-value claim-value-inline"
-                              ><ClaimValue value={change.old_value} /></span
+                              ><ChangeValue value={change.old_value} {citeIndexes} /></span
                             >
                             <span class="arrow">&rarr;</span>
                           {/if}
                           <span class="new-value claim-value-inline"
-                            ><ClaimValue value={change.new_value} /></span
+                            ><ChangeValue value={change.new_value} {citeIndexes} /></span
                           >
                         </dd>
+                        <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
                       </div>
                     {/if}
                   {/each}
@@ -459,6 +480,7 @@
 
   .field-row {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--size-3);
     padding: var(--size-1) 0;
     border-bottom: 1px solid var(--color-border-soft);
