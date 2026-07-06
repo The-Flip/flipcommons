@@ -11,12 +11,13 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 
 from apps.citation.extraction import ExtractionDraft, ExtractionResult
-from apps.citation.extractors import Recognition
+from apps.citation.extractors import Recognition, UrlUnrecognized
 from apps.citation.models import (
     CitationSource,
     CitationSourceLink,
     CitationSourceRootDomain,
 )
+from apps.citation.safe_fetch import FetchResponse
 from apps.citation.test_factories import (
     make_citation_link,
     make_citation_root_domain,
@@ -414,6 +415,41 @@ class TestCreateCitationSource:
         assert data["author"] == ""
         assert data["links"] == []
         assert data["children"] == []
+
+    def test_create_video_root_is_a_movie(self, client, user):
+        """A parentless video create is a movie — the F3 citable-work shape."""
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {
+                "name": "Special When Lit",
+                "source_type": "video",
+                "year": 2009,
+            },
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["source_type"] == "video"
+        assert data["year"] == 2009
+        created = CitationSource.objects.get(pk=data["id"])
+        assert created.parent_id is None
+        assert created.identifier_key == ""
+
+    def test_create_video_child_rejected(self, client, user):
+        """Video creates are root-only: platform videos mint via records/."""
+        client.force_login(user)
+        root = make_citation_source(
+            name="YouTube", source_type="video", identifier_key="youtube"
+        )
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "Hand Video", "source_type": "video", "parent_id": root.pk},
+        )
+        assert resp.status_code == 422
+        assert "created standalone" in resp.json()["detail"]
+        assert not CitationSource.objects.filter(parent=root).exists()
 
     def test_cross_type_authored_child_rejected(self, client, user):
         # Authored children extend their own work's hierarchy (an edition
@@ -909,9 +945,13 @@ class TestCiteUrl:
             raise IntegrityError("duplicate key value violates unique constraint")
 
         rematch = Recognition(parent_id=racer.pk, parent_name="Racer")
+        # classify_url answers the endpoint's verdict (no match — create the
+        # root); recognize_url is called once, by the except-branch's
+        # re-recognition, and finds the racer's committed root.
         with (
             patch.object(CitationSourceRootDomain, "save", raise_integrity),
-            patch("apps.citation.api.recognize_url", side_effect=[None, rematch]),
+            patch("apps.citation.api.classify_url", return_value=UrlUnrecognized()),
+            patch("apps.citation.api.recognize_url", side_effect=[rematch]),
         ):
             resp = _post(
                 client, self.URL, {"url": "https://raced.org/p", "page_name": "P"}
@@ -1809,3 +1849,205 @@ class TestCreateCitationSourceRecord:
             {"identifier": "4443", "source_type": "web"},
         )
         assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Deliverer guardrails — the F2 classification across every interactive surface
+# ---------------------------------------------------------------------------
+
+
+class TestDelivererGuardrails:
+    CITE_URL = "/api/citation-sources/cite-url/"
+
+    def test_cite_url_rejects_deliverer(self, client, user):
+        client.force_login(user)
+        resp = _post(
+            client, self.CITE_URL, {"url": "https://www.netflix.com/title/80057281"}
+        )
+        assert resp.status_code == 422
+        assert "Netflix delivers copies of movies and shows" in resp.json()["detail"]
+        assert CitationSource.objects.count() == 0
+
+    def test_cite_url_rejects_deliverer_despite_legacy_root(self, client, user):
+        """Ordering: a misclassified prod amazon root must not absorb the paste.
+
+        The factory bypasses ``clean()`` exactly the way legacy prod rows do;
+        without deliverer-before-recognition ordering this request would mint
+        another child under the legacy root.
+        """
+        client.force_login(user)
+        legacy = make_citation_source(name="Amazon.com", source_type="web")
+        make_citation_root_domain(source=legacy, host="amazon.com")
+        resp = _post(
+            client, self.CITE_URL, {"url": "https://www.amazon.com/dp/B0ABC12345"}
+        )
+        assert resp.status_code == 422
+        assert "Amazon delivers copies of works" in resp.json()["detail"]
+        assert not CitationSource.objects.filter(parent=legacy).exists()
+
+    def test_cite_url_deliverer_message_uses_path_kind_hint(self, client, user):
+        client.force_login(user)
+        resp = _post(
+            client,
+            self.CITE_URL,
+            {"url": "https://www.amazon.com/gp/video/detail/B0ABC12345"},
+        )
+        assert resp.status_code == 422
+        assert "cite the movie or video itself" in resp.json()["detail"]
+
+    def test_pages_rejects_deliverer_under_any_parent(self, client, user):
+        client.force_login(user)
+        parent = make_citation_source(name="Some Site", source_type="web")
+        resp = _post(
+            client,
+            f"/api/citation-sources/{parent.pk}/pages/",
+            {"url": "https://www.hulu.com/movie/x-abc", "page_name": "P"},
+        )
+        assert resp.status_code == 422
+        assert "Hulu" in resp.json()["detail"]
+        assert not CitationSource.objects.filter(parent=parent).exists()
+
+    def test_search_suppresses_deliverer_recognition(self, client, user):
+        """No "Cite a page under Amazon.com" row, even with a legacy root."""
+        client.force_login(user)
+        legacy = make_citation_source(name="Amazon.com", source_type="web")
+        make_citation_root_domain(source=legacy, host="amazon.com")
+        resp = client.get(
+            "/api/citation-sources/search/",
+            {"q": "https://www.amazon.com/dp/B0ABC12345"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["recognition"] is None
+
+    @patch("apps.citation.url_extraction.safe_fetch")
+    def test_extract_returns_deliverer_notice_without_fetching(
+        self, mock_fetch, client, user
+    ):
+        """A video deliverer never gets a page fetch — nothing to extract."""
+        cache.clear()
+        client.force_login(user)
+        resp = _post(
+            client, EXTRACT_URL, {"input": "https://www.netflix.com/title/80057281"}
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deliverer"] == {
+            "label": "Netflix",
+            "suggested_source_type": "video",
+            "message": (
+                "Netflix delivers copies of movies and shows — cite the movie "
+                "or video itself, not the Netflix page."
+            ),
+        }
+        assert data["draft"] is None
+        assert data["match"] is None
+        assert data["error"] is None
+        mock_fetch.assert_not_called()
+
+    @patch("apps.citation.url_extraction.extract_isbn")
+    def test_extract_amazon_isbn_routes_to_open_library(
+        self, mock_extract, client, user
+    ):
+        """The F4 auto-classify: /dp/<ISBN-10> becomes a book draft."""
+        cache.clear()
+        client.force_login(user)
+        mock_extract.return_value = ExtractionResult(
+            draft=ExtractionDraft(
+                name="Learning Python",
+                source_type="book",
+                author="Mark Lutz",
+                publisher="O'Reilly Media",
+                year=2009,
+                isbn="0596517742",
+            ),
+            confidence="high",
+            source_api="openlibrary",
+        )
+        resp = _post(
+            client,
+            EXTRACT_URL,
+            {"input": "https://www.amazon.com/Learning-Python/dp/0596517742/"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        mock_extract.assert_called_once_with("0596517742")
+        assert data["draft"]["source_type"] == "book"
+        assert data["draft"]["isbn"] == "0596517742"
+        assert data["deliverer"] is None
+
+    @patch("apps.citation.url_extraction.safe_fetch")
+    @patch("apps.citation.url_extraction.extract_isbn")
+    def test_extract_amazon_isbn_lookup_failure_falls_back_to_notice(
+        self, mock_extract, mock_fetch, client, user
+    ):
+        """An Open Library miss teaches instead of surfacing a raw error."""
+        cache.clear()
+        client.force_login(user)
+        mock_extract.return_value = ExtractionResult(error="not_found")
+        resp = _post(
+            client,
+            EXTRACT_URL,
+            {"input": "https://www.amazon.com/dp/0596517742"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["error"] is None
+        assert data["deliverer"]["label"] == "Amazon"
+        assert data["deliverer"]["suggested_source_type"] is None
+
+    @patch("apps.citation.url_extraction.extract_isbn")
+    @patch("apps.citation.url_extraction.safe_fetch")
+    def test_extract_page_meta_isbn_fallback(
+        self, mock_fetch, mock_extract, client, user
+    ):
+        """A book deliverer URL with no URL-embedded ISBN scrapes head meta."""
+        cache.clear()
+        client.force_login(user)
+        mock_fetch.return_value = FetchResponse(
+            status=200,
+            headers={"content-type": "text/html"},
+            body=(
+                b'<html><head><meta property="book:isbn" '
+                b'content="9780596517748"></head><body></body></html>'
+            ),
+        )
+        mock_extract.return_value = ExtractionResult(
+            draft=ExtractionDraft(
+                name="Learning Python",
+                source_type="book",
+                author="",
+                publisher="",
+                year=None,
+                isbn="9780596517748",
+            ),
+            confidence="high",
+            source_api="openlibrary",
+        )
+        resp = _post(
+            client,
+            EXTRACT_URL,
+            {"input": "https://www.barnesandnoble.com/w/learning-python/1100191586"},
+        )
+        assert resp.status_code == 200
+        mock_extract.assert_called_once_with("9780596517748")
+        assert resp.json()["draft"]["source_type"] == "book"
+
+    @patch("apps.citation.url_extraction.safe_fetch")
+    def test_extract_blocked_page_fetch_degrades_to_notice(
+        self, mock_fetch, client, user
+    ):
+        """A bot-blocked deliverer fetch (Amazon's 503) still teaches."""
+        cache.clear()
+        client.force_login(user)
+        mock_fetch.return_value = FetchResponse(
+            status=503, headers={}, body=b"Robot Check"
+        )
+        resp = _post(
+            client,
+            EXTRACT_URL,
+            {"input": "https://www.amazon.com/Some-Product/dp/B0ABC12345"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deliverer"]["label"] == "Amazon"
+        assert data["error"] is None

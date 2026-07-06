@@ -5,7 +5,11 @@ from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 
 from apps.accounts.test_factories import default_actor
-from apps.citation.models import CitationSource, CitationSourceLink
+from apps.citation.models import (
+    CitationSource,
+    CitationSourceLink,
+    CitationSourceRootDomain,
+)
 from apps.citation.test_factories import make_citation_link, make_citation_source
 
 
@@ -201,3 +205,39 @@ class TestCitationSourceLinkStr:
             url="https://example.com",
         )
         assert str(link) == "https://example.com"
+
+
+class TestRootDomainDelivererGuard:
+    def test_clean_rejects_deliverer_host(self, db):
+        """amazon.com can never become a recognition domain on a validated path."""
+        root = make_citation_source(name="Sneaky", source_type="web")
+        domain = CitationSourceRootDomain(
+            source=root,
+            host="www.amazon.com",  # normalization runs before the guard
+            created_by=root.created_by,
+            updated_by=root.created_by,
+        )
+        with pytest.raises(ValidationError) as exc_info:
+            domain.full_clean()
+        assert "Amazon is a deliverer" in str(exc_info.value)
+
+    def test_clean_rejects_deliverer_subdomain(self, db):
+        root = make_citation_source(name="Sneaky", source_type="web")
+        domain = CitationSourceRootDomain(
+            source=root,
+            host="smile.amazon.co.uk",
+            created_by=root.created_by,
+            updated_by=root.created_by,
+        )
+        with pytest.raises(ValidationError):
+            domain.full_clean()
+
+    def test_clean_allows_ordinary_host(self, db):
+        root = make_citation_source(name="Fine", source_type="web")
+        domain = CitationSourceRootDomain(
+            source=root,
+            host="kineticist.com",
+            created_by=root.created_by,
+            updated_by=root.created_by,
+        )
+        domain.full_clean()  # no raise

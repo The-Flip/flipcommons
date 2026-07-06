@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CitationAutocomplete from './CitationAutocomplete.svelte';
 import {
   MOCK_SOURCES,
+  CREATED_INSTANCE,
   CREATED_IPDB_CHILD,
   ABSTRACT_BOOK_SOURCE,
   IPDB_SOURCE,
@@ -18,6 +19,8 @@ import {
   EXTRACT_URL_DRAFT,
   EXTRACT_URL_MATCH,
   EXTRACT_URL_BLOCKED,
+  EXTRACT_DELIVERER_VIDEO,
+  EXTRACT_URL_BOOK_DRAFT,
 } from './citation-fixtures';
 
 const { mockGET, mockPOST } = vi.hoisted(() => ({
@@ -1291,5 +1294,87 @@ describe('CitationAutocomplete (component-level)', () => {
       // It must NOT have advanced to the create stage.
       expect(screen.queryByText('New source')).not.toBeInTheDocument();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Deliverer teaching flow — a store/streaming URL never reaches web-create
+// ---------------------------------------------------------------------------
+
+describe('deliverer teaching flow', () => {
+  beforeEach(() => {
+    mockGET.mockReset();
+    mockPOST.mockReset();
+  });
+
+  it('a streaming URL shows the notice; the CTA opens the form with video preselected', async () => {
+    const user = userEvent.setup();
+    renderAutocomplete();
+
+    mockGET.mockReturnValue(mockSearchReturning([]));
+    mockPOST.mockImplementation((url: string) => {
+      if (url === '/api/citation-sources/extract/')
+        return Promise.resolve({ data: EXTRACT_DELIVERER_VIDEO });
+      return Promise.resolve({ data: CREATED_INSTANCE });
+    });
+
+    const input = getSearchInput();
+    input.focus();
+    await user.keyboard('https://www.netflix.com/title/80057281');
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole('option', { name: /Use this URL/i })).toBeInTheDocument();
+    });
+    fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
+
+    // The teaching notice renders in place; the describe-site flow never opens.
+    await vi.waitFor(() => {
+      expect(screen.getByText(/Netflix delivers copies of movies and shows/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText('New site')).not.toBeInTheDocument();
+
+    // The CTA hands off to the authored-work form, video preselected, Year shown.
+    fireEvent.pointerDown(screen.getByRole('button', { name: /Cite the video instead/i }));
+    await vi.waitFor(() => {
+      expect(screen.getByText('New source')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'video' })).toHaveClass('selected');
+    expect(screen.getByLabelText(/Year/)).toBeInTheDocument();
+
+    // The only write so far is the extract lookup itself.
+    expect(mockPOST).toHaveBeenCalledTimes(1);
+    expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/extract/', {
+      body: { input: 'https://www.netflix.com/title/80057281' },
+    });
+  });
+
+  it('an ISBN-bearing deliverer URL routes to the book form, prefilled', async () => {
+    const user = userEvent.setup();
+    renderAutocomplete();
+
+    mockGET.mockReturnValue(mockSearchReturning([]));
+    mockPOST.mockImplementation((url: string) => {
+      if (url === '/api/citation-sources/extract/')
+        return Promise.resolve({ data: EXTRACT_URL_BOOK_DRAFT });
+      return Promise.resolve({ data: CREATED_INSTANCE });
+    });
+
+    const input = getSearchInput();
+    input.focus();
+    await user.keyboard('https://www.amazon.com/Learning-Python/dp/0596517742');
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole('option', { name: /Use this URL/i })).toBeInTheDocument();
+    });
+    fireEvent.pointerDown(screen.getByRole('option', { name: /Use this URL/i }));
+
+    // The book form (not the web flow), prefilled from Open Library.
+    await vi.waitFor(() => {
+      expect(screen.getByText('New source')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('New site')).not.toBeInTheDocument();
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Learning Python');
+    expect((screen.getByLabelText(/Publisher/) as HTMLInputElement).value).toBe("O'Reilly Media");
+    expect((screen.getByLabelText(/Year/) as HTMLInputElement).value).toBe('2009');
   });
 });

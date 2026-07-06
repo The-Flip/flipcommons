@@ -162,6 +162,8 @@ The remaining distance:
 - **The example tables move with the scheme.** Today a scheme's URL examples are test-side data; a stored scheme carries them as part of its own configuration, and the conformance + example harnesses become its save-time validation gate rather than a CI suite.
 - **The composition contract is what makes this safe.** A stored scheme can only declare _where_ things live — never how anything is parsed. All parsing stays in first-party type code, woven framework-side in the registry, so a broken or hostile scheme's blast radius is bounded to its own URLs.
 
+**Deliverers move to the database at the same time.** The deliverer table ([CitationSourceMisclassification.md](CitationSourceMisclassification.md)) is the same kind of artifact — per-platform pure configuration authored today as in-repo declarations — and it migrates to UI-authored, DB-stored rows alongside schemes rather than on its own track. It is the easier half: most entries are inert data (hosts, work kind, message noun) with no constraint derivation and no seeded root, so only its regex shapes (ISBN extraction, kind hints) share the regex-residue gate above. Code-shipped entries remain as a floor even then — the misclassification guard must hold on an empty database.
+
 ### Citation source misclassification / deliverer hosts
 
 This is the Amazon-book-as-web problem. It's a domain-modeling question, not a plugin-contract one — its plan lives in [CitationSourceMisclassification.md](CitationSourceMisclassification.md), with the rejected-platform reasoning in [VideoCitations.md](VideoCitations.md).

@@ -66,6 +66,33 @@ class TestClassifyInput:
         assert classify_input("12345") is None
         assert classify_input("") is None
 
+    def test_classify_embedded_isbn13_in_text(self):
+        # The Zotero add-by-identifier lesson: messy pastes still look up.
+        result = classify_input("Pinball Compendium 978-0764325847 first edition")
+        assert result == ("isbn", "9780764325847")
+
+    def test_classify_embedded_isbn10_in_text(self):
+        result = classify_input("see The Pinball Compendium (ISBN 0596517742)")
+        assert result == ("isbn", "0596517742")
+
+    def test_embedded_isbn_requires_valid_checksum(self):
+        # A coincidental ten-digit run in text must not trigger a lookup.
+        assert classify_input("call 1234567890 for details") is None
+
+    def test_embedded_isbn_never_mined_from_urls(self):
+        # A digit run inside a URL is the deliverer classification's job.
+        result = classify_input("https://example.com/files/0596517742.pdf")
+        assert result == ("url", "https://example.com/files/0596517742.pdf")
+
+    def test_embedded_isbn_not_matched_inside_longer_run(self):
+        assert classify_input("id 90596517742 ref") is None
+
+    def test_whole_input_isbn_stays_shape_only(self):
+        # The lenient whole-input contract is unchanged: a typo'd ISBN still
+        # goes to Open Library to fail loudly rather than reclassifying.
+        result = classify_input("0596517741")
+        assert result == ("isbn", "0596517741")
+
     def test_classify_url_https(self):
         result = classify_input("https://example.com/page")
         assert result == ("url", "https://example.com/page")

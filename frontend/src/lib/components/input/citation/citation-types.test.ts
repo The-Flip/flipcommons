@@ -12,6 +12,7 @@ import {
   type CitationInstanceDraft,
   type ParentContext,
   type ExtractionDraft,
+  isbnFromQuery,
 } from './citation-types';
 
 // ---------------------------------------------------------------------------
@@ -571,5 +572,31 @@ describe('transition', () => {
       expect(state).toMatchObject({ stage: 'locator', ready: true });
       expect(state.draft).toMatchObject({ sourceId: 6, locator: '' });
     });
+  });
+});
+
+describe('isbnFromQuery', () => {
+  it('accepts a whole-input ISBN shape-only (the lenient historical contract)', () => {
+    expect(isbnFromQuery('978-0-596-51774-8')).toBe('9780596517748');
+    // Bad check digit still passes whole-input — Open Library fails it loudly.
+    expect(isbnFromQuery('0596517741')).toBe('0596517741');
+  });
+
+  it('finds a checksum-valid ISBN embedded in pasted text', () => {
+    expect(isbnFromQuery('Pinball Compendium 978-0764325847 first edition')).toBe('9780764325847');
+    expect(isbnFromQuery('see ISBN 0596517742 for details')).toBe('0596517742');
+  });
+
+  it('rejects embedded digit runs that fail the checksum', () => {
+    expect(isbnFromQuery('call 1234567890 for details')).toBeNull();
+  });
+
+  it('never mines ISBNs out of URLs — the deliverer path owns those', () => {
+    expect(isbnFromQuery('https://example.com/files/0596517742.pdf')).toBeNull();
+    expect(isbnFromQuery('example.com/files/0596517742.pdf')).toBeNull();
+  });
+
+  it('ignores tokens butted against longer alphanumeric runs', () => {
+    expect(isbnFromQuery('id 90596517742 ref')).toBeNull();
   });
 });

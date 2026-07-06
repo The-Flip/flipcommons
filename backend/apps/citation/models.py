@@ -21,6 +21,7 @@ from apps.citation.citation_types import (
     identifier_key_values,
     scheme_bindings,
 )
+from apps.citation.deliverers import deliverer_for_host
 from apps.citation.hosts import is_dns_host, normalize_host
 from apps.citation.psl import is_public_suffix
 from apps.core.models import (
@@ -541,6 +542,25 @@ class CitationSourceRootDomain(TimeStampedModel, ActorAttributedModel):
                         "A bare public suffix (e.g. com, co.uk) can't be a "
                         "recognition host — it would match every site beneath it. "
                         "Use a specific domain such as example.com."
+                    )
+                }
+            )
+        # A deliverer host (Amazon, Netflix, …) serves copies of works whose
+        # identity lives elsewhere; recognizing it would fabricate identity, so
+        # it may never become a recognition domain — on any validated write
+        # path (API, admin inline, patch declare). App-level rather than a
+        # CHECK constraint: suffix-matching the declared table isn't portable
+        # DDL, and the table grows without migrations. ``self.host`` is
+        # normalized above; ``normalize_host`` is idempotent, re-applied here
+        # only to satisfy the ``Host`` provenance contract.
+        deliverer = deliverer_for_host(normalize_host(self.host))
+        if deliverer is not None:
+            raise ValidationError(
+                {
+                    "host": (
+                        f"{deliverer.label} is a deliverer — its pages are "
+                        f"copies of works, not a citable site, so it can't be "
+                        f"a recognition host. Cite the works themselves."
                     )
                 }
             )

@@ -21,15 +21,19 @@ export type ExtractionDraft = CitationExtractDraftSchema;
 /** What seeds a create flow. The orchestrator routes a `web` seed (see
  *  `isWebSeed`) to the describe-site → page web flow and everything else to the
  *  authored-work form:
- *  - `name`: manual text — the authored-work form (book/magazine type picker), unless a parent locks the type.
- *  - `extraction`: a scraped book/magazine draft (from an ISBN) — the authored-work form, fields prefilled.
+ *  - `name`: manual text — the authored-work form (type picker), unless a parent locks the type.
+ *    `sourceType` preselects the picker (any citation-type key — the deliverer handoff sets it from
+ *    the backend's `suggested_source_type`); `url` carries the pasted URL through flow state,
+ *    deliberately unused today — the access-URL hedge, so threading it later is plumbing.
+ *  - `extraction`: a scraped book draft (from an ISBN, pasted or extracted from a deliverer URL) —
+ *    the authored-work form, fields prefilled.
  *  - `web`: a pasted web URL — the web flow. `siteName` non-null means the site already exists
  *    (Create Site is skipped, it names that site); null means a new site (Create Site shown). `draft`
  *    is the page scrape (page name + site name prefill, URL confirmed read-only) or null when the
  *    scrape failed/was skipped (URL stays editable, nothing prefilled). `pageName` prefills the page
  *    name when there's no scrape — used by the manual "add a page under a known site" path. */
 export type CreateSeed =
-  | { kind: 'name'; name: string }
+  | { kind: 'name'; name: string; sourceType?: string; url?: string }
   | { kind: 'extraction'; draft: ExtractionDraft }
   | {
       kind: 'web';
@@ -162,6 +166,59 @@ export function urlFromQuery(q: string): string | null {
   if (/^https?:\/\//i.test(t)) return t;
   if (/\s/.test(t)) return null;
   return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/.*)?$/i.test(t) ? `https://${t}` : null;
+}
+
+/** Strip hyphens/spaces and return a 10/13-digit ISBN shape, or null.
+ *  Shape-only, mirroring the backend's `normalize_isbn`: a hand-typed ISBN
+ *  with a bad check digit still goes to Open Library to fail loudly. */
+export function normalizeIsbn(raw: string): string | null {
+  const stripped = raw.replace(/-/g, '').replace(/ /g, '').toUpperCase();
+  if (stripped.length === 13 && /^\d{13}$/.test(stripped)) return stripped;
+  if (stripped.length === 10 && /^\d{9}[\dX]$/.test(stripped)) return stripped;
+  return null;
+}
+
+/** Whether a normalized 10/13-digit ISBN has a valid check digit. */
+export function isbnChecksumOk(isbn: string): boolean {
+  if (isbn.length === 10) {
+    let total = 0;
+    for (let i = 0; i < 10; i++) {
+      const value = isbn[i] === 'X' ? 10 : Number(isbn[i]);
+      total += (10 - i) * value;
+    }
+    return total % 11 === 0;
+  }
+  if (isbn.length === 13) {
+    let total = 0;
+    for (let i = 0; i < 13; i++) {
+      total += Number(isbn[i]) * (i % 2 === 0 ? 1 : 3);
+    }
+    return total % 10 === 0;
+  }
+  return false;
+}
+
+/** An ISBN-shaped token inside free text, with optional space/hyphen
+ *  separators, not butted against other alphanumerics. Candidates are
+ *  checksum-gated below. Mirrors the backend's `_EMBEDDED_ISBN_RE`. */
+const EMBEDDED_ISBN_RE =
+  /(?<![0-9A-Za-z])(97[89][ -]?(?:\d[ -]?){9}\d|(?:\d[ -]?){9}[\dXx])(?![0-9A-Za-z])/g;
+
+/** The ISBN a pasted query carries, or null — mirroring the backend's
+ *  `classify_input` precedence: the whole input as an ISBN (shape-only, the
+ *  lenient historical contract), never inside a URL (a digit run in a path is
+ *  the deliverer classification's job), else a **checksum-valid** ISBN
+ *  embedded anywhere in the text ("Pinball Compendium 978-0764325847 —
+ *  first edition" still looks the book up). */
+export function isbnFromQuery(q: string): string | null {
+  const whole = normalizeIsbn(q);
+  if (whole) return whole;
+  if (urlFromQuery(q)) return null;
+  for (const match of q.matchAll(EMBEDDED_ISBN_RE)) {
+    const isbn = normalizeIsbn(match[1]);
+    if (isbn && isbnChecksumOk(isbn)) return isbn;
+  }
+  return null;
 }
 
 /** The www-stripped, lowercased host of a URL, or `''` if it can't be parsed.

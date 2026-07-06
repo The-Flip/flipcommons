@@ -11,6 +11,12 @@ from django.core.exceptions import ValidationError
 
 from apps.accounts.test_factories import default_actor
 from apps.citation.extractors import (
+    UrlDeliverer,
+    UrlIdentified,
+    UrlSchemeRecord,
+    UrlSiteOf,
+    UrlUnrecognized,
+    classify_url,
     create_web_child,
     get_or_create_external_source,
     get_or_create_scheme_child,
@@ -347,3 +353,76 @@ class TestGetOrCreateWebSourceRootHomepage:
                 created_by=default_actor(),
             )
         assert not CitationSource.objects.filter(parent=root).exists()
+
+
+# ---------------------------------------------------------------------------
+# classify_url — the exhaustive verdict every interactive surface switches on
+# ---------------------------------------------------------------------------
+
+
+class TestClassifyUrl:
+    def test_deliverer_without_any_data(self, db):
+        verdict = classify_url("https://www.netflix.com/title/80057281")
+        assert isinstance(verdict, UrlDeliverer)
+        assert verdict.spec.label == "Netflix"
+        assert verdict.kind == "video"
+        assert verdict.isbn is None
+
+    def test_deliverer_beats_legacy_recognition_root(self, db):
+        """Ordering is load-bearing: a misclassified prod root must not win.
+
+        The factory's ``objects.create`` bypasses ``clean()`` — exactly how a
+        legacy ``amazon.com`` recognition domain exists in prod data. The
+        deliverer verdict must come first, or recognition would mint another
+        child under the misclassified root.
+        """
+        legacy = make_citation_source(name="Amazon.com", source_type="web")
+        make_citation_root_domain(source=legacy, host="amazon.com")
+        verdict = classify_url("https://www.amazon.com/dp/B0ABC12345")
+        assert isinstance(verdict, UrlDeliverer)
+        assert verdict.spec.label == "Amazon"
+
+    def test_deliverer_carries_embedded_isbn(self, db):
+        verdict = classify_url("https://www.amazon.com/dp/0596517742")
+        assert isinstance(verdict, UrlDeliverer)
+        assert verdict.isbn == "0596517742"
+
+    def test_seeded_scheme_record(self, db):
+        root = make_citation_source(
+            name="YouTube", source_type="video", identifier_key="youtube"
+        )
+        verdict = classify_url(f"https://www.youtube.com/watch?v={VID}")
+        assert isinstance(verdict, UrlSchemeRecord)
+        assert verdict.label == "YouTube"
+        assert verdict.identifier == VID
+        assert verdict.recognition is not None
+        assert verdict.recognition.parent_id == root.id
+
+    def test_unseeded_scheme_record_still_classified(self, db):
+        """A registered scheme's URL is a record even before its root seeds."""
+        verdict = classify_url(f"https://www.youtube.com/watch?v={VID}")
+        assert isinstance(verdict, UrlSchemeRecord)
+        assert verdict.identifier == VID
+        assert verdict.recognition is None
+
+    def test_identified_child(self, db):
+        root = make_citation_source(name="Site", source_type="web")
+        child = make_citation_source(name="Page", source_type="web", parent=root)
+        make_citation_link(
+            citation_source=child,
+            url="https://site.example/page",
+            link_type="reference",
+        )
+        verdict = classify_url("https://site.example/page")
+        assert isinstance(verdict, UrlIdentified)
+        assert verdict.child.id == child.id
+
+    def test_site_of(self, db):
+        root = make_citation_source(name="Site", source_type="web")
+        make_citation_root_domain(source=root, host="site.example")
+        verdict = classify_url("https://site.example/some/new/page")
+        assert isinstance(verdict, UrlSiteOf)
+        assert verdict.recognition.parent_id == root.id
+
+    def test_unrecognized(self, db):
+        assert isinstance(classify_url("https://nowhere.example/page"), UrlUnrecognized)

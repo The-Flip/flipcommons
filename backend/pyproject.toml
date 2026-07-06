@@ -590,8 +590,8 @@ layers = [
     "extractors | extraction | source_upsert | schemas | deep_links | locators",
     "models",
     "scheme_validation",
-    "psl",
-    "hosts | citation_types | safe_fetch | authz | source_node",
+    "psl | deliverers",
+    "hosts | citation_types | safe_fetch | authz | source_node | isbn",
 ]
 
 # Inside the citation_types package, the layers ARE the audience walls of

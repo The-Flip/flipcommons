@@ -75,6 +75,50 @@ describe('CitationCreateStage', () => {
     });
   });
 
+  it('creates a movie via the video chip, with Year prompted', async () => {
+    const user = userEvent.setup();
+    mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
+    render(CitationCreateStage, {
+      parentContext: null,
+      seed: { kind: 'name', name: 'Special When Lit' },
+      onsourcecreated: noop,
+      oncancel: noop,
+      onback: noop,
+    });
+
+    expect(screen.getByRole('button', { name: 'video' })).toBeInTheDocument();
+    // Year appears only once video is selected (a movie's main disambiguator).
+    expect(screen.queryByLabelText(/Year/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'video' }));
+    await user.type(screen.getByLabelText(/Year/), '2009');
+
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
+    await waitFor(() => expect(mockPOST).toHaveBeenCalled());
+    expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
+      body: expect.objectContaining({
+        name: 'Special When Lit',
+        source_type: 'video',
+        year: 2009,
+        parent_id: null,
+      }),
+    });
+  });
+
+  it('a seed sourceType preselects the picker (the deliverer handoff)', () => {
+    render(CitationCreateStage, {
+      parentContext: null,
+      seed: { kind: 'name', name: '', sourceType: 'video' },
+      onsourcecreated: noop,
+      oncancel: noop,
+      onback: noop,
+    });
+
+    // Picker stays visible (the user can override), video selected, Year shown.
+    expect(screen.getByRole('button', { name: 'video' })).toHaveClass('selected');
+    expect(screen.getByRole('button', { name: 'book' })).not.toHaveClass('selected');
+    expect(screen.getByLabelText(/Year/)).toBeInTheDocument();
+  });
+
   it('an extraction (ISBN) draft prefills Publisher and Year; a manual name seed does not', () => {
     const { unmount } = render(CitationCreateStage, {
       parentContext: null,

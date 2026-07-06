@@ -264,3 +264,36 @@ export const EXTRACT_URL_BLOCKED = {
   confidence: '',
   source_api: '',
 };
+
+/** Deliverer verdict: a streaming URL — teach, never web-create. */
+export const EXTRACT_DELIVERER_VIDEO = {
+  draft: null,
+  match: null,
+  deliverer: {
+    label: 'Netflix',
+    suggested_source_type: 'video',
+    message:
+      'Netflix delivers copies of movies and shows — cite the movie or video itself, not the Netflix page.',
+  },
+  error: null,
+  confidence: '',
+  source_api: '',
+};
+
+/** A deliverer URL whose embedded ISBN resolved: a book draft from a URL paste. */
+export const EXTRACT_URL_BOOK_DRAFT = {
+  draft: {
+    name: 'Learning Python',
+    source_type: 'book',
+    author: 'Mark Lutz',
+    publisher: "O'Reilly Media",
+    year: 2009,
+    isbn: '0596517742',
+    url: null,
+  },
+  match: null,
+  deliverer: null,
+  error: null,
+  confidence: 'high',
+  source_api: 'openlibrary',
+};
