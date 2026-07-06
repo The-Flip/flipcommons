@@ -1,57 +1,44 @@
-<!-- @component The "Evidence for this edit" panel: pick a citation, then refine its locator and quote until save. -->
+<!-- @component The "Evidence for this edit" panel: a stacked list of citations,
+  each refinable (locator, quote) until save. Rows are the shared
+  CitationInstanceFields body; "Add citation" opens the picker and appends —
+  multiple separate sources backing one edit are first-class. -->
 <script lang="ts">
-  import { tick } from 'svelte';
   import { type EditCitationSelection } from '$lib/edit-citation';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import CitationAutocomplete from './CitationAutocomplete.svelte';
+  import CitationInstanceFields from './CitationInstanceFields.svelte';
   import type { CompletedCitationDraft } from './citation-types';
 
   let {
-    citation = $bindable<EditCitationSelection | null>(null),
+    citations = $bindable<EditCitationSelection[]>([]),
     showMixedEditWarning = false,
   }: {
-    citation?: EditCitationSelection | null;
+    citations?: EditCitationSelection[];
     showMixedEditWarning?: boolean;
   } = $props();
 
   let pickerOpen = $state(false);
 
-  // The locator is unprompted but reachable: nothing mints until save, so
-  // this panel — not an extra picker stage — is where a skip_locator cite
-  // picks up its rare locator (a video post's 1:35, an article's § heading).
-  // The input stays visible once it has ever held text this session, so a
-  // cleared value doesn't yank the field out from under the contributor.
-  let locatorAdded = $state(false);
-  let locatorInput: HTMLInputElement | undefined = $state();
-  let locatorVisible = $derived(!!citation?.locator || locatorAdded);
-
-  async function addLocator() {
-    locatorAdded = true;
-    await tick();
-    locatorInput?.focus();
-  }
-
   // The picker hands back a content spec, not a minted instance — the spec
-  // rides the save payload and the backend mints the shared instance then.
-  // A quote already typed survives a source re-pick: clearing user-entered
-  // text on "Change citation" would be worse than a stale quote the user can
-  // see and edit.
+  // rides the save payload and the backend mints the shared instances then.
+  // The list updates by reassignment (not push/splice) so the change reaches
+  // the parent's binding regardless of how deep its reactivity goes.
   function handleComplete(draft: CompletedCitationDraft) {
-    citation = {
-      citationSourceId: draft.sourceId,
-      sourceName: draft.sourceName,
-      locator: draft.locator,
-      quote: citation?.quote ?? '',
-    };
-    // Collapse back down for a fresh locator-less pick; a locator entered at
-    // the picker's own stage (book/video) keeps the field open via `derived`.
-    locatorAdded = false;
+    citations = [
+      ...citations,
+      {
+        citationSourceId: draft.sourceId,
+        sourceName: draft.sourceName,
+        sourceType: draft.sourceType,
+        locator: draft.locator,
+        quote: '',
+      },
+    ];
     pickerOpen = false;
   }
 
-  function removeCitation() {
-    citation = null;
-    locatorAdded = false;
+  function removeCitation(index: number) {
+    citations = citations.filter((_, i) => i !== index);
   }
 
   function openPicker() {
@@ -66,60 +53,14 @@
 <FieldGroup label="Evidence for this edit" optional>
   <!-- eslint-disable-next-line @typescript-eslint/no-unused-vars -->
   {#snippet children(inputId, errorId)}
-    <div class="citation-field">
-      {#if citation}
-        <div id={inputId} class="citation-summary">
-          {citation.sourceName}
-        </div>
-        {#if locatorVisible}
-          <input
-            bind:this={locatorInput}
-            type="text"
-            aria-label="Citation locator"
-            placeholder="Where in the source (p. 42, 1:35)"
-            maxlength="200"
-            bind:value={citation.locator}
-          />
-        {/if}
-        <textarea
-          aria-label="Quote from the source"
-          placeholder="Exact text quoted from the source"
-          rows="3"
-          maxlength="2000"
-          bind:value={citation.quote}></textarea>
-      {/if}
+    <div class="citation-field" id={inputId}>
+      {#each citations as citation, index (citation)}
+        <CitationInstanceFields {citation} onremove={() => removeCitation(index)} />
+      {/each}
 
-      <div class="citation-actions">
-        <button type="button" class="citation-button" onclick={openPicker}>
-          {citation ? 'Change citation' : 'Add citation'}
-        </button>
-        {#if citation && !locatorVisible}
-          <button
-            type="button"
-            class="citation-button citation-button-secondary"
-            onclick={addLocator}
-          >
-            Add a locator
-          </button>
-        {/if}
-        {#if citation}
-          <button
-            type="button"
-            class="citation-button citation-button-secondary"
-            onclick={removeCitation}
-          >
-            Remove citation
-          </button>
-        {/if}
-      </div>
-
-      {#if showMixedEditWarning && citation}
-        <p class="citation-warning">
-          This citation will apply to all changed fields in this save. Split unrelated edits if
-          needed.
-        </p>
-      {/if}
-
+      <!-- The picker replaces the button that summoned it (the same swap as
+           the "Add a locator" reveal): while it's open, the picker IS the
+           add-citation action, so a lingering button would be a dead control. -->
       {#if pickerOpen}
         <div class="citation-picker">
           <CitationAutocomplete
@@ -128,6 +69,19 @@
             onback={closePicker}
           />
         </div>
+      {:else}
+        <div class="citation-actions">
+          <button type="button" class="citation-button" onclick={openPicker}>
+            {citations.length > 0 ? 'Add another citation' : 'Add citation'}
+          </button>
+        </div>
+      {/if}
+
+      {#if showMixedEditWarning && citations.length > 0}
+        <p class="citation-warning">
+          {citations.length === 1 ? 'This citation' : 'These citations'} will apply to all changed fields
+          in this save. Split unrelated edits if needed.
+        </p>
       {/if}
     </div>
   {/snippet}
@@ -138,15 +92,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
-  }
-
-  .citation-summary {
-    padding: var(--size-2) var(--size-3);
-    border: 1px solid var(--color-border-soft);
-    border-radius: var(--radius-2);
-    background: var(--color-surface);
-    color: var(--color-text);
-    font-size: var(--font-size-1);
   }
 
   .citation-actions {
@@ -163,10 +108,6 @@
     color: var(--color-text);
     font: inherit;
     cursor: pointer;
-  }
-
-  .citation-button-secondary {
-    color: var(--color-text-muted);
   }
 
   .citation-warning {

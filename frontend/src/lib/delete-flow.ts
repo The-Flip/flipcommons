@@ -33,7 +33,7 @@ export type DeleteOutcome<TResponse> =
 
 interface DeleteSubmitOptions {
   note?: string;
-  citation?: EditCitationSelection | null;
+  citations?: EditCitationSelection[];
 }
 
 // Entity-segment union derived from the schema's delete routes.
@@ -67,7 +67,7 @@ export function createDeleteSubmitter<E extends DeleteEntity>(entity: E) {
         params: { path: { public_id } },
         body: {
           note: opts.note ?? '',
-          citations: buildEditCitationsRequest(opts.citation ?? null),
+          citations: buildEditCitationsRequest(opts.citations ?? []),
         },
       } as never,
     );

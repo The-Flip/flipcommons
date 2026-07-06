@@ -206,7 +206,7 @@ def _emit_assert(
     value: object = None,
     claim_key: ClaimKey = "",
     note: str = "",
-    cite_spec: CiteSpec | None = None,
+    cite_specs: tuple[CiteSpec, ...] = (),
     inline_cites: dict[CiteHandle, CiteSpec] | None = None,
 ) -> None:
     plan.assertions.append(
@@ -215,7 +215,7 @@ def _emit_assert(
             value=value,
             claim_key=claim_key,
             note=note,
-            cite_spec=cite_spec,
+            cite_specs=cite_specs,
             inline_cites=dict(inline_cites) if inline_cites else {},
             content_type_id=target.content_type_id,
             object_id=target.object_id,
@@ -231,7 +231,7 @@ def _emit_direct(
     target: _Target,
     *,
     note: str = "",
-    cite_spec: CiteSpec | None = None,
+    cite_specs: tuple[CiteSpec, ...] = (),
     inline_cites: dict[CiteHandle, CiteSpec] | None = None,
 ) -> None:
     """Emit a scalar or FK claim assertion (FK value is the target public_id).
@@ -246,7 +246,7 @@ def _emit_direct(
         field_name=field_name,
         value=value,
         note=note,
-        cite_spec=cite_spec,
+        cite_specs=cite_specs,
         inline_cites=inline_cites,
     )
 
@@ -691,7 +691,7 @@ def _emit_relationship(
     *,
     registry: PatchEntityRegistry,
     note: str = "",
-    cite_spec: CiteSpec | None = None,
+    cite_specs: tuple[CiteSpec, ...] = (),
 ) -> _MemberEmitResult:
     """Emit ``exists=true`` member assertions; return their clash keys + carrier flag.
 
@@ -761,7 +761,7 @@ def _emit_relationship(
                         identity=resolved.concrete,
                         identity_refs=resolved.refs,
                         note=note,
-                        cite_spec=cite_spec,
+                        cite_specs=cite_specs,
                         content_type_id=target.content_type_id,
                         object_id=target.object_id,
                         handle=target.handle,
@@ -795,7 +795,7 @@ def _emit_relationship(
                         identity=payload,
                         identity_refs={rel_spec.value_key: handle},
                         note=note,
-                        cite_spec=cite_spec,
+                        cite_specs=cite_specs,
                         content_type_id=target.content_type_id,
                         object_id=target.object_id,
                         handle=target.handle,
@@ -824,7 +824,7 @@ def _emit_relationship(
             value=claim_value,
             claim_key=claim_key,
             note=note,
-            cite_spec=cite_spec,
+            cite_specs=cite_specs,
         )
         clash_keys.append(claim_key)
         carrier_written = True
@@ -847,7 +847,7 @@ def _add_removals(
     rel_fields_by_model: RelFieldsByModel,
     *,
     note: str = "",
-    cite_spec: CiteSpec | None = None,
+    cite_specs: tuple[CiteSpec, ...] = (),
 ) -> _RemovalResult:
     """Emit ``exists=false`` member supersedes for each ``remove:`` member.
 
@@ -912,7 +912,7 @@ def _add_removals(
                 value=claim_value,
                 claim_key=claim_key,
                 note=note,
-                cite_spec=cite_spec,
+                cite_specs=cite_specs,
             )
             rel_fields_by_model[model_class].add(namespace)
             carrier_written = True
@@ -1112,7 +1112,7 @@ def _add_delete(
     entry: DeleteEntry,
     *,
     note: str = "",
-    cite_spec: CiteSpec | None = None,
+    cite_specs: tuple[CiteSpec, ...] = (),
 ) -> list[EntityKey]:
     """Emit ``status=deleted`` assertions to soft-delete *existing* and its cascade.
 
@@ -1161,7 +1161,7 @@ def _add_delete(
             field_name=LIFECYCLE_STATUS_FIELD,
             value="deleted",
             note=note,
-            cite_spec=cite_spec,
+            cite_specs=cite_specs,
         )
         affected.append(EntityKey(ct_id, target_entity.pk))
     cascaded = [require_linkable(e) for e in walk.cascade if e.pk != existing.pk]

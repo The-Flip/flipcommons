@@ -22,7 +22,7 @@ vi.mock('$lib/undo-delete', () => ({ submitUndoDelete }));
 type Response = { changeset_id: number };
 type Submit = (
   public_id: string,
-  opts: { note: string; citation: import('$lib/edit-citation').EditCitationSelection | null },
+  opts: { note: string; citations: import('$lib/edit-citation').EditCitationSelection[] },
 ) => Promise<DeleteOutcome<Response>>;
 
 function makeImpact() {

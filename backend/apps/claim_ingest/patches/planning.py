@@ -436,7 +436,7 @@ def _process_entry(
     per-entry provenance-carrier check is enforced inline; the returned
     :class:`_EntryResult` carries only what ``_validate_plan_wide`` needs.
     """
-    note, cite_spec = _parse_provenance(entry)
+    note, cite_specs = _parse_provenance(entry)
     model_class = _resolve_model_class(entry)
     ct_id = ContentType.objects.get_for_model(model_class).pk
     existing = registry.lookup_existing(model_class, entry.public_id)
@@ -456,7 +456,7 @@ def _process_entry(
             )
         if existing is None:
             raise PatchError(f"{entry.ref}: no such {entry.entity_type} to delete")
-        affected = _add_delete(plan, existing, entry, note=note, cite_spec=cite_spec)
+        affected = _add_delete(plan, existing, entry, note=note, cite_specs=cite_specs)
         contributions: dict[_TargetKey, _TargetContribution] = {
             tkey: _TargetContribution(
                 ref=entry.ref,
@@ -555,7 +555,7 @@ def _process_entry(
                 value,
                 target,
                 note=note,
-                cite_spec=cite_spec,
+                cite_specs=cite_specs,
                 inline_cites=inline_cites_by_field.get(key, {}),
             )
             carrier_written = True
@@ -570,7 +570,7 @@ def _process_entry(
                 entry,
                 registry=registry,
                 note=note,
-                cite_spec=cite_spec,
+                cite_specs=cite_specs,
             )
             rel_fields_by_model[model_class].add(key)
             hierarchy_edges.extend(emit.hierarchy_edges)
@@ -602,7 +602,7 @@ def _process_entry(
             rel_namespaces,
             rel_fields_by_model,
             note=note,
-            cite_spec=cite_spec,
+            cite_specs=cite_specs,
         )
         removed_members = removal.removed_members
         carrier_written = carrier_written or removal.carrier_written
@@ -610,7 +610,7 @@ def _process_entry(
     _check_provenance_carrier(
         entry,
         note=note,
-        cite_spec=cite_spec,
+        cite_specs=cite_specs,
         carrier_written=carrier_written,
         retracted_any=retracted_any,
     )
@@ -674,7 +674,7 @@ def _check_provenance_carrier(
     entry: CreateEntry | EditEntry,
     *,
     note: str,
-    cite_spec: CiteSpec | None,
+    cite_specs: tuple[CiteSpec, ...],
     carrier_written: bool,
     retracted_any: bool,
 ) -> None:
@@ -691,7 +691,7 @@ def _check_provenance_carrier(
     emits nothing, so ``_persist`` makes no ChangeSet and the note would vanish.
     This keeps note in step with cite, which likewise requires a real carrier.
     """
-    if cite_spec is not None and not carrier_written:
+    if cite_specs and not carrier_written:
         raise PatchError(
             f"{entry.ref}: cite has no field to attach to — cite a field you're "
             f"also asserting (a retraction, a no-op removal, a field-less "

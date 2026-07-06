@@ -73,7 +73,7 @@ def test_note_and_cite_parsed_and_excluded_from_fields():
     (entry,) = doc.claims
     assert isinstance(entry, EditEntry)  # no create/delete → an edit
     assert entry.note == "tagged because the name says so"
-    assert entry.cite == "ipdb:4443"
+    assert entry.cite == (("ipdb:4443", "", "", ""),)
     assert entry.fields == {"year": 1990}  # note/cite are not field assertions
 
 
@@ -624,7 +624,7 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
             value=1998,
             content_type_id=ct.pk,
             object_id=pm.pk,
-            cite_spec=CiteSpec(ref=SchemeCitationRef("ipdb", "4443")),
+            cite_specs=(CiteSpec(ref=SchemeCitationRef("ipdb", "4443")),),
             entry_index=0,
         )
     )
@@ -649,6 +649,256 @@ def test_attach_citations_is_per_claim(flipcommons_catalog, ipdb_root, pm):
     link = year_claim.citation_links.get()
     assert link.citation_instance_id == year_claim.citation_instances.get().pk
     assert not qty_claim.citation_links.exists()
+
+
+# ── cite: list form — multiple citations per entry ─────────────────
+
+
+def test_cite_list_parsed_and_excluded_from_fields():
+    doc = load_patch(
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.x:\n"
+        "      cite:\n"
+        "        - ipdb:4443\n"
+        "        - ref: ipdb:5556\n"
+        "          locator: Notes section\n"
+        "          quote: exists only as a prototype\n"
+        "      year: 1990\n"
+    )
+    (entry,) = doc.claims
+    assert isinstance(entry, EditEntry)
+    assert entry.cite == (
+        ("ipdb:4443", "", "", ""),
+        ("ipdb:5556", "", "Notes section", "exists only as a prototype"),
+    )
+    assert entry.fields == {"year": 1990}
+
+
+def test_cite_list_fans_out_to_all_claims(
+    flipcommons_catalog, ipdb_root, pm, prototype_tag
+):
+    # N cites × M claims: every claim in the entry carries every cite, through
+    # N shared instances per changeset (not M×N clones).
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      cite:
+        - ipdb:4443
+        - ref: ipdb:5556
+          quote: exists only as a prototype
+      year: 1998
+      tag: [prototype]
+"""
+    _apply(text)
+
+    year_claim = pm.claims.get(field_name="year", is_active=True)
+    tag_claim = pm.claims.get(field_name="tag", is_active=True)
+    year_instances = set(year_claim.citation_instances.values_list("pk", flat=True))
+    tag_instances = set(tag_claim.citation_instances.values_list("pk", flat=True))
+    assert len(year_instances) == 2
+    # Shared instances: the tag claim reaches the SAME two rows, not clones.
+    assert tag_instances == year_instances
+    assert CitationInstance.objects.count() == 2
+    sources = {
+        i.citation_source.identifier for i in year_claim.citation_instances.all()
+    }
+    assert sources == {"4443", "5556"}
+    quotes = {i.quote for i in year_claim.citation_instances.all()}
+    assert quotes == {"", "exists only as a prototype"}
+
+
+def test_cite_single_spec_still_parses_as_before(flipcommons_catalog, ipdb_root, pm):
+    # The single-spec form is unchanged wire grammar — a list of one.
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: ipdb:4443\n      year: 1998\n"
+    _apply(text)
+    year_claim = pm.claims.get(field_name="year", is_active=True)
+    assert year_claim.citation_instances.get().citation_source.identifier == "4443"
+
+
+def test_cite_empty_list_rejected():
+    with pytest.raises(PatchError, match="non-empty"):
+        load_patch(
+            "attribution: flipcommons-catalog\n"
+            "claims:\n"
+            "  - model.x:\n"
+            "      cite: []\n"
+            "      year: 1990\n"
+        )
+
+
+def test_cite_nested_list_element_rejected():
+    with pytest.raises(PatchError, match="cite"):
+        load_patch(
+            "attribution: flipcommons-catalog\n"
+            "claims:\n"
+            "  - model.x:\n"
+            "      cite:\n"
+            "        - [ipdb:4443]\n"
+            "      year: 1990\n"
+        )
+
+
+def test_cite_list_exact_duplicate_rejected():
+    # Byte-identical specs are caught at parse time.
+    with pytest.raises(PatchError, match="duplicate"):
+        load_patch(
+            "attribution: flipcommons-catalog\n"
+            "claims:\n"
+            "  - model.x:\n"
+            "      cite:\n"
+            "        - ipdb:4443\n"
+            "        - ipdb:4443\n"
+            "      year: 1990\n"
+        )
+
+
+def test_cite_list_normalized_duplicate_rejected(flipcommons_catalog, youtube_root, pm):
+    # The video locators '95' and '1:35' both canonicalize to '1:35' — duplicates
+    # are judged on the parsed, normalized spec, not the raw string.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        - ref: youtube:dQw4w9WgXcQ\n"
+        "          locator: '95'\n"
+        "        - ref: youtube:dQw4w9WgXcQ\n"
+        "          locator: '1:35'\n"
+        "      year: 1998\n"
+    )
+    with pytest.raises(PatchError, match="duplicate"):
+        _apply(text)
+
+
+def test_cite_list_string_vs_mapping_duplicate_rejected(
+    flipcommons_catalog, ipdb_root, pm
+):
+    # A bare string and a mapping naming the same ref (with no distinguishing
+    # locator/quote) are the same evidence twice.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        - ipdb:4443\n"
+        "        - ref: ipdb:4443\n"
+        "      year: 1998\n"
+    )
+    with pytest.raises(PatchError, match="duplicate"):
+        _apply(text)
+
+
+def test_cite_list_same_ref_different_quote_allowed(flipcommons_catalog, ipdb_root, pm):
+    # Same source, different quote = two distinct pieces of evidence; both
+    # instances attach to the claim.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      cite:
+        - ref: ipdb:4443
+          quote: first excerpt
+        - ref: ipdb:4443
+          quote: second excerpt
+      year: 1998
+"""
+    _apply(text)
+    year_claim = pm.claims.get(field_name="year", is_active=True)
+    assert year_claim.citation_instances.count() == 2
+    assert (
+        CitationSource.objects.filter(parent=ipdb_root, identifier="4443").count() == 1
+    )
+
+
+def test_cite_list_url_bare_and_archived_one_join_row(
+    flipcommons_catalog, kineticist_root, pm
+):
+    # A bare URL and the same URL with an archive: are distinct specs (the
+    # archive rides the ref) but resolve to one (source, locator, quote) — the
+    # claim gets ONE instance and ONE join row, not a unique-constraint error.
+    url = "https://kineticist.com/reviews/medieval-madness"
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        f"        - {url}\n"
+        f"        - ref: {url}\n"
+        "          archive: https://web.archive.org/web/2024/https://kineticist.com/reviews/medieval-madness\n"
+        "      year: 1998\n"
+    )
+    _apply(text)
+    year_claim = pm.claims.get(field_name="year", is_active=True)
+    assert year_claim.citation_instances.count() == 1
+    assert year_claim.citation_links.count() == 1
+
+
+def test_cite_list_on_delete_entry(flipcommons_catalog, ipdb_root, pm):
+    # A delete entry's cite list rides the cascade's status claims.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      delete: true
+      note: duplicate record
+      cite:
+        - ipdb:4443
+        - ipdb:5556
+"""
+    _apply(text)
+    status_claim = pm.claims.get(field_name="status", is_active=True)
+    assert status_claim.citation_instances.count() == 2
+
+
+def test_cite_list_with_no_carrier_rejected(flipcommons_catalog, pm):
+    make_claim(pm, "year", 1998, ingest_source=flipcommons_catalog)
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        - ipdb:4443\n"
+        "        - ipdb:5556\n"
+        "      retract: [year]\n"
+    )
+    with pytest.raises(PatchError, match="cite has no field to attach to"):
+        _apply(text)
+
+
+def test_cite_list_in_changesets_item(flipcommons_catalog, ipdb_root, pm):
+    # A grouped changesets: item carries its own cite list.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      changesets:
+        - note: two sources agree
+          cite:
+            - ipdb:4443
+            - ipdb:5556
+          year: 1998
+"""
+    _apply(text)
+    year_claim = pm.claims.get(field_name="year", is_active=True)
+    assert year_claim.citation_instances.count() == 2
+
+
+def test_cite_list_idempotent_across_applications(flipcommons_catalog, ipdb_root, pm):
+    base = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        - ipdb:4443\n"
+        "        - ipdb:5556\n"
+        "      year: {year}\n"
+    )
+    _apply(base.format(year=1998), patch_id="0001-a")
+    _apply(base.format(year=1999), patch_id="0002-b")
+    # Re-citing the same ids reuses the two child sources.
+    assert CitationSource.objects.filter(parent=ipdb_root).count() == 2
 
 
 def test_patch_plan_missing_entry_index_raises(flipcommons_catalog, pm):
