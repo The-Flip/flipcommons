@@ -263,12 +263,14 @@ class _PatchEntry:
     cite_quote: str = ""
     # Inline-citation specs for *new* footnotes referenced by numeric-handle
     # ``[[cite:1]]`` markers in this entry's markdown fields, keyed by the
-    # patch-local handle (``"1"``). Each value is a parsed CitationRef minted at
-    # apply time as a floating CitationInstance (reached only by its marker). Existing-slug
-    # markers (``[[cite:<slug>]]``) need no entry here — they self-resolve. Empty
-    # when unset; only ``CreateEntry``/``EditEntry`` ever populate it (a
-    # ``DeleteEntry`` with ``cites:`` is rejected — no markdown claim to bind to).
-    cites: dict[CiteHandle, CitationRef] = field(default_factory=dict)
+    # patch-local handle (``"1"``). Each value is a parsed CiteSpec minted at
+    # apply time as a floating CitationInstance (reached only by its marker),
+    # carrying the same optional locator/quote as the entry-level ``cite:``.
+    # Existing-slug markers (``[[cite:<slug>]]``) need no entry here — they
+    # self-resolve. Empty when unset; only ``CreateEntry``/``EditEntry`` ever
+    # populate it (a ``DeleteEntry`` with ``cites:`` is rejected — no markdown
+    # claim to bind to).
+    cites: dict[CiteHandle, CiteSpec] = field(default_factory=dict)
 
     @property
     def ref(self) -> str:
@@ -416,36 +418,36 @@ def _parse_remove(raw_fields: JsonBody, ref: str) -> RelationshipMembers:
     return cast(RelationshipMembers, raw)
 
 
-def _parse_cites(raw_cites: object, ref: str) -> dict[CiteHandle, CitationRef]:
-    """Parse a ``cites:`` map of ``{handle: cite-spec}`` into CitationRefs.
+def _parse_cites(raw_cites: object, ref: str) -> dict[CiteHandle, CiteSpec]:
+    """Parse a ``cites:`` map of ``{handle: cite-spec}`` into CiteSpecs.
 
     Each value is a cite spec in the same grammar as the entry-level ``cite:``
-    (a ``scheme:identifier``/URL string or a ``{ref, archive}`` mapping — an
-    inline footnote takes no ``locator``/``quote``), parsed through the shared
-    :func:`_normalize_raw_cite` + :func:`_parse_cite_value`
-    path so it dedups and errors identically. Handle keys are always strings —
-    the strict YAML loader's ``_assert_json`` rejects a bare integer mapping key
-    before this runs, so an unquoted ``1:`` is a parse error the adapter never
-    sees. The handle *grammar* (numeric new-cite vs slug existing-cite) and
-    marker↔map correspondence are enforced later, at process time, against the
-    actual markdown markers.
+    (a ``scheme:identifier``/URL string or a ``{ref, archive, locator, quote}``
+    mapping), parsed through the shared :func:`_normalize_raw_cite` +
+    :func:`_parse_cite_value` + :func:`_validated_cite_instance_fields` path so
+    it dedups and errors identically — ``locator``/``quote`` land on the minted
+    inline instance exactly as they do on an entry-level cite. Handle keys are
+    always strings — the strict YAML loader's ``_assert_json`` rejects a bare
+    integer mapping key before this runs, so an unquoted ``1:`` is a parse
+    error the adapter never sees. The handle *grammar* (numeric new-cite vs
+    slug existing-cite) and marker↔map correspondence are enforced later, at
+    process time, against the actual markdown markers.
     """
     if not isinstance(raw_cites, dict):
         raise PatchError(f"{ref}: 'cites' must be a mapping of handle to cite spec")
-    parsed: dict[CiteHandle, CitationRef] = {}
+    parsed: dict[CiteHandle, CiteSpec] = {}
     for handle, raw_spec in raw_cites.items():
         # _assert_json guarantees string keys; assert for the type-checker.
         assert isinstance(handle, str)
         spec_ref = f"{ref} cites[{handle!r}]"
         cite, archive, locator, quote = _normalize_raw_cite(raw_spec, spec_ref)
-        if locator or quote:
-            raise PatchError(
-                f"{spec_ref}: an inline footnote takes no 'locator'/'quote' — "
-                f"they belong on the entry-level 'cite:'"
-            )
         if not cite:
             raise PatchError(f"{spec_ref}: cite spec must be non-empty")
-        parsed[handle] = _parse_cite_value(cite, archive, spec_ref)
+        cite_ref = _parse_cite_value(cite, archive, spec_ref)
+        locator, quote = _validated_cite_instance_fields(
+            cite_ref, locator, quote, spec_ref
+        )
+        parsed[handle] = CiteSpec(ref=cite_ref, locator=locator, quote=quote)
     return parsed
 
 
@@ -494,7 +496,7 @@ def _parse_entry_body(ref: str, raw_fields: JsonBody) -> PatchEntry:
     # Authored claim fields: everything that isn't a reserved directive key.
     fields = {k: v for k, v in raw_fields.items() if k not in RESERVED_FIELD_KEYS}
     # ``cites`` is passed per-constructor below rather than spread here — its
-    # ``dict[str, CitationRef]`` value would widen this all-``str`` mapping.
+    # ``dict[str, CiteSpec]`` value would widen this all-``str`` mapping.
     common = {
         "entity_type": entity_type,
         "public_id": public_id,
@@ -663,8 +665,9 @@ def _normalize_raw_cite(raw_cite: object, ref: str) -> _RawCite:
       ``CitationInstance``.
 
     Shape-only here; the URL/archive validity checks live in ``_parse_cite_url``
-    and the locator/quote length checks in ``_parse_provenance`` (the inline
-    ``cites:`` path rejects them outright).
+    and the locator/quote checks in ``_validated_cite_instance_fields``, shared
+    by the entry-level (``_parse_provenance``) and inline (``_parse_cites``)
+    paths.
     """
     if isinstance(raw_cite, str):
         return _RawCite(raw_cite, "", "", "")
@@ -723,29 +726,40 @@ def _parse_provenance(entry: PatchEntry) -> tuple[str, CiteSpec | None]:
                 f"to attach to"
             )
         return note, None
-    if len(entry.cite_locator) > CITATION_INSTANCE_LOCATOR_MAX_LENGTH:
+    cite_ref = _parse_cite_value(entry.cite, entry.cite_archive, entry.ref)
+    locator, quote = _validated_cite_instance_fields(
+        cite_ref, entry.cite_locator, entry.cite_quote, entry.ref
+    )
+    return note, CiteSpec(ref=cite_ref, locator=locator, quote=quote)
+
+
+def _validated_cite_instance_fields(
+    cite_ref: CitationRef, locator: str, quote: str, ref: str
+) -> tuple[str, str]:
+    """Validate + normalize a cite's minted-instance fields → ``(locator, quote)``.
+
+    Shared by the entry-level ``cite:`` (:func:`_parse_provenance`) and inline
+    ``cites:`` (:func:`_parse_cites`) paths so both validate identically:
+    length-caps each value against the DB column it lands in and mojibake-checks
+    both — necessary because the bulk mint path (``mint_many`` → ``bulk_create``)
+    never runs model validation — then canonicalizes the locator against the
+    resolved source's citation type (see :func:`_normalized_cite_locator`).
+    """
+    if len(locator) > CITATION_INSTANCE_LOCATOR_MAX_LENGTH:
         raise PatchError(
-            f"{entry.ref}: cite locator exceeds "
+            f"{ref}: cite locator exceeds "
             f"{CITATION_INSTANCE_LOCATOR_MAX_LENGTH} characters"
         )
-    if len(entry.cite_quote) > CITATION_INSTANCE_QUOTE_MAX_LENGTH:
+    if len(quote) > CITATION_INSTANCE_QUOTE_MAX_LENGTH:
         raise PatchError(
-            f"{entry.ref}: cite quote exceeds "
-            f"{CITATION_INSTANCE_QUOTE_MAX_LENGTH} characters"
+            f"{ref}: cite quote exceeds {CITATION_INSTANCE_QUOTE_MAX_LENGTH} characters"
         )
-    for label, value in (("locator", entry.cite_locator), ("quote", entry.cite_quote)):
+    for label, value in (("locator", locator), ("quote", quote)):
         try:
             validate_no_mojibake(value)
         except ValidationError as exc:
-            raise PatchError(
-                f"{entry.ref}: cite {label}: {'; '.join(exc.messages)}"
-            ) from exc
-    cite_ref = _parse_cite_value(entry.cite, entry.cite_archive, entry.ref)
-    return note, CiteSpec(
-        ref=cite_ref,
-        locator=_normalized_cite_locator(cite_ref, entry.cite_locator, entry.ref),
-        quote=entry.cite_quote,
-    )
+            raise PatchError(f"{ref}: cite {label}: {'; '.join(exc.messages)}") from exc
+    return _normalized_cite_locator(cite_ref, locator, ref), quote
 
 
 def _normalized_cite_locator(cite_ref: CitationRef, locator: str, ref: str) -> str:

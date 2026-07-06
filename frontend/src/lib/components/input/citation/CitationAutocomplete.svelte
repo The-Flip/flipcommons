@@ -3,10 +3,10 @@
   import client from '$lib/api/client';
   import {
     transition,
-    isDraftSubmittable,
     isWebSeed,
     emptyDraft,
     type CitationCompletion,
+    type CiteFlowConfig,
     type CiteState,
     type CiteAction,
     type CitationInstanceDraft,
@@ -34,6 +34,12 @@
   let isSubmitting = $state(false);
   let submitError = $state('');
 
+  // Only the inline (mint-instance) flow collects a quote on the locator
+  // stage — see CiteFlowConfig.
+  let flowConfig: CiteFlowConfig = $derived({
+    collectsQuote: completion.kind === 'mint-instance',
+  });
+
   // -------------------------------------------------------------------
   // Submission — hands the completed draft to the consumer, minting the
   // instance first only for the inline flow (it needs the slug now)
@@ -54,10 +60,8 @@
     isSubmitting = true;
     submitError = '';
 
-    // Inline cites carry no quote — the quote field lives on the edit-cite
-    // panel (EditCitationField), which takes the content-spec branch above.
     const { data, error } = await client.POST('/api/citation-instances/', {
-      body: { citation_source_id: draft.sourceId, locator: draft.locator, quote: '' },
+      body: { citation_source_id: draft.sourceId, locator: draft.locator, quote: draft.quote },
     });
 
     isSubmitting = false;
@@ -70,11 +74,11 @@
     completion.oncomplete(data);
   }
 
-  /** Dispatch an action, then auto-submit if the draft is ready. */
+  /** Dispatch an action; submit exactly when the machine marks itself ready. */
   function dispatch(action: CiteAction) {
     if (isSubmitting) return;
-    flow = transition(flow, action);
-    if (isDraftSubmittable(flow.draft)) {
+    flow = transition(flow, action, flowConfig);
+    if (flow.stage === 'locator' && flow.ready) {
       submit(flow.draft);
     }
   }
@@ -115,10 +119,8 @@
     dispatch({ type: 'source_created', ...result });
   }
 
-  function handleLocatorSubmit(locator: string) {
-    if (isSubmitting) return;
-    flow = transition(flow, { type: 'locator_submitted', locator });
-    submit(flow.draft);
+  function handleLocatorSubmit(locator: string, quote: string) {
+    dispatch({ type: 'locator_submitted', locator, quote });
   }
 
   function handleBack() {
@@ -179,8 +181,13 @@
       />
     {/if}
   {:else if flow.stage === 'locator'}
+    <!-- Stays rendered when flow.ready: the mint POST can fail, and the
+         populated screen must show submitError in place, not go blank. The
+         edit flow's instant-complete path (skip-locator source, ready with no
+         render) completes synchronously, so this never visibly flashes. -->
     <CitationLocatorStage
       draft={flow.draft}
+      showQuote={flowConfig.collectsQuote}
       onsubmit={handleLocatorSubmit}
       {oncancel}
       onback={goBackToSearch}

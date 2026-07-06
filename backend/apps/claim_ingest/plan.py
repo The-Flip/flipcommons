@@ -101,13 +101,13 @@ type CitationRef = WebCitationRef | SchemeCitationRef
 
 @dataclass(frozen=True)
 class CiteSpec:
-    """A parsed entry-level ``cite:``: the source ref plus per-instance fields.
+    """A parsed cite spec: the source ref plus per-instance fields.
 
     ``ref`` identifies the *source* (and is what the apply-side source
     resolution memoizes on); ``locator`` and ``quote`` are fields of the
     ``CitationInstance`` minted from it — where in the source, and the verbatim
-    excerpt. Inline footnotes (``cites:``) carry a bare :data:`CitationRef`
-    instead: they don't support locator/quote.
+    excerpt. Carried by both the entry-level ``cite:`` and each inline
+    footnote in a ``cites:`` map.
     """
 
     ref: CitationRef
@@ -214,11 +214,12 @@ class PlannedClaimAssert:
     cite_spec: CiteSpec | None = None
     # Inline-citation footnotes referenced by ``[[cite:<numeric-handle>]]`` markers
     # in a markdown field's value, keyed by the patch-local numeric handle. Each
-    # is a *new* citation minted at apply time (a floating CitationInstance,
-    # reached only by its marker), after which the handle markers are rewritten
-    # to the minted slug. Existing-slug markers (``[[cite:<slug>]]``) carry nothing here —
-    # they self-resolve through standard conversion. Empty for non-cited fields.
-    inline_cites: dict[CiteHandle, CitationRef] = field(default_factory=dict)
+    # is a *new* citation minted at apply time (a floating CitationInstance
+    # carrying the spec's locator/quote, reached only by its marker), after which
+    # the handle markers are rewritten to the minted slug. Existing-slug markers
+    # (``[[cite:<slug>]]``) carry nothing here — they self-resolve through
+    # standard conversion. Empty for non-cited fields.
+    inline_cites: dict[CiteHandle, CiteSpec] = field(default_factory=dict)
     # The file-order index of the authoring patch entry, so ``_persist`` can mint
     # one ChangeSet per entry. The front end stamps it in a second pass (see
     # ``planning.build_plan``), so it is ``None`` only transiently between

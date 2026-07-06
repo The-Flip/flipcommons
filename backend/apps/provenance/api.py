@@ -222,6 +222,7 @@ def batch_citation_instances(
             author=ci.citation_source.author,
             year=ci.citation_source.year,
             locator=ci.locator,
+            quote=ci.quote,
             links=[
                 CitationLinkSchema(
                     url=deep_linked_url(ci.citation_source, ci.locator, link.url),

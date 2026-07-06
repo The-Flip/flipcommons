@@ -10,6 +10,7 @@ const makeCitation = (
   author: 'Author',
   year: 2000,
   locator: '',
+  quote: '',
   links: [],
   ...overrides,
 });

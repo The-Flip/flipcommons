@@ -395,9 +395,10 @@ def _materialize_inline_citations(
     """Mint floating ``CitationInstance`` rows for *new* inline citations.
 
     For each assertion carrying ``inline_cites`` (a ``{numeric-handle:
-    CitationRef}`` map populated by the patch adapter), mints one floating
-    ``CitationInstance`` per handle (no join rows — an inline instance is
-    reached only by its marker), then rewrites that handle's
+    CiteSpec}`` map populated by the patch adapter), mints one floating
+    ``CitationInstance`` per handle carrying the spec's locator/quote (no join
+    rows — an inline instance is reached only by its marker), then rewrites
+    that handle's
     ``[[cite:<handle>]]`` markers in the assertion value to the minted
     ``[[cite:<slug>]]``. Existing-slug markers are left untouched.
 
@@ -426,9 +427,15 @@ def _materialize_inline_citations(
     instances: list[CitationInstance] = []
     owners: list[tuple[PlannedClaimAssert, CiteHandle]] = []
     for pca in cited:
-        for handle, ref in pca.inline_cites.items():
-            source_id = _resolve_cite_source_id(ref, source_cache, actor=actor)
-            instances.append(CitationInstance(citation_source_id=source_id))
+        for handle, spec in pca.inline_cites.items():
+            source_id = _resolve_cite_source_id(spec.ref, source_cache, actor=actor)
+            instances.append(
+                CitationInstance(
+                    citation_source_id=source_id,
+                    locator=spec.locator,
+                    quote=spec.quote,
+                )
+            )
             owners.append((pca, handle))
     CitationInstance.objects.mint_many(instances)  # assigns each ``.slug`` in place
 

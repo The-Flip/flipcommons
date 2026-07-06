@@ -29,7 +29,6 @@ from apps.claim_ingest.patches.parsing import (
     PatchEntry,
 )
 from apps.claim_ingest.plan import (
-    CitationRef,
     CiteHandle,
     CiteSpec,
     Handle,
@@ -208,7 +207,7 @@ def _emit_assert(
     claim_key: ClaimKey = "",
     note: str = "",
     cite_spec: CiteSpec | None = None,
-    inline_cites: dict[CiteHandle, CitationRef] | None = None,
+    inline_cites: dict[CiteHandle, CiteSpec] | None = None,
 ) -> None:
     plan.assertions.append(
         PlannedClaimAssert(
@@ -233,7 +232,7 @@ def _emit_direct(
     *,
     note: str = "",
     cite_spec: CiteSpec | None = None,
-    inline_cites: dict[CiteHandle, CitationRef] | None = None,
+    inline_cites: dict[CiteHandle, CiteSpec] | None = None,
 ) -> None:
     """Emit a scalar or FK claim assertion (FK value is the target public_id).
 

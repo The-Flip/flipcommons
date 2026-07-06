@@ -130,7 +130,11 @@ class TestListCitationInstances:
 
 class TestBatchCitationInstances:
     def test_returns_instances_with_source_details(self, client, citation_source):
-        ci = make_citation_instance(citation_source=citation_source, locator="p. 30")
+        ci = make_citation_instance(
+            citation_source=citation_source,
+            locator="p. 30",
+            quote="A masterpiece of the solid-state era.",
+        )
         make_citation_link(
             citation_source=citation_source,
             link_type="archive",
@@ -146,6 +150,7 @@ class TestBatchCitationInstances:
         assert item["source_name"] == "The Encyclopedia of Pinball"
         assert item["source_type"] == "book"
         assert item["locator"] == "p. 30"
+        assert item["quote"] == "A masterpiece of the solid-state era."
         assert len(item["links"]) == 1
         assert item["links"][0]["url"] == "https://archive.org/details/example"
         assert item["links"][0]["link_type"] == "archive"
@@ -205,6 +210,7 @@ class TestBatchCitationInstances:
             "author",
             "year",
             "locator",
+            "quote",
             "links",
         }
 

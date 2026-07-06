@@ -132,6 +132,34 @@ describe('CitationTooltip', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 
+  it('shows a clamped quote when the citation carries one', async () => {
+    GET.mockResolvedValue({
+      data: [
+        {
+          id: 1,
+          source_name: 'Pinball Book',
+          source_type: 'book',
+          author: 'Jane Doe',
+          year: 1992,
+          locator: 'p. 42',
+          quote: 'The flippers were revolutionary.',
+          links: [],
+        },
+      ],
+    });
+    renderTooltip('<p>Hover <sup data-cite-id="1" tabindex="0">[1]</sup>.</p>');
+    await vi.waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
+
+    await fireEvent.mouseEnter(getCitation('1'));
+    const tooltip = await screen.findByRole('tooltip');
+    expect(tooltip).toHaveTextContent('The flippers were revolutionary.');
+    // Clamped in the tooltip so a long excerpt can't balloon it; the sources
+    // panel renders the same component unclamped.
+    const quote = tooltip.querySelector('blockquote');
+    expect(quote).not.toBeNull();
+    expect(quote!.classList.contains('clamped')).toBe(true);
+  });
+
   it('keeps the tooltip open when the pointer moves from anchor onto the tooltip', async () => {
     renderTooltip('<p>Keep <sup data-cite-id="1" tabindex="0">[1]</sup>.</p>');
     await vi.waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
@@ -196,6 +224,7 @@ describe('CitationTooltip', () => {
         author: 'Prop Author',
         year: 2020,
         locator: 'ch. 1',
+        quote: '',
         links: [],
       },
     ];
@@ -223,6 +252,7 @@ describe('CitationTooltip', () => {
           author: 'Ken Russell (director)',
           year: 1975,
           locator: '1:02:03',
+          quote: '',
           links: [],
         },
       ];
@@ -243,6 +273,7 @@ describe('CitationTooltip', () => {
           author: '',
           year: null,
           locator: '1:35',
+          quote: '',
           links: [
             {
               url: 'https://www.youtube.com/watch?v=gbEss0hMAlU&t=95s',

@@ -49,13 +49,13 @@ export type ParentContext = {
   identifier_key: string;
 };
 
-/** An unsaved draft of a CitationInstance.  Accumulates across stages: search sets sourceId, identify may change it, locator sets locator.
+/** An unsaved draft of a CitationInstance.  Accumulates across stages: search sets sourceId, identify may change it, the locator stage sets locator and quote.
  *
  * `sourceType` keys the locator stage into the per-type behavior registry
  * (`$lib/citation-types`): placeholder, inline validation, canonical form.
  * `locatorHint` prefills the locator input (a pasted video URL's `t=` start
  * time, already formatted canonically by the backend) — it is deliberately
- * NOT `locator` so a hint never auto-submits the draft past the stage. */
+ * NOT `locator` so a hint is never mistaken for an entered locator. */
 export type CitationInstanceDraft = {
   sourceId: number | null;
   sourceName: string;
@@ -63,6 +63,7 @@ export type CitationInstanceDraft = {
   locator: string;
   locatorHint: string;
   skipLocator: boolean;
+  quote: string;
 };
 
 /** A finished draft: the source is chosen (non-null) and the locator entered.
@@ -82,6 +83,17 @@ export type CompletedCitationDraft = {
 export type CitationCompletion =
   | { kind: 'mint-instance'; oncomplete: (instance: CitationInstanceSchema) => void }
   | { kind: 'content-spec'; oncomplete: (draft: CompletedCitationDraft) => void };
+
+/** Per-flow configuration, seeded once at flow init and passed to every
+ *  `transition`. `collectsQuote` is true for the inline (`mint-instance`) flow,
+ *  whose locator stage also collects an optional verbatim quote — the instance
+ *  mints (immutably) the moment the flow completes, so the picker is the
+ *  quote's only chance to exist. The edit (`content-spec`) flow collects its
+ *  quote later, on the edit panel (`EditCitationField`), and never shows it
+ *  here. */
+export type CiteFlowConfig = {
+  collectsQuote: boolean;
+};
 
 /** Which stage the citation flow is in. Each variant carries only the context that stage needs. */
 export type CiteState =
@@ -103,8 +115,18 @@ export type CiteState =
       parent: ParentContext | null;
       seed: CreateSeed;
     }
-  /** Source is chosen. User enters an optional locator (page number, URL fragment, etc.). */
-  | { stage: 'locator'; draft: CitationInstanceDraft };
+  /** Source is chosen. User refines the minted instance's fields — an optional
+   *  locator (page number, start time, etc.) and, when the flow collects one
+   *  (`CiteFlowConfig.collectsQuote`), an optional quote. A skip-locator
+   *  source hides the locator input, leaving a quote-only screen.
+   *
+   *  `ready` marks completion: the reducer has everything it needs and the
+   *  orchestrator should submit the draft. The stage stays `locator` rather
+   *  than switching to a bare terminal because submission is an async POST
+   *  that can fail — the populated screen must stay rendered so a failure
+   *  shows in place. `ready` is set with the stage never rendered at all when
+   *  a flow that collects no quote resolves a skip-locator source. */
+  | { stage: 'locator'; draft: CitationInstanceDraft; ready: boolean };
 
 /** Inputs to the state machine, dispatched by stage components via the orchestrator. */
 export type CiteAction =
@@ -129,8 +151,9 @@ export type CiteAction =
       sourceType: string;
       skipLocator: boolean;
     }
-  /** User submitted or skipped the locator. */
-  | { type: 'locator_submitted'; locator: string };
+  /** User submitted or skipped the locator stage. Carries both of that
+   *  screen's fields; `quote` is always `''` for flows that don't collect one. */
+  | { type: 'locator_submitted'; locator: string; quote: string };
 
 // ---------------------------------------------------------------------------
 // Pure functions
@@ -172,10 +195,6 @@ export function suppressChildResults(results: CitationSourceResult[]): CitationS
   return results.filter((r) => !r.parent_id || !resultIds.has(r.parent_id));
 }
 
-export function isDraftSubmittable(draft: CitationInstanceDraft): boolean {
-  return draft.sourceId !== null && (draft.locator.length > 0 || draft.skipLocator);
-}
-
 export function emptyDraft(): CitationInstanceDraft {
   return {
     sourceId: null,
@@ -184,6 +203,7 @@ export function emptyDraft(): CitationInstanceDraft {
     locator: '',
     locatorHint: '',
     skipLocator: false,
+    quote: '',
   };
 }
 
@@ -240,8 +260,24 @@ export function parentContextFromSource(source: CitationSourceResult): ParentCon
   };
 }
 
-/** Invalid action/state combos return current state unchanged. */
-export function transition(state: CiteState, action: CiteAction): CiteState {
+/** Whether a just-resolved source completes the flow with no locator screen.
+ *  Only a flow that collects no quote can finish here: a quote-collecting
+ *  (inline) flow always renders the locator stage, even for a skip-locator
+ *  source, where it shows as a quote-only screen. */
+function readyOnSourceResolution(config: CiteFlowConfig, skipLocator: boolean): boolean {
+  return skipLocator && !config.collectsQuote;
+}
+
+/** Invalid action/state combos return current state unchanged.
+ *
+ * The reducer owns stage sequencing end to end — including the skip-locator
+ * shortcut and flow completion (the `ready` marker on the locator state) — so
+ * the orchestrator submits exactly when told, never by sniffing the draft. */
+export function transition(
+  state: CiteState,
+  action: CiteAction,
+  config: CiteFlowConfig,
+): CiteState {
   switch (action.type) {
     case 'source_selected': {
       if (state.stage !== 'search') return state;
@@ -261,6 +297,7 @@ export function transition(state: CiteState, action: CiteAction): CiteState {
       return {
         stage: 'locator',
         draft: { ...draft, skipLocator: action.source.skip_locator },
+        ready: readyOnSourceResolution(config, action.source.skip_locator),
       };
     }
 
@@ -276,6 +313,7 @@ export function transition(state: CiteState, action: CiteAction): CiteState {
           skipLocator: action.skipLocator,
           locatorHint: action.locatorHint ?? '',
         },
+        ready: readyOnSourceResolution(config, action.skipLocator),
       };
     }
 
@@ -300,6 +338,7 @@ export function transition(state: CiteState, action: CiteAction): CiteState {
           sourceType: action.sourceType,
           skipLocator: action.skipLocator,
         },
+        ready: readyOnSourceResolution(config, action.skipLocator),
       };
     }
 
@@ -307,7 +346,8 @@ export function transition(state: CiteState, action: CiteAction): CiteState {
       if (state.stage !== 'locator') return state;
       return {
         ...state,
-        draft: { ...state.draft, locator: action.locator },
+        draft: { ...state.draft, locator: action.locator, quote: action.quote },
+        ready: true,
       };
     }
   }

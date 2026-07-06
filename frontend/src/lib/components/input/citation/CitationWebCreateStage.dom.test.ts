@@ -66,7 +66,7 @@ describe('CitationWebCreateStage new site', () => {
     expect(urlInput.value).toBe('https://newsite.com/article');
     expect(urlInput.readOnly).toBe(true);
 
-    await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
 
     await waitFor(() => expect(mockPOST).toHaveBeenCalled());
     expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/cite-url/', {
@@ -232,7 +232,7 @@ describe('CitationWebCreateStage existing site', () => {
     expect(urlInput.value).toBe('https://newsite.com/article');
     expect(urlInput.readOnly).toBe(true);
 
-    await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
 
     await waitFor(() => expect(mockPOST).toHaveBeenCalled());
     // Site fields are sent blank — cite-url re-recognizes and nests under the
@@ -306,7 +306,7 @@ describe('CitationWebCreateStage explicit parent (identify path)', () => {
       screen.getByLabelText('URL'),
       'https://jerseyjackpinball.com/products/elton-john',
     );
-    await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
 
     await waitFor(() => expect(mockPOST).toHaveBeenCalled());
     // Filed directly under the chosen root via pages/ — not routed through
@@ -337,7 +337,7 @@ describe('CitationWebCreateStage explicit parent (identify path)', () => {
     });
 
     await user.type(screen.getByLabelText('URL'), 'https://jerseyjackpinball.com/x');
-    await user.click(screen.getByRole('button', { name: /Create Citation/ }));
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
 
     expect(screen.getByText('Page name is required.')).toBeInTheDocument();
     expect(mockPOST).not.toHaveBeenCalled();
