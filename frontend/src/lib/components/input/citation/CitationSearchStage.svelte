@@ -8,6 +8,7 @@
     suppressChildResults,
     createChildByIdentifier,
     urlFromQuery,
+    isbnFromQuery,
     type CitationSourceResult,
     type RecognitionResult,
     type CreateSeed,
@@ -66,19 +67,12 @@
   } | null>(null);
 
   // -----------------------------------------------------------------------
-  // ISBN detection
+  // ISBN detection — whole input or embedded in pasted text (isbnFromQuery)
   // -----------------------------------------------------------------------
-
-  function normalizeIsbn(raw: string): string | null {
-    const stripped = raw.replace(/-/g, '').replace(/ /g, '').toUpperCase();
-    if (stripped.length === 13 && /^\d{13}$/.test(stripped)) return stripped;
-    if (stripped.length === 10 && /^\d{9}[\dX]$/.test(stripped)) return stripped;
-    return null;
-  }
 
   let isbnInput = $derived(
     !recognition && searchResults.length === 0 && searchQuery.trim()
-      ? normalizeIsbn(searchQuery)
+      ? isbnFromQuery(searchQuery)
       : null,
   );
 

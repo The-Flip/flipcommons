@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 from django.core.cache import cache
 
 from apps.citation.citation_types import CitationSourceTypeValue, citation_source_type
-from apps.citation.isbn import normalize_isbn
+from apps.citation.isbn import isbn_checksum_ok, normalize_isbn
 
 __all__ = [
     "ClassifiedInput",
@@ -96,12 +96,45 @@ class ClassifiedInput(NamedTuple):
     value: str
 
 
+# An ISBN-shaped token inside free text: an ISBN-13 (978/979 prefix) or an
+# ISBN-10, with optional single space/hyphen separators between digits, not
+# butted against other alphanumerics. Candidates are checksum-gated by the
+# caller, so a coincidental digit run never triggers a lookup.
+_EMBEDDED_ISBN_RE = re.compile(
+    r"(?<![0-9A-Za-z])"
+    r"(97[89][ -]?(?:\d[ -]?){9}\d|(?:\d[ -]?){9}[\dXx])"
+    r"(?![0-9A-Za-z])"
+)
+
+
+def _embedded_isbn_in_text(text: str) -> str | None:
+    """A checksum-valid ISBN found anywhere in *text*, or ``None``.
+
+    The capture-ergonomics loosening (Zotero's add-by-identifier wand accepts
+    messy input): a paste like ``"Pinball Compendium 978-0764325847 — first
+    edition"`` should look the book up, not dead-end. Stricter than the
+    whole-input path on purpose — a **mined** candidate must pass the
+    checksum, because free text is full of coincidental digit runs, while a
+    whole-input ISBN keeps the lenient shape-only contract (a hand-typed typo
+    should reach Open Library and fail loudly, not be reclassified as text).
+    """
+    for match in _EMBEDDED_ISBN_RE.finditer(text):
+        isbn = normalize_isbn(match.group(1))
+        if isbn is not None and isbn_checksum_ok(isbn):
+            return isbn
+    return None
+
+
 def classify_input(raw: str) -> ClassifiedInput | None:
     """Determine what kind of evidence *raw* is.
 
     Returns a :class:`ClassifiedInput` with ``kind`` of ``"isbn"`` or
-    ``"url"``, or ``None`` if neither matches. ISBN always wins; URL
-    requires an explicit ``http(s)://`` scheme.
+    ``"url"``, or ``None`` if neither matches. Precedence: a whole-input ISBN
+    always wins; then a URL (explicit ``http(s)://`` scheme); then a
+    checksum-valid ISBN embedded anywhere in non-URL text. URLs are
+    deliberately never mined for embedded ISBNs — a digit run in a path is
+    the deliverer classification's job (``deliverers.embedded_isbn``), where
+    the platform's declared shapes say which runs mean anything.
     """
     isbn = normalize_isbn(raw)
     if isbn is not None:
@@ -109,6 +142,9 @@ def classify_input(raw: str) -> ClassifiedInput | None:
     stripped = raw.strip()
     if stripped.startswith(("http://", "https://")) and urlparse(stripped).hostname:
         return ClassifiedInput("url", stripped)
+    embedded = _embedded_isbn_in_text(stripped)
+    if embedded is not None:
+        return ClassifiedInput("isbn", embedded)
     return None
 
 

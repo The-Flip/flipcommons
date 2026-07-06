@@ -168,6 +168,59 @@ export function urlFromQuery(q: string): string | null {
   return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/.*)?$/i.test(t) ? `https://${t}` : null;
 }
 
+/** Strip hyphens/spaces and return a 10/13-digit ISBN shape, or null.
+ *  Shape-only, mirroring the backend's `normalize_isbn`: a hand-typed ISBN
+ *  with a bad check digit still goes to Open Library to fail loudly. */
+export function normalizeIsbn(raw: string): string | null {
+  const stripped = raw.replace(/-/g, '').replace(/ /g, '').toUpperCase();
+  if (stripped.length === 13 && /^\d{13}$/.test(stripped)) return stripped;
+  if (stripped.length === 10 && /^\d{9}[\dX]$/.test(stripped)) return stripped;
+  return null;
+}
+
+/** Whether a normalized 10/13-digit ISBN has a valid check digit. */
+export function isbnChecksumOk(isbn: string): boolean {
+  if (isbn.length === 10) {
+    let total = 0;
+    for (let i = 0; i < 10; i++) {
+      const value = isbn[i] === 'X' ? 10 : Number(isbn[i]);
+      total += (10 - i) * value;
+    }
+    return total % 11 === 0;
+  }
+  if (isbn.length === 13) {
+    let total = 0;
+    for (let i = 0; i < 13; i++) {
+      total += Number(isbn[i]) * (i % 2 === 0 ? 1 : 3);
+    }
+    return total % 10 === 0;
+  }
+  return false;
+}
+
+/** An ISBN-shaped token inside free text, with optional space/hyphen
+ *  separators, not butted against other alphanumerics. Candidates are
+ *  checksum-gated below. Mirrors the backend's `_EMBEDDED_ISBN_RE`. */
+const EMBEDDED_ISBN_RE =
+  /(?<![0-9A-Za-z])(97[89][ -]?(?:\d[ -]?){9}\d|(?:\d[ -]?){9}[\dXx])(?![0-9A-Za-z])/g;
+
+/** The ISBN a pasted query carries, or null — mirroring the backend's
+ *  `classify_input` precedence: the whole input as an ISBN (shape-only, the
+ *  lenient historical contract), never inside a URL (a digit run in a path is
+ *  the deliverer classification's job), else a **checksum-valid** ISBN
+ *  embedded anywhere in the text ("Pinball Compendium 978-0764325847 —
+ *  first edition" still looks the book up). */
+export function isbnFromQuery(q: string): string | null {
+  const whole = normalizeIsbn(q);
+  if (whole) return whole;
+  if (urlFromQuery(q)) return null;
+  for (const match of q.matchAll(EMBEDDED_ISBN_RE)) {
+    const isbn = normalizeIsbn(match[1]);
+    if (isbn && isbnChecksumOk(isbn)) return isbn;
+  }
+  return null;
+}
+
 /** The www-stripped, lowercased host of a URL, or `''` if it can't be parsed.
  *  Used to prefill the Site name when no `og:site_name` was scraped, so the
  *  field shows the name the new root will get. Mirrors the backend's
