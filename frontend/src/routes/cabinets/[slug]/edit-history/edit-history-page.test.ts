@@ -38,7 +38,18 @@ describe('cabinet edit-history page (taxonomy representative)', () => {
           citations: [
             {
               source_name: 'Internet Pinball Database #4443',
-              url: 'https://www.ipdb.org/machine.cgi?id=4443',
+              source_type: 'database',
+              author: '',
+              year: null,
+              locator: '',
+              slug: null,
+              links: [
+                {
+                  url: 'https://www.ipdb.org/machine.cgi?id=4443',
+                  link_type: 'reference',
+                  display_name: 'ipdb.org',
+                },
+              ],
             },
           ],
         },

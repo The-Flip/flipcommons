@@ -148,13 +148,51 @@ class ClaimValueSchema(Schema):
     )
 
 
+class CitationLinkSchema(Schema):
+    """A link attached to a citation source, ready for display."""
+
+    url: str = Field(
+        description="The link's URL, deep-linked to the locator when possible."
+    )
+    link_type: str = Field(
+        description="Kind of link: one of ``homepage``, ``catalog``, ``publisher``, ``reference`` or ``archive``."
+    )
+    display_name: str = Field(
+        description="Human-readable link text — the link's label, or its link-type name when unlabeled. Never blank."
+    )
+
+
 class FieldChangeCitationSchema(Schema):
-    """A citation attached to a single field change's claim."""
+    """A citation backing a single field change's claim.
+
+    Covers both kinds of evidence: instances attached to the claim as
+    supporting evidence (``slug`` is null) and instances referenced by
+    inline ``[[cite:slug]]`` markers in a markdown value (``slug`` set, so
+    clients can match the entry to its marker in the text).
+    """
 
     source_name: str = Field(description="The cited source's display name.")
-    url: str | None = Field(
+    source_type: str = Field(
+        description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
+    )
+    author: str = Field(description="Author of the cited source, if recorded.")
+    year: int | None = Field(
+        None, description="Publication year of the source, if known."
+    )
+    locator: str = Field(
+        description="Specific location within the source, such as a page or section."
+    )
+    slug: str | None = Field(
         None,
-        description="A link to the cited source, or null when it has no link.",
+        description=(
+            "The citation instance's authoring slug when the citation is an "
+            "inline ``[[cite:slug]]`` marker in the change's text; null for "
+            "evidence attached directly to the claim."
+        ),
+    )
+    links: list[CitationLinkSchema] = Field(
+        default_factory=list,
+        description="External links for the cited source.",
     )
 
 
@@ -392,20 +430,6 @@ class AttributionSchema(Schema):
         Field(description="Name of the source this content was derived from."),
     ] = None
     source_url: Annotated[str | None, Field(description="URL of that source.")] = None
-
-
-class CitationLinkSchema(Schema):
-    """A link attached to a citation source, ready for display."""
-
-    url: str = Field(
-        description="The link's URL, deep-linked to the locator when possible."
-    )
-    link_type: str = Field(
-        description="Kind of link: one of ``homepage``, ``catalog``, ``publisher``, ``reference`` or ``archive``."
-    )
-    display_name: str = Field(
-        description="Human-readable link text — the link's label, or its link-type name when unlabeled. Never blank."
-    )
 
 
 class InlineCitationSchema(Schema):

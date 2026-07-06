@@ -1,3 +1,5 @@
+<!-- @component Changeset-grouped edit history for one entity: per-field diffs
+with revert controls and per-change citation footers. -->
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
   import client from '$lib/api/client';
@@ -12,7 +14,9 @@
   import FocusContentShell from '$lib/components/layout/page/FocusContentShell.svelte';
   import InlineDiff from '$lib/components/ui/InlineDiff.svelte';
   import ClaimAttribution from '$lib/components/provenance/ClaimAttribution.svelte';
-  import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
+  import ChangeValue from '$lib/components/provenance/ChangeValue.svelte';
+  import ChangeCitations from '$lib/components/provenance/ChangeCitations.svelte';
+  import CiteMarkedText from '$lib/components/provenance/CiteMarkedText.svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { getEntityContext } from '$lib/entity-context';
   import {
@@ -22,6 +26,10 @@
     isDiffable,
     isUnchanged,
   } from '$lib/components/provenance/change-display';
+  import {
+    citeIndexesForChange,
+    substituteCiteMarkers,
+  } from '$lib/components/provenance/cite-markers';
 
   type ChangeSet = ChangeSetSchema;
   type FieldChange = FieldChangeSchema;
@@ -87,6 +95,9 @@
     return !hasChanges && !hasUnmatchedRetractions;
   }
 
+  /** For value renders with no owning change (unmatched retractions). */
+  const NO_CITE_INDEXES = new Map<string, number>();
+
   function canRevert(change: FieldChange): boolean {
     return (
       auth.isAuthenticated &&
@@ -130,27 +141,16 @@
   }
 </script>
 
-{#snippet oldValue(value: ClaimValueSchema | null | undefined)}
-  <span class="old-value"><ClaimValue {value} /></span>
+{#snippet markedText(text: string)}
+  <CiteMarkedText {text} />
 {/snippet}
 
-{#snippet newValue(value: ClaimValueSchema | null | undefined)}
-  <span class="new-value"><ClaimValue {value} /></span>
+{#snippet oldValue(value: ClaimValueSchema | null | undefined, citeIndexes: Map<string, number>)}
+  <span class="old-value"><ChangeValue {value} {citeIndexes} /></span>
 {/snippet}
 
-{#snippet fieldCitations(change: FieldChange)}
-  {#if change.citations && change.citations.length > 0}
-    <dd class="field-citations">
-      <span class="cite-label">Source:</span>
-      {#each change.citations as cite (cite.source_name)}
-        {#if cite.url}
-          <a class="cite-link" href={cite.url} target="_blank">{cite.source_name}</a>
-        {:else}
-          <span class="cite-link">{cite.source_name}</span>
-        {/if}
-      {/each}
-    </dd>
-  {/if}
+{#snippet newValue(value: ClaimValueSchema | null | undefined, citeIndexes: Map<string, number>)}
+  <span class="new-value"><ChangeValue {value} {citeIndexes} /></span>
 {/snippet}
 
 {#snippet revertControls(change: FieldChange)}
@@ -221,6 +221,8 @@
               {/if}
               <dl class="field-list">
                 {#each cs.changes as change (change.claim_key)}
+                  {@const citeIndexes = citeIndexesForChange(change)}
+                  {@const citeMarked = citeIndexes.size > 0}
                   {#if change.is_retracted}
                     {@const info =
                       change.claim_id != null ? retractionLookup.get(change.claim_id) : undefined}
@@ -237,65 +239,73 @@
                         {/if}
                       </dd>
                       {#if isUnchanged(change)}
-                        <dd>{@render oldValue(change.new_value)}</dd>
+                        <dd>{@render oldValue(change.new_value, citeIndexes)}</dd>
                       {:else if isDiffable(change)}
                         <dd>
                           <InlineDiff
-                            oldValue={diffText(change.old_value)}
-                            newValue={diffText(change.new_value)}
+                            oldValue={substituteCiteMarkers(
+                              diffText(change.old_value),
+                              citeIndexes,
+                            )}
+                            newValue={substituteCiteMarkers(
+                              diffText(change.new_value),
+                              citeIndexes,
+                            )}
+                            renderText={citeMarked ? markedText : undefined}
                           />
                         </dd>
                       {:else}
                         <dd>
                           {#if hasMeaningfulValue(change.old_value?.raw)}
-                            {@render oldValue(change.old_value)}
+                            {@render oldValue(change.old_value, citeIndexes)}
                             <span class="arrow">&rarr;</span>
                           {/if}
-                          {@render oldValue(change.new_value)}
+                          {@render oldValue(change.new_value, citeIndexes)}
                         </dd>
                       {/if}
                     </div>
                   {:else if isUnchanged(change)}
                     <div class="field-row">
                       <dt>{change.field_name}</dt>
-                      <dd>{@render newValue(change.new_value)}</dd>
+                      <dd>{@render newValue(change.new_value, citeIndexes)}</dd>
                       {@render revertControls(change)}
-                      {@render fieldCitations(change)}
+                      <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
                     </div>
                   {:else if isDeletion(change)}
                     <div class="field-row">
                       <dt>{change.field_name}</dt>
                       <dd>
-                        {@render oldValue(change.old_value)}
+                        {@render oldValue(change.old_value, citeIndexes)}
                         <span class="deleted-marker" aria-label="removed">&#x2715;</span>
                       </dd>
                       {@render revertControls(change)}
-                      {@render fieldCitations(change)}
+                      <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
                     </div>
                   {:else if isDiffable(change)}
                     <div class="field-row field-row-diff">
                       <dt>{change.field_name}</dt>
                       <dd>
                         <InlineDiff
-                          oldValue={diffText(change.old_value)}
-                          newValue={diffText(change.new_value)}
+                          oldValue={substituteCiteMarkers(diffText(change.old_value), citeIndexes)}
+                          newValue={substituteCiteMarkers(diffText(change.new_value), citeIndexes)}
+                          renderText={citeMarked ? markedText : undefined}
                         />
                       </dd>
                       {@render revertControls(change)}
-                      {@render fieldCitations(change)}
+                      <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
                     </div>
                   {:else}
                     <div class="field-row">
                       <dt>{change.field_name}</dt>
                       <dd>
                         {#if hasMeaningfulValue(change.old_value?.raw)}
-                          {@render oldValue(change.old_value)}
+                          {@render oldValue(change.old_value, citeIndexes)}
                           <span class="arrow">&rarr;</span>
                         {/if}
-                        {@render newValue(change.new_value)}
+                        {@render newValue(change.new_value, citeIndexes)}
                       </dd>
                       {@render revertControls(change)}
-                      {@render fieldCitations(change)}
+                      <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
                     </div>
                   {/if}
                 {/each}
@@ -306,7 +316,7 @@
                       <dt>{retraction.field_name}</dt>
                       <dd>
                         <span class="reverted-badge">reverted</span>
-                        {@render oldValue(retraction.old_value)}
+                        {@render oldValue(retraction.old_value, NO_CITE_INDEXES)}
                       </dd>
                     </div>
                   {/if}
@@ -406,29 +416,6 @@
   .field-row-diff dd {
     flex-basis: 100%;
     display: block;
-  }
-
-  .field-citations {
-    flex-basis: 100%;
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-1);
-    align-items: baseline;
-    font-size: var(--font-size-00, 0.75rem);
-    color: var(--color-text-muted);
-  }
-
-  .cite-label {
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .cite-link {
-    color: var(--color-text-muted);
-  }
-
-  a.cite-link {
-    color: var(--color-link);
   }
 
   .old-value {

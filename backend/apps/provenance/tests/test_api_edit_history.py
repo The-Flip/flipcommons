@@ -6,7 +6,13 @@ import pytest
 
 from apps.accounts.test_factories import make_user
 from apps.catalog.tests.conftest import make_machine_model
-from apps.provenance.test_factories import make_claim, make_ingest_source
+from apps.citation.test_factories import make_citation_link, make_citation_source
+from apps.provenance.test_factories import (
+    cite_claim,
+    make_citation_instance,
+    make_claim,
+    make_ingest_source,
+)
 
 
 def _user_changesets(resp) -> list[dict[str, Any]]:
@@ -230,6 +236,103 @@ class TestEditHistorySoftDeleted:
         data = _user_changesets(resp)
         assert len(data) == 1
         assert data[0]["changes"][0]["new_value"]["raw"] == 1998
+
+
+@pytest.mark.django_db
+class TestEditHistoryCitations:
+    def test_attached_citation_carries_rich_metadata(self, client, user, pm):
+        """Join-attached (supporting-evidence) citations expose the full
+        source metadata, not just a name and one URL."""
+        claim = make_claim(pm, "year", 1998, user=user)
+        src = make_citation_source(
+            name="The Toy Book",
+            source_type="web",
+            author="Ryan Vincent",
+            year=2024,
+        )
+        make_citation_link(
+            citation_source=src,
+            url="https://toybook.com/wonderland/",
+            link_type="reference",
+        )
+        cite_claim(claim, citation_source=src, locator="para. 2")
+
+        resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        assert resp.status_code == 200
+        [cit] = _user_changesets(resp)[0]["changes"][0]["citations"]
+        assert cit["source_name"] == "The Toy Book"
+        assert cit["source_type"] == "web"
+        assert cit["author"] == "Ryan Vincent"
+        assert cit["year"] == 2024
+        assert cit["locator"] == "para. 2"
+        # Attached evidence has no inline marker, so no slug.
+        assert cit["slug"] is None
+        assert [link["url"] for link in cit["links"]] == [
+            "https://toybook.com/wonderland/"
+        ]
+
+    def test_inline_citations_returned_in_document_order(self, client, user, pm):
+        """Inline ``[[cite:id:N]]`` markers in a markdown claim surface as
+        citations on the change, slug-keyed and ordered by first appearance."""
+        src_a = make_citation_source(
+            name="The Toy Book", author="Ryan Vincent", year=2024
+        )
+        make_citation_link(
+            citation_source=src_a,
+            url="https://toybook.com/wonderland/",
+            link_type="reference",
+        )
+        src_b = make_citation_source(name="Kickstarter")
+        inst_a = make_citation_instance(citation_source=src_a)
+        inst_b = make_citation_instance(citation_source=src_b)
+        make_claim(
+            pm,
+            "description",
+            f"Founded by veterans.[[cite:id:{inst_b.pk}]] "
+            f"Debuted at Expo.[[cite:id:{inst_a.pk}]]",
+            user=user,
+        )
+
+        resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        assert resp.status_code == 200
+        citations = _user_changesets(resp)[0]["changes"][0]["citations"]
+        assert [c["slug"] for c in citations] == [inst_b.slug, inst_a.slug]
+        assert [c["source_name"] for c in citations] == ["Kickstarter", "The Toy Book"]
+        toy_book = citations[1]
+        assert toy_book["author"] == "Ryan Vincent"
+        assert toy_book["year"] == 2024
+        assert [link["url"] for link in toy_book["links"]] == [
+            "https://toybook.com/wonderland/"
+        ]
+
+    def test_old_value_only_citations_included(self, client, user, pm):
+        """A citation that appears only in the prior text (removed by the
+        edit) still gets metadata, so the diff can label its marker."""
+        inst_old = make_citation_instance(
+            citation_source=make_citation_source(name="Pinside forum")
+        )
+        inst_kept = make_citation_instance(
+            citation_source=make_citation_source(name="Kickstarter")
+        )
+        make_claim(
+            pm,
+            "description",
+            f"Old text.[[cite:id:{inst_old.pk}]] Kept.[[cite:id:{inst_kept.pk}]]",
+            user=user,
+        )
+        make_claim(
+            pm,
+            "description",
+            f"New text. Kept.[[cite:id:{inst_kept.pk}]]",
+            user=user,
+        )
+
+        resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        assert resp.status_code == 200
+        newest = _user_changesets(resp)[0]
+        citations = newest["changes"][0]["citations"]
+        # New-text citations first (document order), then old-only ones.
+        assert [c["slug"] for c in citations] == [inst_kept.slug, inst_old.slug]
 
 
 @pytest.mark.django_db

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from itertools import chain
@@ -10,9 +11,10 @@ from django.contrib.contenttypes.models import ContentType
 from django.db.models import Prefetch, Q
 
 from apps.citation.deep_links import deep_linked_url
-from apps.citation.models import CitationSourceLink
+from apps.citation.models import CitationInstance
 from apps.core.authz import PolicyUser, compute_row_capabilities
 from apps.core.types import ClaimKey
+from apps.core.wikilinks import get_link_type, get_patterns
 
 from .attribution import actor_user_id
 from .claim_ranking_in_db import ranked_claims
@@ -30,6 +32,7 @@ from .helpers import (
 from .models import ChangeSet, Claim, ClaimControlledModel
 from .schemas import (
     ChangeSetSchema,
+    CitationLinkSchema,
     ClaimAttributionSchema,
     FieldChangeCitationSchema,
     FieldChangeSchema,
@@ -42,40 +45,125 @@ ordered newest-first. A chain yields a field's prior value and the full set of
 values a change is displayed against."""
 
 
-def _field_change_citations(claim: Claim) -> list[FieldChangeCitationSchema]:
-    """Build the compact citation list for a field change's claim.
+class InlineCitationLookup:
+    """Citation instances resolved from ``[[cite:id:N]]`` markers, keyed by pk.
 
-    Requires the claim to have been loaded with citation instances prefetched
-    (``prefetched_citation_instances`` — see ``claims_prefetch`` and the
-    edit-history / changeset-detail querysets). Uses the source's live link as
-    the compact citation URL; the full set of links (incl. an ``archive``
-    snapshot) is exposed by the citation-source detail surface, not here.
+    Built once per response by :func:`resolve_inline_citations`; consulted by
+    :func:`_field_change_citations` so per-change citation building does no
+    DB work. Same encapsulated shape as
+    :class:`apps.core.markdown.field.WikilinkAuthoringLookup`.
     """
-    result: list[FieldChangeCitationSchema] = []
-    for inst in citation_instances(claim):
-        # Prefer the live page over its durable ``archive`` snapshot. The
-        # snapshot is a backup, not the canonical link — and the default link
-        # ordering sorts "archive" before "reference", so ``links[0]`` alone
-        # would surface the Wayback URL. Pick on the prefetched list (no requery).
-        links = list(inst.citation_source.links.all())
-        live = next(
-            (
-                link
-                for link in links
-                if link.link_type != CitationSourceLink.LinkType.ARCHIVE
-            ),
-            links[0] if links else None,
-        )
-        result.append(
-            FieldChangeCitationSchema(
-                source_name=inst.citation_source.name,
-                url=(
-                    deep_linked_url(inst.citation_source, inst.locator, live.url)
-                    if live
-                    else None
-                ),
+
+    __slots__ = ("_instances",)
+
+    def __init__(self) -> None:
+        self._instances: dict[int, CitationInstance] = {}
+
+    def add(self, instance: CitationInstance) -> None:
+        assert instance.pk is not None
+        self._instances[instance.pk] = instance
+
+    def get(self, pk: int) -> CitationInstance | None:
+        return self._instances.get(pk)
+
+
+def _cite_storage_pattern() -> re.Pattern[str] | None:
+    """The compiled ``[[cite:id:N]]`` pattern, or None when the ``cite``
+    link type isn't registered (cleared-registry tests)."""
+    link_type = get_link_type("cite")
+    if link_type is None:
+        return None
+    return get_patterns(link_type)["storage"]
+
+
+def _inline_cite_pks(value: object) -> list[int]:
+    """Citation-instance pks referenced by ``[[cite:id:N]]`` markers in
+    *value*, in document order, deduped keeping the first occurrence."""
+    if not isinstance(value, str) or not value:
+        return []
+    pattern = _cite_storage_pattern()
+    if pattern is None:
+        return []
+    seen: set[int] = set()
+    pks: list[int] = []
+    for match in pattern.finditer(value):
+        pk = int(match.group(1))
+        if pk not in seen:
+            seen.add(pk)
+            pks.append(pk)
+    return pks
+
+
+def resolve_inline_citations(values: Iterable[object]) -> InlineCitationLookup:
+    """Batch-load every citation instance referenced inline across *values*.
+
+    One query (plus the links prefetch), independent of how many values are
+    passed, so callers rendering many claim values stay query-bounded.
+    """
+    pks: set[int] = set()
+    for value in values:
+        pks.update(_inline_cite_pks(value))
+    lookup = InlineCitationLookup()
+    if not pks:
+        return lookup
+    instances = (
+        CitationInstance.objects.filter(pk__in=pks)
+        # The parent ride-along feeds deep_linked_url (scheme lookup via the
+        # root's identifier_key) without a per-cite query.
+        .select_related("citation_source", "citation_source__parent")
+        .prefetch_related("citation_source__links")
+    )
+    for instance in instances:
+        lookup.add(instance)
+    return lookup
+
+
+def _citation_schema(
+    inst: CitationInstance, *, slug: str | None
+) -> FieldChangeCitationSchema:
+    """Serialize one citation instance for a field change."""
+    source = inst.citation_source
+    return FieldChangeCitationSchema(
+        source_name=source.name,
+        source_type=source.source_type,
+        author=source.author,
+        year=source.year,
+        locator=inst.locator,
+        slug=slug,
+        links=[
+            CitationLinkSchema(
+                url=deep_linked_url(source, inst.locator, link.url),
+                link_type=link.link_type,
+                display_name=link.display_name,
             )
-        )
+            for link in source.links.all()
+        ],
+    )
+
+
+def _field_change_citations(
+    claim: Claim, prior: object, inline: InlineCitationLookup
+) -> list[FieldChangeCitationSchema]:
+    """Build the citation list for a field change's claim.
+
+    Attached (join-row) evidence comes first and requires the claim to have
+    been loaded with citation instances prefetched
+    (``prefetched_citation_instances`` — see ``claims_prefetch`` and the
+    edit-history / changeset-detail querysets). Inline citations follow:
+    ``[[cite:id:N]]`` markers from the claim's own value in document order,
+    then markers only the *prior* value carries (removed by this change), so
+    a client rendering a diff can label every marker on either side. Markers
+    whose instance row is gone are skipped, matching the editor's
+    broken-link degrade.
+    """
+    result = [_citation_schema(inst, slug=None) for inst in citation_instances(claim)]
+    pks = _inline_cite_pks(claim.value)
+    own = set(pks)
+    pks += [pk for pk in _inline_cite_pks(prior) if pk not in own]
+    for pk in pks:
+        inst = inline.get(pk)
+        if inst is not None:
+            result.append(_citation_schema(inst, slug=inst.slug))
     return result
 
 
@@ -103,6 +191,7 @@ def build_changes(
     *,
     winning_ids: set[int] | None = None,
     ctx: ClaimDisplayContext | None = None,
+    inline_citations: InlineCitationLookup | None = None,
 ) -> tuple[list[FieldChangeSchema], list[RetractionSchema]]:
     """Build per-field changes and retractions for a changeset.
 
@@ -110,9 +199,10 @@ def build_changes(
     entity, so the model is uniform; it lets display dispatch markdown fields.
 
     No per-row DB lookups during display building: pass a pre-built ``ctx``
-    when the caller already has one (e.g. a multi-changeset response that
-    resolved references across the whole entity); otherwise this builds its
-    own from the union of values referenced here.
+    (and matching ``inline_citations``) when the caller already has them
+    (e.g. a multi-changeset response that resolved references across the
+    whole entity); otherwise this builds its own from the union of values
+    referenced here.
 
     ``winning_ids`` is only meaningful for entity-wide history; omit it for
     single-changeset detail views and ``is_winning`` will be left unset.
@@ -124,6 +214,10 @@ def build_changes(
         ctx = resolve_display_context(
             FieldValue(c.field_name, c.value)
             for c in chain(own, rets, *history_by_key.values())
+        )
+    if inline_citations is None:
+        inline_citations = resolve_inline_citations(
+            c.value for c in chain(own, rets, *history_by_key.values())
         )
 
     changes: list[FieldChangeSchema] = []
@@ -148,7 +242,7 @@ def build_changes(
                     (claim.pk in winning_ids) if winning_ids is not None else None
                 ),
                 is_retracted=claim.retracted_by_changeset_id is not None,
-                citations=_field_change_citations(claim),
+                citations=_field_change_citations(claim, prior, inline_citations),
             )
         )
 
@@ -193,8 +287,9 @@ def build_edit_history(
     Returns ChangeSetSchema rows newest first. Query count is bounded
     independent of changeset count: changesets+prefetches, all claims for
     the entity (for old-value lookup), winning-claim computation, one query
-    per distinct FK target model display needs to resolve, and one per
-    public-id link type for markdown wikilink rendering.
+    per distinct FK target model display needs to resolve, one per
+    public-id link type for markdown wikilink rendering, and one (plus a
+    links prefetch) for inline citation instances.
 
     ``user`` is the caller (boundary-cast via ``policy_user``) and is
     used to populate the per-row ``capabilities`` map.
@@ -257,6 +352,7 @@ def build_edit_history(
     #    claims, retracted claims, and history chains all draw from it), so one
     #    pass suffices.
     ctx = resolve_display_context(FieldValue(c.field_name, c.value) for c in all_claims)
+    inline_citations = resolve_inline_citations(c.value for c in all_claims)
     model = type(entity)
 
     # 5. Build response.
@@ -269,6 +365,7 @@ def build_edit_history(
             history,
             winning_ids=winning_ids,
             ctx=ctx,
+            inline_citations=inline_citations,
         )
         assert cs.pk is not None
         result.append(
