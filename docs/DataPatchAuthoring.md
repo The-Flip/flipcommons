@@ -52,14 +52,17 @@ Reach for a different attribution only in these cases:
 
 **Each quote should support exactly one fact, so it can be checked — or challenged — on its own.** Fields share a changeset only when they share the evidence: a catalog row stating year, name and maker in one line is a single fact cluster; a machine's format tag two lines below it is a separate fact and gets its own `changesets:` item with its own cite and quote. The `[...]` join is for one statement whose text spans several passages — never for gluing unrelated sentences together so one quote can blanket-cover an entry's fields.
 
-Two boundaries:
+Three boundaries:
 
 - **A fact with no quotable evidence rides the header.** An inference the patch is allowed to make (a 1960s machine's `technology_generation`, a theme read off the name) has no span of its own; it stays on the entry header rather than getting an evidence-free item.
 - **A reassertion that changes nothing can't carry its own changeset.** The apply engine rejects a provenance-carrying unit whose value already matches the record ("changes nothing"), so a field you're re-stating purely to add evidence must ride a unit that changes something — or be dropped.
+- **A maker description citing a machine catalog may aggregate rows.** Several of the maker's machine rows joined with `[...]` are collectively the page's one statement about that maker's activity and years — a sanctioned reading of "one statement", not unrelated facts glued together. Keep it to the minimum rows that support the claimed span.
 
 ### Quote the evidence on the cite
 
-**Put the verbatim source excerpt in `quote:` on the `cite:` mapping** — see the mapping form in [DataPatches.md](DataPatches.md#notes--citations). An inline `cites:` entry takes the same mapping form, so a footnoted description's excerpts ride the footnotes themselves; everything below applies to both carriers. Quote the source _verbatim_ and mark your own omissions with `[...]` — that's a literal square-bracket pair around three ASCII periods, not the `…` character; when a statement spans several passages, join the spans with `[...]` in source order. **Preserve the source's own characters**, including non-ASCII letters in foreign-language quotes (e.g. `Günter`, `gegründet`) — quotes are stored as UTF-8, so don't strip or transliterate them. **Quotes stay in the source's own language**: never translate a quote and don't add any language designation — display-side translation is the reader's tooling's job, and a translation or gloss you want to record is interpretation, which belongs in the `note:`. Only normalize stray _typography_ that's a copy-paste artifact rather than part of the quote: straighten smart quotes (`“ ”` → `"`) and spell out an ellipsis `…` as `[...]`. A reviewer should be able to follow the citation and ctrl-F find each span.
+**Put the verbatim source excerpt in `quote:` on the `cite:` mapping** — see the mapping form in [DataPatches.md](DataPatches.md#notes--citations). An inline `cites:` entry takes the same mapping form, so a footnoted description's excerpts ride the footnotes themselves; everything below applies to both carriers. Quote the source _verbatim_ and mark your own omissions with `[...]` — that's a literal square-bracket pair around three ASCII periods, not the `…` character; when a statement spans several passages, join the spans with `[...]` in source order. **Preserve the source's own characters**, including non-ASCII letters in foreign-language quotes (e.g. `Günter`, `gegründet`) — quotes are stored as UTF-8, so don't strip or transliterate them. **Quotes stay in the source's own language**: never translate a quote and don't add any language designation — display-side translation is the reader's tooling's job, and a translation or gloss you want to record is interpretation, which belongs in the `note:`. Only normalize stray _typography_ that's a copy-paste artifact rather than part of the quote: straighten smart quotes (`“ ”` → `"`) and spell out an ellipsis `…` as `[...]`. **The source's own typos stay verbatim** — "commerical", a misspelled name, a non-breaking hyphen — the verifier requires the exact text and ctrl-F honesty demands it. A reviewer should be able to follow the citation and ctrl-F find each span.
+
+**Reuse before re-derive.** When a footnote states the same fact as an already-verified quote for the same entity and source elsewhere in the patches, reuse that quote verbatim (or widen it) rather than minting a divergent transcription of the same evidence.
 
 ### Note only when there's something to explain
 
@@ -76,6 +79,23 @@ Two boundaries:
 **Only assert what a source supports.** If you can't point to evidence, leave the field unset rather than guess: an unset value reads as "unknown", a wrong claim reads as fact.
 
 Target-creating entries can be **scaffolding** — obvious records like Titles before Models or Locations before corporate-entity claims — and may omit per-entry `note:`/`cite:` when the patch `description:` says why they're needed. The substantive assignment that uses them still needs normal evidence.
+
+### Scheme cites: where the quotable text lives
+
+**A scheme cite's `quote:` verifies against a fixed evidence corpus, not an ad-hoc fetch** (flippatch's `make verify-quotes` checks every quote against it):
+
+- **`ipdb:<id>`** — the `ipdb_machines` table in pinexplore's `explore.duckdb`. The quotable text mirrors what the IPDB page renders: the title as a bare heading, then `Manufacturer:` / `Type:` / `Players:` / `Theme:` label-value rows, then the Notable Features and Notes prose — so a structured-field quote like `Type: Electro-mechanical (EM) [...] Players: 1` is legitimate and stays ctrl-F honest on the page. Cite the machine page whose record carries the field; IPDB has no maker pages, so a maker-level fact (a location, say) cites one of that maker's machine pages.
+- **`opdb:<id>`** — the cached `https://opdb.org/machines/<id>` page in pinexplore's web cache. OPDB renders only label-value fields, so quotes read as terse spans (`Cactus Canyon Continued [...] Manufacturer - Eric Priepke [...] Converted game`); a fact implied by OPDB's group structure (the donor title of a conversion) is never stated as text and stays partially supported.
+- **`youtube:<id>`** — the cached canonical watch URL, whose page text is the video's caption-track transcript. See [Video citations](#video-citations).
+
+### Video citations
+
+**Fetch the video into the web cache like any URL.** Pinexplore's `web_fetch.py` routes any YouTube URL shape (`watch?v=`, `youtu.be/`, `/shorts/`, `/live/`) through yt-dlp and caches the best caption track — manual subtitles over auto-captions, the original spoken language over machine translations — with the spoken-line transcript as the page text. Then:
+
+- **Quote the transcript** like any web quote; `verify-quotes` resolves `youtube:<id>` to the cached watch URL.
+- **Add a timestamp `locator:`** to point at the moment; the stored `.vtt` blob keeps the cue timing for finding it.
+- **Auto-captions are ASR text.** Verbatim means verbatim ASR — a misheard name stays as the transcript has it, like any source typo. A machine-translated caption track is not evidence; quote the original language.
+- **A captionless video can't carry a quote.** Livestream archives often have no caption track at all; the fetcher warns loudly and caches nothing. Cite the written record the video's description usually links (an awards show's results page, a maker's announcement post) for the fact itself, and keep the video footnote — quote-less — as provenance for the event.
 
 ### Prefer primary sources
 
@@ -114,6 +134,7 @@ Some patches set narrative record descriptions (Manufacturer, Model, …) — pr
 - **Every statement supported.** Back each claim with an inline `[[cite:…]]` footnote or a fact already in the catalog. A statement resting on existing catalog data needs no citation; anything else does — and every description must footnote **at least one** fact (a description with no inline citation at all is rejected by the lint, so a purely-catalog description still cites its primary source).
 - **Attribute to the description source.** Each entity type has its own description source named `flipcommons-ai-desc-<entity-type>` — `flipcommons-ai-desc-manufacturer`, `flipcommons-ai-desc-model`, … — not the generic `flipcommons-catalog`. These sources already exist in the database, so just reference one — unlike a `cite:` website root, you don't create it in an earlier patch.
 - **Cite each fact inline.** A narrative description backs individual sentences with **inline `[[cite:…]]` footnotes**, never a single entry-level `cite:` covering the whole field — see [DataPatches.md → Inline citations in descriptions](DataPatches.md#inline-citations-in-descriptions) for the format (numeric handles plus a `cites:` map for new citations; durable slugs for existing ones). The editorial lint enforces two rules here: a `description:` unit must carry **at least one** inline `[[cite:N]]` footnote (`description-needs-inline-cite`), and it may **not** carry an entry-level `cite:` (`description-no-entry-cite`). Even when one source covers the whole description, footnote it inline (a single `[[cite:1]]` at the end is fine) so each statement is individually verifiable. Inline `cites:` count as provenance, so all of an entity's cited fields belong in **one changeset**. (Patches already applied to production predate these rules and are grandfathered; supersede them in a new patch under the same `flipcommons-ai-desc-<type>` source if you need to convert them.)
+- **A footnote's quote is a point citation: it supports the sentence(s) its marker punctuates.** An inline `cites:` entry takes the same `{ ref, locator, quote }` mapping form as an entry-level cite, and its quote covers the facts of the marked sentence — not the whole description; a fact in another sentence belongs to its own marker. Partial support of a sentence is acceptable when the uncovered part rides another footnote or existing catalog data, but flag it for review. One handle may be referenced from **several** markers; its single quote must then cover every marked sentence, spans joined with `[...]` in source order.
 
 ### Rehydrating a description for re-edit
 
