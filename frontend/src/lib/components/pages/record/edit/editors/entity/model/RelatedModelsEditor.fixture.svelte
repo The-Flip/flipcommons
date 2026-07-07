@@ -5,6 +5,7 @@
     variant_of?: { public_id: string } | null;
     converted_from?: { public_id: string } | null;
     remake_of?: { public_id: string } | null;
+    bootleg_of?: { public_id: string } | null;
   };
 
   let {

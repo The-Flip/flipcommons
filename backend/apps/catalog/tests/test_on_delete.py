@@ -259,6 +259,14 @@ class TestProtectBlocksDeletion:
             machine.delete()
         remake.delete()
 
+    def test_bootleg_of_protected(self, machine):
+        bootleg = make_machine_model(
+            name="MM Bootleg", slug="mm-bootleg", bootleg_of=machine
+        )
+        with pytest.raises(ProtectedError):
+            machine.delete()
+        bootleg.delete()
+
     def test_location_parent_protected(self, db):
         parent = Location.objects.create(name="USA", slug="usa", location_path="usa")
         Location.objects.create(

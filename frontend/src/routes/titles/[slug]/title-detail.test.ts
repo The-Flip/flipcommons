@@ -117,6 +117,8 @@ describe('title detail SSR route', () => {
         variant_siblings: [],
         conversions: [],
         remakes: [],
+        bootleg_of: null,
+        bootlegs: [],
         title_models: [],
         production_quantity: '',
       },
@@ -131,5 +133,61 @@ describe('title detail SSR route', () => {
     // Three citation entries, two unique indices — heading should reflect
     // the deduplicated count to match what ReferencesSection renders.
     expect(body).toContain('References (2)');
+  });
+
+  it('surfaces a Bootlegs section on a single-model title with reverse bootlegs', () => {
+    // A bootlegged original stays a single-model title (its bootleg lives under
+    // a different title), so its canonical page must still show it was copied.
+    // The section heading is gated on `md.bootlegs`; the accordion body itself
+    // is lazily rendered (client-side on expand), so SSR asserts the heading.
+    const modelBase = {
+      name: 'Video Pinball',
+      public_id: 'video-pinball',
+      slug: 'video-pinball',
+      description: { text: '', plain: '', html: '', citations: [], attribution: null },
+      abbreviations: [],
+      extra_data: {},
+      credits: [],
+      sources: [],
+      uploaded_media: [],
+      variant_features: [],
+      variants: [],
+      themes: [],
+      gameplay_features: [],
+      tags: [],
+      reward_types: [],
+      variant_siblings: [],
+      conversions: [],
+      remakes: [],
+      bootleg_of: null,
+      title_models: [],
+      production_quantity: '',
+    };
+
+    const withBootlegs = render(Harness, {
+      props: {
+        data: {
+          profile: {
+            ...MOCK_TITLE,
+            model_detail: {
+              ...modelBase,
+              bootlegs: [{ name: 'Rugby', public_id: 'rugby-sidam', year: 1979 }],
+            },
+          },
+          jsonLd: {},
+        },
+      } as never,
+    });
+    expect(withBootlegs.body).toContain('Bootlegs');
+
+    const withoutBootlegs = render(Harness, {
+      props: {
+        data: {
+          profile: { ...MOCK_TITLE, model_detail: { ...modelBase, bootlegs: [] } },
+          jsonLd: {},
+        },
+      } as never,
+    });
+    expect(withoutBootlegs.body).not.toContain('Bootlegs');
   });
 });

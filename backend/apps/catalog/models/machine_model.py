@@ -148,6 +148,17 @@ class MachineModel(
         blank=True,
         help_text="Original model if this is a remake.",
     )
+    bootleg_of = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="bootlegs",
+        null=True,
+        blank=True,
+        help_text=(
+            "Original machine this is an unauthorized copy (bootleg) of. "
+            "Unlike remakes and conversions, may belong to a different Title."
+        ),
+    )
 
     # Core filterable fields
     corporate_entity = models.ForeignKey(
@@ -395,6 +406,13 @@ class MachineModel(
                 | ~models.Q(remake_of=models.F("pk")),
                 name="catalog_machinemodel_remake_of_not_self",
                 violation_error_message="A machine model cannot be a remake of itself.",
+                violation_error_code="cross_field",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(bootleg_of__isnull=True)
+                | ~models.Q(bootleg_of=models.F("pk")),
+                name="catalog_machinemodel_bootleg_of_not_self",
+                violation_error_message="A machine model cannot be a bootleg of itself.",
                 violation_error_code="cross_field",
             ),
         ]

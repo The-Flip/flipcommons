@@ -124,6 +124,36 @@
   </div>
 {/if}
 
+{#if model.bootleg_of}
+  <div class="relationship-group">
+    <h3>Bootleg Of</h3>
+    <ul>
+      <li>
+        <a href={resolve(`/models/${model.bootleg_of.public_id}`)}>{model.bootleg_of.name}</a>
+        {#if model.bootleg_of.year}
+          <span class="muted">({model.bootleg_of.year})</span>
+        {/if}
+      </li>
+    </ul>
+  </div>
+{/if}
+
+{#if model.bootlegs && model.bootlegs.length > 0}
+  <div class="relationship-group">
+    <h3>Bootlegs</h3>
+    <ul>
+      {#each model.bootlegs as bootleg (bootleg.public_id)}
+        <li>
+          <a href={resolve(`/models/${bootleg.public_id}`)}>{bootleg.name}</a>
+          {#if bootleg.year}
+            <span class="muted">({bootleg.year})</span>
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  </div>
+{/if}
+
 <style>
   .relationship-group {
     margin-bottom: var(--size-3);

@@ -119,6 +119,22 @@
     </AccordionSection>
   {/if}
 
+  {#if md.bootlegs.length > 0}
+    <AccordionSection heading="Bootlegs">
+      <p class="bootlegs-note">Unauthorized copies of this game:</p>
+      <ul class="bootlegs">
+        {#each md.bootlegs as bootleg (bootleg.public_id)}
+          <li>
+            <a href={resolve(`/models/${bootleg.public_id}`)}>{bootleg.name}</a>
+            {#if bootleg.year}
+              <span class="muted">({bootleg.year})</span>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </AccordionSection>
+  {/if}
+
   {#if md.credits.length > 0}
     <AccordionSection heading="People ({md.credits.length})" onEdit={editAction('model:people')}>
       <CreditsList credits={md.credits} showHeading={false} />
@@ -382,5 +398,24 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
+  }
+
+  .bootlegs-note {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-0);
+    margin: 0 0 var(--size-1);
+  }
+
+  .bootlegs {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
+  }
+
+  .bootlegs .muted {
+    color: var(--color-text-muted);
   }
 </style>

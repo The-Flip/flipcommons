@@ -1,5 +1,6 @@
 """Models (machine models) router — list, detail, and claim-patch endpoints."""
 
+from collections.abc import Iterable
 from typing import Any
 
 from django.db.models import F, Prefetch, Q, QuerySet
@@ -140,6 +141,20 @@ class ModelRef(Schema):
     year: int | None = None
 
 
+def _model_ref(pm: MachineModel | None) -> ModelRef | None:
+    """Build a `ModelRef` for a nullable related model (e.g. `variant_of`), or `None`."""
+    if pm is None:
+        return None
+    return ModelRef(name=pm.name, public_id=pm.public_id, year=pm.year)
+
+
+def _model_refs(models: Iterable[MachineModel]) -> list[ModelRef]:
+    """Build `ModelRef`s for a related-model collection (e.g. `conversions`)."""
+    return [
+        ModelRef(name=pm.name, public_id=pm.public_id, year=pm.year) for pm in models
+    ]
+
+
 class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     slug: str
     manufacturer: EntityRef | None = None
@@ -181,6 +196,8 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     conversions: list[ModelRef] = []
     remake_of: ModelRef | None = None
     remakes: list[ModelRef] = []
+    bootleg_of: ModelRef | None = None
+    bootlegs: list[ModelRef] = []
     title_models: list[TitleModelSchema] = []
 
 
@@ -404,42 +421,14 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         image_attribution=image_attribution,
         variant_features=variant_features,
         variants=variants,
-        variant_of=(
-            ModelRef(
-                name=pm.variant_of.name,
-                public_id=pm.variant_of.public_id,
-                year=pm.variant_of.year,
-            )
-            if pm.variant_of
-            else None
-        ),
+        variant_of=_model_ref(pm.variant_of),
         variant_siblings=variant_siblings,
-        converted_from=(
-            ModelRef(
-                name=pm.converted_from.name,
-                public_id=pm.converted_from.public_id,
-                year=pm.converted_from.year,
-            )
-            if pm.converted_from
-            else None
-        ),
-        conversions=[
-            ModelRef(name=c.name, public_id=c.public_id, year=c.year)
-            for c in pm.conversions.all()
-        ],
-        remake_of=(
-            ModelRef(
-                name=pm.remake_of.name,
-                public_id=pm.remake_of.public_id,
-                year=pm.remake_of.year,
-            )
-            if pm.remake_of
-            else None
-        ),
-        remakes=[
-            ModelRef(name=r.name, public_id=r.public_id, year=r.year)
-            for r in pm.remakes.all()
-        ],
+        converted_from=_model_ref(pm.converted_from),
+        conversions=_model_refs(pm.conversions.all()),
+        remake_of=_model_ref(pm.remake_of),
+        remakes=_model_refs(pm.remakes.all()),
+        bootleg_of=_model_ref(pm.bootleg_of),
+        bootlegs=_model_refs(pm.bootlegs.all()),
         title=EntityRef(name=pm.title.name, public_id=pm.title.public_id),
         cabinet=(
             EntityRef(name=pm.cabinet.name, public_id=pm.cabinet.public_id)
@@ -535,12 +524,14 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             "variant_of",
             "converted_from",
             "remake_of",
+            "bootleg_of",
         )
         .prefetch_related(
             "variants",
             "variant_of__variants",
             "conversions",
             "remakes",
+            "bootlegs",
             "themes",
             Prefetch(
                 "machinemodelgameplayfeature_set",
@@ -779,7 +770,9 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
     )
 
 
-_SELF_REF_FIELDS = frozenset({"variant_of", "converted_from", "remake_of"})
+_SELF_REF_FIELDS: frozenset[str] = frozenset(
+    {"variant_of", "converted_from", "remake_of", "bootleg_of"}
+)
 
 
 @models_router.patch(

@@ -11,6 +11,7 @@ erDiagram
     Model ||--o{ Model : variant_of
     Model ||--o{ Model : remake_of
     Model ||--o{ Model : converted_from
+    Model ||--o{ Model : bootleg_of
 
     Manufacturer ||--o{ CorporateEntity : incarnations
     CorporateEntity ||--o{ Model : produced
@@ -71,6 +72,19 @@ _Star Trek_ (Bally, 1979) was converted into machines by other manufacturers:
 | Star Trek | Dark Rider   | Geiger-Automatenbau  | 1985 | Star Trek      |
 
 A **conversion** is a Model that reuses the physical cabinet of another machine with a new playfield or theme. Linked via `converted_from`.
+
+### Bootlegs
+
+A **bootleg** is a complete machine, built from scratch, that is an unauthorized copy of another maker's game — common among mid-century Italian and Spanish makers. It is linked to the game it copies via `bootleg_of`, carries the `bootleg` tag and keeps a normal `produced` production status (it is a real commercial machine, just unauthorized). The pinball community uses "bootleg" for both faithful reproductions and renamed/reskinned copies, so there is one relation, not a per-degree taxonomy.
+
+| Title         | Model         | Manufacturer  | bootleg_of                  |
+| ------------- | ------------- | ------------- | --------------------------- |
+| Alien Poker   | Alien Poker   | Williams      | —                           |
+| Alien Poker   | Space Poker   | LTD do Brasil | Alien Poker                 |
+| Video Pinball | Video Pinball | Atari         | —                           |
+| Rugby         | Rugby         | Sidam         | Video Pinball (other Title) |
+
+Unlike `remake_of` and `converted_from`, which stay within one Title by convention, `bootleg_of` records only _what was copied_ — where the bootleg's Model is filed is an independent editorial decision. A renamed bootleg (Sidam's _Rugby_, a copy of Atari's _Video Pinball_) sits under its own Title, so `bootleg_of` is the one lineage relation that routinely points across Titles; a same-name copy (LTD's _Space Poker_) may share the original's Title.
 
 ## Franchises & Series
 
@@ -201,6 +215,7 @@ Classification labels that don't fit elsewhere. As related clusters of tags emer
 - `export`: manufactured for markets outside the United States.
 - `unofficial-retheme`: a re-skin by a non-manufacturer (fan/operator/modder). Paired with the `aftermarket` production status.
 - `manufacturer-retheme`: an official re-theme a manufacturer applied to one of its own designs.
+- `bootleg`: a complete machine, built from scratch, that is an unauthorized copy of another maker's game. See [Bootlegs](#bootlegs); the `bootleg_of` link records the copied machine.
 
 ### Cabinet
 

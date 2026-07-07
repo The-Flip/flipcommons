@@ -363,6 +363,34 @@
       </SidebarSection>
     {/if}
 
+    {#if model.bootleg_of}
+      <SidebarSection heading="Bootleg Of" note="This game is an unauthorized copy of:">
+        <SidebarList>
+          <SidebarListItem>
+            <a href={resolve(`/models/${model.bootleg_of.public_id}`)}>{model.bootleg_of.name}</a>
+            {#if model.bootleg_of.year}
+              <span class="muted">{model.bootleg_of.year}</span>
+            {/if}
+          </SidebarListItem>
+        </SidebarList>
+      </SidebarSection>
+    {/if}
+
+    {#if model.bootlegs && model.bootlegs.length > 0}
+      <SidebarSection heading="Bootlegs" note="Unauthorized copies of this game:">
+        <SidebarList>
+          {#each model.bootlegs as bootleg (bootleg.public_id)}
+            <SidebarListItem>
+              <a href={resolve(`/models/${bootleg.public_id}`)}>{bootleg.name}</a>
+              {#if bootleg.year}
+                <span class="muted">{bootleg.year}</span>
+              {/if}
+            </SidebarListItem>
+          {/each}
+        </SidebarList>
+      </SidebarSection>
+    {/if}
+
     <ModelHierarchy
       models={model.title_models}
       heading="Other Models In Title"

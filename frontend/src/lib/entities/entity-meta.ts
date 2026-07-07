@@ -176,6 +176,7 @@ export const ENTITY_META = {
     label: 'Model',
     label_plural: 'Models',
     relationships: {
+      bootleg_of: { entity_target_type: 'model', many: false },
       cabinet: { entity_target_type: 'cabinet', many: false },
       converted_from: { entity_target_type: 'model', many: false },
       corporate_entity: { entity_target_type: 'corporate-entity', many: false },

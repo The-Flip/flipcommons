@@ -1,17 +1,13 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import type { CrossTitleLinkSchema } from '$lib/api/schema';
 
-  type RelatedTitleLink = {
-    relation: string;
-    other_title: { name: string; public_id: string };
-    source_model: { name: string; public_id: string };
-  };
+  let { relatedTitles }: { relatedTitles: CrossTitleLinkSchema[] } = $props();
 
-  let { relatedTitles }: { relatedTitles: RelatedTitleLink[] } = $props();
-
-  function label(relation: string): string {
+  function label(relation: CrossTitleLinkSchema['relation']): string {
     if (relation === 'remake_of') return 'is a remake of';
     if (relation === 'converted_from') return 'was converted from';
+    if (relation === 'bootleg_of') return 'is a bootleg of';
     return relation;
   }
 </script>
