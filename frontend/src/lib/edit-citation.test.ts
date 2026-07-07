@@ -11,26 +11,36 @@ import {
 const citation: EditCitationSelection = {
   citationSourceId: 7,
   sourceName: 'Williams Flyer',
+  sourceType: 'web',
   locator: 'p. 2',
   quote: 'Released in 1997.',
 };
 
+const secondCitation: EditCitationSelection = {
+  citationSourceId: 9,
+  sourceName: 'Internet Pinball Database #4032',
+  sourceType: 'database',
+  locator: '',
+  quote: '',
+};
+
 describe('buildEditCitationsRequest', () => {
-  it('serializes the selected citation as a content spec', () => {
-    expect(buildEditCitationsRequest(citation)).toEqual([
+  it('serializes every selected citation as a content spec, in order', () => {
+    expect(buildEditCitationsRequest([citation, secondCitation])).toEqual([
       { citation_source_id: 7, locator: 'p. 2', quote: 'Released in 1997.' },
+      { citation_source_id: 9, locator: '', quote: '' },
     ]);
   });
 
   it('sends an empty list when none is selected', () => {
-    expect(buildEditCitationsRequest(null)).toEqual([]);
+    expect(buildEditCitationsRequest([])).toEqual([]);
   });
 });
 
 describe('withEditMetadata', () => {
   it('adds trimmed note and citations to an existing patch body', () => {
     expect(
-      withEditMetadata({ fields: { description: 'Updated' } }, '  cleanup  ', citation),
+      withEditMetadata({ fields: { description: 'Updated' } }, '  cleanup  ', [citation]),
     ).toEqual({
       fields: { description: 'Updated' },
       note: 'cleanup',
@@ -39,7 +49,7 @@ describe('withEditMetadata', () => {
   });
 
   it('sends empty citations for bodies without a citation', () => {
-    expect(withEditMetadata({ fields: { description: 'Updated' } }, '', null)).toEqual({
+    expect(withEditMetadata({ fields: { description: 'Updated' } }, '', [])).toEqual({
       fields: { description: 'Updated' },
       note: '',
       citations: [],
@@ -65,24 +75,24 @@ describe('countPendingChanges', () => {
 });
 
 describe('shouldShowMixedEditCitationWarning', () => {
-  it('warns when one citation is attached to multiple pending changes', () => {
+  it('warns when citations are attached to multiple pending changes', () => {
     expect(
       shouldShowMixedEditCitationWarning(
         {
           fields: { year: 1998, description: 'Updated' },
         },
-        citation,
+        [citation, secondCitation],
       ),
     ).toBe(true);
   });
 
-  it('does not warn for a single pending change or no citation', () => {
+  it('does not warn for a single pending change or no citations', () => {
     expect(
       shouldShowMixedEditCitationWarning(
         {
           fields: { description: 'Updated' },
         },
-        citation,
+        [citation],
       ),
     ).toBe(false);
     expect(
@@ -90,7 +100,7 @@ describe('shouldShowMixedEditCitationWarning', () => {
         {
           fields: { description: 'Updated', year: 1998 },
         },
-        null,
+        [],
       ),
     ).toBe(false);
   });

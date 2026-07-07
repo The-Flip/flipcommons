@@ -64,12 +64,12 @@ _SLUG_HANDLE_RE = re.compile(r"^[a-z]+$")
 
 # Keys in a claim entry's value mapping that are directives, not claim fields.
 #
-# Grammar mirror: pindata's `schema/patch.schema.json` is a hand-maintained JSON
-# Schema of this patch *wire* grammar. It's a structural pre-check for authors,
-# living in the repo where patches are written, run by pindata's `make validate`.
-# It's deliberately partial (this parser and planning stay authoritative) and
-# can't see this file, so when you change the wire grammar here, update
-# `patch.schema.json` in pindata to match.
+# Grammar mirror: flippatch's `schema/patch.schema.json` is a hand-maintained
+# JSON Schema of this patch *wire* grammar. It's a structural pre-check for
+# authors, living in the repo where patches are written, run by flippatch's
+# `make validate`. It's deliberately partial (this parser and planning stay
+# authoritative) and can't see this file, so when you change the wire grammar
+# here, update `patch.schema.json` in flippatch to match.
 RESERVED_FIELD_KEYS = frozenset(
     {
         "create",
@@ -250,17 +250,12 @@ class _PatchEntry:
     entity_type: str
     public_id: str
     # Per-entry provenance, common to all kinds. ``note`` becomes the entity's
-    # ChangeSet note; ``cite`` is a raw ``scheme:identifier`` string or a
-    # ``http(s)://`` URL, parsed + validated into a CiteSpec in build_plan.
-    # ``cite_archive`` is an optional durable-snapshot (Wayback) URL that rides
-    # the same citation; only valid alongside a ``http(s)://`` ``cite``.
-    # ``cite_locator``/``cite_quote`` are the minted CitationInstance's fields:
-    # where in the source, and the verbatim excerpt. Empty when unset.
+    # ChangeSet note; ``cite`` is the entry-level citation(s) — one
+    # :class:`_RawCite` per authored spec (a single spec or a list in the
+    # wire grammar), each parsed + validated into a CiteSpec in build_plan.
+    # Every spec fans out to every claim the entry asserts. Empty when unset.
     note: str = ""
-    cite: str = ""
-    cite_archive: str = ""
-    cite_locator: str = ""
-    cite_quote: str = ""
+    cite: tuple[_RawCite, ...] = ()
     # Inline-citation specs for *new* footnotes referenced by numeric-handle
     # ``[[cite:1]]`` markers in this entry's markdown fields, keyed by the
     # patch-local handle (``"1"``). Each value is a parsed CiteSpec minted at
@@ -489,22 +484,16 @@ def _parse_entry_body(ref: str, raw_fields: JsonBody) -> PatchEntry:
     create = _require_bool(raw_fields, "create", ref)
     delete = _require_bool(raw_fields, "delete", ref)
     note = _require_str(raw_fields, "note", ref)
-    cite, cite_archive, cite_locator, cite_quote = _normalize_raw_cite(
-        raw_fields.get("cite", ""), ref
-    )
+    cite = _normalize_raw_cites(raw_fields.get("cite", ""), ref)
     cites = _parse_cites(raw_fields.get("cites", {}), ref)
     # Authored claim fields: everything that isn't a reserved directive key.
     fields = {k: v for k, v in raw_fields.items() if k not in RESERVED_FIELD_KEYS}
-    # ``cites`` is passed per-constructor below rather than spread here — its
-    # ``dict[str, CiteSpec]`` value would widen this all-``str`` mapping.
+    # ``cite``/``cites`` are passed per-constructor below rather than spread
+    # here — their non-``str`` values would widen this all-``str`` mapping.
     common = {
         "entity_type": entity_type,
         "public_id": public_id,
         "note": note,
-        "cite": cite,
-        "cite_archive": cite_archive,
-        "cite_locator": cite_locator,
-        "cite_quote": cite_quote,
     }
 
     if create and delete:
@@ -520,16 +509,17 @@ def _parse_entry_body(ref: str, raw_fields: JsonBody) -> PatchEntry:
                 f"({', '.join(sorted(fields))}) — reassign references in a "
                 f"separate entry, in an earlier patch, before the delete"
             )
-        return DeleteEntry(**common, cites=cites)
+        return DeleteEntry(**common, cite=cite, cites=cites)
 
     if create:
         for key in ("retract", "remove"):
             if key in raw_fields:
                 raise PatchError(f"{ref}: {key!r} is meaningless on a create")
-        return CreateEntry(**common, cites=cites, fields=fields)
+        return CreateEntry(**common, cite=cite, cites=cites, fields=fields)
 
     return EditEntry(
         **common,
+        cite=cite,
         cites=cites,
         retract=_parse_retract(raw_fields, ref),
         remove=_parse_remove(raw_fields, ref),
@@ -694,43 +684,79 @@ def _normalize_raw_cite(raw_cite: object, ref: str) -> _RawCite:
     )
 
 
-def _parse_provenance(entry: PatchEntry) -> tuple[str, CiteSpec | None]:
-    """Validate an entry's ``note``/``cite`` and parse ``cite`` into a CiteSpec.
+def _normalize_raw_cites(raw_cite: object, ref: str) -> tuple[_RawCite, ...]:
+    """Split an entry-level ``cite:`` value into per-spec :class:`_RawCite`\\ s.
+
+    Three authoring forms: absent (``""`` via the ``.get`` default) → empty;
+    a single spec (string or mapping, the original grammar) → one element; a
+    **list** of such specs → one element each. Byte-identical list elements are
+    rejected here as a cheap copy-paste catch; normalized duplicates (same
+    parsed spec through differing spellings) are caught on the parsed
+    ``CiteSpec``\\ s in :func:`_parse_provenance`.
+    """
+    if raw_cite == "":
+        return ()
+    if not isinstance(raw_cite, list):
+        return (_normalize_raw_cite(raw_cite, ref),)
+    if not raw_cite:
+        raise PatchError(
+            f"{ref}: a 'cite' list must be non-empty — omit the key instead"
+        )
+    normalized: list[_RawCite] = []
+    for i, element in enumerate(raw_cite):
+        element_ref = f"{ref} cite[{i}]"
+        if not isinstance(element, str | dict) or element == "":
+            raise PatchError(
+                f"{element_ref}: each 'cite' list element must be a "
+                f"'scheme:identifier'/URL string or a "
+                f"{{ref, archive, locator, quote}} mapping"
+            )
+        raw = _normalize_raw_cite(element, element_ref)
+        if raw in normalized:
+            raise PatchError(f"{element_ref}: duplicate cite {raw.cite!r}")
+        normalized.append(raw)
+    return tuple(normalized)
+
+
+def _parse_provenance(entry: PatchEntry) -> tuple[str, tuple[CiteSpec, ...]]:
+    """Validate an entry's ``note``/``cite`` and parse ``cite`` into CiteSpecs.
 
     Length-checks each value against the DB column it lands in so an overlong
     value fails as a clear :class:`PatchError` here rather than deep in
     persistence — and mojibake-checks ``locator``/``quote``, which the bulk
     mint path (``mint_many`` → ``bulk_create``) would otherwise never validate.
-    ``cite``'s ref is one of two forms:
+    Each cite's ref is one of two forms:
 
     * ``scheme:identifier`` — the scheme must be a registered scheme and the
       identifier must normalize (``ipdb:4443``).
     * a ``http(s)://`` URL — a standalone web source. A URL that matches a
       known scheme's record pattern is rejected: cite it as ``scheme:identifier``
       so it dedups through the scheme path.
+
+    Duplicates are judged on the *parsed* spec — ``ipdb:04443`` and
+    ``ipdb:4443``, or a bare string and a mapping naming the same ref, are the
+    same evidence twice and rejected. The same ref with a differing locator or
+    quote is a distinct piece of evidence and allowed.
     """
     note = entry.note
     if len(note) > CHANGESET_NOTE_MAX_LENGTH:
         raise PatchError(
             f"{entry.ref}: note exceeds {CHANGESET_NOTE_MAX_LENGTH} characters"
         )
-    if entry.cite_archive and not entry.cite.startswith(("http://", "https://")):
-        raise PatchError(
-            f"{entry.ref}: 'cite.archive' is only valid alongside a http(s):// "
-            f"URL cite, not a scheme cite or an empty cite"
+    specs: list[CiteSpec] = []
+    for raw in entry.cite:
+        cite_ref = _parse_cite_value(raw.cite, raw.archive, entry.ref)
+        locator, quote = _validated_cite_instance_fields(
+            cite_ref, raw.locator, raw.quote, entry.ref
         )
-    if not entry.cite:
-        if entry.cite_locator or entry.cite_quote:
+        spec = CiteSpec(ref=cite_ref, locator=locator, quote=quote)
+        if spec in specs:
             raise PatchError(
-                f"{entry.ref}: 'cite.locator'/'cite.quote' need a 'cite.ref' "
-                f"to attach to"
+                f"{entry.ref}: duplicate cite {raw.cite!r} — the same source, "
+                f"locator and quote appear twice in one 'cite' list"
             )
-        return note, None
-    cite_ref = _parse_cite_value(entry.cite, entry.cite_archive, entry.ref)
-    locator, quote = _validated_cite_instance_fields(
-        cite_ref, entry.cite_locator, entry.cite_quote, entry.ref
-    )
-    return note, CiteSpec(ref=cite_ref, locator=locator, quote=quote)
+        specs.append(spec)
+    return note, tuple(specs)
 
 
 def _validated_cite_instance_fields(

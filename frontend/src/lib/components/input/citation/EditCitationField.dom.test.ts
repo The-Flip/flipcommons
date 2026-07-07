@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import EditCitationField from './EditCitationField.svelte';
+import EditCitationFieldFixture from './EditCitationField.fixture.svelte';
 
 const { GET, POST } = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -17,8 +18,9 @@ function getOpenCitationPickerButton() {
   return screen.getByRole('button', { name: /add citation/i });
 }
 
-function getLocatorInput() {
-  return screen.getByRole('textbox', { name: /citation locator/i });
+/** The row for one attached citation, located by its source-name group label. */
+function row(sourceName: string) {
+  return within(screen.getByRole('group', { name: sourceName }));
 }
 
 describe('EditCitationField', () => {
@@ -63,6 +65,8 @@ describe('EditCitationField', () => {
     render(EditCitationField, { showMixedEditWarning: true });
 
     await user.click(getOpenCitationPickerButton());
+    // The picker replaces the button that summoned it — no dead control above.
+    expect(screen.queryByRole('button', { name: /add citation/i })).not.toBeInTheDocument();
     await user.type(screen.getByRole('combobox', { name: /search sources/i }), 'flyer');
 
     const sourceResult = await screen.findByRole('option', { name: /williams flyer/i });
@@ -70,93 +74,59 @@ describe('EditCitationField', () => {
     await user.type(screen.getByRole('textbox', { name: /location in source/i }), 'p. 2');
     await fireEvent.pointerDown(screen.getByRole('button', { name: 'Insert' }));
 
-    // A locator entered at the picker's own stage lands in the panel's
-    // locator field, editable until save.
+    // A locator entered at the picker's own stage lands in the row's locator
+    // field, editable until save.
     expect(await screen.findByText('Williams Flyer')).toBeInTheDocument();
-    expect(getLocatorInput()).toHaveValue('p. 2');
+    expect(screen.getByRole('textbox', { name: /location in source/i })).toHaveValue('p. 2');
     expect(
       screen.getByText(/This citation will apply to all changed fields in this save/i),
     ).toBeInTheDocument();
+    // The list editor keeps inviting further sources.
+    expect(screen.getByRole('button', { name: 'Add another citation' })).toBeInTheDocument();
   });
 
-  it('removes an existing citation selection', async () => {
-    const user = userEvent.setup();
+  it('stacks one row per citation and pluralizes the mixed-edit warning', () => {
+    render(EditCitationFieldFixture);
 
-    render(EditCitationField, {
-      citation: {
-        citationSourceId: 7,
-        sourceName: 'Williams Flyer',
-        locator: 'p. 2',
-        quote: '',
-      },
-    });
-
-    expect(screen.getByText('Williams Flyer')).toBeInTheDocument();
-    expect(getLocatorInput()).toHaveValue('p. 2');
-    await user.click(screen.getByRole('button', { name: 'Remove citation' }));
-    expect(screen.queryByText('Williams Flyer')).not.toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: /citation locator/i })).not.toBeInTheDocument();
-  });
-
-  it('binds the quote textarea to the selected citation', async () => {
-    const user = userEvent.setup();
-    const citation = {
-      citationSourceId: 7,
-      sourceName: 'Williams Flyer',
-      locator: 'p. 2',
-      quote: '',
-    };
-
-    render(EditCitationField, { citation });
-
-    const quoteInput = screen.getByRole('textbox', { name: /quote from the source/i });
-    await user.type(quoteInput, 'Released in 1997.');
-    expect(quoteInput).toHaveValue('Released in 1997.');
-  });
-
-  it('shows no quote textarea before a citation is selected', () => {
-    render(EditCitationField, { citation: null });
+    expect(screen.getByRole('group', { name: 'Williams Flyer' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Pinside thread' })).toBeInTheDocument();
     expect(
-      screen.queryByRole('textbox', { name: /quote from the source/i }),
-    ).not.toBeInTheDocument();
+      screen.getByText(/These citations will apply to all changed fields in this save/i),
+    ).toBeInTheDocument();
   });
 
-  describe('the unprompted locator affordance', () => {
-    const locatorlessCitation = {
-      citationSourceId: 7,
-      sourceName: 'Pinside thread',
-      locator: '',
-      quote: '',
-    };
+  it('removes only the row whose Remove was clicked, writing through to the host', async () => {
+    const user = userEvent.setup();
+    render(EditCitationFieldFixture);
 
-    it('collapses the locator behind "Add a locator" when the pick has none', () => {
-      render(EditCitationField, { citation: { ...locatorlessCitation } });
-      expect(screen.queryByRole('textbox', { name: /citation locator/i })).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /add a locator/i })).toBeInTheDocument();
-    });
+    await user.click(row('Williams Flyer').getByRole('button', { name: 'Remove' }));
 
-    it('expands to a focused freeform input that binds the locator', async () => {
-      const user = userEvent.setup();
-      render(EditCitationField, { citation: { ...locatorlessCitation } });
+    expect(screen.queryByRole('group', { name: 'Williams Flyer' })).not.toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Pinside thread' })).toBeInTheDocument();
+    expect(screen.getByTestId('citations-json')).not.toHaveTextContent('Williams Flyer');
+  });
 
-      await user.click(screen.getByRole('button', { name: /add a locator/i }));
-      const input = getLocatorInput();
-      expect(input).toHaveFocus();
-      // The affordance is gone once the field is open.
-      expect(screen.queryByRole('button', { name: /add a locator/i })).not.toBeInTheDocument();
+  it('binds each row quote to its own citation', async () => {
+    const user = userEvent.setup();
+    render(EditCitationFieldFixture);
 
-      await user.type(input, '1:35');
-      expect(input).toHaveValue('1:35');
-    });
+    await user.type(
+      row('Williams Flyer').getByRole('textbox', { name: /quote/i }),
+      'Released in 1997.',
+    );
 
-    it('keeps the field open when its text is cleared mid-edit', async () => {
-      const user = userEvent.setup();
-      render(EditCitationField, { citation: { ...locatorlessCitation } });
+    expect(row('Williams Flyer').getByRole('textbox', { name: /quote/i })).toHaveValue(
+      'Released in 1997.',
+    );
+    expect(row('Pinside thread').getByRole('textbox', { name: /quote/i })).toHaveValue('');
+    expect(screen.getByTestId('citations-json')).toHaveTextContent('Released in 1997.');
+  });
 
-      await user.click(screen.getByRole('button', { name: /add a locator/i }));
-      await user.type(getLocatorInput(), '1:35');
-      await user.clear(getLocatorInput());
-      expect(getLocatorInput()).toBeInTheDocument();
-    });
+  it('shows no rows or warning before a citation is selected', () => {
+    render(EditCitationField, { citations: [], showMixedEditWarning: true });
+    expect(screen.queryByRole('textbox', { name: /quote/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/will apply to all changed fields/i)).not.toBeInTheDocument();
+    // Before any pick, the button doesn't yet say "another".
+    expect(screen.getByRole('button', { name: 'Add citation' })).toBeInTheDocument();
   });
 });

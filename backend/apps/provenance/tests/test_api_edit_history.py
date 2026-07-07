@@ -271,6 +271,25 @@ class TestEditHistoryCitations:
             "https://toybook.com/wonderland/"
         ]
 
+    def test_multiple_attached_citations_all_returned(self, client, user, pm):
+        """A claim backed by several join-attached citations surfaces every
+        one on the change, not just the first."""
+        claim = make_claim(pm, "year", 1998, user=user)
+        book = make_citation_source(name="The Encyclopedia of Pinball")
+        web = make_citation_source(name="The Toy Book", source_type="web")
+        cite_claim(claim, citation_source=book, locator="p. 42")
+        cite_claim(claim, citation_source=web)
+
+        resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        assert resp.status_code == 200
+        citations = _user_changesets(resp)[0]["changes"][0]["citations"]
+        assert {(c["source_name"], c["locator"]) for c in citations} == {
+            ("The Encyclopedia of Pinball", "p. 42"),
+            ("The Toy Book", ""),
+        }
+        # Attached evidence has no inline markers.
+        assert all(c["slug"] is None for c in citations)
+
     def test_inline_citations_returned_in_document_order(self, client, user, pm):
         """Inline ``[[cite:id:N]]`` markers in a markdown claim surface as
         citations on the change, slug-keyed and ordered by first appearance."""

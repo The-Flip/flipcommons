@@ -1,3 +1,5 @@
+<!-- @component Collapsible "Notes & Citations" panel for edit forms: the edit
+  summary note plus the multi-citation evidence list (EditCitationField). -->
 <script lang="ts">
   import EditCitationField from './EditCitationField.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
@@ -5,29 +7,29 @@
 
   interface Props {
     note?: string;
-    citation?: EditCitationSelection | null;
+    citations?: EditCitationSelection[];
     showCitation?: boolean;
     showMixedEditWarning?: boolean;
     noteLabel?: string;
-    notePlaceholder?: string;
+    noteHint?: string;
   }
 
   let {
     note = $bindable(''),
-    citation = $bindable(null),
+    citations = $bindable([]),
     showCitation = true,
     showMixedEditWarning = false,
     noteLabel = 'Edit summary',
-    notePlaceholder = 'Why are you making this change?',
+    noteHint = 'Why are you making this change?',
   }: Props = $props();
 </script>
 
 <details class="meta-section">
   <summary>{showCitation ? 'Notes & Citations' : 'Notes'}</summary>
   <div class="meta-fields">
-    <TextField label={noteLabel} bind:value={note} placeholder={notePlaceholder} optional />
+    <TextField label={noteLabel} bind:value={note} hint={noteHint} optional />
     {#if showCitation}
-      <EditCitationField bind:citation {showMixedEditWarning} />
+      <EditCitationField bind:citations {showMixedEditWarning} />
     {/if}
   </div>
 </details>

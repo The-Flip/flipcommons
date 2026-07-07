@@ -1,3 +1,4 @@
+<!-- @component Generic soft-delete confirmation page: impact/blocked preview, deletion note + citations and the undoable delete submit. -->
 <script lang="ts" generics="TResponse extends { changeset_id: number }">
   import { goto } from '$app/navigation';
   import Button from '$lib/components/ui/Button.svelte';
@@ -16,7 +17,7 @@
     public_id: string;
     submit: (
       public_id: string,
-      opts: { note: string; citation: EditCitationSelection | null },
+      opts: { note: string; citations: EditCitationSelection[] },
     ) => Promise<DeleteOutcome<TResponse>>;
     cancelHref: string;
     redirectAfterDelete: string;
@@ -24,7 +25,7 @@
     parentBreadcrumb?: ParentBreadcrumb;
     blocked: BlockedState | null;
     impact: ImpactState;
-    notePlaceholder?: string;
+    noteHint?: string;
   };
 
   let {
@@ -38,26 +39,24 @@
     parentBreadcrumb,
     blocked,
     impact,
-    notePlaceholder,
+    noteHint,
   }: Props = $props();
 
   let note = $state('');
-  let citation = $state<EditCitationSelection | null>(null);
+  let citations = $state<EditCitationSelection[]>([]);
   let formError = $state('');
   let submitting = $state(false);
 
   let isBlocked = $derived(blocked !== null);
   let heading = $derived(isBlocked ? `Can't delete “${entityName}”` : `Delete “${entityName}”?`);
   let headTitle = $derived(isBlocked ? `Can't delete ${entityName}` : `Delete ${entityName}?`);
-  let placeholder = $derived(
-    notePlaceholder ?? `Why are you deleting this ${entityLabel.toLowerCase()}?`,
-  );
+  let hint = $derived(noteHint ?? `Why are you deleting this ${entityLabel.toLowerCase()}?`);
 
   async function handleDelete() {
     formError = '';
     submitting = true;
     try {
-      const outcome = await submit(public_id, { note, citation });
+      const outcome = await submit(public_id, { note, citations });
       switch (outcome.kind) {
         case 'ok': {
           const name = entityName;
@@ -165,12 +164,7 @@
   {/if}
 
   {#if !isBlocked}
-    <NotesAndCitationsDetails
-      bind:note
-      bind:citation
-      noteLabel="Deletion note"
-      notePlaceholder={placeholder}
-    />
+    <NotesAndCitationsDetails bind:note bind:citations noteLabel="Deletion note" noteHint={hint} />
   {/if}
 
   <div class="form-footer">

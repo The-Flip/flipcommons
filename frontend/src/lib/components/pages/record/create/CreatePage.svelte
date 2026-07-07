@@ -1,3 +1,4 @@
+<!-- @component Generic create-record page: name/slug fields (slug projected from name), extra per-entity fields, creation note + citations. -->
 <script lang="ts" generics="T extends { slug: string; name: string }">
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
@@ -35,7 +36,7 @@
     cancelHref: string;
     parentBreadcrumb?: { text: string; href: string };
     projectSlug?: (name: string) => string;
-    notePlaceholder?: string;
+    noteHint?: string;
     /**
      * Field keys whose server-side errors should route to the caller
      * (via the `errors` arg on the `extraFields` snippet). Any field
@@ -67,7 +68,7 @@
     cancelHref,
     parentBreadcrumb,
     projectSlug,
-    notePlaceholder,
+    noteHint,
     extraFieldKeys,
     extraFields,
     extraBody,
@@ -86,7 +87,7 @@
   let slug = $state(initialSlug);
   let syncedSlug = $state(initialSlug);
   let note = $state('');
-  let citation = $state<EditCitationSelection | null>(null);
+  let citations = $state<EditCitationSelection[]>([]);
 
   let formError = $state('');
   let nameError = $state('');
@@ -141,7 +142,7 @@
         // never trips.
         slug: slug.trim().toLowerCase(),
         note: note || '',
-        citations: buildEditCitationsRequest(citation),
+        citations: buildEditCitationsRequest(citations),
         ...extras,
       });
 
@@ -216,9 +217,9 @@
 
   <NotesAndCitationsDetails
     bind:note
-    bind:citation
+    bind:citations
     noteLabel="Creation note"
-    notePlaceholder={notePlaceholder ?? `Why are you adding this ${entityLabel.toLowerCase()}?`}
+    noteHint={noteHint ?? `Why are you adding this ${entityLabel.toLowerCase()}?`}
   />
 
   <div class="form-footer">

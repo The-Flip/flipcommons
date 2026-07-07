@@ -292,6 +292,17 @@ cite:
   archive: https://web.archive.org/... # optional: durable snapshot; http(s) refs only
 ```
 
+`cite:` also takes a **list** of such specs (each element a bare string or a mapping) when a fact is backed by several separate sources — the policy for AI-authored patches is to cite as many facts as possible from multiple separate sources. Every citation in the list attaches to every claim the entry asserts, exactly like a single cite:
+
+```yaml
+cite:
+  - ipdb:4443
+  - ref: https://en.wikipedia.org/wiki/Medieval_Madness
+    quote: "was released in 1997"
+```
+
+The same source, locator and quote appearing twice in one list is a hard error — judged on the parsed, normalized spec, so `ref: ipdb:4443` duplicates the bare `ipdb:4443` string form. The same ref with a differing locator or quote is a distinct piece of evidence and fine. An empty list is rejected; omit the key instead.
+
 A `locator:` on a **video** cite (`youtube:<id>`) must be a start time — `95`, `1:35`, `1:02:03` or `1h2m3s` — validated against the video type's timestamp grammar at apply and stored canonical; a malformed one fails the patch loudly. Other types' locators stay freeform.
 
 `quote` is a **verbatim** excerpt: only exact source text and `[...]` ellipses belong in it — a reviewer should be able to follow the citation and ctrl-F find it. Interpretation, translation and rationale go in `note:` instead. Claims in the entry share one citation instance only when the whole citation matches — a differing quote is a distinct piece of evidence even against the same source and locator.

@@ -1,41 +1,42 @@
+/** The edit form's citation selections and the save-payload builders that turn
+ * them into `citations` content specs. */
 import type { CitationInstanceCreateSchema } from '$lib/api/schema';
 
 /** A citation the user attached to an edit: the content spec the save payload
  * sends (source + locator + quote — the backend mints the shared instance at
- * save time) plus the source name for display. */
+ * save time) plus the source name and type for display (`sourceType` keys the
+ * locator label/hint; neither rides the payload). */
 export type EditCitationSelection = {
   citationSourceId: number;
   sourceName: string;
+  sourceType: string;
   locator: string;
   quote: string;
 };
 
 type PatchBody = Record<string, unknown>;
 
-/** Build the save payload's `citations` list from the user's selection
+/** Build the save payload's `citations` list from the user's selections
  * (empty when no citation was attached). */
 export function buildEditCitationsRequest(
-  citation: EditCitationSelection | null,
+  citations: EditCitationSelection[],
 ): CitationInstanceCreateSchema[] {
-  if (!citation) return [];
-  return [
-    {
-      citation_source_id: citation.citationSourceId,
-      locator: citation.locator,
-      quote: citation.quote,
-    },
-  ];
+  return citations.map((citation) => ({
+    citation_source_id: citation.citationSourceId,
+    locator: citation.locator,
+    quote: citation.quote,
+  }));
 }
 
 export function withEditMetadata<T extends PatchBody>(
   body: T,
   note: string,
-  citation: EditCitationSelection | null,
+  citations: EditCitationSelection[],
 ): T & { note: string; citations: CitationInstanceCreateSchema[] } {
   return {
     ...body,
     note: note.trim(),
-    citations: buildEditCitationsRequest(citation),
+    citations: buildEditCitationsRequest(citations),
   };
 }
 
@@ -59,7 +60,7 @@ export function countPendingChanges(body: PatchBody | null): number {
 
 export function shouldShowMixedEditCitationWarning(
   body: PatchBody | null,
-  citation: EditCitationSelection | null,
+  citations: EditCitationSelection[],
 ): boolean {
-  return citation !== null && countPendingChanges(body) > 1;
+  return citations.length > 0 && countPendingChanges(body) > 1;
 }

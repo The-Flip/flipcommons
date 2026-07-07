@@ -56,8 +56,8 @@ type EntryNotes = dict[EntryIndex, str]
 """Each patch entry's note keyed by its ``EntryIndex`` — one ChangeSet, one note
 per entry. Produced by ``_collect_plan_provenance``, consumed by ``_persist``."""
 
-type ClaimCitations = dict[ClaimIdentity, CiteSpec]
-"""Per-claim ``CiteSpec`` keyed by claim identity — never per entry, so a
+type ClaimCitations = dict[ClaimIdentity, tuple[CiteSpec, ...]]
+"""Per-claim ``CiteSpec``s keyed by claim identity — never per entry, so a
 citation never bleeds onto unrelated claims sharing the entity. Produced by
 ``_collect_plan_provenance``, consumed by ``_attach_plan_citations``."""
 
@@ -172,7 +172,7 @@ def _patch_handles(
 def _collect_plan_provenance(
     plan: IngestPlan,
 ) -> tuple[EntryNotes, ClaimCitations, ClaimEntryIndex]:
-    """Gather per-entry ``note``/``cite_spec`` and the claim→entry grouping map.
+    """Gather per-entry ``note``/``cite_specs`` and the claim→entry grouping map.
 
     Source-agnostic — any plan may set these; today only the patch adapter does
     (from a patch entry's ``note:``/``cite:``). Runs after ``_patch_handles``,
@@ -207,12 +207,12 @@ def _collect_plan_provenance(
         # Every assertion is stamped by the front end's second pass.
         assert pca.entry_index is not None
         claim_entry_index[ident] = pca.entry_index
-        if not pca.note and pca.cite_spec is None:
+        if not pca.note and not pca.cite_specs:
             continue  # the common case: a plain assertion with no note/cite
         if pca.note:
             entry_notes[pca.entry_index] = pca.note
-        if pca.cite_spec is not None:
-            claim_citations[ident] = pca.cite_spec
+        if pca.cite_specs:
+            claim_citations[ident] = pca.cite_specs
     for pcr in plan.retractions:
         if pcr.note:
             assert pcr.entry_index is not None
@@ -359,25 +359,33 @@ def _attach_plan_citations(
 
     # One shared instance per distinct citation per ChangeSet: claims in the
     # same entry citing the same evidence reach one row through join fan-out
-    # rather than minting a clone each.
+    # rather than minting a clone each. Within one claim, two specs that are
+    # distinct as authored can still resolve to one instance content (the same
+    # URL cited bare and with an ``archive:``) — ``seen`` collapses those to
+    # one join row instead of tripping the unique (claim, instance) constraint.
     source_cache: CiteSourceCache = {}
     shared: dict[_SharedCiteKey, CitationInstance] = {}
     cited: list[tuple[Claim, _SharedCiteKey]] = []
     for claim in to_create:
-        spec = claim_citations.get(
-            ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key)
+        specs = claim_citations.get(
+            ClaimIdentity(claim.content_type_id, claim.object_id, claim.claim_key), ()
         )
-        if spec is None:
-            continue
-        source_id = _resolve_cite_source_id(spec.ref, source_cache, actor=actor)
-        key = _SharedCiteKey(claim.changeset_id, source_id, spec.locator, spec.quote)
-        if key not in shared:
-            shared[key] = CitationInstance(
-                citation_source_id=source_id,
-                locator=spec.locator,
-                quote=spec.quote,
+        seen: set[_SharedCiteKey] = set()
+        for spec in specs:
+            source_id = _resolve_cite_source_id(spec.ref, source_cache, actor=actor)
+            key = _SharedCiteKey(
+                claim.changeset_id, source_id, spec.locator, spec.quote
             )
-        cited.append((claim, key))
+            if key in seen:
+                continue
+            seen.add(key)
+            if key not in shared:
+                shared[key] = CitationInstance(
+                    citation_source_id=source_id,
+                    locator=spec.locator,
+                    quote=spec.quote,
+                )
+            cited.append((claim, key))
     if shared:
         CitationInstance.objects.mint_many(list(shared.values()))
         ClaimCitationInstance.objects.bulk_create(

@@ -1,3 +1,4 @@
+<!-- @component Shared edit-form chrome: error line, the section editor body, the Notes & Citations panel and the sticky Cancel/Save footer. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { type EditCitationSelection, buildEditCitationsRequest } from '$lib/edit-citation';
@@ -22,17 +23,17 @@
   } = $props();
 
   let note = $state('');
-  let citation = $state<EditCitationSelection | null>(null);
+  let citations = $state<EditCitationSelection[]>([]);
 
   export function resetMeta() {
     note = '';
-    citation = null;
+    citations = [];
   }
 
   function buildMeta(): SaveMeta {
     return {
       note: note || undefined,
-      citations: buildEditCitationsRequest(citation),
+      citations: buildEditCitationsRequest(citations),
     };
   }
 </script>
@@ -43,7 +44,7 @@
 
 {@render children()}
 
-<NotesAndCitationsDetails bind:note bind:citation {showCitation} {showMixedEditWarning} />
+<NotesAndCitationsDetails bind:note bind:citations {showCitation} {showMixedEditWarning} />
 
 <div class="form-footer">
   <Button variant="secondary" onclick={oncancel}>Cancel</Button>
