@@ -165,10 +165,7 @@ Creating records (rather than correcting seeded ones) has its own discipline. Pr
 
 Dependencies point one way: **Manufacturer → CorporateEntity → Title → Model**. A FK target must exist in the seed, an earlier patch, or an **earlier entry in the same patch** — forward references within a patch are unsupported, and a Location parent must exist in an _earlier patch_ (same-patch location parents don't resolve). Citation website roots must be seeded in the same or an earlier patch before any URL cite against them.
 
-Two working layouts, both valid:
-
-- **Depth-split series** (0043–0046): one patch per entity depth — all manufacturers, then all corporate entities, then titles, then models. Right for generated sweeps over many makers; the generator emits each layer from one worksheet.
-- **Vertical single-file** (0081): one maker's manufacturer → corporate entity → title(s) → model(s) in one dependency-ordered patch. Right for hand-authored one-maker additions; the whole change reviews as a unit.
+**Prefer the vertical per-manufacturer layout** (0081): one maker's manufacturer → corporate entity → title(s) → model(s) in a single dependency-ordered patch. All the related data reviews as one unit, and a generated sweep emits one such patch per maker. The depth-split series (0043–0046: all manufacturers, then all corporate entities, then titles, then models) predates same-patch dependency support and survives as precedent, not as a layout to copy — reach for a split only where the dependency genuinely spans patches (location parents; citation roots shared by many makers).
 
 ### Fill every field you can — grounded in DomainModel.md
 
@@ -181,6 +178,8 @@ A new record should carry every field the evidence supports, and no field it doe
 
 Required minimums for a `create: true`: every entity needs `name` plus a cite; a Model additionally needs `title` and `corporate_entity`. Everything else is fill-what-the-evidence-supports — a Model with no known year is acceptable (say so in the `note:`), a Model with an invented year is not.
 
+**A Model's `year` (and `month`) is the manufacture date — not the trade-show presentation, not the announcement.** A source dating a different event ("presentato Enada ottobre 1974", a reveal, a flyer date) is not `year` evidence: leave the field to a source that dates manufacture, and keep the presentation/announcement date in the `note:` (with its quote) or the description. When two sources disagree on a year, check first whether they are dating different events before treating it as a conflict.
+
 ### Uncertain values
 
 Assert the best value and record the uncertainty in the `note:` — the model has no "approximate" flag (0042 precedent: eremeka's `~1967` becomes `year: 1967` with the `~` quoted in evidence). A source's `(?)` marker, a year range, or a disputed spelling all follow the same rule: pick the best-supported value, keep the hedge visible in the note and quote. Never invent precision the source doesn't have.
@@ -191,7 +190,7 @@ A value can be hedged; a record cannot. When the source itself is unsure a machi
 
 ### Single-source facts
 
-Corroborate wherever possible — IPDB first (scheme-citable, quotable), then targeted web research — but a fact citable from only one original-research archive (eremeka, tilt.it) is still assertable: these archives are effectively primary for machines documented nowhere else. When corroboration was sought and not found, say so in the `note:` on the create. Descriptions still aim for two distinct root sources; where one root is all that exists, multiple footnotes from it beat no description.
+Corroborate wherever possible — IPDB first (scheme-citable, quotable), then targeted web research — but a fact citable from only one original-research archive (eremeka, tilt.it) is still assertable: these archives are effectively primary for obscure machines. When corroboration was sought and not found, say so in the `note:` on the create — and phrase it as the **authoring act, not a claim about the world**: "corroborating sources were sought at authoring time and none found" stays true forever, while "no other source documents the firm" is falsified by the first new website that mentions it. The same durability rule applies to any note: never write a present-tense absence or uniqueness claim ("the only known…", "documented nowhere else") when a past-tense search statement carries the same information. Descriptions still aim for two distinct root sources; where corroboration hasn't surfaced, multiple footnotes from the one root beat no description.
 
 ### Titles for one-off machines
 
@@ -199,7 +198,7 @@ Every Model gets a Title, even a one-off from a maker with one machine. Disambig
 
 ### Re-releases, kits and conversions across makers
 
-When a machine is another maker's game re-released, rebadged, kitted or converted (common among the Italian firms: Tecnoplay's Devil King re-releases Zaccaria's Mystic Star kit; Bell Games' Fantasy rethemes Bally's Centaur), model the relationship per [DomainModel.md](DomainModel.md): remakes share the original's Title; `variant_of` links cosmetic variants; `converted_from` links cabinet conversions; conversion kits carry the `conversion-kit` tag. The relationship claim needs its own cite — the source line stating the lineage — and when sources disagree about who made what, prefer the better-evidenced attribution and document the disagreement in the `note:`.
+When a machine is another maker's game re-released, rebadged, kitted or converted (common among the Italian firms: Tecnoplay's Devil King re-releases Zaccaria's Mystic Star kit; Bell Games' Fantasy rethemes Bally's Centaur), model the relationship per [DomainModel.md](DomainModel.md): remakes share the original's Title; `variant_of` links cosmetic variants; `converted_from` links cabinet conversions; conversion kits carry the `conversion-kit` tag. A source listing electromechanical and solid-state versions of a game, or 1P/2P/4P editions, describes **separate Models** (the seed's convention — "Wood's Queen (1P/2P/4P)", Combat em/ss — each its own record), not `variant_of` variants: reserve `variant_of` for cosmetic/packaging variants of one product. The relationship claim needs its own cite — the source line stating the lineage — and when sources disagree about who made what, prefer the better-evidenced attribution and document the disagreement in the `note:`.
 
 ## Corporate Entity locations
 
