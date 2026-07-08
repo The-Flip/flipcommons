@@ -136,6 +136,39 @@ describe('title layout', () => {
     expect(body).not.toMatch(/<a[^>]+href="[^"]*\/edit-history"[^>]*>\s*History/);
   });
 
+  it('renders model↔model lineage in the sidebar for a single-model title', () => {
+    // A bootlegged/original single-model title must show its lineage (the "of
+    // what") in the sidebar, co-located with the specs/tag — not buried in a
+    // main-content accordion. Sidebar bodies render server-side (unlike the
+    // lazy accordions), so both heading and target link are asserted here.
+    pageState.params.slug = 'video-pinball';
+    pageState.url = new URL('http://localhost:5173/titles/video-pinball');
+
+    const singleModelTitle = {
+      ...MOCK_TITLE,
+      name: 'Video Pinball',
+      public_id: 'video-pinball',
+      slug: 'video-pinball',
+      model_detail: makeModelDetail({
+        name: 'Video Pinball',
+        public_id: 'video-pinball',
+        slug: 'video-pinball',
+        title: { name: 'Video Pinball', public_id: 'video-pinball' },
+        bootleg_of: { name: 'Jungle Life', public_id: 'jungle-life', year: 1978 },
+        bootlegs: [{ name: 'Rugby', public_id: 'rugby-sidam', year: 1979 }],
+      }),
+    } satisfies TitleDetailSchema;
+
+    const { body } = render(Harness, {
+      props: { data: { profile: singleModelTitle } },
+    });
+
+    expect(body).toContain('Bootleg Of');
+    expect(body).toContain('/models/jungle-life');
+    expect(body).toContain('Bootlegs');
+    expect(body).toContain('/models/rugby-sidam');
+  });
+
   it('renders direct edit links on editable title sidebar sections when authenticated', () => {
     authState.isAuthenticated = true;
 

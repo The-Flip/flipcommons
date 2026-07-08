@@ -9,6 +9,7 @@
   import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
+  import { modelLineageSections } from '$lib/entities/model-lineage';
   import { title as titleInfo } from '$lib/entities/title';
   import ModelHierarchy from '$lib/components/pages/record/detail/ModelHierarchy.svelte';
   import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
@@ -263,20 +264,25 @@
         <ModelSpecsSidebar model={md} />
       </SidebarSection>
 
-      {#if md.variants.length > 0}
-        <SidebarSection heading="Variants">
+      <!-- Lineage lives in the sidebar (matching the model page), co-located
+           with the specs/tag above, rather than buried in a main-content
+           accordion. On a single-model title every lineage link is inherently
+           cross-title, so this fully replaces the page's Related Titles /
+           Bootlegs accordions. -->
+      {#each modelLineageSections(md) as { relation, links } (relation.key)}
+        <SidebarSection heading={relation.heading} note={relation.note}>
           <SidebarList>
-            {#each md.variants as variant (variant.public_id)}
+            {#each links as link (link.public_id)}
               <SidebarListItem>
-                <a href={resolve(`/models/${variant.public_id}`)}>{variant.name}</a>
-                {#if variant.year}
-                  <span class="muted">{variant.year}</span>
+                <a href={resolve('/models/[slug]', { slug: link.public_id })}>{link.name}</a>
+                {#if link.year}
+                  <span class="muted">{link.year}</span>
                 {/if}
               </SidebarListItem>
             {/each}
           </SidebarList>
         </SidebarSection>
-      {/if}
+      {/each}
 
       <ExternalLinksSidebarSection
         links={externalSiteLinks}

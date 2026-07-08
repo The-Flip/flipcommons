@@ -2,6 +2,7 @@ import { render } from 'svelte/server';
 import { describe, expect, it, vi } from 'vitest';
 import Harness from './title-detail.test-harness.svelte';
 import { load } from './+layout.server';
+import { makeModelDetail } from '$lib/api/detail-fixtures';
 import type { TitleDetailSchema } from '$lib/api/schema';
 
 const MOCK_TITLE = {
@@ -135,59 +136,55 @@ describe('title detail SSR route', () => {
     expect(body).toContain('References (2)');
   });
 
-  it('surfaces a Bootlegs section on a single-model title with reverse bootlegs', () => {
-    // A bootlegged original stays a single-model title (its bootleg lives under
-    // a different title), so its canonical page must still show it was copied.
-    // The section heading is gated on `md.bootlegs`; the accordion body itself
-    // is lazily rendered (client-side on expand), so SSR asserts the heading.
-    const modelBase = {
-      name: 'Video Pinball',
-      public_id: 'video-pinball',
-      slug: 'video-pinball',
-      description: { text: '', plain: '', html: '', citations: [], attribution: null },
-      abbreviations: [],
-      extra_data: {},
-      credits: [],
-      sources: [],
-      uploaded_media: [],
-      variant_features: [],
-      variants: [],
-      themes: [],
-      gameplay_features: [],
-      tags: [],
-      reward_types: [],
-      variant_siblings: [],
-      conversions: [],
-      remakes: [],
-      bootleg_of: null,
-      title_models: [],
-      production_quantity: '',
-    };
-
-    const withBootlegs = render(Harness, {
+  // Single-model title lineage renders in the desktop sidebar (see
+  // title-layout.test.ts) and, because that sidebar is hidden on mobile, in a
+  // mobile-only Related Models accordion here. Its body is lazy, so SSR shows
+  // the accordion heading but not the per-relation sections. The old standalone
+  // Related Titles / Bootlegs accordions must be gone.
+  it('renders a mobile Related Models accordion, not the old lineage accordions', () => {
+    const { body } = render(Harness, {
       props: {
         data: {
           profile: {
             ...MOCK_TITLE,
-            model_detail: {
-              ...modelBase,
+            model_detail: makeModelDetail({
+              name: 'Video Pinball',
+              public_id: 'video-pinball',
+              slug: 'video-pinball',
+              bootleg_of: { name: 'Jungle Life', public_id: 'jungle-life', year: 1978 },
               bootlegs: [{ name: 'Rugby', public_id: 'rugby-sidam', year: 1979 }],
-            },
+            }),
+            related_titles: [
+              {
+                relation: 'bootleg_of',
+                other_title: { name: 'Jungle Life', public_id: 'jungle-life' },
+                source_model: { name: 'Video Pinball', public_id: 'video-pinball' },
+              },
+            ],
           },
           jsonLd: {},
         },
       } as never,
     });
-    expect(withBootlegs.body).toContain('Bootlegs');
 
-    const withoutBootlegs = render(Harness, {
+    expect(body).toContain('Related Models');
+    expect(body).not.toContain('Related Titles');
+    expect(body).not.toContain('Bootlegs');
+  });
+
+  it('omits the mobile Related Models accordion when the model has no lineage', () => {
+    const { body } = render(Harness, {
       props: {
         data: {
-          profile: { ...MOCK_TITLE, model_detail: { ...modelBase, bootlegs: [] } },
+          profile: {
+            ...MOCK_TITLE,
+            model_detail: makeModelDetail({ name: 'Solo', public_id: 'solo', slug: 'solo' }),
+          },
           jsonLd: {},
         },
       } as never,
     });
-    expect(withoutBootlegs.body).not.toContain('Bootlegs');
+
+    expect(body).not.toContain('Related Models');
   });
 });
