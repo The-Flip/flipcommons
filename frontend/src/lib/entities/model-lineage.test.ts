@@ -58,6 +58,76 @@ describe('modelLineageSections', () => {
     expect(section.relation.key).toBe('bootlegs');
     expect(section.links.map((l) => l.public_id)).toEqual(['rugby-sidam', 'clone']);
   });
+
+  describe('manufacturer disambiguation', () => {
+    // A bootleg keeps the original's name, so with no maker shown it reads as a
+    // relation to itself. The maker is surfaced only when it differs.
+    const gottlieb = { name: 'D. Gottlieb & Company', public_id: 'gottlieb' };
+    const zaccaria = { name: 'Zaccaria', public_id: 'zaccaria' };
+
+    it('shows the maker when it differs from the subject', () => {
+      const model = makeModelDetail({
+        manufacturer: gottlieb,
+        bootlegs: [
+          { name: 'Jungle Life', public_id: 'jungle-life-zaccaria', manufacturer: zaccaria },
+        ],
+      });
+
+      const [section] = modelLineageSections(model);
+      // Keeps the full ref (name + public_id) so the maker renders as a link.
+      expect(section.links[0].manufacturer).toEqual(zaccaria);
+    });
+
+    it('omits the maker when it matches the subject', () => {
+      const model = makeModelDetail({
+        manufacturer: gottlieb,
+        remakes: [{ name: 'Jungle Life 2', public_id: 'jungle-life-2', manufacturer: gottlieb }],
+      });
+
+      const [section] = modelLineageSections(model);
+      expect(section.links[0].manufacturer).toBeNull();
+    });
+
+    it('shows the maker when the subject has none (still disambiguating)', () => {
+      const model = makeModelDetail({
+        manufacturer: null,
+        bootlegs: [
+          { name: 'Jungle Life', public_id: 'jungle-life-zaccaria', manufacturer: zaccaria },
+        ],
+      });
+
+      const [section] = modelLineageSections(model);
+      expect(section.links[0].manufacturer?.name).toBe('Zaccaria');
+    });
+
+    it('omits the maker when the link has none', () => {
+      const model = makeModelDetail({
+        manufacturer: gottlieb,
+        bootlegs: [{ name: 'Jungle Life', public_id: 'jungle-life-emmepi' }],
+      });
+
+      const [section] = modelLineageSections(model);
+      expect(section.links[0].manufacturer).toBeNull();
+    });
+
+    it('disambiguates variant links too, not only ModelRef relations', () => {
+      const model = makeModelDetail({
+        manufacturer: gottlieb,
+        variants: [
+          {
+            name: 'Jungle Life',
+            public_id: 'jungle-life-alt',
+            variant_features: [],
+            manufacturer: zaccaria,
+          },
+        ],
+      });
+
+      const [section] = modelLineageSections(model);
+      expect(section.relation.key).toBe('variants');
+      expect(section.links[0].manufacturer?.name).toBe('Zaccaria');
+    });
+  });
 });
 
 describe('modelLineageRelation', () => {

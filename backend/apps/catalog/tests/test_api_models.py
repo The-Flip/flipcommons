@@ -126,6 +126,36 @@ class TestModelsAPI:
         }
         assert year_claims[0]["is_winner"] is True
 
+    def test_lineage_refs_carry_manufacturer(self, client, machine_model, stern_entity):
+        # A bootleg by a different maker copies the original's name, so without a
+        # maker the reader can't tell the two same-named entries apart. The ref
+        # carries the maker for both directions of the link.
+        bootleg = make_machine_model(
+            name="Medieval Madness",
+            slug="medieval-madness-bootleg",
+            corporate_entity=stern_entity,
+            bootleg_of=machine_model,
+        )
+
+        # Reverse: the original's `bootlegs` list carries the copy's maker.
+        original = client.get(f"/api/pages/model/{machine_model.slug}").json()
+        assert original["bootlegs"][0]["manufacturer"]["name"] == "Stern"
+
+        # Forward: the copy's `bootleg_of` carries the original's maker.
+        copy = client.get(f"/api/pages/model/{bootleg.slug}").json()
+        assert copy["bootleg_of"]["manufacturer"]["name"] == "Williams"
+
+        # Variants carry a maker too, so a different-maker variant disambiguates
+        # like any other lineage link rather than being the one that can't.
+        make_machine_model(
+            name="Medieval Madness (bootleg edition)",
+            slug="medieval-madness-variant",
+            corporate_entity=stern_entity,
+            variant_of=machine_model,
+        )
+        original = client.get(f"/api/pages/model/{machine_model.slug}").json()
+        assert original["variants"][0]["manufacturer"]["name"] == "Stern"
+
     def test_get_model_detail_images(self, client, db):
         pm = make_machine_model(
             name="With Image",
