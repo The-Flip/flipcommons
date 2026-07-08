@@ -131,27 +131,60 @@ class ModelVariantSchema(Schema):
     public_id: str
     year: int | None = None
     variant_features: list[str] = []
+    # Variants are same-maker cosmetic editions by definition, so this usually
+    # matches the subject and stays hidden — but nothing enforces that, so the
+    # ref carries the maker to disambiguate the anomaly like every other lineage
+    # link rather than being the one surface that structurally can't.
+    manufacturer: EntityRef | None = None
 
 
 class ModelRef(Schema):
-    """A reference to a machine model by its public id, with optional year."""
+    """A reference to a machine model by its public id, with optional year and
+    manufacturer. The manufacturer lets a reader distinguish same-named lineage
+    links (e.g. a game and the bootlegs that copied its name) whose surfaces
+    don't otherwise show a maker."""
 
     name: str
     public_id: str
     year: int | None = None
+    manufacturer: EntityRef | None = None
+
+
+def _manufacturer_ref(pm: MachineModel | None) -> EntityRef | None:
+    """The model's manufacturer as an `EntityRef`, resolved via its corporate
+    entity (the manufacturer is a property of the maker, not the model)."""
+    if pm is None:
+        return None
+    mfr = (
+        pm.corporate_entity.manufacturer
+        if pm.corporate_entity and pm.corporate_entity.manufacturer
+        else None
+    )
+    return EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None
 
 
 def _model_ref(pm: MachineModel | None) -> ModelRef | None:
     """Build a `ModelRef` for a nullable related model (e.g. `variant_of`), or `None`."""
     if pm is None:
         return None
-    return ModelRef(name=pm.name, public_id=pm.public_id, year=pm.year)
+    return ModelRef(
+        name=pm.name,
+        public_id=pm.public_id,
+        year=pm.year,
+        manufacturer=_manufacturer_ref(pm),
+    )
 
 
 def _model_refs(models: Iterable[MachineModel]) -> list[ModelRef]:
     """Build `ModelRef`s for a related-model collection (e.g. `conversions`)."""
     return [
-        ModelRef(name=pm.name, public_id=pm.public_id, year=pm.year) for pm in models
+        ModelRef(
+            name=pm.name,
+            public_id=pm.public_id,
+            year=pm.year,
+            manufacturer=_manufacturer_ref(pm),
+        )
+        for pm in models
     ]
 
 
@@ -293,15 +326,10 @@ def _serialize_model_list(
     thumbnail_url, _ = extract_image_urls(
         pm.extra_data or {}, displayed_primary_media(pm), min_rank=min_rank
     )
-    mfr = (
-        pm.corporate_entity.manufacturer
-        if pm.corporate_entity and pm.corporate_entity.manufacturer
-        else None
-    )
     return ModelListItemSchema(
         name=pm.name,
         slug=pm.slug,
-        manufacturer=EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None,
+        manufacturer=_manufacturer_ref(pm),
         year=pm.year,
         thumbnail_url=thumbnail_url,
     )
@@ -336,6 +364,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
             public_id=v.public_id,
             year=v.year,
             variant_features=_extract_variant_features(v.extra_data or {}),
+            manufacturer=_manufacturer_ref(v),
         )
         for v in pm.variants.all()
     ]
@@ -351,6 +380,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
                 public_id=sib.public_id,
                 year=sib.year,
                 variant_features=_extract_variant_features(sib.extra_data or {}),
+                manufacturer=_manufacturer_ref(sib),
             )
             for sib in parent.variants.all()
             if sib.pk != pm.pk
@@ -363,19 +393,13 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         else None
     )
 
-    mfr = (
-        pm.corporate_entity.manufacturer
-        if pm.corporate_entity and pm.corporate_entity.manufacturer
-        else None
-    )
-
     return ModelDetailSchema(
         name=pm.name,
         public_id=pm.public_id,
         last_modified=pm.last_modified,
         slug=pm.slug,
         description=describe(pm),
-        manufacturer=EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None,
+        manufacturer=_manufacturer_ref(pm),
         corporate_entity=(
             EntityRef(
                 name=pm.corporate_entity.name, public_id=pm.corporate_entity.public_id
@@ -521,17 +545,49 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             "cabinet",
             "game_format",
             "production_status",
-            "variant_of",
-            "converted_from",
-            "remake_of",
-            "bootleg_of",
+            # `__corporate_entity__manufacturer` so the lineage ModelRefs can
+            # carry a maker for disambiguating same-named links (bootlegs etc.)
+            # without an N+1 per related row.
+            "variant_of__corporate_entity__manufacturer",
+            "converted_from__corporate_entity__manufacturer",
+            "remake_of__corporate_entity__manufacturer",
+            "bootleg_of__corporate_entity__manufacturer",
         )
         .prefetch_related(
-            "variants",
-            "variant_of__variants",
-            "conversions",
-            "remakes",
-            "bootlegs",
+            # Variants and sibling variants also carry a maker; select the
+            # manufacturer join so building their refs stays query-free.
+            Prefetch(
+                "variants",
+                queryset=MachineModel.objects.select_related(
+                    "corporate_entity__manufacturer"
+                ),
+            ),
+            Prefetch(
+                "variant_of__variants",
+                queryset=MachineModel.objects.select_related(
+                    "corporate_entity__manufacturer"
+                ),
+            ),
+            # Reverse lineage lists render as ModelRefs with a maker; select the
+            # manufacturer join here to keep the ref build query-free.
+            Prefetch(
+                "conversions",
+                queryset=MachineModel.objects.select_related(
+                    "corporate_entity__manufacturer"
+                ),
+            ),
+            Prefetch(
+                "remakes",
+                queryset=MachineModel.objects.select_related(
+                    "corporate_entity__manufacturer"
+                ),
+            ),
+            Prefetch(
+                "bootlegs",
+                queryset=MachineModel.objects.select_related(
+                    "corporate_entity__manufacturer"
+                ),
+            ),
             "themes",
             Prefetch(
                 "machinemodelgameplayfeature_set",

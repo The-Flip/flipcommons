@@ -11,10 +11,10 @@
  * the forward set stays in sync with `ENTITY_META`, so a new backend
  * model↔model FK forces a descriptor here rather than silently going unshown.
  */
-import type { ModelDetailSchema, ModelRef } from '$lib/api/schema';
+import type { EntityRef, ModelDetailSchema, ModelRef } from '$lib/api/schema';
 
 /** A related model. Forward-FK and reverse-list targets share this shape. */
-export type ModelLineageLink = Pick<ModelRef, 'name' | 'public_id' | 'year'>;
+export type ModelLineageLink = Pick<ModelRef, 'name' | 'public_id' | 'year' | 'manufacturer'>;
 
 /** Keys on {@link ModelDetailSchema} whose values are model↔model lineage links. */
 export type ModelLineageKey =
@@ -113,10 +113,27 @@ export const MODEL_LINEAGE_RELATIONS: readonly ModelLineageRelation[] = [
   },
 ];
 
+/**
+ * A resolved lineage link ready to render: identity plus the maker to show for
+ * disambiguation (or `null` to omit it).
+ */
+export interface ModelLineageLinkView {
+  name: string;
+  public_id: string;
+  year?: number | null;
+  /**
+   * Manufacturer to show (as a link to its page), or `null` when it matches the
+   * subject's maker or is unknown. Same-named links (a game and the bootlegs
+   * that copied its name) otherwise read as a relation to itself, since no
+   * reader surface shows a maker; a *differing* maker is what disambiguates them.
+   */
+  manufacturer: EntityRef | null;
+}
+
 /** A lineage relation paired with its resolved, non-empty link list. */
 export interface ModelLineageSection {
   relation: ModelLineageRelation;
-  links: ModelLineageLink[];
+  links: ModelLineageLinkView[];
 }
 
 /**
@@ -125,10 +142,23 @@ export interface ModelLineageSection {
  * the "has any lineage" check that gates the mobile Related Models accordion.
  */
 export function modelLineageSections(model: ModelDetailSchema): ModelLineageSection[] {
+  const subjectManufacturer = model.manufacturer?.name ?? null;
   const sections: ModelLineageSection[] = [];
   for (const relation of MODEL_LINEAGE_RELATIONS) {
     const links = relation.resolve(model);
-    if (links.length > 0) sections.push({ relation, links });
+    if (links.length === 0) continue;
+    sections.push({
+      relation,
+      links: links.map((link) => ({
+        name: link.name,
+        public_id: link.public_id,
+        year: link.year,
+        manufacturer:
+          link.manufacturer && link.manufacturer.name !== subjectManufacturer
+            ? link.manufacturer
+            : null,
+      })),
+    });
   }
   return sections;
 }

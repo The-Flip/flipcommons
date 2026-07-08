@@ -9,15 +9,13 @@
   import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
-  import { modelLineageSections } from '$lib/entities/model-lineage';
   import { title as titleInfo } from '$lib/entities/title';
   import ModelHierarchy from '$lib/components/pages/record/detail/ModelHierarchy.svelte';
+  import ModelLineageSidebarSections from '$lib/components/pages/record/detail/ModelLineageSidebarSections.svelte';
   import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
   import SectionEditorHost from '$lib/components/pages/record/edit/SectionEditorHost.svelte';
-  import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
-  import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';
   import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
   import TaxonomyLinkSidebarSection from '$lib/components/pages/record/detail/TaxonomyLinkSidebarSection.svelte';
   import {
@@ -269,20 +267,7 @@
            accordion. On a single-model title every lineage link is inherently
            cross-title, so this fully replaces the page's Related Titles /
            Bootlegs accordions. -->
-      {#each modelLineageSections(md) as { relation, links } (relation.key)}
-        <SidebarSection heading={relation.heading} note={relation.note}>
-          <SidebarList>
-            {#each links as link (link.public_id)}
-              <SidebarListItem>
-                <a href={resolve('/models/[slug]', { slug: link.public_id })}>{link.name}</a>
-                {#if link.year}
-                  <span class="muted">{link.year}</span>
-                {/if}
-              </SidebarListItem>
-            {/each}
-          </SidebarList>
-        </SidebarSection>
-      {/each}
+      <ModelLineageSidebarSections model={md} />
 
       <ExternalLinksSidebarSection
         links={externalSiteLinks}
@@ -480,10 +465,5 @@
 
   dd {
     color: var(--color-text);
-  }
-
-  .muted {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-0);
   }
 </style>

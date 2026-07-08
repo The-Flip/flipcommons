@@ -9,9 +9,9 @@
   import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
-  import { modelLineageSections } from '$lib/entities/model-lineage';
   import { showsProductionStatus } from '$lib/entities/production-status';
   import ModelHierarchy from '$lib/components/pages/record/detail/ModelHierarchy.svelte';
+  import ModelLineageSidebarSections from '$lib/components/pages/record/detail/ModelLineageSidebarSections.svelte';
   import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
   import RecordDetailShell from '$lib/components/pages/record/detail/RecordDetailShell.svelte';
@@ -257,20 +257,7 @@
       </SidebarList>
     </SidebarSection>
 
-    {#each modelLineageSections(model) as { relation, links } (relation.key)}
-      <SidebarSection heading={relation.heading} note={relation.note}>
-        <SidebarList>
-          {#each links as link (link.public_id)}
-            <SidebarListItem>
-              <a href={resolve('/models/[slug]', { slug: link.public_id })}>{link.name}</a>
-              {#if link.year}
-                <span class="muted">{link.year}</span>
-              {/if}
-            </SidebarListItem>
-          {/each}
-        </SidebarList>
-      </SidebarSection>
-    {/each}
+    <ModelLineageSidebarSections {model} />
 
     <ModelHierarchy
       models={model.title_models}
@@ -316,10 +303,3 @@
     {/snippet}
   </SectionEditorHost>
 {/if}
-
-<style>
-  .muted {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-0);
-  }
-</style>
