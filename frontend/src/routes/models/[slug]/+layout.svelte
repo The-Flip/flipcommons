@@ -9,6 +9,7 @@
   import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
+  import { modelLineageSections } from '$lib/entities/model-lineage';
   import { showsProductionStatus } from '$lib/entities/production-status';
   import ModelHierarchy from '$lib/components/pages/record/detail/ModelHierarchy.svelte';
   import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
@@ -256,112 +257,20 @@
       </SidebarList>
     </SidebarSection>
 
-    {#if model.variants.length > 0}
-      <SidebarSection
-        heading="Variants of this Model"
-        note="These play identically, differing only cosmetically:"
-      >
+    {#each modelLineageSections(model) as { relation, links } (relation.key)}
+      <SidebarSection heading={relation.heading} note={relation.note}>
         <SidebarList>
-          {#each model.variants as variant (variant.public_id)}
+          {#each links as link (link.public_id)}
             <SidebarListItem>
-              <a href={resolve(`/models/${variant.public_id}`)}>{variant.name}</a>
-              {#if variant.year}
-                <span class="muted">{variant.year}</span>
+              <a href={resolve('/models/[slug]', { slug: link.public_id })}>{link.name}</a>
+              {#if link.year}
+                <span class="muted">{link.year}</span>
               {/if}
             </SidebarListItem>
           {/each}
         </SidebarList>
       </SidebarSection>
-    {/if}
-
-    {#if model.variant_of}
-      <SidebarSection heading="Parent Model">
-        <SidebarList>
-          <SidebarListItem>
-            <a href={resolve(`/models/${model.variant_of.public_id}`)}>{model.variant_of.name}</a>
-            {#if model.variant_of.year}
-              <span class="muted">{model.variant_of.year}</span>
-            {/if}
-          </SidebarListItem>
-        </SidebarList>
-      </SidebarSection>
-    {/if}
-
-    {#if model.variant_siblings && model.variant_siblings.length > 0}
-      <SidebarSection heading="Other Variants">
-        <SidebarList>
-          {#each model.variant_siblings as sibling (sibling.public_id)}
-            <SidebarListItem>
-              <a href={resolve(`/models/${sibling.public_id}`)}>{sibling.name}</a>
-              {#if sibling.year}
-                <span class="muted">{sibling.year}</span>
-              {/if}
-            </SidebarListItem>
-          {/each}
-        </SidebarList>
-      </SidebarSection>
-    {/if}
-
-    {#if model.converted_from}
-      <SidebarSection heading="Converted From" note="This game was rebuilt from the hardware of:">
-        <SidebarList>
-          <SidebarListItem>
-            <a href={resolve(`/models/${model.converted_from.public_id}`)}
-              >{model.converted_from.name}</a
-            >
-            {#if model.converted_from.year}
-              <span class="muted">{model.converted_from.year}</span>
-            {/if}
-          </SidebarListItem>
-        </SidebarList>
-      </SidebarSection>
-    {/if}
-
-    {#if model.conversions && model.conversions.length > 0}
-      <SidebarSection
-        heading="Conversions"
-        note="Different games rebuilt from this machine's hardware:"
-      >
-        <SidebarList>
-          {#each model.conversions as conversion (conversion.public_id)}
-            <SidebarListItem>
-              <a href={resolve(`/models/${conversion.public_id}`)}>{conversion.name}</a>
-              {#if conversion.year}
-                <span class="muted">{conversion.year}</span>
-              {/if}
-            </SidebarListItem>
-          {/each}
-        </SidebarList>
-      </SidebarSection>
-    {/if}
-
-    {#if model.remake_of}
-      <SidebarSection heading="Remake Of" note="This game is a remake of:">
-        <SidebarList>
-          <SidebarListItem>
-            <a href={resolve(`/models/${model.remake_of.public_id}`)}>{model.remake_of.name}</a>
-            {#if model.remake_of.year}
-              <span class="muted">{model.remake_of.year}</span>
-            {/if}
-          </SidebarListItem>
-        </SidebarList>
-      </SidebarSection>
-    {/if}
-
-    {#if model.remakes && model.remakes.length > 0}
-      <SidebarSection heading="Remakes" note="Later remakes of this machine:">
-        <SidebarList>
-          {#each model.remakes as remake (remake.public_id)}
-            <SidebarListItem>
-              <a href={resolve(`/models/${remake.public_id}`)}>{remake.name}</a>
-              {#if remake.year}
-                <span class="muted">{remake.year}</span>
-              {/if}
-            </SidebarListItem>
-          {/each}
-        </SidebarList>
-      </SidebarSection>
-    {/if}
+    {/each}
 
     <ModelHierarchy
       models={model.title_models}

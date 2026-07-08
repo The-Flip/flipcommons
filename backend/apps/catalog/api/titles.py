@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from django.db.models import (
     Prefetch,
@@ -310,11 +310,22 @@ class AgreedSpecsSchema(Schema):
     production_quantity: str | None = None
 
 
-class CrossTitleLinkSchema(Schema):
-    """A cross-title relationship (converted_from / remake_of) contributed by
-    a specific model under the current title."""
+# Lineage relations that can point at a model under a different title. Same-title
+# links are filtered out in `_collect_related_titles`; `bootleg_of` is the only one
+# that routinely crosses titles.
+CrossTitleRelation = Literal["converted_from", "remake_of", "bootleg_of"]
+_CROSS_TITLE_RELATIONS: tuple[CrossTitleRelation, ...] = (
+    "converted_from",
+    "remake_of",
+    "bootleg_of",
+)
 
-    relation: str
+
+class CrossTitleLinkSchema(Schema):
+    """A cross-title lineage relationship (converted_from / remake_of /
+    bootleg_of) contributed by a specific model under the current title."""
+
+    relation: CrossTitleRelation
     other_title: EntityRef
     source_model: EntityRef
 
@@ -478,15 +489,17 @@ def _collect_related_titles(
 ) -> list[CrossTitleLinkSchema]:
     """Collect cross-title ``converted_from`` / ``remake_of`` links.
 
-    For each model under *current_title* that has a ``converted_from`` or
-    ``remake_of`` pointing to a model under a *different* title, emit one
-    entry per link with the relation kind, the other title, and the source
-    model under the current title.  Same-title relations (LE→Pro conversion,
-    within-title remakes) are excluded — they are not cross-title content.
+    For each model under *current_title* that has a ``converted_from``,
+    ``remake_of`` or ``bootleg_of`` pointing to a model under a *different*
+    title, emit one entry per link with the relation kind, the other title,
+    and the source model under the current title.  Same-title relations
+    (LE→Pro conversion, within-title remakes) are excluded — they are not
+    cross-title content.  ``bootleg_of`` routinely crosses titles, so it is
+    the most common source of these links.
     """
     items: list[CrossTitleLinkSchema] = []
     for m in models:
-        for attr in ("converted_from", "remake_of"):
+        for attr in _CROSS_TITLE_RELATIONS:
             other = getattr(m, attr, None)
             if other is None or other.title_id is None:
                 continue
@@ -662,6 +675,7 @@ def _title_models_prefetch() -> Prefetch[str, Any, str]:
             "production_status",
             "converted_from__title",
             "remake_of__title",
+            "bootleg_of__title",
         )
         .prefetch_related(
             "themes",

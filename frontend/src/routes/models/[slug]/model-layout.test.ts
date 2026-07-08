@@ -46,4 +46,20 @@ describe('model layout', () => {
     expect(body).toContain('>Back<');
     expect(body).toContain('/models/medieval-madness');
   });
+
+  it('renders bootleg relationships in the desktop sidebar', () => {
+    const model = makeModelDetail({
+      bootleg_of: { name: 'Video Pinball', public_id: 'video-pinball', year: 1978 },
+      bootlegs: [{ name: 'Rugby', public_id: 'rugby-sidam', year: 1979 }],
+    });
+
+    const { body } = render(Harness, {
+      props: { data: { profile: model } },
+    });
+
+    expect(body).toContain('Bootleg Of');
+    expect(body).toContain('/models/video-pinball');
+    expect(body).toContain('Bootlegs');
+    expect(body).toContain('/models/rugby-sidam');
+  });
 });

@@ -2,6 +2,7 @@ import { render } from 'svelte/server';
 import { describe, expect, it, vi } from 'vitest';
 import Harness from './title-detail.test-harness.svelte';
 import { load } from './+layout.server';
+import { makeModelDetail } from '$lib/api/detail-fixtures';
 import type { TitleDetailSchema } from '$lib/api/schema';
 
 const MOCK_TITLE = {
@@ -117,6 +118,8 @@ describe('title detail SSR route', () => {
         variant_siblings: [],
         conversions: [],
         remakes: [],
+        bootleg_of: null,
+        bootlegs: [],
         title_models: [],
         production_quantity: '',
       },
@@ -131,5 +134,57 @@ describe('title detail SSR route', () => {
     // Three citation entries, two unique indices — heading should reflect
     // the deduplicated count to match what ReferencesSection renders.
     expect(body).toContain('References (2)');
+  });
+
+  // Single-model title lineage renders in the desktop sidebar (see
+  // title-layout.test.ts) and, because that sidebar is hidden on mobile, in a
+  // mobile-only Related Models accordion here. Its body is lazy, so SSR shows
+  // the accordion heading but not the per-relation sections. The old standalone
+  // Related Titles / Bootlegs accordions must be gone.
+  it('renders a mobile Related Models accordion, not the old lineage accordions', () => {
+    const { body } = render(Harness, {
+      props: {
+        data: {
+          profile: {
+            ...MOCK_TITLE,
+            model_detail: makeModelDetail({
+              name: 'Video Pinball',
+              public_id: 'video-pinball',
+              slug: 'video-pinball',
+              bootleg_of: { name: 'Jungle Life', public_id: 'jungle-life', year: 1978 },
+              bootlegs: [{ name: 'Rugby', public_id: 'rugby-sidam', year: 1979 }],
+            }),
+            related_titles: [
+              {
+                relation: 'bootleg_of',
+                other_title: { name: 'Jungle Life', public_id: 'jungle-life' },
+                source_model: { name: 'Video Pinball', public_id: 'video-pinball' },
+              },
+            ],
+          },
+          jsonLd: {},
+        },
+      } as never,
+    });
+
+    expect(body).toContain('Related Models');
+    expect(body).not.toContain('Related Titles');
+    expect(body).not.toContain('Bootlegs');
+  });
+
+  it('omits the mobile Related Models accordion when the model has no lineage', () => {
+    const { body } = render(Harness, {
+      props: {
+        data: {
+          profile: {
+            ...MOCK_TITLE,
+            model_detail: makeModelDetail({ name: 'Solo', public_id: 'solo', slug: 'solo' }),
+          },
+          jsonLd: {},
+        },
+      } as never,
+    });
+
+    expect(body).not.toContain('Related Models');
   });
 });

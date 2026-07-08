@@ -5,6 +5,7 @@
   import CreditsList from '$lib/components/pages/record/detail/CreditsList.svelte';
   import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
+  import ModelLineageGroups from '$lib/components/pages/record/detail/ModelLineageGroups.svelte';
   import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
@@ -14,6 +15,7 @@
   import { titleAreaEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
+  import { modelLineageSections } from '$lib/entities/model-lineage';
   import { title as titleInfo } from '$lib/entities/title';
 
   let { data } = $props();
@@ -113,10 +115,15 @@
     <ModelSpecsSidebar model={md} section="features" />
   </AccordionSection>
 
-  {#if title.related_titles && title.related_titles.length > 0}
-    <AccordionSection heading="Related Titles">
-      <RelatedTitlesSection relatedTitles={title.related_titles} />
-    </AccordionSection>
+  <!-- Lineage renders in the sidebar for single-model titles (see +layout.svelte),
+       co-located with the specs/tag. The sidebar is desktop-only on the detail
+       route, so mobile gets the same links here in a Related Models accordion. -->
+  {#if modelLineageSections(md).length > 0}
+    <div class="mobile-only">
+      <AccordionSection heading="Related Models">
+        <ModelLineageGroups model={md} />
+      </AccordionSection>
+    </div>
   {/if}
 
   {#if md.credits.length > 0}
@@ -382,5 +389,17 @@
     display: flex;
     flex-direction: column;
     gap: var(--size-2);
+  }
+
+  /* Lineage lives in the desktop sidebar; this accordion is its mobile surface,
+     hidden once the sidebar appears at the wide breakpoint. */
+  .mobile-only {
+    display: block;
+  }
+
+  @media (--breakpoint-wide) {
+    .mobile-only {
+      display: none;
+    }
   }
 </style>
