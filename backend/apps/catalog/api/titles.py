@@ -80,6 +80,7 @@ from ..models import (
     MachineModelGameplayFeature,
     Title,
 )
+from ._search_sections import tiered_search_rows
 from ._title_facets import (
     Bounds,
     FacetOption,
@@ -887,15 +888,20 @@ class TitleSearchSectionSchema(Schema):
 
 def title_search_section(q: str, *, min_rank: int) -> TitleSearchSectionSchema:
     """Top ≤10 title cards matching ``q``, composing the **ordered** listing
-    queryset + card serializer so results match ``/titles?q=`` exactly. Slices
-    ``[:11]`` to detect ">10" without a second ``count()``."""
-    rows = list(
-        ordered_titles(TitleFilters(q=q)).prefetch_related(_card_models_prefetch())[:11]
+    queryset + card serializer so name matches rank exactly as ``/titles?q=``.
+
+    Titles matched only by their description rank *below* the name/alias tier
+    (:func:`tiered_search_rows`, gated on the shared ``DescribedModel``), and —
+    unlike the name tier — never reach the record-creation ``query_count`` gate."""
+    prefetch = _card_models_prefetch()
+    result = tiered_search_rows(
+        ordered_titles(TitleFilters(q=q)).prefetch_related(prefetch),
+        ordered_titles(TitleFilters()).prefetch_related(prefetch),
+        q,
     )
-    items = rows[:10]
     return TitleSearchSectionSchema(
-        items=[_serialize_card(t, min_rank=min_rank) for t in items],
-        has_more=len(rows) > 10,
+        items=[_serialize_card(t, min_rank=min_rank) for t in result.rows],
+        has_more=result.has_more,
     )
 
 

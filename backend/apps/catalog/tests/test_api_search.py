@@ -5,6 +5,12 @@ reusing its listing-page ``q`` + card serializer, capped at 10 with a ``has_more
 flag. These tests pin: the ``<3``-char no-work guard, per-section matching + card
 shape, the 10-cap, the diacritic dev/prod split, fixed section order, that a section
 preserves its listing sort, the all-empty case, and a constant-query N+1 guard.
+
+Global search also has a **description tier**: rows matched only by their
+``DescribedModel.description`` rank *below* the name/alias tier, and — unlike the name
+tier — never feed the record-creation ``query_count`` gate. Those tests pin the tier
+surfacing per section, the name-before-description ranking, combined ``has_more``, and
+the gate staying blind to description-only matches.
 """
 
 import pytest
@@ -23,14 +29,16 @@ CARD_KEYS = {
 }
 
 
-def _make_manufacturer(name: str, slug: str, source: Source) -> Manufacturer:
-    mfr = Manufacturer.objects.create(name=name, slug=slug)
+def _make_manufacturer(
+    name: str, slug: str, source: Source, description: str = ""
+) -> Manufacturer:
+    mfr = Manufacturer.objects.create(name=name, slug=slug, description=description)
     make_claim(mfr, "name", name, ingest_source=source)
     return mfr
 
 
-def _make_person(name: str, slug: str, source: Source) -> Person:
-    p = Person.objects.create(name=name, slug=slug)
+def _make_person(name: str, slug: str, source: Source, description: str = "") -> Person:
+    p = Person.objects.create(name=name, slug=slug, description=description)
     make_claim(p, "name", name, ingest_source=source)
     return p
 
@@ -185,3 +193,102 @@ def test_query_count_is_constant_across_result_size(
     large = query_count()
 
     assert small == large
+
+
+# ---------------------------------------------------------------------------
+# Description tier (global search only)
+# ---------------------------------------------------------------------------
+
+
+def test_description_only_match_surfaces_in_each_section(client, db, bootstrap_source):
+    """A row whose ``name`` does NOT contain the term but whose ``description`` does
+    still appears in its section — the ``DescribedModel`` tier, applied uniformly to
+    every describable entity in global search."""
+    Title.objects.create(
+        name="Bright Star",
+        slug="bright-star",
+        description="A cabinet with xylophone art.",
+    )
+    _make_manufacturer(
+        "Acme Corp",
+        "acme-corp",
+        bootstrap_source,
+        description="Builds xylophone machines.",
+    )
+    _make_person(
+        "Jane Doe",
+        "jane-doe",
+        bootstrap_source,
+        description="Designed the xylophone ramp.",
+    )
+
+    data = client.get("/api/pages/search?q=xylophone").json()
+    assert [t["name"] for t in data["titles"]["items"]] == ["Bright Star"]
+    assert [m["name"] for m in data["manufacturers"]["items"]] == ["Acme Corp"]
+    assert [p["name"] for p in data["people"]["items"]] == ["Jane Doe"]
+
+
+def test_name_matches_rank_above_description_matches(client, db, williams_entity):
+    """Tiering: a name match precedes a description-only match even when the
+    description match would otherwise sort first. The name-tier title is older, so a
+    single ``latest_year``-ordered query (tiering broken) would rank the newer
+    description-only title first — this pins the two-tier ordering."""
+    zeta = Title.objects.create(name="Zeta Classic", slug="zeta-classic")
+    make_machine_model(
+        title=zeta, name="Zeta Classic", slug="zeta-classic-m", year=1985
+    )
+    retro = Title.objects.create(
+        name="Retro Blast",
+        slug="retro-blast",
+        description="Includes a zeta bonus mode.",
+    )
+    make_machine_model(title=retro, name="Retro Blast", slug="retro-blast-m", year=2020)
+
+    names = [
+        t["name"]
+        for t in client.get("/api/pages/search?q=zeta").json()["titles"]["items"]
+    ]
+    assert names == ["Zeta Classic", "Retro Blast"]
+
+
+def test_has_more_counts_name_and_description_combined(client, db, bootstrap_source):
+    """``has_more`` reflects both tiers: a section under 11 name matches but over 11
+    combined (name + description) still reports more."""
+    for i in range(6):
+        _make_manufacturer(f"Combo {i}", f"combo-name-{i}", bootstrap_source)
+    for i in range(6):
+        _make_manufacturer(
+            f"Filler {i}",
+            f"combo-desc-{i}",
+            bootstrap_source,
+            description="a combo maker",
+        )
+
+    section = client.get("/api/pages/search?q=combo").json()["manufacturers"]
+    assert len(section["items"]) == 10
+    assert section["has_more"] is True
+    # Name-tier rows come first; a description-only row fills a remaining slot.
+    names = [m["name"] for m in section["items"]]
+    assert names[:6] == [f"Combo {i}" for i in range(6)]
+    assert any(n.startswith("Filler") for n in names)
+
+
+def test_description_match_does_not_feed_the_create_gate(client, db, bootstrap_source):
+    """The core constraint: a description-only match is surfaced by global search but
+    must NOT count toward the listing endpoints' ``query_count`` — otherwise the
+    "create this record?" prompt would wrongly vanish for a name that is still free."""
+    Title.objects.create(
+        name="Blank Slate", slug="blank-slate", description="mentions a widget"
+    )
+    _make_manufacturer(
+        "Empty Co", "empty-co", bootstrap_source, description="assembles a widget"
+    )
+
+    # Global search DOES surface them (description tier)…
+    search = client.get("/api/pages/search?q=widget").json()
+    assert [t["name"] for t in search["titles"]["items"]] == ["Blank Slate"]
+    assert [m["name"] for m in search["manufacturers"]["items"]] == ["Empty Co"]
+
+    # …but the record-creation gate stays blind, so the prompt still fires.
+    assert client.get("/api/pages/titles?q=widget").json()["query_count"] == 0
+    assert client.get("/api/pages/manufacturers?q=widget").json()["query_count"] == 0

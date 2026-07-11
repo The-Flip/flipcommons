@@ -50,6 +50,7 @@ from ._manufacturer_facets import (
     ordered,
     query_count,
 )
+from ._search_sections import tiered_search_rows
 from ._typing import FacetOptionDict, HasModelCount
 from .helpers import (
     collect_titles,
@@ -445,11 +446,15 @@ def manufacturer_search_section(
     q: str, *, min_rank: int
 ) -> ManufacturerSearchSectionSchema:
     """Top ≤10 manufacturer cards matching ``q``, composing the **ordered** listing
-    queryset + card serializer so results match ``/manufacturers?q=`` exactly. Slices
-    ``[:11]`` to detect ">10" without a second ``count()``."""
-    rows = list(ordered(MfrFilters(q=q))[:11])
-    items = rows[:10]
-    thumbnails = _page_thumbnails([m.pk for m in items], min_rank=min_rank)
+    queryset + card serializer so name matches rank exactly as ``/manufacturers?q=``.
+
+    Manufacturers matched only by their description rank *below* the name/alias tier
+    (:func:`tiered_search_rows`, gated on the shared ``DescribedModel``), and — unlike
+    the name tier — never reach the record-creation ``query_count`` gate. The
+    ``model_count`` annotation rides on ``ordered(...)`` so description-tier rows
+    serialize identically."""
+    result = tiered_search_rows(ordered(MfrFilters(q=q)), ordered(MfrFilters()), q)
+    thumbnails = _page_thumbnails([m.pk for m in result.rows], min_rank=min_rank)
     return ManufacturerSearchSectionSchema(
         items=[
             ManufacturerCardSchema(
@@ -458,9 +463,9 @@ def manufacturer_search_section(
                 model_count=cast(HasModelCount, m).model_count,
                 thumbnail_url=thumbnails.get(m.pk),
             )
-            for m in items
+            for m in result.rows
         ],
-        has_more=len(rows) > 10,
+        has_more=result.has_more,
     )
 
 

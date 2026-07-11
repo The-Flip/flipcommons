@@ -60,6 +60,7 @@ from ..engine.entity_api.listing import _apply_list_q, paginated_list_response
 from ..engine.entity_api.own_media import own_media
 from ..engine.query.constants import NameAliasQuery, PageParam
 from ..models import Credit, MachineModel, Person
+from ._search_sections import tiered_search_rows
 from ._typing import HasCreditCount
 from .images import (
     extract_image_urls,
@@ -329,20 +330,25 @@ class PersonSearchSectionSchema(Schema):
 
 def person_search_section(q: str) -> PersonSearchSectionSchema:
     """Top ≤10 person cards matching ``q``, composing the listing queryset + card
-    serializer so results match ``/people?q=`` exactly. Re-applies the explicit
+    serializer so name matches rank exactly as ``/people?q=``. Re-applies the explicit
     ``("-credit_count", "name", "pk")`` total order (``_person_list_qs`` omits the
     ``pk`` tiebreak, so the slice would be nondeterministic on credit-count ties).
-    Slices ``[:11]`` to detect ">10" without a second ``count()``."""
+
+    People matched only by their description rank *below* the name/alias tier
+    (:func:`tiered_search_rows`, gated on the shared ``DescribedModel``)."""
     # Splat a tuple (not literal args) so django-stubs doesn't field-check
     # ``credit_count`` — it's a real annotation from ``_person_list_qs`` that the stub
     # can't see across the ``_apply_list_q`` boundary (same shape ``list_people`` uses).
     ordering = ("-credit_count", "name", "pk")
-    rows = list(_apply_list_q(_person_list_qs(), q).order_by(*ordering)[:11])
-    items = rows[:10]
-    thumbnails = _people_thumbnails([p.pk for p in items])
+    result = tiered_search_rows(
+        _apply_list_q(_person_list_qs(), q).order_by(*ordering),
+        _person_list_qs().order_by(*ordering),
+        q,
+    )
+    thumbnails = _people_thumbnails([p.pk for p in result.rows])
     return PersonSearchSectionSchema(
-        items=[_serialize_person_row(p, thumbnails.get(p.pk)) for p in items],
-        has_more=len(rows) > 10,
+        items=[_serialize_person_row(p, thumbnails.get(p.pk)) for p in result.rows],
+        has_more=result.has_more,
     )
 
 
