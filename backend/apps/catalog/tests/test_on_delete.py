@@ -267,6 +267,16 @@ class TestProtectBlocksDeletion:
             machine.delete()
         bootleg.delete()
 
+    def test_licensed_build_of_protected(self, machine):
+        licensed_build = make_machine_model(
+            name="MM Licensed Build",
+            slug="mm-licensed-build",
+            licensed_build_of=machine,
+        )
+        with pytest.raises(ProtectedError):
+            machine.delete()
+        licensed_build.delete()
+
     def test_location_parent_protected(self, db):
         parent = Location.objects.create(name="USA", slug="usa", location_path="usa")
         Location.objects.create(

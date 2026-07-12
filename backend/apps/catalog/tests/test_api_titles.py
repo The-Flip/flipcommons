@@ -270,6 +270,29 @@ class TestTitleDetailAggregation:
             ("remake_of", "remake-src"),
         ]
 
+    def test_related_titles_union_licensed_build_cross_title(self, client, db):
+        """A cross-title `licensed_build_of` link appears in related_titles."""
+        us_title = Title.objects.create(name="Party Animal", slug="party-animal")
+        us_model = make_machine_model(
+            name="Party Animal", slug="party-animal", title=us_title
+        )
+
+        de_title = Title.objects.create(name="Party Animal DE", slug="party-animal-2")
+        make_machine_model(
+            name="Party Animal",
+            slug="party-animal-2",
+            title=de_title,
+            licensed_build_of=us_model,
+        )
+
+        resp = client.get(f"/api/pages/title/{de_title.slug}")
+        data = resp.json()
+        related = data["related_titles"]
+        assert len(related) == 1
+        assert related[0]["relation"] == "licensed_build_of"
+        assert related[0]["other_title"]["public_id"] == "party-animal"
+        assert related[0]["source_model"]["public_id"] == "party-animal-2"
+
     def test_media_aggregation_empty_by_default(self, client, title, williams_entity):
         make_machine_model(name="MM", slug="mm-1", title=title)
         resp = client.get(f"/api/pages/title/{title.slug}")

@@ -188,6 +188,7 @@ class TestExportDriftGuard:
             "converted_from",
             "remake_of",
             "bootleg_of",
+            "licensed_build_of",
             "corporate_entity",
             "system",
             "technology_generation",

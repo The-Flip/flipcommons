@@ -55,6 +55,7 @@ describe('RelatedModelsEditor dirty-state contract', () => {
     converted_from: null,
     remake_of: null,
     bootleg_of: null,
+    licensed_build_of: null,
   };
 
   it('reports clean state initially and dirty + PATCHes the slug after selecting', async () => {
@@ -97,6 +98,23 @@ describe('RelatedModelsEditor dirty-state contract', () => {
       '/api/models/{public_id}/claims/',
       expect.objectContaining({
         body: expect.objectContaining({ fields: { bootleg_of: 'attack-from-mars' } }),
+      }),
+    );
+  });
+
+  it('PATCHes the licensed_build_of field after selecting a licensed-build source', async () => {
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });
+
+    await user.click(screen.getByRole('combobox', { name: 'Licensed build of' }));
+    await user.click(await screen.findByRole('option', { name: 'Attack from Mars' }));
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1));
+    expect(PATCH).toHaveBeenCalledWith(
+      '/api/models/{public_id}/claims/',
+      expect.objectContaining({
+        body: expect.objectContaining({ fields: { licensed_build_of: 'attack-from-mars' } }),
       }),
     );
   });

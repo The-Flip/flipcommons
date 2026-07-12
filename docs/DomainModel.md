@@ -12,6 +12,7 @@ erDiagram
     Model ||--o{ Model : remake_of
     Model ||--o{ Model : converted_from
     Model ||--o{ Model : bootleg_of
+    Model ||--o{ Model : licensed_build_of
 
     Manufacturer ||--o{ CorporateEntity : incarnations
     CorporateEntity ||--o{ Model : produced
@@ -85,6 +86,17 @@ A **bootleg** is a complete machine, built from scratch, that is an unauthorized
 | Rugby         | Rugby         | Sidam         | Video Pinball (other Title) |
 
 Unlike `remake_of` and `converted_from`, which stay within one Title by convention, `bootleg_of` records only _what was copied_ — where the bootleg's Model is filed is an independent editorial decision. A renamed bootleg (Sidam's _Rugby_, a copy of Atari's _Video Pinball_) sits under its own Title, so `bootleg_of` is the one lineage relation that routinely points across Titles; a same-name copy (LTD's _Space Poker_) may share the original's Title.
+
+### Licensed builds
+
+A **licensed build** is the authorized twin of a bootleg: a complete machine built by a licensee or foreign subsidiary that reproduces another maker's design under license, for another market. It is linked to the original via `licensed_build_of`, carries the `licensed-build` tag and keeps a normal `produced` production status. Bally Wulff — Bally's German subsidiary — built its own production run of several Bally designs for Europe, usually with a different translite and no US model number; the pinball community and IPDB catalog these as distinct machines by a distinct maker, not as notes on the US entry. The same pattern covers Spanish (Recel/Petaco, Segasa/Sonic), Italian (Nuova Bell) and Brazilian (Taito do Brasil) licensees.
+
+| Title        | Model                       | Manufacturer | Year | licensed_build_of           |
+| ------------ | --------------------------- | ------------ | ---- | --------------------------- |
+| Party Animal | Party Animal (Bally Midway) | Bally Midway | 1987 | —                           |
+| Party Animal | Party Animal (Bally Wulff)  | Bally Wulff  | 1987 | Party Animal (Bally Midway) |
+
+Like `bootleg_of`, `licensed_build_of` records only _what design was reproduced_ — Title placement is independent, so it routinely points across Titles when a licensee renamed the game, while a same-name build may share the original's Title. The distinction from a `bootleg` is authorization: a licensed build is an official, licensed production; a bootleg is an unauthorized copy.
 
 ## Franchises & Series
 
@@ -216,6 +228,7 @@ Classification labels that don't fit elsewhere. As related clusters of tags emer
 - `unofficial-retheme`: a re-skin by a non-manufacturer (fan/operator/modder). Paired with the `aftermarket` production status.
 - `manufacturer-retheme`: an official re-theme a manufacturer applied to one of its own designs.
 - `bootleg`: a complete machine, built from scratch, that is an unauthorized copy of another maker's game. See [Bootlegs](#bootlegs); the `bootleg_of` link records the copied machine.
+- `licensed-build`: a complete machine built by a licensee or foreign subsidiary that reproduces another maker's design under license. The authorized twin of `bootleg`. See [Licensed builds](#licensed-builds); the `licensed_build_of` link records the reproduced machine.
 
 ### Cabinet
 
