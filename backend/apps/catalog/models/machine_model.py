@@ -172,6 +172,21 @@ class MachineModel(
         ),
     )
 
+    #: Self-FK lineage fields that mark a model as a subordinate *copy* of
+    #: another model. Unlike a cosmetic ``variant_of`` (which collapses out of
+    #: its Title's machine list entirely), a copy is a distinct machine that
+    #: still appears on the Title page — it just must never be the Title's
+    #: representative ("first") model, so :meth:`first_model_candidates` sorts
+    #: copies AFTER originals. That way the Big Ben Title heads with the Williams
+    #: original, not its Segasa licensed build, even though the two share a year.
+    #: ``converted_from`` (a genuinely different machine) and ``remake_of`` (a
+    #: distinct product) are originals in their own right and are deliberately
+    #: absent. A new lineage FK must decide here rather than silently inheriting.
+    SUBORDINATE_COPY_FIELDS: ClassVar[tuple[str, ...]] = (
+        "bootleg_of",
+        "licensed_build_of",
+    )
+
     # Core filterable fields
     corporate_entity = models.ForeignKey(
         "CorporateEntity",
@@ -444,7 +459,14 @@ class MachineModel(
     @classmethod
     def first_model_candidates(cls) -> models.QuerySet[MachineModel]:
         """The "first model" rule, uncorrelated: a title's active, non-variant
-        models, earliest-first by ``(year, name)``.
+        models, ordered so its representative (the first row) is an original —
+        subordinate copies sort last, then earliest-first by ``(year, name)``.
+
+        Variants (cosmetic/LE) collapse out entirely. Bootleg / licensed-build
+        copies (:attr:`SUBORDINATE_COPY_FIELDS`) stay in the list but sort after
+        every original, so ``.first()`` / ``[:1]`` never picks a copy over the
+        model it copies — while a Title whose *only* model is a copy still
+        surfaces it.
 
         Single source for that identity/order rule. Callers layer their own
         ``select_related`` / ``prefetch_related`` for their read shape, and
@@ -452,10 +474,19 @@ class MachineModel(
         ``title=OuterRef("pk")``. Keeping it in one place stops the subquery, the
         title/card prefetches and the kiosk typeahead from drifting apart.
         """
+        is_copy = models.Case(
+            *(
+                models.When(**{f"{field}__isnull": False}, then=models.Value(1))
+                for field in cls.SUBORDINATE_COPY_FIELDS
+            ),
+            default=models.Value(0),
+            output_field=models.IntegerField(),
+        )
         return (
             cls.objects.active()
             .filter(variant_of__isnull=True)
-            .order_by("year", "name")
+            .alias(_is_subordinate_copy=is_copy)
+            .order_by("_is_subordinate_copy", "year", "name")
         )
 
     @classmethod
