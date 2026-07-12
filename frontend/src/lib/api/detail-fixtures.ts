@@ -50,6 +50,8 @@ export function makeModelDetail(overrides: Partial<ModelDetailSchema> = {}): Mod
     remakes: [],
     bootleg_of: null,
     bootlegs: [],
+    licensed_build_of: null,
+    licensed_builds: [],
     themes: [],
     tags: [],
     gameplay_features: [],

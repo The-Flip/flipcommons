@@ -512,6 +512,11 @@ class TestHierarchyFKValidation:
         resp = _patch(client, pm.slug, {"fields": {"bootleg_of": pm.slug}})
         assert resp.status_code == 422
 
+    def test_self_referential_licensed_build_of_rejected(self, client, user, pm):
+        client.force_login(user)
+        resp = _patch(client, pm.slug, {"fields": {"licensed_build_of": pm.slug}})
+        assert resp.status_code == 422
+
     def test_valid_hierarchy_fk_succeeds(self, client, user, pm):
         parent = make_machine_model(name="Star Trek", slug="star-trek", year=1991)
         client.force_login(user)
@@ -530,3 +535,15 @@ class TestHierarchyFKValidation:
         resp = _patch(client, pm.slug, {"fields": {"bootleg_of": original.slug}})
         assert resp.status_code == 200
         assert resp.json()["bootleg_of"]["public_id"] == "video-pinball"
+
+    def test_licensed_build_of_resolves_across_titles(self, client, user, pm):
+        # `licensed_build_of` may point at a model under a different Title, like
+        # `bootleg_of`; make_machine_model gives `original` its own Title.
+        original = make_machine_model(
+            name="Party Animal", slug="party-animal", year=1987
+        )
+        assert original.title_id != pm.title_id
+        client.force_login(user)
+        resp = _patch(client, pm.slug, {"fields": {"licensed_build_of": original.slug}})
+        assert resp.status_code == 200
+        assert resp.json()["licensed_build_of"]["public_id"] == "party-animal"

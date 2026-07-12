@@ -6,7 +6,7 @@
  * instead of in near-clone `{#if}` blocks per surface.
  *
  * `entity-meta.ts` only knows the forward FKs (`variant_of`, `converted_from`,
- * `remake_of`, `bootleg_of`) and carries no display copy, so the reverse lists
+ * `remake_of`, `bootleg_of`, `licensed_build_of`) and carries no display copy, so the reverse lists
  * and the headings/notes are declared here. `model-lineage.test.ts` guards that
  * the forward set stays in sync with `ENTITY_META`, so a new backend
  * model↔model FK forces a descriptor here rather than silently going unshown.
@@ -26,7 +26,9 @@ export type ModelLineageKey =
   | 'remake_of'
   | 'remakes'
   | 'bootleg_of'
-  | 'bootlegs';
+  | 'bootlegs'
+  | 'licensed_build_of'
+  | 'licensed_builds';
 
 /** Display + accessor descriptor for one lineage relation. */
 export interface ModelLineageRelation {
@@ -110,6 +112,20 @@ export const MODEL_LINEAGE_RELATIONS: readonly ModelLineageRelation[] = [
     note: 'Unauthorized copies of this game:',
     many: true,
     resolve: (m) => m.bootlegs ?? [],
+  },
+  {
+    key: 'licensed_build_of',
+    heading: 'Licensed Build Of',
+    note: 'This game is an officially licensed build of:',
+    many: false,
+    resolve: (m) => one(m.licensed_build_of),
+  },
+  {
+    key: 'licensed_builds',
+    heading: 'Licensed Builds',
+    note: 'Officially licensed builds of this game:',
+    many: true,
+    resolve: (m) => m.licensed_builds ?? [],
   },
 ];
 

@@ -159,6 +159,18 @@ class MachineModel(
             "Unlike remakes and conversions, may belong to a different Title."
         ),
     )
+    licensed_build_of = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="licensed_builds",
+        null=True,
+        blank=True,
+        help_text=(
+            "Original machine this is an officially licensed build (by a "
+            "licensee or subsidiary) of. Like bootlegs, may belong to a "
+            "different Title."
+        ),
+    )
 
     # Core filterable fields
     corporate_entity = models.ForeignKey(
@@ -413,6 +425,13 @@ class MachineModel(
                 | ~models.Q(bootleg_of=models.F("pk")),
                 name="catalog_machinemodel_bootleg_of_not_self",
                 violation_error_message="A machine model cannot be a bootleg of itself.",
+                violation_error_code="cross_field",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(licensed_build_of__isnull=True)
+                | ~models.Q(licensed_build_of=models.F("pk")),
+                name="catalog_machinemodel_licensed_build_of_not_self",
+                violation_error_message="A machine model cannot be a licensed build of itself.",
                 violation_error_code="cross_field",
             ),
         ]

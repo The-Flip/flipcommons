@@ -22,4 +22,21 @@ describe('RelatedTitlesSection', () => {
       expect.stringContaining('video-pinball'),
     );
   });
+
+  it('labels a cross-title licensed_build_of link as "is a licensed build of"', () => {
+    const relatedTitles: CrossTitleLinkSchema[] = [
+      {
+        relation: 'licensed_build_of',
+        other_title: { name: 'Party Animal', public_id: 'party-animal' },
+        source_model: { name: 'Party Animal', public_id: 'party-animal-2' },
+      },
+    ];
+    render(RelatedTitlesSection, { props: { relatedTitles } });
+
+    expect(screen.getByText('is a licensed build of')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Party Animal' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('party-animal'),
+    );
+  });
 });

@@ -312,19 +312,23 @@ class AgreedSpecsSchema(Schema):
 
 
 # Lineage relations that can point at a model under a different title. Same-title
-# links are filtered out in `_collect_related_titles`; `bootleg_of` is the only one
-# that routinely crosses titles.
-CrossTitleRelation = Literal["converted_from", "remake_of", "bootleg_of"]
+# links are filtered out in `_collect_related_titles`; `bootleg_of` and
+# `licensed_build_of` are the ones that routinely cross titles.
+CrossTitleRelation = Literal[
+    "converted_from", "remake_of", "bootleg_of", "licensed_build_of"
+]
 _CROSS_TITLE_RELATIONS: tuple[CrossTitleRelation, ...] = (
     "converted_from",
     "remake_of",
     "bootleg_of",
+    "licensed_build_of",
 )
 
 
 class CrossTitleLinkSchema(Schema):
     """A cross-title lineage relationship (converted_from / remake_of /
-    bootleg_of) contributed by a specific model under the current title."""
+    bootleg_of / licensed_build_of) contributed by a specific model under the
+    current title."""
 
     relation: CrossTitleRelation
     other_title: EntityRef
@@ -488,15 +492,15 @@ def _compute_agreed_specs(models: Sequence[MachineModel]) -> AgreedSpecsSchema:
 def _collect_related_titles(
     models: Sequence[MachineModel], current_title: Title
 ) -> list[CrossTitleLinkSchema]:
-    """Collect cross-title ``converted_from`` / ``remake_of`` links.
+    """Collect cross-title lineage links (see ``_CROSS_TITLE_RELATIONS``).
 
     For each model under *current_title* that has a ``converted_from``,
-    ``remake_of`` or ``bootleg_of`` pointing to a model under a *different*
-    title, emit one entry per link with the relation kind, the other title,
-    and the source model under the current title.  Same-title relations
-    (LE→Pro conversion, within-title remakes) are excluded — they are not
-    cross-title content.  ``bootleg_of`` routinely crosses titles, so it is
-    the most common source of these links.
+    ``remake_of``, ``bootleg_of`` or ``licensed_build_of`` pointing to a model
+    under a *different* title, emit one entry per link with the relation kind,
+    the other title, and the source model under the current title.  Same-title
+    relations (LE→Pro conversion, within-title remakes) are excluded — they are
+    not cross-title content.  ``bootleg_of`` and ``licensed_build_of`` routinely
+    cross titles, so they are the most common source of these links.
     """
     items: list[CrossTitleLinkSchema] = []
     for m in models:
@@ -677,6 +681,7 @@ def _title_models_prefetch() -> Prefetch[str, Any, str]:
             "converted_from__title",
             "remake_of__title",
             "bootleg_of__title",
+            "licensed_build_of__title",
         )
         .prefetch_related(
             "themes",

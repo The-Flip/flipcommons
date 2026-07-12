@@ -231,6 +231,8 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     remakes: list[ModelRef] = []
     bootleg_of: ModelRef | None = None
     bootlegs: list[ModelRef] = []
+    licensed_build_of: ModelRef | None = None
+    licensed_builds: list[ModelRef] = []
     title_models: list[TitleModelSchema] = []
 
 
@@ -453,6 +455,8 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         remakes=_model_refs(pm.remakes.all()),
         bootleg_of=_model_ref(pm.bootleg_of),
         bootlegs=_model_refs(pm.bootlegs.all()),
+        licensed_build_of=_model_ref(pm.licensed_build_of),
+        licensed_builds=_model_refs(pm.licensed_builds.all()),
         title=EntityRef(name=pm.title.name, public_id=pm.title.public_id),
         cabinet=(
             EntityRef(name=pm.cabinet.name, public_id=pm.cabinet.public_id)
@@ -552,6 +556,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             "converted_from__corporate_entity__manufacturer",
             "remake_of__corporate_entity__manufacturer",
             "bootleg_of__corporate_entity__manufacturer",
+            "licensed_build_of__corporate_entity__manufacturer",
         )
         .prefetch_related(
             # Variants and sibling variants also carry a maker; select the
@@ -584,6 +589,12 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             ),
             Prefetch(
                 "bootlegs",
+                queryset=MachineModel.objects.select_related(
+                    "corporate_entity__manufacturer"
+                ),
+            ),
+            Prefetch(
+                "licensed_builds",
                 queryset=MachineModel.objects.select_related(
                     "corporate_entity__manufacturer"
                 ),
@@ -827,7 +838,7 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
 
 
 _SELF_REF_FIELDS: frozenset[str] = frozenset(
-    {"variant_of", "converted_from", "remake_of", "bootleg_of"}
+    {"variant_of", "converted_from", "remake_of", "bootleg_of", "licensed_build_of"}
 )
 
 

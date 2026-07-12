@@ -156,6 +156,29 @@ class TestModelsAPI:
         original = client.get(f"/api/pages/model/{machine_model.slug}").json()
         assert original["variants"][0]["manufacturer"]["name"] == "Stern"
 
+    def test_licensed_build_lineage_both_directions(
+        self, client, machine_model, stern_entity
+    ):
+        # A licensed build by a licensee/subsidiary reproduces the original's
+        # design; the link is serialized in both directions with the maker for
+        # disambiguation, exactly like `bootleg_of`.
+        licensed_build = make_machine_model(
+            name="Medieval Madness",
+            slug="medieval-madness-licensed-build",
+            corporate_entity=stern_entity,
+            licensed_build_of=machine_model,
+        )
+
+        # Reverse: the original's `licensed_builds` list carries the build's maker.
+        original = client.get(f"/api/pages/model/{machine_model.slug}").json()
+        assert original["licensed_builds"][0]["public_id"] == licensed_build.slug
+        assert original["licensed_builds"][0]["manufacturer"]["name"] == "Stern"
+
+        # Forward: the build's `licensed_build_of` carries the original's maker.
+        build = client.get(f"/api/pages/model/{licensed_build.slug}").json()
+        assert build["licensed_build_of"]["public_id"] == machine_model.slug
+        assert build["licensed_build_of"]["manufacturer"]["name"] == "Williams"
+
     def test_get_model_detail_images(self, client, db):
         pm = make_machine_model(
             name="With Image",

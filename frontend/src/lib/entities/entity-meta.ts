@@ -184,6 +184,7 @@ export const ENTITY_META = {
       display_type: { entity_target_type: 'display-type', many: false },
       game_format: { entity_target_type: 'game-format', many: false },
       gameplay_features: { entity_target_type: 'gameplay-feature', many: true },
+      licensed_build_of: { entity_target_type: 'model', many: false },
       production_status: { entity_target_type: 'production-status', many: false },
       remake_of: { entity_target_type: 'model', many: false },
       reward_types: { entity_target_type: 'reward-type', many: true },

@@ -12,6 +12,7 @@
     { field: 'converted_from', label: 'Converted from' },
     { field: 'remake_of', label: 'Remake of' },
     { field: 'bootleg_of', label: 'Bootleg of' },
+    { field: 'licensed_build_of', label: 'Licensed build of' },
   ] as const;
 
   type HierarchyField = (typeof HIERARCHY_FIELDS)[number]['field'];
@@ -22,6 +23,7 @@
     converted_from?: HierarchyRef;
     remake_of?: HierarchyRef;
     bootleg_of?: HierarchyRef;
+    licensed_build_of?: HierarchyRef;
   };
 
   let {
@@ -38,6 +40,7 @@
     converted_from: initialData.converted_from?.public_id ?? '',
     remake_of: initialData.remake_of?.public_id ?? '',
     bootleg_of: initialData.bootleg_of?.public_id ?? '',
+    licensed_build_of: initialData.licensed_build_of?.public_id ?? '',
   }));
 
   let fieldErrors = $state<FieldErrors>({});
@@ -49,6 +52,7 @@
     converted_from: fields.converted_from ?? '',
     remake_of: fields.remake_of ?? '',
     bootleg_of: fields.bootleg_of ?? '',
+    licensed_build_of: fields.licensed_build_of ?? '',
   });
   let dirty = $derived.by(() => Object.keys(diffScalarFields(current, original)).length > 0);
 
