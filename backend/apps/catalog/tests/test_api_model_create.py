@@ -104,13 +104,13 @@ class TestCreateHappyPath:
             Claim.objects.filter(changeset=cs).values_list("field_name", flat=True)
         )
         # Note: status claim for Model is written under field_name "status"
-        # just like Title. The title claim (FK-by-slug) is also written.
+        # just like Title. The title FK claim is also written.
         assert claim_fields == {"name", "slug", "status", "title"}
 
-        # The title claim carries the parent's slug, matching ingest's
+        # The title claim carries the parent's PK, matching ingest's
         # convention for FK claims on MachineModel.
         title_claim = Claim.objects.get(changeset=cs, field_name="title")
-        assert title_claim.value == "godzilla"
+        assert title_claim.value == godzilla.pk
 
     def test_note_and_empty_citation(self, client, user, godzilla):
         client.force_login(user)

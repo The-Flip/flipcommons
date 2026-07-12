@@ -60,7 +60,6 @@ class Location(CatalogModel, TimeStampedModel):
     # still renders — only authoring through the picker is gated.
 
     claims_exempt: ClassVar[frozenset[str]] = frozenset({"location_path"})
-    claim_fk_lookups: ClassVar[dict[str, str]] = {"parent": "location_path"}
     soft_delete_usage_blockers: ClassVar[frozenset[str]] = frozenset(
         {"corporate_entities"}
     )

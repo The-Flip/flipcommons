@@ -90,7 +90,8 @@ OPDB_EXTRA_DATA = {
         }
     ],
     "opdb.images.__permissiveness_rank": 50,
-    "opdb.images.__license_slug": "cc-by-sa-4-0",
+    # __license_id is stamped per-test: the sidecar holds a License PK, so a
+    # module-level constant can't carry it (no DB at import time).
 }
 
 
@@ -206,10 +207,38 @@ class TestImageAttribution:
         assert attr is None
 
     def test_external_media_returns_attribution(self):
-        attr = extract_image_attribution(OPDB_EXTRA_DATA, primary_media=[])
+        from apps.core.models import License
+
+        lic = License.objects.create(
+            name="CC BY-SA 4.0",
+            slug="cc-by-sa-4-0",
+            short_name="CC BY-SA",
+            permissiveness_rank=50,
+        )
+        extra = {**OPDB_EXTRA_DATA, "opdb.images.__license_id": lic.pk}
+        attr = extract_image_attribution(extra, primary_media=[])
 
         assert attr is not None
         assert attr.license_slug == "cc-by-sa-4-0"
+
+    def test_attribution_reflects_current_license_slug_after_rename(self):
+        # The sidecar stores the License PK, so a slug rename shows through
+        # immediately at read time — no stale attribution.
+        from apps.core.models import License
+
+        lic = License.objects.create(
+            name="CC BY-SA 4.0",
+            slug="cc-by-sa-4-0",
+            short_name="CC BY-SA",
+            permissiveness_rank=50,
+        )
+        extra = {**OPDB_EXTRA_DATA, "opdb.images.__license_id": lic.pk}
+        lic.slug = "cc-by-sa-4"
+        lic.save(update_fields=["slug"])
+
+        attr = extract_image_attribution(extra, primary_media=[])
+        assert attr is not None
+        assert attr.license_slug == "cc-by-sa-4"
 
     def test_no_media_returns_none(self):
         attr = extract_image_attribution({}, primary_media=[])
@@ -324,7 +353,18 @@ class TestModelDetailApiResponse:
         assert resp.json()["uploaded_media"] == []
 
     def test_detail_falls_back_to_external(self, client, machine_model):
-        machine_model.extra_data = OPDB_EXTRA_DATA
+        from apps.core.models import License
+
+        lic = License.objects.create(
+            name="CC BY-SA 4.0",
+            slug="cc-by-sa-4-0",
+            short_name="CC BY-SA",
+            permissiveness_rank=50,
+        )
+        machine_model.extra_data = {
+            **OPDB_EXTRA_DATA,
+            "opdb.images.__license_id": lic.pk,
+        }
         machine_model.save(update_fields=["extra_data"])
 
         resp = client.get(f"/api/pages/model/{machine_model.public_id}")

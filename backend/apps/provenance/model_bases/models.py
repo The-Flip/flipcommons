@@ -68,10 +68,6 @@ class ClaimControlledModel(models.Model):
     # Subclasses override with their own ``frozenset``.
     claims_exempt: ClassVar[frozenset[str]] = frozenset()
 
-    # Per-FK override of the lookup field for claim writes/resolution.
-    # Default empty; subclasses override (do not mutate) — see Location.
-    claim_fk_lookups: ClassVar[dict[str, str]] = {}
-
     claims = GenericRelation("provenance.Claim")
 
     class Meta:

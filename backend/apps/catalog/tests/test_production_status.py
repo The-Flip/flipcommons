@@ -143,14 +143,17 @@ class TestProductionStatusFacet:
 
 @pytest.mark.django_db
 class TestProductionStatusClaimResolution:
-    def test_fk_claim_resolves_by_slug(self):
-        """A ``production_status`` claim with a slug value materializes the FK —
-        the path the pindata data patch (``production_status: unreleased``) takes."""
-        ProductionStatus.objects.create(name="Unreleased", slug="unreleased")
+    def test_fk_claim_resolves_by_pk(self):
+        """A ``production_status`` claim (target PK) materializes the FK —
+        the path a data patch (``production_status: unreleased``) takes after
+        plan-time slug→PK resolution."""
+        unreleased = ProductionStatus.objects.create(
+            name="Unreleased", slug="unreleased"
+        )
         model = make_machine_model(name="Cancelled Project")
         src = Source.objects.get(slug="bootstrap")
 
-        make_claim(model, "production_status", "unreleased", ingest_source=src)
+        make_claim(model, "production_status", unreleased.pk, ingest_source=src)
         bulk_resolve()
 
         model.refresh_from_db()

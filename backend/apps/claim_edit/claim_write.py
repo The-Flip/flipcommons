@@ -22,7 +22,7 @@ from typing import Any, NamedTuple, NoReturn, cast
 
 from django.contrib.auth.models import AbstractBaseUser, AnonymousUser
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, models, transaction
 
 from apps.accounts.models import User
 from apps.citation.models import CitationInstance, ReservedCitationSlug
@@ -32,6 +32,7 @@ from apps.core.wikilinks import get_link_type, get_patterns
 from apps.provenance.changeset_writer import record_changeset
 from apps.provenance.citation_writer import create_citation_instance
 from apps.provenance.claim_writer import _assert_claim
+from apps.provenance.claims import resolve_fk_target_pk
 from apps.provenance.models import (
     ChangeSet,
     ChangeSetAction,
@@ -214,6 +215,20 @@ def validate_scalar_fields[M: ClaimControlledModel](
                 errors.add_field(field_name, "This field cannot be cleared.")
                 continue
             value = ""
+        # FK fields arrive as public_id strings (the API's addressing scheme)
+        # but claims store the target's PK — the durable identity that
+        # survives slug renames. Resolve here, at the request boundary, so an
+        # unknown target is a field error rather than a silent NULL at
+        # materialization. Already-int values (internal callers) pass through.
+        if field_obj.is_relation and isinstance(value, str) and value != "":
+            related = field_obj.related_model
+            assert isinstance(related, type)
+            assert issubclass(related, models.Model)
+            target_pk = resolve_fk_target_pk(related, value)
+            if target_pk is None:
+                errors.add_field(field_name, f"Unknown {related.__name__}: {value!r}.")
+                continue
+            value = target_pk
         try:
             value = validate_claim_value(
                 field_name, value, model_class, deferred_wikilinks

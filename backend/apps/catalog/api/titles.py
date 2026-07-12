@@ -1071,10 +1071,8 @@ def create_model(
             ClaimSpec(field_name="name", value=name),
             ClaimSpec(field_name="slug", value=slug),
             ClaimSpec(field_name="status", value="active"),
-            # Title FK claim value uses the parent's public_id (defaults to
-            # slug for slug-keyed models). Shape matches ingest's
-            # MODEL_CLAIM_FIELDS["title"] ← entry["title_slug"] convention.
-            ClaimSpec(field_name="title", value=title.public_id),
+            # FK claim values store the target's PK — immune to slug renames.
+            ClaimSpec(field_name="title", value=title.pk),
         ],
         user=request.user,
         note=data.note,

@@ -717,7 +717,7 @@ def test_handle_refs_resolves_fk(test_source):
             ),
             _assert(
                 field_name="manufacturer",
-                value="williams",
+                value_ref="mfr-williams",
                 handle="ce-williams",
             ),
         ],
@@ -778,7 +778,7 @@ def test_handle_refs_forward_reference_raises(test_source):
             ),
             _assert(
                 field_name="manufacturer",
-                value="williams",
+                value_ref="mfr-williams",
                 handle="ce-williams",
             ),
         ],
@@ -835,7 +835,7 @@ def test_handle_refs_kwarg_conflict_raises(test_source):
             ),
             _assert(
                 field_name="manufacturer",
-                value="williams",
+                value_ref="mfr-williams",
                 handle="ce-williams",
             ),
         ],

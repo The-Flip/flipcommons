@@ -541,11 +541,25 @@ def validate_claim_value(
 
     field = model_class._meta.get_field(field_name)
 
-    # FK fields and reverse relations are validated elsewhere (or not at all).
-    # Narrowing to Field also rules out ForeignObjectRel, which lacks
+    # Reverse relations are validated elsewhere (or not at all). Narrowing to
+    # Field also rules out ForeignObjectRel, which lacks
     # validators/blank/to_python/choices.
-    if not isinstance(field, models.Field) or field.is_relation:
+    if not isinstance(field, models.Field):
         return value
+
+    # FK claim values store the target's integer PK — the durable identity
+    # that survives slug renames. Write boundaries (the interactive editor,
+    # the patch planner) resolve authored public_ids to PKs before minting,
+    # so a string here is a bug in the caller, not user input. ``None`` and
+    # ``""`` are the two clear sentinels. Target existence is checked
+    # separately (see ``validate_fk_claims_batch``).
+    if field.is_relation:
+        if value is None or value == "" or type(value) is int:
+            return value
+        raise ValidationError(
+            f"FK claim values must be integer PKs; got "
+            f"{type(value).__name__} {value!r} for field '{field_name}'."
+        )
 
     # Mojibake check — subsumes the old step-0 check in the bulk ingest path.
     if isinstance(value, str) and validate_no_mojibake in field.validators:
@@ -741,8 +755,9 @@ def validate_fk_claims_batch(
     """Batch-validate FK scalar claims. Returns list of rejected claims.
 
     Groups claims by ``(model_class, field_name)``, then issues one query
-    per group to check target existence. Mirrors the ``claim_fk_lookups``
-    convention from the resolver.
+    per group to check target existence. Values are the target's integer PK
+    (``validate_claim_value`` enforces the shape); this check answers only
+    whether the target row still exists.
     """
     groups: dict[
         tuple[type[ClaimControlledModel], str],
@@ -758,39 +773,47 @@ def validate_fk_claims_batch(
         assert isinstance(target_model, type)
         assert issubclass(target_model, models.Model)
         target_manager = target_model._default_manager
-        lookup_key = model_class.claim_fk_lookups.get(field_name, "slug")
 
-        # Collect all non-empty slug values, keyed by claim identity.
-        slug_by_claim: dict[int, str] = {}
+        # Collect all non-empty PK values, keyed by claim identity.
+        # ``type(v) is int`` excludes bools and any stray string — a non-int
+        # non-empty value is rejected outright (it can never resolve).
+        pk_by_claim: dict[int, int] = {}
         for claim in group:
             v = claim.value
-            if v is not None and v != "":
-                slug_by_claim[id(claim)] = str(v).strip()
-
-        slugs = set(slug_by_claim.values())
-        if not slugs:
-            continue
-
-        existing = set(
-            target_manager.filter(**{f"{lookup_key}__in": slugs}).values_list(
-                lookup_key, flat=True
-            )
-        )
-
-        for claim in group:
-            slug = slug_by_claim.get(id(claim))
-            if slug is None:
+            if v is None or v == "":
                 continue
-            if slug not in existing:
+            if type(v) is not int:
                 logger.warning(
                     "Rejected FK claim %s.%s (object_id=%s): "
-                    "target %s with %s=%r does not exist",
+                    "value must be an integer PK, got %r",
+                    model_class.__name__,
+                    field_name,
+                    claim.object_id,
+                    v,
+                )
+                rejected.append(claim)
+                continue
+            pk_by_claim[id(claim)] = v
+
+        pks = set(pk_by_claim.values())
+        if not pks:
+            continue
+
+        existing = set(target_manager.filter(pk__in=pks).values_list("pk", flat=True))
+
+        for claim in group:
+            pk = pk_by_claim.get(id(claim))
+            if pk is None:
+                continue
+            if pk not in existing:
+                logger.warning(
+                    "Rejected FK claim %s.%s (object_id=%s): "
+                    "target %s with pk=%r does not exist",
                     model_class.__name__,
                     field_name,
                     claim.object_id,
                     target_model.__name__,
-                    lookup_key,
-                    slug,
+                    pk,
                 )
                 rejected.append(claim)
 

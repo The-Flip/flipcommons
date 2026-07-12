@@ -100,8 +100,8 @@ class Claim(models.Model):
         max_length=255,
         help_text=(
             "Identity key for uniqueness. Equals field_name for scalar claims. "
-            "For relationship claims, encodes the relationship identity "
-            '(e.g., "credit|person:pat-lawlor|role:art").'
+            "For relationship claims, encodes the relationship identity by "
+            'target PK (e.g., "credit|person:42|role:7").'
         ),
     )
     changeset = models.ForeignKey(
@@ -118,7 +118,14 @@ class Claim(models.Model):
         blank=True,
         help_text="The changeset that deactivated this claim (user revert or full_sync retraction).",
     )
-    value = models.JSONField()
+    value = models.JSONField(
+        help_text=(
+            "The claimed value. Scalars store the raw value; FK fields store "
+            'the target row\'s integer PK ("" / null mean cleared); '
+            "relationship claims store the identity dict plus 'exists'. "
+            "PKs — never slugs — so renames can't invalidate claims."
+        ),
+    )
     # Read-only convenience over the explicit ClaimCitationInstance join (the
     # write path creates join rows directly, never .add()/.set() here). Inline
     # [[cite:...]] instances carry no join row, so they never appear in it.

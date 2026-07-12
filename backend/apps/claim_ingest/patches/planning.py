@@ -230,11 +230,12 @@ def _reject_reassign_onto_delete(doc: PatchDoc, registry: PatchEntityRegistry) -
     patch). All are the one contradiction — point-at-X and delete-X in one file —
     and rejecting them is the strict, defensible choice.
 
-    Covers FK claims on **both creates and edits** — its own walk over the patch's
-    asserted FK values. The create slice is the ``_lookup_pk`` mirror: ``_lookup_pk``
-    resolves FK values while building create kwargs, so a guard blind to create FKs
-    couldn't mirror it. The M2M-member-onto-deleted analogue (a relationship
-    membership, not an FK) is out of scope here.
+    Covers FK claims on **both creates and edits** — its own walk over the
+    patch's asserted FK values. The create slice mirrors
+    ``resolve_fk_target_pk``: it resolves FK values while building create
+    kwargs, so a guard blind to create FKs couldn't mirror it. The
+    M2M-member-onto-deleted analogue (a relationship membership, not an FK) is
+    out of scope here.
     """
     # Right operand: every entity this patch soft-deletes (root + cascade), via
     # the same ``cascade_targets`` walk ``plan_soft_delete`` uses, so the guard's
@@ -283,10 +284,11 @@ def _reject_reassign_onto_delete(doc: PatchDoc, registry: PatchEntityRegistry) -
             django_field = model_class._meta.get_field(field_name)
             if not isinstance(django_field, models.ForeignKey):
                 continue
-            # Canonicalize exactly as apply-time FK resolution does, so a
+            # Canonicalize exactly as plan-time FK resolution does, so a
             # whitespace-padded or numeric value can't slip the guard yet still
-            # resolve onto the deleted entity (``_resolve_fk_generic`` str-casts
-            # and trims before the public_id lookup). One shared definition.
+            # resolve onto the deleted entity (``resolve_fk_target_pk``
+            # str-casts and trims before the public_id lookup). One shared
+            # definition.
             public_id = normalize_fk_value(value)
             if public_id is None:
                 continue  # falsy/blank FK value resolves to nothing
@@ -551,9 +553,12 @@ def _process_entry(
         if key in claim_fields:
             _emit_direct(
                 plan,
+                model_class,
                 key,
                 value,
                 target,
+                entry,
+                registry=registry,
                 note=note,
                 cite_specs=cite_specs,
                 inline_cites=inline_cites_by_field.get(key, {}),

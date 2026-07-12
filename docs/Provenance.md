@@ -27,13 +27,13 @@ Key properties:
 - **Target**: Any catalog entity (via generic foreign key)
 - **Attribution**: Exactly one of `source` (external) or `user` (human contributor)
 - **Field**: `field_name` identifies what's being claimed (e.g. "name", "year", "credit")
-- **Claim key**: Uniqueness identifier. For scalar fields this equals the field name. For relationships it encodes the relationship identity (e.g. `credit|person:pat-lawlor|role:design`)
-- **Value**: The asserted data (JSON)
+- **Claim key**: Uniqueness identifier. For scalar fields this equals the field name. For relationships it encodes the relationship identity by target PK (e.g. `credit|person:42|role:7`)
+- **Value**: The asserted data (JSON). FK fields store the target row's integer PK — never its slug — so renaming an entity's slug cannot invalidate claims that reference it. Slugs appear only at authoring boundaries (patch YAML, API payloads) and are resolved to PKs at write time.
 - **Superseding**: A new claim from the same source for the same claim key deactivates the old one
 
 ### Scalar Claims
 
-Simple field values: name, year, player count, manufacturer (by slug), etc.
+Simple field values: name, year, player count, manufacturer (by target PK), etc.
 
 ### Relationship Claims
 

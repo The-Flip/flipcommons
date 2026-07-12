@@ -212,7 +212,7 @@ def build_changes(
 
     if ctx is None:
         ctx = resolve_display_context(
-            FieldValue(c.field_name, c.value)
+            FieldValue(c.field_name, c.value, model)
             for c in chain(own, rets, *history_by_key.values())
         )
     if inline_citations is None:
@@ -351,9 +351,11 @@ def build_edit_history(
     #    any changeset will render. ``all_claims`` is the superset (current
     #    claims, retracted claims, and history chains all draw from it), so one
     #    pass suffices.
-    ctx = resolve_display_context(FieldValue(c.field_name, c.value) for c in all_claims)
-    inline_citations = resolve_inline_citations(c.value for c in all_claims)
     model = type(entity)
+    ctx = resolve_display_context(
+        FieldValue(c.field_name, c.value, model) for c in all_claims
+    )
+    inline_citations = resolve_inline_citations(c.value for c in all_claims)
 
     # 5. Build response.
     result: list[ChangeSetSchema] = []

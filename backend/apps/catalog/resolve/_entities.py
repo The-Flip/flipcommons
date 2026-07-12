@@ -20,7 +20,6 @@ from apps.core.types import (
     ClaimFieldName,
     ClaimSubjectId,
     JsonBody,
-    PublicId,
 )
 from apps.provenance.claim_ranking_in_db import ranked_claims
 from apps.provenance.licensing import (
@@ -62,7 +61,7 @@ def _sync_markdown_references(obj: ClaimControlledModel) -> None:
 # This is shared between bulk and single-object claims resolution.
 # ------------------------------------------------------------------
 
-type FKLookups = Mapping[str, Mapping[PublicId, models.Model]]
+type FKLookups = Mapping[str, Mapping[int, models.Model]]
 """Read-only covariant view of ``FKTargetLookups`` — the apply loop only reads
 the prefetched FK index, so the param accepts any mapping shape."""
 
@@ -72,8 +71,8 @@ class ScalarApplyContext:
     """The per-``model_class`` invariants of a scalar resolve pass.
 
     Built once and passed to :func:`_apply_claims` for every object.
-    ``fk_lookups`` is ``None`` to resolve each FK by querying its target by slug,
-    or a pre-built ``{attr: {slug: instance}}`` map to resolve FKs from memory.
+    ``fk_lookups`` is ``None`` to resolve each FK by querying its target by PK,
+    or a pre-built ``{attr: {pk: instance}}`` map to resolve FKs from memory.
     """
 
     model_class: type[ClaimControlledModel]
@@ -92,7 +91,7 @@ def _apply_claims(
     """Reset *obj*'s resolvable fields to defaults, then apply its winning claims.
 
     FK fields resolve via :func:`_resolve_fk_generic` (querying when
-    ``ctx.fk_lookups`` is ``None``, else the pre-built slug→instance dict),
+    ``ctx.fk_lookups`` is ``None``, else the pre-built pk→instance dict),
     scalars via :func:`_coerce`, and unmatched claims land in ``extra_data`` with
     the image-license stamp. Mutates *obj*; the caller handles validation,
     conflict resolution and saving.
@@ -204,8 +203,8 @@ def _resolve_bulk(
     them to a shared default (e.g. ``""``) would cause IntegrityError
     when multiple objects lack claims for that field.
 
-    FK fields in *direct_fields* are auto-detected and resolved by slug
-    (or model-declared ``claim_fk_lookups`` override).
+    FK fields in *direct_fields* are auto-detected and resolved by the
+    target PK stored in the claim value.
 
     Parameters:
         model_class: The Django model class to resolve.
@@ -258,8 +257,8 @@ def _resolve_bulk(
 
     preserve_when_unclaimed = get_preserve_fields(model_class, direct_fields)
 
-    # Identify FK fields and pre-build lookups.
-    fk_info = build_fk_info(model_class, direct_fields)
+    # Identify FK fields and pre-fetch the targets the winning claims reference.
+    fk_info = build_fk_info(model_class, direct_fields, claims_by_obj)
 
     # Check if model has extra_data field for unmatched claims.
     has_extra_data = hasattr(model_class, "extra_data")
