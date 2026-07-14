@@ -2,13 +2,9 @@
   import { page } from '$app/state';
   import { goto, invalidateAll } from '$app/navigation';
   import { resolve } from '$app/paths';
-  import SectionEditorForm from '$lib/components/pages/record/edit/SectionEditorForm.svelte';
-  import Button from '$lib/components/ui/Button.svelte';
+  import SectionEditHarness from '$lib/components/pages/record/edit/SectionEditHarness.svelte';
   import MediaEditor from '$lib/components/pages/record/edit/editors/MediaEditor.svelte';
   import ModelEditorSwitch from '$lib/components/pages/record/edit/editors/entity/model/ModelEditorSwitch.svelte';
-  import { getEditLayoutContext } from '$lib/components/pages/record/edit/editors/edit-layout-context';
-  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
-  import type { SaveMeta } from '$lib/components/pages/record/edit/editors/entity/model/save-model-claims';
   import { findSectionBySegment } from '$lib/components/pages/record/edit/editors/entity/model/model-edit-sections';
   import { modelHasTitleOwnedIdentity } from '$lib/catalog-rules';
 
@@ -33,36 +29,6 @@
     }
   });
 
-  const editLayout = getEditLayoutContext();
-
-  let editorRef = $state<SectionEditorHandle>();
-  let editError = $state('');
-  // Bump on each successful save so the editor block remounts with fresh
-  // initialModel — the editor captures `original` once at mount, so without
-  // a remount the dirty comparison stays frozen against pre-save values.
-  let saveCounter = $state(0);
-
-  // Single reactive dirty read: gates the footer Save button and the section
-  // nav-lock, and guards cancel. `false` while the editor is unmounted
-  // (between remounts) keeps Save disabled — the safe default.
-  let editorDirty = $derived(editorRef?.dirty ?? false);
-
-  $effect(() => {
-    editLayout.setDirty(editorDirty);
-  });
-
-  async function handleSave(meta: SaveMeta) {
-    editError = '';
-    await editorRef?.save(meta);
-  }
-
-  function handleCancel() {
-    if (editorDirty && !confirm('Discard unsaved changes?')) {
-      return;
-    }
-    goto(resolve(`/models/${slug}`));
-  }
-
   async function handleSaved() {
     await invalidateAll();
     // BasicsEditor can change the slug — redirect if needed
@@ -72,44 +38,22 @@
         replaceState: true,
       });
     }
-    saveCounter++;
   }
 </script>
 
-{#if section}
-  {#if section.usesSectionEditorForm}
-    {#key saveCounter}
-      <SectionEditorForm
-        error={editError}
-        showCitation={section.showCitation}
-        showMixedEditWarning={section.showMixedEditWarning}
-        dirty={editorDirty}
-        oncancel={handleCancel}
-        onsave={handleSave}
-      >
-        <ModelEditorSwitch
-          sectionKey={section.key}
-          initialData={model}
-          slug={model.slug}
-          slim={slimBasics}
-          bind:editorRef
-          onsaved={handleSaved}
-          onerror={(msg: string) => (editError = msg)}
-        />
-      </SectionEditorForm>
-    {/key}
-  {:else if section.key === 'media'}
+<SectionEditHarness {section} detailHref={`/models/${slug}`} onsaved={handleSaved}>
+  {#snippet editor({ ref, onsaved, onerror }, section)}
+    <ModelEditorSwitch
+      sectionKey={section.key}
+      initialData={model}
+      slug={model.slug}
+      slim={slimBasics}
+      bind:editorRef={ref.current}
+      {onsaved}
+      {onerror}
+    />
+  {/snippet}
+  {#snippet immediateEditor()}
     <MediaEditor entityType="model" slug={model.slug} media={model.uploaded_media} />
-    <div class="media-footer">
-      <Button onclick={handleCancel}>Done</Button>
-    </div>
-  {/if}
-{/if}
-
-<style>
-  .media-footer {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: var(--size-4);
-  }
-</style>
+  {/snippet}
+</SectionEditHarness>

@@ -6,6 +6,10 @@
   import SectionEditorModal from './SectionEditorModal.svelte';
   import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
   import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type {
+    EditorCallbacks,
+    EditorRefBox,
+  } from '$lib/components/pages/record/edit/editors/editor-callbacks';
   import type { SaveMeta } from '$lib/components/pages/record/edit/editors/save-claims-shared';
   import { toast } from '$lib/toast/toast.svelte';
 
@@ -15,14 +19,6 @@
     showCitation: boolean;
     showMixedEditWarning: boolean;
     usesSectionEditorForm: boolean;
-  };
-
-  type EditorRefBox = { current: SectionEditorHandle | undefined };
-
-  type EditorCallbacks = {
-    ref: EditorRefBox;
-    onsaved: () => void;
-    onerror: (msg: string) => void;
   };
 
   let {
