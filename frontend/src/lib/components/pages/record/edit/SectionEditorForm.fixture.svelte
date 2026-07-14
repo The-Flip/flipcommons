@@ -5,9 +5,11 @@
   let {
     showCitation = true,
     error = '',
+    dirty = true,
   }: {
     showCitation?: boolean;
     error?: string;
+    dirty?: boolean;
   } = $props();
 
   let cancelCount = $state(0);
@@ -28,7 +30,7 @@
   }
 </script>
 
-<SectionEditorForm {error} {showCitation} oncancel={handleCancel} onsave={handleSave}>
+<SectionEditorForm {error} {showCitation} {dirty} oncancel={handleCancel} onsave={handleSave}>
   <label>
     Description
     <input type="text" value="Prototype content" />

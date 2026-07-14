@@ -15,6 +15,7 @@
     switcherItems = [],
     currentSectionKey = undefined,
     switcherDisabled = false,
+    dirty = true,
     onclose,
     onsave,
     children,
@@ -27,6 +28,8 @@
     switcherItems?: EditSectionMenuItem[];
     currentSectionKey?: string;
     switcherDisabled?: boolean;
+    /** Whether the editor has unsaved changes; gates the footer Save button. */
+    dirty?: boolean;
     onclose: () => void;
     onsave: (meta: SaveMeta) => void;
     children: Snippet;
@@ -64,6 +67,7 @@
     {error}
     {showCitation}
     {showMixedEditWarning}
+    {dirty}
     oncancel={close}
     {onsave}
   >

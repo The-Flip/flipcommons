@@ -104,6 +104,7 @@
       {switcherItems}
       currentSectionKey={currentFormSection.key}
       switcherDisabled={editorDirty}
+      dirty={editorDirty}
       onclose={closeEditor}
       onsave={saveCurrentSection}
     >

@@ -23,6 +23,14 @@ describe('SectionEditorForm', () => {
     expect(screen.getByTestId('last-citation')).toHaveTextContent('');
   });
 
+  it('disables Save when there are no unsaved changes', () => {
+    render(SectionEditorFormFixture, { props: { dirty: false } });
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    // Cancel stays available so a clean editor can still be dismissed.
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  });
+
   it('calls oncancel when cancel is clicked', async () => {
     const user = userEvent.setup();
     render(SectionEditorFormFixture);
