@@ -111,6 +111,49 @@ class TestBuildDisplayValue:
         assert person_part.state == "missing"
         assert person_part.label is None
 
+    def test_model_relationship_machine_rung_skips_absent_target_slots(self):
+        # Absent xor-group slots (null FK, empty label) are absence by
+        # design — they must not surface as identity parts, and the payload
+        # keys surface as data-faithful qualifiers.
+        target = make_machine_model(name="Rock", slug="rock-display")
+        value = {
+            "target_machine": target.pk,
+            "target_label": "",
+            "relationship_type": "copy",
+            "license_status": "unlicensed",
+            "exists": True,
+        }
+        ctx = _ctx(FieldValue("model_relationship", value, _MODEL))
+        assert build_display_value(
+            _MODEL, "model_relationship", value, ctx
+        ) == ClaimDisplayValueSchema(
+            identity=_identity([("target_machine", "Rock")]),
+            qualifiers=_qualifiers(
+                [("relationship_type", "copy"), ("license_status", "unlicensed")]
+            ),
+        )
+
+    def test_model_relationship_label_rung(self):
+        value = {
+            "target_machine": None,
+            "target_label": "several Gottlieb EM models",
+            "relationship_type": "conversion_kit",
+            "license_status": "unknown",
+            "exists": True,
+        }
+        ctx = _ctx(FieldValue("model_relationship", value, _MODEL))
+        assert build_display_value(
+            _MODEL, "model_relationship", value, ctx
+        ) == ClaimDisplayValueSchema(
+            identity=_identity([("target_label", "several Gottlieb EM models")]),
+            qualifiers=_qualifiers(
+                [
+                    ("relationship_type", "conversion_kit"),
+                    ("license_status", "unknown"),
+                ]
+            ),
+        )
+
     def test_gameplay_feature_emits_count_qualifier_when_present(self):
         feat = GameplayFeature.objects.create(name="Multiball", slug="multiball")
         value = {"gameplay_feature": feat.pk, "count": 3, "exists": True}

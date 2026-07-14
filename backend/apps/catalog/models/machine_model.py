@@ -31,6 +31,7 @@ from apps.provenance.model_bases import (
 
 from ._autocomplete import manufacturer_year_sublabel
 from .base import CatalogModel
+from .model_relationship import ModelRelationship, RelationshipType
 
 __all__ = ["MachineModel", "ModelAbbreviation"]
 
@@ -182,6 +183,13 @@ class MachineModel(
     #: ``converted_from`` (a genuinely different machine) and ``remake_of`` (a
     #: distinct product) are originals in their own right and are deliberately
     #: absent. A new lineage FK must decide here rather than silently inheriting.
+    #:
+    #: TRANSITIONAL: these FKs are being replaced by ``ModelRelationship`` copy
+    #: edges (docs/plans/catalog_data_model/ModelRelationships.md).
+    #: :meth:`first_model_candidates` dual-reads — old FK set OR copy edge —
+    #: which is correct in every transition state (prod has neither; dev has
+    #: FKs until the patch rework lands, edges after). Delete this ClassVar
+    #: with the columns in the final migration step.
     SUBORDINATE_COPY_FIELDS: ClassVar[tuple[str, ...]] = (
         "bootleg_of",
         "licensed_build_of",
@@ -462,11 +470,13 @@ class MachineModel(
         models, ordered so its representative (the first row) is an original —
         subordinate copies sort last, then earliest-first by ``(year, name)``.
 
-        Variants (cosmetic/LE) collapse out entirely. Bootleg / licensed-build
-        copies (:attr:`SUBORDINATE_COPY_FIELDS`) stay in the list but sort after
-        every original, so ``.first()`` / ``[:1]`` never picks a copy over the
-        model it copies — while a Title whose *only* model is a copy still
-        surfaces it.
+        Variants (cosmetic/LE) collapse out entirely. Copies stay in the list
+        but sort after every original, so ``.first()`` / ``[:1]`` never picks a
+        copy over the model it copies — while a Title whose *only* model is a
+        copy still surfaces it. "Copy" is dual-read during the edge-table
+        transition: a legacy lineage FK (:attr:`SUBORDINATE_COPY_FIELDS`) or a
+        ``ModelRelationship`` copy edge; conversions and kits are originals in
+        their own right and don't subordinate.
 
         Single source for that identity/order rule. Callers layer their own
         ``select_related`` / ``prefetch_related`` for their read shape, and
@@ -474,7 +484,14 @@ class MachineModel(
         ``title=OuterRef("pk")``. Keeping it in one place stops the subquery, the
         title/card prefetches and the kiosk typeahead from drifting apart.
         """
+        copy_edge = models.Exists(
+            ModelRelationship.objects.filter(
+                machine_model=models.OuterRef("pk"),
+                relationship_type=RelationshipType.COPY,
+            )
+        )
         is_copy = models.Case(
+            models.When(copy_edge, then=models.Value(1)),
             *(
                 models.When(**{f"{field}__isnull": False}, then=models.Value(1))
                 for field in cls.SUBORDINATE_COPY_FIELDS
@@ -487,6 +504,33 @@ class MachineModel(
             .filter(variant_of__isnull=True)
             .alias(_is_subordinate_copy=is_copy)
             .order_by("_is_subordinate_copy", "year", "name")
+        )
+
+    @classmethod
+    def distinct_machines_q(cls) -> models.Q:
+        """The variant-collapse predicate: non-variants, plus conversions re-admitted.
+
+        The catalog lists at the granularity of distinct machines: cosmetic
+        variants collapse into their parent model, but a conversion or kit —
+        genuinely a different machine — is re-admitted even when it also
+        carries ``variant_of``. Dual-read during the edge-table transition: a
+        legacy ``converted_from`` FK or a ``ModelRelationship`` conversion/kit
+        edge. Single-sourced so the /models list and the title-siblings
+        prefetch can't drift.
+        """
+        conversion_edge = models.Exists(
+            ModelRelationship.objects.filter(
+                machine_model=models.OuterRef("pk"),
+                relationship_type__in=(
+                    RelationshipType.CONVERSION,
+                    RelationshipType.CONVERSION_KIT,
+                ),
+            )
+        )
+        return (
+            models.Q(variant_of__isnull=True)
+            | models.Q(converted_from__isnull=False)
+            | models.Q(conversion_edge)
         )
 
     @classmethod

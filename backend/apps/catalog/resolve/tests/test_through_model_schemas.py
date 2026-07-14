@@ -83,6 +83,43 @@ EXPECTED: dict[
         {MachineModel, Title},
     ),
     "location": ((_fk("location", Location),), {CorporateEntity}),
+    # The target-XOR namespace: a nullable FK identity part (key always
+    # present, value may be null), a required literal ("" = absent) and two
+    # required choices payloads.
+    "model_relationship": (
+        (
+            ValueKeySpec(
+                name="target_machine",
+                scalar_type=int,
+                required=True,
+                nullable=True,
+                identity="target_machine",
+                fk_target=FkTarget(MachineModel, "pk"),
+            ),
+            ValueKeySpec(
+                name="target_label",
+                scalar_type=str,
+                required=True,
+                identity="target_label",
+                max_length=300,
+            ),
+            ValueKeySpec(
+                name="relationship_type",
+                scalar_type=str,
+                required=True,
+                max_length=20,
+                choices=("conversion", "conversion_kit", "copy"),
+            ),
+            ValueKeySpec(
+                name="license_status",
+                scalar_type=str,
+                required=True,
+                max_length=20,
+                choices=("licensed", "unlicensed", "unknown"),
+            ),
+        ),
+        {MachineModel},
+    ),
     # Self-referential parent hierarchies: the member is the parent FK keyed
     # "parent"; the subject is the entity itself.
     "theme_parent": ((_fk("parent", Theme),), {Theme}),
@@ -100,3 +137,19 @@ def test_derived_schema_matches_snapshot(namespace: str) -> None:
     assert schema is not None, f"namespace {namespace!r} not registered"
     assert schema.value_keys == expected_keys
     assert set(schema.valid_subjects) == expected_subjects
+
+
+def test_model_relationship_xor_groups_derived() -> None:
+    """The spec's MemberXor carries into the registered schema as value keys."""
+    schema = get_relationship_schema("model_relationship")
+    assert schema is not None
+    assert schema.xor_groups == (("target_machine",), ("target_label",))
+
+
+def test_only_model_relationship_declares_xor_groups() -> None:
+    """No other namespace silently grows an exclusivity rule."""
+    for namespace in EXPECTED:
+        schema = get_relationship_schema(namespace)
+        assert schema is not None
+        if namespace != "model_relationship":
+            assert schema.xor_groups is None, namespace

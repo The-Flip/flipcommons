@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -547,3 +548,288 @@ class TestHierarchyFKValidation:
         resp = _patch(client, pm.slug, {"fields": {"licensed_build_of": original.slug}})
         assert resp.status_code == 200
         assert resp.json()["licensed_build_of"]["public_id"] == "party-animal"
+
+
+# ---------------------------------------------------------------------------
+# Relationship edges (model_relationship — the target-XOR namespace)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def rock(db, bootstrap_source):
+    target = make_machine_model(name="Rock", slug="rock", year=1985)
+    make_claim(target, "name", "Rock", ingest_source=bootstrap_source)
+    return target
+
+
+def _relationships(resp) -> list[dict[str, Any]]:
+    # Any: raw JSON payload rows — the assertions themselves pin the shapes.
+    body: dict[str, list[dict[str, Any]]] = resp.json()
+    return body["relationships"]
+
+
+@pytest.mark.django_db
+class TestRelationshipEdges:
+    def test_add_machine_target_edge(self, client, user, pm, rock):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "copy",
+                        "license_status": "unlicensed",
+                        "target_slug": "rock",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["relationship_type"] == "copy"
+        assert edge["license_status"] == "unlicensed"
+        assert edge["target_machine"]["public_id"] == "rock"
+        assert edge["target_label"] == ""
+
+    def test_add_label_target_edge(self, client, user, pm):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion_kit",
+                        "target_label": "several Gottlieb EM models",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["relationship_type"] == "conversion_kit"
+        assert edge["license_status"] == "unknown"  # schema default
+        assert edge["target_machine"] is None
+        assert edge["target_label"] == "several Gottlieb EM models"
+
+    def test_payload_change_supersedes_in_place(self, client, user, pm, rock):
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {"relationship_type": "conversion", "target_slug": "rock"}
+                ]
+            },
+        )
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion_kit",
+                        "license_status": "licensed",
+                        "target_slug": "rock",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["relationship_type"] == "conversion_kit"
+        assert edge["license_status"] == "licensed"
+
+    def test_remove_edge(self, client, user, pm, rock):
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "copy", "target_slug": "rock"}]},
+        )
+        resp = _patch(client, pm.slug, {"relationships": []})
+        assert resp.status_code == 200, resp.json()
+        assert _relationships(resp) == []
+
+    def test_edit_target_is_tombstone_plus_assert(self, client, user, pm, rock):
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {"relationship_type": "copy", "target_label": "an unknown game"}
+                ]
+            },
+        )
+        resp = _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "copy", "target_slug": "rock"}]},
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["target_machine"]["public_id"] == "rock"
+        assert edge["target_label"] == ""
+
+    def test_unchanged_edge_emits_no_claim(self, client, user, pm, rock):
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "copy", "target_slug": "rock"}]},
+        )
+        # Re-sending the identical desired list alongside a scalar change must
+        # not re-assert the edge (no duplicate claims in the new changeset).
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "fields": {"year": 1998},
+                "relationships": [{"relationship_type": "copy", "target_slug": "rock"}],
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        latest = ChangeSet.objects.filter(actor=user.actor).order_by("-pk").first()
+        assert latest is not None
+        assert [c.field_name for c in latest.claims.all()] == ["year"]
+
+    def test_one_citation_rides_every_edge_claim(
+        self, client, user, pm, rock, citation_source
+    ):
+        # Dean's flow: a source says "copy of A and B" — add both edges, cite
+        # once, and each edge claim carries the citation.
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "copy",
+                        "license_status": "unlicensed",
+                        "target_slug": "rock",
+                    },
+                    {
+                        "relationship_type": "copy",
+                        "license_status": "unlicensed",
+                        "target_label": "an unidentified Bally game",
+                    },
+                ],
+                "citations": [
+                    {"citation_source_id": citation_source.pk, "locator": "p. 7"}
+                ],
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        changeset = ChangeSet.objects.filter(actor=user.actor).get()
+        claims = list(changeset.claims.all())
+        assert len(claims) == 2
+        instances = set()
+        for claim in claims:
+            (ci,) = list(claim.citation_instances.all())
+            assert ci.citation_source_id == citation_source.pk
+            instances.add(ci.pk)
+        assert len(instances) == 1  # one shared instance, not cloned evidence
+
+    def test_null_leaves_edges_unchanged(self, client, user, pm, rock):
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "copy", "target_slug": "rock"}]},
+        )
+        resp = _patch(client, pm.slug, {"fields": {"year": 1998}})
+        assert resp.status_code == 200
+        assert len(_relationships(resp)) == 1
+
+    # --- row validation ----------------------------------------------------
+
+    def test_both_targets_rejected(self, client, user, pm, rock):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "copy",
+                        "target_slug": "rock",
+                        "target_label": "redundant",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 422
+        assert "relationships.rock" in resp.json()["detail"]["field_errors"]
+
+    def test_no_target_rejected(self, client, user, pm):
+        client.force_login(user)
+        resp = _patch(
+            client, pm.slug, {"relationships": [{"relationship_type": "copy"}]}
+        )
+        assert resp.status_code == 422
+
+    def test_unknown_target_rejected(self, client, user, pm):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {"relationship_type": "copy", "target_slug": "no-such-model"}
+                ]
+            },
+        )
+        assert resp.status_code == 422
+        assert "relationships.no-such-model" in resp.json()["detail"]["field_errors"]
+
+    def test_self_target_rejected(self, client, user, pm):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "copy", "target_slug": pm.slug}]},
+        )
+        assert resp.status_code == 422
+
+    def test_duplicate_target_rejected(self, client, user, pm, rock):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {"relationship_type": "copy", "target_slug": "rock"},
+                    {"relationship_type": "conversion", "target_slug": "rock"},
+                ]
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_out_of_vocab_type_rejected_by_schema(self, client, user, pm, rock):
+        # The Literal union rejects at the pydantic layer, before the planner.
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "remake", "target_slug": "rock"}]},
+        )
+        assert resp.status_code == 422
+
+
+def test_relationship_literals_match_choices() -> None:
+    """The wire Literals are locked to the model TextChoices — a new enum value
+    must show up in both or this fails."""
+    from typing import get_args
+
+    from apps.catalog.api.schemas import (
+        LicenseStatusLiteral,
+        RelationshipTypeLiteral,
+    )
+    from apps.catalog.models import LicenseStatus, RelationshipType
+
+    assert set(get_args(RelationshipTypeLiteral)) == set(RelationshipType.values)
+    assert set(get_args(LicenseStatusLiteral)) == set(LicenseStatus.values)

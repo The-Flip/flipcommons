@@ -115,11 +115,14 @@ def _classify_through_model(facts: _ThroughModelFacts) -> list[CheckMessage]:
         ]
 
     errors: list[CheckMessage] = []
-    if len(spec.members) not in (1, 2):
+    allowed_member_counts = (1, 2) if spec.member_xor is None else (2, 3)
+    if len(spec.members) not in allowed_member_counts:
         errors.append(
             Error(
-                f"{label}: claim_relationship_spec.members must have 1 "
-                f"(plain/literal) or 2 (compound) entries, got {len(spec.members)}.",
+                f"{label}: claim_relationship_spec.members must have "
+                f"{' or '.join(map(str, allowed_member_counts))} entries "
+                f"({'with' if spec.member_xor else 'without'} member_xor), "
+                f"got {len(spec.members)}.",
                 obj=label,
                 id="provenance.E002",
             )
@@ -158,10 +161,74 @@ def _classify_through_model(facts: _ThroughModelFacts) -> list[CheckMessage]:
                 )
             )
 
+    if spec.member_xor is not None:
+        errors.extend(_classify_member_xor(label, spec))
     identity_fields = frozenset(m.field for m in spec.members if m.identity is not None)
     errors.extend(
-        _classify_uniqueness(label, spec.subject, identity_fields, facts.uniques)
+        _classify_uniqueness(
+            label,
+            spec.subject,
+            identity_fields,
+            facts.uniques,
+            has_member_xor=spec.member_xor is not None,
+        )
     )
+    return errors
+
+
+def _classify_member_xor(label: str, spec: ClaimRelationshipSpec) -> list[CheckMessage]:
+    """Shape-check a ``member_xor`` declaration against the spec's members.
+
+    Verifies the groups partition a subset of the identity members and that the
+    spec's subject is a ``SingleSubject`` (no use case pairs a member ladder with
+    a subject XOR, so we stay strict). Like the credit subject-XOR, the *row*
+    semantics (the CHECK constraint) are asserted by a per-model behavior test,
+    not here.
+    """
+    assert spec.member_xor is not None
+    errors: list[CheckMessage] = []
+    if not isinstance(spec.subject, SingleSubject):
+        errors.append(
+            Error(
+                f"{label}: member_xor requires a SingleSubject spec.",
+                obj=label,
+                id="provenance.E007",
+            )
+        )
+    groups = spec.member_xor.groups
+    if len(groups) < 2:
+        errors.append(
+            Error(
+                f"{label}: member_xor must declare at least 2 groups, "
+                f"got {len(groups)}.",
+                obj=label,
+                id="provenance.E007",
+            )
+        )
+    identity_members = frozenset(
+        m.field for m in spec.members if m.identity is not None
+    )
+    seen: set[ColumnName] = set()
+    for group in groups:
+        for field in group:
+            if field not in identity_members:
+                errors.append(
+                    Error(
+                        f"{label}: member_xor names {field!r}, which is not an "
+                        "identity member of the spec.",
+                        obj=label,
+                        id="provenance.E007",
+                    )
+                )
+            elif field in seen:
+                errors.append(
+                    Error(
+                        f"{label}: member_xor groups overlap on {field!r}.",
+                        obj=label,
+                        id="provenance.E007",
+                    )
+                )
+            seen.add(field)
     return errors
 
 
@@ -170,6 +237,8 @@ def _classify_uniqueness(
     subject: SubjectSpec,
     identity_fields: frozenset[ColumnName],
     uniques: tuple[_UniqueShape, ...],
+    *,
+    has_member_xor: bool = False,
 ) -> list[CheckMessage]:
     """Cross-check the claim identity against the model's uniqueness constraints.
 
@@ -179,8 +248,45 @@ def _classify_uniqueness(
     ``{branch FK} ∪ identity`` and whose condition is ``Q(<branch FK>__isnull=
     False)`` — built from the spec, compared by ``Q.__eq__``, so no constraint
     name is hardcoded.
+
+    ``member_xor`` specs have nullable identity columns, where a single
+    unconditional constraint can't dedupe (NULLs compare distinct), so the model
+    carries one *conditional* ``UniqueConstraint`` per ladder rung instead. The
+    rung conditions are per-model semantics this DB-free check can't derive, so
+    it verifies only the shape: every conditional constraint's fields must
+    include the subject FK and stay within ``{subject FK} ∪ identity``, and
+    their union must cover the whole identity. Rung semantics are asserted by
+    the model's behavior test, like the credit XOR ``CheckConstraint``.
     """
     match subject:
+        case SingleSubject(fk_name) if has_member_xor:
+            expected = frozenset({fk_name}) | identity_fields
+            conditional = tuple(u for u in uniques if u.condition is not None)
+            covered: frozenset[ColumnName] = frozenset()
+            for u in conditional:
+                if fk_name not in u.fields or not u.fields <= expected:
+                    return [
+                        Error(
+                            f"{label}: conditional UniqueConstraint "
+                            f"({_fmt(u.fields)}) must include the subject FK and "
+                            f"stay within the claim identity ({_fmt(expected)}).",
+                            obj=label,
+                            id="provenance.E008",
+                        )
+                    ]
+                covered |= u.fields
+            if covered != expected:
+                return [
+                    Error(
+                        f"{label}: conditional UniqueConstraints cover "
+                        f"({_fmt(covered)}) but the claim identity is "
+                        f"({_fmt(expected)}) — every identity member must appear "
+                        "in some rung constraint.",
+                        obj=label,
+                        id="provenance.E008",
+                    )
+                ]
+            return []
         case SingleSubject(fk_name):
             expected = frozenset({fk_name}) | identity_fields
             if any(u.fields == expected and u.condition is None for u in uniques):

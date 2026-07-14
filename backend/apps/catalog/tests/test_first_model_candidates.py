@@ -9,7 +9,13 @@ its Segasa licensed build over the Williams original.
 
 import pytest
 
-from apps.catalog.models import MachineModel, Title
+from apps.catalog.models import (
+    LicenseStatus,
+    MachineModel,
+    ModelRelationship,
+    RelationshipType,
+    Title,
+)
 from apps.catalog.tests.conftest import make_machine_model
 
 
@@ -112,3 +118,74 @@ def test_conversion_stays_eligible(db):
     conversion.converted_from = source
     conversion.save(update_fields=["converted_from"])
     assert _first_model(conversion.title) == conversion
+
+
+# ── ModelRelationship copy edges (the FK replacements) ──────────────
+#
+# During the edge-table transition the rule dual-reads: a legacy lineage FK OR
+# a copy edge subordinates a model. These mirror the FK cases above using only
+# edges, so the rule survives the patch rework that stops authoring the FKs.
+
+
+@pytest.mark.django_db
+def test_copy_edge_sibling_is_not_the_first_model(big_ben_title):
+    """A copy edge (no legacy FK) subordinates exactly like bootleg_of did."""
+    original = make_machine_model(
+        title=big_ben_title, name="Big Ben", slug="big-ben-williams", year=1975
+    )
+    copy = make_machine_model(
+        title=big_ben_title, name="Big Ben", slug="big-ben-segasa", year=1974
+    )
+    ModelRelationship.objects.create(
+        machine_model=copy,
+        target_machine=original,
+        relationship_type=RelationshipType.COPY,
+        license_status=LicenseStatus.LICENSED,
+    )
+    assert _first_model(big_ben_title) == original
+    assert set(_candidates(big_ben_title)) == {original, copy}
+
+
+@pytest.mark.django_db
+def test_label_target_copy_edge_still_subordinates(big_ben_title):
+    """A copy is subordinate even when its target isn't seeded (label rung)."""
+    original = make_machine_model(
+        title=big_ben_title, name="Big Ben", slug="big-ben-williams", year=1975
+    )
+    copy = make_machine_model(
+        title=big_ben_title, name="Big Ben", slug="big-ben-petaco", year=1974
+    )
+    ModelRelationship.objects.create(
+        machine_model=copy,
+        target_label="an unidentified Williams game",
+        relationship_type=RelationshipType.COPY,
+    )
+    assert _first_model(big_ben_title) == original
+
+
+@pytest.mark.django_db
+def test_conversion_edge_stays_eligible(db):
+    """Conversion/kit edges are originals in their own right — only copy
+    edges subordinate."""
+    donor = make_machine_model(name="Base Game", slug="base-game", year=1990)
+    conversion = make_machine_model(name="Retheme", slug="retheme", year=1991)
+    ModelRelationship.objects.create(
+        machine_model=conversion,
+        target_machine=donor,
+        relationship_type=RelationshipType.CONVERSION,
+    )
+    assert _first_model(conversion.title) == conversion
+
+
+@pytest.mark.django_db
+def test_copy_edge_only_title_still_surfaces_the_copy(db):
+    """A Title whose only model carries a copy edge still surfaces it."""
+    us_model = make_machine_model(name="Party Animal", slug="party-animal-us")
+    de_only = make_machine_model(name="Party Animal", slug="party-animal-de")
+    ModelRelationship.objects.create(
+        machine_model=de_only,
+        target_machine=us_model,
+        relationship_type=RelationshipType.COPY,
+        license_status=LicenseStatus.LICENSED,
+    )
+    assert _first_model(de_only.title) == de_only

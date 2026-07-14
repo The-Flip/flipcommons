@@ -99,6 +99,12 @@ class MemberField:
     target lookup field (the target *model* is introspected, never named).
     ``empty_target`` decides what an empty target-PK set means (see
     :class:`EmptyTargetPolicy`).
+
+    ``nullable`` (FK members only) marks an identity part that may be absent:
+    the value key is still always present in the claim value — the *value* may
+    be ``null``, serialized as the literal ``"null"`` in the claim_key — and
+    the through-column is a nullable FK. Literal members express absence as the
+    empty string instead (CharField convention), so they are never nullable.
     """
 
     field: ColumnName
@@ -106,15 +112,42 @@ class MemberField:
     identity: IdentityPartName | None = None
     lookup_field: ColumnName = "pk"
     empty_target: EmptyTargetPolicy = EmptyTargetPolicy.DROP_INVALID
+    nullable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class PayloadField:
-    """A non-identity payload column of a through-row (e.g. gameplay ``count``)."""
+    """A non-identity payload column of a through-row (e.g. gameplay ``count``).
+
+    ``required`` demands the value key be present (and non-null unless
+    ``nullable``) in every positive claim — for payloads whose through-column
+    is NOT NULL, so a missing key can't materialize as a null column write.
+    """
 
     field: ColumnName
     value_key: ClaimValueKey | None = None
     nullable: bool = False
+    required: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MemberXor:
+    """Exclusivity rule over a spec's identity members: exactly one group present.
+
+    Each group is a tuple of member *field* names. A group is "present" when any
+    of its members carries a non-absent value — non-null for an FK member,
+    non-empty for a literal member. Exactly one group must be present in every
+    claim (and through-row); the others' members stay absent. This is the
+    resolution-ladder shape (``target_machine`` XOR (``target_manufacturer``
+    and/or ``target_label``)): one fact, expressible at different resolutions,
+    never redundantly at two.
+
+    Enforced at claim-write time by the relationship validator; the through-model
+    must mirror it with a CHECK constraint (behavior-tested per model, same
+    delegation as the credit subject-XOR).
+    """
+
+    groups: tuple[tuple[ColumnName, ...], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,8 +156,9 @@ class ClaimRelationshipSpec:
 
     Declared as a ClassVar on each :class:`ClaimThroughModel` subclass and
     consumed generically to derive both the validation schema and the resolution
-    projection. ``members`` cardinality is 1 (plain/literal) or 2 (credit),
-    enforced by the model's startup validator.
+    projection. ``members`` cardinality is 1 (plain/literal) or 2 (credit) —
+    or up to 3 when ``member_xor`` declares an exclusivity ladder — enforced by
+    the model's startup validator.
     """
 
     namespace: ClaimFieldName
@@ -133,6 +167,7 @@ class ClaimRelationshipSpec:
     payload: tuple[PayloadField, ...] = ()
     ignore_conflicts: bool = False
     scope: ScopePolicy = ScopePolicy.SUBJECTS
+    member_xor: MemberXor | None = None
 
 
 type MemberAccessor = str

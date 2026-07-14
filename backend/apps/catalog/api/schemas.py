@@ -8,7 +8,7 @@ owns only the entity-specific variants.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from ninja import Schema
 from pydantic import Field
@@ -83,6 +83,36 @@ class CreditInputSchema(Schema):
     role: str
 
 
+# Wire unions for the relationship editor. Literal (not str) so the generated
+# schema.d.ts carries them as unions the frontend derives from; locked against
+# the model TextChoices by a snapshot test in test_api_claims_model_relationships.
+# Plain assignments (not `type` statements): a PEP 695 alias would become a
+# named OpenAPI component and trip the Schema/Ref suffix discipline — these
+# should inline anonymously into the field schemas.
+RelationshipTypeLiteral = Literal["conversion", "conversion_kit", "copy"]
+LicenseStatusLiteral = Literal["licensed", "unlicensed", "unknown"]
+
+
+class ModelRelationshipInputSchema(Schema):
+    """Nested entry in :class:`ModelClaimPatchSchema.relationships` — one typed
+    edge. Exactly one of ``target_slug`` / ``target_label`` must be set (the
+    target XOR); the planner rejects both-or-neither with a row error.
+    """
+
+    relationship_type: RelationshipTypeLiteral
+    license_status: LicenseStatusLiteral = "unknown"
+    target_slug: str = Field(
+        "", description="Public id of the target machine, when seeded."
+    )
+    target_label: str = Field(
+        "",
+        description=(
+            "Plain-text target descriptor when the target isn't seeded "
+            '(e.g. "several Gottlieb EM models"). No markdown, no wikilinks.'
+        ),
+    )
+
+
 class ModelClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
     """Patch body for Model — the widest entity, with several list payloads
     on top of the generic ``fields`` bag.
@@ -96,6 +126,7 @@ class ModelClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
     gameplay_features: list[GameplayFeatureInputSchema] | None = None
     credits: list[CreditInputSchema] | None = None
     abbreviations: list[str] | None = None
+    relationships: list[ModelRelationshipInputSchema] | None = None
 
 
 class TitleClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):

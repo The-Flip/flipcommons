@@ -211,6 +211,7 @@ class TestExportDriftGuard:
             "gameplay_features",
             "abbreviations",
             "credits",
+            "model_relationships",
         }
     )
 
@@ -231,6 +232,7 @@ class TestExportDriftGuard:
             "reward_type": "reward_types",
             "gameplay_feature": "gameplay_features",
             "abbreviation": "abbreviations",
+            "model_relationship": "model_relationships",
         }
         for ns in namespaces - {"media_attachment"}:
             assert ns in covered, f"relationship namespace {ns!r} not covered"

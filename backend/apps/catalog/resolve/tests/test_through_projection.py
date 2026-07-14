@@ -74,6 +74,7 @@ def pks(db: None) -> Pks:
     )
 
     return {
+        "target_machine": make_machine_model(name="Rock", slug="rock-target").pk,
         "theme": Theme.objects.create(name="Horror", slug="horror").pk,
         "tag": Tag.objects.create(name="Home Use", slug="home-use").pk,
         "reward_type": RewardType.objects.create(
@@ -280,6 +281,38 @@ CASES: list[_Case] = [
         valid_value=_fk_value("location"),
         valid_member=lambda pks: pks["location"],
         invalid_value=lambda pks: {"location": 10**9, "exists": True},
+    ),
+    # The target XOR — compound identity with a nullable FK slot, and a
+    # compound (two-column string) payload riding the same tuple codecs as
+    # compound keys.
+    _Case(
+        "model_relationship",
+        MachineModel,
+        "model_relationship",
+        subject_column="machine_model_id",
+        key_columns=("target_machine_id", "target_label"),
+        payload_columns=("relationship_type", "license_status"),
+        columns_to_key=_compound_key,
+        key_to_columns=_compound_columns,
+        columns_to_payload=_compound_key,
+        payload_to_columns=_compound_columns,
+        valid_value=lambda pks: {
+            "target_machine": pks["target_machine"],
+            "target_label": "",
+            "relationship_type": "copy",
+            "license_status": "unknown",
+            "exists": True,
+        },
+        valid_member=lambda pks: (pks["target_machine"], ""),
+        valid_payload=("copy", "unknown"),
+        invalid_value=lambda pks: {
+            "target_machine": 10**9,
+            "target_label": "",
+            "relationship_type": "copy",
+            "license_status": "unknown",
+            "exists": True,
+        },
+        compound=True,
     ),
     # Self-referential parent hierarchies — SingleSubject("from_<model>") with
     # the parent FK (to_<model>) as the identity member keyed "parent";

@@ -57,6 +57,8 @@ from ..engine.entity_api.delete import (
 from ..engine.entity_api.own_media import own_media
 from ..engine.query.constants import DEFAULT_PAGE_SIZE
 from ..models import (
+    RELATIONSHIP_CHIPS,
+    RELATIONSHIP_CHIPS_BY_SLUG,
     Cabinet,
     Credit,
     CreditRole,
@@ -65,6 +67,7 @@ from ..models import (
     GameFormat,
     MachineModel,
     MachineModelGameplayFeature,
+    ModelRelationship,
     ProductionStatus,
     RewardType,
     System,
@@ -72,12 +75,14 @@ from ..models import (
     TechnologyGeneration,
     TechnologySubgeneration,
     Theme,
+    relationship_chip_exists,
 )
 from .edit_claims import (
     plan_abbreviation_claims,
     plan_credit_claims,
     plan_gameplay_feature_claims,
     plan_m2m_claims,
+    plan_model_relationship_claims,
 )
 from .helpers import (
     _extract_variant_features,
@@ -148,6 +153,24 @@ class ModelRef(Schema):
     public_id: str
     year: int | None = None
     manufacturer: EntityRef | None = None
+
+
+class ModelRelationshipSchema(Schema):
+    """One typed relationship edge on a model (copy / conversion / kit).
+
+    ``target_machine`` is set when the target is seeded (renders as a link);
+    ``target_label`` is the plain-text descriptor otherwise (renders unlinked).
+    Exactly one is populated.
+    """
+
+    relationship_type: str = Field(
+        description="Edge type: `conversion`, `conversion_kit` or `copy`."
+    )
+    license_status: str = Field(
+        description="Authorization status: `licensed`, `unlicensed` or `unknown`."
+    )
+    target_machine: ModelRef | None = None
+    target_label: str = ""
 
 
 def _manufacturer_ref(pm: MachineModel | None) -> EntityRef | None:
@@ -233,6 +256,7 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     bootlegs: list[ModelRef] = []
     licensed_build_of: ModelRef | None = None
     licensed_builds: list[ModelRef] = []
+    relationships: list[ModelRelationshipSchema] = []
     title_models: list[TitleModelSchema] = []
 
 
@@ -253,6 +277,7 @@ def _build_model_list_qs(
     cabinet: str = "",
     production_status: str = "",
     tag: str = "",
+    relationship: str = "",
     year_min: int | None = None,
     year_max: int | None = None,
     person: str = "",
@@ -267,14 +292,13 @@ def _build_model_list_qs(
         )
         .prefetch_related(media_prefetch())
     )
-    # The catalog lists at the granularity of distinct machines: cosmetic
-    # variants are collapsed into their parent model (conversions, being
-    # genuinely different machines, are re-admitted). ``include_variants`` opts
-    # out of the collapse for surfaces where a variant's own value is the point
-    # — e.g. the production-status browse, where an announced Limited Edition of
-    # a shipped Premium must appear.
+    # The catalog lists at the granularity of distinct machines (see
+    # MachineModel.distinct_machines_q). ``include_variants`` opts out of the
+    # collapse for surfaces where a variant's own value is the point — e.g. the
+    # production-status browse, where an announced Limited Edition of a shipped
+    # Premium must appear.
     if not include_variants:
-        qs = qs.filter(Q(variant_of__isnull=True) | Q(converted_from__isnull=False))
+        qs = qs.filter(MachineModel.distinct_machines_q())
 
     if manufacturer:
         qs = qs.filter(corporate_entity__manufacturer__slug=manufacturer)
@@ -303,6 +327,13 @@ def _build_model_list_qs(
         qs = qs.filter(production_status__slug=production_status)
     if tag:
         qs = qs.filter(tags__slug=tag)
+    if relationship:
+        chip = RELATIONSHIP_CHIPS_BY_SLUG.get(relationship)
+        # Unknown chip slug matches nothing — same feel as a nonexistent tag
+        # slug, which joins to zero rows.
+        qs = (
+            qs.filter(relationship_chip_exists(chip)) if chip is not None else qs.none()
+        )
     if year_min is not None:
         qs = qs.filter(year__gte=year_min)
     if year_max is not None:
@@ -457,6 +488,15 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         bootlegs=_model_refs(pm.bootlegs.all()),
         licensed_build_of=_model_ref(pm.licensed_build_of),
         licensed_builds=_model_refs(pm.licensed_builds.all()),
+        relationships=[
+            ModelRelationshipSchema(
+                relationship_type=edge.relationship_type,
+                license_status=edge.license_status,
+                target_machine=_model_ref(edge.target_machine),
+                target_label=edge.target_label,
+            )
+            for edge in pm.relationships.all()
+        ],
         title=EntityRef(name=pm.title.name, public_id=pm.title.public_id),
         cabinet=(
             EntityRef(name=pm.cabinet.name, public_id=pm.cabinet.public_id)
@@ -573,6 +613,14 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
                     "corporate_entity__manufacturer"
                 ),
             ),
+            # Relationship edges render their machine target as a ModelRef
+            # with a maker; join it here so the ref build stays query-free.
+            Prefetch(
+                "relationships",
+                queryset=ModelRelationship.objects.select_related(
+                    "target_machine__corporate_entity__manufacturer"
+                ),
+            ),
             # Reverse lineage lists render as ModelRefs with a maker; select the
             # manufacturer join here to keep the ref build query-free.
             Prefetch(
@@ -615,7 +663,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             Prefetch(
                 "title__machine_models",
                 queryset=MachineModel.objects.active()
-                .filter(Q(variant_of__isnull=True) | Q(converted_from__isnull=False))
+                .filter(MachineModel.distinct_machines_q())
                 .select_related(
                     "corporate_entity__manufacturer", "technology_generation"
                 )
@@ -685,6 +733,13 @@ class ModelFilterQuerySchema(Schema):
         description="Production-status slug (see `GET /api/production-statuses/`).",
     )
     tag: str = Field("", description="Tag slug (see `GET /api/tags/`).")
+    relationship: str = Field(
+        "",
+        description=(
+            "Derived relationship chip: models carrying a matching relationship "
+            f"edge. One of {', '.join(f'`{c.slug}`' for c in RELATIONSHIP_CHIPS)}."
+        ),
+    )
     year_min: int | None = Field(None, description="Earliest release year, inclusive.")
     year_max: int | None = Field(None, description="Latest release year, inclusive.")
     person: str = Field(
@@ -731,6 +786,7 @@ def list_models(
         cabinet=filters.cabinet,
         production_status=filters.production_status,
         tag=filters.tag,
+        relationship=filters.relationship,
         year_min=filters.year_min,
         year_max=filters.year_max,
         person=filters.person,
@@ -871,6 +927,8 @@ def patch_model_claims(
             "title__abbreviations",
             "credits__person",
             "credits__role",
+            # The relationship planner diffs against current edges.
+            "relationships",
         ),
         **{MachineModel.public_id_field: public_id},
     )
@@ -929,6 +987,8 @@ def patch_model_claims(
         specs.extend(plan_credit_claims(pm, data.credits))
     if data.abbreviations is not None:
         specs.extend(plan_abbreviation_claims(pm, data.abbreviations))
+    if data.relationships is not None:
+        specs.extend(plan_model_relationship_claims(pm, data.relationships))
 
     if not specs:
         raise_form_error("No changes provided.")

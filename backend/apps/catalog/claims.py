@@ -159,7 +159,28 @@ def _register_through_model_schemas() -> None:
             namespace=namespace,
             value_keys=canonical,
             valid_subjects={b.subject_model for b in bindings},
+            xor_groups=_xor_groups_for(bindings[0]),
         )
+
+
+def _xor_groups_for(
+    binding: ClaimRelationshipBinding,
+) -> tuple[tuple[str, ...], ...] | None:
+    """The spec's ``MemberXor`` groups translated from field names to value keys.
+
+    The spec declares groups in through-model column names (consistent with
+    ``members``); the validator operates on value-dict keys, so squished columns
+    (``rewardtype`` keyed as ``reward_type``) translate through
+    ``member.value_key``. Multi-binding namespaces share one through-model spec,
+    so any binding yields the same groups.
+    """
+    member_xor = binding.spec.member_xor
+    if member_xor is None:
+        return None
+    key_by_field = {m.field: (m.value_key or m.field) for m in binding.spec.members}
+    return tuple(
+        tuple(key_by_field[field] for field in group) for group in member_xor.groups
+    )
 
 
 def _value_keys_for(binding: ClaimRelationshipBinding) -> tuple[ValueKeySpec, ...]:
@@ -184,10 +205,14 @@ def _member_value_key(through_model: type[Model], member: MemberField) -> ValueK
     if isinstance(field, ForeignKey):
         target = field.related_model
         assert not isinstance(target, str)  # resolved to a class once apps are ready
+        # A nullable member's key is still required — always present in the
+        # value dict, with null expressing absence — so the canonical claim_key
+        # covers every identity part ("null" included).
         return ValueKeySpec(
             name=name,
             scalar_type=int,
             required=True,
+            nullable=member.nullable,
             identity=member.identity,
             fk_target=FkTarget(target, member.lookup_field),
         )
@@ -210,22 +235,46 @@ def _member_value_key(through_model: type[Model], member: MemberField) -> ValueK
 def _payload_value_key(
     through_model: type[Model], payload: PayloadField
 ) -> ValueKeySpec:
-    """Derive a non-identity payload value-key (today: gameplay ``count``).
+    """Derive a non-identity payload value-key (gameplay ``count``,
+    model-relationship ``relationship_type``/``license_status``).
 
-    The lower bound is harvested from the field's own ``MinValueValidator`` so
-    the patch adapter rejects a too-small payload at plan time (see
-    ``ValueKeySpec.min_value``). No symmetric *upper* bound is derived:
-    ``PositiveSmallIntegerField`` declares no ``MaxValueValidator``, only the
-    backend integer range — which SQLite (the patch author's local DB) reports
-    as the full 64-bit range, not Postgres's 32767 — so a meaningful max is not
-    model-derivable and an over-large payload falls through to a Postgres range
-    error in prod (the same reason ``max_length`` is the only string bound we
-    pre-check).
+    Integer payloads: the lower bound is harvested from the field's own
+    ``MinValueValidator`` so the patch adapter rejects a too-small payload at
+    plan time (see ``ValueKeySpec.min_value``). No symmetric *upper* bound is
+    derived: ``PositiveSmallIntegerField`` declares no ``MaxValueValidator``,
+    only the backend integer range — which SQLite (the patch author's local DB)
+    reports as the full 64-bit range, not Postgres's 32767 — so a meaningful max
+    is not model-derivable and an over-large payload falls through to a Postgres
+    range error in prod (the same reason ``max_length`` is the only string bound
+    we pre-check).
+
+    String payloads: ``max_length`` and the field's ``choices`` vocabulary (when
+    declared) carry over, so an out-of-vocab value fails validation rather than
+    deferring to the DB CHECK.
     """
     field = through_model._meta.get_field(payload.field)
     name = payload.value_key or payload.field
+    if isinstance(field, CharField):
+        max_length = field.max_length
+        assert max_length is not None, (
+            f"{through_model.__name__}.{payload.field} must declare a max_length"
+        )
+        choices = (
+            tuple(str(value) for value, _label in field.flatchoices)
+            if field.choices
+            else None
+        )
+        return ValueKeySpec(
+            name=name,
+            scalar_type=str,
+            required=payload.required,
+            nullable=payload.nullable,
+            max_length=max_length,
+            choices=choices,
+        )
     assert isinstance(field, IntegerField), (
-        f"{through_model.__name__}.{payload.field} payload must be an IntegerField"
+        f"{through_model.__name__}.{payload.field} payload must be an "
+        f"IntegerField or CharField"
     )
     min_value = max(
         (
@@ -241,7 +290,7 @@ def _payload_value_key(
     return ValueKeySpec(
         name=name,
         scalar_type=int,
-        required=False,
+        required=payload.required,
         nullable=payload.nullable,
         min_value=min_value,
     )

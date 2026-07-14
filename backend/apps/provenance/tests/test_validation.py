@@ -963,6 +963,102 @@ class TestValidateSingleRelationshipClaim:
 
 
 # ---------------------------------------------------------------------------
+# validate_single_relationship_claim — xor_groups + choices rules
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestModelRelationshipClaimShape:
+    """The target-ladder rules: member exclusivity (rule 7) and choices (rule 5).
+
+    ``model_relationship`` is the only namespace with ``xor_groups`` and
+    ``choices``, so its schema is where these rules are exercised. Schema-only
+    checks — the referenced pks never hit the DB.
+    """
+
+    def _validate(self, value, claim_key=None):
+        from apps.provenance.models import make_claim_key
+        from apps.provenance.validation import validate_single_relationship_claim
+
+        if claim_key is None:
+            claim_key = make_claim_key(
+                "model_relationship",
+                target_machine=value.get("target_machine"),
+                target_label=value.get("target_label"),
+            )
+        return validate_single_relationship_claim(
+            subject_model=MachineModel,
+            field_name="model_relationship",
+            claim_key=claim_key,
+            value=value,
+        )
+
+    def _value(self, machine=None, label="", **overrides):
+        return {
+            "target_machine": machine,
+            "target_label": label,
+            "relationship_type": "copy",
+            "license_status": "unknown",
+            "exists": True,
+            **overrides,
+        }
+
+    def test_machine_target_passes(self):
+        self._validate(self._value(machine=42))
+
+    def test_label_target_passes(self):
+        self._validate(self._value(label="several Gottlieb EM models"))
+
+    def test_machine_plus_label_rejected(self):
+        with pytest.raises(ValidationError, match="exactly one"):
+            self._validate(self._value(machine=42, label="redundant"))
+
+    def test_absent_target_rejected(self):
+        """All-null ladder (label "" counts as absent) sets zero groups."""
+        with pytest.raises(ValidationError, match="exactly one"):
+            self._validate(self._value())
+
+    def test_out_of_vocab_relationship_type_rejected(self):
+        with pytest.raises(ValidationError, match="'relationship_type' must be one"):
+            self._validate(self._value(machine=42, relationship_type="remake"))
+
+    def test_out_of_vocab_license_status_rejected(self):
+        with pytest.raises(ValidationError, match="'license_status' must be one"):
+            self._validate(self._value(machine=42, license_status="disputed"))
+
+    def test_missing_required_payload_rejected(self):
+        value = self._value(machine=42)
+        del value["license_status"]
+        with pytest.raises(ValidationError, match="missing required key"):
+            self._validate(value)
+
+    def test_retraction_without_payload_passes(self):
+        """Tombstones strip payload; required payload applies to positive
+        claims only."""
+        self._validate(
+            {
+                "target_machine": 42,
+                "target_label": "",
+                "exists": False,
+            }
+        )
+
+    def test_null_label_rejected(self):
+        """The literal member is not nullable — absence is the empty string."""
+        with pytest.raises(ValidationError, match="'target_label' may not be null"):
+            self._validate(self._value(machine=42, target_label=None))
+
+    def test_missing_null_identity_part_rejected(self):
+        """Nullable identity keys must still be present in the value dict."""
+        value = self._value(machine=42)
+        del value["target_machine"]
+        with pytest.raises(
+            ValidationError, match="missing required key 'target_machine'"
+        ):
+            self._validate(value)
+
+
+# ---------------------------------------------------------------------------
 # assert_claim — shape rejection end-to-end
 # ---------------------------------------------------------------------------
 

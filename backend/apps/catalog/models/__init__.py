@@ -20,6 +20,15 @@ from .manufacturer import (
     ManufacturerAlias,
     OperatingStatus,
 )
+from .model_relationship import (
+    RELATIONSHIP_CHIPS,
+    RELATIONSHIP_CHIPS_BY_SLUG,
+    LicenseStatus,
+    ModelRelationship,
+    RelationshipChip,
+    RelationshipType,
+    relationship_chip_exists,
+)
 from .person import Credit, Person, PersonAlias
 from .series import Franchise, Series
 from .system import System, SystemMpuString

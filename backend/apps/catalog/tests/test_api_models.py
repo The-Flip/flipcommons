@@ -4,8 +4,11 @@ from django.test.utils import CaptureQueriesContext
 from apps.catalog.models import (
     Credit,
     CreditRole,
+    LicenseStatus,
     MachineModel,
     ModelAbbreviation,
+    ModelRelationship,
+    RelationshipType,
     Title,
     TitleAbbreviation,
 )
@@ -56,6 +59,59 @@ class TestModelsAPI:
         resp = client.get("/api/models/?person=pat-lawlor")
         data = resp.json()
         assert data["count"] == 1
+
+    def test_list_models_filter_relationship_chips(
+        self, client, machine_model, another_model
+    ):
+        # machine_model gains a bootleg edge: (copy, unlicensed). The chip
+        # vocabulary is derived — bootleg narrows by both axes, copy by type
+        # only, and an unrelated chip matches nothing.
+        ModelRelationship.objects.create(
+            machine_model=machine_model,
+            target_machine=another_model,
+            relationship_type=RelationshipType.COPY,
+            license_status=LicenseStatus.UNLICENSED,
+        )
+        assert client.get("/api/models/?relationship=bootleg").json()["count"] == 1
+        assert client.get("/api/models/?relationship=copy").json()["count"] == 1
+        assert (
+            client.get("/api/models/?relationship=licensed-build").json()["count"] == 0
+        )
+        assert (
+            client.get("/api/models/?relationship=conversion-kit").json()["count"] == 0
+        )
+
+    def test_list_models_filter_relationship_label_target(self, client, machine_model):
+        # A label-target kit edge still lights up the conversion-kit chip.
+        ModelRelationship.objects.create(
+            machine_model=machine_model,
+            target_label="several Gottlieb EM models",
+            relationship_type=RelationshipType.CONVERSION_KIT,
+        )
+        resp = client.get("/api/models/?relationship=conversion-kit")
+        assert resp.json()["count"] == 1
+
+    def test_list_models_filter_relationship_unknown_chip(self, client, machine_model):
+        # Unknown chip slug matches nothing, like a nonexistent tag slug.
+        assert client.get("/api/models/?relationship=bogus").json()["count"] == 0
+
+    def test_conversion_edge_readmits_variant(self, client, machine_model):
+        # The variant collapse re-admits conversions; an edge-based conversion
+        # (no legacy converted_from FK) must be re-admitted the same way.
+        retheme = make_machine_model(
+            name="Retheme", slug="retheme", title=machine_model.title, year=1998
+        )
+        retheme.variant_of = machine_model
+        retheme.save(update_fields=["variant_of"])
+        assert client.get("/api/models/").json()["count"] == 1
+
+        ModelRelationship.objects.create(
+            machine_model=retheme,
+            target_machine=machine_model,
+            relationship_type=RelationshipType.CONVERSION,
+        )
+        names = {m["name"] for m in client.get("/api/models/").json()["items"]}
+        assert names == {"Medieval Madness", "Retheme"}
 
     def test_list_models_ordering(self, client, machine_model, another_model):
         resp = client.get("/api/models/?ordering=-year")

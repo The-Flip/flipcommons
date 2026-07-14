@@ -105,15 +105,24 @@ class ValueKeySpec:
     display_key: ClaimValueKey | None = None
     max_length: int | None = None
     min_value: int | None = None
+    choices: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class RelationshipSchema:
-    """Shape of one relationship namespace: value-key list + valid subjects."""
+    """Shape of one relationship namespace: value-key list + valid subjects.
+
+    ``xor_groups`` (optional) carries a member-exclusivity rule in value-key
+    names: exactly one group must be "present" per claim, where an FK key is
+    present when non-null and a string key when non-empty. Derived from the
+    through-model spec's ``MemberXor`` (field names → value keys) at
+    registration.
+    """
 
     namespace: str
     value_keys: tuple[ValueKeySpec, ...]
     valid_subjects: frozenset[type[ClaimControlledModel]]
+    xor_groups: tuple[tuple[ClaimValueKey, ...], ...] | None = None
 
 
 class FkClaim(NamedTuple):
@@ -180,6 +189,7 @@ def register_relationship_schema(
     namespace: str,
     value_keys: tuple[ValueKeySpec, ...],
     valid_subjects: Iterable[type[ClaimControlledModel]],
+    xor_groups: tuple[tuple[ClaimValueKey, ...], ...] | None = None,
 ) -> None:
     """Register a relationship schema. Idempotent; conflicting re-registration raises.
 
@@ -205,6 +215,16 @@ def register_relationship_schema(
                 f"identity keys must be required "
                 f"(identity={spec.identity!r}, required=False)"
             )
+
+    if xor_groups is not None:
+        identity_names = {spec.name for spec in value_keys if spec.identity is not None}
+        for group in xor_groups:
+            for name in group:
+                if name not in identity_names:
+                    raise ImproperlyConfigured(
+                        f"namespace {namespace!r}: xor_groups names {name!r}, "
+                        f"which is not an identity value-key"
+                    )
 
     # display_key invariants. Naming a sibling spec lets one declaration drive
     # both the resolver (which stores the override into AliasModel.value) and
@@ -268,6 +288,7 @@ def register_relationship_schema(
         namespace=namespace,
         value_keys=value_keys,
         valid_subjects=frozen_subjects,
+        xor_groups=xor_groups,
     )
     existing = _relationship_schemas.get(namespace)
     if existing is not None:
@@ -437,10 +458,16 @@ def validate_single_relationship_claim(
             f"got {type(value['exists']).__name__}."
         )
 
-    # 4. Missing any required key. Must precede rule 7 (canonical claim_key),
-    # which composes identity parts via `value[spec.name]`.
+    # 4. Missing any required key. Must precede rule 8 (canonical claim_key),
+    # which composes identity parts via `value[spec.name]`. Retractions carry
+    # only identity keys (`build_relationship_claim` strips payload from
+    # tombstones), so a required *payload* key is demanded on positive claims
+    # only — identity keys are required on both.
+    is_retraction = value["exists"] is False
     for spec in schema.value_keys:
-        if spec.required and spec.name not in value:
+        if spec.name in value or not spec.required:
+            continue
+        if spec.identity is not None or not is_retraction:
             raise ValidationError(
                 f"Value for {field_name!r} missing required key {spec.name!r}."
             )
@@ -467,6 +494,11 @@ def validate_single_relationship_claim(
                 f"Value for {field_name!r} key {spec.name!r} must be "
                 f"{spec.scalar_type.__name__}, got {type(v).__name__}."
             )
+        if spec.choices is not None and v not in spec.choices:
+            raise ValidationError(
+                f"Value for {field_name!r} key {spec.name!r} must be one of "
+                f"{sorted(spec.choices)!r}, got {v!r}."
+            )
 
     # 6. Unknown keys (other than "exists" and registered names). Applies
     # uniformly to retractions — a retraction carrying a stale extra key is
@@ -479,7 +511,26 @@ def validate_single_relationship_claim(
             f"{sorted(unknown)!r}. Allowed: {sorted(known)!r}."
         )
 
-    # 7. Non-canonical claim_key. `make_claim_key` sorts its kwargs, so the
+    # 7. Member-exclusivity (xor_groups): exactly one group present. Presence
+    # means non-null for FK keys and non-empty for string keys ("" is the
+    # CharField absence convention). Applies to retractions too — a tombstone
+    # names an edge by its identity, and only valid identities name edges.
+    if schema.xor_groups is not None:
+        present = [
+            group
+            for group in schema.xor_groups
+            if any(value[name] not in (None, "") for name in group)
+        ]
+        if len(present) != 1:
+            groups_desc = " / ".join(
+                "(" + ", ".join(group) + ")" for group in schema.xor_groups
+            )
+            raise ValidationError(
+                f"Value for {field_name!r} must set exactly one of the identity "
+                f"groups {groups_desc}; got {len(present)}."
+            )
+
+    # 8. Non-canonical claim_key. `make_claim_key` sorts its kwargs, so the
     # dict-comprehension order doesn't matter.
     identity_parts: dict[IdentityPartName, IdentityPartValue] = {
         spec.identity: value[spec.name]

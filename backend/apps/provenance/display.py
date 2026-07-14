@@ -403,11 +403,26 @@ def _build_relationship_display(
         s.display_key for s in schema.value_keys if s.display_key is not None
     }
 
+    # Absent ladder rungs are absence by design, not data violations: an
+    # xor_groups namespace sets exactly one group per claim, so the other
+    # groups' slots (nullable FK → None, literal → "") are skipped rather
+    # than rendered as missing identity parts.
+    absent_xor_slots: set[ClaimValueKey] = set()
+    if schema.xor_groups is not None:
+        absent_xor_slots = {
+            name
+            for group in schema.xor_groups
+            for name in group
+            if value.get(name) in (None, "")
+        }
+
     identity_parts: list[ClaimDisplayIdentityPartSchema] = []
     qualifier_parts: list[ClaimDisplayQualifierPartSchema] = []
 
     for spec in schema.value_keys:
         if spec.identity is not None:
+            if spec.name in absent_xor_slots:
+                continue
             result = resolve_identity_label(value, schema, spec, labels)
             identity_parts.append(
                 ClaimDisplayIdentityPartSchema(

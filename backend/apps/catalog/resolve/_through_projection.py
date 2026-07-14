@@ -22,7 +22,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
-from django.db.models import ForeignKey, IntegerField
+from django.db.models import CharField, ForeignKey, IntegerField
 
 from apps.provenance.model_bases import (
     ClaimRelationshipBinding,
@@ -42,6 +42,7 @@ from ._engine import (
     _no_payload,
     _one_column,
     _str_from_column,
+    _str_or_none_from_column,
 )
 
 if TYPE_CHECKING:
@@ -69,19 +70,26 @@ class _MemberInfo:
     """Precomputed per-member facts the extract closure reads on every claim.
 
     ``valid_pks`` is the target table's primary keys for an FK member (empty and
-    unused for a literal member).
+    unused for a literal member). ``nullable`` (FK members only) lets a null
+    identity part pass through as ``None`` instead of dropping the claim.
     """
 
     value_key: ClaimValueKey
     is_fk: bool
     valid_pks: frozenset[int]
+    nullable: bool = False
 
 
 class _PayloadPlan(NamedTuple):
-    """The resolved payload shape: its through-columns and the claim value-key."""
+    """The resolved payload shape: through-columns, value-keys and scalar types.
+
+    Positionally aligned: ``columns[i]`` materializes ``value_keys[i]``, whose
+    scalar shape is ``kinds[i]`` (``int`` or ``str``).
+    """
 
     columns: list[ColumnName]
-    value_key: ClaimValueKey | None
+    value_keys: tuple[ClaimValueKey, ...]
+    kinds: tuple[type, ...]
 
 
 def build_through_projection(
@@ -121,7 +129,9 @@ def build_through_projection(
                     spec.namespace,
                 )
                 return None
-            member_infos.append(_MemberInfo(value_key, True, valid_pks))
+            member_infos.append(
+                _MemberInfo(value_key, True, valid_pks, member.nullable)
+            )
             key_columns.append(f"{member.field}_id")
         else:
             member_infos.append(_MemberInfo(value_key, False, frozenset()))
@@ -130,8 +140,8 @@ def build_through_projection(
     payload = _resolve_payload(binding)
 
     columns_to_key, key_to_columns = _key_codecs(member_infos)
-    columns_to_payload, payload_to_columns = _payload_codecs(bool(payload.columns))
-    extract = _make_extractor(member_infos, payload.value_key)
+    columns_to_payload, payload_to_columns = _payload_codecs(payload)
+    extract = _make_extractor(member_infos, payload.value_keys)
 
     return ThroughRowProjection(
         subject_model=binding.subject_model,
@@ -150,32 +160,34 @@ def build_through_projection(
 
 
 def _resolve_payload(binding: ClaimRelationshipBinding) -> _PayloadPlan:
-    """The payload column + value-key, after the loud single-int-payload guard.
+    """The payload columns, value-keys and scalar kinds, type-checked per field.
 
-    Codec selection is narrowed to the one extant payload shape — a single
-    integer field (gameplay ``count``). The guard is a *type* check, not an arity
-    check, so a future single string/decimal ``PayloadField`` fails loudly here
-    rather than silently taking the int converter. Nullability is not part of the
-    predicate: a non-nullable int reads correctly under ``_int_or_none_from_column``
-    (merely a wider read type). Full type-driven selection lands with a second
-    payload shape.
+    Each payload field must be an ``IntegerField`` or ``CharField`` — the two
+    extant payload scalar shapes (gameplay ``count``; model-relationship
+    ``relationship_type``/``license_status``). The guard is a *type* check, not
+    an arity check, so a future decimal/bool ``PayloadField`` fails loudly here
+    rather than silently taking a scalar converter. Nullability is not part of
+    the predicate: a non-nullable value reads correctly under the ``…_or_none``
+    decoders (merely a wider read type).
     """
-    payload = binding.spec.payload
-    if not payload:
-        return _PayloadPlan([], None)
-    if len(payload) > 1:
-        raise NotImplementedError(
-            f"{binding.through_model.__name__}: only a single payload field is "
-            f"supported, got {len(payload)}."
-        )
-    pf = payload[0]
-    field = binding.through_model._meta.get_field(pf.field)
-    if not isinstance(field, IntegerField):
-        raise NotImplementedError(
-            f"{binding.through_model.__name__}: payload field {pf.field!r} "
-            f"is {type(field).__name__}, but only integer payloads are supported."
-        )
-    return _PayloadPlan([pf.field], pf.value_key or pf.field)
+    columns: list[ColumnName] = []
+    value_keys: list[ClaimValueKey] = []
+    kinds: list[type] = []
+    for pf in binding.spec.payload:
+        field = binding.through_model._meta.get_field(pf.field)
+        if isinstance(field, IntegerField):
+            kinds.append(int)
+        elif isinstance(field, CharField):
+            kinds.append(str)
+        else:
+            raise NotImplementedError(
+                f"{binding.through_model.__name__}: payload field {pf.field!r} "
+                f"is {type(field).__name__}, but only integer and string "
+                "payloads are supported."
+            )
+        columns.append(pf.field)
+        value_keys.append(pf.value_key or pf.field)
+    return _PayloadPlan(columns, tuple(value_keys), tuple(kinds))
 
 
 def _key_codecs(member_infos: list[_MemberInfo]) -> ColumnCodec:
@@ -186,16 +198,27 @@ def _key_codecs(member_infos: list[_MemberInfo]) -> ColumnCodec:
     return _compound_key, _compound_columns
 
 
-def _payload_codecs(has_payload: bool) -> ColumnCodec:
-    """Column⇄payload codecs — the nullable-int map, or the no-payload set."""
-    if has_payload:
-        return _int_or_none_from_column, _one_column
-    return _no_payload, _no_columns
+def _payload_codecs(payload: _PayloadPlan) -> ColumnCodec:
+    """Column⇄payload codecs, by payload arity and scalar kind.
+
+    A multi-column payload rides the compound (tuple-identity) codecs, same as
+    a compound member key.
+    """
+    if not payload.columns:
+        return _no_payload, _no_columns
+    if len(payload.columns) == 1:
+        from_column = (
+            _int_or_none_from_column
+            if payload.kinds[0] is int
+            else _str_or_none_from_column
+        )
+        return from_column, _one_column
+    return _compound_key, _compound_columns
 
 
 def _make_extractor(
     member_infos: list[_MemberInfo],
-    payload_value_key: ClaimValueKey | None,
+    payload_value_keys: tuple[ClaimValueKey, ...],
 ) -> MemberExtractor[Any, Any]:
     """Build the per-claim ``extract`` — the one per-shape step of reconcile.
 
@@ -203,10 +226,13 @@ def _make_extractor(
     the strictest: tolerate a null ``claim.value`` (location's guard), require an
     ``int`` value present in the target-PK set for every FK member (the M2M
     guard, which also drops a ``True``-as-pk), and drop a literal member only
-    when its value is missing. Safe today because tombstones are filtered before
-    ``extract`` and write-time validation enforces scalar types.
+    when its value is missing. A *nullable* FK member passes ``None`` through as
+    an absent identity part instead — only a non-null unresolved value drops the
+    claim. Safe today because tombstones are filtered before ``extract`` and
+    write-time validation enforces scalar types.
     """
     single_member = len(member_infos) == 1
+    single_payload = payload_value_keys[0] if len(payload_value_keys) == 1 else None
 
     def extract(claim: Claim) -> ExtractedMember[Any, Any] | None:
         val = cast(Mapping[str, object], claim.value or {})
@@ -214,6 +240,9 @@ def _make_extractor(
         for mi in member_infos:
             raw = val.get(mi.value_key)
             if mi.is_fk:
+                if raw is None and mi.nullable:
+                    keys.append(None)
+                    continue
                 if type(raw) is not int or raw not in mi.valid_pks:
                     logger.warning(
                         "Unresolved %s %r in claim (subject pk=%s)",
@@ -226,7 +255,13 @@ def _make_extractor(
                 return None
             keys.append(raw)
         key = keys[0] if single_member else tuple(keys)
-        payload = val.get(payload_value_key) if payload_value_key is not None else None
+        payload: object
+        if not payload_value_keys:
+            payload = None
+        elif single_payload is not None:
+            payload = val.get(single_payload)
+        else:
+            payload = tuple(val.get(k) for k in payload_value_keys)
         return ExtractedMember(key, payload)
 
     return extract

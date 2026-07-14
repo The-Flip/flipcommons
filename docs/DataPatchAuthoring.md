@@ -240,6 +240,26 @@ claims:
 - **Series vs model.** Put a credit on the `series.*` entry only when it genuinely applies to the series as a whole (e.g. an original designer credited across the line); a credit specific to one machine belongs on its `model.*` entry.
 - **Remove** drops a credit like any other member: `remove: { credit: [{ john-youssi: art }] }` (or the block form), attributed to the source holding the claim.
 
+## Model relationships
+
+A model relationship types an edge from a model to the machine it copies, converts or fits as a kit (see [DataPatches.md → Model relationships](DataPatches.md#model-relationships) for the full syntax). Each member is an explicit-key mapping with one target key (`target_machine` public_id XOR `target_label` plain text) plus `relationship_type` and `license_status`. Authoring guidance:
+
+```yaml
+claims:
+  - model.al-capone:
+      cite: ipdb:5541
+      model_relationship:
+        - target_machine: fire-action
+          relationship_type: copy
+          license_status: unlicensed
+```
+
+- **Source the two axes separately.** The target ("it's a copy of Fire Action") and the licensing status ("unlicensed") are different facts, often from different sources. Both citations attach to the member's entry; put which-cite-supports-what in each citation's quote.
+- **`license_status: unknown` is the honest default** — write it whenever no source establishes authorization either way. Do NOT infer `unlicensed` from a source merely calling something a "bootleg region" copy; `unlicensed` needs its own evidence.
+- **Use `target_label` only when the machine isn't seeded or the target is plural** ("several Gottlieb EM models"). Write the label as it should display after "Conversion kit for …" / "Copy of …"; it renders as plain text with no links.
+- **No `bootleg`/`licensed-build`/`conversion-kit` tags.** Those tags are superseded by edges: bootleg = (copy, unlicensed), licensed build = (copy, licensed), kit = conversion_kit. Don't author the tags alongside an edge.
+- **Distinct from `variant_of`/`remake_of`.** Cosmetic variants and official remakes stay scalar FK fields on the model; the edge table is for copies, conversions and kits only.
+
 ## Validation process
 
 How to validate your changes:

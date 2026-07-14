@@ -11,6 +11,8 @@ domain layer depends on the generic engine, not vice versa.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from apps.catalog.models import (
     CorporateEntity,
     CreditRole,
@@ -21,6 +23,7 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
+from apps.catalog.models.model_relationship import TARGET_LABEL_MAX_LENGTH
 from apps.claim_edit.claim_write import ClaimSpec, ValidationErrors, raise_form_error
 from apps.core.models import SluggedModel
 from apps.core.types import ClaimFieldName
@@ -33,7 +36,11 @@ from apps.provenance.validation import get_relationship_schema
 
 from ._typing import CreditKey, CreditPkKey
 from .helpers import displayed_model_abbreviations
-from .schemas import CreditInputSchema, GameplayFeatureInputSchema
+from .schemas import (
+    CreditInputSchema,
+    GameplayFeatureInputSchema,
+    ModelRelationshipInputSchema,
+)
 
 # Concrete catalog models with a self-referencing ``parents`` M2M / reverse
 # ``aliases`` relation, typed as unions rather than a structural protocol
@@ -510,6 +517,128 @@ def build_credit_claim_specs(
             "credit", {"person": person_pk, "role": role_pk}, exists=False
         )
         specs.append(ClaimSpec(field_name="credit", value=value, claim_key=claim_key))
+    return specs
+
+
+class _RelationshipTarget(NamedTuple):
+    """A relationship edge's identity — the target ladder as claim-value parts.
+
+    ``machine_pk`` is ``None`` on the label rung; ``label`` is ``""`` on the
+    machine rung (the ""-as-absent convention the claim schema expects).
+    """
+
+    machine_pk: int | None
+    label: str
+
+
+class _RelationshipPayload(NamedTuple):
+    """A relationship edge's non-identity axes."""
+
+    relationship_type: str
+    license_status: str
+
+
+def plan_model_relationship_claims(
+    entity: MachineModel,
+    desired: list[ModelRelationshipInputSchema],
+) -> list[ClaimSpec]:
+    """Validate and diff relationship edges on a MachineModel.
+
+    Desired-list semantics, like credits: the frontend sends every edge that
+    should exist after the save. The diff emits an assert for each new edge
+    *and* for each edge whose payload (type / license) changed — same claim
+    key, superseding in place — and a tombstone for each edge whose target
+    disappeared from the list. An edited target is therefore naturally a
+    tombstone + assert pair in the same ChangeSet.
+
+    Assumes ``entity`` has ``relationships`` prefetched. Field errors are keyed
+    ``relationships.{target}`` so the frontend can display them on the row.
+
+    Raises HttpError 422 on invalid input.
+    """
+    errors = ValidationErrors()
+    seen: set[_RelationshipTarget] = set()
+    rows: list[tuple[_RelationshipTarget, _RelationshipPayload]] = []
+    slugs = {r.target_slug for r in desired if r.target_slug}
+    slug_to_pk = dict(
+        MachineModel.objects.filter(slug__in=slugs).values_list("slug", "pk")
+    )
+    for row in desired:
+        row_key = row.target_slug or row.target_label
+        label = row.target_label.strip()
+        if bool(row.target_slug) == bool(label):
+            errors.add_field(
+                f"relationships.{row_key}",
+                "Set either a target machine or a text description — exactly one.",
+            )
+            continue
+        if len(label) > TARGET_LABEL_MAX_LENGTH:
+            errors.add_field(
+                f"relationships.{row_key}",
+                f"Description must be {TARGET_LABEL_MAX_LENGTH} characters or fewer.",
+            )
+            continue
+        machine_pk: int | None = None
+        if row.target_slug:
+            if row.target_slug == entity.slug:
+                errors.add_field(
+                    f"relationships.{row_key}",
+                    "A model cannot have a relationship to itself.",
+                )
+                continue
+            machine_pk = slug_to_pk.get(row.target_slug)
+            if machine_pk is None:
+                errors.add_field(
+                    f"relationships.{row_key}",
+                    f"Unknown model: {row.target_slug}.",
+                )
+                continue
+        target = _RelationshipTarget(machine_pk, label)
+        if target in seen:
+            errors.add_field(
+                f"relationships.{row_key}",
+                "Duplicate relationship target.",
+            )
+            continue
+        seen.add(target)
+        rows.append(
+            (target, _RelationshipPayload(row.relationship_type, row.license_status))
+        )
+    errors.raise_if_errors()
+
+    desired_by_target = dict(rows)
+    current_by_target: dict[_RelationshipTarget, _RelationshipPayload] = {
+        _RelationshipTarget(edge.target_machine_id, edge.target_label): (
+            _RelationshipPayload(edge.relationship_type, edge.license_status)
+        )
+        for edge in entity.relationships.all()
+    }
+
+    specs: list[ClaimSpec] = []
+    for target, payload in desired_by_target.items():
+        if current_by_target.get(target) == payload:
+            continue  # unchanged edge — no claim
+        claim_key, value = build_relationship_claim(
+            "model_relationship",
+            {
+                "target_machine": target.machine_pk,
+                "target_label": target.label,
+                "relationship_type": payload.relationship_type,
+                "license_status": payload.license_status,
+            },
+        )
+        specs.append(
+            ClaimSpec(field_name="model_relationship", value=value, claim_key=claim_key)
+        )
+    for target in current_by_target.keys() - desired_by_target.keys():
+        claim_key, value = build_relationship_claim(
+            "model_relationship",
+            {"target_machine": target.machine_pk, "target_label": target.label},
+            exists=False,
+        )
+        specs.append(
+            ClaimSpec(field_name="model_relationship", value=value, claim_key=claim_key)
+        )
     return specs
 
 
