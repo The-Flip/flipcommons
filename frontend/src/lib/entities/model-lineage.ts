@@ -5,17 +5,17 @@
  * page — renders from this declaration, so a new relation is added once here
  * instead of in near-clone `{#if}` blocks per surface.
  *
- * `entity-meta.ts` only knows the forward FKs (`variant_of`, `converted_from`,
- * `remake_of`, `bootleg_of`, `licensed_build_of`) and carries no display copy, so the reverse lists
- * and the headings/notes are declared here. `model-lineage.test.ts` guards that
- * the forward set stays in sync with `ENTITY_META`, so a new backend
- * model↔model FK forces a descriptor here rather than silently going unshown.
+ * `entity-meta.ts` only knows the forward FKs (`variant_of`, `remake_of`) and
+ * carries no display copy, so the reverse lists and the headings/notes are
+ * declared here. `model-lineage.test.ts` guards that the forward set stays in
+ * sync with `ENTITY_META`, so a new backend model↔model FK forces a descriptor
+ * here rather than silently going unshown. Copy/conversion/kit facts render
+ * from `ModelRelationship` edges instead — see {@link modelEdgeSections}.
  */
 import type { EntityRef, ModelDetailSchema, ModelRef } from '$lib/api/schema';
 import {
   inboundRelationshipHeading,
   inboundRelationshipNote,
-  machineTargetText,
   relationshipLead,
   relationshipNote,
 } from './relationship-phrase';
@@ -25,17 +25,7 @@ export type ModelLineageLink = Pick<ModelRef, 'name' | 'public_id' | 'year' | 'm
 
 /** Keys on {@link ModelDetailSchema} whose values are model↔model lineage links. */
 export type ModelLineageKey =
-  | 'variant_of'
-  | 'variants'
-  | 'variant_siblings'
-  | 'converted_from'
-  | 'conversions'
-  | 'remake_of'
-  | 'remakes'
-  | 'bootleg_of'
-  | 'bootlegs'
-  | 'licensed_build_of'
-  | 'licensed_builds';
+  'variant_of' | 'variants' | 'variant_siblings' | 'remake_of' | 'remakes';
 
 /** Display + accessor descriptor for one lineage relation. */
 export interface ModelLineageRelation {
@@ -61,7 +51,8 @@ const one = (link: ModelLineageLink | null | undefined): ModelLineageLink[] => (
 export const MODEL_LINEAGE_RELATIONS: readonly ModelLineageRelation[] = [
   {
     key: 'variant_of',
-    heading: 'Parent Model',
+    heading: 'Variant Of',
+    note: 'This game is a variant of:',
     many: false,
     resolve: (m) => one(m.variant_of),
   },
@@ -75,22 +66,9 @@ export const MODEL_LINEAGE_RELATIONS: readonly ModelLineageRelation[] = [
   {
     key: 'variant_siblings',
     heading: 'Other Variants',
+    note: 'Other variants of the same parent:',
     many: true,
     resolve: (m) => m.variant_siblings ?? [],
-  },
-  {
-    key: 'converted_from',
-    heading: 'Converted From',
-    note: 'This game was rebuilt from the hardware of:',
-    many: false,
-    resolve: (m) => one(m.converted_from),
-  },
-  {
-    key: 'conversions',
-    heading: 'Conversions',
-    note: "Different games rebuilt from this machine's hardware:",
-    many: true,
-    resolve: (m) => m.conversions ?? [],
   },
   {
     key: 'remake_of',
@@ -106,51 +84,56 @@ export const MODEL_LINEAGE_RELATIONS: readonly ModelLineageRelation[] = [
     many: true,
     resolve: (m) => m.remakes ?? [],
   },
-  {
-    key: 'bootleg_of',
-    heading: 'Bootleg Of',
-    note: 'This game is an unauthorized copy of:',
-    many: false,
-    resolve: (m) => one(m.bootleg_of),
-  },
-  {
-    key: 'bootlegs',
-    heading: 'Bootlegs',
-    note: 'Unauthorized copies of this game:',
-    many: true,
-    resolve: (m) => m.bootlegs ?? [],
-  },
-  {
-    key: 'licensed_build_of',
-    heading: 'Licensed Build Of',
-    note: 'This game is an officially licensed build of:',
-    many: false,
-    resolve: (m) => one(m.licensed_build_of),
-  },
-  {
-    key: 'licensed_builds',
-    heading: 'Licensed Builds',
-    note: 'Officially licensed builds of this game:',
-    many: true,
-    resolve: (m) => m.licensed_builds ?? [],
-  },
 ];
 
 /**
  * A resolved lineage link ready to render: identity plus the maker to show for
- * disambiguation (or `null` to omit it).
+ * disambiguation (or `null` to omit it). Lineage links and edge machine
+ * targets both resolve to this shape, so `RelatedModelLink` is the one
+ * renderer for a related model across every section.
  */
 export interface ModelLineageLinkView {
   name: string;
   public_id: string;
-  year?: number | null;
+  /** Year to show, or `null` when it matches the subject's year or is unknown. */
+  year: number | null;
   /**
    * Manufacturer to show (as a link to its page), or `null` when it matches the
-   * subject's maker or is unknown. Same-named links (a game and the bootlegs
-   * that copied its name) otherwise read as a relation to itself, since no
+   * subject's maker or is unknown. Same-named links (a game and the copies
+   * that took its name) otherwise read as a relation to itself, since no
    * reader surface shows a maker; a *differing* maker is what disambiguates them.
    */
   manufacturer: EntityRef | null;
+}
+
+/** Input for {@link toModelLinkView}: maker and year may be absent entirely (e.g. variant rows). */
+export type RelatedModelInput = Pick<ModelRef, 'name' | 'public_id'> &
+  Partial<Pick<ModelRef, 'year' | 'manufacturer'>>;
+
+/** The page's subject model, whose maker and year suppress matching values on related-model lines. */
+export interface RelatedModelSubject {
+  manufacturer: string | null;
+  year: number | null;
+}
+
+/**
+ * Resolve a related model for display: keep the maker and year only when they
+ * differ from the subject's (i.e. when they disambiguate). Every surface that
+ * renders a `RelatedModelLink` builds its link through this rule.
+ */
+export function toModelLinkView(
+  link: RelatedModelInput,
+  subject: RelatedModelSubject,
+): ModelLineageLinkView {
+  return {
+    name: link.name,
+    public_id: link.public_id,
+    year: link.year != null && link.year !== subject.year ? link.year : null,
+    manufacturer:
+      link.manufacturer && link.manufacturer.name !== subject.manufacturer
+        ? link.manufacturer
+        : null,
+  };
 }
 
 /** A lineage relation paired with its resolved, non-empty link list. */
@@ -165,31 +148,28 @@ export interface ModelLineageSection {
  * the "has any lineage" check that gates the mobile Related Models accordion.
  */
 export function modelLineageSections(model: ModelDetailSchema): ModelLineageSection[] {
-  const subjectManufacturer = model.manufacturer?.name ?? null;
+  const subject = modelSubject(model);
   const sections: ModelLineageSection[] = [];
   for (const relation of MODEL_LINEAGE_RELATIONS) {
     const links = relation.resolve(model);
     if (links.length === 0) continue;
     sections.push({
       relation,
-      links: links.map((link) => ({
-        name: link.name,
-        public_id: link.public_id,
-        year: link.year,
-        manufacturer:
-          link.manufacturer && link.manufacturer.name !== subjectManufacturer
-            ? link.manufacturer
-            : null,
-      })),
+      links: links.map((link) => toModelLinkView(link, subject)),
     });
   }
   return sections;
 }
 
+/** The suppression subject for a model detail page: the page's own model. */
+function modelSubject(model: ModelDetailSchema): RelatedModelSubject {
+  return { manufacturer: model.manufacturer?.name ?? null, year: model.year ?? null };
+}
+
 /**
  * Look up a single lineage relation by key, for surfaces that render a curated
- * subset (the single-model title page shows only `bootlegs`). Throws on an
- * unknown key so a typo fails loudly rather than rendering nothing.
+ * subset. Throws on an unknown key so a typo fails loudly rather than
+ * rendering nothing.
  */
 export function modelLineageRelation(key: ModelLineageKey): ModelLineageRelation {
   const relation = MODEL_LINEAGE_RELATIONS.find((r) => r.key === key);
@@ -198,13 +178,13 @@ export function modelLineageRelation(key: ModelLineageKey): ModelLineageRelation
 }
 
 /**
- * One rendered line of a relationship-edge section: a machine target (the
- * whole text links to the model page) XOR a plain-text label target, mirroring
- * the edge's own target XOR. Inbound sections put the *source* model here.
+ * One rendered line of a relationship-edge section: a machine target XOR a
+ * plain-text label target, mirroring the edge's own target XOR. Inbound
+ * sections put the *source* model here.
  */
 export interface ModelEdgeTargetView {
-  /** Linked machine, or `null` for a label target. `text` is the full display text ("Galaxie (Gottlieb 1971)"). */
-  machine: { text: string; public_id: string } | null;
+  /** Linked machine (rendered by `RelatedModelLink`, like every lineage link), or `null` for a label target. */
+  machine: ModelLineageLinkView | null;
   /** Free-text descriptor when the donor isn't seeded; rendered unlinked — no hyperlink anywhere in it. */
   label: string;
 }
@@ -221,19 +201,22 @@ export interface ModelEdgeSection {
   targets: ModelEdgeTargetView[];
 }
 
-function machineTargetView(ref: ModelRef): ModelEdgeTargetView {
-  return { machine: { text: machineTargetText(ref), public_id: ref.public_id }, label: '' };
-}
-
 /**
  * The model's relationship edges (copy / conversion / conversion kit) grouped
  * into display sections: outbound edges under their lead phrase
  * ("Conversion kit for" → one target line per edge), then inbound edges under
  * the plural heading ("Conversion Kits" → one source line per edge). Groups
  * follow the edges' payload order of first appearance. Rendered by the same
- * surfaces as {@link modelLineageSections}, after the lineage sections.
+ * surfaces as {@link modelLineageSections}, after the lineage sections, with
+ * the same maker/year-disambiguation rule on machine targets.
  */
 export function modelEdgeSections(model: ModelDetailSchema): ModelEdgeSection[] {
+  const subject = modelSubject(model);
+  const machineTarget = (ref: ModelRef): ModelEdgeTargetView => ({
+    machine: toModelLinkView(ref, subject),
+    label: '',
+  });
+
   const sections = new Map<string, ModelEdgeSection>();
   const section = (key: string, heading: string, note: string): ModelEdgeSection => {
     let existing = sections.get(key);
@@ -250,7 +233,7 @@ export function modelEdgeSections(model: ModelDetailSchema): ModelEdgeSection[] 
     const note = relationshipNote(edge.relationship_type, edge.license_status);
     section(key, lead, note).targets.push(
       edge.target_machine
-        ? machineTargetView(edge.target_machine)
+        ? machineTarget(edge.target_machine)
         : { machine: null, label: edge.target_label ?? '' },
     );
   }
@@ -259,7 +242,7 @@ export function modelEdgeSections(model: ModelDetailSchema): ModelEdgeSection[] 
     const key = `inbound:${edge.relationship_type}:${edge.license_status}`;
     const heading = inboundRelationshipHeading(edge.relationship_type, edge.license_status);
     const note = inboundRelationshipNote(edge.relationship_type, edge.license_status);
-    section(key, heading, note).targets.push(machineTargetView(edge.source_machine));
+    section(key, heading, note).targets.push(machineTarget(edge.source_machine));
   }
 
   return [...sections.values()];

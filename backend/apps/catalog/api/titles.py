@@ -316,38 +316,28 @@ class AgreedSpecsSchema(Schema):
 
 
 # Lineage relations that can point at a model under a different title. Same-title
-# links are filtered out in `_collect_related_titles`. The first four are the
-# legacy scalar FKs (kept until the old columns are dropped — see the migration
-# map in docs/plans/catalog_data_model/ModelRelationships.md); the last three
-# are `ModelRelationship` edge types (`RelationshipTypeLiteral` values).
+# links are filtered out in `_collect_related_titles`. `remake_of` is the scalar
+# lineage FK; the other three are `ModelRelationship` edge types
+# (`RelationshipTypeLiteral` values).
 CrossTitleRelation = Literal[
-    "converted_from",
     "remake_of",
-    "bootleg_of",
-    "licensed_build_of",
     "conversion",
     "conversion_kit",
     "copy",
 ]
-# The legacy FK attrs `_collect_related_titles` walks with getattr.
-_CROSS_TITLE_FK_RELATIONS: tuple[CrossTitleRelation, ...] = (
-    "converted_from",
-    "remake_of",
-    "bootleg_of",
-    "licensed_build_of",
-)
+# The scalar FK attrs `_collect_related_titles` walks with getattr.
+_CROSS_TITLE_FK_RELATIONS: tuple[CrossTitleRelation, ...] = ("remake_of",)
 
 
 class CrossTitleLinkSchema(Schema):
     """A cross-title lineage relationship contributed by a specific model under
-    the current title — a legacy lineage FK or a `ModelRelationship` edge whose
+    the current title — a `remake_of` link or a `ModelRelationship` edge whose
     target machine sits under a different title."""
 
     relation: CrossTitleRelation
     other_title: EntityRef
     source_model: EntityRef
-    # Meaningful for the edge relations only; legacy FK relations carry their
-    # authorization in the relation name itself (bootleg_of / licensed_build_of).
+    # Meaningful for the edge relations only; remakes carry no license axis.
     license_status: LicenseStatusLiteral = "unknown"
 
 
@@ -510,9 +500,8 @@ def _collect_related_titles(
 ) -> list[CrossTitleLinkSchema]:
     """Collect cross-title lineage links (see ``CrossTitleRelation``).
 
-    For each model under *current_title* whose legacy lineage FK
-    (``converted_from`` / ``remake_of`` / ``bootleg_of`` / ``licensed_build_of``)
-    or ``ModelRelationship`` edge points to a model under a *different* title,
+    For each model under *current_title* whose ``remake_of`` FK or
+    ``ModelRelationship`` edge points to a model under a *different* title,
     emit one entry per link with the relation kind, the other title, and the
     source model under the current title.  Same-title relations (LE→Pro
     conversion, within-title remakes) are excluded — they are not cross-title
@@ -718,10 +707,7 @@ def _title_models_prefetch() -> Prefetch[str, Any, str]:
             "cabinet",
             "game_format",
             "production_status",
-            "converted_from__title",
             "remake_of__title",
-            "bootleg_of__title",
-            "licensed_build_of__title",
         )
         .prefetch_related(
             "themes",

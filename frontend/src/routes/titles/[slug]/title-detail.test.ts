@@ -116,10 +116,7 @@ describe('title detail SSR route', () => {
         tags: [],
         reward_types: [],
         variant_siblings: [],
-        conversions: [],
         remakes: [],
-        bootleg_of: null,
-        bootlegs: [],
         title_models: [],
         production_quantity: '',
       },
@@ -151,12 +148,26 @@ describe('title detail SSR route', () => {
               name: 'Video Pinball',
               public_id: 'video-pinball',
               slug: 'video-pinball',
-              bootleg_of: { name: 'Jungle Life', public_id: 'jungle-life', year: 1978 },
-              bootlegs: [{ name: 'Rugby', public_id: 'rugby-sidam', year: 1979 }],
+              relationships: [
+                {
+                  relationship_type: 'copy',
+                  license_status: 'unlicensed',
+                  target_machine: { name: 'Jungle Life', public_id: 'jungle-life', year: 1978 },
+                  target_label: '',
+                },
+              ],
+              inbound_relationships: [
+                {
+                  relationship_type: 'copy',
+                  license_status: 'unlicensed',
+                  source_machine: { name: 'Rugby', public_id: 'rugby-sidam', year: 1979 },
+                },
+              ],
             }),
             related_titles: [
               {
-                relation: 'bootleg_of',
+                relation: 'copy',
+                license_status: 'unlicensed',
                 other_title: { name: 'Jungle Life', public_id: 'jungle-life' },
                 source_model: { name: 'Video Pinball', public_id: 'video-pinball' },
               },

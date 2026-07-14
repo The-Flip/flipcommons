@@ -185,10 +185,11 @@ Ordered steps:
 
 1. ~~**Claims-spec surgery**~~ — done (`feat/model-relationships`).
 2. ~~**Schema migration + patch authoring syntax**~~ — done (same branch; see [DataPatches.md → Model relationships](../../DataPatches.md#model-relationships)).
-3. **Consumer rework, BEFORE the patch rework lands**: `first_model_candidates()` / `SUBORDINATE_COPY_FIELDS` derive "subordinate copy" from copy edges, and the bootleg/licensed-build/conversion-kit chips derive from (type, license_status) filters. Old-FK reads keep working until step 5, but once patches stop authoring the old fields, anything still keyed to them silently degrades — hence the ordering.
-4. **Rework the unshipped 0039–0150 patches** (separate sessions) to author `model_relationship` edges with the `license_status` each row's sources actually support (see [Migration examples](#migration-examples)), and to drop the three tags from the vocabulary patches. Local DBs rebuild by re-ingest; prod is untouched.
-5. **Drop the old columns and tags**: remove `bootleg_of`, `licensed_build_of` and `converted_from` from `MachineModel` (pure DDL — prod columns are all NULL), their reverse accessors and editor/API surfaces. Sequenced after step 4 and after the editing UX stops offering the old fields.
-6. **`make codegen` + remaining derived surfaces.**
+3. **Consumer rework, BEFORE the patch rework lands**: `first_model_candidates()` / `SUBORDINATE_COPY_FIELDS` derive "subordinate copy" from copy edges, and the bootleg/licensed-build/conversion-kit chips derive from (type, license_status) filters. Old-FK reads keep working until step 6, but once patches stop authoring the old fields, anything still keyed to them silently degrades — hence the ordering.
+4. ~~**Retire the old-FK display/API surfaces**~~ — done (2026-07-14, pulled forward from step 6): `converted_from`/`conversions`, `bootleg_of`/`bootlegs` and `licensed_build_of`/`licensed_builds` are no longer serialized in `ModelDetailSchema` or read by the title page's cross-title collector, and the lineage display descriptors are gone. Safe ahead of the patch rework because no shipped patch uses the old fields, so there was nothing to display. The columns remain writable via the claims patch until step 6.
+5. **Rework the unshipped 0039–0150 patches** (separate sessions) to author `model_relationship` edges with the `license_status` each row's sources actually support (see [Migration examples](#migration-examples)), and to drop the three tags from the vocabulary patches. Local DBs rebuild by re-ingest; prod is untouched.
+6. **Drop the old columns and tags**: remove `bootleg_of`, `licensed_build_of` and `converted_from` from `MachineModel` (pure DDL — prod columns are all NULL), their reverse accessors and remaining write-path surfaces (`_SELF_REF_FIELDS`, the `first_model_candidates()` dual-read, the `NON_DISPLAYED_FORWARD_FKS` exemption in `model-lineage.test.ts`). Sequenced after step 5.
+7. **`make codegen` + remaining derived surfaces.**
 
 Guidance for the patch-rework sessions (the value mapping, per row — not a mechanical migration):
 

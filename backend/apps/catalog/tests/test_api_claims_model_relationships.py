@@ -535,7 +535,9 @@ class TestHierarchyFKValidation:
         client.force_login(user)
         resp = _patch(client, pm.slug, {"fields": {"bootleg_of": original.slug}})
         assert resp.status_code == 200
-        assert resp.json()["bootleg_of"]["public_id"] == "video-pinball"
+        # bootleg_of is not serialized in the response; assert against the DB.
+        pm.refresh_from_db()
+        assert pm.bootleg_of_id == original.pk
 
     def test_licensed_build_of_resolves_across_titles(self, client, user, pm):
         # `licensed_build_of` may point at a model under a different Title, like
@@ -547,7 +549,9 @@ class TestHierarchyFKValidation:
         client.force_login(user)
         resp = _patch(client, pm.slug, {"fields": {"licensed_build_of": original.slug}})
         assert resp.status_code == 200
-        assert resp.json()["licensed_build_of"]["public_id"] == "party-animal"
+        # licensed_build_of is not serialized in the response; assert against the DB.
+        pm.refresh_from_db()
+        assert pm.licensed_build_of_id == original.pk
 
 
 # ---------------------------------------------------------------------------

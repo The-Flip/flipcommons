@@ -263,6 +263,8 @@
       models={model.title_models}
       heading="Other Models In Title"
       excludeSlug={model.variant_of?.public_id ?? model.slug}
+      subjectManufacturer={model.manufacturer?.name ?? null}
+      subjectYear={model.year ?? null}
     />
 
     <ExternalLinksSidebarSection links={externalSiteLinks} note="See this model on other sites:" />

@@ -48,6 +48,22 @@ describe('externalLinks', () => {
     ]);
   });
 
+  it('appends " #{id}" to the label when the entry opts in via showId', () => {
+    const links = externalLinks(
+      baseEntity({ ipdb: 1384 }),
+      makeInfo({
+        ipdb: {
+          label: 'IPDB',
+          urlTemplate: 'https://www.ipdb.org/machine.cgi?id={id}',
+          showId: true,
+        },
+      }),
+    );
+    expect(links).toEqual([
+      { label: 'IPDB #1384', href: 'https://www.ipdb.org/machine.cgi?id=1384' },
+    ]);
+  });
+
   it('excludes identifier-only entries (no resolvable URL)', () => {
     const links = externalLinks(baseEntity({ opdb: 'G50L9-MDxXD' }), makeInfo(REGISTRY));
     expect(links).toEqual([]);

@@ -28,7 +28,10 @@ export function externalLinks<T>(entity: T, info: EntityInfo<T>): ExternalLink[]
     const value = entity[key];
     // Same skip rule as the JSON-LD assembler: null / undefined / empty string.
     if (value === null || value === undefined || value === '') continue;
-    links.push({ label: entry.label, href: entry.urlTemplate.replace('{id}', String(value)) });
+    links.push({
+      label: entry.showId ? `${entry.label} #${String(value)}` : entry.label,
+      href: entry.urlTemplate.replace('{id}', String(value)),
+    });
   }
   return links;
 }

@@ -257,14 +257,8 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     series: EntityRef | None = None
     variant_of: ModelRef | None = None
     variant_siblings: list[ModelVariantSchema] = []
-    converted_from: ModelRef | None = None
-    conversions: list[ModelRef] = []
     remake_of: ModelRef | None = None
     remakes: list[ModelRef] = []
-    bootleg_of: ModelRef | None = None
-    bootlegs: list[ModelRef] = []
-    licensed_build_of: ModelRef | None = None
-    licensed_builds: list[ModelRef] = []
     relationships: list[ModelRelationshipSchema] = []
     inbound_relationships: list[InboundModelRelationshipSchema] = []
     title_models: list[TitleModelSchema] = []
@@ -490,14 +484,8 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         variants=variants,
         variant_of=_model_ref(pm.variant_of),
         variant_siblings=variant_siblings,
-        converted_from=_model_ref(pm.converted_from),
-        conversions=_model_refs(pm.conversions.all()),
         remake_of=_model_ref(pm.remake_of),
         remakes=_model_refs(pm.remakes.all()),
-        bootleg_of=_model_ref(pm.bootleg_of),
-        bootlegs=_model_refs(pm.bootlegs.all()),
-        licensed_build_of=_model_ref(pm.licensed_build_of),
-        licensed_builds=_model_refs(pm.licensed_builds.all()),
         relationships=[
             ModelRelationshipSchema(
                 relationship_type=RELATIONSHIP_TYPE_TO_LITERAL[edge.relationship_type],
@@ -608,13 +596,10 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             "game_format",
             "production_status",
             # `__corporate_entity__manufacturer` so the lineage ModelRefs can
-            # carry a maker for disambiguating same-named links (bootlegs etc.)
-            # without an N+1 per related row.
+            # carry a maker for disambiguating same-named links without an
+            # N+1 per related row.
             "variant_of__corporate_entity__manufacturer",
-            "converted_from__corporate_entity__manufacturer",
             "remake_of__corporate_entity__manufacturer",
-            "bootleg_of__corporate_entity__manufacturer",
-            "licensed_build_of__corporate_entity__manufacturer",
         )
         .prefetch_related(
             # Variants and sibling variants also carry a maker; select the
@@ -649,25 +634,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             # Reverse lineage lists render as ModelRefs with a maker; select the
             # manufacturer join here to keep the ref build query-free.
             Prefetch(
-                "conversions",
-                queryset=MachineModel.objects.select_related(
-                    "corporate_entity__manufacturer"
-                ),
-            ),
-            Prefetch(
                 "remakes",
-                queryset=MachineModel.objects.select_related(
-                    "corporate_entity__manufacturer"
-                ),
-            ),
-            Prefetch(
-                "bootlegs",
-                queryset=MachineModel.objects.select_related(
-                    "corporate_entity__manufacturer"
-                ),
-            ),
-            Prefetch(
-                "licensed_builds",
                 queryset=MachineModel.objects.select_related(
                     "corporate_entity__manufacturer"
                 ),

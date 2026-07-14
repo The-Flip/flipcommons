@@ -16,10 +16,15 @@ import {
 // what makes "add a relation once" hold: the shared surfaces render from
 // MODEL_LINEAGE_RELATIONS, and this stops a new FK from silently going unshown.
 describe('model lineage vs entity-meta', () => {
+  // Forward FKs with no display descriptor: copy/conversion facts render from
+  // relationship edges, not from these columns.
+  const NON_DISPLAYED_FORWARD_FKS = ['converted_from', 'bootleg_of', 'licensed_build_of'];
+
   it('declares exactly the forward model↔model FKs that ENTITY_META knows', () => {
     const forwardSelfFks = Object.entries(ENTITY_META.model.relationships)
       .filter(([, r]) => r.entity_target_type === 'model' && !r.many)
       .map(([key]) => key)
+      .filter((key) => !NON_DISPLAYED_FORWARD_FKS.includes(key))
       .sort();
 
     const declaredForward = MODEL_LINEAGE_RELATIONS.filter((r) => !r.many)
@@ -37,39 +42,39 @@ describe('modelLineageSections', () => {
 
   it('includes only non-empty relations, in declaration order', () => {
     const model = makeModelDetail({
-      bootleg_of: { name: 'Video Pinball', public_id: 'video-pinball', year: 1978 },
+      remake_of: { name: 'Video Pinball', public_id: 'video-pinball', year: 1978 },
       variant_of: { name: 'Parent', public_id: 'parent', year: 1980 },
     });
 
     const keys = modelLineageSections(model).map((s) => s.relation.key);
 
-    // variant_of precedes bootleg_of in MODEL_LINEAGE_RELATIONS.
-    expect(keys).toEqual(['variant_of', 'bootleg_of']);
+    // variant_of precedes remake_of in MODEL_LINEAGE_RELATIONS.
+    expect(keys).toEqual(['variant_of', 'remake_of']);
   });
 
   it('resolves a reverse list to its full set of links', () => {
     const model = makeModelDetail({
-      bootlegs: [
+      remakes: [
         { name: 'Rugby', public_id: 'rugby-sidam', year: 1979 },
         { name: 'Clone', public_id: 'clone', year: 1981 },
       ],
     });
 
     const [section] = modelLineageSections(model);
-    expect(section.relation.key).toBe('bootlegs');
+    expect(section.relation.key).toBe('remakes');
     expect(section.links.map((l) => l.public_id)).toEqual(['rugby-sidam', 'clone']);
   });
 
   describe('manufacturer disambiguation', () => {
-    // A bootleg keeps the original's name, so with no maker shown it reads as a
-    // relation to itself. The maker is surfaced only when it differs.
+    // A remake often keeps the original's name, so with no maker shown it reads
+    // as a relation to itself. The maker is surfaced only when it differs.
     const gottlieb = { name: 'D. Gottlieb & Company', public_id: 'gottlieb' };
     const zaccaria = { name: 'Zaccaria', public_id: 'zaccaria' };
 
     it('shows the maker when it differs from the subject', () => {
       const model = makeModelDetail({
         manufacturer: gottlieb,
-        bootlegs: [
+        remakes: [
           { name: 'Jungle Life', public_id: 'jungle-life-zaccaria', manufacturer: zaccaria },
         ],
       });
@@ -92,7 +97,7 @@ describe('modelLineageSections', () => {
     it('shows the maker when the subject has none (still disambiguating)', () => {
       const model = makeModelDetail({
         manufacturer: null,
-        bootlegs: [
+        remakes: [
           { name: 'Jungle Life', public_id: 'jungle-life-zaccaria', manufacturer: zaccaria },
         ],
       });
@@ -104,7 +109,7 @@ describe('modelLineageSections', () => {
     it('omits the maker when the link has none', () => {
       const model = makeModelDetail({
         manufacturer: gottlieb,
-        bootlegs: [{ name: 'Jungle Life', public_id: 'jungle-life-emmepi' }],
+        remakes: [{ name: 'Jungle Life', public_id: 'jungle-life-emmepi' }],
       });
 
       const [section] = modelLineageSections(model);
@@ -133,7 +138,7 @@ describe('modelLineageSections', () => {
 
 describe('modelLineageRelation', () => {
   it('looks up a relation by key', () => {
-    expect(modelLineageRelation('bootlegs').heading).toBe('Bootlegs');
+    expect(modelLineageRelation('remakes').heading).toBe('Remakes');
   });
 
   it('throws on an unknown key', () => {
@@ -181,24 +186,74 @@ describe('modelEdgeSections', () => {
     const sections = modelEdgeSections(model);
     expect(sections.map((s) => s.heading)).toEqual(['Conversion kit for', 'Bootleg of']);
 
-    // Every section carries an explanatory preface, like the legacy lineage
-    // notes ("This game is a remake of:").
+    // Every section carries an explanatory preface, like the lineage notes
+    // ("This game is a remake of:").
     expect(sections.map((s) => s.note)).toEqual([
       'This game is a kit that converts:',
       'This game is an unauthorized copy of:',
     ]);
 
-    // The machine target's whole display text carries the disambiguating
-    // qualifier; the label target has no machine to link.
+    // A machine target resolves like any lineage link (name + maker + year);
+    // the label target has no machine to link.
     const [kit, bootleg] = sections;
     expect(kit.targets).toEqual([
       {
-        machine: { text: 'Galaxie (D. Gottlieb & Company 1971)', public_id: 'galaxie' },
+        machine: {
+          name: 'Galaxie',
+          public_id: 'galaxie',
+          year: 1971,
+          manufacturer: { name: 'D. Gottlieb & Company', public_id: 'gottlieb' },
+        },
         label: '',
       },
       { machine: null, label: 'several Gottlieb EM models' },
     ]);
     expect(bootleg.targets[0].machine?.public_id).toBe('galaxie');
+  });
+
+  it('suppresses a machine target maker that matches the subject, like lineage links', () => {
+    const model = makeModelDetail({
+      manufacturer: { name: 'D. Gottlieb & Company', public_id: 'gottlieb' },
+      relationships: [
+        {
+          relationship_type: 'copy',
+          license_status: 'unknown',
+          target_machine: galaxie,
+          target_label: '',
+        },
+      ],
+    });
+
+    const [section] = modelEdgeSections(model);
+    expect(section.targets[0].machine?.manufacturer).toBeNull();
+  });
+
+  it('suppresses a year that matches the subject, in lineage and edge sections alike', () => {
+    const model = makeModelDetail({
+      year: 1971,
+      remakes: [{ name: 'Galaxie Remake', public_id: 'galaxie-remake', year: 1971 }],
+      relationships: [
+        {
+          relationship_type: 'copy',
+          license_status: 'unknown',
+          target_machine: galaxie, // 1971 — matches the subject
+          target_label: '',
+        },
+        {
+          relationship_type: 'conversion',
+          license_status: 'unknown',
+          target_machine: { name: 'Other', public_id: 'other', year: 1976 },
+          target_label: '',
+        },
+      ],
+    });
+
+    const [lineage] = modelLineageSections(model);
+    expect(lineage.links[0].year).toBeNull();
+
+    const [copy, conversion] = modelEdgeSections(model);
+    expect(copy.targets[0].machine?.year).toBeNull();
+    expect(conversion.targets[0].machine?.year).toBe(1976);
   });
 
   it('splits same-kind edges with different licenses into separate sections', () => {
@@ -258,7 +313,10 @@ describe('modelEdgeSections', () => {
       'Officially licensed kits that convert this machine into a different game:',
     ]);
     expect(sections[1].targets).toEqual([
-      { machine: { text: 'Rugby (1979)', public_id: 'rugby-sidam' }, label: '' },
+      {
+        machine: { name: 'Rugby', public_id: 'rugby-sidam', year: 1979, manufacturer: null },
+        label: '',
+      },
     ]);
   });
 });

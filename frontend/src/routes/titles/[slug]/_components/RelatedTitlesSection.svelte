@@ -7,12 +7,8 @@
   let { relatedTitles }: { relatedTitles: CrossTitleLinkSchema[] } = $props();
 
   function label(link: CrossTitleLinkSchema): string {
-    const relation = link.relation;
-    if (relation === 'remake_of') return 'is a remake of';
-    if (relation === 'converted_from') return 'was converted from';
-    if (relation === 'bootleg_of') return 'is a bootleg of';
-    if (relation === 'licensed_build_of') return 'is a licensed build of';
-    return relationshipSentence(relation, link.license_status);
+    if (link.relation === 'remake_of') return 'is a remake of';
+    return relationshipSentence(link.relation, link.license_status);
   }
 </script>
 

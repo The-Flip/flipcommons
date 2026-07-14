@@ -183,26 +183,11 @@ class TestModelsAPI:
         assert year_claims[0]["is_winner"] is True
 
     def test_lineage_refs_carry_manufacturer(self, client, machine_model, stern_entity):
-        # A bootleg by a different maker copies the original's name, so without a
-        # maker the reader can't tell the two same-named entries apart. The ref
-        # carries the maker for both directions of the link.
-        bootleg = make_machine_model(
-            name="Medieval Madness",
-            slug="medieval-madness-bootleg",
-            corporate_entity=stern_entity,
-            bootleg_of=machine_model,
-        )
-
-        # Reverse: the original's `bootlegs` list carries the copy's maker.
-        original = client.get(f"/api/pages/model/{machine_model.slug}").json()
-        assert original["bootlegs"][0]["manufacturer"]["name"] == "Stern"
-
-        # Forward: the copy's `bootleg_of` carries the original's maker.
-        copy = client.get(f"/api/pages/model/{bootleg.slug}").json()
-        assert copy["bootleg_of"]["manufacturer"]["name"] == "Williams"
-
-        # Variants carry a maker too, so a different-maker variant disambiguates
-        # like any other lineage link rather than being the one that can't.
+        # A same-named lineage link (a copy keeps the original's name) reads as
+        # a relation to itself unless the ref carries a maker. Variants carry
+        # one too, so a different-maker variant disambiguates like any other
+        # lineage link rather than being the one that can't. (Edge refs are
+        # covered by test_relationship_edge_serialized_both_directions.)
         make_machine_model(
             name="Medieval Madness (bootleg edition)",
             slug="medieval-madness-variant",
@@ -211,29 +196,6 @@ class TestModelsAPI:
         )
         original = client.get(f"/api/pages/model/{machine_model.slug}").json()
         assert original["variants"][0]["manufacturer"]["name"] == "Stern"
-
-    def test_licensed_build_lineage_both_directions(
-        self, client, machine_model, stern_entity
-    ):
-        # A licensed build by a licensee/subsidiary reproduces the original's
-        # design; the link is serialized in both directions with the maker for
-        # disambiguation, exactly like `bootleg_of`.
-        licensed_build = make_machine_model(
-            name="Medieval Madness",
-            slug="medieval-madness-licensed-build",
-            corporate_entity=stern_entity,
-            licensed_build_of=machine_model,
-        )
-
-        # Reverse: the original's `licensed_builds` list carries the build's maker.
-        original = client.get(f"/api/pages/model/{machine_model.slug}").json()
-        assert original["licensed_builds"][0]["public_id"] == licensed_build.slug
-        assert original["licensed_builds"][0]["manufacturer"]["name"] == "Stern"
-
-        # Forward: the build's `licensed_build_of` carries the original's maker.
-        build = client.get(f"/api/pages/model/{licensed_build.slug}").json()
-        assert build["licensed_build_of"]["public_id"] == machine_model.slug
-        assert build["licensed_build_of"]["manufacturer"]["name"] == "Williams"
 
     def test_relationship_edge_serialized_both_directions(
         self, client, machine_model, stern_entity
@@ -329,34 +291,6 @@ class TestModelsAPI:
         data = resp.json()
         assert data["title"]["name"] == "Medieval Madness"
         assert data["title"]["public_id"] == title.public_id
-
-    def test_detail_includes_conversion_fields(self, client, db):
-        """Detail response includes conversion fields."""
-        source = make_machine_model(name="Star Trek", slug="star-trek", year=1991)
-        conv = make_machine_model(
-            name="Dark Rider",
-            slug="dark-rider",
-            converted_from=source,
-        )
-        resp = client.get(f"/api/pages/model/{conv.slug}")
-        data = resp.json()
-        assert data["converted_from"]["name"] == "Star Trek"
-        assert data["converted_from"]["public_id"] == "star-trek"
-        assert data["converted_from"]["year"] == 1991
-
-    def test_detail_includes_conversions_list(self, client, db):
-        """Source machine's detail includes conversions list."""
-        source = make_machine_model(name="Star Trek", slug="star-trek", year=1991)
-        make_machine_model(
-            name="Dark Rider",
-            slug="dark-rider",
-            converted_from=source,
-        )
-        resp = client.get(f"/api/pages/model/{source.slug}")
-        data = resp.json()
-        assert len(data["conversions"]) == 1
-        assert data["conversions"][0]["name"] == "Dark Rider"
-        assert data["conversions"][0]["public_id"] == "dark-rider"
 
     def test_conversions_appear_in_list(self, client, db):
         """Conversions are NOT filtered from the list endpoint (unlike variants)."""
