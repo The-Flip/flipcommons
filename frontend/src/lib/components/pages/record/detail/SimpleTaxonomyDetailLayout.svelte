@@ -39,10 +39,6 @@
     sections?: SimpleTaxonomyEditSectionDef[];
     children: Snippet;
   } = $props();
-
-  let sections = $derived(
-    sectionsProp.map((section) => ({ ...section, usesSectionEditorForm: true })),
-  );
 </script>
 
 <TaxonomyDetailBaseLayout
@@ -52,7 +48,7 @@
   {basePath}
   {parentHref}
   {breadcrumbs}
-  {sections}
+  sections={sectionsProp}
   {deleteHref}
   {createChild}
 >

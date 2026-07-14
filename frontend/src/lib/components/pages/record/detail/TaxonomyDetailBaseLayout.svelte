@@ -27,7 +27,7 @@
   import { setEntityContext } from '$lib/entity-context';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
 
-  type SectionDef = EditSectionDef<TKey> & { usesSectionEditorForm: boolean };
+  type SectionDef = EditSectionDef<TKey>;
 
   let {
     profile,

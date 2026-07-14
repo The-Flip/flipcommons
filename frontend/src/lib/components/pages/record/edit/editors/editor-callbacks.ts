@@ -3,15 +3,13 @@ import type { EditSectionDef } from './edit-section-def';
 
 /**
  * The section fields a full-page/modal edit host renders on. Derived from
- * {@link EditSectionDef} so the field types track the source. `usesSectionEditorForm`
- * is optional because entities with no immediate (non-form) sections don't
- * declare it; a host treats absent as form-based and only an explicit `false`
- * as an immediate (non-form) section.
+ * {@link EditSectionDef} so the field types track the source. A `false`
+ * `usesSectionEditorForm` marks an immediate (non-form) section.
  */
 export type HarnessSection = Pick<
   EditSectionDef<string>,
-  'key' | 'showCitation' | 'showMixedEditWarning'
-> & { usesSectionEditorForm?: boolean };
+  'key' | 'showCitation' | 'showMixedEditWarning' | 'usesSectionEditorForm'
+>;
 
 /**
  * Mutable box a host passes down so an editor snippet can publish its handle

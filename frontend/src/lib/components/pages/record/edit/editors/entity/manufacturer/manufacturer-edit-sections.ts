@@ -2,9 +2,7 @@ import type { EditSectionDef } from '$lib/components/pages/record/edit/editors/e
 
 export type ManufacturerEditSectionKey = 'name' | 'description' | 'basics';
 
-export type ManufacturerEditSectionDef = EditSectionDef<ManufacturerEditSectionKey> & {
-  usesSectionEditorForm: boolean;
-};
+export type ManufacturerEditSectionDef = EditSectionDef<ManufacturerEditSectionKey>;
 
 export const MANUFACTURER_EDIT_SECTIONS: ManufacturerEditSectionDef[] = [
   {

@@ -102,7 +102,7 @@ Done button instead of the Save/Cancel form.
 </script>
 
 {#if section}
-  {#if section.usesSectionEditorForm !== false}
+  {#if section.usesSectionEditorForm}
     {#key `${section.key}:${saveCounter}`}
       <SectionEditorForm
         error={editError}

@@ -21,15 +21,11 @@
     claimsPath: SimpleTaxonomyClaimsPath;
     sections?: SimpleTaxonomyEditSectionDef[];
   } = $props();
-
-  let sections = $derived(
-    sectionsProp.map((section) => ({ ...section, usesSectionEditorForm: true })),
-  );
 </script>
 
 <TaxonomyEditSectionPageBase
   {basePath}
-  {sections}
+  sections={sectionsProp}
   defaultSegment={defaultSimpleTaxonomySectionSegment()}
 >
   {#snippet editor(key: SimpleTaxonomyEditSectionKey, { ref, onsaved, onerror })}

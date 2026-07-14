@@ -16,7 +16,7 @@ Callers supply the entity editor switch as the `editor` snippet.
   import type { EditorCallbacks } from '$lib/components/pages/record/edit/editors/editor-callbacks';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
 
-  type SectionDef = EditSectionDef<TKey> & { usesSectionEditorForm: boolean };
+  type SectionDef = EditSectionDef<TKey>;
 
   let {
     basePath,

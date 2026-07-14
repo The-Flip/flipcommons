@@ -12,9 +12,6 @@ export type ModelEditSectionKey =
   | 'media';
 
 export type ModelEditSectionDef = EditSectionDef<ModelEditSectionKey> & {
-  /** URL segment for the mobile edit route, e.g. 'external-data' */
-  /** false for media — uses immediate-action Modal, not SectionEditorForm */
-  usesSectionEditorForm: boolean;
   /**
    * Hide when the model's identity is title-owned (single-model titles). Per
    * ModelAndTitleUX.md, name/slug/abbreviations on single-model titles live on

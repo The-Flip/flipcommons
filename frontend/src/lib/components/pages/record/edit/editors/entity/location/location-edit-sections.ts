@@ -3,7 +3,6 @@ import type { EditSectionDef } from '$lib/components/pages/record/edit/editors/e
 export type LocationEditSectionKey = 'description' | 'basics' | 'divisions' | 'aliases';
 
 export type LocationEditSectionDef = EditSectionDef<LocationEditSectionKey> & {
-  usesSectionEditorForm: boolean;
   /** When true, hide this section unless the row is a country. */
   countryOnly?: boolean;
 };

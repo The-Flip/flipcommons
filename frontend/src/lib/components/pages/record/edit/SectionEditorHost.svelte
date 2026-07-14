@@ -11,15 +11,13 @@
     EditorRefBox,
   } from '$lib/components/pages/record/edit/editors/editor-callbacks';
   import type { SaveMeta } from '$lib/components/pages/record/edit/editors/save-claims-shared';
+  import type { EditSectionDef } from '$lib/components/pages/record/edit/editors/edit-section-def';
   import { toast } from '$lib/toast/toast.svelte';
 
-  type SectionDef = {
-    key: TSectionKey;
-    label: string;
-    showCitation: boolean;
-    showMixedEditWarning: boolean;
-    usesSectionEditorForm: boolean;
-  };
+  type SectionDef = Pick<
+    EditSectionDef<TSectionKey>,
+    'key' | 'label' | 'showCitation' | 'showMixedEditWarning' | 'usesSectionEditorForm'
+  >;
 
   let {
     editingKey = $bindable(),
