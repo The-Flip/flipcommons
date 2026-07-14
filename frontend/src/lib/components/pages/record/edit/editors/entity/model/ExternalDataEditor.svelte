@@ -15,13 +15,7 @@
     pinside_id?: string | null;
   };
 
-  let {
-    initialData,
-    slug,
-    onsaved,
-    onerror,
-    ondirtychange = () => {},
-  }: SectionEditorProps<ExternalDataModel> = $props();
+  let { initialData, slug, onsaved, onerror }: SectionEditorProps<ExternalDataModel> = $props();
 
   type ExternalDataFormFields = {
     ipdb_id: string | number;
@@ -51,13 +45,7 @@
     });
   });
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

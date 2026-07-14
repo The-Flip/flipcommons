@@ -2,7 +2,10 @@ import pytest
 
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import (
+    LicenseStatus,
     MachineModel,
+    ModelRelationship,
+    RelationshipType,
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
@@ -292,6 +295,87 @@ class TestTitleDetailAggregation:
         assert related[0]["relation"] == "licensed_build_of"
         assert related[0]["other_title"]["public_id"] == "party-animal"
         assert related[0]["source_model"]["public_id"] == "party-animal-2"
+
+    def test_related_titles_from_relationship_edges(self, client, db):
+        """Machine-target edges contribute cross-title lines with their license;
+        same-title edges and label-target edges do not; two same-kind edges
+        landing on the same other title collapse to one line."""
+        orig_title = Title.objects.create(name="Galaxie", slug="galaxie")
+        orig_a = make_machine_model(name="Galaxie", slug="galaxie", title=orig_title)
+        orig_b = make_machine_model(
+            name="Galaxie II", slug="galaxie-ii", title=orig_title
+        )
+
+        this_title = Title.objects.create(name="Galaxie RMG", slug="galaxie-rmg")
+        rmg = make_machine_model(name="Galaxie", slug="galaxie-rmg-1", title=this_title)
+        sibling = make_machine_model(
+            name="Galaxie B", slug="galaxie-rmg-2", title=this_title
+        )
+
+        # Two copy edges onto two machines of the same other title → one line.
+        ModelRelationship.objects.create(
+            machine_model=rmg,
+            target_machine=orig_a,
+            relationship_type=RelationshipType.COPY,
+            license_status=LicenseStatus.UNLICENSED,
+        )
+        ModelRelationship.objects.create(
+            machine_model=rmg,
+            target_machine=orig_b,
+            relationship_type=RelationshipType.COPY,
+            license_status=LicenseStatus.UNLICENSED,
+        )
+        # Same-title edge — not cross-title content.
+        ModelRelationship.objects.create(
+            machine_model=rmg,
+            target_machine=sibling,
+            relationship_type=RelationshipType.CONVERSION,
+        )
+        # Label target — no title to link.
+        ModelRelationship.objects.create(
+            machine_model=rmg,
+            target_label="several Gottlieb EM models",
+            relationship_type=RelationshipType.CONVERSION_KIT,
+        )
+
+        data = client.get(f"/api/pages/title/{this_title.slug}").json()
+        related = data["related_titles"]
+        assert len(related) == 1
+        assert related[0]["relation"] == "copy"
+        assert related[0]["license_status"] == "unlicensed"
+        assert related[0]["other_title"]["public_id"] == "galaxie"
+        assert related[0]["source_model"]["public_id"] == "galaxie-rmg-1"
+
+    def test_related_titles_edges_alongside_legacy_fks(self, client, db):
+        """During the transition both representations contribute lines — a
+        legacy FK and an edge from the same source model coexist."""
+        donor_title = Title.objects.create(name="Team One", slug="team-one")
+        donor = make_machine_model(name="Team One", slug="team-one", title=donor_title)
+
+        this_title = Title.objects.create(name="Wizard", slug="wizard")
+        make_machine_model(
+            name="Wizard",
+            slug="wizard-1",
+            title=this_title,
+            converted_from=donor,
+        )
+        kit = make_machine_model(name="Wizard Kit", slug="wizard-2", title=this_title)
+        ModelRelationship.objects.create(
+            machine_model=kit,
+            target_machine=donor,
+            relationship_type=RelationshipType.CONVERSION_KIT,
+            license_status=LicenseStatus.LICENSED,
+        )
+
+        data = client.get(f"/api/pages/title/{this_title.slug}").json()
+        relations = sorted(
+            (r["relation"], r["source_model"]["public_id"], r["license_status"])
+            for r in data["related_titles"]
+        )
+        assert relations == [
+            ("conversion_kit", "wizard-2", "licensed"),
+            ("converted_from", "wizard-1", "unknown"),
+        ]
 
     def test_media_aggregation_empty_by_default(self, client, title, williams_entity):
         make_machine_model(name="MM", slug="mm-1", title=title)

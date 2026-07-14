@@ -49,13 +49,9 @@ describe('SystemTechnologyEditor', () => {
   });
 
   it('reports clean state initially', async () => {
-    const user = userEvent.setup();
     render(SystemTechnologyEditorFixture, { props: { initialData: INITIAL } });
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
   });
 
   it('does not PATCH when saving a clean form', async () => {

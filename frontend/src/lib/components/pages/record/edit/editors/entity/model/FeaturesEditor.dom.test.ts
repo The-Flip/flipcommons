@@ -122,17 +122,11 @@ describe('FeaturesEditor dirty-state contract', () => {
       props: { initialData: INITIAL_MODEL },
     });
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
 
     await user.click(screen.getByRole('button', { name: '×' }));
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('changing only player_count PATCHes just that scalar, no M2Ms', async () => {

@@ -51,6 +51,101 @@ export function relationshipLead(kind: RelationshipKind, license: LicenseStatus)
 }
 
 /**
+ * Explanatory preface shown above an outbound edge section's targets, in the
+ * style of the legacy lineage notes ("This game is a remake of:"). Each is a
+ * sentence the target list completes, so it must end with a colon.
+ */
+const EDGE_NOTES: Record<EdgeKind, Record<LicenseStatus, string>> = {
+  copy: {
+    unknown: 'This game reproduces the design of:',
+    licensed: 'This game is an officially licensed copy of:',
+    unlicensed: 'This game is an unauthorized copy of:',
+  },
+  conversion: {
+    unknown: 'This game was rebuilt from the hardware of:',
+    licensed: 'This game was rebuilt, under license, from the hardware of:',
+    unlicensed: 'This game was rebuilt, without authorization, from the hardware of:',
+  },
+  conversion_kit: {
+    unknown: 'This game is a kit that converts:',
+    licensed: 'This game is an officially licensed kit that converts:',
+    unlicensed: 'This game is an unauthorized kit that converts:',
+  },
+};
+
+/** The explanatory preface for an outbound edge section of one (kind, license). */
+export function relationshipNote(kind: EdgeKind, license: LicenseStatus): string {
+  return EDGE_NOTES[kind][license];
+}
+
+/**
+ * Heading for the inbound side of an edge — the models that copy, convert or
+ * kit-target the subject. Plural nouns mirroring the legacy reverse-list
+ * headings ("Bootlegs", "Conversions"); unknown license renders bare, like
+ * the leads.
+ */
+const EDGE_INBOUND_HEADINGS: Record<EdgeKind, Record<LicenseStatus, string>> = {
+  copy: {
+    unknown: 'Copies',
+    licensed: 'Licensed Copies',
+    unlicensed: 'Bootlegs',
+  },
+  conversion: {
+    unknown: 'Conversions',
+    licensed: 'Licensed Conversions',
+    unlicensed: 'Unlicensed Conversions',
+  },
+  conversion_kit: {
+    unknown: 'Conversion Kits',
+    licensed: 'Licensed Conversion Kits',
+    unlicensed: 'Unlicensed Conversion Kits',
+  },
+};
+
+/** The inbound-side heading for edges of one (kind, license), e.g. "Bootlegs". */
+export function inboundRelationshipHeading(kind: EdgeKind, license: LicenseStatus): string {
+  return EDGE_INBOUND_HEADINGS[kind][license];
+}
+
+/**
+ * Explanatory preface for an inbound edge section, in the style of the legacy
+ * reverse-list notes ("Unauthorized copies of this game:").
+ */
+const EDGE_INBOUND_NOTES: Record<EdgeKind, Record<LicenseStatus, string>> = {
+  copy: {
+    unknown: "Games that reproduce this game's design:",
+    licensed: 'Officially licensed copies of this game:',
+    unlicensed: 'Unauthorized copies of this game:',
+  },
+  conversion: {
+    unknown: "Different games rebuilt from this machine's hardware:",
+    licensed: "Different games rebuilt, under license, from this machine's hardware:",
+    unlicensed: "Different games rebuilt, without authorization, from this machine's hardware:",
+  },
+  conversion_kit: {
+    unknown: 'Kits that convert this machine into a different game:',
+    licensed: 'Officially licensed kits that convert this machine into a different game:',
+    unlicensed: 'Unauthorized kits that convert this machine into a different game:',
+  },
+};
+
+/** The explanatory preface for an inbound edge section of one (kind, license). */
+export function inboundRelationshipNote(kind: EdgeKind, license: LicenseStatus): string {
+  return EDGE_INBOUND_NOTES[kind][license];
+}
+
+/**
+ * Sentence form of a lead phrase, for lines with an explicit subject — the
+ * title page's cross-title lineage: "Bootleg of" → "is a bootleg of",
+ * "Unlicensed conversion of" → "is an unlicensed conversion of".
+ */
+export function relationshipSentence(kind: EdgeKind, license: LicenseStatus): string {
+  const lead = relationshipLead(kind, license);
+  const phrase = lead.charAt(0).toLowerCase() + lead.slice(1);
+  return `is ${/^[aeiou]/i.test(phrase) ? 'an' : 'a'} ${phrase}`;
+}
+
+/**
  * Display text for a machine target: "Galaxie (Gottlieb 1971)". The
  * parenthetical disambiguates same-named machines (a game and its copies
  * often share a name); either part may be missing.

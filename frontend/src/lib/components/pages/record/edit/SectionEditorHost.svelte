@@ -23,7 +23,6 @@
     ref: EditorRefBox;
     onsaved: () => void;
     onerror: (msg: string) => void;
-    ondirtychange: (dirty: boolean) => void;
   };
 
   let {
@@ -41,8 +40,12 @@
   } = $props();
 
   let editError = $state('');
-  let editorDirty = $state(false);
   let activeEditorRef: SectionEditorHandle | undefined = $state();
+
+  // Single reactive dirty read for the active editor: gates the footer Save
+  // button and the section switcher, and guards Escape/backdrop dismissal.
+  // `false` while no editor is mounted — the safe default.
+  let editorDirty = $derived(activeEditorRef?.dirty ?? false);
 
   const refBox: EditorRefBox = {
     get current() {
@@ -62,20 +65,18 @@
       clearEditorState();
     },
     onerror: (msg) => (editError = msg),
-    ondirtychange: (dirty) => (editorDirty = dirty),
   };
 
   function clearEditorState() {
     editingKey = null;
     editError = '';
-    editorDirty = false;
   }
 
   // Guard Escape/backdrop dismissal from silently discarding edits.
   // The switcher is disabled while dirty; the explicit Cancel button
   // inside the form goes through SectionEditorForm and skips this path.
   function closeEditor() {
-    if ((editorDirty || activeEditorRef?.isDirty()) && !confirm('Discard unsaved changes?')) {
+    if (editorDirty && !confirm('Discard unsaved changes?')) {
       return;
     }
     clearEditorState();

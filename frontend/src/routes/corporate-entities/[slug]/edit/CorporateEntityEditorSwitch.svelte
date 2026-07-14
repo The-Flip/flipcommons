@@ -14,7 +14,6 @@
     editorRef = $bindable<SectionEditorHandle | undefined>(undefined),
     onsaved,
     onerror,
-    ondirtychange,
   }: {
     sectionKey: CorporateEntityEditSectionKey;
     initialData: CorporateEntityEditView;
@@ -22,7 +21,6 @@
     editorRef?: SectionEditorHandle | undefined;
     onsaved: () => void;
     onerror: (message: string) => void;
-    ondirtychange: (dirty: boolean) => void;
   } = $props();
 </script>
 
@@ -34,7 +32,6 @@
     save={saveCorporateEntityClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'description'}
   <DescriptionEditor
@@ -44,7 +41,6 @@
     save={saveCorporateEntityClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'aliases'}
   <AliasesSectionEditor
@@ -54,6 +50,5 @@
     save={saveCorporateEntityClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {/if}

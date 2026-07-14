@@ -58,13 +58,9 @@ describe('SystemManufacturerEditor', () => {
   });
 
   it('reports clean state initially', async () => {
-    const user = userEvent.setup();
     render(SystemManufacturerEditorFixture, { props: { initialData: INITIAL } });
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
   });
 
   it('does not PATCH when saving a clean form', async () => {
@@ -113,7 +109,7 @@ describe('SystemManufacturerEditor', () => {
     await fireEvent.pointerDown(option);
 
     // The selection makes the form dirty and shows the new label.
-    await waitFor(() => expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true'));
+    await waitFor(() => expect(screen.getByTestId('dirty')).toHaveTextContent('true'));
     expect(getCombobox()).toHaveValue('Stern Pinball');
 
     // Saving sends only the changed manufacturer field.

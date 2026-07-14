@@ -11,7 +11,6 @@
     slug: publicId,
     onsaved,
     onerror,
-    ondirtychange = () => {},
   }: SectionEditorProps<LocationEditView> = $props();
 
   const originalDivisions = untrack(() => [...(initialData.divisions ?? [])]);
@@ -25,13 +24,7 @@
       divisions.some((v, i) => v !== originalDivisions[i]),
   );
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

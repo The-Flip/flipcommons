@@ -23,7 +23,6 @@
     label = 'Description',
     onsaved,
     onerror,
-    ondirtychange = () => {},
   }: SectionEditorProps<string> & { save: SaveFn; label?: string } = $props();
 
   const original = untrack(() => initialData);
@@ -37,13 +36,7 @@
   // an undo that restores the marker restores its spec too.
   let pendingCitations = $state<PendingInlineCitation[]>([]);
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

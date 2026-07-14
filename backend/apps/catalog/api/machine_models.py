@@ -97,6 +97,8 @@ from .images import (
     fetch_model_media_map,
 )
 from .schemas import (
+    LICENSE_STATUS_TO_LITERAL,
+    RELATIONSHIP_TYPE_TO_LITERAL,
     AlreadyDeletedSchema,
     CreditSchema,
     DeleteResponseSchema,
@@ -104,10 +106,12 @@ from .schemas import (
     EntityDetailSchema,
     EntityRef,
     GameplayFeatureRef,
+    LicenseStatusLiteral,
     ModelClaimPatchSchema,
     ModelDeletePreviewSchema,
     ModelEditOptionsSchema,
     OwnMediaSchema,
+    RelationshipTypeLiteral,
     SoftDeleteBlockedSchema,
     TitleModelSchema,
 )
@@ -163,14 +167,24 @@ class ModelRelationshipSchema(Schema):
     Exactly one is populated.
     """
 
-    relationship_type: str = Field(
-        description="Edge type: `conversion`, `conversion_kit` or `copy`."
-    )
-    license_status: str = Field(
-        description="Authorization status: `licensed`, `unlicensed` or `unknown`."
-    )
+    relationship_type: RelationshipTypeLiteral = Field(description="Edge type.")
+    license_status: LicenseStatusLiteral = Field(description="Authorization status.")
     target_machine: ModelRef | None = None
     target_label: str = ""
+
+
+class InboundModelRelationshipSchema(Schema):
+    """One typed relationship edge *pointing at* this model — the reverse of
+    :class:`ModelRelationshipSchema`, read through the ``inbound_relationships``
+    accessor. Only machine-target edges have an inbound side (label targets
+    aren't seeded rows), so the source is always a resolved ``ModelRef``.
+    """
+
+    relationship_type: RelationshipTypeLiteral = Field(description="Edge type.")
+    license_status: LicenseStatusLiteral = Field(description="Authorization status.")
+    source_machine: ModelRef = Field(
+        description="The model this edge belongs to — the copy/conversion/kit."
+    )
 
 
 def _manufacturer_ref(pm: MachineModel | None) -> EntityRef | None:
@@ -186,10 +200,8 @@ def _manufacturer_ref(pm: MachineModel | None) -> EntityRef | None:
     return EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None
 
 
-def _model_ref(pm: MachineModel | None) -> ModelRef | None:
-    """Build a `ModelRef` for a nullable related model (e.g. `variant_of`), or `None`."""
-    if pm is None:
-        return None
+def _required_model_ref(pm: MachineModel) -> ModelRef:
+    """Build a `ModelRef` for a known-present related model."""
     return ModelRef(
         name=pm.name,
         public_id=pm.public_id,
@@ -198,17 +210,14 @@ def _model_ref(pm: MachineModel | None) -> ModelRef | None:
     )
 
 
+def _model_ref(pm: MachineModel | None) -> ModelRef | None:
+    """Build a `ModelRef` for a nullable related model (e.g. `variant_of`), or `None`."""
+    return _required_model_ref(pm) if pm is not None else None
+
+
 def _model_refs(models: Iterable[MachineModel]) -> list[ModelRef]:
     """Build `ModelRef`s for a related-model collection (e.g. `conversions`)."""
-    return [
-        ModelRef(
-            name=pm.name,
-            public_id=pm.public_id,
-            year=pm.year,
-            manufacturer=_manufacturer_ref(pm),
-        )
-        for pm in models
-    ]
+    return [_required_model_ref(pm) for pm in models]
 
 
 class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
@@ -257,6 +266,7 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     licensed_build_of: ModelRef | None = None
     licensed_builds: list[ModelRef] = []
     relationships: list[ModelRelationshipSchema] = []
+    inbound_relationships: list[InboundModelRelationshipSchema] = []
     title_models: list[TitleModelSchema] = []
 
 
@@ -490,12 +500,20 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         licensed_builds=_model_refs(pm.licensed_builds.all()),
         relationships=[
             ModelRelationshipSchema(
-                relationship_type=edge.relationship_type,
-                license_status=edge.license_status,
+                relationship_type=RELATIONSHIP_TYPE_TO_LITERAL[edge.relationship_type],
+                license_status=LICENSE_STATUS_TO_LITERAL[edge.license_status],
                 target_machine=_model_ref(edge.target_machine),
                 target_label=edge.target_label,
             )
             for edge in pm.relationships.all()
+        ],
+        inbound_relationships=[
+            InboundModelRelationshipSchema(
+                relationship_type=RELATIONSHIP_TYPE_TO_LITERAL[edge.relationship_type],
+                license_status=LICENSE_STATUS_TO_LITERAL[edge.license_status],
+                source_machine=_required_model_ref(edge.machine_model),
+            )
+            for edge in pm.inbound_relationships.all()
         ],
         title=EntityRef(name=pm.title.name, public_id=pm.title.public_id),
         cabinet=(
@@ -619,6 +637,13 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
                 "relationships",
                 queryset=ModelRelationship.objects.select_related(
                     "target_machine__corporate_entity__manufacturer"
+                ),
+            ),
+            # Inbound edges render their source model the same way.
+            Prefetch(
+                "inbound_relationships",
+                queryset=ModelRelationship.objects.select_related(
+                    "machine_model__corporate_entity__manufacturer"
                 ),
             ),
             # Reverse lineage lists render as ModelRefs with a maker; select the

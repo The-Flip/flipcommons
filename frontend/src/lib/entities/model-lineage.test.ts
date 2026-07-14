@@ -4,6 +4,7 @@ import { makeModelDetail } from '$lib/api/detail-fixtures';
 import { ENTITY_META } from './entity-meta';
 import {
   MODEL_LINEAGE_RELATIONS,
+  modelEdgeSections,
   modelLineageRelation,
   modelLineageSections,
 } from './model-lineage';
@@ -138,5 +139,126 @@ describe('modelLineageRelation', () => {
   it('throws on an unknown key', () => {
     // @ts-expect-error — exercising the runtime guard with an invalid key.
     expect(() => modelLineageRelation('nope')).toThrow();
+  });
+});
+
+describe('modelEdgeSections', () => {
+  const galaxie = {
+    name: 'Galaxie',
+    public_id: 'galaxie',
+    year: 1971,
+    manufacturer: { name: 'D. Gottlieb & Company', public_id: 'gottlieb' },
+  };
+
+  it('returns nothing for a model with no edges', () => {
+    expect(modelEdgeSections(makeModelDetail())).toEqual([]);
+  });
+
+  it('groups outbound edges under their lead phrase, one target line per edge', () => {
+    const model = makeModelDetail({
+      relationships: [
+        {
+          relationship_type: 'conversion_kit',
+          license_status: 'unknown',
+          target_machine: galaxie,
+          target_label: '',
+        },
+        {
+          relationship_type: 'conversion_kit',
+          license_status: 'unknown',
+          target_machine: null,
+          target_label: 'several Gottlieb EM models',
+        },
+        {
+          relationship_type: 'copy',
+          license_status: 'unlicensed',
+          target_machine: galaxie,
+          target_label: '',
+        },
+      ],
+    });
+
+    const sections = modelEdgeSections(model);
+    expect(sections.map((s) => s.heading)).toEqual(['Conversion kit for', 'Bootleg of']);
+
+    // Every section carries an explanatory preface, like the legacy lineage
+    // notes ("This game is a remake of:").
+    expect(sections.map((s) => s.note)).toEqual([
+      'This game is a kit that converts:',
+      'This game is an unauthorized copy of:',
+    ]);
+
+    // The machine target's whole display text carries the disambiguating
+    // qualifier; the label target has no machine to link.
+    const [kit, bootleg] = sections;
+    expect(kit.targets).toEqual([
+      {
+        machine: { text: 'Galaxie (D. Gottlieb & Company 1971)', public_id: 'galaxie' },
+        label: '',
+      },
+      { machine: null, label: 'several Gottlieb EM models' },
+    ]);
+    expect(bootleg.targets[0].machine?.public_id).toBe('galaxie');
+  });
+
+  it('splits same-kind edges with different licenses into separate sections', () => {
+    const model = makeModelDetail({
+      relationships: [
+        {
+          relationship_type: 'copy',
+          license_status: 'licensed',
+          target_machine: galaxie,
+          target_label: '',
+        },
+        {
+          relationship_type: 'copy',
+          license_status: 'unknown',
+          target_machine: { name: 'Other', public_id: 'other' },
+          target_label: '',
+        },
+      ],
+    });
+
+    expect(modelEdgeSections(model).map((s) => s.heading)).toEqual(['Licensed copy of', 'Copy of']);
+  });
+
+  it('renders inbound edges under plural headings after the outbound sections', () => {
+    const model = makeModelDetail({
+      relationships: [
+        {
+          relationship_type: 'conversion',
+          license_status: 'unknown',
+          target_machine: galaxie,
+          target_label: '',
+        },
+      ],
+      inbound_relationships: [
+        {
+          relationship_type: 'copy',
+          license_status: 'unlicensed',
+          source_machine: { name: 'Rugby', public_id: 'rugby-sidam', year: 1979 },
+        },
+        {
+          relationship_type: 'conversion_kit',
+          license_status: 'licensed',
+          source_machine: { name: 'Wizard Kit', public_id: 'wizard-kit' },
+        },
+      ],
+    });
+
+    const sections = modelEdgeSections(model);
+    expect(sections.map((s) => s.heading)).toEqual([
+      'Conversion of',
+      'Bootlegs',
+      'Licensed Conversion Kits',
+    ]);
+    expect(sections.map((s) => s.note)).toEqual([
+      'This game was rebuilt from the hardware of:',
+      'Unauthorized copies of this game:',
+      'Officially licensed kits that convert this machine into a different game:',
+    ]);
+    expect(sections[1].targets).toEqual([
+      { machine: { text: 'Rugby (1979)', public_id: 'rugby-sidam' }, label: '' },
+    ]);
   });
 });

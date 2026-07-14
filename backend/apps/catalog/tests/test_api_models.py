@@ -235,6 +235,50 @@ class TestModelsAPI:
         assert build["licensed_build_of"]["public_id"] == machine_model.slug
         assert build["licensed_build_of"]["manufacturer"]["name"] == "Williams"
 
+    def test_relationship_edge_serialized_both_directions(
+        self, client, machine_model, stern_entity
+    ):
+        # One edge appears outbound on the subject (`relationships`) and
+        # inbound on the target (`inbound_relationships`), each side carrying
+        # a maker-bearing ref like the legacy lineage links.
+        copy = make_machine_model(
+            name="Medieval Madness",
+            slug="medieval-madness-copy",
+            corporate_entity=stern_entity,
+        )
+        ModelRelationship.objects.create(
+            machine_model=copy,
+            target_machine=machine_model,
+            relationship_type=RelationshipType.COPY,
+            license_status=LicenseStatus.UNLICENSED,
+        )
+
+        outbound = client.get(f"/api/pages/model/{copy.slug}").json()
+        (edge,) = outbound["relationships"]
+        assert edge["relationship_type"] == "copy"
+        assert edge["license_status"] == "unlicensed"
+        assert edge["target_machine"]["public_id"] == machine_model.slug
+        assert edge["target_machine"]["manufacturer"]["name"] == "Williams"
+        assert outbound["inbound_relationships"] == []
+
+        inbound = client.get(f"/api/pages/model/{machine_model.slug}").json()
+        (edge,) = inbound["inbound_relationships"]
+        assert edge["relationship_type"] == "copy"
+        assert edge["license_status"] == "unlicensed"
+        assert edge["source_machine"]["public_id"] == copy.slug
+        assert edge["source_machine"]["manufacturer"]["name"] == "Stern"
+
+    def test_label_target_edge_serializes_outbound_only(self, client, machine_model):
+        ModelRelationship.objects.create(
+            machine_model=machine_model,
+            target_label="several Gottlieb EM models",
+            relationship_type=RelationshipType.CONVERSION_KIT,
+        )
+        data = client.get(f"/api/pages/model/{machine_model.slug}").json()
+        (edge,) = data["relationships"]
+        assert edge["target_machine"] is None
+        assert edge["target_label"] == "several Gottlieb EM models"
+
     def test_get_model_detail_images(self, client, db):
         pm = make_machine_model(
             name="With Image",

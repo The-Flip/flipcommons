@@ -36,13 +36,7 @@
     display_subtype?: { public_id: string } | null;
   };
 
-  let {
-    initialData,
-    slug,
-    onsaved,
-    onerror,
-    ondirtychange = () => {},
-  }: SectionEditorProps<TechnologyModel> = $props();
+  let { initialData, slug, onsaved, onerror }: SectionEditorProps<TechnologyModel> = $props();
 
   type TechnologyFormFields = {
     technology_generation: string;
@@ -76,13 +70,7 @@
     });
   });
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

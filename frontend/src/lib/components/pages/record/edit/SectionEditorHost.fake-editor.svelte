@@ -4,24 +4,16 @@
     saveBehavior = 'success',
     onsaved,
     onerror,
-    ondirtychange,
   }: {
     label: string;
     saveBehavior?: 'success' | 'error';
     onsaved: () => void;
     onerror: (msg: string) => void;
-    ondirtychange: (dirty: boolean) => void;
   } = $props();
 
   let dirty = $state(false);
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(): Promise<void> {
     if (saveBehavior === 'error') {

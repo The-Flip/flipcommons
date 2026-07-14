@@ -98,7 +98,7 @@ describe('RelatedModelsEditor', () => {
     expect(screen.getAllByRole('combobox', { name: 'License status' })[0]).toHaveValue(
       'unlicensed',
     );
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
   });
 
   it('reveals the target only after a kind is chosen', async () => {
@@ -127,7 +127,7 @@ describe('RelatedModelsEditor', () => {
       screen.getByRole('combobox', { name: 'License status' }),
       'unlicensed',
     );
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1));
@@ -192,7 +192,7 @@ describe('RelatedModelsEditor', () => {
     const removeButtons = screen.getAllByRole('button', { name: 'Remove relationship' });
     await user.click(removeButtons[0]); // drop the Galaxie copy
     expect(screen.queryByDisplayValue('Galaxie (Gottlieb 1971)')).not.toBeInTheDocument();
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1));
@@ -219,9 +219,9 @@ describe('RelatedModelsEditor', () => {
       props: { initialData: { ...CLEAN, relationships: [BOOTLEG_EDGE] } },
     });
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
     await user.selectOptions(screen.getByRole('combobox', { name: 'License status' }), 'licensed');
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1));

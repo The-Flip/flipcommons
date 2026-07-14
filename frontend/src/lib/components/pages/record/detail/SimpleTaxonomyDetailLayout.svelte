@@ -56,7 +56,7 @@
   {deleteHref}
   {createChild}
 >
-  {#snippet editor(key: SimpleTaxonomyEditSectionKey, { ref, onsaved, onerror, ondirtychange })}
+  {#snippet editor(key: SimpleTaxonomyEditSectionKey, { ref, onsaved, onerror })}
     <SimpleTaxonomyEditorSwitch
       sectionKey={key}
       initialData={profile}
@@ -65,7 +65,6 @@
       bind:editorRef={ref.current}
       {onsaved}
       {onerror}
-      {ondirtychange}
     />
   {/snippet}
   {@render children()}

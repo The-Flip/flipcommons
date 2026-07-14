@@ -29,7 +29,6 @@
     save: saveFn,
     onsaved,
     onerror,
-    ondirtychange = () => {},
   }: SectionEditorProps<NameFields> & {
     save: SaveFn;
     initialAbbreviations?: string[];
@@ -64,13 +63,7 @@
     }
   });
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

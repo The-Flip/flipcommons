@@ -9,22 +9,19 @@ describe('DisplayOrderEditor', () => {
     const user = userEvent.setup();
     render(DisplayOrderEditorFixture);
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
 
     await user.clear(screen.getByLabelText('Display order'));
     await user.type(screen.getByLabelText('Display order'), '5');
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('treats a null initial value as blank', async () => {
     render(DisplayOrderEditorFixture, { props: { initialData: null } });
 
     expect(screen.getByLabelText('Display order')).toHaveValue(null);
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
   });
 
   it('sends only the changed display_order in the save body', async () => {

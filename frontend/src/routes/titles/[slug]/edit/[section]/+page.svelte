@@ -37,20 +37,28 @@
   let editError = $state('');
   let saveCounter = $state(0);
 
+  // Single reactive dirty read: gates the footer Save button and the section
+  // nav-lock, and guards cancel. `false` while the editor is unmounted keeps
+  // Save disabled — the safe default.
+  let editorDirty = $derived(editorRef?.dirty ?? false);
+
+  $effect(() => {
+    editLayout.setDirty(editorDirty);
+  });
+
   async function handleSave(meta: SaveMeta) {
     editError = '';
     await editorRef?.save(meta);
   }
 
   function handleCancel() {
-    if (editorRef?.isDirty() && !confirm('Discard unsaved changes?')) {
+    if (editorDirty && !confirm('Discard unsaved changes?')) {
       return;
     }
     goto(resolve(`/titles/${slug}`));
   }
 
   async function handleSaved() {
-    editLayout.setDirty(false);
     await invalidateAll();
     const updatedSlug = data.profile.slug;
     if (updatedSlug !== slug) {
@@ -60,10 +68,6 @@
     }
     saveCounter++;
   }
-
-  function handleDirtyChange(dirty: boolean) {
-    editLayout.setDirty(dirty);
-  }
 </script>
 
 {#if section && sectionAvailable}
@@ -72,6 +76,7 @@
       error={editError}
       showCitation={section.showCitation}
       showMixedEditWarning={section.showMixedEditWarning}
+      dirty={editorDirty}
       oncancel={handleCancel}
       onsave={handleSave}
     >
@@ -82,7 +87,6 @@
         bind:editorRef
         onsaved={handleSaved}
         onerror={(msg: string) => (editError = msg)}
-        ondirtychange={handleDirtyChange}
       />
     </SectionEditorForm>
   {/key}

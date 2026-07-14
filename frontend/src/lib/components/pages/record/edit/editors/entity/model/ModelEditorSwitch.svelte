@@ -22,7 +22,6 @@
     editorRef = $bindable<SectionEditorHandle | undefined>(undefined),
     onsaved,
     onerror,
-    ondirtychange,
   }: {
     sectionKey: ModelEditSectionKey;
     initialData: ModelDetail;
@@ -31,7 +30,6 @@
     editorRef?: SectionEditorHandle | undefined;
     onsaved: () => void;
     onerror: (message: string) => void;
-    ondirtychange: (dirty: boolean) => void;
   } = $props();
 </script>
 
@@ -44,18 +42,9 @@
     save={saveModelClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'basics'}
-  <BasicsEditor
-    bind:this={editorRef}
-    {initialData}
-    {slug}
-    {slim}
-    {onsaved}
-    {onerror}
-    {ondirtychange}
-  />
+  <BasicsEditor bind:this={editorRef} {initialData} {slug} {slim} {onsaved} {onerror} />
 {:else if sectionKey === 'overview'}
   <DescriptionEditor
     bind:this={editorRef}
@@ -64,19 +53,11 @@
     save={saveModelClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'technology'}
-  <TechnologyEditor
-    bind:this={editorRef}
-    {initialData}
-    {slug}
-    {onsaved}
-    {onerror}
-    {ondirtychange}
-  />
+  <TechnologyEditor bind:this={editorRef} {initialData} {slug} {onsaved} {onerror} />
 {:else if sectionKey === 'features'}
-  <FeaturesEditor bind:this={editorRef} {initialData} {slug} {onsaved} {onerror} {ondirtychange} />
+  <FeaturesEditor bind:this={editorRef} {initialData} {slug} {onsaved} {onerror} />
 {:else if sectionKey === 'people'}
   <PeopleEditor
     bind:this={editorRef}
@@ -84,24 +65,9 @@
     {slug}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'related-models'}
-  <RelatedModelsEditor
-    bind:this={editorRef}
-    {initialData}
-    {slug}
-    {onsaved}
-    {onerror}
-    {ondirtychange}
-  />
+  <RelatedModelsEditor bind:this={editorRef} {initialData} {slug} {onsaved} {onerror} />
 {:else if sectionKey === 'external-data'}
-  <ExternalDataEditor
-    bind:this={editorRef}
-    {initialData}
-    {slug}
-    {onsaved}
-    {onerror}
-    {ondirtychange}
-  />
+  <ExternalDataEditor bind:this={editorRef} {initialData} {slug} {onsaved} {onerror} />
 {/if}

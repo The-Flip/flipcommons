@@ -63,6 +63,7 @@ export function makeModelDetail(overrides: Partial<ModelDetailSchema> = {}): Mod
     title_models: [],
     credits: [],
     relationships: [],
+    inbound_relationships: [],
     uploaded_media: [],
     ...overrides,
   };

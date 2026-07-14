@@ -8,7 +8,7 @@ owns only the entity-specific variants.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from ninja import Schema
 from pydantic import Field
@@ -91,6 +91,17 @@ class CreditInputSchema(Schema):
 # should inline anonymously into the field schemas.
 RelationshipTypeLiteral = Literal["conversion", "conversion_kit", "copy"]
 LicenseStatusLiteral = Literal["licensed", "unlicensed", "unknown"]
+
+# Runtime bridges from the stored CharField values (plain ``str`` to mypy) to
+# the wire Literals, for serializers that build Literal-typed schema fields
+# from ORM rows. KeyError on an out-of-vocab value — impossible while the DB
+# CHECK constraints hold.
+RELATIONSHIP_TYPE_TO_LITERAL: dict[str, RelationshipTypeLiteral] = {
+    v: v for v in get_args(RelationshipTypeLiteral)
+}
+LICENSE_STATUS_TO_LITERAL: dict[str, LicenseStatusLiteral] = {
+    v: v for v in get_args(LicenseStatusLiteral)
+}
 
 
 class ModelRelationshipInputSchema(Schema):

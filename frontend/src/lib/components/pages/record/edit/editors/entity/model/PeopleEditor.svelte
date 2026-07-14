@@ -17,13 +17,7 @@
 
   type Credit = CreditSchema;
 
-  let {
-    initialData,
-    slug,
-    onsaved,
-    onerror,
-    ondirtychange = () => {},
-  }: SectionEditorProps<Credit[]> = $props();
+  let { initialData, slug, onsaved, onerror }: SectionEditorProps<Credit[]> = $props();
 
   // `initial` is the row's saved person, frozen at creation, so the typeahead
   // renders it on mount without a search. It must NOT track the live
@@ -69,13 +63,7 @@
     });
   });
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   function addCredit() {
     editCredits = [...editCredits, { key: keyCounter++, person_slug: '', role: '', initial: null }];

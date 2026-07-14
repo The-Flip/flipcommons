@@ -24,7 +24,6 @@
     save: saveFn,
     onsaved,
     onerror,
-    ondirtychange = () => {},
   }: SectionEditorProps<number | null> & { save: SaveFn } = $props();
 
   const original = untrack<DisplayOrderFields>(() => ({
@@ -35,13 +34,7 @@
   let changedFields = $derived(diffScalarFields(fields, original));
   let dirty = $derived(Object.keys(changedFields).length > 0);
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

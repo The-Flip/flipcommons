@@ -410,7 +410,7 @@
   />
 
   <SectionEditorHost bind:editingKey={editing} {sections} {switcherItems}>
-    {#snippet editor(key, { ref, onsaved, onerror, ondirtychange })}
+    {#snippet editor(key, { ref, onsaved, onerror })}
       {#if key.startsWith('title:')}
         <TitleEditorSwitch
           sectionKey={key.slice('title:'.length) as TitleEditSectionKey}
@@ -419,7 +419,6 @@
           bind:editorRef={ref.current}
           {onsaved}
           {onerror}
-          {ondirtychange}
         />
       {:else if md}
         <ModelEditorSwitch
@@ -430,7 +429,6 @@
           bind:editorRef={ref.current}
           {onsaved}
           {onerror}
-          {ondirtychange}
         />
       {/if}
     {/snippet}

@@ -285,7 +285,7 @@
     sections={availableSections}
     switcherItems={editSections}
   >
-    {#snippet editor(key, { ref, onsaved, onerror, ondirtychange })}
+    {#snippet editor(key, { ref, onsaved, onerror })}
       <ModelEditorSwitch
         sectionKey={key}
         initialData={model}
@@ -294,7 +294,6 @@
         bind:editorRef={ref.current}
         {onsaved}
         {onerror}
-        {ondirtychange}
       />
     {/snippet}
 

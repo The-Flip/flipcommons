@@ -35,18 +35,12 @@ describe('NameEditor', () => {
     const user = userEvent.setup();
     render(NameEditorFixture);
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
 
     await user.clear(screen.getByLabelText('Name'));
     await user.type(screen.getByLabelText('Name'), 'Bally');
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('auto-suggests a slug as the user types a name', async () => {
@@ -149,10 +143,10 @@ describe('NameEditor', () => {
     });
 
     expect(screen.getByLabelText('Abbreviations')).toBeInTheDocument();
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
 
     await user.type(screen.getByLabelText('Abbreviations'), 'BLY{Enter}');
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('sends only abbreviations in the save body when only abbreviations changed', async () => {

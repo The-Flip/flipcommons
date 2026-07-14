@@ -1,7 +1,8 @@
-<!-- @component Renders every model↔model lineage relation present on a model as `<h3>` + link-list groups. The mobile lineage presentation (the sidebar renders its own via `SidebarSection`); shared by the model page's Related Models accordion and the single-model title page. -->
+<!-- @component Renders every model↔model lineage relation present on a model as `<h3>` + link-list groups, then the model's relationship-edge sections (copy / conversion / kit, outbound then inbound). The mobile presentation (the sidebar renders its own via `SidebarSection`); shared by the model page's Related Models accordion and the single-model title page. -->
 <script lang="ts">
+  import ModelEdgeTargetList from './ModelEdgeTargetList.svelte';
   import ModelLineageLinkList from './ModelLineageLinkList.svelte';
-  import { modelLineageSections } from '$lib/entities/model-lineage';
+  import { modelEdgeSections, modelLineageSections } from '$lib/entities/model-lineage';
   import type { ModelDetailSchema } from '$lib/api/schema';
 
   let { model }: { model: ModelDetailSchema } = $props();
@@ -11,6 +12,13 @@
   <div class="relationship-group">
     <h3>{relation.heading}</h3>
     <ModelLineageLinkList {links} />
+  </div>
+{/each}
+
+{#each modelEdgeSections(model) as { key, heading, targets } (key)}
+  <div class="relationship-group">
+    <h3>{heading}</h3>
+    <ModelEdgeTargetList {targets} />
   </div>
 {/each}
 

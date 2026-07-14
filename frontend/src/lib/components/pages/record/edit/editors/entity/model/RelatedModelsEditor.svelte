@@ -12,7 +12,7 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   import { untrack } from 'svelte';
   import EntitySelect from '$lib/components/input/entity-select/EntitySelect.svelte';
   import type { EntityOption } from '$lib/api/entity-autocomplete';
-  import type { ModelRef, ModelRelationshipSchema } from '$lib/api/schema';
+  import type { ModelRelationshipSchema } from '$lib/api/schema';
   import {
     machineTargetText,
     type LicenseStatus,
@@ -31,13 +31,7 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     relationships?: ModelRelationshipSchema[];
   };
 
-  let {
-    initialData,
-    slug,
-    onsaved,
-    onerror,
-    ondirtychange = () => {},
-  }: SectionEditorProps<RelatedModelsModel> = $props();
+  let { initialData, slug, onsaved, onerror }: SectionEditorProps<RelatedModelsModel> = $props();
 
   const EDGE_KINDS = ['copy', 'conversion', 'conversion_kit'] as const;
   type EdgeKind = (typeof EDGE_KINDS)[number];
@@ -100,13 +94,13 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     const targetSlug = edge.target_machine?.public_id ?? '';
     return {
       key: keyCounter++,
-      kind: edge.relationship_type as EdgeKind,
+      kind: edge.relationship_type,
       targetSlug,
       targetLabel: edge.target_label ?? '',
       useLabel: !targetSlug && !!edge.target_label,
-      license: edge.license_status as LicenseStatus,
+      license: edge.license_status,
       initial: edge.target_machine
-        ? { value: targetSlug, label: machineTargetText(edge.target_machine as ModelRef) }
+        ? { value: targetSlug, label: machineTargetText(edge.target_machine) }
         : null,
     };
   }
@@ -202,13 +196,7 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     return fieldsChanged || edgesChanged;
   });
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

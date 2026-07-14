@@ -169,7 +169,7 @@
     }))}
     switcherItems={editSections}
   >
-    {#snippet editor(key, { ref, onsaved, onerror, ondirtychange })}
+    {#snippet editor(key, { ref, onsaved, onerror })}
       <SystemEditorSwitch
         sectionKey={key}
         initialData={system}
@@ -177,7 +177,6 @@
         bind:editorRef={ref.current}
         {onsaved}
         {onerror}
-        {ondirtychange}
       />
     {/snippet}
   </SectionEditorHost>

@@ -54,7 +54,6 @@
         label="overview"
         onsaved={callbacks.onsaved}
         onerror={callbacks.onerror}
-        ondirtychange={callbacks.ondirtychange}
       />
     {:else if key === 'features'}
       <FakeEditor
@@ -63,7 +62,6 @@
         saveBehavior="error"
         onsaved={callbacks.onsaved}
         onerror={callbacks.onerror}
-        ondirtychange={callbacks.ondirtychange}
       />
     {/if}
   {/snippet}

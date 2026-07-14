@@ -34,7 +34,6 @@
     ref: EditorRefBox;
     onsaved: () => void;
     onerror: (msg: string) => void;
-    ondirtychange: (dirty: boolean) => void;
   };
 
   let {

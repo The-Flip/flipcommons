@@ -17,8 +17,6 @@
     type?: string;
   } = $props();
 
-  let dirtyFromCallback = $state(false);
-  let dirtyFromHandle = $state('unknown');
   let savedCount = $state(0);
   let lastError = $state('');
   let lastSaveBody = $state<unknown>(null);
@@ -26,9 +24,11 @@
   let editorRef:
     | {
         save(meta?: SaveMeta): Promise<void>;
-        isDirty(): boolean;
+        readonly dirty: boolean;
       }
     | undefined = $state();
+
+  let editorDirty = $derived(editorRef?.dirty ?? false);
 
   async function save(_slug: string, body: { parents: string[] } & SaveMeta): Promise<SaveResult> {
     lastSaveBody = body;
@@ -44,16 +44,11 @@
   {type}
   onsaved={() => savedCount++}
   onerror={(message) => (lastError = message)}
-  ondirtychange={(dirty) => (dirtyFromCallback = dirty)}
 />
 
-<button type="button" onclick={() => (dirtyFromHandle = String(editorRef?.isDirty() ?? false))}>
-  Check dirty
-</button>
 <button type="button" onclick={() => editorRef?.save()}>Save</button>
 
-<p data-testid="dirty-callback">{String(dirtyFromCallback)}</p>
-<p data-testid="dirty-handle">{dirtyFromHandle}</p>
+<p data-testid="dirty">{String(editorDirty)}</p>
 <p data-testid="saved-count">{savedCount}</p>
 <p data-testid="last-error">{lastError}</p>
 <p data-testid="last-save-body">{JSON.stringify(lastSaveBody)}</p>

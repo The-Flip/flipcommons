@@ -33,13 +33,7 @@
     gameplay_features: GameplayFeatureRef[];
   };
 
-  let {
-    initialData,
-    slug,
-    onsaved,
-    onerror,
-    ondirtychange = () => {},
-  }: SectionEditorProps<FeaturesModel> = $props();
+  let { initialData, slug, onsaved, onerror }: SectionEditorProps<FeaturesModel> = $props();
 
   type FeaturesFormFields = {
     cabinet: string;
@@ -144,13 +138,7 @@
       featuresChanged(),
   );
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

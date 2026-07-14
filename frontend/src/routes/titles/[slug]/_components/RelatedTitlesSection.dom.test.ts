@@ -9,6 +9,7 @@ describe('RelatedTitlesSection', () => {
     const relatedTitles: CrossTitleLinkSchema[] = [
       {
         relation: 'bootleg_of',
+        license_status: 'unknown',
         other_title: { name: 'Video Pinball', public_id: 'video-pinball' },
         source_model: { name: 'Rugby', public_id: 'rugby-sidam' },
       },
@@ -27,6 +28,7 @@ describe('RelatedTitlesSection', () => {
     const relatedTitles: CrossTitleLinkSchema[] = [
       {
         relation: 'licensed_build_of',
+        license_status: 'unknown',
         other_title: { name: 'Party Animal', public_id: 'party-animal' },
         source_model: { name: 'Party Animal', public_id: 'party-animal-2' },
       },
@@ -37,6 +39,39 @@ describe('RelatedTitlesSection', () => {
     expect(screen.getByRole('link', { name: 'Party Animal' })).toHaveAttribute(
       'href',
       expect.stringContaining('party-animal'),
+    );
+  });
+
+  it('phrases a relationship edge from its (kind, license), e.g. "is a bootleg of"', () => {
+    const relatedTitles: CrossTitleLinkSchema[] = [
+      {
+        relation: 'copy',
+        license_status: 'unlicensed',
+        other_title: { name: 'Galaxie', public_id: 'galaxie' },
+        source_model: { name: 'Galaxie RMG', public_id: 'galaxie-rmg-1' },
+      },
+      {
+        relation: 'conversion',
+        license_status: 'unlicensed',
+        other_title: { name: 'Hi-Score', public_id: 'hi-score' },
+        source_model: { name: 'Musketeers', public_id: 'musketeers' },
+      },
+      {
+        relation: 'conversion_kit',
+        license_status: 'licensed',
+        other_title: { name: 'Team One', public_id: 'team-one' },
+        source_model: { name: 'Wizard', public_id: 'wizard-4' },
+      },
+    ];
+    render(RelatedTitlesSection, { props: { relatedTitles } });
+
+    expect(screen.getByText('is a bootleg of')).toBeInTheDocument();
+    // The article flexes with the phrase's first sound.
+    expect(screen.getByText('is an unlicensed conversion of')).toBeInTheDocument();
+    expect(screen.getByText('is a licensed conversion kit for')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Galaxie' })).toHaveAttribute(
+      'href',
+      expect.stringContaining('galaxie'),
     );
   });
 });

@@ -12,7 +12,7 @@
   import { modelEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
-  import { modelLineageSections } from '$lib/entities/model-lineage';
+  import { modelEdgeSections, modelLineageSections } from '$lib/entities/model-lineage';
   import { showsProductionStatus } from '$lib/entities/production-status';
 
   let { data } = $props();
@@ -23,7 +23,10 @@
   const richTextState = createRichTextAccordionState();
 
   let hasRelationships = $derived(
-    !!model.title || modelLineageSections(model).length > 0 || model.title_models.length > 1,
+    !!model.title ||
+      modelLineageSections(model).length > 0 ||
+      modelEdgeSections(model).length > 0 ||
+      model.title_models.length > 1,
   );
   let hasTechnology = $derived(
     !!model.technology_generation ||

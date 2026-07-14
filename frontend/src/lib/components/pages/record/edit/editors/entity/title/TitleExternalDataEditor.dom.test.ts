@@ -49,19 +49,13 @@ describe('TitleExternalDataEditor dirty-state contract', () => {
       props: { initialData: INITIAL_TITLE },
     });
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
 
     const opdbInput = screen.getByLabelText('OPDB Group ID');
     await user.clear(opdbInput);
     await user.type(opdbInput, 'G9abc');
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('PATCHes /api/titles/{public_id}/claims/ with only the changed field', async () => {

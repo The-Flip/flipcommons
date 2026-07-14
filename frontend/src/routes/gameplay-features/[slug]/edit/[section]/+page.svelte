@@ -25,10 +25,7 @@
   {sections}
   defaultSegment={defaultHierarchicalTaxonomySectionSegment()}
 >
-  {#snippet editor(
-    key: HierarchicalTaxonomyEditSectionKey,
-    { ref, onsaved, onerror, ondirtychange },
-  )}
+  {#snippet editor(key: HierarchicalTaxonomyEditSectionKey, { ref, onsaved, onerror })}
     <HierarchicalTaxonomyEditorSwitch
       sectionKey={key}
       initialData={profile}
@@ -39,7 +36,6 @@
       bind:editorRef={ref.current}
       {onsaved}
       {onerror}
-      {ondirtychange}
     />
   {/snippet}
 

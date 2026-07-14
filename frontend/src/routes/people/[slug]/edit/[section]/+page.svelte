@@ -30,6 +30,15 @@
   const isMobileFlag = createBelowBreakpointFlag(WIDE_BREAKPOINT, null);
   let isMobile = $derived(isMobileFlag.current);
 
+  // Single reactive dirty read: gates the footer Save button and the section
+  // nav-lock, and guards cancel. `false` while the editor is unmounted keeps
+  // Save disabled — the safe default.
+  let editorDirty = $derived(editorRef?.dirty ?? false);
+
+  $effect(() => {
+    editLayout.setDirty(editorDirty);
+  });
+
   $effect(() => {
     if (isMobile === true && !section) {
       goto(resolve(`/people/${slug}/edit/${defaultPersonSectionSegment()}`), {
@@ -44,19 +53,14 @@
   }
 
   function handleCancel() {
-    if (editorRef?.isDirty() && !confirm('Discard unsaved changes?')) {
+    if (editorDirty && !confirm('Discard unsaved changes?')) {
       return;
     }
     goto(resolve(`/people/${slug}`));
   }
 
   function handleSaved() {
-    editLayout.setDirty(false);
     saveCounter++;
-  }
-
-  function handleDirtyChange(dirty: boolean) {
-    editLayout.setDirty(dirty);
   }
 </script>
 
@@ -67,6 +71,7 @@
         error={editError}
         showCitation={section.showCitation}
         showMixedEditWarning={section.showMixedEditWarning}
+        dirty={editorDirty}
         oncancel={handleCancel}
         onsave={handleSave}
       >
@@ -77,7 +82,6 @@
           bind:editorRef
           onsaved={handleSaved}
           onerror={(msg) => (editError = msg)}
-          ondirtychange={handleDirtyChange}
         />
       </SectionEditorForm>
     {/key}
