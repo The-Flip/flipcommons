@@ -1,4 +1,4 @@
-<!-- @component Renders a list of model lineage links as a plain `<ul>` of `RelatedModelLink` lines. Shared by the mobile model relationships list and the single-model title page; the desktop sidebar renders its own list via `SidebarList`. -->
+<!-- @component Renders a list of model lineage links as a plain `<ul>` of `RelatedModelLink` lines. -->
 <script lang="ts">
   import RelatedModelLink from './RelatedModelLink.svelte';
   import type { ModelLineageLinkView } from '$lib/entities/model-lineage';

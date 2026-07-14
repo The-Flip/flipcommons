@@ -1,4 +1,4 @@
-<!-- @component Renders a model's model↔model lineage relations, then its relationship-edge sections (copy / conversion / kit, outbound then inbound), as `SidebarSection`s — the desktop sidebar presentation. Shared by the model page and the single-model title page; the mobile presentation is `ModelLineageGroups`. -->
+<!-- @component Renders a model's model↔model lineage relations, then its relationship-edge sections (copy / conversion / kit, outbound then inbound), as `SidebarSection`s — the desktop sidebar presentation. -->
 <script lang="ts">
   import RelatedModelLink from './RelatedModelLink.svelte';
   import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';

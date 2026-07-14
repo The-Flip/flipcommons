@@ -5,10 +5,13 @@
  * a new backend enum value fails the build here instead of rendering wrong.
  */
 
-import type { ModelRef, ModelRelationshipInputSchema } from '$lib/api/schema';
+import type { CrossTitleLinkSchema, ModelRef, ModelRelationshipInputSchema } from '$lib/api/schema';
 
 /** The three edge types, derived from the wire union (never redeclared). */
 export type EdgeKind = ModelRelationshipInputSchema['relationship_type'];
+
+/** Relations that can appear on a cross-title lineage line — the edge kinds plus the remake lineage FK; derived from the wire union. */
+export type CrossTitleRelation = CrossTitleLinkSchema['relation'];
 
 /** Authorization status, derived from the wire union. */
 export type LicenseStatus = NonNullable<ModelRelationshipInputSchema['license_status']>;
@@ -137,10 +140,11 @@ export function inboundRelationshipNote(kind: EdgeKind, license: LicenseStatus):
 /**
  * Sentence form of a lead phrase, for lines with an explicit subject — the
  * title page's cross-title lineage: "Bootleg of" → "is a bootleg of",
- * "Unlicensed conversion of" → "is an unlicensed conversion of".
+ * "Unlicensed conversion of" → "is an unlicensed conversion of",
+ * "Remake of" → "is a remake of".
  */
-export function relationshipSentence(kind: EdgeKind, license: LicenseStatus): string {
-  const lead = relationshipLead(kind, license);
+export function relationshipSentence(kind: CrossTitleRelation, license: LicenseStatus): string {
+  const lead = relationshipLead(kind === 'remake_of' ? 'remake' : kind, license);
   const phrase = lead.charAt(0).toLowerCase() + lead.slice(1);
   return `is ${/^[aeiou]/i.test(phrase) ? 'an' : 'a'} ${phrase}`;
 }

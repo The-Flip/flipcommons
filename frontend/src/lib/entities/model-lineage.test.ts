@@ -2,12 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import { makeModelDetail } from '$lib/api/detail-fixtures';
 import { ENTITY_META } from './entity-meta';
-import {
-  MODEL_LINEAGE_RELATIONS,
-  modelEdgeSections,
-  modelLineageRelation,
-  modelLineageSections,
-} from './model-lineage';
+import { MODEL_LINEAGE_RELATIONS, modelEdgeSections, modelLineageSections } from './model-lineage';
 
 // Guards that the forward-FK descriptors stay in sync with the backend's
 // model↔model self-relations. entity-meta.ts is generated from the Django
@@ -133,17 +128,6 @@ describe('modelLineageSections', () => {
       expect(section.relation.key).toBe('variants');
       expect(section.links[0].manufacturer?.name).toBe('Zaccaria');
     });
-  });
-});
-
-describe('modelLineageRelation', () => {
-  it('looks up a relation by key', () => {
-    expect(modelLineageRelation('remakes').heading).toBe('Remakes');
-  });
-
-  it('throws on an unknown key', () => {
-    // @ts-expect-error — exercising the runtime guard with an invalid key.
-    expect(() => modelLineageRelation('nope')).toThrow();
   });
 });
 

@@ -12,7 +12,7 @@
   import { modelEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
-  import { modelEdgeSections, modelLineageSections } from '$lib/entities/model-lineage';
+  import { modelLineageSections } from '$lib/entities/model-lineage';
   import { showsProductionStatus } from '$lib/entities/production-status';
 
   let { data } = $props();
@@ -25,7 +25,8 @@
   let hasRelationships = $derived(
     !!model.title ||
       modelLineageSections(model).length > 0 ||
-      modelEdgeSections(model).length > 0 ||
+      (model.relationships?.length ?? 0) > 0 ||
+      (model.inbound_relationships?.length ?? 0) > 0 ||
       model.title_models.length > 1,
   );
   let hasTechnology = $derived(

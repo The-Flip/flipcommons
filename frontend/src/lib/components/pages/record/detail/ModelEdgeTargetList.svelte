@@ -1,4 +1,4 @@
-<!-- @component Renders one relationship-edge section's target lines as a plain `<ul>` — a machine target as a `RelatedModelLink` line, a label target as plain text with no hyperlink. Shared by the mobile relationships list and the desktop sidebar sections. -->
+<!-- @component Renders one relationship-edge section's target lines as a plain `<ul>` — a machine target as a `RelatedModelLink` line, a label target as plain text with no hyperlink. -->
 <script lang="ts">
   import RelatedModelLink from './RelatedModelLink.svelte';
   import type { ModelEdgeTargetView } from '$lib/entities/model-lineage';

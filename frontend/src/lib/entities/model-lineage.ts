@@ -167,17 +167,6 @@ function modelSubject(model: ModelDetailSchema): RelatedModelSubject {
 }
 
 /**
- * Look up a single lineage relation by key, for surfaces that render a curated
- * subset. Throws on an unknown key so a typo fails loudly rather than
- * rendering nothing.
- */
-export function modelLineageRelation(key: ModelLineageKey): ModelLineageRelation {
-  const relation = MODEL_LINEAGE_RELATIONS.find((r) => r.key === key);
-  if (!relation) throw new Error(`Unknown model lineage relation: ${key}`);
-  return relation;
-}
-
-/**
  * One rendered line of a relationship-edge section: a machine target XOR a
  * plain-text label target, mirroring the edge's own target XOR. Inbound
  * sections put the *source* model here.
