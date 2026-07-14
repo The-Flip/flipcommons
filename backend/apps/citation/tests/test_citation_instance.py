@@ -49,6 +49,40 @@ class TestCitationInstanceCreation:
 
 
 # ---------------------------------------------------------------------------
+# Quote mojibake — verbatim excerpts may reproduce a garbled source
+# ---------------------------------------------------------------------------
+
+
+class TestCitationInstanceQuoteMojibake:
+    """``quote`` is a verbatim excerpt, so it must reproduce a source's own
+    encoding corruption — including U+FFFD — rather than reject it. The
+    corruption-rejecting ``validate_no_mojibake`` guard belongs on our authored
+    fields (``locator`` and the ``CitationSource`` text), not here.
+    """
+
+    # IPDB machine 4645's Notes render "Sky<U+FFFD>Line"; a faithful quote of
+    # that source contains the replacement character verbatim.
+    GARBLED_QUOTE = "This game is a copy of Gottlieb's 1965 'Sky�Line'."
+
+    def test_quote_allows_verbatim_replacement_character(self, citation_source):
+        ci = CitationInstance(
+            citation_source=citation_source,
+            quote=self.GARBLED_QUOTE,
+        )
+        # Must not raise: a verbatim quote of a garbled source is legitimate.
+        # slug is minted on save, so it isn't set on this unsaved instance.
+        ci.full_clean(exclude=["slug"])
+
+    def test_locator_still_rejects_mojibake(self, citation_source):
+        ci = CitationInstance(
+            citation_source=citation_source,
+            locator="Sky�Line",
+        )
+        with pytest.raises(ValidationError, match="mojibake|replacement character"):
+            ci.full_clean(exclude=["slug"])
+
+
+# ---------------------------------------------------------------------------
 # Slug minting
 # ---------------------------------------------------------------------------
 

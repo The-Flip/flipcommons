@@ -148,7 +148,9 @@ def build_sources(
     the per-claim loop.
     """
     claims = list(claims)
-    ctx = resolve_display_context(FieldValue(c.field_name, c.value) for c in claims)
+    ctx = resolve_display_context(
+        FieldValue(c.field_name, c.value, model) for c in claims
+    )
     winners: set[str] = set()
     sources: list[ClaimSchema] = []
     for claim in claims:

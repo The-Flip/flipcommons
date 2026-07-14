@@ -158,7 +158,7 @@ Entity references are of format `type.public_id` — the canonical `entity_type`
 
 ### Field keys
 
-Field keys are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's `public_id`; **relationship** (`tag`, `theme`, `manufacturer_alias`, `abbreviation`) — key is the namespace, value a list of members (FK public_ids, or bare strings for aliases/abbreviations). The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
+Field keys are classified by introspection: **scalar** (`year`) — value used as-is; **FK** (`manufacturer`, `production_status`) — value is the target's `public_id`, resolved to the target's PK at plan time (a patch's slugs are point-in-time: valid at apply, never stored in claims); **relationship** (`tag`, `theme`, `manufacturer_alias`, `abbreviation`) — key is the namespace, value a list of members (FK public_ids, or bare strings for aliases/abbreviations). The lifecycle field **`status` is not directly assertable** — a raw `status: deleted` would skip the delete planner's blocker check and cascade, so it's rejected; soft-delete via `delete: true` instead.
 
 Distinct from field keys are the **reserved keys** — directives, not claims: `create:`, `delete:`, `retract:` and `remove:` (each covered with its operation above), the cross-cutting `note:`, `cite:` and `cites:` (below), the grouping key `changesets:` (see [File format](#file-format)).
 

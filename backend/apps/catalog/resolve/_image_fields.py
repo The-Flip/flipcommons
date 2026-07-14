@@ -26,15 +26,19 @@ def _stamp_image_license(
 ) -> None:
     """Denormalize *claim*'s effective license into *extra_data*, for image fields.
 
-    Writes ``{field}.__license_slug`` and ``{field}.__permissiveness_rank``
+    Writes ``{field}.__license_id`` and ``{field}.__permissiveness_rank``
     beside the already-stored image value; a no-op for non-image claims. The one
     stamp helper for every write path, so the denormalized sidecars are
     identical no matter which path resolved the claim.
+
+    The license reference is the row's PK — never its slug — so a License
+    rename can't strand stale attribution; the read API resolves id→slug at
+    read time.
     """
     if claim.field_name not in IMAGE_FIELDS:
         return
     lic = resolve_effective_license(claim, sfl_map)
-    extra_data[f"{claim.field_name}.__license_slug"] = lic.slug if lic else None
+    extra_data[f"{claim.field_name}.__license_id"] = lic.pk if lic else None
     extra_data[f"{claim.field_name}.__permissiveness_rank"] = (
         lic.permissiveness_rank if lic else None
     )

@@ -503,8 +503,8 @@ class TestPatchSystemResponseShape:
         )
         # Manufacturer is now claim-controlled on System — assert claims so
         # resolution preserves the FK when description is PATCHed.
-        make_claim(system, "manufacturer", manufacturer.slug, ingest_source=source)
-        make_claim(sibling, "manufacturer", manufacturer.slug, ingest_source=source)
+        make_claim(system, "manufacturer", manufacturer.pk, ingest_source=source)
+        make_claim(sibling, "manufacturer", manufacturer.pk, ingest_source=source)
         title = Title.objects.create(name="Medieval Madness", slug="medieval-madness")
         make_machine_model(
             name="Medieval Madness",

@@ -169,6 +169,27 @@ def _validate_assertion_targets(plan: IngestPlan) -> None:
                 f"use one or the other"
             )
 
+        # Deferred direct-FK value: value_ref fills ``value`` post-create, so
+        # a concrete value or a relationship shape alongside it is a bug.
+        if pca.value_ref is not None:
+            if pca.value is not None:
+                raise ValueError(
+                    f"PlannedClaimAssert(field_name={pca.field_name!r}) has "
+                    f"both a concrete value and a value_ref — set exactly one"
+                )
+            if has_deferred:
+                raise ValueError(
+                    f"PlannedClaimAssert(field_name={pca.field_name!r}) has "
+                    f"both a value_ref and relationship_namespace — value_ref "
+                    f"is for direct FK claims only"
+                )
+            if pca.value_ref not in valid_handles:
+                raise ValueError(
+                    f"PlannedClaimAssert(field_name={pca.field_name!r}) has "
+                    f"value_ref {pca.value_ref!r} but that handle does not "
+                    f"exist in the entity list"
+                )
+
         # identity_refs requires relationship_namespace.
         if pca.identity_refs and not pca.relationship_namespace:
             raise ValueError(

@@ -386,9 +386,8 @@ def create_system(
             ClaimSpec(field_name="name", value=name),
             ClaimSpec(field_name="slug", value=slug),
             ClaimSpec(field_name="status", value="active"),
-            # FK claim value is the parent's public_id (defaults to slug;
-            # path-shaped for models that override ``public_id_field``).
-            ClaimSpec(field_name="manufacturer", value=manufacturer.public_id),
+            # FK claim values store the target's PK — immune to slug renames.
+            ClaimSpec(field_name="manufacturer", value=manufacturer.pk),
         ],
         user=request.user,
         note=data.note,

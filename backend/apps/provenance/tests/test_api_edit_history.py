@@ -114,6 +114,38 @@ class TestEditHistoryBasic:
 
 
 @pytest.mark.django_db
+class TestEditHistoryFkDisplay:
+    def test_fk_change_shows_entity_label_not_pk(self, client, user, pm):
+        """An FK edit stores the target PK but history renders its label —
+        via the same display shape relationship claims use — so the raw int
+        never has to surface. The API still accepts the slug on the wire."""
+        from apps.catalog.models import TechnologyGeneration
+
+        ss = TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
+        client.force_login(user)
+        resp = client.patch(
+            f"/api/models/{pm.slug}/claims/",
+            data='{"fields": {"technology_generation": "solid-state"}}',
+            content_type="application/json",
+        )
+        assert resp.status_code == 200, resp.content
+
+        resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        change = _user_changesets(resp)[0]["changes"][0]
+        assert change["field_name"] == "technology_generation"
+        assert change["new_value"]["raw"] == ss.pk
+        display = change["new_value"]["display"]
+        assert display["kind"] == "relationship"
+        assert display["identity"] == [
+            {
+                "key": "technology_generation",
+                "label": "Solid State",
+                "state": "resolved",
+            }
+        ]
+
+
+@pytest.mark.django_db
 class TestEditHistoryMultipleFields:
     def test_multi_field_changeset(self, client, user, pm):
         """A single edit that changes multiple fields shows all changes."""

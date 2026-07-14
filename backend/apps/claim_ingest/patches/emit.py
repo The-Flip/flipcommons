@@ -53,6 +53,7 @@ from apps.provenance.claims import (
     normalize_abbreviation_value,
     normalize_alias_identity,
     normalize_fk_value,
+    resolve_fk_target_pk,
 )
 from apps.provenance.models import (
     Claim,
@@ -164,21 +165,6 @@ def _resolve_model_class(entry: PatchEntry) -> type[LinkableClaimModel]:
     return model_class
 
 
-def _lookup_pk(target_model: type[models.Model], public_id: str) -> int | None:
-    # Canonicalize via the same definition the apply-time resolver uses
-    # (str-cast + trim), so a padded value resolves identically at build time
-    # and at apply — no build-vs-apply FK drift.
-    key = normalize_fk_value(public_id)
-    if key is None:
-        return None
-    pid_field = getattr(target_model, "public_id_field", "slug")
-    return (
-        target_model._default_manager.filter(**{pid_field: key})
-        .values_list("pk", flat=True)
-        .first()
-    )
-
-
 def _resolve_committed_slot(
     slot: _FkMemberSpec, ref: PublicId, *, namespace: Namespace, entry: PatchEntry
 ) -> int:
@@ -189,7 +175,7 @@ def _resolve_committed_slot(
     (``_resolve_member_slots``) — so the "does not resolve to a {Model}" error is
     defined once and the two paths can't drift.
     """
-    member_pk = _lookup_pk(slot.target_model, ref)
+    member_pk = resolve_fk_target_pk(slot.target_model, ref)
     if member_pk is None:
         raise PatchError(
             f"{entry.ref}: relationship {namespace!r} member {ref!r} "
@@ -208,6 +194,7 @@ def _emit_assert(
     note: str = "",
     cite_specs: tuple[CiteSpec, ...] = (),
     inline_cites: dict[CiteHandle, CiteSpec] | None = None,
+    value_ref: Handle | None = None,
 ) -> None:
     plan.assertions.append(
         PlannedClaimAssert(
@@ -220,31 +207,63 @@ def _emit_assert(
             content_type_id=target.content_type_id,
             object_id=target.object_id,
             handle=target.handle,
+            value_ref=value_ref,
         )
     )
 
 
 def _emit_direct(
     plan: IngestPlan,
+    model_class: type[LinkableClaimModel],
     field_name: str,
     value: object,
     target: _Target,
+    entry: PatchEntry,
     *,
+    registry: PatchEntityRegistry,
     note: str = "",
     cite_specs: tuple[CiteSpec, ...] = (),
     inline_cites: dict[CiteHandle, CiteSpec] | None = None,
 ) -> None:
-    """Emit a scalar or FK claim assertion (FK value is the target public_id).
+    """Emit a scalar or FK claim assertion.
+
+    Authored FK values are public_id strings — point-in-time addressing that
+    is only valid while the patch applies. The *stored* claim value is the
+    target's PK, resolved here at plan time; a target created in this same
+    patch has no PK yet, so the assertion carries its handle as ``value_ref``
+    and the apply layer fills the PK in after the bulk-create. An FK value
+    that resolves to neither is a plan-time ``PatchError``.
 
     ``inline_cites`` carries any new (numeric-handle) inline citations to mint
     for a markdown field's value; empty for non-markdown fields and for markdown
     fields whose cites are all existing slugs.
     """
+    value_ref: Handle | None = None
+    django_field = model_class._meta.get_field(field_name)
+    if isinstance(django_field, models.ForeignKey) and value not in (None, ""):
+        target_model = django_field.related_model
+        assert isinstance(target_model, type)  # resolved FK target
+        if not isinstance(value, str):
+            raise PatchError(
+                f"{entry.ref}: FK {field_name!r} value must be a public_id"
+            )
+        target_pk = resolve_fk_target_pk(target_model, value)
+        if target_pk is not None:
+            value = target_pk
+        else:
+            value_ref = registry.created_handle(target_model, normalize_fk_value(value))
+            if value_ref is None:
+                raise PatchError(
+                    f"{entry.ref}: FK {field_name!r} target {value!r} is not in "
+                    f"the seed, an earlier patch, or this patch"
+                )
+            value = None
     _emit_assert(
         plan,
         target,
         field_name=field_name,
         value=value,
+        value_ref=value_ref,
         note=note,
         cite_specs=cite_specs,
         inline_cites=inline_cites,
@@ -549,7 +568,7 @@ def _member_identity(
     match rel_spec:
         case _FkMemberSpec(value_key, target_model):
             public_id, payload = _unpack_fk_member(member, rel_spec, namespace, entry)
-            member_pk = _lookup_pk(target_model, public_id)
+            member_pk = resolve_fk_target_pk(target_model, public_id)
             if member_pk is None:
                 raise PatchError(
                     f"{entry.ref}: relationship {namespace!r} member {public_id!r} "
@@ -1048,7 +1067,7 @@ def _add_create(
             assert isinstance(target_model, type)  # resolved FK target
             if not isinstance(value, str):
                 raise PatchError(f"{entry.ref}: FK {key!r} value must be a public_id")
-            target_pk = _lookup_pk(target_model, value)
+            target_pk = resolve_fk_target_pk(target_model, value)
             if target_pk is not None:
                 kwargs[django_field.attname] = target_pk
             else:

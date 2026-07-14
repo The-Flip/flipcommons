@@ -72,7 +72,7 @@ from ..cache import (
     get_cached_response,
     set_cached_response,
 )
-from .images import extract_image_attribution, extract_image_urls
+from .images import extract_image_attribution, extract_image_urls, license_slug_map
 
 # The "export" tag is the opt-in marker for the public API reference: /api-docs
 # shows only export-tagged endpoints (and uses the tag as the section heading).
@@ -561,6 +561,7 @@ def _serialize_row(
     sfl_map: SourceFieldLicenseMap,
     link_map: _LinkMap,
     strip_rules: _LinkStripRules,
+    license_slugs: Mapping[int, str],
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "public_id": obj.public_id,
@@ -579,7 +580,9 @@ def _serialize_row(
         thumb, hero = extract_image_urls(extra, media, min_rank=min_rank)
         row["thumbnail_url"] = thumb
         row["hero_image_url"] = hero
-        att = extract_image_attribution(extra, media, min_rank=min_rank)
+        att = extract_image_attribution(
+            extra, media, min_rank=min_rank, license_slugs=license_slugs
+        )
         row["image_attribution"] = att.model_dump() if att else None
     for key, rel in spec.relations.items():
         row[key] = _serialize_relation(obj, rel)
@@ -848,6 +851,7 @@ def _register(spec: ExportSpec) -> None:
         min_rank = get_minimum_display_rank()
         sfl_map = build_source_field_license_map()
         strip_rules = _link_strip_rules()  # once per build, honoring is_enabled toggles
+        license_slugs = license_slug_map()
         objs = list(_build_qs(spec))
         link_map = _build_link_map([o.description for o in objs])
         rows = [
@@ -858,6 +862,7 @@ def _register(spec: ExportSpec) -> None:
                 sfl_map=sfl_map,
                 link_map=link_map,
                 strip_rules=strip_rules,
+                license_slugs=license_slugs,
             )
             for obj in objs
         ]

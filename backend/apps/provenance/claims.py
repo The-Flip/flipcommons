@@ -16,6 +16,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import NamedTuple
 
+from django.db import models
+
 from apps.core.types import (
     ClaimFieldName,
     ClaimKey,
@@ -68,22 +70,41 @@ def normalize_abbreviation_value(raw: str) -> str:
 
 
 def normalize_fk_value(value: object) -> PublicId | None:
-    """Canonicalize an FK claim value to its public_id lookup key.
+    """Canonicalize an authored FK reference to its public_id lookup key.
 
-    The single normalization an FK claim value passes through before it becomes a
-    public_id lookup: cast to ``str`` and trim. A falsy or whitespace-only value
-    resolves to nothing (``None``). Shared by both FK-*resolution* lookups —
-    catalog's ``_resolve_fk_generic`` (apply-time) and the patch front end's
-    ``_lookup_pk`` (build-time create/member resolution) — so a padded or
-    non-string value can't normalize one way and look up another.
-
-    Distinct from the FK-*existence* check in :mod:`apps.provenance.validation`,
-    which answers a different question — does the value name an existing row —
-    and keeps its own slug normalization.
+    Authoring-boundary only: cast to ``str`` and trim, so a padded YAML value
+    resolves the same as a clean one. A falsy or whitespace-only value resolves
+    to nothing (``None``). Used by :func:`resolve_fk_target_pk` and the patch
+    planner's same-patch handle registry — the places authored public_id
+    strings are translated to PKs. Persisted claim values are already PKs and
+    never pass through here.
     """
     if not value:
         return None
     return str(value).strip() or None
+
+
+def resolve_fk_target_pk(
+    target_model: type[models.Model], public_id: object
+) -> int | None:
+    """Resolve an authored public_id to the target row's PK, or ``None``.
+
+    The single authoring-boundary translation from public_id strings (patch
+    YAML values, API payloads) to the integer PK stored in an FK claim value.
+    Looks up by the target's ``public_id_field`` (``slug`` for most models,
+    ``location_path`` for Location). Returns ``None`` when the value is blank
+    or names no existing row — the caller decides whether that's an error, a
+    same-patch handle or a clear.
+    """
+    key = normalize_fk_value(public_id)
+    if key is None:
+        return None
+    pid_field = getattr(target_model, "public_id_field", "slug")
+    return (
+        target_model._default_manager.filter(**{pid_field: key})
+        .values_list("pk", flat=True)
+        .first()
+    )
 
 
 def build_relationship_claim(
@@ -140,4 +161,5 @@ __all__ = [
     "normalize_abbreviation_value",
     "normalize_alias_identity",
     "normalize_fk_value",
+    "resolve_fk_target_pk",
 ]

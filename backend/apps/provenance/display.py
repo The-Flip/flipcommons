@@ -1,23 +1,24 @@
-"""Build structured display values for relationship-claim values in edit history.
+"""Build structured display values for FK-bearing claim values in edit history.
 
 A relationship claim's stored value is a dict like
-``{"person": 13, "role": 9, "exists": true}`` — fine for the data model,
-unfriendly for users. This module turns those into a
+``{"person": 13, "role": 9, "exists": true}``, and a direct FK claim's is
+the target's bare PK — fine for the data model, unfriendly for users. This
+module turns both into a
 :class:`~apps.provenance.schemas.ClaimDisplayValueSchema` — an ordered list of
 identity parts (each resolved to a user-facing label) and qualifier parts
-(scalars left as-is for the frontend to render). Layout decisions
-(separators, ``×N`` count suffixes, parentheses around categories) live on
-the frontend; the backend's job is FK-pk-to-label resolution.
+(scalars left as-is for the frontend to render). A direct FK claim renders as
+a single identity part. Layout decisions (separators, ``×N`` count suffixes,
+parentheses around categories) live on the frontend; the backend's job is
+FK-pk-to-label resolution.
 
 Usage::
 
-    labels = resolve_labels([FieldValue(field_name, value), ...])
-    bundled = claim_value(field_name, value, labels)  # {raw, display}
+    labels = resolve_labels([FieldValue(field_name, value, model), ...])
+    bundled = claim_value(model, field_name, value, ctx)  # {raw, display}
 
 ``resolve_labels`` queries one row per FK target model (no per-row N+1).
-Bare scalars (direct-field claims like ``technology_generation``) and
-unregistered namespaces return ``None`` — clients fall back to the raw
-value in that case.
+Non-FK scalars (``year``, ``name``, …) and unregistered namespaces return
+``None`` — clients fall back to the raw value in that case.
 """
 
 from __future__ import annotations
@@ -28,7 +29,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from django.db.models import Model
+from django.core.exceptions import FieldDoesNotExist
+from django.db.models import ForeignKey, Model
 
 from apps.core.markdown import (
     WikilinkAuthoringLookup,
@@ -73,15 +75,18 @@ class _LabelResult(NamedTuple):
 
 
 class FieldValue(NamedTuple):
-    """A claim value paired with the field name that interprets it.
+    """A claim value paired with the field name and subject model that interpret it.
 
-    The field name picks which relationship schema applies; the value is the
-    raw payload. Callers feed :func:`resolve_labels` with these so FK pks
-    can be collected for batched resolution.
+    The field name picks which relationship schema applies (dict values) or
+    which concrete FK field the value is a PK of (int values, introspected on
+    ``model``); the value is the raw payload. Callers feed
+    :func:`resolve_labels` with these so FK pks can be collected for batched
+    resolution.
     """
 
     field_name: ClaimFieldName
     value: object
+    model: type[ClaimControlledModel]
 
 
 class FkRef(NamedTuple):
@@ -212,20 +217,49 @@ def resolve_identity_label(
     return _LabelResult(label=str(raw), state="resolved")
 
 
+def _direct_fk_target(
+    model: type[ClaimControlledModel], field_name: ClaimFieldName
+) -> type[Model] | None:
+    """The related model of a concrete FK field on *model*, else ``None``.
+
+    Decides whether an int claim value is a direct FK claim's target PK
+    (``MachineModel.display_type = 7``) rather than a plain numeric scalar
+    (``year = 1997``).
+    """
+    try:
+        field = model._meta.get_field(field_name)
+    except FieldDoesNotExist:
+        return None
+    if not isinstance(field, ForeignKey):
+        return None
+    target = field.related_model
+    if not isinstance(target, type):
+        return None
+    return target
+
+
 def _collect_refs(items: Iterable[FieldValue]) -> set[FkRef]:
     """Walk :class:`FieldValue`\\ s and gather every FK reference.
 
-    Non-dict values and direct-field claims (unregistered namespaces) are
-    skipped — they have no FKs to resolve. Corrupt pk values (None, wrong
-    type) are also skipped silently here; ``_fk_label`` is the canonical
-    log site for those violations so we don't double-log when the same
-    claim flows through both functions during a single response.
+    Dict values contribute their relationship-schema FK slots; int values
+    contribute the direct FK claim's target (when ``field_name`` is a
+    concrete FK on the subject model). Other scalars have no FKs to resolve.
+    Corrupt pk values (None, wrong type) are skipped silently here;
+    ``_fk_label`` is the canonical log site for those violations so we don't
+    double-log when the same claim flows through both functions during a
+    single response.
     """
     refs: set[FkRef] = set()
-    for field_name, value in items:
+    for item in items:
+        value = item.value
+        if type(value) is int:
+            target = _direct_fk_target(item.model, item.field_name)
+            if target is not None:
+                refs.add(FkRef(target, value))
+            continue
         if not isinstance(value, dict):
             continue
-        schema = get_relationship_schema(field_name)
+        schema = get_relationship_schema(item.field_name)
         if schema is None:
             continue
         for spec in schema.value_keys:
@@ -235,7 +269,7 @@ def _collect_refs(items: Iterable[FieldValue]) -> set[FkRef]:
             # consider hoisting to ``register_relationship_schema`` if a
             # second site ever needs it.
             assert spec.fk_target.lookup_field == "pk", (
-                f"{field_name!r}.{spec.name!r} uses non-pk lookup "
+                f"{item.field_name!r}.{spec.name!r} uses non-pk lookup "
                 f"{spec.fk_target.lookup_field!r}; display only supports pk"
             )
             pk = value.get(spec.name)
@@ -295,7 +329,7 @@ def resolve_display_context(items: Iterable[FieldValue]) -> ClaimDisplayContext:
     return ClaimDisplayContext(
         labels=resolve_labels(materialized),
         wikilinks=resolve_wikilink_authoring(
-            value for _, value in materialized if isinstance(value, str)
+            item.value for item in materialized if isinstance(item.value, str)
         ),
     )
 
@@ -308,22 +342,42 @@ def build_display_value(
 ) -> ClaimDisplaySchema | None:
     """Return the user-facing rendering for a claim value, dispatched by kind.
 
-    Model-driven, three-way dispatch derived from introspection — no
+    Model-driven, four-way dispatch derived from introspection — no
     hardcoded field names:
 
     - **relationship** — ``field_name`` is a registered relationship
       namespace and ``value`` is its dict payload → structured
       identity/qualifier rendering.
+    - **direct FK** — ``field_name`` is a concrete FK on ``model`` and
+      ``value`` is its target PK → a single resolved identity part (reusing
+      the relationship rendering, so the frontend needs no new case).
     - **markdown** — ``field_name`` is a ``MarkdownField`` on ``model`` and
       ``value`` is a non-empty string → authoring-form text (``[[type:id:N]]``
       resolved to ``[[type:slug]]``).
-    - otherwise → ``None``; direct-field scalars and unknown namespaces fall
+    - otherwise → ``None``; non-FK scalars and unknown namespaces fall
       through and the frontend renders the raw value.
     """
     if isinstance(value, dict):
         schema = get_relationship_schema(field_name)
         if schema is not None:
             return _build_relationship_display(value, schema, ctx.labels)
+    if type(value) is int:
+        target = _direct_fk_target(model, field_name)
+        if target is not None:
+            label = ctx.labels.get(FkRef(target, value))
+            return ClaimDisplayValueSchema(
+                identity=[
+                    ClaimDisplayIdentityPartSchema(
+                        key=field_name,
+                        label=label,
+                        # The claim was validated at write time, so an
+                        # unresolvable pk means the target row was since
+                        # hard-deleted.
+                        state="resolved" if label is not None else "deleted",
+                    )
+                ],
+                qualifiers=[],
+            )
     if isinstance(value, str) and value and field_name in get_markdown_fields(model):
         return MarkdownClaimDisplaySchema(
             text=apply_storage_to_authoring(value, ctx.wikilinks)

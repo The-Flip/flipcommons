@@ -213,9 +213,9 @@ claims:
 
 
 def test_create_resolves_padded_fk_value():
-    # _lookup_pk canonicalizes FK values with the same str-cast + trim the
-    # apply-time resolver uses, so a padded create FK resolves to its target
-    # instead of erroring as not-found — no build-vs-apply FK drift.
+    # resolve_fk_target_pk canonicalizes authored FK values (str-cast + trim),
+    # so a padded create FK resolves to its target instead of erroring as
+    # not-found.
     Manufacturer.objects.create(name="Acme", slug="acme-mfr")
     text = """
 attribution: flipcommons-catalog
@@ -252,6 +252,79 @@ claims:
     assert report.records_created == 2
     ce = CorporateEntity.objects.get(slug="acme-incarnation")
     assert ce.manufacturer.slug == "acme-mfr"
+
+
+def test_edit_fk_claim_stores_target_pk(machine_model, stern_entity):
+    # Authored FK values are public_ids (point-in-time), but the stored claim
+    # value is the target's PK — renaming the target's slug later cannot break
+    # the claim.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: {stern_entity.slug}
+"""
+    _apply(text, patch_id="0001-fk-stores-pk")
+    claim = Claim.objects.get(
+        object_id=machine_model.pk, field_name="corporate_entity", is_active=True
+    )
+    assert claim.value == stern_entity.pk
+    machine_model.refresh_from_db()
+    assert machine_model.corporate_entity_id == stern_entity.pk
+
+
+def test_create_fk_claim_to_same_patch_create_stores_target_pk():
+    # An FK claim whose target is created in the same patch defers through
+    # value_ref; after apply the stored claim value is the new row's real PK.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme-mfr:
+      create: true
+      name: Acme
+  - corporate-entity.acme-incarnation:
+      create: true
+      name: Acme Incarnation
+      manufacturer: acme-mfr
+"""
+    _apply(text, patch_id="0001-fk-value-ref-pk")
+    mfr = Manufacturer.objects.get(slug="acme-mfr")
+    ce = CorporateEntity.objects.get(slug="acme-incarnation")
+    claim = ce.claims.get(field_name="manufacturer", is_active=True)
+    assert claim.value == mfr.pk
+
+
+def test_edit_fk_claim_to_same_patch_create(stern_entity, flipcommons_catalog):
+    # An EDIT on an existing entity may point its FK at an entity created in
+    # the same patch — the value_ref deferral isn't create-only.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - manufacturer.acme-mfr:
+      create: true
+      name: Acme
+  - corporate-entity.{stern_entity.slug}:
+      manufacturer: acme-mfr
+"""
+    _apply(text, patch_id="0001-edit-fk-value-ref")
+    mfr = Manufacturer.objects.get(slug="acme-mfr")
+    claim = stern_entity.claims.get(field_name="manufacturer", is_active=True)
+    assert claim.value == mfr.pk
+    stern_entity.refresh_from_db()
+    assert stern_entity.manufacturer_id == mfr.pk
+
+
+def test_edit_unresolvable_fk_rejected_at_plan_time(machine_model):
+    # An edit's FK naming nothing (no committed row, no same-patch create) is a
+    # plan-time PatchError — not a deferred apply-time batch rejection.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      corporate_entity: does-not-exist
+"""
+    with pytest.raises(PatchError, match="not in the seed, an earlier patch"):
+        _apply(text, patch_id="0001-edit-fk-unknown")
 
 
 def test_create_when_already_exists_errors(manufacturer):
@@ -992,8 +1065,8 @@ def test_retract_fk_falls_through_to_remaining_source(
         manufacturer=stern,
     )
     make_claim(ce, "name", "Western Products, Inc.", ingest_source=catalog)
-    make_claim(ce, "manufacturer", "williams", ingest_source=catalog)
-    make_claim(ce, "manufacturer", "stern", ingest_source=ipdb)
+    make_claim(ce, "manufacturer", manufacturer.pk, ingest_source=catalog)
+    make_claim(ce, "manufacturer", stern.pk, ingest_source=ipdb)
 
     text = """
 attribution: flipcommons-catalog
@@ -1029,7 +1102,7 @@ def test_retract_sole_required_fk_claim_preserves_value(stern):
         manufacturer=stern,
     )
     make_claim(ce, "name", "Western Products, Inc.", ingest_source=ipdb)
-    make_claim(ce, "manufacturer", "stern", ingest_source=ipdb)
+    make_claim(ce, "manufacturer", stern.pk, ingest_source=ipdb)
 
     text = """
 attribution: ipdb
@@ -1109,7 +1182,7 @@ def test_retract_real_with_note_records_changeset(stern):
         manufacturer=stern,
     )
     make_claim(ce, "name", "Western Products, Inc.", ingest_source=ipdb)
-    make_claim(ce, "manufacturer", "stern", ingest_source=ipdb)
+    make_claim(ce, "manufacturer", stern.pk, ingest_source=ipdb)
 
     text = """
 attribution: ipdb
@@ -1179,8 +1252,8 @@ def test_retract_one_field_assert_another_in_same_entry(stern, flipcommons_catal
         manufacturer=stern,
     )
     make_claim(ce, "name", "Western Products, Inc.", ingest_source=ipdb)
-    make_claim(ce, "manufacturer", "stern", ingest_source=ipdb)
-    make_claim(ce, "manufacturer", "stern", ingest_source=catalog)
+    make_claim(ce, "manufacturer", stern.pk, ingest_source=ipdb)
+    make_claim(ce, "manufacturer", stern.pk, ingest_source=catalog)
 
     text = """
 attribution: ipdb
@@ -1808,7 +1881,7 @@ claims:
 
 
 def test_create_with_fk_onto_deleted_rejected(db, flipcommons_catalog):
-    # The `_lookup_pk` mirror: a *create* whose FK targets a same-patch-deleted
+    # The create-side mirror: a *create* whose FK targets a same-patch-deleted
     # entity produces the identical dangling row, and an edit-scoped scan would
     # miss it (creates carry no perturbed cell). The fresh manufacturer has no
     # other referrers, so only the onto-guard — not the delete-blocker — can catch
@@ -1846,7 +1919,9 @@ claims:
     assert machine_model.corporate_entity_id == stern_entity.pk
 
 
-def test_losing_fk_reassign_onto_deleted_still_rejected(machine_model, stern_entity):
+def test_losing_fk_reassign_onto_deleted_still_rejected(
+    machine_model, stern_entity, williams_entity
+):
     # Documented over-coverage: the guard is *syntactic* (on the FK claim target),
     # not on the resolved post-patch FK. A higher-priority source pins the
     # machine's corporate_entity to williams, so the patch's stern claim *loses*
@@ -1859,7 +1934,7 @@ def test_losing_fk_reassign_onto_deleted_still_rejected(machine_model, stern_ent
     make_claim(
         machine_model,
         "corporate_entity",
-        "williams-electronics",
+        williams_entity.pk,
         ingest_source=authority,
     )
     text = f"""
@@ -1877,8 +1952,8 @@ claims:
 
 
 def test_reassign_fk_onto_deleted_normalizes_whitespace(machine_model, stern_entity):
-    # The guard must canonicalize FK values exactly as apply-time resolution does
-    # (_resolve_fk_generic str-casts and trims). A whitespace-padded value would
+    # The guard must canonicalize FK values exactly as plan-time resolution does
+    # (resolve_fk_target_pk str-casts and trims). A whitespace-padded value would
     # otherwise slip the raw-string guard yet still resolve the live machine onto
     # stern after the same patch deletes it — a dangling reference.
     text = f"""
@@ -1896,8 +1971,9 @@ claims:
 
 
 def test_reassign_fk_onto_deleted_normalizes_numeric(machine_model, manufacturer):
-    # A non-str FK value (YAML int) must not skip the guard: apply resolves it via
-    # str(value).strip(), so a numeric slug-like value dangles just the same.
+    # A non-str FK value (YAML int) must not skip the guard: plan-time
+    # resolution str-casts it (str(value).strip()), so a numeric slug-like
+    # value dangles just the same.
     doomed = CorporateEntity.objects.create(
         name="Numbered", slug="1234", manufacturer=manufacturer
     )

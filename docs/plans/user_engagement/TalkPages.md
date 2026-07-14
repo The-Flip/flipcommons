@@ -28,7 +28,7 @@ The strongest rationale for Talk Pages is that they can turn conflict and uncert
 
 The weak rationale for Talk Pages is generic engagement. General conversation can create activity, but activity is not the same thing as durable knowledge. If this project wants a place for stories, opinions, troubleshooting, buying advice, or social interaction, that is a different product surface with different incentives and moderation needs.
 
-## Landscape Survey
+## Prior Art
 
 Comparable systems consistently separate different kinds of discussion instead of treating them as one thing.
 
@@ -43,6 +43,36 @@ The key lesson is not just that talk pages exist. It is that they have a narrow 
 - did we already resolve this timeline dispute?
 
 Wikipedia's system also shows the cost side. Talk pages can become dense, procedural, and intimidating. They are useful when the page itself is collaboratively maintained and when editorial memory matters. They are poor as lightweight social spaces.
+
+#### Issues with Wikipedia Talk Pages
+
+Wikipedia's talk pages are not a structured discussion system in the usual modern sense. A talk page is a wiki page in a discussion namespace paired with a subject page: `Talk:English Springer Spaniel` is the discussion counterpart of `English Springer Spaniel`, just as `Template talk:` and `Category talk:` pages are paired with pages in their respective namespaces. The pairing is a built-in MediaWiki mechanism, but the conversation within the page is primarily wikitext organized by community convention.
+
+A topic is normally a section heading, a comment is a block of text, and a reply is indicated by indentation. Editors sign their contributions by entering `~~~~`, which MediaWiki expands into a username and timestamp when the edit is saved. Those conventions make the document look like a discussion, but the underlying model does not give each contribution a durable comment identity or store an explicit parent-child reply relationship. Editing a discussion is therefore still editing a shared document, even when the interface offers section editing or a reply button.
+
+That architecture has genuine strengths. Talk pages inherit revision history, diffs, rollback, watchlists, links, templates, categories, and flexible collaborative editing from the wiki page model. Editors can reorganize a discussion, repair markup, summarize an outcome, and preserve the entire editorial record without MediaWiki needing a separate discussion subsystem. It is a powerful example of obtaining broad functionality from a small set of composable primitives.
+
+The same architecture also imposes substantial usability and information-architecture costs:
+
+- Reply structure is encoded in editable text rather than represented as data, so deep or inconsistent indentation can make a conversation difficult to follow.
+- Authorship and timestamps are inserted into the page text rather than intrinsically attached to comment objects, which makes unsigned, malformed, moved, or edited contributions possible.
+- Multiple topics accumulate in one mutable document. Active pages grow large and eventually depend on manual or bot-assisted archiving, splitting the editorial record across an archive scheme that readers must learn to navigate.
+- A section heading is not a durable topic object. Renaming, moving, merging, or archiving sections can make references and discovery less reliable than they would be in a system with stable topic identities.
+- The page has no intrinsic lifecycle for a question or dispute. Whether a discussion is open, resolved, superseded, or merely abandoned must be inferred from prose, templates, or local convention.
+- Editing shared wikitext exposes participants to formatting mistakes and edit conflicts that a comment-oriented interface can avoid.
+- Notifications and subscriptions are harder to define because the storage model describes page revisions, not semantically distinct topics and replies.
+
+[DiscussionTools](https://www.mediawiki.org/wiki/Help:DiscussionTools/en) improves the experience with affordances such as reply controls, new-topic forms, topic subscriptions, and enhanced navigation. Importantly, it generally works with the existing wikitext talk-page conventions rather than replacing them with a native thread-and-comment data model. This preserves compatibility with established pages, workflows, templates, and bots, but it also means the interface must interpret document structure as discussion structure.
+
+Wikimedia did try to replace this model. It developed [Structured Discussions, originally called Flow](https://www.mediawiki.org/wiki/Structured_Discussions), in which topics and posts were discrete objects with automatic signatures, per-topic subscriptions, stable permalinks, explicit moderation actions, and no need for manual indentation or archiving. On the dimensions where wikitext talk pages most obviously resemble a broken forum, Flow was the more coherent design. Yet it did not replace wikitext talk pages across Wikipedia.
+
+The important reason was social compatibility, expressed through technical workflows. Experienced editors were not merely using talk pages to append comments. Over many years they had learned to treat the entire discussion page as shared, malleable working material: they moved and reorganized conversations, split and merged sections, transcluded discussions, inserted templates and tables, annotated or collapsed debates, built bot-driven archival processes, and inspected whole-page histories and diffs. Local communities had accumulated policies and coordination practices around that freedom. Flow made the basic act of replying easier, especially for newcomers, but its structured objects constrained the page-level manipulation on which experienced editors and community workflows depended. It also represented history at the thread level rather than preserving the familiar whole-page revision model. A replacement therefore had to reproduce a very large set of evolved use cases before the communities doing the most editorial coordination would regard it as an adequate substitute.
+
+This was not simply irrational resistance to a better interface. The open wikitext document was both the source of talk pages' usability problems and a general-purpose coordination substrate. Structure removed accidental complexity, but it also removed affordances that the community had turned into capabilities. In its [2019 Talk Pages Consultation](https://www.mediawiki.org/wiki/Talk_pages_consultation_2019/Phase_1_report/en), the Wikimedia Foundation concluded that experienced contributors favored the flexibility and continuity of wikitext, that important workflows depended on manipulating it, and that replacement systems such as Flow would have to handle an intimidating range of existing use cases to achieve adoption. The resulting product direction was to improve wikitext talk pages rather than replace them: layer automatic replying, indentation, signatures, and subscriptions onto the established substrate.
+
+The lesson for Flipcommons is stronger than "users dislike change." A collaboration system becomes partly defined by the practices its users invent around it. Replacing its data model later can invalidate capabilities that were never written into the original requirements because they emerged through use. Flipcommons has the advantage of choosing a structured model before such dependencies exist, but it should not make that model rigid. It should deliberately preserve escape hatches for summarizing outcomes, reorganizing related topics, linking and quoting across discussions, attaching supporting material, and viewing discussion history at useful scopes. Otherwise it risks solving the visible mechanics of comments while preventing the unanticipated editorial practices that make a knowledge community effective.
+
+Flipcommons does not yet carry Wikipedia's compatibility burden. It can treat page-attached discussion as a first-class relationship while storing topics, comments, replies, authorship, timestamps, subscriptions, and resolution state explicitly. The goal should not be to discard what Wikipedia's model does well: discussions should still be durable, linkable, searchable, historically inspectable, adaptable by their participants, and closely connected to changes in the canonical page. The opportunity is to preserve those properties without making contributors simulate a discussion system by collaboratively editing one giant text document.
 
 ### Fandom
 

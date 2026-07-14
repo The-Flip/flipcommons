@@ -1,8 +1,12 @@
 # Claim FK Lookups
 
-## Status: DONE
+## Status: RETIRED
 
-Landed in PR #281 (`refactor/model-driven-claims-metadata`). No follow-up work remains in this doc's scope.
+`claim_fk_lookups` no longer exists. FK claim values now store the target row's integer PK (not a public_id string), so no per-model lookup-key override is needed anywhere in the claims layer: resolution looks up by `pk`, validation existence-checks by `pk`, and the only public_id→row translation left is at authoring boundaries (patch YAML, API payloads), which use `public_id_field` via `resolve_fk_target_pk` in `apps/provenance/claims.py`. The sections below describe the retired design for historical context.
+
+## Historical status: DONE
+
+Landed in PR #281 (`refactor/model-driven-claims-metadata`).
 
 ## Context
 

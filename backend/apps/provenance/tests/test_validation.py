@@ -86,10 +86,23 @@ class TestValidateClaimValue:
         result = validate_claim_value("ipdb_rating", 8.95, MachineModel)
         assert result == 8.95
 
-    def test_fk_field_passes_through(self):
-        # System.manufacturer is a FK to Manufacturer — should return unchanged.
-        result = validate_claim_value("manufacturer", "some-slug", System)
-        assert result == "some-slug"
+    def test_fk_field_accepts_int_pk(self):
+        # System.manufacturer is a FK to Manufacturer — PKs pass unchanged.
+        assert validate_claim_value("manufacturer", 42, System) == 42
+
+    def test_fk_field_accepts_clear_sentinels(self):
+        assert validate_claim_value("manufacturer", "", System) == ""
+        assert validate_claim_value("manufacturer", None, System) is None
+
+    def test_fk_field_rejects_string(self):
+        # Slugs are an authoring-boundary format; a string reaching the mint
+        # primitive is a caller bug.
+        with pytest.raises(ValidationError, match="integer PK"):
+            validate_claim_value("manufacturer", "some-slug", System)
+
+    def test_fk_field_rejects_bool(self):
+        with pytest.raises(ValidationError, match="integer PK"):
+            validate_claim_value("manufacturer", True, System)
 
     # --- Field-specific validators ---
 
@@ -228,16 +241,14 @@ class TestValidateClaimsBatch:
 
     def test_fk_claim_with_valid_target(self, system, manufacturer):
         claim = Claim.for_object(
-            system, field_name="manufacturer", value=manufacturer.slug
+            system, field_name="manufacturer", value=manufacturer.pk
         )
         valid, rejected = validate_claims_batch([claim])
         assert rejected == 0
         assert len(valid) == 1
 
     def test_fk_claim_with_nonexistent_target(self, system):
-        claim = Claim.for_object(
-            system, field_name="manufacturer", value="no-such-manufacturer"
-        )
+        claim = Claim.for_object(system, field_name="manufacturer", value=999999)
         valid, rejected = validate_claims_batch([claim])
         assert rejected == 1
         assert len(valid) == 0
@@ -266,12 +277,18 @@ class TestValidateFkClaimsBatch:
 
     def test_valid_fk_passes(self, system, manufacturer):
         claim = Claim.for_object(
-            system, field_name="manufacturer", value=manufacturer.slug
+            system, field_name="manufacturer", value=manufacturer.pk
         )
         rejected = validate_fk_claims_batch([FkClaim(claim, System)])
         assert rejected == []
 
     def test_invalid_fk_rejected(self, system):
+        claim = Claim.for_object(system, field_name="manufacturer", value=999999)
+        rejected = validate_fk_claims_batch([FkClaim(claim, System)])
+        assert len(rejected) == 1
+
+    def test_non_int_value_rejected_without_query(self, system):
+        # A stray string can never resolve; rejected outright.
         claim = Claim.for_object(
             system, field_name="manufacturer", value="no-such-slug"
         )
@@ -287,10 +304,8 @@ class TestValidateFkClaimsBatch:
         self, system, manufacturer, django_assert_num_queries
     ):
         """Multiple claims for the same (model, field) should result in one query."""
-        c1 = Claim.for_object(
-            system, field_name="manufacturer", value=manufacturer.slug
-        )
-        c2 = Claim.for_object(system, field_name="manufacturer", value="nonexistent")
+        c1 = Claim.for_object(system, field_name="manufacturer", value=manufacturer.pk)
+        c2 = Claim.for_object(system, field_name="manufacturer", value=999999)
         with django_assert_num_queries(1):
             rejected = validate_fk_claims_batch(
                 [

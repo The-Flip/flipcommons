@@ -131,7 +131,7 @@ class TestMachineModelRouting:
     def test_scalars_resolved(self, pm, source):
         ss = TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
         make_claim(pm, "name", "Test Machine", ingest_source=source)
-        make_claim(pm, "technology_generation", "solid-state", ingest_source=source)
+        make_claim(pm, "technology_generation", ss.pk, ingest_source=source)
 
         resolve_after_mutation(pm, field_names=["name", "technology_generation"])
 

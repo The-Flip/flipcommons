@@ -162,7 +162,7 @@ class TestImageLicenseDenormalization:
         resolve_after_mutation(pm)
         pm.refresh_from_db()
 
-        assert pm.extra_data.get("opdb.images.__license_slug") == "cc-by-sa-4-0"
+        assert pm.extra_data.get("opdb.images.__license_id") == cc_by_sa.pk
         assert pm.extra_data.get("opdb.images.__permissiveness_rank") == 50
 
     def test_null_license_stores_null_rank(self, opdb):
@@ -188,7 +188,7 @@ class TestImageLicenseDenormalization:
         resolve_after_mutation(pm)
         pm.refresh_from_db()
 
-        assert pm.extra_data.get("opdb.images.__license_slug") is None
+        assert pm.extra_data.get("opdb.images.__license_id") is None
         assert pm.extra_data.get("opdb.images.__permissiveness_rank") is None
 
     def test_generic_bulk_path_resolves_image_license_without_n_plus_one(
@@ -244,7 +244,7 @@ class TestExtractImageUrlsWithThreshold:
                     },
                 }
             ],
-            "opdb.images.__license_slug": "not-allowed",
+            "opdb.images.__license_id": 999,
             "opdb.images.__permissiveness_rank": 0,
         }
         thumb, hero = extract_image_urls(extra_data, None)
