@@ -57,8 +57,6 @@ from ..engine.entity_api.delete import (
 from ..engine.entity_api.own_media import own_media
 from ..engine.query.constants import DEFAULT_PAGE_SIZE
 from ..models import (
-    RELATIONSHIP_CHIPS,
-    RELATIONSHIP_CHIPS_BY_SLUG,
     Cabinet,
     Credit,
     CreditRole,
@@ -75,7 +73,6 @@ from ..models import (
     TechnologyGeneration,
     TechnologySubgeneration,
     Theme,
-    relationship_chip_exists,
 )
 from .edit_claims import (
     plan_abbreviation_claims,
@@ -281,7 +278,6 @@ def _build_model_list_qs(
     cabinet: str = "",
     production_status: str = "",
     tag: str = "",
-    relationship: str = "",
     year_min: int | None = None,
     year_max: int | None = None,
     person: str = "",
@@ -331,13 +327,6 @@ def _build_model_list_qs(
         qs = qs.filter(production_status__slug=production_status)
     if tag:
         qs = qs.filter(tags__slug=tag)
-    if relationship:
-        chip = RELATIONSHIP_CHIPS_BY_SLUG.get(relationship)
-        # Unknown chip slug matches nothing — same feel as a nonexistent tag
-        # slug, which joins to zero rows.
-        qs = (
-            qs.filter(relationship_chip_exists(chip)) if chip is not None else qs.none()
-        )
     if year_min is not None:
         qs = qs.filter(year__gte=year_min)
     if year_max is not None:
@@ -725,13 +714,6 @@ class ModelFilterQuerySchema(Schema):
         description="Production-status slug (see `GET /api/production-statuses/`).",
     )
     tag: str = Field("", description="Tag slug (see `GET /api/tags/`).")
-    relationship: str = Field(
-        "",
-        description=(
-            "Derived relationship chip: models carrying a matching relationship "
-            f"edge. One of {', '.join(f'`{c.slug}`' for c in RELATIONSHIP_CHIPS)}."
-        ),
-    )
     year_min: int | None = Field(None, description="Earliest release year, inclusive.")
     year_max: int | None = Field(None, description="Latest release year, inclusive.")
     person: str = Field(
@@ -778,7 +760,6 @@ def list_models(
         cabinet=filters.cabinet,
         production_status=filters.production_status,
         tag=filters.tag,
-        relationship=filters.relationship,
         year_min=filters.year_min,
         year_max=filters.year_max,
         person=filters.person,

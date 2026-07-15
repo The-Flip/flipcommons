@@ -60,40 +60,14 @@ class TestModelsAPI:
         data = resp.json()
         assert data["count"] == 1
 
-    def test_list_models_filter_relationship_chips(
-        self, client, machine_model, another_model
-    ):
-        # machine_model gains a bootleg edge: (copy, unlicensed). The chip
-        # vocabulary is derived — bootleg narrows by both axes, copy by type
-        # only, and an unrelated chip matches nothing.
-        ModelRelationship.objects.create(
-            machine_model=machine_model,
-            target_machine=another_model,
-            relationship_type=RelationshipType.COPY,
-            license_status=LicenseStatus.UNLICENSED,
-        )
-        assert client.get("/api/models/?relationship=bootleg").json()["count"] == 1
-        assert client.get("/api/models/?relationship=copy").json()["count"] == 1
-        assert (
-            client.get("/api/models/?relationship=licensed-build").json()["count"] == 0
-        )
-        assert (
-            client.get("/api/models/?relationship=conversion-kit").json()["count"] == 0
-        )
+    def test_list_models_filter_tag(self, client, machine_model, another_model):
+        from apps.catalog.models import MachineModelTag, Tag
 
-    def test_list_models_filter_relationship_label_target(self, client, machine_model):
-        # A label-target kit edge still lights up the conversion-kit chip.
-        ModelRelationship.objects.create(
-            machine_model=machine_model,
-            target_label="several Gottlieb EM models",
-            relationship_type=RelationshipType.CONVERSION_KIT,
-        )
-        resp = client.get("/api/models/?relationship=conversion-kit")
-        assert resp.json()["count"] == 1
-
-    def test_list_models_filter_relationship_unknown_chip(self, client, machine_model):
-        # Unknown chip slug matches nothing, like a nonexistent tag slug.
-        assert client.get("/api/models/?relationship=bogus").json()["count"] == 0
+        widebody = Tag.objects.create(name="Widebody", slug="widebody")
+        MachineModelTag.objects.create(machinemodel=machine_model, tag=widebody)
+        data = client.get("/api/models/?tag=widebody").json()
+        assert data["count"] == 1
+        assert [item["slug"] for item in data["items"]] == [machine_model.slug]
 
     def test_conversion_edge_readmits_variant(self, client, machine_model):
         # The variant collapse re-admits conversions; an edge-based conversion

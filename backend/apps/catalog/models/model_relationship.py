@@ -11,7 +11,7 @@ its own relationship kind.
 
 from __future__ import annotations
 
-from typing import ClassVar, NamedTuple
+from typing import ClassVar
 
 from django.db import models
 
@@ -26,13 +26,9 @@ from apps.provenance.model_bases import (
 )
 
 __all__ = [
-    "RELATIONSHIP_CHIPS",
-    "RELATIONSHIP_CHIPS_BY_SLUG",
     "LicenseStatus",
     "ModelRelationship",
-    "RelationshipChip",
     "RelationshipType",
-    "relationship_chip_exists",
 ]
 
 TARGET_LABEL_MAX_LENGTH = 300
@@ -186,57 +182,3 @@ class ModelRelationship(ClaimThroughModel):
             else self.target_label
         )
         return f"{self.machine_model} —{self.relationship_type}→ {target}"
-
-
-class RelationshipChip(NamedTuple):
-    """One derived filter chip over relationship edges.
-
-    The bootleg / licensed-build / conversion-kit chips replace the retired
-    tags of the same names ("an edge exists" + type + license_status); copy and
-    conversion complete the set. ``license_status=None`` means any. Declared
-    rather than derived because bootleg and licensed-build are domain names for
-    (type, status) combinations the enums alone can't express.
-    """
-
-    slug: str
-    label: str
-    relationship_type: RelationshipType
-    license_status: LicenseStatus | None = None
-
-
-RELATIONSHIP_CHIPS: tuple[RelationshipChip, ...] = (
-    RelationshipChip("copy", "Copy", RelationshipType.COPY),
-    RelationshipChip(
-        "bootleg", "Bootleg", RelationshipType.COPY, LicenseStatus.UNLICENSED
-    ),
-    RelationshipChip(
-        "licensed-build",
-        "Licensed build",
-        RelationshipType.COPY,
-        LicenseStatus.LICENSED,
-    ),
-    RelationshipChip("conversion", "Conversion", RelationshipType.CONVERSION),
-    RelationshipChip(
-        "conversion-kit", "Conversion kit", RelationshipType.CONVERSION_KIT
-    ),
-)
-
-RELATIONSHIP_CHIPS_BY_SLUG: dict[str, RelationshipChip] = {
-    chip.slug: chip for chip in RELATIONSHIP_CHIPS
-}
-
-
-def relationship_chip_exists(chip: RelationshipChip) -> models.Exists:
-    """An ``Exists()`` over the chip's edges, correlated on the subject model pk.
-
-    The chip query surface (docs/plans/catalog_data_model/ModelRelationships.md
-    → Rework tags): a plain correlated subquery, no materialization — revisit
-    only if the chip filters prove slow.
-    """
-    edges = ModelRelationship.objects.filter(
-        machine_model=models.OuterRef("pk"),
-        relationship_type=chip.relationship_type,
-    )
-    if chip.license_status is not None:
-        edges = edges.filter(license_status=chip.license_status)
-    return models.Exists(edges)
