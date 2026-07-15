@@ -56,4 +56,27 @@ describe('RelatedTitlesSection', () => {
       expect.stringContaining('galaxie'),
     );
   });
+
+  const oneLink: CrossTitleLinkSchema[] = [
+    {
+      relation: 'remake_of',
+      license_status: 'unknown',
+      other_title: { name: 'Video Pinball', public_id: 'video-pinball' },
+      source_model: { name: 'Rugby', public_id: 'rugby-sidam' },
+    },
+  ];
+
+  it('wraps the list in a titled sidebar section by default (desktop sidebar)', () => {
+    render(RelatedTitlesSection, { props: { relatedTitles: oneLink } });
+
+    expect(screen.getByRole('heading', { name: 'Related Titles' })).toBeInTheDocument();
+  });
+
+  it('omits its own heading when inline (the accordion supplies one)', () => {
+    render(RelatedTitlesSection, { props: { relatedTitles: oneLink, inline: true } });
+
+    expect(screen.queryByRole('heading', { name: 'Related Titles' })).not.toBeInTheDocument();
+    // The lines still render.
+    expect(screen.getByRole('link', { name: 'Video Pinball' })).toBeInTheDocument();
+  });
 });

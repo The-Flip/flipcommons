@@ -333,7 +333,7 @@
   <!-- Related Titles — union of cross-title conversion/remake/bootleg/licensed-build links -->
   {#if title.related_titles && title.related_titles.length > 0}
     <AccordionSection heading="Related Titles">
-      <RelatedTitlesSection relatedTitles={title.related_titles} />
+      <RelatedTitlesSection relatedTitles={title.related_titles} inline />
     </AccordionSection>
   {/if}
 

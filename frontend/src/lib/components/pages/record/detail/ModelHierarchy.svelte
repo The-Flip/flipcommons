@@ -56,7 +56,12 @@
     </li>
     {#each sortedVariants(parent.variants) as variant (variant.public_id)}
       <li class="variant-indent">
-        <RelatedModelLink link={toModelLinkView(variant, subject)} />
+        <!-- A variant is a cosmetic variation of its parent and shares its maker,
+             which this projection doesn't carry on the variant itself; inherit the
+             parent's so an unknown maker isn't inferred from the missing field. -->
+        <RelatedModelLink
+          link={toModelLinkView({ ...variant, manufacturer: parent.manufacturer }, subject)}
+        />
       </li>
     {/each}
   {/each}

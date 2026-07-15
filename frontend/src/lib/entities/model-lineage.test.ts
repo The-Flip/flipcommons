@@ -81,7 +81,7 @@ describe('modelLineageSections', () => {
 
       const [section] = modelLineageSections(model);
       // Keeps the full ref (name + public_id) so the maker renders as a link.
-      expect(section.links[0].manufacturer).toEqual(zaccaria);
+      expect(section.links[0].manufacturer).toEqual({ kind: 'known', ref: zaccaria });
     });
 
     it('omits the maker when it matches the subject', () => {
@@ -103,12 +103,22 @@ describe('modelLineageSections', () => {
       });
 
       const [section] = modelLineageSections(model);
-      expect(section.links[0].manufacturer?.name).toBe('Zaccaria');
+      expect(section.links[0].manufacturer).toEqual({ kind: 'known', ref: zaccaria });
     });
 
-    it('omits the maker when the link has none', () => {
+    it('surfaces an unknown maker against a known subject (also disambiguating)', () => {
       const model = makeModelDetail({
         manufacturer: gottlieb,
+        remakes: [{ name: 'Jungle Life', public_id: 'jungle-life-emmepi' }],
+      });
+
+      const [section] = modelLineageSections(model);
+      expect(section.links[0].manufacturer).toEqual({ kind: 'unknown' });
+    });
+
+    it('omits the maker when neither the subject nor the link has one', () => {
+      const model = makeModelDetail({
+        manufacturer: null,
         remakes: [{ name: 'Jungle Life', public_id: 'jungle-life-emmepi' }],
       });
 
@@ -131,7 +141,7 @@ describe('modelLineageSections', () => {
 
       const [section] = modelLineageSections(model);
       expect(section.relation.key).toBe('variants');
-      expect(section.links[0].manufacturer?.name).toBe('Zaccaria');
+      expect(section.links[0].manufacturer).toEqual({ kind: 'known', ref: zaccaria });
     });
   });
 });
@@ -191,7 +201,10 @@ describe('modelEdgeSections', () => {
           name: 'Galaxie',
           public_id: 'galaxie',
           year: 1971,
-          manufacturer: { name: 'D. Gottlieb & Company', public_id: 'gottlieb' },
+          manufacturer: {
+            kind: 'known',
+            ref: { name: 'D. Gottlieb & Company', public_id: 'gottlieb' },
+          },
         },
         label: '',
       },

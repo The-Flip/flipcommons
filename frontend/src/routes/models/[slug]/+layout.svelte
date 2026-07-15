@@ -8,6 +8,7 @@
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
+  import { UNKNOWN_MANUFACTURER_LABEL } from '$lib/entities/manufacturer';
   import { model as modelInfo } from '$lib/entities/model';
   import { showsProductionStatus } from '$lib/entities/production-status';
   import ModelHierarchy from '$lib/components/pages/record/detail/ModelHierarchy.svelte';
@@ -83,6 +84,8 @@
         text: model.manufacturer.name,
         href: resolve(`/manufacturers/${model.manufacturer.public_id}`),
       });
+    } else {
+      items.push({ text: UNKNOWN_MANUFACTURER_LABEL });
     }
     if (model.year) {
       const yearText = model.month

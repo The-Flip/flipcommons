@@ -87,6 +87,15 @@ export const MODEL_LINEAGE_RELATIONS: readonly ModelLineageRelation[] = [
 ];
 
 /**
+ * The maker to show on a related-model line for disambiguation: a `known`
+ * manufacturer (rendered as a link to its page) or an `unknown` one (rendered
+ * as the "Unknown Manufacturer" label). Unknown is a first-class distinguishing
+ * value, not an omission — a related game with an unknown maker is provably not
+ * the subject's when the subject's maker *is* known.
+ */
+export type MakerDisplay = { kind: 'known'; ref: EntityRef } | { kind: 'unknown' };
+
+/**
  * A resolved lineage link ready to render: identity plus the maker to show for
  * disambiguation (or `null` to omit it). Lineage links and edge machine
  * targets both resolve to this shape, so `RelatedModelLink` is the one
@@ -98,12 +107,13 @@ export interface ModelLineageLinkView {
   /** Year to show, or `null` when it matches the subject's year or is unknown. */
   year: number | null;
   /**
-   * Manufacturer to show (as a link to its page), or `null` when it matches the
-   * subject's maker or is unknown. Same-named links (a game and the copies
-   * that took its name) otherwise read as a relation to itself, since no
-   * reader surface shows a maker; a *differing* maker is what disambiguates them.
+   * Maker to show, or `null` when it matches the subject's (including both
+   * unknown) so it wouldn't disambiguate. Same-named links (a game and the
+   * copies that took its name) otherwise read as a relation to itself, since no
+   * reader surface shows a maker; a *differing* maker — a different make or a
+   * missing one against a known subject — is what tells them apart.
    */
-  manufacturer: EntityRef | null;
+  manufacturer: MakerDisplay | null;
 }
 
 /** Input for {@link toModelLinkView}: maker and year may be absent entirely (e.g. variant rows). */
@@ -118,21 +128,26 @@ export interface RelatedModelSubject {
 
 /**
  * Resolve a related model for display: keep the maker and year only when they
- * differ from the subject's (i.e. when they disambiguate). Every surface that
+ * differ from the subject's (i.e. when they disambiguate). A maker differs when
+ * its name isn't the subject's — so a *missing* maker against a known subject
+ * surfaces as `unknown`, while both-missing stays omitted. Every surface that
  * renders a `RelatedModelLink` builds its link through this rule.
  */
 export function toModelLinkView(
   link: RelatedModelInput,
   subject: RelatedModelSubject,
 ): ModelLineageLinkView {
+  const linkMaker = link.manufacturer ?? null;
+  const makerDiffers = (linkMaker?.name ?? null) !== subject.manufacturer;
   return {
     name: link.name,
     public_id: link.public_id,
     year: link.year != null && link.year !== subject.year ? link.year : null,
-    manufacturer:
-      link.manufacturer && link.manufacturer.name !== subject.manufacturer
-        ? link.manufacturer
-        : null,
+    manufacturer: makerDiffers
+      ? linkMaker
+        ? { kind: 'known', ref: linkMaker }
+        : { kind: 'unknown' }
+      : null,
   };
 }
 
