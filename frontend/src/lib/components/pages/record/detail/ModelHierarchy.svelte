@@ -3,7 +3,7 @@
   import RelatedModelLink from './RelatedModelLink.svelte';
   import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
   import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
-  import { toModelLinkView, type RelatedModelSubject } from '$lib/entities/model-lineage';
+  import { titleModelsSubject, toModelLinkView } from '$lib/entities/model-lineage';
   import type { EntityRef } from '$lib/api/schema';
 
   interface Variant {
@@ -44,27 +44,9 @@
     excludeSlug ? models.filter((m) => m.public_id !== excludeSlug) : models,
   );
 
-  /** The value every listed model shares, or `null` when the list is mixed. */
-  function unanimous<T>(values: (T | null)[]): T | null {
-    const first = values[0] ?? null;
-    return values.every((v) => (v ?? null) === first) ? first : null;
-  }
-
-  /**
-   * The subject to suppress against: the caller's values when given, else the
-   * unanimous value across the list (a maker or year every model shares is
-   * effectively the title's own, so only mixed lists show them).
-   */
-  let subject = $derived.by((): RelatedModelSubject => ({
-    manufacturer:
-      subjectManufacturer !== undefined
-        ? subjectManufacturer
-        : unanimous(filteredModels.map((m) => m.manufacturer?.name ?? null)),
-    year:
-      subjectYear !== undefined
-        ? subjectYear
-        : unanimous(filteredModels.map((m) => m.year ?? null)),
-  }));
+  let subject = $derived(
+    titleModelsSubject(filteredModels, { manufacturer: subjectManufacturer, year: subjectYear }),
+  );
 </script>
 
 {#snippet listItems()}

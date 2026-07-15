@@ -166,6 +166,33 @@ function modelSubject(model: ModelDetailSchema): RelatedModelSubject {
   return { manufacturer: model.manufacturer?.name ?? null, year: model.year ?? null };
 }
 
+/** The value shared by every entry, or `null` when they differ or the list is empty. */
+function unanimous<T>(values: readonly (T | null)[]): T | null {
+  const first = values[0] ?? null;
+  return values.every((v) => (v ?? null) === first) ? first : null;
+}
+
+/**
+ * The suppression subject for a list of a title's models. An explicit maker or
+ * year — the model page passes its own — wins; otherwise a value shared by every
+ * model in the list is treated as the title's own, so a uniform list suppresses
+ * it and only a mixed list surfaces makers/years. An `undefined` field defers to
+ * the unanimous value; an explicit `null` asserts "no subject" and is kept.
+ */
+export function titleModelsSubject(
+  models: readonly RelatedModelInput[],
+  explicit: { manufacturer?: string | null; year?: number | null } = {},
+): RelatedModelSubject {
+  return {
+    manufacturer:
+      explicit.manufacturer !== undefined
+        ? explicit.manufacturer
+        : unanimous(models.map((m) => m.manufacturer?.name ?? null)),
+    year:
+      explicit.year !== undefined ? explicit.year : unanimous(models.map((m) => m.year ?? null)),
+  };
+}
+
 /**
  * One rendered line of a relationship-edge section: a machine target XOR a
  * plain-text label target, mirroring the edge's own target XOR. Inbound

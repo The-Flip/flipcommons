@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest';
 
 import { makeModelDetail } from '$lib/api/detail-fixtures';
 import { ENTITY_META } from './entity-meta';
-import { MODEL_LINEAGE_RELATIONS, modelEdgeSections, modelLineageSections } from './model-lineage';
+import {
+  MODEL_LINEAGE_RELATIONS,
+  modelEdgeSections,
+  modelLineageSections,
+  titleModelsSubject,
+} from './model-lineage';
 
 // Guards that the forward-FK descriptors stay in sync with the backend's
 // model↔model self-relations. entity-meta.ts is generated from the Django
@@ -302,5 +307,50 @@ describe('modelEdgeSections', () => {
         label: '',
       },
     ]);
+  });
+});
+
+describe('titleModelsSubject', () => {
+  const gottlieb = { name: 'D. Gottlieb & Company', public_id: 'gottlieb' };
+  const zaccaria = { name: 'Zaccaria', public_id: 'zaccaria' };
+
+  it('treats a maker and year every model shares as the subject', () => {
+    const subject = titleModelsSubject([
+      { name: 'A', public_id: 'a', year: 1979, manufacturer: gottlieb },
+      { name: 'B', public_id: 'b', year: 1979, manufacturer: gottlieb },
+    ]);
+
+    expect(subject).toEqual({ manufacturer: 'D. Gottlieb & Company', year: 1979 });
+  });
+
+  it('yields no subject for a mixed list, so makers and years stay visible', () => {
+    const subject = titleModelsSubject([
+      { name: 'A', public_id: 'a', year: 1979, manufacturer: gottlieb },
+      { name: 'B', public_id: 'b', year: 1981, manufacturer: zaccaria },
+    ]);
+
+    expect(subject).toEqual({ manufacturer: null, year: null });
+  });
+
+  it('yields no subject for an empty list', () => {
+    expect(titleModelsSubject([])).toEqual({ manufacturer: null, year: null });
+  });
+
+  it('lets an explicit maker and year override the unanimous fallback', () => {
+    const subject = titleModelsSubject(
+      [{ name: 'A', public_id: 'a', year: 1979, manufacturer: gottlieb }],
+      { manufacturer: 'Zaccaria', year: 1981 },
+    );
+
+    expect(subject).toEqual({ manufacturer: 'Zaccaria', year: 1981 });
+  });
+
+  it('keeps an explicit null subject rather than falling back to the unanimous value', () => {
+    const subject = titleModelsSubject(
+      [{ name: 'A', public_id: 'a', year: 1979, manufacturer: gottlieb }],
+      { manufacturer: null, year: null },
+    );
+
+    expect(subject).toEqual({ manufacturer: null, year: null });
   });
 });
