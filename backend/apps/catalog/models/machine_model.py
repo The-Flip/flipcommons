@@ -31,7 +31,11 @@ from apps.provenance.model_bases import (
 
 from ._autocomplete import manufacturer_year_sublabel
 from .base import CatalogModel
-from .model_relationship import ModelRelationship, RelationshipType
+from .model_relationship import (
+    COLLAPSE_READMITTING_RELATIONSHIP_TYPES,
+    SUBORDINATING_RELATIONSHIP_TYPES,
+    ModelRelationship,
+)
 
 __all__ = ["MachineModel", "ModelAbbreviation"]
 
@@ -484,10 +488,13 @@ class MachineModel(
         ``title=OuterRef("pk")``. Keeping it in one place stops the subquery, the
         title/card prefetches and the kiosk typeahead from drifting apart.
         """
+        # Type set derived from RELATIONSHIP_TYPE_BEHAVIOR (never named
+        # inline) so a new relationship type must classify itself before it
+        # can influence Title-representative ordering.
         copy_edge = models.Exists(
             ModelRelationship.objects.filter(
                 machine_model=models.OuterRef("pk"),
-                relationship_type=RelationshipType.COPY,
+                relationship_type__in=SUBORDINATING_RELATIONSHIP_TYPES,
             )
         )
         is_copy = models.Case(
@@ -518,13 +525,12 @@ class MachineModel(
         edge. Single-sourced so the /models list and the title-siblings
         prefetch can't drift.
         """
+        # Type set derived from RELATIONSHIP_TYPE_BEHAVIOR — see
+        # first_model_candidates for the forcing-function rationale.
         conversion_edge = models.Exists(
             ModelRelationship.objects.filter(
                 machine_model=models.OuterRef("pk"),
-                relationship_type__in=(
-                    RelationshipType.CONVERSION,
-                    RelationshipType.CONVERSION_KIT,
-                ),
+                relationship_type__in=COLLAPSE_READMITTING_RELATIONSHIP_TYPES,
             )
         )
         return (

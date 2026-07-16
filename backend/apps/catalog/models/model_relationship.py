@@ -11,7 +11,7 @@ its own relationship kind.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, NamedTuple
 
 from django.db import models
 
@@ -26,9 +26,13 @@ from apps.provenance.model_bases import (
 )
 
 __all__ = [
+    "COLLAPSE_READMITTING_RELATIONSHIP_TYPES",
+    "RELATIONSHIP_TYPE_BEHAVIOR",
+    "SUBORDINATING_RELATIONSHIP_TYPES",
     "LicenseStatus",
     "ModelRelationship",
     "RelationshipType",
+    "RelationshipTypeBehavior",
 ]
 
 TARGET_LABEL_MAX_LENGTH = 300
@@ -53,6 +57,51 @@ class LicenseStatus(models.TextChoices):
     LICENSED = "licensed", "Licensed"
     UNLICENSED = "unlicensed", "Unlicensed"
     UNKNOWN = "unknown", "Unknown"
+
+
+class RelationshipTypeBehavior(NamedTuple):
+    """The catalog-semantics decisions every relationship type must make.
+
+    ``subordinates``: does an edge of this type demote its subject below the
+    original when picking a Title's representative model (the Big Ben rule —
+    a copy never heads its Title)? ``readmits_from_collapse``: is the subject
+    a genuinely distinct machine, re-admitted to model lists even when it
+    also carries ``variant_of``?
+    """
+
+    subordinates: bool
+    readmits_from_collapse: bool
+
+
+RELATIONSHIP_TYPE_BEHAVIOR: dict[RelationshipType, RelationshipTypeBehavior] = {
+    RelationshipType.CONVERSION: RelationshipTypeBehavior(
+        subordinates=False, readmits_from_collapse=True
+    ),
+    RelationshipType.CONVERSION_KIT: RelationshipTypeBehavior(
+        subordinates=False, readmits_from_collapse=True
+    ),
+    RelationshipType.COPY: RelationshipTypeBehavior(
+        subordinates=True, readmits_from_collapse=False
+    ),
+}
+"""Per-type behavior classification — the forcing function for new types.
+
+``first_model_candidates()`` and ``distinct_machines_q()`` derive their type
+sets from this table instead of naming values inline, and an exhaustiveness
+test fails on any ``RelationshipType`` value missing here — so adding a type
+(e.g. ``retheme``) goes red on both axes until it explicitly decides, rather
+than silently defaulting to not-subordinate / not-readmitted.
+"""
+
+SUBORDINATING_RELATIONSHIP_TYPES: tuple[RelationshipType, ...] = tuple(
+    t for t, behavior in RELATIONSHIP_TYPE_BEHAVIOR.items() if behavior.subordinates
+)
+
+COLLAPSE_READMITTING_RELATIONSHIP_TYPES: tuple[RelationshipType, ...] = tuple(
+    t
+    for t, behavior in RELATIONSHIP_TYPE_BEHAVIOR.items()
+    if behavior.readmits_from_collapse
+)
 
 
 class ModelRelationship(ClaimThroughModel):

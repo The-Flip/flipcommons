@@ -38,14 +38,21 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   const SINGLE_KINDS = ['variant', 'remake'] as const;
 
   // Phrase-style labels so a row reads like its reader phrasing: "Copy of
-  // [Galaxie] Unlicensed". Order runs lineage FKs first, then the edges.
-  const KIND_OPTIONS: { value: RelationshipKind; label: string }[] = [
-    { value: 'variant', label: 'Variant of' },
-    { value: 'remake', label: 'Remake of' },
-    { value: 'copy', label: 'Copy of' },
-    { value: 'conversion', label: 'Conversion of' },
-    { value: 'conversion_kit', label: 'Conversion kit for' },
-  ];
+  // [Galaxie] Unlicensed". Declaration order is display order: lineage FKs
+  // first, then the edges. A `Record` (not a plain option list) so a new
+  // wire kind is a *completeness* build error here until it gets a picker
+  // label — `satisfies` on a list would only check validity.
+  const KIND_LABELS: Record<RelationshipKind, string> = {
+    variant: 'Variant of',
+    remake: 'Remake of',
+    copy: 'Copy of',
+    conversion: 'Conversion of',
+    conversion_kit: 'Conversion kit for',
+  };
+  const KIND_OPTIONS = Object.entries(KIND_LABELS).map(([value, label]) => ({
+    value: value as RelationshipKind,
+    label,
+  }));
 
   // `satisfies` binds the option list to the wire union — an out-of-vocab
   // value fails the build (a *new* backend value still needs adding here).
