@@ -421,13 +421,11 @@ def _compute_agreed_specs(models: Sequence[MachineModel]) -> AgreedSpecsSchema:
         obj = getattr(m, attr, None)
         return (obj.name, obj.public_id) if obj else None
 
-    def _ref_for(
-        attr: str, candidates: Sequence[MachineModel] = models
-    ) -> EntityRef | None:
+    def _ref_for(attr: str) -> EntityRef | None:
         def accessor(m: MachineModel) -> tuple[str, str] | None:
             return _fk_pair(m, attr)
 
-        val = _agreed_value(candidates, accessor)
+        val = _agreed_value(models, accessor)
         return EntityRef(name=val[0], public_id=val[1]) if val else None
 
     # Themes: only roll up when every model has the same set.
@@ -468,11 +466,12 @@ def _compute_agreed_specs(models: Sequence[MachineModel]) -> AgreedSpecsSchema:
 
     pq = _agreed_value(models, lambda m: m.production_quantity or None)
 
-    # Agree over models that *have* a status (drop nulls; all-null → None via
-    # the helper), then best-effort suppress ``produced``. Backend suppression
-    # is safe here — this schema is read-only/derived, not editor-consumed.
-    ps_models = [m for m in models if m.production_status is not None]
-    production_status = _ref_for("production_status", ps_models)
+    # Agree like every other spec field: all models must share the same status,
+    # any null vetoes (a null status is unknown, not a value to agree with).
+    # Then best-effort suppress ``produced`` — an all-``produced`` title shows
+    # nothing, the assumed default. Backend suppression is safe here — this
+    # schema is read-only/derived, not editor-consumed.
+    production_status = _ref_for("production_status")
     if production_status is not None and production_status.public_id == PRODUCED_SLUG:
         production_status = None
 
