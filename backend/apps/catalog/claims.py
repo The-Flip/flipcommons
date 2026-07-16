@@ -14,6 +14,7 @@ helpers (``build_relationship_claim``, the normalizers) live in
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import NamedTuple
 
 from django.contrib.contenttypes.models import ContentType
 from django.core.validators import MinValueValidator
@@ -31,8 +32,9 @@ from apps.provenance.model_bases import (
 from apps.provenance.models import ClaimControlledModel
 from apps.provenance.validation import (
     FkTarget,
+    MemberSpec,
+    PayloadSpec,
     RelationshipSchema,
-    ValueKeySpec,
     get_all_relationship_schemas,
     register_relationship_schema,
 )
@@ -68,19 +70,19 @@ def register_catalog_relationship_schemas() -> None:
         )
         register_relationship_schema(
             namespace=alias_type.claim_field,
-            value_keys=(
-                ValueKeySpec(
+            members=(
+                MemberSpec(
                     name="alias_value",
                     scalar_type=str,
-                    required=True,
                     identity="alias",
                     display_key="alias_display",
                     max_length=alias_value_len,
                 ),
-                ValueKeySpec(
+            ),
+            payload=(
+                PayloadSpec(
                     name="alias_display",
                     scalar_type=str,
-                    required=False,
                 ),
             ),
             valid_subjects={alias_type.parent_model},
@@ -97,24 +99,23 @@ def register_catalog_relationship_schemas() -> None:
     }
     register_relationship_schema(
         namespace="media_attachment",
-        value_keys=(
-            ValueKeySpec(
+        members=(
+            MemberSpec(
                 name="media_asset",
                 scalar_type=int,
-                required=True,
                 identity="media_asset",
                 fk_target=FkTarget(MediaAsset, "pk"),
             ),
-            ValueKeySpec(
+        ),
+        payload=(
+            PayloadSpec(
                 name="category",
                 scalar_type=str,
-                required=False,
                 nullable=True,
             ),
-            ValueKeySpec(
+            PayloadSpec(
                 name="is_primary",
                 scalar_type=bool,
-                required=False,
             ),
         ),
         valid_subjects=media_subjects,
@@ -143,11 +144,9 @@ def _register_through_model_schemas() -> None:
         by_namespace.setdefault(binding.spec.namespace, []).append(binding)
 
     for namespace, bindings in by_namespace.items():
-        value_keys_per_binding = [_value_keys_for(b) for b in bindings]
-        canonical = value_keys_per_binding[0]
-        for other, binding in zip(
-            value_keys_per_binding[1:], bindings[1:], strict=True
-        ):
+        shapes_per_binding = [_schema_shape_for(b) for b in bindings]
+        canonical = shapes_per_binding[0]
+        for other, binding in zip(shapes_per_binding[1:], bindings[1:], strict=True):
             assert other == canonical, (
                 f"namespace {namespace!r}: bindings "
                 f"{bindings[0].through_model.__name__}/"
@@ -157,7 +156,8 @@ def _register_through_model_schemas() -> None:
             )
         register_relationship_schema(
             namespace=namespace,
-            value_keys=canonical,
+            members=canonical.members,
+            payload=canonical.payload,
             valid_subjects={b.subject_model for b in bindings},
             xor_groups=_xor_groups_for(bindings[0]),
         )
@@ -183,16 +183,34 @@ def _xor_groups_for(
     )
 
 
-def _value_keys_for(binding: ClaimRelationshipBinding) -> tuple[ValueKeySpec, ...]:
-    """The value-key specs a binding's spec implies — members then payload."""
+class _SchemaShape(NamedTuple):
+    """A namespace's derived member/payload specs — the parity-check unit.
+
+    Multi-binding namespaces (credit's XOR subject, abbreviation's two
+    through-models) must derive identical shapes; comparing this pair keeps
+    the cross-model parity assert one equality.
+    """
+
+    members: tuple[MemberSpec, ...]
+    payload: tuple[PayloadSpec, ...]
+
+
+def _schema_shape_for(binding: ClaimRelationshipBinding) -> _SchemaShape:
+    """The member and payload specs a binding's spec implies — structurally.
+
+    The spec's member/payload boundary passes through to the schema unflattened
+    so downstream consumers read roles from structure, never re-derived from
+    ``identity``.
+    """
     through = binding.through_model
-    members = tuple(_member_value_key(through, m) for m in binding.spec.members)
-    payload = tuple(_payload_value_key(through, p) for p in binding.spec.payload)
-    return members + payload
+    return _SchemaShape(
+        members=tuple(_member_value_key(through, m) for m in binding.spec.members),
+        payload=tuple(_payload_value_key(through, p) for p in binding.spec.payload),
+    )
 
 
-def _member_value_key(through_model: type[Model], member: MemberField) -> ValueKeySpec:
-    """Derive an identity value-key from a through-model member field.
+def _member_value_key(through_model: type[Model], member: MemberField) -> MemberSpec:
+    """Derive a member value-key spec from a through-model member field.
 
     The value-key ``name`` is the value-dict key (``member.value_key or
     member.field``) — *not* the column — so a squished FK column (``rewardtype``
@@ -205,13 +223,12 @@ def _member_value_key(through_model: type[Model], member: MemberField) -> ValueK
     if isinstance(field, ForeignKey):
         target = field.related_model
         assert not isinstance(target, str)  # resolved to a class once apps are ready
-        # A nullable member's key is still required — always present in the
-        # value dict, with null expressing absence — so the canonical claim_key
-        # covers every identity part ("null" included).
-        return ValueKeySpec(
+        # A nullable member's key is still always present in the value dict,
+        # with null expressing absence — so the canonical claim_key covers
+        # every identity part ("null" included).
+        return MemberSpec(
             name=name,
             scalar_type=int,
-            required=True,
             nullable=member.nullable,
             identity=member.identity,
             fk_target=FkTarget(target, member.lookup_field),
@@ -223,10 +240,9 @@ def _member_value_key(through_model: type[Model], member: MemberField) -> ValueK
     assert max_length is not None, (
         f"{through_model.__name__}.{member.field} must declare a max_length"
     )
-    return ValueKeySpec(
+    return MemberSpec(
         name=name,
         scalar_type=str,
-        required=True,
         identity=member.identity,
         max_length=max_length,
     )
@@ -234,13 +250,13 @@ def _member_value_key(through_model: type[Model], member: MemberField) -> ValueK
 
 def _payload_value_key(
     through_model: type[Model], payload: PayloadField
-) -> ValueKeySpec:
+) -> PayloadSpec:
     """Derive a non-identity payload value-key (gameplay ``count``,
     model-relationship ``relationship_type``/``license_status``).
 
     Integer payloads: the lower bound is harvested from the field's own
     ``MinValueValidator`` so the patch adapter rejects a too-small payload at
-    plan time (see ``ValueKeySpec.min_value``). No symmetric *upper* bound is
+    plan time (see ``PayloadSpec.min_value``). No symmetric *upper* bound is
     derived: ``PositiveSmallIntegerField`` declares no ``MaxValueValidator``,
     only the backend integer range — which SQLite (the patch author's local DB)
     reports as the full 64-bit range, not Postgres's 32767 — so a meaningful max
@@ -264,7 +280,7 @@ def _payload_value_key(
             if field.choices
             else None
         )
-        return ValueKeySpec(
+        return PayloadSpec(
             name=name,
             scalar_type=str,
             required=payload.required,
@@ -287,7 +303,7 @@ def _payload_value_key(
     assert min_value is not None, (
         f"{through_model.__name__}.{payload.field} must declare a MinValueValidator"
     )
-    return ValueKeySpec(
+    return PayloadSpec(
         name=name,
         scalar_type=int,
         required=payload.required,
@@ -309,7 +325,7 @@ def get_all_namespace_keys() -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
     for namespace, schema in get_all_relationship_schemas().items():
         result[namespace] = [
-            spec.name for spec in schema.value_keys if spec.identity is not None
+            member.name for member in schema.members if member.identity is not None
         ]
     return result
 
@@ -368,12 +384,13 @@ def make_authoritative_scope(
     return {(ct_id, obj_id) for obj_id in object_ids}
 
 
-# Public surface. ``RelationshipSchema`` / ``ValueKeySpec`` are re-exported
-# because this module instantiates them; downstream code should import from
-# whichever module they already use.
+# Public surface. ``RelationshipSchema`` / ``MemberSpec`` / ``PayloadSpec``
+# are re-exported because this module instantiates them; downstream code
+# should import from whichever module they already use.
 __all__ = [
+    "MemberSpec",
+    "PayloadSpec",
     "RelationshipSchema",
-    "ValueKeySpec",
     "build_media_attachment_claim",
     "get_all_namespace_keys",
     "make_authoritative_scope",

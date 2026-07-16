@@ -651,9 +651,11 @@ def _abbreviation_max_length() -> int:
     """
     schema = get_relationship_schema("abbreviation")
     assert schema is not None, "abbreviation schema must be registered"
-    (spec,) = [s for s in schema.value_keys if s.identity is not None]
-    assert spec.max_length is not None, "abbreviation identity must declare max_length"
-    return spec.max_length
+    (member,) = [m for m in schema.members if m.identity is not None]
+    assert member.max_length is not None, (
+        "abbreviation identity must declare max_length"
+    )
+    return member.max_length
 
 
 def _normalize_abbreviations(values: list[str]) -> list[str]:

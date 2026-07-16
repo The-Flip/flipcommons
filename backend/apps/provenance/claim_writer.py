@@ -58,7 +58,7 @@ def _assert_claim(
     # RELATIONSHIP claims get shape validation. EXTRA claims pass through.
     # UNRECOGNIZED claims are rejected outright.
     model_class = type(subject)
-    ct_result = classify_claim(model_class, field_name, claim_key, value)
+    ct_result = classify_claim(model_class, field_name)
     if ct_result == UNRECOGNIZED:
         raise ValueError(
             f"Unrecognized claim field_name {field_name!r} on {model_class.__name__}"

@@ -81,10 +81,10 @@ class AliasProjection:
         alias_val = val.get("alias_value", "")
         if not alias_val:
             return None
-        override = get_display_override(val, self.schema, "alias_value")
-        # Schema registration pins ``alias_display.scalar_type`` to ``str``, so
-        # the override (when present) is always a str at runtime.
-        display = str(override) if override is not None else alias_val
+        # The alias schema's sole member (``alias_value``) declares the
+        # display_key; registration pins the target's scalar_type to str.
+        override = get_display_override(val, self.schema.members[0])
+        display = override if override is not None else alias_val
         return ExtractedMember(alias_val, display)  # alias_val is already lowercase
 
     def read(

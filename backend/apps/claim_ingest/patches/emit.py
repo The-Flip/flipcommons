@@ -420,30 +420,23 @@ def _relationship_member_spec(
     # slots and payload keys don't fit the positional forms below.
     if schema.xor_groups is not None:
         return _dict_member_spec(schema, namespace, entry)
-    identity_specs = [s for s in schema.value_keys if s.identity is not None]
-    # Non-identity slots split in two: a ``display_key`` (derived from the member
-    # itself, e.g. alias_display) is never authored separately, so exclude it. What
-    # remains is independently-authored payload. Two real schemas have it:
+    member_specs = schema.members
+    # Payload splits in two: a display_key target (derived from the member
+    # itself, e.g. alias_display) is never authored separately, so exclude it.
+    # What remains is independently-authored payload. Two real schemas have it:
     # gameplay_feature (one slot, ``count`` — patch-authorable below) and
     # media_attachment (two slots, ``category`` + ``is_primary`` — rejected by the
     # guards below; media is authored through the media API, not data patches).
-    display_keys: set[ClaimValueKey] = {
-        s.display_key for s in schema.value_keys if s.display_key is not None
-    }
-    payload_specs = [
-        s
-        for s in schema.value_keys
-        if s.identity is None and s.name not in display_keys
-    ]
+    payload_specs = [p for p in schema.payload if p.name not in schema.display_targets]
     # A payload slot is authored only via the one-key ``{public_id: value}`` form,
     # which is also how a multi-FK identity is authored — so payload is exclusive to
     # a single-FK relationship, and that form encodes exactly one extra value. Reject
     # every other shape loudly here rather than silently dropping the slot, so the
     # single-FK branch below can read ``payload_specs[0]`` knowing it is the only one.
-    is_single_fk = len(identity_specs) == 1 and identity_specs[0].fk_target is not None
+    is_single_fk = len(member_specs) == 1 and member_specs[0].fk_target is not None
     if payload_specs and not is_single_fk:
         raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} carries non-identity "
+            f"{entry.ref}: relationship {namespace!r} carries payload "
             f"slot(s) {[s.name for s in payload_specs]!r} on a shape that has "
             f"no authoring syntax for them (unsupported)"
         )
@@ -453,15 +446,15 @@ def _relationship_member_spec(
         # syntax at all — not "use one slot", but "not patch-authorable".
         raise PatchError(
             f"{entry.ref}: relationship {namespace!r} carries "
-            f"{len(payload_specs)} non-identity slots "
+            f"{len(payload_specs)} payload slots "
             f"({[s.name for s in payload_specs]!r}); the patch member syntax "
             f"encodes at most one, so it is not patch-authorable"
         )
-    if len(identity_specs) >= 2:
-        # A multi-key relationship is authorable only when every identity slot is
+    if len(member_specs) >= 2:
+        # A multi-key relationship is authorable only when every member slot is
         # an FK (the one-key ``{a: b}`` mapping form maps public_ids onto slots).
         # A mixed FK/non-FK multi-key identity has no authoring syntax yet.
-        if not all(s.fk_target is not None for s in identity_specs):
+        if not all(s.fk_target is not None for s in member_specs):
             raise PatchError(
                 f"{entry.ref}: relationship {namespace!r} has a multi-key identity "
                 f"that is not all-FK (unsupported)"
@@ -469,15 +462,15 @@ def _relationship_member_spec(
         return _MultiFkMemberSpec(
             slots=tuple(
                 _FkMemberSpec(value_key=s.name, target_model=s.fk_target.model)
-                for s in identity_specs
+                for s in member_specs
                 if s.fk_target is not None  # narrowing; guaranteed by the check above
             )
         )
-    if not identity_specs:
+    if not member_specs:
         raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} has no identity key (unsupported)"
+            f"{entry.ref}: relationship {namespace!r} has no member key (unsupported)"
         )
-    spec = identity_specs[0]
+    spec = member_specs[0]
     if spec.fk_target is not None:
         payload = (
             _PayloadSlot(
@@ -518,48 +511,47 @@ def _dict_member_spec(
 ) -> _DictMemberSpec:
     """Build the dict-form member spec from an ``xor_groups`` schema.
 
-    Classification keys off declared schema properties (``identity``,
-    ``fk_target``, ``choices``, ``required``), never a model name — a future
-    XOR-identity namespace lights up with no changes here. ``display_key``
-    targets are derived, never authored, so they yield no slot.
+    Classification keys off the schema's structural member/payload split and
+    declared slot properties (``fk_target``, ``choices``, ``required``), never
+    a model name — a future XOR-identity namespace lights up with no changes
+    here. ``display_key`` targets are derived, never authored, so they yield
+    no slot.
     """
     assert schema.xor_groups is not None
     fk_slots: list[_FkMemberSpec] = []
     literal_slots: list[_StringMemberSpec] = []
     payload_slots: list[_PayloadSlot] = []
-    display_keys: set[ClaimValueKey] = {
-        s.display_key for s in schema.value_keys if s.display_key is not None
-    }
-    for s in schema.value_keys:
-        if s.identity is not None:
-            if s.fk_target is not None:
-                fk_slots.append(
-                    _FkMemberSpec(value_key=s.name, target_model=s.fk_target.model)
-                )
-                continue
-            if s.scalar_type is not str or s.max_length is None:
-                raise PatchError(
-                    f"{entry.ref}: relationship {namespace!r} identity slot "
-                    f"{s.name!r} is neither an FK nor a bounded string "
-                    f"(unsupported)"
-                )
-            literal_slots.append(
-                _StringMemberSpec(
-                    value_key=s.name, max_length=s.max_length, display_key=None
-                )
+    for m in schema.members:
+        if m.fk_target is not None:
+            fk_slots.append(
+                _FkMemberSpec(value_key=m.name, target_model=m.fk_target.model)
             )
-        elif s.name not in display_keys:
-            payload_slots.append(
-                _PayloadSlot(
-                    value_key=s.name,
-                    scalar_type=s.scalar_type,
-                    nullable=s.nullable,
-                    min_value=s.min_value,
-                    required=s.required,
-                    choices=s.choices,
-                    max_length=s.max_length,
-                )
+            continue
+        if m.scalar_type is not str or m.max_length is None:
+            raise PatchError(
+                f"{entry.ref}: relationship {namespace!r} member slot "
+                f"{m.name!r} is neither an FK nor a bounded string "
+                f"(unsupported)"
             )
+        literal_slots.append(
+            _StringMemberSpec(
+                value_key=m.name, max_length=m.max_length, display_key=None
+            )
+        )
+    for p in schema.payload:
+        if p.name in schema.display_targets:
+            continue
+        payload_slots.append(
+            _PayloadSlot(
+                value_key=p.name,
+                scalar_type=p.scalar_type,
+                nullable=p.nullable,
+                min_value=p.min_value,
+                required=p.required,
+                choices=p.choices,
+                max_length=p.max_length,
+            )
+        )
     return _DictMemberSpec(
         fk_slots=tuple(fk_slots),
         literal_slots=tuple(literal_slots),

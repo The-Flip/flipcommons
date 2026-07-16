@@ -67,7 +67,7 @@ type ColumnCodec = tuple[ColumnDecoder, ColumnEncoder]
 
 @dataclass(frozen=True, slots=True)
 class _MemberInfo:
-    """Precomputed per-member facts the extract closure reads on every claim.
+    """Precomputed per-key-member facts the extract closure reads on every claim.
 
     ``valid_pks`` is the target table's primary keys for an FK member (empty and
     unused for a literal member). ``nullable`` (FK members only) lets a null
@@ -81,8 +81,10 @@ class _MemberInfo:
 
 
 class _PayloadPlan(NamedTuple):
-    """The resolved payload shape: through-columns, value-keys and scalar types.
+    """The resolved data-column shape: through-columns, value-keys and scalar types.
 
+    Everything reconciled *by value* rather than *by key* — non-identity
+    members first, then payload — so an in-place row update covers both.
     Positionally aligned: ``columns[i]`` materializes ``value_keys[i]``, whose
     scalar shape is ``kinds[i]`` (``int`` or ``str``).
     """
@@ -100,7 +102,10 @@ def build_through_projection(
     Drives entirely off ``binding.spec`` + ``binding.through_model._meta``: the
     subject column from ``binding.subject_fk``, each member's column and FK-vs-
     literal nature from ``get_field``, the codecs from member/payload arity.
-    Returns ``None`` when an FK member declares
+    Reconcile rows are keyed by the spec's **identity members only**; a
+    non-identity member materializes as a data column beside the payload, so
+    changing its value updates the row in place (same pk, citations intact)
+    instead of delete+create. Returns ``None`` when an FK member declares
     :attr:`EmptyTargetPolicy.SKIP_NAMESPACE` and its target table is empty — the
     sole guard (credit ``role``) against an unseeded vocabulary wiping rows.
 
@@ -111,10 +116,22 @@ def build_through_projection(
 
     member_infos: list[_MemberInfo] = []
     key_columns: list[ColumnName] = []
+    data_columns: list[ColumnName] = []
+    data_value_keys: list[ClaimValueKey] = []
+    data_kinds: list[type] = []
     for member in spec.members:
         field = through_model._meta.get_field(member.field)
         value_key = member.value_key or member.field
         if isinstance(field, ForeignKey):
+            if member.identity is None:
+                # A non-identity FK member would need pk validation on the
+                # data path (the extract guard below covers key members only).
+                # No spec declares one; fail loud rather than write unchecked
+                # pks into a column.
+                raise NotImplementedError(
+                    f"{through_model.__name__}.{member.field}: non-identity FK "
+                    "members are not supported by the through projection."
+                )
             target = field.related_model
             # related_model is a class once apps are loaded (never "self" here).
             assert not isinstance(target, str)
@@ -133,15 +150,25 @@ def build_through_projection(
                 _MemberInfo(value_key, True, valid_pks, member.nullable)
             )
             key_columns.append(f"{member.field}_id")
-        else:
+        elif member.identity is not None:
             member_infos.append(_MemberInfo(value_key, False, frozenset()))
             key_columns.append(member.field)
+        else:
+            # Non-identity literal member: reconciled by value, not by key.
+            data_columns.append(member.field)
+            data_value_keys.append(value_key)
+            data_kinds.append(str)
 
     payload = _resolve_payload(binding)
+    data = _PayloadPlan(
+        columns=data_columns + payload.columns,
+        value_keys=(*data_value_keys, *payload.value_keys),
+        kinds=(*data_kinds, *payload.kinds),
+    )
 
     columns_to_key, key_to_columns = _key_codecs(member_infos)
-    columns_to_payload, payload_to_columns = _payload_codecs(payload)
-    extract = _make_extractor(member_infos, payload.value_keys)
+    columns_to_payload, payload_to_columns = _payload_codecs(data)
+    extract = _make_extractor(member_infos, data.value_keys)
 
     return ThroughRowProjection(
         subject_model=binding.subject_model,
@@ -149,7 +176,7 @@ def build_through_projection(
         through_model=through_model,
         subject_column=f"{binding.subject_fk}_id",
         key_columns=tuple(key_columns),
-        payload_columns=tuple(payload.columns),
+        payload_columns=tuple(data.columns),
         extract_member=extract,
         columns_to_key=columns_to_key,
         key_to_columns=key_to_columns,
@@ -191,10 +218,20 @@ def _resolve_payload(binding: ClaimRelationshipBinding) -> _PayloadPlan:
 
 
 def _key_codecs(member_infos: list[_MemberInfo]) -> ColumnCodec:
-    """Column⇄member-key codecs, by member cardinality and FK-vs-literal."""
+    """Column⇄member-key codecs, by key-member cardinality and FK-vs-literal.
+
+    A single *nullable* FK key member declares the ``int | None`` decoder: the
+    non-nullable ``_int_from_column`` is a ``cast`` (a runtime no-op), so
+    mis-picking it would silently type a NULL key as ``int`` rather than crash
+    — the honest decoder keeps the declared type true.
+    """
     if len(member_infos) == 1:
-        from_column = _int_from_column if member_infos[0].is_fk else _str_from_column
-        return from_column, _one_column
+        only = member_infos[0]
+        if only.is_fk:
+            if only.nullable:
+                return _int_or_none_from_column, _one_column
+            return _int_from_column, _one_column
+        return _str_from_column, _one_column
     return _compound_key, _compound_columns
 
 
@@ -222,14 +259,18 @@ def _make_extractor(
 ) -> MemberExtractor[Any, Any]:
     """Build the per-claim ``extract`` — the one per-shape step of reconcile.
 
-    The unified guard collapses the hand-written builders' three variants into
-    the strictest: tolerate a null ``claim.value`` (location's guard), require an
-    ``int`` value present in the target-PK set for every FK member (the M2M
-    guard, which also drops a ``True``-as-pk), and drop a literal member only
-    when its value is missing. A *nullable* FK member passes ``None`` through as
-    an absent identity part instead — only a non-null unresolved value drops the
-    claim. Safe today because tombstones are filtered before ``extract`` and
-    write-time validation enforces scalar types.
+    ``member_infos`` covers the *key* members only; ``payload_value_keys``
+    covers everything reconciled by value (non-identity members + payload),
+    read with ``val.get`` — write-time validation requires non-identity
+    members on positive claims, and tombstones are filtered before extract.
+
+    The unified key guard collapses the hand-written builders' three variants
+    into the strictest: tolerate a null ``claim.value`` (location's guard),
+    require an ``int`` value present in the target-PK set for every FK member
+    (the M2M guard, which also drops a ``True``-as-pk), and drop a literal
+    member only when its value is missing. A *nullable* FK member passes
+    ``None`` through as an absent identity part instead — only a non-null
+    unresolved value drops the claim.
     """
     single_member = len(member_infos) == 1
     single_payload = payload_value_keys[0] if len(payload_value_keys) == 1 else None

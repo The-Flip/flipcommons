@@ -71,8 +71,9 @@ from apps.provenance.models import (
 from apps.provenance.test_factories import make_claim, make_ingest_source
 from apps.provenance.validation import (
     FkTarget,
+    MemberSpec,
+    PayloadSpec,
     RelationshipSchema,
-    ValueKeySpec,
     get_relationship_schema,
 )
 
@@ -3087,14 +3088,14 @@ def test_non_string_identity_rejected(monkeypatch):
     # no global registry mutation (a successful register would persist).
     crafted = RelationshipSchema(
         namespace="fake_int_identity",
-        value_keys=(
-            ValueKeySpec(
+        members=(
+            MemberSpec(
                 name="amount",
                 scalar_type=int,
-                required=True,
                 identity="amount",
             ),
         ),
+        payload=(),
         valid_subjects=frozenset({Manufacturer}),
     )
     monkeypatch.setattr(
@@ -3118,21 +3119,20 @@ def test_mixed_multi_key_identity_rejected(monkeypatch):
     # reject it rather than classify it as a multi-FK member.
     crafted = RelationshipSchema(
         namespace="fake_mixed_multikey",
-        value_keys=(
-            ValueKeySpec(
+        members=(
+            MemberSpec(
                 name="person",
                 scalar_type=int,
-                required=True,
                 identity="person",
                 fk_target=FkTarget(Person, "pk"),
             ),
-            ValueKeySpec(
+            MemberSpec(
                 name="amount",
                 scalar_type=int,
-                required=True,
                 identity="amount",
             ),
         ),
+        payload=(),
         valid_subjects=frozenset({Manufacturer}),
     )
     monkeypatch.setattr(
@@ -3179,23 +3179,21 @@ def test_payload_on_non_single_fk_rejected(monkeypatch):
     # schema does this, so craft one and confirm registration-time rejection.
     crafted = RelationshipSchema(
         namespace="fake_multikey_payload",
-        value_keys=(
-            ValueKeySpec(
+        members=(
+            MemberSpec(
                 name="person",
                 scalar_type=int,
-                required=True,
                 identity="person",
                 fk_target=FkTarget(Person, "pk"),
             ),
-            ValueKeySpec(
+            MemberSpec(
                 name="role",
                 scalar_type=int,
-                required=True,
                 identity="role",
                 fk_target=FkTarget(CreditRole, "pk"),
             ),
-            ValueKeySpec(name="weight", scalar_type=int, required=False, nullable=True),
         ),
+        payload=(PayloadSpec(name="weight", scalar_type=int, nullable=True),),
         valid_subjects=frozenset({Manufacturer}),
     )
     monkeypatch.setattr(
@@ -3218,16 +3216,17 @@ def test_multiple_payload_slots_rejected(monkeypatch):
     # single-FK shape can carry at most one payload slot. Craft a two-payload one.
     crafted = RelationshipSchema(
         namespace="fake_two_payload",
-        value_keys=(
-            ValueKeySpec(
+        members=(
+            MemberSpec(
                 name="feature",
                 scalar_type=int,
-                required=True,
                 identity="feature",
                 fk_target=FkTarget(GameplayFeature, "pk"),
             ),
-            ValueKeySpec(name="count", scalar_type=int, required=False, nullable=True),
-            ValueKeySpec(name="note", scalar_type=str, required=False, nullable=True),
+        ),
+        payload=(
+            PayloadSpec(name="count", scalar_type=int, nullable=True),
+            PayloadSpec(name="note", scalar_type=str, nullable=True),
         ),
         valid_subjects=frozenset({Manufacturer}),
     )
@@ -3572,12 +3571,12 @@ def test_schema_carries_max_length():
     # loudly here, not silently re-open the over-length trap.
     abbr = get_relationship_schema("abbreviation")
     assert abbr is not None
-    (abbr_id,) = [s for s in abbr.value_keys if s.identity is not None]
+    (abbr_id,) = [m for m in abbr.members if m.identity is not None]
     assert abbr_id.max_length == 50
 
     alias = get_relationship_schema("manufacturer_alias")
     assert alias is not None
-    (alias_id,) = [s for s in alias.value_keys if s.identity is not None]
+    (alias_id,) = [m for m in alias.members if m.identity is not None]
     assert alias_id.max_length == 200
 
 

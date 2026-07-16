@@ -339,3 +339,62 @@ def test_member_xor_uniqueness_ignores_unconditional_constraints() -> None:
 def test_real_models_pass() -> None:
     """The live through-model graph classifies cleanly at boot."""
     assert check_claim_through_models(app_configs=None) == []
+
+
+def test_member_xor_allows_non_identity_member() -> None:
+    """A non-identity member may anchor an XOR rung — membership is structural
+    (``spec.members``), not inferred from ``identity``, so E007 must not fire.
+
+    This is the narrowed-label shape (ModelRelationships step 7): the label
+    leaves the claim key but stays a member, and the rung uniques keyed by the
+    remaining identity — ``(machine_model, target_machine)`` where set,
+    ``(machine_model)`` alone where null — must satisfy E008 as-is.
+    """
+    spec = ClaimRelationshipSpec(
+        namespace="model_relationship",
+        subject=SingleSubject("machine_model"),
+        members=(
+            MemberField("target_machine", identity="target_machine", nullable=True),
+            MemberField("target_label"),
+        ),
+        member_xor=MemberXor(groups=(("target_machine",), ("target_label",))),
+    )
+    facts = _ThroughModelFacts(
+        label="app.ModelRelationship",
+        spec=spec,
+        field_names=frozenset({"machine_model", "target_machine", "target_label"}),
+        uniques=(
+            _UniqueShape(
+                frozenset({"machine_model", "target_machine"}),
+                Q(target_machine__isnull=False),
+            ),
+            _UniqueShape(
+                frozenset({"machine_model"}),
+                Q(target_machine__isnull=True),
+            ),
+        ),
+    )
+    assert _ids(facts) == []
+
+
+def test_member_xor_rejects_payload_field() -> None:
+    """A payload field can never anchor an XOR rung — E007, same as unknown."""
+    spec = ClaimRelationshipSpec(
+        namespace="model_relationship",
+        subject=SingleSubject("machine_model"),
+        members=(
+            MemberField("target_machine", identity="target_machine", nullable=True),
+            MemberField("target_label", identity="target_label"),
+        ),
+        payload=(PayloadField("license_status", required=True),),
+        member_xor=MemberXor(groups=(("target_machine",), ("license_status",))),
+    )
+    facts = _ThroughModelFacts(
+        label="app.ModelRelationship",
+        spec=spec,
+        field_names=frozenset(
+            {"machine_model", "target_machine", "target_label", "license_status"}
+        ),
+        uniques=_LADDER_UNIQUES,
+    )
+    assert "provenance.E007" in _ids(facts)

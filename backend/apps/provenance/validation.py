@@ -30,6 +30,8 @@ from apps.core.types import (
     ClaimFieldName,
     ClaimKey,
     ClaimValueKey,
+    ColumnName,
+    ContentTypeId,
     IdentityPartName,
 )
 from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
@@ -62,67 +64,121 @@ UNRECOGNIZED = "unrecognized"
 
 
 @dataclass(frozen=True, slots=True)
-class ValueKeySpec:
-    """One key in a relationship claim's value dict.
+class MemberSpec:
+    """One member key in a relationship claim's value dict.
+
+    A member is authorable, materialized target data — the FK or literal that
+    the through-row *is about*. Every member is required in a positive claim
+    (there is deliberately no ``required`` field): absence within an XOR
+    ladder is expressed *in the value* — ``null`` for a nullable FK, ``""``
+    for a literal — never by omitting the key.
 
     ``name`` is the key as it appears in the value dict. ``identity``, when
     set, is the label used in the canonical ``claim_key`` identity parts —
     typically equal to ``name`` (e.g. ``"person"``) but occasionally different
-    (e.g. ``identity="alias"`` for ``name="alias_value"``). ``None`` means
-    this key is non-identity (e.g. ``count``, ``category``, ``alias_display``).
+    (e.g. ``identity="alias"`` for ``name="alias_value"``). ``None`` means the
+    member carries claim data without contributing to the claim key (a
+    non-identity member — e.g. a label whose wording is data *on* the edge,
+    not the name *of* it). Identity members are required in tombstones too;
+    non-identity members are stripped from them.
 
-    **INVARIANT**: ``identity is not None`` ⇒ ``required=True``. Enforced at
-    registration time in ``register_relationship_schema``.
-
-    ``display_key`` (identity specs only) names a sibling spec whose value is
-    this identity's user-facing rendering — e.g. ``alias_value`` declares
+    ``display_key`` names a sibling *payload* spec whose value is this
+    member's user-facing rendering — e.g. ``alias_value`` declares
     ``display_key="alias_display"`` so resolvers and display engines both
     read the override from one declaration. See
-    ``register_relationship_schema`` for the full set of invariants.
+    ``register_relationship_schema`` for the cross-reference invariants.
 
-    ``max_length`` (optional, string-identity specs only) carries the target
-    ``CharField`` length bound, derived from the model at registration. It is
-    consumed by the data-patch adapter, which must reject an over-long member
-    at plan-build time: SQLite (the patch author's local DB) silently ignores
+    ``max_length`` (string members only) carries the target ``CharField``
+    length bound, derived from the model at registration. It is consumed by
+    the data-patch adapter, which must reject an over-long member at
+    plan-build time: SQLite (the patch author's local DB) silently ignores
     ``CharField(max_length=...)``, so an over-long string would pass every
     local check and only fail as an ``IntegrityError`` on Postgres in prod.
-    ``None`` for FK and non-length-bounded keys.
-
-    ``min_value`` (optional, int payload specs only) carries the inclusive lower
-    bound the through-model field already declares (its ``MinValueValidator``),
-    derived from the model at registration. Consumed by the data-patch adapter so
-    an out-of-range payload (e.g. ``count: 0``) fails as a clear ``PatchError`` at
-    plan time rather than deferring to the DB CHECK as an opaque ``IntegrityError``
-    when the resolver materializes the row. ``None`` for unbounded keys.
+    ``None`` for FK members.
     """
 
     name: ClaimValueKey
     scalar_type: type
-    required: bool
     nullable: bool = False
     identity: IdentityPartName | None = None
     fk_target: FkTarget | None = None
     display_key: ClaimValueKey | None = None
     max_length: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PayloadSpec:
+    """One payload (qualifier) key in a relationship claim's value dict.
+
+    Payload is scalar data *on* the row — never identity, never an FK, never
+    the display subject (structurally: no ``identity`` / ``fk_target`` /
+    ``display_key`` fields exist here). ``required`` demands the key on
+    positive claims only; tombstones carry identity members + ``exists``
+    alone.
+
+    ``max_length`` / ``min_value`` / ``choices`` carry model-derived bounds
+    for the data-patch adapter, so an out-of-range payload fails as a clear
+    ``PatchError`` at plan time rather than deferring to the DB CHECK as an
+    opaque ``IntegrityError`` when the resolver materializes the row (see
+    ``MemberSpec.max_length`` for why SQLite makes the pre-check load-bearing).
+    """
+
+    name: ClaimValueKey
+    scalar_type: type
+    required: bool = False
+    nullable: bool = False
+    max_length: int | None = None
     min_value: int | None = None
     choices: tuple[str, ...] | None = None
 
 
+type ValueKeySpec = MemberSpec | PayloadSpec
+"""Any key in a relationship claim's value dict — the role-agnostic union.
+
+Only for consumers that genuinely treat every key uniformly (scalar type
+checks, unknown-key rejection). Role-aware code must read
+``RelationshipSchema.members`` / ``.payload`` instead of re-deriving the
+member/payload split from ``identity`` — that inference is exactly the
+lossy-schema bug this split removed.
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class RelationshipSchema:
-    """Shape of one relationship namespace: value-key list + valid subjects.
+    """Shape of one relationship namespace: members + payload + valid subjects.
+
+    ``members`` and ``payload`` preserve the through-model spec's structure
+    (``ClaimRelationshipSpec.members`` / ``.payload``); ``value_keys`` is the
+    derived flat view for the few deliberately role-agnostic consumers.
 
     ``xor_groups`` (optional) carries a member-exclusivity rule in value-key
-    names: exactly one group must be "present" per claim, where an FK key is
-    present when non-null and a string key when non-empty. Derived from the
-    through-model spec's ``MemberXor`` (field names → value keys) at
+    names: exactly one group must be "present" per positive claim, where an FK
+    key is present when non-null and a string key when non-empty. Derived from
+    the through-model spec's ``MemberXor`` (field names → value keys) at
     registration.
     """
 
-    namespace: str
-    value_keys: tuple[ValueKeySpec, ...]
+    namespace: ClaimFieldName
+    members: tuple[MemberSpec, ...]
+    payload: tuple[PayloadSpec, ...]
     valid_subjects: frozenset[type[ClaimControlledModel]]
     xor_groups: tuple[tuple[ClaimValueKey, ...], ...] | None = None
+
+    @property
+    def value_keys(self) -> tuple[MemberSpec | PayloadSpec, ...]:
+        """Members then payload, flattened — role-agnostic consumers only."""
+        return self.members + self.payload
+
+    @property
+    def display_targets(self) -> frozenset[ClaimValueKey]:
+        """Payload keys consumed as a member's display rendering.
+
+        The one derivation of "which payload keys are display_key targets" —
+        display and emit both read this instead of rebuilding the set.
+        """
+        return frozenset(
+            m.display_key for m in self.members if m.display_key is not None
+        )
 
 
 class FkClaim(NamedTuple):
@@ -139,7 +195,7 @@ class FkClaim(NamedTuple):
 class RelationshipTargetKey(NamedTuple):
     """Group key for batched relationship target existence checks."""
 
-    namespace: str
+    namespace: ClaimFieldName
     value_key: ClaimValueKey
 
 
@@ -152,7 +208,7 @@ class FkTarget(NamedTuple):
     """
 
     model: type[models.Model]
-    lookup_field: str
+    lookup_field: ColumnName
 
 
 class BatchValidationResult(NamedTuple):
@@ -174,7 +230,7 @@ class RelationshipClaimRef(NamedTuple):
     ref: object
 
 
-_relationship_schemas: dict[str, RelationshipSchema] = {}
+_relationship_schemas: dict[ClaimFieldName, RelationshipSchema] = {}
 
 # Cached frozenset of registered namespace names. Invalidated on every
 # ``register_relationship_schema`` call and rebuilt lazily by
@@ -182,19 +238,28 @@ _relationship_schemas: dict[str, RelationshipSchema] = {}
 # ``CatalogConfig.ready()``, so the cache is effectively permanent after
 # startup — worth caching because ``get_relationship_namespaces`` is
 # called inside per-winner loops during resolve.
-_namespaces_cache: frozenset[str] | None = None
+_namespaces_cache: frozenset[ClaimFieldName] | None = None
 
 
 def register_relationship_schema(
-    namespace: str,
-    value_keys: tuple[ValueKeySpec, ...],
+    namespace: ClaimFieldName,
+    members: tuple[MemberSpec, ...],
+    payload: tuple[PayloadSpec, ...],
     valid_subjects: Iterable[type[ClaimControlledModel]],
     xor_groups: tuple[tuple[ClaimValueKey, ...], ...] | None = None,
 ) -> None:
     """Register a relationship schema. Idempotent; conflicting re-registration raises.
 
-    Invariants enforced here (not at the validator):
-    - ``identity is not None`` ⇒ ``required=True`` on every value-key.
+    The member/payload split is structural (two dataclass types), so the old
+    per-key role invariants — identity ⇒ required, display_key only on
+    members, choices/min_value only on payload, no payload FKs — hold by
+    construction. What remains here are the cross-reference invariants types
+    can't express:
+
+    - value-key names must be unique across members + payload.
+    - ``xor_groups`` may only name members.
+    - ``display_key`` must name a payload spec with a matching scalar_type,
+      and each payload key may serve at most one member.
     - ``namespace`` must not collide with a concrete claim-controlled field
       name on any class in ``valid_subjects`` — ensures ``classify_claim``
       step 1 (DIRECT) and step 2 (RELATIONSHIP) never both match for a
@@ -208,71 +273,56 @@ def register_relationship_schema(
     means this guard does not protect every (namespace, model) pair — only
     those where the namespace is registered for the subject.
     """
+    value_keys: tuple[MemberSpec | PayloadSpec, ...] = members + payload
+    seen_names: set[ClaimValueKey] = set()
     for spec in value_keys:
-        if spec.identity is not None and not spec.required:
+        if spec.name in seen_names:
             raise ImproperlyConfigured(
-                f"namespace {namespace!r}, value_key {spec.name!r}: "
-                f"identity keys must be required "
-                f"(identity={spec.identity!r}, required=False)"
+                f"namespace {namespace!r}: duplicate value_key {spec.name!r}"
             )
+        seen_names.add(spec.name)
 
     if xor_groups is not None:
-        identity_names = {spec.name for spec in value_keys if spec.identity is not None}
+        member_names = {member.name for member in members}
         for group in xor_groups:
             for name in group:
-                if name not in identity_names:
+                if name not in member_names:
                     raise ImproperlyConfigured(
                         f"namespace {namespace!r}: xor_groups names {name!r}, "
-                        f"which is not an identity value-key"
+                        f"which is not a member value-key"
                     )
 
-    # display_key invariants. Naming a sibling spec lets one declaration drive
-    # both the resolver (which stores the override into AliasModel.value) and
-    # the display engine (which renders identity slots in edit history). The
-    # checks below catch malformed declarations at app-ready time.
-    specs_by_name: dict[ClaimValueKey, ValueKeySpec] = {
-        spec.name: spec for spec in value_keys
-    }
-    # display_key → identity spec name
+    # display_key cross-reference invariants. Naming a sibling payload spec
+    # lets one declaration drive both the resolver (which stores the override
+    # into AliasModel.value) and the display engine (which renders member
+    # slots in edit history). The checks below catch malformed declarations
+    # at app-ready time.
+    payload_by_name: dict[ClaimValueKey, PayloadSpec] = {p.name: p for p in payload}
+    # display_key → member spec name
     seen_display_keys: dict[ClaimValueKey, ClaimValueKey] = {}
-    for spec in value_keys:
-        if spec.display_key is None:
+    for member in members:
+        if member.display_key is None:
             continue
-        if spec.identity is None:
-            raise ImproperlyConfigured(
-                f"namespace {namespace!r}, value_key {spec.name!r}: "
-                f"display_key is only allowed on identity specs"
-            )
-        target = specs_by_name.get(spec.display_key)
+        target = payload_by_name.get(member.display_key)
         if target is None:
             raise ImproperlyConfigured(
-                f"namespace {namespace!r}, value_key {spec.name!r}: "
-                f"display_key {spec.display_key!r} does not name a sibling spec"
+                f"namespace {namespace!r}, member {member.name!r}: "
+                f"display_key {member.display_key!r} does not name a payload spec"
             )
-        if target.identity is not None:
+        if target.scalar_type is not member.scalar_type:
             raise ImproperlyConfigured(
-                f"namespace {namespace!r}, value_key {spec.name!r}: "
-                f"display_key target {spec.display_key!r} must be non-identity"
+                f"namespace {namespace!r}, member {member.name!r}: "
+                f"display_key target {member.display_key!r} scalar_type "
+                f"{target.scalar_type.__name__} must match member scalar_type "
+                f"{member.scalar_type.__name__}"
             )
-        if target.scalar_type is not spec.scalar_type:
-            raise ImproperlyConfigured(
-                f"namespace {namespace!r}, value_key {spec.name!r}: "
-                f"display_key target {spec.display_key!r} scalar_type "
-                f"{target.scalar_type.__name__} must match identity scalar_type "
-                f"{spec.scalar_type.__name__}"
-            )
-        if target.fk_target is not None:
-            raise ImproperlyConfigured(
-                f"namespace {namespace!r}, value_key {spec.name!r}: "
-                f"display_key target {spec.display_key!r} must not declare fk_target"
-            )
-        prior = seen_display_keys.get(spec.display_key)
+        prior = seen_display_keys.get(member.display_key)
         if prior is not None:
             raise ImproperlyConfigured(
-                f"namespace {namespace!r}: identity specs {prior!r} and "
-                f"{spec.name!r} both declare display_key={spec.display_key!r}"
+                f"namespace {namespace!r}: members {prior!r} and "
+                f"{member.name!r} both declare display_key={member.display_key!r}"
             )
-        seen_display_keys[spec.display_key] = spec.name
+        seen_display_keys[member.display_key] = member.name
 
     # Lock down the input here so the schema's invariant (immutability) is
     # an internal guarantee, not something callers must satisfy.
@@ -286,7 +336,8 @@ def register_relationship_schema(
 
     new = RelationshipSchema(
         namespace=namespace,
-        value_keys=value_keys,
+        members=members,
+        payload=payload,
         valid_subjects=frozen_subjects,
         xor_groups=xor_groups,
     )
@@ -302,17 +353,17 @@ def register_relationship_schema(
     _namespaces_cache = None
 
 
-def get_relationship_schema(namespace: str) -> RelationshipSchema | None:
+def get_relationship_schema(namespace: ClaimFieldName) -> RelationshipSchema | None:
     """Return the schema for a namespace, or ``None`` if unregistered."""
     return _relationship_schemas.get(namespace)
 
 
-def get_all_relationship_schemas() -> dict[str, RelationshipSchema]:
+def get_all_relationship_schemas() -> dict[ClaimFieldName, RelationshipSchema]:
     """Return the registry keyed by namespace (read-only snapshot)."""
     return dict(_relationship_schemas)
 
 
-def get_relationship_namespaces() -> frozenset[str]:
+def get_relationship_namespaces() -> frozenset[ClaimFieldName]:
     """Return the cached frozenset of registered namespace names.
 
     Hot path: called inside per-winner loops during entity resolve. The
@@ -327,40 +378,34 @@ def get_relationship_namespaces() -> frozenset[str]:
 
 def get_display_override(
     value: RelationshipClaimValue,
-    schema: RelationshipSchema,
-    identity_spec_name: ClaimValueKey,
-) -> object | None:
-    """Return the user-facing rendering override for one identity slot, or None.
+    member: MemberSpec,
+) -> str | None:
+    """Return the user-facing rendering override for one member slot, or None.
 
-    Reads ``display_key`` from the identity spec named ``identity_spec_name``;
-    if set and the named sibling key has a truthy value in ``value``, returns
-    that value. Otherwise returns ``None`` so callers fall back to the
-    canonical identity value.
+    If ``member`` declares a ``display_key`` and the named payload key has a
+    truthy value in ``value``, returns that value; otherwise returns ``None``
+    so callers fall back to the canonical member value. Registration pins the
+    display target's ``scalar_type`` to the member's (``str`` for every
+    display_key today), so the coercion is a formality for the type checker,
+    not a conversion.
 
     Truthy semantics match the historical resolver expression
     ``val.get("alias_display") or alias_val`` so empty strings fall through
-    to the canonical identity rather than being treated as an override.
+    to the canonical member value rather than being treated as an override.
 
     Shared by the catalog alias resolver (which stores the override into
     ``AliasModel.value``) and the provenance display engine (which renders
-    the identity slot in edit history).
+    the member slot in edit history).
     """
-    spec = next(
-        s
-        for s in schema.value_keys
-        if s.name == identity_spec_name and s.identity is not None
-    )
-    if spec.display_key is None:
+    if member.display_key is None:
         return None
-    candidate = value.get(spec.display_key)
-    return candidate if candidate else None
+    candidate = value.get(member.display_key)
+    return str(candidate) if candidate else None
 
 
 def classify_claim(
     model_class: type[ClaimControlledModel],
     field_name: ClaimFieldName,
-    claim_key: ClaimKey,
-    value: Any,  # noqa: ANN401 - signature preserved for call-site stability
     *,
     claim_fields: ClaimFieldMap | None = None,
 ) -> str:
@@ -410,7 +455,7 @@ def validate_single_relationship_claim(
     subject_model: type[ClaimControlledModel],
     field_name: ClaimFieldName,
     claim_key: ClaimKey,
-    value: Any,  # noqa: ANN401 - claim value is arbitrary JSON
+    value: object,  # claim value is arbitrary JSON; rule 2 narrows to dict
 ) -> None:
     """Validate one relationship claim's shape. Raises ``ValidationError``.
 
@@ -459,51 +504,66 @@ def validate_single_relationship_claim(
         )
 
     # 4. Missing any required key. Must precede rule 8 (canonical claim_key),
-    # which composes identity parts via `value[spec.name]`. Retractions carry
-    # only identity keys (`build_relationship_claim` strips payload from
-    # tombstones), so a required *payload* key is demanded on positive claims
-    # only — identity keys are required on both.
+    # which composes identity parts via `value[spec.name]`. Requiredness is
+    # by role and polarity: identity members are required on both polarities
+    # (they name the edge); non-identity members and required payload are
+    # demanded on positive claims only — `build_relationship_claim` strips
+    # both from tombstones.
     is_retraction = value["exists"] is False
-    for spec in schema.value_keys:
-        if spec.name in value or not spec.required:
+    for member in schema.members:
+        if member.name in value:
             continue
-        if spec.identity is not None or not is_retraction:
+        if member.identity is not None or not is_retraction:
             raise ValidationError(
-                f"Value for {field_name!r} missing required key {spec.name!r}."
+                f"Value for {field_name!r} missing required key {member.name!r}."
             )
+    if not is_retraction:
+        for pspec in schema.payload:
+            if pspec.required and pspec.name not in value:
+                raise ValidationError(
+                    f"Value for {field_name!r} missing required key {pspec.name!r}."
+                )
 
-    # 5. Wrong scalar type for any present registered key. `type(v) is T`
-    # rather than `isinstance(v, T)` rejects `bool` where `int` is expected
+    # 5. Wrong scalar type for any present registered key — deliberately
+    # role-agnostic (members and payload check identically); the payload loop
+    # adds the `choices` vocabulary, which only payload declares. `type(v) is
+    # T` rather than `isinstance(v, T)` rejects `bool` where `int` is expected
     # (PKs, counts) and rejects enum / numpy scalars that would slip past
     # `isinstance`. For `nullable=True`, accept `None` in addition.
-    specs_by_name: dict[ClaimValueKey, ValueKeySpec] = {
-        spec.name: spec for spec in schema.value_keys
-    }
-    for spec in schema.value_keys:
-        if spec.name not in value:
-            continue
-        v = value[spec.name]
+    def check_scalar(name: ClaimValueKey, scalar_type: type, nullable: bool) -> bool:
+        """Type-check one present key; returns False when the value is null."""
+        v = value[name]
         if v is None:
-            if not spec.nullable:
+            if not nullable:
                 raise ValidationError(
-                    f"Value for {field_name!r} key {spec.name!r} may not be null."
+                    f"Value for {field_name!r} key {name!r} may not be null."
                 )
-            continue
-        if type(v) is not spec.scalar_type:
+            return False
+        if type(v) is not scalar_type:
             raise ValidationError(
-                f"Value for {field_name!r} key {spec.name!r} must be "
-                f"{spec.scalar_type.__name__}, got {type(v).__name__}."
+                f"Value for {field_name!r} key {name!r} must be "
+                f"{scalar_type.__name__}, got {type(v).__name__}."
             )
-        if spec.choices is not None and v not in spec.choices:
+        return True
+
+    for member in schema.members:
+        if member.name in value:
+            check_scalar(member.name, member.scalar_type, member.nullable)
+    for pspec in schema.payload:
+        if pspec.name not in value:
+            continue
+        if not check_scalar(pspec.name, pspec.scalar_type, pspec.nullable):
+            continue
+        if pspec.choices is not None and value[pspec.name] not in pspec.choices:
             raise ValidationError(
-                f"Value for {field_name!r} key {spec.name!r} must be one of "
-                f"{sorted(spec.choices)!r}, got {v!r}."
+                f"Value for {field_name!r} key {pspec.name!r} must be one of "
+                f"{sorted(pspec.choices)!r}, got {value[pspec.name]!r}."
             )
 
-    # 6. Unknown keys (other than "exists" and registered names). Applies
-    # uniformly to retractions — a retraction carrying a stale extra key is
-    # rejected the same as a positive claim.
-    known = {"exists"} | specs_by_name.keys()
+    # 6. Unknown keys (other than "exists" and registered names) — also
+    # role-agnostic. Applies uniformly to retractions — a retraction carrying
+    # a stale extra key is rejected the same as a positive claim.
+    known = {"exists"} | {spec.name for spec in schema.value_keys}
     unknown = value.keys() - known
     if unknown:
         raise ValidationError(
@@ -513,13 +573,17 @@ def validate_single_relationship_claim(
 
     # 7. Member-exclusivity (xor_groups): exactly one group present. Presence
     # means non-null for FK keys and non-empty for string keys ("" is the
-    # CharField absence convention). Applies to retractions too — a tombstone
-    # names an edge by its identity, and only valid identities name edges.
-    if schema.xor_groups is not None:
+    # CharField absence convention). Positive claims only: XOR is an invariant
+    # over authored member data, and a tombstone carries identity keys alone —
+    # once a group's member is non-identity, a retraction legitimately has
+    # zero groups present, so "exactly one" cannot apply. `value.get` (not
+    # `value[...]`) because requiredness is polarity-dependent (rule 4): an
+    # absent key must read as "not present", never KeyError.
+    if schema.xor_groups is not None and not is_retraction:
         present = [
             group
             for group in schema.xor_groups
-            if any(value[name] not in (None, "") for name in group)
+            if any(value.get(name) not in (None, "") for name in group)
         ]
         if len(present) != 1:
             groups_desc = " / ".join(
@@ -533,9 +597,9 @@ def validate_single_relationship_claim(
     # 8. Non-canonical claim_key. `make_claim_key` sorts its kwargs, so the
     # dict-comprehension order doesn't matter.
     identity_parts: dict[IdentityPartName, IdentityPartValue] = {
-        spec.identity: value[spec.name]
-        for spec in schema.value_keys
-        if spec.identity is not None
+        member.identity: value[member.name]
+        for member in schema.members
+        if member.identity is not None
     }
     expected_claim_key = make_claim_key(field_name, **identity_parts)
     if claim_key != expected_claim_key:
@@ -700,8 +764,8 @@ def validate_claims_batch(
     rel_claims: list[Claim] = []
 
     # Cache model_class and claim_fields per content_type_id.
-    model_cache: dict[int, type[ClaimControlledModel]] = {}
-    fields_cache: dict[int, dict[str, str]] = {}
+    model_cache: dict[ContentTypeId, type[ClaimControlledModel]] = {}
+    fields_cache: dict[ContentTypeId, ClaimFieldMap] = {}
 
     for claim in pending_claims:
         ct_id = claim.content_type_id
@@ -728,13 +792,7 @@ def validate_claims_batch(
         model_class = model_cache[ct_id]
         fn = claim.field_name
 
-        ct = classify_claim(
-            model_class,
-            fn,
-            claim.claim_key,
-            claim.value,
-            claim_fields=fields_cache[ct_id],
-        )
+        ct = classify_claim(model_class, fn, claim_fields=fields_cache[ct_id])
 
         if ct == RELATIONSHIP:
             try:
@@ -903,7 +961,8 @@ def validate_relationship_claims_batch(
         # target may have been deleted, and the claim is being removed.
         if not member_is_present(claim):
             continue
-        for spec in schema.value_keys:
+        # Only members carry fk_target (structurally — PayloadSpec has none).
+        for spec in schema.members:
             if spec.fk_target is None:
                 continue
             ref = value.get(spec.name)

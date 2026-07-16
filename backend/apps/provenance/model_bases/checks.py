@@ -179,11 +179,12 @@ def _classify_through_model(facts: _ThroughModelFacts) -> list[CheckMessage]:
 def _classify_member_xor(label: str, spec: ClaimRelationshipSpec) -> list[CheckMessage]:
     """Shape-check a ``member_xor`` declaration against the spec's members.
 
-    Verifies the groups partition a subset of the identity members and that the
-    spec's subject is a ``SingleSubject`` (no use case pairs a member ladder with
-    a subject XOR, so we stay strict). Like the credit subject-XOR, the *row*
-    semantics (the CHECK constraint) are asserted by a per-model behavior test,
-    not here.
+    Verifies the groups partition a subset of the spec's members (identity or
+    not — a non-identity member may anchor an XOR rung; payload and unknown
+    names may not) and that the spec's subject is a ``SingleSubject`` (no use
+    case pairs a member ladder with a subject XOR, so we stay strict). Like
+    the credit subject-XOR, the *row* semantics (the CHECK constraint) are
+    asserted by a per-model behavior test, not here.
     """
     assert spec.member_xor is not None
     errors: list[CheckMessage] = []
@@ -205,17 +206,15 @@ def _classify_member_xor(label: str, spec: ClaimRelationshipSpec) -> list[CheckM
                 id="provenance.E007",
             )
         )
-    identity_members = frozenset(
-        m.field for m in spec.members if m.identity is not None
-    )
+    member_fields = frozenset(m.field for m in spec.members)
     seen: set[ColumnName] = set()
     for group in groups:
         for field in group:
-            if field not in identity_members:
+            if field not in member_fields:
                 errors.append(
                     Error(
-                        f"{label}: member_xor names {field!r}, which is not an "
-                        "identity member of the spec.",
+                        f"{label}: member_xor names {field!r}, which is not a "
+                        "member of the spec.",
                         obj=label,
                         id="provenance.E007",
                     )
