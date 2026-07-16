@@ -16,15 +16,10 @@ import {
 // what makes "add a relation once" hold: the shared surfaces render from
 // MODEL_LINEAGE_RELATIONS, and this stops a new FK from silently going unshown.
 describe('model lineage vs entity-meta', () => {
-  // Forward FKs with no display descriptor: copy/conversion facts render from
-  // relationship edges, not from these columns.
-  const NON_DISPLAYED_FORWARD_FKS = ['converted_from', 'bootleg_of', 'licensed_build_of'];
-
   it('declares exactly the forward model↔model FKs that ENTITY_META knows', () => {
     const forwardSelfFks = Object.entries(ENTITY_META.model.relationships)
       .filter(([, r]) => r.entity_target_type === 'model' && !r.many)
       .map(([key]) => key)
-      .filter((key) => !NON_DISPLAYED_FORWARD_FKS.includes(key))
       .sort();
 
     const declaredForward = MODEL_LINEAGE_RELATIONS.filter((r) => !r.many)

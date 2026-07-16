@@ -78,6 +78,15 @@ class MachineModel(
 
     entity_type = "model"
     entity_type_plural = "models"
+    # A model targeted by another *active* model's relationship edge can't be
+    # soft-deleted: the edge row itself has no lifecycle (so the PROTECT pass
+    # skips it), but the owning source model would display a link to a 404.
+    # The blocker walks through the edge to that source model — the same
+    # channel Tag uses for its member models, and the referential semantics
+    # the retired converted_from FK used to enforce.
+    soft_delete_usage_blockers: ClassVar[frozenset[str]] = frozenset(
+        {"inbound_relationship_sources"}
+    )
     MEDIA_CATEGORIES = ["backglass", "playfield", "cabinet", "other"]
     abbreviations: models.Manager[ModelAbbreviation]
     credits: models.Manager[Credit]
@@ -136,14 +145,6 @@ class MachineModel(
         blank=True,
         help_text="Parent machine model if this is a cosmetic/LE variant.",
     )
-    converted_from = models.ForeignKey(
-        "self",
-        on_delete=models.PROTECT,
-        related_name="conversions",
-        null=True,
-        blank=True,
-        help_text="Source machine if this is a conversion/retheme.",
-    )
     remake_of = models.ForeignKey(
         "self",
         on_delete=models.PROTECT,
@@ -152,52 +153,6 @@ class MachineModel(
         blank=True,
         help_text="Original model if this is a remake.",
     )
-    bootleg_of = models.ForeignKey(
-        "self",
-        on_delete=models.PROTECT,
-        related_name="bootlegs",
-        null=True,
-        blank=True,
-        help_text=(
-            "Original machine this is an unauthorized copy (bootleg) of. "
-            "Unlike remakes and conversions, may belong to a different Title."
-        ),
-    )
-    licensed_build_of = models.ForeignKey(
-        "self",
-        on_delete=models.PROTECT,
-        related_name="licensed_builds",
-        null=True,
-        blank=True,
-        help_text=(
-            "Original machine this is an officially licensed build (by a "
-            "licensee or subsidiary) of. Like bootlegs, may belong to a "
-            "different Title."
-        ),
-    )
-
-    #: Self-FK lineage fields that mark a model as a subordinate *copy* of
-    #: another model. Unlike a cosmetic ``variant_of`` (which collapses out of
-    #: its Title's machine list entirely), a copy is a distinct machine that
-    #: still appears on the Title page — it just must never be the Title's
-    #: representative ("first") model, so :meth:`first_model_candidates` sorts
-    #: copies AFTER originals. That way the Big Ben Title heads with the Williams
-    #: original, not its Segasa licensed build, even though the two share a year.
-    #: ``converted_from`` (a genuinely different machine) and ``remake_of`` (a
-    #: distinct product) are originals in their own right and are deliberately
-    #: absent. A new lineage FK must decide here rather than silently inheriting.
-    #:
-    #: TRANSITIONAL: these FKs are being replaced by ``ModelRelationship`` copy
-    #: edges (docs/plans/catalog_data_model/ModelRelationships.md).
-    #: :meth:`first_model_candidates` dual-reads — old FK set OR copy edge —
-    #: which is correct in every transition state (prod has neither; dev has
-    #: FKs until the patch rework lands, edges after). Delete this ClassVar
-    #: with the columns in the final migration step.
-    SUBORDINATE_COPY_FIELDS: ClassVar[tuple[str, ...]] = (
-        "bootleg_of",
-        "licensed_build_of",
-    )
-
     # Core filterable fields
     corporate_entity = models.ForeignKey(
         "CorporateEntity",
@@ -433,31 +388,10 @@ class MachineModel(
                 violation_error_code="cross_field",
             ),
             models.CheckConstraint(
-                condition=models.Q(converted_from__isnull=True)
-                | ~models.Q(converted_from=models.F("pk")),
-                name="catalog_machinemodel_converted_from_not_self",
-                violation_error_message="A machine model cannot be converted from itself.",
-                violation_error_code="cross_field",
-            ),
-            models.CheckConstraint(
                 condition=models.Q(remake_of__isnull=True)
                 | ~models.Q(remake_of=models.F("pk")),
                 name="catalog_machinemodel_remake_of_not_self",
                 violation_error_message="A machine model cannot be a remake of itself.",
-                violation_error_code="cross_field",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(bootleg_of__isnull=True)
-                | ~models.Q(bootleg_of=models.F("pk")),
-                name="catalog_machinemodel_bootleg_of_not_self",
-                violation_error_message="A machine model cannot be a bootleg of itself.",
-                violation_error_code="cross_field",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(licensed_build_of__isnull=True)
-                | ~models.Q(licensed_build_of=models.F("pk")),
-                name="catalog_machinemodel_licensed_build_of_not_self",
-                violation_error_message="A machine model cannot be a licensed build of itself.",
                 violation_error_code="cross_field",
             ),
         ]
@@ -476,10 +410,10 @@ class MachineModel(
         Variants (cosmetic/LE) collapse out entirely. Copies stay in the list
         but sort after every original, so ``.first()`` / ``[:1]`` never picks a
         copy over the model it copies — while a Title whose *only* model is a
-        copy still surfaces it. "Copy" is dual-read during the edge-table
-        transition: a legacy lineage FK (:attr:`SUBORDINATE_COPY_FIELDS`) or a
-        ``ModelRelationship`` copy edge; conversions and kits are originals in
-        their own right and don't subordinate.
+        copy still surfaces it. "Copy" means a subordinating
+        ``ModelRelationship`` edge exists (the Big Ben rule: the Williams
+        original heads the Title, not its Segasa licensed build); conversions
+        and kits are originals in their own right and don't subordinate.
 
         Single source for that identity/order rule. Callers layer their own
         ``select_related`` / ``prefetch_related`` for their read shape, and
@@ -498,10 +432,6 @@ class MachineModel(
         )
         is_copy = models.Case(
             models.When(copy_edge, then=models.Value(1)),
-            *(
-                models.When(**{f"{field}__isnull": False}, then=models.Value(1))
-                for field in cls.SUBORDINATE_COPY_FIELDS
-            ),
             default=models.Value(0),
             output_field=models.IntegerField(),
         )
@@ -511,6 +441,17 @@ class MachineModel(
             .alias(_is_subordinate_copy=is_copy)
             .order_by("_is_subordinate_copy", "year", "name")
         )
+
+    @property
+    def inbound_relationship_sources(self) -> models.QuerySet[MachineModel]:
+        """Models whose relationship edges target this model.
+
+        The read surface behind the ``soft_delete_usage_blockers`` entry: the
+        walk needs a lifecycle queryset (it applies ``.active()``), and the
+        edge row itself has none, so this hops through ``target_machine`` to
+        the owning source models.
+        """
+        return MachineModel.objects.filter(relationships__target_machine=self)
 
     @classmethod
     def non_variant_models_q(cls) -> models.Q:

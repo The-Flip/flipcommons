@@ -39,40 +39,6 @@ def _first_model(title: Title) -> MachineModel | None:
 
 
 @pytest.mark.django_db
-def test_bootleg_sibling_is_not_the_first_model(big_ben_title):
-    """A bootleg that outsorts the original must not be chosen over it, but is
-    still listed among the Title's models."""
-    original = make_machine_model(
-        title=big_ben_title, name="Big Ben", slug="big-ben-williams", year=1975
-    )
-    copy = make_machine_model(
-        title=big_ben_title,
-        name="Big Ben",
-        slug="big-ben-segasa",
-        year=1974,
-        bootleg_of=original,
-    )
-    assert _first_model(big_ben_title) == original
-    assert set(_candidates(big_ben_title)) == {original, copy}
-
-
-@pytest.mark.django_db
-def test_licensed_build_sibling_is_not_the_first_model(big_ben_title):
-    """A licensed build that outsorts the original must not be chosen."""
-    original = make_machine_model(
-        title=big_ben_title, name="Big Ben", slug="big-ben-williams", year=1975
-    )
-    make_machine_model(
-        title=big_ben_title,
-        name="Big Ben",
-        slug="big-ben-segasa",
-        year=1974,
-        licensed_build_of=original,
-    )
-    assert _first_model(big_ben_title) == original
-
-
-@pytest.mark.django_db
 def test_variant_sibling_is_not_the_first_model(big_ben_title):
     original = make_machine_model(
         title=big_ben_title, name="Big Ben", slug="big-ben-le", year=1975
@@ -88,18 +54,6 @@ def test_variant_sibling_is_not_the_first_model(big_ben_title):
 
 
 @pytest.mark.django_db
-def test_copy_only_title_still_surfaces_the_copy(db):
-    """A Title whose only model is a licensed build (its original lives under a
-    different Title) still surfaces that copy as its first model — the copy is
-    sorted last, not filtered out."""
-    us_model = make_machine_model(name="Party Animal", slug="party-animal-us")
-    de_only = make_machine_model(
-        name="Party Animal", slug="party-animal-de", licensed_build_of=us_model
-    )
-    assert _first_model(de_only.title) == de_only
-
-
-@pytest.mark.django_db
 def test_remake_stays_eligible(db):
     """A remake is a distinct product, not a subordinate copy: a Title whose
     only model is a remake must still surface it as the first model."""
@@ -110,21 +64,11 @@ def test_remake_stays_eligible(db):
     assert _first_model(remake.title) == remake
 
 
-@pytest.mark.django_db
-def test_conversion_stays_eligible(db):
-    """A conversion is a genuinely different machine, so it remains eligible."""
-    source = make_machine_model(name="Base Game", slug="base-game", year=1990)
-    conversion = make_machine_model(name="Retheme", slug="retheme", year=1991)
-    conversion.converted_from = source
-    conversion.save(update_fields=["converted_from"])
-    assert _first_model(conversion.title) == conversion
-
-
-# ── ModelRelationship copy edges (the FK replacements) ──────────────
+# ── ModelRelationship copy edges ─────────────────────────────────────
 #
-# During the edge-table transition the rule dual-reads: a legacy lineage FK OR
-# a copy edge subordinates a model. These mirror the FK cases above using only
-# edges, so the rule survives the patch rework that stops authoring the FKs.
+# A subordinating edge (per RELATIONSHIP_TYPE_BEHAVIOR) is what demotes a
+# model below the original when picking a Title's representative — the Big
+# Ben rule. The legacy lineage FKs are gone; edges are the only read.
 
 
 @pytest.mark.django_db

@@ -250,11 +250,15 @@ class TestModelsAPI:
 
     def test_conversions_appear_in_list(self, client, db):
         """Conversions are NOT filtered from the list endpoint (unlike variants)."""
+        from apps.catalog.models import ModelRelationship
+
         source = make_machine_model(name="Star Trek", slug="star-trek", year=1991)
-        make_machine_model(
-            name="Dark Rider",
-            slug="dark-rider",
-            converted_from=source,
+        conversion = make_machine_model(name="Dark Rider", slug="dark-rider")
+        ModelRelationship.objects.create(
+            machine_model=conversion,
+            target_machine=source,
+            relationship_type="conversion",
+            license_status="unknown",
         )
         resp = client.get("/api/models/")
         data = resp.json()

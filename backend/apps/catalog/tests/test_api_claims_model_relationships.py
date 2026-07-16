@@ -500,24 +500,9 @@ class TestHierarchyFKValidation:
         resp = _patch(client, pm.slug, {"fields": {"variant_of": pm.slug}})
         assert resp.status_code == 422
 
-    def test_self_referential_converted_from_rejected(self, client, user, pm):
-        client.force_login(user)
-        resp = _patch(client, pm.slug, {"fields": {"converted_from": pm.slug}})
-        assert resp.status_code == 422
-
     def test_self_referential_remake_of_rejected(self, client, user, pm):
         client.force_login(user)
         resp = _patch(client, pm.slug, {"fields": {"remake_of": pm.slug}})
-        assert resp.status_code == 422
-
-    def test_self_referential_bootleg_of_rejected(self, client, user, pm):
-        client.force_login(user)
-        resp = _patch(client, pm.slug, {"fields": {"bootleg_of": pm.slug}})
-        assert resp.status_code == 422
-
-    def test_self_referential_licensed_build_of_rejected(self, client, user, pm):
-        client.force_login(user)
-        resp = _patch(client, pm.slug, {"fields": {"licensed_build_of": pm.slug}})
         assert resp.status_code == 422
 
     def test_valid_hierarchy_fk_succeeds(self, client, user, pm):
@@ -527,33 +512,13 @@ class TestHierarchyFKValidation:
         assert resp.status_code == 200
         assert resp.json()["variant_of"]["public_id"] == "star-trek"
 
-    def test_bootleg_of_resolves_across_titles(self, client, user, pm):
-        # `bootleg_of` may point at a model under a different Title (its
-        # defining trait); make_machine_model gives `original` its own Title.
-        original = make_machine_model(
-            name="Video Pinball", slug="video-pinball", year=1979
-        )
-        assert original.title_id != pm.title_id
+    def test_retired_lineage_fk_rejected(self, client, user, pm):
+        # The legacy lineage FKs are gone from the model, so the editable-field
+        # surface (model-driven) rejects them like any unknown field — a guard
+        # against accidental resurrection.
         client.force_login(user)
-        resp = _patch(client, pm.slug, {"fields": {"bootleg_of": original.slug}})
-        assert resp.status_code == 200
-        # bootleg_of is not serialized in the response; assert against the DB.
-        pm.refresh_from_db()
-        assert pm.bootleg_of_id == original.pk
-
-    def test_licensed_build_of_resolves_across_titles(self, client, user, pm):
-        # `licensed_build_of` may point at a model under a different Title, like
-        # `bootleg_of`; make_machine_model gives `original` its own Title.
-        original = make_machine_model(
-            name="Party Animal", slug="party-animal", year=1987
-        )
-        assert original.title_id != pm.title_id
-        client.force_login(user)
-        resp = _patch(client, pm.slug, {"fields": {"licensed_build_of": original.slug}})
-        assert resp.status_code == 200
-        # licensed_build_of is not serialized in the response; assert against the DB.
-        pm.refresh_from_db()
-        assert pm.licensed_build_of_id == original.pk
+        resp = _patch(client, pm.slug, {"fields": {"bootleg_of": pm.slug}})
+        assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------

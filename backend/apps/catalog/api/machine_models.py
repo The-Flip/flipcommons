@@ -864,9 +864,7 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
     )
 
 
-_SELF_REF_FIELDS: frozenset[str] = frozenset(
-    {"variant_of", "converted_from", "remake_of", "bootleg_of", "licensed_build_of"}
-)
+_SELF_REF_FIELDS: frozenset[str] = frozenset({"variant_of", "remake_of"})
 
 
 @models_router.patch(
@@ -1029,9 +1027,9 @@ def delete_model(
     Writes a single user ChangeSet with ``action=delete`` containing one
     ``status=deleted`` claim. Rate-limited per user on the ``delete`` bucket
     (5/day; staff bypass). Blocks with 422 when an active PROTECT referrer
-    (a child variant, a model whose ``converted_from`` or ``remake_of``
-    points here, …) would be left dangling. Never cascades to the parent
-    Title — orphan Titles are supported by spec.
+    (a child variant, a model whose ``remake_of`` points here, an inbound
+    relationship edge, …) would be left dangling. Never cascades to the
+    parent Title — orphan Titles are supported by spec.
     """
     pm = get_object_or_404(
         MachineModel.objects.active(), **{MachineModel.public_id_field: public_id}

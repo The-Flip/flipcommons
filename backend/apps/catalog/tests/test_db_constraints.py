@@ -415,15 +415,6 @@ class TestSelfRefConstraints:
         with pytest.raises(IntegrityError):
             _raw_update(MachineModel, mm.pk, variant_of_id=mm.pk)
 
-    def test_machine_model_converted_from_self_rejected(self, db):
-        mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
-        ce = CorporateEntity.objects.create(
-            name="Test Corp", slug="test-corp", manufacturer=mfr
-        )
-        mm = make_machine_model(name="Test", slug="test-mm", corporate_entity=ce)
-        with pytest.raises(IntegrityError):
-            _raw_update(MachineModel, mm.pk, converted_from_id=mm.pk)
-
     def test_machine_model_remake_of_self_rejected(self, db):
         mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
         ce = CorporateEntity.objects.create(
@@ -432,24 +423,6 @@ class TestSelfRefConstraints:
         mm = make_machine_model(name="Test", slug="test-mm", corporate_entity=ce)
         with pytest.raises(IntegrityError):
             _raw_update(MachineModel, mm.pk, remake_of_id=mm.pk)
-
-    def test_machine_model_bootleg_of_self_rejected(self, db):
-        mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
-        ce = CorporateEntity.objects.create(
-            name="Test Corp", slug="test-corp", manufacturer=mfr
-        )
-        mm = make_machine_model(name="Test", slug="test-mm", corporate_entity=ce)
-        with pytest.raises(IntegrityError):
-            _raw_update(MachineModel, mm.pk, bootleg_of_id=mm.pk)
-
-    def test_machine_model_licensed_build_of_self_rejected(self, db):
-        mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
-        ce = CorporateEntity.objects.create(
-            name="Test Corp", slug="test-corp", manufacturer=mfr
-        )
-        mm = make_machine_model(name="Test", slug="test-mm", corporate_entity=ce)
-        with pytest.raises(IntegrityError):
-            _raw_update(MachineModel, mm.pk, licensed_build_of_id=mm.pk)
 
     def test_location_parent_self_rejected(self, db):
         loc = Location.objects.create(location_path="usa", slug="usa", name="USA")
