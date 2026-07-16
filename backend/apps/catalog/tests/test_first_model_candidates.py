@@ -193,9 +193,8 @@ def test_copy_edge_only_title_still_surfaces_the_copy(db):
 
 def test_every_relationship_type_classifies_its_behavior() -> None:
     """The forcing function for new relationship types: every enum value must
-    carry an explicit (subordinates, readmits_from_collapse) decision, so a
-    new type (e.g. retheme) cannot silently inherit not-subordinate /
-    not-readmitted from an inline default."""
+    carry an explicit ``subordinates`` decision, so a new type (e.g. retheme)
+    cannot silently inherit not-subordinate from an inline default."""
     from apps.catalog.models.model_relationship import (
         RELATIONSHIP_TYPE_BEHAVIOR,
         RelationshipType,
@@ -205,5 +204,5 @@ def test_every_relationship_type_classifies_its_behavior() -> None:
     assert not unclassified, (
         f"RelationshipType value(s) {sorted(t.value for t in unclassified)} have "
         "no RELATIONSHIP_TYPE_BEHAVIOR entry — decide whether the new type "
-        "subordinates (Big Ben rule) and re-admits from variant collapse."
+        "subordinates (the Big Ben rule)."
     )

@@ -292,13 +292,11 @@ def _build_model_list_qs(
         )
         .prefetch_related(media_prefetch())
     )
-    # The catalog lists at the granularity of distinct machines (see
-    # MachineModel.distinct_machines_q). ``include_variants`` opts out of the
-    # collapse for surfaces where a variant's own value is the point — e.g. the
-    # production-status browse, where an announced Limited Edition of a shipped
-    # Premium must appear.
+    # include_variants opts out of the variant collapse for browses where a
+    # variant's own value is the point — e.g. production-status, where an
+    # announced LE of an already-shipped Premium must appear as its own row.
     if not include_variants:
-        qs = qs.filter(MachineModel.distinct_machines_q())
+        qs = qs.filter(MachineModel.non_variant_models_q())
 
     if manufacturer:
         qs = qs.filter(corporate_entity__manufacturer__slug=manufacturer)
@@ -644,7 +642,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             Prefetch(
                 "title__machine_models",
                 queryset=MachineModel.objects.active()
-                .filter(MachineModel.distinct_machines_q())
+                .filter(MachineModel.non_variant_models_q())
                 .select_related(
                     "corporate_entity__manufacturer", "technology_generation"
                 )
@@ -786,7 +784,7 @@ def list_recent_models(request: HttpRequest) -> list[ModelRecentSchema]:
     """Return the 3 newest non-variant models, one per title."""
     qs = (
         MachineModel.objects.active()
-        .filter(Q(variant_of__isnull=True) | Q(converted_from__isnull=False))
+        .filter(MachineModel.non_variant_models_q())
         .select_related("corporate_entity__manufacturer")
         .order_by(
             F("year").desc(nulls_last=True),

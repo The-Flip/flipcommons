@@ -69,24 +69,6 @@ class TestModelsAPI:
         assert data["count"] == 1
         assert [item["slug"] for item in data["items"]] == [machine_model.slug]
 
-    def test_conversion_edge_readmits_variant(self, client, machine_model):
-        # The variant collapse re-admits conversions; an edge-based conversion
-        # (no legacy converted_from FK) must be re-admitted the same way.
-        retheme = make_machine_model(
-            name="Retheme", slug="retheme", title=machine_model.title, year=1998
-        )
-        retheme.variant_of = machine_model
-        retheme.save(update_fields=["variant_of"])
-        assert client.get("/api/models/").json()["count"] == 1
-
-        ModelRelationship.objects.create(
-            machine_model=retheme,
-            target_machine=machine_model,
-            relationship_type=RelationshipType.CONVERSION,
-        )
-        names = {m["name"] for m in client.get("/api/models/").json()["items"]}
-        assert names == {"Medieval Madness", "Retheme"}
-
     def test_list_models_ordering(self, client, machine_model, another_model):
         resp = client.get("/api/models/?ordering=-year")
         data = resp.json()
@@ -277,27 +259,6 @@ class TestModelsAPI:
         resp = client.get("/api/models/")
         data = resp.json()
         names = [m["name"] for m in data["items"]]
-        assert "Dark Rider" in names
-        assert "Star Trek" in names
-
-    def test_conversion_with_variant_of_appears_in_list(self, client, db):
-        """A conversion that is also a variant of another conversion still appears."""
-        source = make_machine_model(name="Star Trek", slug="star-trek", year=1991)
-        conv_a = make_machine_model(
-            name="Dark Rider",
-            slug="dark-rider",
-            converted_from=source,
-        )
-        make_machine_model(
-            name="Dark Rider LE",
-            slug="dark-rider-le",
-            converted_from=source,
-            variant_of=conv_a,
-        )
-        resp = client.get("/api/models/")
-        data = resp.json()
-        names = [m["name"] for m in data["items"]]
-        assert "Dark Rider LE" in names
         assert "Dark Rider" in names
         assert "Star Trek" in names
 

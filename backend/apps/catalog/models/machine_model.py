@@ -32,7 +32,6 @@ from apps.provenance.model_bases import (
 from ._autocomplete import manufacturer_year_sublabel
 from .base import CatalogModel
 from .model_relationship import (
-    COLLAPSE_READMITTING_RELATIONSHIP_TYPES,
     SUBORDINATING_RELATIONSHIP_TYPES,
     ModelRelationship,
 )
@@ -514,30 +513,11 @@ class MachineModel(
         )
 
     @classmethod
-    def distinct_machines_q(cls) -> models.Q:
-        """The variant-collapse predicate: non-variants, plus conversions re-admitted.
-
-        The catalog lists at the granularity of distinct machines: cosmetic
-        variants collapse into their parent model, but a conversion or kit —
-        genuinely a different machine — is re-admitted even when it also
-        carries ``variant_of``. Dual-read during the edge-table transition: a
-        legacy ``converted_from`` FK or a ``ModelRelationship`` conversion/kit
-        edge. Single-sourced so the /models list and the title-siblings
-        prefetch can't drift.
+    def non_variant_models_q(cls) -> models.Q:
+        """Some lists in the catalog only show models that are gameplay-distinct.
+        These lists don't show cosmetic variants (``variant_of`` set).
         """
-        # Type set derived from RELATIONSHIP_TYPE_BEHAVIOR — see
-        # first_model_candidates for the forcing-function rationale.
-        conversion_edge = models.Exists(
-            ModelRelationship.objects.filter(
-                machine_model=models.OuterRef("pk"),
-                relationship_type__in=COLLAPSE_READMITTING_RELATIONSHIP_TYPES,
-            )
-        )
-        return (
-            models.Q(variant_of__isnull=True)
-            | models.Q(converted_from__isnull=False)
-            | models.Q(conversion_edge)
-        )
+        return models.Q(variant_of__isnull=True)
 
     @classmethod
     def non_canonical_detail_slugs(cls) -> Iterable[str]:
