@@ -56,12 +56,12 @@ def _edge_claim_key(target_pk: int) -> str:
     """The canonical model_relationship claim_key for a machine target.
 
     Inlined rather than imported from ``make_claim_key`` (migrations must not
-    depend on live app code): identity parts sort alphabetically —
-    ``target_label`` before ``target_machine`` — the label is empty on the
-    machine rung, and an int pk needs no percent-escaping. Locked against the
-    live builder by the migration's test.
+    depend on live app code): the identity is ``target_machine`` alone — the
+    label is a non-identity member and never enters the key — and an int pk
+    needs no percent-escaping. Locked against the live builder by the
+    migration's test.
     """
-    return f"model_relationship|target_label:|target_machine:{target_pk}"
+    return f"model_relationship|target_machine:{target_pk}"
 
 
 def transform_lineage_claims(apps, schema_editor):

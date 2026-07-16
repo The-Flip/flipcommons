@@ -281,7 +281,12 @@ def _make_extractor(
         for mi in member_infos:
             raw = val.get(mi.value_key)
             if mi.is_fk:
-                if raw is None and mi.nullable:
+                # A nullable identity part is None only when the key is
+                # *present* with a null value (validation guarantees identity
+                # keys on every claim). An absent key — a null/corrupt
+                # claim.value — must drop the claim, not extract a null key
+                # that could collide with a legitimate null-identity row.
+                if raw is None and mi.nullable and mi.value_key in val:
                     keys.append(None)
                     continue
                 if type(raw) is not int or raw not in mi.valid_pks:

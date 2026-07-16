@@ -723,6 +723,15 @@ class TestModelRelationshipConstraints:
         with pytest.raises(IntegrityError):
             self._edge(subject, target_label="an unknown game")
 
+    def test_second_label_with_different_wording_rejected(self, subject):
+        """The label rung is a singleton slot keyed by the *slot*, not the
+        wording — only a different-wording second row proves that (the
+        same-wording case above would also violate a wording-inclusive
+        UNIQUE)."""
+        self._edge(subject, target_label="an unknown Gottlieb game")
+        with pytest.raises(IntegrityError):
+            self._edge(subject, target_label="an unidentified Gottlieb")
+
     def test_different_rungs_coexist(self, subject, target):
         self._edge(subject, target_machine=target)
         self._edge(subject, target_label="an unknown game")

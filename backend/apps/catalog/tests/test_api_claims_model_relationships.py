@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from apps.catalog.models import (
     GameplayFeature,
     ModelAbbreviation,
+    ModelRelationship,
     Person,
     RewardType,
     Tag,
@@ -656,6 +657,122 @@ class TestRelationshipEdges:
         resp = _patch(client, pm.slug, {"relationships": []})
         assert resp.status_code == 200, resp.json()
         assert _relationships(resp) == []
+
+    def test_label_reword_supersedes_in_place(self, client, user, pm):
+        """A reworded label is a payload correction on the model's single
+        label slot: same claim_key, same materialized row pk — the citation
+        history stays attached to the edge instead of stranding on a
+        tombstoned one."""
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion",
+                        "target_label": "an unknown Gottlieb game",
+                    }
+                ]
+            },
+        )
+        original = ModelRelationship.objects.get(machine_model=pm)
+
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion",
+                        "target_label": "an unidentified 1960s Gottlieb",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["target_label"] == "an unidentified 1960s Gottlieb"
+
+        row = ModelRelationship.objects.get(machine_model=pm)
+        assert row.pk == original.pk
+
+        # One superseding assert, no tombstone: the reword is a correction,
+        # not a remove+add.
+        latest = ChangeSet.objects.filter(actor=user.actor).order_by("-pk").first()
+        assert latest is not None
+        (claim,) = list(latest.claims.all())
+        assert claim.field_name == "model_relationship"
+        assert claim.value["exists"] is True
+
+    def test_second_label_row_rejected(self, client, user, pm):
+        """A model holds one label slot — two describe-it rows collide on the
+        same claim identity."""
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "copy",
+                        "target_label": "an unknown design",
+                    },
+                    {
+                        "relationship_type": "conversion",
+                        "target_label": "whatever cabinets were available",
+                    },
+                ]
+            },
+        )
+        assert resp.status_code == 422
+        errors = resp.json()["detail"]["field_errors"]
+        assert any("one text-description" in msg for msg in errors.values())
+
+    def test_removed_label_edge_history_shows_current_wording(self, client, user, pm):
+        """A removed label edge stays legible: the tombstone's own value is
+        identity-only (no wording), so the history's old→new derivation must
+        surface the *current* wording from the prior positive claim under the
+        same claim_key — including after a reword."""
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion",
+                        "target_label": "an unknown Gottlieb game",
+                    }
+                ]
+            },
+        )
+        _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion",
+                        "target_label": "an unidentified 1960s Gottlieb",
+                    }
+                ]
+            },
+        )
+        resp = _patch(client, pm.slug, {"relationships": []})
+        assert resp.status_code == 200, resp.json()
+
+        history = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        assert history.status_code == 200
+        newest = history.json()[0]
+        (change,) = newest["changes"]
+        assert change["field_name"] == "model_relationship"
+        assert change["new_value"]["raw"]["exists"] is False
+        assert "target_label" not in change["new_value"]["raw"]
+        assert (
+            change["old_value"]["raw"]["target_label"]
+            == "an unidentified 1960s Gottlieb"
+        )
 
     def test_edit_target_is_tombstone_plus_assert(self, client, user, pm, rock):
         client.force_login(user)

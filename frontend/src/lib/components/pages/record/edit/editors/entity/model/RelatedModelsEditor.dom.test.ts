@@ -291,6 +291,63 @@ describe('RelatedModelsEditor', () => {
     expect(screen.queryByRole('option', { name: 'Medieval Madness' })).not.toBeInTheDocument();
   });
 
+  it('rejects the same machine under two kinds before PATCHing', async () => {
+    // The claim identity is the target alone — the same machine under two
+    // kinds would collide on one edge, so the save is blocked client-side.
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });
+
+    await user.click(screen.getByRole('button', { name: 'Add relationship' }));
+    await user.selectOptions(kindSelects()[0], 'copy');
+    await pickTarget(user, /Attack from Mars/);
+
+    await user.click(screen.getByRole('button', { name: 'Add relationship' }));
+    await user.selectOptions(kindSelects()[1], 'conversion');
+    // Two rows → two search inputs; drive the second row's picker.
+    await user.click(screen.getAllByPlaceholderText('Search models...')[1]);
+    await user.click(await screen.findByRole('option', { name: /Attack from Mars/ }));
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(PATCH).not.toHaveBeenCalled();
+    expect(screen.getByTestId('last-error')).toHaveTextContent(
+      'Two relationships have the same target.',
+    );
+  });
+
+  it('disables the describe-it toggle while a label row exists', async () => {
+    // A model holds one label slot; a second row can't switch to label mode.
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, {
+      props: { initialData: { ...CLEAN, relationships: [KIT_EDGE] } },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Add relationship' }));
+    await user.selectOptions(kindSelects().at(-1) as HTMLSelectElement, 'copy');
+    expect(
+      screen.getByRole('button', {
+        name: 'Not in the catalog, or several machines? Describe it',
+      }),
+    ).toBeDisabled();
+  });
+
+  it('re-enables the describe-it toggle when the label row is removed', async () => {
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, {
+      props: { initialData: { ...CLEAN, relationships: [KIT_EDGE] } },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Add relationship' }));
+    await user.selectOptions(kindSelects().at(-1) as HTMLSelectElement, 'copy');
+
+    // Removing the existing label row frees the slot for the new row.
+    await user.click(screen.getAllByRole('button', { name: 'Remove relationship' })[0]);
+    expect(
+      screen.getByRole('button', {
+        name: 'Not in the catalog, or several machines? Describe it',
+      }),
+    ).toBeEnabled();
+  });
+
   it('disables Add until the new row has a kind and a target', async () => {
     const user = userEvent.setup();
     render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });

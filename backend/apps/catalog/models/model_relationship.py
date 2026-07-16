@@ -58,11 +58,14 @@ class LicenseStatus(models.TextChoices):
 class ModelRelationship(ClaimThroughModel):
     """One typed edge from a MachineModel to a donor/original.
 
-    The claim identity is the target alone (``target_machine`` XOR
-    ``target_label``) — one edge per (model, target). ``relationship_type``
-    and ``license_status`` are payload, so corrections supersede in place and
-    disagreements contest one edge instead of forking two. ``target_label``
-    uses the CharField convention: ``""`` means absent, never NULL.
+    The claim identity is ``target_machine`` alone (nullable): one edge per
+    (model, machine target), plus at most **one** label edge per model — the
+    label's identity is its slot, not its wording, so ``target_label`` is a
+    non-identity member and a reword supersedes the edge in place (same row,
+    citations intact) instead of forking a second edge. ``relationship_type``
+    and ``license_status`` are payload, so corrections likewise supersede in
+    place and disagreements contest one edge. ``target_label`` uses the
+    CharField convention: ``""`` means absent, never NULL.
 
     Existence is controlled by ``"model_relationship"`` relationship claims on
     MachineModel — do not create or delete rows directly.
@@ -73,7 +76,10 @@ class ModelRelationship(ClaimThroughModel):
         subject=SingleSubject("machine_model"),
         members=(
             MemberField("target_machine", identity="target_machine", nullable=True),
-            MemberField("target_label", identity="target_label"),
+            # Non-identity member: authorable, materialized and displayed as
+            # the target, but outside the claim_key — the label slot is the
+            # identity, not the wording.
+            MemberField("target_label"),
         ),
         payload=(
             PayloadField("relationship_type", required=True),
@@ -157,16 +163,19 @@ class ModelRelationship(ClaimThroughModel):
                 condition=models.Q(license_status__in=LicenseStatus.values),
                 name="catalog_modelrelationship_license_status_valid",
             ),
-            # One edge per (model, target): one conditional constraint per
-            # target rung, because the nullable FK makes a single
-            # unconditional constraint useless (NULLs compare distinct).
+            # One edge per (model, machine target) plus one label edge per
+            # model: one conditional constraint per target rung, because the
+            # nullable FK makes a single unconditional constraint useless
+            # (NULLs compare distinct). The label rung is keyed by the slot
+            # alone — the wording is data, not identity — so two label edges
+            # with different wordings still collide.
             models.UniqueConstraint(
                 fields=["machine_model", "target_machine"],
                 condition=models.Q(target_machine__isnull=False),
                 name="catalog_modelrelationship_unique_machine_target",
             ),
             models.UniqueConstraint(
-                fields=["machine_model", "target_label"],
+                fields=["machine_model"],
                 condition=models.Q(target_machine__isnull=True),
                 name="catalog_modelrelationship_unique_label_target",
             ),

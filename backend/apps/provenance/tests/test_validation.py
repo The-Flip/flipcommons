@@ -977,7 +977,6 @@ class TestModelRelationshipClaimShape:
             claim_key = make_claim_key(
                 "model_relationship",
                 target_machine=value.get("target_machine"),
-                target_label=value.get("target_label"),
             )
         return validate_single_relationship_claim(
             subject_model=MachineModel,

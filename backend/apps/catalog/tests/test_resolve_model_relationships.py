@@ -184,8 +184,9 @@ class TestResolveModelRelationships:
             machine_model=subject, target_machine_id=missing_pk
         ).exists()
 
-    def test_claim_key_serializes_null_target_parts(self, subject, target, source):
-        """Every identity part appears in the canonical key, nulls included."""
+    def test_claim_key_is_target_machine_only(self, subject, target, source):
+        """The identity is the machine target alone — the label wording never
+        enters the key (a label edge's key is constant per model)."""
         claim_key, _value = build_relationship_claim(
             "model_relationship",
             {
@@ -194,6 +195,14 @@ class TestResolveModelRelationships:
                 "license_status": "unknown",
             },
         )
-        assert claim_key == (
-            f"model_relationship|target_label:|target_machine:{target.pk}"
+        assert claim_key == f"model_relationship|target_machine:{target.pk}"
+
+        label_key, _value = build_relationship_claim(
+            "model_relationship",
+            {
+                **_identity(label="an unknown Gottlieb game"),
+                "relationship_type": "copy",
+                "license_status": "unknown",
+            },
         )
+        assert label_key == "model_relationship|target_machine:null"

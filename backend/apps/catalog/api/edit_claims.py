@@ -520,20 +520,18 @@ def build_credit_claim_specs(
     return specs
 
 
-class _RelationshipTarget(NamedTuple):
-    """A relationship edge's identity — the target ladder as claim-value parts.
-
-    ``machine_pk`` is ``None`` on the label rung; ``label`` is ``""`` on the
-    machine rung (the ""-as-absent convention the claim schema expects).
-    """
-
-    machine_pk: int | None
-    label: str
+type _RelationshipTarget = int | None
+"""A relationship edge's claim identity: the target machine pk, or ``None``
+for the model's single label slot. The label *wording* is non-identity data —
+see ``_RelationshipPayload``."""
 
 
 class _RelationshipPayload(NamedTuple):
-    """A relationship edge's non-identity axes."""
+    """A relationship edge's non-identity data — everything a correction
+    supersedes in place on the same edge: the label wording (``""`` on the
+    machine rung, per the ""-as-absent convention) plus the two axes."""
 
+    label: str
     relationship_type: str
     license_status: str
 
@@ -593,23 +591,30 @@ def plan_model_relationship_claims(
                     f"Unknown model: {row.target_slug}.",
                 )
                 continue
-        target = _RelationshipTarget(machine_pk, label)
+        target: _RelationshipTarget = machine_pk
         if target in seen:
+            # The identity is the target slot: the same machine under two
+            # kinds, or two describe-it rows, would collide on one claim_key.
             errors.add_field(
                 f"relationships.{row_key}",
-                "Duplicate relationship target.",
+                "Only one text-description relationship per model."
+                if target is None
+                else "Duplicate relationship target.",
             )
             continue
         seen.add(target)
         rows.append(
-            (target, _RelationshipPayload(row.relationship_type, row.license_status))
+            (
+                target,
+                _RelationshipPayload(label, row.relationship_type, row.license_status),
+            )
         )
     errors.raise_if_errors()
 
     desired_by_target = dict(rows)
     current_by_target: dict[_RelationshipTarget, _RelationshipPayload] = {
-        _RelationshipTarget(edge.target_machine_id, edge.target_label): (
-            _RelationshipPayload(edge.relationship_type, edge.license_status)
+        edge.target_machine_id: _RelationshipPayload(
+            edge.target_label, edge.relationship_type, edge.license_status
         )
         for edge in entity.relationships.all()
     }
@@ -618,11 +623,14 @@ def plan_model_relationship_claims(
     for target, payload in desired_by_target.items():
         if current_by_target.get(target) == payload:
             continue  # unchanged edge — no claim
+        # The wording comes from the payload comparison above, so a reworded
+        # label emits an assert under the *same* claim_key and supersedes the
+        # edge in place instead of tombstoning it.
         claim_key, value = build_relationship_claim(
             "model_relationship",
             {
-                "target_machine": target.machine_pk,
-                "target_label": target.label,
+                "target_machine": target,
+                "target_label": payload.label,
                 "relationship_type": payload.relationship_type,
                 "license_status": payload.license_status,
             },
@@ -633,7 +641,7 @@ def plan_model_relationship_claims(
     for target in current_by_target.keys() - desired_by_target.keys():
         claim_key, value = build_relationship_claim(
             "model_relationship",
-            {"target_machine": target.machine_pk, "target_label": target.label},
+            {"target_machine": target},
             exists=False,
         )
         specs.append(

@@ -97,7 +97,8 @@ EXPECTED: dict[str, _ExpectedSchema] = {
     ),
     "location": _ExpectedSchema((_fk("location", Location),), (), {CorporateEntity}),
     # The target-XOR namespace: a nullable FK identity part (key always
-    # present, value may be null), a literal member ("" = absent) and two
+    # present, value may be null), a *non-identity* literal member ("" =
+    # absent; the wording is data on the edge, not the name of it) and two
     # required choices payloads.
     "model_relationship": _ExpectedSchema(
         (
@@ -111,7 +112,6 @@ EXPECTED: dict[str, _ExpectedSchema] = {
             MemberSpec(
                 name="target_label",
                 scalar_type=str,
-                identity="target_label",
                 max_length=300,
             ),
         ),

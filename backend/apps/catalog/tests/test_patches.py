@@ -3789,6 +3789,78 @@ claims:
     assert _edge_rows(machine_model) == set()
 
 
+def test_model_relationship_label_reword_supersedes_across_patches(machine_model):
+    """The label slot is a singleton keyed by the slot, not the wording: a
+    later same-attribution label assert rewords the edge in place — same row
+    pk, one edge — instead of adding a second unresolved-target edge."""
+    _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_label: an unknown Gottlieb game
+          relationship_type: conversion
+          license_status: unknown
+""")
+    original_pk = ModelRelationship.objects.get(machine_model=machine_model).pk
+    report = _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_label: an unidentified 1960s Gottlieb
+          relationship_type: conversion
+          license_status: unknown
+""",
+        patch_id="0002-reword",
+    )
+    assert report.rejected == 0
+    edge = ModelRelationship.objects.get(machine_model=machine_model)
+    assert edge.pk == original_pk
+    assert edge.target_label == "an unidentified 1960s Gottlieb"
+
+
+def test_model_relationship_label_remove_by_stale_wording(machine_model):
+    """``remove:`` by ``target_label`` matches the model's single label slot
+    regardless of wording — a reworded edge is still removed when the remove
+    entry quotes the old text."""
+    _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_label: an unknown Gottlieb game
+          relationship_type: conversion
+          license_status: unknown
+""")
+    _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_label: an unidentified 1960s Gottlieb
+          relationship_type: conversion
+          license_status: unknown
+""",
+        patch_id="0002-reword",
+    )
+    report = _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      remove:
+        model_relationship:
+          - target_label: an unknown Gottlieb game
+""",
+        patch_id="0003-remove",
+    )
+    assert report.rejected == 0
+    assert _edge_rows(machine_model) == set()
+
+
 def test_model_relationship_remove_with_payload_key_rejected(machine_model, rock):
     with pytest.raises(PatchError, match="payload key"):
         _apply(f"""

@@ -91,14 +91,19 @@ type SubjectSpec = SingleSubject | XorSubject
 
 @dataclass(frozen=True, slots=True)
 class MemberField:
-    """One member column of a through-row — the FK or literal that forms identity.
+    """One member column of a through-row — the FK or literal target data.
 
     ``field`` is the through-model column ("theme", "person", "value").
     ``value_key`` is the JSON value-dict key when it differs from ``field``.
-    ``identity`` is the ``claim_key`` identity label. ``lookup_field`` is the FK
-    target lookup field (the target *model* is introspected, never named).
-    ``empty_target`` decides what an empty target-PK set means (see
-    :class:`EmptyTargetPolicy`).
+    ``identity`` is the ``claim_key`` identity label — or ``None`` for a
+    **non-identity member**: still authorable, materialized and displayed as
+    target data, but outside the claim key and the reconcile row-key, so a
+    correction to its value supersedes the same claim (and updates the same
+    row) instead of naming a new one. ``model_relationship.target_label`` is
+    the canonical case: the label's identity is its slot, not its wording.
+    ``lookup_field`` is the FK target lookup field (the target *model* is
+    introspected, never named). ``empty_target`` decides what an empty
+    target-PK set means (see :class:`EmptyTargetPolicy`).
 
     ``nullable`` (FK members only) marks an identity part that may be absent:
     the value key is still always present in the claim value — the *value* may
@@ -132,15 +137,17 @@ class PayloadField:
 
 @dataclass(frozen=True, slots=True)
 class MemberXor:
-    """Exclusivity rule over a spec's identity members: exactly one group present.
+    """Exclusivity rule over a spec's members: exactly one group present.
 
-    Each group is a tuple of member *field* names. A group is "present" when any
-    of its members carries a non-absent value — non-null for an FK member,
+    Each group is a tuple of member *field* names — identity or not; a
+    non-identity member may anchor a rung. A group is "present" when any of
+    its members carries a non-absent value — non-null for an FK member,
     non-empty for a literal member. Exactly one group must be present in every
-    claim (and through-row); the others' members stay absent. This is the
-    resolution-ladder shape (``target_machine`` XOR (``target_manufacturer``
-    and/or ``target_label``)): one fact, expressible at different resolutions,
-    never redundantly at two.
+    positive claim (and through-row); the others' members stay absent — a
+    retraction carries identity keys only, so the rule doesn't apply there.
+    This is the resolution-ladder shape (``target_machine`` XOR
+    ``target_label``): one fact, expressible at different resolutions, never
+    redundantly at two.
 
     Enforced at claim-write time by the relationship validator; the through-model
     must mirror it with a CHECK constraint (behavior-tested per model, same

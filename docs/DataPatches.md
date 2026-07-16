@@ -280,10 +280,10 @@ Rules:
 
 - **Exactly one target key.** `target_machine` plus `target_label` on one member is rejected, as is a member with neither. Don't restate the machine's maker in a label when `target_machine` is set — the model row already knows it.
 - **`license_status` is deliberately explicit** — there is no silent default in patches. Write `unknown` when no source establishes authorization either way; a bootleg is `relationship_type: copy` + `license_status: unlicensed`, and that `unlicensed` must be sourced (see the laundering discussion in the plan doc).
-- **Identity is the target only.** Re-asserting a member with a different `relationship_type`/`license_status` supersedes the old values in place; two members with the same target in one entry are a duplicate and rejected.
+- **Identity is the machine target only; a model holds one label slot.** Re-asserting a machine-target member with a different `relationship_type`/`license_status` supersedes the old values in place; two members with the same target in one entry are a duplicate and rejected. The label edge is keyed by its _slot_, not its wording: a model has at most one `target_label` edge, re-asserting one with different wording rewords that edge in place (same edge, citations intact) and a same-actor label assert in a later patch supersedes the earlier one rather than adding a second edge.
 - **Same-patch create** works for `target_machine` like any FK member — create the model above, reference it below.
 
-`remove:` names the edge by its target only; payload keys are rejected there:
+`remove:` names the edge by its identity; payload keys are rejected there. For a label edge the identity is the slot, so the wording in `remove:` is a human-readable selector only — it matches the model's single label edge regardless of the current wording (a reworded edge is still removed):
 
 ```yaml
 claims:

@@ -142,6 +142,13 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     );
   }
 
+  /** A model holds one describe-it (label) edge — its claim identity is the
+   * slot, not the wording — so a second row can't switch to label mode while
+   * one exists. Removing or converting that row re-enables the toggle. */
+  function labelRowExists(exceptKey: number): boolean {
+    return rows.some((r) => r.key !== exceptKey && isEdge(r.kind) && r.useLabel);
+  }
+
   function addRow() {
     rows = [
       ...rows,
@@ -201,14 +208,20 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};
 
-    // Reject two edges pointing at the same kind+target (license aside).
+    // Reject two edges with the same target (kind and license aside): the
+    // claim identity is the target slot alone, so the same machine under two
+    // kinds — or two describe-it rows, whatever their wording — would collide
+    // on one edge.
     const edges = rows.filter((r) => isEdge(r.kind) && isComplete(r));
-    const dupKeys = edges.map(
-      (r) =>
-        `${r.kind}|${r.useLabel ? '' : r.targetSlug || ''}|${r.useLabel ? r.targetLabel.trim() : ''}`,
-    );
-    if (new Set(dupKeys).size !== dupKeys.length) {
-      onerror('Two relationships have the same kind and target.');
+    const LABEL_SLOT = ' label';
+    const dupKeys = edges.map((r) => (r.useLabel ? LABEL_SLOT : r.targetSlug || ''));
+    const duplicate = dupKeys.find((k, i) => dupKeys.indexOf(k) !== i);
+    if (duplicate !== undefined) {
+      onerror(
+        duplicate === LABEL_SLOT
+          ? 'Only one “describe it” relationship is allowed — combine them into one description.'
+          : 'Two relationships have the same target.',
+      );
       return;
     }
 
@@ -285,7 +298,15 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
               placeholder="Search models..."
             />
             {#if edge}
-              <button type="button" class="toggle-btn" onclick={() => (rows[i].useLabel = true)}>
+              <button
+                type="button"
+                class="toggle-btn"
+                disabled={labelRowExists(row.key)}
+                title={labelRowExists(row.key)
+                  ? 'Only one “describe it” relationship per model — edit the existing description instead.'
+                  : undefined}
+                onclick={() => (rows[i].useLabel = true)}
+              >
                 Not in the catalog, or several machines? Describe it
               </button>
             {/if}

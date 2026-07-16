@@ -202,6 +202,15 @@ describe('hasMeaningfulValue', () => {
     expect(hasMeaningfulValue(0)).toBe(true);
     expect(hasMeaningfulValue(false)).toBe(true);
   });
+
+  it('accepts identity-only relationship tombstones (the narrowed edge shape)', () => {
+    // model_relationship tombstones carry the identity member alone — the
+    // label wording never rides a tombstone. Both target rungs still count
+    // as an assertion (they name which edge was removed), so the change
+    // renders as old → tombstone rather than collapsing to a bare deletion.
+    expect(hasMeaningfulValue({ target_machine: 42, exists: false })).toBe(true);
+    expect(hasMeaningfulValue({ target_machine: null, exists: false })).toBe(true);
+  });
 });
 
 describe('isDeletion', () => {
@@ -273,6 +282,13 @@ describe('simplifyClaimValue', () => {
 
   it('returns null for FK-pk integer values (not human-readable)', () => {
     expect(simplifyClaimValue({ theme: 1, exists: true })).toBeNull();
+  });
+
+  it('returns null for identity-only relationship tombstones (null slot)', () => {
+    // The narrowed label tombstone: one non-exists key whose value is null,
+    // not a string — falls through to the backend display struct.
+    expect(simplifyClaimValue({ target_machine: null, exists: false })).toBeNull();
+    expect(simplifyClaimValue({ target_machine: 42, exists: false })).toBeNull();
   });
 
   it('returns null when exists is missing', () => {
