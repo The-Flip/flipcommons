@@ -142,13 +142,13 @@ The branch is local and unshipped; prod HEAD is data patch 0038; every 0039+ pat
 
 Retheme (a new `relationship_type`) is a clean follow-on — type is payload, orthogonal to this session. These are tripwires, not the feature: they make the toolchain refuse a half-wired new type.
 
-- **Type-behavior exhaustiveness guard.** `first_model_candidates()` ([machine_model.py:468](../../../backend/apps/catalog/models/machine_model.py)) and `distinct_machines_q()` (`:510`) silently default a new type to _not-subordinate / not-readmitted_. Add a per-value classification over `RelationshipType` (`subordinates?`, `readmits_from_collapse?`) with a test that fails on any unclassified value. Payoff: adding `retheme` goes red on both axes until it decides (subordinate=yes, readmit=like-a-variant, per [Re-theme](ModelRelationships.md#re-theme)).
+- **Type-behavior exhaustiveness guard.** `first_model_candidates()` ([machine_model.py](../../../backend/apps/catalog/models/machine_model.py)) silently defaults a new type to _not-subordinate_. Add a per-value classification over `RelationshipType` (`subordinates?`) with a test that fails on any unclassified value. Payoff: adding `retheme` goes red until it decides its subordination (subordinate=yes, per [Rethemes.md](Rethemes.md)).
 - **Exhaustive kind picker.** `KIND_OPTIONS` ([RelatedModelsEditor.svelte:42](../../../frontend/src/lib/components/pages/record/edit/editors/entity/model/RelatedModelsEditor.svelte)) uses a plain annotation — `satisfies` only checks validity, not completeness. Back it with a `Record<RelationshipKind, …>` shape so a new wire kind forces a picker entry.
 
 Phrase tables ([relationship-phrase.ts:28](../../../frontend/src/lib/entities/relationship-phrase.ts)) already force four `Record<EdgeKind, …>` entries per new type — nothing to add.
 
 ## Out of scope
 
-- The `retheme` type itself, its behavior wiring, per-row edge authoring, and the 0007/0008 tag retraction — [Re-theme](ModelRelationships.md#re-theme), plan steps 8–9.
-- Reshaping the subordination/re-admission querysets. Leave them extension-friendly if touched; don't generalize before retheme provides the second behavior.
+- The `retheme` type itself, its behavior wiring, per-row edge authoring, and the 0007/0008 tag retraction — the Retheme PR ([Rethemes.md](Rethemes.md)).
+- Reshaping the subordination queryset. Leave it extension-friendly if touched; don't generalize before retheme actually needs a second behavior.
 - Any filtering/Pages UX for derived concepts — [Articles](Articles.md).
