@@ -220,6 +220,35 @@ class TestEditHistoryMultiUser:
         assert data[0]["changes"][0]["old_value"]["raw"] == 1997
         assert data[0]["changes"][0]["new_value"]["raw"] == 1999
 
+    def test_old_value_is_chronological_even_when_prior_claim_is_not_winner(
+        self, client, user, pm
+    ):
+        """The ``old_value`` contract: the chronologically prior claim under
+        the key, regardless of priority or winning state — history narrates
+        the claim log, not resolution deltas. The two sources are
+        priority-inverted so the chronological prior (newer, low priority)
+        and the resolution winner (older, high priority) differ; a
+        resolution-based ``old_value`` would show 2001 here."""
+        high = make_ingest_source(
+            name="Editorial", source_type="editorial", priority=100
+        )
+        low = make_ingest_source(name="Databases", source_type="database", priority=10)
+        make_claim(pm, "year", 2001, ingest_source=high)
+        make_claim(pm, "year", 1999, ingest_source=low)
+
+        client.force_login(user)
+        client.patch(
+            f"/api/models/{pm.slug}/claims/",
+            data='{"fields": {"year": 1995}}',
+            content_type="application/json",
+        )
+
+        resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        data = _user_changesets(resp)
+        assert len(data) == 1
+        assert data[0]["changes"][0]["old_value"]["raw"] == 1999
+        assert data[0]["changes"][0]["new_value"]["raw"] == 1995
+
 
 @pytest.mark.django_db
 class TestEditHistoryOrdering:

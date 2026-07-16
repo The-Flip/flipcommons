@@ -56,17 +56,22 @@ export function isUnchanged(change: FieldChange): boolean {
 
 /**
  * True when a claim value represents an actual assertion — i.e. not null,
- * undefined, empty string, or a bare retraction marker like `{exists: false}`
- * with no other keys. Used to decide whether to render an `old → new`
- * transition or treat the change as a creation / deletion.
+ * undefined, empty string, or a retraction marker with nothing visible to
+ * say: `{exists: false}` bare, or a tombstone whose remaining keys are all
+ * null/empty (the narrowed label-slot tombstone, whose wording lives on the
+ * chronologically prior claim, surfaced by the backend as `old_value`).
+ * Used to decide whether to render an `old → new` transition or treat the
+ * change as a creation / deletion.
  */
 export function hasMeaningfulValue(v: unknown): boolean {
   if (v === null || v === undefined || v === '') return false;
   if (typeof v === 'object' && !Array.isArray(v)) {
     const obj = v as Record<string, unknown>;
     if (obj.exists === false) {
-      const otherKeys = Object.keys(obj).filter((k) => k !== 'exists');
-      if (otherKeys.length === 0) return false;
+      const visible = Object.entries(obj).filter(
+        ([k, val]) => k !== 'exists' && val !== null && val !== '',
+      );
+      if (visible.length === 0) return false;
     }
   }
   return true;

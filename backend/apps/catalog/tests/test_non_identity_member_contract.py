@@ -244,7 +244,8 @@ class TestDisplay:
         rungs are absent-by-XOR, so display emits no parts and, critically, no
         "missing identity key" error logs. (Edit-history legibility for the
         removed wording is the history renderer's job — it derives the value
-        from the prior positive claim; pinned at the API level in stage 3.)
+        from the chronologically prior claim under the shared claim_key;
+        pinned at the API level in stage 3.)
         """
         with caplog.at_level(logging.ERROR, logger="apps.provenance.display"):
             display = _build_relationship_display(

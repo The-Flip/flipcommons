@@ -203,13 +203,22 @@ describe('hasMeaningfulValue', () => {
     expect(hasMeaningfulValue(false)).toBe(true);
   });
 
-  it('accepts identity-only relationship tombstones (the narrowed edge shape)', () => {
-    // model_relationship tombstones carry the identity member alone — the
-    // label wording never rides a tombstone. Both target rungs still count
-    // as an assertion (they name which edge was removed), so the change
-    // renders as old → tombstone rather than collapsing to a bare deletion.
+  it('accepts a machine-target tombstone (it names which edge was removed)', () => {
+    // model_relationship tombstones carry the identity member alone. A
+    // non-null identity still reads as an assertion, so the change renders
+    // as old → struck-through target.
     expect(hasMeaningfulValue({ target_machine: 42, exists: false })).toBe(true);
-    expect(hasMeaningfulValue({ target_machine: null, exists: false })).toBe(true);
+  });
+
+  it('rejects a tombstone whose identity is all null/empty (the label slot)', () => {
+    // The narrowed label tombstone has nothing visible to say — its wording
+    // arrives as old_value, from the chronologically prior claim — so the
+    // change must classify as a deletion (struck old value + removed
+    // marker), not old → blank.
+    expect(hasMeaningfulValue({ target_machine: null, exists: false })).toBe(false);
+    expect(hasMeaningfulValue({ target_machine: null, target_label: '', exists: false })).toBe(
+      false,
+    );
   });
 });
 
@@ -251,6 +260,30 @@ describe('isDeletion', () => {
     // marker as old_value.raw. That is not a real prior value, so this is
     // a creation, not an edit.
     expect(isDeletion(fc({ exists: false }, 'plasma-dmd'))).toBe(false);
+  });
+
+  it('is true for a label-edge removal (positive claim → null-slot tombstone)', () => {
+    // The narrowed label tombstone carries no wording; the removal renders
+    // as the prior claim's wording struck through plus the removed marker.
+    const old = {
+      target_machine: null,
+      target_label: 'an unknown Gottlieb game',
+      relationship_type: 'conversion',
+      license_status: 'unknown',
+      exists: true,
+    };
+    expect(isDeletion(fc(old, { target_machine: null, exists: false }))).toBe(true);
+  });
+
+  it('is false for a machine-edge removal (the tombstone names its target)', () => {
+    const old = {
+      target_machine: 42,
+      target_label: '',
+      relationship_type: 'copy',
+      license_status: 'unknown',
+      exists: true,
+    };
+    expect(isDeletion(fc(old, { target_machine: 42, exists: false }))).toBe(false);
   });
 });
 

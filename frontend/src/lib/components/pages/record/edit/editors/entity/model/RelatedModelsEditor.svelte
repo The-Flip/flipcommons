@@ -15,6 +15,7 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   import type { ModelRelationshipSchema } from '$lib/api/schema';
   import {
     machineTargetText,
+    type EdgeKind,
     type LicenseStatus,
     type RelationshipKind,
   } from '$lib/entities/relationship-phrase';
@@ -33,8 +34,16 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
 
   let { initialData, slug, onsaved, onerror }: SectionEditorProps<RelatedModelsModel> = $props();
 
-  const EDGE_KINDS = ['copy', 'conversion', 'conversion_kit'] as const;
-  type EdgeKind = (typeof EDGE_KINDS)[number];
+  // Completeness-forced over the wire union, like KIND_LABELS below: a new
+  // edge kind is a build error here until the editor classifies it as an
+  // edge row — otherwise isEdge() would silently exclude it from the save
+  // payload while the picker still offered it.
+  const EDGE_KIND_SET: Record<EdgeKind, true> = {
+    copy: true,
+    conversion: true,
+    conversion_kit: true,
+  };
+  const EDGE_KINDS = Object.keys(EDGE_KIND_SET) as readonly EdgeKind[];
   const SINGLE_KINDS = ['variant', 'remake'] as const;
 
   // Phrase-style labels so a row reads like its reader phrasing: "Copy of
@@ -220,7 +229,7 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     // kinds — or two describe-it rows, whatever their wording — would collide
     // on one edge.
     const edges = rows.filter((r) => isEdge(r.kind) && isComplete(r));
-    const LABEL_SLOT = ' label';
+    const LABEL_SLOT = ' label';
     const dupKeys = edges.map((r) => (r.useLabel ? LABEL_SLOT : r.targetSlug || ''));
     const duplicate = dupKeys.find((k, i) => dupKeys.indexOf(k) !== i);
     if (duplicate !== undefined) {

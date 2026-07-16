@@ -10,6 +10,7 @@ from django.contrib.auth import get_user_model
 
 from apps.catalog.models import (
     GameplayFeature,
+    MachineModel,
     ModelAbbreviation,
     ModelRelationship,
     Person,
@@ -731,9 +732,12 @@ class TestRelationshipEdges:
 
     def test_removed_label_edge_history_shows_current_wording(self, client, user, pm):
         """A removed label edge stays legible: the tombstone's own value is
-        identity-only (no wording), so the history's old→new derivation must
-        surface the *current* wording from the prior positive claim under the
-        same claim_key — including after a reword."""
+        identity-only (no wording), so the history's old→new derivation
+        surfaces the *chronologically prior* claim's wording under the same
+        claim_key. Single-actor (as here), that is the current wording even
+        after a reword-then-remove-by-old-wording; for the priority-inverted
+        case where chronology and resolution diverge, see
+        ``test_removed_label_history_is_chronological_not_resolved``."""
         client.force_login(user)
         _patch(
             client,
@@ -772,6 +776,66 @@ class TestRelationshipEdges:
         assert (
             change["old_value"]["raw"]["target_label"]
             == "an unidentified 1960s Gottlieb"
+        )
+
+    def test_removed_label_history_is_chronological_not_resolved(
+        self, client, user, pm
+    ):
+        """``old_value`` is the *chronologically* prior claim under the key,
+        not the pre-change resolved winner — the same edit-log semantics every
+        field has, now load-bearing for label removals since the tombstone
+        itself carries no wording. The two sources are priority-inverted so
+        the chronological prior (the low-priority, newer wording) and the
+        resolution winner (the high-priority, older wording) genuinely differ:
+        a resolution-based history would show the other value."""
+        from apps.catalog.resolve import resolve_relationship
+        from apps.provenance.claims import build_relationship_claim
+        from apps.provenance.test_factories import make_ingest_source
+
+        high = make_ingest_source(
+            name="Editorial", source_type="editorial", priority=100
+        )
+        low = make_ingest_source(name="IPDB", source_type="database", priority=10)
+
+        def mint_label(source, wording):
+            claim_key, value = build_relationship_claim(
+                "model_relationship",
+                {
+                    "target_machine": None,
+                    "target_label": wording,
+                    "relationship_type": "conversion",
+                    "license_status": "unknown",
+                },
+            )
+            make_claim(
+                pm,
+                "model_relationship",
+                value,
+                ingest_source=source,
+                claim_key=claim_key,
+            )
+
+        mint_label(high, "the winning wording")
+        mint_label(low, "the newer but losing wording")
+        resolve_relationship(MachineModel, "model_relationship", subject_ids={pm.pk})
+
+        # Pre-removal, resolution materializes the high-priority wording —
+        # the chronological prior is a resolution *loser*.
+        edge = ModelRelationship.objects.get(machine_model=pm)
+        assert edge.target_label == "the winning wording"
+
+        client.force_login(user)
+        resp = _patch(client, pm.slug, {"relationships": []})
+        assert resp.status_code == 200, resp.json()
+
+        history = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        newest = history.json()[0]
+        (change,) = newest["changes"]
+        assert change["new_value"]["raw"]["exists"] is False
+        # Chronology over resolution: the low-priority claim is newer, so it —
+        # not the materialized winner — is the removal's old value.
+        assert (
+            change["old_value"]["raw"]["target_label"] == "the newer but losing wording"
         )
 
     def test_edit_target_is_tombstone_plus_assert(self, client, user, pm, rock):

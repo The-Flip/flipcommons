@@ -212,7 +212,13 @@ class FieldChangeSchema(Schema):
     # value is JSON null.
     old_value: ClaimValueSchema | None = Field(
         None,
-        description="The previous value, or null when there was no prior value.",
+        description=(
+            "The immediately preceding claim value for the same claim key in "
+            "chronological claim-log order, regardless of actor, priority, "
+            "active state or winning state — NOT the previously "
+            "resolved/materialized catalog value. Null when there was no "
+            "prior claim."
+        ),
     )
     new_value: ClaimValueSchema = Field(
         description="The new value asserted by this change."
