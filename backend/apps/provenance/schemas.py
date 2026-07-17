@@ -182,6 +182,12 @@ class FieldChangeCitationSchema(Schema):
     locator: str = Field(
         description="Specific location within the source, such as a page or section."
     )
+    quote: str = Field(
+        description=(
+            "Verbatim excerpt from the source backing the claim, or an empty "
+            "string when none was recorded."
+        )
+    )
     slug: str | None = Field(
         None,
         description=(

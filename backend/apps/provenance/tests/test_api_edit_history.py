@@ -316,7 +316,12 @@ class TestEditHistoryCitations:
             url="https://toybook.com/wonderland/",
             link_type="reference",
         )
-        cite_claim(claim, citation_source=src, locator="para. 2")
+        cite_claim(
+            claim,
+            citation_source=src,
+            locator="para. 2",
+            quote="A landmark of the era.",
+        )
 
         resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
         assert resp.status_code == 200
@@ -326,6 +331,7 @@ class TestEditHistoryCitations:
         assert cit["author"] == "Ryan Vincent"
         assert cit["year"] == 2024
         assert cit["locator"] == "para. 2"
+        assert cit["quote"] == "A landmark of the era."
         # Attached evidence has no inline marker, so no slug.
         assert cit["slug"] is None
         assert [link["url"] for link in cit["links"]] == [

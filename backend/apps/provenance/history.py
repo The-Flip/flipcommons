@@ -129,6 +129,7 @@ def _citation_schema(
         author=source.author,
         year=source.year,
         locator=inst.locator,
+        quote=inst.quote,
         slug=slug,
         links=[
             CitationLinkSchema(
