@@ -32,7 +32,6 @@
     save: saveFn,
     onsaved,
     onerror,
-    ondirtychange = () => {},
   }: SectionEditorProps<InitialData> & { save: SaveFn } = $props();
 
   const original = untrack(() => ({
@@ -43,17 +42,11 @@
   let options = $state<SystemEditOption[]>([]);
   let dirty = $derived(Object.keys(diffScalarFields(fields, original)).length > 0);
 
+  export { dirty };
+
   $effect(() => {
     fetchTechnologySubgenerationOptions().then((opts) => (options = opts));
   });
-
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

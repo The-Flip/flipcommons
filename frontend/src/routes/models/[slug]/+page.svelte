@@ -23,7 +23,11 @@
   const richTextState = createRichTextAccordionState();
 
   let hasRelationships = $derived(
-    !!model.title || modelLineageSections(model).length > 0 || model.title_models.length > 1,
+    !!model.title ||
+      modelLineageSections(model).length > 0 ||
+      (model.relationships?.length ?? 0) > 0 ||
+      (model.inbound_relationships?.length ?? 0) > 0 ||
+      model.title_models.length > 1,
   );
   let hasTechnology = $derived(
     !!model.technology_generation ||
@@ -93,6 +97,8 @@
         models={model.title_models}
         heading="Other Models In Title"
         excludeSlug={model.variant_of?.public_id ?? model.slug}
+        subjectManufacturer={model.manufacturer?.name ?? null}
+        subjectYear={model.year ?? null}
         inline
       />
     </AccordionSection>

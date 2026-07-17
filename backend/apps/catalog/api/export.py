@@ -171,6 +171,27 @@ class CreditExportSchema(Schema):
     role: str = PydanticField(description="Slug of the credit role (e.g. `design`).")
 
 
+class ModelRelationshipExportSchema(Schema):
+    """A typed edge to a donor/original machine, at any target resolution."""
+
+    relationship_type: str = PydanticField(
+        description="Edge type: `conversion`, `conversion_kit` or `copy`."
+    )
+    license_status: str = PydanticField(
+        description="Authorization status: `licensed`, `unlicensed` or `unknown`."
+    )
+    target_machine: str | None = PydanticField(
+        description="Slug of the target machine, when fully resolved; else null."
+    )
+    target_label: str = PydanticField(
+        description=(
+            "Free-text target descriptor when the target isn't seeded "
+            '(e.g. "several Gottlieb EM models"); empty when target_machine '
+            "is set."
+        )
+    )
+
+
 # Implementation note (kept out of the public schema description below): we emit
 # the description as source text, not rendered HTML — rendering resolves the
 # inline [[type:id]] entity links per row, which is a query storm at bulk scale.
@@ -316,6 +337,11 @@ def _relation_doc(key: str, rel: RelationSpec) -> str:
     label = key.replace("_", " ")
     if rel.shape == "credits":
         return "Production credits, as person-slug / role-slug pairs."
+    if rel.shape == "model_relationships":
+        return (
+            "Typed relationships to donor/original machines "
+            "(copies, conversions, conversion kits)."
+        )
     if rel.shape == "strings":
         return f"List of {label}."
     return f"Slugs of the associated {label}."
@@ -349,8 +375,12 @@ def _build_schema(spec: ExportSpec) -> type[EntityExportSchema]:
                 ),
             ),
         )
+    structured_items: dict[str, type[Schema]] = {
+        "credits": CreditExportSchema,
+        "model_relationships": ModelRelationshipExportSchema,
+    }
     for key, rel in spec.relations.items():
-        item: Any = CreditExportSchema if rel.shape == "credits" else str
+        item: Any = structured_items.get(rel.shape, str)
         fields[key] = (list[item], PydanticField(description=_relation_doc(key, rel)))
     for key, dfield in spec.derived.items():
         fields[key] = (dfield.py_type, PydanticField(description=dfield.description))
@@ -421,6 +451,18 @@ def _serialize_relation(obj: CatalogModel, rel: RelationSpec) -> list[Any]:
         return [r.value for r in rows]
     if rel.shape == "credits":
         return [{"person": c.person.public_id, "role": c.role.public_id} for c in rows]
+    if rel.shape == "model_relationships":
+        return [
+            {
+                "relationship_type": r.relationship_type,
+                "license_status": r.license_status,
+                "target_machine": (
+                    r.target_machine.public_id if r.target_machine else None
+                ),
+                "target_label": r.target_label,
+            }
+            for r in rows
+        ]
     raise ValueError(f"Unknown relation shape: {rel.shape!r}")
 
 
@@ -628,6 +670,11 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
                 "abbreviations": _rel("abbreviations", "strings"),
                 "credits": _rel(
                     "credits", "credits", "credits__person", "credits__role"
+                ),
+                "model_relationships": _rel(
+                    "relationships",
+                    "model_relationships",
+                    "relationships__target_machine",
                 ),
             },
             derived={

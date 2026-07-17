@@ -38,6 +38,18 @@ describe('SectionEditorHost', () => {
     expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
   });
 
+  it('gates Save on the editor dirty state', async () => {
+    const user = userEvent.setup();
+    render(SectionEditorHostFixture);
+
+    await user.click(screen.getByRole('button', { name: 'Open overview' }));
+    // A clean editor has nothing to save.
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Make dirty' }));
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  });
+
   it('clears editingKey when the editor reports onsaved (Save flow)', async () => {
     const user = userEvent.setup();
     render(SectionEditorHostFixture);
@@ -45,6 +57,7 @@ describe('SectionEditorHost', () => {
     await user.click(screen.getByRole('button', { name: 'Open overview' }));
     expect(screen.getByTestId('editing-key')).toHaveTextContent('overview');
 
+    await user.click(screen.getByRole('button', { name: 'Make dirty' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(screen.getByTestId('editing-key')).toHaveTextContent('none');
@@ -56,6 +69,7 @@ describe('SectionEditorHost', () => {
     render(SectionEditorHostFixture);
 
     await user.click(screen.getByRole('button', { name: 'Open features' }));
+    await user.click(screen.getByRole('button', { name: 'Make dirty' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(screen.getByText('save failed for features')).toBeInTheDocument();

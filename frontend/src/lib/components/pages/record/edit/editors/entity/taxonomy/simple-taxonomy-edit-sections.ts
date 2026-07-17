@@ -11,6 +11,7 @@ export const SIMPLE_TAXONOMY_EDIT_SECTIONS: SimpleTaxonomyEditSectionDef[] = [
     label: 'Name',
     showCitation: true,
     showMixedEditWarning: false,
+    usesSectionEditorForm: true,
   },
   {
     key: 'description',
@@ -18,6 +19,7 @@ export const SIMPLE_TAXONOMY_EDIT_SECTIONS: SimpleTaxonomyEditSectionDef[] = [
     label: 'Description',
     showCitation: false,
     showMixedEditWarning: false,
+    usesSectionEditorForm: true,
   },
   {
     key: 'display-order',
@@ -25,6 +27,7 @@ export const SIMPLE_TAXONOMY_EDIT_SECTIONS: SimpleTaxonomyEditSectionDef[] = [
     label: 'Display order',
     showCitation: false,
     showMixedEditWarning: false,
+    usesSectionEditorForm: true,
   },
 ];
 

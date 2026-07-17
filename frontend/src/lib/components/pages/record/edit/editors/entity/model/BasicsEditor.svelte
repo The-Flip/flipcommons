@@ -38,7 +38,6 @@
     slug,
     onsaved,
     onerror,
-    ondirtychange = () => {},
     slim = false,
   }: SectionEditorProps<BasicsModel> & { slim?: boolean } = $props();
 
@@ -93,13 +92,7 @@
     });
   });
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

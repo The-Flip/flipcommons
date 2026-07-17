@@ -39,10 +39,6 @@
     sections?: SimpleTaxonomyEditSectionDef[];
     children: Snippet;
   } = $props();
-
-  let sections = $derived(
-    sectionsProp.map((section) => ({ ...section, usesSectionEditorForm: true })),
-  );
 </script>
 
 <TaxonomyDetailBaseLayout
@@ -52,11 +48,11 @@
   {basePath}
   {parentHref}
   {breadcrumbs}
-  {sections}
+  sections={sectionsProp}
   {deleteHref}
   {createChild}
 >
-  {#snippet editor(key: SimpleTaxonomyEditSectionKey, { ref, onsaved, onerror, ondirtychange })}
+  {#snippet editor(key: SimpleTaxonomyEditSectionKey, { ref, onsaved, onerror })}
     <SimpleTaxonomyEditorSwitch
       sectionKey={key}
       initialData={profile}
@@ -65,7 +61,6 @@
       bind:editorRef={ref.current}
       {onsaved}
       {onerror}
-      {ondirtychange}
     />
   {/snippet}
   {@render children()}

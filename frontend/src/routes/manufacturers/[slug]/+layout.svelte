@@ -252,7 +252,7 @@
     sections={MANUFACTURER_EDIT_SECTIONS}
     switcherItems={editSections}
   >
-    {#snippet editor(key, { ref, onsaved, onerror, ondirtychange })}
+    {#snippet editor(key, { ref, onsaved, onerror })}
       <ManufacturerEditorSwitch
         sectionKey={key}
         initialData={mfr}
@@ -260,7 +260,6 @@
         bind:editorRef={ref.current}
         {onsaved}
         {onerror}
-        {ondirtychange}
       />
     {/snippet}
   </SectionEditorHost>

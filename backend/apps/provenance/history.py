@@ -129,6 +129,7 @@ def _citation_schema(
         author=source.author,
         year=source.year,
         locator=inst.locator,
+        quote=inst.quote,
         slug=slug,
         links=[
             CitationLinkSchema(
@@ -167,11 +168,19 @@ def _field_change_citations(
     return result
 
 
-def _prior_value(claim: Claim, chain: Sequence[Claim]) -> object | None:
+def _chronological_prior_claim_value(
+    claim: Claim, chain: Sequence[Claim]
+) -> object | None:
     """Return the value of the claim immediately preceding ``claim`` in ``chain``.
 
     ``chain`` is ordered newest-first by ``(-created_at, -pk)``; the prior
-    claim is the entry immediately after ``claim`` in that ordering.
+    claim is the entry immediately after ``claim`` in that ordering —
+    **chronological claim-log order**, regardless of actor, priority, active
+    state or winning state. This is deliberately not the previously
+    resolved/materialized value: edit history narrates the claim log, and a
+    priority-inverted prior claim (newer but out-ranked) is still what
+    ``old_value`` shows. Pinned by
+    ``test_old_value_is_chronological_even_when_prior_claim_is_not_winner``.
     Returns ``None`` if ``claim`` is at the tail of the chain or absent
     from it.
     """
@@ -222,7 +231,9 @@ def build_changes(
 
     changes: list[FieldChangeSchema] = []
     for claim in own:
-        prior = _prior_value(claim, history_by_key.get(claim.claim_key, []))
+        prior = _chronological_prior_claim_value(
+            claim, history_by_key.get(claim.claim_key, [])
+        )
         old_value = (
             claim_value(model, claim.field_name, prior, ctx)
             if prior is not None

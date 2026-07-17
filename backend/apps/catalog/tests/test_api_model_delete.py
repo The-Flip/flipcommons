@@ -40,7 +40,6 @@ def _make_model(
     slug: str,
     *,
     variant_of: MachineModel | None = None,
-    converted_from: MachineModel | None = None,
     remake_of: MachineModel | None = None,
 ) -> MachineModel:
     label = slug.replace("-", " ").title()
@@ -50,7 +49,6 @@ def _make_model(
         slug=slug,
         status="active",
         variant_of=variant_of,
-        converted_from=converted_from,
         remake_of=remake_of,
     )
     make_claim(m, "name", label, ingest_source=bootstrap_source)
@@ -199,17 +197,58 @@ class TestDeleteBlocked:
         assert len(blocked) == 1
         assert blocked[0]["slug"] == "other-variant"
 
-    def test_converted_from_referrer_blocks(self, client, user, bootstrap_source):
+    def test_inbound_relationship_edge_blocks(self, client, user, bootstrap_source):
+        # The edge row itself has no lifecycle, so the PROTECT pass skips it —
+        # but the edge belongs to a different *active* model, whose page would
+        # link a 404 if the target vanished. The usage-blocker channel walks
+        # through the edge to that owning source model, exactly like Tag's
+        # machine_models blocker — preserving the referential semantics the
+        # retired converted_from FK enforced.
+        from apps.catalog.models import ModelRelationship
+
         t = _make_title(bootstrap_source, "source")
         source = _make_model(bootstrap_source, t, "source-game")
         t2 = _make_title(bootstrap_source, "conv")
-        _make_model(bootstrap_source, t2, "conv-game", converted_from=source)
+        conv = _make_model(bootstrap_source, t2, "conv-game")
+        ModelRelationship.objects.create(
+            machine_model=conv,
+            target_machine=source,
+            relationship_type="conversion",
+            license_status="unknown",
+        )
         client.force_login(user)
 
         resp = _post_delete(client, "source-game")
         assert resp.status_code == 422
         blocked = resp.json()["blocked_by"]
-        assert any(b["relation"] == "converted_from" for b in blocked)
+        assert any(
+            b["relation"] == "inbound_relationship_sources" and b["slug"] == "conv-game"
+            for b in blocked
+        )
+
+    def test_soft_deleted_source_edge_does_not_block(
+        self, client, user, bootstrap_source
+    ):
+        # Usage blockers count *active* referrers only: once the source model
+        # is itself soft-deleted, its edge no longer pins the target.
+        from apps.catalog.models import ModelRelationship
+
+        t = _make_title(bootstrap_source, "source")
+        source = _make_model(bootstrap_source, t, "source-game")
+        t2 = _make_title(bootstrap_source, "conv")
+        conv = _make_model(bootstrap_source, t2, "conv-game")
+        ModelRelationship.objects.create(
+            machine_model=conv,
+            target_machine=source,
+            relationship_type="conversion",
+            license_status="unknown",
+        )
+        conv.status = "deleted"
+        conv.save(update_fields=["status"])
+        client.force_login(user)
+
+        resp = _post_delete(client, "source-game")
+        assert resp.status_code == 200
 
     def test_remake_of_referrer_blocks(self, client, user, bootstrap_source):
         t = _make_title(bootstrap_source, "og")

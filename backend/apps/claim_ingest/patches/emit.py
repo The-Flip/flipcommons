@@ -62,7 +62,7 @@ from apps.provenance.models import (
     Source,
     get_claim_fields,
 )
-from apps.provenance.validation import get_relationship_schema
+from apps.provenance.validation import RelationshipSchema, get_relationship_schema
 
 type RelFieldsByModel = dict[type[LinkableClaimModel], set[Namespace]]
 """Mutable accumulator of relationship namespaces touched per model class, built
@@ -271,14 +271,14 @@ def _emit_direct(
 
 
 class _PayloadSlot(NamedTuple):
-    """A single non-identity scalar a counted FK member carries.
+    """A single non-identity scalar a relationship member carries.
 
-    Surfaced from the schema's lone non-identity, non-``display_key`` value-key so
-    nothing here names ``count``. The one-key ``{public_id: value}`` authoring form
-    encodes exactly one extra value, so only a single-FK relationship with exactly
-    one such slot yields a ``_PayloadSlot`` — today just gameplay_feature.count.
-    A relationship with two (media_attachment) is rejected upstream in
-    ``_relationship_member_spec`` before any slot is built, so this stays singular.
+    Surfaced from a schema non-identity, non-``display_key`` value-key so nothing
+    here names ``count`` or ``relationship_type``. Two authoring forms build one:
+    the one-key ``{public_id: value}`` form (a single-FK relationship with exactly
+    one slot — gameplay_feature.count; media_attachment's two are rejected upstream
+    in ``_relationship_member_spec``), and the dict-member form
+    (:class:`_DictMemberSpec`), whose explicit keys carry any number of slots.
     """
 
     value_key: ClaimValueKey  # the value-dict key carrying the payload (``spec.name``)
@@ -288,6 +288,14 @@ class _PayloadSlot(NamedTuple):
     # ``MinValueValidator``), or ``None`` if unbounded. Enforced at plan time so an
     # out-of-range value is a clear ``PatchError``, not a deferred ``IntegrityError``.
     min_value: int | None
+    # Whether a positive (assert) claim must author this slot — schema
+    # ``required`` (model_relationship's type/status). Always False for the
+    # one-key form's slot (``count`` is optional).
+    required: bool = False
+    # String-slot bounds: the allowed vocabulary (Django ``choices``) and the
+    # CharField length bound, both enforced at plan time. ``None`` when unbounded.
+    choices: tuple[str, ...] | None = None
+    max_length: int | None = None
 
 
 class _FkMemberSpec(NamedTuple):
@@ -341,11 +349,44 @@ class _MemberSlotRef(NamedTuple):
     ref: PublicId
 
 
+class _DictMemberSpec(NamedTuple):
+    """Member authored as a mapping of schema value-keys — the XOR-identity form.
+
+    Selected when the schema declares ``xor_groups`` (today only
+    ``model_relationship``): the bare-string and one-key mapping forms can't
+    express an identity with alternative slots (machine XOR label) plus
+    independent payload keys. Authored as an explicit-key mapping, e.g.::
+
+        model_relationship:
+          - target_machine: galaxie
+            relationship_type: conversion_kit
+            license_status: licensed
+          - target_label: several Gottlieb EM models
+            relationship_type: conversion_kit
+
+    Exactly one XOR group's slots may be authored (the others are filled with
+    their absence value — ``null`` for an FK slot, ``""`` for a literal slot).
+    Required payload slots are mandatory on assert; every payload key is
+    rejected on ``remove:`` (a removal names an edge by its target identity
+    only). ``fk_slots``/``literal_slots`` reuse the single-slot spec records so
+    resolution shares ``_resolve_committed_slot``/``_resolve_member_slots``
+    with the credit path.
+    """
+
+    fk_slots: tuple[_FkMemberSpec, ...]
+    literal_slots: tuple[_StringMemberSpec, ...]
+    payload_slots: tuple[_PayloadSlot, ...]
+    xor_groups: tuple[tuple[ClaimValueKey, ...], ...]
+
+
 # Closed discriminated union: an FK member never has a display key, a string
 # member never has a target model, a multi-FK member carries an ordered slot
-# tuple — modelled so the illegal combinations are unrepresentable rather than
+# tuple, a dict member carries per-kind slot tuples plus its XOR groups —
+# modelled so the illegal combinations are unrepresentable rather than
 # guarded by nullable sentinels.
-type _RelationshipMemberSpec = _FkMemberSpec | _StringMemberSpec | _MultiFkMemberSpec
+type _RelationshipMemberSpec = (
+    _FkMemberSpec | _StringMemberSpec | _MultiFkMemberSpec | _DictMemberSpec
+)
 
 
 def _relationship_member_spec(
@@ -375,30 +416,27 @@ def _relationship_member_spec(
             f"{entry.ref}: relationship {namespace!r} is not valid on "
             f"{model_class.__name__}"
         )
-    identity_specs = [s for s in schema.value_keys if s.identity is not None]
-    # Non-identity slots split in two: a ``display_key`` (derived from the member
-    # itself, e.g. alias_display) is never authored separately, so exclude it. What
-    # remains is independently-authored payload. Two real schemas have it:
+    # An XOR-identity schema takes the explicit-key dict form; its alternative
+    # slots and payload keys don't fit the positional forms below.
+    if schema.xor_groups is not None:
+        return _dict_member_spec(schema, namespace, entry)
+    member_specs = schema.members
+    # Payload splits in two: a display_key target (derived from the member
+    # itself, e.g. alias_display) is never authored separately, so exclude it.
+    # What remains is independently-authored payload. Two real schemas have it:
     # gameplay_feature (one slot, ``count`` — patch-authorable below) and
     # media_attachment (two slots, ``category`` + ``is_primary`` — rejected by the
     # guards below; media is authored through the media API, not data patches).
-    display_keys: set[ClaimValueKey] = {
-        s.display_key for s in schema.value_keys if s.display_key is not None
-    }
-    payload_specs = [
-        s
-        for s in schema.value_keys
-        if s.identity is None and s.name not in display_keys
-    ]
+    payload_specs = [p for p in schema.payload if p.name not in schema.display_targets]
     # A payload slot is authored only via the one-key ``{public_id: value}`` form,
     # which is also how a multi-FK identity is authored — so payload is exclusive to
     # a single-FK relationship, and that form encodes exactly one extra value. Reject
     # every other shape loudly here rather than silently dropping the slot, so the
     # single-FK branch below can read ``payload_specs[0]`` knowing it is the only one.
-    is_single_fk = len(identity_specs) == 1 and identity_specs[0].fk_target is not None
+    is_single_fk = len(member_specs) == 1 and member_specs[0].fk_target is not None
     if payload_specs and not is_single_fk:
         raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} carries non-identity "
+            f"{entry.ref}: relationship {namespace!r} carries payload "
             f"slot(s) {[s.name for s in payload_specs]!r} on a shape that has "
             f"no authoring syntax for them (unsupported)"
         )
@@ -408,15 +446,15 @@ def _relationship_member_spec(
         # syntax at all — not "use one slot", but "not patch-authorable".
         raise PatchError(
             f"{entry.ref}: relationship {namespace!r} carries "
-            f"{len(payload_specs)} non-identity slots "
+            f"{len(payload_specs)} payload slots "
             f"({[s.name for s in payload_specs]!r}); the patch member syntax "
             f"encodes at most one, so it is not patch-authorable"
         )
-    if len(identity_specs) >= 2:
-        # A multi-key relationship is authorable only when every identity slot is
+    if len(member_specs) >= 2:
+        # A multi-key relationship is authorable only when every member slot is
         # an FK (the one-key ``{a: b}`` mapping form maps public_ids onto slots).
         # A mixed FK/non-FK multi-key identity has no authoring syntax yet.
-        if not all(s.fk_target is not None for s in identity_specs):
+        if not all(s.fk_target is not None for s in member_specs):
             raise PatchError(
                 f"{entry.ref}: relationship {namespace!r} has a multi-key identity "
                 f"that is not all-FK (unsupported)"
@@ -424,15 +462,15 @@ def _relationship_member_spec(
         return _MultiFkMemberSpec(
             slots=tuple(
                 _FkMemberSpec(value_key=s.name, target_model=s.fk_target.model)
-                for s in identity_specs
+                for s in member_specs
                 if s.fk_target is not None  # narrowing; guaranteed by the check above
             )
         )
-    if not identity_specs:
+    if not member_specs:
         raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} has no identity key (unsupported)"
+            f"{entry.ref}: relationship {namespace!r} has no member key (unsupported)"
         )
-    spec = identity_specs[0]
+    spec = member_specs[0]
     if spec.fk_target is not None:
         payload = (
             _PayloadSlot(
@@ -463,6 +501,62 @@ def _relationship_member_spec(
     raise PatchError(
         f"{entry.ref}: relationship {namespace!r} has a non-FK, non-string "
         f"identity ({spec.scalar_type.__name__}) — unsupported"
+    )
+
+
+def _dict_member_spec(
+    schema: RelationshipSchema,
+    namespace: Namespace,
+    entry: PatchEntry,
+) -> _DictMemberSpec:
+    """Build the dict-form member spec from an ``xor_groups`` schema.
+
+    Classification keys off the schema's structural member/payload split and
+    declared slot properties (``fk_target``, ``choices``, ``required``), never
+    a model name — a future XOR-identity namespace lights up with no changes
+    here. ``display_key`` targets are derived, never authored, so they yield
+    no slot.
+    """
+    assert schema.xor_groups is not None
+    fk_slots: list[_FkMemberSpec] = []
+    literal_slots: list[_StringMemberSpec] = []
+    payload_slots: list[_PayloadSlot] = []
+    for m in schema.members:
+        if m.fk_target is not None:
+            fk_slots.append(
+                _FkMemberSpec(value_key=m.name, target_model=m.fk_target.model)
+            )
+            continue
+        if m.scalar_type is not str or m.max_length is None:
+            raise PatchError(
+                f"{entry.ref}: relationship {namespace!r} member slot "
+                f"{m.name!r} is neither an FK nor a bounded string "
+                f"(unsupported)"
+            )
+        literal_slots.append(
+            _StringMemberSpec(
+                value_key=m.name, max_length=m.max_length, display_key=None
+            )
+        )
+    for p in schema.payload:
+        if p.name in schema.display_targets:
+            continue
+        payload_slots.append(
+            _PayloadSlot(
+                value_key=p.name,
+                scalar_type=p.scalar_type,
+                nullable=p.nullable,
+                min_value=p.min_value,
+                required=p.required,
+                choices=p.choices,
+                max_length=p.max_length,
+            )
+        )
+    return _DictMemberSpec(
+        fk_slots=tuple(fk_slots),
+        literal_slots=tuple(literal_slots),
+        payload_slots=tuple(payload_slots),
+        xor_groups=schema.xor_groups,
     )
 
 
@@ -511,7 +605,7 @@ def _unpack_fk_member(
 def _coerce_payload_value(
     payload: _PayloadSlot,
     raw: object,
-    public_id: str,
+    member_label: str,
     namespace: Namespace,
     entry: PatchEntry,
 ) -> IdentityPartValue:
@@ -520,12 +614,15 @@ def _coerce_payload_value(
     Returns ``None`` for an explicit ``null`` on a nullable slot (the caller omits
     the key, so the resolver writes NULL). ``bool`` is rejected where an ``int`` is
     expected — YAML ``true``/``false`` are ``int`` subclasses but never a count.
+    A string value is checked against the slot's ``choices`` vocabulary and
+    ``max_length`` when declared, so an out-of-vocab value is a clear
+    ``PatchError`` at plan time rather than a deferred write-time rejection.
     """
     if raw is None:
         if payload.nullable:
             return None
         raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} member {public_id!r} "
+            f"{entry.ref}: relationship {namespace!r} member {member_label!r} "
             f"{payload.value_key} must not be null"
         )
     if (
@@ -535,16 +632,149 @@ def _coerce_payload_value(
     ):
         if payload.min_value is not None and raw < payload.min_value:
             raise PatchError(
-                f"{entry.ref}: relationship {namespace!r} member {public_id!r} "
+                f"{entry.ref}: relationship {namespace!r} member {member_label!r} "
                 f"{payload.value_key} must be >= {payload.min_value}, got {raw}"
             )
         return raw
     if payload.scalar_type is str and isinstance(raw, str):
+        if payload.choices is not None and raw not in payload.choices:
+            raise PatchError(
+                f"{entry.ref}: relationship {namespace!r} member {member_label!r} "
+                f"{payload.value_key} must be one of "
+                f"{', '.join(payload.choices)}; got {raw!r}"
+            )
+        if payload.max_length is not None and len(raw) > payload.max_length:
+            raise PatchError(
+                f"{entry.ref}: relationship {namespace!r} member {member_label!r} "
+                f"{payload.value_key} exceeds the {payload.max_length}-character "
+                f"limit"
+            )
         return raw
     raise PatchError(
-        f"{entry.ref}: relationship {namespace!r} member {public_id!r} "
+        f"{entry.ref}: relationship {namespace!r} member {member_label!r} "
         f"{payload.value_key} must be {payload.scalar_type.__name__}, got {raw!r}"
     )
+
+
+class _DictMemberParts(NamedTuple):
+    """A dict-form member split at the parse edge.
+
+    ``values`` carries every concrete part — the authored literal identity,
+    the absent-slot fills (FK ⇒ ``None``, literal ⇒ ``""``) and the coerced
+    payload — while ``fk_refs`` pairs each *authored* FK identity slot with its
+    public_id for the caller to resolve (a committed pk via
+    ``_resolve_committed_slot``, or a same-patch handle via
+    ``_resolve_member_slots``).
+    """
+
+    values: dict[ClaimValueKey, IdentityPartValue]
+    fk_refs: tuple[_MemberSlotRef, ...]
+
+
+def _unpack_dict_member(
+    member: object,
+    rel_spec: _DictMemberSpec,
+    namespace: Namespace,
+    entry: PatchEntry,
+    *,
+    for_removal: bool = False,
+) -> _DictMemberParts:
+    """Validate a dict-form member's shape and split it into parts, or raise.
+
+    ``member`` is untyped parsed YAML, so every rule re-checks at this boundary:
+    the mapping's keys must be declared slots, exactly one XOR group may be
+    authored (the identity), explicit ``null``s are rejected (omit the key
+    instead), required payload is mandatory on assert, and *any* payload key is
+    rejected on ``remove:`` — a removal names an edge by its target identity
+    only, and silently dropping an authored payload there would misread as
+    "remove just this payload value".
+    """
+    groups_desc = " / ".join(
+        "(" + ", ".join(group) + ")" for group in rel_spec.xor_groups
+    )
+    if not isinstance(member, dict):
+        raise PatchError(
+            f"{entry.ref}: relationship {namespace!r} member {member!r} must be "
+            f"a mapping with exactly one of {groups_desc} plus payload keys"
+        )
+    fk_by_key = {slot.value_key: slot for slot in rel_spec.fk_slots}
+    literal_by_key = {slot.value_key: slot for slot in rel_spec.literal_slots}
+    payload_by_key = {slot.value_key: slot for slot in rel_spec.payload_slots}
+    allowed = fk_by_key.keys() | literal_by_key.keys() | payload_by_key.keys()
+    unknown = member.keys() - allowed
+    if unknown:
+        raise PatchError(
+            f"{entry.ref}: relationship {namespace!r} member has unknown "
+            f"key(s) {sorted(unknown)!r}; allowed: {sorted(allowed)!r}"
+        )
+    for key, raw in member.items():
+        if raw is None:
+            raise PatchError(
+                f"{entry.ref}: relationship {namespace!r} member key {key!r} "
+                f"is null — omit the key instead"
+            )
+    if for_removal:
+        authored_payload = member.keys() & payload_by_key.keys()
+        if authored_payload:
+            raise PatchError(
+                f"{entry.ref}: remove {namespace!r} member names payload "
+                f"key(s) {sorted(authored_payload)!r} — a removal identifies "
+                f"the edge by its target only"
+            )
+    present_groups = [
+        group for group in rel_spec.xor_groups if any(key in member for key in group)
+    ]
+    if len(present_groups) != 1:
+        raise PatchError(
+            f"{entry.ref}: relationship {namespace!r} member must set exactly "
+            f"one of {groups_desc}; got {len(present_groups)}"
+        )
+
+    values: dict[ClaimValueKey, IdentityPartValue] = {}
+    fk_refs: list[_MemberSlotRef] = []
+    for key, slot in fk_by_key.items():
+        if key not in member:
+            values[key] = None  # absent FK slot: null identity part
+            continue
+        ref = member[key]
+        if not isinstance(ref, str):
+            raise PatchError(
+                f"{entry.ref}: relationship {namespace!r} member {key!r} "
+                f"must be a public_id string, got {ref!r}"
+            )
+        fk_refs.append(_MemberSlotRef(slot=slot, ref=ref))
+    for key, literal in literal_by_key.items():
+        if key not in member:
+            values[key] = ""  # absent literal slot: ""-as-absent convention
+            continue
+        raw = member[key]
+        if not isinstance(raw, str) or not raw.strip():
+            raise PatchError(
+                f"{entry.ref}: relationship {namespace!r} member {key!r} "
+                f"must be a non-blank string, got {raw!r}"
+            )
+        stripped = raw.strip()
+        if len(stripped) > literal.max_length:
+            raise PatchError(
+                f"{entry.ref}: relationship {namespace!r} member {key!r} "
+                f"exceeds the {literal.max_length}-character limit"
+            )
+        values[key] = stripped
+    member_label = next(str(member[k]) for k in member if k not in payload_by_key)
+    for key, payload in payload_by_key.items():
+        if key not in member:
+            if payload.required and not for_removal:
+                raise PatchError(
+                    f"{entry.ref}: relationship {namespace!r} member "
+                    f"{member_label!r} is missing required key {key!r}"
+                )
+            continue
+        value = _coerce_payload_value(
+            payload, member[key], member_label, namespace, entry
+        )
+        if value is not None:
+            values[key] = value
+    return _DictMemberParts(values=values, fk_refs=tuple(fk_refs))
 
 
 def _member_identity(
@@ -615,6 +845,22 @@ def _member_identity(
                     slot_ref.slot, slot_ref.ref, namespace=namespace, entry=entry
                 )
             return identity
+        case _DictMemberSpec():
+            # Reached only by the remove path (``_emit_relationship`` resolves
+            # dict members itself, committed or deferred). Removal targets
+            # committed edges only, so resolve every authored FK slot against a
+            # committed row.
+            parts = _unpack_dict_member(
+                member, rel_spec, namespace, entry, for_removal=True
+            )
+            removal_identity: dict[ClaimValueKey, IdentityPartValue] = dict(
+                parts.values
+            )
+            for slot_ref in parts.fk_refs:
+                removal_identity[slot_ref.slot.value_key] = _resolve_committed_slot(
+                    slot_ref.slot, slot_ref.ref, namespace=namespace, entry=entry
+                )
+            return removal_identity
 
 
 def _unpack_credit_member(
@@ -716,8 +962,8 @@ def _emit_relationship(
 
     A member that resolves against the DB is emitted concretely (its ``claim_key``
     is recorded for the plan-wide assert/remove conflict guard). A member that
-    instead names a *same-patch* create — a single-FK member, or any slot of a
-    multi-FK (credit) member — is emitted **deferred**
+    instead names a *same-patch* create — a single-FK member, any slot of a
+    multi-FK (credit) member, or a dict member's FK slot — is emitted **deferred**
     (``relationship_namespace`` + ``identity`` for committed slots + ``identity_refs``
     for deferred slots), resolved post-creation in ``_patch_handles``. A deferred
     member has no concrete claim_key yet, so it stays out of the clash list (the
@@ -761,8 +1007,14 @@ def _emit_relationship(
         # Resolve the member's identity, splitting same-patch-create slots
         # (deferred) from committed ones. Any deferred slot makes the whole member
         # deferred; a fully-committed member falls through to the concrete path.
-        if isinstance(rel_spec, _MultiFkMemberSpec):
-            slot_refs = _unpack_credit_member(member, rel_spec, namespace, entry)
+        if isinstance(rel_spec, _MultiFkMemberSpec | _DictMemberSpec):
+            if isinstance(rel_spec, _MultiFkMemberSpec):
+                slot_refs = _unpack_credit_member(member, rel_spec, namespace, entry)
+                concrete_base: dict[ClaimValueKey, IdentityPartValue] = {}
+            else:
+                parts = _unpack_dict_member(member, rel_spec, namespace, entry)
+                slot_refs = parts.fk_refs
+                concrete_base = parts.values
             resolved = _resolve_member_slots(
                 slot_refs, registry=registry, namespace=namespace, entry=entry
             )
@@ -777,7 +1029,11 @@ def _emit_relationship(
                     PlannedClaimAssert(
                         field_name=namespace,
                         relationship_namespace=namespace,
-                        identity=resolved.concrete,
+                        # For a dict member the concrete part carries the
+                        # absent-slot fills and payload alongside any committed
+                        # slots; merged with the resolved refs at apply time
+                        # (see persist._patch_handles).
+                        identity={**concrete_base, **resolved.concrete},
                         identity_refs=resolved.refs,
                         note=note,
                         cite_specs=cite_specs,
@@ -788,7 +1044,7 @@ def _emit_relationship(
                 )
                 carrier_written = True
                 continue
-            identity = resolved.concrete
+            identity = {**concrete_base, **resolved.concrete}
         elif isinstance(rel_spec, _FkMemberSpec):
             public_id, payload = _unpack_fk_member(member, rel_spec, namespace, entry)
             handle = registry.created_handle(

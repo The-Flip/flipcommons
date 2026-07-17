@@ -47,17 +47,30 @@ describe('model layout', () => {
     expect(body).toContain('/models/medieval-madness');
   });
 
-  it('renders bootleg relationships in the desktop sidebar', () => {
+  it('renders relationship edges in the desktop sidebar', () => {
     const model = makeModelDetail({
-      bootleg_of: { name: 'Video Pinball', public_id: 'video-pinball', year: 1978 },
-      bootlegs: [{ name: 'Rugby', public_id: 'rugby-sidam', year: 1979 }],
+      relationships: [
+        {
+          relationship_type: 'copy',
+          license_status: 'unlicensed',
+          target_machine: { name: 'Video Pinball', public_id: 'video-pinball', year: 1978 },
+          target_label: '',
+        },
+      ],
+      inbound_relationships: [
+        {
+          relationship_type: 'copy',
+          license_status: 'unlicensed',
+          source_machine: { name: 'Rugby', public_id: 'rugby-sidam', year: 1979 },
+        },
+      ],
     });
 
     const { body } = render(Harness, {
       props: { data: { profile: model } },
     });
 
-    expect(body).toContain('Bootleg Of');
+    expect(body).toContain('Bootleg of');
     expect(body).toContain('/models/video-pinball');
     expect(body).toContain('Bootlegs');
     expect(body).toContain('/models/rugby-sidam');

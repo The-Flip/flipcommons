@@ -42,6 +42,7 @@ describe('cabinet edit-history page (taxonomy representative)', () => {
               author: '',
               year: null,
               locator: '',
+              quote: '',
               slug: null,
               links: [
                 {

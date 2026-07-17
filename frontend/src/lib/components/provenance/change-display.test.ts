@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ClaimValueSchema, FieldChangeSchema } from '$lib/api/schema';
 import {
+  buildStructuredDiff,
+  classifyChange,
   diffText,
   formatValue,
   hasMeaningfulValue,
@@ -71,6 +73,111 @@ describe('formatValue', () => {
   it('preserves long JSON-serialized values verbatim', () => {
     const obj = { data: 'x'.repeat(200) };
     expect(formatValue(obj)).toBe(JSON.stringify(obj));
+  });
+});
+
+describe('buildStructuredDiff', () => {
+  it('keeps unchanged relationship context and marks only the changed qualifier', () => {
+    const change: FieldChangeSchema = {
+      field_name: 'model_relationship',
+      claim_key: 'model_relationship:42',
+      old_value: {
+        raw: {
+          target_machine: 42,
+          target_label: '',
+          relationship_type: 'copy',
+          license_status: 'unknown',
+          exists: true,
+        },
+        display: {
+          kind: 'relationship',
+          identity: [
+            { key: 'target_machine', label: 'Speakeasy (Playmatic, 1982)', state: 'resolved' },
+          ],
+          qualifiers: [
+            { key: 'relationship_type', value: 'copy' },
+            { key: 'license_status', value: 'unknown' },
+          ],
+        },
+      },
+      new_value: {
+        raw: {
+          target_machine: 42,
+          target_label: '',
+          relationship_type: 'copy',
+          license_status: 'unlicensed',
+          exists: true,
+        },
+        display: {
+          kind: 'relationship',
+          identity: [
+            { key: 'target_machine', label: 'Speakeasy (Playmatic, 1982)', state: 'resolved' },
+          ],
+          qualifiers: [
+            { key: 'relationship_type', value: 'copy' },
+            { key: 'license_status', value: 'unlicensed' },
+          ],
+        },
+      },
+    };
+
+    expect(buildStructuredDiff(change)).toEqual([
+      {
+        key: 'target_machine',
+        label: 'Target machine',
+        oldText: 'Speakeasy (Playmatic, 1982)',
+        newText: 'Speakeasy (Playmatic, 1982)',
+        changed: false,
+      },
+      {
+        key: 'relationship_type',
+        label: 'Relationship type',
+        oldText: 'Copy',
+        newText: 'Copy',
+        changed: false,
+      },
+      {
+        key: 'license_status',
+        label: 'License status',
+        oldText: 'Unknown',
+        newText: 'Unlicensed',
+        changed: true,
+      },
+    ]);
+  });
+
+  it('diffs generic JSON objects by key', () => {
+    expect(
+      buildStructuredDiff(
+        fc({ title: 'Same', status: 'draft' }, { title: 'Same', status: 'live' }),
+      ),
+    ).toEqual([
+      {
+        key: 'title',
+        label: 'Title',
+        oldText: 'Same',
+        newText: 'Same',
+        changed: false,
+      },
+      {
+        key: 'status',
+        label: 'Status',
+        oldText: 'draft',
+        newText: 'live',
+        changed: true,
+      },
+    ]);
+  });
+
+  it('leaves relationship tombstones to the deletion display', () => {
+    expect(
+      buildStructuredDiff(
+        fc(
+          { target_machine: 42, license_status: 'unknown', exists: true },
+          { target_machine: 42, exists: false },
+        ),
+      ),
+    ).toBeNull();
   });
 });
 
@@ -202,6 +309,24 @@ describe('hasMeaningfulValue', () => {
     expect(hasMeaningfulValue(0)).toBe(true);
     expect(hasMeaningfulValue(false)).toBe(true);
   });
+
+  it('accepts a machine-target tombstone (it names which edge was removed)', () => {
+    // model_relationship tombstones carry the identity member alone. A
+    // non-null identity still reads as an assertion, so the change renders
+    // as old → struck-through target.
+    expect(hasMeaningfulValue({ target_machine: 42, exists: false })).toBe(true);
+  });
+
+  it('rejects a tombstone whose identity is all null/empty (the label slot)', () => {
+    // The narrowed label tombstone has nothing visible to say — its wording
+    // arrives as old_value, from the chronologically prior claim — so the
+    // change must classify as a deletion (struck old value + removed
+    // marker), not old → blank.
+    expect(hasMeaningfulValue({ target_machine: null, exists: false })).toBe(false);
+    expect(hasMeaningfulValue({ target_machine: null, target_label: '', exists: false })).toBe(
+      false,
+    );
+  });
 });
 
 describe('isDeletion', () => {
@@ -243,6 +368,63 @@ describe('isDeletion', () => {
     // a creation, not an edit.
     expect(isDeletion(fc({ exists: false }, 'plasma-dmd'))).toBe(false);
   });
+
+  it('is true for a label-edge removal (positive claim → null-slot tombstone)', () => {
+    // The narrowed label tombstone carries no wording; the removal renders
+    // as the prior claim's wording struck through plus the removed marker.
+    const old = {
+      target_machine: null,
+      target_label: 'an unknown Gottlieb game',
+      relationship_type: 'conversion',
+      license_status: 'unknown',
+      exists: true,
+    };
+    expect(isDeletion(fc(old, { target_machine: null, exists: false }))).toBe(true);
+  });
+
+  it('is false for a machine-edge removal (the tombstone names its target)', () => {
+    const old = {
+      target_machine: 42,
+      target_label: '',
+      relationship_type: 'copy',
+      license_status: 'unknown',
+      exists: true,
+    };
+    expect(isDeletion(fc(old, { target_machine: 42, exists: false }))).toBe(false);
+  });
+});
+
+describe('classifyChange', () => {
+  it('classifies an identical value as unchanged', () => {
+    expect(classifyChange(fc('solid-state', 'solid-state'))).toEqual({ kind: 'unchanged' });
+  });
+
+  it('classifies a removed value as a deletion', () => {
+    expect(classifyChange(fc('Save the universe', null))).toEqual({ kind: 'deletion' });
+  });
+
+  it('classifies a long text edit as a text diff', () => {
+    expect(classifyChange(fc('a'.repeat(81), 'short'))).toEqual({ kind: 'textDiff' });
+  });
+
+  it('classifies an object-valued edit as a structured diff carrying its parts', () => {
+    const mode = classifyChange(
+      fc({ title: 'Same', status: 'draft' }, { title: 'Same', status: 'live' }),
+    );
+    expect(mode.kind).toBe('structuredDiff');
+    expect(mode).toHaveProperty('parts');
+  });
+
+  it('classifies an ordinary scalar edit as scalar', () => {
+    expect(classifyChange(fc('foo', 'bar'))).toEqual({ kind: 'scalar' });
+  });
+
+  it('prefers unchanged over textDiff for identical long values', () => {
+    // Both sides diffable-length yet identical: unchanged wins so the row
+    // renders once rather than as an empty diff. This is the ordering the
+    // changelog feed and retracted rows now share with the main history view.
+    expect(classifyChange(fc('a'.repeat(100), 'a'.repeat(100)))).toEqual({ kind: 'unchanged' });
+  });
 });
 
 describe('simplifyClaimValue', () => {
@@ -273,6 +455,13 @@ describe('simplifyClaimValue', () => {
 
   it('returns null for FK-pk integer values (not human-readable)', () => {
     expect(simplifyClaimValue({ theme: 1, exists: true })).toBeNull();
+  });
+
+  it('returns null for identity-only relationship tombstones (null slot)', () => {
+    // The narrowed label tombstone: one non-exists key whose value is null,
+    // not a string — falls through to the backend display struct.
+    expect(simplifyClaimValue({ target_machine: null, exists: false })).toBeNull();
+    expect(simplifyClaimValue({ target_machine: 42, exists: false })).toBeNull();
   });
 
   it('returns null when exists is missing', () => {

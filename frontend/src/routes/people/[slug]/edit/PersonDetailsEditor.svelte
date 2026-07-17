@@ -22,13 +22,7 @@
     photo_url: string;
   };
 
-  let {
-    initialData,
-    slug,
-    onsaved,
-    onerror,
-    ondirtychange = () => {},
-  }: SectionEditorProps<PersonEditView> = $props();
+  let { initialData, slug, onsaved, onerror }: SectionEditorProps<PersonEditView> = $props();
 
   function extractFields(person: PersonEditView): DetailsFields {
     return {
@@ -50,6 +44,8 @@
   let changedFields = $derived(diffScalarFields(fields, original));
   let dirty = $derived(Object.keys(changedFields).length > 0);
 
+  export { dirty };
+
   let constraints = $state<FieldConstraints>({});
 
   $effect(() => {
@@ -57,14 +53,6 @@
       constraints = c;
     });
   });
-
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

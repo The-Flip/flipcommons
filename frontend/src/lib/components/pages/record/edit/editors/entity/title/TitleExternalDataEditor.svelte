@@ -17,13 +17,7 @@
     fandom_page_id?: number | null;
   };
 
-  let {
-    initialData,
-    slug,
-    onsaved,
-    onerror,
-    ondirtychange = () => {},
-  }: SectionEditorProps<ExternalDataTitle> = $props();
+  let { initialData, slug, onsaved, onerror }: SectionEditorProps<ExternalDataTitle> = $props();
 
   type ExternalDataFormFields = {
     opdb_id: string;
@@ -41,6 +35,8 @@
   let fields = $state<ExternalDataFormFields>({ ...original });
   let dirty = $derived.by(() => Object.keys(diffScalarFields(fields, original)).length > 0);
 
+  export { dirty };
+
   let fieldErrors = $state<FieldErrors>({});
   let constraints = $state<FieldConstraints>({});
 
@@ -49,14 +45,6 @@
       constraints = c;
     });
   });
-
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

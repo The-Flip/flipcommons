@@ -15,6 +15,7 @@ const TITLE_EDIT_SECTIONS: TitleEditSectionDef[] = [
     label: 'Name',
     showCitation: true,
     showMixedEditWarning: false,
+    usesSectionEditorForm: true,
     includeInSingleModel: true,
   },
   {
@@ -23,6 +24,7 @@ const TITLE_EDIT_SECTIONS: TitleEditSectionDef[] = [
     label: 'Overview',
     showCitation: false,
     showMixedEditWarning: false,
+    usesSectionEditorForm: true,
     includeInSingleModel: false,
   },
   {
@@ -31,6 +33,7 @@ const TITLE_EDIT_SECTIONS: TitleEditSectionDef[] = [
     label: 'Franchise',
     showCitation: true,
     showMixedEditWarning: true,
+    usesSectionEditorForm: true,
     includeInSingleModel: true,
   },
   {
@@ -39,6 +42,7 @@ const TITLE_EDIT_SECTIONS: TitleEditSectionDef[] = [
     label: 'External Data',
     showCitation: true,
     showMixedEditWarning: true,
+    usesSectionEditorForm: true,
     includeInSingleModel: true,
   },
 ];

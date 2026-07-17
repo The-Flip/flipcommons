@@ -3,10 +3,7 @@ import type { EditSectionDef } from '$lib/components/pages/record/edit/editors/e
 export type HierarchicalTaxonomyEditSectionKey =
   'name' | 'description' | 'aliases' | 'parents' | 'media';
 
-export type HierarchicalTaxonomyEditSectionDef =
-  EditSectionDef<HierarchicalTaxonomyEditSectionKey> & {
-    usesSectionEditorForm: boolean;
-  };
+export type HierarchicalTaxonomyEditSectionDef = EditSectionDef<HierarchicalTaxonomyEditSectionKey>;
 
 /**
  * Base sections for hierarchical taxonomies (gameplay-features, themes).

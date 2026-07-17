@@ -324,34 +324,26 @@ class TestValidateFkClaimsBatch:
 @pytest.mark.django_db
 class TestClassifyClaim:
     def test_scalar_field_is_direct(self):
-        assert classify_claim(MachineModel, "name", "", "Test") == DIRECT
+        assert classify_claim(MachineModel, "name") == DIRECT
 
     def test_fk_field_is_direct(self):
-        assert classify_claim(System, "manufacturer", "", "williams") == DIRECT
+        assert classify_claim(System, "manufacturer") == DIRECT
 
     def test_relationship_claim_detected(self):
         """Compound claim_key + dict value with 'exists' → RELATIONSHIP."""
-        assert (
-            classify_claim(
-                MachineModel,
-                "credit",
-                "credit|person:1|role:2",
-                {"person": 1, "role": 2, "exists": True},
-            )
-            == RELATIONSHIP
-        )
+        assert classify_claim(MachineModel, "credit") == RELATIONSHIP
 
     def test_extra_data_on_model_with_extra_data(self):
         """Unknown field on a model with extra_data → EXTRA."""
-        assert classify_claim(MachineModel, "opdb.description", "", "text") == EXTRA
+        assert classify_claim(MachineModel, "opdb.description") == EXTRA
 
     def test_unrecognized_on_model_without_extra_data(self):
         """Unknown field on a model without extra_data → UNRECOGNIZED."""
-        assert classify_claim(Theme, "nonexistent", "", "whatever") == UNRECOGNIZED
+        assert classify_claim(Theme, "nonexistent") == UNRECOGNIZED
 
     def test_undotted_extra_data_on_model_with_extra_data(self):
         """Undotted unknown field on model with extra_data → EXTRA."""
-        assert classify_claim(MachineModel, "manufacturer", "", "williams") == EXTRA
+        assert classify_claim(MachineModel, "manufacturer") == EXTRA
 
     def test_every_registered_namespace_classifies_as_relationship(self):
         """Integration check: registry and classifier agree.
@@ -374,12 +366,13 @@ class TestClassifyClaim:
 
         for namespace, keys in get_all_namespace_keys().items():
             identity = dict.fromkeys(keys, "test-value")
-            claim_key, value = build_relationship_claim(namespace, identity)
+            # Property (1): the builder accepts the namespace (no ValueError).
+            build_relationship_claim(namespace, identity)
 
             # MachineModel isn't in every namespace's valid_subjects, but
             # classify_claim is subject-agnostic for RELATIONSHIP routing —
             # wrong-subject is the validator's concern, not the classifier's.
-            result = classify_claim(MachineModel, namespace, claim_key, value)
+            result = classify_claim(MachineModel, namespace)
             assert result == RELATIONSHIP, (
                 f"Namespace {namespace!r} classified as {result!r}, expected RELATIONSHIP."
             )
@@ -963,6 +956,118 @@ class TestValidateSingleRelationshipClaim:
 
 
 # ---------------------------------------------------------------------------
+# validate_single_relationship_claim — xor_groups + choices rules
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestModelRelationshipClaimShape:
+    """The target-ladder rules: member exclusivity (rule 7) and choices (rule 5).
+
+    ``model_relationship`` is the only namespace with ``xor_groups`` and
+    ``choices``, so its schema is where these rules are exercised. Schema-only
+    checks — the referenced pks never hit the DB.
+    """
+
+    def _validate(self, value, claim_key=None):
+        from apps.provenance.models import make_claim_key
+        from apps.provenance.validation import validate_single_relationship_claim
+
+        if claim_key is None:
+            claim_key = make_claim_key(
+                "model_relationship",
+                target_machine=value.get("target_machine"),
+            )
+        return validate_single_relationship_claim(
+            subject_model=MachineModel,
+            field_name="model_relationship",
+            claim_key=claim_key,
+            value=value,
+        )
+
+    def _value(self, machine=None, label="", **overrides):
+        return {
+            "target_machine": machine,
+            "target_label": label,
+            "relationship_type": "copy",
+            "license_status": "unknown",
+            "exists": True,
+            **overrides,
+        }
+
+    def test_machine_target_passes(self):
+        self._validate(self._value(machine=42))
+
+    def test_label_target_passes(self):
+        self._validate(self._value(label="several Gottlieb EM models"))
+
+    def test_machine_plus_label_rejected(self):
+        with pytest.raises(ValidationError, match="exactly one"):
+            self._validate(self._value(machine=42, label="redundant"))
+
+    def test_absent_target_rejected(self):
+        """All-null ladder (label "" counts as absent) sets zero groups."""
+        with pytest.raises(ValidationError, match="exactly one"):
+            self._validate(self._value())
+
+    def test_out_of_vocab_relationship_type_rejected(self):
+        with pytest.raises(ValidationError, match="'relationship_type' must be one"):
+            self._validate(self._value(machine=42, relationship_type="remake"))
+
+    def test_out_of_vocab_license_status_rejected(self):
+        with pytest.raises(ValidationError, match="'license_status' must be one"):
+            self._validate(self._value(machine=42, license_status="disputed"))
+
+    def test_missing_required_payload_rejected(self):
+        value = self._value(machine=42)
+        del value["license_status"]
+        with pytest.raises(ValidationError, match="missing required key"):
+            self._validate(value)
+
+    def test_retraction_without_payload_passes(self):
+        """Tombstones strip payload; required payload applies to positive
+        claims only."""
+        self._validate(
+            {
+                "target_machine": 42,
+                "target_label": "",
+                "exists": False,
+            }
+        )
+
+    def test_retraction_skips_xor(self):
+        """XOR is a positive-claim invariant (rule 7 skips ``exists=false``).
+
+        A tombstone names an edge by its identity alone; once a group's member
+        is non-identity a retraction legitimately has zero groups present, so
+        "exactly one" cannot apply to retractions. Pinned here on the
+        zero-group shape — the same value with ``exists=True`` is rejected
+        (``test_absent_target_rejected``).
+        """
+        self._validate(
+            {
+                "target_machine": None,
+                "target_label": "",
+                "exists": False,
+            }
+        )
+
+    def test_null_label_rejected(self):
+        """The literal member is not nullable — absence is the empty string."""
+        with pytest.raises(ValidationError, match="'target_label' may not be null"):
+            self._validate(self._value(machine=42, target_label=None))
+
+    def test_missing_null_identity_part_rejected(self):
+        """Nullable identity keys must still be present in the value dict."""
+        value = self._value(machine=42)
+        del value["target_machine"]
+        with pytest.raises(
+            ValidationError, match="missing required key 'target_machine'"
+        ):
+            self._validate(value)
+
+
+# ---------------------------------------------------------------------------
 # assert_claim — shape rejection end-to-end
 # ---------------------------------------------------------------------------
 
@@ -1024,42 +1129,42 @@ class TestAssertClaimRelationshipShape:
 
 
 class TestRegisterRelationshipSchemaGuards:
-    """Registration-time invariants fail at startup, not at write time."""
+    """Registration-time cross-reference invariants fail at startup, not at
+    write time.
 
-    def test_non_required_identity_rejected(self):
+    The per-key role invariants the old flat schema checked here — identity ⇒
+    required, display_key only on members, choices only on payload, no payload
+    FKs — are now structural (``MemberSpec`` / ``PayloadSpec`` don't carry the
+    illegal fields), so only the cross-reference rules remain testable.
+    """
+
+    def test_duplicate_value_key_name_rejected(self):
         from django.core.exceptions import ImproperlyConfigured
 
         from apps.provenance.validation import (
-            ValueKeySpec,
+            MemberSpec,
+            PayloadSpec,
             _relationship_schemas,
             register_relationship_schema,
         )
 
-        with pytest.raises(
-            ImproperlyConfigured, match="identity keys must be required"
-        ):
+        with pytest.raises(ImproperlyConfigured, match="duplicate value_key"):
             register_relationship_schema(
-                namespace="_test_bad_identity",
-                value_keys=(
-                    ValueKeySpec(
-                        name="x",
-                        scalar_type=int,
-                        required=False,
-                        identity="x",
-                    ),
-                ),
+                namespace="_test_dup_name",
+                members=(MemberSpec(name="x", scalar_type=int, identity="x"),),
+                payload=(PayloadSpec(name="x", scalar_type=int),),
                 valid_subjects={Theme},
             )
         # Pin "raise before insert" — a future refactor that inserts and
         # then validates would pass the exception assertion but pollute the
         # registry across tests.
-        assert "_test_bad_identity" not in _relationship_schemas
+        assert "_test_dup_name" not in _relationship_schemas
 
     def test_collision_with_direct_field_rejected(self):
         from django.core.exceptions import ImproperlyConfigured
 
         from apps.provenance.validation import (
-            ValueKeySpec,
+            MemberSpec,
             _relationship_schemas,
             register_relationship_schema,
         )
@@ -1069,14 +1174,8 @@ class TestRegisterRelationshipSchemaGuards:
         with pytest.raises(ImproperlyConfigured, match="collides with a concrete"):
             register_relationship_schema(
                 namespace="name",
-                value_keys=(
-                    ValueKeySpec(
-                        name="x",
-                        scalar_type=int,
-                        required=True,
-                        identity="x",
-                    ),
-                ),
+                members=(MemberSpec(name="x", scalar_type=int, identity="x"),),
+                payload=(),
                 valid_subjects={Theme},
             )
         # Same "raise before insert" invariant. Compared against any
@@ -1084,94 +1183,105 @@ class TestRegisterRelationshipSchemaGuards:
         # future catalog namespace happens to be called "name".
         assert _relationship_schemas.get("name") == existing
 
-    def test_display_key_on_non_identity_rejected(self):
+    def test_xor_group_naming_payload_rejected(self):
         from django.core.exceptions import ImproperlyConfigured
 
         from apps.provenance.validation import (
-            ValueKeySpec,
+            MemberSpec,
+            PayloadSpec,
             _relationship_schemas,
             register_relationship_schema,
         )
 
-        with pytest.raises(
-            ImproperlyConfigured, match="display_key is only allowed on identity specs"
-        ):
+        with pytest.raises(ImproperlyConfigured, match="not a member value-key"):
             register_relationship_schema(
-                namespace="_test_display_key_non_identity",
-                value_keys=(
-                    ValueKeySpec(
-                        name="x",
-                        scalar_type=str,
-                        required=False,
-                        display_key="y",
-                    ),
-                    ValueKeySpec(name="y", scalar_type=str, required=False),
-                ),
+                namespace="_test_xor_payload",
+                members=(MemberSpec(name="x", scalar_type=int, identity="x"),),
+                payload=(PayloadSpec(name="y", scalar_type=str),),
                 valid_subjects={Theme},
+                xor_groups=(("x",), ("y",)),
             )
-        assert "_test_display_key_non_identity" not in _relationship_schemas
+        assert "_test_xor_payload" not in _relationship_schemas
+
+    def test_xor_group_naming_unknown_key_rejected(self):
+        from django.core.exceptions import ImproperlyConfigured
+
+        from apps.provenance.validation import (
+            MemberSpec,
+            _relationship_schemas,
+            register_relationship_schema,
+        )
+
+        with pytest.raises(ImproperlyConfigured, match="not a member value-key"):
+            register_relationship_schema(
+                namespace="_test_xor_unknown",
+                members=(MemberSpec(name="x", scalar_type=int, identity="x"),),
+                payload=(),
+                valid_subjects={Theme},
+                xor_groups=(("x",), ("nope",)),
+            )
+        assert "_test_xor_unknown" not in _relationship_schemas
 
     def test_display_key_dangling_target_rejected(self):
         from django.core.exceptions import ImproperlyConfigured
 
         from apps.provenance.validation import (
-            ValueKeySpec,
+            MemberSpec,
             _relationship_schemas,
             register_relationship_schema,
         )
 
-        with pytest.raises(ImproperlyConfigured, match="does not name a sibling spec"):
+        with pytest.raises(ImproperlyConfigured, match="does not name a payload spec"):
             register_relationship_schema(
                 namespace="_test_display_key_dangling",
-                value_keys=(
-                    ValueKeySpec(
+                members=(
+                    MemberSpec(
                         name="x",
                         scalar_type=str,
-                        required=True,
                         identity="x",
                         display_key="nope",
                     ),
                 ),
+                payload=(),
                 valid_subjects={Theme},
             )
         assert "_test_display_key_dangling" not in _relationship_schemas
 
-    def test_display_key_target_is_identity_rejected(self):
+    def test_display_key_naming_a_member_rejected(self):
+        # A member can't be another member's display rendering — the target
+        # must live in payload. (The old flat schema stated this as "must be
+        # non-identity"; structurally it's now "not found among payload".)
         from django.core.exceptions import ImproperlyConfigured
 
         from apps.provenance.validation import (
-            ValueKeySpec,
+            MemberSpec,
             _relationship_schemas,
             register_relationship_schema,
         )
 
-        with pytest.raises(ImproperlyConfigured, match="must be non-identity"):
+        with pytest.raises(ImproperlyConfigured, match="does not name a payload spec"):
             register_relationship_schema(
-                namespace="_test_display_key_target_identity",
-                value_keys=(
-                    ValueKeySpec(
+                namespace="_test_display_key_member_target",
+                members=(
+                    MemberSpec(
                         name="a",
                         scalar_type=str,
-                        required=True,
                         identity="a",
                         display_key="b",
                     ),
-                    ValueKeySpec(
-                        name="b",
-                        scalar_type=str,
-                        required=True,
-                        identity="b",
-                    ),
+                    MemberSpec(name="b", scalar_type=str, identity="b"),
                 ),
+                payload=(),
                 valid_subjects={Theme},
             )
-        assert "_test_display_key_target_identity" not in _relationship_schemas
+        assert "_test_display_key_member_target" not in _relationship_schemas
 
     def test_display_key_scalar_type_mismatch_rejected(self):
         from django.core.exceptions import ImproperlyConfigured
 
         from apps.provenance.validation import (
-            ValueKeySpec,
+            MemberSpec,
+            PayloadSpec,
             _relationship_schemas,
             register_relationship_schema,
         )
@@ -1179,57 +1289,25 @@ class TestRegisterRelationshipSchemaGuards:
         with pytest.raises(ImproperlyConfigured, match="scalar_type"):
             register_relationship_schema(
                 namespace="_test_display_key_type_mismatch",
-                value_keys=(
-                    ValueKeySpec(
+                members=(
+                    MemberSpec(
                         name="x",
                         scalar_type=str,
-                        required=True,
                         identity="x",
                         display_key="y",
                     ),
-                    ValueKeySpec(name="y", scalar_type=int, required=False),
                 ),
+                payload=(PayloadSpec(name="y", scalar_type=int),),
                 valid_subjects={Theme},
             )
         assert "_test_display_key_type_mismatch" not in _relationship_schemas
 
-    def test_display_key_target_with_fk_target_rejected(self):
+    def test_two_members_naming_same_display_key_rejected(self):
         from django.core.exceptions import ImproperlyConfigured
 
         from apps.provenance.validation import (
-            FkTarget,
-            ValueKeySpec,
-            _relationship_schemas,
-            register_relationship_schema,
-        )
-
-        with pytest.raises(ImproperlyConfigured, match="must not declare fk_target"):
-            register_relationship_schema(
-                namespace="_test_display_key_target_fk",
-                value_keys=(
-                    ValueKeySpec(
-                        name="x",
-                        scalar_type=str,
-                        required=True,
-                        identity="x",
-                        display_key="y",
-                    ),
-                    ValueKeySpec(
-                        name="y",
-                        scalar_type=str,
-                        required=False,
-                        fk_target=FkTarget(Person, "slug"),
-                    ),
-                ),
-                valid_subjects={Theme},
-            )
-        assert "_test_display_key_target_fk" not in _relationship_schemas
-
-    def test_two_identity_specs_naming_same_display_key_rejected(self):
-        from django.core.exceptions import ImproperlyConfigured
-
-        from apps.provenance.validation import (
-            ValueKeySpec,
+            MemberSpec,
+            PayloadSpec,
             _relationship_schemas,
             register_relationship_schema,
         )
@@ -1237,23 +1315,21 @@ class TestRegisterRelationshipSchemaGuards:
         with pytest.raises(ImproperlyConfigured, match="both declare display_key"):
             register_relationship_schema(
                 namespace="_test_display_key_collision",
-                value_keys=(
-                    ValueKeySpec(
+                members=(
+                    MemberSpec(
                         name="a",
                         scalar_type=str,
-                        required=True,
                         identity="a",
                         display_key="shared",
                     ),
-                    ValueKeySpec(
+                    MemberSpec(
                         name="b",
                         scalar_type=str,
-                        required=True,
                         identity="b",
                         display_key="shared",
                     ),
-                    ValueKeySpec(name="shared", scalar_type=str, required=False),
                 ),
+                payload=(PayloadSpec(name="shared", scalar_type=str),),
                 valid_subjects={Theme},
             )
         assert "_test_display_key_collision" not in _relationship_schemas
@@ -1263,53 +1339,45 @@ class TestGetDisplayOverride:
     """get_display_override truthy semantics match the resolver's historical
     ``val.get("alias_display") or alias_val`` expression."""
 
-    def test_returns_override_when_truthy(self):
-        from apps.provenance.validation import (
-            get_display_override,
-            get_relationship_schema,
-        )
+    @staticmethod
+    def _alias_member():
+        from apps.provenance.validation import get_relationship_schema
 
         schema = get_relationship_schema("person_alias")
         assert schema is not None
+        (member,) = schema.members
+        return member
+
+    def test_returns_override_when_truthy(self):
+        from apps.provenance.validation import get_display_override
+
         override = get_display_override(
             {"alias_value": "the patster", "alias_display": "The Patster"},
-            schema,
-            "alias_value",
+            self._alias_member(),
         )
         assert override == "The Patster"
 
     def test_returns_none_when_override_absent(self):
-        from apps.provenance.validation import (
-            get_display_override,
-            get_relationship_schema,
-        )
+        from apps.provenance.validation import get_display_override
 
-        schema = get_relationship_schema("person_alias")
-        assert schema is not None
         override = get_display_override(
-            {"alias_value": "the patster"}, schema, "alias_value"
+            {"alias_value": "the patster"}, self._alias_member()
         )
         assert override is None
 
     def test_returns_none_when_override_empty(self):
         # Empty strings fall through to canonical identity — preserves the
         # historical ``or`` semantics in the resolver.
-        from apps.provenance.validation import (
-            get_display_override,
-            get_relationship_schema,
-        )
+        from apps.provenance.validation import get_display_override
 
-        schema = get_relationship_schema("person_alias")
-        assert schema is not None
         override = get_display_override(
             {"alias_value": "the patster", "alias_display": ""},
-            schema,
-            "alias_value",
+            self._alias_member(),
         )
         assert override is None
 
     def test_returns_none_when_no_display_key_declared(self):
-        # ``theme`` identity has no display_key — override is always None.
+        # ``theme`` member has no display_key — override is always None.
         from apps.provenance.validation import (
             get_display_override,
             get_relationship_schema,
@@ -1317,5 +1385,5 @@ class TestGetDisplayOverride:
 
         schema = get_relationship_schema("theme")
         assert schema is not None
-        override = get_display_override({"theme": 7}, schema, "theme")
+        override = get_display_override({"theme": 7}, schema.members[0])
         assert override is None

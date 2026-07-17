@@ -109,27 +109,30 @@ def resolve_fk_target_pk(
 
 def build_relationship_claim(
     field_name: ClaimFieldName,
-    identity: Mapping[ClaimValueKey, IdentityPartValue],
+    values: Mapping[ClaimValueKey, IdentityPartValue],
     exists: bool = True,
 ) -> RelationshipClaim:
     """Return ``(claim_key, value)`` for a relationship claim.
 
-    ``identity`` contains the identity fields for this relationship, e.g.,
-    ``{"person": 42, "role": 5}`` or ``{"alias_value": "foo"}``. Keys are
-    value-dict names (``alias_value``), not identity labels (``alias``) —
-    the mapping is resolved via ``ValueKeySpec.identity``. The mapping may
-    also carry non-identity keys (e.g. ``alias_display``) for an assert.
+    ``values`` contains the member fields for this relationship — e.g.
+    ``{"person": 42, "role": 5}`` or ``{"alias_value": "foo"}`` — and, on an
+    assert, may also carry payload keys (``alias_display``, ``count``). Keys
+    are value-dict names (``alias_value``), not identity labels (``alias``) —
+    the mapping is resolved via ``MemberSpec.identity`` on the registered
+    schema. Deliberately one polarity-dependent mapping rather than separate
+    member/payload parameters: the patch front end builds assert and remove
+    values through one identity builder and relies on this function to
+    extract the tombstone shape (see ``_member_identity`` in the patch
+    emitter).
 
-    The claim_key is derived from identity using the registered schema for
-    *field_name*.
+    The claim_key is derived from the schema's identity members.
 
     Tombstone invariant: when ``exists=False`` the value carries **only** the
-    schema-identity keys plus ``exists`` — any non-identity payload in
-    *identity* is dropped. No resolver reads a non-identity key off an absent
-    member (they short-circuit on ``exists=False`` first), so dropping it keeps
+    identity-member keys plus ``exists`` — any non-identity key in *values*
+    is dropped. No resolver reads a non-identity key off an absent member
+    (they short-circuit on ``exists=False`` first), so dropping it keeps
     tombstone bytes canonical and lets every write path supersede/dedup
-    byte-identically. This is a no-op for callers that already pass
-    identity-only dicts on removal (all of them, today).
+    byte-identically.
     """
     schema = get_relationship_schema(field_name)
     if schema is None:
@@ -137,19 +140,19 @@ def build_relationship_claim(
 
     identity_parts: dict[IdentityPartName, IdentityPartValue] = {}
     identity_key_names: list[ClaimValueKey] = []
-    for spec in schema.value_keys:
-        if spec.identity is None:
+    for member in schema.members:
+        if member.identity is None:
             continue
-        if spec.name not in identity:
-            raise ValueError(f"Missing required key {spec.name!r} for {field_name!r}")
-        identity_parts[spec.identity] = identity[spec.name]
-        identity_key_names.append(spec.name)
+        if member.name not in values:
+            raise ValueError(f"Missing required key {member.name!r} for {field_name!r}")
+        identity_parts[member.identity] = values[member.name]
+        identity_key_names.append(member.name)
     claim_key = make_claim_key(field_name, **identity_parts)
     value: JsonBody
     if exists:
-        value = {**identity, "exists": True}
+        value = {**values, "exists": True}
     else:
-        value = {name: identity[name] for name in identity_key_names}
+        value = {name: values[name] for name in identity_key_names}
         value["exists"] = False
     return RelationshipClaim(claim_key, value)
 

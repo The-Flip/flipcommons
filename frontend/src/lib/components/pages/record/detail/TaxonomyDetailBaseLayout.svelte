@@ -21,21 +21,13 @@
     EditActionContext,
     EditActionFn,
   } from '$lib/components/pages/record/edit/editors/edit-action-context';
-  import type { SectionEditorHandle } from '$lib/components/pages/record/edit/editors/editor-contract';
+  import type { EditorCallbacks } from '$lib/components/pages/record/edit/editors/editor-callbacks';
   import { resolveDetailSubrouteMode } from '$lib/detail-subroute-mode';
   import { isFocusModePath } from '$lib/focus-mode';
   import { setEntityContext } from '$lib/entity-context';
   import { createBelowBreakpointFlag } from '$lib/use-below-breakpoint.svelte';
 
-  type SectionDef = EditSectionDef<TKey> & { usesSectionEditorForm: boolean };
-
-  type EditorRefBox = { current: SectionEditorHandle | undefined };
-  type EditorCallbacks = {
-    ref: EditorRefBox;
-    onsaved: () => void;
-    onerror: (msg: string) => void;
-    ondirtychange: (dirty: boolean) => void;
-  };
+  type SectionDef = EditSectionDef<TKey>;
 
   let {
     profile,

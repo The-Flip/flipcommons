@@ -52,8 +52,8 @@ from .schemas import (
 )
 from .types import RelationshipClaimValue
 from .validation import (
+    MemberSpec,
     RelationshipSchema,
-    ValueKeySpec,
     get_display_override,
     get_relationship_schema,
 )
@@ -118,10 +118,10 @@ class LabelLookup:
 def _fk_label(
     value: RelationshipClaimValue,
     schema: RelationshipSchema,
-    spec: ValueKeySpec,
+    spec: MemberSpec,
     labels: LabelLookup,
 ) -> _LabelResult:
-    """Resolve a spec's FK value into a ``_LabelResult``.
+    """Resolve a member's FK value into a ``_LabelResult``.
 
     Returns ``(None, "missing")`` when the claim dict carries no value
     for the key — an invariant violation that validation rule 4 should
@@ -178,13 +178,13 @@ def _fk_label(
     return _LabelResult(label=label, state="resolved")
 
 
-def resolve_identity_label(
+def resolve_member_label(
     value: RelationshipClaimValue,
     schema: RelationshipSchema,
-    spec: ValueKeySpec,
+    spec: MemberSpec,
     labels: LabelLookup,
 ) -> _LabelResult:
-    """Resolve one identity slot into a ``_LabelResult``.
+    """Resolve one member (primary-part) slot into a ``_LabelResult``.
 
     Composes :func:`get_display_override` (declarative display_key
     substitution) with :func:`_fk_label` (FK pk → label) and the canonical
@@ -192,12 +192,9 @@ def resolve_identity_label(
     ``state="resolved"``; missing-key paths log and return
     ``state="missing"``.
     """
-    assert spec.identity is not None, (
-        f"resolve_identity_label called on non-identity spec {spec.name!r}"
-    )
-    override = get_display_override(value, schema, spec.name)
+    override = get_display_override(value, spec)
     if override is not None:
-        return _LabelResult(label=str(override), state="resolved")
+        return _LabelResult(label=override, state="resolved")
     if spec.fk_target is not None:
         return _fk_label(value, schema, spec, labels)
     # Canonical scalar fallback. ``is not None`` (not truthy) so a
@@ -262,7 +259,8 @@ def _collect_refs(items: Iterable[FieldValue]) -> set[FkRef]:
         schema = get_relationship_schema(item.field_name)
         if schema is None:
             continue
-        for spec in schema.value_keys:
+        # Only members carry fk_target (structurally — PayloadSpec has none).
+        for spec in schema.members:
             if spec.fk_target is None:
                 continue
             # Display-engine limitation. Same check fires in ``_fk_label``;
@@ -285,10 +283,11 @@ def _collect_refs(items: Iterable[FieldValue]) -> set[FkRef]:
 def resolve_labels(items: Iterable[FieldValue]) -> LabelLookup:
     """Build a :class:`LabelLookup` for all relationship claims in ``items``.
 
-    One query per FK target model. Resolved labels are ``str(instance)``,
-    so each FK target model is expected to define a meaningful ``__str__``.
-    Missing rows (referent deleted) simply don't appear in the result;
-    callers (``_fk_label``) emit ``state="deleted"`` for those refs.
+    One query per FK target model. Claim-controlled targets provide their label
+    through the model-level ``claim_display_label`` hook; other Django models
+    retain the ``str(instance)`` fallback. Missing rows (referent deleted)
+    simply don't appear in the result; callers (``_fk_label``) emit
+    ``state="deleted"`` for those refs.
     """
     pks_by_model: dict[type[Model], set[int]] = defaultdict(set)
     for ref in _collect_refs(items):
@@ -296,8 +295,15 @@ def resolve_labels(items: Iterable[FieldValue]) -> LabelLookup:
 
     lookup = LabelLookup()
     for model, pks in pks_by_model.items():
-        for inst in model._default_manager.filter(pk__in=pks):
-            lookup.add(FkRef(model, inst.pk), str(inst))
+        if issubclass(model, ClaimControlledModel):
+            queryset = model._default_manager.filter(pk__in=pks)
+            if model.claim_display_select_related:
+                queryset = queryset.select_related(*model.claim_display_select_related)
+            for inst in queryset:
+                lookup.add(FkRef(model, inst.pk), inst.claim_display_label())
+            continue
+        for other in model._default_manager.filter(pk__in=pks):
+            lookup.add(FkRef(model, other.pk), str(other))
     return lookup
 
 
@@ -390,58 +396,51 @@ def _build_relationship_display(
 ) -> ClaimDisplayValueSchema:
     """Structured rendering for a relationship-claim value.
 
-    Generic engine: identity slots are emitted in declaration order via
-    :func:`resolve_identity_label`; non-identity, non-display-override
-    specs are emitted as ``ClaimDisplayQualifierPartSchema`` entries in
-    declaration order. Absent qualifier keys are skipped; present-but-
-    falsy qualifiers (``None``, ``False``, ``0``, ``""``) are emitted —
-    "should this be visible to the user" is the frontend's job.
+    Generic engine: members are the primary parts, emitted in declaration
+    order via :func:`resolve_member_label` (the wire field is still named
+    ``identity`` — see ``ClaimDisplayValueSchema``); payload specs are
+    emitted as ``ClaimDisplayQualifierPartSchema`` entries in declaration
+    order, except display_key targets, which a member's rendering consumes.
+    Absent qualifier keys are skipped; present-but-falsy qualifiers
+    (``None``, ``False``, ``0``, ``""``) are emitted — "should this be
+    visible to the user" is the frontend's job.
     """
-    # display_key targets are consumed by their identity spec's rendering;
-    # they must not also surface as qualifiers.
-    consumed_by_display: set[ClaimValueKey] = {
-        s.display_key for s in schema.value_keys if s.display_key is not None
-    }
+    # Absent ladder rungs are absence by design, not data violations: an
+    # xor_groups namespace sets exactly one group per claim, so the other
+    # groups' slots (nullable FK → None, literal → "") are skipped rather
+    # than rendered as missing primary parts.
+    absent_xor_slots: set[ClaimValueKey] = set()
+    if schema.xor_groups is not None:
+        absent_xor_slots = {
+            name
+            for group in schema.xor_groups
+            for name in group
+            if value.get(name) in (None, "")
+        }
 
     identity_parts: list[ClaimDisplayIdentityPartSchema] = []
     qualifier_parts: list[ClaimDisplayQualifierPartSchema] = []
 
-    for spec in schema.value_keys:
-        if spec.identity is not None:
-            result = resolve_identity_label(value, schema, spec, labels)
-            identity_parts.append(
-                ClaimDisplayIdentityPartSchema(
-                    key=spec.name,
-                    label=result.label,
-                    state=result.state,
-                )
+    for member in schema.members:
+        if member.name in absent_xor_slots:
+            continue
+        result = resolve_member_label(value, schema, member, labels)
+        identity_parts.append(
+            ClaimDisplayIdentityPartSchema(
+                key=member.name,
+                label=result.label,
+                state=result.state,
             )
-            continue
+        )
 
-        if spec.name in consumed_by_display:
+    for pspec in schema.payload:
+        # display_key targets are consumed by their member's rendering;
+        # they must not also surface as qualifiers.
+        if pspec.name in schema.display_targets:
             continue
-
-        if spec.name not in value:
+        if pspec.name not in value:
             continue
-
-        raw = value[spec.name]
-        if spec.fk_target is not None:
-            # TODO(qualifier-fk): no schema has non-identity FKs today; this
-            # branch exists for symmetry with the identity FK path. The
-            # state discriminant has nowhere to surface on
-            # ``ClaimDisplayQualifierPartSchema``, so ``deleted`` and
-            # ``missing`` both silently collapse to ``value=None`` here.
-            # When the first qualifier-FK schema is registered, widen
-            # ``ClaimDisplayQualifierPartSchema`` with a ``state`` field
-            # rather than shipping with the silent collapse.
-            qualifier_parts.append(
-                ClaimDisplayQualifierPartSchema(
-                    key=spec.name,
-                    value=_fk_label(value, schema, spec, labels).label,
-                )
-            )
-            continue
-
+        raw = value[pspec.name]
         # Pass the typed value through. ``bool`` stays bool through this
         # Python-side path because ``raw`` keeps its runtime type — the
         # Pydantic-side coercion risk (True → 1) is handled at the Schema
@@ -451,7 +450,7 @@ def _build_relationship_display(
             raw if raw is None or isinstance(raw, bool | int | str) else str(raw)
         )
         qualifier_parts.append(
-            ClaimDisplayQualifierPartSchema(key=spec.name, value=scalar)
+            ClaimDisplayQualifierPartSchema(key=pspec.name, value=scalar)
         )
 
     return ClaimDisplayValueSchema(identity=identity_parts, qualifiers=qualifier_parts)

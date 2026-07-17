@@ -118,7 +118,7 @@
   <!-- Lineage renders in the sidebar for single-model titles (see +layout.svelte),
        co-located with the specs/tag. The sidebar is desktop-only on the detail
        route, so mobile gets the same links here in a Related Models accordion. -->
-  {#if modelLineageSections(md).length > 0}
+  {#if modelLineageSections(md).length > 0 || (md.relationships?.length ?? 0) > 0 || (md.inbound_relationships?.length ?? 0) > 0}
     <div class="mobile-only">
       <AccordionSection heading="Related Models">
         <ModelLineageGroups model={md} />
@@ -333,7 +333,7 @@
   <!-- Related Titles — union of cross-title conversion/remake/bootleg/licensed-build links -->
   {#if title.related_titles && title.related_titles.length > 0}
     <AccordionSection heading="Related Titles">
-      <RelatedTitlesSection relatedTitles={title.related_titles} />
+      <RelatedTitlesSection relatedTitles={title.related_titles} inline />
     </AccordionSection>
   {/if}
 

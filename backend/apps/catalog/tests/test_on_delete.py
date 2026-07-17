@@ -243,14 +243,6 @@ class TestProtectBlocksDeletion:
             machine.delete()
         variant.delete()  # cleanup reference first
 
-    def test_converted_from_protected(self, machine):
-        conversion = make_machine_model(
-            name="MM Retheme", slug="mm-retheme", converted_from=machine
-        )
-        with pytest.raises(ProtectedError):
-            machine.delete()
-        conversion.delete()
-
     def test_remake_of_protected(self, machine):
         remake = make_machine_model(
             name="MM Remake", slug="mm-remake", remake_of=machine
@@ -258,24 +250,6 @@ class TestProtectBlocksDeletion:
         with pytest.raises(ProtectedError):
             machine.delete()
         remake.delete()
-
-    def test_bootleg_of_protected(self, machine):
-        bootleg = make_machine_model(
-            name="MM Bootleg", slug="mm-bootleg", bootleg_of=machine
-        )
-        with pytest.raises(ProtectedError):
-            machine.delete()
-        bootleg.delete()
-
-    def test_licensed_build_of_protected(self, machine):
-        licensed_build = make_machine_model(
-            name="MM Licensed Build",
-            slug="mm-licensed-build",
-            licensed_build_of=machine,
-        )
-        with pytest.raises(ProtectedError):
-            machine.delete()
-        licensed_build.delete()
 
     def test_location_parent_protected(self, db):
         parent = Location.objects.create(name="USA", slug="usa", location_path="usa")

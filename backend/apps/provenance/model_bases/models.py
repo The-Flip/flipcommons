@@ -68,10 +68,24 @@ class ClaimControlledModel(models.Model):
     # Subclasses override with their own ``frozenset``.
     claims_exempt: ClassVar[frozenset[str]] = frozenset()
 
+    # Joins needed by ``claim_display_label()`` when this model is referenced
+    # from an FK-bearing claim value. The display engine applies them to its
+    # one batched query per target model, so an override remains N+1-safe.
+    claim_display_select_related: ClassVar[tuple[str, ...]] = ()
+
     claims = GenericRelation("provenance.Claim")
 
     class Meta:
         abstract = True
+
+    def claim_display_label(self) -> str:
+        """Label used when this row is referenced from a displayed claim value.
+
+        Models may override this together with ``claim_display_select_related``
+        when their concise provenance label needs related data. The generic
+        default preserves the historical ``str(instance)`` behavior.
+        """
+        return str(self)
 
 
 class ClaimThroughModel(models.Model):

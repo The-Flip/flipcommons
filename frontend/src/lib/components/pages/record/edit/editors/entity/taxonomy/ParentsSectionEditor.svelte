@@ -26,7 +26,6 @@
     save: saveFn,
     onsaved,
     onerror,
-    ondirtychange = () => {},
     type,
     label = 'Parents',
     placeholder = 'Search...',
@@ -47,13 +46,7 @@
   let fieldErrors = $state<FieldErrors>({});
   let dirty = $derived(publicIdSetChanged(selectedParents, originalParents));
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

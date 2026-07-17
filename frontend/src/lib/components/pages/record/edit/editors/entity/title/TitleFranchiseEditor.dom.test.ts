@@ -59,17 +59,13 @@ describe('TitleFranchiseEditor', () => {
   });
 
   it('reports clean state initially with the saved franchise rendered (no network)', async () => {
-    const user = userEvent.setup();
     render(TitleFranchiseEditorFixture, {
       props: { initialData: INITIAL_TITLE },
     });
 
     expect(screen.getByRole('combobox', { name: 'Franchise' })).toHaveValue('Addams Family');
     expect(GET).not.toHaveBeenCalled();
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
   });
 
   it('does not PATCH when saving a clean form', async () => {
@@ -93,7 +89,7 @@ describe('TitleFranchiseEditor', () => {
     // The franchise is optional, so its clear (×) is present; clearing empties it.
     await user.click(screen.getByRole('button', { name: 'Clear selection' }));
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 

@@ -202,8 +202,9 @@ class TestProductionStatusModelDetail:
 
 @pytest.mark.django_db
 class TestProductionStatusTitleRollup:
-    """Multi-model Title rollup: agree over models that *have* a status (drop
-    nulls), then best-effort suppress ``produced``."""
+    """Multi-model Title rollup: production_status agrees like every other spec
+    field — all models must share the same non-null status, any null vetoes the
+    rollup — then best-effort suppress ``produced``."""
 
     @pytest.fixture
     def title(self):
@@ -227,13 +228,15 @@ class TestProductionStatusTitleRollup:
         make_machine_model(name="B", slug="b", title=title, production_status=s2)
         assert self._agreed(client, title).get("production_status") is None
 
-    def test_nulls_dropped_before_agreement(self, client, title):
-        status = ProductionStatus.objects.create(name="Unreleased", slug="unreleased")
-        make_machine_model(name="A", slug="a", title=title, production_status=status)
-        make_machine_model(name="B", slug="b", title=title)  # no status
-        assert self._agreed(client, title)["production_status"]["public_id"] == (
-            "unreleased"
-        )
+    def test_null_status_vetoes_rollup(self, client, title):
+        """A null status is unknown, not a value to agree with: one model with a
+        status and one without does not roll up. This is the Cactus Canyon case
+        (a produced original with a null status + one aftermarket remake) — the
+        title must not inherit the lone model's status."""
+        status = ProductionStatus.objects.create(name="Aftermarket", slug="aftermarket")
+        make_machine_model(name="A", slug="a", title=title)  # no status
+        make_machine_model(name="B", slug="b", title=title, production_status=status)
+        assert self._agreed(client, title).get("production_status") is None
 
     def test_all_null_is_none_no_raise(self, client, title):
         make_machine_model(name="A", slug="a", title=title)

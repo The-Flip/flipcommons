@@ -21,6 +21,7 @@ from apps.catalog.models import (
     MachineModel,
     MachineModelGameplayFeature,
     Manufacturer,
+    ModelRelationship,
     Person,
     Series,
     Tag,
@@ -70,8 +71,9 @@ from apps.provenance.models import (
 from apps.provenance.test_factories import make_claim, make_ingest_source
 from apps.provenance.validation import (
     FkTarget,
+    MemberSpec,
+    PayloadSpec,
     RelationshipSchema,
-    ValueKeySpec,
     get_relationship_schema,
 )
 
@@ -3086,14 +3088,14 @@ def test_non_string_identity_rejected(monkeypatch):
     # no global registry mutation (a successful register would persist).
     crafted = RelationshipSchema(
         namespace="fake_int_identity",
-        value_keys=(
-            ValueKeySpec(
+        members=(
+            MemberSpec(
                 name="amount",
                 scalar_type=int,
-                required=True,
                 identity="amount",
             ),
         ),
+        payload=(),
         valid_subjects=frozenset({Manufacturer}),
     )
     monkeypatch.setattr(
@@ -3117,21 +3119,20 @@ def test_mixed_multi_key_identity_rejected(monkeypatch):
     # reject it rather than classify it as a multi-FK member.
     crafted = RelationshipSchema(
         namespace="fake_mixed_multikey",
-        value_keys=(
-            ValueKeySpec(
+        members=(
+            MemberSpec(
                 name="person",
                 scalar_type=int,
-                required=True,
                 identity="person",
                 fk_target=FkTarget(Person, "pk"),
             ),
-            ValueKeySpec(
+            MemberSpec(
                 name="amount",
                 scalar_type=int,
-                required=True,
                 identity="amount",
             ),
         ),
+        payload=(),
         valid_subjects=frozenset({Manufacturer}),
     )
     monkeypatch.setattr(
@@ -3178,23 +3179,21 @@ def test_payload_on_non_single_fk_rejected(monkeypatch):
     # schema does this, so craft one and confirm registration-time rejection.
     crafted = RelationshipSchema(
         namespace="fake_multikey_payload",
-        value_keys=(
-            ValueKeySpec(
+        members=(
+            MemberSpec(
                 name="person",
                 scalar_type=int,
-                required=True,
                 identity="person",
                 fk_target=FkTarget(Person, "pk"),
             ),
-            ValueKeySpec(
+            MemberSpec(
                 name="role",
                 scalar_type=int,
-                required=True,
                 identity="role",
                 fk_target=FkTarget(CreditRole, "pk"),
             ),
-            ValueKeySpec(name="weight", scalar_type=int, required=False, nullable=True),
         ),
+        payload=(PayloadSpec(name="weight", scalar_type=int, nullable=True),),
         valid_subjects=frozenset({Manufacturer}),
     )
     monkeypatch.setattr(
@@ -3217,16 +3216,17 @@ def test_multiple_payload_slots_rejected(monkeypatch):
     # single-FK shape can carry at most one payload slot. Craft a two-payload one.
     crafted = RelationshipSchema(
         namespace="fake_two_payload",
-        value_keys=(
-            ValueKeySpec(
+        members=(
+            MemberSpec(
                 name="feature",
                 scalar_type=int,
-                required=True,
                 identity="feature",
                 fk_target=FkTarget(GameplayFeature, "pk"),
             ),
-            ValueKeySpec(name="count", scalar_type=int, required=False, nullable=True),
-            ValueKeySpec(name="note", scalar_type=str, required=False, nullable=True),
+        ),
+        payload=(
+            PayloadSpec(name="count", scalar_type=int, nullable=True),
+            PayloadSpec(name="note", scalar_type=str, nullable=True),
         ),
         valid_subjects=frozenset({Manufacturer}),
     )
@@ -3571,12 +3571,12 @@ def test_schema_carries_max_length():
     # loudly here, not silently re-open the over-length trap.
     abbr = get_relationship_schema("abbreviation")
     assert abbr is not None
-    (abbr_id,) = [s for s in abbr.value_keys if s.identity is not None]
+    (abbr_id,) = [m for m in abbr.members if m.identity is not None]
     assert abbr_id.max_length == 50
 
     alias = get_relationship_schema("manufacturer_alias")
     assert alias is not None
-    (alias_id,) = [s for s in alias.value_keys if s.identity is not None]
+    (alias_id,) = [m for m in alias.members if m.identity is not None]
     assert alias_id.max_length == 200
 
 
@@ -3666,3 +3666,341 @@ def test_member_identity_shares_canonical_fold():
     abbr_spec = _relationship_member_spec(MachineModel, "abbreviation", abbr_entry)
     abbr_ident = _member_identity("MedMad", "abbreviation", abbr_spec, abbr_entry)
     assert abbr_ident == {"value": normalize_abbreviation_value("MedMad")}
+
+
+# ── model_relationship: the dict-form XOR member syntax ─────────────
+
+
+def _edge_rows(machine_model: MachineModel) -> set[tuple[str | None, str, str, str]]:
+    return {
+        (
+            e.target_machine.slug if e.target_machine else None,
+            e.target_label,
+            e.relationship_type,
+            e.license_status,
+        )
+        for e in ModelRelationship.objects.filter(machine_model=machine_model)
+    }
+
+
+@pytest.fixture
+def rock(machine_model):
+    from apps.catalog.tests.conftest import make_machine_model
+
+    return make_machine_model(name="Rock", slug="rock")
+
+
+def test_model_relationship_machine_target(machine_model, rock):
+    report = _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          relationship_type: copy
+          license_status: unlicensed
+""")
+    assert report.rejected == 0
+    assert _edge_rows(machine_model) == {("rock", "", "copy", "unlicensed")}
+
+
+def test_model_relationship_label_target(machine_model):
+    report = _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_label: several Gottlieb EM models
+          relationship_type: conversion_kit
+          license_status: unknown
+""")
+    assert report.rejected == 0
+    assert _edge_rows(machine_model) == {
+        (None, "several Gottlieb EM models", "conversion_kit", "unknown")
+    }
+
+
+def test_model_relationship_multiple_members(machine_model, rock):
+    report = _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          relationship_type: copy
+          license_status: licensed
+        - target_label: an unknown 1960s replay game
+          relationship_type: conversion
+          license_status: unknown
+""")
+    assert report.rejected == 0
+    assert _edge_rows(machine_model) == {
+        ("rock", "", "copy", "licensed"),
+        (None, "an unknown 1960s replay game", "conversion", "unknown"),
+    }
+
+
+def test_model_relationship_same_patch_create_target(machine_model):
+    # The target machine is created earlier in the same patch, so the member
+    # rides the deferred (identity_refs) path and resolves post-create.
+    report = _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - title.galaxie-title:
+      create: true
+      name: Galaxie
+  - model.galaxie:
+      create: true
+      name: Galaxie
+      title: galaxie-title
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: galaxie
+          relationship_type: conversion_kit
+          license_status: licensed
+""")
+    assert report.rejected == 0
+    assert _edge_rows(machine_model) == {("galaxie", "", "conversion_kit", "licensed")}
+
+
+def test_model_relationship_remove_member(machine_model, rock):
+    _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          relationship_type: copy
+          license_status: unlicensed
+""")
+    assert _edge_rows(machine_model)
+    report = _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      remove:
+        model_relationship:
+          - target_machine: rock
+""",
+        patch_id="0002-remove",
+    )
+    assert report.rejected == 0
+    assert _edge_rows(machine_model) == set()
+
+
+def test_model_relationship_label_reword_supersedes_across_patches(machine_model):
+    """The label slot is a singleton keyed by the slot, not the wording: a
+    later same-attribution label assert rewords the edge in place — same row
+    pk, one edge — instead of adding a second unresolved-target edge."""
+    _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_label: an unknown Gottlieb game
+          relationship_type: conversion
+          license_status: unknown
+""")
+    original_pk = ModelRelationship.objects.get(machine_model=machine_model).pk
+    report = _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_label: an unidentified 1960s Gottlieb
+          relationship_type: conversion
+          license_status: unknown
+""",
+        patch_id="0002-reword",
+    )
+    assert report.rejected == 0
+    edge = ModelRelationship.objects.get(machine_model=machine_model)
+    assert edge.pk == original_pk
+    assert edge.target_label == "an unidentified 1960s Gottlieb"
+
+
+def test_model_relationship_label_remove_by_stale_wording(machine_model):
+    """``remove:`` by ``target_label`` matches the model's single label slot
+    regardless of wording — a reworded edge is still removed when the remove
+    entry quotes the old text."""
+    _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_label: an unknown Gottlieb game
+          relationship_type: conversion
+          license_status: unknown
+""")
+    _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_label: an unidentified 1960s Gottlieb
+          relationship_type: conversion
+          license_status: unknown
+""",
+        patch_id="0002-reword",
+    )
+    report = _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      remove:
+        model_relationship:
+          - target_label: an unknown Gottlieb game
+""",
+        patch_id="0003-remove",
+    )
+    assert report.rejected == 0
+    assert _edge_rows(machine_model) == set()
+
+
+def test_model_relationship_remove_with_payload_key_rejected(machine_model, rock):
+    with pytest.raises(PatchError, match="payload key"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      remove:
+        model_relationship:
+          - target_machine: rock
+            relationship_type: copy
+""")
+
+
+def test_model_relationship_missing_type_rejected(machine_model, rock):
+    with pytest.raises(PatchError, match="missing required key 'relationship_type'"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          license_status: unknown
+""")
+
+
+def test_model_relationship_missing_license_status_rejected(machine_model, rock):
+    # license_status is deliberately explicit in patches — no silent default.
+    with pytest.raises(PatchError, match="missing required key 'license_status'"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          relationship_type: copy
+""")
+
+
+def test_model_relationship_out_of_vocab_type_rejected(machine_model, rock):
+    with pytest.raises(PatchError, match="must be one of"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          relationship_type: remake
+          license_status: unknown
+""")
+
+
+def test_model_relationship_both_targets_rejected(machine_model, rock):
+    with pytest.raises(PatchError, match="exactly one"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          target_label: redundant
+          relationship_type: copy
+          license_status: unknown
+""")
+
+
+def test_model_relationship_no_target_rejected(machine_model):
+    with pytest.raises(PatchError, match="exactly one"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - relationship_type: copy
+          license_status: unknown
+""")
+
+
+def test_model_relationship_unknown_key_rejected(machine_model, rock):
+    with pytest.raises(PatchError, match="unknown key"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          relationship_type: copy
+          license_status: unknown
+          bogus: 1
+""")
+
+
+def test_model_relationship_bare_string_member_rejected(machine_model, rock):
+    with pytest.raises(PatchError, match="must be a mapping"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - rock
+""")
+
+
+def test_model_relationship_unresolvable_target_rejected(machine_model):
+    with pytest.raises(PatchError, match="does not resolve"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: no-such-machine
+          relationship_type: copy
+          license_status: unknown
+""")
+
+
+def test_model_relationship_duplicate_member_rejected(machine_model, rock):
+    with pytest.raises(PatchError, match="duplicate member"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          relationship_type: copy
+          license_status: unknown
+        - target_machine: rock
+          relationship_type: conversion
+          license_status: unknown
+""")
+
+
+def test_model_relationship_explicit_null_key_rejected(machine_model, rock):
+    with pytest.raises(PatchError, match="omit the key"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          target_label: null
+          relationship_type: copy
+          license_status: unknown
+""")

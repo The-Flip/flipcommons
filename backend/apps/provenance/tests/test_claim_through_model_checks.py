@@ -15,6 +15,7 @@ from apps.provenance.model_bases import (
     ClaimRelationshipSpec,
     EmptyTargetPolicy,
     MemberField,
+    MemberXor,
     PayloadField,
     SingleSubject,
     XorSubject,
@@ -212,9 +213,188 @@ def test_xor_rejects_unconditional_unique() -> None:
     assert _ids(facts) == ["provenance.E006"]
 
 
+# --- member_xor (target-ladder) specs -------------------------------------
+
+
+def _ladder_spec(
+    *,
+    member_xor: MemberXor | None = None,
+) -> ClaimRelationshipSpec:
+    return ClaimRelationshipSpec(
+        namespace="model_relationship",
+        subject=SingleSubject("machine_model"),
+        members=(
+            MemberField("target_machine", identity="target_machine", nullable=True),
+            MemberField(
+                "target_manufacturer", identity="target_manufacturer", nullable=True
+            ),
+            MemberField("target_label", identity="target_label"),
+        ),
+        member_xor=member_xor
+        or MemberXor(
+            groups=(("target_machine",), ("target_manufacturer", "target_label"))
+        ),
+    )
+
+
+_LADDER_FIELDS = frozenset(
+    {"machine_model", "target_machine", "target_manufacturer", "target_label"}
+)
+_LADDER_UNIQUES = (
+    _UniqueShape(
+        frozenset({"machine_model", "target_machine"}),
+        Q(target_machine__isnull=False),
+    ),
+    _UniqueShape(
+        frozenset({"machine_model", "target_manufacturer", "target_label"}),
+        Q(target_manufacturer__isnull=False),
+    ),
+    _UniqueShape(
+        frozenset({"machine_model", "target_label"}),
+        Q(target_machine__isnull=True, target_manufacturer__isnull=True),
+    ),
+)
+
+
+def _ladder_facts(
+    *,
+    spec: ClaimRelationshipSpec | None = None,
+    uniques: tuple[_UniqueShape, ...] = _LADDER_UNIQUES,
+) -> _ThroughModelFacts:
+    return _ThroughModelFacts(
+        label="app.ModelRelationship",
+        spec=spec or _ladder_spec(),
+        field_names=_LADDER_FIELDS,
+        uniques=uniques,
+    )
+
+
+def test_well_formed_member_xor_ladder_passes() -> None:
+    assert _ids(_ladder_facts()) == []
+
+
+def test_member_xor_allows_three_members() -> None:
+    """E002 widens to 3 members only when member_xor is declared."""
+    without_xor = ClaimRelationshipSpec(
+        namespace="model_relationship",
+        subject=SingleSubject("machine_model"),
+        members=_ladder_spec().members,
+    )
+    assert "provenance.E002" in _ids(
+        _ladder_facts(spec=without_xor, uniques=_LADDER_UNIQUES)
+    )
+
+
+def test_member_xor_requires_at_least_two_groups() -> None:
+    spec = _ladder_spec(
+        member_xor=MemberXor(
+            groups=(("target_machine", "target_manufacturer", "target_label"),)
+        )
+    )
+    assert "provenance.E007" in _ids(_ladder_facts(spec=spec))
+
+
+def test_member_xor_rejects_non_member_field() -> None:
+    spec = _ladder_spec(
+        member_xor=MemberXor(groups=(("target_machine",), ("nonexistent",)))
+    )
+    assert "provenance.E007" in _ids(_ladder_facts(spec=spec))
+
+
+def test_member_xor_rejects_overlapping_groups() -> None:
+    spec = _ladder_spec(
+        member_xor=MemberXor(
+            groups=(("target_machine",), ("target_machine", "target_label"))
+        )
+    )
+    assert "provenance.E007" in _ids(_ladder_facts(spec=spec))
+
+
+def test_member_xor_uniqueness_requires_full_identity_coverage() -> None:
+    """Rung constraints that miss an identity member report E008."""
+    assert _ids(_ladder_facts(uniques=_LADDER_UNIQUES[:1])) == ["provenance.E008"]
+
+
+def test_member_xor_uniqueness_rejects_stray_field() -> None:
+    """A rung constraint reaching outside the claim identity reports E008."""
+    stray = (
+        _UniqueShape(
+            frozenset({"machine_model", "target_machine", "license_status"}),
+            Q(target_machine__isnull=False),
+        ),
+    ) + _LADDER_UNIQUES[1:]
+    assert _ids(_ladder_facts(uniques=stray)) == ["provenance.E008"]
+
+
+def test_member_xor_uniqueness_ignores_unconditional_constraints() -> None:
+    """An unconditional UC can't stand in for the rung constraints (NULLs
+    compare distinct, so it wouldn't dedupe null-bearing identities)."""
+    unconditional = (_UniqueShape(frozenset(_LADDER_FIELDS), None),)
+    assert _ids(_ladder_facts(uniques=unconditional)) == ["provenance.E008"]
+
+
 # --- Acceptance ----------------------------------------------------------
 
 
 def test_real_models_pass() -> None:
     """The live through-model graph classifies cleanly at boot."""
     assert check_claim_through_models(app_configs=None) == []
+
+
+def test_member_xor_allows_non_identity_member() -> None:
+    """A non-identity member may anchor an XOR rung — membership is structural
+    (``spec.members``), not inferred from ``identity``, so E007 must not fire.
+
+    This is the narrowed-label shape (ModelRelationships step 7): the label
+    leaves the claim key but stays a member, and the rung uniques keyed by the
+    remaining identity — ``(machine_model, target_machine)`` where set,
+    ``(machine_model)`` alone where null — must satisfy E008 as-is.
+    """
+    spec = ClaimRelationshipSpec(
+        namespace="model_relationship",
+        subject=SingleSubject("machine_model"),
+        members=(
+            MemberField("target_machine", identity="target_machine", nullable=True),
+            MemberField("target_label"),
+        ),
+        member_xor=MemberXor(groups=(("target_machine",), ("target_label",))),
+    )
+    facts = _ThroughModelFacts(
+        label="app.ModelRelationship",
+        spec=spec,
+        field_names=frozenset({"machine_model", "target_machine", "target_label"}),
+        uniques=(
+            _UniqueShape(
+                frozenset({"machine_model", "target_machine"}),
+                Q(target_machine__isnull=False),
+            ),
+            _UniqueShape(
+                frozenset({"machine_model"}),
+                Q(target_machine__isnull=True),
+            ),
+        ),
+    )
+    assert _ids(facts) == []
+
+
+def test_member_xor_rejects_payload_field() -> None:
+    """A payload field can never anchor an XOR rung — E007, same as unknown."""
+    spec = ClaimRelationshipSpec(
+        namespace="model_relationship",
+        subject=SingleSubject("machine_model"),
+        members=(
+            MemberField("target_machine", identity="target_machine", nullable=True),
+            MemberField("target_label", identity="target_label"),
+        ),
+        payload=(PayloadField("license_status", required=True),),
+        member_xor=MemberXor(groups=(("target_machine",), ("license_status",))),
+    )
+    facts = _ThroughModelFacts(
+        label="app.ModelRelationship",
+        spec=spec,
+        field_names=frozenset(
+            {"machine_model", "target_machine", "target_label", "license_status"}
+        ),
+        uniques=_LADDER_UNIQUES,
+    )
+    assert "provenance.E007" in _ids(facts)

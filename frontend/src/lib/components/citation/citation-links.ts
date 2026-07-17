@@ -12,6 +12,19 @@ export interface CitationLink {
   display_name: string;
 }
 
+/** A citation's identity fields, shared across the tooltip, sources panel and
+ *  edit-history change rows — the input to `CitationBody`. Every citation wire
+ *  schema (inline, evidence, field-change) structurally satisfies it. */
+export interface CitationIdentity {
+  source_name: string;
+  source_type: string;
+  author: string;
+  year?: number | null;
+  locator: string;
+  quote: string;
+  links?: CitationLink[];
+}
+
 /** The title's href and the remaining links, split from a source's links.
  *  The `reference` link is the source's canonical URL, so it becomes the
  *  hyperlink on the source name rather than a separate chip. */

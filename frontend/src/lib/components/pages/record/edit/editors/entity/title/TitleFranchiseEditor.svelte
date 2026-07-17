@@ -20,13 +20,7 @@
     series?: FranchiseRef;
   };
 
-  let {
-    initialData,
-    slug,
-    onsaved,
-    onerror,
-    ondirtychange = () => {},
-  }: SectionEditorProps<FranchiseTitle> = $props();
+  let { initialData, slug, onsaved, onerror }: SectionEditorProps<FranchiseTitle> = $props();
 
   // Original keeps the `''` sentinel for "none"; the form binds `string | null`
   // (the widget clears to `null`), normalized back to `''` at the diff boundary
@@ -40,18 +34,12 @@
   let current = $derived({ franchise: franchise ?? '', series: series ?? '' });
   let dirty = $derived(Object.keys(diffScalarFields(current, original)).length > 0);
 
+  export { dirty };
+
   let fieldErrors = $state<FieldErrors>({});
 
   function initialSelection(ref: FranchiseRef): EntityOption | null {
     return ref ? { value: ref.public_id, label: ref.name } : null;
-  }
-
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
   }
 
   export async function save(meta?: SaveMeta): Promise<void> {
