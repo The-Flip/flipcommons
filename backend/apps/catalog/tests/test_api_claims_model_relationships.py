@@ -1021,7 +1021,8 @@ def test_cross_title_relation_covers_every_edge_type() -> None:
     """CrossTitleRelation is a hand-written flat Literal (kept flat so it inlines
     in the OpenAPI schema), so this locks it to {remake_of} ∪ the edge types — a
     new relationship_type can't silently omit its cross-title arm and fail
-    Literal validation at serialize time (re-themes always cross titles)."""
+    Literal validation at serialize time (a re-theme's donor nearly always sits
+    under its own Title, so this is a re-theme's normal read path)."""
     from typing import get_args
 
     from apps.catalog.api.schemas import RelationshipTypeLiteral

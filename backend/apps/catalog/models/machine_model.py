@@ -409,15 +409,17 @@ class MachineModel(
     def first_model_candidates(cls) -> models.QuerySet[MachineModel]:
         """The "first model" rule, uncorrelated: a title's active, non-variant
         models, ordered so its representative (the first row) is an original —
-        subordinate copies sort last, then earliest-first by ``(year, name)``.
+        subordinate models sort last, then earliest-first by ``(year, name)``.
 
-        Variants (cosmetic/LE) collapse out entirely. Copies stay in the list
-        but sort after every original, so ``.first()`` / ``[:1]`` never picks a
-        copy over the model it copies — while a Title whose *only* model is a
-        copy still surfaces it. "Copy" means a subordinating
-        ``ModelRelationship`` edge exists (the Big Ben rule: the Williams
-        original heads the Title, not its Segasa licensed build); conversions
-        and kits are originals in their own right and don't subordinate.
+        Variants (cosmetic/LE) collapse out entirely. Subordinate models stay in
+        the list but sort after every original, so ``.first()`` / ``[:1]`` never
+        picks one over the model it derives from — while a Title whose *only*
+        model is subordinate still surfaces it. Subordinate means a
+        subordinating ``ModelRelationship`` edge exists (the Big Ben rule: the
+        Williams original heads the Title, not its Segasa licensed build) —
+        today a copy or a re-theme, where the source game outranks the
+        derivative sharing its Title; conversions and kits are originals in
+        their own right and don't subordinate.
 
         Single source for that identity/order rule. Callers layer their own
         ``select_related`` / ``prefetch_related`` for their read shape, and

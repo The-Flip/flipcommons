@@ -328,9 +328,10 @@ class TestTitleDetailAggregation:
         assert related[0]["source_model"]["public_id"] == "galaxie-rmg-1"
 
     def test_related_titles_retheme_edge(self, client, db):
-        """A retheme edge always crosses titles (its donor has its own Title), so
-        it must serialize through the cross-title path — the regression guarding
-        the CrossTitleRelation literal against a missing edge type."""
+        """A re-theme's donor nearly always sits under its own Title (38 of the
+        39 seeded edges), so the cross-title path is a re-theme's normal read —
+        the regression guarding the CrossTitleRelation literal against a missing
+        edge type."""
         donor_title = Title.objects.create(name="Earthshaker", slug="earthshaker")
         donor = make_machine_model(
             name="Earthshaker", slug="earthshaker", title=donor_title

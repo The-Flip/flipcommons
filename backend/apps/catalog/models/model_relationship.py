@@ -91,12 +91,15 @@ RELATIONSHIP_TYPE_BEHAVIOR: dict[RelationshipType, RelationshipTypeBehavior] = {
     RelationshipType.COPY: RelationshipTypeBehavior(
         subordinates=True, requires_machine_target=False
     ),
-    # A re-theme has its own Title, so it never contends to head the donor's —
-    # subordination (a within-Title tiebreak) doesn't apply. Its donor is always
-    # known and seeded (IPDB names it in every note), so a free-text label rung
-    # would be a data error: require a machine target.
+    # A re-theme usually gets its own Title, but not always — Metallica
+    # (Retheme) sits under the Earthshaker Title alongside its donor — and where
+    # it does, the original heads the Title, never the re-skin (the Big Ben
+    # rule). Don't lean on the year tiebreak to get this right: a donor is
+    # necessarily older, but an undated re-theme would sort ahead of it. Its
+    # donor is always known and seeded (IPDB names it in every note), so a
+    # free-text label rung would be a data error: require a machine target.
     RelationshipType.RETHEME: RelationshipTypeBehavior(
-        subordinates=False, requires_machine_target=True
+        subordinates=True, requires_machine_target=True
     ),
 }
 """Per-type behavior classification — the forcing function for new types.
