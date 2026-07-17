@@ -23,7 +23,10 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
-from apps.catalog.models.model_relationship import TARGET_LABEL_MAX_LENGTH
+from apps.catalog.models.model_relationship import (
+    MACHINE_TARGET_REQUIRED_TYPES,
+    TARGET_LABEL_MAX_LENGTH,
+)
 from apps.claim_edit.claim_write import ClaimSpec, ValidationErrors, raise_form_error
 from apps.core.models import SluggedModel
 from apps.core.types import ClaimFieldName
@@ -40,6 +43,13 @@ from .schemas import (
     CreditInputSchema,
     GameplayFeatureInputSchema,
     ModelRelationshipInputSchema,
+)
+
+# String wire values of the types that forbid a label rung (mirrors the DB
+# CHECK), for the planner's row-level rejection. Derived from the behavior
+# table, so a new requires_machine_target type is covered with no edit here.
+_MACHINE_TARGET_REQUIRED_VALUES: frozenset[str] = frozenset(
+    t.value for t in MACHINE_TARGET_REQUIRED_TYPES
 )
 
 # Concrete catalog models with a self-referencing ``parents`` M2M / reverse
@@ -568,6 +578,13 @@ def plan_model_relationship_claims(
             errors.add_field(
                 f"relationships.{row_key}",
                 "Set either a target machine or a text description — exactly one.",
+            )
+            continue
+        if label and row.relationship_type in _MACHINE_TARGET_REQUIRED_VALUES:
+            errors.add_field(
+                f"relationships.{row_key}",
+                f"A {row.relationship_type} relationship needs a target machine "
+                "from the catalog, not a text description.",
             )
             continue
         if len(label) > TARGET_LABEL_MAX_LENGTH:

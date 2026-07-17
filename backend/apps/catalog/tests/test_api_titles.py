@@ -327,6 +327,32 @@ class TestTitleDetailAggregation:
         assert related[0]["other_title"]["public_id"] == "galaxie"
         assert related[0]["source_model"]["public_id"] == "galaxie-rmg-1"
 
+    def test_related_titles_retheme_edge(self, client, db):
+        """A retheme edge always crosses titles (its donor has its own Title), so
+        it must serialize through the cross-title path — the regression guarding
+        the CrossTitleRelation literal against a missing edge type."""
+        donor_title = Title.objects.create(name="Earthshaker", slug="earthshaker")
+        donor = make_machine_model(
+            name="Earthshaker", slug="earthshaker", title=donor_title
+        )
+        this_title = Title.objects.create(name="Metallica Retheme", slug="metallica-rt")
+        subject = make_machine_model(
+            name="Metallica", slug="metallica-rt-1", title=this_title
+        )
+        ModelRelationship.objects.create(
+            machine_model=subject,
+            target_machine=donor,
+            relationship_type=RelationshipType.RETHEME,
+            license_status=LicenseStatus.UNLICENSED,
+        )
+
+        data = client.get(f"/api/pages/title/{this_title.slug}").json()
+        related = data["related_titles"]
+        assert len(related) == 1
+        assert related[0]["relation"] == "retheme"
+        assert related[0]["license_status"] == "unlicensed"
+        assert related[0]["other_title"]["public_id"] == "earthshaker"
+
     def test_related_titles_remake_fk_alongside_edges(self, client, db):
         """The permanent `remake_of` FK and relationship edges contribute
         lines to the same panel."""

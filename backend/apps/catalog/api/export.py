@@ -46,7 +46,7 @@ from ninja import Router, Schema
 from pydantic import Field as PydanticField
 from pydantic import TypeAdapter, create_model
 
-from apps.catalog.models import CatalogModel
+from apps.catalog.models import CatalogModel, LicenseStatus, RelationshipType
 from apps.core.entity_types import all_linkable_models, get_linkable_model
 from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
@@ -171,14 +171,28 @@ class CreditExportSchema(Schema):
     role: str = PydanticField(description="Slug of the credit role (e.g. `design`).")
 
 
+def _describe_choices(prefix: str, choices: type[models.TextChoices]) -> str:
+    """A field-description string that enumerates a TextChoices' values, derived
+    so a new value propagates to the export docs with no hand-edit.
+
+    e.g. ``_describe_choices("Edge type", RelationshipType)`` →
+    "Edge type: `conversion`, `conversion_kit`, `copy` or `retheme`."
+    """
+    values = [f"`{v}`" for v in choices.values]
+    joined = (
+        values[0] if len(values) == 1 else f"{', '.join(values[:-1])} or {values[-1]}"
+    )
+    return f"{prefix}: {joined}."
+
+
 class ModelRelationshipExportSchema(Schema):
     """A typed edge to a donor/original machine, at any target resolution."""
 
     relationship_type: str = PydanticField(
-        description="Edge type: `conversion`, `conversion_kit` or `copy`."
+        description=_describe_choices("Edge type", RelationshipType)
     )
     license_status: str = PydanticField(
-        description="Authorization status: `licensed`, `unlicensed` or `unknown`."
+        description=_describe_choices("Authorization status", LicenseStatus)
     )
     target_machine: str | None = PydanticField(
         description="Slug of the target machine, when fully resolved; else null."
@@ -338,10 +352,7 @@ def _relation_doc(key: str, rel: RelationSpec) -> str:
     if rel.shape == "credits":
         return "Production credits, as person-slug / role-slug pairs."
     if rel.shape == "model_relationships":
-        return (
-            "Typed relationships to donor/original machines "
-            "(copies, conversions, conversion kits)."
-        )
+        return "Typed relationships like copies and conversions to donor/original machines."
     if rel.shape == "strings":
         return f"List of {label}."
     return f"Slugs of the associated {label}."

@@ -121,7 +121,7 @@ EXPECTED: dict[str, _ExpectedSchema] = {
                 scalar_type=str,
                 required=True,
                 max_length=20,
-                choices=("conversion", "conversion_kit", "copy"),
+                choices=("conversion", "conversion_kit", "copy", "retheme"),
             ),
             PayloadSpec(
                 name="license_status",

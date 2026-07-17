@@ -348,6 +348,42 @@ describe('RelatedModelsEditor', () => {
     ).toBeEnabled();
   });
 
+  it('offers retheme with a license select but no describe-it toggle', async () => {
+    // retheme sets requiresMachineTarget: it records license like any edge, but
+    // the target must be a seeded machine — so no label rung is offered.
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });
+
+    await user.click(screen.getByRole('button', { name: 'Add relationship' }));
+    await user.selectOptions(kindSelects()[0], 'retheme');
+
+    expect(screen.getByRole('combobox', { name: 'License status' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', {
+        name: 'Not in the catalog, or several machines? Describe it',
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('drops an in-progress label target when the row switches to retheme', async () => {
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });
+
+    await user.click(screen.getByRole('button', { name: 'Add relationship' }));
+    await user.selectOptions(kindSelects()[0], 'conversion_kit');
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Not in the catalog, or several machines? Describe it',
+      }),
+    );
+    await user.type(screen.getByRole('textbox', { name: 'Describe the target' }), 'some donor');
+
+    // Switching to a machine-target-only kind clears the label input.
+    await user.selectOptions(kindSelects()[0], 'retheme');
+    expect(screen.queryByRole('textbox', { name: 'Describe the target' })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search models...')).toBeInTheDocument();
+  });
+
   it('disables Add until the new row has a kind and a target', async () => {
     const user = userEvent.setup();
     render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });
