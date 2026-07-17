@@ -10,9 +10,8 @@ erDiagram
 
     Model ||--o{ Model : variant_of
     Model ||--o{ Model : remake_of
-    Model ||--o{ Model : converted_from
-    Model ||--o{ Model : bootleg_of
-    Model ||--o{ Model : licensed_build_of
+    Model ||--o{ ModelRelationship : source
+    ModelRelationship }o--o| Model : target_machine
 
     Manufacturer ||--o{ CorporateEntity : incarnations
     CorporateEntity ||--o{ Model : produced
@@ -62,41 +61,40 @@ The _Cactus Canyon_ Title includes the 1998 original and its remakes by Chicago 
 
 A **remake** is a Model that recreates an older game with new technology. Linked via `remake_of`. The original and its remakes all belong to the same Title.
 
-### Conversions
+### Model relationships
 
-_Star Trek_ (Bally, 1979) was converted into machines by other manufacturers:
+Copies, conversions and conversion kits use `ModelRelationship`, a typed edge from one Model to a target. A model can have several edges of the same type, so a copy can draw from several designs and a conversion kit can fit several donor machines.
 
-| Title     | Model        | Manufacturer         | Year | converted_from |
-| --------- | ------------ | -------------------- | ---- | -------------- |
-| Star Trek | Star Trek    | Bally                | 1979 | —              |
-| Star Trek | Challenger V | Professional Pinball | 1981 | Star Trek      |
-| Star Trek | Dark Rider   | Geiger-Automatenbau  | 1985 | Star Trek      |
+Each edge carries:
 
-A **conversion** is a Model that reuses the physical cabinet of another machine with a new playfield or theme. Linked via `converted_from`.
+- exactly one target: `target_machine` for a seeded Model, or `target_label` for a plain-text target such as "many late 1970s solid state Gottliebs"
+- a `relationship_type`: `copy`, `conversion` or `conversion_kit`
+- a `license_status`: `licensed`, `unlicensed` or `unknown`
 
-### Bootlegs
+A model can have many machine-target edges but at most one text-target edge. Text targets are useful when the source names a plural or unidentified target rather than one resolvable Model.
 
-A **bootleg** is a complete machine, built from scratch, that is an unauthorized copy of another maker's game — common among mid-century Italian and Spanish makers. It is linked to the game it copies via `bootleg_of`, carries the `bootleg` tag and keeps a normal `produced` production status (it is a real commercial machine, just unauthorized). The pinball community uses "bootleg" for both faithful reproductions and renamed/reskinned copies, so there is one relation, not a per-degree taxonomy.
+#### Conversions and conversion kits
 
-| Title         | Model         | Manufacturer  | bootleg_of                  |
-| ------------- | ------------- | ------------- | --------------------------- |
-| Alien Poker   | Alien Poker   | Williams      | —                           |
-| Alien Poker   | Space Poker   | LTD do Brasil | Alien Poker                 |
-| Video Pinball | Video Pinball | Atari         | —                           |
-| Rugby         | Rugby         | Sidam         | Video Pinball (other Title) |
+A **conversion** is a complete machine built by reusing another machine or its components with a new playfield, rules or theme. A **conversion kit** is a set of parts sold to convert a compatible donor machine; its target means "works with this donor", not "this individual machine was built from this donor".
 
-Unlike `remake_of` and `converted_from`, which stay within one Title by convention, `bootleg_of` records only _what was copied_ — where the bootleg's Model is filed is an independent editorial decision. A renamed bootleg (Sidam's _Rugby_, a copy of Atari's _Video Pinball_) sits under its own Title, so `bootleg_of` is the one lineage relation that routinely points across Titles; a same-name copy (LTD's _Space Poker_) may share the original's Title.
+| Model        | Manufacturer         | Relationship type | Target                                | License status |
+| ------------ | -------------------- | ----------------- | ------------------------------------- | -------------- |
+| Challenger V | Professional Pinball | conversion        | Star Trek (Bally, 1979)               | unknown        |
+| Dark Rider   | Geiger-Automatenbau  | conversion        | Star Trek (Bally, 1979)               | unknown        |
+| Sky Warrior  | IDI                  | conversion_kit    | many late 1970s solid state Gottliebs | unknown        |
 
-### Licensed builds
+#### Copies
 
-A **licensed build** is the authorized twin of a bootleg: a complete machine built by a licensee or foreign subsidiary that reproduces another maker's design under license, for another market. It is linked to the original via `licensed_build_of`, carries the `licensed-build` tag and keeps a normal `produced` production status. Bally Wulff — Bally's German subsidiary — built its own production run of several Bally designs for Europe, usually with a different translite and no US model number; the pinball community and IPDB catalog these as distinct machines by a distinct maker, not as notes on the US entry. The same pattern covers Spanish (Recel/Petaco, Segasa/Sonic), Italian (Nuova Bell) and Brazilian (Taito do Brasil) licensees.
+A **copy** reproduces another machine's design using newly built hardware. Authorization is independent of that physical relationship: an unlicensed copy is commonly called a **bootleg**, while a licensed copy is commonly called a **licensed build**. Those concepts are derived from `relationship_type` plus `license_status`; they are not fields or tags of their own.
 
-| Title        | Model                       | Manufacturer | Year | licensed_build_of           |
-| ------------ | --------------------------- | ------------ | ---- | --------------------------- |
-| Party Animal | Party Animal (Bally Midway) | Bally Midway | 1987 | —                           |
-| Party Animal | Party Animal (Bally Wulff)  | Bally Wulff  | 1987 | Party Animal (Bally Midway) |
+| Model                      | Manufacturer  | Target                      | License status |
+| -------------------------- | ------------- | --------------------------- | -------------- |
+| Punky Willy                | Joctronic     | Rock                        | unknown        |
+| Punky Willy                | Joctronic     | Rock Encore                 | unknown        |
+| Party Animal (Bally Wulff) | Bally Wulff   | Party Animal (Bally Midway) | licensed       |
+| Al Capone                  | LTD do Brasil | Speakeasy                   | unlicensed     |
 
-Like `bootleg_of`, `licensed_build_of` records only _what design was reproduced_ — Title placement is independent, so it routinely points across Titles when a licensee renamed the game, while a same-name build may share the original's Title. The distinction from a `bootleg` is authorization: a licensed build is an official, licensed production; a bootleg is an unauthorized copy.
+The edge records what was copied; the copy's Title placement is a separate editorial decision. A renamed copy may have its own Title, while a same-name licensed build may share the original's Title. Copies remain ordinary commercially produced Models when that is their production history; license status does not replace `production_status`.
 
 ## Franchises & Series
 
@@ -223,12 +221,9 @@ Classification labels that don't fit elsewhere. As related clusters of tags emer
 - `prototype`: an engineering sample, design proof or pre-production test unit.
 - `widebody`: a wider-than-standard cabinet and playfield.
 - `remake`: a newly manufactured recreation of an earlier title (not a restored original). See [Remakes](#remakes); the `remake_of` link records the lineage.
-- `conversion-kit`: sold as a kit of parts to install into an existing machine, not a complete machine. See [Conversions](#conversions); the `converted_from` link records the source machine.
 - `export`: manufactured for markets outside the United States.
 - `unofficial-retheme`: a re-skin by a non-manufacturer (fan/operator/modder). Paired with the `aftermarket` production status.
 - `manufacturer-retheme`: an official re-theme a manufacturer applied to one of its own designs.
-- `bootleg`: a complete machine, built from scratch, that is an unauthorized copy of another maker's game. See [Bootlegs](#bootlegs); the `bootleg_of` link records the copied machine.
-- `licensed-build`: a complete machine built by a licensee or foreign subsidiary that reproduces another maker's design under license. The authorized twin of `bootleg`. See [Licensed builds](#licensed-builds); the `licensed_build_of` link records the reproduced machine.
 
 ### Cabinet
 
