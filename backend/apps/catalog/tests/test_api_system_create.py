@@ -77,8 +77,8 @@ class TestCreateHappyPath:
             c.field_name: c.value for c in Claim.objects.filter(changeset=cs)
         }
         assert set(claim_fields) == {"name", "slug", "status", "manufacturer"}
-        # FK claim value is the parent's slug string.
-        assert claim_fields["manufacturer"] == "stern"
+        # FK claim value is the parent's PK.
+        assert claim_fields["manufacturer"] == mfr.pk
 
     def test_note_preserved(self, client, user, mfr):
         client.force_login(user)

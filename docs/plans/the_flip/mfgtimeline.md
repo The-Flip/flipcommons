@@ -104,9 +104,9 @@ I'm considering this done enough for now.
 
 ### 8. Conversion kits counted as machines: WONTFIX
 
-The `conversion-kit` tag still exists so consumers can continue exclude them. I think this is still the correct modeling: official conversion kits are `production_status` = `produced`, unofficial ones are `aftermarket`. Including them `conversion-kit` in `production_status` would lose info. Happy to talk data modeling more, though!
+The `conversion-kit` tag has been retired. Models returned by `/api/export/models/` now carry a `model_relationships` array; a conversion kit has an edge whose `relationship_type` is `conversion_kit`. This keeps kit-ness separate from `production_status`: an official kit can be `produced`, while an unofficial one can be `aftermarket`.
 
-**Workaround**: continue filtering out models tagged `conversion-kit`.
+**Workaround**: filter out models with any `model_relationships` entry whose `relationship_type` is `conversion_kit`.
 
 ### 9. Aftermarket re-themes attributed to the original maker: DONE
 

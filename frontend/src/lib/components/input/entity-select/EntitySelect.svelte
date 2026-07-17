@@ -18,6 +18,7 @@ so the current value renders on mount without a search.
     error = '',
     disabled = false,
     required = false,
+    onselect = undefined,
   }: {
     /** Registry key the endpoint searches (`manufacturer`, `title`, …). */
     type: string;
@@ -33,6 +34,8 @@ so the current value renders on mount without a search.
     disabled?: boolean;
     /** Hide the clear (×) so the field can't be emptied once set. */
     required?: boolean;
+    /** Optional: observe the chosen option (label included) on selection. */
+    onselect?: (option: EntityOption) => void;
   } = $props();
 
   const selectedValues = $derived(selected ? [selected] : []);
@@ -49,6 +52,9 @@ so the current value renders on mount without a search.
   {error}
   {disabled}
   {required}
-  onToggle={(row) => (selected = row.value)}
+  onToggle={(row) => {
+    selected = row.value;
+    onselect?.(row);
+  }}
   onClear={() => (selected = null)}
 />

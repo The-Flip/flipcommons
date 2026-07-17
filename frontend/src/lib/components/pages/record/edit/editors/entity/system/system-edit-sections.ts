@@ -11,6 +11,7 @@ export const SYSTEM_EDIT_SECTIONS: SystemEditSectionDef[] = [
     label: 'Name',
     showCitation: true,
     showMixedEditWarning: false,
+    usesSectionEditorForm: true,
   },
   {
     key: 'description',
@@ -18,6 +19,7 @@ export const SYSTEM_EDIT_SECTIONS: SystemEditSectionDef[] = [
     label: 'Description',
     showCitation: false,
     showMixedEditWarning: false,
+    usesSectionEditorForm: true,
   },
   {
     key: 'manufacturer',
@@ -25,6 +27,7 @@ export const SYSTEM_EDIT_SECTIONS: SystemEditSectionDef[] = [
     label: 'Manufacturer',
     showCitation: true,
     showMixedEditWarning: false,
+    usesSectionEditorForm: true,
   },
   {
     key: 'technology',
@@ -32,6 +35,7 @@ export const SYSTEM_EDIT_SECTIONS: SystemEditSectionDef[] = [
     label: 'Technology',
     showCitation: true,
     showMixedEditWarning: false,
+    usesSectionEditorForm: true,
   },
 ];
 

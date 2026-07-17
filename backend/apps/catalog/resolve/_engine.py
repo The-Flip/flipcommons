@@ -303,6 +303,11 @@ def _int_or_none_from_column(columns: ColumnValues) -> int | None:
     return cast(int | None, columns[0])
 
 
+def _str_or_none_from_column(columns: ColumnValues) -> str | None:
+    """Single nullable str column → its value (single string payload)."""
+    return cast(str | None, columns[0])
+
+
 def _one_column(value: object) -> ColumnValues:
     """A scalar Member/Payload → its single column."""
     return (value,)

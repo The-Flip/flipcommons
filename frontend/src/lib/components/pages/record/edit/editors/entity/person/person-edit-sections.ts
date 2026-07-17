@@ -2,10 +2,7 @@ import type { EditSectionDef } from '$lib/components/pages/record/edit/editors/e
 
 export type PersonEditSectionKey = 'name' | 'bio' | 'details' | 'media';
 
-export type PersonEditSectionDef = EditSectionDef<PersonEditSectionKey> & {
-  /** false for media — uses immediate-action editor, not SectionEditorForm */
-  usesSectionEditorForm: boolean;
-};
+export type PersonEditSectionDef = EditSectionDef<PersonEditSectionKey>;
 
 export const PERSON_EDIT_SECTIONS: PersonEditSectionDef[] = [
   {

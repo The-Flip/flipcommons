@@ -208,16 +208,7 @@
     onfocusin={() => dispatch({ type: 'tooltip-mouseenter' })}
     onfocusout={() => dispatch({ type: 'tooltip-mouseleave' })}
   >
-    <CitationBody
-      sourceName={activeCitation.source_name}
-      sourceType={activeCitation.source_type}
-      author={activeCitation.author}
-      year={activeCitation.year}
-      locator={activeCitation.locator}
-      quote={activeCitation.quote}
-      clampQuote
-      links={activeCitation.links}
-    />
+    <CitationBody citation={activeCitation} clampQuote />
   </div>
 {/if}
 

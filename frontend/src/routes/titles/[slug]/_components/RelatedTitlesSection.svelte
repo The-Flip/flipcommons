@@ -1,27 +1,36 @@
+<!-- @component Cross-title lineage lines on the title page: "<model> is a bootleg of <other title>". One line per link — legacy lineage FKs and ModelRelationship edges alike. Renders as a `SidebarSection` (desktop sidebar) by default, or bare when `inline` (inside the mobile Related Titles accordion, which supplies its own heading). -->
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
+  import { relationshipSentence } from '$lib/entities/relationship-phrase';
   import type { CrossTitleLinkSchema } from '$lib/api/schema';
 
-  let { relatedTitles }: { relatedTitles: CrossTitleLinkSchema[] } = $props();
-
-  function label(relation: CrossTitleLinkSchema['relation']): string {
-    if (relation === 'remake_of') return 'is a remake of';
-    if (relation === 'converted_from') return 'was converted from';
-    if (relation === 'bootleg_of') return 'is a bootleg of';
-    if (relation === 'licensed_build_of') return 'is a licensed build of';
-    return relation;
-  }
+  let {
+    relatedTitles,
+    heading = 'Related Titles',
+    inline = false,
+  }: { relatedTitles: CrossTitleLinkSchema[]; heading?: string; inline?: boolean } = $props();
 </script>
 
-<ul class="related-titles">
-  {#each relatedTitles as link (`${link.source_model.public_id}-${link.relation}-${link.other_title.public_id}`)}
-    <li>
-      <span class="source">{link.source_model.name}</span>
-      <span class="relation">{label(link.relation)}</span>
-      <a href={resolve(`/titles/${link.other_title.public_id}`)}>{link.other_title.name}</a>
-    </li>
-  {/each}
-</ul>
+{#snippet list()}
+  <ul class="related-titles">
+    {#each relatedTitles as link (`${link.source_model.public_id}-${link.relation}-${link.license_status}-${link.other_title.public_id}`)}
+      <li>
+        <span class="source">{link.source_model.name}</span>
+        <span class="relation">{relationshipSentence(link.relation, link.license_status)}</span>
+        <a href={resolve(`/titles/${link.other_title.public_id}`)}>{link.other_title.name}</a>
+      </li>
+    {/each}
+  </ul>
+{/snippet}
+
+{#if inline}
+  {@render list()}
+{:else}
+  <SidebarSection {heading}>
+    {@render list()}
+  </SidebarSection>
+{/if}
 
 <style>
   .related-titles {

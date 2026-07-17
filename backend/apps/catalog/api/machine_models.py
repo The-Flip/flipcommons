@@ -65,6 +65,7 @@ from ..models import (
     GameFormat,
     MachineModel,
     MachineModelGameplayFeature,
+    ModelRelationship,
     ProductionStatus,
     RewardType,
     System,
@@ -78,6 +79,7 @@ from .edit_claims import (
     plan_credit_claims,
     plan_gameplay_feature_claims,
     plan_m2m_claims,
+    plan_model_relationship_claims,
 )
 from .helpers import (
     _extract_variant_features,
@@ -92,6 +94,8 @@ from .images import (
     fetch_model_media_map,
 )
 from .schemas import (
+    LICENSE_STATUS_TO_LITERAL,
+    RELATIONSHIP_TYPE_TO_LITERAL,
     AlreadyDeletedSchema,
     CreditSchema,
     DeleteResponseSchema,
@@ -99,10 +103,12 @@ from .schemas import (
     EntityDetailSchema,
     EntityRef,
     GameplayFeatureRef,
+    LicenseStatusLiteral,
     ModelClaimPatchSchema,
     ModelDeletePreviewSchema,
     ModelEditOptionsSchema,
     OwnMediaSchema,
+    RelationshipTypeLiteral,
     SoftDeleteBlockedSchema,
     TitleModelSchema,
 )
@@ -150,6 +156,34 @@ class ModelRef(Schema):
     manufacturer: EntityRef | None = None
 
 
+class ModelRelationshipSchema(Schema):
+    """One typed relationship edge on a model (copy / conversion / kit).
+
+    ``target_machine`` is set when the target is seeded (renders as a link);
+    ``target_label`` is the plain-text descriptor otherwise (renders unlinked).
+    Exactly one is populated.
+    """
+
+    relationship_type: RelationshipTypeLiteral = Field(description="Edge type.")
+    license_status: LicenseStatusLiteral = Field(description="Authorization status.")
+    target_machine: ModelRef | None = None
+    target_label: str = ""
+
+
+class InboundModelRelationshipSchema(Schema):
+    """One typed relationship edge *pointing at* this model — the reverse of
+    :class:`ModelRelationshipSchema`, read through the ``inbound_relationships``
+    accessor. Only machine-target edges have an inbound side (label targets
+    aren't seeded rows), so the source is always a resolved ``ModelRef``.
+    """
+
+    relationship_type: RelationshipTypeLiteral = Field(description="Edge type.")
+    license_status: LicenseStatusLiteral = Field(description="Authorization status.")
+    source_machine: ModelRef = Field(
+        description="The model this edge belongs to — the copy/conversion/kit."
+    )
+
+
 def _manufacturer_ref(pm: MachineModel | None) -> EntityRef | None:
     """The model's manufacturer as an `EntityRef`, resolved via its corporate
     entity (the manufacturer is a property of the maker, not the model)."""
@@ -163,10 +197,8 @@ def _manufacturer_ref(pm: MachineModel | None) -> EntityRef | None:
     return EntityRef(name=mfr.name, public_id=mfr.public_id) if mfr else None
 
 
-def _model_ref(pm: MachineModel | None) -> ModelRef | None:
-    """Build a `ModelRef` for a nullable related model (e.g. `variant_of`), or `None`."""
-    if pm is None:
-        return None
+def _required_model_ref(pm: MachineModel) -> ModelRef:
+    """Build a `ModelRef` for a known-present related model."""
     return ModelRef(
         name=pm.name,
         public_id=pm.public_id,
@@ -175,17 +207,14 @@ def _model_ref(pm: MachineModel | None) -> ModelRef | None:
     )
 
 
+def _model_ref(pm: MachineModel | None) -> ModelRef | None:
+    """Build a `ModelRef` for a nullable related model (e.g. `variant_of`), or `None`."""
+    return _required_model_ref(pm) if pm is not None else None
+
+
 def _model_refs(models: Iterable[MachineModel]) -> list[ModelRef]:
     """Build `ModelRef`s for a related-model collection (e.g. `conversions`)."""
-    return [
-        ModelRef(
-            name=pm.name,
-            public_id=pm.public_id,
-            year=pm.year,
-            manufacturer=_manufacturer_ref(pm),
-        )
-        for pm in models
-    ]
+    return [_required_model_ref(pm) for pm in models]
 
 
 class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
@@ -225,14 +254,10 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     series: EntityRef | None = None
     variant_of: ModelRef | None = None
     variant_siblings: list[ModelVariantSchema] = []
-    converted_from: ModelRef | None = None
-    conversions: list[ModelRef] = []
     remake_of: ModelRef | None = None
     remakes: list[ModelRef] = []
-    bootleg_of: ModelRef | None = None
-    bootlegs: list[ModelRef] = []
-    licensed_build_of: ModelRef | None = None
-    licensed_builds: list[ModelRef] = []
+    relationships: list[ModelRelationshipSchema] = []
+    inbound_relationships: list[InboundModelRelationshipSchema] = []
     title_models: list[TitleModelSchema] = []
 
 
@@ -267,14 +292,11 @@ def _build_model_list_qs(
         )
         .prefetch_related(media_prefetch())
     )
-    # The catalog lists at the granularity of distinct machines: cosmetic
-    # variants are collapsed into their parent model (conversions, being
-    # genuinely different machines, are re-admitted). ``include_variants`` opts
-    # out of the collapse for surfaces where a variant's own value is the point
-    # — e.g. the production-status browse, where an announced Limited Edition of
-    # a shipped Premium must appear.
+    # include_variants opts out of the variant collapse for browses where a
+    # variant's own value is the point — e.g. production-status, where an
+    # announced LE of an already-shipped Premium must appear as its own row.
     if not include_variants:
-        qs = qs.filter(Q(variant_of__isnull=True) | Q(converted_from__isnull=False))
+        qs = qs.filter(MachineModel.non_variant_models_q())
 
     if manufacturer:
         qs = qs.filter(corporate_entity__manufacturer__slug=manufacturer)
@@ -449,14 +471,25 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         variants=variants,
         variant_of=_model_ref(pm.variant_of),
         variant_siblings=variant_siblings,
-        converted_from=_model_ref(pm.converted_from),
-        conversions=_model_refs(pm.conversions.all()),
         remake_of=_model_ref(pm.remake_of),
         remakes=_model_refs(pm.remakes.all()),
-        bootleg_of=_model_ref(pm.bootleg_of),
-        bootlegs=_model_refs(pm.bootlegs.all()),
-        licensed_build_of=_model_ref(pm.licensed_build_of),
-        licensed_builds=_model_refs(pm.licensed_builds.all()),
+        relationships=[
+            ModelRelationshipSchema(
+                relationship_type=RELATIONSHIP_TYPE_TO_LITERAL[edge.relationship_type],
+                license_status=LICENSE_STATUS_TO_LITERAL[edge.license_status],
+                target_machine=_model_ref(edge.target_machine),
+                target_label=edge.target_label,
+            )
+            for edge in pm.relationships.all()
+        ],
+        inbound_relationships=[
+            InboundModelRelationshipSchema(
+                relationship_type=RELATIONSHIP_TYPE_TO_LITERAL[edge.relationship_type],
+                license_status=LICENSE_STATUS_TO_LITERAL[edge.license_status],
+                source_machine=_required_model_ref(edge.machine_model),
+            )
+            for edge in pm.inbound_relationships.all()
+        ],
         title=EntityRef(name=pm.title.name, public_id=pm.title.public_id),
         cabinet=(
             EntityRef(name=pm.cabinet.name, public_id=pm.cabinet.public_id)
@@ -550,13 +583,10 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             "game_format",
             "production_status",
             # `__corporate_entity__manufacturer` so the lineage ModelRefs can
-            # carry a maker for disambiguating same-named links (bootlegs etc.)
-            # without an N+1 per related row.
+            # carry a maker for disambiguating same-named links without an
+            # N+1 per related row.
             "variant_of__corporate_entity__manufacturer",
-            "converted_from__corporate_entity__manufacturer",
             "remake_of__corporate_entity__manufacturer",
-            "bootleg_of__corporate_entity__manufacturer",
-            "licensed_build_of__corporate_entity__manufacturer",
         )
         .prefetch_related(
             # Variants and sibling variants also carry a maker; select the
@@ -573,28 +603,25 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
                     "corporate_entity__manufacturer"
                 ),
             ),
+            # Relationship edges render their machine target as a ModelRef
+            # with a maker; join it here so the ref build stays query-free.
+            Prefetch(
+                "relationships",
+                queryset=ModelRelationship.objects.select_related(
+                    "target_machine__corporate_entity__manufacturer"
+                ),
+            ),
+            # Inbound edges render their source model the same way.
+            Prefetch(
+                "inbound_relationships",
+                queryset=ModelRelationship.objects.select_related(
+                    "machine_model__corporate_entity__manufacturer"
+                ),
+            ),
             # Reverse lineage lists render as ModelRefs with a maker; select the
             # manufacturer join here to keep the ref build query-free.
             Prefetch(
-                "conversions",
-                queryset=MachineModel.objects.select_related(
-                    "corporate_entity__manufacturer"
-                ),
-            ),
-            Prefetch(
                 "remakes",
-                queryset=MachineModel.objects.select_related(
-                    "corporate_entity__manufacturer"
-                ),
-            ),
-            Prefetch(
-                "bootlegs",
-                queryset=MachineModel.objects.select_related(
-                    "corporate_entity__manufacturer"
-                ),
-            ),
-            Prefetch(
-                "licensed_builds",
                 queryset=MachineModel.objects.select_related(
                     "corporate_entity__manufacturer"
                 ),
@@ -615,7 +642,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             Prefetch(
                 "title__machine_models",
                 queryset=MachineModel.objects.active()
-                .filter(Q(variant_of__isnull=True) | Q(converted_from__isnull=False))
+                .filter(MachineModel.non_variant_models_q())
                 .select_related(
                     "corporate_entity__manufacturer", "technology_generation"
                 )
@@ -757,7 +784,7 @@ def list_recent_models(request: HttpRequest) -> list[ModelRecentSchema]:
     """Return the 3 newest non-variant models, one per title."""
     qs = (
         MachineModel.objects.active()
-        .filter(Q(variant_of__isnull=True) | Q(converted_from__isnull=False))
+        .filter(MachineModel.non_variant_models_q())
         .select_related("corporate_entity__manufacturer")
         .order_by(
             F("year").desc(nulls_last=True),
@@ -837,9 +864,7 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
     )
 
 
-_SELF_REF_FIELDS: frozenset[str] = frozenset(
-    {"variant_of", "converted_from", "remake_of", "bootleg_of", "licensed_build_of"}
-)
+_SELF_REF_FIELDS: frozenset[str] = frozenset({"variant_of", "remake_of"})
 
 
 @models_router.patch(
@@ -871,6 +896,8 @@ def patch_model_claims(
             "title__abbreviations",
             "credits__person",
             "credits__role",
+            # The relationship planner diffs against current edges.
+            "relationships",
         ),
         **{MachineModel.public_id_field: public_id},
     )
@@ -929,6 +956,8 @@ def patch_model_claims(
         specs.extend(plan_credit_claims(pm, data.credits))
     if data.abbreviations is not None:
         specs.extend(plan_abbreviation_claims(pm, data.abbreviations))
+    if data.relationships is not None:
+        specs.extend(plan_model_relationship_claims(pm, data.relationships))
 
     if not specs:
         raise_form_error("No changes provided.")
@@ -998,9 +1027,9 @@ def delete_model(
     Writes a single user ChangeSet with ``action=delete`` containing one
     ``status=deleted`` claim. Rate-limited per user on the ``delete`` bucket
     (5/day; staff bypass). Blocks with 422 when an active PROTECT referrer
-    (a child variant, a model whose ``converted_from`` or ``remake_of``
-    points here, …) would be left dangling. Never cascades to the parent
-    Title — orphan Titles are supported by spec.
+    (a child variant, a model whose ``remake_of`` points here, an inbound
+    relationship edge, …) would be left dangling. Never cascades to the
+    parent Title — orphan Titles are supported by spec.
     """
     pm = get_object_or_404(
         MachineModel.objects.active(), **{MachineModel.public_id_field: public_id}

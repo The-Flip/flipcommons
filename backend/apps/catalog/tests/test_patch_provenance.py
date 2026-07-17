@@ -104,6 +104,39 @@ def test_invalid_cite_identifier_rejected(flipcommons_catalog, pm):
         _apply(text)
 
 
+def test_cite_quote_allows_mojibake_verbatim(flipcommons_catalog, ipdb_root, pm):
+    # A quote is a verbatim excerpt, so it must reproduce a garbled source
+    # rather than reject it — IPDB machine 4645 serves a literal U+FFFD. The
+    # ingest path re-validates cite fields (bulk mint skips model validation),
+    # so this guards the actual `make ingest-patches` failure.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        ref: ipdb:4443\n"
+        "        quote: \"a copy of 'Sky�Line'\"\n"
+        "      year: 1998\n"
+    )
+    _apply(text)  # must not raise
+    assert "�" in CitationInstance.objects.get().quote
+
+
+def test_cite_locator_still_rejects_mojibake(flipcommons_catalog, ipdb_root, pm):
+    # locator is authored, not verbatim, so the mojibake guard stays.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        ref: ipdb:4443\n"
+        '        locator: "Sky�Line"\n'
+        "      year: 1998\n"
+    )
+    with pytest.raises(PatchError, match="mojibake|replacement character"):
+        _apply(text)
+
+
 def test_overlong_note_rejected(flipcommons_catalog, pm):
     long_note = "x" * 1001
     text = (
@@ -1258,22 +1291,6 @@ def test_cite_locator_overlong_rejected(flipcommons_catalog, pm):
         "      year: 1998\n"
     )
     with pytest.raises(PatchError, match="cite locator exceeds"):
-        _apply(text)
-
-
-def test_cite_quote_mojibake_rejected(flipcommons_catalog, pm):
-    # The bulk mint path skips model validators, so the parser must catch
-    # encoding corruption itself.
-    text = (
-        "attribution: flipcommons-catalog\n"
-        "claims:\n"
-        "  - model.medieval-madness:\n"
-        "      cite:\n"
-        "        ref: ipdb:4443\n"
-        '        quote: "It doesnâ€™t work"\n'
-        "      year: 1998\n"
-    )
-    with pytest.raises(PatchError, match="cite quote"):
         _apply(text)
 
 

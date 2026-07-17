@@ -10,6 +10,7 @@
     error = '',
     showCitation = true,
     showMixedEditWarning = false,
+    dirty = true,
     oncancel,
     onsave,
     children,
@@ -17,6 +18,9 @@
     error?: string;
     showCitation?: boolean;
     showMixedEditWarning?: boolean;
+    /** Whether the editor has unsaved changes; gates the Save button. Defaults
+     *  to true so the form stays saveable when rendered without a dirty owner. */
+    dirty?: boolean;
     oncancel: () => void;
     onsave: (meta: SaveMeta) => void;
     children: Snippet;
@@ -48,7 +52,7 @@
 
 <div class="form-footer">
   <Button variant="secondary" onclick={oncancel}>Cancel</Button>
-  <Button onclick={() => onsave(buildMeta())}>Save</Button>
+  <Button disabled={!dirty} onclick={() => onsave(buildMeta())}>Save</Button>
 </div>
 
 <style>

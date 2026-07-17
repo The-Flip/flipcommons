@@ -238,6 +238,12 @@ class PlannedClaimAssert:
     identity: dict[ClaimValueKey, Any] = field(default_factory=dict)
     # value-key → the handle of the planned entity whose PK fills that identity slot.
     identity_refs: dict[ClaimValueKey, Handle] = field(default_factory=dict)
+    # Deferred direct-FK claim value: the handle of the planned entity whose PK
+    # becomes this claim's ``value`` (FK claim values store target PKs). Set only
+    # when a direct FK field references a same-patch create; the apply layer
+    # fills ``value`` after the bulk-create, like ``identity_refs`` does for
+    # relationship identity slots.
+    value_ref: Handle | None = None
 
 
 @dataclass

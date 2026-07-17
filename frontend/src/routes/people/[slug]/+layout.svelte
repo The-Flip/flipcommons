@@ -163,7 +163,7 @@
     sections={PERSON_EDIT_SECTIONS}
     switcherItems={editSections}
   >
-    {#snippet editor(key, { ref, onsaved, onerror, ondirtychange })}
+    {#snippet editor(key, { ref, onsaved, onerror })}
       <PersonEditorSwitch
         sectionKey={key}
         initialData={person}
@@ -171,7 +171,6 @@
         bind:editorRef={ref.current}
         {onsaved}
         {onerror}
-        {ondirtychange}
       />
     {/snippet}
 

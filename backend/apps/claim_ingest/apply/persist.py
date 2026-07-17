@@ -140,12 +140,15 @@ def _patch_handles(
 ) -> None:
     """Resolve temporary handles to real PKs after entity creation.
 
-    Two kinds of handle resolution:
+    Three kinds of handle resolution:
 
     1. **Target handles** — ``pca.handle`` references the entity this
        claim is *about*.  Patches ``object_id`` and ``content_type_id``.
 
-    2. **Identity refs** — ``pca.identity_refs`` references entities
+    2. **Value refs** — ``pca.value_ref`` references the entity a direct
+       FK claim points *at*; its new PK becomes the claim ``value``.
+
+    3. **Identity refs** — ``pca.identity_refs`` references entities
        whose PKs appear *inside* relationship claim values (e.g. the
        Person PK in a credit claim).  Resolves handles to PKs, merges
        with concrete ``identity``, then calls
@@ -160,6 +163,8 @@ def _patch_handles(
             entity_key = handle_map[pca.handle]
             pca.content_type_id = entity_key.content_type_id
             pca.object_id = entity_key.object_id
+        if pca.value_ref is not None:
+            pca.value = handle_map[pca.value_ref].object_id
         if pca.relationship_namespace:
             resolved_identity = dict(pca.identity)
             for key, ref_handle in pca.identity_refs.items():

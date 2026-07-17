@@ -22,7 +22,6 @@
     editorRef = $bindable<SectionEditorHandle | undefined>(undefined),
     onsaved,
     onerror,
-    ondirtychange,
   }: {
     sectionKey: HierarchicalTaxonomyEditSectionKey;
     initialData: HierarchicalTaxonomyEditView;
@@ -35,7 +34,6 @@
     editorRef?: SectionEditorHandle | undefined;
     onsaved: () => void;
     onerror: (message: string) => void;
-    ondirtychange: (dirty: boolean) => void;
   } = $props();
 
   const saveClaims = (s: string, body: HierarchicalTaxonomySectionPatchBody) =>
@@ -50,7 +48,6 @@
     save={saveClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'description'}
   <DescriptionEditor
@@ -60,7 +57,6 @@
     save={saveClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'aliases'}
   <AliasesSectionEditor
@@ -70,7 +66,6 @@
     save={saveClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'parents'}
   <ParentsSectionEditor
@@ -82,6 +77,5 @@
     label={parentsLabel}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {/if}

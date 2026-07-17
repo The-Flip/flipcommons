@@ -80,23 +80,31 @@ def _check_against_schema(td: type, schema: RelationshipSchema) -> None:
         f"{td.__name__} keys {td_keys} != schema {schema.namespace!r} keys {schema_keys}"
     )
 
-    for spec in schema.value_keys:
-        annotation = hints[spec.name]
-        is_required = spec.name in required
-        assert is_required == spec.required, (
-            f"{td.__name__}.{spec.name}: required={is_required} "
-            f"but schema {schema.namespace!r} has required={spec.required}"
+    def check_key(
+        name: str, scalar_type: type, nullable: bool, spec_required: bool
+    ) -> None:
+        annotation = hints[name]
+        is_required = name in required
+        assert is_required == spec_required, (
+            f"{td.__name__}.{name}: required={is_required} "
+            f"but schema {schema.namespace!r} has required={spec_required}"
         )
         is_nullable = _is_nullable(annotation)
-        assert is_nullable == spec.nullable, (
-            f"{td.__name__}.{spec.name}: nullable={is_nullable} "
-            f"but schema {schema.namespace!r} has nullable={spec.nullable}"
+        assert is_nullable == nullable, (
+            f"{td.__name__}.{name}: nullable={is_nullable} "
+            f"but schema {schema.namespace!r} has nullable={nullable}"
         )
         scalar = _unwrap_nullable(annotation)
-        assert scalar is spec.scalar_type, (
-            f"{td.__name__}.{spec.name}: scalar {scalar!r} "
-            f"!= schema {schema.namespace!r} scalar {spec.scalar_type!r}"
+        assert scalar is scalar_type, (
+            f"{td.__name__}.{name}: scalar {scalar!r} "
+            f"!= schema {schema.namespace!r} scalar {scalar_type!r}"
         )
+
+    # Members are required by construction; payload declares it per-spec.
+    for member in schema.members:
+        check_key(member.name, member.scalar_type, member.nullable, True)
+    for pspec in schema.payload:
+        check_key(pspec.name, pspec.scalar_type, pspec.nullable, pspec.required)
 
 
 def test_every_typeddict_has_at_least_one_namespace() -> None:

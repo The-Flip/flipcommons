@@ -11,6 +11,7 @@ function makeCitation(over: Partial<FieldChangeCitationSchema>): FieldChangeCita
     author: '',
     year: null,
     locator: '',
+    quote: '',
     slug: null,
     links: [],
     ...over,

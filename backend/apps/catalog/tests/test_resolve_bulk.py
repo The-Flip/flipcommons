@@ -84,7 +84,7 @@ class TestResolveBulkTitle:
         t = Title.objects.create(opdb_id="G1", name="Placeholder", slug="t1")
 
         make_claim(t, "name", "Godzilla", ingest_source=opdb)
-        make_claim(t, "franchise", "godzilla", ingest_source=opdb)
+        make_claim(t, "franchise", franchise.pk, ingest_source=opdb)
 
         resolve_all_entities(Title)
 
@@ -98,7 +98,7 @@ class TestResolveBulkTitle:
         t = Title.objects.create(opdb_id="G1", name="Placeholder", slug="t1")
 
         make_claim(t, "name", "Godzilla", ingest_source=opdb)
-        make_claim(t, "series", "godzilla-line", ingest_source=opdb)
+        make_claim(t, "series", series.pk, ingest_source=opdb)
 
         resolve_all_entities(Title)
 
@@ -397,7 +397,7 @@ class TestPreserveNotNullFK:
         )
 
         make_claim(subgen, "name", "Discrete Logic", ingest_source=opdb)
-        make_claim(subgen, "technology_generation", "em", ingest_source=opdb)
+        make_claim(subgen, "technology_generation", gen2.pk, ingest_source=opdb)
 
         _resolve_bulk(
             TechnologySubgeneration,
@@ -430,7 +430,7 @@ class TestResolveTitle:
 
         make_claim(t, "name", "Godzilla", ingest_source=opdb)
         make_claim(t, "description", "A monster game.", ingest_source=opdb)
-        make_claim(t, "franchise", "godzilla", ingest_source=opdb)
+        make_claim(t, "franchise", franchise.pk, ingest_source=opdb)
 
         result = resolve_entity(t)
 
@@ -444,7 +444,7 @@ class TestResolveTitle:
 
         make_claim(t, "name", "Godzilla", ingest_source=opdb)
         make_claim(t, "description", "A monster game.", ingest_source=opdb)
-        make_claim(t, "series", "godzilla-line", ingest_source=opdb)
+        make_claim(t, "series", series.pk, ingest_source=opdb)
 
         result = resolve_entity(t)
 

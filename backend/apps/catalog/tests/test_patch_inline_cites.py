@@ -612,9 +612,9 @@ def test_inline_cite_quote_overlong_rejected(flipcommons_catalog, pm):
         _apply(text)
 
 
-def test_inline_cite_quote_mojibake_rejected(flipcommons_catalog, pm):
-    # The bulk mint path skips model validators, so the parser must catch
-    # encoding corruption itself — on the inline path too.
+def test_inline_cite_quote_allows_mojibake_verbatim(flipcommons_catalog, ipdb_root, pm):
+    # quote is a verbatim excerpt, so it may reproduce a garbled source (IPDB
+    # serves a literal U+FFFD) — no mojibake guard, on the inline path too.
     text = (
         "attribution: flipcommons-catalog\n"
         "claims:\n"
@@ -623,7 +623,7 @@ def test_inline_cite_quote_mojibake_rejected(flipcommons_catalog, pm):
         "      cites:\n"
         "        '1':\n"
         "          ref: ipdb:4443\n"
-        '          quote: "It doesnâ€™t work"\n'
+        "          quote: \"a copy of 'Sky�Line'\"\n"
     )
-    with pytest.raises(PatchError, match="cite quote"):
-        _apply(text)
+    _apply(text)  # must not raise
+    assert "�" in _floating().get().quote

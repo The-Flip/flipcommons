@@ -19,6 +19,8 @@ export type ExternalReference =
       label: string;
       /** `{id}` is replaced by the stored value to generate a URL */
       urlTemplate: string;
+      /** Append " #{id}" to the label — for systems whose record number is how the community cites entries (IPDB). */
+      showId?: boolean;
     }
   /** A non-linkable reference */
   | {

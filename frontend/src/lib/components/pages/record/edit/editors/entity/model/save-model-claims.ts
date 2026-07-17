@@ -34,6 +34,7 @@ export type SectionPatchBody = Partial<
     | 'gameplay_features'
     | 'credits'
     | 'abbreviations'
+    | 'relationships'
     | 'note'
     | 'citations'
     | 'inline_citations'

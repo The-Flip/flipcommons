@@ -2,7 +2,10 @@ import pytest
 
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import (
+    LicenseStatus,
     MachineModel,
+    ModelRelationship,
+    RelationshipType,
     Title,
 )
 from apps.catalog.tests.conftest import make_machine_model
@@ -212,8 +215,8 @@ class TestTitleDetailAggregation:
         assert tag_slugs == ["classic"]  # only the shared one
 
     def test_related_titles_union_cross_title_only(self, client, db):
-        """converted_from / remake_of pointing to *other* titles appear;
-        same-title relations do not."""
+        """`remake_of` pointing to an *other* title appears; same-title
+        relations do not."""
         other_title = Title.objects.create(name="Star Trek", slug="star-trek")
         other_model = make_machine_model(
             name="Star Trek", slug="star-trek-orig", title=other_title
@@ -224,26 +227,27 @@ class TestTitleDetailAggregation:
             name="Dark Rider",
             slug="dark-rider-1",
             title=this_title,
-            converted_from=other_model,
+            remake_of=other_model,
         )
-        # Within-title "conversion" — should NOT appear in related_titles.
+        # Within-title remake — should NOT appear in related_titles.
         make_machine_model(
             name="Dark Rider B",
             slug="dark-rider-2",
             title=this_title,
-            converted_from=m_cross,
+            remake_of=m_cross,
         )
 
         resp = client.get(f"/api/pages/title/{this_title.slug}")
         data = resp.json()
         related = data["related_titles"]
         assert len(related) == 1
-        assert related[0]["relation"] == "converted_from"
+        assert related[0]["relation"] == "remake_of"
         assert related[0]["other_title"]["public_id"] == "star-trek"
         assert related[0]["source_model"]["public_id"] == "dark-rider-1"
 
     def test_related_titles_union_across_models(self, client, db):
-        """Two different models each contribute a cross-title link."""
+        """Two different models each contribute a cross-title link — one via
+        the `remake_of` FK, one via a conversion edge."""
         orig = Title.objects.create(name="Orig A", slug="orig-a")
         orig_m = make_machine_model(name="Orig A", slug="orig-a-1", title=orig)
         remake_src = Title.objects.create(name="Remake Src", slug="remake-src")
@@ -252,8 +256,11 @@ class TestTitleDetailAggregation:
         )
 
         this_title = Title.objects.create(name="Compound", slug="compound")
-        make_machine_model(
-            name="C1", slug="c-1", title=this_title, converted_from=orig_m
+        c1 = make_machine_model(name="C1", slug="c-1", title=this_title)
+        ModelRelationship.objects.create(
+            machine_model=c1,
+            target_machine=orig_m,
+            relationship_type=RelationshipType.CONVERSION,
         )
         make_machine_model(
             name="C2", slug="c-2", title=this_title, remake_of=remake_src_m
@@ -266,32 +273,90 @@ class TestTitleDetailAggregation:
             (r["relation"], r["other_title"]["public_id"]) for r in related
         )
         assert relations == [
-            ("converted_from", "orig-a"),
+            ("conversion", "orig-a"),
             ("remake_of", "remake-src"),
         ]
 
-    def test_related_titles_union_licensed_build_cross_title(self, client, db):
-        """A cross-title `licensed_build_of` link appears in related_titles."""
-        us_title = Title.objects.create(name="Party Animal", slug="party-animal")
-        us_model = make_machine_model(
-            name="Party Animal", slug="party-animal", title=us_title
+    def test_related_titles_from_relationship_edges(self, client, db):
+        """Machine-target edges contribute cross-title lines with their license;
+        same-title edges and label-target edges do not; two same-kind edges
+        landing on the same other title collapse to one line."""
+        orig_title = Title.objects.create(name="Galaxie", slug="galaxie")
+        orig_a = make_machine_model(name="Galaxie", slug="galaxie", title=orig_title)
+        orig_b = make_machine_model(
+            name="Galaxie II", slug="galaxie-ii", title=orig_title
         )
 
-        de_title = Title.objects.create(name="Party Animal DE", slug="party-animal-2")
-        make_machine_model(
-            name="Party Animal",
-            slug="party-animal-2",
-            title=de_title,
-            licensed_build_of=us_model,
+        this_title = Title.objects.create(name="Galaxie RMG", slug="galaxie-rmg")
+        rmg = make_machine_model(name="Galaxie", slug="galaxie-rmg-1", title=this_title)
+        sibling = make_machine_model(
+            name="Galaxie B", slug="galaxie-rmg-2", title=this_title
         )
 
-        resp = client.get(f"/api/pages/title/{de_title.slug}")
-        data = resp.json()
+        # Two copy edges onto two machines of the same other title → one line.
+        ModelRelationship.objects.create(
+            machine_model=rmg,
+            target_machine=orig_a,
+            relationship_type=RelationshipType.COPY,
+            license_status=LicenseStatus.UNLICENSED,
+        )
+        ModelRelationship.objects.create(
+            machine_model=rmg,
+            target_machine=orig_b,
+            relationship_type=RelationshipType.COPY,
+            license_status=LicenseStatus.UNLICENSED,
+        )
+        # Same-title edge — not cross-title content.
+        ModelRelationship.objects.create(
+            machine_model=rmg,
+            target_machine=sibling,
+            relationship_type=RelationshipType.CONVERSION,
+        )
+        # Label target — no title to link.
+        ModelRelationship.objects.create(
+            machine_model=rmg,
+            target_label="several Gottlieb EM models",
+            relationship_type=RelationshipType.CONVERSION_KIT,
+        )
+
+        data = client.get(f"/api/pages/title/{this_title.slug}").json()
         related = data["related_titles"]
         assert len(related) == 1
-        assert related[0]["relation"] == "licensed_build_of"
-        assert related[0]["other_title"]["public_id"] == "party-animal"
-        assert related[0]["source_model"]["public_id"] == "party-animal-2"
+        assert related[0]["relation"] == "copy"
+        assert related[0]["license_status"] == "unlicensed"
+        assert related[0]["other_title"]["public_id"] == "galaxie"
+        assert related[0]["source_model"]["public_id"] == "galaxie-rmg-1"
+
+    def test_related_titles_remake_fk_alongside_edges(self, client, db):
+        """The permanent `remake_of` FK and relationship edges contribute
+        lines to the same panel."""
+        donor_title = Title.objects.create(name="Team One", slug="team-one")
+        donor = make_machine_model(name="Team One", slug="team-one", title=donor_title)
+
+        this_title = Title.objects.create(name="Wizard", slug="wizard")
+        make_machine_model(
+            name="Wizard",
+            slug="wizard-1",
+            title=this_title,
+            remake_of=donor,
+        )
+        kit = make_machine_model(name="Wizard Kit", slug="wizard-2", title=this_title)
+        ModelRelationship.objects.create(
+            machine_model=kit,
+            target_machine=donor,
+            relationship_type=RelationshipType.CONVERSION_KIT,
+            license_status=LicenseStatus.LICENSED,
+        )
+
+        data = client.get(f"/api/pages/title/{this_title.slug}").json()
+        relations = sorted(
+            (r["relation"], r["source_model"]["public_id"], r["license_status"])
+            for r in data["related_titles"]
+        )
+        assert relations == [
+            ("conversion_kit", "wizard-2", "licensed"),
+            ("remake_of", "wizard-1", "unknown"),
+        ]
 
     def test_media_aggregation_empty_by_default(self, client, title, williams_entity):
         make_machine_model(name="MM", slug="mm-1", title=title)

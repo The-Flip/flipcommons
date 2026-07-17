@@ -154,8 +154,21 @@ describe('title layout', () => {
         public_id: 'video-pinball',
         slug: 'video-pinball',
         title: { name: 'Video Pinball', public_id: 'video-pinball' },
-        bootleg_of: { name: 'Jungle Life', public_id: 'jungle-life', year: 1978 },
-        bootlegs: [{ name: 'Rugby', public_id: 'rugby-sidam', year: 1979 }],
+        relationships: [
+          {
+            relationship_type: 'copy',
+            license_status: 'unlicensed',
+            target_machine: { name: 'Jungle Life', public_id: 'jungle-life', year: 1978 },
+            target_label: '',
+          },
+        ],
+        inbound_relationships: [
+          {
+            relationship_type: 'copy',
+            license_status: 'unlicensed',
+            source_machine: { name: 'Rugby', public_id: 'rugby-sidam', year: 1979 },
+          },
+        ],
       }),
     } satisfies TitleDetailSchema;
 
@@ -163,7 +176,7 @@ describe('title layout', () => {
       props: { data: { profile: singleModelTitle } },
     });
 
-    expect(body).toContain('Bootleg Of');
+    expect(body).toContain('Bootleg of');
     expect(body).toContain('/models/jungle-life');
     expect(body).toContain('Bootlegs');
     expect(body).toContain('/models/rugby-sidam');

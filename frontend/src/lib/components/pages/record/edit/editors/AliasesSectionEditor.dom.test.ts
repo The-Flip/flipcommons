@@ -6,13 +6,9 @@ import AliasesSectionEditorFixture from './AliasesSectionEditor.fixture.svelte';
 
 describe('AliasesSectionEditor', () => {
   it('reports clean state initially', async () => {
-    const user = userEvent.setup();
     render(AliasesSectionEditorFixture);
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
   });
 
   it('reports dirty after adding an alias', async () => {
@@ -21,7 +17,7 @@ describe('AliasesSectionEditor', () => {
 
     await user.type(screen.getByLabelText('Aliases'), 'Side Kicker{Enter}');
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('reports dirty after removing an alias', async () => {
@@ -30,7 +26,7 @@ describe('AliasesSectionEditor', () => {
 
     await user.click(screen.getByRole('button', { name: 'Remove Slingshot' }));
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('treats reordering as clean (set semantics)', async () => {
@@ -41,10 +37,10 @@ describe('AliasesSectionEditor', () => {
 
     // Remove A then re-add — same set, different order
     await user.click(screen.getByRole('button', { name: 'Remove A' }));
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
 
     await user.type(screen.getByLabelText('Aliases'), 'A{Enter}');
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
   });
 
   it('sends the full aliases list in the save body when dirty', async () => {

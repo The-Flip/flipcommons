@@ -72,7 +72,7 @@ from ..cache import (
     get_cached_response,
     set_cached_response,
 )
-from .images import extract_image_attribution, extract_image_urls
+from .images import extract_image_attribution, extract_image_urls, license_slug_map
 
 # The "export" tag is the opt-in marker for the public API reference: /api-docs
 # shows only export-tagged endpoints (and uses the tag as the section heading).
@@ -169,6 +169,27 @@ class CreditExportSchema(Schema):
 
     person: str = PydanticField(description="Slug of the credited person.")
     role: str = PydanticField(description="Slug of the credit role (e.g. `design`).")
+
+
+class ModelRelationshipExportSchema(Schema):
+    """A typed edge to a donor/original machine, at any target resolution."""
+
+    relationship_type: str = PydanticField(
+        description="Edge type: `conversion`, `conversion_kit` or `copy`."
+    )
+    license_status: str = PydanticField(
+        description="Authorization status: `licensed`, `unlicensed` or `unknown`."
+    )
+    target_machine: str | None = PydanticField(
+        description="Slug of the target machine, when fully resolved; else null."
+    )
+    target_label: str = PydanticField(
+        description=(
+            "Free-text target descriptor when the target isn't seeded "
+            '(e.g. "several Gottlieb EM models"); empty when target_machine '
+            "is set."
+        )
+    )
 
 
 # Implementation note (kept out of the public schema description below): we emit
@@ -316,6 +337,11 @@ def _relation_doc(key: str, rel: RelationSpec) -> str:
     label = key.replace("_", " ")
     if rel.shape == "credits":
         return "Production credits, as person-slug / role-slug pairs."
+    if rel.shape == "model_relationships":
+        return (
+            "Typed relationships to donor/original machines "
+            "(copies, conversions, conversion kits)."
+        )
     if rel.shape == "strings":
         return f"List of {label}."
     return f"Slugs of the associated {label}."
@@ -349,8 +375,12 @@ def _build_schema(spec: ExportSpec) -> type[EntityExportSchema]:
                 ),
             ),
         )
+    structured_items: dict[str, type[Schema]] = {
+        "credits": CreditExportSchema,
+        "model_relationships": ModelRelationshipExportSchema,
+    }
     for key, rel in spec.relations.items():
-        item: Any = CreditExportSchema if rel.shape == "credits" else str
+        item: Any = structured_items.get(rel.shape, str)
         fields[key] = (list[item], PydanticField(description=_relation_doc(key, rel)))
     for key, dfield in spec.derived.items():
         fields[key] = (dfield.py_type, PydanticField(description=dfield.description))
@@ -421,6 +451,18 @@ def _serialize_relation(obj: CatalogModel, rel: RelationSpec) -> list[Any]:
         return [r.value for r in rows]
     if rel.shape == "credits":
         return [{"person": c.person.public_id, "role": c.role.public_id} for c in rows]
+    if rel.shape == "model_relationships":
+        return [
+            {
+                "relationship_type": r.relationship_type,
+                "license_status": r.license_status,
+                "target_machine": (
+                    r.target_machine.public_id if r.target_machine else None
+                ),
+                "target_label": r.target_label,
+            }
+            for r in rows
+        ]
     raise ValueError(f"Unknown relation shape: {rel.shape!r}")
 
 
@@ -561,6 +603,7 @@ def _serialize_row(
     sfl_map: SourceFieldLicenseMap,
     link_map: _LinkMap,
     strip_rules: _LinkStripRules,
+    license_slugs: Mapping[int, str],
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "public_id": obj.public_id,
@@ -579,7 +622,9 @@ def _serialize_row(
         thumb, hero = extract_image_urls(extra, media, min_rank=min_rank)
         row["thumbnail_url"] = thumb
         row["hero_image_url"] = hero
-        att = extract_image_attribution(extra, media, min_rank=min_rank)
+        att = extract_image_attribution(
+            extra, media, min_rank=min_rank, license_slugs=license_slugs
+        )
         row["image_attribution"] = att.model_dump() if att else None
     for key, rel in spec.relations.items():
         row[key] = _serialize_relation(obj, rel)
@@ -625,6 +670,11 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
                 "abbreviations": _rel("abbreviations", "strings"),
                 "credits": _rel(
                     "credits", "credits", "credits__person", "credits__role"
+                ),
+                "model_relationships": _rel(
+                    "relationships",
+                    "model_relationships",
+                    "relationships__target_machine",
                 ),
             },
             derived={
@@ -848,6 +898,7 @@ def _register(spec: ExportSpec) -> None:
         min_rank = get_minimum_display_rank()
         sfl_map = build_source_field_license_map()
         strip_rules = _link_strip_rules()  # once per build, honoring is_enabled toggles
+        license_slugs = license_slug_map()
         objs = list(_build_qs(spec))
         link_map = _build_link_map([o.description for o in objs])
         rows = [
@@ -858,6 +909,7 @@ def _register(spec: ExportSpec) -> None:
                 sfl_map=sfl_map,
                 link_map=link_map,
                 strip_rules=strip_rules,
+                license_slugs=license_slugs,
             )
             for obj in objs
         ]

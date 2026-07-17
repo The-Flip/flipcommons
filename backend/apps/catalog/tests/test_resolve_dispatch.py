@@ -109,16 +109,16 @@ class TestLiteralSchemasAutoPopulated:
         for at in discover_alias_types():
             schema = get_relationship_schema(at.claim_field)
             assert schema is not None
-            # The alias value-key is named "alias_value" and participates in
-            # the claim_key under the identity label "alias".
+            # The alias member is named "alias_value" and participates in
+            # the claim_key under the identity label "alias". (Members are
+            # required by construction — no per-spec flag to assert.)
             alias_value_spec = next(
-                (s for s in schema.value_keys if s.name == "alias_value"),
+                (m for m in schema.members if m.name == "alias_value"),
                 None,
             )
             assert alias_value_spec is not None
             assert alias_value_spec.identity == "alias"
             assert alias_value_spec.scalar_type is str
-            assert alias_value_spec.required is True
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ class TestMachineModelRouting:
     def test_scalars_resolved(self, pm, source):
         ss = TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
         make_claim(pm, "name", "Test Machine", ingest_source=source)
-        make_claim(pm, "technology_generation", "solid-state", ingest_source=source)
+        make_claim(pm, "technology_generation", ss.pk, ingest_source=source)
 
         resolve_after_mutation(pm, field_names=["name", "technology_generation"])
 

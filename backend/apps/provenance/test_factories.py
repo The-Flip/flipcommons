@@ -152,6 +152,7 @@ def cite_claim(
     *,
     citation_source: CitationSource | None = None,
     locator: str = "",
+    quote: str = "",
 ) -> CitationInstance:
     """Attach a citation instance to *claim* as supporting evidence.
 
@@ -161,7 +162,9 @@ def cite_claim(
     and (as of the shared-evidence write path) the only tie a scalar cite has
     to its claims. Returns the created instance.
     """
-    instance = make_citation_instance(citation_source=citation_source, locator=locator)
+    instance = make_citation_instance(
+        citation_source=citation_source, locator=locator, quote=quote
+    )
     claim_citation_instance(claim, instance)
     return instance
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from django.contrib.contenttypes.models import ContentType
 
@@ -11,6 +11,7 @@ from apps.core.licensing import (
     UNKNOWN_LICENSE_RANK,
     get_minimum_display_rank,
 )
+from apps.core.models import License
 from apps.core.types import JsonData
 from apps.media.helpers import displayed_primary_asset_ids
 from apps.media.models import EntityMedia
@@ -25,7 +26,18 @@ __all__ = [
     "fetch_model_media_map",
     "fetch_title_media_map",
     "first_thumbnail",
+    "license_slug_map",
 ]
+
+
+def license_slug_map() -> dict[int, str]:
+    """License pk→slug for resolving ``__license_id`` sidecars at read time.
+
+    The sidecar stores the License PK (rename-proof); the API contract is the
+    slug. Pass the map to :func:`extract_image_attribution` in tight loops to
+    avoid a query per row — licenses are a handful of rows, one query total.
+    """
+    return dict(License.objects.values_list("pk", "slug"))
 
 
 def fetch_model_media_map(
@@ -171,6 +183,7 @@ def extract_image_attribution(
     primary_media: Sequence[EntityMedia] | None,
     *,
     min_rank: int | None = None,
+    license_slugs: Mapping[int, str] | None = None,
 ) -> AttributionSchema | None:
     """Return AttributionSchema for the displayed image, or None.
 
@@ -179,8 +192,10 @@ def extract_image_attribution(
     image source in priority order and returns info for the first source that
     passes the display threshold.
 
-    Pass *min_rank* to avoid repeated Constance DB lookups in tight loops
-    (mirrors :func:`extract_image_urls`).
+    The sidecar stores the License PK (``__license_id``); the slug on the wire
+    is resolved here so it always reflects the license's *current* slug. Pass
+    *min_rank* and *license_slugs* (see :func:`license_slug_map`) to avoid
+    repeated DB lookups in tight loops (mirrors :func:`extract_image_urls`).
     """
     # Uploaded media has no third-party attribution.
     if primary_media:
@@ -197,10 +212,12 @@ def extract_image_attribution(
         rank = rank_raw if isinstance(rank_raw, int) else None
         effective = rank if rank is not None else UNKNOWN_LICENSE_RANK
         if effective >= min_rank:
-            license_slug_raw = extra_data.get(f"{key}.__license_slug")
-            license_slug = (
-                license_slug_raw if isinstance(license_slug_raw, str) else None
-            )
+            license_id = extra_data.get(f"{key}.__license_id")
+            license_slug: str | None = None
+            if type(license_id) is int:
+                if license_slugs is None:
+                    license_slugs = license_slug_map()
+                license_slug = license_slugs.get(license_id)
             return AttributionSchema(
                 license_slug=license_slug,
             )

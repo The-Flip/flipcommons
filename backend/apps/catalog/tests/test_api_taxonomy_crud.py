@@ -162,8 +162,8 @@ class TestSubgenerationCreate:
         cs = ChangeSet.objects.get(actor=user.actor, action=ChangeSetAction.CREATE)
         claims = {c.field_name: c.value for c in Claim.objects.filter(changeset=cs)}
         assert claims.keys() == {"name", "slug", "status", "technology_generation"}
-        # FK claim stores the parent's slug string, not the PK.
-        assert claims["technology_generation"] == parent.slug
+        # FK claim stores the parent's PK.
+        assert claims["technology_generation"] == parent.pk
 
     def test_unknown_parent_slug_returns_404(self, client, user):
         client.force_login(user)

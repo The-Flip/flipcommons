@@ -1,10 +1,10 @@
 <!-- @component Citations footer for one field change: numbered rows for inline
 [[cite:]] citations (matching the [n] markers in the change's text), unnumbered
-rows for evidence attached directly to the claim. -->
+rows for evidence attached directly to the claim. Owns the marker numbering and
+ordering; each row's identity is rendered by CitationBody in its inline layout. -->
 <script lang="ts">
   import type { FieldChangeCitationSchema } from '$lib/api/schema';
-  import { displayLocator } from '$lib/citation-types';
-  import { citationLinkDisplay } from '$lib/components/citation/citation-links';
+  import CitationBody from '$lib/components/citation/CitationBody.svelte';
 
   let {
     citations,
@@ -37,31 +37,13 @@ rows for evidence attached directly to the claim. -->
 {#if entries.length > 0}
   <dd class="change-citations">
     {#each entries as { citation, index }, i (citation.slug ?? `attached-${i}`)}
-      {@const links = citationLinkDisplay(citation.links ?? [])}
       <div class="citation-row">
         {#if index !== undefined}
           <span class="marker">{index}.</span>
         {/if}
-        <span>
-          <strong>
-            {#if links.titleHref}
-              <a href={links.titleHref} target="_blank">{citation.source_name}</a>
-            {:else}
-              {citation.source_name}
-            {/if}
-          </strong>
-          {#if citation.author || citation.year}
-            <span class="meta">
-              &mdash; {[citation.author, citation.year].filter(Boolean).join(', ')}
-            </span>
-          {/if}
-          {#if citation.locator}
-            <span class="meta">({displayLocator(citation.source_type, citation.locator)})</span>
-          {/if}
-          {#each links.chips as link (link.url)}
-            <a class="chip" href={link.url} target="_blank">{link.display_name}</a>
-          {/each}
-        </span>
+        <div class="citation-body">
+          <CitationBody {citation} layout="inline" />
+        </div>
       </div>
     {/each}
   </dd>
@@ -86,30 +68,11 @@ rows for evidence attached directly to the claim. -->
     text-align: right;
   }
 
-  strong {
-    color: var(--color-text);
-  }
-
-  strong a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  strong a:hover {
-    text-decoration: underline;
-  }
-
-  .meta {
-    color: var(--color-text-muted);
-  }
-
-  .chip {
-    margin-left: var(--size-1);
-    color: var(--color-link);
-    text-decoration: none;
-  }
-
-  .chip:hover {
-    text-decoration: underline;
+  .citation-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-1);
   }
 </style>

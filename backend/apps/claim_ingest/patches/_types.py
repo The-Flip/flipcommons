@@ -36,8 +36,8 @@ class _CreatedKey(NamedTuple):
 
     Keyed by the *resolved concrete model class* (never the ``entity_type``
     label), so a later reference looks it up by the FK/relationship target's
-    ``related_model`` — the same class ``_lookup_pk`` queries — with no
-    ``"corporate-entity"`` vs ``corporate_entity`` or base-vs-concrete drift.
+    ``related_model`` — the same class ``resolve_fk_target_pk`` queries — with
+    no ``"corporate-entity"`` vs ``corporate_entity`` or base-vs-concrete drift.
 
     Typed ``type[models.Model]`` (not ``type[LinkableClaimModel]``) because
     lookups key by an FK target's ``related_model``, which Django only types as

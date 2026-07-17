@@ -1,6 +1,181 @@
-import type { ClaimValueSchema, FieldChangeSchema } from '$lib/api/schema';
+import type {
+  ClaimDisplayIdentityPartSchema,
+  ClaimDisplayValueSchema,
+  ClaimValueSchema,
+  FieldChangeSchema,
+} from '$lib/api/schema';
+import { DELETED_PLACEHOLDER, MISSING_PLACEHOLDER } from './claim-display';
 
 type FieldChange = FieldChangeSchema;
+
+/** One member of an object-valued claim, ready for member-level diff rendering. */
+export interface StructuredDiffPart {
+  key: string;
+  label: string;
+  oldText: string | null;
+  newText: string;
+  changed: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function valuesEqual(oldValue: unknown, newValue: unknown): boolean {
+  if (oldValue === newValue) return true;
+  if (oldValue == null || newValue == null) return false;
+  return JSON.stringify(oldValue) === JSON.stringify(newValue);
+}
+
+function humanizeKey(key: string): string {
+  const words = key.replaceAll('_', ' ').replaceAll('-', ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function humanizeRelationshipValue(value: unknown): string {
+  if (typeof value !== 'string') return formatValue(value);
+  if (!/^[a-z0-9_-]+$/.test(value)) return value;
+  return humanizeKey(value);
+}
+
+function identityText(part: ClaimDisplayIdentityPartSchema | undefined): string {
+  if (!part) return '—';
+  if (part.state === 'deleted') return DELETED_PLACEHOLDER;
+  if (part.state === 'missing') return MISSING_PLACEHOLDER;
+  return part.label ?? '—';
+}
+
+/** Object keys that carry displayable content — everything but the `exists` marker. */
+function contentKeys(raw: Record<string, unknown>): string[] {
+  return Object.keys(raw).filter((key) => key !== 'exists');
+}
+
+/**
+ * Build parts for a plain key set, deriving each cell from `resolve`. Shared by
+ * the raw-JSON branches whose members are keyed but carry no backend labels.
+ */
+function partsForKeys(
+  keys: string[],
+  resolve: (key: string) => Pick<StructuredDiffPart, 'oldText' | 'newText' | 'changed'>,
+): StructuredDiffPart[] {
+  return keys.map((key) => ({ key, label: humanizeKey(key), ...resolve(key) }));
+}
+
+function relationshipDisplay(
+  value: ClaimValueSchema | null | undefined,
+): ClaimDisplayValueSchema | null {
+  return value?.display?.kind === 'relationship' ? value.display : null;
+}
+
+function orderedUnion(first: string[], second: string[]): string[] {
+  return [...new Set([...first, ...second])];
+}
+
+function buildRelationshipDiff(
+  oldRaw: Record<string, unknown>,
+  newRaw: Record<string, unknown>,
+  oldDisplay: ClaimDisplayValueSchema,
+  newDisplay: ClaimDisplayValueSchema,
+): StructuredDiffPart[] {
+  const identityKeys = orderedUnion(
+    oldDisplay.identity.map((part) => part.key),
+    newDisplay.identity.map((part) => part.key),
+  );
+  const qualifierKeys = orderedUnion(
+    oldDisplay.qualifiers.map((part) => part.key),
+    newDisplay.qualifiers.map((part) => part.key),
+  );
+
+  const identityParts = identityKeys.map((key) => {
+    const oldPart = oldDisplay.identity.find((part) => part.key === key);
+    const newPart = newDisplay.identity.find((part) => part.key === key);
+    const oldText = identityText(oldPart);
+    const newText = identityText(newPart);
+    return {
+      key,
+      label: humanizeKey(key),
+      oldText,
+      newText,
+      changed: oldText !== newText || !valuesEqual(oldRaw[key], newRaw[key]),
+    };
+  });
+
+  const qualifierParts = qualifierKeys.map((key) => {
+    const oldPart = oldDisplay.qualifiers.find((part) => part.key === key);
+    const newPart = newDisplay.qualifiers.find((part) => part.key === key);
+    const oldValue = oldPart?.value;
+    const newValue = newPart?.value;
+    return {
+      key,
+      label: humanizeKey(key),
+      oldText: humanizeRelationshipValue(oldValue),
+      newText: humanizeRelationshipValue(newValue),
+      changed: !valuesEqual(oldValue, newValue),
+    };
+  });
+
+  return [...identityParts, ...qualifierParts];
+}
+
+function buildRelationshipCreation(newDisplay: ClaimDisplayValueSchema): StructuredDiffPart[] {
+  const identityParts = newDisplay.identity.map((part) => ({
+    key: part.key,
+    label: humanizeKey(part.key),
+    oldText: null,
+    newText: identityText(part),
+    changed: true,
+  }));
+  const qualifierParts = newDisplay.qualifiers.map((part) => ({
+    key: part.key,
+    label: humanizeKey(part.key),
+    oldText: null,
+    newText: humanizeRelationshipValue(part.value),
+    changed: true,
+  }));
+  return [...identityParts, ...qualifierParts];
+}
+
+/**
+ * Build a member-level diff for object-valued claims. Relationship claims use
+ * their backend-provided identity labels and qualifier order; unknown JSON
+ * objects fall back to their raw keys. Creations, deletions, and tombstones
+ * retain the ordinary whole-value rendering because their existence changed.
+ */
+export function buildStructuredDiff(change: FieldChange): StructuredDiffPart[] | null {
+  const oldRaw = change.old_value?.raw;
+  const newRaw = change.new_value.raw;
+  if (!isRecord(newRaw) || newRaw.exists === false) return null;
+
+  const oldDisplay = relationshipDisplay(change.old_value);
+  const newDisplay = relationshipDisplay(change.new_value);
+  if (oldRaw == null) {
+    if (newDisplay) {
+      const parts = buildRelationshipCreation(newDisplay);
+      return parts.length > 0 ? parts : null;
+    }
+    const keys = contentKeys(newRaw);
+    if (keys.length === 0) return null;
+    return partsForKeys(keys, (key) => ({
+      oldText: null,
+      newText: formatValue(newRaw[key]),
+      changed: true,
+    }));
+  }
+
+  if (!isRecord(oldRaw) || oldRaw.exists === false) return null;
+  if (oldDisplay && newDisplay) {
+    const parts = buildRelationshipDiff(oldRaw, newRaw, oldDisplay, newDisplay);
+    return parts.length > 0 ? parts : null;
+  }
+
+  const keys = orderedUnion(contentKeys(oldRaw), contentKeys(newRaw));
+  if (keys.length === 0) return null;
+  return partsForKeys(keys, (key) => ({
+    oldText: formatValue(oldRaw[key]),
+    newText: formatValue(newRaw[key]),
+    changed: !valuesEqual(oldRaw[key], newRaw[key]),
+  }));
+}
 
 /**
  * The text a claim value contributes to a diff. For markdown fields this is
@@ -49,24 +224,27 @@ export function isUnchanged(change: FieldChange): boolean {
   // distinct event (e.g. for ingest provenance), tighten this here.
   const oldRaw = change.old_value?.raw ?? null;
   const newRaw = change.new_value.raw ?? null;
-  if (oldRaw === newRaw) return true;
-  if (oldRaw == null || newRaw == null) return false;
-  return JSON.stringify(oldRaw) === JSON.stringify(newRaw);
+  return valuesEqual(oldRaw, newRaw);
 }
 
 /**
  * True when a claim value represents an actual assertion — i.e. not null,
- * undefined, empty string, or a bare retraction marker like `{exists: false}`
- * with no other keys. Used to decide whether to render an `old → new`
- * transition or treat the change as a creation / deletion.
+ * undefined, empty string, or a retraction marker with nothing visible to
+ * say: `{exists: false}` bare, or a tombstone whose remaining keys are all
+ * null/empty (the narrowed label-slot tombstone, whose wording lives on the
+ * chronologically prior claim, surfaced by the backend as `old_value`).
+ * Used to decide whether to render an `old → new` transition or treat the
+ * change as a creation / deletion.
  */
 export function hasMeaningfulValue(v: unknown): boolean {
   if (v === null || v === undefined || v === '') return false;
   if (typeof v === 'object' && !Array.isArray(v)) {
     const obj = v as Record<string, unknown>;
     if (obj.exists === false) {
-      const otherKeys = Object.keys(obj).filter((k) => k !== 'exists');
-      if (otherKeys.length === 0) return false;
+      const visible = Object.entries(obj).filter(
+        ([k, val]) => k !== 'exists' && val !== null && val !== '',
+      );
+      if (visible.length === 0) return false;
     }
   }
   return true;
@@ -79,6 +257,30 @@ export function hasMeaningfulValue(v: unknown): boolean {
  */
 export function isDeletion(change: FieldChange): boolean {
   return hasMeaningfulValue(change.old_value?.raw) && !hasMeaningfulValue(change.new_value.raw);
+}
+
+/**
+ * How a field change should render, decided once. Most-specific-first:
+ * unchanged → deletion → text diff → member-level structured diff → scalar
+ * old→new. `structuredDiff` carries its already-built parts so callers don't
+ * recompute. Views that don't distinguish every mode (the changelog feed, the
+ * retracted-row branch) fold the ones they skip into their scalar rendering.
+ */
+export type ChangeRenderMode =
+  | { kind: 'unchanged' }
+  | { kind: 'deletion' }
+  | { kind: 'textDiff' }
+  | { kind: 'structuredDiff'; parts: StructuredDiffPart[] }
+  | { kind: 'scalar' };
+
+/** Classify a change into its render mode; the single source of that decision. */
+export function classifyChange(change: FieldChange): ChangeRenderMode {
+  if (isUnchanged(change)) return { kind: 'unchanged' };
+  if (isDeletion(change)) return { kind: 'deletion' };
+  if (isDiffable(change)) return { kind: 'textDiff' };
+  const parts = buildStructuredDiff(change);
+  if (parts) return { kind: 'structuredDiff', parts };
+  return { kind: 'scalar' };
 }
 
 /**

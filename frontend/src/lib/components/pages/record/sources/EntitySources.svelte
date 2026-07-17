@@ -70,16 +70,7 @@
                 <p class="changeset-fields">Applies to: {changeset.fields.join(', ')}</p>
                 {#each changeset.citations as citation, i (i)}
                   <div class="evidence-citation">
-                    <CitationBody
-                      sourceName={citation.source_name}
-                      sourceType={citation.source_type}
-                      author={citation.author}
-                      year={citation.year}
-                      locator={citation.locator}
-                      quote={citation.quote}
-                      links={citation.links}
-                      linkLayout="row"
-                    />
+                    <CitationBody {citation} linkLayout="row" />
                   </div>
                 {/each}
               </li>

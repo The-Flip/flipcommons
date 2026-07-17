@@ -15,7 +15,6 @@
     editorRef = $bindable<SectionEditorHandle | undefined>(undefined),
     onsaved,
     onerror,
-    ondirtychange,
   }: {
     sectionKey: SystemEditSectionKey;
     initialData: SystemEditView;
@@ -23,7 +22,6 @@
     editorRef?: SectionEditorHandle | undefined;
     onsaved: () => void;
     onerror: (message: string) => void;
-    ondirtychange: (dirty: boolean) => void;
   } = $props();
 </script>
 
@@ -35,7 +33,6 @@
     save={saveSystemClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'description'}
   <DescriptionEditor
@@ -45,7 +42,6 @@
     save={saveSystemClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'manufacturer'}
   <SystemManufacturerEditor
@@ -55,7 +51,6 @@
     save={saveSystemClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'technology'}
   <SystemTechnologyEditor
@@ -65,6 +60,5 @@
     save={saveSystemClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {/if}

@@ -16,13 +16,7 @@
     logo_url: string;
   };
 
-  let {
-    initialData,
-    slug,
-    onsaved,
-    onerror,
-    ondirtychange = () => {},
-  }: SectionEditorProps<ManufacturerEditView> = $props();
+  let { initialData, slug, onsaved, onerror }: SectionEditorProps<ManufacturerEditView> = $props();
 
   function extractFields(manufacturer: ManufacturerEditView): BasicsFields {
     return {
@@ -37,13 +31,7 @@
   let changedFields = $derived(diffScalarFields(fields, original));
   let dirty = $derived(Object.keys(changedFields).length > 0);
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

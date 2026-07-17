@@ -47,7 +47,7 @@ class TestResolveModel:
         ss = TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
         make_claim(pm, "name", "Medieval Madness", ingest_source=ipdb)
         make_claim(pm, "year", 1997, ingest_source=ipdb)
-        make_claim(pm, "technology_generation", "solid-state", ingest_source=ipdb)
+        make_claim(pm, "technology_generation", ss.pk, ingest_source=ipdb)
 
         resolve_after_mutation(pm)
         assert pm.name == "Medieval Madness"
@@ -188,7 +188,7 @@ class TestResolveAll:
         make_claim(pm1, "year", 1997, ingest_source=ipdb)
         make_claim(pm2, "name", "The Addams Family", ingest_source=ipdb)
         make_claim(pm3, "name", "Twilight Zone", ingest_source=ipdb)
-        make_claim(pm3, "technology_generation", "solid-state", ingest_source=ipdb)
+        make_claim(pm3, "technology_generation", ss.pk, ingest_source=ipdb)
 
         before = timezone.now()
         count = bulk_resolve()
@@ -218,7 +218,7 @@ class TestResolveAll:
             opdb_id="G1111", name="Medieval Madness", slug="mm"
         )
         make_claim(title, "name", "Medieval Madness", ingest_source=ipdb)
-        TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
+        ss = TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
 
         pm_bulk = make_machine_model(name="P1", slug="p1", title=title)
         pm_single = make_machine_model(name="P2", slug="p2", title=title)
@@ -230,11 +230,11 @@ class TestResolveAll:
         for pm in (pm_bulk, pm_single):
             make_claim(pm, "name", "Medieval Madness", ingest_source=ipdb)
             make_claim(pm, "year", 1997, ingest_source=opdb)
-            make_claim(pm, "title", title.slug, ingest_source=opdb)
+            make_claim(pm, "title", title.pk, ingest_source=opdb)
             make_claim(
                 pm, "abbreviation", abbr_val, ingest_source=ipdb, claim_key=abbr_key
             )
-            make_claim(pm, "technology_generation", "solid-state", ingest_source=ipdb)
+            make_claim(pm, "technology_generation", ss.pk, ingest_source=ipdb)
 
         resolve_after_mutation(pm_single)
         pm_single.refresh_from_db()
@@ -411,7 +411,7 @@ class TestResolveSystem:
         )
         pm = make_machine_model(name="Medieval Madness", slug="medieval-madness")
         make_claim(pm, "name", "Medieval Madness", ingest_source=ipdb)
-        make_claim(pm, "system", "wpc-95", ingest_source=ipdb)
+        make_claim(pm, "system", system.pk, ingest_source=ipdb)
 
         resolve_after_mutation(pm)
         pm.refresh_from_db()
@@ -423,7 +423,7 @@ class TestResolveSystem:
         )
         pm = make_machine_model(name="Mystery Machine", slug="mystery-machine")
         make_claim(pm, "name", "Mystery Machine", ingest_source=ipdb)
-        make_claim(pm, "system", "nonexistent-slug", ingest_source=ipdb)
+        make_claim(pm, "system", 999999, ingest_source=ipdb)
 
         resolve_after_mutation(pm)
         pm.refresh_from_db()

@@ -37,10 +37,12 @@
 </script>
 
 <div class="field-group">
-  <label for={inputId}
-    >{label}
-    {#if optional}<span class="optional">(optional)</span>{/if}</label
-  >
+  {#if label}
+    <label for={inputId}
+      >{label}
+      {#if optional}<span class="optional">(optional)</span>{/if}</label
+    >
+  {/if}
   {#if hint}
     <p class="field-hint" id={hintId}>{hint}</p>
   {/if}

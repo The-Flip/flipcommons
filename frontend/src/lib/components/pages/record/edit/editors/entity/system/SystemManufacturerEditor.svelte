@@ -31,7 +31,6 @@
     save: saveFn,
     onsaved,
     onerror,
-    ondirtychange = () => {},
   }: SectionEditorProps<InitialData> & { save: SaveFn } = $props();
 
   const original = untrack(() => ({
@@ -41,20 +40,14 @@
   let fieldErrors = $state<FieldErrors>({});
   let dirty = $derived(Object.keys(diffScalarFields(fields, original)).length > 0);
 
+  export { dirty };
+
   // Seed the typeahead so the saved manufacturer renders on mount with no search.
   const initialSelection: EntityOption | null = untrack(() =>
     initialData.manufacturer
       ? { value: initialData.manufacturer.public_id, label: initialData.manufacturer.name }
       : null,
   );
-
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

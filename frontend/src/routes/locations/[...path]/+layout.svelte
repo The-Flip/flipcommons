@@ -196,7 +196,7 @@
     sections={visibleSections}
     switcherItems={editMenuItems}
   >
-    {#snippet editor(key, { ref, onsaved, onerror, ondirtychange })}
+    {#snippet editor(key, { ref, onsaved, onerror })}
       <LocationEditorSwitch
         sectionKey={key}
         initialData={profile}
@@ -204,7 +204,6 @@
         bind:editorRef={ref.current}
         {onsaved}
         {onerror}
-        {ondirtychange}
       />
     {/snippet}
   </SectionEditorHost>

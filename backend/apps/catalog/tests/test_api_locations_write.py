@@ -281,8 +281,8 @@ class TestChildCreate:
         claim_fields = {
             c.field_name: c.value for c in Claim.objects.filter(changeset=cs)
         }
-        # FK claim value is the parent's location_path (not slug).
-        assert claim_fields["parent"] == "usa"
+        # FK claim value is the parent's PK.
+        assert claim_fields["parent"] == usa.pk
         assert claim_fields["location_type"] == "state"
 
     def test_creates_city_under_state(self, client, user, il):

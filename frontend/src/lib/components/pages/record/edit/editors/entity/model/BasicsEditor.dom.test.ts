@@ -92,19 +92,13 @@ describe('BasicsEditor dirty-state contract', () => {
       props: { initialData: INITIAL_MODEL },
     });
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
 
     const yearInput = screen.getByLabelText('Year');
     await user.clear(yearInput);
     await user.type(yearInput, '1998');
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('changing Title marks dirty and PATCHes only the title slug', async () => {
@@ -118,7 +112,7 @@ describe('BasicsEditor dirty-state contract', () => {
     await user.click(screen.getByRole('combobox', { name: 'Title' }));
     await user.click(await screen.findByRole('option', { name: 'Attack from Mars' }));
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
@@ -145,7 +139,7 @@ describe('BasicsEditor dirty-state contract', () => {
     await user.click(screen.getByRole('combobox', { name: 'Production status' }));
     await user.click(await screen.findByRole('option', { name: 'Unreleased' }));
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 

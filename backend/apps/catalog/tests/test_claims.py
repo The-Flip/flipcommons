@@ -212,7 +212,7 @@ class TestBuildRelationshipClaimCanonicalKey:
 
         for namespace, schema in get_all_relationship_schemas().items():
             identity_kwargs: dict[ClaimValueKey, IdentityPartValue] = {}
-            for spec in schema.value_keys:
+            for spec in schema.members:
                 if spec.identity is None:
                     continue
                 # No current identity spec uses scalar_type=bool, so int|str
@@ -232,7 +232,7 @@ class TestBuildRelationshipClaimCanonicalKey:
             )
             expected_parts = {
                 spec.identity: identity_kwargs[spec.name]
-                for spec in schema.value_keys
+                for spec in schema.members
                 if spec.identity is not None
             }
             assert claim_key == make_claim_key(namespace, **expected_parts), (

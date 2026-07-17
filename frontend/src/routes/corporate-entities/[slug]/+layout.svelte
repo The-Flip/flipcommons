@@ -197,7 +197,7 @@
     sections={CORPORATE_ENTITY_EDIT_SECTIONS}
     switcherItems={editSections}
   >
-    {#snippet editor(key, { ref, onsaved, onerror, ondirtychange })}
+    {#snippet editor(key, { ref, onsaved, onerror })}
       <CorporateEntityEditorSwitch
         sectionKey={key}
         initialData={ce}
@@ -205,7 +205,6 @@
         bind:editorRef={ref.current}
         {onsaved}
         {onerror}
-        {ondirtychange}
       />
     {/snippet}
   </SectionEditorHost>

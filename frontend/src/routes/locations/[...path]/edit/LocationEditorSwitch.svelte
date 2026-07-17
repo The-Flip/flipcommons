@@ -15,7 +15,6 @@
     editorRef = $bindable<SectionEditorHandle | undefined>(undefined),
     onsaved,
     onerror,
-    ondirtychange,
   }: {
     sectionKey: LocationEditSectionKey;
     initialData: LocationEditView;
@@ -23,7 +22,6 @@
     editorRef?: SectionEditorHandle | undefined;
     onsaved: () => void;
     onerror: (message: string) => void;
-    ondirtychange: (dirty: boolean) => void;
   } = $props();
 </script>
 
@@ -35,17 +33,9 @@
     save={saveLocationClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'basics'}
-  <LocationBasicsEditor
-    bind:this={editorRef}
-    {initialData}
-    slug={publicId}
-    {onsaved}
-    {onerror}
-    {ondirtychange}
-  />
+  <LocationBasicsEditor bind:this={editorRef} {initialData} slug={publicId} {onsaved} {onerror} />
 {:else if sectionKey === 'divisions'}
   <LocationDivisionsEditor
     bind:this={editorRef}
@@ -53,7 +43,6 @@
     slug={publicId}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'aliases'}
   <AliasesSectionEditor
@@ -63,6 +52,5 @@
     save={saveLocationClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {/if}

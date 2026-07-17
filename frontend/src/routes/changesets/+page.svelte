@@ -9,9 +9,10 @@
   import ChangeValue from '$lib/components/provenance/ChangeValue.svelte';
   import ChangeCitations from '$lib/components/provenance/ChangeCitations.svelte';
   import CiteMarkedText from '$lib/components/provenance/CiteMarkedText.svelte';
+  import StructuredValueDiff from '$lib/components/provenance/StructuredValueDiff.svelte';
   import InlineDiff from '$lib/components/ui/InlineDiff.svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-  import { diffText, isDiffable } from '$lib/components/provenance/change-display';
+  import { classifyChange, diffText } from '$lib/components/provenance/change-display';
   import {
     citeIndexesForChange,
     substituteCiteMarkers,
@@ -244,7 +245,8 @@
                 <dl class="field-list">
                   {#each detail.changes as change (change.claim_key)}
                     {@const citeIndexes = citeIndexesForChange(change)}
-                    {#if isDiffable(change)}
+                    {@const mode = classifyChange(change)}
+                    {#if mode.kind === 'textDiff'}
                       <div class="field-row field-row-diff">
                         <dt>{change.field_name}</dt>
                         <dd>
@@ -260,6 +262,12 @@
                             renderText={citeIndexes.size > 0 ? markedText : undefined}
                           />
                         </dd>
+                        <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
+                      </div>
+                    {:else if mode.kind === 'structuredDiff'}
+                      <div class="field-row">
+                        <dt>{change.field_name}</dt>
+                        <dd><StructuredValueDiff parts={mode.parts} /></dd>
                         <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
                       </div>
                     {:else}

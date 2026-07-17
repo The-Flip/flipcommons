@@ -31,6 +31,10 @@ from apps.provenance.model_bases import (
 
 from ._autocomplete import manufacturer_year_sublabel
 from .base import CatalogModel
+from .model_relationship import (
+    SUBORDINATING_RELATIONSHIP_TYPES,
+    ModelRelationship,
+)
 
 __all__ = ["MachineModel", "ModelAbbreviation"]
 
@@ -74,6 +78,15 @@ class MachineModel(
 
     entity_type = "model"
     entity_type_plural = "models"
+    # A model targeted by another *active* model's relationship edge can't be
+    # soft-deleted: the edge row itself has no lifecycle (so the PROTECT pass
+    # skips it), but the owning source model would display a link to a 404.
+    # The blocker walks through the edge to that source model — the same
+    # channel Tag uses for its member models, and the referential semantics
+    # the retired converted_from FK used to enforce.
+    soft_delete_usage_blockers: ClassVar[frozenset[str]] = frozenset(
+        {"inbound_relationship_sources"}
+    )
     MEDIA_CATEGORIES = ["backglass", "playfield", "cabinet", "other"]
     abbreviations: models.Manager[ModelAbbreviation]
     credits: models.Manager[Credit]
@@ -84,6 +97,10 @@ class MachineModel(
     # Reach the manufacturer for the autocomplete sublabel in one join (year is
     # a direct field). No queryset override needed — the engine applies this.
     autocomplete_select_related = ("corporate_entity__manufacturer",)
+    # Provenance relationship labels use the same joins, but a deliberately
+    # tighter one-line presentation than ``__str__`` (which names the full
+    # corporate entity for admin/debug contexts).
+    claim_display_select_related = autocomplete_select_related
 
     # Identity
     name = models.CharField(max_length=300, validators=[validate_no_mojibake])
@@ -132,14 +149,6 @@ class MachineModel(
         blank=True,
         help_text="Parent machine model if this is a cosmetic/LE variant.",
     )
-    converted_from = models.ForeignKey(
-        "self",
-        on_delete=models.PROTECT,
-        related_name="conversions",
-        null=True,
-        blank=True,
-        help_text="Source machine if this is a conversion/retheme.",
-    )
     remake_of = models.ForeignKey(
         "self",
         on_delete=models.PROTECT,
@@ -148,30 +157,6 @@ class MachineModel(
         blank=True,
         help_text="Original model if this is a remake.",
     )
-    bootleg_of = models.ForeignKey(
-        "self",
-        on_delete=models.PROTECT,
-        related_name="bootlegs",
-        null=True,
-        blank=True,
-        help_text=(
-            "Original machine this is an unauthorized copy (bootleg) of. "
-            "Unlike remakes and conversions, may belong to a different Title."
-        ),
-    )
-    licensed_build_of = models.ForeignKey(
-        "self",
-        on_delete=models.PROTECT,
-        related_name="licensed_builds",
-        null=True,
-        blank=True,
-        help_text=(
-            "Original machine this is an officially licensed build (by a "
-            "licensee or subsidiary) of. Like bootlegs, may belong to a "
-            "different Title."
-        ),
-    )
-
     # Core filterable fields
     corporate_entity = models.ForeignKey(
         "CorporateEntity",
@@ -407,31 +392,10 @@ class MachineModel(
                 violation_error_code="cross_field",
             ),
             models.CheckConstraint(
-                condition=models.Q(converted_from__isnull=True)
-                | ~models.Q(converted_from=models.F("pk")),
-                name="catalog_machinemodel_converted_from_not_self",
-                violation_error_message="A machine model cannot be converted from itself.",
-                violation_error_code="cross_field",
-            ),
-            models.CheckConstraint(
                 condition=models.Q(remake_of__isnull=True)
                 | ~models.Q(remake_of=models.F("pk")),
                 name="catalog_machinemodel_remake_of_not_self",
                 violation_error_message="A machine model cannot be a remake of itself.",
-                violation_error_code="cross_field",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(bootleg_of__isnull=True)
-                | ~models.Q(bootleg_of=models.F("pk")),
-                name="catalog_machinemodel_bootleg_of_not_self",
-                violation_error_message="A machine model cannot be a bootleg of itself.",
-                violation_error_code="cross_field",
-            ),
-            models.CheckConstraint(
-                condition=models.Q(licensed_build_of__isnull=True)
-                | ~models.Q(licensed_build_of=models.F("pk")),
-                name="catalog_machinemodel_licensed_build_of_not_self",
-                violation_error_message="A machine model cannot be a licensed build of itself.",
                 violation_error_code="cross_field",
             ),
         ]
@@ -444,7 +408,16 @@ class MachineModel(
     @classmethod
     def first_model_candidates(cls) -> models.QuerySet[MachineModel]:
         """The "first model" rule, uncorrelated: a title's active, non-variant
-        models, earliest-first by ``(year, name)``.
+        models, ordered so its representative (the first row) is an original —
+        subordinate copies sort last, then earliest-first by ``(year, name)``.
+
+        Variants (cosmetic/LE) collapse out entirely. Copies stay in the list
+        but sort after every original, so ``.first()`` / ``[:1]`` never picks a
+        copy over the model it copies — while a Title whose *only* model is a
+        copy still surfaces it. "Copy" means a subordinating
+        ``ModelRelationship`` edge exists (the Big Ben rule: the Williams
+        original heads the Title, not its Segasa licensed build); conversions
+        and kits are originals in their own right and don't subordinate.
 
         Single source for that identity/order rule. Callers layer their own
         ``select_related`` / ``prefetch_related`` for their read shape, and
@@ -452,11 +425,44 @@ class MachineModel(
         ``title=OuterRef("pk")``. Keeping it in one place stops the subquery, the
         title/card prefetches and the kiosk typeahead from drifting apart.
         """
+        # Type set derived from RELATIONSHIP_TYPE_BEHAVIOR (never named
+        # inline) so a new relationship type must classify itself before it
+        # can influence Title-representative ordering.
+        copy_edge = models.Exists(
+            ModelRelationship.objects.filter(
+                machine_model=models.OuterRef("pk"),
+                relationship_type__in=SUBORDINATING_RELATIONSHIP_TYPES,
+            )
+        )
+        is_copy = models.Case(
+            models.When(copy_edge, then=models.Value(1)),
+            default=models.Value(0),
+            output_field=models.IntegerField(),
+        )
         return (
             cls.objects.active()
             .filter(variant_of__isnull=True)
-            .order_by("year", "name")
+            .alias(_is_subordinate_copy=is_copy)
+            .order_by("_is_subordinate_copy", "year", "name")
         )
+
+    @property
+    def inbound_relationship_sources(self) -> models.QuerySet[MachineModel]:
+        """Models whose relationship edges target this model.
+
+        The read surface behind the ``soft_delete_usage_blockers`` entry: the
+        walk needs a lifecycle queryset (it applies ``.active()``), and the
+        edge row itself has none, so this hops through ``target_machine`` to
+        the owning source models.
+        """
+        return MachineModel.objects.filter(relationships__target_machine=self)
+
+    @classmethod
+    def non_variant_models_q(cls) -> models.Q:
+        """Some lists in the catalog only show models that are gameplay-distinct.
+        These lists don't show cosmetic variants (``variant_of`` set).
+        """
+        return models.Q(variant_of__isnull=True)
 
     @classmethod
     def non_canonical_detail_slugs(cls) -> Iterable[str]:
@@ -489,6 +495,21 @@ class MachineModel(
             self.corporate_entity.manufacturer.name if self.corporate_entity else None
         )
         return manufacturer_year_sublabel(manufacturer, self.year)
+
+    def claim_display_label(self) -> str:
+        """Concise label when this model is the target of another claim."""
+        manufacturer = (
+            self.corporate_entity.manufacturer.name if self.corporate_entity else None
+        )
+        context = " ".join(
+            part
+            for part in (
+                manufacturer,
+                str(self.year) if self.year is not None else None,
+            )
+            if part
+        )
+        return f"{self.name} ({context})" if context else self.name
 
     def __str__(self) -> str:
         parts = [self.name]

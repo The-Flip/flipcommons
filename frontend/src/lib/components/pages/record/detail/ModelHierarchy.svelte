@@ -1,7 +1,10 @@
+<!-- @component Renders a title's machine models (variants nested under their parent) as `RelatedModelLink` lines — the model page's "Other Models In Title" and the title page's "Models" sidebar section. `subjectManufacturer`/`subjectYear` drive the shared disambiguation rule; when omitted, a value shared by every listed model is treated as the subject's (so only mixed lists show makers/years). -->
 <script lang="ts">
-  import { resolve } from '$app/paths';
+  import RelatedModelLink from './RelatedModelLink.svelte';
   import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
   import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
+  import { titleModelsSubject, toModelLinkView } from '$lib/entities/model-lineage';
+  import type { EntityRef } from '$lib/api/schema';
 
   interface Variant {
     name: string;
@@ -13,22 +16,23 @@
     name: string;
     public_id: string;
     year?: number | null;
+    manufacturer?: EntityRef | null;
     variants: Variant[];
   }
 
   let {
     models,
     heading = 'Models',
-    currentSlug = undefined,
-    variantOfSlug = undefined,
     excludeSlug = undefined,
+    subjectManufacturer = undefined,
+    subjectYear = undefined,
     inline = false,
   }: {
     models: Model[];
     heading?: string;
-    currentSlug?: string;
-    variantOfSlug?: string;
     excludeSlug?: string;
+    subjectManufacturer?: string | null;
+    subjectYear?: number | null;
     inline?: boolean;
   } = $props();
 
@@ -39,28 +43,25 @@
   let filteredModels = $derived(
     excludeSlug ? models.filter((m) => m.public_id !== excludeSlug) : models,
   );
+
+  let subject = $derived(
+    titleModelsSubject(filteredModels, { manufacturer: subjectManufacturer, year: subjectYear }),
+  );
 </script>
 
 {#snippet listItems()}
   {#each filteredModels as parent (parent.public_id)}
-    <li
-      class:current={currentSlug !== undefined &&
-        (parent.public_id === currentSlug || parent.public_id === variantOfSlug)}
-    >
-      <a href={resolve(`/models/${parent.public_id}`)}>{parent.name}</a>
-      {#if parent.year}
-        <span class="muted">{parent.year}</span>
-      {/if}
+    <li>
+      <RelatedModelLink link={toModelLinkView(parent, subject)} />
     </li>
     {#each sortedVariants(parent.variants) as variant (variant.public_id)}
-      <li
-        class="variant-indent"
-        class:current={currentSlug !== undefined && variant.public_id === currentSlug}
-      >
-        <a href={resolve(`/models/${variant.public_id}`)}>{variant.name}</a>
-        {#if variant.year}
-          <span class="muted">{variant.year}</span>
-        {/if}
+      <li class="variant-indent">
+        <!-- A variant is a cosmetic variation of its parent and shares its maker,
+             which this projection doesn't carry on the variant itself; inherit the
+             parent's so an unknown maker isn't inferred from the missing field. -->
+        <RelatedModelLink
+          link={toModelLinkView({ ...variant, manufacturer: parent.manufacturer }, subject)}
+        />
       </li>
     {/each}
   {/each}
@@ -108,23 +109,12 @@
   }
 
   li {
-    display: flex;
-    align-items: baseline;
     padding: var(--size-1) 0;
     font-size: var(--font-size-0);
   }
 
-  li > a {
-    flex: 1;
-  }
-
   li:not(:last-child):not(.variant-indent):not(:has(+ .variant-indent)) {
     border-bottom: 1px solid var(--color-border-soft);
-  }
-
-  .muted {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-0);
   }
 
   .variant-indent {
@@ -135,10 +125,5 @@
     content: '└';
     margin-right: var(--size-2);
     color: var(--color-text-muted);
-  }
-
-  .current > a {
-    font-weight: 600;
-    color: var(--color-link);
   }
 </style>

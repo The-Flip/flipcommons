@@ -19,7 +19,6 @@
     editorRef = $bindable<SectionEditorHandle | undefined>(undefined),
     onsaved,
     onerror,
-    ondirtychange,
   }: {
     sectionKey: SimpleTaxonomyEditSectionKey;
     initialData: SimpleTaxonomyEditView;
@@ -28,7 +27,6 @@
     editorRef?: SectionEditorHandle | undefined;
     onsaved: () => void;
     onerror: (message: string) => void;
-    ondirtychange: (dirty: boolean) => void;
   } = $props();
 
   const saveClaims = (s: string, body: SimpleTaxonomySectionPatchBody) =>
@@ -43,7 +41,6 @@
     save={saveClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'description'}
   <DescriptionEditor
@@ -53,7 +50,6 @@
     save={saveClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'display-order'}
   <DisplayOrderEditor
@@ -63,6 +59,5 @@
     save={saveClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {/if}

@@ -95,20 +95,14 @@ describe('TechnologyEditor', () => {
     const user = userEvent.setup();
     renderEditor();
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
 
     // Clear the System combobox to mark dirty
     const systemCombobox = screen.getByRole('combobox', { name: 'System' });
     await user.click(systemCombobox);
     await user.click(screen.getByRole('option', { name: 'Spike 2' }));
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('save() with no changes calls onsaved() without PATCHing', async () => {

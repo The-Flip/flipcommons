@@ -11,6 +11,7 @@ from django.test.utils import CaptureQueriesContext
 
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import (
+    CorporateEntity,
     CreditRole,
     GameplayFeature,
     MachineModel,
@@ -37,9 +38,9 @@ from apps.provenance.schemas import (
 from apps.provenance.test_factories import make_claim
 
 # Any ClaimControlledModel works for relationship/scalar dispatch: the display
-# kind is derived from field_name + value, not from this model. Markdown tests
-# pass an explicit model (Manufacturer) since markdown dispatch reads the
-# model's MarkdownField set.
+# kind is derived from field_name + value, not from this model. Direct-FK and
+# markdown dispatch DO read the model (concrete FK fields / MarkdownField set),
+# so those tests pass the real subject model.
 _MODEL = MachineModel
 
 
@@ -70,7 +71,7 @@ class TestBuildDisplayValue:
         role = CreditRole.objects.create(name="Art", slug="art")
         value = {"person": person.pk, "role": role.pk, "exists": True}
 
-        ctx = _ctx(FieldValue("credit", value))
+        ctx = _ctx(FieldValue("credit", value, _MODEL))
         assert build_display_value(
             _MODEL, "credit", value, ctx
         ) == ClaimDisplayValueSchema(
@@ -84,7 +85,7 @@ class TestBuildDisplayValue:
         # frontend render this case however it wants; ``label`` is null
         # because the backend doesn't choose presentation.
         value = {"person": 999, "role": 888, "exists": True}
-        ctx = _ctx(FieldValue("credit", value))
+        ctx = _ctx(FieldValue("credit", value, _MODEL))
         assert build_display_value(
             _MODEL, "credit", value, ctx
         ) == ClaimDisplayValueSchema(
@@ -103,7 +104,7 @@ class TestBuildDisplayValue:
         # source slips one through, the display engine must not 500 the
         # whole page — log, emit state="missing", carry on.
         value = {"person": "not-an-int", "role": 7, "exists": True}
-        ctx = _ctx(FieldValue("credit", value))
+        ctx = _ctx(FieldValue("credit", value, _MODEL))
         result = build_display_value(_MODEL, "credit", value, ctx)
         assert result is not None
         assert isinstance(result, ClaimDisplayValueSchema)
@@ -111,10 +112,85 @@ class TestBuildDisplayValue:
         assert person_part.state == "missing"
         assert person_part.label is None
 
+    def test_model_relationship_machine_rung_skips_absent_target_slots(self):
+        # Absent xor-group slots (null FK, empty label) are absence by
+        # design — they must not surface as identity parts, and the payload
+        # keys surface as data-faithful qualifiers.
+        target = make_machine_model(name="Rock", slug="rock-display")
+        value = {
+            "target_machine": target.pk,
+            "target_label": "",
+            "relationship_type": "copy",
+            "license_status": "unlicensed",
+            "exists": True,
+        }
+        ctx = _ctx(FieldValue("model_relationship", value, _MODEL))
+        assert build_display_value(
+            _MODEL, "model_relationship", value, ctx
+        ) == ClaimDisplayValueSchema(
+            identity=_identity([("target_machine", "Rock")]),
+            qualifiers=_qualifiers(
+                [("relationship_type", "copy"), ("license_status", "unlicensed")]
+            ),
+        )
+
+    def test_model_relationship_machine_uses_concise_model_declared_label(self):
+        manufacturer = Manufacturer.objects.create(name="Bally", slug="bally-display")
+        corporate_entity = CorporateEntity.objects.create(
+            name="Bally Manufacturing Corporation (1932-1994)",
+            slug="bally-manufacturing-display",
+            manufacturer=manufacturer,
+        )
+        target = make_machine_model(
+            name="Speakeasy",
+            slug="speakeasy-display",
+            corporate_entity=corporate_entity,
+            year=1982,
+        )
+        value = {
+            "target_machine": target.pk,
+            "target_label": "",
+            "relationship_type": "copy",
+            "license_status": "unlicensed",
+            "exists": True,
+        }
+
+        ctx = _ctx(FieldValue("model_relationship", value, _MODEL))
+
+        assert build_display_value(
+            _MODEL, "model_relationship", value, ctx
+        ) == ClaimDisplayValueSchema(
+            identity=_identity([("target_machine", "Speakeasy (Bally 1982)")]),
+            qualifiers=_qualifiers(
+                [("relationship_type", "copy"), ("license_status", "unlicensed")]
+            ),
+        )
+
+    def test_model_relationship_label_rung(self):
+        value = {
+            "target_machine": None,
+            "target_label": "several Gottlieb EM models",
+            "relationship_type": "conversion_kit",
+            "license_status": "unknown",
+            "exists": True,
+        }
+        ctx = _ctx(FieldValue("model_relationship", value, _MODEL))
+        assert build_display_value(
+            _MODEL, "model_relationship", value, ctx
+        ) == ClaimDisplayValueSchema(
+            identity=_identity([("target_label", "several Gottlieb EM models")]),
+            qualifiers=_qualifiers(
+                [
+                    ("relationship_type", "conversion_kit"),
+                    ("license_status", "unknown"),
+                ]
+            ),
+        )
+
     def test_gameplay_feature_emits_count_qualifier_when_present(self):
         feat = GameplayFeature.objects.create(name="Multiball", slug="multiball")
         value = {"gameplay_feature": feat.pk, "count": 3, "exists": True}
-        ctx = _ctx(FieldValue("gameplay_feature", value))
+        ctx = _ctx(FieldValue("gameplay_feature", value, _MODEL))
         # Backend always emits the qualifier when the key is present in the
         # claim dict — including count==1. The frontend's per-qualifier rule
         # decides whether to render ``×N`` (only when N > 1). Wire format
@@ -132,7 +208,7 @@ class TestBuildDisplayValue:
         # hide ``count == 1`` belongs on the frontend.
         feat = GameplayFeature.objects.create(name="Multiball", slug="multiball")
         value = {"gameplay_feature": feat.pk, "count": 1, "exists": True}
-        ctx = _ctx(FieldValue("gameplay_feature", value))
+        ctx = _ctx(FieldValue("gameplay_feature", value, _MODEL))
         assert build_display_value(
             _MODEL, "gameplay_feature", value, ctx
         ) == ClaimDisplayValueSchema(
@@ -143,7 +219,7 @@ class TestBuildDisplayValue:
     def test_gameplay_feature_omits_count_qualifier_when_missing(self):
         feat = GameplayFeature.objects.create(name="Multiball", slug="multiball")
         value = {"gameplay_feature": feat.pk, "exists": True}
-        ctx = _ctx(FieldValue("gameplay_feature", value))
+        ctx = _ctx(FieldValue("gameplay_feature", value, _MODEL))
         # Absent key → no qualifier emitted. Distinct from count==0.
         assert build_display_value(
             _MODEL, "gameplay_feature", value, ctx
@@ -155,7 +231,7 @@ class TestBuildDisplayValue:
     def test_theme_emits_single_identity_part(self):
         theme = Theme.objects.create(name="Sci-Fi", slug="sci-fi")
         value = {"theme": theme.pk, "exists": True}
-        ctx = _ctx(FieldValue("theme", value))
+        ctx = _ctx(FieldValue("theme", value, _MODEL))
         assert build_display_value(
             _MODEL, "theme", value, ctx
         ) == ClaimDisplayValueSchema(
@@ -165,7 +241,7 @@ class TestBuildDisplayValue:
 
     def test_abbreviation_emits_scalar_identity(self):
         value = {"value": "DW", "exists": True}
-        ctx = _ctx(FieldValue("abbreviation", value))
+        ctx = _ctx(FieldValue("abbreviation", value, _MODEL))
         assert build_display_value(
             _MODEL, "abbreviation", value, ctx
         ) == ClaimDisplayValueSchema(
@@ -233,7 +309,7 @@ class TestBuildDisplayValue:
             "alias_display": "The Patster",
             "exists": True,
         }
-        ctx = _ctx(FieldValue("person_alias", value))
+        ctx = _ctx(FieldValue("person_alias", value, _MODEL))
         assert build_display_value(
             _MODEL, "person_alias", value, ctx
         ) == ClaimDisplayValueSchema(
@@ -243,7 +319,7 @@ class TestBuildDisplayValue:
 
     def test_alias_falls_back_to_canonical_when_display_missing(self):
         value = {"alias_value": "the patster", "exists": True}
-        ctx = _ctx(FieldValue("person_alias", value))
+        ctx = _ctx(FieldValue("person_alias", value, _MODEL))
         assert build_display_value(
             _MODEL, "person_alias", value, ctx
         ) == ClaimDisplayValueSchema(
@@ -255,7 +331,7 @@ class TestBuildDisplayValue:
         # Empty string override → fall through to canonical identity.
         # Mirrors the historical ``val.get("alias_display") or alias_val``.
         value = {"alias_value": "the patster", "alias_display": "", "exists": True}
-        ctx = _ctx(FieldValue("person_alias", value))
+        ctx = _ctx(FieldValue("person_alias", value, _MODEL))
         assert build_display_value(
             _MODEL, "person_alias", value, ctx
         ) == ClaimDisplayValueSchema(
@@ -272,7 +348,7 @@ class TestBuildDisplayValue:
             "alias_display": "The Patster",
             "exists": True,
         }
-        ctx = _ctx(FieldValue("person_alias", value))
+        ctx = _ctx(FieldValue("person_alias", value, _MODEL))
         result = build_display_value(_MODEL, "person_alias", value, ctx)
         assert result is not None
         assert isinstance(result, ClaimDisplayValueSchema)
@@ -336,19 +412,57 @@ class TestBuildDisplayValue:
         assert type(primary.value) is bool
 
     def test_unknown_namespace_returns_none(self):
-        # Direct-field claims (scalar new_value, not a registered namespace)
-        # fall through — frontend renders the raw scalar.
+        # Non-FK scalar claims (year is an IntegerField, not a namespace or
+        # FK) fall through — frontend renders the raw scalar.
         ctx = _ctx()
         assert build_display_value(_MODEL, "year", 1998, ctx) is None
-        assert (
-            build_display_value(_MODEL, "technology_generation", "solid-state", ctx)
-            is None
-        )
 
     def test_non_dict_value_returns_none(self):
         ctx = _ctx()
         assert build_display_value(_MODEL, "credit", None, ctx) is None
         assert build_display_value(_MODEL, "credit", "string", ctx) is None
+
+
+@pytest.mark.django_db
+class TestDirectFkDisplay:
+    """Direct FK claim values (target PKs) render as a single identity part."""
+
+    def test_fk_pk_resolves_to_entity_label(self):
+        from apps.catalog.models import TechnologyGeneration
+
+        ss = TechnologyGeneration.objects.create(name="Solid State", slug="solid-state")
+        ctx = _ctx(FieldValue("technology_generation", ss.pk, _MODEL))
+        assert build_display_value(
+            _MODEL, "technology_generation", ss.pk, ctx
+        ) == ClaimDisplayValueSchema(
+            identity=_identity([("technology_generation", "Solid State")]),
+            qualifiers=[],
+        )
+
+    def test_missing_target_renders_deleted_state(self):
+        # A validated-then-hard-deleted target degrades, not 500s.
+        ctx = _ctx(FieldValue("technology_generation", 999999, _MODEL))
+        assert build_display_value(
+            _MODEL, "technology_generation", 999999, ctx
+        ) == ClaimDisplayValueSchema(
+            identity=[
+                ClaimDisplayIdentityPartSchema(
+                    key="technology_generation", label=None, state="deleted"
+                )
+            ],
+            qualifiers=[],
+        )
+
+    def test_clear_sentinels_return_none(self):
+        # ""/None mean cleared — frontend renders its own empty state.
+        ctx = _ctx()
+        assert build_display_value(_MODEL, "technology_generation", "", ctx) is None
+        assert build_display_value(_MODEL, "technology_generation", None, ctx) is None
+
+    def test_bool_is_not_treated_as_fk_pk(self):
+        # isinstance(True, int) is True; the dispatch must not resolve it.
+        ctx = _ctx()
+        assert build_display_value(_MODEL, "technology_generation", True, ctx) is None
 
     def test_resolve_labels_ignores_direct_fields_and_bare_markers(self):
         # Resolve over a mixed batch: a credit dict, a theme dict, a
@@ -363,10 +477,11 @@ class TestBuildDisplayValue:
                 FieldValue(
                     "credit",
                     {"person": person.pk, "role": role.pk, "exists": True},
+                    _MODEL,
                 ),
-                FieldValue("theme", {"theme": theme.pk, "exists": True}),
-                FieldValue("year", 1998),
-                FieldValue("credit", {"exists": False}),
+                FieldValue("theme", {"theme": theme.pk, "exists": True}, _MODEL),
+                FieldValue("year", 1998, _MODEL),
+                FieldValue("credit", {"exists": False}, _MODEL),
             ]
         )
         assert labels.get(FkRef(Person, person.pk)) == "Pat Lawlor"
@@ -385,7 +500,7 @@ class TestMarkdownDisplay:
         # form — what the editor shows, so the diff reads the same.
         man = Manufacturer.objects.create(name="Williams", slug="williams")
         value = f"Made by [[manufacturer:id:{man.pk}]] here."
-        ctx = _ctx(FieldValue("description", value))
+        ctx = _ctx(FieldValue("description", value, _MODEL))
         result = build_display_value(Manufacturer, "description", value, ctx)
         assert result == MarkdownClaimDisplaySchema(
             text="Made by [[manufacturer:williams]] here."
@@ -394,19 +509,19 @@ class TestMarkdownDisplay:
     def test_markdown_deleted_target_keeps_storage_form(self):
         # Broken link (target deleted) keeps storage form — same as the editor.
         value = "Gone [[manufacturer:id:999999]]."
-        ctx = _ctx(FieldValue("description", value))
+        ctx = _ctx(FieldValue("description", value, _MODEL))
         result = build_display_value(Manufacturer, "description", value, ctx)
         assert result == MarkdownClaimDisplaySchema(
             text="Gone [[manufacturer:id:999999]]."
         )
 
     def test_empty_markdown_value_has_no_display(self):
-        ctx = _ctx(FieldValue("description", ""))
+        ctx = _ctx(FieldValue("description", "", _MODEL))
         assert build_display_value(Manufacturer, "description", "", ctx) is None
 
     def test_markdown_without_links_passes_through(self):
         value = "Just plain prose, no links."
-        ctx = _ctx(FieldValue("description", value))
+        ctx = _ctx(FieldValue("description", value, _MODEL))
         result = build_display_value(Manufacturer, "description", value, ctx)
         assert result == MarkdownClaimDisplaySchema(text="Just plain prose, no links.")
 
@@ -454,7 +569,7 @@ class TestClaimValue:
         role = CreditRole.objects.create(name="Art", slug="art")
         value = {"person": person.pk, "role": role.pk, "exists": True}
 
-        ctx = _ctx(FieldValue("credit", value))
+        ctx = _ctx(FieldValue("credit", value, _MODEL))
         bundled = claim_value(_MODEL, "credit", value, ctx)
 
         assert bundled.raw == value
@@ -466,7 +581,7 @@ class TestClaimValue:
     def test_markdown_field_bundles_authoring_text(self):
         man = Manufacturer.objects.create(name="Bally", slug="bally")
         value = f"By [[manufacturer:id:{man.pk}]]."
-        ctx = _ctx(FieldValue("description", value))
+        ctx = _ctx(FieldValue("description", value, _MODEL))
         bundled = claim_value(Manufacturer, "description", value, ctx)
 
         # raw stays the stored value; display carries the authoring form.
@@ -487,7 +602,7 @@ class TestClaimValue:
 
         person.delete()
         # Resolve after deletion to simulate a stale-but-stored FK pk.
-        ctx = _ctx(FieldValue("credit", value))
+        ctx = _ctx(FieldValue("credit", value, _MODEL))
         bundled = claim_value(_MODEL, "credit", value, ctx)
 
         assert bundled.display is not None

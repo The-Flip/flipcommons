@@ -17,7 +17,6 @@
     editorRef = $bindable<SectionEditorHandle | undefined>(undefined),
     onsaved,
     onerror,
-    ondirtychange,
   }: {
     sectionKey: TitleEditSectionKey;
     initialData: TitleDetail;
@@ -25,7 +24,6 @@
     editorRef?: SectionEditorHandle | undefined;
     onsaved: () => void;
     onerror: (message: string) => void;
-    ondirtychange: (dirty: boolean) => void;
   } = $props();
 </script>
 
@@ -38,7 +36,6 @@
     save={saveTitleClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'overview'}
   <DescriptionEditor
@@ -48,24 +45,9 @@
     save={saveTitleClaims}
     {onsaved}
     {onerror}
-    {ondirtychange}
   />
 {:else if sectionKey === 'franchise'}
-  <TitleFranchiseEditor
-    bind:this={editorRef}
-    {initialData}
-    {slug}
-    {onsaved}
-    {onerror}
-    {ondirtychange}
-  />
+  <TitleFranchiseEditor bind:this={editorRef} {initialData} {slug} {onsaved} {onerror} />
 {:else if sectionKey === 'external-data'}
-  <TitleExternalDataEditor
-    bind:this={editorRef}
-    {initialData}
-    {slug}
-    {onsaved}
-    {onerror}
-    {ondirtychange}
-  />
+  <TitleExternalDataEditor bind:this={editorRef} {initialData} {slug} {onsaved} {onerror} />
 {/if}

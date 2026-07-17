@@ -20,7 +20,6 @@
     save: saveFn,
     onsaved,
     onerror,
-    ondirtychange = () => {},
     placeholder = 'Type an alias and press Enter',
   }: SectionEditorProps<AliasesData> & {
     save: SaveFn;
@@ -32,13 +31,7 @@
   let fieldErrors = $state<FieldErrors>({});
   let dirty = $derived(stringSetChanged(aliases, originalAliases));
 
-  $effect(() => {
-    ondirtychange(dirty);
-  });
-
-  export function isDirty(): boolean {
-    return dirty;
-  }
+  export { dirty };
 
   export async function save(meta?: SaveMeta): Promise<void> {
     fieldErrors = {};

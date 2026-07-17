@@ -7,6 +7,7 @@ Python validators.
 
 import pytest
 from django.db import IntegrityError, connection
+from django.db.models import ProtectedError
 
 from apps.catalog.models import (
     CorporateEntity,
@@ -18,8 +19,10 @@ from apps.catalog.models import (
     Location,
     MachineModel,
     Manufacturer,
+    ModelRelationship,
     Person,
     PersonAlias,
+    RelationshipType,
     Series,
     TechnologyGeneration,
     TechnologySubgeneration,
@@ -412,15 +415,6 @@ class TestSelfRefConstraints:
         with pytest.raises(IntegrityError):
             _raw_update(MachineModel, mm.pk, variant_of_id=mm.pk)
 
-    def test_machine_model_converted_from_self_rejected(self, db):
-        mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
-        ce = CorporateEntity.objects.create(
-            name="Test Corp", slug="test-corp", manufacturer=mfr
-        )
-        mm = make_machine_model(name="Test", slug="test-mm", corporate_entity=ce)
-        with pytest.raises(IntegrityError):
-            _raw_update(MachineModel, mm.pk, converted_from_id=mm.pk)
-
     def test_machine_model_remake_of_self_rejected(self, db):
         mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
         ce = CorporateEntity.objects.create(
@@ -429,24 +423,6 @@ class TestSelfRefConstraints:
         mm = make_machine_model(name="Test", slug="test-mm", corporate_entity=ce)
         with pytest.raises(IntegrityError):
             _raw_update(MachineModel, mm.pk, remake_of_id=mm.pk)
-
-    def test_machine_model_bootleg_of_self_rejected(self, db):
-        mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
-        ce = CorporateEntity.objects.create(
-            name="Test Corp", slug="test-corp", manufacturer=mfr
-        )
-        mm = make_machine_model(name="Test", slug="test-mm", corporate_entity=ce)
-        with pytest.raises(IntegrityError):
-            _raw_update(MachineModel, mm.pk, bootleg_of_id=mm.pk)
-
-    def test_machine_model_licensed_build_of_self_rejected(self, db):
-        mfr = Manufacturer.objects.create(name="Test", slug="test-mfr")
-        ce = CorporateEntity.objects.create(
-            name="Test Corp", slug="test-corp", manufacturer=mfr
-        )
-        mm = make_machine_model(name="Test", slug="test-mm", corporate_entity=ce)
-        with pytest.raises(IntegrityError):
-            _raw_update(MachineModel, mm.pk, licensed_build_of_id=mm.pk)
 
     def test_location_parent_self_rejected(self, db):
         loc = Location.objects.create(location_path="usa", slug="usa", name="USA")
@@ -658,3 +634,103 @@ class TestParentThroughConstraints:
         parent.delete()
         assert not ThemeParent.objects.filter(from_theme=child).exists()
         assert Theme.objects.filter(pk=child.pk).exists()
+
+
+# ---------------------------------------------------------------------------
+# ModelRelationship: target ladder XOR, rung uniqueness, choices
+# ---------------------------------------------------------------------------
+
+
+class TestModelRelationshipConstraints:
+    """DB-level behavior of the target-ladder constraints.
+
+    The startup check (``provenance.E008``) verifies only the *shape* of the
+    rung UniqueConstraints; the XOR CheckConstraint and the rung semantics are
+    delegated to this test, per the credit subject-XOR precedent.
+    """
+
+    @pytest.fixture
+    def subject(self, db):
+        return make_machine_model(name="Punky Willy", slug="punky-willy")
+
+    @pytest.fixture
+    def target(self, db):
+        return make_machine_model(name="Rock", slug="rock")
+
+    def _edge(self, subject, **fields):
+        return ModelRelationship.objects.create(
+            machine_model=subject,
+            relationship_type=RelationshipType.COPY,
+            **fields,
+        )
+
+    # --- target XOR ---------------------------------------------------------
+
+    def test_machine_target_accepted(self, subject, target):
+        self._edge(subject, target_machine=target)
+
+    def test_label_target_accepted(self, subject):
+        self._edge(subject, target_label="several Gottlieb EM models")
+
+    def test_no_target_rejected(self, subject):
+        with pytest.raises(IntegrityError):
+            self._edge(subject)
+
+    def test_machine_plus_label_rejected(self, subject, target):
+        with pytest.raises(IntegrityError):
+            self._edge(subject, target_machine=target, target_label="redundant")
+
+    def test_self_target_rejected(self, subject):
+        with pytest.raises(IntegrityError):
+            self._edge(subject, target_machine=subject)
+
+    # --- rung uniqueness ---------------------------------------------------
+
+    def test_duplicate_machine_target_rejected(self, subject, target):
+        self._edge(subject, target_machine=target)
+        with pytest.raises(IntegrityError):
+            self._edge(subject, target_machine=target)
+
+    def test_duplicate_label_target_rejected(self, subject):
+        self._edge(subject, target_label="an unknown game")
+        with pytest.raises(IntegrityError):
+            self._edge(subject, target_label="an unknown game")
+
+    def test_second_label_with_different_wording_rejected(self, subject):
+        """The label rung is a singleton slot keyed by the *slot*, not the
+        wording — only a different-wording second row proves that (the
+        same-wording case above would also violate a wording-inclusive
+        UNIQUE)."""
+        self._edge(subject, target_label="an unknown Gottlieb game")
+        with pytest.raises(IntegrityError):
+            self._edge(subject, target_label="an unidentified Gottlieb")
+
+    def test_different_rungs_coexist(self, subject, target):
+        self._edge(subject, target_machine=target)
+        self._edge(subject, target_label="an unknown game")
+        assert ModelRelationship.objects.filter(machine_model=subject).count() == 2
+
+    # --- choices CHECKs ----------------------------------------------------
+
+    def test_invalid_relationship_type_rejected(self, subject, target):
+        edge = self._edge(subject, target_machine=target)
+        with pytest.raises(IntegrityError):
+            _raw_update(ModelRelationship, edge.pk, relationship_type="remake")
+
+    def test_invalid_license_status_rejected(self, subject, target):
+        edge = self._edge(subject, target_machine=target)
+        with pytest.raises(IntegrityError):
+            _raw_update(ModelRelationship, edge.pk, license_status="disputed")
+
+    # --- delete behavior ---------------------------------------------------
+
+    def test_deleting_subject_reaps_edge_keeps_target(self, subject, target):
+        self._edge(subject, target_machine=target)
+        subject.delete()
+        assert not ModelRelationship.objects.filter(target_machine=target).exists()
+        assert MachineModel.objects.filter(pk=target.pk).exists()
+
+    def test_deleting_target_with_inbound_edge_protected(self, subject, target):
+        self._edge(subject, target_machine=target)
+        with pytest.raises(ProtectedError):
+            target.delete()

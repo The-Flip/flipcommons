@@ -30,17 +30,11 @@ describe('ManufacturerBasicsEditor dirty-state contract', () => {
     const user = userEvent.setup();
     render(ManufacturerBasicsEditorFixture);
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
 
     await user.clear(screen.getByLabelText('Website'));
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('PATCHes cleared nullable URL fields as null', async () => {

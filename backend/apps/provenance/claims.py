@@ -16,6 +16,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import NamedTuple
 
+from django.db import models
+
 from apps.core.types import (
     ClaimFieldName,
     ClaimKey,
@@ -68,47 +70,69 @@ def normalize_abbreviation_value(raw: str) -> str:
 
 
 def normalize_fk_value(value: object) -> PublicId | None:
-    """Canonicalize an FK claim value to its public_id lookup key.
+    """Canonicalize an authored FK reference to its public_id lookup key.
 
-    The single normalization an FK claim value passes through before it becomes a
-    public_id lookup: cast to ``str`` and trim. A falsy or whitespace-only value
-    resolves to nothing (``None``). Shared by both FK-*resolution* lookups —
-    catalog's ``_resolve_fk_generic`` (apply-time) and the patch front end's
-    ``_lookup_pk`` (build-time create/member resolution) — so a padded or
-    non-string value can't normalize one way and look up another.
-
-    Distinct from the FK-*existence* check in :mod:`apps.provenance.validation`,
-    which answers a different question — does the value name an existing row —
-    and keeps its own slug normalization.
+    Authoring-boundary only: cast to ``str`` and trim, so a padded YAML value
+    resolves the same as a clean one. A falsy or whitespace-only value resolves
+    to nothing (``None``). Used by :func:`resolve_fk_target_pk` and the patch
+    planner's same-patch handle registry — the places authored public_id
+    strings are translated to PKs. Persisted claim values are already PKs and
+    never pass through here.
     """
     if not value:
         return None
     return str(value).strip() or None
 
 
+def resolve_fk_target_pk(
+    target_model: type[models.Model], public_id: object
+) -> int | None:
+    """Resolve an authored public_id to the target row's PK, or ``None``.
+
+    The single authoring-boundary translation from public_id strings (patch
+    YAML values, API payloads) to the integer PK stored in an FK claim value.
+    Looks up by the target's ``public_id_field`` (``slug`` for most models,
+    ``location_path`` for Location). Returns ``None`` when the value is blank
+    or names no existing row — the caller decides whether that's an error, a
+    same-patch handle or a clear.
+    """
+    key = normalize_fk_value(public_id)
+    if key is None:
+        return None
+    pid_field = getattr(target_model, "public_id_field", "slug")
+    return (
+        target_model._default_manager.filter(**{pid_field: key})
+        .values_list("pk", flat=True)
+        .first()
+    )
+
+
 def build_relationship_claim(
     field_name: ClaimFieldName,
-    identity: Mapping[ClaimValueKey, IdentityPartValue],
+    values: Mapping[ClaimValueKey, IdentityPartValue],
     exists: bool = True,
 ) -> RelationshipClaim:
     """Return ``(claim_key, value)`` for a relationship claim.
 
-    ``identity`` contains the identity fields for this relationship, e.g.,
-    ``{"person": 42, "role": 5}`` or ``{"alias_value": "foo"}``. Keys are
-    value-dict names (``alias_value``), not identity labels (``alias``) —
-    the mapping is resolved via ``ValueKeySpec.identity``. The mapping may
-    also carry non-identity keys (e.g. ``alias_display``) for an assert.
+    ``values`` contains the member fields for this relationship — e.g.
+    ``{"person": 42, "role": 5}`` or ``{"alias_value": "foo"}`` — and, on an
+    assert, may also carry payload keys (``alias_display``, ``count``). Keys
+    are value-dict names (``alias_value``), not identity labels (``alias``) —
+    the mapping is resolved via ``MemberSpec.identity`` on the registered
+    schema. Deliberately one polarity-dependent mapping rather than separate
+    member/payload parameters: the patch front end builds assert and remove
+    values through one identity builder and relies on this function to
+    extract the tombstone shape (see ``_member_identity`` in the patch
+    emitter).
 
-    The claim_key is derived from identity using the registered schema for
-    *field_name*.
+    The claim_key is derived from the schema's identity members.
 
     Tombstone invariant: when ``exists=False`` the value carries **only** the
-    schema-identity keys plus ``exists`` — any non-identity payload in
-    *identity* is dropped. No resolver reads a non-identity key off an absent
-    member (they short-circuit on ``exists=False`` first), so dropping it keeps
+    identity-member keys plus ``exists`` — any non-identity key in *values*
+    is dropped. No resolver reads a non-identity key off an absent member
+    (they short-circuit on ``exists=False`` first), so dropping it keeps
     tombstone bytes canonical and lets every write path supersede/dedup
-    byte-identically. This is a no-op for callers that already pass
-    identity-only dicts on removal (all of them, today).
+    byte-identically.
     """
     schema = get_relationship_schema(field_name)
     if schema is None:
@@ -116,19 +140,19 @@ def build_relationship_claim(
 
     identity_parts: dict[IdentityPartName, IdentityPartValue] = {}
     identity_key_names: list[ClaimValueKey] = []
-    for spec in schema.value_keys:
-        if spec.identity is None:
+    for member in schema.members:
+        if member.identity is None:
             continue
-        if spec.name not in identity:
-            raise ValueError(f"Missing required key {spec.name!r} for {field_name!r}")
-        identity_parts[spec.identity] = identity[spec.name]
-        identity_key_names.append(spec.name)
+        if member.name not in values:
+            raise ValueError(f"Missing required key {member.name!r} for {field_name!r}")
+        identity_parts[member.identity] = values[member.name]
+        identity_key_names.append(member.name)
     claim_key = make_claim_key(field_name, **identity_parts)
     value: JsonBody
     if exists:
-        value = {**identity, "exists": True}
+        value = {**values, "exists": True}
     else:
-        value = {name: identity[name] for name in identity_key_names}
+        value = {name: values[name] for name in identity_key_names}
         value["exists"] = False
     return RelationshipClaim(claim_key, value)
 
@@ -140,4 +164,5 @@ __all__ = [
     "normalize_abbreviation_value",
     "normalize_alias_identity",
     "normalize_fk_value",
+    "resolve_fk_target_pk",
 ]

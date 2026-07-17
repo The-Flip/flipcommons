@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 from django.contrib.auth import get_user_model
 
 from apps.catalog.models import (
     GameplayFeature,
+    MachineModel,
     ModelAbbreviation,
+    ModelRelationship,
     Person,
     RewardType,
     Tag,
@@ -497,24 +500,9 @@ class TestHierarchyFKValidation:
         resp = _patch(client, pm.slug, {"fields": {"variant_of": pm.slug}})
         assert resp.status_code == 422
 
-    def test_self_referential_converted_from_rejected(self, client, user, pm):
-        client.force_login(user)
-        resp = _patch(client, pm.slug, {"fields": {"converted_from": pm.slug}})
-        assert resp.status_code == 422
-
     def test_self_referential_remake_of_rejected(self, client, user, pm):
         client.force_login(user)
         resp = _patch(client, pm.slug, {"fields": {"remake_of": pm.slug}})
-        assert resp.status_code == 422
-
-    def test_self_referential_bootleg_of_rejected(self, client, user, pm):
-        client.force_login(user)
-        resp = _patch(client, pm.slug, {"fields": {"bootleg_of": pm.slug}})
-        assert resp.status_code == 422
-
-    def test_self_referential_licensed_build_of_rejected(self, client, user, pm):
-        client.force_login(user)
-        resp = _patch(client, pm.slug, {"fields": {"licensed_build_of": pm.slug}})
         assert resp.status_code == 422
 
     def test_valid_hierarchy_fk_succeeds(self, client, user, pm):
@@ -524,26 +512,474 @@ class TestHierarchyFKValidation:
         assert resp.status_code == 200
         assert resp.json()["variant_of"]["public_id"] == "star-trek"
 
-    def test_bootleg_of_resolves_across_titles(self, client, user, pm):
-        # `bootleg_of` may point at a model under a different Title (its
-        # defining trait); make_machine_model gives `original` its own Title.
-        original = make_machine_model(
-            name="Video Pinball", slug="video-pinball", year=1979
-        )
-        assert original.title_id != pm.title_id
+    def test_retired_lineage_fk_rejected(self, client, user, pm):
+        # The legacy lineage FKs are gone from the model, so the editable-field
+        # surface (model-driven) rejects them like any unknown field — a guard
+        # against accidental resurrection.
         client.force_login(user)
-        resp = _patch(client, pm.slug, {"fields": {"bootleg_of": original.slug}})
-        assert resp.status_code == 200
-        assert resp.json()["bootleg_of"]["public_id"] == "video-pinball"
+        resp = _patch(client, pm.slug, {"fields": {"bootleg_of": pm.slug}})
+        assert resp.status_code == 422
 
-    def test_licensed_build_of_resolves_across_titles(self, client, user, pm):
-        # `licensed_build_of` may point at a model under a different Title, like
-        # `bootleg_of`; make_machine_model gives `original` its own Title.
-        original = make_machine_model(
-            name="Party Animal", slug="party-animal", year=1987
-        )
-        assert original.title_id != pm.title_id
+
+# ---------------------------------------------------------------------------
+# Relationship edges (model_relationship — the target-XOR namespace)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def rock(db, bootstrap_source):
+    target = make_machine_model(name="Rock", slug="rock", year=1985)
+    make_claim(target, "name", "Rock", ingest_source=bootstrap_source)
+    return target
+
+
+def _relationships(resp) -> list[dict[str, Any]]:
+    # Any: raw JSON payload rows — the assertions themselves pin the shapes.
+    body: dict[str, list[dict[str, Any]]] = resp.json()
+    return body["relationships"]
+
+
+@pytest.mark.django_db
+class TestRelationshipEdges:
+    def test_add_machine_target_edge(self, client, user, pm, rock):
         client.force_login(user)
-        resp = _patch(client, pm.slug, {"fields": {"licensed_build_of": original.slug}})
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "copy",
+                        "license_status": "unlicensed",
+                        "target_slug": "rock",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["relationship_type"] == "copy"
+        assert edge["license_status"] == "unlicensed"
+        assert edge["target_machine"]["public_id"] == "rock"
+        assert edge["target_label"] == ""
+
+    def test_add_label_target_edge(self, client, user, pm):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion_kit",
+                        "target_label": "several Gottlieb EM models",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["relationship_type"] == "conversion_kit"
+        assert edge["license_status"] == "unknown"  # schema default
+        assert edge["target_machine"] is None
+        assert edge["target_label"] == "several Gottlieb EM models"
+
+    def test_payload_change_supersedes_in_place(self, client, user, pm, rock):
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {"relationship_type": "conversion", "target_slug": "rock"}
+                ]
+            },
+        )
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion_kit",
+                        "license_status": "licensed",
+                        "target_slug": "rock",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["relationship_type"] == "conversion_kit"
+        assert edge["license_status"] == "licensed"
+
+    def test_remove_edge(self, client, user, pm, rock):
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "copy", "target_slug": "rock"}]},
+        )
+        resp = _patch(client, pm.slug, {"relationships": []})
+        assert resp.status_code == 200, resp.json()
+        assert _relationships(resp) == []
+
+    def test_label_reword_supersedes_in_place(self, client, user, pm):
+        """A reworded label is a payload correction on the model's single
+        label slot: same claim_key, same materialized row pk — the citation
+        history stays attached to the edge instead of stranding on a
+        tombstoned one."""
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion",
+                        "target_label": "an unknown Gottlieb game",
+                    }
+                ]
+            },
+        )
+        original = ModelRelationship.objects.get(machine_model=pm)
+
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion",
+                        "target_label": "an unidentified 1960s Gottlieb",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["target_label"] == "an unidentified 1960s Gottlieb"
+
+        row = ModelRelationship.objects.get(machine_model=pm)
+        assert row.pk == original.pk
+
+        # One superseding assert, no tombstone: the reword is a correction,
+        # not a remove+add.
+        latest = ChangeSet.objects.filter(actor=user.actor).order_by("-pk").first()
+        assert latest is not None
+        (claim,) = list(latest.claims.all())
+        assert claim.field_name == "model_relationship"
+        assert claim.value["exists"] is True
+
+    def test_second_label_row_rejected(self, client, user, pm):
+        """A model holds one label slot — two describe-it rows collide on the
+        same claim identity."""
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "copy",
+                        "target_label": "an unknown design",
+                    },
+                    {
+                        "relationship_type": "conversion",
+                        "target_label": "whatever cabinets were available",
+                    },
+                ]
+            },
+        )
+        assert resp.status_code == 422
+        errors = resp.json()["detail"]["field_errors"]
+        assert any("one text-description" in msg for msg in errors.values())
+
+    def test_removed_label_edge_history_shows_current_wording(self, client, user, pm):
+        """A removed label edge stays legible: the tombstone's own value is
+        identity-only (no wording), so the history's old→new derivation
+        surfaces the *chronologically prior* claim's wording under the same
+        claim_key. Single-actor (as here), that is the current wording even
+        after a reword-then-remove-by-old-wording; for the priority-inverted
+        case where chronology and resolution diverge, see
+        ``test_removed_label_history_is_chronological_not_resolved``."""
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion",
+                        "target_label": "an unknown Gottlieb game",
+                    }
+                ]
+            },
+        )
+        _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "conversion",
+                        "target_label": "an unidentified 1960s Gottlieb",
+                    }
+                ]
+            },
+        )
+        resp = _patch(client, pm.slug, {"relationships": []})
+        assert resp.status_code == 200, resp.json()
+
+        history = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        assert history.status_code == 200
+        newest = history.json()[0]
+        (change,) = newest["changes"]
+        assert change["field_name"] == "model_relationship"
+        assert change["new_value"]["raw"]["exists"] is False
+        assert "target_label" not in change["new_value"]["raw"]
+        assert (
+            change["old_value"]["raw"]["target_label"]
+            == "an unidentified 1960s Gottlieb"
+        )
+
+    def test_removed_label_history_is_chronological_not_resolved(
+        self, client, user, pm
+    ):
+        """``old_value`` is the *chronologically* prior claim under the key,
+        not the pre-change resolved winner — the same edit-log semantics every
+        field has, now load-bearing for label removals since the tombstone
+        itself carries no wording. The two sources are priority-inverted so
+        the chronological prior (the low-priority, newer wording) and the
+        resolution winner (the high-priority, older wording) genuinely differ:
+        a resolution-based history would show the other value."""
+        from apps.catalog.resolve import resolve_relationship
+        from apps.provenance.claims import build_relationship_claim
+        from apps.provenance.test_factories import make_ingest_source
+
+        high = make_ingest_source(
+            name="Editorial", source_type="editorial", priority=100
+        )
+        low = make_ingest_source(name="IPDB", source_type="database", priority=10)
+
+        def mint_label(source, wording):
+            claim_key, value = build_relationship_claim(
+                "model_relationship",
+                {
+                    "target_machine": None,
+                    "target_label": wording,
+                    "relationship_type": "conversion",
+                    "license_status": "unknown",
+                },
+            )
+            make_claim(
+                pm,
+                "model_relationship",
+                value,
+                ingest_source=source,
+                claim_key=claim_key,
+            )
+
+        mint_label(high, "the winning wording")
+        mint_label(low, "the newer but losing wording")
+        resolve_relationship(MachineModel, "model_relationship", subject_ids={pm.pk})
+
+        # Pre-removal, resolution materializes the high-priority wording —
+        # the chronological prior is a resolution *loser*.
+        edge = ModelRelationship.objects.get(machine_model=pm)
+        assert edge.target_label == "the winning wording"
+
+        client.force_login(user)
+        resp = _patch(client, pm.slug, {"relationships": []})
+        assert resp.status_code == 200, resp.json()
+
+        history = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        newest = history.json()[0]
+        (change,) = newest["changes"]
+        assert change["new_value"]["raw"]["exists"] is False
+        # Chronology over resolution: the low-priority claim is newer, so it —
+        # not the materialized winner — is the removal's old value.
+        assert (
+            change["old_value"]["raw"]["target_label"] == "the newer but losing wording"
+        )
+
+    def test_edit_target_is_tombstone_plus_assert(self, client, user, pm, rock):
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {"relationship_type": "copy", "target_label": "an unknown game"}
+                ]
+            },
+        )
+        resp = _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "copy", "target_slug": "rock"}]},
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["target_machine"]["public_id"] == "rock"
+        assert edge["target_label"] == ""
+
+    def test_unchanged_edge_emits_no_claim(self, client, user, pm, rock):
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "copy", "target_slug": "rock"}]},
+        )
+        # Re-sending the identical desired list alongside a scalar change must
+        # not re-assert the edge (no duplicate claims in the new changeset).
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "fields": {"year": 1998},
+                "relationships": [{"relationship_type": "copy", "target_slug": "rock"}],
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        latest = ChangeSet.objects.filter(actor=user.actor).order_by("-pk").first()
+        assert latest is not None
+        assert [c.field_name for c in latest.claims.all()] == ["year"]
+
+    def test_one_citation_rides_every_edge_claim(
+        self, client, user, pm, rock, citation_source
+    ):
+        # Dean's flow: a source says "copy of A and B" — add both edges, cite
+        # once, and each edge claim carries the citation.
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "copy",
+                        "license_status": "unlicensed",
+                        "target_slug": "rock",
+                    },
+                    {
+                        "relationship_type": "copy",
+                        "license_status": "unlicensed",
+                        "target_label": "an unidentified Bally game",
+                    },
+                ],
+                "citations": [
+                    {"citation_source_id": citation_source.pk, "locator": "p. 7"}
+                ],
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        changeset = ChangeSet.objects.filter(actor=user.actor).get()
+        claims = list(changeset.claims.all())
+        assert len(claims) == 2
+        instances = set()
+        for claim in claims:
+            (ci,) = list(claim.citation_instances.all())
+            assert ci.citation_source_id == citation_source.pk
+            instances.add(ci.pk)
+        assert len(instances) == 1  # one shared instance, not cloned evidence
+
+    def test_null_leaves_edges_unchanged(self, client, user, pm, rock):
+        client.force_login(user)
+        _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "copy", "target_slug": "rock"}]},
+        )
+        resp = _patch(client, pm.slug, {"fields": {"year": 1998}})
         assert resp.status_code == 200
-        assert resp.json()["licensed_build_of"]["public_id"] == "party-animal"
+        assert len(_relationships(resp)) == 1
+
+    # --- row validation ----------------------------------------------------
+
+    def test_both_targets_rejected(self, client, user, pm, rock):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {
+                        "relationship_type": "copy",
+                        "target_slug": "rock",
+                        "target_label": "redundant",
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 422
+        assert "relationships.rock" in resp.json()["detail"]["field_errors"]
+
+    def test_no_target_rejected(self, client, user, pm):
+        client.force_login(user)
+        resp = _patch(
+            client, pm.slug, {"relationships": [{"relationship_type": "copy"}]}
+        )
+        assert resp.status_code == 422
+
+    def test_unknown_target_rejected(self, client, user, pm):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {"relationship_type": "copy", "target_slug": "no-such-model"}
+                ]
+            },
+        )
+        assert resp.status_code == 422
+        assert "relationships.no-such-model" in resp.json()["detail"]["field_errors"]
+
+    def test_self_target_rejected(self, client, user, pm):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "copy", "target_slug": pm.slug}]},
+        )
+        assert resp.status_code == 422
+
+    def test_duplicate_target_rejected(self, client, user, pm, rock):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {"relationship_type": "copy", "target_slug": "rock"},
+                    {"relationship_type": "conversion", "target_slug": "rock"},
+                ]
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_out_of_vocab_type_rejected_by_schema(self, client, user, pm, rock):
+        # The Literal union rejects at the pydantic layer, before the planner.
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {"relationships": [{"relationship_type": "remake", "target_slug": "rock"}]},
+        )
+        assert resp.status_code == 422
+
+
+def test_relationship_literals_match_choices() -> None:
+    """The wire Literals are locked to the model TextChoices — a new enum value
+    must show up in both or this fails."""
+    from typing import get_args
+
+    from apps.catalog.api.schemas import (
+        LicenseStatusLiteral,
+        RelationshipTypeLiteral,
+    )
+    from apps.catalog.models import LicenseStatus, RelationshipType
+
+    assert set(get_args(RelationshipTypeLiteral)) == set(RelationshipType.values)
+    assert set(get_args(LicenseStatusLiteral)) == set(LicenseStatus.values)

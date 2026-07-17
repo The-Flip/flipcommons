@@ -78,6 +78,7 @@ from ..models import (
     PRODUCED_SLUG,
     MachineModel,
     MachineModelGameplayFeature,
+    ModelRelationship,
     Title,
 )
 from ._search_sections import tiered_search_rows
@@ -105,6 +106,8 @@ from .machine_models import (
     _serialize_model_detail,
 )
 from .schemas import (
+    LICENSE_STATUS_TO_LITERAL,
+    RELATIONSHIP_TYPE_TO_LITERAL,
     AlreadyDeletedSchema,
     CreditSchema,
     EntityCreateInputSchema,
@@ -112,6 +115,7 @@ from .schemas import (
     EntityRef,
     FacetOptionSchema,
     GameplayFeatureRef,
+    LicenseStatusLiteral,
     SoftDeleteBlockedSchema,
     TitleClaimPatchSchema,
     TitleDeletePreviewSchema,
@@ -312,27 +316,29 @@ class AgreedSpecsSchema(Schema):
 
 
 # Lineage relations that can point at a model under a different title. Same-title
-# links are filtered out in `_collect_related_titles`; `bootleg_of` and
-# `licensed_build_of` are the ones that routinely cross titles.
+# links are filtered out in `_collect_related_titles`. `remake_of` is the scalar
+# lineage FK; the other three are `ModelRelationship` edge types
+# (`RelationshipTypeLiteral` values).
 CrossTitleRelation = Literal[
-    "converted_from", "remake_of", "bootleg_of", "licensed_build_of"
-]
-_CROSS_TITLE_RELATIONS: tuple[CrossTitleRelation, ...] = (
-    "converted_from",
     "remake_of",
-    "bootleg_of",
-    "licensed_build_of",
-)
+    "conversion",
+    "conversion_kit",
+    "copy",
+]
+# The scalar FK attrs `_collect_related_titles` walks with getattr.
+_CROSS_TITLE_FK_RELATIONS: tuple[CrossTitleRelation, ...] = ("remake_of",)
 
 
 class CrossTitleLinkSchema(Schema):
-    """A cross-title lineage relationship (converted_from / remake_of /
-    bootleg_of / licensed_build_of) contributed by a specific model under the
-    current title."""
+    """A cross-title lineage relationship contributed by a specific model under
+    the current title — a `remake_of` link or a `ModelRelationship` edge whose
+    target machine sits under a different title."""
 
     relation: CrossTitleRelation
     other_title: EntityRef
     source_model: EntityRef
+    # Meaningful for the edge relations only; remakes carry no license axis.
+    license_status: LicenseStatusLiteral = "unknown"
 
 
 class AggregatedMediaSchema(Schema):
@@ -415,13 +421,11 @@ def _compute_agreed_specs(models: Sequence[MachineModel]) -> AgreedSpecsSchema:
         obj = getattr(m, attr, None)
         return (obj.name, obj.public_id) if obj else None
 
-    def _ref_for(
-        attr: str, candidates: Sequence[MachineModel] = models
-    ) -> EntityRef | None:
+    def _ref_for(attr: str) -> EntityRef | None:
         def accessor(m: MachineModel) -> tuple[str, str] | None:
             return _fk_pair(m, attr)
 
-        val = _agreed_value(candidates, accessor)
+        val = _agreed_value(models, accessor)
         return EntityRef(name=val[0], public_id=val[1]) if val else None
 
     # Themes: only roll up when every model has the same set.
@@ -462,11 +466,12 @@ def _compute_agreed_specs(models: Sequence[MachineModel]) -> AgreedSpecsSchema:
 
     pq = _agreed_value(models, lambda m: m.production_quantity or None)
 
-    # Agree over models that *have* a status (drop nulls; all-null → None via
-    # the helper), then best-effort suppress ``produced``. Backend suppression
-    # is safe here — this schema is read-only/derived, not editor-consumed.
-    ps_models = [m for m in models if m.production_status is not None]
-    production_status = _ref_for("production_status", ps_models)
+    # Agree like every other spec field: all models must share the same status,
+    # any null vetoes (a null status is unknown, not a value to agree with).
+    # Then best-effort suppress ``produced`` — an all-``produced`` title shows
+    # nothing, the assumed default. Backend suppression is safe here — this
+    # schema is read-only/derived, not editor-consumed.
+    production_status = _ref_for("production_status")
     if production_status is not None and production_status.public_id == PRODUCED_SLUG:
         production_status = None
 
@@ -492,19 +497,21 @@ def _compute_agreed_specs(models: Sequence[MachineModel]) -> AgreedSpecsSchema:
 def _collect_related_titles(
     models: Sequence[MachineModel], current_title: Title
 ) -> list[CrossTitleLinkSchema]:
-    """Collect cross-title lineage links (see ``_CROSS_TITLE_RELATIONS``).
+    """Collect cross-title lineage links (see ``CrossTitleRelation``).
 
-    For each model under *current_title* that has a ``converted_from``,
-    ``remake_of``, ``bootleg_of`` or ``licensed_build_of`` pointing to a model
-    under a *different* title, emit one entry per link with the relation kind,
-    the other title, and the source model under the current title.  Same-title
-    relations (LE→Pro conversion, within-title remakes) are excluded — they are
-    not cross-title content.  ``bootleg_of`` and ``licensed_build_of`` routinely
-    cross titles, so they are the most common source of these links.
+    For each model under *current_title* whose ``remake_of`` FK or
+    ``ModelRelationship`` edge points to a model under a *different* title,
+    emit one entry per link with the relation kind, the other title, and the
+    source model under the current title.  Same-title relations (LE→Pro
+    conversion, within-title remakes) are excluded — they are not cross-title
+    content.  Label-target edges are skipped: an unseeded donor has no title to
+    link.  Two edges of the same kind and license landing on two machines of
+    the same other title collapse to one entry — the line would read
+    identically, and the per-edge connective is deliberately unmodeled.
     """
     items: list[CrossTitleLinkSchema] = []
     for m in models:
-        for attr in _CROSS_TITLE_RELATIONS:
+        for attr in _CROSS_TITLE_FK_RELATIONS:
             other = getattr(m, attr, None)
             if other is None or other.title_id is None:
                 continue
@@ -517,6 +524,27 @@ def _collect_related_titles(
                         public_id=other.title.public_id, name=other.title.name
                     ),
                     source_model=EntityRef(public_id=m.public_id, name=m.name),
+                )
+            )
+        seen_edge_lines: set[tuple[str, str, int]] = set()
+        for edge in m.relationships.all():
+            target = edge.target_machine
+            if target is None or target.title_id is None:
+                continue
+            if target.title_id == current_title.pk:
+                continue
+            line_key = (edge.relationship_type, edge.license_status, target.title_id)
+            if line_key in seen_edge_lines:
+                continue
+            seen_edge_lines.add(line_key)
+            items.append(
+                CrossTitleLinkSchema(
+                    relation=RELATIONSHIP_TYPE_TO_LITERAL[edge.relationship_type],
+                    other_title=EntityRef(
+                        public_id=target.title.public_id, name=target.title.name
+                    ),
+                    source_model=EntityRef(public_id=m.public_id, name=m.name),
+                    license_status=LICENSE_STATUS_TO_LITERAL[edge.license_status],
                 )
             )
     return items
@@ -678,14 +706,19 @@ def _title_models_prefetch() -> Prefetch[str, Any, str]:
             "cabinet",
             "game_format",
             "production_status",
-            "converted_from__title",
             "remake_of__title",
-            "bootleg_of__title",
-            "licensed_build_of__title",
         )
         .prefetch_related(
             "themes",
             "gameplay_features",
+            # Cross-title links read each edge's target title; join it here so
+            # `_collect_related_titles` stays query-free.
+            Prefetch(
+                "relationships",
+                queryset=ModelRelationship.objects.select_related(
+                    "target_machine__title"
+                ),
+            ),
             Prefetch(
                 "machinemodelgameplayfeature_set",
                 queryset=MachineModelGameplayFeature.objects.select_related(
@@ -1071,10 +1104,8 @@ def create_model(
             ClaimSpec(field_name="name", value=name),
             ClaimSpec(field_name="slug", value=slug),
             ClaimSpec(field_name="status", value="active"),
-            # Title FK claim value uses the parent's public_id (defaults to
-            # slug for slug-keyed models). Shape matches ingest's
-            # MODEL_CLAIM_FIELDS["title"] ← entry["title_slug"] convention.
-            ClaimSpec(field_name="title", value=title.public_id),
+            # FK claim values store the target's PK — immune to slug renames.
+            ClaimSpec(field_name="title", value=title.pk),
         ],
         user=request.user,
         note=data.note,

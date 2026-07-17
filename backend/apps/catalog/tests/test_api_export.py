@@ -185,10 +185,7 @@ class TestExportDriftGuard:
             "pinside_id",
             "title",
             "variant_of",
-            "converted_from",
             "remake_of",
-            "bootleg_of",
-            "licensed_build_of",
             "corporate_entity",
             "system",
             "technology_generation",
@@ -211,6 +208,7 @@ class TestExportDriftGuard:
             "gameplay_features",
             "abbreviations",
             "credits",
+            "model_relationships",
         }
     )
 
@@ -231,6 +229,7 @@ class TestExportDriftGuard:
             "reward_type": "reward_types",
             "gameplay_feature": "gameplay_features",
             "abbreviation": "abbreviations",
+            "model_relationship": "model_relationships",
         }
         for ns in namespaces - {"media_attachment"}:
             assert ns in covered, f"relationship namespace {ns!r} not covered"

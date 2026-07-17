@@ -16,9 +16,8 @@ from typing import Any, cast
 from django.db import models
 
 from apps.core.models import meta_unique_fields
-from apps.core.types import ClaimFieldMap, ClaimFieldName, PublicId
-from apps.provenance.claims import normalize_fk_value
-from apps.provenance.models import ClaimControlledModel
+from apps.core.types import ClaimFieldMap, ClaimFieldName
+from apps.provenance.models import Claim, ClaimControlledModel
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +45,10 @@ def validate_check_constraints(obj: models.Model) -> None:
             validate(type(obj), obj)
 
 
-type FKTargetLookups = dict[str, dict[PublicId, models.Model]]
-"""Per FK field, a map from a target's public_id (typically slug) to its resolved
-instance — the prefetched index that turns a claimed slug into a foreign key
-without a query per claim."""
+type FKTargetLookups = dict[str, dict[int, models.Model]]
+"""Per FK field, a map from a target's PK to its resolved instance — the
+prefetched index that turns a claimed PK into a foreign key without a query
+per claim."""
 
 
 @dataclass
@@ -69,21 +68,22 @@ def _resolve_fk_generic(
     model_class: type[ClaimControlledModel],
     field_name: ClaimFieldName,
     value: object,
-    lookup: Mapping[str, models.Model] | None = None,
+    lookup: Mapping[int, models.Model] | None = None,
 ) -> models.Model | None:
-    """Resolve a claim value to an FK instance by introspecting the Django field.
+    """Resolve an FK claim value (the target's PK) to the target instance.
 
-    Uses ``slug`` as the default lookup key on the target model.  Models can
-    override this per-FK via a ``claim_fk_lookups`` class attribute::
+    FK claim values store the target's integer PK — the durable identity
+    that survives slug renames. ``None``/``""`` are the clear sentinels.
 
-        class Location(models.Model):
-            claim_fk_lookups = {"parent": "location_path"}
-
-    If *lookup* is provided (pre-fetched slug→instance dict), it is used
+    If *lookup* is provided (pre-fetched pk→instance dict), it is used
     instead of hitting the database.
     """
-    key = normalize_fk_value(value)
-    if key is None:
+    if value is None or value == "":
+        return None
+    if type(value) is not int:
+        # validate_claim_value enforces the int shape on every write path;
+        # a non-int here is pre-migration data or a bug, never user input.
+        logger.warning("Non-integer %s claim value: %r", field_name, value)
         return None
 
     field = model_class._meta.get_field(field_name)
@@ -93,15 +93,16 @@ def _resolve_fk_generic(
             "FK field %s on %s has no related model", field_name, model_class
         )
         return None
-    lookup_key = model_class.claim_fk_lookups.get(field_name, "slug")
 
     if lookup is not None:
-        result = lookup.get(key)
+        result = lookup.get(value)
     else:
         assert isinstance(target_model, type)
         assert issubclass(target_model, models.Model)
-        result = target_model._default_manager.filter(**{lookup_key: key}).first()
+        result = target_model._default_manager.filter(pk=value).first()
     if not result:
+        # The target row no longer exists (hard delete after the claim was
+        # validated) — renames can't cause this anymore.
         logger.warning("Unmatched %s claim value: %r", field_name, value)
     return result
 
@@ -109,23 +110,42 @@ def _resolve_fk_generic(
 def build_fk_info(
     model_class: type[ClaimControlledModel],
     claim_fields: ClaimFieldMap,
+    winners_by_obj: Mapping[int, Mapping[ClaimFieldName, Claim]],
 ) -> FKInfo:
-    """Identify FK fields and pre-build slug-to-instance lookups for bulk resolution."""
+    """Identify FK fields and pre-fetch the referenced targets for bulk resolution.
+
+    Collects the distinct PKs held by the winning FK claims and fetches only
+    those rows (one ``in_bulk`` per target model) — never the whole target
+    table.
+    """
     info = FKInfo()
+    fk_targets: dict[str, type[models.Model]] = {}
     for attr in claim_fields.values():
         f = model_class._meta.get_field(attr)
         if f.is_relation:
             info.fk_fields.add(attr)
-            lookup_key = model_class.claim_fk_lookups.get(attr, "slug")
             target_model = f.related_model
             if target_model is None:
                 continue
             assert isinstance(target_model, type)
             assert issubclass(target_model, models.Model)
-            info.lookups[attr] = {
-                getattr(obj, lookup_key): obj
-                for obj in target_model._default_manager.all()
-            }
+            fk_targets[attr] = target_model
+
+    if not fk_targets:
+        return info
+
+    referenced: dict[str, set[int]] = {attr: set() for attr in fk_targets}
+    for winners in winners_by_obj.values():
+        for field_name, claim in winners.items():
+            fk_attr = claim_fields.get(field_name)
+            if fk_attr in referenced and type(claim.value) is int:
+                referenced[fk_attr].add(claim.value)
+
+    for attr, target_model in fk_targets.items():
+        pks = referenced[attr]
+        info.lookups[attr] = (
+            dict(target_model._default_manager.in_bulk(pks)) if pks else {}
+        )
     return info
 
 

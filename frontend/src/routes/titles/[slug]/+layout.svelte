@@ -8,9 +8,11 @@
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
   import ExternalLinksSidebarSection from '$lib/components/pages/record/detail/ExternalLinksSidebarSection.svelte';
   import { externalLinks } from '$lib/entities/external-links';
+  import { UNKNOWN_MANUFACTURER_LABEL } from '$lib/entities/manufacturer';
   import { model as modelInfo } from '$lib/entities/model';
   import { title as titleInfo } from '$lib/entities/title';
   import ModelHierarchy from '$lib/components/pages/record/detail/ModelHierarchy.svelte';
+  import RelatedTitlesSection from './_components/RelatedTitlesSection.svelte';
   import ModelLineageSidebarSections from '$lib/components/pages/record/detail/ModelLineageSidebarSections.svelte';
   import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
   import PageActionBar from '$lib/components/layout/page/PageActionBar.svelte';
@@ -88,6 +90,8 @@
         text: md.manufacturer.name,
         href: resolve(`/manufacturers/${md.manufacturer.public_id}`),
       });
+    } else {
+      items.push({ text: UNKNOWN_MANUFACTURER_LABEL });
     }
     if (md.year) {
       const yearText = md.month
@@ -395,6 +399,10 @@
       {#if title.machines.length > 0}
         <ModelHierarchy models={title.machines} />
       {/if}
+
+      {#if title.related_titles && title.related_titles.length > 0}
+        <RelatedTitlesSection relatedTitles={title.related_titles} />
+      {/if}
     {/if}
   {/snippet}
 
@@ -410,7 +418,7 @@
   />
 
   <SectionEditorHost bind:editingKey={editing} {sections} {switcherItems}>
-    {#snippet editor(key, { ref, onsaved, onerror, ondirtychange })}
+    {#snippet editor(key, { ref, onsaved, onerror })}
       {#if key.startsWith('title:')}
         <TitleEditorSwitch
           sectionKey={key.slice('title:'.length) as TitleEditSectionKey}
@@ -419,7 +427,6 @@
           bind:editorRef={ref.current}
           {onsaved}
           {onerror}
-          {ondirtychange}
         />
       {:else if md}
         <ModelEditorSwitch
@@ -430,7 +437,6 @@
           bind:editorRef={ref.current}
           {onsaved}
           {onerror}
-          {ondirtychange}
         />
       {/if}
     {/snippet}

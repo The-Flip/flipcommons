@@ -1,5 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
+  import { UNKNOWN_MANUFACTURER_LABEL } from '$lib/entities/manufacturer';
   import Card from './Card.svelte';
 
   let {
@@ -18,7 +19,9 @@
     roles?: string[] | null;
   } = $props();
 
-  const subtitle = $derived([manufacturerName, year].filter(Boolean).join(', ') || null);
+  const subtitle = $derived(
+    [manufacturerName || UNKNOWN_MANUFACTURER_LABEL, year].filter(Boolean).join(', '),
+  );
 </script>
 
 <Card href={resolve(`/titles/${slug}`)} title={name} {thumbnailUrl}>

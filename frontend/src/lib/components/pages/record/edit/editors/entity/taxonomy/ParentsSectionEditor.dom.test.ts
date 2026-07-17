@@ -32,13 +32,9 @@ describe('ParentsSectionEditor', () => {
   });
 
   it('reports clean state initially', async () => {
-    const user = userEvent.setup();
     render(ParentsSectionEditorFixture);
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
   });
 
   it('filters the entity itself out of the loaded options', async () => {
@@ -68,7 +64,7 @@ describe('ParentsSectionEditor', () => {
     await user.click(screen.getByLabelText('Parents'));
     await user.click(await screen.findByRole('option', { name: /Spinner/i }));
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('reports dirty after removing the original parent', async () => {
@@ -78,7 +74,7 @@ describe('ParentsSectionEditor', () => {
     await waitFor(() => screen.getByLabelText('Parents'));
     await user.click(screen.getByRole('button', { name: 'Remove Physical Feature' }));
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 
   it('sends parent slugs in the save body when dirty', async () => {

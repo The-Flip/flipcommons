@@ -50,18 +50,12 @@ describe('ExternalDataEditor dirty-state contract', () => {
       props: { initialData: INITIAL_MODEL },
     });
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('false');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('false');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
 
     const pinsideIdInput = screen.getByLabelText('Pinside ID');
     await user.clear(pinsideIdInput);
     await user.type(pinsideIdInput, 'mm-special');
 
-    expect(screen.getByTestId('dirty-callback')).toHaveTextContent('true');
-
-    await user.click(screen.getByRole('button', { name: 'Check dirty' }));
-    expect(screen.getByTestId('dirty-handle')).toHaveTextContent('true');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
   });
 });

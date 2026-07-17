@@ -20,6 +20,7 @@ export const model: EntityInfo<ModelDetailSchema> = {
     ipdb_id: {
       label: 'Internet Pinball Database',
       urlTemplate: 'https://www.ipdb.org/machine.cgi?id={id}',
+      showId: true,
     },
     // OPDB's public URLs key off an internal autoincrement we don't store; our
     // opdb_id is the alphanumeric cross-DB id. Emit as identifier until we

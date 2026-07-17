@@ -125,10 +125,9 @@ def register_entity_create[ModelT: LinkableLifecycleClaimModel, SchemaT: Schema]
         ``assert_public_id_available``, ``create_entity_with_claims``,
         …) instead of extending this factory.
 
-    FK claim values come from ``model_cls.claim_fk_lookups`` (defaults to
-    the parent's ``slug`` when unset; Location overrides ``parent`` to
-    ``location_path``). Hardcoding ``parent.slug`` anywhere on the write
-    path is a field-on-model antipattern.
+    FK claim values store the parent's PK — the durable identity that
+    survives slug renames. Public-id strings appear only in request/response
+    payloads, never in claim values.
 
     *scope_filter_builder* narrows the name-collision scan to a subset
     of rows. Required for entities whose names are unique per-parent
@@ -228,13 +227,8 @@ def register_entity_create[ModelT: LinkableLifecycleClaimModel, SchemaT: Schema]
         if parent is not None:
             assert parent_field is not None
             row_kwargs[parent_field] = parent
-            # FK claim value reads from claim_fk_lookups (defaults to parent's
-            # slug); models override per-field when the parent's identity
-            # lives on a non-slug field.
-            fk_lookup = model_cls.claim_fk_lookups.get(parent_field, "slug")
-            claim_specs.append(
-                ClaimSpec(field_name=parent_field, value=getattr(parent, fk_lookup))
-            )
+            # FK claim values store the target's PK — immune to slug renames.
+            claim_specs.append(ClaimSpec(field_name=parent_field, value=parent.pk))
 
         if extra_create_fields_builder is not None:
             extras = extra_create_fields_builder(data, parent)

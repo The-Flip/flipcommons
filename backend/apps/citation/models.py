@@ -712,12 +712,16 @@ class CitationInstance(models.Model):
     # ellipses belong here — a reviewer should be able to follow the citation's
     # URL and ctrl-F find each span. Interpretation, translation and rationale
     # go in ChangeSet.note instead.
+    #
+    # No validate_no_mojibake here, unlike our authored fields: a faithful quote
+    # of a garbled source is itself garbled (e.g. IPDB serves a literal U+FFFD),
+    # and reproducing that verbatim is correct. flippatch's verify-quotes gate
+    # guards quote fidelity against the canonical cached source upstream.
     quote = BoundedTextField(
         max_length=CITATION_INSTANCE_QUOTE_MAX_LENGTH,
         blank=True,
         default="",
         db_default="",
-        validators=[validate_no_mojibake],
     )
     created_at = models.DateTimeField(auto_now_add=True, db_default=Now())
 

@@ -58,9 +58,10 @@ class PatchEntityRegistry:
         ``Model``), matching ``_CreatedKey``'s identity (see its docstring).
 
         The caller canonicalizes an FK/member value the same way the committed
-        lookup (``_lookup_pk``) does before passing it, so a padded value reaches
-        an earlier create exactly as it reaches a committed row. A ``None`` key (a
-        value that normalizes to nothing) names no create and returns ``None``.
+        lookup (``resolve_fk_target_pk``) does before passing it, so a padded
+        value reaches an earlier create exactly as it reaches a committed row.
+        A ``None`` key (a value that normalizes to nothing) names no create and
+        returns ``None``.
         """
         if public_id is None:
             return None

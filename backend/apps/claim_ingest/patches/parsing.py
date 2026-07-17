@@ -723,8 +723,8 @@ def _parse_provenance(entry: PatchEntry) -> tuple[str, tuple[CiteSpec, ...]]:
 
     Length-checks each value against the DB column it lands in so an overlong
     value fails as a clear :class:`PatchError` here rather than deep in
-    persistence — and mojibake-checks ``locator``/``quote``, which the bulk
-    mint path (``mint_many`` → ``bulk_create``) would otherwise never validate.
+    persistence — and mojibake-checks ``locator``, which the bulk mint path
+    (``mint_many`` → ``bulk_create``) would otherwise never validate.
     Each cite's ref is one of two forms:
 
     * ``scheme:identifier`` — the scheme must be a registered scheme and the
@@ -767,9 +767,11 @@ def _validated_cite_instance_fields(
     Shared by the entry-level ``cite:`` (:func:`_parse_provenance`) and inline
     ``cites:`` (:func:`_parse_cites`) paths so both validate identically:
     length-caps each value against the DB column it lands in and mojibake-checks
-    both — necessary because the bulk mint path (``mint_many`` → ``bulk_create``)
-    never runs model validation — then canonicalizes the locator against the
-    resolved source's citation type (see :func:`_normalized_cite_locator`).
+    ``locator`` — necessary because the bulk mint path (``mint_many`` →
+    ``bulk_create``) never runs model validation. ``quote`` is a verbatim
+    excerpt and carries no mojibake guard (it may reproduce a garbled source),
+    matching ``CitationInstance.quote``. Then canonicalizes the locator against
+    the resolved source's citation type (see :func:`_normalized_cite_locator`).
     """
     if len(locator) > CITATION_INSTANCE_LOCATOR_MAX_LENGTH:
         raise PatchError(
@@ -780,11 +782,13 @@ def _validated_cite_instance_fields(
         raise PatchError(
             f"{ref}: cite quote exceeds {CITATION_INSTANCE_QUOTE_MAX_LENGTH} characters"
         )
-    for label, value in (("locator", locator), ("quote", quote)):
-        try:
-            validate_no_mojibake(value)
-        except ValidationError as exc:
-            raise PatchError(f"{ref}: cite {label}: {'; '.join(exc.messages)}") from exc
+    # locator only: it's authored, so mojibake is corruption. quote is a
+    # verbatim excerpt that must reproduce a garbled source (e.g. IPDB's
+    # literal U+FFFD), matching CitationInstance.quote which drops the guard.
+    try:
+        validate_no_mojibake(locator)
+    except ValidationError as exc:
+        raise PatchError(f"{ref}: cite locator: {'; '.join(exc.messages)}") from exc
     return _normalized_cite_locator(cite_ref, locator, ref), quote
 
 

@@ -198,7 +198,7 @@ Every Model gets a Title, even a one-off from a maker with one machine. Disambig
 
 ### Re-releases, kits and conversions across makers
 
-When a machine is another maker's game re-released, rebadged, kitted or converted (common among the Italian firms: Tecnoplay's Devil King re-releases Zaccaria's Mystic Star kit; Bell Games' Fantasy rethemes Bally's Centaur), model the relationship per [DomainModel.md](DomainModel.md): remakes share the original's Title; `variant_of` links cosmetic variants; `converted_from` links cabinet conversions; conversion kits carry the `conversion-kit` tag. A source listing electromechanical and solid-state versions of a game, or 1P/2P/4P editions, describes **separate Models** (the seed's convention — "Wood's Queen (1P/2P/4P)", Combat em/ss — each its own record), not `variant_of` variants: reserve `variant_of` for cosmetic/packaging variants of one product. The relationship claim needs its own cite — the source line stating the lineage — and when sources disagree about who made what, prefer the better-evidenced attribution and document the disagreement in the `note:`.
+When a machine is another maker's game re-released, rebadged, kitted or converted, first classify the relationship per [DomainModel.md](DomainModel.md): remakes share the original's Title; `variant_of` links cosmetic variants; copies, complete conversions and conversion kits use `model_relationship` edges as described below. A source listing electromechanical and solid-state versions of a game, or 1P/2P/4P editions, describes **separate Models**, not `variant_of` variants: reserve `variant_of` for cosmetic or packaging variants of one product. Cite the source line that states the relationship, and when sources disagree, prefer the better-evidenced attribution and document the disagreement in the `note:`.
 
 ## Corporate Entity locations
 
@@ -239,6 +239,31 @@ claims:
 - **One person, many roles.** Repeat the person across list items — `dan-forden: software` and `dan-forden: sound` are two distinct credits, not a duplicate. The duplicate guard only rejects the _same_ `{person, role}` pair twice in one entry.
 - **Series vs model.** Put a credit on the `series.*` entry only when it genuinely applies to the series as a whole (e.g. an original designer credited across the line); a credit specific to one machine belongs on its `model.*` entry.
 - **Remove** drops a credit like any other member: `remove: { credit: [{ john-youssi: art }] }` (or the block form), attributed to the source holding the claim.
+
+## Model relationships
+
+A model relationship types an edge from a model to the machine it copies, converts or fits as a kit (see [DataPatches.md → Model relationships](DataPatches.md#model-relationships) for the full syntax). Each member is an explicit-key mapping with one target key (`target_machine` public_id XOR `target_label` plain text) plus `relationship_type` and `license_status`. Authoring guidance:
+
+```yaml
+claims:
+  - model.al-capone:
+      cite:
+        - ref: ipdb:5176
+          quote: "This game is a copy of Bally's 1982 'Speakeasy'."
+        - ref: https://augustocampos.net/taito-brasil
+          quote: "certamente não era a única empresa a usar a Reserva de Mercado como escudo para copiar impunemente a tecnologia e a jogabilidade dos pinballs do exterior: a LTD, sediada em Campinas, fazia o mesmo"
+      model_relationship:
+        - target_machine: speakeasy-2
+          relationship_type: copy
+          license_status: unlicensed
+```
+
+- **Source the two axes separately.** The target and the licensing status are different facts, often established by different sources. Citations attach to the edge as a set; each citation's quote should make clear which fact it supports.
+- **`license_status: unknown` is the honest default** — write it whenever no source establishes authorization either way. Do NOT infer `unlicensed` from a source merely calling something a "bootleg region" copy; `unlicensed` needs its own evidence.
+- **Use `target_label` only when the machine isn't seeded or the target is plural** ("several Gottlieb EM models"). Write the label as it should display after "Conversion kit for …" / "Copy of …"; it renders as plain text with no links.
+- **One label target per model.** Fold all unresolved targets into one display string ("Hi-Score or Super Score"). A later assert rewords that edge in place; `remove:` by `target_label` removes the slot regardless of its current wording.
+- **Bootlegs, licensed builds and kits are edges.** These common terms map to edge values, not to tags or fields of their own: a bootleg is `(copy, unlicensed)`, a licensed build is `(copy, licensed)` and a kit is `conversion_kit`.
+- **Distinct from `variant_of`/`remake_of`.** Cosmetic variants and official remakes stay scalar FK fields on the model; the edge table is for copies, conversions and kits only.
 
 ## Validation process
 
