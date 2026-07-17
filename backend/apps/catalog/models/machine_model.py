@@ -97,6 +97,10 @@ class MachineModel(
     # Reach the manufacturer for the autocomplete sublabel in one join (year is
     # a direct field). No queryset override needed — the engine applies this.
     autocomplete_select_related = ("corporate_entity__manufacturer",)
+    # Provenance relationship labels use the same joins, but a deliberately
+    # tighter one-line presentation than ``__str__`` (which names the full
+    # corporate entity for admin/debug contexts).
+    claim_display_select_related = autocomplete_select_related
 
     # Identity
     name = models.CharField(max_length=300, validators=[validate_no_mojibake])
@@ -491,6 +495,21 @@ class MachineModel(
             self.corporate_entity.manufacturer.name if self.corporate_entity else None
         )
         return manufacturer_year_sublabel(manufacturer, self.year)
+
+    def claim_display_label(self) -> str:
+        """Concise label when this model is the target of another claim."""
+        manufacturer = (
+            self.corporate_entity.manufacturer.name if self.corporate_entity else None
+        )
+        context = " ".join(
+            part
+            for part in (
+                manufacturer,
+                str(self.year) if self.year is not None else None,
+            )
+            if part
+        )
+        return f"{self.name} ({context})" if context else self.name
 
     def __str__(self) -> str:
         parts = [self.name]

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ClaimValueSchema, FieldChangeSchema } from '$lib/api/schema';
 import {
+  buildStructuredDiff,
+  classifyChange,
   diffText,
   formatValue,
   hasMeaningfulValue,
@@ -71,6 +73,111 @@ describe('formatValue', () => {
   it('preserves long JSON-serialized values verbatim', () => {
     const obj = { data: 'x'.repeat(200) };
     expect(formatValue(obj)).toBe(JSON.stringify(obj));
+  });
+});
+
+describe('buildStructuredDiff', () => {
+  it('keeps unchanged relationship context and marks only the changed qualifier', () => {
+    const change: FieldChangeSchema = {
+      field_name: 'model_relationship',
+      claim_key: 'model_relationship:42',
+      old_value: {
+        raw: {
+          target_machine: 42,
+          target_label: '',
+          relationship_type: 'copy',
+          license_status: 'unknown',
+          exists: true,
+        },
+        display: {
+          kind: 'relationship',
+          identity: [
+            { key: 'target_machine', label: 'Speakeasy (Playmatic, 1982)', state: 'resolved' },
+          ],
+          qualifiers: [
+            { key: 'relationship_type', value: 'copy' },
+            { key: 'license_status', value: 'unknown' },
+          ],
+        },
+      },
+      new_value: {
+        raw: {
+          target_machine: 42,
+          target_label: '',
+          relationship_type: 'copy',
+          license_status: 'unlicensed',
+          exists: true,
+        },
+        display: {
+          kind: 'relationship',
+          identity: [
+            { key: 'target_machine', label: 'Speakeasy (Playmatic, 1982)', state: 'resolved' },
+          ],
+          qualifiers: [
+            { key: 'relationship_type', value: 'copy' },
+            { key: 'license_status', value: 'unlicensed' },
+          ],
+        },
+      },
+    };
+
+    expect(buildStructuredDiff(change)).toEqual([
+      {
+        key: 'target_machine',
+        label: 'Target machine',
+        oldText: 'Speakeasy (Playmatic, 1982)',
+        newText: 'Speakeasy (Playmatic, 1982)',
+        changed: false,
+      },
+      {
+        key: 'relationship_type',
+        label: 'Relationship type',
+        oldText: 'Copy',
+        newText: 'Copy',
+        changed: false,
+      },
+      {
+        key: 'license_status',
+        label: 'License status',
+        oldText: 'Unknown',
+        newText: 'Unlicensed',
+        changed: true,
+      },
+    ]);
+  });
+
+  it('diffs generic JSON objects by key', () => {
+    expect(
+      buildStructuredDiff(
+        fc({ title: 'Same', status: 'draft' }, { title: 'Same', status: 'live' }),
+      ),
+    ).toEqual([
+      {
+        key: 'title',
+        label: 'Title',
+        oldText: 'Same',
+        newText: 'Same',
+        changed: false,
+      },
+      {
+        key: 'status',
+        label: 'Status',
+        oldText: 'draft',
+        newText: 'live',
+        changed: true,
+      },
+    ]);
+  });
+
+  it('leaves relationship tombstones to the deletion display', () => {
+    expect(
+      buildStructuredDiff(
+        fc(
+          { target_machine: 42, license_status: 'unknown', exists: true },
+          { target_machine: 42, exists: false },
+        ),
+      ),
+    ).toBeNull();
   });
 });
 
@@ -284,6 +391,39 @@ describe('isDeletion', () => {
       exists: true,
     };
     expect(isDeletion(fc(old, { target_machine: 42, exists: false }))).toBe(false);
+  });
+});
+
+describe('classifyChange', () => {
+  it('classifies an identical value as unchanged', () => {
+    expect(classifyChange(fc('solid-state', 'solid-state'))).toEqual({ kind: 'unchanged' });
+  });
+
+  it('classifies a removed value as a deletion', () => {
+    expect(classifyChange(fc('Save the universe', null))).toEqual({ kind: 'deletion' });
+  });
+
+  it('classifies a long text edit as a text diff', () => {
+    expect(classifyChange(fc('a'.repeat(81), 'short'))).toEqual({ kind: 'textDiff' });
+  });
+
+  it('classifies an object-valued edit as a structured diff carrying its parts', () => {
+    const mode = classifyChange(
+      fc({ title: 'Same', status: 'draft' }, { title: 'Same', status: 'live' }),
+    );
+    expect(mode.kind).toBe('structuredDiff');
+    expect(mode).toHaveProperty('parts');
+  });
+
+  it('classifies an ordinary scalar edit as scalar', () => {
+    expect(classifyChange(fc('foo', 'bar'))).toEqual({ kind: 'scalar' });
+  });
+
+  it('prefers unchanged over textDiff for identical long values', () => {
+    // Both sides diffable-length yet identical: unchanged wins so the row
+    // renders once rather than as an empty diff. This is the ordering the
+    // changelog feed and retracted rows now share with the main history view.
+    expect(classifyChange(fc('a'.repeat(100), 'a'.repeat(100)))).toEqual({ kind: 'unchanged' });
   });
 });
 

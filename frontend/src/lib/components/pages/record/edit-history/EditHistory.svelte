@@ -17,14 +17,14 @@ with revert controls and per-change citation footers. -->
   import ChangeValue from '$lib/components/provenance/ChangeValue.svelte';
   import ChangeCitations from '$lib/components/provenance/ChangeCitations.svelte';
   import CiteMarkedText from '$lib/components/provenance/CiteMarkedText.svelte';
+  import StructuredValueDiff from '$lib/components/provenance/StructuredValueDiff.svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { getEntityContext } from '$lib/entity-context';
   import {
+    classifyChange,
     diffText,
     hasMeaningfulValue,
-    isDeletion,
-    isDiffable,
-    isUnchanged,
+    type ChangeRenderMode,
   } from '$lib/components/provenance/change-display';
   import {
     citeIndexesForChange,
@@ -153,6 +153,41 @@ with revert controls and per-change citation footers. -->
   <span class="new-value"><ChangeValue {value} {citeIndexes} /></span>
 {/snippet}
 
+<!-- The value cell for one change, rendered by its classified mode. -->
+{#snippet valueCell(
+  change: FieldChange,
+  mode: ChangeRenderMode,
+  citeIndexes: Map<string, number>,
+  citeMarked: boolean,
+)}
+  {#if mode.kind === 'unchanged'}
+    <dd>{@render newValue(change.new_value, citeIndexes)}</dd>
+  {:else if mode.kind === 'deletion'}
+    <dd>
+      {@render oldValue(change.old_value, citeIndexes)}
+      <span class="deleted-marker" aria-label="removed">&#x2715;</span>
+    </dd>
+  {:else if mode.kind === 'textDiff'}
+    <dd>
+      <InlineDiff
+        oldValue={substituteCiteMarkers(diffText(change.old_value), citeIndexes)}
+        newValue={substituteCiteMarkers(diffText(change.new_value), citeIndexes)}
+        renderText={citeMarked ? markedText : undefined}
+      />
+    </dd>
+  {:else if mode.kind === 'structuredDiff'}
+    <dd><StructuredValueDiff parts={mode.parts} /></dd>
+  {:else}
+    <dd>
+      {#if hasMeaningfulValue(change.old_value?.raw)}
+        {@render oldValue(change.old_value, citeIndexes)}
+        <span class="arrow">&rarr;</span>
+      {/if}
+      {@render newValue(change.new_value, citeIndexes)}
+    </dd>
+  {/if}
+{/snippet}
+
 {#snippet revertControls(change: FieldChange)}
   {#if canRevert(change)}
     <div class="revert-cell">
@@ -223,12 +258,13 @@ with revert controls and per-change citation footers. -->
                 {#each cs.changes as change (change.claim_key)}
                   {@const citeIndexes = citeIndexesForChange(change)}
                   {@const citeMarked = citeIndexes.size > 0}
+                  {@const mode = classifyChange(change)}
                   {#if change.is_retracted}
                     {@const info =
                       change.claim_id != null ? retractionLookup.get(change.claim_id) : undefined}
                     <div
                       class="field-row field-row-retraction"
-                      class:field-row-diff={isDiffable(change)}
+                      class:field-row-diff={mode.kind === 'textDiff'}
                     >
                       <dt>{change.field_name}</dt>
                       <dd>
@@ -238,9 +274,9 @@ with revert controls and per-change citation footers. -->
                             {info.note}{/if}
                         {/if}
                       </dd>
-                      {#if isUnchanged(change)}
+                      {#if mode.kind === 'unchanged'}
                         <dd>{@render oldValue(change.new_value, citeIndexes)}</dd>
-                      {:else if isDiffable(change)}
+                      {:else if mode.kind === 'textDiff'}
                         <dd>
                           <InlineDiff
                             oldValue={substituteCiteMarkers(
@@ -254,6 +290,8 @@ with revert controls and per-change citation footers. -->
                             renderText={citeMarked ? markedText : undefined}
                           />
                         </dd>
+                      {:else if mode.kind === 'structuredDiff'}
+                        <dd><StructuredValueDiff parts={mode.parts} /></dd>
                       {:else}
                         <dd>
                           {#if hasMeaningfulValue(change.old_value?.raw)}
@@ -264,46 +302,10 @@ with revert controls and per-change citation footers. -->
                         </dd>
                       {/if}
                     </div>
-                  {:else if isUnchanged(change)}
-                    <div class="field-row">
-                      <dt>{change.field_name}</dt>
-                      <dd>{@render newValue(change.new_value, citeIndexes)}</dd>
-                      {@render revertControls(change)}
-                      <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
-                    </div>
-                  {:else if isDeletion(change)}
-                    <div class="field-row">
-                      <dt>{change.field_name}</dt>
-                      <dd>
-                        {@render oldValue(change.old_value, citeIndexes)}
-                        <span class="deleted-marker" aria-label="removed">&#x2715;</span>
-                      </dd>
-                      {@render revertControls(change)}
-                      <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
-                    </div>
-                  {:else if isDiffable(change)}
-                    <div class="field-row field-row-diff">
-                      <dt>{change.field_name}</dt>
-                      <dd>
-                        <InlineDiff
-                          oldValue={substituteCiteMarkers(diffText(change.old_value), citeIndexes)}
-                          newValue={substituteCiteMarkers(diffText(change.new_value), citeIndexes)}
-                          renderText={citeMarked ? markedText : undefined}
-                        />
-                      </dd>
-                      {@render revertControls(change)}
-                      <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
-                    </div>
                   {:else}
-                    <div class="field-row">
+                    <div class="field-row" class:field-row-diff={mode.kind === 'textDiff'}>
                       <dt>{change.field_name}</dt>
-                      <dd>
-                        {#if hasMeaningfulValue(change.old_value?.raw)}
-                          {@render oldValue(change.old_value, citeIndexes)}
-                          <span class="arrow">&rarr;</span>
-                        {/if}
-                        {@render newValue(change.new_value, citeIndexes)}
-                      </dd>
+                      {@render valueCell(change, mode, citeIndexes, citeMarked)}
                       {@render revertControls(change)}
                       <ChangeCitations citations={change.citations ?? []} indexes={citeIndexes} />
                     </div>

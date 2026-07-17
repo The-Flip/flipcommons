@@ -11,6 +11,7 @@ from django.test.utils import CaptureQueriesContext
 
 from apps.accounts.test_factories import make_user
 from apps.catalog.models import (
+    CorporateEntity,
     CreditRole,
     GameplayFeature,
     MachineModel,
@@ -128,6 +129,38 @@ class TestBuildDisplayValue:
             _MODEL, "model_relationship", value, ctx
         ) == ClaimDisplayValueSchema(
             identity=_identity([("target_machine", "Rock")]),
+            qualifiers=_qualifiers(
+                [("relationship_type", "copy"), ("license_status", "unlicensed")]
+            ),
+        )
+
+    def test_model_relationship_machine_uses_concise_model_declared_label(self):
+        manufacturer = Manufacturer.objects.create(name="Bally", slug="bally-display")
+        corporate_entity = CorporateEntity.objects.create(
+            name="Bally Manufacturing Corporation (1932-1994)",
+            slug="bally-manufacturing-display",
+            manufacturer=manufacturer,
+        )
+        target = make_machine_model(
+            name="Speakeasy",
+            slug="speakeasy-display",
+            corporate_entity=corporate_entity,
+            year=1982,
+        )
+        value = {
+            "target_machine": target.pk,
+            "target_label": "",
+            "relationship_type": "copy",
+            "license_status": "unlicensed",
+            "exists": True,
+        }
+
+        ctx = _ctx(FieldValue("model_relationship", value, _MODEL))
+
+        assert build_display_value(
+            _MODEL, "model_relationship", value, ctx
+        ) == ClaimDisplayValueSchema(
+            identity=_identity([("target_machine", "Speakeasy (Bally 1982)")]),
             qualifiers=_qualifiers(
                 [("relationship_type", "copy"), ("license_status", "unlicensed")]
             ),

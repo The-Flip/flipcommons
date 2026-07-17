@@ -283,10 +283,11 @@ def _collect_refs(items: Iterable[FieldValue]) -> set[FkRef]:
 def resolve_labels(items: Iterable[FieldValue]) -> LabelLookup:
     """Build a :class:`LabelLookup` for all relationship claims in ``items``.
 
-    One query per FK target model. Resolved labels are ``str(instance)``,
-    so each FK target model is expected to define a meaningful ``__str__``.
-    Missing rows (referent deleted) simply don't appear in the result;
-    callers (``_fk_label``) emit ``state="deleted"`` for those refs.
+    One query per FK target model. Claim-controlled targets provide their label
+    through the model-level ``claim_display_label`` hook; other Django models
+    retain the ``str(instance)`` fallback. Missing rows (referent deleted)
+    simply don't appear in the result; callers (``_fk_label``) emit
+    ``state="deleted"`` for those refs.
     """
     pks_by_model: dict[type[Model], set[int]] = defaultdict(set)
     for ref in _collect_refs(items):
@@ -294,8 +295,15 @@ def resolve_labels(items: Iterable[FieldValue]) -> LabelLookup:
 
     lookup = LabelLookup()
     for model, pks in pks_by_model.items():
-        for inst in model._default_manager.filter(pk__in=pks):
-            lookup.add(FkRef(model, inst.pk), str(inst))
+        if issubclass(model, ClaimControlledModel):
+            queryset = model._default_manager.filter(pk__in=pks)
+            if model.claim_display_select_related:
+                queryset = queryset.select_related(*model.claim_display_select_related)
+            for inst in queryset:
+                lookup.add(FkRef(model, inst.pk), inst.claim_display_label())
+            continue
+        for other in model._default_manager.filter(pk__in=pks):
+            lookup.add(FkRef(model, other.pk), str(other))
     return lookup
 
 
