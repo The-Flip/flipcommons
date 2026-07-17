@@ -584,6 +584,38 @@ class TestRelationshipEdges:
         assert edge["target_machine"] is None
         assert edge["target_label"] == "several Gottlieb EM models"
 
+    def test_retheme_label_target_rejected(self, client, user, pm):
+        """retheme requires a machine target, so a label rung is a row error —
+        the planner mirror of the derived DB CHECK."""
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {"relationship_type": "retheme", "target_label": "an unknown donor"}
+                ]
+            },
+        )
+        assert resp.status_code == 422, resp.json()
+
+    def test_retheme_machine_target_accepted(self, client, user, pm, rock):
+        client.force_login(user)
+        resp = _patch(
+            client,
+            pm.slug,
+            {
+                "relationships": [
+                    {"relationship_type": "retheme", "target_slug": "rock"}
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.json()
+        (edge,) = _relationships(resp)
+        assert edge["relationship_type"] == "retheme"
+        assert edge["target_machine"]["public_id"] == "rock"
+        assert edge["target_label"] == ""
+
     def test_payload_change_supersedes_in_place(self, client, user, pm, rock):
         client.force_login(user)
         _patch(
@@ -983,3 +1015,20 @@ def test_relationship_literals_match_choices() -> None:
 
     assert set(get_args(RelationshipTypeLiteral)) == set(RelationshipType.values)
     assert set(get_args(LicenseStatusLiteral)) == set(LicenseStatus.values)
+
+
+def test_cross_title_relation_covers_every_edge_type() -> None:
+    """CrossTitleRelation is a hand-written flat Literal (kept flat so it inlines
+    in the OpenAPI schema), so this locks it to {remake_of} ∪ the edge types — a
+    new relationship_type can't silently omit its cross-title arm and fail
+    Literal validation at serialize time (a re-theme's donor nearly always sits
+    under its own Title, so this is a re-theme's normal read path)."""
+    from typing import get_args
+
+    from apps.catalog.api.schemas import RelationshipTypeLiteral
+    from apps.catalog.api.titles import CrossTitleRelation
+
+    assert set(get_args(CrossTitleRelation)) == {
+        "remake_of",
+        *get_args(RelationshipTypeLiteral),
+    }

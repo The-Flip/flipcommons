@@ -260,7 +260,7 @@ claims:
 
 ### Model relationships
 
-A **model relationship** — "this model is a copy / conversion / conversion kit of that machine" — is authored under `model_relationship:` as a list of **explicit-key mappings**. Each member names its target at exactly one of two resolutions — `target_machine` (a model public_id) XOR `target_label` (plain text for an unseeded or plural target) — plus two mandatory payload keys, `relationship_type` (`conversion` | `conversion_kit` | `copy`) and `license_status` (`licensed` | `unlicensed` | `unknown`):
+A **model relationship** — "this model is a copy / conversion / conversion kit / re-theme of that machine" — is authored under `model_relationship:` as a list of **explicit-key mappings**. Each member names its target at exactly one of two resolutions — `target_machine` (a model public_id) XOR `target_label` (plain text for an unseeded or plural target) — plus two mandatory payload keys, `relationship_type` (`conversion` | `conversion_kit` | `copy` | `retheme`) and `license_status` (`licensed` | `unlicensed` | `unknown`):
 
 ```yaml
 attribution: flipcommons-catalog
@@ -289,6 +289,7 @@ claims:
 Rules:
 
 - **Exactly one target key.** `target_machine` plus `target_label` on one member is rejected, as is a member with neither. Don't restate the machine's maker in a label when `target_machine` is set — the model row already knows it.
+- **Some types require a seeded machine target.** A `retheme` member must use `target_machine`; a `target_label` on a re-theme is rejected (a re-theme's donor is always a known, seeded machine). For re-themes, `license_status` records official (`licensed`) vs unofficial (`unlicensed`), or `unknown` when no source establishes it.
 - **`license_status` is deliberately explicit** — there is no silent default in patches. Write `unknown` when no source establishes authorization either way; an unlicensed copy is `relationship_type: copy` + `license_status: unlicensed`, and the source must establish both facts.
 - **Identity is the machine target only; a model holds one label slot.** Re-asserting a machine-target member with a different `relationship_type`/`license_status` supersedes the old values in place; two members with the same target in one entry are a duplicate and rejected. The label edge is keyed by its _slot_, not its wording: a model has at most one `target_label` edge, re-asserting one with different wording rewords that edge in place (same edge, citations intact) and a same-actor label assert in a later patch supersedes the earlier one rather than adding a second edge.
 - **Same-patch create** works for `target_machine` like any FK member — create the model above, reference it below.

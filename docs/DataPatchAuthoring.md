@@ -242,7 +242,7 @@ claims:
 
 ## Model relationships
 
-A model relationship types an edge from a model to the machine it copies, converts or fits as a kit (see [DataPatches.md → Model relationships](DataPatches.md#model-relationships) for the full syntax). Each member is an explicit-key mapping with one target key (`target_machine` public_id XOR `target_label` plain text) plus `relationship_type` and `license_status`. Authoring guidance:
+A model relationship types an edge from a model to the machine it copies, rethemes, converts or fits as a kit (see [DataPatches.md → Model relationships](DataPatches.md#model-relationships) for the full syntax). Each member is an explicit-key mapping with one target key (`target_machine` public_id XOR `target_label` plain text) plus `relationship_type` and `license_status`. Authoring guidance:
 
 ```yaml
 claims:
@@ -262,7 +262,7 @@ claims:
 - **`license_status: unknown` is the honest default** — write it whenever no source establishes authorization either way. Do NOT infer `unlicensed` from a source merely calling something a "bootleg region" copy; `unlicensed` needs its own evidence.
 - **Use `target_label` only when the machine isn't seeded or the target is plural** ("several Gottlieb EM models"). Write the label as it should display after "Conversion kit for …" / "Copy of …"; it renders as plain text with no links.
 - **One label target per model.** Fold all unresolved targets into one display string ("Hi-Score or Super Score"). A later assert rewords that edge in place; `remove:` by `target_label` removes the slot regardless of its current wording.
-- **Bootlegs, licensed builds and kits are edges.** These common terms map to edge values, not to tags or fields of their own: a bootleg is `(copy, unlicensed)`, a licensed build is `(copy, licensed)` and a kit is `conversion_kit`.
+- **Bootlegs, licensed builds, rethemes and kits are edges.** These common terms map to edge values, not to tags or fields of their own: a bootleg is `(copy, unlicensed)`, a licensed build is `(copy, licensed)` and a kit is `conversion_kit` (own-manufacturer conversions are `licensed`, look for evidence as to whether other-manufacturer conversions are unlicensed, default to unknown).
 - **Distinct from `variant_of`/`remake_of`.** Cosmetic variants and official remakes stay scalar FK fields on the model; the edge table is for copies, conversions and kits only.
 
 ## Validation process

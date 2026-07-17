@@ -317,13 +317,17 @@ class AgreedSpecsSchema(Schema):
 
 # Lineage relations that can point at a model under a different title. Same-title
 # links are filtered out in `_collect_related_titles`. `remake_of` is the scalar
-# lineage FK; the other three are `ModelRelationship` edge types
-# (`RelationshipTypeLiteral` values).
+# lineage FK; the rest are `ModelRelationship` edge types
+# (`RelationshipTypeLiteral` values). Kept a flat literal (not a runtime union of
+# `RelationshipTypeLiteral`) so it inlines anonymously in the OpenAPI schema like
+# its siblings; a snapshot test locks it to `{remake_of} ∪ RelationshipTypeLiteral`
+# so a new edge type can't silently omit its cross-title arm.
 CrossTitleRelation = Literal[
     "remake_of",
     "conversion",
     "conversion_kit",
     "copy",
+    "retheme",
 ]
 # The scalar FK attrs `_collect_related_titles` walks with getattr.
 _CROSS_TITLE_FK_RELATIONS: tuple[CrossTitleRelation, ...] = ("remake_of",)

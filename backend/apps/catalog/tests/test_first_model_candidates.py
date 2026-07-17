@@ -64,11 +64,12 @@ def test_remake_stays_eligible(db):
     assert _first_model(remake.title) == remake
 
 
-# ── ModelRelationship copy edges ─────────────────────────────────────
+# ── ModelRelationship subordinating edges ────────────────────────────
 #
-# A subordinating edge (per RELATIONSHIP_TYPE_BEHAVIOR) is what demotes a
-# model below the original when picking a Title's representative — the Big
-# Ben rule. The legacy lineage FKs are gone; edges are the only read.
+# A subordinating edge (per RELATIONSHIP_TYPE_BEHAVIOR — today copy and
+# retheme) is what demotes a model below the original when picking a Title's
+# representative — the Big Ben rule. The legacy lineage FKs are gone; edges
+# are the only read.
 
 
 @pytest.mark.django_db
@@ -108,11 +109,58 @@ def test_label_target_copy_edge_still_subordinates(big_ben_title):
 
 
 @pytest.mark.django_db
+def test_retheme_edge_sibling_is_not_the_first_model(big_ben_title):
+    """A re-theme sharing its donor's Title never heads it — the donor is the
+    original. Not hypothetical: Metallica (Retheme) sits under the Earthshaker
+    Title with its donor.
+
+    The re-theme is given the *earlier* year so the ``(year, name)`` tiebreak
+    would pick it if subordination weren't doing the work — a donor is
+    necessarily older in reality, so only an inverted year proves the rule
+    rather than the tiebreak.
+    """
+    original = make_machine_model(
+        title=big_ben_title, name="Big Ben", slug="big-ben-williams", year=1975
+    )
+    retheme = make_machine_model(
+        title=big_ben_title, name="Big Ben Reskinned", slug="big-ben-reskin", year=1974
+    )
+    ModelRelationship.objects.create(
+        machine_model=retheme,
+        target_machine=original,
+        relationship_type=RelationshipType.RETHEME,
+    )
+    assert _first_model(big_ben_title) == original
+    assert set(_candidates(big_ben_title)) == {original, retheme}
+
+
+@pytest.mark.django_db
+def test_undated_retheme_still_loses_to_its_dated_donor(big_ben_title):
+    """The year tiebreak can't be leaned on: an undated re-theme would sort
+    ahead of its dated donor (NULLs sort first on SQLite), so subordination is
+    what keeps the original at the head."""
+    original = make_machine_model(
+        title=big_ben_title, name="Big Ben", slug="big-ben-williams", year=1975
+    )
+    retheme = make_machine_model(
+        title=big_ben_title, name="Big Ben Reskinned", slug="big-ben-reskin", year=None
+    )
+    ModelRelationship.objects.create(
+        machine_model=retheme,
+        target_machine=original,
+        relationship_type=RelationshipType.RETHEME,
+    )
+    assert _first_model(big_ben_title) == original
+
+
+@pytest.mark.django_db
 def test_conversion_edge_stays_eligible(db):
-    """Conversion/kit edges are originals in their own right — only copy
-    edges subordinate."""
+    """Conversion/kit edges are originals in their own right — they don't
+    subordinate, unlike copy and re-theme edges."""
     donor = make_machine_model(name="Base Game", slug="base-game", year=1990)
-    conversion = make_machine_model(name="Retheme", slug="retheme", year=1991)
+    conversion = make_machine_model(
+        name="Converted Game", slug="converted-game", year=1991
+    )
     ModelRelationship.objects.create(
         machine_model=conversion,
         target_machine=donor,
@@ -137,8 +185,10 @@ def test_copy_edge_only_title_still_surfaces_the_copy(db):
 
 def test_every_relationship_type_classifies_its_behavior() -> None:
     """The forcing function for new relationship types: every enum value must
-    carry an explicit ``subordinates`` decision, so a new type (e.g. retheme)
-    cannot silently inherit not-subordinate from an inline default."""
+    carry an explicit behavior entry (the ``RelationshipTypeBehavior``
+    constructor then requires each decision — ``subordinates``,
+    ``requires_machine_target``), so a new type (e.g. retheme) cannot silently
+    inherit a default."""
     from apps.catalog.models.model_relationship import (
         RELATIONSHIP_TYPE_BEHAVIOR,
         RelationshipType,
@@ -147,6 +197,6 @@ def test_every_relationship_type_classifies_its_behavior() -> None:
     unclassified = set(RelationshipType) - set(RELATIONSHIP_TYPE_BEHAVIOR)
     assert not unclassified, (
         f"RelationshipType value(s) {sorted(t.value for t in unclassified)} have "
-        "no RELATIONSHIP_TYPE_BEHAVIOR entry — decide whether the new type "
-        "subordinates (the Big Ben rule)."
+        "no RELATIONSHIP_TYPE_BEHAVIOR entry — decide its subordination (the Big "
+        "Ben rule) and whether it requires a seeded machine target."
     )

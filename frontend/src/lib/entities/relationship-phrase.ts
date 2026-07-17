@@ -7,7 +7,7 @@
 
 import type { CrossTitleLinkSchema, ModelRef, ModelRelationshipInputSchema } from '$lib/api/schema';
 
-/** The three edge types, derived from the wire union (never redeclared). */
+/** The edge types (copy / conversion / conversion kit / re-theme), derived from the wire union (never redeclared). */
 export type EdgeKind = ModelRelationshipInputSchema['relationship_type'];
 
 /** Relations that can appear on a cross-title lineage line — the edge kinds plus the remake lineage FK; derived from the wire union. */
@@ -19,27 +19,111 @@ export type LicenseStatus = NonNullable<ModelRelationshipInputSchema['license_st
 /** Every relationship kind the editor presents — the edges plus the two scalar lineage FKs. */
 export type RelationshipKind = EdgeKind | 'variant' | 'remake';
 
+/** All reader-facing copy for one (edge kind, license) cell. */
+interface EdgePhrases {
+  /** Lead-in phrase, e.g. "Bootleg of". The caller appends the target. */
+  lead: string;
+  /** Outbound preface above the targets; a sentence they complete, so it ends
+   * with a colon ("This game reproduces the design of:"). */
+  note: string;
+  /** Inbound plural heading, e.g. "Bootlegs". */
+  inboundHeading: string;
+  /** Inbound preface above the sources; ends with a colon. */
+  inboundNote: string;
+}
+
 /**
- * The lead-in phrase per (kind, license). "Bootleg" is the domain word for an
- * unlicensed copy — the one cell with its own name; every other cell composes
- * the license adjective onto the kind noun. Unknown license renders bare
- * (no "possibly licensed" hedging — absence of the axis is the statement).
+ * Every edge kind's reader copy, one object per (kind, license) — colocated so a
+ * new kind's phrasing lands in one block instead of four parallel maps. "Bootleg"
+ * is the domain word for an unlicensed copy — the one cell with its own name;
+ * others compose the license adjective onto the kind noun. Unknown license
+ * renders bare (no "possibly licensed" hedging — absence of the axis is the
+ * statement).
  */
-const EDGE_LEADS: Record<EdgeKind, Record<LicenseStatus, string>> = {
+const EDGE_PHRASES: Record<EdgeKind, Record<LicenseStatus, EdgePhrases>> = {
   copy: {
-    unknown: 'Copy of',
-    licensed: 'Licensed copy of',
-    unlicensed: 'Bootleg of',
+    unknown: {
+      lead: 'Copy of',
+      note: 'This game reproduces the design of:',
+      inboundHeading: 'Copies',
+      inboundNote: "Games that reproduce this game's design:",
+    },
+    licensed: {
+      lead: 'Licensed copy of',
+      note: 'This game is an officially licensed copy of:',
+      inboundHeading: 'Licensed Copies',
+      inboundNote: 'Officially licensed copies of this game:',
+    },
+    unlicensed: {
+      lead: 'Bootleg of',
+      note: 'This game is an unauthorized copy of:',
+      inboundHeading: 'Bootlegs',
+      inboundNote: 'Unauthorized copies of this game:',
+    },
   },
   conversion: {
-    unknown: 'Conversion of',
-    licensed: 'Licensed conversion of',
-    unlicensed: 'Unlicensed conversion of',
+    unknown: {
+      lead: 'Conversion of',
+      note: 'This game was rebuilt from the hardware of:',
+      inboundHeading: 'Conversions',
+      inboundNote: "Different games rebuilt from this machine's hardware:",
+    },
+    licensed: {
+      lead: 'Licensed conversion of',
+      note: 'This game was rebuilt, under license, from the hardware of:',
+      inboundHeading: 'Licensed Conversions',
+      inboundNote: "Different games rebuilt, under license, from this machine's hardware:",
+    },
+    unlicensed: {
+      lead: 'Unlicensed conversion of',
+      note: 'This game was rebuilt, without authorization, from the hardware of:',
+      inboundHeading: 'Unlicensed Conversions',
+      inboundNote: "Different games rebuilt, without authorization, from this machine's hardware:",
+    },
   },
   conversion_kit: {
-    unknown: 'Conversion kit for',
-    licensed: 'Licensed conversion kit for',
-    unlicensed: 'Unlicensed conversion kit for',
+    unknown: {
+      lead: 'Conversion kit for',
+      note: 'This game is a kit that converts:',
+      inboundHeading: 'Conversion Kits',
+      inboundNote: 'Kits that convert this machine into a different game:',
+    },
+    licensed: {
+      lead: 'Licensed conversion kit for',
+      note: 'This game is an officially licensed kit that converts:',
+      inboundHeading: 'Licensed Conversion Kits',
+      inboundNote: 'Officially licensed kits that convert this machine into a different game:',
+    },
+    unlicensed: {
+      lead: 'Unlicensed conversion kit for',
+      note: 'This game is an unauthorized kit that converts:',
+      inboundHeading: 'Unlicensed Conversion Kits',
+      inboundNote: 'Unauthorized kits that convert this machine into a different game:',
+    },
+  },
+  // A re-theme keeps the donor's gameplay and re-skins its art and theme. The
+  // license axis reads as official/unofficial here (recovering the old
+  // `manufacturer-retheme` / `unofficial-retheme` tag vocabulary); the stored
+  // value is still licensed/unlicensed.
+  retheme: {
+    unknown: {
+      lead: 'Re-theme of',
+      note: 'This game re-skins the art and theme of:',
+      inboundHeading: 'Re-themes',
+      inboundNote: 'Games that re-skin this one with new art and theme:',
+    },
+    licensed: {
+      lead: 'Official re-theme of',
+      note: 'This game is an official re-theme of:',
+      inboundHeading: 'Official Re-themes',
+      inboundNote: 'Official re-themes of this game:',
+    },
+    unlicensed: {
+      lead: 'Unofficial re-theme of',
+      note: 'This game is an unofficial re-theme of:',
+      inboundHeading: 'Unofficial Re-themes',
+      inboundNote: 'Unofficial re-themes of this game:',
+    },
   },
 };
 
@@ -50,91 +134,22 @@ const EDGE_LEADS: Record<EdgeKind, Record<LicenseStatus, string>> = {
 export function relationshipLead(kind: RelationshipKind, license: LicenseStatus): string {
   if (kind === 'variant') return 'Variant of';
   if (kind === 'remake') return 'Remake of';
-  return EDGE_LEADS[kind][license];
+  return EDGE_PHRASES[kind][license].lead;
 }
-
-/**
- * Explanatory preface shown above an outbound edge section's targets, in the
- * style of the legacy lineage notes ("This game is a remake of:"). Each is a
- * sentence the target list completes, so it must end with a colon.
- */
-const EDGE_NOTES: Record<EdgeKind, Record<LicenseStatus, string>> = {
-  copy: {
-    unknown: 'This game reproduces the design of:',
-    licensed: 'This game is an officially licensed copy of:',
-    unlicensed: 'This game is an unauthorized copy of:',
-  },
-  conversion: {
-    unknown: 'This game was rebuilt from the hardware of:',
-    licensed: 'This game was rebuilt, under license, from the hardware of:',
-    unlicensed: 'This game was rebuilt, without authorization, from the hardware of:',
-  },
-  conversion_kit: {
-    unknown: 'This game is a kit that converts:',
-    licensed: 'This game is an officially licensed kit that converts:',
-    unlicensed: 'This game is an unauthorized kit that converts:',
-  },
-};
 
 /** The explanatory preface for an outbound edge section of one (kind, license). */
 export function relationshipNote(kind: EdgeKind, license: LicenseStatus): string {
-  return EDGE_NOTES[kind][license];
+  return EDGE_PHRASES[kind][license].note;
 }
-
-/**
- * Heading for the inbound side of an edge — the models that copy, convert or
- * kit-target the subject. Plural nouns mirroring the legacy reverse-list
- * headings ("Bootlegs", "Conversions"); unknown license renders bare, like
- * the leads.
- */
-const EDGE_INBOUND_HEADINGS: Record<EdgeKind, Record<LicenseStatus, string>> = {
-  copy: {
-    unknown: 'Copies',
-    licensed: 'Licensed Copies',
-    unlicensed: 'Bootlegs',
-  },
-  conversion: {
-    unknown: 'Conversions',
-    licensed: 'Licensed Conversions',
-    unlicensed: 'Unlicensed Conversions',
-  },
-  conversion_kit: {
-    unknown: 'Conversion Kits',
-    licensed: 'Licensed Conversion Kits',
-    unlicensed: 'Unlicensed Conversion Kits',
-  },
-};
 
 /** The inbound-side heading for edges of one (kind, license), e.g. "Bootlegs". */
 export function inboundRelationshipHeading(kind: EdgeKind, license: LicenseStatus): string {
-  return EDGE_INBOUND_HEADINGS[kind][license];
+  return EDGE_PHRASES[kind][license].inboundHeading;
 }
-
-/**
- * Explanatory preface for an inbound edge section, in the style of the legacy
- * reverse-list notes ("Unauthorized copies of this game:").
- */
-const EDGE_INBOUND_NOTES: Record<EdgeKind, Record<LicenseStatus, string>> = {
-  copy: {
-    unknown: "Games that reproduce this game's design:",
-    licensed: 'Officially licensed copies of this game:',
-    unlicensed: 'Unauthorized copies of this game:',
-  },
-  conversion: {
-    unknown: "Different games rebuilt from this machine's hardware:",
-    licensed: "Different games rebuilt, under license, from this machine's hardware:",
-    unlicensed: "Different games rebuilt, without authorization, from this machine's hardware:",
-  },
-  conversion_kit: {
-    unknown: 'Kits that convert this machine into a different game:',
-    licensed: 'Officially licensed kits that convert this machine into a different game:',
-    unlicensed: 'Unauthorized kits that convert this machine into a different game:',
-  },
-};
 
 /** The explanatory preface for an inbound edge section of one (kind, license). */
 export function inboundRelationshipNote(kind: EdgeKind, license: LicenseStatus): string {
-  return EDGE_INBOUND_NOTES[kind][license];
+  return EDGE_PHRASES[kind][license].inboundNote;
 }
 
 /**

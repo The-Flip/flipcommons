@@ -657,10 +657,10 @@ class TestModelRelationshipConstraints:
     def target(self, db):
         return make_machine_model(name="Rock", slug="rock")
 
-    def _edge(self, subject, **fields):
+    def _edge(self, subject, *, relationship_type=RelationshipType.COPY, **fields):
         return ModelRelationship.objects.create(
             machine_model=subject,
-            relationship_type=RelationshipType.COPY,
+            relationship_type=relationship_type,
             **fields,
         )
 
@@ -721,6 +721,28 @@ class TestModelRelationshipConstraints:
         edge = self._edge(subject, target_machine=target)
         with pytest.raises(IntegrityError):
             _raw_update(ModelRelationship, edge.pk, license_status="disputed")
+
+    # --- machine-target-required (derived from RELATIONSHIP_TYPE_BEHAVIOR) ---
+
+    def test_required_type_machine_target_accepted(self, subject, target):
+        self._edge(
+            subject,
+            target_machine=target,
+            relationship_type=RelationshipType.RETHEME,
+        )
+
+    def test_required_type_label_target_rejected(self, subject):
+        """retheme sets requires_machine_target, so its label rung is barred by
+        the derived CHECK even though the target XOR alone would allow it."""
+        with pytest.raises(IntegrityError):
+            self._edge(
+                subject,
+                target_label="an unknown donor",
+                relationship_type=RelationshipType.RETHEME,
+            )
+
+    # The derived CHECK doesn't over-reach: types without the flag still accept a
+    # label rung — see ``test_label_target_accepted`` (COPY) above.
 
     # --- delete behavior ---------------------------------------------------
 

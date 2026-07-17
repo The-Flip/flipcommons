@@ -19,6 +19,10 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     type LicenseStatus,
     type RelationshipKind,
   } from '$lib/entities/relationship-phrase';
+  import {
+    RELATIONSHIP_TYPE_META,
+    type RelationshipTypeMeta,
+  } from '$lib/entities/relationship-type-meta';
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
   import type { FieldErrors } from '$lib/api/parse-api-error';
@@ -34,16 +38,15 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
 
   let { initialData, slug, onsaved, onerror }: SectionEditorProps<RelatedModelsModel> = $props();
 
-  // Completeness-forced over the wire union, like KIND_LABELS below: a new
-  // edge kind is a build error here until the editor classifies it as an
-  // edge row — otherwise isEdge() would silently exclude it from the save
-  // payload while the picker still offered it.
-  const EDGE_KIND_SET: Record<EdgeKind, true> = {
-    copy: true,
-    conversion: true,
-    conversion_kit: true,
-  };
-  const EDGE_KINDS = Object.keys(EDGE_KIND_SET) as readonly EdgeKind[];
+  // The edge kinds ARE the generated relationship-type meta keys (edges carry a
+  // relationship_type; variant/remake are scalar lineage FKs, not in the meta),
+  // so a new backend relationship_type joins here automatically with its target
+  // rule — no hand-maintained set to keep in sync. The typed alias pins the
+  // generated keys to the wire union: if schema.d.ts and the meta file drift,
+  // this assignment fails the build.
+  const RELATIONSHIP_TYPE_META_BY_EDGE: Record<EdgeKind, RelationshipTypeMeta> =
+    RELATIONSHIP_TYPE_META;
+  const EDGE_KINDS = Object.keys(RELATIONSHIP_TYPE_META_BY_EDGE) as readonly EdgeKind[];
   const SINGLE_KINDS = ['variant', 'remake'] as const;
 
   // Phrase-style labels so a row reads like its reader phrasing: "Copy of
@@ -57,6 +60,7 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     copy: 'Copy of',
     conversion: 'Conversion of',
     conversion_kit: 'Conversion kit for',
+    retheme: 'Re-theme of',
   };
   const KIND_OPTIONS = Object.entries(KIND_LABELS).map(([value, label]) => ({
     value: value as RelationshipKind,
@@ -138,6 +142,14 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
 
   function isEdge(kind: RowKind): kind is EdgeKind {
     return (EDGE_KINDS as readonly string[]).includes(kind);
+  }
+
+  /** Whether an edge of this kind may describe its target as free text (the
+   * "Describe it" label rung) rather than pick a seeded machine. False for
+   * types the backend marks `requiresMachineTarget` (e.g. re-themes, whose
+   * donor is always known) — the editor then offers the machine selector only. */
+  function allowsLabelTarget(kind: RowKind): boolean {
+    return isEdge(kind) && !RELATIONSHIP_TYPE_META_BY_EDGE[kind].requiresMachineTarget;
   }
 
   /** The row's effective target text: the label for a describe-it edge, else the machine slug. */
@@ -283,7 +295,15 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
          chosen, since the kind decides which other fields the row even has. -->
     <div class="rel-row" class:unset={row.kind === ''}>
       <div class="rel-kind">
-        <select aria-label="Relationship kind" bind:value={rows[i].kind}>
+        <select
+          aria-label="Relationship kind"
+          bind:value={rows[i].kind}
+          onchange={() => {
+            // Switching to a machine-target-only kind (e.g. re-theme) drops any
+            // in-progress label target so the row can't submit a forbidden rung.
+            if (!allowsLabelTarget(rows[i].kind)) rows[i].useLabel = false;
+          }}
+        >
           <option value="" disabled>Choose relationship…</option>
           {#each KIND_OPTIONS as opt (opt.value)}
             <option value={opt.value} disabled={kindTaken(opt.value, row.key)}>{opt.label}</option>
@@ -313,7 +333,7 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
               exclude={[slug]}
               placeholder="Search models..."
             />
-            {#if edge}
+            {#if allowsLabelTarget(row.kind)}
               <button
                 type="button"
                 class="toggle-btn"

@@ -63,12 +63,12 @@ A **remake** is a Model that recreates an older game with new technology. Linked
 
 ### Model relationships
 
-Copies, conversions and conversion kits use `ModelRelationship`, a typed edge from one Model to a target. A model can have several edges of the same type, so a copy can draw from several designs and a conversion kit can fit several donor machines.
+Copies, conversions, conversion kits and re-themes use `ModelRelationship`, a typed edge from one Model to a target. A model can have several edges of the same type, so a copy can draw from several designs, a conversion kit can fit several donor machines and a re-theme can name more than one donor.
 
 Each edge carries:
 
-- exactly one target: `target_machine` for a seeded Model, or `target_label` for a plain-text target such as "many late 1970s solid state Gottliebs"
-- a `relationship_type`: `copy`, `conversion` or `conversion_kit`
+- exactly one target: `target_machine` for a seeded Model, or `target_label` for a plain-text target such as "many late 1970s solid state Gottliebs" (some types require a seeded `target_machine` — see [Re-themes](#re-themes))
+- a `relationship_type`: `copy`, `conversion`, `conversion_kit` or `retheme`
 - a `license_status`: `licensed`, `unlicensed` or `unknown`
 
 A model can have many machine-target edges but at most one text-target edge. Text targets are useful when the source names a plural or unidentified target rather than one resolvable Model.
@@ -95,6 +95,19 @@ A **copy** reproduces another machine's design using newly built hardware. Autho
 | Al Capone                  | LTD do Brasil | Speakeasy                   | unlicensed     |
 
 The edge records what was copied; the copy's Title placement is a separate editorial decision. A renamed copy may have its own Title, while a same-name licensed build may share the original's Title. Copies remain ordinary commercially produced Models when that is their production history; license status does not replace `production_status`.
+
+#### Re-themes
+
+A **re-theme** keeps another machine's gameplay and re-skins it with new art and theme. Unlike the other edge types, a re-theme's donor is always a known, seeded machine, so a re-theme edge always carries `target_machine` and never `target_label` (a text-target re-theme is rejected). A single re-theme can name more than one donor — two edges — when its origin is genuinely ambiguous.
+
+For re-themes the `license_status` reads as **official** (`licensed`) versus **unofficial** (`unlicensed`), and renders that way in the UI ("Official re-theme of…" / "Unofficial re-theme of…"). A same-maker re-theme is official; a re-theme by another party is often unofficial, but with no licensing evidence either way it stays `unknown` rather than being assumed.
+
+| Model                  | Manufacturer | Target                           | License status |
+| ---------------------- | ------------ | -------------------------------- | -------------- |
+| Metallica (Retheme)    | —            | Earthshaker (Williams, 1989)     | unlicensed     |
+| Shrek                  | Stern        | Family Guy (Stern, 2007)         | licensed       |
+| Actros Magic Tour 2013 | —            | Volcano (Gottlieb, 1981)         | unknown        |
+| Actros Magic Tour 2013 | —            | Mars God of War (Gottlieb, 1981) | unknown        |
 
 ## Franchises & Series
 
@@ -211,7 +224,7 @@ Whether or not a Model reached commercial production. Values:
 - `produced`: commercially produced and sold, even if only in small quantities
 - `unreleased`: a project intended for commercial production, but cancelled. It may have resulted in prototypes or sample runs.
 - `one-off`: one-of-a-kind or few-of-a-kind, built by a manufacturer but never intended for commercial production — e.g. gifts, movie props and test pieces.
-- `aftermarket`: a machine modified by someone other than the original manufacturer (fan re-themes, operators, modders); not an official commercial release. Usually paired with the `unofficial-retheme` tag.
+- `aftermarket`: a machine modified by someone other than the original manufacturer (fan re-themes, operators, modders); not an official commercial release. A fan re-theme's donor is recorded structurally as a `retheme` [model relationship](#re-themes).
 
 ### Tag
 
@@ -222,8 +235,8 @@ Classification labels that don't fit elsewhere. As related clusters of tags emer
 - `widebody`: a wider-than-standard cabinet and playfield.
 - `remake`: a newly manufactured recreation of an earlier title (not a restored original). See [Remakes](#remakes); the `remake_of` link records the lineage.
 - `export`: manufactured for markets outside the United States.
-- `unofficial-retheme`: a re-skin by a non-manufacturer (fan/operator/modder). Paired with the `aftermarket` production status.
-- `manufacturer-retheme`: an official re-theme a manufacturer applied to one of its own designs.
+
+Re-themes are **not** tags — they are `retheme` [model relationships](#re-themes) that name the donor machine; the official/unofficial distinction lives in the edge's `license_status`.
 
 ### Cabinet
 

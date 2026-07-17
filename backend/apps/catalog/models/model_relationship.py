@@ -26,6 +26,7 @@ from apps.provenance.model_bases import (
 )
 
 __all__ = [
+    "MACHINE_TARGET_REQUIRED_TYPES",
     "RELATIONSHIP_TYPE_BEHAVIOR",
     "SUBORDINATING_RELATIONSHIP_TYPES",
     "LicenseStatus",
@@ -42,12 +43,14 @@ class RelationshipType(models.TextChoices):
 
     ``CONVERSION`` is a complete converted machine ("built from this donor");
     ``CONVERSION_KIT`` is a kit ("compatible with this donor"); ``COPY``
-    reproduces the target's design on new hardware.
+    reproduces the target's design on new hardware; ``RETHEME`` keeps a donor's
+    gameplay and re-skins it with new art and theme.
     """
 
     CONVERSION = "conversion", "Conversion"
     CONVERSION_KIT = "conversion_kit", "Conversion kit"
     COPY = "copy", "Copy"
+    RETHEME = "retheme", "Re-theme"
 
 
 class LicenseStatus(models.TextChoices):
@@ -69,23 +72,55 @@ class RelationshipTypeBehavior(NamedTuple):
     a copy still surfaces it; subordination is a tiebreak against originals, not
     a bar on ever being representative.)"""
 
+    requires_machine_target: bool
+    """Must an edge of this type resolve to a seeded ``target_machine``, never a
+    free-text ``target_label``? True where the donor is always known and seeded,
+    so a label rung would be a data error rather than a lower resolution (a
+    re-theme names its donor in every IPDB note). Derives
+    ``MACHINE_TARGET_REQUIRED_TYPES``, which drives both the DB CHECK below and
+    the planner's row-level rejection."""
+
 
 RELATIONSHIP_TYPE_BEHAVIOR: dict[RelationshipType, RelationshipTypeBehavior] = {
-    RelationshipType.CONVERSION: RelationshipTypeBehavior(subordinates=False),
-    RelationshipType.CONVERSION_KIT: RelationshipTypeBehavior(subordinates=False),
-    RelationshipType.COPY: RelationshipTypeBehavior(subordinates=True),
+    RelationshipType.CONVERSION: RelationshipTypeBehavior(
+        subordinates=False, requires_machine_target=False
+    ),
+    RelationshipType.CONVERSION_KIT: RelationshipTypeBehavior(
+        subordinates=False, requires_machine_target=False
+    ),
+    RelationshipType.COPY: RelationshipTypeBehavior(
+        subordinates=True, requires_machine_target=False
+    ),
+    # A re-theme usually gets its own Title, but not always — Metallica
+    # (Retheme) sits under the Earthshaker Title alongside its donor — and where
+    # it does, the original heads the Title, never the re-skin (the Big Ben
+    # rule). Don't lean on the year tiebreak to get this right: a donor is
+    # necessarily older, but an undated re-theme would sort ahead of it. Its
+    # donor is always known and seeded (IPDB names it in every note), so a
+    # free-text label rung would be a data error: require a machine target.
+    RelationshipType.RETHEME: RelationshipTypeBehavior(
+        subordinates=True, requires_machine_target=True
+    ),
 }
 """Per-type behavior classification — the forcing function for new types.
 
-``first_model_candidates()`` derives ``SUBORDINATING_RELATIONSHIP_TYPES`` from
-this table instead of naming values inline, and an exhaustiveness test fails on
-any ``RelationshipType`` value missing here — so adding a type (e.g. ``retheme``)
-goes red until it explicitly decides, rather than silently defaulting to
-not-subordinate.
+Consumers derive their type sets from this table instead of naming values
+inline (``SUBORDINATING_RELATIONSHIP_TYPES`` for representative-model selection,
+``MACHINE_TARGET_REQUIRED_TYPES`` for the target CHECK and planner). An
+exhaustiveness test fails on any ``RelationshipType`` value missing here, and the
+``RelationshipTypeBehavior`` constructor requires every field, so adding a type
+(e.g. ``retheme``) goes red until it explicitly decides each behavior, rather
+than silently inheriting a default.
 """
 
 SUBORDINATING_RELATIONSHIP_TYPES: tuple[RelationshipType, ...] = tuple(
     t for t, behavior in RELATIONSHIP_TYPE_BEHAVIOR.items() if behavior.subordinates
+)
+
+MACHINE_TARGET_REQUIRED_TYPES: tuple[RelationshipType, ...] = tuple(
+    t
+    for t, behavior in RELATIONSHIP_TYPE_BEHAVIOR.items()
+    if behavior.requires_machine_target
 )
 
 
@@ -192,6 +227,29 @@ class ModelRelationship(ClaimThroughModel):
             models.CheckConstraint(
                 condition=models.Q(relationship_type__in=RelationshipType.values),
                 name="catalog_modelrelationship_type_valid",
+            ),
+            # Derived from RELATIONSHIP_TYPE_BEHAVIOR: a type flagged
+            # requires_machine_target may not use a label rung. Absent from the
+            # DDL entirely until some type sets the flag, so no vacuous
+            # empty-IN constraint ships (and it appears automatically when one
+            # does).
+            *(
+                [
+                    models.CheckConstraint(
+                        condition=~models.Q(
+                            relationship_type__in=MACHINE_TARGET_REQUIRED_TYPES
+                        )
+                        | models.Q(target_machine__isnull=False),
+                        name="catalog_modelrelationship_machine_target_required",
+                        violation_error_message=(
+                            "This relationship type requires a seeded target "
+                            "machine, not a text label."
+                        ),
+                        violation_error_code="cross_field",
+                    )
+                ]
+                if MACHINE_TARGET_REQUIRED_TYPES
+                else []
             ),
             models.CheckConstraint(
                 condition=models.Q(license_status__in=LicenseStatus.values),

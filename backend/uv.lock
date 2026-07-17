@@ -86,7 +86,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=11.0" },
     { name = "pillow-heif", specifier = ">=1.2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
-    { name = "publicsuffixlist", specifier = "==1.0.2.20260703" },
+    { name = "publicsuffixlist", specifier = "==1.0.2.20260710" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sentry-sdk", extras = ["django"], specifier = ">=2.0" },
     { name = "whitenoise", specifier = ">=6.8" },
@@ -775,11 +775,11 @@ wheels = [
 
 [[package]]
 name = "publicsuffixlist"
-version = "1.0.2.20260703"
+version = "1.0.2.20260710"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ca/e0/860c483d1406cc912dcea07a25aba2b82cd757aec736ad610dffb89d7b8f/publicsuffixlist-1.0.2.20260703.tar.gz", hash = "sha256:353678a1a973d3dc3be07a625874493fde726abb5600773c6da59e40f0676774", size = 108876, upload-time = "2026-07-03T06:38:26.774Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/00/7ebd28afd380751bf59215bf91ccf5d6bc558bd434d7c62d8c330c53276c/publicsuffixlist-1.0.2.20260710.tar.gz", hash = "sha256:94227aea83f9d8ac4c7d527f2c86a7d2ac76b639f4f51003d09f7ef1fa0423a4", size = 108939, upload-time = "2026-07-10T06:52:08.897Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7b/b6/3072eaba33d169cd3729541cbb7fdb89e4ca7b5a19ee6641f76ed3102d84/publicsuffixlist-1.0.2.20260703-py2.py3-none-any.whl", hash = "sha256:074d8e88e3c4e8b3775c0875719c9cfaa791586fa3dd46d0e10e3a53d38a66df", size = 108700, upload-time = "2026-07-03T06:38:25.53Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/b9/4a328a8474de378fe254dc91722931bdc9e25a4539841a4d5b33b8b85510/publicsuffixlist-1.0.2.20260710-py2.py3-none-any.whl", hash = "sha256:d3945ed15a74f192dd92dacf017fc54b9307440fe0953b272d88c3c2ebf27669", size = 108764, upload-time = "2026-07-10T06:52:07.68Z" },
 ]
 
 [[package]]

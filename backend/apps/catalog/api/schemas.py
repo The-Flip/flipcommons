@@ -89,7 +89,7 @@ class CreditInputSchema(Schema):
 # Plain assignments (not `type` statements): a PEP 695 alias would become a
 # named OpenAPI component and trip the Schema/Ref suffix discipline — these
 # should inline anonymously into the field schemas.
-RelationshipTypeLiteral = Literal["conversion", "conversion_kit", "copy"]
+RelationshipTypeLiteral = Literal["conversion", "conversion_kit", "copy", "retheme"]
 LicenseStatusLiteral = Literal["licensed", "unlicensed", "unknown"]
 
 # Runtime bridges from the stored CharField values (plain ``str`` to mypy) to
