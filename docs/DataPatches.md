@@ -194,7 +194,7 @@ claims:
 Rules:
 
 - If you supply a count, it must be **positive integer** (`>= 1`); it cannot be `0`, negative or non-int (`ramps: lots`). A bare `ramps:` parses as the empty string `''` and not null, so it's rejected.
-- Only `gameplay_feature` takes a count. Every other relationship (`tag`, `theme`, `location`) rejects the mapping form — `- prototype: 2` errors with "must be a public_id string".
+- Only `gameplay_feature` takes a count. Other simple member relationships (`tag`, `theme`, `location`) reject the counted mapping form — `- prototype: 2` errors with "must be a public_id string". Structured relationships such as credits and model relationships use the mapping forms documented below.
 - The count is **not part of member identity**: re-asserting a member with a new count supersedes the old one.
 
 `remove:` uses the bare slug:
@@ -209,7 +209,7 @@ claims:
 
 ### Credits
 
-A **credit** — "person X did role Y on this model or series" — is the catalog's one **multi-key** relationship: its identity is `{person, role}`, two FK keys. A credit member is written as a **single-key mapping** `<person-public_id>: <role-public_id>` — one line per credit, no braces. In YAML a list item `- brian-eddy: design` parses to the dict `{brian-eddy: design}`, so the **key is the person** public_id and the **value is the role** (a `credit-role`) public_id. The `credit:` value is a flat list of these, so a person can repeat — each list item is one `{person, role}` claim:
+A **credit** — "person X did role Y on this model or series" — has the two-part identity `{person, role}`. A credit member is written as a **single-key mapping** `<person-public_id>: <role-public_id>` — one line per credit, no braces. In YAML a list item `- brian-eddy: design` parses to the dict `{brian-eddy: design}`, so the **key is the person** public_id and the **value is the role** (a `credit-role`) public_id. The `credit:` value is a flat list of these, so a person can repeat — each list item is one `{person, role}` claim:
 
 ```yaml
 attribution: flipcommons-catalog
@@ -266,12 +266,22 @@ A **model relationship** — "this model is a copy / conversion / conversion kit
 attribution: flipcommons-catalog
 claims:
   - model.punky-willy:
-      cite: ipdb:5049
+      cite:
+        ref: ipdb:4101
+        quote: "This game is a copy of Premier's 1985 'Rock' and Premier's 1986 'Rock Encore'."
       model_relationship:
         - target_machine: rock
           relationship_type: copy
-          license_status: unlicensed
-        - target_label: several Gottlieb EM models
+          license_status: unknown
+        - target_machine: rock-encore
+          relationship_type: copy
+          license_status: unknown
+  - model.sky-warrior:
+      cite:
+        ref: ipdb:3905
+        quote: Conversion kit for many solid state Gottlieb games of the late 1970's.
+      model_relationship:
+        - target_label: many late 1970s solid state Gottliebs
           relationship_type: conversion_kit
           license_status: unknown
 ```
@@ -279,7 +289,7 @@ claims:
 Rules:
 
 - **Exactly one target key.** `target_machine` plus `target_label` on one member is rejected, as is a member with neither. Don't restate the machine's maker in a label when `target_machine` is set — the model row already knows it.
-- **`license_status` is deliberately explicit** — there is no silent default in patches. Write `unknown` when no source establishes authorization either way; a bootleg is `relationship_type: copy` + `license_status: unlicensed`, and that `unlicensed` must be sourced (see the laundering discussion in the plan doc).
+- **`license_status` is deliberately explicit** — there is no silent default in patches. Write `unknown` when no source establishes authorization either way; an unlicensed copy is `relationship_type: copy` + `license_status: unlicensed`, and the source must establish both facts.
 - **Identity is the machine target only; a model holds one label slot.** Re-asserting a machine-target member with a different `relationship_type`/`license_status` supersedes the old values in place; two members with the same target in one entry are a duplicate and rejected. The label edge is keyed by its _slot_, not its wording: a model has at most one `target_label` edge, re-asserting one with different wording rewords that edge in place (same edge, citations intact) and a same-actor label assert in a later patch supersedes the earlier one rather than adding a second edge.
 - **Same-patch create** works for `target_machine` like any FK member — create the model above, reference it below.
 
