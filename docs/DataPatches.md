@@ -413,7 +413,7 @@ Re-applying a description with only existing slugs mints nothing and produces by
 
 Two limitations to know:
 
-- **`--dry-run` skips validating an assertion that references any new handle** (the slug isn't minted yet, so conversion can't resolve it). Such an assertion is counted but not diffed; its existing-slug portion isn't dry-validated either. Real validation is the snapshot+apply loop.
+- **`--dry-run` skips validating an assertion that references any new handle** (the slug isn't minted yet, so conversion can't resolve it). Such an assertion is counted but not diffed; its existing-slug portion isn't dry-validated either. Real validation is the snapshot+apply loop ([DataPatchAuthoring.md → Validate via snapshot](DataPatchAuthoring.md#validate-via-snapshot)).
 - **A bad or stale slug fails at apply with a _generic_ message** — `"N claim(s) failed validation"` live, `"Invalid claim: …"` in dry-run. The specific `Cite not found: [[cite:<slug>]]` only reaches the logs, so don't expect a friendly per-marker error.
 
 ### Strict parsing
@@ -489,13 +489,13 @@ uv run python manage.py ingest_patches --patches-dir DIR  # override the default
 
 Patches apply in numeric order. The command **pre-flights the whole batch** (filename format, unique numeric prefixes), then **stops at the first failure** — patches before it stay committed, the failing one and everything after are left unapplied. A missing or empty directory is a no-op. It is idempotent — the ledger skips already-applied patches.
 
-To test-and-revise a patch on localhost before shipping, snapshot the DB first — see [DataPatchAuthoring.md → Validate via snapshot](DataPatchAuthoring.md#validate-via-snapshot).
+To test-and-revise a patch on localhost before shipping, roll back to a snapshot and re-apply — see [DataPatchAuthoring.md → Validate via snapshot](DataPatchAuthoring.md#validate-via-snapshot).
 
 ## The ledger: applied once, immutably
 
 A patch application **is** an ingest run. Each `IngestRun` carries the `patch_id` (filename stem) and an `input_fingerprint` (sha256 of the normalized parsed content — comments, whitespace and key order ignored). The applied set is the `SUCCESS` runs with a `patch_id`, tracked **per database** (what makes "run locally, then on prod" work). On re-run: fingerprint matches → skip (a cosmetic reformat still skips); fingerprint differs → **hard error**, since an applied patch is immutable — a semantic change means you changed history, so add a new numbered patch instead. The invariant is enforced by a partial unique index on `patch_id` where `status='success'`, flipped in the same transaction as the claims.
 
-On localhost, snapshot the DB before applying (see [DataPatchAuthoring.md → Validate via snapshot](DataPatchAuthoring.md#validate-via-snapshot)) so you can roll back and re-apply a revised patch rather than fighting this guard.
+On localhost, don't fight this guard: roll back to a snapshot and re-apply the revised patch (see [DataPatchAuthoring.md → Validate via snapshot](DataPatchAuthoring.md#validate-via-snapshot)).
 
 ## Undoing a patch
 

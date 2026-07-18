@@ -97,7 +97,7 @@ pk.write_patch("../../0010-game-formats.yaml", attribution="flipcommons-catalog"
 
 The attribution, cite and verbatim-note rules are canonical in [DataPatchAuthoring.md → Authoring a good patch](DataPatchAuthoring.md#authoring-a-good-patch). Two consequences specific to generated patches:
 
-- Vocab and its assignment can share one file now — the derive case attributes both to `flipcommons-catalog` (the assignment carries `cite: ipdb:<id>`), and same-patch backward refs let the vocab entries sit above the assignments that reference them. Split vocab into an earlier file only when the two genuinely need different attributions. The historical 0009→0010/0011 `game_format` patches predate same-patch refs and split anyway (`0009-game-format-vocab.yaml` → `0010-game-formats.yaml`; see [DataPatchAuthoring.md → Create new vocabulary in a patch](DataPatchAuthoring.md#create-new-vocabulary-in-a-patch-not-the-seed)).
+- Vocab and its assignment can share one file now — the derive case attributes both to `flipcommons-catalog` (the assignment carries `cite: ipdb:<id>`), and same-patch backward refs let the vocab entries sit above the assignments that reference them. Split vocab into an earlier file only when the two genuinely need different attributions. The historical 0009→0010/0011 `game_format` patches predate same-patch refs and split anyway (`0009-game-format-vocab.yaml` → `0010-game-formats.yaml`; see [DataPatches.md → Create](DataPatches.md#create)).
 - `source_note` / `clean_text` enforce the verbatim-note shape for you — use them rather than hand-formatting `<Source> says "<quote>"`.
 
 ## Validate
