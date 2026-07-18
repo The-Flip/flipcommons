@@ -1,0 +1,110 @@
+#!/usr/bin/env sh
+# Thin runner for plan-doc DuckDB analyses. Wraps the `duckdb` CLI so the
+# discipline in scripts/analysis/README.md happens automatically: every `run`
+# prints the input watermark and the summary, then GATES on the checks view —
+# exiting nonzero if it returns any row.
+#
+# Location-independent: it finds its own flipcommons root and cd's there before
+# invoking DuckDB, so it can be called from anywhere — including a sister repo
+# whose plan `.read`s scripts/analysis/catalog.sql. The plan path you pass is
+# resolved against YOUR current directory; everything the plan reads
+# (scripts/analysis/catalog.sql, backend/db.sqlite3) resolves against flipcommons.
+#
+# It is a convenience, not the only way in: `duckdb -init <plan>.sql :memory:`
+# from the flipcommons root still works for ad-hoc querying.
+#
+#   scripts/analysis/analysis run <plan.sql> <prefix> [--markdown]
+#   scripts/analysis/analysis ui  <plan.sql>
+#   scripts/analysis/analysis snapshot <plan.sql> <view> [<view>...]
+#   scripts/analysis/analysis query <plan.sql> "<sql>" [--format json|csv|table]
+#
+# <prefix> names the summary/checks pair: `export` -> export_summary, export_checks.
+# `query` prints pure data on stdout (diagnostics on stderr) for generators.
+set -eu
+
+# flipcommons root = two dirs up from this script (…/scripts/analysis/analysis).
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+
+need() { command -v duckdb >/dev/null 2>&1 || { echo "duckdb not on PATH" >&2; exit 127; }; }
+
+usage() {
+  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 2
+}
+
+# Resolve a plan path (given relative to the CALLER's cwd) to absolute, validate
+# it, then cd into the flipcommons root so the plan's relative reads resolve.
+resolve_and_cd() {
+  case "$1" in
+    *.sql) : ;;
+    *) echo "expected a .sql plan file, got: $1" >&2; exit 2 ;;
+  esac
+  [ -f "$1" ] || { echo "no such file: $1" >&2; exit 2; }
+  plan=$(CDPATH= cd -- "$(dirname -- "$1")" && pwd)/$(basename -- "$1")
+  cd "$root"
+}
+
+[ $# -ge 1 ] || usage
+need
+cmd=$1; shift
+
+case "$cmd" in
+  run)
+    [ $# -ge 2 ] || usage
+    sql=$1; prefix=$2; shift 2
+    fmt=box
+    [ "${1:-}" = "--markdown" ] && fmt=markdown
+    resolve_and_cd "$sql"
+
+    printf '\n— context —\n'
+    duckdb -init "$plan" -"$fmt" :memory: "FROM analysis_context;"
+    printf '\n— %s_summary —\n' "$prefix"
+    duckdb -init "$plan" -"$fmt" :memory: "FROM ${prefix}_summary;"
+
+    # Gate: any row in <prefix>_checks fails the run.
+    n=$(duckdb -init "$plan" -noheader -list :memory: "SELECT count(*) FROM ${prefix}_checks;" 2>/dev/null)
+    if [ "$n" -ne 0 ]; then
+      printf '\n✗ %s_checks returned %s row(s):\n' "$prefix" "$n" >&2
+      duckdb -init "$plan" :memory: "FROM ${prefix}_checks;" >&2
+      exit 1
+    fi
+    printf '\n✓ %s_checks clean\n' "$prefix"
+    ;;
+
+  ui)
+    [ $# -ge 1 ] || usage
+    resolve_and_cd "$1"
+    duckdb -ui -init "$plan" :memory:
+    ;;
+
+  query)
+    [ $# -ge 2 ] || usage
+    sql=$1; query=$2; shift 2
+    fmt=table
+    if [ "${1:-}" = "--format" ]; then
+      case "${2:-}" in
+        json|csv|table) fmt=$2 ;;
+        *) echo "--format must be json, csv or table" >&2; exit 2 ;;
+      esac
+    fi
+    resolve_and_cd "$sql"
+    # Pure data on stdout; DuckDB's own diagnostics already go to stderr.
+    duckdb -init "$plan" -"$fmt" :memory: "$query"
+    ;;
+
+  snapshot)
+    [ $# -ge 2 ] || usage
+    sql=$1; shift
+    resolve_and_cd "$sql"
+    out="${plan%.sql}.duckdb"
+    rm -f "$out"
+    stmts="ATTACH '$out' AS snap;"
+    for v in "$@"; do
+      stmts="$stmts CREATE TABLE snap.$v AS FROM $v;"
+    done
+    duckdb -init "$plan" :memory: "$stmts"
+    printf 'wrote %s (%s)\n' "$out" "$*"
+    ;;
+
+  *) usage ;;
+esac

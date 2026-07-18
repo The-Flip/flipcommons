@@ -142,11 +142,7 @@ type CheckReason = NonNullable<SignupCheckResponseSchema["reason"]>;
 
 // Wrong — silently drifts from the backend after the next codegen
 type CheckReason =
-  | "too_short"
-  | "too_long"
-  | "bad_charset"
-  | "reserved"
-  | "taken";
+  "too_short" | "too_long" | "bad_charset" | "reserved" | "taken";
 ```
 
 A locally-redeclared Literal stays right until the backend adds a value, at which point it silently narrows the wire shape and the frontend stops handling the new case. The derived form catches it at type-check time.
@@ -287,6 +283,10 @@ END_AGENTS
 
 Catalog data enters the database exclusively through **data patches** — numbered YAML files applied by `make ingest-patches`. There is no seed-ingest of external sources. Run `make pull-patches` to download patches from R2, then `make ingest-patches` to apply the pending ones (idempotent — already-applied patches are skipped). See [docs/DataPatches.md](DataPatches.md) for the patch model and [docs/Data.md](Data.md) for the overall data flow.
 
+## Data Analysis
+
+For empirical questions about the current local catalog — counts, lists, distributions, comparisons and candidate sets — feel free to use this DuckDB setup over the local dev database: [`scripts/analysis/`](scripts/analysis/README.md). However, the Django models remain the source of truth. Inspect models, migrations, provenance and application code for representation, validation, resolution and write behavior. And use pinexplore instead for external or cross-source analysis.
+
 ## Pre-commit Hooks
 
 Pre-commit hooks auto-regenerate `CLAUDE.md` and `AGENTS.md` when `docs/AGENTS.src.md` changes, and block direct edits to those generated files. Hooks also run ruff, ESLint, type checks, and the full test suite. Do not edit `CLAUDE.md` or `AGENTS.md` directly — edit `docs/AGENTS.src.md` instead.
@@ -349,10 +349,10 @@ This project has three sister projects:
 
 **[flippatch](https://github.com/deanmoses/flippatch)**: the numbered `NNNN-slug.yaml` data patches — the sole bulk write path into the catalog (split out of pindata). It publishes them to Cloudflare R2 and this project pulls them via `make pull-patches`, then applies them with `make ingest-patches`. See [DataPatches.md](DataPatches.md).
 
-### Catalog seed records
-
-**[pindata](https://github.com/deanmoses/pindata)**: canonical seed catalog source records (markdown files + JSON schemas). Originally bulk-ingested to bootstrap the database; flipcommons no longer ingests it directly. It remains a source repo for catalog facts and feeds pinexplore.
-
 ### Analytics DB over pinball data
 
 **[pinexplore](https://github.com/deanmoses/pinexplore)**: DuckDB exploration/validation database for exploring the Pindata data as well as other sources of pinball knowledge.
+
+### Catalog seed records
+
+**[pindata](https://github.com/deanmoses/pindata)**: canonical seed catalog source records (markdown files + JSON schemas). Originally bulk-ingested to bootstrap the database; flipcommons no longer ingests it directly. It remains a source repo for catalog facts and feeds pinexplore, but at this point is quite obsolete.
