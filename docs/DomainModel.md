@@ -258,6 +258,7 @@ The type of game:
 - `slot-machine`: a coin-op gambling machine paying out by chance rather than skill.
 - `video-game`: played on a video screen rather than a physical playfield.
 - `gun-game`: a shooting game aiming a mechanical gun or rifle at targets.
+- `bingo-pinball`: a coin-op gambling machine — five balls shot into a grid of holes to line up numbers on a 5×5 card printed on the backglass; classically flipperless, though later export machines added flippers.
 - `miscellaneous`: a catch-all for machines that fit no more specific format.
 
 ### RewardType
