@@ -6,7 +6,7 @@ A **data patch** is a small set of catalog claims authored as YAML and applied t
 
 It's the schema-migration model, but for catalog data. A database starts from a **baseline** loaded via Django's database export/import (`dumpdata`/`loaddata`, or a copied DB snapshot) — a fresh dev DB is populated this way, prod is restored from backup. The baseline is never edited by hand to fix data. On top of it, corrections and ongoing source updates are **append-only, numbered patches replayed in order in every environment** (`0001` → `0002` → …). Patches are never edited once applied; fixes arrive as new patches over time.
 
-A patch is **attributed to a source** — usually `flipcommons-catalog`, Flipcommons' own attribution for values we research, scrape and classify ourselves (see [DataPatchAuthoring.md → Authoring a good patch](DataPatchAuthoring.md#authoring-a-good-patch)) — and does one of three things to _that source's_ claims:
+A patch is **attributed to a source** — usually `flipcommons-catalog`, Flipcommons' own attribution for values we research, scrape and classify ourselves (see [DataPatchAuthoring.md → Authoring a good patch](DataPatchAuthoring.md#authoring-a-good-patch)) — and does one of the following things to _that source's_ claims:
 
 - **assert / supersede** — (re-)assert a claim; the engine deactivates the source's prior claim for that `(entity, claim_key)` and writes the new one. Corrects a wrong value or carries a source's updated one.
 - **create** — make a new entity and its claims.
@@ -16,9 +16,9 @@ A patch is **attributed to a source** — usually `flipcommons-catalog`, Flipcom
 
 ## Patches live in flippatch
 
-Data patches live in the [flippatch](https://github.com/deanmoses/flippatch) repo in the `patches/` directory. They are numbered files `NNNN-slug.yaml`, like `0001-prototype-tags`. (They used to live in pindata alongside the seed catalog; they were split out into flippatch, which is now the patch authoring home and transport.)
+Data patches live in the [flippatch](https://github.com/deanmoses/flippatch) repo in the `patches/` directory. They are numbered files `NNNN-slug.yaml`, like `0001-prototype-tags`.
 
-flippatch's `make push` publishes them to Cloudflare R2 under the `flippatch/` prefix. This repo fetches them with `make pull-patches`, which lands them at `data/ingest_sources/flippatch/patches/` — the directory `ingest_patches` reads by default.
+During localhost development, developers will have both projects checked out in sibling directories and can ingest in-progress patches to try them out using `--patches-dir` to point to the Flippatch patches directory. It'll be something like `../flippatch/patches/` though you might need an absolute path. Generally developers will already have a backup database, so that patches can be corrected and ingest run again.
 
 ## File format
 
@@ -327,10 +327,25 @@ claims:
 
 Rules:
 
-- **At most one target key.** `target_market_location` plus `target_market_label` on one member is rejected. Neither is legal — that's the unknown-market row, whose existence alone records "built for export".
+- **At most one target key.** `target_market_location` plus `target_market_label` on one member is rejected. Neither is legal — that's the unknown-market row, whose existence alone records "built for export". Write the absent slot by **omitting the key**, not by authoring `null`: an explicit `target_market_label: null` is rejected ("omit the key instead").
 - **Locations must be countries.** A non-top-level location (`usa/tx`) is rejected at plan time; a region that isn't a country ("Europe") is a label, not a location.
-- **A null-location row must be the model's only row.** Author either country rows, or a single label row, or a single `{}` row — never a mix.
-- **Identity is the location slot.** Re-asserting the label row with different wording rewords it in place (same row, citations intact), like the relationship label edge. `remove:` names the row by the same identity — a country public_id, or `{}`/any-worded label for the model's single null-location row.
+- **Labels are short plain text.** Non-blank, 120 characters or fewer.
+- **A null-location row must be the model's only row** — but on the patch path this is **author discipline, not a validated rule.** Author either country rows, or a single label row, or a single `{}` row — never a mix. Only the editor's planner enforces it; ingest does not, and the DB constraints permit a country row and a null-location row to coexist, so a patch that mixes them applies silently. The same goes across patches: asserting a country market in one patch and `{}` in a later one produces the illegal mix with no error. (One case ingest _does_ catch, confusingly: `{}` and a label row in the **same entry** fold to the same identity and fail as a "duplicate member".)
+- **Identity is the location slot.** Re-asserting the label row with different wording rewords it in place (same row, citations intact), like the relationship label edge.
+
+`remove:` names the row by that same identity, as an **explicit-key mapping** — a bare string (`- italy`) is rejected. For the null-location row the identity is the empty slot, so `- {}` removes it, as does a `target_market_label` member with any wording (the current wording doesn't have to match):
+
+```yaml
+claims:
+  - model.big-ben-italy:
+      remove:
+        export_market:
+          - target_market_location: italy
+  - model.dragon:
+      remove:
+        export_market:
+          - {}
+```
 
 ### Notes & citations
 
@@ -351,9 +366,10 @@ claims:
 
 `note:` is the entity's ChangeSet note, shown on its Edit History page.
 
-`cite:` is external evidence, attached to each of the entry's authored claims and shown beside the field on the edit-history page. Its ref is one of two forms:
+`cite:` is external evidence, attached to each of the entry's authored claims and shown beside the field on the edit-history page. Its ref is one of the following forms:
 
 - **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`, `youtube:O-2BXTXLXIY`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
+- **`isbn:<isbn>`** (`isbn:9781889933023`) — an **already-seeded authored work**: a book edition, cited by the globally-unique ISBN the record itself carries. `isbn` is not a scheme — a scheme's root mints children from URLs, while a book is its own record — so this form never creates anything: it resolves to the one source holding that ISBN, which is what makes every cite of a work land on the shared record. Hyphens are ignored and an ISBN-10 canonicalizes to its 13-digit form, so both spellings cite the one source; a bad check digit fails the patch. An ISBN nothing is seeded with errors — declare the work in this patch's `sources:` block (processed before claims) or an earlier patch. Cite the **edition**, not the work that groups editions: an ISBN belongs to a specific printing, and an ISBN landing on a record that has editions under it is rejected in favor of the edition's own ISBN.
 - **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's host must fall under a **seeded website root**'s _recognition domain_ — a root's homepage host becomes its recognition domain when the root is declared in a `sources:` block, and a cite on that host **or any subdomain of it** (`static.example.com` under `example.com`) nests here. The cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no recognition domain matches, the patch errors — declare the website root in this patch's `sources:` block (processed before claims) or an earlier patch. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
 
 `cite:` takes either a bare ref string (as above), or a **mapping** that widens the ref with fields of the minted citation:
@@ -373,6 +389,18 @@ cite:
   - ipdb:4443
   - ref: https://en.wikipedia.org/wiki/Medieval_Madness
     quote: "was released in 1997"
+```
+
+A common pairing is a **proximate source plus the original authority**: an IPDB note that attributes a fact to a book cites both — IPDB with the verbatim quote (that text is in hand) and the book with a page locator and no `quote:` (the book text isn't):
+
+```yaml
+cite:
+  - ref: ipdb:3905
+    quote:
+      "According to the Encyclopedia of Pinball Vol 2 page 107, this game is a
+      copy of Tura Automatenfabrik Gmbh's 1933 'Tura-Ball'."
+  - ref: isbn:9781889933023 # the Encyclopedia volume itself
+    locator: Vol. 2, p. 107
 ```
 
 The same source, locator and quote appearing twice in one list is a hard error — judged on the parsed, normalized spec, so `ref: ipdb:4443` duplicates the bare `ipdb:4443` string form. The same ref with a differing locator or quote is a distinct piece of evidence and fine. An empty list is rejected; omit the key instead.
@@ -408,7 +436,7 @@ claims:
       note: "Narrative compiled from IPDB and Pinside."
 ```
 
-`cites:` declares **only new** citations. Each key is a **numeric handle quoted as a string** (`"1":`, never bare `1:` — an unquoted integer key is a hard parse error) and each value is a cite spec in the **same grammar as `cite:`** — `scheme:identifier`, an `http(s)://` URL or a `{ ref, archive, locator, quote }` mapping. `locator` and `quote` land on the minted footnote instance with the same validation as the entry-level `cite:` (video locators canonicalized, the verbatim-quote rule above applies verbatim):
+`cites:` declares **only new** citations. Each key is a **numeric handle quoted as a string** (`"1":`, never bare `1:` — an unquoted integer key is a hard parse error) and each value is a cite spec in the **same grammar as `cite:`** — `scheme:identifier`, `isbn:<isbn>`, an `http(s)://` URL or a `{ ref, archive, locator, quote }` mapping. `locator` and `quote` land on the minted footnote instance with the same validation as the entry-level `cite:` (video locators canonicalized, the verbatim-quote rule above applies verbatim):
 
 ```yaml
 cites:
@@ -493,6 +521,8 @@ claims: []
 ```
 
 A `sources:` node is flat (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, `domains`, `links`). Nested `children` is rejected — a child source under a root is created on demand when you `cite:` a URL on its domain.
+
+That flatness bounds what a patch can cite by `isbn:`. A **standalone** book — one printing, no edition hierarchy — is declarable here with its `isbn:` and citable in the same patch (sources are processed before claims). An **edition under a work** (a volume of a multi-volume set, a revised printing) is a child, so a patch can't declare one; it must already be seeded before a patch cites its ISBN.
 
 The block is **additive get-or-create**: a source is matched by recognition host (homepage ∪ `domains:`), else `isbn`, else `(name, source_type)`. A match is reused — missing links and recognition hosts are backfilled — and an existing row is **never overwritten** (a divergent field warns, doesn't fail). So re-applying is a clean no-op and a patch can't clobber a user-created source or dam later patches. Recognition hosts split across two existing roots skip the node with a warning naming both — resolve the duplicate roots first; visible at `--dry-run`.
 

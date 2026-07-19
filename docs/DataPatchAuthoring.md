@@ -200,7 +200,7 @@ Every Model gets a Title, even a one-off from a maker with one machine. Disambig
 
 ### Re-releases, kits and conversions across makers
 
-When a machine is another maker's game re-released, rebadged, kitted or converted, first classify the relationship per [DomainModel.md](DomainModel.md): remakes share the original's Title; `variant_of` links cosmetic variants; copies, complete conversions and conversion kits use `model_relationship` edges as described below. A source listing electromechanical and solid-state versions of a game, or 1P/2P/4P editions, describes **separate Models**, not `variant_of` variants: reserve `variant_of` for cosmetic or packaging variants of one product. Cite the source line that states the relationship, and when sources disagree, prefer the better-evidenced attribution and document the disagreement in the `note:`.
+When a machine is another maker's game re-released, rebadged, kitted or converted, first classify the relationship per [DomainModel.md](DomainModel.md): remakes share the original's Title; `variant_of` links cosmetic variants; copies, complete conversions and conversion kits use `model_relationship` edges as described below; a build for a foreign market is `export_edition_of` plus its export markets ([below](#export-editions-and-markets)), and is **independent** of the other three — an export edition is often also a `copy`. A source listing electromechanical and solid-state versions of a game, or 1P/2P/4P editions, describes **separate Models**, not `variant_of` variants: reserve `variant_of` for cosmetic or packaging variants of one product. Cite the source line that states the relationship, and when sources disagree, prefer the better-evidenced attribution and document the disagreement in the `note:`.
 
 ## Corporate Entity locations
 
@@ -265,7 +265,29 @@ claims:
 - **Use `target_label` only when the machine isn't seeded or the target is plural** ("several Gottlieb EM models"). Write the label as it should display after "Conversion kit for …" / "Copy of …"; it renders as plain text with no links.
 - **One label target per model.** Fold all unresolved targets into one display string ("Hi-Score or Super Score"). A later assert rewords that edge in place; `remove:` by `target_label` removes the slot regardless of its current wording.
 - **Bootlegs, licensed builds, rethemes and kits are edges.** These common terms map to edge values, not to tags or fields of their own: a bootleg is `(copy, unlicensed)`, a licensed build is `(copy, licensed)` and a kit is `conversion_kit` (own-manufacturer conversions are `licensed`, look for evidence as to whether other-manufacturer conversions are unlicensed, default to unknown).
-- **Distinct from `variant_of`/`remake_of`.** Cosmetic variants and official remakes stay scalar FK fields on the model; the edge table is for copies, conversions and kits only.
+- **Distinct from `variant_of`/`remake_of`/`export_edition_of`.** Cosmetic variants, official remakes and export editions stay scalar FK fields on the model; the edge table is for copies, conversions and kits only.
+
+## Export editions and markets
+
+An export edition is a model built to serve a foreign market — usually differing from its domestic original in `reward_type`, because the destination jurisdiction didn't allow the original's (an add-a-ball or novelty edition of a replay game). Two independent facts record it: `export_edition_of`, the scalar FK to the domestic original, and `export_market:` rows naming where it was sold. See [DataPatches.md → Export editions and markets](DataPatches.md#export-editions-and-markets) for the full syntax. Authoring guidance:
+
+```yaml
+claims:
+  - model.big-ben-italy:
+      cite:
+        ref: ipdb:1234
+        quote: "Export version of Big Ben, made for export to Italy."
+      export_edition_of: big-ben
+      export_market:
+        - target_market_location: italy
+```
+
+- **Export is maker-relative.** A model built for the country its maker is based in is domestic, not an export — a Portuguese maker's Portuguese-market game is not an export edition however the note phrases it. Check the maker's home country before treating a named market as a destination.
+- **The two facts are separate claims, separately sourced.** Most export models have no known original: record the market alone and leave `export_edition_of` null. Do **not** infer the original from a shared Title — a title-mate is a lead to verify against the source, not evidence. Conversely a known original with no stated destination gets the FK and an unknown-market row.
+- **The unknown-market row is a positive claim.** `- {}` asserts "this model was built for export, destination unknown". It needs a cite establishing the export fact, exactly like a country row — it is not a placeholder for "we haven't looked yet". If the source doesn't establish that the model was built for export, author no row at all.
+- **Only a genuine multi-country region is a label.** `target_market_label` is for a destination that isn't a country ("Europe"); a country always goes in `target_market_location` so it joins the location graph. One label per model, and a later assert rewords it in place.
+- **Nothing stops you mixing row kinds — check yourself.** A country row and a `{}`/label row on one model is illegal but applies silently on the patch path, including when the two arrive in different patches. Before adding a market row, check what the model already carries.
+- **`export_edition_of` doesn't replace a copy edge.** An unauthorized build isn't an export — it's a `copy` with `license_status: unlicensed`. When a model is both an authorized export edition and a copy of another maker's design, author both, each from its own evidence.
 
 ## Validation process
 
