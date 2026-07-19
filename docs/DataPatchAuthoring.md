@@ -72,7 +72,9 @@ Three boundaries:
 
 **Cite external evidence with `cite:` on every substantive claim.** Skip the cite only when the evidence _is_ the entity's own data — then state it in the `note:` instead ("Its name contains the word 'prototype'"). The other exemptions are scaffolding entries (below) and aliases/abbreviations (see [Aliases and abbreviations](#aliases-and-abbreviations)).
 
-**Pick the cite ref form by source:** `scheme:identifier` for IPDB/OPDB records, or a raw `http(s)://` URL for any other web page (a forum thread, an archive scan, a manufacturer's page). Reach for the scheme form whenever one exists; the URL form is the escape hatch for sources without a scheme. A URL cite needs its **website root seeded first** — see [Citation sources](#citation-sources).
+**Pick the cite ref form by source:** `scheme:identifier` for IPDB/OPDB records, `isbn:<isbn>` for a book, or a raw `http(s)://` URL for any other web page (a forum thread, an archive scan, a manufacturer's page). Reach for the scheme form whenever one exists; the URL form is the escape hatch for sources without a scheme. A URL cite needs its **website root seeded first** — see [Citation sources](#citation-sources).
+
+**Cite the book behind a source that names one.** When a web or IPDB source attributes a fact to a book ("According to the Encyclopedia of Pinball Vol 2 page 107, …"), cite **both**: the source you read, carrying the verbatim `quote:`, and the book itself as `isbn:<isbn>` with a `locator:` naming the volume and page and **no `quote:`** — you don't have the book's text, and inventing one would break the verbatim rule. The book's ISBN is the edition's own (the volume, not the multi-volume set), and the work must already be seeded — see [DataPatches.md → Notes & citations](DataPatches.md#notes--citations).
 
 **The cite can target a different record than the claim.** When the evidence lives in a _different_ record's note (a cross-reference — "‹other game› is not a pinball"), `cite:` the record that contains the statement.
 

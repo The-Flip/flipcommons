@@ -1545,3 +1545,132 @@ def test_web_scheme_cite_locator_stays_freeform(flipcommons_catalog, ipdb_root, 
     _apply(text)
     instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
     assert instance.locator == "Notes section"
+
+
+# ── cite: isbn — citing a seeded book (or other authored work) ──────
+
+
+@pytest.fixture
+def encyclopedia_vol2(db):
+    """A seeded book edition under its abstract multi-volume work root."""
+    work = make_citation_source(
+        name="The Encyclopedia of Pinball",
+        source_type="book",
+        author="Richard Bueschel",
+    )
+    return make_citation_source(
+        name="The Encyclopedia of Pinball, Vol. 2: Contact to Bumper 1934-1936",
+        source_type="book",
+        author="Richard Bueschel",
+        year=1997,
+        isbn="9781889933023",
+        parent=work,
+    )
+
+
+def test_isbn_cite_attaches_to_the_seeded_edition(
+    flipcommons_catalog, encyclopedia_vol2, pm
+):
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite:\n"
+        "        ref: isbn:9781889933023\n"
+        "        locator: Vol. 2, p. 107\n"
+        "      year: 1998\n"
+    )
+    _apply(text)
+
+    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    assert instance.citation_source_id == encyclopedia_vol2.pk
+    assert instance.locator == "Vol. 2, p. 107"
+    assert instance.quote == ""
+
+
+def test_isbn_cite_reuses_the_one_source(flipcommons_catalog, encyclopedia_vol2, pm):
+    # A citation source is a shared record: citing the same book from two
+    # patches must dedup to it, never mint a second identity.
+    before = CitationSource.objects.count()
+    base = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite: isbn:978-1-889933-02-3\n"
+        "      year: {year}\n"
+    )
+    _apply(base.format(year=1998), patch_id="0001-a")
+    _apply(base.format(year=1999), patch_id="0002-b")
+    assert CitationSource.objects.count() == before
+    instance = pm.claims.get(field_name="year", is_active=True).citation_instances.get()
+    assert instance.citation_source_id == encyclopedia_vol2.pk
+
+
+def test_unseeded_isbn_cite_rejected(flipcommons_catalog, pm):
+    # A cite never mints a work — an unseeded book is a loud patch error
+    # naming the isbn, not a silently-invented source.
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite: isbn:9780764365027\n"
+        "      year: 1998\n"
+    )
+    # Apply-time failures surface as ValidationError here; the ingest command
+    # is what maps them to a PatchError (see the missing-root cite tests).
+    with pytest.raises(ValidationError, match="9780764365027"):
+        _apply(text)
+
+
+def test_isbn_cite_on_a_work_with_children_rejected(flipcommons_catalog, pm):
+    # An isbn that lands on a container (a work root with editions under it)
+    # is the wrong target — cite the edition that holds the evidence.
+    work = make_citation_source(
+        name="The Pinball Compendium", source_type="book", isbn="9780764323003"
+    )
+    make_citation_source(
+        name="The Pinball Compendium, 1st edition", source_type="book", parent=work
+    )
+    text = (
+        "attribution: flipcommons-catalog\n"
+        "claims:\n"
+        "  - model.medieval-madness:\n"
+        "      cite: isbn:9780764323003\n"
+        "      year: 1998\n"
+    )
+    with pytest.raises(ValidationError, match="edition"):
+        _apply(text)
+
+
+def test_scheme_quote_plus_book_locator_cite_list(
+    flipcommons_catalog, ipdb_root, encyclopedia_vol2, pm
+):
+    # The driving case: the proximate source (IPDB) carries the verbatim
+    # quote, the original authority (the book) carries a page locator and no
+    # quote, and both ride the same claim.
+    text = """
+attribution: flipcommons-catalog
+claims:
+  - model.medieval-madness:
+      cite:
+        - ref: ipdb:4443
+          quote: >-
+            According to the Encyclopedia of Pinball Vol 2 page 107, this game
+            is a copy of Tura Automatenfabrik Gmbh's 1933 'Tura-Ball'.
+        - ref: isbn:9781889933023
+          locator: Vol. 2, p. 107
+      year: 1998
+"""
+    _apply(text)
+
+    instances = pm.claims.get(
+        field_name="year", is_active=True
+    ).citation_instances.all()
+    by_source = {i.citation_source_id: i for i in instances}
+    assert len(by_source) == 2
+    book = by_source[encyclopedia_vol2.pk]
+    assert book.locator == "Vol. 2, p. 107"
+    assert book.quote == ""
+    ipdb_child = CitationSource.objects.get(parent=ipdb_root, identifier="4443")
+    assert by_source[ipdb_child.pk].quote.startswith("According to the Encyclopedia")
+    assert by_source[ipdb_child.pk].locator == ""

@@ -38,6 +38,7 @@ from apps.claim_ingest.plan import (
     EntryIndex,
     Handle,
     IngestPlan,
+    IsbnCitationRef,
     PlannedClaimAssert,
     PlannedEntityCreate,
     SchemeCitationRef,
@@ -274,6 +275,8 @@ def _cite_resolution_error(ref: CitationRef, exc: Exception) -> str:
                 descriptor += f" (archive {archive_url!r})"
         case SchemeCitationRef(scheme=scheme, identifier=identifier):
             descriptor = repr(f"{scheme}:{identifier}")
+        case IsbnCitationRef(isbn=isbn):
+            descriptor = repr(f"isbn:{isbn}")
         case _:
             assert_never(ref)
     detail = "; ".join(exc.messages) if isinstance(exc, ValidationError) else str(exc)
@@ -306,6 +309,7 @@ def _resolve_cite_source_id(
     source_id = cache.get(ref)
     if source_id is None:
         from apps.citation.extractors import (
+            get_isbn_source,
             get_or_create_external_source,
             get_or_create_web_source,
         )
@@ -320,6 +324,10 @@ def _resolve_cite_source_id(
                     source_id = get_or_create_external_source(
                         scheme, identifier, created_by=actor
                     ).pk
+                case IsbnCitationRef(isbn=isbn):
+                    # Read-only: an authored work is seeded, never minted by a
+                    # cite, so this arm takes no ``actor``.
+                    source_id = get_isbn_source(isbn).pk
                 case _:
                     assert_never(ref)
         except (ValidationError, ValueError, ObjectDoesNotExist) as exc:
