@@ -6,6 +6,7 @@
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import { ENTITY_META } from '$lib/entities/entity-meta';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
+  import SourceDebugPanel from '$lib/components/debug/SourceDebugPanel.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import ModelRelationshipsList from './_components/ModelRelationshipsList.svelte';
@@ -63,6 +64,8 @@
     onEdit={editAction('overview')}
   />
 {/if}
+
+<SourceDebugPanel extraData={model.extra_data} />
 
 <!-- Technology — mobile only -->
 {#if hasTechnology}

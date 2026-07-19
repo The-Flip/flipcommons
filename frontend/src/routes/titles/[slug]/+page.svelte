@@ -8,6 +8,7 @@
   import ModelLineageGroups from '$lib/components/pages/record/detail/ModelLineageGroups.svelte';
   import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
+  import SourceDebugPanel from '$lib/components/debug/SourceDebugPanel.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import RelatedTitlesSection from './_components/RelatedTitlesSection.svelte';
@@ -104,6 +105,14 @@
       onEdit={editAction('model:overview')}
     />
   {/if}
+
+  <!-- The collapsed model's parked source data. This page is the only way to
+       reach it: /models/{slug} 301s here for a single-model title, so without
+       this the debug panel would be unreachable for exactly the records whose
+       model page never renders. The multi-model branch below has no equivalent
+       — Title carries no extra_data of its own, and each model there keeps a
+       reachable detail page of its own. -->
+  <SourceDebugPanel extraData={md.extra_data} />
 
   {#if md.technology_generation || md.technology_subgeneration || md.display_type || md.display_subtype || md.system}
     <AccordionSection heading="Technology" onEdit={editAction('model:technology')}>
