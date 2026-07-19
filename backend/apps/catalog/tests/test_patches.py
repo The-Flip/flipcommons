@@ -4179,3 +4179,70 @@ claims:
     )
     assert report.rejected == 0
     assert _market_rows(machine_model) == set()
+
+
+def test_export_market_country_plus_unknown_row_rejected(machine_model, italy):
+    # The Exports.md shape rule, per entry: a null-identity row (the unknown
+    # market) must be the model's only row — mixing it with country rows is
+    # an authoring error, not two independent claims.
+    with pytest.raises(PatchError, match="only row"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_location: italy
+        - {{}}
+""")
+
+
+def test_export_market_country_plus_label_row_rejected(machine_model, italy):
+    # A label row is also a null-identity row (its identity is the slot), so
+    # the same per-entry exclusivity applies.
+    with pytest.raises(PatchError, match="only row"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_location: italy
+        - target_market_label: Europe
+""")
+
+
+def test_export_market_deferred_country_plus_unknown_row_rejected(machine_model):
+    # The exclusivity check must see a same-patch-created country (the deferred
+    # slot path), not only committed ones.
+    with pytest.raises(PatchError, match="only row"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - location.israel:
+      create: true
+      name: Israel
+      slug: israel
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_location: israel
+        - {{}}
+""")
+
+
+def test_model_relationship_label_plus_machine_edges_still_allowed(machine_model, rock):
+    # The exclusivity rule is keyed to the *optional* XOR (export_market); a
+    # required-XOR namespace like model_relationship legitimately mixes a label
+    # edge with machine edges (different facts, not one fact at two
+    # resolutions).
+    report = _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      model_relationship:
+        - target_machine: rock
+          relationship_type: copy
+          license_status: unknown
+        - target_label: an unknown Gottlieb game
+          relationship_type: conversion
+          license_status: unknown
+""")
+    assert report.rejected == 0

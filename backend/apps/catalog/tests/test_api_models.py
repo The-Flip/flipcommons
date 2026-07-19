@@ -357,3 +357,81 @@ class TestModelDetailAbbreviations:
         # The model now shows "MM" live — no model re-resolve happened.
         data = client.get(f"/api/pages/model/{pm.slug}").json()
         assert sorted(data["abbreviations"]) == ["MM", "TS4LE"]
+
+
+@pytest.mark.django_db
+class TestDetailExcludesDeletedReverseLinks:
+    """Reverse lineage lists must exclude soft-deleted models.
+
+    Deleting the FK *source* (a variant, remake, export edition, or the owner
+    of a relationship edge) is never delete-blocked — PROTECT and the usage
+    blockers guard only the *target* direction — so without liveness filtering
+    the target's detail page would list the deleted model and link a 404.
+    """
+
+    def _detail(self, client, slug: str) -> dict[str, object]:
+        resp = client.get(f"/api/pages/model/{slug}")
+        assert resp.status_code == 200
+        detail: dict[str, object] = resp.json()
+        return detail
+
+    def test_deleted_variant_excluded(self, client, machine_model):
+        make_machine_model(
+            title=machine_model.title,
+            name="MM Zombie LE",
+            slug="mm-zombie-le",
+            variant_of=machine_model,
+            status="deleted",
+        )
+        detail = self._detail(client, machine_model.slug)
+        assert detail["variants"] == []
+
+    def test_deleted_variant_sibling_excluded(self, client, machine_model):
+        live = make_machine_model(
+            title=machine_model.title,
+            name="MM Live LE",
+            slug="mm-live-le",
+            variant_of=machine_model,
+        )
+        make_machine_model(
+            title=machine_model.title,
+            name="MM Zombie SE",
+            slug="mm-zombie-se",
+            variant_of=machine_model,
+            status="deleted",
+        )
+        detail = self._detail(client, live.slug)
+        assert detail["variant_siblings"] == []
+
+    def test_deleted_remake_excluded(self, client, machine_model):
+        make_machine_model(
+            name="MM Zombie Remake",
+            slug="mm-zombie-remake",
+            remake_of=machine_model,
+            status="deleted",
+        )
+        detail = self._detail(client, machine_model.slug)
+        assert detail["remakes"] == []
+
+    def test_deleted_export_edition_excluded(self, client, machine_model):
+        make_machine_model(
+            name="MM Zombie Export",
+            slug="mm-zombie-export",
+            export_edition_of=machine_model,
+            status="deleted",
+        )
+        detail = self._detail(client, machine_model.slug)
+        assert detail["export_editions"] == []
+
+    def test_deleted_inbound_edge_source_excluded(self, client, machine_model):
+        zombie = make_machine_model(
+            name="Zombie Copy", slug="zombie-copy", status="deleted"
+        )
+        ModelRelationship.objects.create(
+            machine_model=zombie,
+            target_machine=machine_model,
+            relationship_type=RelationshipType.COPY,
+            license_status=LicenseStatus.UNLICENSED,
+        )
+        detail = self._detail(client, machine_model.slug)
+        assert detail["inbound_relationships"] == []

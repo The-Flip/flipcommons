@@ -113,6 +113,22 @@ class TestTitlesAPI:
         names = [m["name"] for m in data["machines"]]
         assert "Medieval Madness (LE)" not in names
 
+    def test_title_detail_excludes_deleted_variants(self, client, title_with_machines):
+        # A soft-deleted variant (its delete is never blocked) must not render
+        # a nested variant card — same reverse-liveness rule as the model page.
+        parent = MachineModel.objects.get(name="Medieval Madness")
+        make_machine_model(
+            name="Medieval Madness (Zombie LE)",
+            slug="medieval-madness-zombie-le",
+            title=title_with_machines,
+            variant_of=parent,
+            status="deleted",
+        )
+        resp = client.get(f"/api/pages/title/{title_with_machines.slug}")
+        data = resp.json()
+        variants = [v for m in data["machines"] for v in m.get("variants", [])]
+        assert variants == []
+
     def test_model_count_excludes_variants(self, client, title_with_machines):
         parent = MachineModel.objects.get(name="Medieval Madness")
         make_machine_model(

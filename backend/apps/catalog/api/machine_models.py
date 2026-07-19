@@ -25,7 +25,7 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.exceptions import StructuredValidationError
 from apps.core.licensing import get_minimum_display_rank
-from apps.core.models import is_deleted
+from apps.core.models import active_status_q, is_deleted
 from apps.core.pagination import NamedPageNumberPagination
 from apps.core.schemas import (
     ErrorDetailSchema,
@@ -629,46 +629,56 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             "export_edition_of__corporate_entity__manufacturer",
         )
         .prefetch_related(
+            # Reverse lineage lists and inbound edges filter to LIVE referrers:
+            # deleting the FK *source* (a variant, remake, export edition, or
+            # an edge's owning model) is never delete-blocked — PROTECT and the
+            # usage blockers guard the target direction only — so an unfiltered
+            # list would link the deleted model's 404. Forward FKs need no
+            # filter: their targets can't be soft-deleted while referenced.
+            #
             # Variants and sibling variants also carry a maker; select the
             # manufacturer join so building their refs stays query-free.
             Prefetch(
                 "variants",
-                queryset=MachineModel.objects.select_related(
+                queryset=MachineModel.objects.active().select_related(
                     "corporate_entity__manufacturer"
                 ),
             ),
             Prefetch(
                 "variant_of__variants",
-                queryset=MachineModel.objects.select_related(
+                queryset=MachineModel.objects.active().select_related(
                     "corporate_entity__manufacturer"
                 ),
             ),
             # Relationship edges render their machine target as a ModelRef
             # with a maker; join it here so the ref build stays query-free.
+            # (Outbound targets are delete-blocked while this model is live,
+            # so no liveness filter is needed on the target side.)
             Prefetch(
                 "relationships",
                 queryset=ModelRelationship.objects.select_related(
                     "target_machine__corporate_entity__manufacturer"
                 ),
             ),
-            # Inbound edges render their source model the same way.
+            # Inbound edges render their source model the same way; the edge
+            # row itself has no lifecycle, so liveness rides its owner.
             Prefetch(
                 "inbound_relationships",
-                queryset=ModelRelationship.objects.select_related(
-                    "machine_model__corporate_entity__manufacturer"
-                ),
+                queryset=ModelRelationship.objects.filter(
+                    active_status_q("machine_model")
+                ).select_related("machine_model__corporate_entity__manufacturer"),
             ),
             # Reverse lineage lists render as ModelRefs with a maker; select the
             # manufacturer join here to keep the ref build query-free.
             Prefetch(
                 "remakes",
-                queryset=MachineModel.objects.select_related(
+                queryset=MachineModel.objects.active().select_related(
                     "corporate_entity__manufacturer"
                 ),
             ),
             Prefetch(
                 "export_editions",
-                queryset=MachineModel.objects.select_related(
+                queryset=MachineModel.objects.active().select_related(
                     "corporate_entity__manufacturer"
                 ),
             ),
@@ -700,7 +710,10 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
                 .select_related(
                     "corporate_entity__manufacturer", "technology_generation"
                 )
-                .prefetch_related("variants")
+                # Live variants only — same reverse-liveness rule as above.
+                .prefetch_related(
+                    Prefetch("variants", queryset=MachineModel.objects.active())
+                )
                 .order_by("year", "name"),
             ),
             Prefetch(

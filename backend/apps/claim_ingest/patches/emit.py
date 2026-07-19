@@ -1051,6 +1051,16 @@ def _emit_relationship(
     is_self_hierarchy = (
         isinstance(rel_spec, _FkMemberSpec) and rel_spec.target_model is model_class
     )
+    # Optional-XOR set rule (export_market's shape): the all-absent bottom rung
+    # means the whole fact at its lowest resolution, so a member with no FK
+    # identity (a label row or `{}`) must be the entry's ONLY member — mixing
+    # it with resolved members asserts one fact at two resolutions. Keyed off
+    # the spec shape (``xor_required=False``), never a namespace name; a
+    # required-XOR namespace (model_relationship) legitimately mixes label and
+    # machine edges, so it is untouched. Per-entry only: a cross-patch mix
+    # needs a `remove:` of the null-identity row, per DataPatches.md.
+    null_identity_seen = False
+    fk_identity_seen = False
     for member in value:
         if is_self_hierarchy and isinstance(member, str):
             hierarchy_edges.append(
@@ -1073,6 +1083,21 @@ def _emit_relationship(
                 parts = _unpack_dict_member(member, rel_spec, namespace, entry)
                 slot_refs = parts.fk_refs
                 concrete_base = parts.values
+                if not rel_spec.xor_required:
+                    if parts.fk_refs:
+                        fk_identity_seen = True
+                    else:
+                        null_identity_seen = True
+                    if null_identity_seen and fk_identity_seen:
+                        fk_keys = ", ".join(
+                            slot.value_key for slot in rel_spec.fk_slots
+                        )
+                        raise PatchError(
+                            f"{entry.ref}: relationship {namespace!r} mixes a "
+                            f"member without {fk_keys} and members that have "
+                            f"one — a no-target member must be the entry's "
+                            f"only row"
+                        )
             resolved = _resolve_member_slots(
                 slot_refs, registry=registry, namespace=namespace, entry=entry
             )

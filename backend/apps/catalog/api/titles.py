@@ -742,7 +742,9 @@ def _title_models_prefetch() -> Prefetch[str, Any, str]:
             "tags",
             "credits__person",
             "credits__role",
-            "variants",
+            # Live variants only: a soft-deleted variant (its delete is never
+            # blocked) must not render a card linking its 404.
+            Prefetch("variants", queryset=MachineModel.objects.active()),
             media_prefetch(),
         ),
     )
