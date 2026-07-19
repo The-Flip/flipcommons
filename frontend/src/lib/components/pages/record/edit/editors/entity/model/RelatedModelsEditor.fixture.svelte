@@ -4,13 +4,15 @@ Test fixture for RelatedModelsEditor: mounts the editor with dirty/save probes
 so the dom test can drive the section-editor contract without the modal shell.
 -->
 <script lang="ts">
-  import type { ModelRelationshipSchema } from '$lib/api/schema';
+  import type { ModelExportMarketSchema, ModelRelationshipSchema } from '$lib/api/schema';
   import RelatedModelsEditor from './RelatedModelsEditor.svelte';
 
   type RelatedModels = {
     variant_of?: { public_id: string; name?: string } | null;
     remake_of?: { public_id: string; name?: string } | null;
+    export_edition_of?: { public_id: string; name?: string } | null;
     relationships?: ModelRelationshipSchema[];
+    export_markets?: ModelExportMarketSchema[];
   };
 
   let {

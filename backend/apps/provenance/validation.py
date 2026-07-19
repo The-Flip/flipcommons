@@ -36,6 +36,7 @@ from apps.core.types import (
 )
 from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
 from apps.provenance.claim_presence import member_is_present
+from apps.provenance.model_bases import TargetFilter
 from apps.provenance.models import (
     ClaimControlledModel,
     IdentityPartValue,
@@ -155,7 +156,9 @@ class RelationshipSchema:
     names: exactly one group must be "present" per positive claim, where an FK
     key is present when non-null and a string key when non-empty. Derived from
     the through-model spec's ``MemberXor`` (field names → value keys) at
-    registration.
+    registration. ``xor_required=False`` relaxes "exactly one" to "at most
+    one" (the ``MemberXor.required`` flag): a positive claim may leave every
+    group absent.
     """
 
     namespace: ClaimFieldName
@@ -163,6 +166,7 @@ class RelationshipSchema:
     payload: tuple[PayloadSpec, ...]
     valid_subjects: frozenset[type[ClaimControlledModel]]
     xor_groups: tuple[tuple[ClaimValueKey, ...], ...] | None = None
+    xor_required: bool = True
 
     @property
     def value_keys(self) -> tuple[MemberSpec | PayloadSpec, ...]:
@@ -200,15 +204,26 @@ class RelationshipTargetKey(NamedTuple):
 
 
 class FkTarget(NamedTuple):
-    """A foreign-key target lookup: ``(model, lookup_field)``.
+    """A foreign-key target lookup: ``(model, lookup_field[, target_filter])``.
 
     Used in two places: ``ValueKeySpec.fk_target`` declares the target of a
     relationship value-key, and ``validate_relationship_claims_batch`` keys
-    its per-group existence query by this same pair.
+    its per-group existence query by this same tuple. ``target_filter``
+    (optional) restricts which target rows are valid — see
+    :class:`~apps.provenance.model_bases.TargetFilter`; consumers apply
+    :meth:`scoped_manager` instead of the bare default manager.
     """
 
     model: type[models.Model]
     lookup_field: ColumnName
+    target_filter: TargetFilter | None = None
+
+    def scoped_queryset(self) -> models.QuerySet[models.Model]:
+        """The target rows this member may legally reference."""
+        qs = self.model._default_manager.all()
+        if self.target_filter is not None:
+            qs = qs.filter(**dict(self.target_filter.lookups))
+        return qs
 
 
 class BatchValidationResult(NamedTuple):
@@ -247,6 +262,7 @@ def register_relationship_schema(
     payload: tuple[PayloadSpec, ...],
     valid_subjects: Iterable[type[ClaimControlledModel]],
     xor_groups: tuple[tuple[ClaimValueKey, ...], ...] | None = None,
+    xor_required: bool = True,
 ) -> None:
     """Register a relationship schema. Idempotent; conflicting re-registration raises.
 
@@ -340,6 +356,7 @@ def register_relationship_schema(
         payload=payload,
         valid_subjects=frozen_subjects,
         xor_groups=xor_groups,
+        xor_required=xor_required,
     )
     existing = _relationship_schemas.get(namespace)
     if existing is not None:
@@ -571,27 +588,32 @@ def validate_single_relationship_claim(
             f"{sorted(unknown)!r}. Allowed: {sorted(known)!r}."
         )
 
-    # 7. Member-exclusivity (xor_groups): exactly one group present. Presence
-    # means non-null for FK keys and non-empty for string keys ("" is the
-    # CharField absence convention). Positive claims only: XOR is an invariant
-    # over authored member data, and a tombstone carries identity keys alone —
-    # once a group's member is non-identity, a retraction legitimately has
-    # zero groups present, so "exactly one" cannot apply. `value.get` (not
-    # `value[...]`) because requiredness is polarity-dependent (rule 4): an
-    # absent key must read as "not present", never KeyError.
+    # 7. Member-exclusivity (xor_groups): exactly one group present — or at
+    # most one when the xor is optional (``xor_required=False``, the
+    # ladder-with-a-bottom-rung shape where all-absent is itself meaningful).
+    # Presence means non-null for FK keys and non-empty for string keys ("" is
+    # the CharField absence convention). Positive claims only: XOR is an
+    # invariant over authored member data, and a tombstone carries identity
+    # keys alone — once a group's member is non-identity, a retraction
+    # legitimately has zero groups present, so "exactly one" cannot apply.
+    # `value.get` (not `value[...]`) because requiredness is
+    # polarity-dependent (rule 4): an absent key must read as "not present",
+    # never KeyError.
     if schema.xor_groups is not None and not is_retraction:
         present = [
             group
             for group in schema.xor_groups
             if any(value.get(name) not in (None, "") for name in group)
         ]
-        if len(present) != 1:
+        bad = len(present) != 1 if schema.xor_required else len(present) > 1
+        if bad:
             groups_desc = " / ".join(
                 "(" + ", ".join(group) + ")" for group in schema.xor_groups
             )
+            quantifier = "exactly" if schema.xor_required else "at most"
             raise ValidationError(
-                f"Value for {field_name!r} must set exactly one of the identity "
-                f"groups {groups_desc}; got {len(present)}."
+                f"Value for {field_name!r} must set {quantifier} one of the "
+                f"identity groups {groups_desc}; got {len(present)}."
             )
 
     # 8. Non-canonical claim_key. `make_claim_key` sorts its kwargs, so the
@@ -981,22 +1003,29 @@ def validate_relationship_claims_batch(
         namespace = key.namespace
 
         refs = {r.ref for r in group}
+        # scoped_queryset applies the member's TargetFilter (when declared),
+        # so a row that exists but falls outside the restriction — e.g. a
+        # non-country Location as an export market — rejects like a missing
+        # target.
         existing = set(
-            target.model._default_manager.filter(
-                **{f"{target.lookup_field}__in": refs}
-            ).values_list(target.lookup_field, flat=True)
+            target.scoped_queryset()
+            .filter(**{f"{target.lookup_field}__in": refs})
+            .values_list(target.lookup_field, flat=True)
         )
 
         for r in group:
             if r.ref not in existing and id(r.claim) not in rejected_ids:
                 logger.warning(
                     "Rejected relationship claim %s (object_id=%s): "
-                    "target %s with %s=%r does not exist",
+                    "target %s with %s=%r does not exist%s",
                     r.claim.claim_key or namespace,
                     r.claim.object_id,
                     target.model.__name__,
                     target.lookup_field,
                     r.ref,
+                    ""
+                    if target.target_filter is None
+                    else f" or is not {target.target_filter.description}",
                 )
                 rejected.append(r.claim)
                 rejected_ids.add(id(r.claim))

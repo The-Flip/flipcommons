@@ -84,6 +84,7 @@ def test_relationships_for_returns_declared_specs() -> None:
         "credit",
         "abbreviation",
         "model_relationship",
+        "export_market",
     }
     assert namespaces(Title) == {"abbreviation"}
     assert namespaces(CorporateEntity) == {"location"}
@@ -180,6 +181,7 @@ def test_all_relationship_bindings_is_the_union_of_relationships_for() -> None:
         "abbreviation",
         "credit",
         "credit",
+        "export_market",
         "gameplay_feature",
         "gameplay_feature_parent",
         "location",

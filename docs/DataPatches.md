@@ -305,6 +305,33 @@ claims:
           - target_label: several Gottlieb EM models
 ```
 
+### Export editions and markets
+
+`export_edition_of` is a plain FK field like `variant_of`/`remake_of` — author it as a scalar key whose value is the domestic original's public_id. The destination markets are authored under `export_market:` as a list of explicit-key mappings, like `model_relationship:` but with an **optional** target — at most one of `target_market_location` (a country's public_id; must be a top-level location) or `target_market_label` (plain text for a multi-country region), and an **empty mapping** (`{}`) for a model known to be built for export with an unknown destination:
+
+```yaml
+attribution: flipcommons-catalog
+claims:
+  - model.big-ben-italy:
+      export_edition_of: big-ben
+      export_market:
+        - target_market_location: italy
+  - model.phantom-haus:
+      export_market:
+        - target_market_label: Europe
+  - model.dragon:
+      export_edition_of: dragoon
+      export_market:
+        - {}
+```
+
+Rules:
+
+- **At most one target key.** `target_market_location` plus `target_market_label` on one member is rejected. Neither is legal — that's the unknown-market row, whose existence alone records "built for export".
+- **Locations must be countries.** A non-top-level location (`usa/tx`) is rejected at plan time; a region that isn't a country ("Europe") is a label, not a location.
+- **A null-location row must be the model's only row.** Author either country rows, or a single label row, or a single `{}` row — never a mix.
+- **Identity is the location slot.** Re-asserting the label row with different wording rewords it in place (same row, citations intact), like the relationship label edge. `remove:` names the row by the same identity — a country public_id, or `{}`/any-worded label for the model's single null-location row.
+
 ### Notes & citations
 
 Write a `note:` about the changeset and `cite:` citations:

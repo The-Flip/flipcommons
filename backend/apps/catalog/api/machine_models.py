@@ -63,8 +63,10 @@ from ..models import (
     DisplaySubtype,
     DisplayType,
     GameFormat,
+    Location,
     MachineModel,
     MachineModelGameplayFeature,
+    ModelExportMarket,
     ModelRelationship,
     ProductionStatus,
     RewardType,
@@ -74,9 +76,11 @@ from ..models import (
     TechnologySubgeneration,
     Theme,
 )
+from ..models.export_market import COUNTRY_TARGET_FILTER
 from .edit_claims import (
     plan_abbreviation_claims,
     plan_credit_claims,
+    plan_export_market_claims,
     plan_gameplay_feature_claims,
     plan_m2m_claims,
     plan_model_relationship_claims,
@@ -170,6 +174,22 @@ class ModelRelationshipSchema(Schema):
     target_label: str = ""
 
 
+class ModelExportMarketSchema(Schema):
+    """One export-market row on a model (see Exports.md).
+
+    ``target_location`` is set when the market is a seeded country (renders as
+    a link to its location page); ``target_label`` is the free-text region
+    descriptor otherwise ("Europe", unlinked). Both empty is the legal
+    unknown-market row — the row itself says "built for export".
+    """
+
+    target_location: EntityRef | None = Field(
+        None,
+        description=("The destination country; public_id is its location_path."),
+    )
+    target_label: str = ""
+
+
 class InboundModelRelationshipSchema(Schema):
     """One typed relationship edge *pointing at* this model — the reverse of
     :class:`ModelRelationshipSchema`, read through the ``inbound_relationships``
@@ -256,6 +276,9 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     variant_siblings: list[ModelVariantSchema] = []
     remake_of: ModelRef | None = None
     remakes: list[ModelRef] = []
+    export_edition_of: ModelRef | None = None
+    export_editions: list[ModelRef] = []
+    export_markets: list[ModelExportMarketSchema] = []
     relationships: list[ModelRelationshipSchema] = []
     inbound_relationships: list[InboundModelRelationshipSchema] = []
     title_models: list[TitleModelSchema] = []
@@ -473,6 +496,22 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         variant_siblings=variant_siblings,
         remake_of=_model_ref(pm.remake_of),
         remakes=_model_refs(pm.remakes.all()),
+        export_edition_of=_model_ref(pm.export_edition_of),
+        export_editions=_model_refs(pm.export_editions.all()),
+        export_markets=[
+            ModelExportMarketSchema(
+                target_location=(
+                    EntityRef(
+                        name=market.target_market_location.name,
+                        public_id=market.target_market_location.public_id,
+                    )
+                    if market.target_market_location
+                    else None
+                ),
+                target_label=market.target_market_label,
+            )
+            for market in pm.export_markets.all()
+        ],
         relationships=[
             ModelRelationshipSchema(
                 relationship_type=RELATIONSHIP_TYPE_TO_LITERAL[edge.relationship_type],
@@ -587,6 +626,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             # N+1 per related row.
             "variant_of__corporate_entity__manufacturer",
             "remake_of__corporate_entity__manufacturer",
+            "export_edition_of__corporate_entity__manufacturer",
         )
         .prefetch_related(
             # Variants and sibling variants also carry a maker; select the
@@ -624,6 +664,20 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
                 "remakes",
                 queryset=MachineModel.objects.select_related(
                     "corporate_entity__manufacturer"
+                ),
+            ),
+            Prefetch(
+                "export_editions",
+                queryset=MachineModel.objects.select_related(
+                    "corporate_entity__manufacturer"
+                ),
+            ),
+            # Export-market rows render their country as a linked ref; join it
+            # here so the ref build stays query-free.
+            Prefetch(
+                "export_markets",
+                queryset=ModelExportMarket.objects.select_related(
+                    "target_market_location"
                 ),
             ),
             "themes",
@@ -861,10 +915,21 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
         credit_roles=_opts(
             CreditRole.objects.active().order_by("display_order", "name")
         ),
+        # Root locations only (COUNTRY_TARGET_FILTER): the export-market
+        # editor's country picker. slug carries the location_path, which
+        # equals the slug for root locations.
+        countries=[
+            EditOptionSchema(slug=loc.location_path, label=loc.name)
+            for loc in Location.objects.active()
+            .filter(**dict(COUNTRY_TARGET_FILTER.lookups))
+            .order_by("name")
+        ],
     )
 
 
-_SELF_REF_FIELDS: frozenset[str] = frozenset({"variant_of", "remake_of"})
+_SELF_REF_FIELDS: frozenset[str] = frozenset(
+    {"variant_of", "remake_of", "export_edition_of"}
+)
 
 
 @models_router.patch(
@@ -898,6 +963,8 @@ def patch_model_claims(
             "credits__role",
             # The relationship planner diffs against current edges.
             "relationships",
+            # The export-market planner diffs against current rows.
+            "export_markets",
         ),
         **{MachineModel.public_id_field: public_id},
     )
@@ -958,6 +1025,8 @@ def patch_model_claims(
         specs.extend(plan_abbreviation_claims(pm, data.abbreviations))
     if data.relationships is not None:
         specs.extend(plan_model_relationship_claims(pm, data.relationships))
+    if data.export_markets is not None:
+        specs.extend(plan_export_market_claims(pm, data.export_markets))
 
     if not specs:
         raise_form_error("No changes provided.")

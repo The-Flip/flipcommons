@@ -29,6 +29,7 @@ CREATE OR REPLACE VIEW foundation_summary AS
   UNION ALL SELECT 'themes',              count(*) FROM themes
   UNION ALL SELECT 'tags',                count(*) FROM tags
   UNION ALL SELECT 'model_gameplay_features', count(*) FROM model_gameplay_features
+  UNION ALL SELECT 'model_export_markets', count(*) FROM model_export_markets
   UNION ALL SELECT 'countries',           count(*) FROM countries
   UNION ALL SELECT 'game_formats',        count(*) FROM game_formats
   UNION ALL SELECT 'title_size',          count(*) FROM title_size
@@ -71,9 +72,14 @@ CREATE OR REPLACE VIEW _anchor_skip AS
   -- Matched by column name (these names are unique to their facet). Sparse dims the app
   -- barely populates today; anchoring them would false-positive the moment the last one
   -- is edited away. Remove an entry here once its dim is broadly populated.
+  -- export_edition_of_id is data-pending: the column shipped ahead of the export
+  -- data patches (Exports.md), so it is legitimately all-NULL until they land —
+  -- remove the entry (and anchor the model_lineage export_edition_of
+  -- subpopulation) once they do.
   SELECT unnest([
     'technology_subgeneration_slug',
-    'display_subtype_slug'
+    'display_subtype_slug',
+    'export_edition_of_id'
   ]) AS col;
 
 -- foundation_checks — invariants. EMPTY = healthy; any row is a violation with a
@@ -144,6 +150,18 @@ CREATE OR REPLACE VIEW foundation_checks AS
          'model_id=' || model_id::VARCHAR || ' target_id=' || target_id::VARCHAR
            || ' type=' || relationship_type
   FROM model_relationships WHERE target_id IS NOT NULL AND target_slug IS NULL
+
+  -- export-market targets are always live countries: the app restricts the FK to
+  -- root Locations (COUNTRY_TARGET_FILTER) and blocks soft-deleting a targeted
+  -- location (export_market_models usage blocker), so a set target_location_id
+  -- that doesn't enrich through `countries` means one of those protections was
+  -- bypassed (or the location was re-parented under another).
+  UNION ALL
+  SELECT 'export_market_target_not_country',
+         'model_id=' || model_id::VARCHAR
+           || ' target_location_id=' || target_location_id::VARCHAR
+  FROM model_export_markets
+  WHERE target_location_id IS NOT NULL AND target_country_slug IS NULL
 
   -- vocabulary: relationship_type and license_status are CLOSED sets, DB-enforced
   -- (catalog_modelrelationship_type_valid / _license_status_valid). These checks pin
@@ -236,12 +254,20 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- ── coverage: close the last hand-lists so a NEW view/array can't slip in unanchored ──
   -- A public foundation view not swept by _anchor_scan (added without being anchored).
   -- analysis_context is excluded on purpose — a watermark whose NULLs are legitimate.
+  -- model_export_markets is excluded as data-pending: the table shipped ahead of
+  -- the export data patches (Exports.md), so the view is legitimately empty and a
+  -- column sweep would dark-anchor every column (and its target_label / model_id
+  -- names collide with populated facets in other views, so _anchor_skip can't
+  -- carry them). Move it into _anchor_scan once the patches land.
   UNION ALL
   SELECT 'unanchored_view', table_name
   FROM information_schema.tables
   WHERE table_schema = 'main' AND table_type = 'VIEW'
     AND table_name NOT LIKE '\_%' ESCAPE '\'
-    AND table_name NOT IN ('foundation_summary', 'foundation_checks', 'analysis_context')
+    AND table_name NOT IN (
+      'foundation_summary', 'foundation_checks', 'analysis_context',
+      'model_export_markets'
+    )
     AND table_name NOT IN (SELECT DISTINCT view_name FROM _anchor_scan)
 
   -- A VARCHAR[] facet in a swept view that isn't accounted for would silently escape

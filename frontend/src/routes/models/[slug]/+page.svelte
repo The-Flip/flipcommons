@@ -27,6 +27,7 @@
       modelLineageSections(model).length > 0 ||
       (model.relationships?.length ?? 0) > 0 ||
       (model.inbound_relationships?.length ?? 0) > 0 ||
+      (model.export_markets?.length ?? 0) > 0 ||
       model.title_models.length > 1,
   );
   let hasTechnology = $derived(

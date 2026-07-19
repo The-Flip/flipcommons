@@ -135,7 +135,14 @@ def build_through_projection(
             target = field.related_model
             # related_model is a class once apps are loaded (never "self" here).
             assert not isinstance(target, str)
-            valid_pks = frozenset(target._default_manager.values_list("pk", flat=True))
+            # The valid-PK set honors the member's TargetFilter (when
+            # declared), so a claim naming a row outside the restriction —
+            # e.g. a non-country Location as an export market — drops like an
+            # unresolved target instead of materializing.
+            target_qs = target._default_manager.all()
+            if member.target_filter is not None:
+                target_qs = target_qs.filter(**dict(member.target_filter.lookups))
+            valid_pks = frozenset(target_qs.values_list("pk", flat=True))
             if (
                 not valid_pks
                 and member.empty_target is EmptyTargetPolicy.SKIP_NAMESPACE

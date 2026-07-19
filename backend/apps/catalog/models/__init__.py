@@ -5,6 +5,7 @@ Field values are derived by resolving claims from the provenance layer.
 """
 
 from .base import AliasModel, CatalogModel
+from .export_market import ModelExportMarket
 from .gameplay_feature import (
     GameplayFeature,
     GameplayFeatureAlias,

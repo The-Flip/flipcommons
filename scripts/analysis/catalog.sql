@@ -78,8 +78,9 @@ CREATE OR REPLACE VIEW _ce_location AS
 --             `status` column. The subgeneration/subtype dims are sparsely populated
 --             today — surfaced anyway so a future campaign keying on them (e.g. the
 --             nixie DisplaySubtype) finds the column already here.
---   variant_of_id / remake_of_id : bare self-FKs to the origin model — the
---             `model_lineage` view expands them (see its "two homes" note).
+--   variant_of_id / remake_of_id / export_edition_of_id : bare self-FKs to the
+--             origin model — the `model_lineage` view expands them (see its
+--             "two homes" note).
 --   source free-text : ipdb_notes, ipdb_notable_features (prose) and opdb_features
 --             (VARCHAR[], empty never NULL; 'Export edition', 'Cocktail', …) are the
 --             fields the product doesn't surface. Mining them is most of plan
@@ -94,7 +95,7 @@ CREATE OR REPLACE VIEW all_models AS
   SELECT
     m.id, m.name, m.slug,
     m.title_id, t.slug AS title_slug, t.name AS title_name,
-    m.variant_of_id, m.remake_of_id,
+    m.variant_of_id, m.remake_of_id, m.export_edition_of_id,
     m.opdb_id, m.ipdb_id, m.year, m.player_count,
     m.corporate_entity_id, ce.slug AS corporate_entity_slug,
     ce.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
@@ -249,9 +250,10 @@ CREATE OR REPLACE VIEW _model_target AS
 -- specific views below, which exist because the edges have two different physical
 -- shapes; drop to them when you want just ONE mechanism:
 --
---   model_lineage        single-valued structured self-FKs: variant_of, remake_of.
---                        At most ONE of each per model; the target is always a
---                        resolved catalog model. Fixed semantics, no payload.
+--   model_lineage        single-valued structured self-FKs: variant_of, remake_of,
+--                        export_edition_of. At most ONE of each per model; the
+--                        target is always a resolved catalog model. Fixed
+--                        semantics, no payload.
 --   model_relationships  the multi-valued typed edge table (ModelRelationship):
 --                        MANY per model, a CLOSED four-value type vocabulary
 --                        (conversion, conversion_kit, copy, retheme — DB-enforced), a
@@ -268,17 +270,18 @@ CREATE OR REPLACE VIEW _model_target AS
 -- and a typed edge to the same target are two rows, deciding they're one is plan-local.
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- model_lineage — variant_of + remake_of as row-grain edges: one row per
--- (model, edge_kind), 0..1 per kind. Target enriched inline via a LEFT JOIN. The app
--- PROTECTS lineage targets the same way it protects typed-relationship targets — it
--- blocks soft-deleting a model that is an ACTIVE variant_of/remake_of target
--- (soft_delete_usage_blockers; test_api_model_delete.test_remake_of_referrer_blocks
--- returns 422) — so with a live source (this view builds on `models`) the target is
--- always live too, and target_* always enriches. The LEFT JOIN is defensive, not an
--- expected de-enrich path: a resolved-but-de-enriched lineage target means that
--- protection was bypassed, and catalog_checks flags it (lineage_target_not_live),
--- exactly like model_relationships.
---   edge_kind : 'variant_of' | 'remake_of'
+-- model_lineage — variant_of + remake_of + export_edition_of as row-grain edges:
+-- one row per (model, edge_kind), 0..1 per kind. Target enriched inline via a LEFT
+-- JOIN. The app PROTECTS lineage targets the same way it protects
+-- typed-relationship targets — it blocks soft-deleting a model that is an ACTIVE
+-- lineage-FK target (soft_delete_usage_blockers;
+-- test_api_model_delete.test_remake_of_referrer_blocks returns 422) — so with a
+-- live source (this view builds on `models`) the target is always live too, and
+-- target_* always enriches. The LEFT JOIN is defensive, not an expected de-enrich
+-- path: a resolved-but-de-enriched lineage target means that protection was
+-- bypassed, and catalog_checks flags it (lineage_target_not_live), exactly like
+-- model_relationships.
+--   edge_kind : 'variant_of' | 'remake_of' | 'export_edition_of'
 --   target_*  : the origin model's identity, year, genre, reward types, player count
 --               and maker (see _model_target; predicate on ids/slugs, display names)
 CREATE OR REPLACE VIEW model_lineage AS
@@ -288,6 +291,9 @@ CREATE OR REPLACE VIEW model_lineage AS
     UNION ALL
     SELECT id AS model_id, remake_of_id AS target_id, 'remake_of' AS edge_kind
       FROM models WHERE remake_of_id IS NOT NULL
+    UNION ALL
+    SELECT id AS model_id, export_edition_of_id AS target_id, 'export_edition_of' AS edge_kind
+      FROM models WHERE export_edition_of_id IS NOT NULL
   )
   SELECT
     e.model_id,
@@ -320,15 +326,38 @@ CREATE OR REPLACE VIEW model_relationships AS
   LEFT JOIN _model_target tgt ON tgt.id = r.target_machine_id   -- resolved target, if live
   WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = r.machine_model_id);  -- live subjects only
 
+-- model_export_markets — the ModelExportMarket rows: one row per export
+-- destination of a live model. NOT part of model_edges (the target is a Location,
+-- not a model — the model↔model half of the export story is the
+-- export_edition_of lineage FK). The target ladder is OPTIONAL: a country
+-- (target_location_id + country columns), a free-text region label
+-- (target_label), or neither — the unknown-market row, whose existence alone
+-- says "built for export". The app restricts location targets to countries
+-- (COUNTRY_TARGET_FILTER), so the `countries` join always enriches; a
+-- resolved-but-de-enriched target is an integrity violation catalog_checks
+-- flags (export_market_target_not_country).
+CREATE OR REPLACE VIEW model_export_markets AS
+  SELECT
+    em.machine_model_id                 AS model_id,
+    em.target_market_location_id        AS target_location_id,
+    c.slug                              AS target_country_slug,
+    c.name                              AS target_country_name,
+    NULLIF(em.target_market_label, '')  AS target_label
+  FROM fc.catalog_modelexportmarket em
+  LEFT JOIN countries c ON c.id = em.target_market_location_id
+  WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = em.machine_model_id);
+
 -- model_edges — the DEFAULT relationships view: every edge out of a model, lineage
 -- and typed, in one row-grain set. A UNION ALL over model_lineage + model_
 -- relationships — no new joins, since both already carry the target_* block — so
 -- one predicate returns all of a model's edges and none is missed. Concatenates,
 -- does NOT reconcile (overlapping FK + typed edges are two rows; that's plan-local).
---   edge_source       : 'lineage_fk' (variant_of/remake_of) | 'relationship' (typed)
---   relationship_type : variant_of | remake_of | conversion | conversion_kit | copy
---                       | retheme — lineage's edge_kind (2) and the typed table's
---                       relationship_type (4, DB-enforced) unified: a CLOSED 6-value set.
+--   edge_source       : 'lineage_fk' (variant_of/remake_of/export_edition_of)
+--                       | 'relationship' (typed)
+--   relationship_type : variant_of | remake_of | export_edition_of | conversion |
+--                       conversion_kit | copy | retheme — lineage's edge_kind (3)
+--                       and the typed table's relationship_type (4, DB-enforced)
+--                       unified: a CLOSED 7-value set.
 --   license_status    : NULL for lineage FKs; licensed|unlicensed|unknown for typed.
 --   target_label      : NULL for lineage (always resolved); set on label-only typed.
 --   target_*          : the shared enrichment block (see _model_target).

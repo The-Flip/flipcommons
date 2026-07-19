@@ -37,6 +37,7 @@ from apps.catalog.resolve._engine import (
     _no_payload,
     _one_column,
     _str_from_column,
+    _str_or_none_from_column,
     reconcile,
 )
 from apps.catalog.resolve._through_projection import build_through_projection
@@ -94,7 +95,7 @@ def pks(db: None) -> Pks:
 
 
 # ---------------------------------------------------------------------------
-# The eleven shapes, each with its expected ctor data + codecs (snapshot).
+# The twelve shapes, each with its expected ctor data + codecs (snapshot).
 # ---------------------------------------------------------------------------
 
 type Codec = Callable[..., Any]
@@ -310,6 +311,35 @@ CASES: list[_Case] = [
             "target_label": "",
             "relationship_type": "copy",
             "license_status": "unknown",
+            "exists": True,
+        },
+    ),
+    # The optional target ladder — like model_relationship, a single nullable
+    # FK identity slot with the non-identity label riding the data column, but
+    # no payload: the single data column takes the scalar (not tuple) codecs.
+    # The FK member declares COUNTRY_TARGET_FILTER, so valid_pks holds only
+    # root locations (the fixture's "usa" qualifies).
+    _Case(
+        "export_market",
+        MachineModel,
+        "export_market",
+        subject_column="machine_model_id",
+        key_columns=("target_market_location_id",),
+        payload_columns=("target_market_label",),
+        columns_to_key=_int_or_none_from_column,
+        key_to_columns=_one_column,
+        columns_to_payload=_str_or_none_from_column,
+        payload_to_columns=_one_column,
+        valid_value=lambda pks: {
+            "target_market_location": pks["location"],
+            "target_market_label": "",
+            "exists": True,
+        },
+        valid_member=lambda pks: pks["location"],
+        valid_payload="",
+        invalid_value=lambda pks: {
+            "target_market_location": 10**9,
+            "target_market_label": "",
             "exists": True,
         },
     ),

@@ -23,6 +23,10 @@ from apps.catalog.models import (
     Theme,
     Title,
 )
+from apps.catalog.models.export_market import (
+    COUNTRY_TARGET_FILTER,
+    TARGET_MARKET_LABEL_MAX_LENGTH,
+)
 from apps.catalog.models.model_relationship import (
     MACHINE_TARGET_REQUIRED_TYPES,
     TARGET_LABEL_MAX_LENGTH,
@@ -42,6 +46,7 @@ from .helpers import displayed_model_abbreviations
 from .schemas import (
     CreditInputSchema,
     GameplayFeatureInputSchema,
+    ModelExportMarketInputSchema,
     ModelRelationshipInputSchema,
 )
 
@@ -663,6 +668,124 @@ def plan_model_relationship_claims(
         )
         specs.append(
             ClaimSpec(field_name="model_relationship", value=value, claim_key=claim_key)
+        )
+    return specs
+
+
+type _ExportMarketTarget = int | None
+"""An export-market row's claim identity: the target country's pk, or ``None``
+for the model's single null-location slot (a region label or the unknown-market
+row). The label wording is non-identity data, like the relationship label."""
+
+
+def plan_export_market_claims(
+    entity: MachineModel,
+    desired: list[ModelExportMarketInputSchema],
+) -> list[ClaimSpec]:
+    """Validate and diff export-market rows on a MachineModel.
+
+    Desired-list semantics, like relationships: the frontend sends every row
+    that should exist after the save. The diff emits an assert for each new
+    row *and* for the null-location row when its label wording changed (same
+    claim key, superseding in place), and a tombstone for each row whose
+    target disappeared from the list.
+
+    Enforces the Exports.md shape rule — a null-location row (a label or the
+    unknown-market row) must be the model's **only** row — and the
+    country-only restriction on location targets, via the spec's
+    ``COUNTRY_TARGET_FILTER``.
+
+    Assumes ``entity`` has ``export_markets`` prefetched. Field errors are
+    keyed ``export_markets.{target}`` so the frontend can display them on the
+    row (``export_markets.(unknown)`` for the targetless row).
+
+    Raises HttpError 422 on invalid input.
+    """
+    errors = ValidationErrors()
+    seen: set[_ExportMarketTarget] = set()
+    rows: list[tuple[_ExportMarketTarget, str]] = []
+    paths = {r.target_location for r in desired if r.target_location}
+    path_to_pk = dict(
+        Location.objects.filter(
+            location_path__in=paths, **dict(COUNTRY_TARGET_FILTER.lookups)
+        ).values_list("location_path", "pk")
+    )
+    for row in desired:
+        label = row.target_label.strip()
+        row_key = row.target_location or label or "(unknown)"
+        if row.target_location and label:
+            errors.add_field(
+                f"export_markets.{row_key}",
+                "Set a target country or a market label — never both.",
+            )
+            continue
+        if len(label) > TARGET_MARKET_LABEL_MAX_LENGTH:
+            errors.add_field(
+                f"export_markets.{row_key}",
+                f"Label must be {TARGET_MARKET_LABEL_MAX_LENGTH} characters or fewer.",
+            )
+            continue
+        location_pk: int | None = None
+        if row.target_location:
+            location_pk = path_to_pk.get(row.target_location)
+            if location_pk is None:
+                errors.add_field(
+                    f"export_markets.{row_key}",
+                    f"Unknown country: {row.target_location}. The market must "
+                    f"be {COUNTRY_TARGET_FILTER.description}.",
+                )
+                continue
+        target: _ExportMarketTarget = location_pk
+        if target in seen:
+            # The identity is the target slot: two null-location rows —
+            # whatever their label wordings — would collide on one claim_key.
+            errors.add_field(
+                f"export_markets.{row_key}",
+                "Only one label or unknown-market row per model."
+                if target is None
+                else "Duplicate export market.",
+            )
+            continue
+        seen.add(target)
+        rows.append((target, label))
+    # The Exports.md shape rule: a null-location row must be the only row.
+    if None in seen and len(seen) > 1:
+        errors.add_field(
+            "export_markets.(unknown)",
+            "A label or unknown-market row cannot be combined with country "
+            "rows — pick countries, or a single label.",
+        )
+    errors.raise_if_errors()
+
+    desired_by_target = dict(rows)
+    current_by_target: dict[_ExportMarketTarget, str] = {
+        market.target_market_location_id: market.target_market_label
+        for market in entity.export_markets.all()
+    }
+
+    specs: list[ClaimSpec] = []
+    for target, label in desired_by_target.items():
+        # Labels are str (never None), so a missing target reads as None here
+        # and can't false-match an authored label.
+        if current_by_target.get(target) == label:
+            continue  # unchanged row — no claim
+        # The label wording is non-identity, so a reworded label emits an
+        # assert under the *same* claim_key and supersedes the row in place.
+        claim_key, value = build_relationship_claim(
+            "export_market",
+            {"target_market_location": target, "target_market_label": label},
+        )
+        specs.append(
+            ClaimSpec(field_name="export_market", value=value, claim_key=claim_key)
+        )
+    for target in current_by_target.keys() - desired_by_target.keys():
+        claim_key, value = build_relationship_claim(
+            "export_market",
+            {"target_market_location": target},
+            exists=False,
+        )
+        specs.append(
+            ClaimSpec(field_name="export_market", value=value, claim_key=claim_key)
         )
     return specs
 

@@ -25,7 +25,13 @@ export type ModelLineageLink = Pick<ModelRef, 'name' | 'public_id' | 'year' | 'm
 
 /** Keys on {@link ModelDetailSchema} whose values are model↔model lineage links. */
 export type ModelLineageKey =
-  'variant_of' | 'variants' | 'variant_siblings' | 'remake_of' | 'remakes';
+  | 'variant_of'
+  | 'variants'
+  | 'variant_siblings'
+  | 'remake_of'
+  | 'remakes'
+  | 'export_edition_of'
+  | 'export_editions';
 
 /** Display + accessor descriptor for one lineage relation. */
 export interface ModelLineageRelation {
@@ -83,6 +89,20 @@ export const MODEL_LINEAGE_RELATIONS: readonly ModelLineageRelation[] = [
     note: 'Later remakes of this machine:',
     many: true,
     resolve: (m) => m.remakes ?? [],
+  },
+  {
+    key: 'export_edition_of',
+    heading: 'Export Edition Of',
+    note: 'This game is the export edition of:',
+    many: false,
+    resolve: (m) => one(m.export_edition_of),
+  },
+  {
+    key: 'export_editions',
+    heading: 'Export Editions',
+    note: 'Editions of this game built for export markets:',
+    many: true,
+    resolve: (m) => m.export_editions ?? [],
   },
 ];
 
@@ -277,4 +297,46 @@ export function modelEdgeSections(model: ModelDetailSchema): ModelEdgeSection[] 
   }
 
   return [...sections.values()];
+}
+
+/**
+ * One rendered line of the export-markets section: a linked country XOR a
+ * plain-text label ("Europe") XOR neither — the unknown-market row, rendered
+ * as fixed copy by the surface. Mirrors the market row's own optional target
+ * ladder.
+ */
+export interface ModelExportMarketView {
+  /** The destination country; `public_id` is its location_path for the `/locations/...` link. */
+  location: EntityRef | null;
+  /** Free-text market descriptor when the market is not a country; rendered unlinked. */
+  label: string;
+}
+
+/** The export-markets display section: heading + note + one line per market row. */
+export interface ModelExportMarketSection {
+  heading: string;
+  note: string;
+  markets: ModelExportMarketView[];
+}
+
+/**
+ * The model's export markets as one display section, or `null` when it has
+ * none. Rendered by the same surfaces as {@link modelLineageSections}, after
+ * the lineage and edge sections — together with the `export_edition_of`
+ * lineage section this carries the Exports.md goal sentence ("the export
+ * version of X, built for export to Y").
+ */
+export function modelExportMarketSection(
+  model: ModelDetailSchema,
+): ModelExportMarketSection | null {
+  const rows = model.export_markets ?? [];
+  if (rows.length === 0) return null;
+  return {
+    heading: 'Export Markets',
+    note: 'This game was built for export to:',
+    markets: rows.map((row) => ({
+      location: row.target_location ?? null,
+      label: row.target_label ?? '',
+    })),
+  };
 }

@@ -21,6 +21,7 @@ from apps.catalog.models import (
     MachineModel,
     MachineModelGameplayFeature,
     Manufacturer,
+    ModelExportMarket,
     ModelRelationship,
     Person,
     Series,
@@ -4004,3 +4005,177 @@ claims:
           relationship_type: copy
           license_status: unknown
 """)
+
+
+# ── export_market: the optional-XOR (at-most-one) dict-form syntax ──
+
+
+def _market_rows(machine_model: MachineModel) -> set[tuple[str | None, str]]:
+    return {
+        (
+            m.target_market_location.location_path
+            if m.target_market_location
+            else None,
+            m.target_market_label,
+        )
+        for m in ModelExportMarket.objects.filter(machine_model=machine_model)
+    }
+
+
+@pytest.fixture
+def italy(db) -> Location:
+    return _country("italy", "Italy")
+
+
+def test_export_market_country_target(machine_model, italy):
+    report = _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_location: italy
+""")
+    assert report.rejected == 0
+    assert _market_rows(machine_model) == {("italy", "")}
+
+
+def test_export_market_multiple_countries(machine_model, italy):
+    _country("france", "France")
+    report = _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_location: italy
+        - target_market_location: france
+""")
+    assert report.rejected == 0
+    assert _market_rows(machine_model) == {("italy", ""), ("france", "")}
+
+
+def test_export_market_region_label(machine_model):
+    report = _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_label: Europe
+""")
+    assert report.rejected == 0
+    assert _market_rows(machine_model) == {(None, "Europe")}
+
+
+def test_export_market_unknown_row(machine_model):
+    # The bottom rung of the optional XOR: an empty mapping is a legal member —
+    # the row itself asserts "built for export", destination unknown.
+    report = _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - {{}}
+""")
+    assert report.rejected == 0
+    assert _market_rows(machine_model) == {(None, "")}
+
+
+def test_export_market_non_country_location_rejected(machine_model):
+    usa = _country("usa", "USA")
+    Location.objects.create(location_path="usa/tx", slug="tx", name="Texas", parent=usa)
+    with pytest.raises(PatchError, match="a country"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_location: usa/tx
+""")
+
+
+def test_export_market_both_targets_rejected(machine_model, italy):
+    with pytest.raises(PatchError, match="at most one"):
+        _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_location: italy
+          target_market_label: Europe
+""")
+
+
+def test_export_market_label_reword_supersedes_across_patches(machine_model):
+    # The null-location slot is a singleton keyed by the slot, not the label
+    # wording — same row pk after a reword, like the relationship label edge.
+    _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_label: Europe
+""")
+    original_pk = ModelExportMarket.objects.get(machine_model=machine_model).pk
+    report = _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_label: Western Europe
+""",
+        patch_id="0002-reword",
+    )
+    assert report.rejected == 0
+    row = ModelExportMarket.objects.get(machine_model=machine_model)
+    assert row.pk == original_pk
+    assert row.target_market_label == "Western Europe"
+
+
+def test_export_market_remove_country_member(machine_model, italy):
+    _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - target_market_location: italy
+""")
+    assert _market_rows(machine_model)
+    report = _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      remove:
+        export_market:
+          - target_market_location: italy
+""",
+        patch_id="0002-remove",
+    )
+    assert report.rejected == 0
+    assert _market_rows(machine_model) == set()
+
+
+def test_export_market_remove_unknown_row(machine_model):
+    # Removal names the edge by identity; the unknown row's identity is the
+    # empty mapping (null location slot).
+    _apply(f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      export_market:
+        - {{}}
+""")
+    assert _market_rows(machine_model) == {(None, "")}
+    report = _apply(
+        f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      remove:
+        export_market:
+          - {{}}
+""",
+        patch_id="0002-remove",
+    )
+    assert report.rejected == 0
+    assert _market_rows(machine_model) == set()

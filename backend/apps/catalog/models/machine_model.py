@@ -92,6 +92,7 @@ class MachineModel(
     credits: models.Manager[Credit]
     title_id: int
     technology_generation_id: int | None
+    export_edition_of_id: int | None
 
     link_sort_order = 20
     # Reach the manufacturer for the autocomplete sublabel in one join (year is
@@ -156,6 +157,20 @@ class MachineModel(
         null=True,
         blank=True,
         help_text="Original model if this is a remake.",
+    )
+    # Singular by design (Exports.md): a model is the export edition of at
+    # most one other model, and licensing doesn't apply (an unauthorized
+    # "export" is a copy) — so this is a scalar lineage FK like variant_of /
+    # remake_of, not a ModelRelationship edge type. When the domestic
+    # original is unknown, this stays null and the export fact lives in
+    # ModelExportMarket rows alone.
+    export_edition_of = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="export_editions",
+        null=True,
+        blank=True,
+        help_text="Domestic original if this model was built for an export market.",
     )
     # Core filterable fields
     corporate_entity = models.ForeignKey(
@@ -398,6 +413,15 @@ class MachineModel(
                 violation_error_message="A machine model cannot be a remake of itself.",
                 violation_error_code="cross_field",
             ),
+            models.CheckConstraint(
+                condition=models.Q(export_edition_of__isnull=True)
+                | ~models.Q(export_edition_of=models.F("pk")),
+                name="catalog_machinemodel_export_edition_of_not_self",
+                violation_error_message=(
+                    "A machine model cannot be an export edition of itself."
+                ),
+                violation_error_code="cross_field",
+            ),
         ]
         indexes = [
             models.Index(fields=["corporate_entity", "year"]),
@@ -419,7 +443,10 @@ class MachineModel(
         Williams original heads the Title, not its Segasa licensed build) —
         today a copy or a re-theme, where the source game outranks the
         derivative sharing its Title; conversions and kits are originals in
-        their own right and don't subordinate.
+        their own right and don't subordinate. ``export_edition_of``
+        subordinates the same way: when an export edition shares a Title with
+        its domestic original, the domestic model heads the Title — the year
+        tiebreak alone can't guarantee that for same-year pairs.
 
         Single source for that identity/order rule. Callers layer their own
         ``select_related`` / ``prefetch_related`` for their read shape, and
@@ -437,7 +464,10 @@ class MachineModel(
             )
         )
         is_copy = models.Case(
-            models.When(copy_edge, then=models.Value(1)),
+            models.When(
+                models.Q(export_edition_of__isnull=False) | models.Q(copy_edge),
+                then=models.Value(1),
+            ),
             default=models.Value(0),
             output_field=models.IntegerField(),
         )

@@ -2,6 +2,16 @@
 
 This is a proposal to add more structure around how the product represents models built for export to another market.
 
+## Status
+
+The schema and product surfaces shipped on `feat/export-editions`:
+
+1. ✅ DONE: **`export_edition_of`** — scalar lineage FK on `MachineModel` (PROTECT, anti-self CHECK, claims-based via the generic scalar-FK path). Subordinates in `first_model_candidates()` (the Big Ben rule — an export edition never outranks its domestic original when they share a Title), joins the cross-title related-titles collector, the model detail schema (`export_edition_of` + reverse `export_editions`), the bulk-export dump, the related-models editor (an "Export edition of" kind) and the lineage display sections.
+2. ✅ DONE: **`ModelExportMarket`** — claim-controlled join table (namespace `export_market`), identity = nullable `target_market_location`, non-identity `target_market_label`. Two spec extensions carry its shape generically: `MemberXor.required=False` (an _optional_ XOR — the all-absent row is the legal unknown-market shape; patch syntax `- {}`) and `MemberField.target_filter` (pure-data target restriction — `COUNTRY_TARGET_FILTER` limits locations to countries across resolution, batch validation, the patch adapter and the editor planner). The "a null-location row must be the model's only row" rule is enforced in the editor planner and documented as a patch convention; the DB carries the per-rung UNIQUEs and the at-most-one CHECK (the cross-row mix rule isn't expressible without triggers). Display: an "Export Markets" section beside the lineage sections; editing: an "Export markets" block in the related-models editor. Locations targeted by a market row are delete-blocked via the `export_market_models` usage blocker.
+3. **`export` tag deletion** — the docs no longer mention it (DomainModel.md); the `Tag` row's `delete:` ships as a flippatch data patch (it has zero memberships, so no membership sweep is needed).
+
+Remaining: the data patches themselves (the review buckets below), authored in flippatch per the [shipping plan](../ModelRelationships.md#rework-but-dont-ship-the-data-patches).
+
 ## Problem statement
 
 Some pinball machine models are built specifically to serve a foreign market. They usually differ in `reward_type`: an add-a-ball or novelty edition of a replay/payout game, built for a jurisdiction that did not allow the original's reward type (Italy, France, Germany, Spain…).
@@ -67,16 +77,4 @@ Delete the `export` tag. It exists as a `Tag` row (slug `export`) but has never 
 
 ## Data
 
-The analysis of models for export lives in [`exports.sql`](exports.sql). It's DuckDB views over the live catalog. How to run it is in that file's header comment.
-
-It decomposes the candidates into review buckets, each a first-guess worklist for a data patch:
-
-`export_edition_of`:
-
-- `export_twin_pairs`: deterministic `export_edition_of` target Model
-- `export_titlemate_review`: the likely `export_edition_of` target Model is sitting the same Title.
-- `export_orphan_review`: candidates still needing a target
-
-`ModelExportMarket`:
-
-- `export_market_review`: which `ModelExportMarket` shape each candidate takes
+The analysis of models for export lives in **flippatch**, at [`patches/authoring/0177-exports/`](../../../../../flippatch/patches/authoring/0177-exports/) — DuckDB views over the live catalog, alongside the data-patch campaign that acts on them. Flippatch wholly owns it: how to run it, what the detectors are, and how the candidates decompose into review buckets are all documented in that directory's README, which is where they stay current. This doc specifies the two catalog structures; it does not duplicate the data work.

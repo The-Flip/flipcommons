@@ -41,6 +41,7 @@ def _make_model(
     *,
     variant_of: MachineModel | None = None,
     remake_of: MachineModel | None = None,
+    export_edition_of: MachineModel | None = None,
 ) -> MachineModel:
     label = slug.replace("-", " ").title()
     m = MachineModel.objects.create(
@@ -50,6 +51,7 @@ def _make_model(
         status="active",
         variant_of=variant_of,
         remake_of=remake_of,
+        export_edition_of=export_edition_of,
     )
     make_claim(m, "name", label, ingest_source=bootstrap_source)
     make_claim(m, "status", "active", ingest_source=bootstrap_source)
@@ -261,6 +263,18 @@ class TestDeleteBlocked:
         assert resp.status_code == 422
         blocked = resp.json()["blocked_by"]
         assert any(b["relation"] == "remake_of" for b in blocked)
+
+    def test_export_edition_of_referrer_blocks(self, client, user, bootstrap_source):
+        t = _make_title(bootstrap_source, "domestic")
+        domestic = _make_model(bootstrap_source, t, "domestic-game")
+        t2 = _make_title(bootstrap_source, "export")
+        _make_model(bootstrap_source, t2, "export-game", export_edition_of=domestic)
+        client.force_login(user)
+
+        resp = _post_delete(client, "domestic-game")
+        assert resp.status_code == 422
+        blocked = resp.json()["blocked_by"]
+        assert any(b["relation"] == "export_edition_of" for b in blocked)
 
     def test_already_deleted_variant_does_not_block(
         self, client, user, bootstrap_source
