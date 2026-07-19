@@ -269,27 +269,19 @@ claims:
 
 How to validate your changes:
 
-1. [`--dry-run`](#dry-run) is the cheap first pass: it parses the patch and runs every structural check without writing.
-2. [Validate via snapshot](#validate-via-snapshot) is the real check: it commits to localhost, so you see the resolved effect in the running app and can validate cross-file dependencies, then roll back.
-3. [Hand off to user](#hand-off-to-user) only after those. Committing and `make push` are the user's call.
-
-### Dry run
-
-`--dry-run` parses the patch and runs every structural check (schema, escaping, citation roots) without writing. This catches most single-file mistakes in seconds. However, what it cannot do is show the resolved result or validate a dependency that spans patch files, because it commits nothing.
-
-**`--dry-run` can't validate a reference to an entity from another patch file.** Dry-run commits nothing, so if a later patch references something an earlier patch file creates — a title before its model, a manufacturer, a parent location, a vocab value — the later patch reports "FK target does not exist" for it. When you are testing multiple patch files together where one depends on a previous, validate with the snapshot+apply above instead of dry-run.
+1. [Validate via snapshot](#validate-via-snapshot) is the real check: it commits to localhost, so you see the resolved effect in the running app and can validate cross-file dependencies.
+2. [Hand off to user](#hand-off-to-user) only after those. Committing and `make push` are the user's call.
 
 ### Validate via snapshot
 
-Because a patch is immutable once applied (see [DataPatches.md → The ledger](DataPatches.md#the-ledger-applied-once-immutably)), you can't tweak it and re-run against a DB that already has it. Instead, iterate behind a DB snapshot: copy the SQLite file before applying and restore it to roll back. Name the snapshot after the patch (`db.pre-NNNN.sqlite3`) so it's clear which state it captures; the `.sqlite3` suffix keeps it under the gitignored `*.sqlite3` rule. Apply your new, uncommitted patches **from an isolated dir** so the already-applied 0001–N stay untouched:
+Because a patch is immutable once applied (see [DataPatches.md → The ledger](DataPatches.md#the-ledger-applied-once-immutably)), you can't tweak it and re-run against a DB that already has it. Instead, iterate behind a DB snapshot. Ask the user for the snapshot to use; do not make a snapshot of your own. Apply your new, uncommitted patches from the patches dir:
 
 ```bash
 cd backend
-mkdir -p /tmp/p && cp ../../flippatch/patches/00NN-*.yaml /tmp/p/
-cp db.sqlite3 db.pre-00NN.sqlite3                      # snapshot (.sqlite3 -> gitignored)
-uv run python manage.py ingest_patches --patches-dir /tmp/p
+cp db.USER-SUPPLIED-SNAPSHOT.sqlite3 db.sqlite3
+uv run python manage.py migrate
+uv run python manage.py ingest_patches --patches-dir ../../flippatch/patches
 # verify in the running app / Django admin ...
-cp db.pre-00NN.sqlite3 db.sqlite3                      # roll back
 ```
 
 #### Verify snapshot

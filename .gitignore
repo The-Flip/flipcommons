@@ -67,3 +67,6 @@ backend/cache/
 
 # Ingest sources (pulled from R2, not committed)
 data/ingest_sources/
+
+# Scratch DuckDB build artifacts for plan-doc analysis (see docs/plans/**/*.sql)
+*.duckdb

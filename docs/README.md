@@ -53,6 +53,7 @@ For setup and common commands, start with the repository [README](../README.md).
 ## Working With Data
 
 - [Data.md](Data.md) index for working with catalog data: where it comes from, how to correct it via YAML patches, where to explore via DuckDB.
+  - [Plan-doc data analysis](../scripts/analysis/README.md) read-only queries over the current local catalog, from ad-hoc questions to reproducible evidence for docs and plans.
   - [DataPatches.md](DataPatches.md) numbered, replayable data patches — the sole bulk write path for catalog data.
     - [DataPatchAuthoring.md](DataPatchAuthoring.md) authoring guidance: hand-authored vs generated, descriptions, vocab sequencing, validation.
       - [DataPatchKit.md](DataPatchKit.md) the `patchkit` generator workflow for large curated patch sets.

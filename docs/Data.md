@@ -28,7 +28,8 @@ make ingest-patches   # apply pending patches (idempotent)
 
 ## I want to…
 
-- **Explore, validate or compare the data** → use [pinexplore](https://github.com/deanmoses/pinexplore) (DuckDB, read-only).
+- **Ask an empirical question about the current local catalog** → the [read-only DuckDB analysis foundation](../scripts/analysis/README.md) can answer it (its README covers both ad-hoc queries and doc-backing analyses).
+- **Compare Flipcommons with external datasets** → use [pinexplore](https://github.com/deanmoses/pinexplore) (DuckDB, read-only).
 - **Understand the catalog model** (titles, models, variants, manufacturers, taxonomy) → [DomainModel.md](DomainModel.md).
 - **Correct or update a catalog value** → author a [data patch](DataPatches.md), attributed to the source the fact came from. Snapshot localhost first so you can iterate.
 - **Bootstrap a fresh local database** → import a database export (Django `loaddata`, or copy a `db.sqlite3` snapshot).
