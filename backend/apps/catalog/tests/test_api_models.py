@@ -15,6 +15,7 @@ from apps.catalog.models import (
 from apps.catalog.resolve import resolve_relationship
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.claims import build_relationship_claim
+from apps.provenance.resolution import resolve_after_mutation
 from apps.provenance.test_factories import make_claim, make_ingest_source
 
 from .conftest import SAMPLE_IMAGES
@@ -137,6 +138,23 @@ class TestModelsAPI:
             "name": "IPDB",
         }
         assert year_claims[0]["is_winner"] is True
+
+    def test_manufacturer_model_identifier_resolves_and_serializes(
+        self, client, machine_model, source
+    ):
+        # A claim on the promoted field resolves into the column (not
+        # extra_data) and ships on the detail payload.
+        make_claim(
+            machine_model,
+            "manufacturer_model_identifier",
+            "500-5013-01",
+            ingest_source=source,
+        )
+        resolve_after_mutation(machine_model)
+
+        data = client.get(f"/api/pages/model/{machine_model.slug}").json()
+        assert data["manufacturer_model_identifier"] == "500-5013-01"
+        assert "manufacturer_model_identifier" not in data["extra_data"]
 
     def test_lineage_refs_carry_manufacturer(self, client, machine_model, stern_entity):
         # A same-named lineage link (a copy keeps the original's name) reads as

@@ -78,17 +78,6 @@ describe('SourceDebugPanel', () => {
     expect(screen.queryByText(/Source Debug/)).toBeNull();
   });
 
-  it('labels ipdb.model_number as the manufacturer id, not an IPDB one', () => {
-    render(SourceDebugPanel, { extraData: { 'ipdb.model_number': '20021' } });
-
-    const heading = screen.getByRole('heading', { level: 3 });
-    expect(heading.textContent).toBe('Manufacturer Model ID');
-    // Must not be mistaken for a key IPDB assigns, nor flagged as unrecognized.
-    expect(heading.textContent).not.toContain('IPDB');
-    expect(heading.textContent).not.toContain('unrecognized');
-    expect(valueText('Manufacturer Model ID')).toBe('20021');
-  });
-
   it('flags an unrecognized key as such, naming it', () => {
     render(SourceDebugPanel, { extraData: { theme: { theme: 429, exists: true } } });
 

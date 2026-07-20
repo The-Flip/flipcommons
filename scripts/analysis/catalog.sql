@@ -53,13 +53,21 @@ CREATE OR REPLACE VIEW _ce_location AS
 --             of reaching for catalog_title; `title_size` carries the same identity
 --             plus the sibling count.
 --   status  : 'active' | 'deleted' | NULL — live is anything but 'deleted'.
+--   manufacturer_model_identifier : the MAKER's own model number (Gottlieb '654',
+--             Stern 'PINBALL I-00M1 * JURAS. PARK PRO'). NOT unique — and not unique
+--             paired with manufacturer_id either, for two different reasons: makers
+--             number independently from 1 (low integers collide across makers), AND the
+--             catalog splits finer than they numbered, so one number spans several
+--             of our models — within a Title (Gottlieb 409 = Cleopatra + Cleopatra
+--             (EM)) or across Titles for a re-theme family (Williams 394 = Zodiac +
+--             Planets). Some collisions are just bad data (Bally 868 = Safari 1969 +
+--             Mysterian 1982). GROUP BY (manufacturer_id, identifier) before
+--             treating it as an identity. NULL on ~2 of 3 live models.
 --   maker   : manufacturer_name is the canonical maker (Manufacturer.name via
---             corporate_entity) — display/group by it. The IPDB manufacturer
---             trade-name freetext is intentionally NOT a column; it stays in raw
---             extra_data, only for auditing the trade-name -> Manufacturer mapping.
+--             corporate_entity) — display/group by it.
 --   location: where the MAKER was based, model -> corporate_entity -> location. This
---             is the maker's ORIGIN, NOT an export-market destination (a separate,
---             freetext-parsed concept). location_path ('usa/il/chicago') is the most-
+--             is the maker's ORIGIN, NOT an export-market destination — those are
+--             `model_export_markets`. location_path ('usa/il/chicago') is the most-
 --             specific known place and doubles as the stable key; country_slug ('usa')
 --             is its root, the field to join/group by (-> countries.slug for the name).
 --             Single-valued via _ce_location — see its note on the 1:1 assumption.
@@ -75,9 +83,7 @@ CREATE OR REPLACE VIEW _ce_location AS
 --             exception is `system`, which keeps `system_name`: a hardware designation
 --             like 'Bally AS-2518-35' the slug ('bally-as2518-35') mangles.
 --             production_status is the ProductionStatus FK, NOT the soft-delete
---             `status` column. The subgeneration/subtype dims are sparsely populated
---             today — surfaced anyway so a future campaign keying on them (e.g. the
---             nixie DisplaySubtype) finds the column already here.
+--             `status` column. The subgeneration/subtype dims are mostly NULL today.
 --   variant_of_id / remake_of_id / export_edition_of_id : bare self-FKs to the
 --             origin model — the `model_lineage` view expands them (see its
 --             "two homes" note).
@@ -85,10 +91,9 @@ CREATE OR REPLACE VIEW _ce_location AS
 --             (VARCHAR[], empty never NULL; 'Export edition', 'Cocktail', …) are the
 --             fields the product doesn't surface. Mining them is most of plan
 --             analysis, so they're first-class columns, not hand-rolled json_extract.
---   NOT surfaced : opdb.keywords is theme data — use `themes`, not raw keywords
---             (same reason makers go through manufacturer_name). The long tail
---             (ipdb.marketing_slogans, opdb.common_name, …) stays in extra_data;
---             promote one the day an analysis needs it.
+--   NOT surfaced : the extra_data long tail (opdb.keywords — use `themes` —
+--             ipdb.marketing_slogans, opdb.common_name, …). Promote one the day an
+--             analysis needs it; that's a single line here.
 --   label   : "Name (Manufacturer Year)", CE name then '?' as fallbacks; year
 --             omitted if unknown.
 CREATE OR REPLACE VIEW all_models AS
@@ -96,7 +101,7 @@ CREATE OR REPLACE VIEW all_models AS
     m.id, m.name, m.slug,
     m.title_id, t.slug AS title_slug, t.name AS title_name,
     m.variant_of_id, m.remake_of_id, m.export_edition_of_id,
-    m.opdb_id, m.ipdb_id, m.year, m.player_count,
+    m.opdb_id, m.ipdb_id, m.manufacturer_model_identifier, m.year, m.player_count,
     m.corporate_entity_id, ce.slug AS corporate_entity_slug,
     ce.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
     cel.location_path, cel.country_slug,
@@ -140,18 +145,15 @@ CREATE OR REPLACE VIEW models AS
   SELECT * FROM all_models WHERE status IS DISTINCT FROM 'deleted';
 
 -- countries — the country vocabulary: live root Locations (a country has no
--- parent). Live-only because it feeds detectors — a soft-deleted country
--- shouldn't match a name suffix or a "for the X market" note. Carries slug too, so
--- models.country_slug (and target_country_slug) joins here for the country name. Add
--- an `all_countries` twin the day an analysis actually needs deleted rows.
+-- parent). Carries slug, so models.country_slug (and target_country_slug) joins here
+-- for the country name. Add an `all_countries` twin the day an analysis needs the
+-- deleted rows.
 CREATE OR REPLACE VIEW countries AS
   SELECT id, slug, name FROM fc.catalog_location
   WHERE parent_id IS NULL AND status IS DISTINCT FROM 'deleted';
 
 -- game_formats — the machine-genre vocabulary (live). Join models.game_format_id to
--- it, or use it to check that a format slug/name you hardcode still exists. Promoted
--- because both the export and bingo analyses independently reached past the
--- foundation to read catalog_gameformat.
+-- it, or use it to check that a format slug/name you hardcode still exists.
 CREATE OR REPLACE VIEW game_formats AS
   SELECT id, slug, name FROM fc.catalog_gameformat
   WHERE status IS DISTINCT FROM 'deleted';
@@ -166,9 +168,7 @@ CREATE OR REPLACE VIEW rewards AS
   GROUP BY rt2.machinemodel_id;
 
 -- themes — sorted theme names per model (only models that have any). Keyed by id,
--- like `rewards`. This is the canonical home for theme data; the raw opdb.keywords
--- tags that seeded it are intentionally not surfaced (see the note above). Live
--- themes only — a soft-deleted theme doesn't count.
+-- like `rewards`, and the canonical home for theme data. Live themes only.
 CREATE OR REPLACE VIEW themes AS
   SELECT mt.machinemodel_id AS id, list_sort(list(t.name)) AS themes
   FROM fc.catalog_machinemodel_themes mt
@@ -180,8 +180,7 @@ CREATE OR REPLACE VIEW themes AS
 -- to. Deliberately lists SLUGS, not names: unlike rewards/themes (display lists),
 -- tags are the classification vocabulary you PREDICATE on (`'widebody' IN tags`), and
 -- the slug is the stable key. Live tags only. NB `conversion_kit` and re-themes are
--- NOT tags — they're ModelRelationship types (see DomainModel); only true Tag rows
--- appear here, so this view is the honest picture of the tag vocabulary.
+-- NOT tags and won't appear here — they're ModelRelationship types.
 CREATE OR REPLACE VIEW tags AS
   SELECT mt.machinemodel_id AS id, list_sort(list(tg.slug)) AS tags
   FROM fc.catalog_machinemodel_tags mt
@@ -198,11 +197,9 @@ CREATE OR REPLACE VIEW tags AS
 -- plan-locally if a query needs them, exactly as themes leaves its DAG unrolled.
 -- Predicate and display on feature_slug (a controlled vocab: 'trap-holes', 'flippers');
 -- the redundant display feature_name is not surfaced. feature_id keys the grain.
---   count : the M2M's optional count (Flippers x2); NULL for a bare membership. NB the
---           scalar catalog_machinemodel.flipper_count is deliberately NOT surfaced —
---           it's populated on a tiny fraction of models while the Flippers feature
---           covers thousands, so the feature is the real "has flippers" signal; the
---           scalar would look authoritative while being near-empty.
+--   count : the M2M's optional count (Flippers x2); NULL for a bare membership. This
+--           is the real "how many flippers" signal — the raw table's scalar
+--           flipper_count is near-empty and deliberately not surfaced.
 CREATE OR REPLACE VIEW model_gameplay_features AS
   SELECT
     mgf.machinemodel_id AS model_id,
@@ -215,10 +212,10 @@ CREATE OR REPLACE VIEW model_gameplay_features AS
   WHERE EXISTS (SELECT 1 FROM models s WHERE s.id = mgf.machinemodel_id);  -- live subjects
 
 -- _model_target — the distinguishing facts surfaced for the OTHER end of a
--- relationship edge (a lineage or relationship target): identity, year, genre
--- (game_format), reward types, player count, maker and where the maker was based
--- (location) — the pieces a reviewer uses to tell two models apart, and genre is the
--- most fundamental ("is my target a bingo?").
+-- relationship edge (a lineage or relationship target): identity (including the maker's
+-- own model number), year, genre (game_format), reward types, player count, maker and
+-- where the maker was based (location) — the pieces a reviewer uses to tell two models
+-- apart, and genre is the most fundamental ("is my target a bingo?").
 -- A pure projection of `models` (live-only) + `rewards`, with columns named
 -- target_* so both edge views pull the whole block via `* EXCLUDE (id)` and never
 -- restate the list. Private: read it through model_lineage / model_relationships.
@@ -228,6 +225,7 @@ CREATE OR REPLACE VIEW _model_target AS
     m.id,
     m.slug                              AS target_slug,
     m.name                              AS target_name,
+    m.manufacturer_model_identifier     AS target_manufacturer_model_identifier,
     m.year                              AS target_year,
     COALESCE(rw.rewards, []::VARCHAR[]) AS target_reward_types,
     m.player_count                      AS target_player_count,
@@ -272,17 +270,12 @@ CREATE OR REPLACE VIEW _model_target AS
 
 -- model_lineage — variant_of + remake_of + export_edition_of as row-grain edges:
 -- one row per (model, edge_kind), 0..1 per kind. Target enriched inline via a LEFT
--- JOIN. The app PROTECTS lineage targets the same way it protects
--- typed-relationship targets — it blocks soft-deleting a model that is an ACTIVE
--- lineage-FK target (soft_delete_usage_blockers;
--- test_api_model_delete.test_remake_of_referrer_blocks returns 422) — so with a
--- live source (this view builds on `models`) the target is always live too, and
--- target_* always enriches. The LEFT JOIN is defensive, not an expected de-enrich
--- path: a resolved-but-de-enriched lineage target means that protection was
--- bypassed, and catalog_checks flags it (lineage_target_not_live), exactly like
--- model_relationships.
+-- JOIN, which is defensive only: the app blocks soft-deleting a live lineage target,
+-- so target_* always enriches here. A de-enriched one means that protection was
+-- bypassed — catalog_checks flags it (lineage_target_not_live).
 --   edge_kind : 'variant_of' | 'remake_of' | 'export_edition_of'
---   target_*  : the origin model's identity, year, genre, reward types, player count
+--   target_*  : the origin model's identity (incl. manufacturer_model_identifier),
+--               year, genre, reward types, player count
 --               and maker (see _model_target; predicate on ids/slugs, display names)
 CREATE OR REPLACE VIEW model_lineage AS
   WITH edges AS (

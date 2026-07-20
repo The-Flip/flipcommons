@@ -110,7 +110,7 @@ These fields are **derived** from resolving claims. The resolution logic picks t
 
 Indexes: `(manufacturer, year)`, `(machine_type, year)`, `(display_type)`.
 
-**`extra_data`** (renamed from `ipdb_data`): Holds resolved values for fields that don't have dedicated columns — model_number, abbreviations, playfield features, toys, marketing slogans, weight, msrp, factory address, etc. Any `field_name` in a Claim that doesn't match a column on PinballModel gets resolved into this JSON.
+**`extra_data`** (renamed from `ipdb_data`): Holds resolved values for fields that don't have dedicated columns — abbreviations, playfield features, toys, marketing slogans, weight, msrp, factory address, etc. Any `field_name` in a Claim that doesn't match a column on PinballModel gets resolved into this JSON.
 
 ### Person
 

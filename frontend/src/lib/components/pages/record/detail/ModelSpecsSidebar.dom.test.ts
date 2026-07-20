@@ -32,3 +32,20 @@ describe('ModelSpecsSidebar production status', () => {
     expect(screen.queryByText('Production status')).toBeNull();
   });
 });
+
+describe('ModelSpecsSidebar manufacturer model id', () => {
+  it('shows the manufacturer model id as plain text', () => {
+    render(ModelSpecsSidebar, {
+      props: { model: makeModelDetail({ manufacturer_model_identifier: '500-5013-01' }) },
+    });
+
+    expect(screen.getByText('Manufacturer Model ID')).toBeInTheDocument();
+    expect(screen.getByText('500-5013-01')).toBeInTheDocument();
+  });
+
+  it('hides the row when absent', () => {
+    render(ModelSpecsSidebar, { props: { model: makeModelDetail({}) } });
+
+    expect(screen.queryByText('Manufacturer Model ID')).toBeNull();
+  });
+});

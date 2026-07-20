@@ -21,10 +21,6 @@
     { key: 'opdb.features', label: 'OPDB features' },
     { key: 'opdb.keywords', label: 'OPDB keywords' },
     { key: 'opdb.description', label: 'OPDB description' },
-    // Despite the `ipdb.` prefix this is not IPDB's own id for the machine —
-    // it is the *manufacturer's* model number, which IPDB happens to record.
-    // Labelled for what it is so nobody reads it as an IPDB identifier.
-    { key: 'ipdb.model_number', label: 'Manufacturer Model ID' },
   ];
 
   /** Parked keys that are real and expected, but not worth showing: media blobs

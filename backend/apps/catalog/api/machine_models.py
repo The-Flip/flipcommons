@@ -254,6 +254,7 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     ipdb_id: int | None = None
     opdb_id: str | None = None
     pinside_id: str | None = None
+    manufacturer_model_identifier: str | None = None
     abbreviations: list[str] = []
     extra_data: JsonBody
     credits: list[CreditSchema]
@@ -484,6 +485,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         ipdb_id=pm.ipdb_id,
         opdb_id=pm.opdb_id,
         pinside_id=pm.pinside_id,
+        manufacturer_model_identifier=pm.manufacturer_model_identifier,
         abbreviations=displayed_model_abbreviations(pm),
         extra_data=pm.extra_data or {},
         credits=credits,

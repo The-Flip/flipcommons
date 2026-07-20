@@ -151,6 +151,10 @@
       <dt>Variant</dt>
       <dd>{model.variant_features.join(', ')}</dd>
     {/if}
+    {#if model.manufacturer_model_identifier}
+      <dt>Manufacturer Model ID</dt>
+      <dd>{model.manufacturer_model_identifier}</dd>
+    {/if}
   {/if}
 </dl>
 

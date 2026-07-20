@@ -134,6 +134,17 @@ class MachineModel(
         validators=[validate_no_mojibake],
         help_text="Pinside.com game id slug for this machine.",
     )
+    # Unlike the external-site IDs above, this is the manufacturer's own
+    # identifier for the model (e.g. a Stern part descriptor). Not unique:
+    # manufacturers assign these independently of each other.
+    manufacturer_model_identifier = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        verbose_name="Manufacturer Model ID",
+        validators=[validate_no_mojibake],
+        help_text="The manufacturer's own identifier for this model.",
+    )
 
     # Hierarchy
     title = models.ForeignKey(
@@ -391,6 +402,7 @@ class MachineModel(
             # Nullable string IDs: NULL or non-empty
             nullable_id_not_empty("opdb_id"),
             nullable_id_not_empty("pinside_id"),
+            nullable_id_not_empty("manufacturer_model_identifier"),
             # Cross-field: month requires year
             models.CheckConstraint(
                 condition=models.Q(month__isnull=True) | models.Q(year__isnull=False),

@@ -183,6 +183,7 @@ class TestExportDriftGuard:
             "ipdb_id",
             "opdb_id",
             "pinside_id",
+            "manufacturer_model_identifier",
             "title",
             "variant_of",
             "remake_of",
