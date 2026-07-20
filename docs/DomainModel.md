@@ -253,8 +253,6 @@ Classification labels that don't fit elsewhere. As related clusters of tags emer
 - `widebody`: a wider-than-standard cabinet and playfield.
 - `remake`: a newly manufactured recreation of an earlier title (not a restored original). See [Remakes](#remakes); the `remake_of` link records the lineage.
 
-Re-themes are **not** tags — they are `retheme` [model relationships](#re-themes) that name the donor machine; the official/unofficial distinction lives in the edge's `license_status`. Export models are likewise not tags — see [Export editions](#export-editions).
-
 ### Cabinet
 
 Form factor of the physical cabinet:
@@ -271,10 +269,12 @@ The type of game:
 - `pinball`: a steel ball launched onto a tilted playfield, scored by hitting targets and — on flipper-era machines — kept alive with player-controlled [flippers](#gameplayfeature).
 - `bagatelle`: balls launched up an inclined surface that fall by gravity into scoring holes and pockets; the direct ancestor of pinball.
 - `shuffle`: a puck or ball slid down a long polished surface toward scoring zones.
+- `rolldown`: balls rolled by hand down a long cabinet into scoring holes or pockets rather than launched by a plunger; distinct from `shuffle`, where a puck is slid toward open scoring zones instead.
 - `pitch-and-bat`: a coin-op baseball game with a mechanical pitch and a player-swung bat.
 - `slot-machine`: a coin-op gambling machine paying out by chance rather than skill.
 - `video-game`: played on a video screen rather than a physical playfield.
 - `gun-game`: a shooting game aiming a mechanical gun or rifle at targets.
+- `one-ball`: a coin-op gambling machine — one ball per coin, paying out in cash or tickets when it lands in a winning hole; often horse-race themed, and the payout format that preceded `bingo-pinball`.
 - `bingo-pinball`: a coin-op gambling machine — five balls shot into a grid of holes to line up numbers on a 5×5 card printed on the backglass; classically flipperless, though later export machines added flippers.
 - `miscellaneous`: a catch-all for machines that fit no more specific format.
 
