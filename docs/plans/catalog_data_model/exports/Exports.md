@@ -77,4 +77,4 @@ Delete the `export` tag. It exists as a `Tag` row (slug `export`) but has never 
 
 ## Data
 
-The analysis of models for export lives in **flippatch**, at [`patches/authoring/0177-exports/`](../../../../../flippatch/patches/authoring/0177-exports/) — DuckDB views over the live catalog, alongside the data-patch campaign that acts on them. Flippatch wholly owns it: how to run it, what the detectors are, and how the candidates decompose into review buckets are all documented in that directory's README, which is where they stay current. This doc specifies the two catalog structures; it does not duplicate the data work.
+The analysis of models for export lives in **flippatch**, at [`campaigns/0177-exports/`](../../../../../flippatch/campaigns/0177-exports/) — DuckDB views over the live catalog, alongside the data-patch campaign that acts on them. Flippatch wholly owns it: how to run it, what the detectors are, and how the candidates decompose into review buckets are all documented in that directory's README, which is where they stay current. This doc specifies the two catalog structures; it does not duplicate the data work.

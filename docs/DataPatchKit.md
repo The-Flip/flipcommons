@@ -6,7 +6,7 @@ It exists because the scaffolding around a generated patch — YAML escaping, th
 
 ## The shape: an analysis file and an emitter
 
-A campaign is **two files** in flippatch's `patches/authoring/<patch>/`, and the split is the design:
+A campaign is **two files** in flippatch's `campaigns/<patch>/`, and the split is the design:
 
 ```text
 flippatch/patches/
@@ -24,7 +24,7 @@ flippatch/patches/
 Iterate on it with the runner, from the flippatch checkout:
 
 ```bash
-F=patches/authoring/0181-bingo-years/years.sql
+F=campaigns/0181-bingo-years/years.sql
 make analyze FILE=$F PREFIX=year               # watermark + summary, gated on checks
 make analyze FILE=$F Q="FROM year_patch_rows;" # exactly what gen.py will emit
 make analyze FILE=$F Q="FROM year_rejected;"   # what the gate held back, and why
@@ -52,7 +52,7 @@ The worked examples to copy are **`0177-exports`**, **`0178-gameplay-features`**
 
 ## `patchkit` API
 
-`gen.py` puts the authoring dir on `sys.path` (`sys.path.insert(0, <authoring>)`) and imports `patchkit as pk`.
+`gen.py` puts the campaign dir on `sys.path` (`sys.path.insert(0, <authoring>)`) and imports `patchkit as pk`.
 
 | function                                                                                                                                                                          | purpose                                                                            |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |

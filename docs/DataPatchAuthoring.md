@@ -188,7 +188,7 @@ Assert the best value and record the uncertainty in the `note:` — the model ha
 
 ### Uncertain existence
 
-A value can be hedged; a record cannot. When the source itself is unsure a machine _exists as a distinct product_ — tilt.it's CEFF page says outright it is unclear whether "Joker Ball" names a second model or a gameplay feature of Five Martians — do **not** create the record. Keep the ambiguity in the created sibling's note or description (cited), record the decision in the authoring dir's README, and revisit if evidence surfaces. The same applies to version variants: two cosmetic/scoring versions reported in passing stay one Model with the variance noted, unless a source distinguishes them as separate products (then see variants below).
+A value can be hedged; a record cannot. When the source itself is unsure a machine _exists as a distinct product_ — tilt.it's CEFF page says outright it is unclear whether "Joker Ball" names a second model or a gameplay feature of Five Martians — do **not** create the record. Keep the ambiguity in the created sibling's note or description (cited), record the decision in the campaign dir's README, and revisit if evidence surfaces. The same applies to version variants: two cosmetic/scoring versions reported in passing stay one Model with the variance noted, unless a source distinguishes them as separate products (then see variants below).
 
 ### Single-source facts
 
