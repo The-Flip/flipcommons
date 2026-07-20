@@ -1,20 +1,20 @@
-<!-- @component Renders a model's model↔model lineage relations, its relationship-edge sections (copy / conversion / kit, outbound then inbound), then its export-markets section, as `SidebarSection`s — the desktop sidebar presentation. -->
+<!-- @component Renders a model's model↔model lineage relations, its relationship-edge sections (copy / conversion / kit, outbound then inbound), then its export-edition sentence, as `SidebarSection`s — the desktop sidebar presentation. -->
 <script lang="ts">
-  import ExportMarketLine from './ExportMarketLine.svelte';
+  import ExportEditionSentence from './ExportEditionSentence.svelte';
   import RelatedModelLink from './RelatedModelLink.svelte';
   import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
   import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';
   import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
   import {
     modelEdgeSections,
-    modelExportMarketSection,
+    modelExportEditionSection,
     modelLineageSections,
   } from '$lib/entities/model-lineage';
   import type { ModelDetailSchema } from '$lib/api/schema';
 
   let { model }: { model: ModelDetailSchema } = $props();
 
-  let exportMarkets = $derived(modelExportMarketSection(model));
+  let exportEdition = $derived(modelExportEditionSection(model));
 </script>
 
 {#each modelLineageSections(model) as { relation, links } (relation.key)}
@@ -45,14 +45,8 @@
   </SidebarSection>
 {/each}
 
-{#if exportMarkets}
-  <SidebarSection heading={exportMarkets.heading} note={exportMarkets.note}>
-    <SidebarList>
-      {#each exportMarkets.markets as market (market.location?.public_id ?? market.label)}
-        <SidebarListItem>
-          <ExportMarketLine {market} />
-        </SidebarListItem>
-      {/each}
-    </SidebarList>
+{#if exportEdition}
+  <SidebarSection heading={exportEdition.heading}>
+    <ExportEditionSentence section={exportEdition} />
   </SidebarSection>
 {/if}

@@ -7,18 +7,19 @@
   let { link }: { link: ModelLineageLinkView } = $props();
 </script>
 
-<span class="related-model">
-  <a href={resolve('/models/[slug]', { slug: link.public_id })}>{link.name}</a>
-  {#if link.manufacturer || link.year}
-    <span class="muted"
+<!-- Whitespace is hugged throughout: the component renders inline inside running
+     prose (the export-edition sentence), where a stray leading or trailing space
+     would show up as a gap before the comma. -->
+<span class="related-model"
+  ><a href={resolve('/models/[slug]', { slug: link.public_id })}>{link.name}</a
+  >{#if link.manufacturer || link.year}&nbsp;<span class="muted"
       >({#if link.manufacturer?.kind === 'known'}<a
           class="maker"
           href={resolve('/manufacturers/[slug]', { slug: link.manufacturer.ref.public_id })}
           >{link.manufacturer.ref.name}</a
         >{:else if link.manufacturer?.kind === 'unknown'}{UNKNOWN_MANUFACTURER_LABEL}{/if}{#if link.manufacturer && link.year}&nbsp;·&nbsp;{/if}{#if link.year}{link.year}{/if})</span
-    >
-  {/if}
-</span>
+    >{/if}</span
+>
 
 <style>
   .muted {

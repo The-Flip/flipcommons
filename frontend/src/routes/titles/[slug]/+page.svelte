@@ -16,7 +16,7 @@
   import { titleAreaEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
-  import { modelLineageSections } from '$lib/entities/model-lineage';
+  import { hasModelRelationshipContent } from '$lib/entities/model-lineage';
   import { title as titleInfo } from '$lib/entities/title';
 
   let { data } = $props();
@@ -127,7 +127,7 @@
   <!-- Lineage renders in the sidebar for single-model titles (see +layout.svelte),
        co-located with the specs/tag. The sidebar is desktop-only on the detail
        route, so mobile gets the same links here in a Related Models accordion. -->
-  {#if modelLineageSections(md).length > 0 || (md.relationships?.length ?? 0) > 0 || (md.inbound_relationships?.length ?? 0) > 0 || (md.export_markets?.length ?? 0) > 0}
+  {#if hasModelRelationshipContent(md)}
     <div class="mobile-only">
       <AccordionSection heading="Related Models">
         <ModelLineageGroups model={md} />
