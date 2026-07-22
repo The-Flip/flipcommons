@@ -26,6 +26,33 @@ repos:
       - id: mixed-line-ending
         args: ['--fix=lf']
 
+  - repo: local
+    hooks:
+      # Reject literal control bytes in source. A NUL written into a string
+      # literal is legal JS/Python and sails past prettier, eslint,
+      # svelte-check and the test suites -- but git treats any file with a NUL
+      # in its first 8000 bytes as binary, so it renders as "Bin N -> M bytes"
+      # in every diff and becomes unreviewable. That happened once already: a
+      # NUL stood in for a space in a `.join(...)` separator and survived four
+      # commits, because the only signal was git's diff view and nothing ever
+      # emitted an error.
+      #
+      # Tab, LF and CR are allowed; anything else in the C0 range (plus DEL)
+      # belongs in source as an escape sequence, never as a raw byte.
+      #
+      # types:[text] uses identify's extension-based classification, which
+      # scans .ts/.py/.md and skips the PNG/AVIF/WOFF2 under frontend/static/.
+      # Do NOT swap this for git's own binary detection: `git grep -I` skips
+      # exactly the poisoned file we're hunting, since the poison is what makes
+      # git call it binary. Likewise don't reach for .gitattributes -- marking
+      # these paths `text` would restore the readable diff while leaving the
+      # byte in place, deleting the symptom rather than the cause.
+      - id: forbid-control-characters
+        name: forbid control characters in text files
+        entry: '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]'
+        language: pygrep
+        types: [text]
+
   # Local hooks (use system Node to avoid nodeenv/Node 24 incompatibility)
   - repo: local
     hooks:
