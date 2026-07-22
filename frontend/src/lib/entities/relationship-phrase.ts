@@ -16,8 +16,8 @@ export type CrossTitleRelation = CrossTitleLinkSchema['relation'];
 /** Authorization status, derived from the wire union. */
 export type LicenseStatus = NonNullable<ModelRelationshipInputSchema['license_status']>;
 
-/** Every relationship kind the editor presents — the edges plus the two scalar lineage FKs. */
-export type RelationshipKind = EdgeKind | 'variant' | 'remake';
+/** Every relationship kind the editor presents — the edges plus the three scalar lineage FKs. */
+export type RelationshipKind = EdgeKind | 'variant' | 'remake' | 'export_edition';
 
 /** All reader-facing copy for one (edge kind, license) cell. */
 interface EdgePhrases {
@@ -134,6 +134,7 @@ const EDGE_PHRASES: Record<EdgeKind, Record<LicenseStatus, EdgePhrases>> = {
 export function relationshipLead(kind: RelationshipKind, license: LicenseStatus): string {
   if (kind === 'variant') return 'Variant of';
   if (kind === 'remake') return 'Remake of';
+  if (kind === 'export_edition') return 'Export edition of';
   return EDGE_PHRASES[kind][license].lead;
 }
 
@@ -159,7 +160,9 @@ export function inboundRelationshipNote(kind: EdgeKind, license: LicenseStatus):
  * "Remake of" → "is a remake of".
  */
 export function relationshipSentence(kind: CrossTitleRelation, license: LicenseStatus): string {
-  const lead = relationshipLead(kind === 'remake_of' ? 'remake' : kind, license);
+  const editorKind: RelationshipKind =
+    kind === 'remake_of' ? 'remake' : kind === 'export_edition_of' ? 'export_edition' : kind;
+  const lead = relationshipLead(editorKind, license);
   const phrase = lead.charAt(0).toLowerCase() + lead.slice(1);
   return `is ${/^[aeiou]/i.test(phrase) ? 'an' : 'a'} ${phrase}`;
 }

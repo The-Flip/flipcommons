@@ -94,9 +94,33 @@ jobs:
       - name: Svelte type check
         run: cd frontend && pnpm check
 
+  # Deliberately NOT behind `needs: changes`. The paths filter above covers
+  # backend/, frontend/, scripts/ and a few root files -- a docs-only PR would
+  # skip it, and docs/ is squarely in this check's blast radius. It scans the
+  # whole tree in ~2s, so there is nothing to gain by narrowing it.
+  #
+  # Duplicates the local pre-commit hook on purpose: the local hook is the fast
+  # feedback loop, this is the merge gate that survives --no-verify and clones
+  # that never ran `pre-commit install`. Selecting the single pygrep hook builds
+  # no hook environments, so the job is just pip + a tree scan.
+  control-characters:
+    name: control characters
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Any modern Python runs pre-commit; deliberately not pinned to
+      # backend/.python-version, since coupling a merge-blocking job to an
+      # exact patch release buys nothing and fails the moment that patch
+      # leaves the runner manifest.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - run: pip install pre-commit
+      - run: pre-commit run forbid-control-characters --all-files
+
   ci:
     if: always()
-    needs: [backend, frontend, api-types]
+    needs: [backend, frontend, api-types, control-characters]
     runs-on: ubuntu-latest
     steps:
       - name: All checks passed

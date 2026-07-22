@@ -90,6 +90,24 @@ type SubjectSpec = SingleSubject | XorSubject
 
 
 @dataclass(frozen=True, slots=True)
+class TargetFilter:
+    """A pure-data restriction on an FK member's valid target rows.
+
+    ``lookups`` is a tuple of ``(orm_lookup, value)`` pairs applied to the
+    target model's default manager wherever target validity is decided: the
+    resolution projection's valid-PK set, the batch claim validator's
+    existence query and the data-patch adapter's public_id resolution. Kept
+    as lookup pairs (not a queryset or Q) so the spec stays a pure-data,
+    lift-out-ready declaration. ``description`` is the human phrasing error
+    messages use for a row that exists but falls outside the restriction
+    (e.g. "a country (top-level location)").
+    """
+
+    lookups: tuple[tuple[ColumnName, object], ...]
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
 class MemberField:
     """One member column of a through-row — the FK or literal target data.
 
@@ -110,6 +128,11 @@ class MemberField:
     be ``null``, serialized as the literal ``"null"`` in the claim_key — and
     the through-column is a nullable FK. Literal members express absence as the
     empty string instead (CharField convention), so they are never nullable.
+
+    ``target_filter`` (FK members only) restricts which target rows are valid
+    (see :class:`TargetFilter`); ``export_market.target_market_location`` is
+    the canonical case — any Location row exists, but only countries are
+    legal targets.
     """
 
     field: ColumnName
@@ -118,6 +141,7 @@ class MemberField:
     lookup_field: ColumnName = "pk"
     empty_target: EmptyTargetPolicy = EmptyTargetPolicy.DROP_INVALID
     nullable: bool = False
+    target_filter: TargetFilter | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,12 +173,19 @@ class MemberXor:
     ``target_label``): one fact, expressible at different resolutions, never
     redundantly at two.
 
+    ``required=False`` relaxes "exactly one" to "at most one": a positive
+    claim may leave every group absent. This is the ladder-with-a-bottom-rung
+    shape (``export_market``): the row's existence is itself the fact ("built
+    for export"), and both target fields absent means the destination is
+    unknown — still never redundantly at two resolutions.
+
     Enforced at claim-write time by the relationship validator; the through-model
     must mirror it with a CHECK constraint (behavior-tested per model, same
     delegation as the credit subject-XOR).
     """
 
     groups: tuple[tuple[ColumnName, ...], ...]
+    required: bool = True
 
 
 @dataclass(frozen=True, slots=True)

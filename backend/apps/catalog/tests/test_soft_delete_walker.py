@@ -18,7 +18,9 @@ from apps.catalog.engine.entity_api.delete import (
 )
 from apps.catalog.models import (
     GameplayFeature,
+    Location,
     MachineModel,
+    ModelExportMarket,
     Tag,
     TechnologyGeneration,
     TechnologySubgeneration,
@@ -312,3 +314,33 @@ class TestCascadeToSubgenerations:
         parent_plan = plan_soft_delete(gen)
         assert parent_plan.is_blocked
         assert any(b.slug == "mm-pro" for b in parent_plan.blockers)
+
+
+class TestExportMarketLocationBlocker:
+    """A Location targeted by an active model's export-market row can't be
+    soft-deleted: the row itself has no lifecycle (the PROTECT pass skips it),
+    so the ``export_market_models`` usage blocker walks through it to the
+    owning subject model — the ``inbound_relationship_sources`` channel."""
+
+    def _location(self, path: str, name: str) -> Location:
+        return Location.objects.create(location_path=path, slug=path, name=name)
+
+    def test_location_blocked_by_active_export_model(self):
+        italy = self._location("italy", "Italy")
+        t = _title("black-magic-title")
+        pm = _model(t, "black-magic")
+        ModelExportMarket.objects.create(machine_model=pm, target_market_location=italy)
+        plan = plan_soft_delete(italy)
+        assert plan.is_blocked
+        assert any(
+            b.slug == pm.slug and b.relation == "export_market_models"
+            for b in plan.blockers
+        )
+
+    def test_location_not_blocked_by_soft_deleted_export_model(self):
+        italy = self._location("france", "France")
+        t = _title("zombie-title")
+        pm = _model(t, "zombie-export", status="deleted")
+        ModelExportMarket.objects.create(machine_model=pm, target_market_location=italy)
+        plan = plan_soft_delete(italy)
+        assert not plan.is_blocked

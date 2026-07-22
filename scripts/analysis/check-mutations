@@ -1,0 +1,165 @@
+#!/bin/sh
+# Mutation-test the foundation self-test: break the catalog on purpose, one way per
+# line of catalog_mutations.tsv, and assert the check that should notice actually does.
+#
+# The self-test proves the foundation holds its invariants. This proves the self-test
+# would NOTICE if it stopped — the part that a green run cannot tell you, because a
+# no-op check and a passing check both return zero rows.
+#
+#     scripts/analysis/check-mutations            # all mutations
+#     scripts/analysis/check-mutations title      # only those whose name matches
+#
+# Exits nonzero if any mutation SURVIVES (the defect went unnoticed) or fires the wrong
+# check. Run it after touching catalog_checks.sql; the everyday gate stays `analysis run`.
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+cd "$root"
+plan=scripts/analysis/catalog_checks.sql
+spec=scripts/analysis/catalog_mutations.tsv
+filter=${1:-}
+
+pass=0; fail=0
+
+# ── baseline ───────────────────────────────────────────────────────────────────
+# Every verdict below is "the expected check appeared". That is only evidence the
+# MUTATION caused it if the check was silent to begin with — otherwise a check firing
+# on healthy data would pass every mutation that expects it, including mutations whose
+# SQL does nothing at all. So prove the baseline is clean before trusting anything.
+# DuckDB writes a coloured `-- Loading resources` banner to stderr; strip the escapes
+# and surrounding blanks so an empty result really reads as empty.
+clean() { tail -1 | sed 's/\x1b\[[0-9;]*m//g; s/^[[:space:]]*//; s/[[:space:]]*$//'; }
+
+baseline=$(duckdb -init "$plan" -noheader -list :memory: \
+  "SELECT COALESCE(string_agg(DISTINCT check_name, ','), '') FROM foundation_checks;" 2>&1 | clean)
+if [ -n "$baseline" ]; then
+  echo "✗ baseline is not clean: foundation_checks already returns [$baseline]"
+  echo "  Fix the foundation first — mutation results are meaningless until it is green."
+  exit 1
+fi
+
+# ── coverage ───────────────────────────────────────────────────────────────────
+# Every check_name declared in catalog_checks.sql needs a mutation, or nobody has
+# proven it fires. This is the same reasoning as the `unanchored_view` meta-check, and
+# it matters more: the anchor lists are EXCEPTION lists where a missing entry fails
+# loudly, while this one is a COVERAGE list where a missing entry is silent.
+# Check branches are the top-level UNION arms, indented two spaces; the deeper-indented
+# literals inside subqueries are labels, not check names.
+#
+# The plan `.read`s the layers it gates (catalog.sql, provenance_checks.sql), and a
+# checks view defined in one of those — `_provenance_checks` — declares check names the
+# plan text never contains. Reading only the plan would silently stop covering them,
+# which is the same false-coverage failure the reverse direction below guards against.
+# So the scan runs over the plan with its reads INLINED. Two passes because the nesting
+# goes two deep (plan -> catalog.sql -> provenance.sql); a third level would need
+# another, and would also mean a layer defining checks further down than it should.
+expand_reads() {
+  awk '/^[[:space:]]*\.read[[:space:]]+/ {
+         f = $2
+         while ((getline line < f) > 0) print line
+         close(f)
+         next
+       }
+       { print }'
+}
+# The range opens at the FIRST checks view rather than at foundation_checks by name, so
+# a checks view read in ahead of it is inside the range. Everything before that — the
+# foundation itself, foundation_summary — stays outside, where its string literals
+# cannot be mistaken for check names.
+declared=$(expand_reads < "$plan" | expand_reads \
+  | awk '/CREATE OR REPLACE VIEW [_a-z]*checks AS/,0' \
+  | grep -oE "^  SELECT (DISTINCT )?'[a-z_]+'" | grep -oE "'[a-z_]+'" | tr -d "'" | sort -u)
+covered=$(grep -v '^#' "$spec" | cut -f2 | grep -vE '^$|^\*$' | sort -u)
+
+tmp=${TMPDIR:-/tmp}/check-mutations.$$
+trap 'rm -f "$tmp"' EXIT
+printf '%s\n' "$covered"  > "$tmp"
+uncovered=$(printf '%s\n' "$declared" | grep -vxFf "$tmp" || true)
+printf '%s\n' "$declared" > "$tmp"
+stale=$(printf '%s\n' "$covered" | grep -vxFf "$tmp" || true)
+
+if [ -n "$uncovered" ]; then
+  echo "✗ checks with no mutation proving they fire:"
+  echo "$uncovered" | sed 's/^/    /'
+  echo "  Add a line to $spec that breaks what each one guards."
+  exit 1
+fi
+# ...and the reverse, so the spec can't rot into false coverage after a check is
+# renamed or dropped — the same both-directions guard _anchor_array carries.
+if [ -n "$stale" ]; then
+  echo "✗ $spec expects check names that no longer exist:"
+  echo "$stale" | sed 's/^/    /'
+  exit 1
+fi
+
+printf '%-34s %-32s %s\n' NAME EXPECT RESULT
+
+# The mutation SQL runs before foundation_checks is queried, so it redefines the views
+# the checks read. Everything happens in an in-memory DB over a READ_ONLY attachment —
+# the catalog itself is never touched.
+#
+# Fast path: query foundation_checks FILTERED to the expected check_name. Each check is
+# a UNION branch selecting a literal, so DuckDB prunes every other branch and the run
+# costs ~0.5s instead of ~4s. A hit is conclusive — that check fired. Only a MISS needs
+# the full unfiltered run, to say whether the mutation survived outright or tripped a
+# different check. Misses are the rare case, so the suite pays for them rarely.
+probe() {  # probe <sql> [check_name] — stderr kept, so a broken mutation is visible
+  # Unfiltered (the miss path) drops undocumented_view: nearly every mutation redefines
+  # a view with CREATE OR REPLACE, which DROPS that view's COMMENT ON VIEW, so the check
+  # fires as an artifact of mutating rather than as the defect under test. Reporting it
+  # would turn every genuine SURVIVED into a misleading "WRONG CHECK". The filtered fast
+  # path is unaffected, so `view comment dropped` still proves the check itself fires.
+  # undocumented_macro is dropped for the same reason: the macro mutations redefine a
+  # macro, which drops its COMMENT ON MACRO.
+  _where="WHERE check_name NOT IN ('undocumented_view', 'undocumented_macro')"
+  [ -n "${2:-}" ] && _where="WHERE check_name = '$2'"
+  _out=$(duckdb -init "$plan" -noheader -list :memory: "
+      $1
+      SELECT COALESCE(string_agg(DISTINCT check_name, ','), '')
+      FROM foundation_checks $_where;" 2>&1 || true)
+  # A DuckDB error can span several lines and end with a caret, so the verdict cannot
+  # come from the last line alone — scan the whole output before reading a value off it.
+  case "$_out" in
+    *Error*) printf 'ERROR: %s' "$(printf '%s\n' "$_out" | grep -i -m1 error | clean)" ;;
+    *)       printf '%s\n' "$_out" | clean ;;
+  esac
+}
+
+selected=0
+while IFS='	' read -r name expect sql; do
+  case "$name" in ''|'#'*) continue ;; esac
+  case "$name" in *"$filter"*) ;; *) continue ;; esac
+  selected=$((selected + 1))
+
+  if [ "$expect" != '*' ] && [ "$(probe "$sql" "$expect")" = "$expect" ]; then
+    printf '%-34s %-32s ok\n' "$name" "$expect"; pass=$((pass + 1)); continue
+  fi
+
+  got=$(probe "$sql")
+  case "$got" in
+    # A mutation whose own SQL fails would otherwise read as SURVIVED — a real defect
+    # report for a test that never ran. Name it for what it is.
+    ERROR:*) printf '%-34s %-32s MUTATION FAILED — %s\n' "$name" "$expect" "$got"; fail=$((fail + 1)) ;;
+    '')      printf '%-34s %-32s SURVIVED — defect unnoticed\n' "$name" "$expect"; fail=$((fail + 1)) ;;
+    *)
+      if [ "$expect" = '*' ]; then
+        printf '%-34s %-32s ok (%s)\n' "$name" "$expect" "$got"; pass=$((pass + 1))
+      else
+        printf '%-34s %-32s WRONG CHECK — got %s\n' "$name" "$expect" "$got"; fail=$((fail + 1))
+      fi ;;
+  esac
+done < "$spec"
+
+# A filter that matches nothing must not report success — otherwise a stale or
+# misspelled argument yields a green run that executed no tests at all.
+if [ "$selected" -eq 0 ]; then
+  echo "✗ no mutations matched filter '$filter'"
+  exit 1
+fi
+
+echo
+if [ "$fail" -gt 0 ]; then
+  echo "✗ $fail of $((pass + fail)) mutations were not caught"
+  exit 1
+fi
+echo "✓ all $pass mutations caught"

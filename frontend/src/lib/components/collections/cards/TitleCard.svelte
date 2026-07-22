@@ -10,6 +10,7 @@
     manufacturerName = null,
     year = null,
     roles = null,
+    showManufacturer = true,
   }: {
     slug: string;
     name: string;
@@ -17,10 +18,19 @@
     manufacturerName?: string | null;
     year?: number | null;
     roles?: string[] | null;
+    /**
+     * Whether the tile carries a manufacturer line at all. Set false where the
+     * maker is already the page subject (a manufacturer or corporate-entity
+     * page) — there a missing `manufacturerName` means "redundant", not
+     * "unknown", and the fallback label would be a lie.
+     */
+    showManufacturer?: boolean;
   } = $props();
 
   const subtitle = $derived(
-    [manufacturerName || UNKNOWN_MANUFACTURER_LABEL, year].filter(Boolean).join(', '),
+    [showManufacturer ? manufacturerName || UNKNOWN_MANUFACTURER_LABEL : null, year]
+      .filter(Boolean)
+      .join(', '),
   );
 </script>
 

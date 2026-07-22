@@ -30,6 +30,7 @@ export const EMPTY_EDIT_OPTIONS: ModelEditOptions = {
   production_statuses: [],
   systems: [],
   credit_roles: [],
+  countries: [],
 };
 
 let cached: Promise<ModelEditOptions> | null = null;

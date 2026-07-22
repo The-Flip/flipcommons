@@ -5,6 +5,7 @@ import { ENTITY_META } from './entity-meta';
 import {
   MODEL_LINEAGE_RELATIONS,
   modelEdgeSections,
+  modelExportEditionSection,
   modelLineageSections,
   titleModelsSubject,
 } from './model-lineage';
@@ -360,5 +361,51 @@ describe('titleModelsSubject', () => {
     );
 
     expect(subject).toEqual({ manufacturer: null, year: null });
+  });
+});
+
+describe('modelExportEditionSection', () => {
+  const italy = { name: 'Italy', public_id: 'italy' };
+  const original = { name: 'Big Ben', public_id: 'big-ben', year: 1975 };
+
+  it('returns nothing for a model with no export facts', () => {
+    expect(modelExportEditionSection(makeModelDetail())).toBeNull();
+  });
+
+  it('carries the original and its named markets', () => {
+    const section = modelExportEditionSection(
+      makeModelDetail({
+        export_edition_of: original,
+        export_markets: [
+          { target_location: italy, target_label: '' },
+          { target_location: null, target_label: 'Europe' },
+        ],
+      }),
+    );
+
+    expect(section?.original?.public_id).toBe('big-ben');
+    expect(section?.markets).toEqual([
+      { location: italy, label: '' },
+      { location: null, label: 'Europe' },
+    ]);
+  });
+
+  // The unknown-market row asserts "built for export" and nothing more — the
+  // sentence must not invent a market for it.
+  it('drops the unknown-market row, keeping the section', () => {
+    const section = modelExportEditionSection(
+      makeModelDetail({ export_markets: [{ target_location: null, target_label: '' }] }),
+    );
+
+    expect(section).not.toBeNull();
+    expect(section?.markets).toEqual([]);
+    expect(section?.original).toBeNull();
+  });
+
+  it('is rendered on its own, not as a generic lineage section', () => {
+    const model = makeModelDetail({ export_edition_of: original });
+
+    expect(modelLineageSections(model)).toEqual([]);
+    expect(modelExportEditionSection(model)?.original?.name).toBe('Big Ben');
   });
 });

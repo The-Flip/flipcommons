@@ -1,13 +1,20 @@
-<!-- @component Renders a model's model↔model lineage relations, then its relationship-edge sections (copy / conversion / kit, outbound then inbound), as `SidebarSection`s — the desktop sidebar presentation. -->
+<!-- @component Renders a model's model↔model lineage relations, its relationship-edge sections (copy / conversion / kit, outbound then inbound), then its export-edition sentence, as `SidebarSection`s — the desktop sidebar presentation. -->
 <script lang="ts">
+  import ExportEditionSentence from './ExportEditionSentence.svelte';
   import RelatedModelLink from './RelatedModelLink.svelte';
   import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
   import SidebarListItem from '$lib/components/layout/page/sidebar/SidebarListItem.svelte';
   import SidebarSection from '$lib/components/layout/page/sidebar/SidebarSection.svelte';
-  import { modelEdgeSections, modelLineageSections } from '$lib/entities/model-lineage';
+  import {
+    modelEdgeSections,
+    modelExportEditionSection,
+    modelLineageSections,
+  } from '$lib/entities/model-lineage';
   import type { ModelDetailSchema } from '$lib/api/schema';
 
   let { model }: { model: ModelDetailSchema } = $props();
+
+  let exportEdition = $derived(modelExportEditionSection(model));
 </script>
 
 {#each modelLineageSections(model) as { relation, links } (relation.key)}
@@ -37,3 +44,9 @@
     </SidebarList>
   </SidebarSection>
 {/each}
+
+{#if exportEdition}
+  <SidebarSection heading={exportEdition.heading}>
+    <ExportEditionSentence section={exportEdition} />
+  </SidebarSection>
+{/if}

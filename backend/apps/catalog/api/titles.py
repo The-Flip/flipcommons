@@ -316,27 +316,34 @@ class AgreedSpecsSchema(Schema):
 
 
 # Lineage relations that can point at a model under a different title. Same-title
-# links are filtered out in `_collect_related_titles`. `remake_of` is the scalar
-# lineage FK; the rest are `ModelRelationship` edge types
-# (`RelationshipTypeLiteral` values). Kept a flat literal (not a runtime union of
-# `RelationshipTypeLiteral`) so it inlines anonymously in the OpenAPI schema like
-# its siblings; a snapshot test locks it to `{remake_of} ∪ RelationshipTypeLiteral`
-# so a new edge type can't silently omit its cross-title arm.
+# links are filtered out in `_collect_related_titles`. `remake_of` and
+# `export_edition_of` are the scalar lineage FKs (variant_of is same-title by
+# nature, so it has no cross-title arm); the rest are `ModelRelationship` edge
+# types (`RelationshipTypeLiteral` values). Kept a flat literal (not a runtime
+# union of `RelationshipTypeLiteral`) so it inlines anonymously in the OpenAPI
+# schema like its siblings; a snapshot test locks it to
+# `{remake_of, export_edition_of} ∪ RelationshipTypeLiteral` so a new edge type
+# can't silently omit its cross-title arm.
 CrossTitleRelation = Literal[
     "remake_of",
+    "export_edition_of",
     "conversion",
     "conversion_kit",
     "copy",
     "retheme",
 ]
 # The scalar FK attrs `_collect_related_titles` walks with getattr.
-_CROSS_TITLE_FK_RELATIONS: tuple[CrossTitleRelation, ...] = ("remake_of",)
+_CROSS_TITLE_FK_RELATIONS: tuple[CrossTitleRelation, ...] = (
+    "remake_of",
+    "export_edition_of",
+)
 
 
 class CrossTitleLinkSchema(Schema):
     """A cross-title lineage relationship contributed by a specific model under
-    the current title — a `remake_of` link or a `ModelRelationship` edge whose
-    target machine sits under a different title."""
+    the current title — a `remake_of` / `export_edition_of` link or a
+    `ModelRelationship` edge whose target machine sits under a different
+    title."""
 
     relation: CrossTitleRelation
     other_title: EntityRef
@@ -503,8 +510,9 @@ def _collect_related_titles(
 ) -> list[CrossTitleLinkSchema]:
     """Collect cross-title lineage links (see ``CrossTitleRelation``).
 
-    For each model under *current_title* whose ``remake_of`` FK or
-    ``ModelRelationship`` edge points to a model under a *different* title,
+    For each model under *current_title* whose lineage FK (``remake_of``,
+    ``export_edition_of``) or ``ModelRelationship`` edge points to a model
+    under a *different* title,
     emit one entry per link with the relation kind, the other title, and the
     source model under the current title.  Same-title relations (LE→Pro
     conversion, within-title remakes) are excluded — they are not cross-title
@@ -711,6 +719,7 @@ def _title_models_prefetch() -> Prefetch[str, Any, str]:
             "game_format",
             "production_status",
             "remake_of__title",
+            "export_edition_of__title",
         )
         .prefetch_related(
             "themes",
@@ -733,7 +742,9 @@ def _title_models_prefetch() -> Prefetch[str, Any, str]:
             "tags",
             "credits__person",
             "credits__role",
-            "variants",
+            # Live variants only: a soft-deleted variant (its delete is never
+            # blocked) must not render a card linking its 404.
+            Prefetch("variants", queryset=MachineModel.objects.active()),
             media_prefetch(),
         ),
     )

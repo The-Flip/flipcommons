@@ -47,3 +47,20 @@ def isbn_checksum_ok(isbn: str) -> bool:
         total = sum(int(char) * (1 if i % 2 == 0 else 3) for i, char in enumerate(isbn))
         return total % 10 == 0
     return False
+
+
+def isbn13(isbn: str) -> str:
+    """Return a normalized ISBN in its 13-digit form (a 13 passes through).
+
+    Sources store the 13-digit spelling, so both spellings of one work must
+    collapse to one identity before lookup — otherwise the same book cited by
+    its ISBN-10 would read as a different work. Expects
+    :func:`normalize_isbn` output; the caller checks the check digit
+    separately (the recomputed 13-digit check digit is always valid, so a
+    conversion would otherwise launder a typo'd ISBN-10 into a plausible 13).
+    """
+    if len(isbn) != 10:
+        return isbn
+    body = "978" + isbn[:9]
+    total = sum(int(char) * (1 if i % 2 == 0 else 3) for i, char in enumerate(body))
+    return body + str(-total % 10)

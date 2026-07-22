@@ -19,6 +19,7 @@ from apps.catalog.models import (
     Location,
     MachineModel,
     Manufacturer,
+    ModelExportMarket,
     ModelRelationship,
     Person,
     PersonAlias,
@@ -756,3 +757,102 @@ class TestModelRelationshipConstraints:
         self._edge(subject, target_machine=target)
         with pytest.raises(ProtectedError):
             target.delete()
+
+
+# ---------------------------------------------------------------------------
+# ModelExportMarket: optional target ladder, rung uniqueness
+# ---------------------------------------------------------------------------
+
+
+class TestModelExportMarketConstraints:
+    """DB-level behavior of the export-market target constraints.
+
+    Like ModelRelationship's ladder, but the XOR is *optional*: a row with
+    neither target is the legal unknown-market shape, so the CHECK is
+    at-most-one rather than exactly-one.
+    """
+
+    @pytest.fixture
+    def subject(self, db):
+        return make_machine_model(name="Black Magic", slug="black-magic")
+
+    @pytest.fixture
+    def italy(self, db):
+        return Location.objects.create(
+            location_path="italy", slug="italy", name="Italy"
+        )
+
+    def _row(self, subject, **fields):
+        return ModelExportMarket.objects.create(machine_model=subject, **fields)
+
+    # --- target ladder (at most one) ---------------------------------------
+
+    def test_country_target_accepted(self, subject, italy):
+        self._row(subject, target_market_location=italy)
+
+    def test_label_target_accepted(self, subject):
+        self._row(subject, target_market_label="Europe")
+
+    def test_no_target_accepted(self, subject):
+        """Both absent is the legal unknown-market row — the row itself
+        asserts "built for export"."""
+        self._row(subject)
+
+    def test_location_plus_label_rejected(self, subject, italy):
+        with pytest.raises(IntegrityError):
+            self._row(
+                subject, target_market_location=italy, target_market_label="Europe"
+            )
+
+    # --- rung uniqueness ---------------------------------------------------
+
+    def test_duplicate_country_target_rejected(self, subject, italy):
+        self._row(subject, target_market_location=italy)
+        with pytest.raises(IntegrityError):
+            self._row(subject, target_market_location=italy)
+
+    def test_second_null_location_row_rejected(self, subject):
+        """The null-location rung is a singleton slot keyed by the *slot*: a
+        label row and an unknown row (or two differently-worded label rows)
+        collide."""
+        self._row(subject, target_market_label="Europe")
+        with pytest.raises(IntegrityError):
+            self._row(subject)
+
+    def test_country_rows_coexist(self, subject, italy):
+        france = Location.objects.create(
+            location_path="france", slug="france", name="France"
+        )
+        self._row(subject, target_market_location=italy)
+        self._row(subject, target_market_location=france)
+        assert ModelExportMarket.objects.filter(machine_model=subject).count() == 2
+
+    # --- delete behavior ---------------------------------------------------
+
+    def test_deleting_subject_reaps_row_keeps_location(self, subject, italy):
+        self._row(subject, target_market_location=italy)
+        subject.delete()
+        assert not ModelExportMarket.objects.filter(
+            target_market_location=italy
+        ).exists()
+        assert Location.objects.filter(pk=italy.pk).exists()
+
+    def test_deleting_location_with_market_row_protected(self, subject, italy):
+        self._row(subject, target_market_location=italy)
+        with pytest.raises(ProtectedError):
+            italy.delete()
+
+
+class TestExportEditionOfConstraints:
+    def test_self_reference_rejected(self, db):
+        pm = make_machine_model(name="Loop", slug="loop")
+        with pytest.raises(IntegrityError):
+            _raw_update(MachineModel, pm.pk, export_edition_of_id=pm.pk)
+
+    def test_deleting_target_with_export_edition_protected(self, db):
+        domestic = make_machine_model(name="Domestic", slug="domestic")
+        export = make_machine_model(name="Export", slug="export-ed")
+        export.export_edition_of = domestic
+        export.save(update_fields=["export_edition_of"])
+        with pytest.raises(ProtectedError):
+            domestic.delete()

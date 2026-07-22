@@ -26,6 +26,7 @@ from apps.core.types import (
     JsonBody,
     PublicId,
 )
+from apps.provenance.model_bases import TargetFilter
 from apps.provenance.models import IdentityPartValue, make_claim_key
 from apps.provenance.validation import get_relationship_schema
 
@@ -85,7 +86,10 @@ def normalize_fk_value(value: object) -> PublicId | None:
 
 
 def resolve_fk_target_pk(
-    target_model: type[models.Model], public_id: object
+    target_model: type[models.Model],
+    public_id: object,
+    *,
+    target_filter: TargetFilter | None = None,
 ) -> int | None:
     """Resolve an authored public_id to the target row's PK, or ``None``.
 
@@ -94,17 +98,18 @@ def resolve_fk_target_pk(
     Looks up by the target's ``public_id_field`` (``slug`` for most models,
     ``location_path`` for Location). Returns ``None`` when the value is blank
     or names no existing row — the caller decides whether that's an error, a
-    same-patch handle or a clear.
+    same-patch handle or a clear. ``target_filter`` (when the member declares
+    one) narrows the legal rows, so a row outside the restriction resolves
+    like a missing one.
     """
     key = normalize_fk_value(public_id)
     if key is None:
         return None
     pid_field = getattr(target_model, "public_id_field", "slug")
-    return (
-        target_model._default_manager.filter(**{pid_field: key})
-        .values_list("pk", flat=True)
-        .first()
-    )
+    qs = target_model._default_manager.filter(**{pid_field: key})
+    if target_filter is not None:
+        qs = qs.filter(**dict(target_filter.lookups))
+    return qs.values_list("pk", flat=True).first()
 
 
 def build_relationship_claim(

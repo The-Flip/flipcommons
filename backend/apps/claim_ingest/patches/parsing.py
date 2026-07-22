@@ -27,6 +27,7 @@ from apps.citation.citation_types import (
     recognize_scheme,
     scheme_source_type,
 )
+from apps.citation.isbn import isbn13, isbn_checksum_ok, normalize_isbn
 from apps.citation.locators import normalized_locator
 from apps.citation.models import (
     CITATION_INSTANCE_LOCATOR_MAX_LENGTH,
@@ -40,6 +41,7 @@ from apps.claim_ingest.plan import (
     CitationRef,
     CiteHandle,
     CiteSpec,
+    IsbnCitationRef,
     SchemeCitationRef,
     WebCitationRef,
 )
@@ -48,6 +50,11 @@ from apps.core.validators import validate_no_mojibake
 from apps.provenance.models.changeset import CHANGESET_NOTE_MAX_LENGTH
 
 PATCH_ID_RE = re.compile(r"^\d{4}-[a-z0-9-]+$")
+
+# The cite-ref prefix naming a seeded authored work by its ISBN
+# (``isbn:9781889933023``). Shape-identical to ``scheme:identifier`` and
+# checked first, so it also reserves the key against the scheme registry.
+ISBN_CITE_PREFIX = "isbn"
 
 # Inline-citation marker scan. Deliberately BROADER than the wikilink registry's
 # ``cite`` authoring pattern (which carries a ``(?!id:)`` negative lookahead):
@@ -818,12 +825,20 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
     """Parse one non-empty cite spec into a :data:`CitationRef`.
 
     Shared by the entry-level ``cite:`` (via :func:`_parse_provenance`) and the
-    inline ``cites:`` map (:func:`_parse_cites`). Two forms:
+    inline ``cites:`` map (:func:`_parse_cites`). Three forms:
 
     * a ``http(s)://`` URL — a standalone web source; an optional ``archive``
       durable-snapshot URL rides along;
     * ``scheme:identifier`` — the scheme must be a registered scheme and the
-      identifier must normalize (``ipdb:4443``).
+      identifier must normalize (``ipdb:4443``);
+    * ``isbn:<isbn>`` — an already-seeded authored work (a book edition), by
+      the globally-unique identifier the work itself carries.
+
+    ``isbn:`` is checked before the scheme grammar it shape-matches, and is
+    deliberately *not* a registered scheme: a scheme is a platform whose root
+    mints children from URLs, while a book is its own root and is never minted
+    by a cite. (Nothing may register ``isbn`` as a scheme key — the registry's
+    keys and this prefix share one namespace.)
 
     The empty-cite short-circuit and (for the entry path) the archive-without-URL
     guard stay with :func:`_parse_provenance`, which allows an absent cite; here
@@ -834,8 +849,10 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
     if archive:
         raise PatchError(
             f"{ref}: 'cite.archive' is only valid alongside a http(s):// URL "
-            f"cite, not a scheme cite"
+            f"cite, not a scheme or isbn cite"
         )
+    if cite.startswith(f"{ISBN_CITE_PREFIX}:"):
+        return _parse_cite_isbn(cite[len(ISBN_CITE_PREFIX) + 1 :], ref)
     scheme, sep, raw_id = cite.partition(":")
     if not sep or not scheme or not raw_id:
         raise PatchError(
@@ -844,7 +861,8 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
     if not is_known_scheme(scheme):
         raise PatchError(
             f"{ref}: unknown cite scheme {scheme!r} "
-            f"(known: {', '.join(sorted(known_scheme_keys()))})"
+            f"(known: {', '.join(sorted(known_scheme_keys()))}; "
+            f"cite a book by '{ISBN_CITE_PREFIX}:<isbn>')"
         )
     normalized = normalize_scheme_identifier(scheme, raw_id)
     if normalized is None:
@@ -855,6 +873,24 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
             f"{CITATION_SOURCE_IDENTIFIER_MAX_LENGTH} characters"
         )
     return SchemeCitationRef(scheme=scheme, identifier=normalized)
+
+
+def _parse_cite_isbn(raw_isbn: str, ref: str) -> IsbnCitationRef:
+    """Validate an ``isbn:`` cite value into an authored-work CitationRef.
+
+    Stricter than the interactive paste path (``normalize_isbn`` is shape-only,
+    leaving Open Library to arbitrate a typo): a patch has no human at the
+    keyboard to see a "not found", so a bad check digit fails the patch here
+    rather than surfacing later as a puzzling missing-source error. The
+    accepted value is canonicalized to the stored 13-digit spelling, so an
+    ISBN-10 and its ISBN-13 cite the one source.
+    """
+    normalized = normalize_isbn(raw_isbn)
+    if normalized is None:
+        raise PatchError(f"{ref}: cite isbn {raw_isbn!r} is not a 10- or 13-digit ISBN")
+    if not isbn_checksum_ok(normalized):
+        raise PatchError(f"{ref}: cite isbn {raw_isbn!r} has a bad check digit")
+    return IsbnCitationRef(isbn=isbn13(normalized))
 
 
 def _parse_cite_url(url: str, archive_url: str, ref: str) -> WebCitationRef:

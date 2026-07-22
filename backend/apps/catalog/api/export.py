@@ -206,6 +206,22 @@ class ModelRelationshipExportSchema(Schema):
     )
 
 
+class ModelExportMarketExportSchema(Schema):
+    """An export-market row: where this model was built to be exported."""
+
+    target_location: str | None = PydanticField(
+        description=("Location path of the destination country, when known; else null.")
+    )
+    target_label: str = PydanticField(
+        description=(
+            "Free-text market descriptor when the market is not a single "
+            'country (e.g. "Europe"). Empty when target_location is set — '
+            "and a row with both empty records an export model whose "
+            "destination is unknown."
+        )
+    )
+
+
 # Implementation note (kept out of the public schema description below): we emit
 # the description as source text, not rendered HTML — rendering resolves the
 # inline [[type:id]] entity links per row, which is a query storm at bulk scale.
@@ -353,6 +369,8 @@ def _relation_doc(key: str, rel: RelationSpec) -> str:
         return "Production credits, as person-slug / role-slug pairs."
     if rel.shape == "model_relationships":
         return "Typed relationships like copies and conversions to donor/original machines."
+    if rel.shape == "export_markets":
+        return "Export destinations: the markets this model was built for."
     if rel.shape == "strings":
         return f"List of {label}."
     return f"Slugs of the associated {label}."
@@ -389,6 +407,7 @@ def _build_schema(spec: ExportSpec) -> type[EntityExportSchema]:
     structured_items: dict[str, type[Schema]] = {
         "credits": CreditExportSchema,
         "model_relationships": ModelRelationshipExportSchema,
+        "export_markets": ModelExportMarketExportSchema,
     }
     for key, rel in spec.relations.items():
         item: Any = structured_items.get(rel.shape, str)
@@ -471,6 +490,18 @@ def _serialize_relation(obj: CatalogModel, rel: RelationSpec) -> list[Any]:
                     r.target_machine.public_id if r.target_machine else None
                 ),
                 "target_label": r.target_label,
+            }
+            for r in rows
+        ]
+    if rel.shape == "export_markets":
+        return [
+            {
+                "target_location": (
+                    r.target_market_location.public_id
+                    if r.target_market_location
+                    else None
+                ),
+                "target_label": r.target_market_label,
             }
             for r in rows
         ]
@@ -686,6 +717,11 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
                     "relationships",
                     "model_relationships",
                     "relationships__target_machine",
+                ),
+                "export_markets": _rel(
+                    "export_markets",
+                    "export_markets",
+                    "export_markets__target_market_location",
                 ),
             },
             derived={

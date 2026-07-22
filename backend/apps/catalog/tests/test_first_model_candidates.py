@@ -200,3 +200,35 @@ def test_every_relationship_type_classifies_its_behavior() -> None:
         "no RELATIONSHIP_TYPE_BEHAVIOR entry — decide its subordination (the Big "
         "Ben rule) and whether it requires a seeded machine target."
     )
+
+
+# ── export_edition_of subordination ──────────────────────────────────
+
+
+@pytest.mark.django_db
+def test_export_edition_sibling_is_not_the_first_model(big_ben_title):
+    """An export edition sharing a Title with its domestic original never heads
+    it (Exports.md). Same-year pairs are the common real case (the export ships
+    the same year), so the ``(year, name)`` tiebreak can't be trusted — here the
+    export is given the *earlier* year to prove subordination does the work."""
+    domestic = make_machine_model(
+        title=big_ben_title, name="Big Ben", slug="big-ben-domestic", year=1975
+    )
+    export = make_machine_model(
+        title=big_ben_title, name="Big Ben (Italy)", slug="big-ben-italy", year=1974
+    )
+    export.export_edition_of = domestic
+    export.save(update_fields=["export_edition_of"])
+    assert _first_model(big_ben_title) == domestic
+    assert set(_candidates(big_ben_title)) == {domestic, export}
+
+
+@pytest.mark.django_db
+def test_export_edition_only_title_still_surfaces_it(db):
+    """Subordination is a tiebreak against originals, not a bar: a Title whose
+    only model is an export edition still surfaces it."""
+    domestic = make_machine_model(name="Dragoon", slug="dragoon", year=1977)
+    export = make_machine_model(name="Dragon", slug="dragon-interflip", year=1977)
+    export.export_edition_of = domestic
+    export.save(update_fields=["export_edition_of"])
+    assert _first_model(export.title) == export

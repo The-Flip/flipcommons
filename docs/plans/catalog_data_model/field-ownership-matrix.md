@@ -69,7 +69,6 @@ These fields exist only in external sources and are either raw evidence or metad
 | `ipdb.notable_features`  | ipdb       | 5,209  | Raw feature text                           |
 | `ipdb.notes`             | ipdb       | 5,060  | Raw notes                                  |
 | `ipdb.toys`              | ipdb       | 294    | Raw toy lists                              |
-| `ipdb.model_number`      | ipdb       | 2,321  | IPDB model number                          |
 | `ipdb.marketing_slogans` | ipdb       | 253    | Raw marketing text                         |
 | `manufacturer_address`   | flip-signs | 15     | Flip-signs only; low value                 |
 

@@ -10,8 +10,11 @@ erDiagram
 
     Model ||--o{ Model : variant_of
     Model ||--o{ Model : remake_of
+    Model ||--o{ Model : export_edition_of
     Model ||--o{ ModelRelationship : source
     ModelRelationship }o--o| Model : target_machine
+    Model ||--o{ ModelExportMarket : exported_to
+    ModelExportMarket }o--o| Location : target_market
 
     Manufacturer ||--o{ CorporateEntity : incarnations
     CorporateEntity ||--o{ Model : produced
@@ -108,6 +111,21 @@ For re-themes the `license_status` reads as **official** (`licensed`) versus **u
 | Shrek                  | Stern        | Family Guy (Stern, 2007)         | licensed       |
 | Actros Magic Tour 2013 | —            | Volcano (Gottlieb, 1981)         | unknown        |
 | Actros Magic Tour 2013 | —            | Mars God of War (Gottlieb, 1981) | unknown        |
+
+### Export editions
+
+Some models were built specifically to serve a foreign market — usually an add-a-ball or novelty edition of a replay/payout game, made for a jurisdiction that didn't allow the original's reward type. Two structures carry this:
+
+- **`export_edition_of`**: a scalar lineage FK like `variant_of` and `remake_of` — a model is the export edition of at most one domestic original. It is deliberately **not** a `ModelRelationship` edge type: the relationship is 1:1, and licensing doesn't apply (an unauthorized "export" is a copy, not an export). A model can carry `export_edition_of` **and** other relationships (`variant_of`, a `copy` edge), usually to the same target. When the domestic original is unknown, the FK stays null and the export fact lives in `ModelExportMarket` alone.
+- **`ModelExportMarket`**: a join table recording each destination market. A row's target is a country (`target_market_location`, restricted to top-level Locations), a free-text region label (`target_market_label`, e.g. "Europe"), or neither — the row itself then records "built for export" with an unknown destination. A model has either multiple country rows, a single label row, or a single unknown row; a null-location row must be the model's only row.
+
+| Model           | Manufacturer | export_edition_of | Export markets |
+| --------------- | ------------ | ----------------- | -------------- |
+| Big Ben (Italy) | Williams     | Big Ben           | Italy          |
+| Dragon          | Interflip    | Dragoon           | —              |
+| Phantom Haus    | Williams     | Fun House         | Europe         |
+
+A model is an export model when `export_edition_of` is set **or** an export-market row exists. Like copies and re-themes, an export edition never outranks its domestic original when they share a Title (the Big Ben rule).
 
 ## Franchises & Series
 
@@ -234,9 +252,6 @@ Classification labels that don't fit elsewhere. As related clusters of tags emer
 - `prototype`: an engineering sample, design proof or pre-production test unit.
 - `widebody`: a wider-than-standard cabinet and playfield.
 - `remake`: a newly manufactured recreation of an earlier title (not a restored original). See [Remakes](#remakes); the `remake_of` link records the lineage.
-- `export`: manufactured for markets outside the United States.
-
-Re-themes are **not** tags — they are `retheme` [model relationships](#re-themes) that name the donor machine; the official/unofficial distinction lives in the edge's `license_status`.
 
 ### Cabinet
 
@@ -254,10 +269,12 @@ The type of game:
 - `pinball`: a steel ball launched onto a tilted playfield, scored by hitting targets and — on flipper-era machines — kept alive with player-controlled [flippers](#gameplayfeature).
 - `bagatelle`: balls launched up an inclined surface that fall by gravity into scoring holes and pockets; the direct ancestor of pinball.
 - `shuffle`: a puck or ball slid down a long polished surface toward scoring zones.
+- `rolldown`: balls rolled by hand down a long cabinet into scoring holes or pockets rather than launched by a plunger; distinct from `shuffle`, where a puck is slid toward open scoring zones instead.
 - `pitch-and-bat`: a coin-op baseball game with a mechanical pitch and a player-swung bat.
 - `slot-machine`: a coin-op gambling machine paying out by chance rather than skill.
 - `video-game`: played on a video screen rather than a physical playfield.
 - `gun-game`: a shooting game aiming a mechanical gun or rifle at targets.
+- `one-ball`: a coin-op gambling machine — one ball per coin, paying out in cash or tickets when it lands in a winning hole; often horse-race themed, and the payout format that preceded `bingo-pinball`.
 - `bingo-pinball`: a coin-op gambling machine — five balls shot into a grid of holes to line up numbers on a 5×5 card printed on the backglass; classically flipperless, though later export machines added flippers.
 - `miscellaneous`: a catch-all for machines that fit no more specific format.
 

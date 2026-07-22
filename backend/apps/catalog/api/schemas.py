@@ -124,6 +124,29 @@ class ModelRelationshipInputSchema(Schema):
     )
 
 
+class ModelExportMarketInputSchema(Schema):
+    """Nested entry in :class:`ModelClaimPatchSchema.export_markets` — one
+    export-market row. At most one of ``target_location`` / ``target_label``
+    may be set; both empty is the legal unknown-market row (the row itself
+    asserts "built for export").
+    """
+
+    target_location: str = Field(
+        "",
+        description=(
+            "Public id (location_path) of the destination country, when known. "
+            "Must be a top-level location."
+        ),
+    )
+    target_label: str = Field(
+        "",
+        description=(
+            "Free-text market descriptor when the market is not a country "
+            '(e.g. "Europe"). No markdown, no wikilinks.'
+        ),
+    )
+
+
 class ModelClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
     """Patch body for Model — the widest entity, with several list payloads
     on top of the generic ``fields`` bag.
@@ -138,6 +161,7 @@ class ModelClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
     credits: list[CreditInputSchema] | None = None
     abbreviations: list[str] | None = None
     relationships: list[ModelRelationshipInputSchema] | None = None
+    export_markets: list[ModelExportMarketInputSchema] | None = None
 
 
 class TitleClaimPatchSchema(ChangeSetInputSchema, InlineCitationsInputSchema):
@@ -202,6 +226,9 @@ class ModelEditOptionsSchema(Schema):
     production_statuses: list[EditOptionSchema]
     systems: list[EditOptionSchema]
     credit_roles: list[EditOptionSchema]
+    # Export-market countries (top-level Locations); slug is the
+    # location_path, which equals the slug for root locations.
+    countries: list[EditOptionSchema]
 
 
 class TitleModelVariantSchema(Schema):

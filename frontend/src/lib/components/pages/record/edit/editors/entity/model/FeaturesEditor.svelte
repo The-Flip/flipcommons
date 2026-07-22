@@ -6,6 +6,7 @@
   import type { EntityOption } from '$lib/api/entity-autocomplete';
   import Fieldset from '$lib/components/input/Fieldset.svelte';
   import NumberField from '$lib/components/input/NumberField.svelte';
+  import TextField from '$lib/components/input/TextField.svelte';
   import { diffScalarFields, publicIdSetChanged } from '$lib/edit-helpers';
   import { fetchFieldConstraints, fc, type FieldConstraints } from '$lib/field-constraints';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
@@ -30,6 +31,7 @@
     production_quantity: string;
     player_count?: number | null;
     flipper_count?: number | null;
+    manufacturer_model_identifier?: string | null;
     gameplay_features: GameplayFeatureRef[];
   };
 
@@ -40,6 +42,7 @@
     production_quantity: string | number;
     player_count: string | number;
     flipper_count: string | number;
+    manufacturer_model_identifier: string;
   };
 
   function extractFields(m: FeaturesModel): FeaturesFormFields {
@@ -48,6 +51,7 @@
       production_quantity: m.production_quantity ?? '',
       player_count: m.player_count ?? '',
       flipper_count: m.flipper_count ?? '',
+      manufacturer_model_identifier: m.manufacturer_model_identifier ?? '',
     };
   }
 
@@ -244,6 +248,11 @@
       bind:value={fields.production_quantity}
       error={fieldErrors.production_quantity ?? ''}
       min={0}
+    />
+    <TextField
+      label="Manufacturer Model ID"
+      bind:value={fields.manufacturer_model_identifier}
+      error={fieldErrors.manufacturer_model_identifier ?? ''}
     />
   </div>
 

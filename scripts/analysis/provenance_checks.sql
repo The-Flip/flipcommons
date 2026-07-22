@@ -1,0 +1,216 @@
+-- Provenance self-test — the invariants for provenance.sql.
+--
+-- Not a standalone analysis: catalog_checks.sql `.read`s this and folds
+-- `_provenance_checks` into `foundation_checks`, so there is ONE gate and one mutation
+-- harness entry point. Private (`_` prefix) for that reason — a public `*_checks` view
+-- would ALSO be discovered by the runner's sweep and every failure would report twice.
+--
+-- Same contract as the rest of the self-test: a row means something broke, empty means
+-- healthy, and every check_name here needs a line in catalog_mutations.tsv proving it
+-- fires. Same house rule too: compare with IS DISTINCT FROM, never <>, and null-test
+-- operands before any ordering operator — a NULL comparison is how a check silently
+-- becomes a no-op.
+--
+-- Three classes, and the first is the one that carries the file:
+--
+--   AGREEMENT   the ranking in provenance.sql reproduces what the real resolver
+--               (apps/catalog/resolve/*) actually materialized. This is the price of
+--               reimplementing the winner-pick in SQL, and it is what makes that
+--               reimplementation defensible rather than a second source of truth
+--               quietly drifting from the first. Three registers are compared, chosen
+--               to cover both shapes: two membership sets (gameplay_feature, theme) and
+--               one scalar (year). ~34k resolved rows, all three exact today.
+--               If one of these fires, the SQL is wrong and the catalog is right.
+--   CLASSIFIER  the structural member/scalar split the register logic rests on.
+--   VOCABULARY  closed enum domains, asserted rather than assumed — the same reasoning
+--               as status_unknown in catalog_checks.sql.
+
+CREATE OR REPLACE VIEW _provenance_checks AS
+
+  -- ─── AGREEMENT ───────────────────────────────────────────────────────────
+  -- Membership: the set of top-ranked, non-tombstoned member claims must equal the set
+  -- of through-rows the resolver wrote. FULL OUTER on both keys so BOTH directions are
+  -- reported — a claim that should have materialized and didn't, and a through-row with
+  -- no claim behind it — from one scan. The side that is NULL names the direction.
+  --
+  -- Both sides are restricted to LIVE models, because model_gameplay_features is
+  -- (`claims` is not), and comparing across that filter would report every claim on a
+  -- soft-deleted model as a phantom disagreement.
+  SELECT 'gameplay_feature_resolution_disagrees' AS check_name,
+         'model_id=' || coalesce(r.model_id, c.model_id)::VARCHAR
+           || ' feature_id=' || coalesce(r.feature_id, c.ref_id)::VARCHAR
+           || ' missing_from=' || CASE WHEN r.model_id IS NULL THEN 'catalog'
+                                       ELSE 'ranking' END AS detail
+  FROM (SELECT model_id, feature_id FROM model_gameplay_features) r
+  FULL OUTER JOIN (
+    SELECT model_id, ref_id FROM model_claims
+    WHERE field_name = 'gameplay_feature' AND rank = 1 AND member_exists
+  ) c ON c.model_id = r.model_id AND c.ref_id = r.feature_id
+  WHERE r.model_id IS NULL OR c.model_id IS NULL
+
+  UNION ALL
+  SELECT 'theme_resolution_disagrees',
+         'model_id=' || coalesce(r.model_id, c.model_id)::VARCHAR
+           || ' theme_id=' || coalesce(r.theme_id, c.ref_id)::VARCHAR
+           || ' missing_from=' || CASE WHEN r.model_id IS NULL THEN 'catalog'
+                                       ELSE 'ranking' END
+  FROM (SELECT model_id, theme_id FROM model_themes) r
+  FULL OUTER JOIN (
+    SELECT model_id, ref_id FROM model_claims
+    WHERE field_name = 'theme' AND rank = 1 AND member_exists
+  ) c ON c.model_id = r.model_id AND c.ref_id = r.theme_id
+  WHERE r.model_id IS NULL OR c.model_id IS NULL
+
+  -- Scalar register: the top-ranked `year` claim must equal the resolved models.year.
+  -- Covers the OTHER half of the register split — a membership-only agreement check
+  -- would pass even if scalar registers were grouped on entirely the wrong key.
+  -- Joined (not FULL OUTER) on models: a model with no year claim at all is not a
+  -- disagreement, it is a model nobody has dated.
+  UNION ALL
+  SELECT 'year_resolution_disagrees',
+         'model_id=' || m.id::VARCHAR || ' catalog=' || coalesce(m.year::VARCHAR, 'NULL')
+           || ' top_ranked=' || coalesce(w.yr::VARCHAR, 'NULL')
+  FROM models m
+  JOIN (
+    SELECT model_id, try_cast(json_extract_string(value, '$') AS BIGINT) AS yr
+    FROM model_claims WHERE field_name = 'year' AND rank = 1
+  ) w ON w.model_id = m.id
+  WHERE m.year IS DISTINCT FROM w.yr
+
+  -- ─── CLASSIFIER ──────────────────────────────────────────────────────────
+  -- The two invariants that license deriving member-vs-scalar from the claim_key
+  -- rather than from a registry export. See the register block in provenance.sql.
+  --
+  -- A member claim's value is always a JSON object — member_exists reads `$.exists` off
+  -- it, and a non-object value would read as "present" no matter what it says.
+  UNION ALL
+  SELECT 'member_claim_nondict_value',
+         'claim_id=' || claim_id::VARCHAR || ' claim_key=' || claim_key
+  FROM claims
+  WHERE is_member AND json_type(value) IS DISTINCT FROM 'OBJECT'
+
+  -- ...and the converse, which is the one that would actually break us: a claim with NO
+  -- identity parts carrying an `exists` flag would mean a relationship member whose key
+  -- has no parts, so the `|` test would misfile it as a scalar and its tombstone would
+  -- be ignored. claim_presence.py documents that a claim-controlled JSON scalar may
+  -- legitimately be a dict, which is exactly why the VALUE shape can't be the test.
+  UNION ALL
+  SELECT 'scalar_claim_exists_flag',
+         'claim_id=' || claim_id::VARCHAR || ' field_name=' || field_name
+  FROM claims
+  WHERE NOT is_member AND json_extract_string(value, '$.exists') IS NOT NULL
+
+  -- Exactly one top-ranked claim per (subject, register). row_number() guarantees this
+  -- structurally, so a row here means the PARTITION lost a key — the failure mode that
+  -- would make every attribution answer plausibly wrong rather than obviously broken.
+  UNION ALL
+  SELECT 'multiple_top_ranked',
+         'subject=' || subject_type || ':' || subject_id::VARCHAR || ' register=' || register
+  FROM claims WHERE rank = 1
+  GROUP BY subject_type, subject_id, register
+  HAVING count(*) > 1
+
+  -- A suppressed actor never ranks — that is the kill switch ranked_claims implements
+  -- by excluding them, and `rank` is NULL for exactly that reason.
+  UNION ALL
+  SELECT 'suppressed_actor_ranked', 'claim_id=' || claim_id::VARCHAR
+  FROM claims
+  WHERE rank IS NOT NULL AND actor_resolution_status = 'suppressed'
+
+  -- ─── Row preservation ────────────────────────────────────────────────────
+  -- `claims` inner-joins content type, changeset and actor; `citation_instances` inner-
+  -- joins its citation source. An inner join that stops matching DROPS rows silently —
+  -- an analysis then reports a smaller, confidently wrong universe. Compare against the
+  -- physical tables so a lost row is loud.
+  UNION ALL
+  SELECT 'claim_rows_dropped',
+         'physical=' || (SELECT count(*) FROM fc.provenance_claim)::VARCHAR
+           || ' view=' || (SELECT count(*) FROM claims)::VARCHAR
+  WHERE (SELECT count(*) FROM fc.provenance_claim) IS DISTINCT FROM (SELECT count(*) FROM claims)
+
+  UNION ALL
+  SELECT 'citation_instance_rows_dropped',
+         'physical=' || (SELECT count(*) FROM fc.provenance_citationinstance)::VARCHAR
+           || ' view=' || (SELECT count(*) FROM citation_instances)::VARCHAR
+  WHERE (SELECT count(*) FROM fc.provenance_citationinstance)
+        IS DISTINCT FROM (SELECT count(*) FROM citation_instances)
+
+  -- ─── Citation structure ──────────────────────────────────────────────────
+  -- The citation source tree is exactly two levels — a root (the work) and its children
+  -- (the cited items). citation_sources resolves the root with a SINGLE self-join, so a
+  -- grandchild would resolve to the middle node and silently attribute to the wrong
+  -- work. Zero grandchildren today; this is what keeps that true.
+  UNION ALL
+  SELECT 'citation_tree_too_deep',
+         'citation_source_id=' || citation_source_id::VARCHAR
+           || ' parent_id=' || parent_id::VARCHAR
+  FROM _citation_parent_chain
+  WHERE grandparent_id IS NOT NULL
+
+  -- A root resolves to itself — what lets a consumer GROUP BY root_citation_source_id
+  -- without special-casing roots.
+  UNION ALL
+  SELECT 'citation_root_not_self', 'citation_source_id=' || citation_source_id::VARCHAR
+  FROM citation_sources
+  WHERE is_root AND root_citation_source_id IS DISTINCT FROM citation_source_id
+
+  -- A registered recognition host hangs off a ROOT citation source, never off a child.
+  -- citation_root_domains names its column root_citation_source_id and citation_roots
+  -- aggregates on that basis, so a host on a child would be reported under a work that
+  -- does not own it — and citation_root_for_host would hand back an id that
+  -- citation_roots has no row for.
+  UNION ALL
+  SELECT 'root_domain_on_non_root',
+         'citation_source_id=' || d.root_citation_source_id::VARCHAR || ' host=' || d.host
+  FROM citation_root_domains d
+  JOIN citation_sources s ON s.citation_source_id = d.root_citation_source_id
+  WHERE NOT s.is_root
+
+  -- The evidence bridge names a claim and an instance that both exist. A dangling side
+  -- would make claim_citations over-report coverage relative to what can be joined.
+  UNION ALL
+  SELECT 'orphan_claim_citation',
+         'claim_id=' || cc.claim_id::VARCHAR
+           || ' citation_instance_id=' || cc.citation_instance_id::VARCHAR
+  FROM claim_citations cc
+  WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.claim_id = cc.claim_id)
+     OR NOT EXISTS (SELECT 1 FROM citation_instances ci
+                    WHERE ci.citation_instance_id = cc.citation_instance_id)
+
+  -- ─── VOCABULARY ──────────────────────────────────────────────────────────
+  -- Closed enums, asserted rather than assumed. A new member is a silent behaviour
+  -- change everywhere this file branches on one — the same reasoning that makes
+  -- status_unknown load-bearing for catalog.sql's liveness spelling. Notably
+  -- actor_resolution_status: a third member would join neither the "ranks" nor the
+  -- "suppressed" branch, and `rank` would keep looking right.
+  UNION ALL
+  SELECT 'unknown_actor_kind', v
+  FROM (SELECT DISTINCT actor_kind AS v FROM claims)
+  WHERE v NOT IN ('source', 'user')
+
+  UNION ALL
+  SELECT 'unknown_actor_resolution_status', v
+  FROM (SELECT DISTINCT actor_resolution_status AS v FROM claims)
+  WHERE v NOT IN ('active', 'suppressed')
+
+  -- ChangeSetAction, plus '' — the empty action is REQUIRED for an ingest changeset
+  -- (the provenance_changeset_action_iff_interactive constraint), not a missing value.
+  UNION ALL
+  SELECT 'unknown_changeset_action', v
+  FROM (SELECT DISTINCT changeset_action AS v FROM claims)
+  WHERE v NOT IN ('', 'create', 'edit', 'delete', 'revert')
+
+  UNION ALL
+  SELECT 'unknown_ingest_run_status', v
+  FROM (SELECT DISTINCT status AS v FROM ingest_runs)
+  WHERE v NOT IN ('running', 'success', 'failed')
+
+  UNION ALL
+  SELECT 'unknown_ingest_source_type', v
+  FROM (SELECT DISTINCT ingest_source_type AS v FROM ingest_sources)
+  WHERE v NOT IN ('database', 'wiki', 'book', 'editorial', 'other')
+
+  UNION ALL
+  SELECT 'unknown_citation_source_type', v
+  FROM (SELECT DISTINCT citation_source_type AS v FROM citation_sources)
+  WHERE v NOT IN ('book', 'magazine', 'web', 'video');

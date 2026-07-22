@@ -33,6 +33,7 @@
           name={title.name}
           thumbnailUrl={title.thumbnail_url}
           year={title.year}
+          showManufacturer={false}
         />
       {/snippet}
     </SearchableGrid>

@@ -35,6 +35,7 @@ export type SectionPatchBody = Partial<
     | 'credits'
     | 'abbreviations'
     | 'relationships'
+    | 'export_markets'
     | 'note'
     | 'citations'
     | 'inline_citations'
