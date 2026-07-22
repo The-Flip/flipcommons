@@ -42,30 +42,42 @@ export function findRefEntry(container: Element, index: number): Element | null 
 
 /**
  * Find the first inline citation marker with a given index within a container.
+ *
+ * Matches on the data attribute alone: markers are a `<sup>` in server-rendered
+ * markdown and a `<button>` where a component renders them, so qualifying the
+ * selector by tag would miss one surface or the other.
  */
 export function findFirstInlineMarker(container: Element, index: number): Element | null {
-  return container.querySelector(`sup[data-cite-index="${index}"]`);
+  return container.querySelector(`[data-cite-index="${index}"]`);
 }
 
-const highlightTimers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
+/**
+ * Class driving the `cite-flash` keyframe (declared in `app.css`).
+ *
+ * Only for elements no component owns — the `sup` markers inside
+ * server-rendered markdown, which Svelte cannot attach a scoped class to.
+ * Anywhere a component renders the target itself, bind the class declaratively
+ * instead so the style stays scoped; see `CitationReference.svelte`.
+ */
+export const CITE_FLASH_CLASS = 'cite-flash';
 
 /**
- * Smooth-scroll to an element and briefly highlight it.
- * Safe to call rapidly — clears any pending highlight timeout on the
- * same element before starting a new one.
+ * Smooth-scroll to an element and flash it.
+ *
+ * Safe to call rapidly: the class is removed and re-added around a forced
+ * reflow, so a repeat jump to the same element restarts the animation.
  */
-export function scrollToAndHighlight(element: Element): void {
+export function scrollToAndFlash(element: Element): void {
   element.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-  const existing = highlightTimers.get(element);
-  if (existing != null) clearTimeout(existing);
-
-  element.classList.add('cite-highlight');
-  highlightTimers.set(
-    element,
-    setTimeout(() => {
-      element.classList.remove('cite-highlight');
-      highlightTimers.delete(element);
-    }, 1500),
-  );
+  element.classList.remove(CITE_FLASH_CLASS);
+  // Forces style recalculation, without which the removal and re-add collapse
+  // into no change at all and the animation never restarts. Read through
+  // `getBoundingClientRect`, which every Element has, rather than an
+  // HTMLElement-only property that would need a cast to reach.
+  element.getBoundingClientRect();
+  element.classList.add(CITE_FLASH_CLASS);
+  element.addEventListener('animationend', () => element.classList.remove(CITE_FLASH_CLASS), {
+    once: true,
+  });
 }

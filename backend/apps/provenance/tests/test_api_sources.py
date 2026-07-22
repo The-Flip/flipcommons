@@ -3,16 +3,23 @@ citation-join write path its citation payload depends on."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
+from apps.accounts.test_factories import make_user
 from apps.catalog.models import Title
+from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.test_factories import make_citation_link, make_citation_source
 from apps.claim_edit.claim_write import ClaimSpec, execute_claims
 from apps.provenance.models import ClaimCitationInstance
 from apps.provenance.schemas import CitationInstanceCreateSchema
 from apps.provenance.test_factories import (
     cite_claim,
+    make_citation_instance,
     make_claim,
     user_changeset,
 )
@@ -258,3 +265,68 @@ class TestScalarCitationJoin:
             "Released in 1997.",
             "Designed by Brian Eddy.",
         }
+
+
+def _q(fn: Callable[[], object]) -> int:
+    with CaptureQueriesContext(connection) as ctx:
+        fn()
+    return len(ctx.captured_queries)
+
+
+def _seed_cited_claims(pm, citation_source, start: int, n: int) -> None:
+    """Add ``n`` claims to ``pm``, each by its own actor and each carrying both
+    an attached citation instance and an inline ``[[cite:id:N]]`` marker.
+
+    Scales every axis the sources payload builds per claim, so a batch that
+    regresses to a per-claim query shows up as a query-count growth:
+    ``resolve_display_context`` and ``resolve_inline_citations`` each issue one
+    query for the whole claim list, and both ``citation_instances_prefetch``
+    and ``resolve_inline_citations`` prefetch ``citation_source__links``, which
+    ``citation_schema`` reads for every citation it serializes. Dropping the
+    ``to_attr`` prefetch fails loudly (``citation_instances()`` raises), but
+    dropping either ``links`` prefetch would N+1 silently — hence both a join
+    row and a marker on every claim.
+    """
+    for i in range(start, start + n):
+        instance = make_citation_instance(citation_source=citation_source)
+        # Namespaced names park in extra_data, so each claim is its own field
+        # without needing 20 real columns.
+        claim = make_claim(
+            pm,
+            f"probe.note_{i}",
+            f"Copy [[cite:id:{instance.pk}]] {i}",
+            user=make_user(),
+        )
+        cite_claim(claim, citation_source=citation_source, locator=f"p. {i}")
+
+
+@pytest.mark.django_db
+def test_sources_page_does_not_scale_queries_with_claim_count(client, bootstrap_source):
+    """GET /api/pages/sources/... query count must not grow with N claims.
+
+    Distinct actors and distinct fields per claim, so a regression in the
+    display-context batch, the inline-citation batch or either citation-links
+    prefetch shows up here.
+    """
+    pm = make_machine_model(name="MM3", slug="mm-z")
+    citation_source = make_citation_source(name="Flyer", source_type="web")
+
+    _seed_cited_claims(pm, citation_source, 0, 2)
+    base = _q(lambda: client.get("/api/pages/sources/model/mm-z/"))
+
+    _seed_cited_claims(pm, citation_source, 2, 18)
+    scaled = _q(lambda: client.get("/api/pages/sources/model/mm-z/"))
+
+    # Guard against a vacuous pass: the endpoint must actually be serving the
+    # claims we seeded, not 404ing or returning an empty list.
+    resp = client.get("/api/pages/sources/model/mm-z/")
+    assert resp.status_code == 200
+    body = resp.json()["sources"]
+    probes = [c for c in body if c["field_name"].startswith("probe.")]
+    assert len(probes) == 20
+    # One attached instance plus one inline marker on each.
+    assert sum(len(claim["citations"]) for claim in probes) == 40
+
+    assert scaled == base, (
+        f"sources page scales queries with claim count: {base} -> {scaled}."
+    )

@@ -97,7 +97,9 @@ def resolve_inline_citations(values: Iterable[object]) -> InlineCitationLookup:
 def citation_schema(inst: CitationInstance, *, slug: str | None) -> ClaimCitationSchema:
     """Serialize one citation instance for a claim."""
     source = inst.citation_source
+    assert inst.pk is not None
     return ClaimCitationSchema(
+        id=inst.pk,
         source_name=source.name,
         source_type=source.source_type,
         author=source.author,

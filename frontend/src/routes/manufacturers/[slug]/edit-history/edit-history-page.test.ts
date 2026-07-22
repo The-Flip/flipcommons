@@ -6,6 +6,7 @@ import Harness from './edit-history-page.test-harness.svelte';
 
 function makeCitation(over: Partial<ClaimCitationSchema>): ClaimCitationSchema {
   return {
+    id: 1,
     source_name: 'Some Source',
     source_type: 'web',
     author: '',

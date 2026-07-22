@@ -88,6 +88,28 @@ export function substituteCiteMarkers(text: string, indexes: Map<string, number>
   });
 }
 
+/**
+ * Makes rendered `[n]` markers live rather than inert labels.
+ *
+ * Supplied only by a surface that has a citation reference list to jump to —
+ * the Sources page. Edit-history rows omit it, so their markers stay plain
+ * text instead of advertising an interaction they do not have.
+ */
+export interface CiteMarkerInteractions {
+  /** Reference number → citation-instance id, the identity `CitationTooltip`
+   *  binds to via `data-cite-id`. A number absent here stays inert. */
+  ids: Map<number, number>;
+  /** Where a marker points. Markers render as anchors: inline by default, so
+   *  they keep a real hit area inside the zero line-height superscript that a
+   *  `<button>` (inline-block, and not reliably overridable) collapses to
+   *  nothing. It also means the jump works before hydration. */
+  hrefFor: (index: number) => string;
+  /** Reference number to flash, set when a citation's back-link jumps back to
+   *  the text. Every marker carrying that number flashes, not only the one
+   *  scrolled to. */
+  flashIndex?: number | null;
+}
+
 /** One piece of marker-split text: a plain-text run or a `[n]` marker. */
 export interface CiteMarkedPart {
   type: 'text' | 'marker';

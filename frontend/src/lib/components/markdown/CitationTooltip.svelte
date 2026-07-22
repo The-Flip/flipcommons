@@ -13,12 +13,16 @@
 
   let {
     container,
-    htmlSignal,
+    contentSignal,
     citations = undefined,
     onNavigate = undefined,
   }: {
     container: HTMLDivElement | undefined;
-    htmlSignal: string;
+    /** Changes whenever the markers inside `container` may have been
+     *  re-rendered, so the listener scan re-runs. The rich-text surfaces pass
+     *  their HTML; a Svelte-rendered surface passes any string derived from
+     *  what it drew. */
+    contentSignal: string;
     citations?: InlineCitation[];
     onNavigate?: (index: number) => void;
   } = $props();
@@ -87,7 +91,7 @@
     function onClick(e: MouseEvent) {
       const target = e.target as HTMLElement;
       if (tooltipEl?.contains(target)) return;
-      if (target.closest('sup[data-cite-id]')) return;
+      if (target.closest('[data-cite-id]')) return;
       dispatch({ type: 'click-outside' });
     }
     document.addEventListener('click', onClick, true);
@@ -96,10 +100,10 @@
 
   // Scan container for citation elements and attach listeners
   $effect(() => {
-    void htmlSignal; // re-run when html changes
+    void contentSignal; // re-run when the markers may have changed
     if (!container) return;
 
-    const sups = container.querySelectorAll<HTMLElement>('sup[data-cite-id]');
+    const sups = container.querySelectorAll<HTMLElement>('[data-cite-id]');
     if (sups.length === 0) return;
 
     // Collect IDs and fetch missing data (skip if populated from props)

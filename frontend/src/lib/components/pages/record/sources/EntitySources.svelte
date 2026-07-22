@@ -2,11 +2,16 @@
 showing the distinct values asserted for it, who backs each value and the
 citations behind it, with the losing values de-emphasized beneath the winner. -->
 <script lang="ts">
+  import { tick } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import type { ClaimSchema } from '$lib/api/schema';
+  import ChangeValue from '$lib/components/provenance/ChangeValue.svelte';
   import ClaimAuthor from '$lib/components/provenance/ClaimAuthor.svelte';
-  import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
   import FocusContentShell from '$lib/components/layout/page/FocusContentShell.svelte';
-  import CitationBody from '$lib/components/citation/CitationBody.svelte';
+  import CitationReference from '$lib/components/markdown/CitationReference.svelte';
+  import CitationTooltip from '$lib/components/markdown/CitationTooltip.svelte';
+  import CollapsibleBlock from '$lib/components/ui/CollapsibleBlock.svelte';
+  import { findFirstInlineMarker, findRefEntry } from '$lib/components/markdown/citation-refs';
   import { getEntityContext } from '$lib/entity-context';
   import { buildSourcesView, type ValueSupport } from './entity-sources';
 
@@ -14,19 +19,104 @@ citations behind it, with the losing values de-emphasized beneath the winner. --
 
   let view = $derived(buildSourcesView(sources));
   const entity = getEntityContext();
+
+  /** Wraps every marker on the page, so one tooltip serves them all. */
+  let fieldsEl: HTMLDivElement | undefined = $state();
+  let refsEl: HTMLElement | undefined = $state();
+  let highlightedRef: number | null = $state(null);
+  let flashedMarker: number | null = $state(null);
+  /** Prose values the reader has opened, by `ValueSupport.uid`. */
+  const expandedValues = new SvelteSet<string>();
+
+  /** Re-runs the tooltip's listener scan whenever the markers change. Keyed on
+   *  the reference identities, which is what the markers are drawn from. */
+  let markerSignal = $derived(view.references.map((c) => c.id).join(','));
+
+  /** Fragment target of a reference number. The tooltip intercepts the click
+   *  to scroll and flash; the href is what makes the jump work regardless. */
+  const citationHref = (index: number) => `#citation-${index}`;
+
+  /** A marker was activated: jump to its entry in the citation list. */
+  async function scrollToRef(index: number) {
+    // Clear first so a repeat jump to the same entry replays the flash.
+    highlightedRef = null;
+    await tick();
+    highlightedRef = index;
+    await tick();
+    if (refsEl)
+      findRefEntry(refsEl, index)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  /** Every value that renders a marker for *index*. */
+  function valuesCiting(index: number): ValueSupport[] {
+    return view.fields
+      .flatMap((field) => field.slots)
+      .flatMap((slot) => [slot.winner, ...slot.others])
+      .filter((entry) => entry.citeIds.get(index) !== undefined);
+  }
+
+  /** A citation's back-link was activated: scroll to its first marker. Every
+   *  marker carrying that number flashes, since the reader may want the rest. */
+  async function scrollToMarker(index: number) {
+    // A collapsed value clips its own markers, so open the ones that carry
+    // this number before looking for it — otherwise the jump lands on
+    // something the reader cannot see.
+    for (const entry of valuesCiting(index)) expandedValues.add(entry.uid);
+    flashedMarker = null;
+    await tick();
+    flashedMarker = index;
+    await tick();
+    if (fieldsEl) {
+      findFirstInlineMarker(fieldsEl, index)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }
+  }
+
+  function setExpanded(uid: string, expanded: boolean): void {
+    if (expanded) expandedValues.add(uid);
+    else expandedValues.delete(uid);
+  }
 </script>
+
+{#snippet valueText(entry: ValueSupport)}
+  <ChangeValue
+    value={entry.value}
+    citeIndexes={entry.citeIndexes}
+    interactions={{ ids: entry.citeIds, hrefFor: citationHref, flashIndex: flashedMarker }}
+  /><!--
+ -->{#each entry.footnotes as footnote (footnote.index)}<sup class="cite-marker"
+      ><a
+        href={citationHref(footnote.index)}
+        class:flash={footnote.index === flashedMarker}
+        data-cite-id={footnote.id}
+        data-cite-index={footnote.index}
+        aria-label="Citation {footnote.index}">[{footnote.index}]</a
+      ></sup
+    >{/each}
+{/snippet}
 
 {#snippet valueRow(entry: ValueSupport)}
   <div class="value-row" class:displaced={!entry.isWinner}>
-    <span class="value">
-      <ClaimValue value={entry.value} /><!--
-     --><sup class="refs"
-        >{#each entry.citationNumbers as number (number)}<a
-            href="#citation-{number}"
-            title="Jump to citation {number}">[{number}]</a
-          >{/each}</sup
-      >
-    </span>
+    <div class="value">
+      {#if entry.isProse}
+        <!-- Two lines until asked: a description runs to paragraphs, and a
+             contested one is rendered once per editor who has touched it. The
+             second line is what the fade acts on — cut to one, there is nothing
+             trailing off and "Show more" reads as unattached to anything. -->
+        <CollapsibleBlock
+          collapsedHeight="2lh"
+          expanded={expandedValues.has(entry.uid)}
+          onExpandedChange={(next) => setExpanded(entry.uid, next)}
+          signal={entry.uid}
+        >
+          {@render valueText(entry)}
+        </CollapsibleBlock>
+      {:else}
+        {@render valueText(entry)}
+      {/if}
+    </div>
     <span class="support">
       {#each entry.supporters as attribution, i (i)}
         <ClaimAuthor {attribution} />
@@ -56,35 +146,48 @@ citations behind it, with the losing values de-emphasized beneath the winner. --
           : '.'}{/each}
     </p>
 
-    <dl class="fields">
-      {#each view.fields as field (field.field)}
-        <div class="field">
-          <dt>{field.field}</dt>
-          <dd>
-            {#each field.slots as slot (slot.claimKey)}
-              <div class="slot">
-                {@render valueRow(slot.winner)}
-                {#if slot.others.length > 0}
-                  <p class="others-label">Other values claimed:</p>
-                  {#each slot.others as entry (entry.key)}
-                    {@render valueRow(entry)}
-                  {/each}
-                {/if}
-              </div>
-            {/each}
-          </dd>
-        </div>
-      {/each}
-    </dl>
+    <div bind:this={fieldsEl}>
+      <dl class="fields">
+        {#each view.fields as field (field.field)}
+          <div class="field">
+            <dt>{field.field}</dt>
+            <dd>
+              {#each field.slots as slot (slot.claimKey)}
+                <div class="slot">
+                  {@render valueRow(slot.winner)}
+                  {#if slot.others.length > 0}
+                    <p class="others-label">Other values claimed:</p>
+                    {#each slot.others as entry (entry.key)}
+                      {@render valueRow(entry)}
+                    {/each}
+                  {/if}
+                </div>
+              {/each}
+            </dd>
+          </div>
+        {/each}
+      </dl>
+    </div>
+    <CitationTooltip
+      container={fieldsEl}
+      contentSignal={markerSignal}
+      citations={view.references}
+      onNavigate={scrollToRef}
+    />
 
     {#if view.references.length > 0}
-      <section class="references">
+      <section class="references" bind:this={refsEl}>
         <h2>Citations</h2>
         <ol>
-          {#each view.references as citation, i (i)}
-            <li id="citation-{i + 1}">
-              <CitationBody {citation} layout="inline" />
-            </li>
+          {#each view.references as citation (citation.index)}
+            <CitationReference
+              index={citation.index}
+              {citation}
+              anchorId="citation-{citation.index}"
+              onBackLink={scrollToMarker}
+              highlighted={citation.index === highlightedRef}
+              onFlashEnd={() => (highlightedRef = null)}
+            />
           {/each}
         </ol>
       </section>
@@ -109,7 +212,7 @@ citations behind it, with the losing values de-emphasized beneath the winner. --
      unchanged, being inline-block already; line-height does the work row-gap
      used to. */
   .summary {
-    font-size: var(--font-size-0);
+    font-size: var(--font-size-1);
     line-height: 1.9;
     color: var(--color-text-muted);
     margin-bottom: var(--size-4);
@@ -166,8 +269,11 @@ citations behind it, with the losing values de-emphasized beneath the winner. --
     color: var(--color-text);
   }
 
-  .value-row.displaced {
-    opacity: 0.5;
+  /* Colour rather than opacity, and on the value alone: opacity on the row
+     would fade the citation markers and supporter chips too, pushing text
+     that is already muted under the contrast floor. */
+  .value-row.displaced .value {
+    color: var(--color-text-muted);
   }
 
   .value {
@@ -185,20 +291,28 @@ citations behind it, with the losing values de-emphasized beneath the winner. --
   }
 
   /* Bracketed superscript, the encyclopedia convention: a bare number riding a
-     numeric value ("4 3" for player_count) reads as part of the value. */
-  .refs {
-    font-size: 0.85em;
-  }
-
-  .refs a {
+     numeric value ("4 3" for player_count) reads as part of the value. Sized to
+     match CiteMarkedText's inline markers, which sit alongside these. */
+  .cite-marker {
     margin-left: 2px;
+    font-size: var(--font-size-00, 0.75rem);
+    line-height: 0;
     color: var(--color-link);
-    text-decoration: none;
     font-variant-numeric: tabular-nums;
   }
 
-  .refs a:hover {
+  .cite-marker a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .cite-marker a:hover,
+  .cite-marker a:focus-visible {
     text-decoration: underline;
+  }
+
+  .cite-marker a.flash {
+    animation: cite-flash 1.5s ease-out;
   }
 
   .references {
@@ -212,18 +326,12 @@ citations behind it, with the losing values de-emphasized beneath the winner. --
     margin-bottom: var(--size-3);
   }
 
+  /* The entries are CitationReference's own `<li>`s — their spacing and flash
+     belong to it, so only the list box is styled here. */
   .references ol {
     margin: 0;
     padding-left: var(--size-5);
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-3);
     font-size: var(--font-size-0);
-  }
-
-  .references li {
-    /* Anchor targets: keep the number in view when jumped to from a ref. */
-    scroll-margin-top: var(--size-5);
   }
 
   .no-sources {
@@ -239,6 +347,19 @@ citations behind it, with the losing values de-emphasized beneath the winner. --
 
     .value-row {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* Scoped per component: `no-unknown-animations` resolves keyframes within a
+     stylesheet, so a shared global one would not satisfy it — and Svelte hashes
+     a local @keyframes together with the rule referencing it. */
+  @keyframes cite-flash {
+    from {
+      background-color: var(--color-highlight-bg);
+    }
+
+    to {
+      background-color: transparent;
     }
   }
 </style>

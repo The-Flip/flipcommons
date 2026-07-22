@@ -1,5 +1,5 @@
 import { tick } from 'svelte';
-import { findFirstInlineMarker, findRefEntry, scrollToAndHighlight } from './citation-refs';
+import { findFirstInlineMarker, findRefEntry, scrollToAndFlash } from './citation-refs';
 
 /**
  * Shared state connecting a Rich-Text Overview accordion to its References
@@ -11,19 +11,26 @@ export function createRichTextAccordionState() {
   let descriptionContentEl = $state<HTMLDivElement | undefined>();
   let refsContentEl = $state<HTMLDivElement | undefined>();
   let refsAccordionOpen = $state(false);
+  let highlightedRefIndex = $state<number | null>(null);
 
   function scrollToInlineMarker(index: number) {
     if (!descriptionContentEl) return;
     const marker = findFirstInlineMarker(descriptionContentEl, index);
-    if (marker) scrollToAndHighlight(marker);
+    // Imperative: the marker is inside `{@html}` markdown, so no component
+    // renders it and no scoped class can reach it. Reference entries are
+    // component-rendered and flash off `highlightedRefIndex` instead.
+    if (marker) scrollToAndFlash(marker);
   }
 
   async function scrollToRefEntry(index: number) {
     refsAccordionOpen = true;
+    // Clear first so a repeat jump to the same entry replays the flash.
+    highlightedRefIndex = null;
+    await tick();
+    highlightedRefIndex = index;
     await tick();
     if (!refsContentEl) return;
-    const entry = findRefEntry(refsContentEl, index);
-    if (entry) scrollToAndHighlight(entry);
+    findRefEntry(refsContentEl, index)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   return {
@@ -44,6 +51,12 @@ export function createRichTextAccordionState() {
     },
     set refsAccordionOpen(value) {
       refsAccordionOpen = value;
+    },
+    get highlightedRefIndex() {
+      return highlightedRefIndex;
+    },
+    clearHighlightedRef() {
+      highlightedRefIndex = null;
     },
     scrollToInlineMarker,
     scrollToRefEntry,

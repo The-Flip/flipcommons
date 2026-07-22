@@ -86,7 +86,7 @@ afterEach(() => {
 import type { InlineCitation } from './citation-tooltip';
 
 function renderTooltip(html: string, citations?: InlineCitation[]) {
-  return render(CitationTooltipFixture, { html, htmlSignal: html, citations });
+  return render(CitationTooltipFixture, { html, contentSignal: html, citations });
 }
 
 function getCitation(id: string) {
@@ -107,7 +107,7 @@ describe('CitationTooltip', () => {
 
     await rendered.rerender({
       html: '<p>Updated <sup data-cite-id="1" tabindex="0">[1]</sup> and <sup data-cite-id="2" tabindex="0">[2]</sup>.</p>',
-      htmlSignal: 'updated',
+      contentSignal: 'updated',
     });
 
     await vi.advanceTimersByTimeAsync(0);

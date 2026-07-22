@@ -172,6 +172,12 @@ class ClaimCitationSchema(Schema):
     clients can match the entry to its marker in the text).
     """
 
+    id: int = Field(
+        description=(
+            "The citation instance's primary key — the identity the citation "
+            "tooltip keys on, matching the ``data-cite-id`` its marker carries."
+        )
+    )
     source_name: str = Field(description="The cited source's display name.")
     source_type: str = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."

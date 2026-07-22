@@ -1,19 +1,23 @@
 <script lang="ts">
   import type { InlineCitation } from './citation-tooltip';
   import { deduplicateCitations } from './citation-refs';
-  import { displayLocator } from '$lib/citation-types';
-  import { citationLinkDisplay } from '$lib/components/citation/citation-links';
+  import CitationReference from './CitationReference.svelte';
 
   let {
     citations,
     open = $bindable(false),
     onBackLink,
     showToggle = true,
+    highlightedIndex = null,
+    onFlashEnd,
   }: {
     citations: InlineCitation[];
     open?: boolean;
     onBackLink: (index: number) => void;
     showToggle?: boolean;
+    /** Reference number to flash — the entry a marker just jumped to. */
+    highlightedIndex?: number | null;
+    onFlashEnd?: () => void;
   } = $props();
 
   let uniqueCitations = $derived(deduplicateCitations(citations));
@@ -28,36 +32,13 @@
   {#if open || !showToggle}
     <ol>
       {#each uniqueCitations as cite (cite.index)}
-        {@const links = citationLinkDisplay(cite.links)}
-        <li data-ref-index={cite.index}>
-          <button
-            class="back-link"
-            onclick={() => onBackLink(cite.index)}
-            aria-label="Back to citation {cite.index}">&#x21A9;</button
-          >
-          <strong>
-            {#if links.titleHref}
-              <a href={links.titleHref} target="_blank">{cite.source_name}</a>
-            {:else}
-              {cite.source_name}
-            {/if}
-          </strong>
-          {#if cite.author || cite.year}
-            <span class="meta">
-              &mdash; {[cite.author, cite.year].filter(Boolean).join(', ')}
-            </span>
-          {/if}
-          {#if cite.locator}
-            <span class="locator">({displayLocator(cite.source_type, cite.locator)})</span>
-          {/if}
-          {#if links.chips.length > 0}
-            <span class="links">
-              {#each links.chips as link (link.url)}
-                <a href={link.url} target="_blank">{link.display_name}</a>
-              {/each}
-            </span>
-          {/if}
-        </li>
+        <CitationReference
+          index={cite.index}
+          citation={cite}
+          {onBackLink}
+          highlighted={cite.index === highlightedIndex}
+          {onFlashEnd}
+        />
       {/each}
     </ol>
   {/if}
@@ -95,52 +76,5 @@
     padding-left: var(--size-5);
     font-size: var(--font-size-1);
     line-height: var(--font-lineheight-3);
-  }
-
-  li {
-    margin-bottom: var(--size-2);
-  }
-
-  .back-link {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-link);
-    font-size: var(--font-size-0);
-    padding: 0;
-    margin-right: var(--size-1);
-  }
-
-  .back-link:hover {
-    text-decoration: underline;
-  }
-
-  strong a {
-    color: inherit;
-    text-decoration: none;
-  }
-
-  strong a:hover {
-    text-decoration: underline;
-  }
-
-  .meta,
-  .locator {
-    color: var(--color-text-muted);
-  }
-
-  .links {
-    display: inline;
-    margin-left: var(--size-1);
-  }
-
-  .links a {
-    color: var(--color-link);
-    text-decoration: none;
-    font-size: var(--font-size-0);
-  }
-
-  .links a:hover {
-    text-decoration: underline;
   }
 </style>

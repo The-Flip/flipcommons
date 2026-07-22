@@ -13,7 +13,6 @@
   let {
     citation,
     clampQuote = false,
-    linkLayout = 'column',
     layout = 'stacked',
   }: {
     /** The citation to render. Any citation wire schema (inline, evidence,
@@ -23,8 +22,6 @@
      *  tooltip). Off by default so the sources panel shows it in full.
      *  Ignored in the inline layout. */
     clampQuote?: boolean;
-    /** How to lay out the supporting-link chips in the stacked layout. */
-    linkLayout?: 'column' | 'row';
     /** Overall arrangement: `'stacked'` blocks (tooltip, sources panel) or a
      *  single inline `source-line` with the byline, locator and chips run
      *  together (edit-history change rows). */
@@ -71,7 +68,7 @@
     <blockquote class="quote" class:clamped={clampQuote}>{citation.quote}</blockquote>
   {/if}
   {#if display.chips.length > 0}
-    <div class="links" class:row={linkLayout === 'row'}>
+    <div class="links">
       {#each display.chips as link (link.url)}
         <a href={link.url} target="_blank">{link.display_name}</a>
       {/each}
@@ -123,13 +120,6 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-  }
-
-  .links.row {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: var(--size-2);
-    margin-top: 0;
   }
 
   .links a {

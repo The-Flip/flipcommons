@@ -9,6 +9,12 @@
  * Within a slot, claims asserting the same value are consolidated into one
  * entry whose supporters and citations are pooled across every actor that
  * asserted it.
+ *
+ * Ordering is derived in two passes: the drafts below accumulate and sort, then
+ * a freeze pass walks the ordered result assigning reference numbers, so the
+ * page reads 1, 2, 3… top to bottom. A number cannot be known until the values
+ * around it are ordered, which is why the exported shapes are built only in
+ * that second pass, complete.
  */
 import type {
   ClaimAttributionSchema,
@@ -16,32 +22,45 @@ import type {
   ClaimSchema,
   ClaimValueSchema,
 } from '$lib/api/schema';
+import type { InlineCitation } from '$lib/components/markdown/citation-tooltip';
 
-/** A deduped citation paired with its identity key, so the numbering pass
- *  reuses the key `accumulate` already derived rather than rebuilding it. */
-interface KeyedCitation {
-  key: string;
-  citation: ClaimCitationSchema;
+/** A marker with no inline position in the value's text — evidence attached to
+ *  the claim rather than cited from it. Rendered as a trailing superscript. */
+export interface FootnoteMarker {
+  /** Reference number into `SourcesView.references`. */
+  index: number;
+  /** Citation-instance id, for the tooltip's `data-cite-id`. */
+  id: number;
 }
 
 /** One distinct value within a slot, with everything that backs it. */
 export interface ValueSupport {
   /** Canonical JSON form of the value — stable `{#each}` key within a slot. */
   key: string;
+  /** Page-unique identity, for state the page keeps per value. Claim keys are
+   *  unique within an entity, so pairing one with a value key is too. */
+  uid: string;
   value: ClaimValueSchema;
+  /** Whether the value is prose — a markdown field, the only kind whose text
+   *  runs to paragraphs. Drives both the collapse and whether the value's own
+   *  text can position a citation marker, so the two cannot disagree. */
+  isProse: boolean;
   /** Distinct actors asserting this value, most recent assertion first. */
   supporters: ClaimAttributionSchema[];
-  /** Ascending 1-based reference numbers into `SourcesView.references` — what
-   *  the page renders as footnote markers. */
-  citationNumbers: number[];
+  /** Reference numbers keyed by citation-instance slug, for the citations the
+   *  value's own text positions with an inline `[[cite:slug]]` marker. Feeds
+   *  `ChangeValue`, which renders them as superscripts in place. */
+  citeIndexes: Map<string, number>;
+  /** Reference number → citation-instance id, for the numbers this value cites
+   *  *inline*. Deliberately excludes its footnote numbers: the marker renderer
+   *  treats any bracketed number in the text as a marker, so a number the
+   *  value never substituted must not be resolvable from stray prose.
+   *  Footnote markers carry their own id and never go through that path. */
+  citeIds: Map<number, number>;
+  /** Markers with no inline position, ascending by reference number. */
+  footnotes: FootnoteMarker[];
   /** Whether this value currently wins its slot. */
   isWinner: boolean;
-  /** Internal: newest assertion of this value; the sort key for slots and fields. */
-  latestAt: string;
-  /** Internal: the deduped citations backing this value. Consumed by
-   *  `numberCitations` to fill `citationNumbers`; the page renders bodies from
-   *  `SourcesView.references`, never from here. */
-  citationEntries: KeyedCitation[];
 }
 
 /** One claim key — the set of values competing for a single resolved slot. */
@@ -51,8 +70,6 @@ export interface ClaimSlot {
   winner: ValueSupport;
   /** Values that lost, newest-first. Empty unless sources disagree. */
   others: ValueSupport[];
-  /** Internal: sort key. */
-  latestAt: string;
 }
 
 /**
@@ -68,15 +85,15 @@ export interface FieldSupport {
   /** One entry for a scalar field; one per related row for a relationship field. */
   slots: ClaimSlot[];
   kind: FieldSupportKind;
-  /** Internal: sort key. */
-  latestAt: string;
 }
 
 /** The whole page: the field list plus the citations its entries reference. */
 export interface SourcesView {
   fields: FieldSupport[];
-  /** Every distinct citation on the page, in reference-number order. */
-  references: ClaimCitationSchema[];
+  /** Every distinct citation on the page, in reference-number order. Carries
+   *  its own `index`, so it satisfies `InlineCitation` and feeds both the
+   *  reference list and the marker tooltip unchanged. */
+  references: InlineCitation[];
   /** Every actor that asserted a claim, most recent contribution first. */
   contributors: ClaimAttributionSchema[];
 }
@@ -108,11 +125,6 @@ function latestOf(items: readonly Dated[]): string {
   return items.reduce((max, item) => (item.latestAt > max ? item.latestAt : max), '');
 }
 
-/** A slot's values in display order: the winner, then everything it displaced. */
-function slotValues(slot: ClaimSlot): ValueSupport[] {
-  return [slot.winner, ...slot.others];
-}
-
 /** Identity of an actor, so the same source asserting twice counts once. */
 function actorKey(attribution: ClaimAttributionSchema): string {
   const author = attribution.author;
@@ -134,7 +146,11 @@ function keepLatestByActor(
  *  JSON rather than a joined string: the array encoding is injective, so no
  *  separator has to be chosen that the fields themselves cannot contain.
  *  Joining on a printable character would let neighbours collide — source
- *  "A B" with no author keying the same as source "A" by author "B". */
+ *  "A B" with no author keying the same as source "A" by author "B".
+ *
+ *  `slug` is deliberately out of the key: the same evidence reaches a claim
+ *  both as an attached join row (no slug) and as an inline marker (slug), and
+ *  those are one citation, listed once. */
 function citationKey(citation: ClaimCitationSchema): string {
   return JSON.stringify([
     citation.source_name,
@@ -146,7 +162,7 @@ function citationKey(citation: ClaimCitationSchema): string {
 }
 
 /** Mutable accumulator for one distinct value while claims are folded in. */
-interface ValueAccumulator {
+interface ValueDraft {
   key: string;
   value: ClaimValueSchema;
   supporters: Map<string, ClaimAttributionSchema>;
@@ -155,19 +171,37 @@ interface ValueAccumulator {
   latestAt: string;
 }
 
+/** One slot mid-build: its distinct values, ordered winner-first. */
+interface SlotDraft extends Dated {
+  claimKey: string;
+  values: ValueDraft[];
+}
+
+/** One field mid-build: its slots, ordered and classified. */
+interface FieldDraft extends Dated {
+  field: string;
+  slots: SlotDraft[];
+  kind: FieldSupportKind;
+}
+
 /** Distinct values of one slot, keyed by the canonical JSON of the value. */
-type SlotAccumulator = Map<string, ValueAccumulator>;
+type SlotAccumulator = Map<string, ValueDraft>;
 /** One field's slots, keyed by claim key. */
 type FieldAccumulator = Map<string, SlotAccumulator>;
 
-function foldClaim(acc: ValueAccumulator, claim: ClaimSchema): void {
-  keepLatestByActor(acc.supporters, claim.attribution);
+function foldClaim(draft: ValueDraft, claim: ClaimSchema): void {
+  keepLatestByActor(draft.supporters, claim.attribution);
   for (const citation of claim.citations) {
     const key = citationKey(citation);
-    if (!acc.citations.has(key)) acc.citations.set(key, citation);
+    const seen = draft.citations.get(key);
+    // Prefer the slug-bearing copy: only it can be placed inline, and the
+    // attached copy of the same evidence carries no extra information.
+    if (!seen || (seen.slug == null && citation.slug != null)) {
+      draft.citations.set(key, citation);
+    }
   }
-  acc.isWinner ||= claim.is_winner;
-  if (claim.attribution.created_at > acc.latestAt) acc.latestAt = claim.attribution.created_at;
+  draft.isWinner ||= claim.is_winner;
+  if (claim.attribution.created_at > draft.latestAt) draft.latestAt = claim.attribution.created_at;
 }
 
 /** Bucket every claim by field, then slot, then distinct value. */
@@ -187,9 +221,9 @@ function accumulate(sources: ClaimSchema[]): Map<string, FieldAccumulator> {
     }
 
     const key = JSON.stringify(claim.value.raw ?? null);
-    let acc = values.get(key);
-    if (!acc) {
-      acc = {
+    let draft = values.get(key);
+    if (!draft) {
+      draft = {
         key,
         value: claim.value,
         supporters: new Map(),
@@ -197,79 +231,113 @@ function accumulate(sources: ClaimSchema[]): Map<string, FieldAccumulator> {
         isWinner: false,
         latestAt: claim.attribution.created_at,
       };
-      values.set(key, acc);
+      values.set(key, draft);
     }
 
-    foldClaim(acc, claim);
+    foldClaim(draft, claim);
   }
   return byField;
 }
 
-/** Freeze one slot's accumulated values into display order: winner, then the
- *  values it displaced, newest-first. */
-function buildSlot(claimKey: string, values: SlotAccumulator): ClaimSlot {
-  const ordered: ValueSupport[] = [...values.values()]
-    .map((acc) => ({
-      key: acc.key,
-      value: acc.value,
-      supporters: [...acc.supporters.values()].sort((a, b) =>
-        newestFirst(a.created_at, b.created_at),
-      ),
-      citationNumbers: [],
-      isWinner: acc.isWinner,
-      latestAt: acc.latestAt,
-      // Carries the map's keys forward so numbering need not re-derive them.
-      citationEntries: [...acc.citations].map(([key, citation]) => ({ key, citation })),
-    }))
-    .sort((a, b) => Number(b.isWinner) - Number(a.isWinner) || byRecency(a, b));
-  // Every claim key has a winner (the backend marks one per key), so the head
-  // of a winner-first ordering is it.
-  const [winner, ...others] = ordered;
-  return { claimKey, winner, others, latestAt: latestOf(ordered) };
+/** Order one slot's values: the winner, then the values it displaced,
+ *  newest-first. */
+function draftSlot(claimKey: string, values: SlotAccumulator): SlotDraft {
+  const ordered = [...values.values()].sort(
+    (a, b) => Number(b.isWinner) - Number(a.isWinner) || byRecency(a, b),
+  );
+  return { claimKey, values: ordered, latestAt: latestOf(ordered) };
 }
 
-/** Freeze one field's slots and classify how well-attested it is. */
-function buildField(field: string, slotMap: FieldAccumulator): FieldSupport {
+/** Order one field's slots and classify how well-attested it is. */
+function draftField(field: string, slotMap: FieldAccumulator): FieldDraft {
   const slots = [...slotMap]
-    .map(([claimKey, values]) => buildSlot(claimKey, values))
-    .sort((a, b) => Number(b.others.length > 0) - Number(a.others.length > 0) || byRecency(a, b));
+    .map(([claimKey, values]) => draftSlot(claimKey, values))
+    .sort((a, b) => Number(b.values.length > 1) - Number(a.values.length > 1) || byRecency(a, b));
 
-  const kind: FieldSupportKind = slots.some((slot) => slot.others.length > 0)
+  const kind: FieldSupportKind = slots.some((slot) => slot.values.length > 1)
     ? 'contested'
-    : slots.some((slot) => slotValues(slot).some((value) => value.supporters.length > 1))
+    : slots.some((slot) => slot.values.some((value) => value.supporters.size > 1))
       ? 'corroborated'
       : 'single';
   return { field, slots, kind, latestAt: latestOf(slots) };
 }
 
+/** Assigns each distinct citation its page-wide reference number on first
+ *  sight, in the reading order the freeze pass walks. */
+class ReferenceNumbering {
+  readonly references: InlineCitation[] = [];
+  readonly #numbers = new Map<string, number>();
+
+  /** The 1-based number for *citation*, minting one if it is new. */
+  numberFor(citation: ClaimCitationSchema): number {
+    const key = citationKey(citation);
+    let index = this.#numbers.get(key);
+    if (index === undefined) {
+      index = this.references.length + 1;
+      // `links` is optional on the wire but required by InlineCitation, since
+      // the tooltip and the reference entry both split it unconditionally.
+      this.references.push({ ...citation, index, links: citation.links ?? [] });
+      this.#numbers.set(key, index);
+    }
+    return index;
+  }
+}
+
 /**
- * Number every citation in reading order and collect the reference list.
+ * Freeze one ordered value draft, numbering its citations.
  *
- * Runs after the fields are ordered so the page reads 1, 2, 3… top to bottom,
- * and writes each value's numbers back onto it — the numbers cannot be known
- * while the values are still being ordered.
+ * A citation with a slug is positioned by an inline `[[cite:slug]]` marker in
+ * the value's own text, so it goes to `citeIndexes` for in-place rendering;
+ * one without is attached evidence with nowhere to sit, so it becomes a
+ * trailing footnote. A markdown value is the only kind whose text carries
+ * markers — anywhere else a slug-bearing citation has no marker to replace, so
+ * it falls back to a footnote rather than vanishing.
  */
-function numberCitations(fields: FieldSupport[]): ClaimCitationSchema[] {
-  const references: ClaimCitationSchema[] = [];
-  const numbers = new Map<string, number>();
-  for (const field of fields) {
-    for (const slot of field.slots) {
-      for (const value of slotValues(slot)) {
-        for (const { key, citation } of value.citationEntries) {
-          let index = numbers.get(key);
-          if (index === undefined) {
-            index = references.push(citation);
-            numbers.set(key, index);
-          }
-          value.citationNumbers.push(index);
-        }
-        // A citation first seen under an earlier field keeps its low number, so
-        // sort — otherwise a value reads "6, 7, 8, 3".
-        value.citationNumbers.sort((a, b) => a - b);
-      }
+function freezeValue(
+  draft: ValueDraft,
+  claimKey: string,
+  numbering: ReferenceNumbering,
+): ValueSupport {
+  const isProse = draft.value.display?.kind === 'markdown';
+  const citeIndexes = new Map<string, number>();
+  const citeIds = new Map<number, number>();
+  const footnotes: FootnoteMarker[] = [];
+  for (const citation of draft.citations.values()) {
+    const index = numbering.numberFor(citation);
+    if (isProse && citation.slug != null) {
+      citeIndexes.set(citation.slug, index);
+      // Only a number this value actually cites inline goes in the lookup the
+      // marker renderer consults, so a number it merely footnotes cannot be
+      // resolved out of a literal "[3]" the prose happens to contain.
+      citeIds.set(index, citation.id);
+    } else {
+      footnotes.push({ index, id: citation.id });
     }
   }
-  return references;
+  return {
+    key: draft.key,
+    uid: `${claimKey} ${draft.key}`,
+    value: draft.value,
+    isProse,
+    supporters: [...draft.supporters.values()].sort((a, b) =>
+      newestFirst(a.created_at, b.created_at),
+    ),
+    citeIndexes,
+    citeIds,
+    // A citation first seen under an earlier field keeps its low number, so
+    // sort — otherwise a value reads "6, 7, 8, 3".
+    footnotes: footnotes.sort((a, b) => a.index - b.index),
+    isWinner: draft.isWinner,
+  };
+}
+
+function freezeSlot(draft: SlotDraft, numbering: ReferenceNumbering): ClaimSlot {
+  // Every claim key has a winner (the backend marks one per key), so the head
+  // of a winner-first ordering is it.
+  const [winner, ...others] = draft.values.map((value) =>
+    freezeValue(value, draft.claimKey, numbering),
+  );
+  return { claimKey: draft.claimKey, winner, others };
 }
 
 /** Every actor that asserted a claim, most recent contribution first. */
@@ -285,13 +353,20 @@ function collectContributors(sources: ClaimSchema[]): ClaimAttributionSchema[] {
  * `sources` may arrive in any order; every ordering below is derived here.
  */
 export function buildSourcesView(sources: ClaimSchema[]): SourcesView {
-  const fields = [...accumulate(sources)]
-    .map(([field, slotMap]) => buildField(field, slotMap))
+  const drafts = [...accumulate(sources)]
+    .map(([field, slotMap]) => draftField(field, slotMap))
     .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || byRecency(a, b));
+
+  const numbering = new ReferenceNumbering();
+  const fields = drafts.map((draft) => ({
+    field: draft.field,
+    slots: draft.slots.map((slot) => freezeSlot(slot, numbering)),
+    kind: draft.kind,
+  }));
 
   return {
     fields,
-    references: numberCitations(fields),
+    references: numbering.references,
     contributors: collectContributors(sources),
   };
 }
