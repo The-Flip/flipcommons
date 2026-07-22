@@ -330,3 +330,38 @@ def test_sources_page_does_not_scale_queries_with_claim_count(client, bootstrap_
     assert scaled == base, (
         f"sources page scales queries with claim count: {base} -> {scaled}."
     )
+
+
+@pytest.mark.django_db
+class TestSourcesPageParkedFields:
+    """Parked source fields are hidden from the Sources page."""
+
+    def test_parked_field_is_hidden(self, client, bootstrap_source):
+        pm = make_machine_model(name="MM4", slug="mm-parked")
+        make_claim(pm, "year", 1997, ingest_source=bootstrap_source)
+        make_claim(
+            pm,
+            "opdb.images",
+            [{"urls": {"large": "https://example.com/a.jpg"}}],
+            ingest_source=bootstrap_source,
+        )
+
+        resp = client.get("/api/pages/sources/model/mm-parked/")
+        assert resp.status_code == 200
+        fields = {c["field_name"] for c in resp.json()["sources"]}
+        assert "opdb.images" not in fields
+        assert "year" in fields
+
+    def test_unlisted_parked_field_still_shows(self, client, bootstrap_source):
+        """Hiding is by name, not by the dot the ingest namespaces happen to use.
+
+        A field nobody has listed is a data surprise worth seeing — the debug
+        panel makes the same call for the same reason.
+        """
+        pm = make_machine_model(name="MM5", slug="mm-surprise")
+        make_claim(pm, "wat.mystery", "?", ingest_source=bootstrap_source)
+
+        resp = client.get("/api/pages/sources/model/mm-surprise/")
+        assert resp.status_code == 200
+        fields = {c["field_name"] for c in resp.json()["sources"]}
+        assert "wat.mystery" in fields

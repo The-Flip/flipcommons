@@ -8,6 +8,7 @@ from .claim_citations import claim_citation_schemas, resolve_inline_citations
 from .display import FieldValue, claim_value, resolve_display_context
 from .helpers import claim_author
 from .models import Claim, ClaimControlledModel
+from .parked_fields import HIDDEN_PARKED_FIELDS
 from .schemas import ClaimAttributionSchema, ClaimSchema
 
 
@@ -29,11 +30,15 @@ def build_sources(
     field (one winner per column). Those coincide with how the resolver groups
     for as long as a non-relationship claim's key stays canonical.
 
+    Parked source fields (see :mod:`.parked_fields`) are dropped before
+    anything else runs, so they cost no display resolution and take no
+    reference number.
+
     The iterable is materialized to a list internally so FK labels, wikilink
     authoring keys and inline citations can each be resolved in a single
     batched pass before the per-claim loop.
     """
-    claims = list(claims)
+    claims = [c for c in claims if c.field_name not in HIDDEN_PARKED_FIELDS]
     ctx = resolve_display_context(
         FieldValue(c.field_name, c.value, model) for c in claims
     )

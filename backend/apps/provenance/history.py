@@ -29,6 +29,7 @@ from .display import (
 )
 from .helpers import changeset_author, citation_instances_prefetch
 from .models import ChangeSet, Claim, ClaimControlledModel
+from .parked_fields import HIDDEN_PARKED_FIELDS
 from .schemas import (
     ChangeSetSchema,
     ClaimAttributionSchema,
@@ -110,9 +111,13 @@ def build_changes(
 
     ``winning_ids`` is only meaningful for entity-wide history; omit it for
     single-changeset detail views and ``is_winning`` will be left unset.
+
+    Parked source fields (see :mod:`.parked_fields`) are dropped from both
+    lists. ``history_by_key`` needs no filtering: a parked claim's key is its
+    own field name, so it can only ever chain to itself.
     """
-    own = list(own_claims)
-    rets = list(retracted)
+    own = [c for c in own_claims if c.field_name not in HIDDEN_PARKED_FIELDS]
+    rets = [c for c in retracted if c.field_name not in HIDDEN_PARKED_FIELDS]
 
     if ctx is None:
         ctx = resolve_display_context(
@@ -275,6 +280,11 @@ def build_edit_history(
             ctx=ctx,
             inline_citations=inline_citations,
         )
+        # A changeset selected for touching this entity but left with nothing to
+        # show wrote only parked fields — an ingest artifact, not an edit. Drop
+        # it rather than render a card with an empty body.
+        if not changes and not retractions:
+            continue
         assert cs.pk is not None
         result.append(
             ChangeSetSchema(
