@@ -72,19 +72,11 @@ export interface ClaimSlot {
   others: ValueSupport[];
 }
 
-/**
- * How well-attested a field is, which drives its sort bucket: `contested`
- * (sources disagree) sorts above `corroborated` (more than one actor backs
- * some value) above `single` (every value rests on one actor).
- */
-export type FieldSupportKind = 'contested' | 'corroborated' | 'single';
-
 /** One field of the entity and all the claims made about it. */
 export interface FieldSupport {
   field: string;
   /** One entry for a scalar field; one per related row for a relationship field. */
   slots: ClaimSlot[];
-  kind: FieldSupportKind;
 }
 
 /** The whole page: the field list plus the citations its entries reference. */
@@ -97,12 +89,6 @@ export interface SourcesView {
   /** Every actor that asserted a claim, most recent contribution first. */
   contributors: ClaimAttributionSchema[];
 }
-
-const KIND_ORDER: Record<FieldSupportKind, number> = {
-  contested: 0,
-  corroborated: 1,
-  single: 2,
-};
 
 /** Anything carrying the timestamp of its most recent assertion. */
 interface Dated {
@@ -177,11 +163,10 @@ interface SlotDraft extends Dated {
   values: ValueDraft[];
 }
 
-/** One field mid-build: its slots, ordered and classified. */
+/** One field mid-build: its slots, ordered. */
 interface FieldDraft extends Dated {
   field: string;
   slots: SlotDraft[];
-  kind: FieldSupportKind;
 }
 
 /** Distinct values of one slot, keyed by the canonical JSON of the value. */
@@ -248,18 +233,12 @@ function draftSlot(claimKey: string, values: SlotAccumulator): SlotDraft {
   return { claimKey, values: ordered, latestAt: latestOf(ordered) };
 }
 
-/** Order one field's slots and classify how well-attested it is. */
+/** Order one field's slots, most recently claimed first. */
 function draftField(field: string, slotMap: FieldAccumulator): FieldDraft {
   const slots = [...slotMap]
     .map(([claimKey, values]) => draftSlot(claimKey, values))
-    .sort((a, b) => Number(b.values.length > 1) - Number(a.values.length > 1) || byRecency(a, b));
-
-  const kind: FieldSupportKind = slots.some((slot) => slot.values.length > 1)
-    ? 'contested'
-    : slots.some((slot) => slot.values.some((value) => value.supporters.size > 1))
-      ? 'corroborated'
-      : 'single';
-  return { field, slots, kind, latestAt: latestOf(slots) };
+    .sort(byRecency);
+  return { field, slots, latestAt: latestOf(slots) };
 }
 
 /** Assigns each distinct citation its page-wide reference number on first
@@ -355,13 +334,12 @@ function collectContributors(sources: ClaimSchema[]): ClaimAttributionSchema[] {
 export function buildSourcesView(sources: ClaimSchema[]): SourcesView {
   const drafts = [...accumulate(sources)]
     .map(([field, slotMap]) => draftField(field, slotMap))
-    .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || byRecency(a, b));
+    .sort(byRecency);
 
   const numbering = new ReferenceNumbering();
   const fields = drafts.map((draft) => ({
     field: draft.field,
     slots: draft.slots.map((slot) => freezeSlot(slot, numbering)),
-    kind: draft.kind,
   }));
 
   return {

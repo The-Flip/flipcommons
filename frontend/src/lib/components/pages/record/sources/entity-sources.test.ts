@@ -3,14 +3,16 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { ClaimSchema } from '$lib/api/schema';
 import { buildSourcesView } from './entity-sources';
 
+/** Attribution shorthand — source *name* asserting at *created_at*. */
+function by(name: string, created_at: string): ClaimSchema['attribution'] {
+  return { author: { kind: 'source', name }, created_at };
+}
+
 function claim(overrides: Partial<ClaimSchema> & Pick<ClaimSchema, 'field_name'>): ClaimSchema {
   return {
     claim_key: overrides.field_name,
     value: { raw: null },
-    attribution: {
-      author: { kind: 'source', name: 'IPDB' },
-      created_at: '2026-04-07T00:00:00Z',
-    },
+    attribution: by('IPDB', '2026-04-07T00:00:00Z'),
     is_winner: false,
     citations: [],
     ...overrides,
@@ -44,10 +46,7 @@ describe('buildSourcesView', () => {
         field_name: 'year',
         value: { raw: 1997 },
         is_winner: true,
-        attribution: {
-          author: { kind: 'source', name: 'Flipcommons Catalog' },
-          created_at: '2026-04-08T00:00:00Z',
-        },
+        attribution: by('Flipcommons Catalog', '2026-04-08T00:00:00Z'),
       }),
       claim({ field_name: 'year', value: { raw: 1997 } }),
     ]);
@@ -78,7 +77,6 @@ describe('buildSourcesView', () => {
     const slot = fields[0].slots[0];
     expect(slot.winner.value.raw).toBe(1997);
     expect(slot.others.map((v) => v.value.raw)).toEqual([1998]);
-    expect(fields[0].kind).toBe('contested');
   });
 
   it('keeps a multi-valued field as separate uncontested slots', () => {
@@ -91,50 +89,53 @@ describe('buildSourcesView', () => {
 
     expect(fields[0].slots).toHaveLength(2);
     expect(fields[0].slots.every((slot) => slot.others.length === 0)).toBe(true);
-    expect(fields[0].kind).toBe('single');
   });
 
-  it('buckets fields as contested, then corroborated, then single', () => {
+  it('sorts fields by most recent claim, not by whether they are contested', () => {
     const { fields } = buildSourcesView([
-      claim({ field_name: 'manufacturer', value: { raw: 'Williams' }, is_winner: true }),
-      claim({ field_name: 'name', value: { raw: 'MM' }, is_winner: true }),
-      claim({
-        field_name: 'name',
-        value: { raw: 'MM' },
-        attribution: {
-          author: { kind: 'source', name: 'OPDB' },
-          created_at: '2026-04-06T00:00:00Z',
-        },
-      }),
+      // 'year' is contested but stale; 'name' is uncontested and newer.
       claim({ field_name: 'year', value: { raw: 1997 }, is_winner: true }),
       claim({
         field_name: 'year',
         value: { raw: 1998 },
-        attribution: {
-          author: { kind: 'source', name: 'OPDB' },
-          created_at: '2026-04-06T00:00:00Z',
-        },
+        attribution: by('OPDB', '2026-04-06T00:00:00Z'),
+      }),
+      claim({
+        field_name: 'name',
+        value: { raw: 'MM' },
+        is_winner: true,
+        attribution: by('OPDB', '2026-05-01T00:00:00Z'),
       }),
     ]);
 
-    expect(fields.map((f) => f.field)).toEqual(['year', 'name', 'manufacturer']);
-    expect(fields.map((f) => f.kind)).toEqual(['contested', 'corroborated', 'single']);
+    expect(fields.map((f) => f.field)).toEqual(['name', 'year']);
   });
 
-  it('sorts within a bucket by most recent assertion first', () => {
+  it('sorts slots by most recent claim, not by whether they are contested', () => {
     const { fields } = buildSourcesView([
-      claim({ field_name: 'older', is_winner: true }),
+      // theme:1 is contested but stale; theme:2 is uncontested and newer.
       claim({
-        field_name: 'newer',
+        field_name: 'theme',
+        claim_key: 'theme|theme:1',
+        value: { raw: 'Medieval' },
         is_winner: true,
-        attribution: {
-          author: { kind: 'source', name: 'IPDB' },
-          created_at: '2026-05-01T00:00:00Z',
-        },
+      }),
+      claim({
+        field_name: 'theme',
+        claim_key: 'theme|theme:1',
+        value: { raw: 'Fantasy' },
+        attribution: by('OPDB', '2026-04-06T00:00:00Z'),
+      }),
+      claim({
+        field_name: 'theme',
+        claim_key: 'theme|theme:2',
+        value: { raw: 'Dragons' },
+        is_winner: true,
+        attribution: by('OPDB', '2026-05-01T00:00:00Z'),
       }),
     ]);
 
-    expect(fields.map((f) => f.field)).toEqual(['newer', 'older']);
+    expect(fields[0].slots.map((s) => s.claimKey)).toEqual(['theme|theme:2', 'theme|theme:1']);
   });
 
   it('pools and dedupes citations across the actors backing one value', () => {
@@ -148,10 +149,7 @@ describe('buildSourcesView', () => {
       claim({
         field_name: 'year',
         value: { raw: 1997 },
-        attribution: {
-          author: { kind: 'source', name: 'OPDB' },
-          created_at: '2026-04-06T00:00:00Z',
-        },
+        attribution: by('OPDB', '2026-04-06T00:00:00Z'),
         citations: [citation('Williams Flyer', 'p. 2')],
       }),
     ]);
@@ -192,10 +190,7 @@ describe('buildSourcesView', () => {
         is_winner: true,
         // 'Second' is new here (gets 2); 'First' already carries 1.
         citations: [citation('Second'), citation('First')],
-        attribution: {
-          author: { kind: 'source', name: 'IPDB' },
-          created_at: '2026-04-06T00:00:00Z',
-        },
+        attribution: by('IPDB', '2026-04-06T00:00:00Z'),
       }),
     ]);
 
