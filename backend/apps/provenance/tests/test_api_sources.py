@@ -1,4 +1,5 @@
-"""Tests for cited edit evidence endpoint."""
+"""Tests for the per-entity Sources page endpoint, plus the scalar
+citation-join write path its citation payload depends on."""
 
 from __future__ import annotations
 
@@ -38,32 +39,35 @@ def citation_source(db):
     return source
 
 
+def _citations(body, field_name: str):
+    """Every citation carried by any claim of *field_name*."""
+    return [
+        citation
+        for claim in body["sources"]
+        if claim["field_name"] == field_name
+        for citation in claim["citations"]
+    ]
+
+
 @pytest.mark.django_db
-class TestCitedEditEvidence:
-    def test_returns_cited_changesets_with_fields_and_citation_details(
+class TestSourcesPageCitations:
+    def test_claim_carries_its_attached_citation_with_link_details(
         self, client, user, title, citation_source
     ):
         changeset = user_changeset(user, note="Documented the flyer")
-        year_claim = make_claim(
+        name_claim = make_claim(
             title, "name", "Medieval Madness (1997)", user=user, changeset=changeset
         )
-        desc_claim = make_claim(
-            title, "description", "Updated copy", user=user, changeset=changeset
-        )
-        cite_claim(year_claim, citation_source=citation_source, locator="p. 2")
-        cite_claim(desc_claim, citation_source=citation_source, locator="p. 2")
+        cite_claim(name_claim, citation_source=citation_source, locator="p. 2")
 
         resp = client.get("/api/pages/sources/title/medieval-madness/")
 
         assert resp.status_code == 200
-        evidence = resp.json()["evidence"]
-        assert len(evidence) == 1
-        assert evidence[0]["note"] == "Documented the flyer"
-        assert set(evidence[0]["fields"]) == {"description", "name"}
-        assert len(evidence[0]["citations"]) == 1
-        assert evidence[0]["citations"][0]["source_name"] == "Williams Flyer"
-        assert evidence[0]["citations"][0]["locator"] == "p. 2"
-        assert evidence[0]["citations"][0]["links"] == [
+        citations = _citations(resp.json(), "name")
+        assert len(citations) == 1
+        assert citations[0]["source_name"] == "Williams Flyer"
+        assert citations[0]["locator"] == "p. 2"
+        assert citations[0]["links"] == [
             {
                 "url": "https://example.com/flyer",
                 "link_type": "homepage",
@@ -71,37 +75,48 @@ class TestCitedEditEvidence:
             }
         ]
 
-    def test_coalesces_repeated_copied_claim_citations(
+    def test_shared_evidence_rides_every_claim_it_backs(
         self, client, user, title, citation_source
     ):
+        """One instance fanned across a save appears on each claim it supports.
+
+        The page consolidates them per value client-side; the wire format
+        carries the full support edge for every claim.
+        """
         changeset = user_changeset(user, note="Grouped edit")
-        first_claim = make_claim(
+        name_claim = make_claim(
             title, "name", "Medieval Madness (1997)", user=user, changeset=changeset
         )
-        second_claim = make_claim(
+        desc_claim = make_claim(
             title, "description", "Updated copy", user=user, changeset=changeset
         )
-        cite_claim(first_claim, citation_source=citation_source, locator="p. 3")
-        cite_claim(second_claim, citation_source=citation_source, locator="p. 3")
+        cite_claim(name_claim, citation_source=citation_source, locator="p. 3")
+        cite_claim(desc_claim, citation_source=citation_source, locator="p. 3")
 
-        resp = client.get("/api/pages/sources/title/medieval-madness/")
+        body = client.get("/api/pages/sources/title/medieval-madness/").json()
 
-        assert resp.status_code == 200
-        assert len(resp.json()["evidence"][0]["citations"]) == 1
+        for field_name in ("name", "description"):
+            assert [c["locator"] for c in _citations(body, field_name)] == ["p. 3"]
 
-    def test_omits_uncited_changesets(self, client, user, title, citation_source):
-        uncited = user_changeset(user, note="Uncited cleanup")
-        cited = user_changeset(user, note="Cited update")
-        make_claim(title, "description", "Cleanup", user=user, changeset=uncited)
-        cited_claim = make_claim(
-            title, "name", "Medieval Madness (1997)", user=user, changeset=cited
+    def test_uncited_claim_carries_an_empty_citation_list(self, client, user, title):
+        make_claim(
+            title,
+            "description",
+            "Cleanup",
+            user=user,
+            changeset=user_changeset(user, note="Uncited cleanup"),
         )
-        cite_claim(cited_claim, citation_source=citation_source)
 
-        resp = client.get("/api/pages/sources/title/medieval-madness/")
+        body = client.get("/api/pages/sources/title/medieval-madness/").json()
 
-        assert resp.status_code == 200
-        assert [item["note"] for item in resp.json()["evidence"]] == ["Cited update"]
+        assert _citations(body, "description") == []
+
+    def test_claims_expose_the_claim_key_that_scopes_resolution(self, client, title):
+        """The page groups by claim_key, so it must cross the wire."""
+        body = client.get("/api/pages/sources/title/medieval-madness/").json()
+
+        keys = {c["claim_key"] for c in body["sources"] if c["field_name"] == "name"}
+        assert keys == {"name"}
 
     def test_soft_deleted_entity_still_returns_sources(
         self, client, user, title, citation_source
@@ -126,8 +141,7 @@ class TestCitedEditEvidence:
         assert resp.status_code == 200
         body = resp.json()
         assert len(body["sources"]) >= 1
-        assert len(body["evidence"]) == 1
-        assert body["evidence"][0]["note"] == "Documented the flyer"
+        assert len(_citations(body, "name")) == 1
 
 
 @pytest.mark.django_db

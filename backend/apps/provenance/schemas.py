@@ -162,8 +162,9 @@ class CitationLinkSchema(Schema):
     )
 
 
-class FieldChangeCitationSchema(Schema):
-    """A citation backing a single field change's claim.
+class ClaimCitationSchema(Schema):
+    """A citation backing a claim — an edit-history field change or a
+    Sources-page assertion; both render it through the same client component.
 
     Covers both kinds of evidence: instances attached to the claim as
     supporting evidence (``slug`` is null) and instances referenced by
@@ -247,7 +248,7 @@ class FieldChangeSchema(Schema):
     is_retracted: bool | None = Field(
         None, description="Whether the claim has been retracted."
     )
-    citations: list[FieldChangeCitationSchema] = Field(
+    citations: list[ClaimCitationSchema] = Field(
         default_factory=list,
         description="Citations attached to this change's claim (e.g. an IPDB page).",
     )
@@ -360,12 +361,27 @@ class ClaimSchema(Schema):
         description="Who asserted the claim and when."
     )
     field_name: str = Field(description="The entity field the claim applies to.")
+    claim_key: str = Field(
+        description=(
+            "Identity of the slot this claim competes for. Claims sharing it "
+            "are rival values and exactly one wins; claims of the same field "
+            "under different keys coexist. Composite for a relationship member "
+            '("credit|person:42|role:7" — one winner per related row), equal '
+            "to ``field_name`` for a direct or ``extra_data`` field (one "
+            "winner per column)."
+        )
+    )
     value: ClaimValueSchema = Field(description="The claim's asserted value.")
     is_winner: bool = Field(
-        description="Whether this claim currently wins resolution for its field."
+        description="Whether this claim currently wins resolution for its claim_key."
     )
-    changeset_note: str | None = Field(
-        None, description="The note from the ChangeSet that grouped this claim, if any."
+    citations: list[ClaimCitationSchema] = Field(
+        description=(
+            "Citations backing this claim: instances attached as supporting "
+            "evidence, then the ``[[cite:...]]`` markers its value carries. "
+            "Always present, empty when the claim has none — required, not "
+            "defaulted, so the generated client type is not optional."
+        )
     )
 
 

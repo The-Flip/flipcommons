@@ -1,42 +1,38 @@
+<!-- @component The per-entity Sources page: every claim field in one list, each
+showing the distinct values asserted for it, who backs each value and the
+citations behind it, with the losing values de-emphasized beneath the winner. -->
 <script lang="ts">
-  import type { CitedChangeSetSchema, ClaimSchema } from '$lib/api/schema';
-  import ClaimAttribution from '$lib/components/provenance/ClaimAttribution.svelte';
+  import type { ClaimSchema } from '$lib/api/schema';
   import ClaimAuthor from '$lib/components/provenance/ClaimAuthor.svelte';
   import ClaimValue from '$lib/components/provenance/ClaimValue.svelte';
   import FocusContentShell from '$lib/components/layout/page/FocusContentShell.svelte';
-  import { getEntityContext } from '$lib/entity-context';
-  import { groupSourcesByField } from './entity-sources';
   import CitationBody from '$lib/components/citation/CitationBody.svelte';
+  import { getEntityContext } from '$lib/entity-context';
+  import { buildSourcesView, type ValueSupport } from './entity-sources';
 
-  type Claim = ClaimSchema;
-  type CitedChangeSet = CitedChangeSetSchema;
+  let { sources }: { sources: ClaimSchema[] } = $props();
 
-  let {
-    sources,
-    evidence = [],
-  }: {
-    sources: Claim[];
-    evidence?: CitedChangeSet[];
-  } = $props();
-
-  let sourceGroups = $derived(groupSourcesByField(sources));
+  let view = $derived(buildSourcesView(sources));
   const entity = getEntityContext();
-
-  function claimAttribution(claim: Claim): string {
-    const author = claim.attribution.author;
-    return author.kind === 'source' ? author.name : author.username;
-  }
 </script>
 
-{#snippet claimDetail(claim: Claim)}
-  <ClaimAuthor attribution={claim.attribution} />
-  <span class="claim-value-inline"><ClaimValue value={claim.value} /></span>
-  {#if claim.is_winner}
-    <span class="badge-used">used</span>
-  {/if}
-  {#if claim.changeset_note}
-    <span class="claim-note">{claim.changeset_note}</span>
-  {/if}
+{#snippet valueRow(entry: ValueSupport)}
+  <div class="value-row" class:displaced={!entry.isWinner}>
+    <span class="value">
+      <ClaimValue value={entry.value} /><!--
+     --><sup class="refs"
+        >{#each entry.citationNumbers as number (number)}<a
+            href="#citation-{number}"
+            title="Jump to citation {number}">[{number}]</a
+          >{/each}</sup
+      >
+    </span>
+    <span class="support">
+      {#each entry.supporters as attribution, i (i)}
+        <ClaimAuthor {attribution} />
+      {/each}
+    </span>
+  </div>
 {/snippet}
 
 <FocusContentShell
@@ -50,110 +46,49 @@
   {/snippet}
 
   {#if sources.length > 0}
-    {@const { conflicts, agreed, single } = sourceGroups}
-    {@const contributorNames = [
-      ...new Set(sources.map(claimAttribution).filter((n) => n !== 'Unknown')),
-    ]}
-    <section class="sources">
-      {#if evidence.length > 0}
-        <section class="evidence">
-          <h2>Evidence</h2>
-          <ol class="changeset-list">
-            {#each evidence as changeset (changeset.id)}
-              <li class="changeset-card">
-                <div class="changeset-header">
-                  <ClaimAttribution attribution={changeset.attribution} />
-                </div>
-                {#if changeset.note}
-                  <p class="evidence-note">{changeset.note}</p>
-                {/if}
-                <p class="changeset-fields">Applies to: {changeset.fields.join(', ')}</p>
-                {#each changeset.citations as citation, i (i)}
-                  <div class="evidence-citation">
-                    <CitationBody {citation} linkLayout="row" />
-                  </div>
-                {/each}
-              </li>
-            {/each}
-          </ol>
-        </section>
-      {/if}
+    <p class="summary">
+      Contributors to this record:
+      <!-- The separator is an expression, not markup: Svelte trims the
+      whitespace off a literal ", " and the line copies as "moses,OPDB". -->
+      {#each view.contributors as attribution, i (i)}<ClaimAuthor {attribution} />{i <
+        view.contributors.length - 1
+          ? ', '
+          : '.'}{/each}
+    </p>
 
-      <p class="sources-summary">
-        {contributorNames.join(' and ')} contributed to this record.
-      </p>
-
-      {#if conflicts.length > 0}
-        <details class="sources-group" open>
-          <summary>
-            <h3>
-              Conflicts resolved ({conflicts.length} field{conflicts.length === 1 ? '' : 's'})
-            </h3>
-          </summary>
-          <dl class="field-list">
-            {#each conflicts as { field, claims } (field)}
-              <div class="field-row conflict">
-                <dt>{field}</dt>
-                <dd>
-                  {#each claims as claim, i (i)}
-                    <span class="claim" class:used={claim.is_winner}>
-                      {@render claimDetail(claim)}
-                    </span>
+    <dl class="fields">
+      {#each view.fields as field (field.field)}
+        <div class="field">
+          <dt>{field.field}</dt>
+          <dd>
+            {#each field.slots as slot (slot.claimKey)}
+              <div class="slot">
+                {@render valueRow(slot.winner)}
+                {#if slot.others.length > 0}
+                  <p class="others-label">Other values claimed:</p>
+                  {#each slot.others as entry (entry.key)}
+                    {@render valueRow(entry)}
                   {/each}
-                </dd>
+                {/if}
               </div>
             {/each}
-          </dl>
-        </details>
-      {/if}
+          </dd>
+        </div>
+      {/each}
+    </dl>
 
-      {#if agreed.length > 0}
-        <details class="sources-group">
-          <summary>
-            <h3>Sources agree ({agreed.length} field{agreed.length === 1 ? '' : 's'})</h3>
-          </summary>
-          <dl class="field-list">
-            {#each agreed as { field, claims } (field)}
-              <div class="field-row">
-                <dt>{field}</dt>
-                <dd>
-                  <span class="claim used">
-                    <span class="claim-value-inline"><ClaimValue value={claims[0].value} /></span>
-                    <span class="source-list">
-                      {#each claims as claim, i (i)}
-                        {#if i > 0},
-                        {/if}
-                        <ClaimAuthor attribution={claim.attribution} />
-                      {/each}
-                    </span>
-                  </span>
-                </dd>
-              </div>
-            {/each}
-          </dl>
-        </details>
-      {/if}
-
-      {#if single.length > 0}
-        <details class="sources-group">
-          <summary>
-            <h3>Single source ({single.length} field{single.length === 1 ? '' : 's'})</h3>
-          </summary>
-          <dl class="field-list">
-            {#each single as { field, claims } (field)}
-              <div class="field-row">
-                <dt>{field}</dt>
-                <dd>
-                  <span class="claim used">
-                    {@render claimDetail(claims[0])}
-                  </span>
-                </dd>
-              </div>
-            {/each}
-          </dl>
-        </details>
-      {/if}
-    </section>
+    {#if view.references.length > 0}
+      <section class="references">
+        <h2>Citations</h2>
+        <ol>
+          {#each view.references as citation, i (i)}
+            <li id="citation-{i + 1}">
+              <CitationBody {citation} layout="inline" />
+            </li>
+          {/each}
+        </ol>
+      </section>
+    {/if}
   {:else}
     <p class="no-sources">No source data recorded yet.</p>
   {/if}
@@ -167,156 +102,143 @@
     color: inherit;
   }
 
-  h2 {
-    font-size: var(--font-size-3);
+  /* Inline flow, not flex: a comma is a text node, and flex would make it its
+     own item with gap on both sides ("IPDB , OPDB"). Inline also gives the
+     paragraph real text content — under flex the gaps are layout only, so the
+     line copied and read aloud as "moses" run into "OPDB". The pills flow here
+     unchanged, being inline-block already; line-height does the work row-gap
+     used to. */
+  .summary {
+    font-size: var(--font-size-0);
+    line-height: 1.9;
+    color: var(--color-text-muted);
+    margin-bottom: var(--size-4);
+  }
+
+  .fields {
+    margin: 0;
+  }
+
+  .field {
+    display: grid;
+    grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+    gap: var(--size-3);
+    padding: var(--size-3) 0;
+    border-bottom: 1px solid var(--color-border-soft);
+  }
+
+  .field dt {
+    font-weight: 500;
+    font-size: var(--font-size-0);
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  /* A slot's displaced values sit at the same rhythm as a multi-valued
+     field's sibling slots — the "Other values claimed" lead-in is what marks
+     them as losing, so neither the winner nor the field needs a badge. */
+  .field dd,
+  .slot {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-3);
+  }
+
+  .field dd {
+    margin: 0;
+    min-width: 0;
+  }
+
+  .others-label {
+    margin: 0;
+    font-size: var(--font-size-0);
+    color: var(--color-text-muted);
+    /* Full strength: the label has to stay legible over the values it
+       introduces, which carry the de-emphasis. */
+  }
+
+  .value-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 15rem);
+    gap: var(--size-1) var(--size-3);
+    align-items: baseline;
+    font-size: var(--font-size-0);
+    color: var(--color-text);
+  }
+
+  .value-row.displaced {
+    opacity: 0.5;
+  }
+
+  .value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .support {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--size-1) var(--size-2);
+    font-size: var(--font-size-0);
+    color: var(--color-text-muted);
+  }
+
+  /* Bracketed superscript, the encyclopedia convention: a bare number riding a
+     numeric value ("4 3" for player_count) reads as part of the value. */
+  .refs {
+    font-size: 0.85em;
+  }
+
+  .refs a {
+    margin-left: 2px;
+    color: var(--color-link);
+    text-decoration: none;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .refs a:hover {
+    text-decoration: underline;
+  }
+
+  .references {
+    margin-top: var(--size-6);
+  }
+
+  .references h2 {
+    font-size: var(--font-size-2);
     font-weight: 600;
     color: var(--color-text);
     margin-bottom: var(--size-3);
   }
 
-  .sources-summary {
-    font-size: var(--font-size-1);
-    color: var(--color-text-muted);
-    margin-bottom: var(--size-4);
-  }
-
-  .evidence {
-    margin-bottom: var(--size-5);
-  }
-
-  .changeset-list {
-    list-style: none;
+  .references ol {
     margin: 0;
-    padding: 0;
+    padding-left: var(--size-5);
     display: flex;
     flex-direction: column;
     gap: var(--size-3);
-  }
-
-  .changeset-card {
-    border: 1px solid var(--color-border-soft);
-    border-radius: var(--radius-2);
-    padding: var(--size-3);
-    background: var(--color-surface);
-  }
-
-  .changeset-header {
-    display: flex;
-    align-items: center;
-    gap: var(--size-2);
-    margin-bottom: var(--size-2);
-  }
-
-  .evidence-note {
-    margin: 0 0 var(--size-2);
-    font-size: var(--font-size-00, 0.7rem);
-    font-style: italic;
-    color: var(--color-text-muted);
-  }
-
-  .sources-group {
-    margin-bottom: var(--size-4);
-  }
-
-  .sources-group h3 {
-    font-size: var(--font-size-1);
-    font-weight: 600;
-    color: var(--color-text);
-    margin-bottom: var(--size-2);
-  }
-
-  .sources-group summary {
-    cursor: pointer;
-    list-style: revert;
-  }
-
-  .sources-group summary h3 {
-    display: inline;
-  }
-
-  .field-list {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-
-  .field-row {
-    display: flex;
-    gap: var(--size-3);
-    padding: var(--size-2) 0;
-    border-bottom: 1px solid var(--color-border-soft);
     font-size: var(--font-size-0);
   }
 
-  .field-row dt {
-    min-width: 10rem;
-    font-weight: 500;
-    color: var(--color-text-muted);
-    font-size: var(--font-size-0);
-  }
-
-  .field-row dd {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-    font-size: var(--font-size-0);
-    color: var(--color-text);
-    overflow-wrap: break-word;
-  }
-
-  .claim {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--size-2);
-    opacity: 0.5;
-  }
-
-  .claim.used {
-    opacity: 1;
-  }
-
-  .claim-value-inline {
-    display: inline-block;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .badge-used {
-    font-size: var(--font-size-00, 0.7rem);
-    font-weight: 600;
-    color: var(--color-link);
-  }
-
-  .claim-note {
-    width: 100%;
-    font-size: var(--font-size-00, 0.7rem);
-    font-style: italic;
-    color: var(--color-text-muted);
-  }
-
-  .changeset-fields {
-    margin: 0 0 var(--size-2);
-    font-size: var(--font-size-0);
-    color: var(--color-text-muted);
-  }
-
-  .evidence-citation {
-    display: flex;
-    flex-direction: column;
-    gap: var(--size-1);
-    padding-top: var(--size-2);
-  }
-
-  .source-list {
-    font-size: var(--font-size-00, 0.7rem);
-    color: var(--color-text-muted);
+  .references li {
+    /* Anchor targets: keep the number in view when jumped to from a ref. */
+    scroll-margin-top: var(--size-5);
   }
 
   .no-sources {
     font-size: var(--font-size-1);
     color: var(--color-text-muted);
+  }
+
+  @media (--breakpoint-narrow) {
+    .field {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--size-1);
+    }
+
+    .value-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 </style>

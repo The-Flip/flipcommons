@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from itertools import chain
@@ -10,13 +9,17 @@ from itertools import chain
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Prefetch, Q
 
-from apps.citation.deep_links import deep_linked_url
-from apps.citation.models import CitationInstance
 from apps.core.authz import PolicyUser, compute_row_capabilities
 from apps.core.types import ClaimKey
-from apps.core.wikilinks import get_link_type, get_patterns
 
 from .attribution import actor_user_id
+from .claim_citations import (
+    InlineCitationLookup,
+    citation_schema,
+    claim_citation_schemas,
+    inline_cite_pks,
+    resolve_inline_citations,
+)
 from .claim_ranking_in_db import ranked_claims
 from .display import (
     ClaimDisplayContext,
@@ -24,17 +27,12 @@ from .display import (
     claim_value,
     resolve_display_context,
 )
-from .helpers import (
-    changeset_author,
-    citation_instances,
-    citation_instances_prefetch,
-)
+from .helpers import changeset_author, citation_instances_prefetch
 from .models import ChangeSet, Claim, ClaimControlledModel
 from .schemas import (
     ChangeSetSchema,
-    CitationLinkSchema,
     ClaimAttributionSchema,
-    FieldChangeCitationSchema,
+    ClaimCitationSchema,
     FieldChangeSchema,
     RetractionSchema,
 )
@@ -45,126 +43,23 @@ ordered newest-first. A chain yields a field's prior value and the full set of
 values a change is displayed against."""
 
 
-class InlineCitationLookup:
-    """Citation instances resolved from ``[[cite:id:N]]`` markers, keyed by pk.
-
-    Built once per response by :func:`resolve_inline_citations`; consulted by
-    :func:`_field_change_citations` so per-change citation building does no
-    DB work. Same encapsulated shape as
-    :class:`apps.core.markdown.field.WikilinkAuthoringLookup`.
-    """
-
-    __slots__ = ("_instances",)
-
-    def __init__(self) -> None:
-        self._instances: dict[int, CitationInstance] = {}
-
-    def add(self, instance: CitationInstance) -> None:
-        assert instance.pk is not None
-        self._instances[instance.pk] = instance
-
-    def get(self, pk: int) -> CitationInstance | None:
-        return self._instances.get(pk)
-
-
-def _cite_storage_pattern() -> re.Pattern[str] | None:
-    """The compiled ``[[cite:id:N]]`` pattern, or None when the ``cite``
-    link type isn't registered (cleared-registry tests)."""
-    link_type = get_link_type("cite")
-    if link_type is None:
-        return None
-    return get_patterns(link_type)["storage"]
-
-
-def _inline_cite_pks(value: object) -> list[int]:
-    """Citation-instance pks referenced by ``[[cite:id:N]]`` markers in
-    *value*, in document order, deduped keeping the first occurrence."""
-    if not isinstance(value, str) or not value:
-        return []
-    pattern = _cite_storage_pattern()
-    if pattern is None:
-        return []
-    seen: set[int] = set()
-    pks: list[int] = []
-    for match in pattern.finditer(value):
-        pk = int(match.group(1))
-        if pk not in seen:
-            seen.add(pk)
-            pks.append(pk)
-    return pks
-
-
-def resolve_inline_citations(values: Iterable[object]) -> InlineCitationLookup:
-    """Batch-load every citation instance referenced inline across *values*.
-
-    One query (plus the links prefetch), independent of how many values are
-    passed, so callers rendering many claim values stay query-bounded.
-    """
-    pks: set[int] = set()
-    for value in values:
-        pks.update(_inline_cite_pks(value))
-    lookup = InlineCitationLookup()
-    if not pks:
-        return lookup
-    instances = (
-        CitationInstance.objects.filter(pk__in=pks)
-        # The parent ride-along feeds deep_linked_url (scheme lookup via the
-        # root's identifier_key) without a per-cite query.
-        .select_related("citation_source", "citation_source__parent")
-        .prefetch_related("citation_source__links")
-    )
-    for instance in instances:
-        lookup.add(instance)
-    return lookup
-
-
-def _citation_schema(
-    inst: CitationInstance, *, slug: str | None
-) -> FieldChangeCitationSchema:
-    """Serialize one citation instance for a field change."""
-    source = inst.citation_source
-    return FieldChangeCitationSchema(
-        source_name=source.name,
-        source_type=source.source_type,
-        author=source.author,
-        year=source.year,
-        locator=inst.locator,
-        quote=inst.quote,
-        slug=slug,
-        links=[
-            CitationLinkSchema(
-                url=deep_linked_url(source, inst.locator, link.url),
-                link_type=link.link_type,
-                display_name=link.display_name,
-            )
-            for link in source.links.all()
-        ],
-    )
-
-
 def _field_change_citations(
     claim: Claim, prior: object, inline: InlineCitationLookup
-) -> list[FieldChangeCitationSchema]:
+) -> list[ClaimCitationSchema]:
     """Build the citation list for a field change's claim.
 
-    Attached (join-row) evidence comes first and requires the claim to have
-    been loaded with citation instances prefetched
-    (``prefetched_citation_instances`` — see ``claims_prefetch`` and the
-    edit-history / changeset-detail querysets). Inline citations follow:
-    ``[[cite:id:N]]`` markers from the claim's own value in document order,
-    then markers only the *prior* value carries (removed by this change), so
-    a client rendering a diff can label every marker on either side. Markers
-    whose instance row is gone are skipped, matching the editor's
-    broken-link degrade.
+    The claim's own citations (see :func:`claim_citation_schemas`) come first,
+    then markers only the *prior* value carries (removed by this change), so a
+    client rendering a diff can label every marker on either side.
     """
-    result = [_citation_schema(inst, slug=None) for inst in citation_instances(claim)]
-    pks = _inline_cite_pks(claim.value)
-    own = set(pks)
-    pks += [pk for pk in _inline_cite_pks(prior) if pk not in own]
-    for pk in pks:
+    result, own_pks = claim_citation_schemas(claim, inline)
+    own = set(own_pks)
+    for pk in inline_cite_pks(prior):
+        if pk in own:
+            continue
         inst = inline.get(pk)
         if inst is not None:
-            result.append(_citation_schema(inst, slug=inst.slug))
+            result.append(citation_schema(inst, slug=inst.slug))
     return result
 
 

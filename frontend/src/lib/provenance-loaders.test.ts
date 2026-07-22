@@ -12,7 +12,6 @@ const MOCK_CHANGESETS = [
 
 const MOCK_SOURCES_PAYLOAD = {
   sources: [{ id: 1, name: 'IPDB', priority: 10 }],
-  evidence: [],
 };
 
 function makeEvent(fetch: typeof globalThis.fetch, path: string) {
@@ -61,7 +60,7 @@ describe('loadEditHistory', () => {
 });
 
 describe('loadSources', () => {
-  it('calls the sources page API and returns sources + evidence', async () => {
+  it('calls the sources page API and returns the claim list', async () => {
     const fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(MOCK_SOURCES_PAYLOAD), {
         status: 200,

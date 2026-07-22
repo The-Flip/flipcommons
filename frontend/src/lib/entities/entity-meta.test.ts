@@ -19,7 +19,7 @@ import { ENTITY_META, CATALOG_ENTITY_KEYS } from './entity-meta';
 // loading (loadEditHistory / loadSources from $lib/provenance-loaders). If
 // the server file is deleted, the route still classifies — the +page.svelte
 // is what classification looks at — but the page would render with missing
-// `data.evidence` / `data.sources` and crash at runtime.
+// `data.changesets` / `data.sources` and crash at runtime.
 const PAGE_SERVER_SOURCES = import.meta.glob('/src/routes/**/+page.server.ts', {
   eager: true,
   query: '?raw',
@@ -49,7 +49,7 @@ describe('entity-meta vs route tree', () => {
         const path = `/src/routes${id}/+page.server.ts`;
         expect(
           PAGE_SERVER_SOURCES[path],
-          `${path} is missing — the /edit-history page exists but its loader doesn't, so data.evidence will be undefined at runtime.`,
+          `${path} is missing — the /edit-history page exists but its loader doesn't, so data.changesets will be undefined at runtime.`,
         ).toBeDefined();
       }
     },

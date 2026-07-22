@@ -19,10 +19,9 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.accounts.test_factories import make_user
-from apps.catalog.models import Title
 from apps.catalog.tests.conftest import make_machine_model
 from apps.citation.test_factories import make_citation_source
-from apps.provenance.test_factories import cite_claim, make_claim, user_changeset
+from apps.provenance.test_factories import make_citation_instance, make_claim
 
 pytestmark = pytest.mark.django_db
 
@@ -96,37 +95,57 @@ def test_global_changes_feed_capabilities_does_not_scale_queries(
     )
 
 
-def _seed_cited_changesets(user, title: Title, citation_source, n: int) -> None:
-    """Create ``n`` cited user changesets on ``title``, each with one claim."""
-    for i in range(n):
-        cs = user_changeset(user, note=f"Edit {i}")
-        claim = make_claim(
-            title, "description", f"Updated copy {i}", user=user, changeset=cs
-        )
-        cite_claim(claim, citation_source=citation_source, locator=f"p. {i}")
+def _seed_cited_claims(pm, citation_source, start: int, n: int) -> None:
+    """Add ``n`` claims to ``pm``, each by its own actor and each carrying
+    an inline ``[[cite:id:N]]`` marker in its value.
 
-
-def test_sources_page_capabilities_does_not_scale_queries(client, bootstrap_source):
-    """GET /api/pages/sources/... query count must not grow with N cited rows.
-
-    Exercises the ``CitedChangeset`` dataclass path — the row passed to
-    ``compute_row_capabilities`` is a dataclass that structurally satisfies
-    ``ChangeSetPolicyView``, not a ChangeSet ORM instance. Distinct N+1
-    surface from the ORM-backed paths above.
+    Scales the axis that can actually regress. The attached-citation count
+    cannot: ``citation_instances()`` raises when its prefetch is missing
+    rather than falling back to a per-row query, so dropping that prefetch
+    fails loudly instead of quietly N+1-ing. What *can* regress is the
+    per-claim batching in ``build_sources`` — ``resolve_display_context`` and
+    ``resolve_inline_citations`` each issue one query for the whole list, and
+    both would go per-claim if moved inside the loop. Both scale with claim
+    count, and inline markers are what gives the second one anything to do.
     """
-    user = make_user()
-    title = Title.objects.create(name="MM3", slug="mm-z")
-    make_claim(title, "name", "MM3", ingest_source=bootstrap_source)
+    for i in range(start, start + n):
+        instance = make_citation_instance(citation_source=citation_source)
+        # Namespaced names park in extra_data, so each claim is its own field
+        # without needing 20 real columns.
+        make_claim(
+            pm,
+            f"probe.note_{i}",
+            f"Copy [[cite:id:{instance.pk}]] {i}",
+            user=make_user(),
+        )
+
+
+def test_sources_page_does_not_scale_queries_with_claim_count(client, bootstrap_source):
+    """GET /api/pages/sources/... query count must not grow with N claims.
+
+    Distinct actors and distinct fields per claim, so a regression in either
+    the display-context batch or the inline-citation batch shows up here.
+    """
+    pm = make_machine_model(name="MM3", slug="mm-z")
     citation_source = make_citation_source(name="Flyer", source_type="web")
 
-    _seed_cited_changesets(user, title, citation_source, 2)
-    base = _q(lambda: client.get("/api/pages/sources/title/mm-z/"))
+    _seed_cited_claims(pm, citation_source, 0, 2)
+    base = _q(lambda: client.get("/api/pages/sources/model/mm-z/"))
 
-    _seed_cited_changesets(user, title, citation_source, 18)
-    scaled = _q(lambda: client.get("/api/pages/sources/title/mm-z/"))
+    _seed_cited_claims(pm, citation_source, 2, 18)
+    scaled = _q(lambda: client.get("/api/pages/sources/model/mm-z/"))
+
+    # Guard against a vacuous pass: the endpoint must actually be serving the
+    # claims we seeded, not 404ing or returning an empty list.
+    resp = client.get("/api/pages/sources/model/mm-z/")
+    assert resp.status_code == 200
+    body = resp.json()["sources"]
+    probes = [c for c in body if c["field_name"].startswith("probe.")]
+    assert len(probes) == 20
+    assert sum(len(claim["citations"]) for claim in probes) == 20
 
     assert scaled == base, (
-        f"sources-page evidence embed scales queries with N: {base} -> {scaled}."
+        f"sources page scales queries with claim count: {base} -> {scaled}."
     )
 
 

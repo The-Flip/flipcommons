@@ -150,7 +150,7 @@ class TestTitlesAPI:
         assert resp.status_code == 200
         body = resp.json()
         assert "sources" in body
-        assert "evidence" in body
+        assert set(body) == {"sources"}
 
 
 class TestTitleDetailAggregation:

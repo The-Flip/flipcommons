@@ -538,7 +538,8 @@ containers = ["apps.provenance"]
 layers = [
     "api | admin",
     "page_endpoints",
-    "evidence | history",
+    "sources | history",
+    "claim_citations",
     "helpers",
     "claims | claim_writer | citation_writer | display | revert",
     "changeset_writer",

@@ -167,22 +167,6 @@ class TestPatchGameplayFeatureChangeSet:
         cs = _only_changeset()
         assert cs.note == "Corrected from IPDB listing"
 
-    def test_changeset_note_in_sources_response(self, client, user, feature):
-        client.force_login(user)
-        _patch(
-            client,
-            feature.slug,
-            {
-                "fields": {"description": "Updated"},
-                "note": "My edit note",
-            },
-        )
-        resp = client.get(f"/api/pages/sources/gameplay-feature/{feature.slug}/")
-        desc_claim = next(
-            c for c in resp.json()["sources"] if c["field_name"] == "description"
-        )
-        assert desc_claim["changeset_note"] == "My edit note"
-
     def test_changeset_note_defaults_to_empty(self, client, user, feature):
         client.force_login(user)
         _patch(client, feature.slug, {"fields": {"description": "Updated"}})

@@ -1,10 +1,10 @@
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
 
-import type { ChangeSetSchema, FieldChangeCitationSchema } from '$lib/api/schema';
+import type { ChangeSetSchema, ClaimCitationSchema } from '$lib/api/schema';
 import Harness from './edit-history-page.test-harness.svelte';
 
-function makeCitation(over: Partial<FieldChangeCitationSchema>): FieldChangeCitationSchema {
+function makeCitation(over: Partial<ClaimCitationSchema>): ClaimCitationSchema {
   return {
     source_name: 'Some Source',
     source_type: 'web',
