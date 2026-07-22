@@ -25,7 +25,7 @@ from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.exceptions import StructuredValidationError
 from apps.core.licensing import get_minimum_display_rank
-from apps.core.models import is_deleted
+from apps.core.models import active_status_q, is_deleted
 from apps.core.pagination import NamedPageNumberPagination
 from apps.core.schemas import (
     ErrorDetailSchema,
@@ -63,8 +63,10 @@ from ..models import (
     DisplaySubtype,
     DisplayType,
     GameFormat,
+    Location,
     MachineModel,
     MachineModelGameplayFeature,
+    ModelExportMarket,
     ModelRelationship,
     ProductionStatus,
     RewardType,
@@ -74,9 +76,11 @@ from ..models import (
     TechnologySubgeneration,
     Theme,
 )
+from ..models.export_market import COUNTRY_TARGET_FILTER
 from .edit_claims import (
     plan_abbreviation_claims,
     plan_credit_claims,
+    plan_export_market_claims,
     plan_gameplay_feature_claims,
     plan_m2m_claims,
     plan_model_relationship_claims,
@@ -170,6 +174,22 @@ class ModelRelationshipSchema(Schema):
     target_label: str = ""
 
 
+class ModelExportMarketSchema(Schema):
+    """One export-market row on a model (see Exports.md).
+
+    ``target_location`` is set when the market is a seeded country (renders as
+    a link to its location page); ``target_label`` is the free-text region
+    descriptor otherwise ("Europe", unlinked). Both empty is the legal
+    unknown-market row — the row itself says "built for export".
+    """
+
+    target_location: EntityRef | None = Field(
+        None,
+        description=("The destination country; public_id is its location_path."),
+    )
+    target_label: str = ""
+
+
 class InboundModelRelationshipSchema(Schema):
     """One typed relationship edge *pointing at* this model — the reverse of
     :class:`ModelRelationshipSchema`, read through the ``inbound_relationships``
@@ -234,6 +254,7 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     ipdb_id: int | None = None
     opdb_id: str | None = None
     pinside_id: str | None = None
+    manufacturer_model_identifier: str | None = None
     abbreviations: list[str] = []
     extra_data: JsonBody
     credits: list[CreditSchema]
@@ -256,6 +277,9 @@ class ModelDetailSchema(EntityDetailSchema, OwnMediaSchema):
     variant_siblings: list[ModelVariantSchema] = []
     remake_of: ModelRef | None = None
     remakes: list[ModelRef] = []
+    export_edition_of: ModelRef | None = None
+    export_editions: list[ModelRef] = []
+    export_markets: list[ModelExportMarketSchema] = []
     relationships: list[ModelRelationshipSchema] = []
     inbound_relationships: list[InboundModelRelationshipSchema] = []
     title_models: list[TitleModelSchema] = []
@@ -461,6 +485,7 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         ipdb_id=pm.ipdb_id,
         opdb_id=pm.opdb_id,
         pinside_id=pm.pinside_id,
+        manufacturer_model_identifier=pm.manufacturer_model_identifier,
         abbreviations=displayed_model_abbreviations(pm),
         extra_data=pm.extra_data or {},
         credits=credits,
@@ -473,6 +498,22 @@ def _serialize_model_detail(pm: MachineModel) -> ModelDetailSchema:
         variant_siblings=variant_siblings,
         remake_of=_model_ref(pm.remake_of),
         remakes=_model_refs(pm.remakes.all()),
+        export_edition_of=_model_ref(pm.export_edition_of),
+        export_editions=_model_refs(pm.export_editions.all()),
+        export_markets=[
+            ModelExportMarketSchema(
+                target_location=(
+                    EntityRef(
+                        name=market.target_market_location.name,
+                        public_id=market.target_market_location.public_id,
+                    )
+                    if market.target_market_location
+                    else None
+                ),
+                target_label=market.target_market_label,
+            )
+            for market in pm.export_markets.all()
+        ],
         relationships=[
             ModelRelationshipSchema(
                 relationship_type=RELATIONSHIP_TYPE_TO_LITERAL[edge.relationship_type],
@@ -587,43 +628,68 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             # N+1 per related row.
             "variant_of__corporate_entity__manufacturer",
             "remake_of__corporate_entity__manufacturer",
+            "export_edition_of__corporate_entity__manufacturer",
         )
         .prefetch_related(
+            # Reverse lineage lists and inbound edges filter to LIVE referrers:
+            # deleting the FK *source* (a variant, remake, export edition, or
+            # an edge's owning model) is never delete-blocked — PROTECT and the
+            # usage blockers guard the target direction only — so an unfiltered
+            # list would link the deleted model's 404. Forward FKs need no
+            # filter: their targets can't be soft-deleted while referenced.
+            #
             # Variants and sibling variants also carry a maker; select the
             # manufacturer join so building their refs stays query-free.
             Prefetch(
                 "variants",
-                queryset=MachineModel.objects.select_related(
+                queryset=MachineModel.objects.active().select_related(
                     "corporate_entity__manufacturer"
                 ),
             ),
             Prefetch(
                 "variant_of__variants",
-                queryset=MachineModel.objects.select_related(
+                queryset=MachineModel.objects.active().select_related(
                     "corporate_entity__manufacturer"
                 ),
             ),
             # Relationship edges render their machine target as a ModelRef
             # with a maker; join it here so the ref build stays query-free.
+            # (Outbound targets are delete-blocked while this model is live,
+            # so no liveness filter is needed on the target side.)
             Prefetch(
                 "relationships",
                 queryset=ModelRelationship.objects.select_related(
                     "target_machine__corporate_entity__manufacturer"
                 ),
             ),
-            # Inbound edges render their source model the same way.
+            # Inbound edges render their source model the same way; the edge
+            # row itself has no lifecycle, so liveness rides its owner.
             Prefetch(
                 "inbound_relationships",
-                queryset=ModelRelationship.objects.select_related(
-                    "machine_model__corporate_entity__manufacturer"
-                ),
+                queryset=ModelRelationship.objects.filter(
+                    active_status_q("machine_model")
+                ).select_related("machine_model__corporate_entity__manufacturer"),
             ),
             # Reverse lineage lists render as ModelRefs with a maker; select the
             # manufacturer join here to keep the ref build query-free.
             Prefetch(
                 "remakes",
-                queryset=MachineModel.objects.select_related(
+                queryset=MachineModel.objects.active().select_related(
                     "corporate_entity__manufacturer"
+                ),
+            ),
+            Prefetch(
+                "export_editions",
+                queryset=MachineModel.objects.active().select_related(
+                    "corporate_entity__manufacturer"
+                ),
+            ),
+            # Export-market rows render their country as a linked ref; join it
+            # here so the ref build stays query-free.
+            Prefetch(
+                "export_markets",
+                queryset=ModelExportMarket.objects.select_related(
+                    "target_market_location"
                 ),
             ),
             "themes",
@@ -646,7 +712,10 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
                 .select_related(
                     "corporate_entity__manufacturer", "technology_generation"
                 )
-                .prefetch_related("variants")
+                # Live variants only — same reverse-liveness rule as above.
+                .prefetch_related(
+                    Prefetch("variants", queryset=MachineModel.objects.active())
+                )
                 .order_by("year", "name"),
             ),
             Prefetch(
@@ -861,10 +930,21 @@ def get_model_edit_options(request: HttpRequest) -> ModelEditOptionsSchema:
         credit_roles=_opts(
             CreditRole.objects.active().order_by("display_order", "name")
         ),
+        # Root locations only (COUNTRY_TARGET_FILTER): the export-market
+        # editor's country picker. slug carries the location_path, which
+        # equals the slug for root locations.
+        countries=[
+            EditOptionSchema(slug=loc.location_path, label=loc.name)
+            for loc in Location.objects.active()
+            .filter(**dict(COUNTRY_TARGET_FILTER.lookups))
+            .order_by("name")
+        ],
     )
 
 
-_SELF_REF_FIELDS: frozenset[str] = frozenset({"variant_of", "remake_of"})
+_SELF_REF_FIELDS: frozenset[str] = frozenset(
+    {"variant_of", "remake_of", "export_edition_of"}
+)
 
 
 @models_router.patch(
@@ -898,6 +978,8 @@ def patch_model_claims(
             "credits__role",
             # The relationship planner diffs against current edges.
             "relationships",
+            # The export-market planner diffs against current rows.
+            "export_markets",
         ),
         **{MachineModel.public_id_field: public_id},
     )
@@ -958,6 +1040,8 @@ def patch_model_claims(
         specs.extend(plan_abbreviation_claims(pm, data.abbreviations))
     if data.relationships is not None:
         specs.extend(plan_model_relationship_claims(pm, data.relationships))
+    if data.export_markets is not None:
+        specs.extend(plan_export_market_claims(pm, data.export_markets))
 
     if not specs:
         raise_form_error("No changes provided.")

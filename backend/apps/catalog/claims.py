@@ -154,12 +154,14 @@ def _register_through_model_schemas() -> None:
                 f"{binding.through_model.__name__}/{binding.subject_model.__name__} "
                 f"derive different value-keys ({canonical!r} != {other!r})"
             )
+        member_xor = bindings[0].spec.member_xor
         register_relationship_schema(
             namespace=namespace,
             members=canonical.members,
             payload=canonical.payload,
             valid_subjects={b.subject_model for b in bindings},
             xor_groups=_xor_groups_for(bindings[0]),
+            xor_required=member_xor.required if member_xor is not None else True,
         )
 
 
@@ -231,7 +233,7 @@ def _member_value_key(through_model: type[Model], member: MemberField) -> Member
             scalar_type=int,
             nullable=member.nullable,
             identity=member.identity,
-            fk_target=FkTarget(target, member.lookup_field),
+            fk_target=FkTarget(target, member.lookup_field, member.target_filter),
         )
     assert isinstance(field, CharField), (
         f"{through_model.__name__}.{member.field} must be a ForeignKey or CharField"

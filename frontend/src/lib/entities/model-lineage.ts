@@ -25,7 +25,13 @@ export type ModelLineageLink = Pick<ModelRef, 'name' | 'public_id' | 'year' | 'm
 
 /** Keys on {@link ModelDetailSchema} whose values are model↔model lineage links. */
 export type ModelLineageKey =
-  'variant_of' | 'variants' | 'variant_siblings' | 'remake_of' | 'remakes';
+  | 'variant_of'
+  | 'variants'
+  | 'variant_siblings'
+  | 'remake_of'
+  | 'remakes'
+  | 'export_edition_of'
+  | 'export_editions';
 
 /** Display + accessor descriptor for one lineage relation. */
 export interface ModelLineageRelation {
@@ -37,6 +43,13 @@ export interface ModelLineageRelation {
   note?: string;
   /** `false` for a forward FK (points at one model), `true` for a reverse list. */
   many: boolean;
+  /**
+   * `true` when a dedicated section renders this relation instead of the
+   * generic heading + link-list treatment, so {@link modelLineageSections}
+   * skips it. Declared here rather than omitted from the list so the
+   * entity-meta sync guard still forces a decision for every forward FK.
+   */
+  dedicated?: boolean;
   /** Resolves the relation's link targets from a model; `[]` when the relation is absent. */
   resolve: (model: ModelDetailSchema) => ModelLineageLink[];
 }
@@ -83,6 +96,22 @@ export const MODEL_LINEAGE_RELATIONS: readonly ModelLineageRelation[] = [
     note: 'Later remakes of this machine:',
     many: true,
     resolve: (m) => m.remakes ?? [],
+  },
+  {
+    key: 'export_edition_of',
+    heading: 'Export Edition',
+    many: false,
+    // Rendered as a sentence alongside the export markets — see
+    // {@link modelExportEditionSection}.
+    dedicated: true,
+    resolve: (m) => one(m.export_edition_of),
+  },
+  {
+    key: 'export_editions',
+    heading: 'Export Editions',
+    note: 'Editions of this game built for export markets:',
+    many: true,
+    resolve: (m) => m.export_editions ?? [],
   },
 ];
 
@@ -166,6 +195,7 @@ export function modelLineageSections(model: ModelDetailSchema): ModelLineageSect
   const subject = modelSubject(model);
   const sections: ModelLineageSection[] = [];
   for (const relation of MODEL_LINEAGE_RELATIONS) {
+    if (relation.dedicated) continue;
     const links = relation.resolve(model);
     if (links.length === 0) continue;
     sections.push({
@@ -277,4 +307,70 @@ export function modelEdgeSections(model: ModelDetailSchema): ModelEdgeSection[] 
   }
 
   return [...sections.values()];
+}
+
+/**
+ * One named export market: a linked country XOR a plain-text label ("Europe").
+ * The unknown-market row — the bottom rung of the row's target ladder — names
+ * no market and so produces no view; the row's *existence* still counts as
+ * "built for export", which the section carries on its own.
+ */
+export interface ModelExportMarketView {
+  /** The destination country; `public_id` is its location_path for the `/locations/...` link. */
+  location: EntityRef | null;
+  /** Free-text market descriptor when the market is not a country; rendered unlinked. */
+  label: string;
+}
+
+/**
+ * The export-edition display section: the domestic original and/or the named
+ * markets behind the Exports.md sentence, "This model is the export version of
+ * [other model], built for export to [market(s)]." Each half is optional —
+ * whichever facts exist are the ones the sentence states.
+ */
+export interface ModelExportEditionSection {
+  heading: string;
+  /** The domestic original, or `null` when it is unknown. */
+  original: ModelLineageLinkView | null;
+  /** The named markets; empty when the only market row is the unknown-market one. */
+  markets: ModelExportMarketView[];
+}
+
+/**
+ * The model's export-edition facts as one display section, or `null` when it
+ * has none — no `export_edition_of` and no market rows. Rendered by the same
+ * surfaces as {@link modelLineageSections}, after the lineage and edge
+ * sections. An unknown-market row yields a section with no `original` and no
+ * `markets`: the assertion "built for export" with nothing further to say.
+ */
+export function modelExportEditionSection(
+  model: ModelDetailSchema,
+): ModelExportEditionSection | null {
+  const original = model.export_edition_of ?? null;
+  const rows = model.export_markets ?? [];
+  if (!original && rows.length === 0) return null;
+  return {
+    heading: 'Export Edition',
+    original: original ? toModelLinkView(original, modelSubject(model)) : null,
+    markets: rows
+      .filter((row) => row.target_location || row.target_label)
+      .map((row) => ({
+        location: row.target_location ?? null,
+        label: row.target_label ?? '',
+      })),
+  };
+}
+
+/**
+ * Whether `model` has anything for the related-models surfaces to show:
+ * lineage relations, relationship edges or export-edition facts. Gates the
+ * mobile Related Models accordion on both the model and single-model title
+ * pages, so a new section kind is added to the gate once, here.
+ */
+export function hasModelRelationshipContent(model: ModelDetailSchema): boolean {
+  return (
+    modelLineageSections(model).length > 0 ||
+    modelEdgeSections(model).length > 0 ||
+    modelExportEditionSection(model) !== null
+  );
 }

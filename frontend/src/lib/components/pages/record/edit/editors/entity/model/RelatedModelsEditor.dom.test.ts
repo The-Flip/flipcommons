@@ -37,12 +37,30 @@ function mockResponses() {
       const results = AUTOCOMPLETE_ROWS.filter((r) => r.label.toLowerCase().includes(q));
       return { data: { results }, error: undefined, response: { status: 200 } };
     }
+    if (path === '/api/models/edit-options/') {
+      return {
+        data: {
+          countries: [
+            { slug: 'france', label: 'France' },
+            { slug: 'italy', label: 'Italy' },
+          ],
+        },
+        error: undefined,
+        response: { status: 200 },
+      };
+    }
     throw new Error(`Unexpected GET ${path}`);
   });
   PATCH.mockResolvedValue({ data: { slug: 'medieval-madness' }, error: undefined });
 }
 
-const CLEAN = { variant_of: null, remake_of: null, relationships: [] };
+const CLEAN = {
+  variant_of: null,
+  remake_of: null,
+  export_edition_of: null,
+  relationships: [],
+  export_markets: [],
+};
 
 const BOOTLEG_EDGE: ModelRelationshipSchema = {
   relationship_type: 'copy',
@@ -398,5 +416,144 @@ describe('RelatedModelsEditor', () => {
 
     await pickTarget(user, /Attack from Mars/);
     expect(addButton).toBeEnabled();
+  });
+
+  it('sets export_edition_of as a scalar field like variant/remake', async () => {
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });
+
+    await user.click(screen.getByRole('button', { name: 'Add relationship' }));
+    await user.selectOptions(kindSelects()[0], 'export_edition');
+    // Lineage FK: no license selector, no describe-it toggle.
+    expect(screen.queryByRole('combobox', { name: 'License status' })).not.toBeInTheDocument();
+    await pickTarget(user, /Attack from Mars/);
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1));
+    expect(PATCH).toHaveBeenCalledWith(
+      '/api/models/{public_id}/claims/',
+      expect.objectContaining({
+        body: expect.objectContaining({ fields: { export_edition_of: 'attack-from-mars' } }),
+      }),
+    );
+  });
+
+  it('renders saved export markets and stays clean until edited', async () => {
+    render(RelatedModelsEditorFixture, {
+      props: {
+        initialData: {
+          ...CLEAN,
+          export_markets: [
+            { target_location: { name: 'Italy', public_id: 'italy' }, target_label: '' },
+            { target_location: null, target_label: '' },
+          ],
+        },
+      },
+    });
+
+    const modeSelects = screen.getAllByRole('combobox', {
+      name: 'Export market kind',
+    }) as HTMLSelectElement[];
+    expect(modeSelects).toHaveLength(2);
+    expect(modeSelects[0]).toHaveValue('country');
+    expect(modeSelects[1]).toHaveValue('unknown');
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Destination country' })).toHaveValue('italy'),
+    );
+    expect(screen.getByTestId('dirty')).toHaveTextContent('false');
+  });
+
+  it('adds a country market row and PATCHes export_markets', async () => {
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });
+
+    await user.click(screen.getByRole('button', { name: 'Add export market' }));
+    const countrySelect = await screen.findByRole('combobox', { name: 'Destination country' });
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Italy' })).toBeInTheDocument());
+    await user.selectOptions(countrySelect, 'italy');
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1));
+    expect(PATCH).toHaveBeenCalledWith(
+      '/api/models/{public_id}/claims/',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          export_markets: [{ target_location: 'italy', target_label: '' }],
+        }),
+      }),
+    );
+  });
+
+  it('adds a region-label market row', async () => {
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, { props: { initialData: CLEAN } });
+
+    await user.click(screen.getByRole('button', { name: 'Add export market' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Export market kind' }), 'label');
+    await user.type(screen.getByRole('textbox', { name: 'Describe the market' }), 'Europe');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1));
+    expect(PATCH).toHaveBeenCalledWith(
+      '/api/models/{public_id}/claims/',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          export_markets: [{ target_location: '', target_label: 'Europe' }],
+        }),
+      }),
+    );
+  });
+
+  it('blocks adding more markets while a non-country row exists', async () => {
+    // The Exports.md shape rule: a label or unknown-market row must be the
+    // model's only row — so the add button locks while one exists, and a
+    // second row can't switch mode to label/unknown.
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, {
+      props: {
+        initialData: { ...CLEAN, export_markets: [{ target_location: null, target_label: '' }] },
+      },
+    });
+
+    expect(screen.getByRole('button', { name: 'Add export market' })).toBeDisabled();
+
+    // The lone row itself may still switch mode freely; once it becomes a
+    // complete country row, adding a second market unlocks.
+    const modeSelect = screen.getByRole('combobox', { name: 'Export market kind' });
+    expect(
+      (screen.getByRole('option', { name: 'Region (describe it)' }) as HTMLOptionElement).disabled,
+    ).toBe(false);
+    await user.selectOptions(modeSelect, 'country');
+    const countrySelect = await screen.findByRole('combobox', { name: 'Destination country' });
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Italy' })).toBeInTheDocument());
+    await user.selectOptions(countrySelect, 'italy');
+    expect(screen.getByRole('button', { name: 'Add export market' })).toBeEnabled();
+  });
+
+  it('removes a saved market row and drops it from the payload', async () => {
+    const user = userEvent.setup();
+    render(RelatedModelsEditorFixture, {
+      props: {
+        initialData: {
+          ...CLEAN,
+          export_markets: [
+            { target_location: { name: 'Italy', public_id: 'italy' }, target_label: '' },
+          ],
+        },
+      },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Remove export market' }));
+    expect(screen.getByTestId('dirty')).toHaveTextContent('true');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(PATCH).toHaveBeenCalledTimes(1));
+    expect(PATCH).toHaveBeenCalledWith(
+      '/api/models/{public_id}/claims/',
+      expect.objectContaining({
+        body: expect.objectContaining({ export_markets: [] }),
+      }),
+    );
   });
 });

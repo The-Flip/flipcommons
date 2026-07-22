@@ -8,6 +8,7 @@
   import ModelLineageGroups from '$lib/components/pages/record/detail/ModelLineageGroups.svelte';
   import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
+  import SourceDebugPanel from '$lib/components/debug/SourceDebugPanel.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import RelatedTitlesSection from './_components/RelatedTitlesSection.svelte';
@@ -15,7 +16,7 @@
   import { titleAreaEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { externalLinks } from '$lib/entities/external-links';
   import { model as modelInfo } from '$lib/entities/model';
-  import { modelLineageSections } from '$lib/entities/model-lineage';
+  import { hasModelRelationshipContent } from '$lib/entities/model-lineage';
   import { title as titleInfo } from '$lib/entities/title';
 
   let { data } = $props();
@@ -105,6 +106,14 @@
     />
   {/if}
 
+  <!-- The collapsed model's parked source data. This page is the only way to
+       reach it: /models/{slug} 301s here for a single-model title, so without
+       this the debug panel would be unreachable for exactly the records whose
+       model page never renders. The multi-model branch below has no equivalent
+       — Title carries no extra_data of its own, and each model there keeps a
+       reachable detail page of its own. -->
+  <SourceDebugPanel extraData={md.extra_data} />
+
   {#if md.technology_generation || md.technology_subgeneration || md.display_type || md.display_subtype || md.system}
     <AccordionSection heading="Technology" onEdit={editAction('model:technology')}>
       <ModelSpecsSidebar model={md} section="technology" />
@@ -118,7 +127,7 @@
   <!-- Lineage renders in the sidebar for single-model titles (see +layout.svelte),
        co-located with the specs/tag. The sidebar is desktop-only on the detail
        route, so mobile gets the same links here in a Related Models accordion. -->
-  {#if modelLineageSections(md).length > 0 || (md.relationships?.length ?? 0) > 0 || (md.inbound_relationships?.length ?? 0) > 0}
+  {#if hasModelRelationshipContent(md)}
     <div class="mobile-only">
       <AccordionSection heading="Related Models">
         <ModelLineageGroups model={md} />

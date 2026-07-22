@@ -1,18 +1,20 @@
 <!--
 @component
 Related-models section editor: a flat, inline-editable list — one row per
-relationship. Each row picks a kind (the variant/remake lineage FKs, or a
-copy/conversion/conversion-kit edge), a target machine (or, for edges, a
-free-text label when the donor isn't in the catalog) and — for edges — a
-license. "Add relationship" appends a blank row; the modal's footer Save
-commits the whole diff as one ChangeSet, so a single citation rides every
-changed claim. Mirrors PeopleEditor's inline-list pattern.
+relationship. Each row picks a kind (the variant/remake/export-edition
+lineage FKs, or a copy/conversion/conversion-kit edge), a target machine (or,
+for edges, a free-text label when the donor isn't in the catalog) and — for
+edges — a license. Below the list, an "Export markets" block edits the
+model's ModelExportMarket rows (country / region label / unknown). "Add
+relationship" appends a blank row; the modal's footer Save commits the whole
+diff as one ChangeSet, so a single citation rides every changed claim.
+Mirrors PeopleEditor's inline-list pattern.
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
   import EntitySelect from '$lib/components/input/entity-select/EntitySelect.svelte';
   import type { EntityOption } from '$lib/api/entity-autocomplete';
-  import type { ModelRelationshipSchema } from '$lib/api/schema';
+  import type { ModelExportMarketSchema, ModelRelationshipSchema } from '$lib/api/schema';
   import {
     machineTargetText,
     type EdgeKind,
@@ -26,6 +28,11 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   import { diffScalarFields } from '$lib/edit-helpers';
   import type { SectionEditorProps } from '$lib/components/pages/record/edit/editors/editor-contract';
   import type { FieldErrors } from '$lib/api/parse-api-error';
+  import {
+    EMPTY_EDIT_OPTIONS,
+    fetchModelEditOptions,
+    type ModelEditOptions,
+  } from './model-edit-options';
   import { saveModelClaims, type SaveResult, type SaveMeta } from './save-model-claims';
 
   type HierarchyRef = { public_id: string; name?: string } | null | undefined;
@@ -33,7 +40,9 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   type RelatedModelsModel = {
     variant_of?: HierarchyRef;
     remake_of?: HierarchyRef;
+    export_edition_of?: HierarchyRef;
     relationships?: ModelRelationshipSchema[];
+    export_markets?: ModelExportMarketSchema[];
   };
 
   let { initialData, slug, onsaved, onerror }: SectionEditorProps<RelatedModelsModel> = $props();
@@ -47,7 +56,8 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   const RELATIONSHIP_TYPE_META_BY_EDGE: Record<EdgeKind, RelationshipTypeMeta> =
     RELATIONSHIP_TYPE_META;
   const EDGE_KINDS = Object.keys(RELATIONSHIP_TYPE_META_BY_EDGE) as readonly EdgeKind[];
-  const SINGLE_KINDS = ['variant', 'remake'] as const;
+  const SINGLE_KINDS = ['variant', 'remake', 'export_edition'] as const;
+  type SingleKind = (typeof SINGLE_KINDS)[number];
 
   // Phrase-style labels so a row reads like its reader phrasing: "Copy of
   // [Galaxie] Unlicensed". Declaration order is display order: lineage FKs
@@ -57,6 +67,7 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   const KIND_LABELS: Record<RelationshipKind, string> = {
     variant: 'Variant of',
     remake: 'Remake of',
+    export_edition: 'Export edition of',
     copy: 'Copy of',
     conversion: 'Conversion of',
     conversion_kit: 'Conversion kit for',
@@ -95,7 +106,7 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
 
   let keyCounter = 0;
 
-  function hierarchyRows(kind: 'variant' | 'remake', ref: HierarchyRef): Row[] {
+  function hierarchyRows(kind: SingleKind, ref: HierarchyRef): Row[] {
     if (!ref) return [];
     return [
       {
@@ -129,11 +140,13 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   const original = untrack(() => ({
     variant_of: initialData.variant_of?.public_id ?? '',
     remake_of: initialData.remake_of?.public_id ?? '',
+    export_edition_of: initialData.export_edition_of?.public_id ?? '',
   }));
   let rows = $state<Row[]>(
     untrack(() => [
       ...hierarchyRows('variant', initialData.variant_of),
       ...hierarchyRows('remake', initialData.remake_of),
+      ...hierarchyRows('export_edition', initialData.export_edition_of),
       ...(initialData.relationships ?? []).map(edgeRow),
     ]),
   );
@@ -196,11 +209,107 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     rows = rows.filter((_, i) => i !== index);
   }
 
-  let hasIncomplete = $derived(rows.some((r) => !isComplete(r)));
-
   function rowError(row: Row): string {
     return fieldErrors[`relationships.${rowTarget(row)}`] ?? '';
   }
+
+  // --- export markets ----------------------------------------------------------
+
+  // How one market row names its destination — mirrors the ModelExportMarket
+  // target ladder: a seeded country, a free-text region label, or nothing (the
+  // row itself asserts "built for export", destination unknown).
+  type MarketMode = 'country' | 'label' | 'unknown';
+
+  type MarketRow = {
+    key: number;
+    mode: MarketMode;
+    country: string; // location_path of the picked country ('' until picked)
+    label: string; // free-text region label (label mode only)
+  };
+
+  const MARKET_MODE_LABELS: Record<MarketMode, string> = {
+    country: 'Country',
+    label: 'Region (describe it)',
+    unknown: 'Market unknown',
+  };
+  const MARKET_MODE_OPTIONS = Object.entries(MARKET_MODE_LABELS).map(([value, label]) => ({
+    value: value as MarketMode,
+    label,
+  }));
+
+  function marketRowFrom(market: ModelExportMarketSchema): MarketRow {
+    const country = market.target_location?.public_id ?? '';
+    const label = market.target_label ?? '';
+    return {
+      key: keyCounter++,
+      mode: country ? 'country' : label ? 'label' : 'unknown',
+      country,
+      label,
+    };
+  }
+
+  let marketRows = $state<MarketRow[]>(
+    untrack(() => (initialData.export_markets ?? []).map(marketRowFrom)),
+  );
+
+  let editOptions = $state<ModelEditOptions>(EMPTY_EDIT_OPTIONS);
+  $effect(() => {
+    fetchModelEditOptions().then((opts) => {
+      editOptions = opts;
+    });
+  });
+
+  function isMarketComplete(row: MarketRow): boolean {
+    if (row.mode === 'country') return row.country.length > 0;
+    if (row.mode === 'label') return row.label.trim().length > 0;
+    return true;
+  }
+
+  /** The Exports.md shape rule, mirrored for UX: a label or unknown-market row
+   * must be the model's only market row — so those modes are blocked while
+   * another row exists, and adding a row is blocked while one of them exists. */
+  function soleRowModeBlocked(exceptKey: number): boolean {
+    return marketRows.some((r) => r.key !== exceptKey);
+  }
+
+  function nonCountryRowExists(): boolean {
+    return marketRows.some((r) => r.mode !== 'country');
+  }
+
+  function marketTarget(row: MarketRow): string {
+    if (row.mode === 'country') return row.country;
+    if (row.mode === 'label') return row.label.trim();
+    return '(unknown)';
+  }
+
+  function marketRowError(row: MarketRow): string {
+    return fieldErrors[`export_markets.${marketTarget(row) || '(unknown)'}`] ?? '';
+  }
+
+  function addMarketRow() {
+    marketRows = [...marketRows, { key: keyCounter++, mode: 'country', country: '', label: '' }];
+  }
+
+  function removeMarketRow(index: number) {
+    marketRows = marketRows.filter((_, i) => i !== index);
+  }
+
+  function marketSignatures(list: MarketRow[]): string[] {
+    return list
+      .filter(isMarketComplete)
+      .map((r) => {
+        const country = r.mode === 'country' ? r.country : '';
+        const label = r.mode === 'label' ? r.label.trim() : '';
+        return `${country}|${label}`;
+      })
+      .sort();
+  }
+
+  const originalMarketSignatures = untrack(() => marketSignatures(marketRows));
+
+  let hasIncomplete = $derived(
+    rows.some((r) => !isComplete(r)) || marketRows.some((r) => !isMarketComplete(r)),
+  );
 
   // --- dirty + save ------------------------------------------------------------
 
@@ -209,6 +318,7 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     return {
       variant_of: complete.find((r) => r.kind === 'variant')?.targetSlug ?? '',
       remake_of: complete.find((r) => r.kind === 'remake')?.targetSlug ?? '',
+      export_edition_of: complete.find((r) => r.kind === 'export_edition')?.targetSlug ?? '',
     };
   }
 
@@ -228,7 +338,9 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     const fieldsChanged = Object.keys(diffScalarFields(currentFields(), original)).length > 0;
     const edgesChanged =
       JSON.stringify(edgeSignatures(rows)) !== JSON.stringify(originalEdgeSignatures);
-    return fieldsChanged || edgesChanged;
+    const marketsChanged =
+      JSON.stringify(marketSignatures(marketRows)) !== JSON.stringify(originalMarketSignatures);
+    return fieldsChanged || edgesChanged || marketsChanged;
   });
 
   export { dirty };
@@ -253,6 +365,22 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
       return;
     }
 
+    // Mirror the Exports.md market-shape rules the backend enforces: no
+    // duplicate country, and a label/unknown row must be the only row.
+    const completeMarkets = marketRows.filter(isMarketComplete);
+    const countryKeys = completeMarkets.filter((r) => r.mode === 'country').map((r) => r.country);
+    if (countryKeys.some((k, i) => countryKeys.indexOf(k) !== i)) {
+      onerror('Two export markets name the same country.');
+      return;
+    }
+    const nonCountry = completeMarkets.filter((r) => r.mode !== 'country');
+    if (nonCountry.length > 0 && completeMarkets.length > 1) {
+      onerror(
+        'A region label or unknown-market row must be the only export market — pick countries, or a single label.',
+      );
+      return;
+    }
+
     if (!dirty) {
       onsaved();
       return;
@@ -261,6 +389,8 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
     const changedFields = diffScalarFields(currentFields(), original);
     const edgesChanged =
       JSON.stringify(edgeSignatures(rows)) !== JSON.stringify(originalEdgeSignatures);
+    const marketsChanged =
+      JSON.stringify(marketSignatures(marketRows)) !== JSON.stringify(originalMarketSignatures);
     const body: Parameters<typeof saveModelClaims>[1] = { ...meta };
     if (Object.keys(changedFields).length > 0) body.fields = changedFields;
     if (edgesChanged) {
@@ -269,6 +399,12 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
         license_status: r.license,
         target_slug: r.useLabel ? '' : r.targetSlug || '',
         target_label: r.useLabel ? r.targetLabel.trim() : '',
+      }));
+    }
+    if (marketsChanged) {
+      body.export_markets = marketRows.filter(isMarketComplete).map((r) => ({
+        target_location: r.mode === 'country' ? r.country : '',
+        target_label: r.mode === 'label' ? r.label.trim() : '',
       }));
     }
 
@@ -375,6 +511,84 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   <button type="button" class="add-btn" disabled={hasIncomplete} onclick={addRow}>
     Add relationship
   </button>
+
+  <div class="markets-block">
+    <h3>Export markets</h3>
+    <p class="markets-note">
+      Where this model was built to be exported. Add each destination country — or, when the market
+      isn’t a single country, one region description or “market unknown” row.
+    </p>
+
+    {#each marketRows as row, i (row.key)}
+      <div class="market-row">
+        <div class="market-mode">
+          <select
+            aria-label="Export market kind"
+            bind:value={marketRows[i].mode}
+            onchange={() => {
+              // Switching mode drops the other mode's in-progress target so a
+              // stale value can't ride along in the save payload.
+              if (marketRows[i].mode !== 'country') marketRows[i].country = '';
+              if (marketRows[i].mode !== 'label') marketRows[i].label = '';
+            }}
+          >
+            {#each MARKET_MODE_OPTIONS as opt (opt.value)}
+              <option
+                value={opt.value}
+                disabled={opt.value !== 'country' && soleRowModeBlocked(row.key)}
+                title={opt.value !== 'country' && soleRowModeBlocked(row.key)
+                  ? 'A region or unknown-market row must be the only export market.'
+                  : undefined}>{opt.label}</option
+              >
+            {/each}
+          </select>
+        </div>
+
+        {#if row.mode === 'country'}
+          <div class="market-target">
+            <select aria-label="Destination country" bind:value={marketRows[i].country}>
+              <option value="" disabled>Choose country…</option>
+              {#each editOptions.countries ?? [] as country (country.slug)}
+                <option value={country.slug}>{country.label}</option>
+              {/each}
+            </select>
+          </div>
+        {:else if row.mode === 'label'}
+          <div class="market-target">
+            <input
+              type="text"
+              aria-label="Describe the market"
+              bind:value={marketRows[i].label}
+              maxlength="120"
+              placeholder="e.g. Europe"
+            />
+          </div>
+        {/if}
+
+        <button
+          type="button"
+          class="remove-btn"
+          aria-label="Remove export market"
+          onclick={() => removeMarketRow(i)}>&times;</button
+        >
+      </div>
+      {#if marketRowError(row)}
+        <p class="row-error" role="alert">{marketRowError(row)}</p>
+      {/if}
+    {/each}
+
+    <button
+      type="button"
+      class="add-btn"
+      disabled={hasIncomplete || nonCountryRowExists()}
+      title={nonCountryRowExists()
+        ? 'A region or unknown-market row must be the only export market.'
+        : undefined}
+      onclick={addMarketRow}
+    >
+      Add export market
+    </button>
+  </div>
 </div>
 
 <style>
@@ -508,5 +722,60 @@ changed claim. Mirrors PeopleEditor's inline-list pattern.
   .add-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .markets-block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2);
+    margin-top: var(--size-3);
+    padding-top: var(--size-3);
+    border-top: 1px solid var(--color-border-soft);
+  }
+
+  .markets-block h3 {
+    font-size: var(--font-size-0);
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 0;
+  }
+
+  .markets-note {
+    font-size: var(--font-size-0);
+    color: var(--color-text-muted);
+    margin: 0;
+  }
+
+  /* Same aligned-grid idiom as .rel-row: mode | target | remove. */
+  .market-row {
+    display: grid;
+    grid-template-columns: 11.5rem minmax(0, 1fr) auto;
+    gap: var(--size-2);
+    align-items: start;
+  }
+
+  .market-mode select,
+  .market-target select {
+    width: 100%;
+    min-height: calc(1.5em + 2 * var(--size-2) + 2px);
+  }
+
+  .market-target {
+    min-width: 0;
+  }
+
+  @container (max-width: 30rem) {
+    .market-row {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      position: relative;
+      padding: var(--size-3);
+      padding-right: calc(var(--size-3) + 2.75rem);
+      border: 1px solid var(--color-border-soft);
+      border-radius: var(--radius-2);
+    }
   }
 </style>

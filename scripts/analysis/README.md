@@ -1,145 +1,187 @@
-# Plan-doc data analysis
+# Data analysis tool
 
-How we back a design decision with a reproducible query instead of hand-typed tables. The goal is analysis that is easy to start, easy to reason about and hard to let rot.
+This doc is about using our DuckDB analytics layer to explore the Flipcommons localhost dev database — both ad-hoc, and via analysis files that back planning docs and data patch campaigns with reproducible queries.
 
-What's guaranteed is a **reproducible query over the current local catalog**, not reproducible _results_. The catalog is a live, moving target; the same query run a week later can return different numbers because the data changed, not because anything broke. That's why every run prints an `analysis_context` watermark (DuckDB version, live model count, migration point, latest successful data patch + fingerprint, latest changeset) — it lets a second person tell "same query, newer catalog" apart from a broken reproduction. The changeset id matters: an interactive edit moves the numbers without touching a migration or a patch.
+## Quick start
 
-## Is this the right tool?
+```bash
+# takes `--format json|csv|table` default `table`
+scripts/analysis/analysis query scripts/analysis/catalog.sql \
+  "FROM models WHERE year = 1977 ORDER BY name;"
+```
 
-- **This** — empirical questions about the current local catalog (counts, lists, distributions, comparisons, candidate sets), and docs backed by reproducible queries.
-- **Django models and the ORM** — application semantics and behavior: representation, validation, resolution, write paths.
-- **[pinexplore](https://github.com/deanmoses/pinexplore)** — external or cross-source analysis.
+## Reference
 
-For a one-off you don't need a plan file — query the foundation directly: `scripts/analysis/analysis query scripts/analysis/catalog.sql "<sql>"`.
+How to explore the data model:
 
-## The engine: DuckDB over the live DB
+```bash
+# Describe every public view
+scripts/analysis/analysis describe
 
-We query the live catalog with the [DuckDB](https://duckdb.org/) CLI — a single standalone binary, already on the machine, **not** a project dependency. A script `ATTACH`es `backend/db.sqlite3` **read-only** and defines views over it. Nothing is written to the catalog, nothing is persisted, there is no build step and no artifact to clean up. Re-running always reflects the current DB.
+# Describe a single view and its columns
+scripts/analysis/analysis describe models
 
-It is deliberately lighter than sister project pinexplore (a standing multi-source explorer with a build step and a persisted database): for a one-off that argues a single plan, live-ATTACH over a couple of view files is enough. We borrow its _layering_ idea, not its machinery.
+# Understand related areas
+# Each view's comment block carries what a one-liner cannot — the grain, the
+# liveness rule and the specific way that view will hand you a plausible wrong
+# answer — and it sits next to the SELECT it explains.
+grep '═══' scripts/analysis/catalog.sql scripts/analysis/provenance.sql
+```
 
-## Layers
+In `catalog.sql`, two headings say where to start: `MODELS — the spine; start here` and `MODEL-TO-MODEL RELATIONSHIPS — start with model_edges`.
 
-Three tiers, each depending only on the ones above it:
+`query` and `describe` put only data on stdout; diagnostics — including DuckDB's grey `-- Loading resources` notice — go to stderr.
 
-1. **Foundation — [`catalog.sql`](catalog.sql).** Shared, reusable decode of the awkward physical schema into clean views (`models`, `countries`, `rewards`, `title_size`). Owns the connection. Every analysis `.read`s this.
-2. **Domain modules — `<domain>.sql` in this folder.** Reusable vocabulary for a subject area (e.g. a future `bingo.sql`). Optional; create one only when a second analysis would re-derive the same views. `.read`s the foundation.
-3. **Plan-local — `<plan>.sql` in the plan's own folder.** The argument-specific detectors and review views. Ephemeral, lives and dies with the plan doc. `.read`s the foundation and any domain modules it builds on.
+Use a CTE for intermediate steps that still fit comfortably in one query. When you need named intermediate views, manual reference data, durable checks or repeated execution, use an [analysis file](#analysis-files).
 
-Because every layer is just a `.read`-able SQL file, composition is free: a plan can `.read` the foundation, a domain module, **and** a sibling plan's file. Put anything not specific to your plan's argument down a layer so the next analysis can steal it.
+## Working with the data model
 
-## Start a new analysis
+Guidance that belongs to no single view.
 
-Create `docs/plans/<area>/<plan>.sql`:
+### Model vs Title
+
+When a user asks a question about "models" (aka `MachineModel`) they often mean Titles, or models-as-users-see-them — and for a Title with exactly one Model the UI collapses the two (see `SingleModelTitles.md`). Decide which grain the question wants before counting. title_size on the model row is the test: title_size = 1 is a model that is its own Title in the UI.
+
+### Matching source records to models
+
+Match models on `name_key(name)`, `manufacturer_slug` and `year`; a name alone is often ambiguous. No result means unresolved, not absent — a missing year or an alternate maker name can prevent a match.
+
+If maker or year is unavailable, use `namesake_count`: `1` means the `name_key` is unique among live models; greater than `1` requires another signal or manual review. The count already uses `name_key`. Read it after a match succeeds too — greater than `1` means the maker or year carried the match alone, so an uncertain one makes the result uncertain.
+
+### Matching free text source wording
+
+Before maintaining a manual mapping, check the alias views. They map source wording to stable catalog keys:
+
+| view                                         | resolves                                                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------- |
+| `country_aliases`                            | West Germany, Holland, England, R.O.C. → the modelled country             |
+| `location_aliases`                           | the same at any level — regions and cities too (Firenze, Milano)          |
+| `manufacturer_aliases`                       | native-script, accented and trade-name maker names                        |
+| `corporate_entity_aliases`                   | the legal entity below the brand                                          |
+| `person_aliases`                             | aka / maiden forms on a credit                                            |
+| `reward_type_aliases`                        | a payout phrasing → the reward type                                       |
+| `theme_aliases`, `gameplay_feature_aliases`  | a source's wording → the controlled term                                  |
+| `model_abbreviations`, `title_abbreviations` | community shorthand (LTBR, ACDC Prem VE) — shorthand, not alternate names |
+
+Match canonical names and aliases as one pool — most records have no alias row, so searching aliases alone resolves almost nothing. Alias views contain one row per alias of a live parent, keyed by parent ID and its stable key. `location_aliases` uses `location_path` because a location slug is unique only within its parent; abbreviation views name their value column `abbreviation` because shorthand is not an alternate name. Values are stored as entered, so choose normalization locally and count distinct target records before accepting a match.
+
+Found a phrasing the catalog lacks? Add it with a [data patch](../../docs/DataPatches.md), not a lookup table in your analysis.
+
+### Liveness is the default
+
+Catalog records are soft-deleted (see [RecordLifecycle.md](../../docs/RecordLifecycle.md)). `models` excludes them, matching the read APIs; `all_models` is the escape hatch. Liveness applies to what a model _points at_ too: every dim is soft-deleted independently, so a dead dim **de-enriches to NULL** rather than being reported as current. The one deliberate exception is `claims`, which is not live-filtered — provenance of a deleted record is legitimate history. Use `model_claims` for the live-model lens.
+
+### Model relationship shapes
+
+The foundation surfaces a model's relationships in three shapes, plus a fourth for the controlled vocabularies behind them. Reach for the one that fits:
+
+- **Flat name-list** — `rewards`, `themes`, `tags`. One row per model, a sorted list of the related names (or, for `tags`, slugs). Pure enrichment: join to a model view and display, or test membership. Use when the relationship has no per-edge payload and you only need _which ones_. A name-list **cannot** answer anything about the vocabulary itself — it carries no id, no slug, no DAG. When that's the question, use the vocabulary shape below rather than reaching past the foundation into `fc.catalog_*`.
+- **Resolved-edge grain** — `model_edges` and its `model_lineage` / `model_relationships` components. One row per edge, the far end resolved into the shared `target_*` block. Use when each edge points at another model you need to identify.
+- **Counted-payload grain** — `model_gameplay_features`. One row per edge that carries a payload (here, the feature `count`: Flippers ×2, Trap Holes ×25). Use when flattening to a name-list would drop a per-edge value.
+- **Vocabulary** — `theme_vocab` / `theme_aliases` / `model_themes`, and `gameplay_feature_vocab` / `gameplay_feature_aliases` / `model_gameplay_features`. Not a model relationship at all: one row per _term_, with its usage count (`n`), its place in the DAG and its aliases. Reach for it when the subject is the controlled vocabulary rather than the models — auditing near-duplicates, finding unparented or unused terms, checking whether an alias collides with a live term. The alias views are their own grain so you can join and compare on an alias. `countries` is the same shape minus the DAG, with its aliases in `country_aliases`; `game_formats` has neither.
+
+### `model_edges` is outbound only
+
+`model_edges` answers "what does this model point at", not "is this pair connected". An edge is stored once, on the end that states it, so a model whose only relationship is something else pointing _at_ it has no rows at all — **hundreds of live models are in exactly that position today**, and a connectedness test written against `model_edges` returns `false` for every one of them. Use `model_edges_bidir` for that question: it mirrors each resolved edge and adds a `direction` column. Two rules come with it — `relationship_type` is always the edge _as stated_ and is never re-pointed, so read it together with `direction`; and never aggregate from it, since every edge is counted twice by construction.
+
+### Joining out to other sources
+
+Two mechanisms cross the foundation's edge, both documented where they are defined:
+
+- **What a slug means** — `domain_vocab` parses [DomainModel.md](../../docs/DomainModel.md) at query time, so definitions are never copied into this layer. `LEFT JOIN domain_vocab d ON d.dim = 'gameformat' AND d.slug = g.slug`.
+- **Which work a URL belongs to** — `citation_root_for_host(url_host(u))`. Not equality or `LIKE`: registered hosts nest, so the rule is a longest label-boundary suffix.
+
+## Analysis files
+
+An **analysis file** is a SQL program built on the foundation. The Flippatch project uses them for data patch campaigns; this project uses them for planning docs under `docs/plans/`. [`catalog_checks.sql`](catalog_checks.sql) is a local worked example.
+
+An analysis file has the following sections; only the third is shaped by the question:
+
+1. **Foundation** — `.read scripts/analysis/catalog.sql`. One line.
+2. **Reference** — analysis-local hand-maintained lookups: adjective maps, exception lists, constant vocab. Not derived from the DB. Often empty; that's fine.
+3. **Analysis** — the actual work. A candidate hunt might run _detect → assemble → enrich → review_; a different question might _classify_, _aggregate_ or _diff_.
+4. **Summary & checks** — the `<prefix>_summary` and `<prefix>_checks` views. The summary computes every headline number the analysis publishes. The checks express invariants so that an empty result means healthy. Three useful check classes are:
+   - **Structural** — joins preserve grain; a classification is complete and mutually exclusive; the detector set covers the candidates with nothing left over.
+   - **Vocabulary** — a parsed or reviewed value belongs to a closed set.
+   - **Anchors** — a known example still triggers each heuristic. This is the only class that catches a whole detector going dark when, for example, a regex rots or a column is renamed. Anchors are essential for free-text detectors.
+
+Start with this shape and keep the file beside its campaign or planning doc:
 
 ```sql
--- <plan> analysis for <Plan>.md
+-- <purpose>
 .read scripts/analysis/catalog.sql
 
 CREATE OR REPLACE VIEW my_finding AS
   SELECT id, name, label FROM models WHERE /* … */;
+
+CREATE OR REPLACE VIEW my_analysis_summary AS
+  SELECT 'findings' AS metric, count(*) AS value FROM my_finding;
+
+CREATE OR REPLACE VIEW my_analysis_checks AS
+  SELECT 'duplicate_finding' AS check_name, id::VARCHAR AS detail
+  FROM my_finding GROUP BY id HAVING count(*) > 1;
 ```
 
-The `scripts/analysis/analysis` runner is the everyday path — it prints the watermark and summary, then **gates on the checks view**, so you can't forget to run them. It is **location-independent**: it finds its own flipcommons root and `cd`s there before invoking DuckDB, so you can call it from any directory — including a sister repo whose plan `.read`s `scripts/analysis/catalog.sql`. The plan path is resolved against _your_ cwd; the plan's own relative reads resolve against flipcommons.
+## Runner
+
+The runner is location-independent: the analysis-file path resolves against your current directory, while its relative `.read`s resolve against flipcommons. This is what lets a data patch campaign in Flippatch consume the foundation without copying it.
 
 ```bash
-# run: context + <prefix>_summary, then fail nonzero if <prefix>_checks has rows
-scripts/analysis/analysis run docs/plans/<area>/<plan>.sql <prefix>
+# describe: the view reference — every public view with its one-line description
+scripts/analysis/analysis describe <analysis>.sql  # include an analysis file's views
 
-# same, but render the summary as a Markdown table to paste into the plan doc
-scripts/analysis/analysis run docs/plans/<area>/<plan>.sql <prefix> --markdown
+# run: context + <prefix>_summary, then fail nonzero if any *_checks view has rows
+scripts/analysis/analysis run <analysis>.sql <prefix>
 
-# query: pure data on stdout (diagnostics on stderr) — for generators/pipelines
-scripts/analysis/analysis query docs/plans/<area>/<plan>.sql "FROM my_finding;" --format json
+# render the summary as Markdown for a planning doc or campaign README
+scripts/analysis/analysis run <analysis>.sql <prefix> --markdown
+
+# pure data on stdout; --check runs the gate before a generator reads it
+scripts/analysis/analysis query <analysis>.sql "FROM my_finding;" --format json --check <prefix>
 
 # GUI: browse every view live in the local DuckDB UI (localhost:4213)
-scripts/analysis/analysis ui docs/plans/<area>/<plan>.sql
+scripts/analysis/analysis ui <analysis>.sql
 
-# snapshot: freeze selected views as real tables into a standalone <plan>.duckdb
-scripts/analysis/analysis snapshot docs/plans/<area>/<plan>.sql my_finding another_view
+# snapshot: freeze selected views as real tables into a standalone <analysis>.duckdb
+scripts/analysis/analysis snapshot <analysis>.sql my_finding another_view
 ```
 
-`<prefix>` names the summary/checks pair (`export` → `export_summary`, `export_checks`). `query` takes `--format json|csv|table` (default `table`) and puts nothing but data on stdout, so a generator can read a view directly instead of re-implementing the DuckDB invocation. The runner is a convenience, not a gate you must go through: raw `duckdb -init docs/plans/<area>/<plan>.sql :memory: "FROM my_finding LIMIT 20;"` from the flipcommons root still works for ad-hoc querying.
+`<prefix>` names the analysis's summary/checks pair (`export` → `export_summary`, `export_checks`), and both must exist for `run` — an analysis that ships a summary with no checks is rejected rather than reported clean.
 
-The snapshot copies tables into an **attached** output file, so the `.duckdb` holds plain tables — not the session's views, which reference the `fc` attachment and would dangle once it's gone. (For the same reason the analytical views stay non-`TEMP`: the DuckDB UI runs each query cell on its own connection, and `TEMP` views aren't visible across connections.) `*.duckdb` is gitignored — a snapshot is a throwaway you hand to someone who can't run the pipeline, never a committed artifact.
+What's reproducible are _queries_, not _results_: the catalog is a live, moving target. So `run` opens with an `analysis_context` watermark (DuckDB version, live model count, migration point, latest successful data patch + fingerprint, latest changeset), which lets a later reader tell "same query, newer catalog" apart from a broken reproduction.
 
-## Shape of a plan file
+The **gate is not limited to that pair**: `run` discovers every public `*_checks` view in the session and fails on a row from any of them, and prints every public `*_context` view alongside `analysis_context`. Any SQL file the analysis `.read`s therefore contributes its own invariants and watermark automatically. Private `_underscore` views are excluded from both sweeps, so an intermediate helper can be named `_foo_checks` without joining the gate.
 
-A plan file has four sections. Three are the same in every analysis; only the third is shaped by the question you're asking. The banners in an existing plan file (e.g. the exports one) mark them — copy the skeleton, keep sections 1, 2 and 4, and rebuild section 3.
+For a generator or pipeline, pass `--check <prefix>` to `query` so the same gate as `run` executes before any data is emitted. The runner is a convenience: raw `duckdb -init <analysis>.sql :memory: "FROM my_finding LIMIT 20;"` from the repo root still works.
 
-1. **Foundation** — `.read scripts/analysis/catalog.sql` (and any domain module). One line.
-2. **Reference** — plan-local hand-maintained lookups: adjective maps, exception lists, constant vocab. Not derived from the DB. Often empty; that's fine.
-3. **Analysis** — the actual work, and the only part whose internal shape varies. A candidate hunt runs _detect → assemble → enrich → review_ (what the exports file does); a different question might _classify_, _aggregate_ or _diff_ instead. Don't force your analysis into someone else's sub-shape.
-4. **Summary & checks** — the `<plan>_summary` and `<plan>_checks` views. This is the tail that keeps the prose honest, and the part most easily dropped when copying — always keep it.
+`*.duckdb` is gitignored — a snapshot is a throwaway to hand to someone who can't run the pipeline, never a committed artifact.
 
 ## Conventions
 
-These are what keep an analysis readable and honest:
-
-- **Run from the repo root.** Paths in the scripts assume it.
-- **`_underscore` = private helper view; unprefixed = public.** Public views are the ones the doc quotes and other layers build on. Keep intermediate parsing private.
-- **End a plan file with two views:**
-  - **`<plan>_summary`** — one row per headline number the prose cites, computed from the views. Regenerate the doc's summary section from it; a number that disagrees with the prose means the **prose is stale**.
-  - **`<plan>_checks`** — invariants that should always hold, phrased so that **an empty result means healthy**. The runner queries it and fails nonzero on any row. This is pinexplore's `_violations` idea at plan scale. Three check classes are worth reaching for:
-    - **Structural** — joins preserve grain; a classification is complete and mutually exclusive; the detector set covers the candidates with nothing left over.
-    - **Vocabulary** — a parsed or reviewed value belongs to a closed set (e.g. every market is a known country).
-    - **Anchors** — a known example still triggers each heuristic. This is the only class that catches a _whole detector going dark_ (a regex rots, a column is renamed); a row-level invariant can't see that the set silently shrank. Essential for freetext detectors.
-- **Numbers in the plan doc come from `<plan>_summary`, never hand-counted.** This is the whole point: the query is the source of truth, the prose is a rendering of it. When you re-run and the numbers moved, update the prose.
-- **Predicate on stable keys, display names.** Filter and join on `slug` / `*_id` / `game_format_slug`; use `name` / `manufacturer_name` / `game_format_name` only for output. Names drift and a renamed value silently zeroes a count with no error; a slug or id doesn't. Same rule the maker split follows. When you find yourself reaching past the foundation into a raw `fc.` table for a stable id or a vocabulary, that's the promotion signal — a second consumer doing the same is how `slug`, `ipdb_id` and `game_formats` got here.
-- **Makers come from the catalog, not the source text.** The maker of a model is `model → corporate_entity → manufacturer` (no corporate entity → no manufacturer, so `manufacturer_name` is legitimately NULL for some rows). Foundation exposes `manufacturer_name` (display and group by it) and `manufacturer_id` — compare "same maker" on `manufacturer_id`, the user-facing brand. `corporate_entity_id` is a single _legal incarnation_ (one brand's eras split across several), so use it only when corporate continuity is the actual question, not for "same maker". The IPDB manufacturer trade-name freetext is deliberately **not** a column — treating it as the maker was the first bug this template shipped. It survives only inside raw `extra_data`, for the one job it's right for: auditing the trade-name → Manufacturer mapping itself.
-- **Source free-text that the product doesn't model is first-class.** The flip side of the maker rule: `ipdb_notes`, `ipdb_notable_features` and `opdb_features` are the fields IPDB/OPDB carry that flipcommons never surfaces, and mining them is most of what plan analysis does — so they're plain columns on `models`, never a hand-written `json_extract`. `opdb_features` is the one with editions/flags like `Export edition`. The test for a raw `extra_data` field is whether it _shadows something the catalog already models_ — if so, use the modeled form and leave the source buried: the IPDB trade name defers to `manufacturer_name`, and `opdb.keywords` defers to the canonical `themes` view. Promote a raw field only when it's genuine unmodeled signal (notes, edition flags) — a single line in `catalog.sql`.
+- **The runner works from anywhere; raw `duckdb` commands must run from the repo root.** Only the runner does the path resolution described above.
+- **`_underscore` = private helper view; unprefixed = public.** Public views are the ones a document quotes and other analyses build on. Keep intermediate parsing private.
+- **Published numbers come from `<prefix>_summary`, never hand-counted.** The query is the source of truth, the prose a rendering of it. When the numbers move, update the prose.
+- **Predicate on stable keys, display names.** Filter and join on `slug` / `*_id` / `game_format_slug`; use `name` / `manufacturer_name` / `game_format_name` only for output. A renamed value silently zeroes a count with no error; a slug or id doesn't.
+- **Ingested source free-text is a plain column.** `ipdb_notes`, `ipdb_notable_features` and `opdb_features` (the editions and flags list, e.g. `Export edition`) sit on `models` directly, so never hand-roll a `json_extract`. Wanting a raw `extra_data` field that isn't there is a foundation change: see [EDITING.md](EDITING.md#what-belongs-in-the-foundation).
 - **Read-only, always.** The catalog is never mutated from an analysis script.
 
 ### Making manual judgment checkable (optional)
 
-Sometimes a plan cites numbers that come from human classification, not a query — "34 of these are bingos, 7 are slot machines." Rather than leave those as hand-counted prose, encode the judgment as a Reference (section 2) lookup table and let it flow through the summary and checks like anything else:
+Sometimes an analysis cites numbers that come from human classification, not a query — "34 of these are bingos, 7 are slot machines." Rather than leave those as hand-counted prose, encode the judgment as a Reference (section 2) lookup table and let it flow through the summary and checks like anything else:
 
 ```sql
 CREATE OR REPLACE VIEW _orphan_class AS
   SELECT * FROM (VALUES (123,'bingo'), (456,'slot'), (789,'other')) AS t(model_id, category);
 ```
 
-Then `<plan>_checks` can catch a classification that's missing a candidate, one that names a model no longer in the set, a duplicate, or a `category` outside the allowed vocabulary — the same guarantees you get for parsed data, now covering the human-entered part. Reach for this only when the manual split is worth keeping honest; a one-off count in prose is fine otherwise.
+Then `<prefix>_checks` can catch a classification that's missing a candidate, one that names a model no longer in the set, a duplicate or a `category` outside the allowed vocabulary. Reach for this only when the manual split is worth keeping honest; a one-off count in prose is fine otherwise.
 
-## Foundation reference (`catalog.sql`)
+## The engine: DuckDB over the live DB
 
-Catalog records are soft-deleted (see [RecordLifecycle.md](../../docs/RecordLifecycle.md)). The foundation is **live-only by default**: `models` excludes rows whose `status` is `deleted`, matching how the read APIs behave. Use `all_models` only when you deliberately want the deleted rows too.
+We query the live catalog with the DuckDB CLI. The CLI must already be on the machine, it's not a project dependency.
 
-**Editing the foundation? Run its self-test.** `scripts/analysis/analysis run scripts/analysis/catalog_checks.sql foundation` prints a row-count-per-view health readout, then fails if any invariant broke — three classes: data-independent structural checks (union integrity, grain, the live filter, the `model_edges` license/source contract, subject + target resolution), generated dark anchors, and coverage meta-checks. It's a plan-shaped consumer of the foundation, not part of it, so `catalog.sql` stays pure views.
+A script `ATTACH`es `backend/db.sqlite3` **read-only** and defines views over it. Nothing is written to the localhost product DB, nothing is persisted, there is no build step and no artifact to clean up; re-running always reflects the current DB.
 
-**Dark anchors are generated, not hand-written.** An anchor fires when a decoded facet goes silently all-empty — a broken join or a renamed source key (`model` → `models`, `notes` → `ipdb_notes`) zeroes a whole column with no error, the one failure a row-level invariant can't see. `catalog_checks.sql` derives these from the views themselves: `_anchor_scan` sweeps `COUNT(COLUMNS(*))` across every column of every public view, so **adding a decoded facet anchors it for free** — there is no per-facet anchor to write. Adding a whole view, or a new `VARCHAR[]` facet, is caught by the `unanchored_view` / `unanchored_array` coverage meta-checks. The only hand-input is `_anchor_skip` — the columns allowed to be entirely empty (genuinely-sparse dims like `technology_subgeneration` / `display_subtype` that would false-positive on a healthy catalog). It's an exception list with a safe default: forgetting an entry over-anchors loudly rather than under-anchoring silently. `analysis_context` is swept out on purpose — a watermark whose NULLs (e.g. no successful patch yet) are legitimate.
+## Editing the foundation
 
-| View                      | Grain                                           | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `models`                  | one row per **live** MachineModel               | stable ids (`slug`, `opdb_id`, `ipdb_id`); `status`; `year`, `player_count`; Title identity (`title_id`, `title_slug`, `title_name`); lineage FKs (`variant_of_id`, `remake_of_id`); maker identity (`corporate_entity_id` / `corporate_entity_slug`, `manufacturer_id` / `manufacturer_slug`) + `manufacturer_name`; maker origin (`location_path` like `usa/il/chicago`, `country_slug` like `usa` — where the maker was based, NOT an export destination); genre (`game_format_id`, `game_format_slug`); single-FK taxonomy dims as **slug only** — the slug is both the readable label and the unique raw-join key, so the FK id and display `name` are dropped as redundant (`system` keeps `system_name`, a hardware designation the slug mangles): `technology_generation_slug`, `technology_subgeneration_slug`, `display_type_slug`, `display_subtype_slug`, `system_slug`/`system_name`, `cabinet_slug`, `production_status_slug`; source free-text (`ipdb_notes` / `ipdb_notable_features` / `opdb_features`); a display `label`; raw `extra_data` |
-| `all_models`              | one row per MachineModel (live **and** deleted) | same columns as `models`; filter on `status` yourself                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `countries`               | one row per **live** country                    | `id`, `slug`, `name` — root Locations (a country has no parent); feeds detectors, so live-only. Join `models.country_slug` / `target_country_slug` here for the country name                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `game_formats`            | one row per **live** game format                | `id`, `slug`, `name` — the machine-genre vocabulary; join `models.game_format_id` or check a slug/name exists                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `rewards`                 | one row per model with any                      | sorted reward-type name list; keyed by id                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `themes`                  | one row per model with any                      | sorted theme name list; keyed by id — the canonical home for theme data (use instead of raw `opdb.keywords`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `tags`                    | one row per tagged model                        | sorted list of tag **slugs** (not names — you predicate on these); keyed by id. The classification vocab (`widebody`, `prototype`, …); `conversion_kit`/re-themes are relationships, not tags                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `model_gameplay_features` | one row per (model, feature)                    | the counted grain — `feature_id`/`feature_slug` + optional `count` (Flippers ×2, Trap Holes ×25). Live subjects; direct attachments only (DAG not rolled up). Predicate on `feature_slug`. Scalar `flipper_count` deliberately NOT surfaced                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `model_edges`             | one row per model edge (lineage + typed)        | **the default relationships view** — `UNION` of the two below, so one `WHERE model_id = ?` returns every edge. `edge_source` (`lineage_fk`/`relationship`), unified `relationship_type` (a closed 6-value set: `variant_of`/`remake_of` + the typed four), `license_status` (NULL for lineage), `target_label`, and the shared `target_*` block. Concatenates, doesn't reconcile. **See the note below.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `model_lineage`           | one row per (model, lineage edge)               | drill-down: single-valued self-FKs (`variant_of`, `remake_of`) as row grain; `edge_kind` discriminator; origin model fully resolved — `target_slug`/`_name`/`_year`/`_game_format_slug`/`_reward_types`/`_player_count` + `target_corporate_entity_slug`, `target_manufacturer_slug`/`_name`, `target_location_path`/`target_country_slug`. Live-only both ends. **See the note below.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `model_relationships`     | one row per typed edge                          | drill-down: the multi-valued `ModelRelationship` table; `relationship_type` (closed four-value set: conversion/conversion*kit/copy/retheme), `license_status` (closed: licensed/unlicensed/unknown), and a target that's either a resolved model (same `target*\*`block as`model_lineage`) or a `target_label`. Live subjects. **See the note below.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `title_size`              | one row per Title (with a live model)           | Title identity (`title_slug`, `title_name`) + `n`, the **live** model count — the "alone in its Title?" signal (n = 1)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `analysis_context`        | one row                                         | the input watermark: DuckDB version, live model count, migrations applied + latest name, latest successful patch + fingerprint, latest changeset id                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-
-### Three relationship shapes
-
-The foundation surfaces a model's relationships in three shapes — reach for the one that fits, and when adding a new relationship match it to a shape rather than inventing a fourth:
-
-- **Flat name-list** — `rewards`, `themes`, `tags`. One row per model, a sorted list of the related names (or, for `tags`, slugs). Pure enrichment: join to a model view and display, or test membership. Use when the relationship has no per-edge payload and you only need _which ones_.
-- **Resolved-edge grain** — `model_edges` and its `model_lineage` / `model_relationships` components. One row per edge, the far end resolved into the shared `target_*` block. Use when each edge points at another model you need to identify.
-- **Counted-payload grain** — `model_gameplay_features`. One row per edge that carries a payload (here, the feature `count`: Flippers ×2, Trap Holes ×25). Use when flattening to a name-list would drop a per-edge value. This is the newest shape; the next payload-bearing relationship should follow it, not get flattened.
-
-### Model-to-model relationships: start with `model_edges`
-
-**`model_edges` is the default — reach for it first.** It's every edge out of a model in one view, so a single `WHERE model_id = ?` returns the complete relationship picture and you can't miss a source. It carries `edge_source` (`lineage_fk`/`relationship`), a unified `relationship_type`, `license_status` (NULL for lineage), `target_label` and the shared `target_*` block.
-
-It's a `UNION ALL` over two mechanism-specific views, which exist because the edges have two different physical shapes. Drop to one only when you want that mechanism alone:
-
-- **`model_lineage`** — the two _single-valued_ structured self-FKs. A model has at most one `variant_of` and one `remake_of`, and the target is always a resolved catalog model.
-- **`model_relationships`** — the _multi-valued_ typed `ModelRelationship` edge table: many edges per model, a closed four-value `relationship_type` vocabulary (DB-enforced), a closed three-value `license_status`, and a target that may be an unresolved free-text `target_label` rather than a catalog model.
-
-Both expose the identical `target_*` block for the other end of the edge — identity (`slug`/`name`), `year`, genre (`game_format_slug`), `reward_types`, `player_count`, maker (`corporate_entity_slug`, `manufacturer_slug`/`name`) and maker origin (`location_path`/`country_slug`), the facts that tell two models apart — sourced from one internal projection (`_model_target`), so it can't drift and a new facet is a one-line add. `model_edges` **concatenates** these two; it deliberately does **not** reconcile them. If a model carries both a `variant_of` FK and a typed edge to the same target, that's two rows — surfacing the overlap so a consumer can see it. Deciding the two describe the same relationship is a plan-local call, not a foundation fact.
+For **changing** the foundation — adding a view, editing a check — see [EDITING.md](EDITING.md).

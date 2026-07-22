@@ -198,4 +198,41 @@ describe('title detail SSR route', () => {
 
     expect(body).not.toContain('Related Models');
   });
+
+  describe('source data debug panel', () => {
+    // A single-model title is the ONLY way to reach the collapsed model's
+    // parked source data: /models/{slug} 301s to this page, so a regression
+    // here silently hides the panel for those records rather than breaking
+    // anything visibly.
+    const withDebug = (extra_data: Record<string, unknown>) => ({
+      ...MOCK_TITLE,
+      model_detail: makeModelDetail({ extra_data }),
+    });
+
+    it('renders the collapsed model source data when the flag is on', () => {
+      const { body } = render(Harness, {
+        props: {
+          data: { profile: withDebug({ 'ipdb.notes': 'Parked note.' }), jsonLd: {} },
+        } as never,
+      });
+
+      expect(body).toContain('Source Debug');
+    });
+
+    it('renders nothing when the model has nothing parked', () => {
+      const { body } = render(Harness, {
+        props: { data: { profile: withDebug({}), jsonLd: {} } } as never,
+      });
+
+      expect(body).not.toContain('Source Debug');
+    });
+
+    it('omits the panel for a multi-model title, which has no collapsed model', () => {
+      const { body } = render(Harness, {
+        props: { data: { profile: { ...MOCK_TITLE, model_detail: null }, jsonLd: {} } } as never,
+      });
+
+      expect(body).not.toContain('Source Debug');
+    });
+  });
 });

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import ClassVar, Self
+from typing import TYPE_CHECKING, ClassVar, Self
 
 from django.db import models
 from django.db.models import Exists, OuterRef, Q, Value
@@ -26,6 +26,9 @@ from apps.provenance.model_bases import (
 
 from .base import AliasModel, CatalogModel
 from .manufacturer import CorporateEntity
+
+if TYPE_CHECKING:
+    from .machine_model import MachineModel
 
 __all__ = [
     "CorporateEntityLocation",
@@ -60,8 +63,12 @@ class Location(CatalogModel, TimeStampedModel):
     # still renders — only authoring through the picker is gated.
 
     claims_exempt: ClassVar[frozenset[str]] = frozenset({"location_path"})
+    # ``export_market_models`` walks through ModelExportMarket rows (which
+    # have no lifecycle, so the PROTECT pass skips them) to the active models
+    # exported to this location — the same channel MachineModel uses for
+    # ``inbound_relationship_sources``.
     soft_delete_usage_blockers: ClassVar[frozenset[str]] = frozenset(
-        {"corporate_entities"}
+        {"corporate_entities", "export_market_models"}
     )
 
     # system-derived from ``parent.location_path + "/" + slug`` — the
@@ -149,6 +156,19 @@ class Location(CatalogModel, TimeStampedModel):
 
     def __str__(self) -> str:
         return self.name or self.location_path
+
+    @property
+    def export_market_models(self) -> models.QuerySet[MachineModel]:
+        """Models whose export-market rows target this location.
+
+        The read surface behind the ``soft_delete_usage_blockers`` entry: the
+        walk needs a lifecycle queryset (it applies ``.active()``), and the
+        ModelExportMarket row itself has none, so this hops through
+        ``target_market_location`` to the owning subject models.
+        """
+        from .machine_model import MachineModel
+
+        return MachineModel.objects.filter(export_markets__target_market_location=self)
 
     @classmethod
     def sitemap_queryset(cls) -> models.QuerySet[Self]:

@@ -86,7 +86,22 @@ class SchemeCitationRef:
     identifier: str
 
 
-# A parsed, normalized reference to a citation source: one of two
+@dataclass(frozen=True)
+class IsbnCitationRef:
+    """The isbn form of a :data:`CitationRef` — an authored work, not a web page.
+
+    ``isbn`` is a checksum-valid ISBN normalized to its 13-digit spelling, the
+    globally-unique column on ``CitationSource``; resolved at apply time to the
+    **already-seeded** source carrying it (no DB access to construct one).
+    Unlike the other two forms this one never mints: a book is a work someone
+    seeds deliberately with its author, publisher and year, not something a
+    passing cite can invent from an identifier alone.
+    """
+
+    isbn: str
+
+
+# A parsed, normalized reference to a citation source: one of three
 # mutually-exclusive forms, resolved to a ``CitationSource`` at apply time. A
 # sum type so a both-set / neither-set ref is unconstructable and the apply-side
 # resolve can ``match`` the variant the builder chose rather than re-reading a
@@ -96,7 +111,7 @@ class SchemeCitationRef:
 # Defined here, beside the plan dataclasses, rather than in any source adapter:
 # the source-agnostic apply layer must not import an adapter, and adapters (e.g.
 # ``ingestion.patches``) already import the plan carriers from this module.
-type CitationRef = WebCitationRef | SchemeCitationRef
+type CitationRef = WebCitationRef | SchemeCitationRef | IsbnCitationRef
 
 
 @dataclass(frozen=True)

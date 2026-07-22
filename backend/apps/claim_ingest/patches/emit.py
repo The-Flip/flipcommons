@@ -55,6 +55,7 @@ from apps.provenance.claims import (
     normalize_fk_value,
     resolve_fk_target_pk,
 )
+from apps.provenance.model_bases import TargetFilter
 from apps.provenance.models import (
     Claim,
     IdentityPartValue,
@@ -166,7 +167,12 @@ def _resolve_model_class(entry: PatchEntry) -> type[LinkableClaimModel]:
 
 
 def _resolve_committed_slot(
-    slot: _FkMemberSpec, ref: PublicId, *, namespace: Namespace, entry: PatchEntry
+    slot: _FkMemberSpec,
+    ref: PublicId,
+    *,
+    namespace: Namespace,
+    entry: PatchEntry,
+    enforce_target_filter: bool = True,
 ) -> int:
     """Resolve one FK slot's public_id to a committed pk, or raise.
 
@@ -174,12 +180,26 @@ def _resolve_committed_slot(
     (``_member_identity``) and the assert path's committed-slot resolution
     (``_resolve_member_slots``) — so the "does not resolve to a {Model}" error is
     defined once and the two paths can't drift.
+
+    ``enforce_target_filter=False`` (the remove path) resolves without the
+    slot's :class:`TargetFilter`: a removal names an existing edge, so the
+    target's *current* validity is irrelevant and an out-of-restriction
+    target must stay removable (it no-ops with a warning if no edge exists,
+    per the standard remove semantics).
     """
-    member_pk = resolve_fk_target_pk(slot.target_model, ref)
+    target_filter = slot.target_filter if enforce_target_filter else None
+    member_pk = resolve_fk_target_pk(
+        slot.target_model, ref, target_filter=target_filter
+    )
     if member_pk is None:
+        restriction = (
+            f" that is {slot.target_filter.description}"
+            if enforce_target_filter and slot.target_filter is not None
+            else ""
+        )
         raise PatchError(
             f"{entry.ref}: relationship {namespace!r} member {ref!r} "
-            f"does not resolve to a {slot.target_model.__name__}"
+            f"does not resolve to a {slot.target_model.__name__}{restriction}"
         )
     return member_pk
 
@@ -308,6 +328,10 @@ class _FkMemberSpec(NamedTuple):
     # member is a bare public_id string (tag, theme, location). Always ``None``
     # for the slots of a ``_MultiFkMemberSpec`` (identity slots carry no payload).
     payload: _PayloadSlot | None = None
+    # The schema's target restriction (``FkTarget.target_filter``), applied when
+    # resolving an *asserted* member's public_id — an out-of-restriction row
+    # (a non-country Location as an export market) fails like a missing one.
+    target_filter: TargetFilter | None = None
 
 
 class _StringMemberSpec(NamedTuple):
@@ -377,6 +401,11 @@ class _DictMemberSpec(NamedTuple):
     literal_slots: tuple[_StringMemberSpec, ...]
     payload_slots: tuple[_PayloadSlot, ...]
     xor_groups: tuple[tuple[ClaimValueKey, ...], ...]
+    # Schema ``xor_required``: True ⇒ exactly one group must be authored;
+    # False ⇒ at most one, and the all-absent member (``- {}``) is legal —
+    # the row's existence is itself the fact (export_market's unknown-market
+    # row).
+    xor_required: bool = True
 
 
 # Closed discriminated union: an FK member never has a display key, a string
@@ -461,7 +490,11 @@ def _relationship_member_spec(
             )
         return _MultiFkMemberSpec(
             slots=tuple(
-                _FkMemberSpec(value_key=s.name, target_model=s.fk_target.model)
+                _FkMemberSpec(
+                    value_key=s.name,
+                    target_model=s.fk_target.model,
+                    target_filter=s.fk_target.target_filter,
+                )
                 for s in member_specs
                 if s.fk_target is not None  # narrowing; guaranteed by the check above
             )
@@ -486,6 +519,7 @@ def _relationship_member_spec(
             value_key=spec.name,
             target_model=spec.fk_target.model,
             payload=payload,
+            target_filter=spec.fk_target.target_filter,
         )
     if spec.scalar_type is str:
         if spec.max_length is None:
@@ -524,7 +558,11 @@ def _dict_member_spec(
     for m in schema.members:
         if m.fk_target is not None:
             fk_slots.append(
-                _FkMemberSpec(value_key=m.name, target_model=m.fk_target.model)
+                _FkMemberSpec(
+                    value_key=m.name,
+                    target_model=m.fk_target.model,
+                    target_filter=m.fk_target.target_filter,
+                )
             )
             continue
         if m.scalar_type is not str or m.max_length is None:
@@ -557,6 +595,7 @@ def _dict_member_spec(
         literal_slots=tuple(literal_slots),
         payload_slots=tuple(payload_slots),
         xor_groups=schema.xor_groups,
+        xor_required=schema.xor_required,
     )
 
 
@@ -689,13 +728,14 @@ def _unpack_dict_member(
     only, and silently dropping an authored payload there would misread as
     "remove just this payload value".
     """
+    quantifier = "exactly" if rel_spec.xor_required else "at most"
     groups_desc = " / ".join(
         "(" + ", ".join(group) + ")" for group in rel_spec.xor_groups
     )
     if not isinstance(member, dict):
         raise PatchError(
             f"{entry.ref}: relationship {namespace!r} member {member!r} must be "
-            f"a mapping with exactly one of {groups_desc} plus payload keys"
+            f"a mapping with {quantifier} one of {groups_desc} plus payload keys"
         )
     fk_by_key = {slot.value_key: slot for slot in rel_spec.fk_slots}
     literal_by_key = {slot.value_key: slot for slot in rel_spec.literal_slots}
@@ -724,9 +764,10 @@ def _unpack_dict_member(
     present_groups = [
         group for group in rel_spec.xor_groups if any(key in member for key in group)
     ]
-    if len(present_groups) != 1:
+    bad = len(present_groups) != 1 if rel_spec.xor_required else len(present_groups) > 1
+    if bad:
         raise PatchError(
-            f"{entry.ref}: relationship {namespace!r} member must set exactly "
+            f"{entry.ref}: relationship {namespace!r} member must set {quantifier} "
             f"one of {groups_desc}; got {len(present_groups)}"
         )
 
@@ -760,7 +801,11 @@ def _unpack_dict_member(
                 f"exceeds the {literal.max_length}-character limit"
             )
         values[key] = stripped
-    member_label = next(str(member[k]) for k in member if k not in payload_by_key)
+    # An all-absent member (the optional-XOR bottom rung, ``- {}``) has no
+    # target key to label errors with; fall back to a fixed marker.
+    member_label = next(
+        (str(member[k]) for k in member if k not in payload_by_key), "(no target)"
+    )
     for key, payload in payload_by_key.items():
         if key not in member:
             if payload.required and not for_removal:
@@ -798,11 +843,18 @@ def _member_identity(
     match rel_spec:
         case _FkMemberSpec(value_key, target_model):
             public_id, payload = _unpack_fk_member(member, rel_spec, namespace, entry)
-            member_pk = resolve_fk_target_pk(target_model, public_id)
+            member_pk = resolve_fk_target_pk(
+                target_model, public_id, target_filter=rel_spec.target_filter
+            )
             if member_pk is None:
+                restriction = (
+                    f" that is {rel_spec.target_filter.description}"
+                    if rel_spec.target_filter is not None
+                    else ""
+                )
                 raise PatchError(
                     f"{entry.ref}: relationship {namespace!r} member {public_id!r} "
-                    f"does not resolve to a {target_model.__name__}"
+                    f"does not resolve to a {target_model.__name__}{restriction}"
                 )
             # ``payload`` (e.g. count) is non-identity: it rides the assert value
             # and is dropped by ``build_relationship_claim(..., exists=False)`` on
@@ -858,7 +910,13 @@ def _member_identity(
             )
             for slot_ref in parts.fk_refs:
                 removal_identity[slot_ref.slot.value_key] = _resolve_committed_slot(
-                    slot_ref.slot, slot_ref.ref, namespace=namespace, entry=entry
+                    slot_ref.slot,
+                    slot_ref.ref,
+                    namespace=namespace,
+                    entry=entry,
+                    # A removal names an existing edge; the target's current
+                    # validity under the slot's TargetFilter is irrelevant.
+                    enforce_target_filter=False,
                 )
             return removal_identity
 
@@ -993,6 +1051,16 @@ def _emit_relationship(
     is_self_hierarchy = (
         isinstance(rel_spec, _FkMemberSpec) and rel_spec.target_model is model_class
     )
+    # Optional-XOR set rule (export_market's shape): the all-absent bottom rung
+    # means the whole fact at its lowest resolution, so a member with no FK
+    # identity (a label row or `{}`) must be the entry's ONLY member — mixing
+    # it with resolved members asserts one fact at two resolutions. Keyed off
+    # the spec shape (``xor_required=False``), never a namespace name; a
+    # required-XOR namespace (model_relationship) legitimately mixes label and
+    # machine edges, so it is untouched. Per-entry only: a cross-patch mix
+    # needs a `remove:` of the null-identity row, per DataPatches.md.
+    null_identity_seen = False
+    fk_identity_seen = False
     for member in value:
         if is_self_hierarchy and isinstance(member, str):
             hierarchy_edges.append(
@@ -1015,6 +1083,21 @@ def _emit_relationship(
                 parts = _unpack_dict_member(member, rel_spec, namespace, entry)
                 slot_refs = parts.fk_refs
                 concrete_base = parts.values
+                if not rel_spec.xor_required:
+                    if parts.fk_refs:
+                        fk_identity_seen = True
+                    else:
+                        null_identity_seen = True
+                    if null_identity_seen and fk_identity_seen:
+                        fk_keys = ", ".join(
+                            slot.value_key for slot in rel_spec.fk_slots
+                        )
+                        raise PatchError(
+                            f"{entry.ref}: relationship {namespace!r} mixes a "
+                            f"member without {fk_keys} and members that have "
+                            f"one — a no-target member must be the entry's "
+                            f"only row"
+                        )
             resolved = _resolve_member_slots(
                 slot_refs, registry=registry, namespace=namespace, entry=entry
             )

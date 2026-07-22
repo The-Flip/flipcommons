@@ -183,9 +183,11 @@ class TestExportDriftGuard:
             "ipdb_id",
             "opdb_id",
             "pinside_id",
+            "manufacturer_model_identifier",
             "title",
             "variant_of",
             "remake_of",
+            "export_edition_of",
             "corporate_entity",
             "system",
             "technology_generation",
@@ -209,6 +211,7 @@ class TestExportDriftGuard:
             "abbreviations",
             "credits",
             "model_relationships",
+            "export_markets",
         }
     )
 
@@ -230,6 +233,7 @@ class TestExportDriftGuard:
             "gameplay_feature": "gameplay_features",
             "abbreviation": "abbreviations",
             "model_relationship": "model_relationships",
+            "export_market": "export_markets",
         }
         for ns in namespaces - {"media_attachment"}:
             assert ns in covered, f"relationship namespace {ns!r} not covered"

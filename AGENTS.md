@@ -252,7 +252,7 @@ Catalog data enters the database exclusively through **data patches** — number
 
 ## Data Analysis
 
-For empirical questions about the current local catalog — counts, lists, distributions, comparisons and candidate sets — feel free to use this DuckDB setup over the local dev database: [`scripts/analysis/`](scripts/analysis/README.md). However, the Django models remain the source of truth. Inspect models, migrations, provenance and application code for representation, validation, resolution and write behavior. And use pinexplore instead for external or cross-source analysis.
+For empirical questions about the current local catalog — counts, lists, distributions, comparisons and candidate sets — use the DuckDB analytics layer: [`scripts/analysis/`](scripts/analysis/README.md). Do NOT answer these with manage.py shell, a throwaway ORM script or raw sqlite3 against db.sqlite3 — those skip the liveness and grain rules the views encode, and silently return plausible wrong answers. However, the Django models remain the source of truth. Inspect models, migrations, provenance and application code for representation, validation, resolution and write behavior. And use pinexplore instead for external or cross-source analysis.
 
 ## Pre-commit Hooks
 

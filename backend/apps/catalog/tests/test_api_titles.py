@@ -113,6 +113,22 @@ class TestTitlesAPI:
         names = [m["name"] for m in data["machines"]]
         assert "Medieval Madness (LE)" not in names
 
+    def test_title_detail_excludes_deleted_variants(self, client, title_with_machines):
+        # A soft-deleted variant (its delete is never blocked) must not render
+        # a nested variant card — same reverse-liveness rule as the model page.
+        parent = MachineModel.objects.get(name="Medieval Madness")
+        make_machine_model(
+            name="Medieval Madness (Zombie LE)",
+            slug="medieval-madness-zombie-le",
+            title=title_with_machines,
+            variant_of=parent,
+            status="deleted",
+        )
+        resp = client.get(f"/api/pages/title/{title_with_machines.slug}")
+        data = resp.json()
+        variants = [v for m in data["machines"] for v in m.get("variants", [])]
+        assert variants == []
+
     def test_model_count_excludes_variants(self, client, title_with_machines):
         parent = MachineModel.objects.get(name="Medieval Madness")
         make_machine_model(
@@ -326,6 +342,32 @@ class TestTitleDetailAggregation:
         assert related[0]["license_status"] == "unlicensed"
         assert related[0]["other_title"]["public_id"] == "galaxie"
         assert related[0]["source_model"]["public_id"] == "galaxie-rmg-1"
+
+    def test_related_titles_export_edition_fk(self, client, db):
+        """A cross-title `export_edition_of` link (the Dragon/Dragoon shape —
+        twin pairs don't always share a Title) contributes its line; a
+        same-title export edition does not."""
+        domestic_title = Title.objects.create(name="Dragoon", slug="dragoon")
+        domestic = make_machine_model(
+            name="Dragoon", slug="dragoon-1", title=domestic_title
+        )
+        this_title = Title.objects.create(name="Dragon", slug="dragon")
+        export = make_machine_model(name="Dragon", slug="dragon-1", title=this_title)
+        export.export_edition_of = domestic
+        export.save(update_fields=["export_edition_of"])
+        # Same-title export edition — not cross-title content.
+        sibling = make_machine_model(
+            name="Dragon (Italy)", slug="dragon-italy", title=this_title
+        )
+        sibling.export_edition_of = export
+        sibling.save(update_fields=["export_edition_of"])
+
+        data = client.get(f"/api/pages/title/{this_title.slug}").json()
+        related = data["related_titles"]
+        assert len(related) == 1
+        assert related[0]["relation"] == "export_edition_of"
+        assert related[0]["other_title"]["public_id"] == "dragoon"
+        assert related[0]["source_model"]["public_id"] == "dragon-1"
 
     def test_related_titles_retheme_edge(self, client, db):
         """A re-theme's donor nearly always sits under its own Title (38 of the

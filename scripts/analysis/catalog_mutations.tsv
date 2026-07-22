@@ -1,0 +1,120 @@
+# Mutation tests for the foundation self-test — see scripts/analysis/check-mutations.
+#
+# WHY THIS FILE EXISTS. A check that is broken and a check that is passing both return
+# zero rows. That is the only signal SQL gives, so "it returned nothing on healthy data"
+# is not evidence a check works — it is exactly what a no-op does. Every defect found in
+# this suite so far was a check that had silently become a no-op, usually because a
+# comparison went NULL. This file breaks the catalog on purpose, one way per line, and
+# asserts the check that is supposed to notice actually does.
+#
+# Columns, TAB-separated:
+#   name            what is being broken, for the report
+#   expect          check_name that MUST appear. `*` means "any row at all" — avoid it:
+#                   it passes when the WRONG check fires, so it proves almost nothing
+#   sql             statements redefining a view/macro to introduce the defect
+#
+# Adding a check to catalog_checks.sql? Add a line here breaking what it guards. A check
+# with no line is a check nobody has proven fires — and the harness ENFORCES that, in
+# both directions: a check with no mutation fails the run, and an entry naming a check
+# that no longer exists fails it too.
+
+vocab n zeroed	anchor_dark	CREATE TABLE _m AS SELECT * FROM theme_vocab; CREATE OR REPLACE VIEW theme_vocab AS SELECT * REPLACE (0::BIGINT AS n) FROM _m;
+empty view	anchor_dark	CREATE TABLE _m AS SELECT * FROM tags LIMIT 0; CREATE OR REPLACE VIEW tags AS SELECT * FROM _m;
+facet nulled	anchor_dark	CREATE TABLE _m AS SELECT * FROM all_models; CREATE OR REPLACE VIEW all_models AS SELECT * REPLACE (NULL::VARCHAR AS ipdb_notes) FROM _m;
+theme names corrupted	theme_views_disagree	CREATE TABLE _m AS SELECT * FROM themes; CREATE OR REPLACE VIEW themes AS SELECT id, list_transform(themes, lambda x: 'wrong') AS themes FROM _m;
+themes shifted to wrong model	theme_views_disagree	CREATE TABLE _m AS SELECT * FROM themes; CREATE OR REPLACE VIEW themes AS SELECT id, (SELECT themes FROM _m o WHERE o.id > t.id ORDER BY o.id LIMIT 1) AS themes FROM _m t WHERE EXISTS (SELECT 1 FROM _m o WHERE o.id > t.id);
+theme dropped from vocab	theme_not_in_vocab	CREATE TABLE _m AS SELECT * FROM theme_vocab; CREATE OR REPLACE VIEW theme_vocab AS SELECT * FROM _m WHERE id <> (SELECT min(theme_id) FROM model_themes);
+feature dropped from vocab	feature_not_in_vocab	CREATE TABLE _m AS SELECT * FROM gameplay_feature_vocab; CREATE OR REPLACE VIEW gameplay_feature_vocab AS SELECT * FROM _m WHERE id <> (SELECT min(feature_id) FROM model_gameplay_features);
+vocab DAG one-sided	vocab_dag_asymmetric	CREATE TABLE _m AS SELECT * FROM theme_vocab; CREATE OR REPLACE VIEW theme_vocab AS SELECT * REPLACE ([]::VARCHAR[] AS children) FROM _m;
+bidir mirror missing	bidir_mirror_broken	CREATE OR REPLACE VIEW model_edges_bidir AS SELECT 'out' AS direction, * FROM model_edges;
+bidir not re-enriched	bidir_target_mismatch	CREATE OR REPLACE VIEW model_edges_bidir AS SELECT 'out' AS direction, * FROM model_edges UNION ALL BY NAME SELECT 'in' AS direction, e.target_id AS model_id, e.edge_source, e.relationship_type, e.license_status, e.model_id AS target_id, NULL::VARCHAR AS target_label, e.* EXCLUDE (model_id, edge_source, relationship_type, license_status, target_id, target_label) FROM model_edges e WHERE e.target_id IS NOT NULL;
+bidir mirrors only lineage	bidir_asymmetric	CREATE OR REPLACE VIEW model_edges_bidir AS SELECT 'out' AS direction, * FROM model_edges UNION ALL BY NAME SELECT 'in' AS direction, e.target_id AS model_id, e.edge_source, e.relationship_type, e.license_status, e.model_id AS target_id, NULL::VARCHAR AS target_label, t.* EXCLUDE (id) FROM model_edges e JOIN _model_target t ON t.id = e.model_id WHERE e.target_id IS NOT NULL AND e.edge_source = 'lineage_fk';
+title_size row dropped	title_size_disagree	CREATE TABLE _m AS SELECT * FROM title_size; CREATE OR REPLACE VIEW title_size AS SELECT * FROM _m WHERE title_id <> (SELECT min(title_id) FROM _m);
+title_size.n nulled	title_size_disagree	CREATE TABLE _m AS SELECT * FROM title_size; CREATE OR REPLACE VIEW title_size AS SELECT * REPLACE (CASE WHEN title_id = (SELECT min(title_id) FROM _m) THEN NULL ELSE n END AS n) FROM _m;
+title_size.n shifted	title_size_disagree	CREATE TABLE _m AS SELECT * FROM title_size; CREATE OR REPLACE VIEW title_size AS SELECT * REPLACE (n + 1 AS n) FROM _m;
+models.title_size zeroed	title_size_zero_on_live	CREATE TABLE _m AS SELECT * FROM all_models; CREATE OR REPLACE VIEW all_models AS SELECT * REPLACE (0::BIGINT AS title_size) FROM _m;
+models.title_size nulled	title_size_zero_on_live	CREATE TABLE _m AS SELECT * FROM all_models; CREATE OR REPLACE VIEW all_models AS SELECT * REPLACE (NULLIF(title_size, 1) AS title_size) FROM _m;
+namesake_count shifted	namesake_count_disagree	CREATE TABLE _m AS SELECT * FROM all_models; CREATE OR REPLACE VIEW all_models AS SELECT * REPLACE (namesake_count + 1 AS namesake_count) FROM _m;
+namesake_count nulled on one	namesake_count_disagree	CREATE TABLE _m AS SELECT * FROM all_models; CREATE OR REPLACE VIEW all_models AS SELECT * REPLACE (CASE WHEN id = (SELECT min(id) FROM _m) THEN NULL ELSE namesake_count END AS namesake_count) FROM _m;
+namesake_count keyed on raw name	namesake_count_disagree	CREATE OR REPLACE VIEW _namesake_live_n AS SELECT name AS name_key, count(*) AS n FROM fc.catalog_machinemodel WHERE status IS DISTINCT FROM 'deleted' GROUP BY name;
+namesake_count counts deleted too	namesake_count_disagree	CREATE OR REPLACE VIEW _namesake_live_n AS SELECT name_key(name) AS name_key, count(*) AS n FROM fc.catalog_machinemodel GROUP BY name_key(name);
+models.namesake_count zeroed	namesake_count_zero_on_live	CREATE TABLE _m AS SELECT * FROM all_models; CREATE OR REPLACE VIEW all_models AS SELECT * REPLACE (0::BIGINT AS namesake_count) FROM _m;
+maker country collapsed	manufacturer_country_collapsed	CREATE TABLE _m AS SELECT * FROM manufacturers; CREATE OR REPLACE VIEW manufacturers AS SELECT * REPLACE ('usa' AS country_slug) FROM _m;
+maker n_countries nulled	manufacturer_country_collapsed	CREATE TABLE _m AS SELECT * FROM manufacturers; CREATE OR REPLACE VIEW manufacturers AS SELECT * REPLACE (NULLIF(n_countries, 1) AS n_countries) FROM _m;
+maker era_end nulled	manufacturer_era_malformed	CREATE TABLE _m AS SELECT * FROM manufacturers; CREATE OR REPLACE VIEW manufacturers AS SELECT * REPLACE (CASE WHEN slug = (SELECT min(slug) FROM _m WHERE n_dated > 0) THEN NULL ELSE era_end END AS era_end) FROM _m;
+maker era inverted	manufacturer_era_malformed	CREATE TABLE _m AS SELECT * FROM manufacturers; CREATE OR REPLACE VIEW manufacturers AS SELECT * REPLACE (era_end AS era_start, era_start AS era_end) FROM _m WHERE era_start IS DISTINCT FROM era_end;
+maker n_dated nulled	manufacturer_era_malformed	CREATE TABLE _m AS SELECT * FROM manufacturers; CREATE OR REPLACE VIEW manufacturers AS SELECT * REPLACE (NULLIF(n_dated, 3) AS n_dated) FROM _m;
+collision labels truncated	collision_grain_broken	CREATE TABLE _m AS SELECT * FROM model_number_collisions; CREATE OR REPLACE VIEW model_number_collisions AS SELECT * REPLACE (labels[1:1] AS labels) FROM _m;
+collision labels nulled	collision_grain_broken	CREATE TABLE _m AS SELECT * FROM model_number_collisions; CREATE OR REPLACE VIEW model_number_collisions AS SELECT * REPLACE (CASE WHEN n = (SELECT max(n) FROM _m) THEN NULL ELSE labels END AS labels) FROM _m;
+collision ids truncated	collision_grain_broken	CREATE TABLE _m AS SELECT * FROM model_number_collisions; CREATE OR REPLACE VIEW model_number_collisions AS SELECT * REPLACE (model_ids[1:1] AS model_ids) FROM _m;
+name_norm ascii-only	macro_name_norm	CREATE OR REPLACE MACRO name_norm(s) AS trim(regexp_replace(lower(COALESCE(s, '')), '[^a-z0-9]+', ' ', 'g'));
+name_norm loses accent folding	macro_name_norm	CREATE OR REPLACE MACRO name_norm(s) AS trim(regexp_replace(lower(COALESCE(s, '')), '[^\p{L}\p{N}]+', ' ', 'g'));
+name_strip_paren greedy	macro_name_strip_paren	CREATE OR REPLACE MACRO name_strip_paren(s) AS regexp_replace(COALESCE(s, ''), '\s*\([^()]*\)\s*', '', 'g');
+name_key returns NULL	macro_name_key	CREATE OR REPLACE MACRO name_key(s) AS NULL::VARCHAR;
+edge union lossy	union_integrity	CREATE OR REPLACE VIEW model_edges AS SELECT model_id, 'lineage_fk' AS edge_source, edge_kind AS relationship_type, NULL::VARCHAR AS license_status, target_id, NULL::VARCHAR AS target_label, * EXCLUDE (model_id, edge_kind, target_id) FROM model_lineage;
+view added unanchored	unanchored_view	CREATE OR REPLACE VIEW brand_new_view AS SELECT 1 AS x;
+alias table no longer read by any view	unexposed_alias_table	CREATE TABLE _m AS SELECT * FROM person_aliases; CREATE OR REPLACE VIEW person_aliases AS SELECT * FROM _m;
+view comment dropped	undocumented_view	COMMENT ON VIEW countries IS NULL;
+vocab definition dropped	undocumented_vocab	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m WHERE slug <> 'floor';
+vocab defines a dead term	stale_vocab_doc	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m UNION ALL SELECT 'cabinet','no-such-cabinet','invented',1;
+vocab dim not in _dim_vocab	unmapped_vocab_dim	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m UNION ALL SELECT 'corporateentity','acme','invented',1;
+vocab heading renamed away	stale_vocab_dim	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m WHERE dim <> 'cabinet';
+list facet added unanchored	unanchored_array	CREATE TABLE _m AS SELECT * FROM title_size; CREATE OR REPLACE VIEW title_size AS SELECT *, ['a'] AS newlist FROM _m;
+anchor_array entry gone stale	stale_anchor_array	CREATE OR REPLACE VIEW _anchor_array AS SELECT unnest(['theme_vocab.no_such_column']) AS qualified_col;
+models keeps deleted rows	models_has_deleted	CREATE OR REPLACE VIEW models AS SELECT * FROM all_models;
+models not a subset of all_models	models_not_subset_of_all	CREATE TABLE _m AS SELECT * FROM all_models; CREATE OR REPLACE VIEW all_models AS SELECT * FROM _m WHERE status IS DISTINCT FROM 'deleted' AND id <> (SELECT min(id) FROM _m WHERE status IS DISTINCT FROM 'deleted'); CREATE OR REPLACE VIEW models AS SELECT * FROM _m WHERE status IS DISTINCT FROM 'deleted';
+theme grain duplicated	theme_grain_dup	CREATE TABLE _m AS SELECT * FROM model_themes; CREATE OR REPLACE VIEW model_themes AS SELECT * FROM _m UNION ALL SELECT * FROM _m;
+gameplay-feature grain duplicated	gpf_grain_dup	CREATE TABLE _m AS SELECT * FROM model_gameplay_features; CREATE OR REPLACE VIEW model_gameplay_features AS SELECT * FROM _m UNION ALL SELECT * FROM _m;
+lineage grain duplicated	lineage_grain_dup	CREATE TABLE _m AS SELECT * FROM model_lineage; CREATE OR REPLACE VIEW model_lineage AS SELECT * FROM _m UNION ALL SELECT * FROM _m;
+theme subject not live	theme_subject_not_live	CREATE TABLE _m AS SELECT machinemodel_id AS model_id, t.id AS theme_id, t.slug AS theme_slug FROM fc.catalog_machinemodel_themes mt JOIN _live_theme t ON t.id = mt.theme_id; CREATE OR REPLACE VIEW model_themes AS SELECT * FROM _m;
+gpf subject not live	gpf_subject_not_live	CREATE TABLE _m AS SELECT mgf.machinemodel_id AS model_id, gf.id AS feature_id, gf.slug AS feature_slug, mgf.count AS count FROM fc.catalog_machinemodelgameplayfeature mgf JOIN fc.catalog_gameplayfeature gf ON gf.id = mgf.gameplayfeature_id; CREATE OR REPLACE VIEW model_gameplay_features AS SELECT * FROM _m;
+edge subject not live	edge_subject_not_live	CREATE TABLE _m AS SELECT * FROM model_edges; CREATE OR REPLACE VIEW model_edges AS SELECT * REPLACE ((SELECT max(id) + 1 FROM all_models) AS model_id) FROM _m;
+lineage target de-enriched	lineage_target_not_live	CREATE TABLE _m AS SELECT * FROM model_lineage; CREATE OR REPLACE VIEW model_lineage AS SELECT * REPLACE (NULL::VARCHAR AS target_slug) FROM _m;
+relationship target de-enriched	relationship_target_not_live	CREATE TABLE _m AS SELECT * FROM model_relationships; CREATE OR REPLACE VIEW model_relationships AS SELECT * REPLACE (CASE WHEN target_id IS NULL THEN target_slug END AS target_slug) FROM _m;
+lineage target_id lost	lineage_missing_target_id	CREATE TABLE _m AS SELECT * FROM model_lineage; CREATE OR REPLACE VIEW model_lineage AS SELECT * REPLACE (NULL::BIGINT AS target_id) FROM _m;
+target genre mis-enriched	target_genre_mismatch	CREATE TABLE _m AS SELECT * FROM model_lineage; CREATE OR REPLACE VIEW model_lineage AS SELECT * REPLACE ('not-a-genre' AS target_game_format_slug) FROM _m;
+relationship_type off-vocabulary	relationship_type_unknown	CREATE TABLE _m AS SELECT * FROM model_relationships; CREATE OR REPLACE VIEW model_relationships AS SELECT * REPLACE ('bogus' AS relationship_type) FROM _m;
+license_status off-vocabulary	license_status_unknown	CREATE TABLE _m AS SELECT * FROM model_relationships; CREATE OR REPLACE VIEW model_relationships AS SELECT * REPLACE ('bogus' AS license_status) FROM _m;
+edge_source off-vocabulary	edge_source_unknown	CREATE TABLE _m AS SELECT * FROM model_edges; CREATE OR REPLACE VIEW model_edges AS SELECT * REPLACE ('bogus' AS edge_source) FROM _m;
+relationship_type nulled	edge_relationship_type_null	CREATE TABLE _m AS SELECT * FROM model_edges; CREATE OR REPLACE VIEW model_edges AS SELECT * REPLACE (NULL::VARCHAR AS relationship_type) FROM _m;
+license/source contract broken	edge_license_contract	CREATE TABLE _m AS SELECT * FROM model_edges; CREATE OR REPLACE VIEW model_edges AS SELECT * REPLACE ('unknown' AS license_status) FROM _m;
+CE gains a second location	ce_multi_location	CREATE TABLE _m AS SELECT * FROM _ce_location_n; CREATE OR REPLACE VIEW _ce_location_n AS SELECT corporate_entity_id, n + 1 AS n FROM _m;
+export market target not a country	export_market_target_not_country	CREATE TABLE _m AS SELECT * FROM model_export_markets; CREATE OR REPLACE VIEW model_export_markets AS SELECT * REPLACE (COALESCE(target_location_id, 1) AS target_location_id, NULL::VARCHAR AS target_country_slug) FROM _m;
+anchor_skip entry expired	expired_anchor_skip	CREATE OR REPLACE VIEW _anchor_skip AS SELECT * FROM (VALUES ('models.year', 'pending')) AS t(col, kind);
+anchor_skip entry gone stale	stale_anchor_skip	CREATE OR REPLACE VIEW _anchor_skip AS SELECT * FROM (VALUES ('theme_vocab.no_such_column', 'sparse')) AS t(col, kind);
+live model on soft-deleted dim	model_dim_not_live	CREATE OR REPLACE VIEW _model_dim_liveness AS SELECT r.model_id, r.dim, r.target_id FROM _model_dim_ref r JOIN (SELECT dim, id, CASE WHEN dim = 'game_format_id' THEN 'deleted' ELSE status END AS status FROM _dim_status) d ON d.dim = r.dim AND d.id = r.target_id WHERE d.status = 'deleted';
+dim FK added uncovered	uncovered_model_dim	CREATE OR REPLACE VIEW _dim_status AS SELECT * FROM (SELECT 'title_id' AS dim, id, status FROM fc.catalog_title);
+dim dropped from _model_dim_wide	dim_status_unreferenced	CREATE OR REPLACE VIEW _model_dim_wide AS SELECT * EXCLUDE (production_status_id) FROM (SELECT m.id AS model_id, m.title_id, m.corporate_entity_id, ce.manufacturer_id, m.game_format_id, m.technology_generation_id, m.technology_subgeneration_id, m.display_type_id, m.display_subtype_id, m.system_id, m.cabinet_id, m.production_status_id FROM fc.catalog_machinemodel m LEFT JOIN fc.catalog_corporateentity ce ON ce.id = m.corporate_entity_id WHERE m.status IS DISTINCT FROM 'deleted');
+dim added to _model_dim_wide only	dim_not_liveness_checked	CREATE TABLE _m AS SELECT * FROM _model_dim_wide; CREATE OR REPLACE VIEW _model_dim_wide AS SELECT *, model_id AS invented_dim_id FROM _m;
+anchor_skip kind misspelled	unknown_anchor_skip_kind	CREATE OR REPLACE VIEW _anchor_skip AS SELECT * FROM (VALUES ('technology_subgeneration_slug','pendign'),('display_subtype_slug','sparse'),('model_export_markets.target_label','sparse')) AS t(col, kind);
+vocab term defined twice	vocab_grain_dup	CREATE TABLE _m AS SELECT * FROM domain_vocab; CREATE OR REPLACE VIEW domain_vocab AS SELECT * FROM _m UNION ALL SELECT 'cabinet','floor','a conflicting second definition',999;
+component array dark, union not	anchor_dark	CREATE TABLE _m AS SELECT * FROM model_relationships; CREATE OR REPLACE VIEW model_relationships AS SELECT * REPLACE (CAST([] AS VARCHAR[]) AS target_reward_types) FROM _m;
+third EntityStatus value appears	status_unknown	CREATE OR REPLACE VIEW _status_domain AS SELECT 'theme' AS entity, 'archived' AS status;
+
+# ── provenance layer (provenance.sql / provenance_checks.sql) ──
+resolved feature edge dropped	gameplay_feature_resolution_disagrees	CREATE TABLE _m AS SELECT * FROM model_gameplay_features; CREATE OR REPLACE VIEW model_gameplay_features AS SELECT * FROM _m WHERE feature_id <> (SELECT min(feature_id) FROM _m);
+feature ranking loses a claim	gameplay_feature_resolution_disagrees	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE (CASE WHEN field_name = 'gameplay_feature' AND rank = 1 AND claim_id = (SELECT min(claim_id) FROM _m WHERE field_name = 'gameplay_feature' AND rank = 1) THEN NULL ELSE rank END AS rank) FROM _m;
+resolved theme edge dropped	theme_resolution_disagrees	CREATE TABLE _m AS SELECT * FROM model_themes; CREATE OR REPLACE VIEW model_themes AS SELECT * FROM _m WHERE theme_id <> (SELECT min(theme_id) FROM _m);
+resolved year shifted	year_resolution_disagrees	CREATE TABLE _m AS SELECT * FROM models; CREATE OR REPLACE VIEW models AS SELECT * REPLACE (year + 1 AS year) FROM _m;
+member claim value not an object	member_claim_nondict_value	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE (CASE WHEN claim_id = (SELECT min(claim_id) FROM _m WHERE is_member) THEN '123' ELSE value END AS value) FROM _m;
+scalar claim carries exists flag	scalar_claim_exists_flag	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE (CASE WHEN claim_id = (SELECT min(claim_id) FROM _m WHERE NOT is_member) THEN '{"exists": false}' ELSE value END AS value) FROM _m;
+register partition lost	multiple_top_ranked	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE (1::BIGINT AS rank) FROM _m;
+suppressed actor still ranks	suppressed_actor_ranked	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE ('suppressed' AS actor_resolution_status) FROM _m;
+claim row dropped by a join	claim_rows_dropped	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * FROM _m WHERE claim_id <> (SELECT min(claim_id) FROM _m);
+citation instance dropped by a join	citation_instance_rows_dropped	CREATE TABLE _m AS SELECT * FROM citation_instances; CREATE OR REPLACE VIEW citation_instances AS SELECT * FROM _m WHERE citation_instance_id <> (SELECT min(citation_instance_id) FROM _m);
+citation tree grows a third level	citation_tree_too_deep	CREATE TABLE _m AS SELECT * FROM _citation_parent_chain; CREATE OR REPLACE VIEW _citation_parent_chain AS SELECT * REPLACE (coalesce(grandparent_id, parent_id) AS grandparent_id) FROM _m;
+citation root stops resolving to itself	citation_root_not_self	CREATE TABLE _m AS SELECT * FROM citation_sources; CREATE OR REPLACE VIEW citation_sources AS SELECT * REPLACE (root_citation_source_id + 1 AS root_citation_source_id) FROM _m;
+evidence bridge dangles	orphan_claim_citation	CREATE TABLE _m AS SELECT * FROM claim_citations; CREATE OR REPLACE VIEW claim_citations AS SELECT claim_id, 999999999::BIGINT AS citation_instance_id FROM _m;
+actor kind outside its domain	unknown_actor_kind	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE ('robot' AS actor_kind) FROM _m;
+actor resolution status outside its domain	unknown_actor_resolution_status	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE ('paused' AS actor_resolution_status) FROM _m;
+changeset action outside its domain	unknown_changeset_action	CREATE TABLE _m AS SELECT * FROM claims; CREATE OR REPLACE VIEW claims AS SELECT * REPLACE ('merge' AS changeset_action) FROM _m;
+ingest run status outside its domain	unknown_ingest_run_status	CREATE TABLE _m AS SELECT * FROM ingest_runs; CREATE OR REPLACE VIEW ingest_runs AS SELECT * REPLACE ('paused' AS status) FROM _m;
+ingest source type outside its domain	unknown_ingest_source_type	CREATE TABLE _m AS SELECT * FROM ingest_sources; CREATE OR REPLACE VIEW ingest_sources AS SELECT * REPLACE ('zine' AS ingest_source_type) FROM _m;
+citation source type outside its domain	unknown_citation_source_type	CREATE TABLE _m AS SELECT * FROM citation_sources; CREATE OR REPLACE VIEW citation_sources AS SELECT * REPLACE ('scroll' AS citation_source_type) FROM _m;
+citation root domains all empty	anchor_dark	CREATE TABLE _m AS SELECT * FROM citation_roots; CREATE OR REPLACE VIEW citation_roots AS SELECT * REPLACE ([]::VARCHAR[] AS root_domains) FROM _m;
+host_norm stops stripping www	macro_host_norm	CREATE OR REPLACE MACRO host_norm(h) AS lower(trim(h));
+url_host keeps the port	macro_url_host	CREATE OR REPLACE MACRO url_host(u) AS host_norm(regexp_extract(coalesce(u, ''), '^(?:[a-z][a-z0-9+.-]*:)?//(?:[^/@]*@)?([^/?#]*)', 1));
+host match loses the label boundary	macro_citation_root_for_host	CREATE OR REPLACE MACRO citation_root_for_host(h) AS (SELECT d.root_citation_source_id FROM citation_root_domains d WHERE ends_with(host_norm(h), d.host) ORDER BY length(d.host) DESC LIMIT 1);
+host match stops preferring the longest	macro_citation_root_for_host	CREATE OR REPLACE MACRO citation_root_for_host(h) AS (SELECT d.root_citation_source_id FROM citation_root_domains d WHERE host_norm(h) = d.host OR ends_with(host_norm(h), '.' || d.host) ORDER BY length(d.host) ASC LIMIT 1);
+recognition host on a child source	root_domain_on_non_root	CREATE TABLE _m AS SELECT * FROM citation_sources; CREATE OR REPLACE VIEW citation_sources AS SELECT * REPLACE (false AS is_root) FROM _m;
+macro comment dropped	undocumented_macro	COMMENT ON MACRO name_key IS NULL;

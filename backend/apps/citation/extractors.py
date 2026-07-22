@@ -635,3 +635,34 @@ def get_or_create_web_source(
             archive.full_clean()
             archive.save()
     return source
+
+
+def get_isbn_source(isbn: str) -> CitationSource:
+    """Resolve a seeded ``CitationSource`` by its ISBN — never minting one.
+
+    The read-only counterpart to the two ``get_or_create_*`` helpers, for the
+    ingestion path that cites an authored work (a book edition) rather than a
+    web page or a platform record. A work is not derivable from its
+    identifier the way a scheme record is — its author, publisher, year and
+    place in a work/edition hierarchy are editorial facts — so an unseeded
+    ISBN raises ``CitationSource.DoesNotExist`` instead of minting a nameless
+    row. ``isbn`` is globally unique on the model, so resolution is exact and
+    reuse is automatic: every cite of one work lands on the one shared source.
+
+    A hit that has children is the abstract *work* (a multi-volume set, a book
+    with several editions), not citable evidence, and raises too — an ISBN
+    normally sits on the concrete edition, so this only fires on data that
+    put one on a container.
+    """
+    source = CitationSource.objects.filter(isbn=isbn).first()
+    if source is None:
+        raise CitationSource.DoesNotExist(
+            f"No CitationSource is seeded with ISBN {isbn!r}; declare the work "
+            f"in a sources: block (or an earlier patch) before citing it."
+        )
+    if source.children.exists():
+        raise ValueError(
+            f"ISBN {isbn!r} is {source.name!r}, a work with editions under it — "
+            f"cite the ISBN of the specific edition that holds the evidence."
+        )
+    return source

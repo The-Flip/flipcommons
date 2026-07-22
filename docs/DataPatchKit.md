@@ -1,116 +1,104 @@
 # Generating Patches with `patchkit`
 
-`patchkit` is the shared Python helper for generating large curated **classification** patches — a population tagged or classified from source data, where each row needs a verbatim source quote. **When** to reach for it instead of hand-authoring native YAML is in [DataPatchAuthoring.md → Hand-authored or generated?](DataPatchAuthoring.md#hand-authored-or-generated). This doc is the workflow once you've decided to generate.
+`patchkit` is the shared Python helper for generating large curated **classification** patches — a population classified from source data, where each row needs a verbatim source quote. **When** to reach for it instead of hand-authoring native YAML is in [DataPatchAuthoring.md → Hand-authored or generated?](DataPatchAuthoring.md#hand-authored-or-generated). This doc is the workflow once you've decided to generate.
 
-It exists because several AI sessions each re-derived the same generator from scratch — and each reinvented YAML escaping and the review-doc scaffolding slightly differently, some subtly wrong. Read this once and use `patchkit`; don't re-derive it.
+It exists because the scaffolding around a generated patch — YAML escaping, the guards, reading the campaign's analysis — is easy to re-derive slightly wrong in each session. Read this once and use `patchkit`.
 
-## The recipe
+## The shape: an analysis file and an emitter
 
-Every good curated patch session converges on these steps:
-
-1. **Classify into in-script data** — buckets of `(ref, verbatim evidence)` literals. Human judgment is frozen as data, not prose.
-2. **Pull live catalog values** to build refs (e.g. slug from `ipdb_id`), then assert every ref resolved (fail loud on a typo — never silently skip).
-3. **Emit YAML with `patchkit`** — never `yaml.dump`; never hand-roll escaping.
-4. **Keep the audit trail** alongside — the editorial judgment lives in `classify.py` as data (`INCLUDE`/`FLAGGED`/`REJECTED` dicts with a reason on each row), the realized rows + extracted quotes land in `worksheet.csv`, and a short `README.md` narrates the signal, the totals and the dead-end searches (proving a term is absent is what justifies the signal you did use). Prose in the README is the right home for dead-ends — don't build a generator for it.
-5. **Validate** on a localhost snapshot, then ship — see [Validate](#validate).
-
-## Where the work lives
-
-Authoring artifacts are committed in **flippatch**, next to the patches they produce — not in `/tmp` or `~/.claude/plans`, which lose the audit trail:
+A campaign is **two files** in flippatch's `campaigns/<patch>/`, and the split is the design:
 
 ```text
 flippatch/patches/
-  0010-game-formats.yaml              # the shipped patch(es)
-  0011-...
+  0181-bingo-years.yaml               # the shipped patch
   authoring/
-    patchkit.py                       # the shared helper (this workflow's library)
-    0010-game-formats/                # one dir per patch set
-      classify.py                     # (optional) pinexplore-side: DuckDB -> worksheet.csv; holds the judgment dicts
-      xref_sweep.py                   # (optional) extra source sweeps
-      worksheet.csv                   # classification interchange (the realized rows + quotes)
-      gen.py                          # reads worksheet.csv + live DB -> the patch YAML
+    patchkit.py                       # the shared helper
+    0181-bingo-years/
+      years.sql                       # the analysis: detect, classify, gate, extract quotes
+      gen.py                          # the emitter: one view -> patch YAML
       README.md                       # the narrative: signal, totals, dead-end searches
 ```
 
-`0010-game-formats/` is the **worked reference example** — copy its shape.
+**`<name>.sql` is where the thinking lives.** It is a DuckDB analysis file over the shared catalog foundation — see [scripts/analysis/README.md](../scripts/analysis/README.md) for the four-section shape and the runner. Candidate detection, the false-positive gate, the human-judgment lookups and the verbatim quote extraction all belong here, in SQL, next to the data they reason about. It ends in the `<prefix>_summary` / `<prefix>_checks` pair the runner gates on, so the campaign's invariants are executable rather than described.
 
-### Two stages (source text vs live ref resolution)
+Iterate on it with the runner, from the flippatch checkout:
 
-Curated patches draw on two different databases, so split the work:
-
-- **Classification + verbatim source text** comes from **pinexplore** (the DuckDB analysis DB: IPDB/OPDB notes, cross-source checks). Output a `worksheet.csv`.
-- **Ref resolution** uses the **live flipcommons DB** (the serving catalog): `gen.py` runs from the backend, reads the CSV, looks up live slugs/ids to build the refs (and assert they resolve), then emits the YAML.
-
-`patchkit` itself is pure Python (no Django, stdlib only) so it imports on either side; the one Django line — the live lookup — stays in `gen.py`. On the pinexplore side, `classify.py` can import it too for the source-text helpers (`sentences`, `sentence_with`, `clean_ipdb_quote`) instead of re-deriving them — add the authoring dir to `sys.path` first, as `gen.py` does:
-
-```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # the authoring/ dir
-import patchkit as pk
+```bash
+F=campaigns/0181-bingo-years/years.sql
+make analyze FILE=$F PREFIX=year               # watermark + summary, gated on checks
+make analyze FILE=$F Q="FROM year_patch_rows;" # exactly what gen.py will emit
+make analyze FILE=$F Q="FROM year_rejected;"   # what the gate held back, and why
 ```
 
-## `patchkit` API
-
-Import from the authoring dir (`gen.py` does `sys.path.insert(0, <authoring>)`).
-
-| function                                                                                                                  | purpose                                                                                                 |
-| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `check_resolved(requested, found)`                                                                                        | raise if any ref didn't resolve (typo)                                                                  |
-| `sentences(text)` / `sentence_with(blob, needle)`                                                                         | split source free text; pull the sentence containing a needle                                           |
-| `clean_ipdb_quote(text, limit=240)`                                                                                       | normalize a quote's typography, strip the IPD header and `…: "<passage>` framing, truncate with `[...]` |
-| `source_note(source, verbatim, tail="")`                                                                                  | build `IPDB says "<verbatim>"` (normalizes typography, preserves non-ASCII; mark omissions `[...]`)     |
-| `entry(ref, *, create, note, cite, cites, fields, description, tags, relationships, remove, retract, commented, comment)` | one correctly-escaped `claims:` block                                                                   |
-| `write_patch(path, *, attribution, description, entries)`                                                                 | a complete patch file                                                                                   |
-| `yamlq` / `clean_text`                                                                                                    | the escaper / the typography normalizer, if you need them directly                                      |
-
-**Escaping is solved — use it.** Notes go through `yamlq` (single-quoted YAML: literal except `'`, which doubles). This carries both the double quotes in `... says "x"` and apostrophes, with no backslashes. Do **not** `json.dumps` notes.
-
-**Relationship members.** `entry(...)` also takes `relationships={namespace: [members]}` (the general emitter; `tags=` is the `tag` shorthand) and `remove={namespace: [members]}`. Members are escaped, so string members for aliases / abbreviations are safe — e.g. `relationships={"manufacturer_alias": ["Stern Pinball", "Stern, Inc"]}` or `remove={"abbreviation": ["MedievalMadness"]}`. Alias values case-fold for identity; abbreviations are verbatim (see [DataPatchAuthoring.md → Aliases and abbreviations](DataPatchAuthoring.md#aliases-and-abbreviations)).
-
-**Inline citations.** `entry(..., cites={"1": "ipdb:4443", "2": {"ref": "…", "archive": "…", "locator": "…", "quote": "…"}})` emits a `cites:` map for the new inline footnotes a `description` references as `[[cite:1]]` / `[[cite:2]]` (see [DataPatches.md → Inline citations in descriptions](DataPatches.md#inline-citations-in-descriptions)). The mapping form takes the same `{ref, archive, locator, quote}` keys as the entry-level `cite:` (`ref` required); a quote-bearing spec is emitted as a block map so the prose stays readable, each field single-quote escaped. `entry()` runs the **within-entry marker ↔ map correspondence guard at author time** — every numeric-handle marker needs a `cites:` entry, every `cites:` key must be a numeric handle a marker references, a slug marker (`[[cite:bqntvkrs]]`, an existing citation) carries no entry — so a structural mistake raises a `ValueError` before the patch ships. It can't confirm a slug _resolves_ (that's the backend's job at apply), and the cross-entry disjoint-fields rule stays backend-only (`entry()` sees one entry at a time).
-
-Minimal generator:
+**`gen.py` is a pure emitter.** It reads one view and turns each row into a claims entry. It holds no detection logic and issues no catalog queries of its own — if you find yourself filtering rows in Python, that predicate belongs in the analysis file, where the checks can see it.
 
 ```python
-import patchkit as pk
-from apps.catalog.models import MachineModel  # after django.setup()
-
-rows = list(csv.DictReader(open("worksheet.csv")))
-ids = [int(r["ipdb_id"]) for r in rows]
-live = {m["ipdb_id"]: m for m in MachineModel.objects.filter(ipdb_id__in=ids).values("slug", "ipdb_id")}
-pk.check_resolved(ids, live)
+rows = pk.read_view(YEARS_SQL, "year_patch_rows", prefix="year")
 
 entries = [
     pk.entry(
-        f"model.{live[int(r['ipdb_id'])]['slug']}",
-        note=pk.source_note("IPDB", r["quote"]),
-        cite=f"ipdb:{r['cite_ipdb']}",
-        fields={"game_format": r["format"]},
+        f"model.{r['slug']}",
+        cite={"ref": CDYN_URL, "quote": pk.clean_quote(r["quote"])},
+        fields={"year": r["year"]},
     )
-    for r in rows
+    for r in sorted(rows, key=lambda r: r["slug"])
 ]
-pk.write_patch("../../0010-game-formats.yaml", attribution="flipcommons-catalog", description="...", entries=entries)
+pk.write_patch(PATCH_PATH, attribution="flipcommons-catalog", description="…", entries=entries)
 ```
+
+`read_view` runs the analysis's checks **before** it yields a row, so a generator cannot emit a patch from an analysis whose detectors have gone dark. That gate matters because its absence is invisible: a patch built on a rotted regex is still perfectly well-formed YAML, and every gate downstream of the generator will pass it. `prefix` names the checks pair explicitly, since it routinely differs from the filename — `exports.sql` gates on `export_checks`, `features.sql` on `gpf_checks`.
+
+The worked examples to copy are **`0177-exports`**, **`0178-gameplay-features`** and **`0181-bingo-years`**.
+
+## `patchkit` API
+
+`gen.py` puts the campaign dir on `sys.path` (`sys.path.insert(0, <authoring>)`) and imports `patchkit as pk`.
+
+| function                                                                                                                                                                          | purpose                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `read_view(analysis, view, *, prefix)`                                                                                                                                            | rows of one view from the campaign's analysis file, gated on its checks            |
+| `entry(ref, *, create, note, cite, cites, fields, description, tags, credits, relationships, model_relationship, export_market, changesets, remove, retract, commented, comment)` | one correctly-escaped `claims:` block                                              |
+| `source_root(name, *, source_type, description, links)`                                                                                                                           | one `sources:` block entry — the website root a URL `cite:` nests under            |
+| `write_patch(path, *, attribution, description, entries, sources)`                                                                                                                | the complete patch file                                                            |
+| `render_patch(...)`                                                                                                                                                               | the same as text, without writing — for byte-comparing a regeneration              |
+| `clean_quote(s)`                                                                                                                                                                  | the sanctioned quote normalization: smart quotes straightened, `…` spelled `[...]` |
+| `clean_ipdb_quote(text, limit=240)`                                                                                                                                               | additionally strips IPDB's run-on header and `…: "<passage>` framing               |
+| `yamlq` / `clean_text`                                                                                                                                                            | the escaper / the typography normalizer, if you need them directly                 |
+
+**Escaping is solved — use it.** Notes go through `yamlq` (single-quoted YAML: literal except `'`, which doubles), which carries both the double quotes in a quoted excerpt and apostrophes, with no backslashes. Never `yaml.dump`, never `json.dumps` a note, never hand-roll it.
+
+**Relationship members.** `entry(...)` takes `relationships={namespace: [members]}` (the general emitter; `tags=` is the `tag` shorthand) and `remove={namespace: [members]}`. Members are escaped, so string members for aliases and abbreviations are safe — `relationships={"manufacturer_alias": ["Stern Pinball", "Stern, Inc"]}`. A `gameplay_feature` member may carry a count as a one-key `{public_id: count}` mapping, and the two forms mix freely in one list.
+
+**Guards that run at author time.** `entry()` enforces what it can see before a patch ever reaches ingest: within-entry inline-citation correspondence (every numeric `[[cite:N]]` marker has a `cites:` entry and vice versa), counted-member validity, and the export-market shape rules — including "a row with no target must be the model's only row", which ingest applies **silently** as an illegal mix, making this the only gate it has.
+
+**Inline citations.** `entry(..., cites={"1": "ipdb:4443", "2": {"ref": …, "quote": …}})` emits the `cites:` map a `description` references as `[[cite:1]]` — see [DataPatches.md → Inline citations in descriptions](DataPatches.md#inline-citations-in-descriptions). The mapping form takes the same `{ref, archive, locator, quote}` keys as an entry-level `cite:`.
 
 ## Provenance in generated patches
 
-The attribution, cite and verbatim-note rules are canonical in [DataPatchAuthoring.md → Authoring a good patch](DataPatchAuthoring.md#authoring-a-good-patch). Two consequences specific to generated patches:
+The attribution, cite and quote rules are canonical in [DataPatchAuthoring.md → Authoring a good patch](DataPatchAuthoring.md#authoring-a-good-patch). One consequence specific to generated patches: vocabulary and its assignment can share one file, since a patch may reference an entity it creates **earlier in the same file**. Emit the vocabulary entries above the assignments that reference them, in topological order where the terms form a tree. Split vocabulary into an earlier patch only when the two genuinely need different attributions.
 
-- Vocab and its assignment can share one file now — the derive case attributes both to `flipcommons-catalog` (the assignment carries `cite: ipdb:<id>`), and same-patch backward refs let the vocab entries sit above the assignments that reference them. Split vocab into an earlier file only when the two genuinely need different attributions. The historical 0009→0010/0011 `game_format` patches predate same-patch refs and split anyway (`0009-game-format-vocab.yaml` → `0010-game-formats.yaml`; see [DataPatches.md → Create](DataPatches.md#create)).
-- `source_note` / `clean_text` enforce the verbatim-note shape for you — use them rather than hand-formatting `<Source> says "<quote>"`.
+## The audit trail
+
+The campaign's `README.md` carries what SQL cannot: the signal you used, the totals (quoted from `<prefix>_summary`, never hand-counted), the judgment calls, and the **dead-end searches** — proving a term is absent from the sources is what justifies the signal you did use. Prose is the right home for dead ends; don't build a generator for them.
+
+Human judgment that the analysis depends on goes in its Reference section as a lookup table, not in `gen.py`, so the checks can hold it honest — see [scripts/analysis/README.md → Making manual judgment checkable](../scripts/analysis/README.md#making-manual-judgment-checkable-optional).
 
 ## Validate
 
-Iterate behind a localhost snapshot, then verify and hand off — the full loop (snapshot/rollback, the per-row spot-check, the misleading-dry-run trap on references that span patch files, and the hand-off) is in [DataPatchAuthoring.md → Validation process](DataPatchAuthoring.md#validation-process).
+Iterate behind a localhost snapshot, then verify and hand off — the full loop is in [DataPatchAuthoring.md → Validation process](DataPatchAuthoring.md#validation-process).
 
-Generator-specific addition: a curated patch classifies a whole **population**, so after applying confirm the population landed — the distribution across buckets looks right and the row counts match your worksheet — not just that one spot-checked entity resolved.
+Generator-specific additions:
+
+- A curated patch classifies a whole **population**, so after applying confirm the population landed — the distribution across buckets looks right and the counts match `<prefix>_summary` — not just that one spot-checked entity resolved.
+- **Every quote is a proposal until `make verify-quotes` passes.** That gate checks each span against the evidence corpus independently of your extraction.
+- **A patch already in `patches/` is immutable.** Localhost may be far ahead of production, and nothing in the repo records what production has ingested — only the user knows. If an existing patch looks worth regenerating, raise it and let them decide.
 
 ## Gotchas (learned the hard way)
 
-- **Keyword matches catch cross-references.** "Skill Derby" matched `gun game` from a sentence about _Bally Derby_. Read the matched sentence; keep an explicit override/exclude map for the misses. Re-read every non-trivial assignment.
-- **The signal can have false positives.** A note saying "not a pinball" may be about a _different_ game it cross-references; the listed game can be a real pinball. When unsure, leave the field null — an honest unknown beats a wrong fact.
-- **Assert the extracted quote contains the keyword you classified on.** When you re-extract a quote by needle (`sentence_with`), a stale or loose needle can land on a sentence that never names the mechanism — 0011's `bagatelle` needle "came in two sizes" matched a sentence with no "bagatelle" in it. A one-line guard (`assert FORMAT_KEYWORD[fmt].search(quote)`) turns that into a loud failure at classify time instead of a wrong claim in the patch.
-- **Sentence-splitting can sever an inner quotation.** A verbatim sentence with its own `"..."` can split at the period _inside_ the inner quote, leaving a dangling `"` in the note (`IPDB says "... follows: "Hit the ball.`). It's valid YAML but reads oddly. `clean_ipdb_quote` now strips the `…: "<passage>` framing for you (returning `Hit the ball.`); only an inner quotation without a colon introducer (e.g. `He said "...`) may still need a manual trim.
-- **`except A, B:` is valid Python 3** and ruff's preferred style — don't parenthesize (a project-wide rule; relevant if your generator catches exceptions).
-- **Values are JSON-shaped; YAML coercion is off.** `patchkit._scalar` handles this — bare `1996-01-01` would stay a string, `no` stays `"no"`.
+- **Keyword matches catch cross-references.** A note about _Bally Derby_ makes "Skill Derby" look like a gun game. Read the matched sentence; keep an explicit exclude list in the analysis's Reference section for the misses.
+- **The signal can have false positives.** A note saying "not a pinball" may be about a _different_ game it cross-references. When unsure, leave the field unset — an honest unknown beats a wrong fact.
+- **Anchor every free-text detector.** A rotted regex or a renamed column zeroes a whole detector with no error, and a row-level invariant cannot see a set silently shrink. An anchor check asserting a known example still triggers is the only thing that catches it.
+- **Cut the quote from the raw source text, not from a parsed segment.** Then it is verbatim by construction and `verify-quotes` passes by construction too.
+- **Joined spans must appear in source order.** `verify-quotes` checks each `[...]`-joined span separately and requires the order the source uses, so a row matching several patterns follows its own source text, not your feature ordering. Dedupe repeated spans — one phrase asserting two facts would otherwise read as out of order.
+- **Values are JSON-shaped; YAML coercion is off.** `patchkit._scalar` handles this — a bare `1996-01-01` stays a string, `no` stays `"no"`.
+- **`except A, B:` is valid Python 3** and ruff's preferred style — don't parenthesize (a project-wide rule, relevant if your generator catches exceptions).

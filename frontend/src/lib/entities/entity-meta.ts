@@ -180,6 +180,7 @@ export const ENTITY_META = {
       corporate_entity: { entity_target_type: 'corporate-entity', many: false },
       display_subtype: { entity_target_type: 'display-subtype', many: false },
       display_type: { entity_target_type: 'display-type', many: false },
+      export_edition_of: { entity_target_type: 'model', many: false },
       game_format: { entity_target_type: 'game-format', many: false },
       gameplay_features: { entity_target_type: 'gameplay-feature', many: true },
       production_status: { entity_target_type: 'production-status', many: false },
