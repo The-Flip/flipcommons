@@ -61,7 +61,7 @@ jobs:
       - uses: pnpm/action-setup@v6
         with:
           package_json_file: frontend/package.json
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
           cache: pnpm
@@ -80,7 +80,7 @@ jobs:
       - uses: pnpm/action-setup@v6
         with:
           package_json_file: frontend/package.json
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
           cache: pnpm
@@ -112,7 +112,7 @@ jobs:
       # backend/.python-version, since coupling a merge-blocking job to an
       # exact patch release buys nothing and fails the moment that patch
       # leaves the runner manifest.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
       - run: pip install pre-commit
