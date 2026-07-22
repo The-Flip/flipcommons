@@ -46,6 +46,11 @@ class TestManufacturerModelIdentifierMigration:
         # attribution carries over without a new ChangeSet.
         claim.refresh_from_db()
         assert claim.field_name == "manufacturer_model_identifier"
+        # claim_key is derived from field_name, so it has to move with it.
+        # Asserting only the line above is what let the original migration ship
+        # having rewritten the input and not the output, stranding 2322 rows in
+        # a slot no later claim could reach. See provenance 0027.
+        assert claim.claim_key == "manufacturer_model_identifier"
 
     def test_blank_parked_value_drops_key_leaves_null(self, ipdb):
         pm = make_machine_model(name="M", slug="m")
@@ -71,7 +76,7 @@ class TestManufacturerModelIdentifierMigration:
 
     def test_reverse_parks_value_back(self, ipdb):
         pm = make_machine_model(name="M", slug="m")
-        make_claim(pm, "ipdb.model_number", "20021", ingest_source=ipdb)
+        claim = make_claim(pm, "ipdb.model_number", "20021", ingest_source=ipdb)
         pm.extra_data = {"ipdb.model_number": "20021"}
         pm.save(update_fields=["extra_data"])
 
@@ -83,3 +88,8 @@ class TestManufacturerModelIdentifierMigration:
         assert pm.extra_data == {"ipdb.model_number": "20021"}
         assert pm.claims.filter(field_name="ipdb.model_number").exists()
         assert not pm.claims.filter(field_name="manufacturer_model_identifier").exists()
+        # Both columns come back together. Moving field_name alone would be the
+        # same drift mirrored, and would now trip the provenance 0027 constraint
+        # on the way down.
+        claim.refresh_from_db()
+        assert claim.field_name == claim.claim_key == "ipdb.model_number"

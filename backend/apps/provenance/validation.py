@@ -836,6 +836,28 @@ def validate_claims_batch(
                 continue
             rel_claims.append(claim)
             continue
+
+        # Past this point the claim is not a relationship, so its claim_key IS
+        # its field_name — that is what `make_claim_key` returns with no
+        # identity parts. A patch may supply an explicit claim_key
+        # (`pca.claim_key or pca.field_name` in claim_ingest), so a direct field
+        # can be handed a foreign slot; reject it here as one dropped claim
+        # rather than letting the CHECK constraint abort the whole ingest.
+        # Blank is not drift — `claim_writer` derives it on write. UNRECOGNIZED
+        # is left alone so it keeps reporting the field name as the root cause.
+        if ct in (DIRECT, EXTRA) and claim.claim_key and claim.claim_key != fn:
+            logger.warning(
+                "Rejected %s claim %s.%s (object_id=%s): claim_key %r must "
+                "equal field_name; only relationship claims may differ.",
+                ct,
+                model_class.__name__,
+                fn,
+                claim.object_id,
+                claim.claim_key,
+            )
+            rejected.append(claim)
+            continue
+
         if ct == EXTRA:
             continue
         if ct == UNRECOGNIZED:
