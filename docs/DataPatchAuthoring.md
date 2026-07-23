@@ -128,6 +128,24 @@ Write a root's `description:` to only describe **the source itself** — what it
 
 This is because a root is reusable, so a reason-specific description goes stale the moment the next patch cites the same root for an unrelated fact. Leave per-fact reasoning to the citing entry's `note:`.
 
+### Magazine issues
+
+A print-issue attribution — "Victory Game's ad in Billboard 09/29/1945 p83" — cites the **issue**, a declared child of its magazine (grammar and mechanics in [DataPatches.md → Citation sources](DataPatches.md#citation-sources)). The recipe:
+
+- **Two cites when the fact arrives secondhand.** IPDB reporting what Billboard printed is the book pairing's shape exactly: cite IPDB with the verbatim `quote:` (that text is in hand) and the issue with a `locator:` and no quote (the scan text isn't):
+
+  ```yaml
+  cite:
+    - ref: ipdb:3656
+      quote: "The earliest mention [...] is in Victory Game's ad in Billboard 09/29/1945 p83."
+    - ref: billboard:1945-09-29
+      locator: p. 83
+  ```
+
+- **Issue-slug convention.** An ISO date when the issue is dated (`1945-09-29`; year-month `1994-03` when no day is known), the slugified issue name otherwise (`vol-10-no-6`). The slug is an address, not data — `year`/`month`/`day` on the node carry the date for sort and display, and nothing parses the slug.
+- **Page-locator convention.** `p. 83` — lowercase `p.`, a space, the number (`pp. 83-84` for a range). Locators dedup by exact text, so a hand-authored `p83` mints a second CitationInstance for the same page.
+- **Hang archive links off the issue.** A Google Books scan URL is an `archive`-typed link on the issue node, where every later citer benefits — not an `archive:` on the cite (that form rides only `http(s)://` refs).
+
 ## Record descriptions
 
 Some patches set narrative record descriptions (Manufacturer, Model, …) — prose, not classified values. The rules:
