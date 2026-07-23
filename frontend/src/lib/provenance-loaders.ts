@@ -49,8 +49,5 @@ export async function loadSources(
     throw error(response.status || 500, 'Failed to load sources');
   }
 
-  return {
-    sources: data.sources,
-    evidence: data.evidence,
-  };
+  return { sources: data.sources };
 }

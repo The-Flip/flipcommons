@@ -538,7 +538,8 @@ containers = ["apps.provenance"]
 layers = [
     "api | admin",
     "page_endpoints",
-    "evidence | history",
+    "sources | history",
+    "claim_citations",
     "helpers",
     "claims | claim_writer | citation_writer | display | revert",
     "changeset_writer",
@@ -547,7 +548,7 @@ layers = [
     # note_quote_backfill is migration support (provenance/0023-0024): it walks
     # historical models through the apps registry, so its only static import is
     # the pure recognizer below.
-    "models | claim_presence | constants | entity_links | pagination | authz | note_quote_backfill",
+    "models | claim_presence | constants | parked_fields | entity_links | pagination | authz | note_quote_backfill",
     # The abstract claim-control bases every claim-controlled model inherits.
     # Pinned to the bottom so it can't reach UP into the provenance domain
     # (Claim, ChangeSet, Source). Its core-only-leaf guarantee — no cross-app

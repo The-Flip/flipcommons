@@ -3,21 +3,21 @@
 rows for evidence attached directly to the claim. Owns the marker numbering and
 ordering; each row's identity is rendered by CitationBody in its inline layout. -->
 <script lang="ts">
-  import type { FieldChangeCitationSchema } from '$lib/api/schema';
+  import type { ClaimCitationSchema } from '$lib/api/schema';
   import CitationBody from '$lib/components/citation/CitationBody.svelte';
 
   let {
     citations,
     indexes,
   }: {
-    citations: FieldChangeCitationSchema[];
+    citations: ClaimCitationSchema[];
     /** Per-change footnote numbers keyed by citation-instance slug (see
      *  `assignCiteIndexes`); attached citations have no slug and no number. */
     indexes: Map<string, number>;
   } = $props();
 
   interface Entry {
-    citation: FieldChangeCitationSchema;
+    citation: ClaimCitationSchema;
     index: number | undefined;
   }
 

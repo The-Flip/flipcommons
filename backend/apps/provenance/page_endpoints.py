@@ -34,10 +34,8 @@ from apps.core.schemas import EntityLinkSchema
 from apps.core.types import EntityKey
 
 from .entity_links import build_entity_links
-from .evidence import build_cited_changesets
 from .helpers import (
     active_claims,
-    build_sources,
     changeset_author,
     citation_instances_prefetch,
     claims_prefetch,
@@ -48,13 +46,12 @@ from .models.changeset import ChangeSet
 from .schemas import (
     ChangeSetBaseSchema,
     ChangeSetSchema,
-    CitationLinkSchema,
     ClaimAttributionSchema,
     ClaimSchema,
-    ClaimUserAuthorSchema,
     FieldChangeSchema,
     RetractionSchema,
 )
+from .sources import build_sources
 
 
 class ChangeSetWithEntitySchema(ChangeSetBaseSchema):
@@ -86,34 +83,14 @@ class ChangeSetDetailSchema(ChangeSetWithEntitySchema):
     policy_target_model: ClassVar[type[Model]] = ChangeSet
 
 
-class CitedChangeSetCitationSchema(Schema):
-    source_name: str
-    source_type: str
-    author: str
-    year: int | None = None
-    locator: str
-    quote: str
-    links: list[CitationLinkSchema] = []
-
-
-class CitedChangeSetSchema(ChangeSetBaseSchema):
-    fields: list[str]
-    citations: list[CitedChangeSetCitationSchema]
-    capabilities: dict[Activity, bool] = Field(default_factory=dict)
-
-    policy_activities: ClassVar[PolicyActivities] = (Activity.CHANGESET_UNDO,)
-    policy_target_model: ClassVar[type[Model]] = ChangeSet
-
-
 class SourcesPageSchema(Schema):
     """Page model for the per-entity Sources subroute.
 
-    Bundles the sources list (grouped claims) with the cited-edit evidence
-    so the page renders from a single fetch.
+    One entry per active claim, each carrying its own citations — the page
+    groups them by field and value client-side.
     """
 
     sources: list[ClaimSchema]
-    evidence: list[CitedChangeSetSchema]
 
 
 type ErrorPayload = dict[str, str]
@@ -175,7 +152,7 @@ def sources_page(
     entity_type: str,
     public_id: str,
 ) -> SourcesPageSchema | Status[ErrorPayload]:
-    """Return the sources page model: grouped claims + cited evidence.
+    """Return the sources page model: every active claim with its citations.
 
     Accepts soft-deleted entities so the provenance record remains
     inspectable after deletion — matches ``edit_history_page``.
@@ -190,48 +167,7 @@ def sources_page(
         **{model_class.public_id_field: public_id},
     )
     assert isinstance(entity, ClaimControlledModel)
-    claims = active_claims(entity)
-    sources = build_sources(type(entity), claims)
-    caller = policy_user(request.user)
-    evidence: list[CitedChangeSetSchema] = []
-    for row in build_cited_changesets(claims):
-        evidence.append(
-            CitedChangeSetSchema(
-                id=row.id,
-                attribution=ClaimAttributionSchema(
-                    author=ClaimUserAuthorSchema(username=row.user_username),
-                    created_at=row.created_at,
-                ),
-                note=row.note,
-                fields=row.fields,
-                citations=[
-                    CitedChangeSetCitationSchema(
-                        source_name=c.source_name,
-                        source_type=c.source_type,
-                        author=c.author,
-                        year=c.year,
-                        locator=c.locator,
-                        quote=c.quote,
-                        links=[
-                            CitationLinkSchema(
-                                url=link.url,
-                                link_type=link.link_type,
-                                display_name=link.display_name,
-                            )
-                            for link in c.links
-                        ],
-                    )
-                    for c in row.citations
-                ],
-                capabilities=compute_row_capabilities(
-                    caller, row, CitedChangeSetSchema.policy_activities
-                ),
-            )
-        )
-    return SourcesPageSchema(
-        sources=sources,
-        evidence=evidence,
-    )
+    return SourcesPageSchema(sources=build_sources(type(entity), active_claims(entity)))
 
 
 @pages_router.get("/changesets/", response=ChangeSetListSchema)

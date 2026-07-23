@@ -19,10 +19,8 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from apps.accounts.test_factories import make_user
-from apps.catalog.models import Title
 from apps.catalog.tests.conftest import make_machine_model
-from apps.citation.test_factories import make_citation_source
-from apps.provenance.test_factories import cite_claim, make_claim, user_changeset
+from apps.provenance.test_factories import make_claim
 
 pytestmark = pytest.mark.django_db
 
@@ -93,40 +91,6 @@ def test_global_changes_feed_capabilities_does_not_scale_queries(
 
     assert scaled == base, (
         f"global changes-feed embed scales queries with N: {base} -> {scaled}."
-    )
-
-
-def _seed_cited_changesets(user, title: Title, citation_source, n: int) -> None:
-    """Create ``n`` cited user changesets on ``title``, each with one claim."""
-    for i in range(n):
-        cs = user_changeset(user, note=f"Edit {i}")
-        claim = make_claim(
-            title, "description", f"Updated copy {i}", user=user, changeset=cs
-        )
-        cite_claim(claim, citation_source=citation_source, locator=f"p. {i}")
-
-
-def test_sources_page_capabilities_does_not_scale_queries(client, bootstrap_source):
-    """GET /api/pages/sources/... query count must not grow with N cited rows.
-
-    Exercises the ``CitedChangeset`` dataclass path — the row passed to
-    ``compute_row_capabilities`` is a dataclass that structurally satisfies
-    ``ChangeSetPolicyView``, not a ChangeSet ORM instance. Distinct N+1
-    surface from the ORM-backed paths above.
-    """
-    user = make_user()
-    title = Title.objects.create(name="MM3", slug="mm-z")
-    make_claim(title, "name", "MM3", ingest_source=bootstrap_source)
-    citation_source = make_citation_source(name="Flyer", source_type="web")
-
-    _seed_cited_changesets(user, title, citation_source, 2)
-    base = _q(lambda: client.get("/api/pages/sources/title/mm-z/"))
-
-    _seed_cited_changesets(user, title, citation_source, 18)
-    scaled = _q(lambda: client.get("/api/pages/sources/title/mm-z/"))
-
-    assert scaled == base, (
-        f"sources-page evidence embed scales queries with N: {base} -> {scaled}."
     )
 
 

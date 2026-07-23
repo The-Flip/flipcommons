@@ -37,6 +37,7 @@ describe('cabinet edit-history page (taxonomy representative)', () => {
           is_retracted: false,
           citations: [
             {
+              id: 1,
               source_name: 'Internet Pinball Database #4443',
               source_type: 'database',
               author: '',

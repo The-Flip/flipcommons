@@ -231,24 +231,6 @@ class TestPatchTitleClaims:
             "abbreviation",
         }
 
-    def test_changeset_note_is_returned_in_sources(self, client, user, title):
-        client.force_login(user)
-        resp = _patch(
-            client,
-            title.slug,
-            {
-                "fields": {"description": "Updated"},
-                "abbreviations": ["MM"],
-                "note": "Editorial cleanup",
-            },
-        )
-        assert resp.status_code == 200
-        sources_resp = client.get(f"/api/pages/sources/title/{title.slug}/")
-        assert any(
-            claim["changeset_note"] == "Editorial cleanup"
-            for claim in sources_resp.json()["sources"]
-        )
-
     def test_scalar_edit_with_citation_attaches_to_created_claim(
         self, client, user, title, citation_source
     ):

@@ -4,7 +4,7 @@
   import ReferencesSection from './ReferencesSection.svelte';
   import Prose from '$lib/components/ui/Prose.svelte';
   import type { InlineCitation } from './citation-tooltip';
-  import { findRefEntry, findFirstInlineMarker, scrollToAndHighlight } from './citation-refs';
+  import { findRefEntry, findFirstInlineMarker, scrollToAndFlash } from './citation-refs';
 
   let {
     html,
@@ -21,20 +21,28 @@
   let container: HTMLDivElement | undefined = $state();
   let refsSection: HTMLElement | undefined = $state();
   let refsOpen = $state(false);
+  let highlightedRef: number | null = $state(null);
 
   async function scrollToRef(index: number) {
     refsOpen = true;
+    // Clear first so a repeat jump to the entry already highlighted replays
+    // the flash.
+    highlightedRef = null;
+    await tick();
+    highlightedRef = index;
     await tick();
     if (refsSection) {
       const entry = findRefEntry(refsSection, index);
-      if (entry) scrollToAndHighlight(entry);
+      entry?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }
 
   function scrollToInlineMarker(index: number) {
     if (container) {
       const marker = findFirstInlineMarker(container, index);
-      if (marker) scrollToAndHighlight(marker);
+      // Imperative here and only here: the marker lives inside `{@html}`, so
+      // no component renders it and no scoped class can reach it.
+      if (marker) scrollToAndFlash(marker);
     }
   }
 </script>
@@ -45,13 +53,19 @@
 </Prose>
 <CitationTooltip
   {container}
-  htmlSignal={html}
+  contentSignal={html}
   {citations}
   onNavigate={onNavigateToRef ?? (citations && citations.length > 0 ? scrollToRef : undefined)}
 />
 {#if showReferences && citations && citations.length > 0}
   <div bind:this={refsSection}>
-    <ReferencesSection {citations} bind:open={refsOpen} onBackLink={scrollToInlineMarker} />
+    <ReferencesSection
+      {citations}
+      bind:open={refsOpen}
+      onBackLink={scrollToInlineMarker}
+      highlightedIndex={highlightedRef}
+      onFlashEnd={() => (highlightedRef = null)}
+    />
   </div>
 {/if}
 
@@ -75,9 +89,23 @@
     outline: none;
   }
 
-  .content :global(.cite-highlight),
-  :global(.cite-highlight) {
-    background-color: var(--color-highlight-bg);
-    transition: background-color 1.5s ease-out;
+  /* The markers are inside `{@html}`, so Svelte never sees them and cannot
+     hash a class onto them. Scoping to `.content` — a subtree this component
+     owns — is the narrowest reach that still matches them. */
+  .content :global(.cite-flash) {
+    animation: cite-flash 1.5s ease-out;
+  }
+
+  /* Scoped per component: `no-unknown-animations` resolves keyframes within a
+     stylesheet, so a shared global one would not satisfy it — and Svelte hashes
+     a local @keyframes together with the rule referencing it. */
+  @keyframes cite-flash {
+    from {
+      background-color: var(--color-highlight-bg);
+    }
+
+    to {
+      background-color: transparent;
+    }
   }
 </style>

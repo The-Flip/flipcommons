@@ -4,11 +4,11 @@
 
   let {
     html,
-    htmlSignal = html,
+    contentSignal = html,
     citations = undefined,
   }: {
     html: string;
-    htmlSignal?: string;
+    contentSignal?: string;
     citations?: InlineCitation[];
   } = $props();
 
@@ -17,4 +17,4 @@
 
 <!-- eslint-disable-next-line svelte/no-at-html-tags -->
 <div bind:this={container}>{@html html}</div>
-<CitationTooltip {container} {htmlSignal} {citations} />
+<CitationTooltip {container} {contentSignal} {citations} />

@@ -12,6 +12,7 @@ from apps.provenance.test_factories import (
     make_citation_instance,
     make_claim,
     make_ingest_source,
+    source_changeset,
 )
 
 
@@ -431,3 +432,29 @@ class TestEditHistoryEntityTypeGuard:
         """Models that aren't LinkableModel subclasses (e.g. Location) should be rejected."""
         resp = client.get("/api/pages/edit-history/location/some-slug/")
         assert resp.status_code == 404
+
+
+@pytest.mark.django_db
+class TestEditHistoryParkedFields:
+    """Parked source fields are hidden from edit history."""
+
+    def test_parked_field_change_is_hidden(self, client, pm, source):
+        """A mixed changeset keeps its real fields and drops the parked one."""
+        cs = source_changeset(source)
+        make_claim(pm, "year", 1998, changeset=cs)
+        make_claim(pm, "ipdb.notes", "Raw scraped text.", changeset=cs)
+
+        resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        assert resp.status_code == 200
+        entry = next(e for e in resp.json() if e["id"] == cs.pk)
+        assert [c["field_name"] for c in entry["changes"]] == ["year"]
+
+    def test_changeset_of_only_parked_fields_is_dropped(self, client, pm, source):
+        """Nothing left to show means an ingest artifact, not an edit — so the
+        card is dropped rather than rendered empty."""
+        cs = source_changeset(source)
+        make_claim(pm, "opdb.features", ["Remake"], changeset=cs)
+
+        resp = client.get(f"/api/pages/edit-history/model/{pm.slug}/")
+        assert resp.status_code == 200
+        assert cs.pk not in [e["id"] for e in resp.json()]

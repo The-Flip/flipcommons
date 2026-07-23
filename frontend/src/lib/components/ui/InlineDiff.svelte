@@ -1,6 +1,9 @@
+<!-- @component A word-level diff of two text values, capped to a few lines
+until the reader asks for the rest. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { computeWordDiff } from '$lib/diff';
+  import CollapsibleBlock from './CollapsibleBlock.svelte';
 
   let {
     oldValue,
@@ -15,42 +18,31 @@
   } = $props();
 
   let segments = $derived(computeWordDiff(oldValue, newValue));
-
-  let container: HTMLDivElement | undefined = $state();
   let expanded = $state(false);
-  let needsExpansion = $state(false);
-
-  const COLLAPSED_HEIGHT = 200;
-
-  $effect(() => {
-    // Read segments.length to re-fire when diff content changes.
-    void segments.length;
-    if (container) {
-      needsExpansion = container.scrollHeight > COLLAPSED_HEIGHT;
-    }
-  });
 </script>
 
 {#snippet segText(text: string)}
   {#if renderText}{@render renderText(text)}{:else}{text}{/if}
 {/snippet}
 
-<div class="diff-container" class:collapsed={needsExpansion && !expanded} bind:this={container}>
-  {#each segments as seg, i (i)}
-    {#if seg.type === 'added'}
-      <ins>{@render segText(seg.text)}</ins>
-    {:else if seg.type === 'removed'}
-      <del>{@render segText(seg.text)}</del>
-    {:else}
-      <span>{@render segText(seg.text)}</span>
-    {/if}
-  {/each}
-</div>
-{#if needsExpansion}
-  <button class="diff-toggle" onclick={() => (expanded = !expanded)}>
-    {expanded ? 'Show less' : 'Show full diff'}
-  </button>
-{/if}
+<CollapsibleBlock
+  expandLabel="Show full diff"
+  {expanded}
+  onExpandedChange={(next) => (expanded = next)}
+  signal={segments.length}
+>
+  <div class="diff-container">
+    {#each segments as seg, i (i)}
+      {#if seg.type === 'added'}
+        <ins>{@render segText(seg.text)}</ins>
+      {:else if seg.type === 'removed'}
+        <del>{@render segText(seg.text)}</del>
+      {:else}
+        <span>{@render segText(seg.text)}</span>
+      {/if}
+    {/each}
+  </div>
+</CollapsibleBlock>
 
 <style>
   .diff-container {
@@ -58,16 +50,6 @@
     line-height: var(--font-lineheight-3);
     overflow-wrap: break-word;
     white-space: pre-wrap;
-  }
-
-  .collapsed {
-    max-height: 200px;
-    overflow: hidden;
-    /* `black` here is a luminance alpha for the mask, not a theme color. */
-    /* stylelint-disable-next-line color-named */
-    mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
-    /* stylelint-disable-next-line color-named */
-    -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
   }
 
   ins {
@@ -83,18 +65,5 @@
     border-radius: 2px;
     padding: 0 1px;
     opacity: 0.7;
-  }
-
-  .diff-toggle {
-    background: none;
-    border: none;
-    color: var(--color-link);
-    font-size: var(--font-size-0);
-    padding: var(--size-1) 0 0;
-    cursor: pointer;
-  }
-
-  .diff-toggle:hover {
-    text-decoration: underline;
   }
 </style>

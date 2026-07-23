@@ -29,6 +29,8 @@
         open={true}
         showToggle={false}
         onBackLink={state.scrollToInlineMarker}
+        highlightedIndex={state.highlightedRefIndex}
+        onFlashEnd={state.clearHighlightedRef}
       />
     </div>
   </AccordionSection>

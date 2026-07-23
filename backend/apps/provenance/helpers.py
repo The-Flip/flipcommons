@@ -12,12 +12,9 @@ from apps.citation.models import CitationInstance
 
 from .attribution import actor_user, source_backing
 from .claim_ranking_in_db import ranked_claims
-from .display import FieldValue, claim_value, resolve_display_context
 from .models import ChangeSet, Claim, ClaimControlledModel
 from .schemas import (
-    ClaimAttributionSchema,
     ClaimAuthorSchema,
-    ClaimSchema,
     ClaimSourceAuthorSchema,
     ClaimUserAuthorSchema,
 )
@@ -90,12 +87,12 @@ def claims_prefetch(
     so it doesn't drag the whole claim table.
     """
     queryset = (
-        # ranked_claims already select_relates the claim's actor backings (for
-        # claim_author); changeset__actor__user covers the per-claim changeset
-        # note and the changeset author the evidence panel reads.
-        ranked_claims(Claim.objects.all(), "claim_key")
-        .select_related("changeset__actor__user")
-        .prefetch_related(citation_instances_prefetch())
+        # ranked_claims already select_relates the claim's actor backings, which
+        # is all claim_author reads. The changeset join is deliberately absent —
+        # reading claim.changeset off a claim from here is an N+1.
+        ranked_claims(Claim.objects.all(), "claim_key").prefetch_related(
+            citation_instances_prefetch()
+        )
     )
     if field_names is not None:
         queryset = queryset.filter(field_name__in=list(field_names))
@@ -128,46 +125,3 @@ def citation_instances(claim: Claim) -> list[CitationInstance]:
             "prefetched_citation_instances is missing."
         )
     return cast(list[CitationInstance], instances)
-
-
-def build_sources(
-    model: type[ClaimControlledModel], claims: Iterable[Claim]
-) -> list[ClaimSchema]:
-    """Serialize pre-fetched active claims into the sources list format.
-
-    ``model`` is the subject entity's class — all claims belong to one entity,
-    so it is uniform and the caller supplies it (do not hop
-    ``claim.content_type`` per claim: ``claims_prefetch`` does not
-    ``select_related`` it, so that would be an N+1).
-
-    Claims should be ordered by claim_key, -priority, -created_at. The first
-    claim seen per claim_key is marked as the winner.
-
-    The iterable is materialized to a list internally so FK labels and
-    wikilink authoring keys can be resolved in a single batched pass before
-    the per-claim loop.
-    """
-    claims = list(claims)
-    ctx = resolve_display_context(
-        FieldValue(c.field_name, c.value, model) for c in claims
-    )
-    winners: set[str] = set()
-    sources: list[ClaimSchema] = []
-    for claim in claims:
-        is_winner = claim.claim_key not in winners
-        if is_winner:
-            winners.add(claim.claim_key)
-        sources.append(
-            ClaimSchema(
-                attribution=ClaimAttributionSchema(
-                    author=claim_author(claim),
-                    created_at=claim.created_at.isoformat(),
-                ),
-                field_name=claim.field_name,
-                value=claim_value(model, claim.field_name, claim.value, ctx),
-                is_winner=is_winner,
-                changeset_note=claim.changeset.note if claim.changeset else None,
-            )
-        )
-    sources.sort(key=lambda c: c.attribution.created_at, reverse=True)
-    return sources

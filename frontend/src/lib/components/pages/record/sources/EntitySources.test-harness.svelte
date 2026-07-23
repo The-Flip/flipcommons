@@ -2,7 +2,7 @@
   import EntitySources from './EntitySources.svelte';
   import { setEntityContext } from '$lib/entity-context';
 
-  let { sources, evidence = undefined } = $props();
+  let { sources } = $props();
 
   setEntityContext({
     name: 'Test Entity',
@@ -10,4 +10,4 @@
   });
 </script>
 
-<EntitySources {sources} {evidence} />
+<EntitySources {sources} />

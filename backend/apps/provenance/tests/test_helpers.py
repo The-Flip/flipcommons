@@ -6,12 +6,12 @@ from apps.catalog.models import CreditRole, Person, Series
 from apps.catalog.tests.conftest import make_machine_model
 from apps.provenance.helpers import (
     active_claims,
-    build_sources,
     citation_instances,
     claims_prefetch,
 )
 from apps.provenance.models import Claim
 from apps.provenance.schemas import ClaimDisplayValueSchema
+from apps.provenance.sources import build_sources
 from apps.provenance.test_factories import make_claim, make_ingest_source
 
 
