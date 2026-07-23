@@ -13,7 +13,8 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
-from django.db.models.functions import Now
+from django.db.models.functions import Concat, Left, Length, Now
+from django.db.models.lookups import Exact
 
 from apps.actors.types import ActorId
 from apps.core.models import field_not_blank
@@ -42,9 +43,19 @@ class ExistingClaimRow(NamedTuple):
     pk: int
 
 
+CLAIM_KEY_SEPARATOR = "|"
+"""Separates ``field_name`` from the identity parts in a relationship claim_key.
+
+Spelled once because three things depend on it agreeing: ``make_claim_key``
+joins on it, ``_escape_claim_value`` escapes it out of identity values so the
+key stays unambiguous, and the ``provenance_claim_key_derived_from_field_name``
+CHECK constraint uses it to verify a stored key is still derivable from its
+field name."""
+
+
 def _escape_claim_value(s: str) -> str:
     """Percent-escape reserved delimiters in claim key identity values."""
-    return s.replace("%", "%25").replace("|", "%7C").replace(":", "%3A")
+    return s.replace("%", "%25").replace(CLAIM_KEY_SEPARATOR, "%7C").replace(":", "%3A")
 
 
 def make_claim_key(
@@ -65,7 +76,7 @@ def make_claim_key(
         v = identity_parts[k]
         s = "null" if v is None else str(v)
         parts.append(f"{k}:{_escape_claim_value(s)}")
-    return "|".join(parts)
+    return CLAIM_KEY_SEPARATOR.join(parts)
 
 
 class Claim(models.Model):
@@ -164,6 +175,37 @@ class Claim(models.Model):
             ),
             field_not_blank("field_name"),
             field_not_blank("claim_key"),
+            models.CheckConstraint(
+                # claim_key is a materialized `make_claim_key(field_name, ...)`,
+                # so field_name is one of its *inputs*. This asserts the output
+                # is still derivable from the input: either the key IS the field
+                # name (scalar), or it is the field name followed by the
+                # separator (relationship). The DB can't check the identity
+                # parts themselves — knowing which claims are relationship
+                # claims needs `_meta` introspection — but it does catch an
+                # input rewritten without recomputing the output, which is how
+                # catalog 0026 split one column's rivals into two contests.
+                #
+                # Spelled with Left/Length rather than __startswith: the latter
+                # compiles to LIKE, where the `_` in field names like
+                # `short_name` is a single-character wildcard and would quietly
+                # widen the check.
+                condition=(
+                    models.Q(claim_key=models.F("field_name"))
+                    | models.Q(
+                        Exact(
+                            Left("claim_key", Length("field_name") + models.Value(1)),
+                            Concat("field_name", models.Value(CLAIM_KEY_SEPARATOR)),
+                        )
+                    )
+                ),
+                name="provenance_claim_key_derived_from_field_name",
+                violation_error_message=(
+                    "claim_key must equal field_name, or begin with "
+                    f"field_name + {CLAIM_KEY_SEPARATOR!r} for relationship claims."
+                ),
+                violation_error_code="cross_field",
+            ),
             models.CheckConstraint(
                 condition=(
                     models.Q(retracted_by_changeset__isnull=True)

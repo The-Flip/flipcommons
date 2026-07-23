@@ -7,9 +7,18 @@ matched no column, so the resolver parked it in ``extra_data``. Now that a
 dedicated column exists, two rewrites make the promotion complete:
 
 1. Claims: rename ``field_name`` from ``ipdb.model_number`` to
-   ``manufacturer_model_identifier``. The claim rows themselves are untouched
-   otherwise, so their IPDB ingest attribution (actor → source → IngestRun)
-   carries over — no new ChangeSet is needed or wanted.
+   ``manufacturer_model_identifier``, and ``claim_key`` with it. The claim rows
+   themselves are untouched otherwise, so their IPDB ingest attribution (actor →
+   source → IngestRun) carries over — no new ChangeSet is needed or wanted.
+
+   ``claim_key`` must move too because it is derived from ``field_name``
+   (``make_claim_key`` returns the field name verbatim for a scalar claim),
+   and it is what the Sources page and Edit History group rivals by. The first
+   version of this migration rewrote only ``field_name``, stranding every
+   promoted row in a slot no later claim could reach, so rival values stopped
+   competing and both rendered as winners. Provenance ``0027`` repairs those
+   rows and adds the CHECK constraint that now makes this class of mistake fail
+   at the database rather than in the UI months later.
 2. Materialized rows: copy the parked value into the column and drop the
    ``extra_data`` key, mirroring exactly what the next resolve would produce
    (a claim whose field name matches a column resolves into the column, not
@@ -30,7 +39,9 @@ def promote_model_number(apps, schema_editor):
     Claim = apps.get_model("provenance", "Claim")
     MachineModel = apps.get_model("catalog", "MachineModel")
 
-    Claim.objects.filter(field_name=_OLD_FIELD_NAME).update(field_name=_NEW_FIELD_NAME)
+    Claim.objects.filter(field_name=_OLD_FIELD_NAME).update(
+        field_name=_NEW_FIELD_NAME, claim_key=_NEW_FIELD_NAME
+    )
 
     changed = []
     for pm in MachineModel.objects.filter(extra_data__has_key=_OLD_FIELD_NAME):
@@ -50,11 +61,18 @@ def promote_model_number(apps, schema_editor):
 
 def demote_model_number(apps, schema_editor):
     """Reverse: park the value back under the old field name so the state
-    matches what the pre-migration resolver produced."""
+    matches what the pre-migration resolver produced.
+
+    Both columns move, for the same reason the forward moves both: leaving
+    ``claim_key`` on the new name while ``field_name`` goes back to the old one
+    is the identical drift in the mirror direction, and would trip the
+    provenance ``0027`` constraint on the way down."""
     Claim = apps.get_model("provenance", "Claim")
     MachineModel = apps.get_model("catalog", "MachineModel")
 
-    Claim.objects.filter(field_name=_NEW_FIELD_NAME).update(field_name=_OLD_FIELD_NAME)
+    Claim.objects.filter(field_name=_NEW_FIELD_NAME).update(
+        field_name=_OLD_FIELD_NAME, claim_key=_OLD_FIELD_NAME
+    )
 
     changed = []
     for pm in MachineModel.objects.filter(manufacturer_model_identifier__isnull=False):
