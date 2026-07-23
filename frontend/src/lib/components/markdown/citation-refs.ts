@@ -6,8 +6,8 @@
 import type { InlineCitation } from './citation-tooltip';
 
 /**
- * Deduplicate citations by index, keeping the first occurrence of each.
- * Used by ReferencesSection to render one entry per unique reference number.
+ * Deduplicate citations by index, keeping the first occurrence of each — one
+ * entry per reference number.
  */
 export function deduplicateCitations(citations: InlineCitation[]): InlineCitation[] {
   const seen = new Set<number>();
@@ -22,8 +22,8 @@ export function deduplicateCitations(citations: InlineCitation[]): InlineCitatio
 }
 
 /**
- * Build an id → CitationInfo map from the citations array.
- * Used by CitationTooltip to populate its data from props instead of fetching.
+ * Build an id → citation map from the citations array, for resolving a marker
+ * to its citation without a fetch.
  */
 export function buildCitationMap(citations: InlineCitation[]): Map<number, InlineCitation> {
   const map = new Map<number, InlineCitation>();
@@ -43,41 +43,45 @@ export function findRefEntry(container: Element, index: number): Element | null 
 /**
  * Find the first inline citation marker with a given index within a container.
  *
- * Matches on the data attribute alone: markers are a `<sup>` in server-rendered
- * markdown and a `<button>` where a component renders them, so qualifying the
- * selector by tag would miss one surface or the other.
+ * Matches on the data attribute alone: a marker's tag varies with how it was
+ * rendered, so qualifying the selector by element would miss some of them.
  */
 export function findFirstInlineMarker(container: Element, index: number): Element | null {
   return container.querySelector(`[data-cite-index="${index}"]`);
 }
 
 /**
- * Class driving the `cite-flash` keyframe (declared in `app.css`).
- *
- * Only for elements no component owns — the `sup` markers inside
- * server-rendered markdown, which Svelte cannot attach a scoped class to.
- * Anywhere a component renders the target itself, bind the class declaratively
- * instead so the style stays scoped; see `CitationReference.svelte`.
+ * Class that plays the flash animation. Only for a target this code applies it
+ * to imperatively — where the element is rendered declaratively, bind the class
+ * there instead so the rule can stay scoped to it.
  */
 export const CITE_FLASH_CLASS = 'cite-flash';
+
+/** Strips the flash class once its animation finishes. Declared once rather
+ *  than per call so the listener can be replaced instead of stacked. */
+function clearFlash(event: Event): void {
+  if (event.currentTarget instanceof Element) {
+    event.currentTarget.classList.remove(CITE_FLASH_CLASS);
+  }
+}
 
 /**
  * Smooth-scroll to an element and flash it.
  *
- * Safe to call rapidly: the class is removed and re-added around a forced
- * reflow, so a repeat jump to the same element restarts the animation.
+ * Safe to call rapidly. Restarting the animation means removing and re-adding
+ * the class around a forced reflow — without the reflow the pair collapses into
+ * no change at all. That removal cancels the running animation, which fires
+ * `animationcancel` rather than `animationend`, so the previous listener would
+ * never fire and never retire itself; it is dropped explicitly instead.
  */
 export function scrollToAndFlash(element: Element): void {
   element.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
+  element.removeEventListener('animationend', clearFlash);
   element.classList.remove(CITE_FLASH_CLASS);
-  // Forces style recalculation, without which the removal and re-add collapse
-  // into no change at all and the animation never restarts. Read through
-  // `getBoundingClientRect`, which every Element has, rather than an
-  // HTMLElement-only property that would need a cast to reach.
+  // Read through `getBoundingClientRect`, which every Element has, rather than
+  // an HTMLElement-only property that would need a cast to reach.
   element.getBoundingClientRect();
   element.classList.add(CITE_FLASH_CLASS);
-  element.addEventListener('animationend', () => element.classList.remove(CITE_FLASH_CLASS), {
-    once: true,
-  });
+  element.addEventListener('animationend', clearFlash, { once: true });
 }
