@@ -1,7 +1,8 @@
 """Sum-type guarantees for ``CitationRef`` and the cite-spec builders.
 
 ``CitationRef`` is a sum of :class:`WebCitationRef` / :class:`SchemeCitationRef`
-/ :class:`IsbnCitationRef`; a two-forms-at-once ref is unconstructable (a static
+/ :class:`IsbnCitationRef` / :class:`SourceCitationRef`; a two-forms-at-once ref
+is unconstructable (a static
 guarantee, exercised here at runtime via the per-form field sets), and
 ``_parse_cite_value`` lowers a cite spec to the variant the apply-side ``match``
 then resolves without re-deciding.
@@ -11,7 +12,12 @@ import pytest
 
 from apps.claim_ingest.patches._types import PatchError
 from apps.claim_ingest.patches.parsing import _parse_cite_url, _parse_cite_value
-from apps.claim_ingest.plan import IsbnCitationRef, SchemeCitationRef, WebCitationRef
+from apps.claim_ingest.plan import (
+    IsbnCitationRef,
+    SchemeCitationRef,
+    SourceCitationRef,
+    WebCitationRef,
+)
 
 
 def test_web_ref_carries_only_the_url_form() -> None:
@@ -98,3 +104,53 @@ def test_parse_cite_value_rejects_a_scheme_matching_url() -> None:
     # as a web ref — the builder fork the resolve site relies on stays honest.
     with pytest.raises(PatchError, match="ipdb"):
         _parse_cite_value("https://www.ipdb.org/machine.cgi?id=4443", "", "ref")
+
+
+def test_source_ref_carries_only_the_slug_form() -> None:
+    ref = SourceCitationRef(root_slug="billboard", child_slug="1945-09-29")
+    assert ref.root_slug == "billboard"
+    assert ref.child_slug == "1945-09-29"
+    # No url/archive/scheme/isbn on the slug form — a two-form ref is
+    # unrepresentable.
+    assert not hasattr(ref, "url")
+    assert not hasattr(ref, "scheme")
+    assert not hasattr(ref, "isbn")
+
+
+def test_parse_cite_value_lowers_a_source_ref() -> None:
+    ref = _parse_cite_value("billboard:1945-09-29", "", "ref")
+    assert ref == SourceCitationRef(root_slug="billboard", child_slug="1945-09-29")
+
+
+def test_parse_cite_value_accepts_hyphenated_root_slugs() -> None:
+    # The scheme grammar's left segment can't carry hyphens; the slug form can —
+    # 'gameroom-magazine:vol-2' is exactly the ref the scheme parser rejects.
+    ref = _parse_cite_value("gameroom-magazine:vol-2", "", "ref")
+    assert ref == SourceCitationRef(root_slug="gameroom-magazine", child_slug="vol-2")
+
+
+def test_parse_cite_value_a_known_scheme_still_wins_its_left_segment() -> None:
+    # 'ipdb:4443' is slug-shaped on both segments, but a registered scheme key
+    # always parses as the scheme form — the slug arm is checked last.
+    assert _parse_cite_value("ipdb:4443", "", "ref") == SchemeCitationRef(
+        scheme="ipdb", identifier="4443"
+    )
+
+
+def test_parse_cite_value_a_slug_shaped_scheme_typo_parses_as_a_source_ref() -> None:
+    # 'ipddb:4443' can't fail parse as an unknown scheme any more — it is a
+    # well-formed slug ref, deferred to the plan-time resolution check (which
+    # names the known schemes in its error).
+    assert _parse_cite_value("ipddb:4443", "", "ref") == SourceCitationRef(
+        root_slug="ipddb", child_slug="4443"
+    )
+
+
+def test_parse_cite_value_rejects_a_non_slug_shaped_unknown_scheme() -> None:
+    with pytest.raises(PatchError, match="unknown cite scheme"):
+        _parse_cite_value("IPDB:4443", "", "ref")
+
+
+def test_parse_cite_value_rejects_archive_on_a_source_ref() -> None:
+    with pytest.raises(PatchError, match="archive"):
+        _parse_cite_value("billboard:1945-09-29", "https://web.archive.org/x", "ref")

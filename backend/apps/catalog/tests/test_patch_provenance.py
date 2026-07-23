@@ -92,7 +92,17 @@ def test_bad_cite_format_rejected(flipcommons_catalog, pm):
 
 
 def test_unknown_cite_scheme_rejected(flipcommons_catalog, pm):
+    # A slug-shaped unknown left segment parses as an authored source ref and
+    # fails the read-phase resolution check — still at build/dry-run, with a
+    # message naming the known schemes (the did-you-mean for a typo'd key).
     text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: bogus:4443\n      year: 1998\n"
+    with pytest.raises(PatchError, match="known schemes are"):
+        _apply(text)
+
+
+def test_non_slug_shaped_unknown_cite_scheme_rejected_at_parse(flipcommons_catalog, pm):
+    # A left segment that isn't even slug-shaped still fails at parse.
+    text = "attribution: flipcommons-catalog\nclaims:\n  - model.medieval-madness:\n      cite: BOGUS:4443\n      year: 1998\n"
     with pytest.raises(PatchError, match="unknown cite scheme"):
         _apply(text)
 

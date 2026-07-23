@@ -31,4 +31,12 @@ class SourceNode(TypedDict):
     identifier_key: NotRequired[str]
     domains: NotRequired[list[str]]
     links: NotRequired[list[SourceLinkNode]]
+    # ``slug``/``parent`` express slug-addressed (magazine) nodes: ``slug`` is
+    # the node's authored handle, ``parent`` the root slug a child nests under —
+    # nesting is spelled ``parent:``, never by structure (``children`` stays
+    # rejected by the patch grammar). Both are required in practice on
+    # slug-addressed nodes and rejected on other types, enforced at read phase
+    # (``validate_source_node``) rather than in this type.
+    slug: NotRequired[str]
+    parent: NotRequired[str]
     children: NotRequired[list[SourceNode]]

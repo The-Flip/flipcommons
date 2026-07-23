@@ -1,7 +1,7 @@
 """Tests for the data-patch ``sources:`` get-or-create path (``source_upsert``).
 
 Focus: recognition-domain minting and host-based dedup layered onto the
-additive ``ensure_root_source`` upsert. Field/link upsert behavior is covered
+additive ``ensure_source`` upsert. Field/link upsert behavior is covered
 end-to-end by ``apps/catalog/tests/test_patches.py``.
 """
 
@@ -17,8 +17,8 @@ from apps.citation.source_upsert import (
     _declared_homepage_hosts,
     _declared_recognition_hosts,
     detect_host_collision,
-    ensure_root_source,
-    validate_root_source,
+    ensure_source,
+    validate_source_node,
 )
 from apps.citation.test_factories import make_citation_root_domain, make_citation_source
 from apps.provenance.test_factories import make_ingest_source
@@ -82,7 +82,7 @@ class TestDeclaredHomepageHosts:
 class TestRootDomainMinting:
     def test_new_root_mints_normalized_domain(self, actor):
         warnings: list[str] = []
-        result = ensure_root_source(
+        result = ensure_source(
             _node(
                 "American Pinball",
                 links=[_homepage("https://www.American-Pinball.com/")],
@@ -98,7 +98,7 @@ class TestRootDomainMinting:
 
     def test_any_root_type_mints_domain(self, actor):
         """Any-root, not web-only: a book root with a homepage link gets one."""
-        ensure_root_source(
+        ensure_source(
             _node(
                 "A Pinball Book",
                 source_type="book",
@@ -111,7 +111,7 @@ class TestRootDomainMinting:
         assert root.root_domains.filter(host="pinball-book.example").exists()
 
     def test_non_homepage_link_mints_no_domain(self, actor):
-        ensure_root_source(
+        ensure_source(
             _node(
                 "Catalog Only",
                 links=[{"url": "https://example.com/c", "link_type": "catalog"}],
@@ -124,7 +124,7 @@ class TestRootDomainMinting:
 
     def test_new_root_mints_a_domain_per_distinct_host(self, actor):
         """One root owns many domains — a node may declare several at once."""
-        ensure_root_source(
+        ensure_source(
             _node(
                 "Rebrand",
                 links=[
@@ -145,13 +145,13 @@ class TestRootDomainMinting:
 class TestSourceUpsertDedup:
     def test_redeclare_by_name_with_new_host_adds_domain_no_duplicate(self, actor):
         """A same-named root gaining a new homepage host is found, not duplicated."""
-        ensure_root_source(
+        ensure_source(
             _node("TWIP", links=[_homepage("https://twip.example/")]),
             actor=actor,
             warnings=[],
         )
         warnings: list[str] = []
-        result = ensure_root_source(
+        result = ensure_source(
             _node("TWIP", links=[_homepage("https://blog.twip.example/")]),
             actor=actor,
             warnings=warnings,
@@ -166,14 +166,14 @@ class TestSourceUpsertDedup:
 
     def test_dedup_by_host_under_a_new_name(self, actor):
         """Re-declaring the same host under a different name reuses the host owner."""
-        ensure_root_source(
+        ensure_source(
             _node("This Week in Pinball", links=[_homepage("https://twip.example/")]),
             actor=actor,
             warnings=[],
         )
         before = CitationSource.objects.count()
         warnings: list[str] = []
-        result = ensure_root_source(
+        result = ensure_source(
             _node("TWiP (alt name)", links=[_homepage("https://twip.example/")]),
             actor=actor,
             warnings=warnings,
@@ -191,7 +191,7 @@ class TestSourceUpsertDedup:
         """A single owning root + an unowned host → reuse the root, add the host."""
         root = make_citation_source(name="Owner", source_type="web")
         make_citation_root_domain(source=root, host="owned.example")
-        result = ensure_root_source(
+        result = ensure_source(
             _node(
                 "Owner",
                 links=[
@@ -221,7 +221,7 @@ class TestSourceUpsertDedup:
         make_citation_root_domain(source=child, host="squatted.example")
 
         warnings: list[str] = []
-        result = ensure_root_source(  # must not raise
+        result = ensure_source(  # must not raise
             _node("Fresh Root", links=[_homepage("https://squatted.example/")]),
             actor=actor,
             warnings=warnings,
@@ -241,7 +241,7 @@ class TestSourceUpsertDedup:
         sources_before = CitationSource.objects.count()
         domains_before = CitationSourceRootDomain.objects.count()
         warnings: list[str] = []
-        result = ensure_root_source(
+        result = ensure_source(
             _node(
                 "Spans Two",
                 links=[
@@ -286,7 +286,7 @@ class TestDeclaredDomainsHosts:
 class TestDeclaredDomainsMinting:
     def test_subdomain_is_minted_verbatim_no_rounding(self, actor):
         """A declared subdomain stays its own host — declare does not round."""
-        result = ensure_root_source(
+        result = ensure_source(
             _node("TWIP", domains=["twip.kineticist.com"]), actor=actor, warnings=[]
         )
         assert result.source_created
@@ -296,7 +296,7 @@ class TestDeclaredDomainsMinting:
         ]
 
     def test_homepage_and_domains_union_onto_one_root(self, actor):
-        ensure_root_source(
+        ensure_source(
             _node(
                 "Pinball Now",
                 links=[_homepage("https://pinballnow.com/")],
@@ -312,7 +312,7 @@ class TestDeclaredDomainsMinting:
         }
 
     def test_url_form_domain_normalizes_like_bare_form(self, actor):
-        ensure_root_source(
+        ensure_source(
             _node("Pinball Now", domains=["https://OldPin.com/"]),
             actor=actor,
             warnings=[],
@@ -334,7 +334,7 @@ class TestRebrandResolution:
         make_citation_root_domain(source=existing, host="oldpin.com")
         before = CitationSource.objects.count()
 
-        result = ensure_root_source(
+        result = ensure_source(
             _node(
                 "Pinball Now",
                 links=[_homepage("https://pinballnow.com/")],
@@ -365,7 +365,7 @@ class TestRebrandResolution:
         make_citation_root_domain(source=child, host="squatted.example")
 
         warnings: list[str] = []
-        result = ensure_root_source(  # must not raise
+        result = ensure_source(  # must not raise
             _node("Fresh", domains=["squatted.example", "free.example"]),
             actor=actor,
             warnings=warnings,
@@ -384,7 +384,7 @@ class TestRebrandResolution:
         make_citation_root_domain(source=b, host="b.example")
 
         warnings: list[str] = []
-        result = ensure_root_source(
+        result = ensure_source(
             _node("Spans Two", domains=["a.example", "b.example"]),
             actor=actor,
             warnings=warnings,
@@ -400,26 +400,26 @@ class TestValidateRootSourceHosts:
 
     def test_public_suffix_domain_is_rejected(self):
         with pytest.raises(ValidationError):
-            validate_root_source(_node("Bad", domains=["co.uk"]))
+            validate_source_node(_node("Bad", domains=["co.uk"]))
 
     def test_non_dns_domain_is_rejected(self):
         with pytest.raises(ValidationError):
-            validate_root_source(_node("Bad", domains=["127.0.0.1"]))
+            validate_source_node(_node("Bad", domains=["127.0.0.1"]))
 
     def test_malformed_ipv6_url_domain_is_rejected_not_raised_raw(self):
         """``urlparse(...).hostname`` raises ValueError on an unbalanced IPv6
         bracket; the extractor must route it to the model guard so it surfaces as
         a ValidationError (→ PatchError), never a raw traceback at read phase."""
         with pytest.raises(ValidationError):
-            validate_root_source(_node("Bad", domains=["https://[::1/page"]))
+            validate_source_node(_node("Bad", domains=["https://[::1/page"]))
 
     def test_bad_homepage_host_now_fails_at_validate(self):
         """Flagged behavior change: a public-suffix homepage host fails here too."""
         with pytest.raises(ValidationError):
-            validate_root_source(_node("Bad", links=[_homepage("https://co.uk/")]))
+            validate_source_node(_node("Bad", links=[_homepage("https://co.uk/")]))
 
     def test_valid_domains_pass(self):
-        validate_root_source(
+        validate_source_node(
             _node(
                 "Good",
                 links=[_homepage("https://pinballnow.com/")],
@@ -468,7 +468,7 @@ class TestSourceUpsertAttribution:
     """
 
     def test_created_rows_carry_the_actor(self, actor):
-        result = ensure_root_source(
+        result = ensure_source(
             _node(
                 "Attributed Site",
                 links=[_homepage("https://attributed.example/")],
@@ -510,26 +510,26 @@ class TestValidateSchemeRootCitationSourceInfo:
         }
 
     def test_matching_declaration_passes(self):
-        validate_root_source(self._scheme_node())  # does not raise
+        validate_source_node(self._scheme_node())  # does not raise
 
     def test_wrong_name_rejected(self):
         with pytest.raises(ValidationError, match="registered root info"):
-            validate_root_source(self._scheme_node(name="You Tube"))
+            validate_source_node(self._scheme_node(name="You Tube"))
 
     def test_wrong_homepage_rejected(self):
         with pytest.raises(ValidationError, match="registered root info"):
-            validate_root_source(self._scheme_node(homepage="https://videos.example/"))
+            validate_source_node(self._scheme_node(homepage="https://videos.example/"))
 
     def test_extra_recognition_host_rejected(self):
         node = self._scheme_node()
         node["domains"] = ["youtube-nocookie.com"]
         with pytest.raises(ValidationError, match="registered root info"):
-            validate_root_source(node)
+            validate_source_node(node)
 
     def test_ipdb_declaration_matches_its_seeded_reality(self):
         # The registered facts mirror the root as it actually shipped (≤0038),
         # not an idealized short name.
-        validate_root_source(
+        validate_source_node(
             {
                 "name": "Internet Pinball Database (IPDB)",
                 "source_type": "web",
@@ -540,6 +540,193 @@ class TestValidateSchemeRootCitationSourceInfo:
 
     def test_non_scheme_node_is_unconstrained(self):
         # No identifier_key → no registered root info to conform to.
-        validate_root_source(
+        validate_source_node(
             _node("Any Site", links=[_homepage("https://any.example/")])
         )
+
+
+# ---------------------------------------------------------------------------
+# Slug-addressed (magazine) nodes: validation + the slug upsert branches
+# ---------------------------------------------------------------------------
+
+
+def _mag(name, slug, parent=None, **extra):
+    node: dict[str, object] = {"name": name, "source_type": "magazine", "slug": slug}
+    if parent is not None:
+        node["parent"] = parent
+    node.update(extra)
+    return node
+
+
+class TestSlugAddressedValidation:
+    """Read-phase checks on the ``slug``/``parent`` verbs."""
+
+    def test_slug_on_a_non_slug_addressed_type_rejected(self):
+        with pytest.raises(ValidationError, match="slug-addressed"):
+            validate_source_node(
+                {"name": "A Site", "source_type": "web", "slug": "a-site"}
+            )
+
+    def test_parent_on_a_non_slug_addressed_type_rejected(self):
+        with pytest.raises(ValidationError, match="slug-addressed"):
+            validate_source_node(
+                {"name": "A Page", "source_type": "web", "parent": "a-site"}
+            )
+
+    def test_magazine_without_slug_rejected(self):
+        with pytest.raises(ValidationError, match="requires an authored 'slug'"):
+            validate_source_node({"name": "Billboard", "source_type": "magazine"})
+
+    def test_slug_grammar_enforced(self):
+        with pytest.raises(ValidationError, match="lowercase letters"):
+            validate_source_node(_mag("Game Room", "game_room"))
+
+    def test_reserved_root_slug_rejected(self):
+        with pytest.raises(ValidationError, match="reserved"):
+            validate_source_node(_mag("Ipdb Monthly", "ipdb"))
+
+    def test_reserved_handle_fine_on_a_child(self):
+        validate_source_node(
+            _mag("The ISBN Issue", "isbn", parent="a-magazine"),
+            declared_root_slugs={"a-magazine"},
+        )  # does not raise
+
+    def test_unresolvable_parent_rejected(self):
+        with pytest.raises(ValidationError, match="neither an existing"):
+            validate_source_node(_mag("Sep 1945", "1945-09", parent="billboard"))
+
+    def test_parent_resolves_via_declared_block(self):
+        validate_source_node(
+            _mag("Sep 1945", "1945-09", parent="billboard"),
+            declared_root_slugs={"billboard"},
+        )  # does not raise
+
+    def test_parent_resolves_via_committed_state(self):
+        make_citation_source(name="Billboard", source_type="magazine", slug="billboard")
+        validate_source_node(
+            _mag("Sep 1945", "1945-09", parent="billboard")
+        )  # does not raise
+
+    def test_domains_on_a_child_rejected(self):
+        with pytest.raises(ValidationError, match="roots only"):
+            validate_source_node(
+                _mag("Sep 1945", "1945-09", parent="billboard", domains=["a.test"]),
+                declared_root_slugs={"billboard"},
+            )
+
+
+class TestSlugRootUpsert:
+    def test_creates_a_magazine_root(self, actor):
+        warnings: list[str] = []
+        result = ensure_source(
+            _mag("Billboard", "billboard"), actor=actor, warnings=warnings
+        )
+        assert result.source_created
+        root = CitationSource.objects.get(slug="billboard")
+        assert root.source_type == "magazine"
+        assert root.parent_id is None
+        assert warnings == []
+
+    def test_reapply_is_idempotent(self, actor):
+        ensure_source(_mag("Billboard", "billboard"), actor=actor, warnings=[])
+        warnings: list[str] = []
+        result = ensure_source(
+            _mag("Billboard", "billboard"), actor=actor, warnings=warnings
+        )
+        assert not result.source_created
+        assert warnings == []
+        assert CitationSource.objects.filter(slug="billboard").count() == 1
+
+    def test_slug_is_the_identity_not_the_name(self, actor):
+        # A renamed magazine re-declared under its slug is found, not duplicated,
+        # and the declared-name divergence warns.
+        ensure_source(_mag("Bill Board", "billboard"), actor=actor, warnings=[])
+        warnings: list[str] = []
+        result = ensure_source(
+            _mag("Billboard", "billboard"), actor=actor, warnings=warnings
+        )
+        assert not result.source_created
+        assert any("resolved by slug" in w for w in warnings)
+        assert CitationSource.objects.get(slug="billboard").name == "Bill Board"
+
+
+class TestSlugChildUpsert:
+    @pytest.fixture
+    def billboard(self, actor):
+        ensure_source(_mag("Billboard", "billboard"), actor=actor, warnings=[])
+        return CitationSource.objects.get(slug="billboard")
+
+    def test_creates_a_child_under_its_parent(self, actor, billboard):
+        warnings: list[str] = []
+        result = ensure_source(
+            _mag("September 29, 1945", "1945-09-29", parent="billboard"),
+            actor=actor,
+            warnings=warnings,
+        )
+        assert result.source_created
+        child = CitationSource.objects.get(slug="1945-09-29")
+        assert child.parent_id == billboard.pk
+        assert warnings == []
+
+    def test_child_reapply_is_idempotent(self, actor, billboard):
+        node = _mag("September 29, 1945", "1945-09-29", parent="billboard")
+        ensure_source(node, actor=actor, warnings=[])
+        warnings: list[str] = []
+        result = ensure_source(node, actor=actor, warnings=warnings)
+        assert not result.source_created
+        assert warnings == []
+        assert CitationSource.objects.filter(slug="1945-09-29").count() == 1
+
+    def test_child_links_backfill_additively(self, actor, billboard):
+        node = _mag("September 29, 1945", "1945-09-29", parent="billboard")
+        ensure_source(node, actor=actor, warnings=[])
+        with_link = _mag(
+            "September 29, 1945",
+            "1945-09-29",
+            parent="billboard",
+            links=[
+                {"url": "https://books.google.com/books?id=x", "link_type": "archive"}
+            ],
+        )
+        warnings: list[str] = []
+        result = ensure_source(with_link, actor=actor, warnings=warnings)
+        assert not result.source_created
+        assert result.links_created == 1
+        child = CitationSource.objects.get(slug="1945-09-29")
+        assert child.links.count() == 1
+
+    def test_namesake_sibling_warns_but_creates(self, actor, billboard):
+        ensure_source(
+            _mag("September 29, 1945", "1945-09-29", parent="billboard"),
+            actor=actor,
+            warnings=[],
+        )
+        warnings: list[str] = []
+        result = ensure_source(
+            _mag("September 29, 1945", "sep-29-1945", parent="billboard"),
+            actor=actor,
+            warnings=warnings,
+        )
+        assert result.source_created
+        assert any("possible duplicate issue" in w for w in warnings)
+        assert billboard.children.count() == 2
+
+    def test_vanished_parent_warns_and_skips(self, actor):
+        warnings: list[str] = []
+        result = ensure_source(
+            _mag("Sep 1945", "1945-09", parent="billboard"),
+            actor=actor,
+            warnings=warnings,
+        )
+        assert not result.source_created
+        assert any("no longer resolves" in w for w in warnings)
+        assert not CitationSource.objects.filter(slug="1945-09").exists()
+
+    def test_plain_nodes_still_resolve_through_the_name_chain(self, actor):
+        # Regression: a non-slug node is untouched by the slug branches.
+        node = _node("A Fanzine", source_type="book")
+        first = ensure_source(node, actor=actor, warnings=[])
+        second = ensure_source(node, actor=actor, warnings=[])
+        assert first.source_created
+        assert not second.source_created
+        assert CitationSource.objects.filter(name="A Fanzine").count() == 1

@@ -78,7 +78,7 @@ CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG = (
 )
 
 
-def _reserved_cite_handles() -> list[str]:
+def reserved_cite_handles() -> list[str]:
     """Root-slug values consumed by the other cite-ref grammars.
 
     A root slug is the left segment of a patch cite ref
@@ -371,13 +371,13 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
                 name="citation_citationsource_slug_required_when_slug_addressed",
             ),
             # A root slug may not shadow the other cite-ref grammars' handles
-            # (``isbn``, the scheme keys) — see ``_reserved_cite_handles``.
+            # (``isbn``, the scheme keys) — see ``reserved_cite_handles``.
             # Roots only: a child slug is the ref's right segment, where those
             # handles aren't special.
             models.CheckConstraint(
                 condition=models.Q(slug__isnull=True)
                 | models.Q(parent__isnull=False)
-                | ~models.Q(slug__in=_reserved_cite_handles()),
+                | ~models.Q(slug__in=reserved_cite_handles()),
                 name="citation_citationsource_slug_not_reserved_handle",
             ),
         ]

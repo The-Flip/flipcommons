@@ -1,20 +1,30 @@
 """Get-or-create citation sources for the data-patch ``sources:`` block.
 
-Flat (roots only) and **additive-only**: ``ensure_root_source`` creates a
-missing source or backfills a missing link, but never overwrites an existing row
-or link. A collision is a warning, never a failure — so a user-created source
-can't wedge the ingest queue. See ``docs/DataPatches.md``.
+**Additive-only**: ``ensure_source`` creates a missing source or backfills a
+missing link, but never overwrites an existing row or link. A collision is a
+warning, never a failure — so a user-created source can't wedge the ingest
+queue. See ``docs/DataPatches.md``.
+
+Three shapes, dispatched on the node: a slug-addressed child (``parent:`` set,
+a magazine issue), a slug-addressed root (``slug:`` set, a magazine), and the
+plain root every other type declares — the original host-then-ISBN-then-name
+chain, untouched. Nesting is expressed by ``parent:``, never by structure.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING, NamedTuple, NotRequired, TypedDict
 from urllib.parse import urlparse
 
-from apps.citation.citation_types import scheme_root_citation_source_info
+from apps.citation.citation_types import (
+    SourceType,
+    citation_type_spec,
+    scheme_root_citation_source_info,
+)
 from apps.citation.hosts import Host, normalize_host
 from apps.citation.source_node import SourceLinkNode, SourceNode
+from apps.core.validators import SLUG_FORMAT_MESSAGE, SLUG_RE
 
 if TYPE_CHECKING:
     from apps.actors.models import Actor
@@ -24,10 +34,11 @@ if TYPE_CHECKING:
 class SourceFields(TypedDict):
     """The model-column subset of a patch source node — no parent, links or children.
 
-    This is ``SourceNode`` minus its ``links``/``children`` keys: the exact set
-    of kwargs that construct a ``CitationSource`` row. Naming each column (rather
-    than a ``dict[str, object]`` bag) lets ``_lookup_source`` read ``name`` as a
-    ``str`` and ``isbn`` as ``str | None`` without a cast.
+    This is ``SourceNode`` minus its ``parent``/``links``/``children`` keys: the
+    exact set of kwargs that construct a ``CitationSource`` row (``parent`` is a
+    slug *reference*, resolved to the FK by the upsert). Naming each column
+    (rather than a ``dict[str, object]`` bag) lets ``_lookup_source`` read
+    ``name`` as a ``str`` and ``isbn`` as ``str | None`` without a cast.
     """
 
     name: str
@@ -41,10 +52,11 @@ class SourceFields(TypedDict):
     isbn: NotRequired[str]
     description: NotRequired[str]
     identifier_key: NotRequired[str]
+    slug: NotRequired[str]
 
 
 class SourceUpsertResult(NamedTuple):
-    """Outcome of one ``ensure_root_source`` call, tallied by the caller.
+    """Outcome of one ``ensure_source`` call, tallied by the caller.
 
     Source-agnostic by design: the data-patch hook reads these counts into its
     ``RunReport`` (a catalog type the citation app must not import).
@@ -98,6 +110,8 @@ def _source_fields(node: SourceNode) -> SourceFields:
         fields["description"] = node["description"]
     if "identifier_key" in node:
         fields["identifier_key"] = node["identifier_key"]
+    if "slug" in node:
+        fields["slug"] = node["slug"]
     return fields
 
 
@@ -185,7 +199,7 @@ def _declared_domains_hosts(node: SourceNode) -> list[Host]:
     the same host before :func:`normalize_host`. Unlike a homepage host this is a
     pure recognition declaration — no display side, no rounding. Order-preserving
     and de-duplicated; the universal DNS/public-suffix guard is applied later by
-    :func:`validate_root_source` and the model's ``clean()`` at mint.
+    :func:`validate_source_node` and the model's ``clean()`` at mint.
 
     A malformed entry whose ``.hostname`` access raises (an unbalanced IPv6
     bracket, ``https://[::1/page``) falls back to the raw string, so the model
@@ -246,7 +260,7 @@ def _spans_two_roots_warning(name: str, host_roots: Sequence[CitationSource]) ->
     Such a node skips whole at apply — picking one owner and minting the others
     would trip the ``host`` ``unique`` and wedge the queue. Names each owning root
     (the merge backlog until citation gardening ships). Shared by the apply-path
-    warn-skip (:func:`ensure_root_source`) and the dry-run preview
+    warn-skip (:func:`_ensure_plain_root`) and the dry-run preview
     (:func:`detect_host_collision`) so the two channels never diverge.
     """
     owners = ", ".join(sorted(repr(r.name) for r in host_roots))
@@ -299,7 +313,83 @@ def _ensure_root_domains(
 # ---------------------------------------------------------------------------
 
 
-def validate_root_source(node: SourceNode) -> None:
+def _validate_slug_addressing(
+    node: SourceNode, declared_root_slugs: Collection[str]
+) -> None:
+    """Read-phase checks for the ``slug``/``parent`` verbs on a source node.
+
+    Explicit (not via the model's CHECKs — those are excluded from the in-memory
+    ``full_clean`` because the partial-unique validations would reject the
+    legitimate re-declare case): ``slug``/``parent`` only on a slug-addressed
+    type, and required there; both in the system slug grammar; a root slug clear
+    of the reserved cite handles; and every ``parent:`` resolving to a root of
+    the same type — already in the DB, or declared elsewhere in the same block
+    (``declared_root_slugs``, the caller's parentless-node slugs). The
+    committed-state read is what lets a typo'd parent fail at ``--dry-run``
+    instead of skipping at apply. A parented node may not declare recognition
+    ``domains`` — those are root-only.
+    """
+    from django.core.exceptions import ValidationError
+
+    from apps.citation.models import CitationSource, reserved_cite_handles
+
+    slug = node.get("slug", "")
+    parent_ref = node.get("parent", "")
+    source_type = node["source_type"]
+    addressed = (
+        source_type in SourceType.values
+        and citation_type_spec(source_type).slug_addressed
+    )
+    if not addressed:
+        # An invalid source_type is the field validator's error (caught by the
+        # model full_clean before this runs); here it just isn't slug-addressed.
+        for key, value in (("slug", slug), ("parent", parent_ref)):
+            if value:
+                raise ValidationError(
+                    {
+                        key: f"'{key}' is only valid on a slug-addressed type "
+                        f"(a {source_type} source is addressed another way)"
+                    }
+                )
+        return
+    if not slug:
+        raise ValidationError(
+            {
+                "slug": f"a {source_type} source is slug-addressed and requires "
+                f"an authored 'slug'"
+            }
+        )
+    if not SLUG_RE.fullmatch(slug):
+        raise ValidationError({"slug": SLUG_FORMAT_MESSAGE})
+    if parent_ref:
+        if not SLUG_RE.fullmatch(parent_ref):
+            raise ValidationError({"parent": SLUG_FORMAT_MESSAGE})
+        if node.get("domains"):
+            raise ValidationError({"domains": "recognition domains live on roots only"})
+        if parent_ref not in declared_root_slugs and not (
+            CitationSource.objects.roots()
+            .filter(slug=parent_ref, source_type=source_type)
+            .exists()
+        ):
+            raise ValidationError(
+                {
+                    "parent": f"parent {parent_ref!r} is neither an existing "
+                    f"{source_type} root nor declared in this patch's sources: "
+                    f"block"
+                }
+            )
+    elif slug in reserved_cite_handles():
+        raise ValidationError(
+            {
+                "slug": f"{slug!r} is reserved — it is the cite prefix of another "
+                f"citation form (isbn: or a scheme key)"
+            }
+        )
+
+
+def validate_source_node(
+    node: SourceNode, *, declared_root_slugs: Collection[str] = ()
+) -> None:
     """Field-validate a patch ``sources:`` node in memory (no writes).
 
     Builds the ``CitationSource``, its ``CitationSourceLink`` rows and its
@@ -313,9 +403,12 @@ def validate_root_source(node: SourceNode) -> None:
     ``homepage ∪ domains`` set, so a bad **homepage** host fails here at
     ``--dry-run`` rather than crashing mid-apply at mint. Validating through the
     model's ``clean()`` keeps the host guard single-sourced (no forked predicate
-    check). Raises :class:`django.core.exceptions.ValidationError`; the patch
-    adapter maps it to a ``PatchError`` (so it surfaces at ``--dry-run`` before
-    shipping).
+    check). The ``slug``/``parent`` verbs are validated by
+    :func:`_validate_slug_addressing` (see there for why they sit outside the
+    model ``full_clean``); ``declared_root_slugs`` is the same-block declared
+    parentless slugs a ``parent:`` may resolve against. Raises
+    :class:`django.core.exceptions.ValidationError`; the patch adapter maps it
+    to a ``PatchError`` (so it surfaces at ``--dry-run`` before shipping).
     """
     from django.core.exceptions import ValidationError
 
@@ -326,11 +419,15 @@ def validate_root_source(node: SourceNode) -> None:
     )
 
     # Validate field/host shape only — ``created_by``/``updated_by`` are stamped
-    # at write time (``ensure_root_source``), not on these throwaway instances,
-    # so exclude them from the non-null check alongside the unset parent FK.
+    # at write time (``ensure_source``), not on these throwaway instances, so
+    # exclude them from the non-null check alongside the unset parent FK.
+    # ``slug`` is excluded because its partial-unique constraints would reject
+    # the legitimate found case; ``_validate_slug_addressing`` owns it instead.
     attribution = ["created_by", "updated_by"]
     source = CitationSource(**_source_fields(node))
-    source.full_clean(exclude=attribution, validate_unique=False)
+    source.full_clean(exclude=[*attribution, "slug"], validate_unique=False)
+
+    _validate_slug_addressing(node, declared_root_slugs)
 
     seen_urls: set[str] = set()
     for link in node.get("links", []):
@@ -401,7 +498,7 @@ def _validate_scheme_root_citation_source_info(node: SourceNode) -> None:
 def detect_host_collision(node: SourceNode) -> str | None:
     """Committed-state recognition-host collision for one node, or ``None``.
 
-    The dry-run preview of the whole-node skip :func:`ensure_root_source` would
+    The dry-run preview of the whole-node skip :func:`_ensure_plain_root` would
     warn on at apply: a pure :func:`_roots_owning_hosts` read returning the
     spans-two-roots warning when the node's recognition hosts are owned by >1
     distinct root. An author validating against the dev DB sees the skip before
@@ -424,7 +521,152 @@ def detect_host_collision(node: SourceNode) -> str | None:
     return None
 
 
-def ensure_root_source(
+def _ensure_links(
+    obj: CitationSource,
+    links: Sequence[SourceLinkNode],
+    *,
+    warnings: list[str],
+    actor: Actor,
+) -> int:
+    """Additively ensure each declared link on a found source.
+
+    Create a missing URL, no-op an identical one, warn on a same-URL link whose
+    type/label diverge — never overwrite. Returns the number created.
+    """
+    existing = {link.url: link for link in obj.links.all()}
+    links_created = 0
+    for link in links:
+        url = link["url"]
+        current = existing.get(url)
+        if current is None:
+            _create_link(obj, link, actor=actor)
+            links_created += 1
+        elif current.link_type != link["link_type"] or current.label != link.get(
+            "label", ""
+        ):
+            warnings.append(
+                f"Citation source {obj.name!r} link {url!r} already exists with a "
+                f"different type/label; left unchanged."
+            )
+    return links_created
+
+
+def ensure_source(
+    node: SourceNode,
+    *,
+    actor: Actor,
+    warnings: list[str],
+) -> SourceUpsertResult:
+    """Additively get-or-create one ``sources:`` node. Never overwrites.
+
+    Dispatch on the node's shape: ``parent:`` present → a slug-addressed child
+    under a slug-resolved root; ``slug:`` present → a slug-addressed root; else
+    the original host-then-ISBN-then-name chain (:func:`_ensure_plain_root`),
+    which still owns every non-slug-addressed node. All branches share the
+    additive semantics: create if absent, warn on declared-field divergence,
+    backfill missing links, never raise on a collision.
+    """
+    if "parent" in node:
+        return _ensure_slug_child(node, actor=actor, warnings=warnings)
+    if "slug" in node:
+        return _ensure_slug_root(node, actor=actor, warnings=warnings)
+    return _ensure_plain_root(node, actor=actor, warnings=warnings)
+
+
+def _ensure_slug_root(
+    node: SourceNode, *, actor: Actor, warnings: list[str]
+) -> SourceUpsertResult:
+    """Get-or-create a slug-addressed root, resolved by its authored slug.
+
+    The slug is the identity — the name key never runs, so a renamed magazine
+    re-declared under its slug is found, not duplicated. Recognition-domain
+    handling matches the plain-root path (a magazine may declare a homepage).
+    """
+    from apps.citation.models import CitationSource
+
+    fields = _source_fields(node)
+    links = node.get("links", [])
+    recognition_hosts = _declared_recognition_hosts(node)
+    obj = CitationSource.objects.roots().filter(slug=fields["slug"]).first()
+    if obj is None:
+        obj = _create_source(fields, actor=actor)
+        for link in links:
+            _create_link(obj, link, actor=actor)
+        _ensure_root_domains(obj, recognition_hosts, warnings=warnings, actor=actor)
+        return SourceUpsertResult(source_created=True, links_created=len(links))
+    divergent = sorted(k for k, v in fields.items() if getattr(obj, k) != v)
+    if divergent:
+        warnings.append(
+            f"Citation source {fields['name']!r} resolved by slug "
+            f"{fields['slug']!r} to existing root {obj.name!r}; declared fields "
+            f"{divergent} differ and were left unchanged."
+        )
+    links_created = _ensure_links(obj, links, warnings=warnings, actor=actor)
+    _ensure_root_domains(obj, recognition_hosts, warnings=warnings, actor=actor)
+    return SourceUpsertResult(source_created=False, links_created=links_created)
+
+
+def _ensure_slug_child(
+    node: SourceNode, *, actor: Actor, warnings: list[str]
+) -> SourceUpsertResult:
+    """Get-or-create a slug-addressed child under its slug-resolved parent root.
+
+    The parent resolved at read phase (committed or same-block, parentless
+    processed first), so a miss here means the state changed between read and
+    apply — warn and skip the node whole, honoring the module's never-fail
+    contract. A declared child whose *name* matches an existing sibling under a
+    different slug warns too (two campaigns inventing ``1945-09-29`` and
+    ``sep-29-1945`` for one issue) but still creates: a cite in this patch may
+    reference the new slug, and a human merges duplicates later. Children mint
+    no recognition domains — those are root-only.
+    """
+    from apps.citation.models import CitationSource
+
+    fields = _source_fields(node)
+    links = node.get("links", [])
+    parent_slug = node["parent"]
+    parent = (
+        CitationSource.objects.roots()
+        .filter(slug=parent_slug, source_type=fields["source_type"])
+        .first()
+    )
+    if parent is None:
+        warnings.append(
+            f"Citation source {fields['name']!r} declares parent "
+            f"{parent_slug!r}, which no longer resolves to a "
+            f"{fields['source_type']} root; skipped the node (no writes)."
+        )
+        return SourceUpsertResult(source_created=False, links_created=0)
+    obj = CitationSource.objects.filter(parent=parent, slug=fields["slug"]).first()
+    if obj is None:
+        namesake = (
+            CitationSource.objects.filter(parent=parent, name=fields["name"])
+            .exclude(slug=fields["slug"])
+            .first()
+        )
+        if namesake is not None:
+            warnings.append(
+                f"Citation source {fields['name']!r} (slug {fields['slug']!r}) "
+                f"has the same name as existing sibling slug {namesake.slug!r} "
+                f"under {parent.name!r} — possible duplicate issue; created "
+                f"anyway."
+            )
+        obj = _create_source(fields, actor=actor, parent=parent)
+        for link in links:
+            _create_link(obj, link, actor=actor)
+        return SourceUpsertResult(source_created=True, links_created=len(links))
+    divergent = sorted(k for k, v in fields.items() if getattr(obj, k) != v)
+    if divergent:
+        warnings.append(
+            f"Citation source {fields['name']!r} resolved by slug "
+            f"{parent_slug}:{fields['slug']} to an existing child; declared "
+            f"fields {divergent} differ and were left unchanged."
+        )
+    links_created = _ensure_links(obj, links, warnings=warnings, actor=actor)
+    return SourceUpsertResult(source_created=False, links_created=links_created)
+
+
+def _ensure_plain_root(
     node: SourceNode,
     *,
     actor: Actor,
@@ -501,21 +743,6 @@ def ensure_root_source(
             f"{divergent} differ from the stored values and were left unchanged."
         )
 
-    # Additive links: create a missing URL, warn on a divergent same-URL link.
-    existing = {link.url: link for link in obj.links.all()}
-    links_created = 0
-    for link in links:
-        url = link["url"]
-        current = existing.get(url)
-        if current is None:
-            _create_link(obj, link, actor=actor)
-            links_created += 1
-        elif current.link_type != link["link_type"] or current.label != link.get(
-            "label", ""
-        ):
-            warnings.append(
-                f"Citation source {name!r} link {url!r} already exists with a "
-                f"different type/label; left unchanged."
-            )
+    links_created = _ensure_links(obj, links, warnings=warnings, actor=actor)
     _ensure_root_domains(obj, recognition_hosts, warnings=warnings, actor=actor)
     return SourceUpsertResult(source_created=False, links_created=links_created)

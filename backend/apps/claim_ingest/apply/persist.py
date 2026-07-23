@@ -42,6 +42,7 @@ from apps.claim_ingest.plan import (
     PlannedClaimAssert,
     PlannedEntityCreate,
     SchemeCitationRef,
+    SourceCitationRef,
     WebCitationRef,
 )
 from apps.core.types import (
@@ -277,6 +278,8 @@ def _cite_resolution_error(ref: CitationRef, exc: Exception) -> str:
             descriptor = repr(f"{scheme}:{identifier}")
         case IsbnCitationRef(isbn=isbn):
             descriptor = repr(f"isbn:{isbn}")
+        case SourceCitationRef(root_slug=root_slug, child_slug=child_slug):
+            descriptor = repr(f"{root_slug}:{child_slug}")
         case _:
             assert_never(ref)
     detail = "; ".join(exc.messages) if isinstance(exc, ValidationError) else str(exc)
@@ -312,6 +315,7 @@ def _resolve_cite_source_id(
             get_isbn_source,
             get_or_create_external_source,
             get_or_create_web_source,
+            get_slug_source,
         )
 
         try:
@@ -328,6 +332,9 @@ def _resolve_cite_source_id(
                     # Read-only: an authored work is seeded, never minted by a
                     # cite, so this arm takes no ``actor``.
                     source_id = get_isbn_source(isbn).pk
+                case SourceCitationRef(root_slug=root_slug, child_slug=child_slug):
+                    # Read-only like isbn: an issue is declared, never minted.
+                    source_id = get_slug_source(root_slug, child_slug).pk
                 case _:
                     assert_never(ref)
         except (ValidationError, ValueError, ObjectDoesNotExist) as exc:
