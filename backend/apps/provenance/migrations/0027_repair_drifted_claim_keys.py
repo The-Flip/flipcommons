@@ -24,10 +24,11 @@ runs only inside ``validate_single_relationship_claim``, and ``0026`` used
 entirely. That is the case for putting the invariant in the database: a
 constraint is the only layer a migration cannot walk past.
 
-Measured on a rebuild of the production data: 2322 affected rows, all active,
-all from the IPDB ingest actor, none colliding with an existing canonical claim.
-Re-checked at run time rather than trusted — this migration would sooner abort
-than guess which of two rival claims survives.
+When this was written, every affected row was active, carried the IPDB ingest
+actor, and collided with nothing. None of that is assumed: the collision check
+and the residue sweep below re-derive it against whatever database this runs
+on, because a collision means two rival claims from one actor and choosing a
+survivor is not a migration's call.
 """
 
 from __future__ import annotations

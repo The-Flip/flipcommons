@@ -7,13 +7,14 @@ It is materialized into a column so the partial-unique index and the grouping
 index can exist, which makes it a denormalized cache carrying the usual
 obligation: change the input, recompute the output.
 
-Catalog migration ``0026`` changed ``field_name`` on 2322 rows and did not
-recompute ``claim_key``, leaving rows that advertise a slot no longer derivable
-from anything they contain. Nothing rejected it — the canonicality check
-(``validation`` rule 8) runs only for relationship claims, and a migration's
-raw ``.update()`` skips model validation entirely. The database is the only
-layer that sees a migration coming, so the backstop lives there; the second
-half of this file covers the validation-boundary check in front of it.
+Catalog migration ``0026`` changed ``field_name`` on the ``ipdb.model_number``
+claims and did not recompute ``claim_key``, leaving rows that advertise a slot
+no longer derivable from anything they contain. Nothing rejected it — the
+canonicality check (``validation`` rule 8) runs only for relationship claims,
+and a migration's raw ``.update()`` skips model validation entirely. The
+database is the only layer that sees a migration coming, so the backstop lives
+there; the second half of this file covers the validation-boundary check in
+front of it.
 
 The constraint is deliberately weaker than the full rule: it cannot know which
 claims are relationship claims (that needs ``_meta`` introspection), so it

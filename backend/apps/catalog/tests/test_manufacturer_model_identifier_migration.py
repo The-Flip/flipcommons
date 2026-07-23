@@ -48,8 +48,8 @@ class TestManufacturerModelIdentifierMigration:
         assert claim.field_name == "manufacturer_model_identifier"
         # claim_key is derived from field_name, so it has to move with it.
         # Asserting only the line above is what let the original migration ship
-        # having rewritten the input and not the output, stranding 2322 rows in
-        # a slot no later claim could reach. See provenance 0027.
+        # having rewritten the input and not the output, stranding every
+        # promoted row in a slot no later claim could reach. See provenance 0027.
         assert claim.claim_key == "manufacturer_model_identifier"
 
     def test_blank_parked_value_drops_key_leaves_null(self, ipdb):

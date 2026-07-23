@@ -14,8 +14,8 @@ dedicated column exists, two rewrites make the promotion complete:
    ``claim_key`` must move too because it is derived from ``field_name``
    (``make_claim_key`` returns the field name verbatim for a scalar claim),
    and it is what the Sources page and Edit History group rivals by. The first
-   version of this migration rewrote only ``field_name``, stranding 2322 rows
-   in a slot no later claim could reach, so one column's rival values stopped
+   version of this migration rewrote only ``field_name``, stranding every
+   promoted row in a slot no later claim could reach, so rival values stopped
    competing and both rendered as winners. Provenance ``0027`` repairs those
    rows and adds the CHECK constraint that now makes this class of mistake fail
    at the database rather than in the UI months later.
