@@ -119,6 +119,77 @@ describe('CitationCreateStage', () => {
     expect(screen.getByLabelText(/Year/)).toBeInTheDocument();
   });
 
+  it('shows the Slug field only for a slug-addressed type', async () => {
+    const user = userEvent.setup();
+    render(CitationCreateStage, {
+      parentContext: null,
+      seed: { kind: 'name', name: 'Billboard' },
+      onsourcecreated: noop,
+      oncancel: noop,
+      onback: noop,
+    });
+
+    // Book (the default) is not slug-addressed — no Slug field.
+    expect(screen.queryByLabelText(/Slug/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'magazine' }));
+    expect(screen.getByLabelText(/Slug/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'book' }));
+    expect(screen.queryByLabelText(/Slug/)).not.toBeInTheDocument();
+  });
+
+  it('auto-proposes the slug from the name until the user diverges it', async () => {
+    const user = userEvent.setup();
+    render(CitationCreateStage, {
+      parentContext: null,
+      seed: { kind: 'name', name: '' },
+      onsourcecreated: noop,
+      oncancel: noop,
+      onback: noop,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'magazine' }));
+    await user.type(screen.getByLabelText('Name'), 'GameRoom Magazine');
+    expect((screen.getByLabelText(/Slug/) as HTMLInputElement).value).toBe('gameroom-magazine');
+
+    // Diverge the slug; further name edits no longer overwrite it.
+    await user.clear(screen.getByLabelText(/Slug/));
+    await user.type(screen.getByLabelText(/Slug/), 'gameroom');
+    await user.type(screen.getByLabelText('Name'), ' Monthly');
+    expect((screen.getByLabelText(/Slug/) as HTMLInputElement).value).toBe('gameroom');
+  });
+
+  it('submits the slug for a magazine and null for other types', async () => {
+    const user = userEvent.setup();
+    mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
+    render(CitationCreateStage, {
+      parentContext: null,
+      seed: { kind: 'name', name: 'Billboard' },
+      onsourcecreated: noop,
+      oncancel: noop,
+      onback: noop,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'magazine' }));
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
+    await waitFor(() => expect(mockPOST).toHaveBeenCalled());
+    expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
+      body: expect.objectContaining({
+        name: 'Billboard',
+        source_type: 'magazine',
+        slug: 'billboard',
+      }),
+    });
+
+    mockPOST.mockReset();
+    mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
+    await user.click(screen.getByRole('button', { name: 'book' }));
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
+    await waitFor(() => expect(mockPOST).toHaveBeenCalled());
+    expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
+      body: expect.objectContaining({ source_type: 'book', slug: null }),
+    });
+  });
+
   it('an extraction (ISBN) draft prefills Publisher and Year; a manual name seed does not', () => {
     const { unmount } = render(CitationCreateStage, {
       parentContext: null,

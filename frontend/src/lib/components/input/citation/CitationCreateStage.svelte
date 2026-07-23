@@ -2,10 +2,12 @@
 <script lang="ts">
   import client from '$lib/api/client';
   import type { ParentContext, CreateSeed } from './citation-types';
+  import { citationTypeMeta } from '$lib/citation-types';
   import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
+  import { reconcileSlug } from '$lib/create-form';
 
   type SourceType = 'book' | 'magazine' | 'video';
 
@@ -56,6 +58,8 @@
   let author = $state(draft?.author ?? parentContext?.author ?? '');
   let publisher = $state(draft?.publisher ?? '');
   let year = $state<number | null>(draft?.year ?? null);
+  let slug = $state('');
+  let syncedSlug = $state('');
   let error = $state('');
   let submitting = $state(false);
   let nameInputEl: HTMLInputElement | undefined = $state();
@@ -68,6 +72,20 @@
   // Year is also prompted for a manually-created video: a movie's year is its
   // main disambiguator across remakes.
   let showYear = $derived(showExtractedFields || sourceType === 'video');
+  // A slug-addressed type (magazine, per the generated meta — never a
+  // hardcoded type name) requires an authored cite handle.
+  let slugAddressed = $derived(citationTypeMeta(sourceType).slugAddressed);
+
+  // Auto-propose the slug from the name (shared sync-until-diverged behavior)
+  // so the citation flow inherits create-form's slugify instead of its own copy.
+  $effect(() => {
+    if (!slugAddressed) return;
+    const next = reconcileSlug({ name, slug, syncedSlug });
+    if (next.slug !== slug) {
+      slug = next.slug;
+      syncedSlug = next.syncedSlug;
+    }
+  });
 
   $effect(() => {
     if (nameInputEl) {
@@ -87,6 +105,10 @@
       error = 'Name is required.';
       return;
     }
+    if (slugAddressed && !slug.trim()) {
+      error = 'Slug is required.';
+      return;
+    }
 
     submitting = true;
     error = '';
@@ -102,6 +124,7 @@
         isbn: draft?.isbn ?? null,
         description: '',
         parent_id: parentContext?.id ?? null,
+        slug: slugAddressed ? slug : null,
       },
     });
     submitting = false;
@@ -151,6 +174,11 @@
     </div>
   {/if}
   <TextField label="Name" bind:value={name} bind:inputRef={nameInputEl} noAutofill />
+  {#if slugAddressed}
+    <!-- The authored cite handle (billboard, 1945-09-29) — auto-proposed from
+         the name until the user diverges it. -->
+    <TextField label="Slug" bind:value={slug} noAutofill />
+  {/if}
   <TextField label="Author" optional bind:value={author} noAutofill />
   {#if showExtractedFields}
     <TextField label="Publisher" optional bind:value={publisher} noAutofill />

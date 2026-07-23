@@ -33,7 +33,9 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from ninja import Field, Schema
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator, model_validator
+
+from apps.citation.citation_types import citation_type_spec
 
 from .models import (
     CITATION_SOURCE_AUTHOR_MAX_LENGTH,
@@ -45,6 +47,7 @@ from .models import (
     CITATION_SOURCE_LINK_URL_MAX_LENGTH,
     CITATION_SOURCE_NAME_MAX_LENGTH,
     CITATION_SOURCE_PUBLISHER_MAX_LENGTH,
+    CITATION_SOURCE_SLUG_MAX_LENGTH,
 )
 
 # String fields that are non-nullable CharFields on the model: an update that
@@ -70,6 +73,7 @@ DescriptionStr = Annotated[
     str, Field(max_length=CITATION_SOURCE_DESCRIPTION_MAX_LENGTH)
 ]
 IdentifierStr = Annotated[str, Field(max_length=CITATION_SOURCE_IDENTIFIER_MAX_LENGTH)]
+SlugStr = Annotated[str, Field(max_length=CITATION_SOURCE_SLUG_MAX_LENGTH)]
 LinkUrlStr = Annotated[str, Field(max_length=CITATION_SOURCE_LINK_URL_MAX_LENGTH)]
 LinkLabelStr = Annotated[str, Field(max_length=CITATION_SOURCE_LINK_LABEL_MAX_LENGTH)]
 
@@ -86,9 +90,17 @@ class CitationSourceSearchSchema(Schema):
     publisher: str = Field(description="Publisher, or an empty string.")
     year: int | None = Field(None, description="Publication year, if known.")
     isbn: str | None = Field(None, description="ISBN, if known.")
+    slug: str | None = Field(
+        None,
+        description="Authored cite handle for a slug-addressed (magazine) source; null on other types.",
+    )
     parent_id: int | None = Field(
         None,
         description="Identifier of the root source this is a child of, or null if it is itself a root.",
+    )
+    parent_name: str | None = Field(
+        None,
+        description="Display name of the parent root, so a child (a magazine issue) can render in context; null on roots.",
     )
     has_children: bool = Field(
         False,
@@ -230,12 +242,41 @@ class CitationSourceCreateSchema(Schema):
         None,
         description="Identifier of the root source to nest this under, or null to create a root.",
     )
+    slug: SlugStr | None = Field(
+        None,
+        description=(
+            "Authored cite handle, in the system slug grammar. Required when "
+            "the chosen type is slug-addressed (magazine) and rejected "
+            "otherwise."
+        ),
+    )
 
     @field_validator("isbn", mode="before")
     @classmethod
     def coerce_empty_isbn_to_none(cls, v: object) -> object:
         """Empty string → None for nullable unique field."""
         return None if v == "" else v
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def coerce_empty_slug_to_none(cls, v: object) -> object:
+        """Empty string → None, so the presence check below sees one shape."""
+        return None if v == "" else v
+
+    @model_validator(mode="after")
+    def slug_iff_slug_addressed(self) -> CitationSourceCreateSchema:
+        """Slug present exactly on a slug-addressed type (the model CHECK's
+        API-boundary twin, so the error names the field instead of a constraint)."""
+        addressed = citation_type_spec(self.source_type).slug_addressed
+        if addressed and self.slug is None:
+            raise ValueError(
+                f"a {self.source_type} source is slug-addressed and requires a slug"
+            )
+        if not addressed and self.slug is not None:
+            raise ValueError(
+                f"slug is only valid on a slug-addressed type, not {self.source_type}"
+            )
+        return self
 
 
 class CitationCiteUrlSchema(Schema):
@@ -327,12 +368,27 @@ class CitationSourceUpdateSchema(Schema):
     description: DescriptionStr | None = Field(
         None, description="New free-text description."
     )
+    slug: SlugStr | None = Field(
+        None,
+        description=(
+            "New authored cite handle (a typo fix). Only valid on a "
+            "slug-addressed (magazine) source, and cannot be cleared — the "
+            "model requires one there."
+        ),
+    )
 
     @field_validator(*NONNULLABLE_STR_FIELDS, mode="before")
     @classmethod
     def coerce_null_to_empty(cls, v: object) -> object:
         """None → empty string for non-nullable CharFields."""
         return "" if v is None else v
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def coerce_empty_slug_to_none(cls, v: object) -> object:
+        """Empty/null → None, the isbn-style nullable treatment —
+        ``nullable_id_not_empty`` would reject a stored empty string."""
+        return None if v == "" else v
 
     @field_validator("isbn", mode="before")
     @classmethod
@@ -351,6 +407,10 @@ class CitationSourceChildSchema(Schema):
     )
     year: int | None = Field(None, description="Publication year, if known.")
     isbn: str | None = Field(None, description="ISBN, if known.")
+    slug: str | None = Field(
+        None,
+        description="Authored cite handle for a slug-addressed (magazine) child; null on other types.",
+    )
     skip_locator: bool = Field(
         False,
         description=(
@@ -392,6 +452,10 @@ class CitationSourceDetailSchema(Schema):
         description="Free-text note about the date, or an empty string."
     )
     isbn: str | None = Field(None, description="ISBN, if known.")
+    slug: str | None = Field(
+        None,
+        description="Authored cite handle for a slug-addressed (magazine) source; null on other types.",
+    )
     description: str = Field(description="Free-text description, or an empty string.")
     identifier_key: str = Field(
         "",

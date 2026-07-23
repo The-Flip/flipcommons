@@ -45,18 +45,23 @@ export function createDebouncedSearch<T>(
 /**
  * Format a citation source for display in autocomplete results.
  *
+ * A child row leads with its parent, so an issue reads in context
+ * ("Vol. 10 No. 6, March 1994 — GameRoom Magazine"); author/year follow.
+ *
  * Examples:
  *   "The Encyclopedia of Pinball"
  *   "The Encyclopedia of Pinball — Richard Bueschel"
  *   "The Encyclopedia of Pinball — Richard Bueschel, 1996"
- *   "The Encyclopedia of Pinball — 1996"
+ *   "September 29, 1945 — Billboard, 1945"
  */
 export function formatCitationResult(source: {
   name: string;
   author: string;
   year?: number | null;
+  parent_name?: string | null;
 }): string {
   const detail: string[] = [];
+  if (source.parent_name) detail.push(source.parent_name);
   if (source.author) detail.push(source.author);
   if (source.year != null) detail.push(String(source.year));
   if (detail.length === 0) return source.name;

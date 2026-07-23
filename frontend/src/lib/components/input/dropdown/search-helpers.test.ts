@@ -153,4 +153,21 @@ describe('formatCitationResult', () => {
       'A Book \u2014 John Doe, 1996',
     );
   });
+
+  it('a child leads with its parent (a magazine issue in context)', () => {
+    expect(
+      formatCitationResult({
+        name: 'September 29, 1945',
+        author: '',
+        year: 1945,
+        parent_name: 'Billboard',
+      }),
+    ).toBe('September 29, 1945 \u2014 Billboard, 1945');
+  });
+
+  it('a root passes a null parent_name through unchanged', () => {
+    expect(
+      formatCitationResult({ name: 'Billboard', author: '', year: null, parent_name: null }),
+    ).toBe('Billboard');
+  });
 });
