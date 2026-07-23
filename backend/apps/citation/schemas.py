@@ -52,7 +52,6 @@ from .models import (
 # ``CitationSourceUpdateSchema.coerce_null_to_empty``).
 NONNULLABLE_STR_FIELDS = (
     "name",
-    "source_type",
     "author",
     "publisher",
     "date_note",
@@ -301,13 +300,19 @@ class CitationSourceUpdateSchema(Schema):
     Omitted fields are left unchanged (the endpoint applies only the keys the
     client sends). Sending ``null`` for a non-nullable string field clears it to
     an empty string; sending ``null`` (or empty) for ``isbn`` clears it to null.
+
+    ``source_type`` is deliberately absent — it is immutable through the API.
+    Nothing revalidates a type change against the parent, children, ISBN or
+    recognition domains (``clean()`` only checks the grandchild rule), so a
+    "valid" new type could silently corrupt a hierarchy. A mistyped fresh
+    source is deleted and recreated; a cited or child-bearing one is an admin
+    job. ``extra="forbid"`` turns a stale client's ``source_type`` into a loud
+    422 instead of a silently-ignored key.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     name: NameStr | None = Field(None, description="New display name.")
-    source_type: str | None = Field(
-        None,
-        description='New citation source type: "book", "magazine", "web" or "video".',
-    )
     author: AuthorStr | None = Field(None, description="New author or creator.")
     publisher: PublisherStr | None = Field(None, description="New publisher.")
     year: int | None = Field(None, description="New publication year.")

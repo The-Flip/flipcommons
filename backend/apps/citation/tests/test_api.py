@@ -1293,6 +1293,26 @@ class TestUpdateCitationSource:
         resp = _patch(client, f"/api/citation-sources/{citation_source.pk}/", {})
         assert resp.status_code == 422
 
+    def test_source_type_in_mixed_payload_returns_422(
+        self, client, user, citation_source
+    ):
+        """``source_type`` is immutable; a payload carrying it is rejected whole.
+
+        The mixed payload is the sharp case: without ``extra="forbid"`` the
+        unknown key would be silently dropped and the rest would land with a
+        200, leaving a stale client believing the type change took.
+        """
+        client.force_login(user)
+        resp = _patch(
+            client,
+            f"/api/citation-sources/{citation_source.pk}/",
+            {"name": "New Name", "source_type": "magazine"},
+        )
+        assert resp.status_code == 422
+        citation_source.refresh_from_db()
+        assert citation_source.source_type == "book"
+        assert citation_source.name != "New Name"
+
     def test_nonexistent_returns_404(self, client, user):
         client.force_login(user)
         resp = _patch(client, "/api/citation-sources/99999/", {"name": "X"})
