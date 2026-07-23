@@ -38,7 +38,10 @@ export interface ValueSupport {
   /** Canonical JSON form of the value — stable `{#each}` key within a slot. */
   key: string;
   /** Page-unique identity, for state the page keeps per value. Claim keys are
-   *  unique within an entity, so pairing one with a value key is too. */
+   *  unique within an entity, so pairing one with a value key is too. The `:`
+   *  joining the two cannot blur that pair even though claim keys contain their
+   *  own colons: a value key is `JSON.stringify` output, and no suffix of one is
+   *  itself valid JSON output, so the split point can never move. */
   uid: string;
   value: ClaimValueSchema;
   /** Whether the value is prose — a markdown field, the only kind whose text
@@ -309,7 +312,7 @@ function freezeValue(
   }
   return {
     key: draft.key,
-    uid: `${claimKey} ${draft.key}`,
+    uid: `${claimKey}:${draft.key}`,
     value: draft.value,
     isProse,
     supporters: [...draft.supporters.values()].sort((a, b) =>
