@@ -918,7 +918,12 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
         n for n in sources if "parent" in n
     ]
     plan.pre_write_hooks.append(_make_sources_hook(ordered, plan.source.actor))
-    plan.dry_run_preview_hooks.append(_make_sources_preview_hook(ordered))
+    # The collision preview models the plain-root chain only: a host set
+    # spanning two roots makes THAT path skip the whole node, but a slug node
+    # resolves by slug and handles occupied domains per-host at apply — so a
+    # plain preview over a slug node would claim a skip that never happens.
+    plain = [n for n in ordered if "slug" not in n and "parent" not in n]
+    plan.dry_run_preview_hooks.append(_make_sources_preview_hook(plain))
 
 
 def _validate_source_cite_refs(plan: IngestPlan, sources: list[SourceNode]) -> None:
@@ -996,13 +1001,15 @@ def _make_sources_hook(sources: list[SourceNode], actor: Actor) -> PreWriteHook:
 
 
 def _make_sources_preview_hook(sources: list[SourceNode]) -> DryRunPreviewHook:
-    """Build the dry-run preview hook for a patch's citation sources.
+    """Build the dry-run preview hook for a patch's **plain** citation sources.
 
     Read-only counterpart to ``_make_sources_hook``: a pure committed-state
     ``detect_host_collision`` read per node, appending the spans-two-roots warning
     so an author sees the whole-node skip at ``--dry-run`` before publishing. The
     live path runs the authoritative ``_make_sources_hook`` instead, so the
-    collision warns exactly once on each path.
+    collision warns exactly once on each path. The caller passes plain
+    (non-slug) nodes only — a slug node's occupied-domain warnings surface at
+    apply, per the committed-state-preview stance.
     """
 
     def hook(report: RunReport) -> None:

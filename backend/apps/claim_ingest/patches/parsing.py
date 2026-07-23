@@ -346,16 +346,18 @@ def _parse_link_shape(link: object, where: str) -> None:
 def _parse_source_node(entry: object, where: str) -> SourceNode:
     """Validate one `sources:` node's shape and return it as a SourceNode.
 
-    Shape only — required keys, no unknown keys, `children` rejected (v1 is
-    flat), link mappings well-formed. Field *values* (enum, ranges, URL format)
-    are validated against the model in build_plan's read phase.
+    Shape only — required keys, no unknown keys, `children` rejected (nesting
+    is spelled `parent:`, never by structure), link mappings well-formed.
+    Field *values* (enum, ranges, URL format) are validated against the model
+    in build_plan's read phase.
     """
     if not isinstance(entry, dict):
         raise PatchError(f"{where} must be a mapping")
     if "children" in entry:
         raise PatchError(
-            f"{where}: nested 'children' is unsupported — v1 `sources:` is flat "
-            f"(create child sources via 'cite:' instead)"
+            f"{where}: nested 'children' is unsupported — nesting is expressed "
+            f"by reference, not structure: declare a magazine issue as its own "
+            f"node with 'parent: <root-slug>', or create web pages via 'cite:'"
         )
     unknown = set(entry) - ALLOWED_SOURCE_KEYS
     if unknown:

@@ -331,7 +331,11 @@ def _validate_slug_addressing(
     """
     from django.core.exceptions import ValidationError
 
-    from apps.citation.models import CitationSource, reserved_cite_handles
+    from apps.citation.models import (
+        CITATION_SOURCE_SLUG_MAX_LENGTH,
+        CitationSource,
+        reserved_cite_handles,
+    )
 
     slug = node.get("slug", "")
     parent_ref = node.get("parent", "")
@@ -361,9 +365,24 @@ def _validate_slug_addressing(
         )
     if not SLUG_RE.fullmatch(slug):
         raise ValidationError({"slug": SLUG_FORMAT_MESSAGE})
+    # Length is normally the model field's check, but ``slug`` is excluded
+    # from the read-phase full_clean (its partial uniques would reject the
+    # found case) — without this, an overlong slug passes --dry-run and
+    # raises mid-apply, wedging the queue.
+    if len(slug) > CITATION_SOURCE_SLUG_MAX_LENGTH:
+        raise ValidationError(
+            {"slug": f"slug exceeds {CITATION_SOURCE_SLUG_MAX_LENGTH} characters"}
+        )
     if parent_ref:
         if not SLUG_RE.fullmatch(parent_ref):
             raise ValidationError({"parent": SLUG_FORMAT_MESSAGE})
+        if len(parent_ref) > CITATION_SOURCE_SLUG_MAX_LENGTH:
+            raise ValidationError(
+                {
+                    "parent": f"parent exceeds "
+                    f"{CITATION_SOURCE_SLUG_MAX_LENGTH} characters"
+                }
+            )
         if node.get("domains"):
             raise ValidationError({"domains": "recognition domains live on roots only"})
         if parent_ref not in declared_root_slugs and not (

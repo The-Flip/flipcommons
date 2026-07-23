@@ -614,6 +614,20 @@ class TestSlugAddressedValidation:
                 declared_root_slugs={"billboard"},
             )
 
+    def test_overlong_slug_rejected_at_read_phase(self):
+        # The model's 200-char limit must fail at --dry-run, not as a
+        # ValidationError mid-apply that wedges the queue — ``slug`` is
+        # excluded from the read-phase full_clean, so this check owns it.
+        with pytest.raises(ValidationError, match="200"):
+            validate_source_node(_mag("A Magazine", "a" * 201))
+
+    def test_overlong_parent_ref_rejected_at_read_phase(self):
+        with pytest.raises(ValidationError, match="200"):
+            validate_source_node(
+                _mag("Sep 1945", "1945-09", parent="a" * 201),
+                declared_root_slugs={"a" * 201},
+            )
+
 
 class TestSlugRootUpsert:
     def test_creates_a_magazine_root(self, actor):

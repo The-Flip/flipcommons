@@ -4408,6 +4408,33 @@ claims:
         _apply(text, patch_id="0001-typo", dry_run=True)
 
 
+def test_slug_root_host_collision_preview_not_applied(machine_model):
+    # detect_host_collision models the plain-root path only: hosts spanning two
+    # roots make IT skip the whole node, but a slug root resolves by slug and
+    # handles occupied domains per-host at apply. The dry-run preview must not
+    # claim a whole-node skip that live apply won't perform.
+    a = make_citation_source(name="Site A", source_type="web")
+    make_citation_root_domain(source=a, host="site-a.test")
+    b = make_citation_source(name="Site B", source_type="web")
+    make_citation_root_domain(source=b, host="site-b.test")
+    text = """
+attribution: flipcommons-catalog
+sources:
+  - slug: billboard
+    name: Billboard
+    source_type: magazine
+    domains: [site-a.test, site-b.test]
+"""
+    dry = _apply(text, patch_id="0001-slug-preview", dry_run=True)
+    assert not any("skipped the node" in w for w in dry.warnings)
+
+    live = _apply(text, patch_id="0001-slug-preview")
+    # Live: the root is created by slug; each occupied host warns individually
+    # and is left with its owner.
+    assert CitationSource.objects.filter(slug="billboard").exists()
+    assert sum("already owned" in w for w in live.warnings) == 2
+
+
 def test_cite_of_a_same_patch_declared_issue_passes_dry_run(machine_model):
     report = _apply(_billboard_patch(machine_model), patch_id="0001-dry", dry_run=True)
     assert report.rejected == 0
