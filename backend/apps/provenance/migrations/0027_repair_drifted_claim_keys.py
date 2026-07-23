@@ -133,7 +133,14 @@ class Migration(migrations.Migration):
         ("contenttypes", "0002_remove_content_type_name"),
         ("core", "0001_initial"),
         ("provenance", "0026_fk_claim_values_to_pk"),
-        # The rows can only be repaired after 0026 has created them.
+        # The repair must run after the migration whose rows it repairs. Django
+        # happens to pick that order today without being told, but incidentally
+        # — reordered, this migration silently no-ops and the constraint lands
+        # before the promotion. That is survivable only while catalog 0026
+        # rewrites both columns in one statement, so leaving it implicit would
+        # make this migration's correctness depend on that one staying correct,
+        # which is the coupling that caused the bug in the first place.
+        # Provenance→catalog edges are established here (see 0007, 0026).
         ("catalog", "0026_promote_manufacturer_model_identifier"),
     ]
 
@@ -144,7 +151,7 @@ class Migration(migrations.Migration):
             constraint=models.CheckConstraint(
                 condition=_derivable_key(),
                 name="provenance_claim_key_derived_from_field_name",
-                violation_error_code="non_derivable_claim_key",
+                violation_error_code="cross_field",
                 violation_error_message=(
                     "claim_key must equal field_name, or begin with "
                     f"field_name + {_SEPARATOR!r} for relationship claims."

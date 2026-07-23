@@ -204,7 +204,7 @@ class Claim(models.Model):
                     "claim_key must equal field_name, or begin with "
                     f"field_name + {CLAIM_KEY_SEPARATOR!r} for relationship claims."
                 ),
-                violation_error_code="non_derivable_claim_key",
+                violation_error_code="cross_field",
             ),
             models.CheckConstraint(
                 condition=(
