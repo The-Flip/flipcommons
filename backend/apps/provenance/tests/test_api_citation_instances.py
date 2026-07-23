@@ -210,6 +210,7 @@ class TestBatchCitationInstances:
         assert set(data.keys()) == {
             "id",
             "source_name",
+            "root_name",
             "source_type",
             "author",
             "year",
@@ -217,6 +218,28 @@ class TestBatchCitationInstances:
             "quote",
             "links",
         }
+
+    def test_root_name_is_null_for_a_root_source(self, client, citation_source):
+        make_citation_instance(citation_source=citation_source, locator="front")
+        instance = CitationInstance.objects.first()
+        assert instance is not None
+        resp = client.get(f"/api/citation-instances/batch/?ids={instance.pk}")
+        assert resp.json()[0]["root_name"] is None
+
+    def test_root_name_names_the_parent_for_a_child_source(self, client, db):
+        magazine = make_citation_source(
+            name="GameRoom Magazine", source_type="magazine"
+        )
+        issue = make_citation_source(
+            name="Vol. 10 No. 6, March 1994",
+            source_type="magazine",
+            parent=magazine,
+        )
+        ci = make_citation_instance(citation_source=issue, locator="p. 42")
+        resp = client.get(f"/api/citation-instances/batch/?ids={ci.pk}")
+        data = resp.json()[0]
+        assert data["source_name"] == "Vol. 10 No. 6, March 1994"
+        assert data["root_name"] == "GameRoom Magazine"
 
     def test_caps_at_50_ids(self, client, db):
         ids = ",".join(str(i) for i in range(1, 52))

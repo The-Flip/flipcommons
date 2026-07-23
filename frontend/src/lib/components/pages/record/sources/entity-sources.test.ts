@@ -26,10 +26,11 @@ beforeEach(() => {
   nextCitationId = 0;
 });
 
-function citation(source_name: string, locator = '') {
+function citation(source_name: string, locator = '', root_name: string | null = null) {
   return {
     id: (nextCitationId += 1),
     source_name,
+    root_name,
     source_type: 'web',
     author: '',
     year: null,
@@ -157,6 +158,27 @@ describe('buildSourcesView', () => {
     const entry = fields[0].slots[0].winner;
     expect(entry.footnotes.map((f) => f.index)).toEqual([1, 2]);
     expect(references.map((c) => c.source_name)).toEqual(['Williams Flyer', 'IPDB']);
+  });
+
+  it('keeps identically named children of different parents apart', () => {
+    // A child's name need not repeat its parent, so two works can each hold a
+    // "Vol. 2". Without the parent in the key they would pool into one.
+    const { references } = buildSourcesView([
+      claim({
+        field_name: 'year',
+        value: { raw: 1997 },
+        is_winner: true,
+        citations: [
+          citation('Vol. 2', 'p. 42', 'The Encyclopedia of Pinball'),
+          citation('Vol. 2', 'p. 42', 'The Pinball Compendium'),
+        ],
+      }),
+    ]);
+
+    expect(references.map((c) => c.root_name)).toEqual([
+      'The Encyclopedia of Pinball',
+      'The Pinball Compendium',
+    ]);
   });
 
   it('numbers citations in page order and reuses the number on repeat', () => {

@@ -13,6 +13,9 @@ import type { CitationLink } from '$lib/components/citation/citation-links';
 export interface CitationInfo {
   id: number;
   source_name: string;
+  /** The parent root's name (e.g. the magazine a cited issue belongs to), so
+   *  a child renders in context. Absent/null on a root. */
+  root_name?: string | null;
   source_type: string;
   author: string;
   year?: number | null;

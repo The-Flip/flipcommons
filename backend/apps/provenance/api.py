@@ -215,6 +215,14 @@ def batch_citation_instances(
         CitationInstanceBatchSchema(
             id=ci.pk,
             source_name=ci.citation_source.name,
+            # The parent root's name, so a child (a magazine issue) renders in
+            # context — "Vol. 1" alone is ambiguous without its magazine. None
+            # on a root; select_related above, so it costs no query.
+            root_name=(
+                ci.citation_source.parent.name
+                if ci.citation_source.parent is not None
+                else None
+            ),
             source_type=ci.citation_source.source_type,
             author=ci.citation_source.author,
             year=ci.citation_source.year,

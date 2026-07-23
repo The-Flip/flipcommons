@@ -140,9 +140,14 @@ function keepLatestByActor(
  *
  *  `slug` is deliberately out of the key: the same evidence reaches a claim
  *  both as an attached join row (no slug) and as an inline marker (slug), and
- *  those are one citation, listed once. */
+ *  those are one citation, listed once.
+ *
+ *  `root_name` IS in the key: a child's name need not repeat its parent, so
+ *  two works can each hold a "Vol. 2" — or two magazines a "July 1940" — and
+ *  without the parent they would pool into one citation. */
 function citationKey(citation: ClaimCitationSchema): string {
   return JSON.stringify([
+    citation.root_name ?? '',
     citation.source_name,
     citation.author,
     citation.year ?? '',

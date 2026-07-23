@@ -81,6 +81,29 @@ class TestSourcesPageCitations:
                 "display_name": "Scan",
             }
         ]
+        # A root source has no parent to name.
+        assert citations[0]["root_name"] is None
+
+    def test_cited_child_carries_its_parent_work(self, client, user, title):
+        """A magazine issue is ambiguous without the magazine it belongs to,
+        so the Sources page carries the parent alongside the child."""
+        magazine = make_citation_source(name="Billboard", source_type="magazine")
+        issue = make_citation_source(
+            name="July 27, 1940", source_type="magazine", parent=magazine
+        )
+        changeset = user_changeset(user, note="Dated from the trade ad")
+        name_claim = make_claim(
+            title, "name", "Medieval Madness (1997)", user=user, changeset=changeset
+        )
+        cite_claim(name_claim, citation_source=issue, locator="p. 42")
+
+        resp = client.get("/api/pages/sources/title/medieval-madness/")
+
+        assert resp.status_code == 200
+        citations = _citations(resp.json(), "name")
+        assert len(citations) == 1
+        assert citations[0]["source_name"] == "July 27, 1940"
+        assert citations[0]["root_name"] == "Billboard"
 
     def test_shared_evidence_rides_every_claim_it_backs(
         self, client, user, title, citation_source
