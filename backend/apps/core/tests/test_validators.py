@@ -7,7 +7,34 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 
 from apps.catalog.tests.conftest import make_machine_model
-from apps.core.validators import validate_no_mojibake
+from apps.core.validators import SLUG_RE, validate_no_mojibake
+
+
+class TestSlugRe:
+    """The system slug grammar must behave identically under every call style.
+
+    Consumers use all three: ``fullmatch`` (cite parsing), ``match`` (catalog
+    entity create, claim validation) and ``search`` (Django's
+    ``RegexValidator`` on the citation slug field). With ``$`` anchoring,
+    ``match``/``search`` accept one trailing newline that ``fullmatch``
+    rejects — a slug that saves but can never be resolved — so the pattern
+    must use absolute anchors.
+    """
+
+    @pytest.mark.parametrize("value", ["billboard", "1945-09-29", "vol-2"])
+    def test_valid_slugs_pass_every_call_style(self, value):
+        assert SLUG_RE.fullmatch(value)
+        assert SLUG_RE.match(value)
+        assert SLUG_RE.search(value)
+
+    @pytest.mark.parametrize(
+        "value",
+        ["billboard\n", "\nbillboard", "Billboard", "game_room", "-x", "x-", ""],
+    )
+    def test_invalid_slugs_fail_every_call_style(self, value):
+        assert not SLUG_RE.fullmatch(value)
+        assert not SLUG_RE.match(value)
+        assert not SLUG_RE.search(value)
 
 
 class TestValidateNoMojibake:

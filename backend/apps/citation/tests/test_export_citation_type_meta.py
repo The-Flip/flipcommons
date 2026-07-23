@@ -10,9 +10,10 @@ irrelevant.
 
 Only the fields a stale artifact would make the frontend act on are pinned: the
 key union, plus each type's declarative flags (``locatorKind`` drives the input
-behavior, ``childSkipsLocator`` drives whether the locator field appears). The
-copy fields (labels, help, placeholders) are prose the emitter passes through,
-and prettier wraps them across lines — pinning them would buy little and cost a
+behavior, ``childSkipsLocator`` drives whether the locator field appears, and
+``slugAddressed`` drives whether authored sources require a slug). The copy
+fields (labels, help, placeholders) are prose the emitter passes through, and
+prettier wraps them across lines — pinning them would buy little and cost a
 brittle parser.
 """
 

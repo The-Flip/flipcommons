@@ -238,6 +238,36 @@ class TestSlugAddressedGuards:
         with pytest.raises(ValidationError, match="lowercase letters"):
             row.full_clean()
 
+    def test_trailing_newline_slug_rejected(self, db):
+        # RegexValidator calls .search(); a $-anchored pattern would let
+        # "billboard\n" save — a slug cite parsing (fullmatch) and resolution
+        # (exact equality) could never reach.
+        row = CitationSource(
+            name="Billboard",
+            source_type="magazine",
+            slug="billboard\n",
+            created_by=default_actor(),
+            updated_by=default_actor(),
+        )
+        with pytest.raises(ValidationError, match="lowercase letters"):
+            row.full_clean()
+
+    def test_rejects_a_magazine_child_under_a_non_magazine_root(self, db):
+        # A book root carries no slug, so a magazine issue nested under it
+        # would be permanently unaddressable (resolution joins parent__slug).
+        # The API's same-type check doesn't protect admin or direct writes.
+        book = make_citation_source(name="A Book", source_type="book")
+        issue = CitationSource(
+            name="Sep 1945",
+            source_type="magazine",
+            slug="1945-09",
+            parent=book,
+            created_by=default_actor(),
+            updated_by=default_actor(),
+        )
+        with pytest.raises(ValidationError, match="magazine root"):
+            issue.full_clean()
+
 
 class TestCitationSourceRelationships:
     def test_children_relationship(self, citation_source):

@@ -13,6 +13,13 @@ from django.utils.text import slugify
 # constraint conditions in 0024 — a migration must not read the live registry.
 _SLUG_ADDRESSED_TYPES = ["magazine"]
 
+# The slug column's max_length, frozen like the type list. The base is cut
+# shorter to leave headroom for the ``-N`` dedup suffix, since ``name`` (500
+# chars) can slugify past the column — SQLite would store the overflow
+# silently while Postgres would fail the migration mid-backfill.
+_SLUG_MAX_LENGTH = 200
+_SLUG_BASE_MAX_LENGTH = 190
+
 
 def backfill_slugs(apps, schema_editor):
     """Slugify every slug-addressed row's name, deduped within its parent.
@@ -22,7 +29,10 @@ def backfill_slugs(apps, schema_editor):
     magazine roots + 1 child): no collisions, no empty results. Prod may
     differ, so a name that slugifies to nothing raises — an unaddressable row
     needs a human-authored handle, not minted junk — and the final assertion
-    trusts a recount, not the loop.
+    trusts a recount, not the loop. An over-long name is truncated to the
+    column bound instead (a shortened handle is still a valid, addressable
+    one), with the cut stripped of any trailing hyphen so the grammar CHECKs
+    in 0024 hold.
     """
     CitationSource = apps.get_model("citation", "CitationSource")
     used: dict[int | None, set[str]] = {}
@@ -30,7 +40,7 @@ def backfill_slugs(apps, schema_editor):
         source_type__in=_SLUG_ADDRESSED_TYPES, slug__isnull=True
     ).order_by("pk")
     for row in rows:
-        base = slugify(row.name)
+        base = slugify(row.name)[:_SLUG_BASE_MAX_LENGTH].rstrip("-")
         if not base:
             raise RuntimeError(
                 f"CitationSource {row.pk} ({row.name!r}) slugifies to nothing; "
@@ -40,6 +50,7 @@ def backfill_slugs(apps, schema_editor):
         slug, n = base, 2
         while slug in taken:
             slug, n = f"{base}-{n}", n + 1
+        assert len(slug) <= _SLUG_MAX_LENGTH
         taken.add(slug)
         row.slug = slug
         row.save(update_fields=["slug"])

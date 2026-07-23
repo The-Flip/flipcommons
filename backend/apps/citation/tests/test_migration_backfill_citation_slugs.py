@@ -127,3 +127,24 @@ class TestBackfillSlugs:
         # The failed run must leave the row addressable by a human, not junk.
         row.refresh_from_db()
         assert row.slug is None
+
+    def test_bounds_long_names_to_the_column_limit(self, state):
+        # ``name`` is capped at 500 but ``slug`` at 200 — SQLite would store an
+        # over-long slug silently while prod Postgres would fail the migration
+        # mid-backfill. Two colliding long names also prove the dedup suffix
+        # fits inside the bound.
+        long_name = "The Extraordinarily Verbose Coin-Operated Amusement " * 6
+        first = _source(state, long_name)
+        second = _source(state, long_name + "!")  # same slugify result
+
+        backfill_slugs(state, None)
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        for row in (first, second):
+            assert row.slug is not None
+            assert len(row.slug) <= 200
+            # The truncation cut must not leave a trailing hyphen — the slug
+            # grammar (and the lowercase/not-empty CHECKs in 0024) reject it.
+            assert not row.slug.endswith("-")
+        assert first.slug != second.slug

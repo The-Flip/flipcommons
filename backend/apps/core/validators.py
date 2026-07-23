@@ -12,7 +12,11 @@ from django.core.exceptions import ValidationError
 # and any hyphen placement. Owned here so the create and edit paths stay
 # in sync (see ``apps.catalog.api.entity_create.validate_slug_format``
 # and ``apps.provenance.validation.validate_claim_value``).
-SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+# ``\A``/``\Z``, not ``^``/``$``: consumers call this via ``match`` and
+# ``search`` (Django's ``RegexValidator``) as well as ``fullmatch``, and a
+# ``$`` anchor lets those first two accept one trailing newline — a slug
+# that saves but that exact-equality resolution can never reach.
+SLUG_RE = re.compile(r"\A[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 SLUG_FORMAT_MESSAGE = (
     "Slug may contain only lowercase letters, digits, and hyphens, "
     "with no leading, trailing, or repeated hyphens."

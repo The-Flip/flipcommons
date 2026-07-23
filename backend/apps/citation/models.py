@@ -439,25 +439,32 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         super().clean()
         # Guards that read through the parent FK, which a CHECK can't express.
         #
-        # Test the parent's rootness with a ``children()`` ``exists()`` query
-        # rather than dereferencing ``self.parent``: a dangling ``parent_id``
-        # then matches no row (guard skips) and the FK field validator owns that
-        # error, instead of ``self.parent`` raising a raw ``DoesNotExist``
+        # Read the parent's facts with one ``values()`` query rather than
+        # dereferencing ``self.parent``: a dangling ``parent_id`` then matches
+        # no row (guards skip) and the FK field validator owns that error,
+        # instead of ``self.parent`` raising a raw ``DoesNotExist``
         # mid-``clean``. The ``in SourceType.values`` guard likewise keeps an
         # invalid ``source_type`` the field validator's error, not a
         # ``ValueError`` from the trait lookup.
         if self.parent_id is None or self.source_type not in SourceType.values:
             return
         spec = citation_type_spec(self.source_type)
+        if not (spec.flat_hierarchy or spec.slug_addressed):
+            return
+        parent_row = (
+            CitationSource.objects.filter(pk=self.parent_id)
+            .values("parent_id", "identifier_key", "source_type")
+            .first()
+        )
+        if parent_row is None:
+            return
         # One level deep, two reasons. Web-flatness: a ``flat_hierarchy`` type
         # nests root → child so recognition can always resolve a host to the
         # root and mint a child directly under it. Slug addressing: the cite
         # ref grammar reaches exactly ``root_slug:child_slug`` and analytics
         # (``citation_tree_too_deep``) resolves roots with a single self-join,
         # so a slugged grandchild would be both unaddressable and misattributed.
-        if (
-            spec.flat_hierarchy or spec.slug_addressed
-        ) and CitationSource.objects.children().filter(pk=self.parent_id).exists():
+        if parent_row["parent_id"] is not None:
             raise ValidationError(
                 {
                     "parent": (
@@ -467,21 +474,35 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
                     )
                 }
             )
+        if not spec.slug_addressed:
+            return
         # A slug-addressed child under a scheme root could never be reached:
         # ``<scheme-key>:<anything>`` is permanently consumed by the scheme
         # parser before slug resolution runs.
-        if (
-            spec.slug_addressed
-            and CitationSource.objects.filter(pk=self.parent_id)
-            .exclude(identifier_key="")
-            .exists()
-        ):
+        if parent_row["identifier_key"]:
             raise ValidationError(
                 {
                     "parent": (
                         f"A {self.source_type} source is addressed by its "
                         "parent's slug, so its parent cannot be a scheme root — "
                         "the scheme's cite prefix would shadow the slug."
+                    )
+                }
+            )
+        # And its parent must carry a slug to be addressed *by* — i.e. be a
+        # root of the same slug-addressed type. A book root has no slug, so an
+        # issue nested under it would be permanently unresolvable (resolution
+        # joins ``parent__slug``). The API enforces same-type nesting too; this
+        # covers admin and direct model writes.
+        if parent_row["source_type"] != self.source_type:
+            raise ValidationError(
+                {
+                    "parent": (
+                        f"A {self.source_type} source is addressed by its "
+                        f"parent's slug, so its parent must be a "
+                        f"{self.source_type} root — a "
+                        f"{parent_row['source_type']} parent has no slug to "
+                        "address it by."
                     )
                 }
             )

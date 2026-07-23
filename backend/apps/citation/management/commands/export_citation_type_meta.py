@@ -3,10 +3,11 @@
 The declarative half of the citation-type plugin channel (see
 ``docs/plans/citations/VideoCitations.md``): per-type facts the frontend
 locator UX reads — label, locator kind, placeholder, invalid message,
-child-skips flag — exported from the backend registry so the two sides can't
-drift. Behavior (the client-side grammar mirror, UX-only) lives in the
-hand-written per-type modules beside the generated file; their registry
-asserts exhaustiveness against the generated key union at compile time.
+child-skips flag, and slug-addressed flag — exported from the backend registry
+so the two sides can't drift. Behavior (the client-side grammar mirror, UX-only)
+lives in the hand-written per-type modules beside the generated file; their
+registry asserts exhaustiveness against the generated key union at compile
+time.
 
 Run via ``make codegen`` or directly::
 
