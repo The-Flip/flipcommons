@@ -13,4 +13,5 @@ WEB = CitationTypeSpec(
     flat_hierarchy=True,
     schemeless_parentless_abstract=True,
     child_skips_locator=True,
+    slug_addressed=False,
 )

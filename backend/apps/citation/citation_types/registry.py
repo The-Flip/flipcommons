@@ -213,6 +213,20 @@ def scheme_bindings() -> list[SchemeBinding]:
     return [SchemeBinding(spec.key, spec.source_type) for spec in SCHEME_SPECS.values()]
 
 
+def slug_addressed_source_types() -> list[SourceType]:
+    """The source types addressed by authored slugs, in registration order.
+
+    The value list behind the model's slug CHECKs (slug only on — and required
+    on — a slug-addressed type) and the ingest validators, so turning the flag
+    on for another type is a spec edit plus a backfill, never a hand-edit of
+    shared code. Stable registration order for the same
+    migration-churn reason as :func:`scheme_bindings`.
+    """
+    return [
+        spec.source_type for spec in CITATION_TYPE_SPECS.values() if spec.slug_addressed
+    ]
+
+
 # ---------------------------------------------------------------------------
 # External-customer scheme queries. Pure, read-only over ``SCHEME_SPECS`` —
 # what code outside this package calls instead of reaching into spec fields,

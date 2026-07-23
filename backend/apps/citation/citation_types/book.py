@@ -12,4 +12,5 @@ BOOK = CitationTypeSpec(
     flat_hierarchy=False,
     schemeless_parentless_abstract=False,
     child_skips_locator=False,
+    slug_addressed=False,
 )

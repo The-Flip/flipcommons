@@ -141,6 +141,13 @@ class CitationTypeSpec:
       (its URL), so the cite picker skips the locator prompt and cites it
       one-click. Unprompted, not unavailable: the edit-evidence panel keeps a
       collapsed affordance and patches may store one.
+    - ``slug_addressed``: sources of this type are addressed by an authored
+      kebab slug — root-unique, sibling-unique — making
+      ``<root-slug>:<child-slug>`` a legal patch cite ref (a magazine issue:
+      ``billboard:1945-09-29``). For every other type the identifier already
+      exists (a book's ISBN, a site's recognition domain, a scheme's key), so
+      only a type with no natural identifier turns this on. Slugs are authored,
+      never minted: a cite of an undeclared slug fails, exactly like ``isbn:``.
     - ``locator``: the type's locator contract (grammar, prompt, structured
       value bridge).
     - ``scheme_spec_type``: the spec class this type's schemes implement — the
@@ -157,5 +164,6 @@ class CitationTypeSpec:
     flat_hierarchy: bool
     schemeless_parentless_abstract: bool
     child_skips_locator: bool
+    slug_addressed: bool
     locator: LocatorContract = FREEFORM_LOCATOR
     scheme_spec_type: type[SchemeSpec] = SchemeSpec

@@ -59,6 +59,7 @@ from apps.citation.citation_types.registry import (
     scheme_root_citation_source_info,
     scheme_source_type,
     scheme_start_seconds_hint,
+    slug_addressed_source_types,
 )
 from apps.citation.citation_types.vocabulary import (
     CitationSourceTypeValue,
@@ -102,6 +103,7 @@ __all__ = [
     "SchemeChoice",
     "scheme_bindings",
     "SchemeBinding",
+    "slug_addressed_source_types",
     "CITATION_TYPE_SPECS",
     "SCHEME_SPECS",
     "SCHEME_DRIVERS",

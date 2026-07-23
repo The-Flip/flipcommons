@@ -12,4 +12,5 @@ MAGAZINE = CitationTypeSpec(
     flat_hierarchy=False,
     schemeless_parentless_abstract=True,
     child_skips_locator=False,
+    slug_addressed=True,
 )
