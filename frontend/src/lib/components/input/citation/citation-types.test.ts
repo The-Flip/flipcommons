@@ -440,6 +440,38 @@ describe('transition', () => {
       if (next.stage === 'locator') expect(next.ready).toBe(false);
     });
 
+    it('abstract create (a parentless magazine) → identify under the new root', () => {
+      // A created abstract container is never the cited record — the flow
+      // must route to child identification, exactly as selecting the same
+      // root from search would, not hand the user a locator for it.
+      const state: CiteState = {
+        stage: 'create',
+        draft: emptyDraft(),
+        parent: null,
+        seed: { kind: 'name', name: 'Billboard' },
+      };
+      const next = transition(state, {
+        type: 'source_created',
+        sourceType: 'magazine',
+        sourceId: 60,
+        sourceName: 'Billboard',
+        skipLocator: false,
+        isAbstract: true,
+        author: '',
+      });
+
+      expect(next.stage).toBe('identify');
+      if (next.stage === 'identify') {
+        expect(next.parent).toEqual({
+          id: 60,
+          name: 'Billboard',
+          source_type: 'magazine',
+          author: '',
+          identifier_key: '',
+        });
+      }
+    });
+
     it('skip-locator create → ready immediately', () => {
       const state: CiteState = {
         stage: 'create',

@@ -382,6 +382,44 @@ describe('CitationAutocomplete (component-level)', () => {
   // Recognition flows (backend-driven)
   // -----------------------------------------------------------------------
 
+  describe('abstract create routing', () => {
+    it('creating a magazine root routes to identify, not the locator', async () => {
+      // A parentless magazine is an abstract container — never the cited
+      // record. After create, the flow must land on issue identification
+      // under the new root, exactly as selecting it from search would.
+      const user = userEvent.setup();
+      renderAutocomplete();
+
+      const createdMagazine = {
+        id: 70,
+        name: 'Billboard',
+        source_type: 'magazine',
+        skip_locator: false,
+        is_abstract: true,
+        author: '',
+        slug: 'billboard',
+        children: [],
+        links: [],
+      };
+      mockGET.mockImplementation((url: string) => {
+        if (url === '/api/citation-sources/search/') return mockSearchReturning(MOCK_SOURCES);
+        if (url === '/api/citation-sources/{source_id}/')
+          return Promise.resolve({ data: createdMagazine });
+        return Promise.resolve({ data: [] });
+      });
+      mockPOST.mockResolvedValueOnce({ data: createdMagazine });
+
+      await enterCreateStage(user, 'Billboard');
+      await user.click(screen.getByRole('button', { name: 'magazine' }));
+      await user.click(screen.getByRole('button', { name: /continue/i }));
+
+      await vi.waitFor(() => {
+        expect(screen.getByPlaceholderText('Filter editions...')).toBeInTheDocument();
+      });
+      expect(screen.queryByRole('textbox', { name: /location in source/i })).toBeNull();
+    });
+  });
+
   describe('recognition flows', () => {
     it('shows exact match when recognition returns existing child', async () => {
       const user = userEvent.setup();

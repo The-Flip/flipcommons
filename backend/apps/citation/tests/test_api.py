@@ -557,7 +557,21 @@ class TestCreateCitationSource:
             {"name": "Billboard", "source_type": "magazine", "slug": "billboard"},
         )
         assert resp.status_code == 201
-        assert resp.json()["slug"] == "billboard"
+        data = resp.json()
+        assert data["slug"] == "billboard"
+        # A parentless magazine is an abstract container — the create flow
+        # reads this to route to issue identification, not the locator.
+        assert data["is_abstract"] is True
+
+    def test_book_create_is_not_abstract(self, client, user):
+        client.force_login(user)
+        resp = _post(
+            client,
+            "/api/citation-sources/",
+            {"name": "A Standalone Book", "source_type": "book"},
+        )
+        assert resp.status_code == 201
+        assert resp.json()["is_abstract"] is False
 
     def test_magazine_issue_creates_under_its_root(self, client, user):
         # The "create the issue while citing the magazine" flow: parent_id from

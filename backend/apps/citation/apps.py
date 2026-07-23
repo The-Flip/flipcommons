@@ -112,7 +112,7 @@ class CitationConfig(AppConfig):
             PickerType(
                 name="cite",
                 label="Citation",
-                description="Cite a source (book, web, magazine)",
+                description="Cite a source (book, web, etc)",
                 sort_order=1,
                 flow="custom",
             )

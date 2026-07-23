@@ -100,6 +100,8 @@
     sourceName: string;
     sourceType: string;
     skipLocator: boolean;
+    isAbstract?: boolean;
+    author?: string;
   }) {
     dispatch({ type: 'source_created', ...result });
   }

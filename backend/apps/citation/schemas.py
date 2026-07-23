@@ -465,6 +465,15 @@ class CitationSourceDetailSchema(Schema):
         False,
         description="Whether the cite picker skips the locator prompt (true for a web child).",
     )
+    is_abstract: bool = Field(
+        False,
+        description=(
+            "Whether this source is a container rather than directly-citable "
+            "evidence (it has children, or is a parentless source of a "
+            "container type) — the create flow routes an abstract result to "
+            "child identification instead of the locator."
+        ),
+    )
     parent: CitationSourceParentSchema | None = Field(
         None, description="The root source this is a child of, or null if it is a root."
     )

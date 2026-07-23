@@ -158,6 +158,54 @@ describe('CitationCreateStage', () => {
     expect((screen.getByLabelText(/Slug/) as HTMLInputElement).value).toBe('gameroom');
   });
 
+  it('clamps the proposed slug to the 200-char column limit', async () => {
+    const user = userEvent.setup();
+    const longName = 'Word '.repeat(60).trim(); // slugifies to ~299 chars
+    render(CitationCreateStage, {
+      parentContext: null,
+      seed: { kind: 'name', name: longName },
+      onsourcecreated: noop,
+      oncancel: noop,
+      onback: noop,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'magazine' }));
+    const slug = (screen.getByLabelText(/Slug/) as HTMLInputElement).value;
+    expect(slug.length).toBeLessThanOrEqual(200);
+    expect(slug.length).toBeGreaterThan(190); // clamped near the limit, not emptied
+    expect(slug.endsWith('-')).toBe(false); // the cut never leaves a trailing hyphen
+  });
+
+  it('reports the created source abstract flag to the orchestrator', async () => {
+    const user = userEvent.setup();
+    const onsourcecreated = vi.fn();
+    mockPOST.mockResolvedValueOnce({
+      data: {
+        id: 70,
+        name: 'Billboard',
+        source_type: 'magazine',
+        skip_locator: false,
+        is_abstract: true,
+        author: '',
+        slug: 'billboard',
+      },
+    });
+    render(CitationCreateStage, {
+      parentContext: null,
+      seed: { kind: 'name', name: 'Billboard' },
+      onsourcecreated,
+      oncancel: noop,
+      onback: noop,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'magazine' }));
+    await user.click(screen.getByRole('button', { name: /Continue/ }));
+    await waitFor(() => expect(onsourcecreated).toHaveBeenCalled());
+    expect(onsourcecreated).toHaveBeenCalledWith(
+      expect.objectContaining({ isAbstract: true, author: '' }),
+    );
+  });
+
   it('submits the slug for a magazine and null for other types', async () => {
     const user = userEvent.setup();
     mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });

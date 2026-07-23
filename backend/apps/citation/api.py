@@ -192,6 +192,7 @@ def _serialize_detail(source: CitationSource) -> CitationSourceDetailSchema:
         parent_obj = source.parent
         assert parent_obj is not None  # a non-root always has a parent loaded
         parent = CitationSourceParentSchema(id=parent_obj.pk, name=parent_obj.name)
+    children = [_serialize_child(child) for child in source.children.all()]
     return CitationSourceDetailSchema(
         id=source.pk,
         name=source.name,
@@ -207,12 +208,13 @@ def _serialize_detail(source: CitationSource) -> CitationSourceDetailSchema:
         description=source.description,
         identifier_key=source.identifier_key,
         skip_locator=source.skip_locator,
+        is_abstract=source.is_abstract(has_children=bool(children)),
         parent=parent,
         links=[
             CitationSourceLinkSchema.model_validate(link, from_attributes=True)
             for link in source.links.all()
         ],
-        children=[_serialize_child(child) for child in source.children.all()],
+        children=children,
         created_at=source.created_at.isoformat(),
         updated_at=source.updated_at.isoformat(),
     )

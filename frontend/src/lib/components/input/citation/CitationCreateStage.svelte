@@ -7,9 +7,14 @@
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
-  import { reconcileSlug } from '$lib/create-form';
+  import { reconcileSlug, slugifyForCatalog } from '$lib/create-form';
 
   type SourceType = 'book' | 'magazine' | 'video';
+
+  /** The slug column's limit (CITATION_SOURCE_SLUG_MAX_LENGTH backend-side).
+   *  Names run to 500 chars, so an unclamped proposal could exceed what the
+   *  API accepts and fail with a generic error. */
+  const SLUG_MAX_LENGTH = 200;
 
   let {
     parentContext,
@@ -25,6 +30,8 @@
       sourceName: string;
       sourceType: string;
       skipLocator: boolean;
+      isAbstract?: boolean;
+      author?: string;
     }) => void;
     oncancel: () => void;
     onback: () => void;
@@ -77,10 +84,13 @@
   let slugAddressed = $derived(citationTypeMeta(sourceType).slugAddressed);
 
   // Auto-propose the slug from the name (shared sync-until-diverged behavior)
-  // so the citation flow inherits create-form's slugify instead of its own copy.
+  // so the citation flow inherits create-form's slugify instead of its own
+  // copy — clamped to the column limit, with the cut never leaving a
+  // trailing hyphen (the grammar rejects one).
   $effect(() => {
     if (!slugAddressed) return;
-    const next = reconcileSlug({ name, slug, syncedSlug });
+    const projectedSlug = slugifyForCatalog(name).slice(0, SLUG_MAX_LENGTH).replace(/-+$/, '');
+    const next = reconcileSlug({ name, slug, syncedSlug, projectedSlug });
     if (next.slug !== slug) {
       slug = next.slug;
       syncedSlug = next.syncedSlug;
@@ -139,6 +149,10 @@
       sourceName: data.name,
       sourceType: data.source_type,
       skipLocator: data.skip_locator,
+      // An abstract result (a parentless magazine) routes the flow to child
+      // identification under it; author rides along for the parent context.
+      isAbstract: data.is_abstract,
+      author: data.author,
     });
   }
 </script>
@@ -177,7 +191,7 @@
   {#if slugAddressed}
     <!-- The authored cite handle (billboard, 1945-09-29) — auto-proposed from
          the name until the user diverges it. -->
-    <TextField label="Slug" bind:value={slug} noAutofill />
+    <TextField label="Slug" bind:value={slug} noAutofill maxlength={SLUG_MAX_LENGTH} />
   {/if}
   <TextField label="Author" optional bind:value={author} noAutofill />
   {#if showExtractedFields}
