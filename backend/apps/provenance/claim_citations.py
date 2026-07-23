@@ -2,9 +2,9 @@
 
 A claim carries evidence two ways: instances *attached* to it through the
 ``ClaimCitationInstance`` join, and instances referenced *inline* by
-``[[cite:id:N]]`` markers inside a markdown value. Both edit history and the
-sources page render them, so the batch lookup and the per-instance serializer
-live here rather than in either consumer.
+``[[cite:id:N]]`` markers inside a markdown value. The batch lookup and the
+per-instance serializer cover both, so a claim's evidence serializes the same
+way wherever it is rendered.
 """
 
 from __future__ import annotations
@@ -26,8 +26,7 @@ class InlineCitationLookup:
     """Citation instances resolved from ``[[cite:id:N]]`` markers, keyed by pk.
 
     Built once per response by :func:`resolve_inline_citations`, so per-claim
-    citation building does no DB work. Same encapsulated shape as
-    :class:`apps.core.markdown.field.WikilinkAuthoringLookup`.
+    citation building does no DB work.
     """
 
     __slots__ = ("_instances",)
@@ -135,12 +134,10 @@ def claim_citation_schemas(
 ) -> ClaimCitations:
     """Every citation backing *claim*'s own value.
 
-    Attached (join-row) evidence comes first and requires the claim to have
-    been loaded with citation instances prefetched
-    (``prefetched_citation_instances`` — see ``claims_prefetch``), then the
-    ``[[cite:id:N]]`` markers in the claim's value in document order. Markers
-    whose instance row is gone are skipped, matching the editor's broken-link
-    degrade.
+    Attached (join-row) evidence comes first — *claim* must have been loaded
+    with its citation instances prefetched — then the ``[[cite:id:N]]`` markers
+    in the claim's value in document order. A marker whose instance row is gone
+    is skipped rather than raising: a broken link degrades to no citation.
     """
     schemas = [citation_schema(inst, slug=None) for inst in citation_instances(claim)]
     pks = inline_cite_pks(claim.value)

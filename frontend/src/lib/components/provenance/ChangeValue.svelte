@@ -32,11 +32,9 @@ keeps its line breaks; everything else falls through to ClaimValue. -->
 >
 
 <style>
-  /* The line breaks an author typed are part of a markdown value, so every
-     surface reading one keeps them. Here rather than in each surface's CSS,
-     which is how the Sources page came to collapse them while edit history
-     did not. `InlineDiff` sets its own: it renders diff segments directly and
-     never reaches this component. */
+  /* The line breaks an author typed are part of a markdown value, so they are
+     preserved here — beside the rendering that owns them — rather than left to
+     whatever styles the value happens to land in. */
   .markdown {
     white-space: pre-wrap;
   }

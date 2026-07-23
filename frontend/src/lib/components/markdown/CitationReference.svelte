@@ -1,7 +1,7 @@
 <!-- @component One numbered entry in a citation reference list: the back-link
 to its marker, the citation's identity, and the flash that plays when a marker
-jumps here. Shared by the rich-text references accordion and the Sources page,
-which differ in where the list sits, not in what an entry is. -->
+jumps here. Where the list itself sits is the parent's business; an entry is
+the same thing wherever it appears. -->
 <script lang="ts">
   import CitationBody from '$lib/components/citation/CitationBody.svelte';
   import type { CitationIdentity } from '$lib/components/citation/citation-links';

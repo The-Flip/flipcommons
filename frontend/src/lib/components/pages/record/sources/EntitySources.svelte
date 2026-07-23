@@ -292,7 +292,7 @@ citations behind it, with the losing values de-emphasized beneath the winner. --
 
   /* Bracketed superscript, the encyclopedia convention: a bare number riding a
      numeric value ("4 3" for player_count) reads as part of the value. Sized to
-     match CiteMarkedText's inline markers, which sit alongside these. */
+     match the inline markers these sit alongside. */
   .cite-marker {
     margin-left: 2px;
     font-size: var(--font-size-00, 0.75rem);
@@ -326,8 +326,8 @@ citations behind it, with the losing values de-emphasized beneath the winner. --
     margin-bottom: var(--size-3);
   }
 
-  /* The entries are CitationReference's own `<li>`s — their spacing and flash
-     belong to it, so only the list box is styled here. */
+  /* The entries bring their own spacing and flash, so only the list box is
+     styled here. */
   .references ol {
     margin: 0;
     padding-left: var(--size-5);

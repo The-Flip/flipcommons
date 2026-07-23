@@ -29,8 +29,7 @@ import type { InlineCitation } from '$lib/components/markdown/citation-tooltip';
 export interface FootnoteMarker {
   /** Reference number into `SourcesView.references`. */
   index: number;
-  /** The id `references` lists under `index`, for the tooltip's
-   *  `data-cite-id` — see `Reference.id`. */
+  /** The id `references` lists under `index` — see `Reference.id`. */
   id: number;
 }
 
@@ -49,15 +48,15 @@ export interface ValueSupport {
   /** Distinct actors asserting this value, most recent assertion first. */
   supporters: ClaimAttributionSchema[];
   /** Reference numbers keyed by citation-instance slug, for the citations the
-   *  value's own text positions with an inline `[[cite:slug]]` marker. Feeds
-   *  `ChangeValue`, which renders them as superscripts in place. */
+   *  value's own text positions with an inline `[[cite:slug]]` marker — what
+   *  substitutes each marker for its number in place. */
   citeIndexes: Map<string, number>;
   /** Reference number → the id `references` lists under it (see
    *  `Reference.id`), for the numbers this value cites *inline*. Deliberately
-   *  excludes its footnote numbers: the marker renderer treats any bracketed
-   *  number in the text as a marker, so a number the value never substituted
-   *  must not be resolvable from stray prose. Footnote markers carry the same
-   *  id on themselves and never go through this path. */
+   *  excludes its footnote numbers: any bracketed number in the text reads as
+   *  a marker, so a number the value never substituted must not be resolvable
+   *  out of stray prose. Footnote markers carry the same id on themselves and
+   *  never go through this path. */
   citeIds: Map<number, number>;
   /** Markers with no inline position, ascending by reference number. */
   footnotes: FootnoteMarker[];
@@ -84,9 +83,9 @@ export interface FieldSupport {
 /** The whole page: the field list plus the citations its entries reference. */
 export interface SourcesView {
   fields: FieldSupport[];
-  /** Every distinct citation on the page, in reference-number order. Carries
-   *  its own `index`, so it satisfies `InlineCitation` and feeds both the
-   *  reference list and the marker tooltip unchanged. */
+  /** Every distinct citation on the page, in reference-number order. Each
+   *  carries its own `index`, so an entry is self-describing wherever it is
+   *  rendered. */
   references: InlineCitation[];
   /** Every actor that asserted a claim, most recent contribution first. */
   contributors: ClaimAttributionSchema[];

@@ -1,23 +1,21 @@
 """The parked source fields the provenance pages hide.
 
 A claim whose ``field_name`` matches neither a claim-controlled column nor a
-relationship namespace is *parked*: the resolver drops it into the entity's
-``extra_data`` JSON instead of a column (see ``apps.catalog.resolve``). Parked
-claims are ingest-only — the editor exposes ``get_claim_fields`` alone, so no
-user can author one — and they carry a source's own bookkeeping (raw IPDB note
-text, OPDB image blobs) rather than catalog facts. The Sources and edit-history
-pages are about who claimed what, so they leave them out.
+relationship namespace is *parked*: resolution drops it into the entity's
+``extra_data`` JSON instead of a column. Parked claims are ingest-only — no
+editable field set exposes one, so no user can author one — and they carry a
+source's own bookkeeping (raw IPDB note text, OPDB image blobs) rather than
+catalog facts. Provenance is about who claimed what, so it leaves them out.
 
 Named explicitly rather than derived from the structural rule ("no column, no
 namespace") because the set is closed: every parked claim in the database was
 written by the one bootstrap ingest, and no data patch has produced one since.
 That makes the drift risk small and inverts it usefully — a patch that parks a
-*new* field would appear on the Sources page unhidden, which is a data problem
-worth seeing rather than one worth suppressing automatically.
+*new* field surfaces unhidden, which is a data problem worth seeing rather than
+one worth suppressing automatically.
 
-Only the claim rows are hidden. ``extra_data`` itself is untouched: the entity
-detail APIs still ship it whole, which is what the developer-only source debug
-panel reads.
+Only the claim rows are hidden; ``extra_data`` itself is untouched and still
+ships whole.
 """
 
 from __future__ import annotations

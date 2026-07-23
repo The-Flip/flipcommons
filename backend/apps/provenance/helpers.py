@@ -88,8 +88,8 @@ def claims_prefetch(
     """
     queryset = (
         # ranked_claims already select_relates the claim's actor backings, which
-        # is all claim_author reads. Nothing reads claim.changeset off a
-        # prefetched claim, so that join is deliberately absent.
+        # is all claim_author reads. The changeset join is deliberately absent —
+        # reading claim.changeset off a claim from here is an N+1.
         ranked_claims(Claim.objects.all(), "claim_key").prefetch_related(
             citation_instances_prefetch()
         )

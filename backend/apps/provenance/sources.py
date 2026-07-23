@@ -18,12 +18,11 @@ def build_sources(
     """Serialize pre-fetched active claims into the sources list format.
 
     ``model`` is the subject entity's class — all claims belong to one entity,
-    so it is uniform and the caller supplies it (do not hop
-    ``claim.content_type`` per claim: ``claims_prefetch`` does not
-    ``select_related`` it, so that would be an N+1).
+    so it is uniform and the caller supplies it rather than this hopping
+    ``claim.content_type`` per claim, which is not joined and so would N+1.
 
-    Claims should be ordered by claim_key, then rank — ``claims_prefetch``
-    does exactly that — so the first claim seen per claim_key is its winner.
+    Claims must arrive ordered by claim_key, then rank, so the first claim seen
+    per claim_key is its winner.
 
     ``claim_key`` is the slot: composite for a relationship member (one winner
     per related row), equal to ``field_name`` for a direct or ``extra_data``

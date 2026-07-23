@@ -19,9 +19,8 @@
   }: {
     container: HTMLDivElement | undefined;
     /** Changes whenever the markers inside `container` may have been
-     *  re-rendered, so the listener scan re-runs. The rich-text surfaces pass
-     *  their HTML; a Svelte-rendered surface passes any string derived from
-     *  what it drew. */
+     *  re-rendered, so the listener scan re-runs. Any string derived from what
+     *  was drawn will do — the value is never read, only compared. */
     contentSignal: string;
     citations?: InlineCitation[];
     onNavigate?: (index: number) => void;

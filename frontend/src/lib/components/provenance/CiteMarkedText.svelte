@@ -1,7 +1,7 @@
 <!-- @component Plain text whose [n] / [?] cite markers (from
 substituteCiteMarkers) render as superscripts. Pass `interactions` to make them
-tooltip-and-jump targets; without it they are inert labels, which is what the
-edit-history rows want — there is no reference list there to jump to. -->
+tooltip-and-jump targets; omit it where there is no reference list to jump to,
+and they stay inert labels rather than advertising an interaction. -->
 <script lang="ts">
   import { splitCiteMarkers, type CiteMarkerInteractions } from './cite-markers';
 

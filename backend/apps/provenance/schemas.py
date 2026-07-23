@@ -163,8 +163,7 @@ class CitationLinkSchema(Schema):
 
 
 class ClaimCitationSchema(Schema):
-    """A citation backing a claim — an edit-history field change or a
-    Sources-page assertion; both render it through the same client component.
+    """A citation backing a claim, wherever that claim is presented.
 
     Covers both kinds of evidence: instances attached to the claim as
     supporting evidence (``slug`` is null) and instances referenced by
@@ -174,8 +173,8 @@ class ClaimCitationSchema(Schema):
 
     id: int = Field(
         description=(
-            "The citation instance's primary key — the identity the citation "
-            "tooltip keys on, matching the ``data-cite-id`` its marker carries."
+            "The citation instance's primary key — the stable identity a "
+            "client keys a citation on."
         )
     )
     source_name: str = Field(description="The cited source's display name.")

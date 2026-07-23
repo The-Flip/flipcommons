@@ -91,13 +91,13 @@ export function substituteCiteMarkers(text: string, indexes: Map<string, number>
 /**
  * Makes rendered `[n]` markers live rather than inert labels.
  *
- * Supplied only by a surface that has a citation reference list to jump to —
- * the Sources page. Edit-history rows omit it, so their markers stay plain
- * text instead of advertising an interaction they do not have.
+ * Supply it only where there is a citation reference list for a marker to jump
+ * to; omitted, markers stay plain text instead of advertising an interaction
+ * they do not have.
  */
 export interface CiteMarkerInteractions {
-  /** Reference number → citation-instance id, the identity `CitationTooltip`
-   *  binds to via `data-cite-id`. A number absent here stays inert. */
+  /** Reference number → citation-instance id, published on the marker as
+   *  `data-cite-id`. A number absent here stays inert. */
   ids: Map<number, number>;
   /** Where a marker points. Markers render as anchors: inline by default, so
    *  they keep a real hit area inside the zero line-height superscript that a
