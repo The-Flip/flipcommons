@@ -288,4 +288,35 @@ describe('buildSourcesView', () => {
     expect([...entry.citeIndexes]).toEqual([['flyer-p2', 1]]);
     expect(entry.footnotes.map((f) => f.index)).toEqual([]);
   });
+
+  it('points every marker sharing a number at the id that number lists', () => {
+    // The same evidence recorded twice is two instance ids but one reference
+    // number. The tooltip resolves a marker by id against `references`, which
+    // holds one entry per number — so a marker citing its own id instead of
+    // the entry's would resolve to nothing and go inert.
+    const { fields, references } = buildSourcesView([
+      claim({
+        field_name: 'description',
+        value: {
+          raw: 'Text [[cite:id:10]]',
+          display: { kind: 'markdown', text: 'Text [[cite:flyer]]' },
+        },
+        is_winner: true,
+        citations: [{ ...citation('Williams Flyer', 'p. 2'), id: 10, slug: 'flyer' }],
+      }),
+      claim({
+        field_name: 'year',
+        value: { raw: 1997 },
+        is_winner: true,
+        citations: [{ ...citation('Williams Flyer', 'p. 2'), id: 57 }],
+        attribution: by('OPDB', '2026-04-06T00:00:00Z'),
+      }),
+    ]);
+
+    expect(references).toHaveLength(1);
+    const listed = references[0].id;
+    const [prose, scalar] = fields.map((f) => f.slots[0].winner);
+    expect([...prose.citeIds.values()]).toEqual([listed]);
+    expect(scalar.footnotes.map((f) => f.id)).toEqual([listed]);
+  });
 });

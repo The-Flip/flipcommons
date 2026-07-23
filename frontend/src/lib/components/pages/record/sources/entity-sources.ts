@@ -29,7 +29,8 @@ import type { InlineCitation } from '$lib/components/markdown/citation-tooltip';
 export interface FootnoteMarker {
   /** Reference number into `SourcesView.references`. */
   index: number;
-  /** Citation-instance id, for the tooltip's `data-cite-id`. */
+  /** The id `references` lists under `index`, for the tooltip's
+   *  `data-cite-id` — see `Reference.id`. */
   id: number;
 }
 
@@ -51,11 +52,12 @@ export interface ValueSupport {
    *  value's own text positions with an inline `[[cite:slug]]` marker. Feeds
    *  `ChangeValue`, which renders them as superscripts in place. */
   citeIndexes: Map<string, number>;
-  /** Reference number → citation-instance id, for the numbers this value cites
-   *  *inline*. Deliberately excludes its footnote numbers: the marker renderer
-   *  treats any bracketed number in the text as a marker, so a number the
-   *  value never substituted must not be resolvable from stray prose.
-   *  Footnote markers carry their own id and never go through that path. */
+  /** Reference number → the id `references` lists under it (see
+   *  `Reference.id`), for the numbers this value cites *inline*. Deliberately
+   *  excludes its footnote numbers: the marker renderer treats any bracketed
+   *  number in the text as a marker, so a number the value never substituted
+   *  must not be resolvable from stray prose. Footnote markers carry the same
+   *  id on themselves and never go through this path. */
   citeIds: Map<number, number>;
   /** Markers with no inline position, ascending by reference number. */
   footnotes: FootnoteMarker[];
@@ -241,24 +243,37 @@ function draftField(field: string, slotMap: FieldAccumulator): FieldDraft {
   return { field, slots, latestAt: latestOf(slots) };
 }
 
+/** A reference number together with the citation-instance id listed under it. */
+interface Reference {
+  /** 1-based position in `SourcesView.references`. */
+  index: number;
+  /** The id of the instance `references` actually carries for this number.
+   *
+   *  Not necessarily the id of the citation that asked for the number: the
+   *  same evidence recorded twice is two instances but one entry. Markers
+   *  resolve by id against that list, so every marker for a number must carry
+   *  this id rather than its own, or it resolves to nothing and goes inert. */
+  id: number;
+}
+
 /** Assigns each distinct citation its page-wide reference number on first
  *  sight, in the reading order the freeze pass walks. */
 class ReferenceNumbering {
   readonly references: InlineCitation[] = [];
-  readonly #numbers = new Map<string, number>();
+  readonly #byKey = new Map<string, Reference>();
 
-  /** The 1-based number for *citation*, minting one if it is new. */
-  numberFor(citation: ClaimCitationSchema): number {
+  /** The reference for *citation*, minting one if it is new. */
+  referenceFor(citation: ClaimCitationSchema): Reference {
     const key = citationKey(citation);
-    let index = this.#numbers.get(key);
-    if (index === undefined) {
-      index = this.references.length + 1;
+    let reference = this.#byKey.get(key);
+    if (reference === undefined) {
+      reference = { index: this.references.length + 1, id: citation.id };
       // `links` is optional on the wire but required by InlineCitation, since
       // the tooltip and the reference entry both split it unconditionally.
-      this.references.push({ ...citation, index, links: citation.links ?? [] });
-      this.#numbers.set(key, index);
+      this.references.push({ ...citation, index: reference.index, links: citation.links ?? [] });
+      this.#byKey.set(key, reference);
     }
-    return index;
+    return reference;
   }
 }
 
@@ -282,15 +297,15 @@ function freezeValue(
   const citeIds = new Map<number, number>();
   const footnotes: FootnoteMarker[] = [];
   for (const citation of draft.citations.values()) {
-    const index = numbering.numberFor(citation);
+    const { index, id } = numbering.referenceFor(citation);
     if (isProse && citation.slug != null) {
       citeIndexes.set(citation.slug, index);
       // Only a number this value actually cites inline goes in the lookup the
       // marker renderer consults, so a number it merely footnotes cannot be
       // resolved out of a literal "[3]" the prose happens to contain.
-      citeIds.set(index, citation.id);
+      citeIds.set(index, id);
     } else {
-      footnotes.push({ index, id: citation.id });
+      footnotes.push({ index, id });
     }
   }
   return {
