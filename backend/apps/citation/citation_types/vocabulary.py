@@ -24,6 +24,15 @@ from django.db import models
 SchemeKey = str
 StartSeconds = int
 
+# The reserved left segment of an ``isbn:`` patch cite ref. Deliberately NOT a
+# registered scheme — a scheme is a platform whose root mints children from
+# URLs, while a book is its own root and is never minted by a cite — but it
+# shares the ``<prefix>:<identifier>`` cite namespace with scheme keys and
+# authored root slugs. Owned here (the dependency-free leaf) so the model's
+# reserved-handle constraint and the patch parser derive from one constant
+# without inverting the citation ← claim_ingest boundary.
+ISBN_CITE_PREFIX = "isbn"
+
 
 class SourceType(models.TextChoices):
     BOOK = "book", "Book"

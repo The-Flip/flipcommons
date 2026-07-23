@@ -171,6 +171,74 @@ class TestWebFlatnessGuard:
         page.full_clean()  # does not raise
 
 
+class TestSlugAddressedGuards:
+    """A slug-addressed (magazine) source: two levels, never under a scheme root,
+    slug in the system-wide grammar."""
+
+    def test_rejects_a_magazine_grandchild(self, db):
+        root = make_citation_source(
+            name="Billboard", source_type="magazine", slug="billboard"
+        )
+        issue = make_citation_source(
+            name="Sep 1945", source_type="magazine", slug="1945-09", parent=root
+        )
+        article = CitationSource(
+            name="An Article",
+            source_type="magazine",
+            slug="an-article",
+            parent=issue,
+            created_by=default_actor(),
+            updated_by=default_actor(),
+        )
+        with pytest.raises(ValidationError, match="nests only one level"):
+            article.full_clean()
+
+    def test_rejects_a_magazine_child_under_a_scheme_root(self, db):
+        # ``ipdb:<anything>`` is consumed by the scheme parser, so a slugged
+        # child under a scheme root could never be reached by its slug.
+        ipdb = make_citation_source(
+            name="IPDB", source_type="web", identifier_key="ipdb"
+        )
+        issue = CitationSource(
+            name="Sep 1945",
+            source_type="magazine",
+            slug="1945-09",
+            parent=ipdb,
+            created_by=default_actor(),
+            updated_by=default_actor(),
+        )
+        with pytest.raises(ValidationError, match="scheme root"):
+            issue.full_clean()
+
+    def test_accepts_a_magazine_issue_under_a_magazine_root(self, db):
+        root = make_citation_source(
+            name="Billboard", source_type="magazine", slug="billboard"
+        )
+        issue = CitationSource(
+            name="September 29, 1945",
+            source_type="magazine",
+            slug="1945-09-29",
+            parent=root,
+            created_by=default_actor(),
+            updated_by=default_actor(),
+        )
+        issue.full_clean()  # does not raise
+
+    def test_slug_grammar_is_the_system_wide_one(self, db):
+        # ``game_room`` is a valid Django SlugField value but not a valid
+        # system slug — the field is a CharField + SLUG_RE precisely so the
+        # API can't mint a handle no cite could resolve.
+        row = CitationSource(
+            name="Game Room",
+            source_type="magazine",
+            slug="game_room",
+            created_by=default_actor(),
+            updated_by=default_actor(),
+        )
+        with pytest.raises(ValidationError, match="lowercase letters"):
+            row.full_clean()
+
+
 class TestCitationSourceRelationships:
     def test_children_relationship(self, citation_source):
         child = make_citation_source(

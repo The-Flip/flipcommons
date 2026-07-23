@@ -21,6 +21,7 @@ import yaml
 from django.core.exceptions import ValidationError
 
 from apps.citation.citation_types import (
+    ISBN_CITE_PREFIX,
     is_known_scheme,
     known_scheme_keys,
     normalize_scheme_identifier,
@@ -50,11 +51,6 @@ from apps.core.validators import validate_no_mojibake
 from apps.provenance.models.changeset import CHANGESET_NOTE_MAX_LENGTH
 
 PATCH_ID_RE = re.compile(r"^\d{4}-[a-z0-9-]+$")
-
-# The cite-ref prefix naming a seeded authored work by its ISBN
-# (``isbn:9781889933023``). Shape-identical to ``scheme:identifier`` and
-# checked first, so it also reserves the key against the scheme registry.
-ISBN_CITE_PREFIX = "isbn"
 
 # Inline-citation marker scan. Deliberately BROADER than the wikilink registry's
 # ``cite`` authoring pattern (which carries a ``(?!id:)`` negative lookahead):

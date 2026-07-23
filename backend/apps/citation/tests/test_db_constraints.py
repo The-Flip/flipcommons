@@ -426,6 +426,98 @@ class TestIdentifierConstraints:
 
 
 # ---------------------------------------------------------------------------
+# CitationSource: authored slug (slug-addressed types)
+# ---------------------------------------------------------------------------
+
+
+def _slugless_magazine(name: str, parent: CitationSource | None = None):
+    """A magazine row with no slug — bypasses the factory's disposable mint."""
+    return CitationSource.objects.create(
+        name=name, source_type="magazine", parent=parent, **_attr()
+    )
+
+
+class TestAuthoredSlugConstraints:
+    """Presence, uniqueness and reserved-handle CHECKs on the authored slug."""
+
+    def test_slug_rejected_on_a_non_slug_addressed_type(self, db):
+        with pytest.raises(IntegrityError):
+            make_citation_source(name="A Site", source_type="web", slug="a-site")
+
+    def test_slug_required_on_a_magazine_root(self, db):
+        with pytest.raises(IntegrityError):
+            _slugless_magazine("Billboard")
+
+    def test_slug_required_on_a_magazine_child(self, db):
+        root = make_citation_source(
+            name="Billboard", source_type="magazine", slug="billboard"
+        )
+        with pytest.raises(IntegrityError):
+            _slugless_magazine("September 29, 1945", parent=root)
+
+    def test_empty_slug_rejected(self, db):
+        with pytest.raises(IntegrityError):
+            make_citation_source(name="Billboard", source_type="magazine", slug="")
+
+    def test_duplicate_root_slug_rejected(self, db):
+        make_citation_source(name="RePlay", source_type="magazine", slug="replay")
+        with pytest.raises(IntegrityError):
+            make_citation_source(name="Replay", source_type="magazine", slug="replay")
+
+    def test_duplicate_sibling_slug_rejected(self, db):
+        root = make_citation_source(
+            name="Billboard", source_type="magazine", slug="billboard"
+        )
+        make_citation_source(
+            name="Vol. 2", source_type="magazine", slug="vol-2", parent=root
+        )
+        with pytest.raises(IntegrityError):
+            make_citation_source(
+                name="Volume 2", source_type="magazine", slug="vol-2", parent=root
+            )
+
+    def test_same_child_slug_under_different_magazines_accepted(self, db):
+        """The sibling unique is per-parent: two magazines may both have vol-2."""
+        a = make_citation_source(
+            name="GameRoom Magazine", source_type="magazine", slug="gameroom-magazine"
+        )
+        b = make_citation_source(
+            name="Play Meter", source_type="magazine", slug="play-meter"
+        )
+        c1 = make_citation_source(
+            name="Vol. 2", source_type="magazine", slug="vol-2", parent=a
+        )
+        c2 = make_citation_source(
+            name="Vol. 2", source_type="magazine", slug="vol-2", parent=b
+        )
+        assert c1.pk is not None
+        assert c2.pk is not None
+
+    @pytest.mark.parametrize("handle", ["isbn", "ipdb", "youtube"])
+    def test_reserved_handle_rejected_on_a_root(self, db, handle):
+        """A root slug may not shadow ``isbn:`` or a scheme key's cite prefix."""
+        with pytest.raises(IntegrityError):
+            make_citation_source(name="A Magazine", source_type="magazine", slug=handle)
+
+    def test_reserved_handle_accepted_on_a_child(self, db):
+        """Child slugs are the ref's right segment — reserved handles aren't
+        special there."""
+        root = make_citation_source(
+            name="A Magazine", source_type="magazine", slug="a-magazine"
+        )
+        child = make_citation_source(
+            name="The ISBN Issue", source_type="magazine", slug="isbn", parent=root
+        )
+        assert child.pk is not None
+
+    def test_uppercase_slug_rejected(self, db):
+        with pytest.raises(IntegrityError):
+            make_citation_source(
+                name="A Magazine", source_type="magazine", slug="A-Magazine"
+            )
+
+
+# ---------------------------------------------------------------------------
 # CitationSourceRootDomain: recognition-host constraints + root-only rule
 # ---------------------------------------------------------------------------
 

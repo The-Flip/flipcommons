@@ -21,7 +21,11 @@ from typing import Literal
 
 from apps.accounts.test_factories import default_actor
 from apps.actors.models import Actor
-from apps.citation.citation_types import CitationSourceTypeValue, identifier_key_values
+from apps.citation.citation_types import (
+    CitationSourceTypeValue,
+    citation_type_spec,
+    identifier_key_values,
+)
 from apps.citation.models import (
     CitationSource,
     CitationSourceLink,
@@ -64,12 +68,18 @@ def make_citation_source(
     description: str = "",
     identifier_key: IdentifierKeyValue = "",
     identifier: str = "",
+    slug: str | None = None,
     created_by: Actor | None = None,
     updated_by: Actor | None = None,
 ) -> CitationSource:
     """Create a ``CitationSource`` for tests, defaulting name/source_type/actor."""
     created_by = created_by or default_actor()
     identifier_key = identifier_key_value(identifier_key)
+    if slug is None and citation_type_spec(source_type).slug_addressed:
+        # A slug-addressed row without a slug violates the CHECK, so mint a
+        # disposable one — the "bare factory call is a valid row" contract.
+        # Constraint tests that need a slugless row build the model directly.
+        slug = f"slug-{uuid.uuid4().hex[:8]}"
     return CitationSource.objects.create(
         name=name,
         source_type=source_type,
@@ -84,6 +94,7 @@ def make_citation_source(
         description=description,
         identifier_key=identifier_key,
         identifier=identifier,
+        slug=slug,
         created_by=created_by,
         updated_by=updated_by or created_by,
     )

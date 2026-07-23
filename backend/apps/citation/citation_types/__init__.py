@@ -62,6 +62,7 @@ from apps.citation.citation_types.registry import (
     slug_addressed_source_types,
 )
 from apps.citation.citation_types.vocabulary import (
+    ISBN_CITE_PREFIX,
     CitationSourceTypeValue,
     SourceType,
     StartSeconds,
@@ -95,6 +96,7 @@ __all__ = [
     "CitationSourceTypeValue",
     "SchemeKey",
     "StartSeconds",
+    "ISBN_CITE_PREFIX",
     # ----- Framework channel: constraint derivation (models), the drivers
     # and raw spec mappings (extractors/deep_links/locators, codegen, tests
     # only) -----
