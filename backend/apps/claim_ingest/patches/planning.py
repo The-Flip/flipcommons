@@ -24,8 +24,8 @@ from apps.actors.models import Actor
 from apps.citation.source_node import SourceNode
 from apps.citation.source_upsert import (
     detect_host_collision,
-    ensure_root_source,
-    validate_root_source,
+    ensure_source,
+    validate_source_node,
 )
 from apps.claim_ingest.patches._types import (
     PatchError,
@@ -64,6 +64,7 @@ from apps.claim_ingest.plan import (
     Namespace,
     PreWriteHook,
     RunReport,
+    SourceCitationRef,
 )
 from apps.core.markdown import get_markdown_fields
 from apps.core.models import (
@@ -209,6 +210,7 @@ def build_plan(doc: PatchDoc, *, source: Source, patch_id: str) -> IngestPlan:
         plan.changed_relationship_fields[rel_ct_id] = existing | frozenset(field_names)
 
     _plan_citation_sources(plan, doc.sources)
+    _validate_source_cite_refs(plan, doc.sources)
 
     return plan
 
@@ -889,7 +891,11 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
     clean :class:`PatchError` at ``--dry-run`` rather than mid-transaction — then
     appends a pre-write hook that additively get-or-creates the sources when the
     plan is applied. The upsert itself never errors on a collision (see
-    ``ensure_root_source``); only author-controllable shape/value errors raise.
+    ``ensure_source``); only author-controllable shape/value errors raise.
+
+    A node's ``parent:`` may reference a root declared elsewhere in the same
+    block (``declared_root_slugs``), in either file order — the hook processes
+    parentless nodes first, so an author may list issues before their periodical.
 
     Also registers a dry-run preview hook so a host collision (recognition hosts
     spanning >1 root → a whole-node skip) surfaces as a warning at ``--dry-run``,
@@ -898,15 +904,65 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
     """
     if not sources:
         return
+    declared_root_slugs = frozenset(
+        node["slug"] for node in sources if "slug" in node and "parent" not in node
+    )
     for i, node in enumerate(sources):
         try:
-            validate_root_source(node)
+            validate_source_node(node, declared_root_slugs=declared_root_slugs)
         except ValidationError as exc:
             raise PatchError(
                 f"sources[{i}] ({node['name']!r}): {_format_validation_error(exc)}"
             ) from exc
-    plan.pre_write_hooks.append(_make_sources_hook(sources, plan.source.actor))
-    plan.dry_run_preview_hooks.append(_make_sources_preview_hook(sources))
+    ordered = [n for n in sources if "parent" not in n] + [
+        n for n in sources if "parent" in n
+    ]
+    plan.pre_write_hooks.append(_make_sources_hook(ordered, plan.source.actor))
+    # The collision preview models the plain-root chain only: a host set
+    # spanning two roots makes THAT path skip the whole node, but a slug node
+    # resolves by slug and handles occupied domains per-host at apply — so a
+    # plain preview over a slug node would claim a skip that never happens.
+    plain = [n for n in ordered if "slug" not in n and "parent" not in n]
+    plan.dry_run_preview_hooks.append(_make_sources_preview_hook(plain))
+
+
+def _validate_source_cite_refs(plan: IngestPlan, sources: list[SourceNode]) -> None:
+    """Read-phase resolution of every authored-slug cite ref in the plan.
+
+    ``--dry-run`` never reaches the apply-side resolvers (``_apply_dry_run``
+    deliberately doesn't touch ``persist``), and the slug grammar makes any
+    slug-shaped typo of a scheme key (``ipddb:4443``) parse as a
+    ``SourceCitationRef`` — so without this check such a cite would pass
+    ``--dry-run`` clean and wedge the queue at live apply. Resolving a slug ref
+    is read-only (``get_slug_source`` never mints), so it validates here: each
+    distinct ref must resolve against committed state or be declared by this
+    patch's own ``sources:`` block (a parented node whose ``parent``/``slug``
+    match). The apply-time arm stays as the backstop with the same message —
+    the read-phase/apply pairing ``parent:`` refs already have.
+    """
+    from apps.citation.extractors import get_slug_source
+    from apps.citation.models import CitationSource
+
+    declared = {
+        (node["parent"], node["slug"])
+        for node in sources
+        if "parent" in node and "slug" in node
+    }
+    checked: set[SourceCitationRef] = set()
+    for pca in plan.assertions:
+        for spec in (*pca.cite_specs, *pca.inline_cites.values()):
+            ref = spec.ref
+            if not isinstance(ref, SourceCitationRef) or ref in checked:
+                continue
+            checked.add(ref)
+            if (ref.root_slug, ref.child_slug) in declared:
+                continue
+            try:
+                get_slug_source(ref.root_slug, ref.child_slug)
+            except (CitationSource.DoesNotExist, ValueError) as exc:
+                raise PatchError(
+                    f"cite {ref.root_slug}:{ref.child_slug}: {exc}"
+                ) from exc
 
 
 def _format_validation_error(exc: ValidationError) -> str:
@@ -923,16 +979,18 @@ def _format_validation_error(exc: ValidationError) -> str:
 def _make_sources_hook(sources: list[SourceNode], actor: Actor) -> PreWriteHook:
     """Build the pre-write hook that upserts a patch's citation sources.
 
-    The closure owns the catalog-side accounting: ``ensure_root_source`` is
+    The closure owns the catalog-side accounting: ``ensure_source`` is
     source-agnostic (plain ``list[str]`` sink + a result tuple), and the hook
     folds its result into the ``RunReport`` — keeping the catalog ``RunReport``
     type out of the citation app. ``actor`` is the patch's ``Source`` actor, so
-    the citation rows a patch creates are attributed to it.
+    the citation rows a patch creates are attributed to it. ``sources`` arrives
+    parentless-first, so a same-patch declared parent exists before its
+    children upsert; created children count into the same tallies as roots.
     """
 
     def hook(report: RunReport) -> None:
         for node in sources:
-            result = ensure_root_source(node, actor=actor, warnings=report.warnings)
+            result = ensure_source(node, actor=actor, warnings=report.warnings)
             if result.source_created:
                 report.sources_created += 1
             else:
@@ -943,13 +1001,15 @@ def _make_sources_hook(sources: list[SourceNode], actor: Actor) -> PreWriteHook:
 
 
 def _make_sources_preview_hook(sources: list[SourceNode]) -> DryRunPreviewHook:
-    """Build the dry-run preview hook for a patch's citation sources.
+    """Build the dry-run preview hook for a patch's **plain** citation sources.
 
     Read-only counterpart to ``_make_sources_hook``: a pure committed-state
     ``detect_host_collision`` read per node, appending the spans-two-roots warning
     so an author sees the whole-node skip at ``--dry-run`` before publishing. The
     live path runs the authoritative ``_make_sources_hook`` instead, so the
-    collision warns exactly once on each path.
+    collision warns exactly once on each path. The caller passes plain
+    (non-slug) nodes only — a slug node's occupied-domain warnings surface at
+    apply, per the committed-state-preview stance.
     """
 
     def hook(report: RunReport) -> None:

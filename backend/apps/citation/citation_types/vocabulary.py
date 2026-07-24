@@ -24,10 +24,19 @@ from django.db import models
 SchemeKey = str
 StartSeconds = int
 
+# The reserved left segment of an ``isbn:`` patch cite ref. Deliberately NOT a
+# registered scheme — a scheme is a platform whose root mints children from
+# URLs, while a book is its own root and is never minted by a cite — but it
+# shares the ``<prefix>:<identifier>`` cite namespace with scheme keys and
+# authored root slugs. Owned here (the dependency-free leaf) so the model's
+# reserved-handle constraint and the patch parser derive from one constant
+# without inverting the citation ← claim_ingest boundary.
+ISBN_CITE_PREFIX = "isbn"
+
 
 class SourceType(models.TextChoices):
     BOOK = "book", "Book"
-    MAGAZINE = "magazine", "Magazine"
+    PERIODICAL = "periodical", "Periodical"
     WEB = "web", "Web"
     VIDEO = "video", "Video"
 
@@ -38,7 +47,7 @@ class SourceType(models.TextChoices):
 # ``docs/Python.md`` so internal renames never surface as schema diffs. A
 # Literal can't be derived from the enum, so the import-time assertion below
 # keeps the hand-mirrored list honest.
-CitationSourceTypeValue = Literal["book", "magazine", "web", "video"]
+CitationSourceTypeValue = Literal["book", "periodical", "web", "video"]
 
 
 def _assert_citation_source_type_literal_current() -> None:

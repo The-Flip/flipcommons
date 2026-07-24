@@ -2,7 +2,7 @@
 
 A movie is a ``video`` source with no ``identifier_key`` and no canonical URL:
 reached by search, cited with a timestamp locator (see ``MovieCitations.md``).
-These tests drive the real seed path (``ensure_root_source``) and the shared
+These tests drive the real seed path (``ensure_source``) and the shared
 locator chokepoint (``normalized_locator``) to prove the video citation type
 supports movies with no new machinery — the abstractness relaxation is all it
 takes.
@@ -16,7 +16,7 @@ from django.core.exceptions import ValidationError
 from apps.citation.locators import normalized_locator
 from apps.citation.models import CitationSource
 from apps.citation.source_node import SourceNode
-from apps.citation.source_upsert import ensure_root_source
+from apps.citation.source_upsert import ensure_source
 from apps.provenance.test_factories import make_ingest_source
 
 pytestmark = pytest.mark.django_db
@@ -59,7 +59,7 @@ def actor(db):
 class TestMovieSeed:
     def test_movies_seed_as_citable_parentless_video_works(self, actor):
         for node in MOVIES:
-            result = ensure_root_source(node, actor=actor, warnings=[])
+            result = ensure_source(node, actor=actor, warnings=[])
             assert result.source_created
 
         for node in MOVIES:
@@ -76,15 +76,15 @@ class TestMovieSeed:
     def test_a_movie_mints_no_recognition_domain(self, actor):
         """A movie has no canonical URL, so it is reached by search, never by
         URL recognition — it declares no host and owns no root domain."""
-        ensure_root_source(MOVIES[0], actor=actor, warnings=[])
+        ensure_source(MOVIES[0], actor=actor, warnings=[])
         movie = CitationSource.objects.get(name="Tommy")
         assert movie.root_domains.count() == 0
 
     def test_reseeding_is_idempotent(self, actor):
         """Re-applying the seed matches the existing row instead of duplicating
         it (the additive get-or-create by ``(name, source_type)``)."""
-        first = ensure_root_source(MOVIES[0], actor=actor, warnings=[])
-        second = ensure_root_source(MOVIES[0], actor=actor, warnings=[])
+        first = ensure_source(MOVIES[0], actor=actor, warnings=[])
+        second = ensure_source(MOVIES[0], actor=actor, warnings=[])
         assert first.source_created is True
         assert second.source_created is False
         assert CitationSource.objects.filter(name="Tommy").count() == 1

@@ -2,7 +2,7 @@
 // Do not edit manually.
 
 /** The registered citation-type keys (`CitationSource.source_type` values). */
-export type CitationTypeKey = 'book' | 'magazine' | 'video' | 'web';
+export type CitationTypeKey = 'book' | 'periodical' | 'video' | 'web';
 
 /** Declarative per-type facts, exported from the backend registry.
  * `locatorKind` is the frontend input behavior: `freeform` is a plain
@@ -10,7 +10,9 @@ export type CitationTypeKey = 'book' | 'magazine' | 'video' | 'web';
  * `locatorLabel`/`locatorHelp` are the field label and persistent
  * format guidance the cite picker shows (not placeholder text).
  * `locatorDisplayPrefix` prefixes the locator on the read side
- * (tooltip, references) — e.g. video's `starting at` prefix. */
+ * (tooltip, references) — e.g. video's `starting at` prefix.
+ * `slugAddressed` marks types addressed by an authored kebab slug
+ * (periodical issues) — the create UI shows a slug field for these. */
 export interface CitationTypeMeta {
   key: CitationTypeKey;
   label: string;
@@ -21,6 +23,7 @@ export interface CitationTypeMeta {
   locatorDisplayPrefix: string;
   locatorInvalidMessage: string;
   childSkipsLocator: boolean;
+  slugAddressed: boolean;
 }
 
 export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
@@ -34,10 +37,11 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorDisplayPrefix: '',
     locatorInvalidMessage: '',
     childSkipsLocator: false,
+    slugAddressed: false,
   },
-  magazine: {
-    key: 'magazine',
-    label: 'Magazine',
+  periodical: {
+    key: 'periodical',
+    label: 'Periodical',
     locatorKind: 'freeform',
     locatorLabel: 'Location in source',
     locatorPlaceholder: 'p. 42, Chapter 3, timestamp...',
@@ -45,6 +49,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorDisplayPrefix: '',
     locatorInvalidMessage: '',
     childSkipsLocator: false,
+    slugAddressed: true,
   },
   video: {
     key: 'video',
@@ -57,6 +62,7 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorInvalidMessage:
       'Enter a start time like 1:02:03, 95, or 1h2m3s (where to start watching).',
     childSkipsLocator: false,
+    slugAddressed: false,
   },
   web: {
     key: 'web',
@@ -68,5 +74,6 @@ export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {
     locatorDisplayPrefix: '',
     locatorInvalidMessage: '',
     childSkipsLocator: true,
+    slugAddressed: false,
   },
 };

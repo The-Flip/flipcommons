@@ -160,6 +160,7 @@ def _serialize_child(child: CitationSource) -> CitationSourceChildSchema:
         source_type=child.source_type,
         year=child.year,
         isbn=child.isbn,
+        slug=child.slug,
         skip_locator=child.skip_locator,
         urls=[link.url for link in child.links.all()],
     )
@@ -175,7 +176,9 @@ def _serialize_search_row(s: CitationSource) -> CitationSourceSearchSchema:
         publisher=s.publisher,
         year=s.year,
         isbn=s.isbn,
+        slug=s.slug,
         parent_id=s.parent_id,
+        parent_name=s.parent.name if s.parent is not None else None,
         has_children=has_children,
         is_abstract=s.is_abstract(has_children=has_children),
         skip_locator=s.skip_locator,
@@ -189,6 +192,7 @@ def _serialize_detail(source: CitationSource) -> CitationSourceDetailSchema:
         parent_obj = source.parent
         assert parent_obj is not None  # a non-root always has a parent loaded
         parent = CitationSourceParentSchema(id=parent_obj.pk, name=parent_obj.name)
+    children = [_serialize_child(child) for child in source.children.all()]
     return CitationSourceDetailSchema(
         id=source.pk,
         name=source.name,
@@ -200,15 +204,17 @@ def _serialize_detail(source: CitationSource) -> CitationSourceDetailSchema:
         day=source.day,
         date_note=source.date_note,
         isbn=source.isbn,
+        slug=source.slug,
         description=source.description,
         identifier_key=source.identifier_key,
         skip_locator=source.skip_locator,
+        is_abstract=source.is_abstract(has_children=bool(children)),
         parent=parent,
         links=[
             CitationSourceLinkSchema.model_validate(link, from_attributes=True)
             for link in source.links.all()
         ],
-        children=[_serialize_child(child) for child in source.children.all()],
+        children=children,
         created_at=source.created_at.isoformat(),
         updated_at=source.updated_at.isoformat(),
     )
@@ -293,6 +299,7 @@ def search_citation_sources(
 
     qs = (
         CitationSource.objects.filter(text_filter)
+        .select_related("parent")
         .annotate(
             has_children=Exists(CitationSource.objects.filter(parent=OuterRef("pk")))
         )
@@ -314,7 +321,7 @@ def search_citation_sources(
 def create_citation_source(
     request: HttpRequest, data: CitationSourceCreateSchema
 ) -> Status[CitationSourceDetailSchema]:
-    """Create an authored root (book/magazine/movie) or a linkless child.
+    """Create an authored root (book/periodical/movie) or a linkless child.
 
     This endpoint owns neither URLs nor links: web roots/children are minted by
     ``cite-url``/``pages/`` and scheme children by ``records/``. It creates a
@@ -337,7 +344,7 @@ def create_citation_source(
             )
         parent = get_object_or_404(CitationSource, pk=data.parent_id)
         # Authored children extend their own work's hierarchy — an edition
-        # under its book, an issue under its magazine. A cross-type authored
+        # under its book, an issue under its periodical. A cross-type authored
         # child (a book "edition" under a video or web root) has no meaning
         # and would sidestep the parent type's minting rules.
         if parent.source_type != data.source_type:
@@ -346,7 +353,7 @@ def create_citation_source(
                 f"A {data.source_type} child can't nest under a "
                 f"{parent.source_type} source — an authored child belongs to "
                 f"its own work's hierarchy (an edition under its book, an "
-                f"issue under its magazine).",
+                f"issue under its periodical).",
             )
 
     source = CitationSource(
@@ -359,12 +366,15 @@ def create_citation_source(
         day=data.day,
         date_note=data.date_note,
         isbn=data.isbn,
+        slug=data.slug,
         description=data.description,
         parent=parent,
         created_by=user.actor,
         updated_by=user.actor,
     )
-    _clean_and_save(source, integrity_msg="A source with this ISBN already exists.")
+    _clean_and_save(
+        source, integrity_msg="A source with this ISBN or slug already exists."
+    )
 
     source = get_object_or_404(_detail_qs(), pk=source.pk)
     return Status(201, _serialize_detail(source))
@@ -655,7 +665,7 @@ def create_citation_source_page(
 
     The contributor already chose the parent (the identify path), so the URL is
     not re-recognized — the page nests directly under *source_id*. The parent may
-    be any root type (a web page under a magazine/book/video root is intended —
+    be any root type (a web page under a periodical/book/video root is intended —
     a platform's terms or channel page is a page, not a record); the structural
     rules are the uncitable-URL classification below (deliverer copies and
     scheme records never mint as pages) and the web-flatness guard, which 422s
@@ -732,7 +742,7 @@ def update_citation_source(
     _clean_and_save(
         source,
         update_fields=[*fields.keys(), "updated_by", "updated_at"],
-        integrity_msg="A source with this ISBN already exists.",
+        integrity_msg="A source with this ISBN or slug already exists.",
     )
 
     source = get_object_or_404(_detail_qs(), pk=source.pk)

@@ -1,13 +1,20 @@
-<!-- @component New-source form for an authored work — book, magazine, or video/movie (a root, or an edition under a parent). -->
+<!-- @component New-source form for an authored work — book, periodical, or video/movie (a root, or an edition under a parent). -->
 <script lang="ts">
   import client from '$lib/api/client';
   import type { ParentContext, CreateSeed } from './citation-types';
+  import { citationTypeMeta } from '$lib/citation-types';
   import DropdownButton from '$lib/components/input/dropdown/DropdownButton.svelte';
   import DropdownHeader from '$lib/components/input/dropdown/DropdownHeader.svelte';
   import FieldGroup from '$lib/components/input/FieldGroup.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
+  import { reconcileSlug, slugifyForCatalog } from '$lib/create-form';
 
-  type SourceType = 'book' | 'magazine' | 'video';
+  type SourceType = 'book' | 'periodical' | 'video';
+
+  /** The slug column's limit (CITATION_SOURCE_SLUG_MAX_LENGTH backend-side).
+   *  Names run to 500 chars, so an unclamped proposal could exceed what the
+   *  API accepts and fail with a generic error. */
+  const SLUG_MAX_LENGTH = 200;
 
   let {
     parentContext,
@@ -23,6 +30,8 @@
       sourceName: string;
       sourceType: string;
       skipLocator: boolean;
+      isAbstract?: boolean;
+      author?: string;
     }) => void;
     oncancel: () => void;
     onback: () => void;
@@ -30,7 +39,7 @@
 
   // These props are intentionally captured once at mount — the orchestrator
   // creates a fresh component for each stage transition, so they won't change.
-  // This stage creates authored works (book/magazine/video) — a root, or an
+  // This stage creates authored works (book/periodical/video) — a root, or an
   // edition under a parent. All web creation goes through
   // CitationWebCreateStage, so a `web` seed never arrives here and an
   // `extraction` seed is always a book.
@@ -56,6 +65,8 @@
   let author = $state(draft?.author ?? parentContext?.author ?? '');
   let publisher = $state(draft?.publisher ?? '');
   let year = $state<number | null>(draft?.year ?? null);
+  let slug = $state('');
+  let syncedSlug = $state('');
   let error = $state('');
   let submitting = $state(false);
   let nameInputEl: HTMLInputElement | undefined = $state();
@@ -68,6 +79,23 @@
   // Year is also prompted for a manually-created video: a movie's year is its
   // main disambiguator across remakes.
   let showYear = $derived(showExtractedFields || sourceType === 'video');
+  // A slug-addressed type (periodical, per the generated meta — never a
+  // hardcoded type name) requires an authored cite handle.
+  let slugAddressed = $derived(citationTypeMeta(sourceType).slugAddressed);
+
+  // Auto-propose the slug from the name (shared sync-until-diverged behavior)
+  // so the citation flow inherits create-form's slugify instead of its own
+  // copy — clamped to the column limit, with the cut never leaving a
+  // trailing hyphen (the grammar rejects one).
+  $effect(() => {
+    if (!slugAddressed) return;
+    const projectedSlug = slugifyForCatalog(name).slice(0, SLUG_MAX_LENGTH).replace(/-+$/, '');
+    const next = reconcileSlug({ name, slug, syncedSlug, projectedSlug });
+    if (next.slug !== slug) {
+      slug = next.slug;
+      syncedSlug = next.syncedSlug;
+    }
+  });
 
   $effect(() => {
     if (nameInputEl) {
@@ -87,6 +115,10 @@
       error = 'Name is required.';
       return;
     }
+    if (slugAddressed && !slug.trim()) {
+      error = 'Slug is required.';
+      return;
+    }
 
     submitting = true;
     error = '';
@@ -102,6 +134,7 @@
         isbn: draft?.isbn ?? null,
         description: '',
         parent_id: parentContext?.id ?? null,
+        slug: slugAddressed ? slug : null,
       },
     });
     submitting = false;
@@ -116,6 +149,10 @@
       sourceName: data.name,
       sourceType: data.source_type,
       skipLocator: data.skip_locator,
+      // An abstract result (a parentless periodical) routes the flow to child
+      // identification under it; author rides along for the parent context.
+      isAbstract: data.is_abstract,
+      author: data.author,
     });
   }
 </script>
@@ -135,7 +172,7 @@
       <!-- Authored works only — web sources are created by pasting a URL
            (CitationWebCreateStage), never typed in here. A video here is a
            movie (a standalone work); platform videos mint from their URLs. -->
-      {#each ['book', 'magazine', 'video'] as t (t)}
+      {#each ['book', 'periodical', 'video'] as t (t)}
         <button
           type="button"
           class="type-chip"
@@ -145,12 +182,17 @@
             sourceType = t as SourceType;
           }}
         >
-          {t}
+          {citationTypeMeta(t).label}
         </button>
       {/each}
     </div>
   {/if}
   <TextField label="Name" bind:value={name} bind:inputRef={nameInputEl} noAutofill />
+  {#if slugAddressed}
+    <!-- The authored cite handle (billboard, 1945-09-29) — auto-proposed from
+         the name until the user diverges it. -->
+    <TextField label="Slug" bind:value={slug} noAutofill maxlength={SLUG_MAX_LENGTH} />
+  {/if}
   <TextField label="Author" optional bind:value={author} noAutofill />
   {#if showExtractedFields}
     <TextField label="Publisher" optional bind:value={publisher} noAutofill />

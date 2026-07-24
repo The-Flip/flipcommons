@@ -21,6 +21,7 @@ import yaml
 from django.core.exceptions import ValidationError
 
 from apps.citation.citation_types import (
+    ISBN_CITE_PREFIX,
     is_known_scheme,
     known_scheme_keys,
     normalize_scheme_identifier,
@@ -34,6 +35,7 @@ from apps.citation.models import (
     CITATION_INSTANCE_QUOTE_MAX_LENGTH,
     CITATION_SOURCE_IDENTIFIER_MAX_LENGTH,
     CITATION_SOURCE_LINK_URL_MAX_LENGTH,
+    CITATION_SOURCE_SLUG_MAX_LENGTH,
 )
 from apps.citation.source_node import SourceLinkNode, SourceNode
 from apps.claim_ingest.patches._types import PatchError
@@ -43,18 +45,14 @@ from apps.claim_ingest.plan import (
     CiteSpec,
     IsbnCitationRef,
     SchemeCitationRef,
+    SourceCitationRef,
     WebCitationRef,
 )
 from apps.core.types import JsonBody
-from apps.core.validators import validate_no_mojibake
+from apps.core.validators import SLUG_RE, validate_no_mojibake
 from apps.provenance.models.changeset import CHANGESET_NOTE_MAX_LENGTH
 
 PATCH_ID_RE = re.compile(r"^\d{4}-[a-z0-9-]+$")
-
-# The cite-ref prefix naming a seeded authored work by its ISBN
-# (``isbn:9781889933023``). Shape-identical to ``scheme:identifier`` and
-# checked first, so it also reserves the key against the scheme registry.
-ISBN_CITE_PREFIX = "isbn"
 
 # Inline-citation marker scan. Deliberately BROADER than the wikilink registry's
 # ``cite`` authoring pattern (which carries a ``(?!id:)`` negative lookahead):
@@ -348,16 +346,18 @@ def _parse_link_shape(link: object, where: str) -> None:
 def _parse_source_node(entry: object, where: str) -> SourceNode:
     """Validate one `sources:` node's shape and return it as a SourceNode.
 
-    Shape only — required keys, no unknown keys, `children` rejected (v1 is
-    flat), link mappings well-formed. Field *values* (enum, ranges, URL format)
-    are validated against the model in build_plan's read phase.
+    Shape only — required keys, no unknown keys, `children` rejected (nesting
+    is spelled `parent:`, never by structure), link mappings well-formed.
+    Field *values* (enum, ranges, URL format) are validated against the model
+    in build_plan's read phase.
     """
     if not isinstance(entry, dict):
         raise PatchError(f"{where} must be a mapping")
     if "children" in entry:
         raise PatchError(
-            f"{where}: nested 'children' is unsupported — v1 `sources:` is flat "
-            f"(create child sources via 'cite:' instead)"
+            f"{where}: nested 'children' is unsupported — nesting is expressed "
+            f"by reference, not structure: declare a periodical issue as its own "
+            f"node with 'parent: <root-slug>', or create web pages via 'cite:'"
         )
     unknown = set(entry) - ALLOWED_SOURCE_KEYS
     if unknown:
@@ -366,6 +366,9 @@ def _parse_source_node(entry: object, where: str) -> SourceNode:
         value = entry.get(key)
         if not isinstance(value, str) or not value:
             raise PatchError(f"{where}: {key!r} is required and must be a string")
+    for key in ("slug", "parent"):
+        if key in entry and (not isinstance(entry[key], str) or not entry[key]):
+            raise PatchError(f"{where}: {key!r} must be a non-empty string")
     raw_domains = entry.get("domains", [])
     if not isinstance(raw_domains, list) or not all(
         isinstance(d, str) and d for d in raw_domains
@@ -825,20 +828,31 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
     """Parse one non-empty cite spec into a :data:`CitationRef`.
 
     Shared by the entry-level ``cite:`` (via :func:`_parse_provenance`) and the
-    inline ``cites:`` map (:func:`_parse_cites`). Three forms:
+    inline ``cites:`` map (:func:`_parse_cites`). Four forms, tried in order so
+    the later grammars never shadow the earlier:
 
     * a ``http(s)://`` URL — a standalone web source; an optional ``archive``
       durable-snapshot URL rides along;
+    * ``isbn:<isbn>`` — an already-seeded authored work (a book edition), by
+      the globally-unique identifier the work itself carries;
     * ``scheme:identifier`` — the scheme must be a registered scheme and the
       identifier must normalize (``ipdb:4443``);
-    * ``isbn:<isbn>`` — an already-seeded authored work (a book edition), by
-      the globally-unique identifier the work itself carries.
+    * ``<root-slug>:<child-slug>`` — an already-declared child of a
+      slug-addressed source (a periodical issue, ``billboard:1945-09-29``), both
+      segments in the system-wide slug grammar.
 
     ``isbn:`` is checked before the scheme grammar it shape-matches, and is
     deliberately *not* a registered scheme: a scheme is a platform whose root
     mints children from URLs, while a book is its own root and is never minted
     by a cite. (Nothing may register ``isbn`` as a scheme key — the registry's
-    keys and this prefix share one namespace.)
+    keys, this prefix and the authored root slugs share one namespace; the
+    model's reserved-handle constraint keeps the slugs clear of the other two.)
+
+    The slug form is checked last: a known scheme key always wins its left
+    segment, so ``ipdb:4443`` can never become a slug lookup. A slug-shaped
+    ref whose root doesn't exist fails at plan time (the read-phase resolution
+    check) with a message naming the known schemes — the did-you-mean for a
+    typo'd scheme key, which lands here as a slug-shaped ref.
 
     The empty-cite short-circuit and (for the entry path) the archive-without-URL
     guard stay with :func:`_parse_provenance`, which allows an absent cite; here
@@ -856,23 +870,37 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
     scheme, sep, raw_id = cite.partition(":")
     if not sep or not scheme or not raw_id:
         raise PatchError(
-            f"{ref}: cite {cite!r} must be 'scheme:identifier' (e.g. 'ipdb:4443')"
+            f"{ref}: cite {cite!r} must be 'scheme:identifier' (e.g. 'ipdb:4443') "
+            f"or '<root-slug>:<child-slug>' (e.g. 'billboard:1945-09-29')"
         )
-    if not is_known_scheme(scheme):
-        raise PatchError(
-            f"{ref}: unknown cite scheme {scheme!r} "
-            f"(known: {', '.join(sorted(known_scheme_keys()))}; "
-            f"cite a book by '{ISBN_CITE_PREFIX}:<isbn>')"
-        )
-    normalized = normalize_scheme_identifier(scheme, raw_id)
-    if normalized is None:
-        raise PatchError(f"{ref}: invalid {scheme} identifier {raw_id!r}")
-    if len(normalized) > CITATION_SOURCE_IDENTIFIER_MAX_LENGTH:
-        raise PatchError(
-            f"{ref}: cite identifier exceeds "
-            f"{CITATION_SOURCE_IDENTIFIER_MAX_LENGTH} characters"
-        )
-    return SchemeCitationRef(scheme=scheme, identifier=normalized)
+    if is_known_scheme(scheme):
+        normalized = normalize_scheme_identifier(scheme, raw_id)
+        if normalized is None:
+            raise PatchError(f"{ref}: invalid {scheme} identifier {raw_id!r}")
+        if len(normalized) > CITATION_SOURCE_IDENTIFIER_MAX_LENGTH:
+            raise PatchError(
+                f"{ref}: cite identifier exceeds "
+                f"{CITATION_SOURCE_IDENTIFIER_MAX_LENGTH} characters"
+            )
+        return SchemeCitationRef(scheme=scheme, identifier=normalized)
+    if SLUG_RE.fullmatch(scheme) and SLUG_RE.fullmatch(raw_id):
+        if len(scheme) > CITATION_SOURCE_SLUG_MAX_LENGTH:
+            raise PatchError(
+                f"{ref}: cite root slug exceeds "
+                f"{CITATION_SOURCE_SLUG_MAX_LENGTH} characters"
+            )
+        if len(raw_id) > CITATION_SOURCE_SLUG_MAX_LENGTH:
+            raise PatchError(
+                f"{ref}: cite child slug exceeds "
+                f"{CITATION_SOURCE_SLUG_MAX_LENGTH} characters"
+            )
+        return SourceCitationRef(root_slug=scheme, child_slug=raw_id)
+    raise PatchError(
+        f"{ref}: unknown cite scheme {scheme!r} "
+        f"(known: {', '.join(sorted(known_scheme_keys()))}; "
+        f"cite a book by '{ISBN_CITE_PREFIX}:<isbn>', a declared source child "
+        f"by '<root-slug>:<child-slug>')"
+    )
 
 
 def _parse_cite_isbn(raw_isbn: str, ref: str) -> IsbnCitationRef:

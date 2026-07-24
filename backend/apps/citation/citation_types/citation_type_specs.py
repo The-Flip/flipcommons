@@ -1,7 +1,7 @@
 """The citation-type author's declarations.
 
 **This module is the authoring surface for a citation type** — book,
-magazine, web, video — the first-party plugin unit. Unlike a scheme, a
+periodical, web, video — the first-party plugin unit. Unlike a scheme, a
 citation type *is allowed real programming*: its module owns code (video's
 timestamp grammar, its ``VideoSchemeSpec`` scheme contract), declared to the
 framework as fields on these contracts. The rule here is narrower than the
@@ -135,12 +135,19 @@ class CitationTypeSpec:
       resolves to its children), handled universally in
       ``CitationSource.is_abstract`` rather than per type. So this governs only
       the schemeless form: a parentless *book* is the work itself (citable), a
-      schemeless parentless *video* is a **movie** (citable), while a magazine
+      schemeless parentless *video* is a **movie** (citable), while a periodical
       or a site is a container (abstract).
     - ``child_skips_locator``: a child of this type carries its own locator
       (its URL), so the cite picker skips the locator prompt and cites it
       one-click. Unprompted, not unavailable: the edit-evidence panel keeps a
       collapsed affordance and patches may store one.
+    - ``slug_addressed``: sources of this type are addressed by an authored
+      kebab slug — root-unique, sibling-unique — making
+      ``<root-slug>:<child-slug>`` a legal patch cite ref (a periodical issue:
+      ``billboard:1945-09-29``). For every other type the identifier already
+      exists (a book's ISBN, a site's recognition domain, a scheme's key), so
+      only a type with no natural identifier turns this on. Slugs are authored,
+      never minted: a cite of an undeclared slug fails, exactly like ``isbn:``.
     - ``locator``: the type's locator contract (grammar, prompt, structured
       value bridge).
     - ``scheme_spec_type``: the spec class this type's schemes implement — the
@@ -157,5 +164,6 @@ class CitationTypeSpec:
     flat_hierarchy: bool
     schemeless_parentless_abstract: bool
     child_skips_locator: bool
+    slug_addressed: bool
     locator: LocatorContract = FREEFORM_LOCATOR
     scheme_spec_type: type[SchemeSpec] = SchemeSpec

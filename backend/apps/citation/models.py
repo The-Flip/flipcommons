@@ -7,7 +7,11 @@ from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.validators import (
+    MaxValueValidator,
+    MinValueValidator,
+    RegexValidator,
+)
 from django.db import IntegrityError, models, transaction
 from django.db.models.functions import Length, Now
 from django.utils.crypto import get_random_string
@@ -15,11 +19,14 @@ from django.utils.crypto import get_random_string
 from apps.accounts.models import User
 from apps.actors.models import ActorAttributedModel
 from apps.citation.citation_types import (
+    ISBN_CITE_PREFIX,
     SourceType,
     citation_type_spec,
     identifier_key_choices,
     identifier_key_values,
+    known_scheme_keys,
     scheme_bindings,
+    slug_addressed_source_types,
 )
 from apps.citation.deliverers import deliverer_for_host
 from apps.citation.hosts import is_dns_host, normalize_host
@@ -32,7 +39,11 @@ from apps.core.models import (
     nullable_id_not_empty,
 )
 from apps.core.types import CitationSourceId
-from apps.core.validators import validate_no_mojibake
+from apps.core.validators import (
+    SLUG_FORMAT_MESSAGE,
+    SLUG_RE,
+    validate_no_mojibake,
+)
 
 __all__ = [
     "CitationInstance",
@@ -53,6 +64,7 @@ CITATION_SOURCE_PUBLISHER_MAX_LENGTH = 300
 CITATION_SOURCE_DATE_NOTE_MAX_LENGTH = 200
 CITATION_SOURCE_ISBN_MAX_LENGTH = 20
 CITATION_SOURCE_IDENTIFIER_MAX_LENGTH = 200
+CITATION_SOURCE_SLUG_MAX_LENGTH = 200
 CITATION_SOURCE_DESCRIPTION_MAX_LENGTH = 5_000
 CITATION_SOURCE_LINK_URL_MAX_LENGTH = 2_000
 CITATION_SOURCE_LINK_LABEL_MAX_LENGTH = 200
@@ -64,6 +76,19 @@ CITATION_ROOT_DOMAIN_HOST_MAX_LENGTH = 253  # RFC 1035 DNS hostname limit
 CITATION_ROOT_DOMAIN_HOST_TAKEN_MSG = (
     "That domain is already recognized by another citation source."
 )
+
+
+def reserved_cite_handles() -> list[str]:
+    """Root-slug values consumed by the other cite-ref grammars.
+
+    A root slug is the left segment of a patch cite ref
+    (``<root-slug>:<child-slug>``), a namespace it shares with ``isbn:`` and
+    ``scheme:identifier`` — and those parsers run first, so a root claiming one
+    of their handles could never be reached by its slug. Derived from the one
+    vocabulary constant and the scheme registry, never a hand-maintained list,
+    so a new scheme flows into makemigrations.
+    """
+    return [ISBN_CITE_PREFIX, *known_scheme_keys()]
 
 
 def _identifier_key_matches_scheme_type() -> models.Q:
@@ -85,7 +110,7 @@ class CitationSourceQuerySet(models.QuerySet["CitationSource"]):
     """Adds the root/child split the whole citation hierarchy turns on."""
 
     def roots(self) -> CitationSourceQuerySet:
-        """Top-level sources with no parent (books, magazines, website roots)."""
+        """Top-level sources with no parent (books, periodicals, website roots)."""
         return self.filter(parent__isnull=True)
 
     def children(self) -> CitationSourceQuerySet:
@@ -101,7 +126,7 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
 
     NOT claims-controlled — edited directly through admin or future UI.
     Hierarchy via self-referential parent FK enables grouping (e.g., article
-    within magazine issue, edition within book).
+    within periodical issue, edition within book).
     """
 
     id: int
@@ -199,6 +224,25 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         ),
     )
 
+    # NOT the same word as ``CitationInstance.slug`` a few hundred lines below:
+    # that one is 8 random consonants behind a ``[[cite:…]]`` marker; this one
+    # is an authored kebab handle in the system-wide slug grammar. A plain
+    # ``CharField`` (not ``SlugField``, which accepts uppercase and underscores
+    # — the API could then mint ``game_room``, a handle no cite could resolve)
+    # validated by the same ``SLUG_RE`` entity create and claim validation use.
+    slug = models.CharField(
+        max_length=CITATION_SOURCE_SLUG_MAX_LENGTH,
+        null=True,
+        blank=True,
+        validators=[RegexValidator(SLUG_RE, SLUG_FORMAT_MESSAGE)],
+        help_text=(
+            "Authored kebab handle addressing this source in patch cite refs "
+            "(<periodical-slug>:<issue-slug>, e.g. billboard:1945-09-29). "
+            "Present exactly on slug-addressed types (periodical); null "
+            "everywhere else."
+        ),
+    )
+
     class Meta:
         ordering = ["name"]
         constraints = [
@@ -290,6 +334,52 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
                 condition=models.Q(identifier__gt=""),
                 name="citation_citationsource_unique_child_identifier",
             ),
+            # Authored slug (see the field's docstring): never empty, always
+            # lowercase — the addressing grammar's cheap DB half; the full
+            # ``SLUG_RE`` shape is the field validator's job.
+            nullable_id_not_empty("slug"),
+            field_lowercase("slug"),
+            # Root slugs unique across roots, child slugs unique among
+            # siblings. Two constraints, not one: SQL treats NULL parents as
+            # distinct, so a plain UNIQUE(parent, slug) would not constrain
+            # roots.
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(parent__isnull=True, slug__isnull=False),
+                name="citation_citationsource_unique_slug_at_root",
+            ),
+            models.UniqueConstraint(
+                fields=["parent", "slug"],
+                condition=models.Q(parent__isnull=False, slug__isnull=False),
+                name="citation_citationsource_unique_slug_per_parent",
+            ),
+            # A slug lives only on — and is required on, root AND child — a
+            # slug-addressed type. Both derived from the type registry, so
+            # flipping ``slug_addressed`` for a type flows into makemigrations
+            # (plus a backfill), never a hand-edit. Required on children too:
+            # a periodical child is never auto-minted (periodical isn't
+            # flat_hierarchy, so no URL/scheme mint path reaches it), and an
+            # unslugged one would be permanently unaddressable.
+            models.CheckConstraint(
+                condition=models.Q(slug__isnull=True)
+                | models.Q(source_type__in=slug_addressed_source_types()),
+                name="citation_citationsource_slug_only_when_slug_addressed",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(slug__isnull=False)
+                | ~models.Q(source_type__in=slug_addressed_source_types()),
+                name="citation_citationsource_slug_required_when_slug_addressed",
+            ),
+            # A root slug may not shadow the other cite-ref grammars' handles
+            # (``isbn``, the scheme keys) — see ``reserved_cite_handles``.
+            # Roots only: a child slug is the ref's right segment, where those
+            # handles aren't special.
+            models.CheckConstraint(
+                condition=models.Q(slug__isnull=True)
+                | models.Q(parent__isnull=False)
+                | ~models.Q(slug__in=reserved_cite_handles()),
+                name="citation_citationsource_slug_not_reserved_handle",
+            ),
         ]
 
     @property
@@ -319,7 +409,7 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         abstract when it has children (prefer a specific child), or it's a
         platform/site root carrying an ``identifier_key`` (recognition resolves
         a URL to a child under it, so the root is never the cited record), or
-        it's a schemeless parentless root of a container type — a magazine or a
+        it's a schemeless parentless root of a container type — a periodical or a
         website. A standalone book and a movie (a schemeless parentless video)
         are the work themselves, so they stay valid cite targets; abstractness
         is deliberately *not* used to reject a target.
@@ -341,36 +431,78 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         if self.identifier_key:
             return True
         # A schemeless parentless root: abstract only when this type's
-        # schemeless parentless form is a container (a magazine, a site) and
+        # schemeless parentless form is a container (a periodical, a site) and
         # not the work itself (a book, a movie).
         return citation_type_spec(self.source_type).schemeless_parentless_abstract
 
     def clean(self) -> None:
         super().clean()
-        # Web-flatness: a ``flat_hierarchy`` type (web) nests exactly one
-        # level — root → child — so recognition can always resolve a host to the
-        # root and mint a child directly under it. A grandchild (its parent is
-        # itself a child) would be unreachable, so reject it.
+        # Guards that read through the parent FK, which a CHECK can't express.
         #
-        # Test the parent's rootness with a ``children()`` ``exists()`` query
-        # rather than dereferencing ``self.parent``: a dangling ``parent_id``
-        # then matches no row (guard skips) and the FK field validator owns that
-        # error, instead of ``self.parent`` raising a raw ``DoesNotExist``
+        # Read the parent's facts with one ``values()`` query rather than
+        # dereferencing ``self.parent``: a dangling ``parent_id`` then matches
+        # no row (guards skip) and the FK field validator owns that error,
+        # instead of ``self.parent`` raising a raw ``DoesNotExist``
         # mid-``clean``. The ``in SourceType.values`` guard likewise keeps an
         # invalid ``source_type`` the field validator's error, not a
         # ``ValueError`` from the trait lookup.
-        if (
-            self.parent_id is not None
-            and self.source_type in SourceType.values
-            and citation_type_spec(self.source_type).flat_hierarchy
-            and CitationSource.objects.children().filter(pk=self.parent_id).exists()
-        ):
+        if self.parent_id is None or self.source_type not in SourceType.values:
+            return
+        spec = citation_type_spec(self.source_type)
+        if not (spec.flat_hierarchy or spec.slug_addressed):
+            return
+        parent_row = (
+            CitationSource.objects.filter(pk=self.parent_id)
+            .values("parent_id", "identifier_key", "source_type")
+            .first()
+        )
+        if parent_row is None:
+            return
+        # One level deep, two reasons. Web-flatness: a ``flat_hierarchy`` type
+        # nests root → child so recognition can always resolve a host to the
+        # root and mint a child directly under it. Slug addressing: the cite
+        # ref grammar reaches exactly ``root_slug:child_slug`` and analytics
+        # (``citation_tree_too_deep``) resolves roots with a single self-join,
+        # so a slugged grandchild would be both unaddressable and misattributed.
+        if parent_row["parent_id"] is not None:
             raise ValidationError(
                 {
                     "parent": (
                         f"A {self.source_type} source nests only one level deep: "
                         "its parent must be a root (a source with no parent of "
                         "its own)."
+                    )
+                }
+            )
+        if not spec.slug_addressed:
+            return
+        # A slug-addressed child under a scheme root could never be reached:
+        # ``<scheme-key>:<anything>`` is permanently consumed by the scheme
+        # parser before slug resolution runs.
+        if parent_row["identifier_key"]:
+            raise ValidationError(
+                {
+                    "parent": (
+                        f"A {self.source_type} source is addressed by its "
+                        "parent's slug, so its parent cannot be a scheme root — "
+                        "the scheme's cite prefix would shadow the slug."
+                    )
+                }
+            )
+        # And its parent must carry a slug to be addressed *by* — i.e. be a
+        # root of the same slug-addressed type. A book root has no slug, so an
+        # issue nested under it would be permanently unresolvable (resolution
+        # joins ``parent__slug``). The API enforces same-type nesting too; this
+        # covers admin and direct model writes.
+        if parent_row["source_type"] != self.source_type:
+            raise ValidationError(
+                {
+                    "parent": (
+                        f"A {self.source_type} source is addressed by its "
+                        f"parent's slug, so its parent must be a "
+                        f"{self.source_type} root — a "
+                        f"{parent_row['source_type']} parent has no slug to "
+                        "address it by."
                     )
                 }
             )

@@ -382,6 +382,44 @@ describe('CitationAutocomplete (component-level)', () => {
   // Recognition flows (backend-driven)
   // -----------------------------------------------------------------------
 
+  describe('abstract create routing', () => {
+    it('creating a periodical root routes to identify, not the locator', async () => {
+      // A parentless periodical is an abstract container — never the cited
+      // record. After create, the flow must land on issue identification
+      // under the new root, exactly as selecting it from search would.
+      const user = userEvent.setup();
+      renderAutocomplete();
+
+      const createdPeriodical = {
+        id: 70,
+        name: 'Billboard',
+        source_type: 'periodical',
+        skip_locator: false,
+        is_abstract: true,
+        author: '',
+        slug: 'billboard',
+        children: [],
+        links: [],
+      };
+      mockGET.mockImplementation((url: string) => {
+        if (url === '/api/citation-sources/search/') return mockSearchReturning(MOCK_SOURCES);
+        if (url === '/api/citation-sources/{source_id}/')
+          return Promise.resolve({ data: createdPeriodical });
+        return Promise.resolve({ data: [] });
+      });
+      mockPOST.mockResolvedValueOnce({ data: createdPeriodical });
+
+      await enterCreateStage(user, 'Billboard');
+      await user.click(screen.getByRole('button', { name: 'Periodical' }));
+      await user.click(screen.getByRole('button', { name: /continue/i }));
+
+      await vi.waitFor(() => {
+        expect(screen.getByPlaceholderText('Filter editions...')).toBeInTheDocument();
+      });
+      expect(screen.queryByRole('textbox', { name: /location in source/i })).toBeNull();
+    });
+  });
+
   describe('recognition flows', () => {
     it('shows exact match when recognition returns existing child', async () => {
       const user = userEvent.setup();
@@ -670,7 +708,7 @@ describe('CitationAutocomplete (component-level)', () => {
       await user.keyboard('Elton John');
       fireEvent.pointerDown(screen.getByRole('option', { name: /Create "Elton John"/ }));
 
-      // Routes to the web flow's page step — not the book/magazine form.
+      // Routes to the web flow's page step — not the book/periodical form.
       await vi.waitFor(() => {
         expect(screen.getByText('New page')).toBeInTheDocument();
       });
@@ -947,7 +985,7 @@ describe('CitationAutocomplete (component-level)', () => {
       expect(screen.getByDisplayValue("O'Reilly Media")).toBeInTheDocument();
       expect(screen.getByDisplayValue('2009')).toBeInTheDocument();
       // Type picker should be hidden (locked to book)
-      expect(screen.queryByText('magazine')).not.toBeInTheDocument();
+      expect(screen.queryByText('Periodical')).not.toBeInTheDocument();
     });
 
     it('ISBN lookup returns match → locator stage', async () => {
@@ -1338,7 +1376,7 @@ describe('deliverer teaching flow', () => {
     await vi.waitFor(() => {
       expect(screen.getByText('New source')).toBeInTheDocument();
     });
-    expect(screen.getByRole('button', { name: 'video' })).toHaveClass('selected');
+    expect(screen.getByRole('button', { name: 'Video' })).toHaveClass('selected');
     expect(screen.getByLabelText(/Year/)).toBeInTheDocument();
 
     // The only write so far is the extract lookup itself.

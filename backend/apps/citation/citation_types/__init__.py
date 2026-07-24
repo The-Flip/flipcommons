@@ -5,7 +5,7 @@ here, each with its own author module and its own framework module, meeting
 only at the registry's composition weaves (see
 ``docs/plans/citations/CitationPluginSystem.md``):
 
-- **Citation types** (book, magazine, web, video — first-party, allowed real
+- **Citation types** (book, periodical, web, video — first-party, allowed real
   programming): authors declare in ``citation_type_specs`` and write their
   grammar code in their type module; the framework runs it via
   ``citation_type_driver``.
@@ -59,8 +59,10 @@ from apps.citation.citation_types.registry import (
     scheme_root_citation_source_info,
     scheme_source_type,
     scheme_start_seconds_hint,
+    slug_addressed_source_types,
 )
 from apps.citation.citation_types.vocabulary import (
+    ISBN_CITE_PREFIX,
     CitationSourceTypeValue,
     SourceType,
     StartSeconds,
@@ -94,6 +96,7 @@ __all__ = [
     "CitationSourceTypeValue",
     "SchemeKey",
     "StartSeconds",
+    "ISBN_CITE_PREFIX",
     # ----- Framework channel: constraint derivation (models), the drivers
     # and raw spec mappings (extractors/deep_links/locators, codegen, tests
     # only) -----
@@ -102,6 +105,7 @@ __all__ = [
     "SchemeChoice",
     "scheme_bindings",
     "SchemeBinding",
+    "slug_addressed_source_types",
     "CITATION_TYPE_SPECS",
     "SCHEME_SPECS",
     "SCHEME_DRIVERS",

@@ -4246,3 +4246,252 @@ claims:
           license_status: unknown
 """)
     assert report.rejected == 0
+
+
+# ── Periodical issues: slug-declared sources + <root>:<child> cite refs ──
+
+
+_BILLBOARD_SOURCES = """
+sources:
+  - slug: billboard
+    name: Billboard
+    source_type: periodical
+    year: 1894
+
+  - parent: billboard
+    slug: 1945-09-29
+    name: September 29, 1945
+    source_type: periodical
+    year: 1945
+    month: 9
+    day: 29
+    links:
+      - { url: "https://books.google.com/books?id=x", link_type: archive }
+"""
+
+
+def _billboard_patch(machine_model) -> str:
+    return f"""
+attribution: flipcommons-catalog
+{_BILLBOARD_SOURCES}
+claims:
+  - model.{machine_model.slug}:
+      year: 1990
+      cite:
+        - ref: billboard:1945-09-29
+          locator: p. 83
+"""
+
+
+def test_periodical_issue_declared_and_cited(machine_model):
+    # The headline flow: declare the periodical + issue, cite the issue by slug
+    # with a page locator, all in one patch.
+    report = _apply(_billboard_patch(machine_model), patch_id="0001-billboard")
+    assert report.rejected == 0
+    assert report.sources_created == 2
+    root = CitationSource.objects.get(slug="billboard")
+    issue = CitationSource.objects.get(slug="1945-09-29")
+    assert issue.parent_id == root.pk
+    inst = CitationInstance.objects.get()
+    assert inst.citation_source_id == issue.pk
+    assert inst.locator == "p. 83"
+
+
+def test_periodical_sources_redeclare_as_a_noop(machine_model):
+    # A later patch re-declaring the same periodical + issue finds both rows —
+    # by slug, not name — and creates nothing. (The claim entry is not
+    # repeated: an unchanged claim re-assert is rejected by the empty-diff
+    # provenance guard, by design.)
+    _apply(_billboard_patch(machine_model), patch_id="0001-billboard")
+    report = _apply(
+        f"attribution: flipcommons-catalog\n{_BILLBOARD_SOURCES}",
+        patch_id="0002-billboard-again",
+    )
+    assert report.rejected == 0
+    assert report.sources_created == 0
+    assert report.sources_skipped == 2
+    assert CitationSource.objects.filter(source_type="periodical").count() == 2
+
+
+def test_issue_may_be_declared_before_its_periodical(machine_model):
+    # File order is free: parentless nodes upsert first, so an issue listed
+    # above its periodical still nests correctly.
+    text = f"""
+attribution: flipcommons-catalog
+sources:
+  - parent: billboard
+    slug: 1945-09-29
+    name: September 29, 1945
+    source_type: periodical
+
+  - slug: billboard
+    name: Billboard
+    source_type: periodical
+claims:
+  - model.{machine_model.slug}:
+      year: 1990
+      cite: billboard:1945-09-29
+"""
+    report = _apply(text, patch_id="0001-issue-first")
+    assert report.rejected == 0
+    issue = CitationSource.objects.get(slug="1945-09-29")
+    assert issue.parent == CitationSource.objects.get(slug="billboard")
+
+
+def test_periodical_node_without_slug_rejected():
+    with pytest.raises(PatchError, match="requires an authored 'slug'"):
+        _apply(
+            _bad_source("name: Billboard\n    source_type: periodical"),
+            patch_id="0001-no-slug",
+            dry_run=True,
+        )
+
+
+def test_slug_on_a_web_node_rejected():
+    with pytest.raises(PatchError, match="slug-addressed"):
+        _apply(
+            _bad_source("name: X\n    source_type: web\n    slug: x"),
+            patch_id="0001-web-slug",
+            dry_run=True,
+        )
+
+
+def test_reserved_root_slug_rejected():
+    with pytest.raises(PatchError, match="reserved"):
+        _apply(
+            _bad_source(
+                "name: Ipdb Monthly\n    source_type: periodical\n    slug: ipdb"
+            ),
+            patch_id="0001-reserved",
+            dry_run=True,
+        )
+
+
+def test_unresolvable_parent_rejected_at_dry_run():
+    with pytest.raises(PatchError, match="neither an existing"):
+        _apply(
+            _bad_source(
+                "name: Sep 1945\n    source_type: periodical\n"
+                "    slug: 1945-09\n    parent: billboard"
+            ),
+            patch_id="0001-orphan",
+            dry_run=True,
+        )
+
+
+# -- Dry-run coverage: a bad slug cite must fail at read phase, not live apply --
+
+
+def test_cite_of_an_undeclared_issue_fails_at_dry_run(machine_model):
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      year: 1990
+      cite: billboard:1945-09-29
+"""
+    with pytest.raises(PatchError, match="declare\\s+the issue"):
+        _apply(text, patch_id="0001-undeclared", dry_run=True)
+
+
+def test_scheme_typo_fails_at_dry_run_naming_the_schemes(machine_model):
+    # 'ipddb:4443' parses as a slug ref; the read-phase resolution check is what
+    # keeps it from surviving --dry-run and wedging the queue at live apply.
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      year: 1990
+      cite: ipddb:4443
+"""
+    with pytest.raises(PatchError, match="known schemes are"):
+        _apply(text, patch_id="0001-typo", dry_run=True)
+
+
+def test_slug_root_host_collision_preview_not_applied(machine_model):
+    # detect_host_collision models the plain-root path only: hosts spanning two
+    # roots make IT skip the whole node, but a slug root resolves by slug and
+    # handles occupied domains per-host at apply. The dry-run preview must not
+    # claim a whole-node skip that live apply won't perform.
+    a = make_citation_source(name="Site A", source_type="web")
+    make_citation_root_domain(source=a, host="site-a.test")
+    b = make_citation_source(name="Site B", source_type="web")
+    make_citation_root_domain(source=b, host="site-b.test")
+    text = """
+attribution: flipcommons-catalog
+sources:
+  - slug: billboard
+    name: Billboard
+    source_type: periodical
+    domains: [site-a.test, site-b.test]
+"""
+    dry = _apply(text, patch_id="0001-slug-preview", dry_run=True)
+    assert not any("skipped the node" in w for w in dry.warnings)
+
+    live = _apply(text, patch_id="0001-slug-preview")
+    # Live: the root is created by slug; each occupied host warns individually
+    # and is left with its owner.
+    assert CitationSource.objects.filter(slug="billboard").exists()
+    assert sum("already owned" in w for w in live.warnings) == 2
+
+
+def test_cite_of_a_same_patch_declared_issue_passes_dry_run(machine_model):
+    report = _apply(_billboard_patch(machine_model), patch_id="0001-dry", dry_run=True)
+    assert report.rejected == 0
+    # Dry-run writes nothing — the declared sources are validated, not created.
+    assert not CitationSource.objects.filter(source_type="periodical").exists()
+
+
+def test_cite_of_a_previously_seeded_issue_resolves(machine_model):
+    root = make_citation_source(
+        name="Billboard", source_type="periodical", slug="billboard"
+    )
+    make_citation_source(
+        name="September 29, 1945",
+        source_type="periodical",
+        slug="1945-09-29",
+        parent=root,
+    )
+    text = f"""
+attribution: flipcommons-catalog
+claims:
+  - model.{machine_model.slug}:
+      year: 1990
+      cite:
+        - ref: billboard:1945-09-29
+          locator: p. 83
+"""
+    report = _apply(text, patch_id="0001-seeded")
+    assert report.rejected == 0
+    inst = CitationInstance.objects.get()
+    assert inst.citation_source.slug == "1945-09-29"
+
+
+def test_secondhand_shape_two_cites_on_one_claim(machine_model):
+    # "IPDB says Billboard says X": the IPDB cite carries the quote, the issue
+    # cite the locator — the two-cite shape DataPatches.md documents for books.
+    ipdb_root = make_citation_source(
+        name="Internet Pinball Database (IPDB)",
+        source_type="web",
+        identifier_key="ipdb",
+    )
+    make_citation_root_domain(source=ipdb_root, host="ipdb.org")
+    text = f"""
+attribution: flipcommons-catalog
+{_BILLBOARD_SOURCES}
+claims:
+  - model.{machine_model.slug}:
+      year: 1990
+      cite:
+        - ref: ipdb:3656
+          quote: "The earliest mention is in Victory Game's ad in Billboard 09/29/1945 p83."
+        - ref: billboard:1945-09-29
+          locator: p. 83
+"""
+    report = _apply(text, patch_id="0001-secondhand")
+    assert report.rejected == 0
+    sources = {
+        inst.citation_source.slug or inst.citation_source.identifier
+        for inst in CitationInstance.objects.all()
+    }
+    assert sources == {"1945-09-29", "3656"}

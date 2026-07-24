@@ -101,7 +101,7 @@ export type CiteState =
   /** User is creating a new source. The seed carries what we know to prefill it.
    *  The orchestrator renders this stage with one of two create components: a
    *  web seed (see `isWebSeed`) gets the two-panel describe-site → page
-   *  web flow; everything else gets the authored-work (book/magazine) form. */
+   *  web flow; everything else gets the authored-work (book/periodical) form. */
   | {
       stage: 'create';
       draft: CitationInstanceDraft;
@@ -135,13 +135,19 @@ export type CiteAction =
     }
   /** User wants to create a new CitationSource. The seed says what prefill we have. → create. */
   | { type: 'create_started'; seed: CreateSeed }
-  /** New CitationSource was created via API. → locator. */
+  /** New CitationSource was created via API. Abstract → identify (a
+   *  parentless periodical is a container — the user picks/creates the issue
+   *  under it); concrete → locator. `isAbstract`/`author` come from the
+   *  create response; the web mint paths omit them (a minted page child is
+   *  never abstract). */
   | {
       type: 'source_created';
       sourceId: number;
       sourceName: string;
       sourceType: string;
       skipLocator: boolean;
+      isAbstract?: boolean;
+      author?: string;
     }
   /** User submitted or skipped the locator stage. */
   | { type: 'locator_submitted'; locator: string };
@@ -288,7 +294,7 @@ export async function createChildByIdentifier(
 
 /** True when a create seed is a pasted web URL. The orchestrator renders these
  *  with the describe-site → page web flow; everything else (manual names,
- *  book/magazine extractions) uses the authored-work create form. */
+ *  book/periodical extractions) uses the authored-work create form. */
 export function isWebSeed(seed: CreateSeed): boolean {
   return seed.kind === 'web';
 }
@@ -360,17 +366,31 @@ export function transition(state: CiteState, action: CiteAction): CiteState {
 
     case 'source_created': {
       if (state.stage !== 'create') return state;
-      return {
-        stage: 'locator',
-        draft: {
-          ...state.draft,
-          sourceId: action.sourceId,
-          sourceName: action.sourceName,
-          sourceType: action.sourceType,
-          skipLocator: action.skipLocator,
-        },
-        ready: action.skipLocator,
+      const draft = {
+        ...state.draft,
+        sourceId: action.sourceId,
+        sourceName: action.sourceName,
+        sourceType: action.sourceType,
+        skipLocator: action.skipLocator,
       };
+      if (action.isAbstract) {
+        // A created abstract container (a parentless periodical) is never the
+        // cited record — route to identify under it, mirroring what selecting
+        // the same root from search does. `identifier_key` is always empty:
+        // authored creates can't mint scheme roots.
+        return {
+          stage: 'identify',
+          draft,
+          parent: {
+            id: action.sourceId,
+            name: action.sourceName,
+            source_type: action.sourceType,
+            author: action.author ?? '',
+            identifier_key: '',
+          },
+        };
+      }
+      return { stage: 'locator', draft, ready: action.skipLocator };
     }
 
     case 'locator_submitted': {

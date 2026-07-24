@@ -1,17 +1,17 @@
 """API schemas for the citation app — the "Sources" UI for cited evidence.
 
 A :class:`~apps.citation.models.CitationSource` is a work or evidence object
-that can be cited: a book, magazine or web page. Sources form a one-level
+that can be cited: a book, periodical or web page. Sources form a one-level
 hierarchy through a self FK — a *root* source (e.g. the IPDB website, or a
-magazine title) groups *child* sources (e.g. one IPDB machine page, or a
+periodical title) groups *child* sources (e.g. one IPDB machine page, or a
 single issue/article). ``source_type`` is one of the registered
-citation types (``book`` / ``magazine`` / ``web`` / ``video``).
+citation types (``book`` / ``periodical`` / ``web`` / ``video``).
 
 Two derived notions recur across these schemas:
 
 - **abstract** — a source that is a container rather than a directly-citable
   work: any source that has children, or a parentless source of a container
-  type (``magazine`` / ``web`` / ``video`` — a publication, a site, a platform).
+  type (``periodical`` / ``web`` / ``video`` — a publication, a site, a platform).
   The UI offers such a source's children for citation instead of the source
   itself.
 - **skip_locator** — citing a web *child* doesn't prompt for a locator: its
@@ -33,7 +33,9 @@ from __future__ import annotations
 from typing import Annotated, Literal
 
 from ninja import Field, Schema
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, field_validator, model_validator
+
+from apps.citation.citation_types import citation_type_spec
 
 from .models import (
     CITATION_SOURCE_AUTHOR_MAX_LENGTH,
@@ -45,6 +47,7 @@ from .models import (
     CITATION_SOURCE_LINK_URL_MAX_LENGTH,
     CITATION_SOURCE_NAME_MAX_LENGTH,
     CITATION_SOURCE_PUBLISHER_MAX_LENGTH,
+    CITATION_SOURCE_SLUG_MAX_LENGTH,
 )
 
 # String fields that are non-nullable CharFields on the model: an update that
@@ -52,7 +55,6 @@ from .models import (
 # ``CitationSourceUpdateSchema.coerce_null_to_empty``).
 NONNULLABLE_STR_FIELDS = (
     "name",
-    "source_type",
     "author",
     "publisher",
     "date_note",
@@ -71,6 +73,7 @@ DescriptionStr = Annotated[
     str, Field(max_length=CITATION_SOURCE_DESCRIPTION_MAX_LENGTH)
 ]
 IdentifierStr = Annotated[str, Field(max_length=CITATION_SOURCE_IDENTIFIER_MAX_LENGTH)]
+SlugStr = Annotated[str, Field(max_length=CITATION_SOURCE_SLUG_MAX_LENGTH)]
 LinkUrlStr = Annotated[str, Field(max_length=CITATION_SOURCE_LINK_URL_MAX_LENGTH)]
 LinkLabelStr = Annotated[str, Field(max_length=CITATION_SOURCE_LINK_LABEL_MAX_LENGTH)]
 
@@ -81,15 +84,23 @@ class CitationSourceSearchSchema(Schema):
     id: int = Field(description="The source's identifier.")
     name: str = Field(description="The source's display name.")
     source_type: str = Field(
-        description='Kind of citation source: "book", "magazine", "web" or "video".'
+        description='Kind of citation source: "book", "periodical", "web" or "video".'
     )
     author: str = Field(description="Author or creator, or an empty string.")
     publisher: str = Field(description="Publisher, or an empty string.")
     year: int | None = Field(None, description="Publication year, if known.")
     isbn: str | None = Field(None, description="ISBN, if known.")
+    slug: str | None = Field(
+        None,
+        description="Authored cite handle for a slug-addressed (periodical) source; null on other types.",
+    )
     parent_id: int | None = Field(
         None,
         description="Identifier of the root source this is a child of, or null if it is itself a root.",
+    )
+    parent_name: str | None = Field(
+        None,
+        description="Display name of the parent root, so a child (a periodical issue) can render in context; null on roots.",
     )
     has_children: bool = Field(
         False,
@@ -100,7 +111,7 @@ class CitationSourceSearchSchema(Schema):
         description=(
             "Whether this source is a container rather than a directly-citable "
             "work (it has children, or is a parentless source of a container "
-            "type — magazine, web or video); the UI "
+            "type — periodical, web or video); the UI "
             "cites its children instead."
         ),
     )
@@ -131,7 +142,7 @@ class CitationSourceMatchSchema(Schema):
     name: str = Field(description="The matched source's display name.")
     source_type: str = Field(
         description=(
-            "The matched citation source's type (book/magazine/web/video) — "
+            "The matched citation source's type (book/periodical/web/video) — "
             "the frontend's key into the per-type locator behavior."
         ),
     )
@@ -196,7 +207,7 @@ class CitationSourceSearchResponseSchema(Schema):
 
 
 class CitationSourceCreateSchema(Schema):
-    """Input to create an authored root (book/magazine/movie) or a linkless child.
+    """Input to create an authored root (book/periodical/movie) or a linkless child.
 
     This endpoint creates plain authored sources only. Web roots/children are
     minted by ``cite-url``/``pages/`` and scheme children by ``records/``, so
@@ -210,8 +221,8 @@ class CitationSourceCreateSchema(Schema):
     model_config = ConfigDict(extra="forbid")
 
     name: NameStr = Field(description="The source's display name.")
-    source_type: Literal["book", "magazine", "video"] = Field(
-        description='Kind of source: "book", "magazine", or "video" (a movie).'
+    source_type: Literal["book", "periodical", "video"] = Field(
+        description='Kind of source: "book", "periodical", or "video" (a movie).'
     )
     author: AuthorStr = Field("", description="Author or creator.")
     publisher: PublisherStr = Field("", description="Publisher.")
@@ -231,12 +242,41 @@ class CitationSourceCreateSchema(Schema):
         None,
         description="Identifier of the root source to nest this under, or null to create a root.",
     )
+    slug: SlugStr | None = Field(
+        None,
+        description=(
+            "Authored cite handle, in the system slug grammar. Required when "
+            "the chosen type is slug-addressed (periodical) and rejected "
+            "otherwise."
+        ),
+    )
 
     @field_validator("isbn", mode="before")
     @classmethod
     def coerce_empty_isbn_to_none(cls, v: object) -> object:
         """Empty string → None for nullable unique field."""
         return None if v == "" else v
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def coerce_empty_slug_to_none(cls, v: object) -> object:
+        """Empty string → None, so the presence check below sees one shape."""
+        return None if v == "" else v
+
+    @model_validator(mode="after")
+    def slug_iff_slug_addressed(self) -> CitationSourceCreateSchema:
+        """Slug present exactly on a slug-addressed type (the model CHECK's
+        API-boundary twin, so the error names the field instead of a constraint)."""
+        addressed = citation_type_spec(self.source_type).slug_addressed
+        if addressed and self.slug is None:
+            raise ValueError(
+                f"a {self.source_type} source is slug-addressed and requires a slug"
+            )
+        if not addressed and self.slug is not None:
+            raise ValueError(
+                f"slug is only valid on a slug-addressed type, not {self.source_type}"
+            )
+        return self
 
 
 class CitationCiteUrlSchema(Schema):
@@ -301,13 +341,19 @@ class CitationSourceUpdateSchema(Schema):
     Omitted fields are left unchanged (the endpoint applies only the keys the
     client sends). Sending ``null`` for a non-nullable string field clears it to
     an empty string; sending ``null`` (or empty) for ``isbn`` clears it to null.
+
+    ``source_type`` is deliberately absent — it is immutable through the API.
+    Nothing revalidates a type change against the parent, children, ISBN or
+    recognition domains (``clean()`` only checks the grandchild rule), so a
+    "valid" new type could silently corrupt a hierarchy. A mistyped fresh
+    source is deleted and recreated; a cited or child-bearing one is an admin
+    job. ``extra="forbid"`` turns a stale client's ``source_type`` into a loud
+    422 instead of a silently-ignored key.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     name: NameStr | None = Field(None, description="New display name.")
-    source_type: str | None = Field(
-        None,
-        description='New citation source type: "book", "magazine", "web" or "video".',
-    )
     author: AuthorStr | None = Field(None, description="New author or creator.")
     publisher: PublisherStr | None = Field(None, description="New publisher.")
     year: int | None = Field(None, description="New publication year.")
@@ -322,12 +368,27 @@ class CitationSourceUpdateSchema(Schema):
     description: DescriptionStr | None = Field(
         None, description="New free-text description."
     )
+    slug: SlugStr | None = Field(
+        None,
+        description=(
+            "New authored cite handle (a typo fix). Only valid on a "
+            "slug-addressed (periodical) source, and cannot be cleared — the "
+            "model requires one there."
+        ),
+    )
 
     @field_validator(*NONNULLABLE_STR_FIELDS, mode="before")
     @classmethod
     def coerce_null_to_empty(cls, v: object) -> object:
         """None → empty string for non-nullable CharFields."""
         return "" if v is None else v
+
+    @field_validator("slug", mode="before")
+    @classmethod
+    def coerce_empty_slug_to_none(cls, v: object) -> object:
+        """Empty/null → None, the isbn-style nullable treatment —
+        ``nullable_id_not_empty`` would reject a stored empty string."""
+        return None if v == "" else v
 
     @field_validator("isbn", mode="before")
     @classmethod
@@ -342,10 +403,14 @@ class CitationSourceChildSchema(Schema):
     id: int = Field(description="The child source's identifier.")
     name: str = Field(description="The child source's display name.")
     source_type: str = Field(
-        description='Kind of citation source: "book", "magazine", "web" or "video".'
+        description='Kind of citation source: "book", "periodical", "web" or "video".'
     )
     year: int | None = Field(None, description="Publication year, if known.")
     isbn: str | None = Field(None, description="ISBN, if known.")
+    slug: str | None = Field(
+        None,
+        description="Authored cite handle for a slug-addressed (periodical) child; null on other types.",
+    )
     skip_locator: bool = Field(
         False,
         description=(
@@ -376,7 +441,7 @@ class CitationSourceDetailSchema(Schema):
     id: int = Field(description="The source's identifier.")
     name: str = Field(description="The source's display name.")
     source_type: str = Field(
-        description='Kind of citation source: "book", "magazine", "web" or "video".'
+        description='Kind of citation source: "book", "periodical", "web" or "video".'
     )
     author: str = Field(description="Author or creator, or an empty string.")
     publisher: str = Field(description="Publisher, or an empty string.")
@@ -387,6 +452,10 @@ class CitationSourceDetailSchema(Schema):
         description="Free-text note about the date, or an empty string."
     )
     isbn: str | None = Field(None, description="ISBN, if known.")
+    slug: str | None = Field(
+        None,
+        description="Authored cite handle for a slug-addressed (periodical) source; null on other types.",
+    )
     description: str = Field(description="Free-text description, or an empty string.")
     identifier_key: str = Field(
         "",
@@ -395,6 +464,15 @@ class CitationSourceDetailSchema(Schema):
     skip_locator: bool = Field(
         False,
         description="Whether the cite picker skips the locator prompt (true for a web child).",
+    )
+    is_abstract: bool = Field(
+        False,
+        description=(
+            "Whether this source is a container rather than directly-citable "
+            "evidence (it has children, or is a parentless source of a "
+            "container type) — the create flow routes an abstract result to "
+            "child identification instead of the locator."
+        ),
     )
     parent: CitationSourceParentSchema | None = Field(
         None, description="The root source this is a child of, or null if it is a root."

@@ -1,7 +1,15 @@
-<!-- @component A citation's identity block: the source name (hyperlinked to
-  its reference URL when it has one), byline, locator, supporting quote and
-  link chips. The single renderer for a citation's identity across surfaces —
-  the citation tooltip, the sources panel and edit-history change rows.
+<!-- @component A citation's identity block: the parent work, the source name
+  (hyperlinked to its reference URL when it has one), byline, locator,
+  supporting quote and link chips. The single renderer for a citation's
+  identity across surfaces — the citation tooltip, the sources panel and
+  edit-history change rows.
+
+  A child source leads with its parent, so the container reads before the
+  specific item — "Billboard" above "July 27, 1940", "The Encyclopedia of
+  Pinball" above the volume. The lead line always carries the emphasis: the
+  parent when there is one, the source itself otherwise. The hyperlink stays
+  on the child either way — it is the cited record, and the links (an issue's
+  archive scan) belong to it.
 
   `layout='stacked'` (default) stacks the pieces as separate blocks; `'inline'`
   runs the name, byline, locator and chips together on one line with the quote
@@ -42,7 +50,12 @@
 
 {#if layout === 'inline'}
   <span class="source-line" class:with-quote={Boolean(citation.quote)}>
-    <strong>{@render nameLink()}</strong>
+    {#if citation.root_name}
+      <strong>{citation.root_name}</strong>
+      <span class="child-name">&mdash; {@render nameLink()}</span>
+    {:else}
+      <strong>{@render nameLink()}</strong>
+    {/if}
     {#if byline}
       <span class="meta">&mdash; {byline}</span>
     {/if}
@@ -57,7 +70,12 @@
     <blockquote class="quote inline-quote">{citation.quote}</blockquote>
   {/if}
 {:else}
-  <div class="source-name">{@render nameLink()}</div>
+  {#if citation.root_name}
+    <div class="source-name">{citation.root_name}</div>
+    <div class="child-name">{@render nameLink()}</div>
+  {:else}
+    <div class="source-name">{@render nameLink()}</div>
+  {/if}
   {#if byline}
     <div class="meta">{byline}</div>
   {/if}
@@ -77,6 +95,9 @@
 {/if}
 
 <style>
+  /* The leading identity line: the parent work when there is one, else the
+     source itself. Always the bold one, so the block reads top-down from
+     container to cited record. */
   .source-name {
     font-weight: 600;
     /* Source name can be a bare URL (nameless source) far longer than the
@@ -84,12 +105,20 @@
     overflow-wrap: anywhere;
   }
 
-  .source-name a {
+  /* The cited child beneath its parent — full-strength text (it is the
+     record, not metadata like the byline), just not the bold lead. */
+  .child-name {
+    overflow-wrap: anywhere;
+  }
+
+  .source-name a,
+  .child-name a {
     color: inherit;
     text-decoration: none;
   }
 
-  .source-name a:hover {
+  .source-name a:hover,
+  .child-name a:hover {
     text-decoration: underline;
   }
 

@@ -149,6 +149,7 @@ VIDEO = CitationTypeSpec(
     # universally by ``CitationSource.is_abstract``, not by this field.
     schemeless_parentless_abstract=False,
     child_skips_locator=False,
+    slug_addressed=False,
     locator=LocatorContract(
         kind="timestamp",
         placeholder="e.g. 1:02:03",

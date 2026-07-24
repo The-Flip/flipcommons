@@ -370,6 +370,7 @@ claims:
 
 - **`scheme:identifier`** (`ipdb:4443`, `opdb:GRhX5`, `youtube:O-2BXTXLXIY`) — a known scheme. Get-or-creates the source under that scheme's seeded root.
 - **`isbn:<isbn>`** (`isbn:9781889933023`) — an **already-seeded authored work**: a book edition, cited by the globally-unique ISBN the record itself carries. `isbn` is not a scheme — a scheme's root mints children from URLs, while a book is its own record — so this form never creates anything: it resolves to the one source holding that ISBN, which is what makes every cite of a work land on the shared record. Hyphens are ignored and an ISBN-10 canonicalizes to its 13-digit form, so both spellings cite the one source; a bad check digit fails the patch. An ISBN nothing is seeded with errors — declare the work in this patch's `sources:` block (processed before claims) or an earlier patch. Cite the **edition**, not the work that groups editions: an ISBN belongs to a specific printing, and an ISBN landing on a record that has editions under it is rejected in favor of the edition's own ISBN.
+- **`<root-slug>:<child-slug>`** (`billboard:1945-09-29`, `gameroom-magazine:vol-2`) — an **already-declared child of a slug-addressed source**: a periodical issue, cited by its periodical's authored slug and its own. Like `isbn:`, this form never creates anything — an issue is an editorial record, declared with `slug:`/`parent:` in a `sources:` block (this patch's, processed before claims, or an earlier one); a cite of an undeclared pair fails the patch at dry-run. Both segments use the system-wide slug grammar (lowercase, digits, hyphens). A registered scheme key always wins the left segment, so this form can never shadow `ipdb:4443` — and a typo'd scheme key (`ipddb:4443`) parses as this form and fails resolution with a message naming the known schemes.
 - **a `http(s)://` URL** (`https://en.wikipedia.org/wiki/...`) — any other web page. The URL's host must fall under a **seeded website root**'s _recognition domain_ — a root's homepage host becomes its recognition domain when the root is declared in a `sources:` block, and a cite on that host **or any subdomain of it** (`static.example.com` under `example.com`) nests here. The cite get-or-creates a `reference` child page under that root, keyed by the exact URL (re-citing reuses it). If no recognition domain matches, the patch errors — declare the website root in this patch's `sources:` block (processed before claims) or an earlier patch. (A root web source is an abstract container, so a patch never mints a parentless one.) A URL matching a known scheme's record pattern (e.g. an `ipdb.org/machine.cgi?id=...` link) is **rejected** — cite it as `scheme:identifier` so it dedups through the scheme path.
 
 `cite:` takes either a bare ref string (as above), or a **mapping** that widens the ref with fields of the minted citation:
@@ -483,7 +484,7 @@ A patch can create **citation sources** — the reference works (`ipdb`, `pinsid
 attribution: flipcommons-catalog # owns the IngestRun; does NOT attribute the sources
 sources: # processed before claims, so a cite: below can nest under a root created here
   - name: Wikipedia
-    source_type: web # book | magazine | web | video
+    source_type: web # book | periodical | web | video
     description: Free collaborative encyclopedia.
     links: # a source may carry several
       - {
@@ -520,11 +521,31 @@ sources:
 claims: []
 ```
 
-A `sources:` node is flat (`name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, `domains`, `links`). Nested `children` is rejected — a child source under a root is created on demand when you `cite:` a URL on its domain.
+A `sources:` node carries `name`, `source_type`, optional `author`/`publisher`/`year`/`month`/`day`/`date_note`/`isbn`/`description`/`identifier_key`, `domains`, `links` — plus `slug`/`parent` on slug-addressed (periodical) nodes, below. Nesting is never expressed by structure — a nested `children` key is rejected. A **web** child is created on demand when you `cite:` a URL on its root's domain; a **periodical** issue is declared as its own node whose `parent:` names its periodical's slug.
 
-That flatness bounds what a patch can cite by `isbn:`. A **standalone** book — one printing, no edition hierarchy — is declarable here with its `isbn:` and citable in the same patch (sources are processed before claims). An **edition under a work** (a volume of a multi-volume set, a revised printing) is a child, so a patch can't declare one; it must already be seeded before a patch cites its ISBN.
+A **periodical** is the one slug-addressed type: it has no natural identifier (no ISBN, no recognition domain, no scheme key), so its nodes carry an authored `slug` — required, in the system slug grammar, root-unique for periodicals and sibling-unique for issues. An issue node sets `parent:` to its periodical's slug; the periodical may be declared in the same block (any order — parentless nodes are processed first) or an earlier patch. A root slug may not shadow `isbn` or a scheme key. Archive links (a Google Books scan) hang off the issue via `links:`, where every citer benefits:
 
-The block is **additive get-or-create**: a source is matched by recognition host (homepage ∪ `domains:`), else `isbn`, else `(name, source_type)`. A match is reused — missing links and recognition hosts are backfilled — and an existing row is **never overwritten** (a divergent field warns, doesn't fail). So re-applying is a clean no-op and a patch can't clobber a user-created source or dam later patches. Recognition hosts split across two existing roots skip the node with a warning naming both — resolve the duplicate roots first; visible at `--dry-run`.
+```yaml
+sources:
+  - slug: billboard
+    name: Billboard
+    source_type: periodical
+    year: 1894
+
+  - parent: billboard
+    slug: 1945-09-29
+    name: September 29, 1945
+    source_type: periodical
+    year: 1945
+    month: 9
+    day: 29
+    links:
+      - { url: "https://books.google.com/books?id=…", link_type: archive }
+```
+
+Structure-wise this bounds what a patch can cite by `isbn:`. A **standalone** book — one printing, no edition hierarchy — is declarable here with its `isbn:` and citable in the same patch (sources are processed before claims). An **edition under a work** (a volume of a multi-volume set, a revised printing) is a child, so a patch can't declare one; it must already be seeded before a patch cites its ISBN.
+
+The block is **additive get-or-create**: a slug-addressed node is matched by its slug (root) or `(parent, slug)` (issue) — the slug is the identity, so a renamed periodical is found, not duplicated; every other node is matched by recognition host (homepage ∪ `domains:`), else `isbn`, else `(name, source_type)`. A match is reused — missing links and recognition hosts are backfilled — and an existing row is **never overwritten** (a divergent field warns, doesn't fail). So re-applying is a clean no-op and a patch can't clobber a user-created source or dam later patches. Recognition hosts split across two existing roots skip the node with a warning naming both — resolve the duplicate roots first; visible at `--dry-run`. A declared issue whose `name` matches an existing sibling under a different slug warns too (two campaigns inventing `1945-09-29` and `sep-29-1945` for one issue) but still creates — a human merges duplicates later.
 
 ## Applying patches
 

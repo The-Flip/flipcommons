@@ -101,7 +101,24 @@ class IsbnCitationRef:
     isbn: str
 
 
-# A parsed, normalized reference to a citation source: one of three
+@dataclass(frozen=True)
+class SourceCitationRef:
+    """The authored-slug form of a :data:`CitationRef` — a slug-addressed child.
+
+    ``root_slug`` and ``child_slug`` are authored kebab handles in the
+    system-wide slug grammar, addressing a child of a slug-addressed source
+    (a periodical issue: ``billboard:1945-09-29``); resolved at apply time via
+    ``get_slug_source`` (no DB access to construct one). Like ``isbn:`` and
+    unlike the web/scheme forms, this never mints: an issue is an editorial
+    record declared in a ``sources:`` block, not something a passing ref can
+    invent.
+    """
+
+    root_slug: str
+    child_slug: str
+
+
+# A parsed, normalized reference to a citation source: one of four
 # mutually-exclusive forms, resolved to a ``CitationSource`` at apply time. A
 # sum type so a both-set / neither-set ref is unconstructable and the apply-side
 # resolve can ``match`` the variant the builder chose rather than re-reading a
@@ -111,7 +128,9 @@ class IsbnCitationRef:
 # Defined here, beside the plan dataclasses, rather than in any source adapter:
 # the source-agnostic apply layer must not import an adapter, and adapters (e.g.
 # ``ingestion.patches``) already import the plan carriers from this module.
-type CitationRef = WebCitationRef | SchemeCitationRef | IsbnCitationRef
+type CitationRef = (
+    WebCitationRef | SchemeCitationRef | IsbnCitationRef | SourceCitationRef
+)
 
 
 @dataclass(frozen=True)

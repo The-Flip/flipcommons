@@ -19,7 +19,7 @@ import { videoType } from './video';
  * or extra entry a compile error after `make codegen` regenerates the keys. */
 const CITATION_TYPE_FRONTENDS: Record<CitationTypeKey, CitationTypeFrontend> = {
   book: freeformType,
-  magazine: freeformType,
+  periodical: freeformType,
   web: freeformType,
   video: videoType,
 };

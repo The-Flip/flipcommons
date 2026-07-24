@@ -26,6 +26,7 @@ from apps.citation.citation_types import (
     scheme_deep_link,
     scheme_root_citation_source_info,
     scheme_source_type,
+    slug_addressed_source_types,
 )
 from apps.citation.citation_types.registry import (
     _assert_registry_coherent,
@@ -35,24 +36,36 @@ from apps.citation.citation_types.registry import (
 
 class TestCitationTypeSpecs:
     @pytest.mark.parametrize(
-        ("source_type", "flat", "schemeless_abstract", "skips_locator"),
+        ("source_type", "flat", "schemeless_abstract", "skips_locator", "slugged"),
         [
-            (SourceType.BOOK, False, False, False),
-            (SourceType.MAGAZINE, False, True, False),
-            (SourceType.WEB, True, True, True),
+            (SourceType.BOOK, False, False, False, False),
+            # Periodical is the one slug-addressed type: no natural identifier
+            # (no ISBN, no recognition domain, no scheme key), so issues are
+            # addressed by an authored ``<periodical>:<issue>`` slug pair.
+            (SourceType.PERIODICAL, False, True, False, True),
+            (SourceType.WEB, True, True, True, False),
             # A schemeless parentless video is a movie — a citable work, not a
             # container — so it is NOT abstract; a scheme'd video root (YouTube)
             # is kept abstract universally by ``identifier_key``, not this field.
-            (SourceType.VIDEO, True, False, False),
+            (SourceType.VIDEO, True, False, False, False),
         ],
     )
     def test_traits_per_type(
-        self, source_type, flat, schemeless_abstract, skips_locator
+        self, source_type, flat, schemeless_abstract, skips_locator, slugged
     ):
         spec = citation_type_spec(source_type)
         assert spec.flat_hierarchy is flat
         assert spec.schemeless_parentless_abstract is schemeless_abstract
         assert spec.child_skips_locator is skips_locator
+        assert spec.slug_addressed is slugged
+
+    def test_slug_addressed_source_types_derive_from_the_specs(self):
+        assert slug_addressed_source_types() == [
+            spec.source_type
+            for spec in CITATION_TYPE_SPECS.values()
+            if spec.slug_addressed
+        ]
+        assert slug_addressed_source_types() == [SourceType.PERIODICAL]
 
     def test_accessor_coerces_a_raw_field_string(self):
         # A model's ``source_type`` CharField arrives as a plain ``str``.

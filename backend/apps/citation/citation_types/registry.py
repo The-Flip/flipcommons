@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Final, NamedTuple
 
-from apps.citation.citation_types import book, magazine, video, web
+from apps.citation.citation_types import book, periodical, video, web
 from apps.citation.citation_types import schemes as scheme_package
 from apps.citation.citation_types.citation_scheme_driver import (
     SchemeDriver,
@@ -32,7 +32,7 @@ from apps.citation.citation_types.vocabulary import SourceType, StartSeconds
 
 _CITATION_TYPES: Final[tuple[CitationTypeSpec, ...]] = (
     book.BOOK,
-    magazine.MAGAZINE,
+    periodical.PERIODICAL,
     web.WEB,
     video.VIDEO,
 )
@@ -211,6 +211,20 @@ def scheme_bindings() -> list[SchemeBinding]:
     migration on unrelated edits.
     """
     return [SchemeBinding(spec.key, spec.source_type) for spec in SCHEME_SPECS.values()]
+
+
+def slug_addressed_source_types() -> list[SourceType]:
+    """The source types addressed by authored slugs, in registration order.
+
+    The value list behind the model's slug CHECKs (slug only on — and required
+    on — a slug-addressed type) and the ingest validators, so turning the flag
+    on for another type is a spec edit plus a backfill, never a hand-edit of
+    shared code. Stable registration order for the same
+    migration-churn reason as :func:`scheme_bindings`.
+    """
+    return [
+        spec.source_type for spec in CITATION_TYPE_SPECS.values() if spec.slug_addressed
+    ]
 
 
 # ---------------------------------------------------------------------------

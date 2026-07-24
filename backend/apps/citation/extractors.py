@@ -25,6 +25,7 @@ from apps.citation.citation_types import (
     citation_source_type,
     citation_type_driver,
     is_known_scheme,
+    known_scheme_keys,
     recognize_scheme,
     scheme_start_seconds_hint,
 )
@@ -664,5 +665,43 @@ def get_isbn_source(isbn: str) -> CitationSource:
         raise ValueError(
             f"ISBN {isbn!r} is {source.name!r}, a work with editions under it — "
             f"cite the ISBN of the specific edition that holds the evidence."
+        )
+    return source
+
+
+def get_slug_source(root_slug: str, child_slug: str) -> CitationSource:
+    """Resolve a slug-addressed child (a periodical issue) — never minting one.
+
+    The authored-slug sibling of :func:`get_isbn_source`, for the ingestion
+    path that cites a declared child of a slug-addressed root
+    (``billboard:1945-09-29``). An issue is an editorial record — its date,
+    name and place under its periodical are facts someone declares — so an
+    undeclared pair raises ``CitationSource.DoesNotExist`` instead of minting
+    a nameless row. The message names the known scheme keys because a typo'd
+    scheme cite (``ipddb:4443``) parses as this form and lands here — the
+    did-you-mean for that mistake.
+
+    A hit that has children is an abstract container, not citable evidence
+    (the reasoning of :func:`get_isbn_source`'s work-with-editions guard),
+    and raises too. The parent must be a root — the model's ``clean()``
+    enforces two-level nesting for slug-addressed types, and the single
+    ``parent__parent__isnull`` hop here mirrors that.
+    """
+    source = CitationSource.objects.filter(
+        slug=child_slug, parent__slug=root_slug, parent__parent__isnull=True
+    ).first()
+    if source is None:
+        known = ", ".join(sorted(known_scheme_keys()))
+        raise CitationSource.DoesNotExist(
+            f"No citation source child {root_slug}:{child_slug} exists; declare "
+            f"the issue in a sources: block (or an earlier patch) before citing "
+            f"it. (If you meant a scheme record, the known schemes are: "
+            f"{known}.)"
+        )
+    if source.children.exists():
+        raise ValueError(
+            f"{root_slug}:{child_slug} is {source.name!r}, a container with "
+            f"children under it — cite the specific child that holds the "
+            f"evidence."
         )
     return source

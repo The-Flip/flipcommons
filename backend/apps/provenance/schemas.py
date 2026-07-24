@@ -178,6 +178,10 @@ class ClaimCitationSchema(Schema):
         )
     )
     source_name: str = Field(description="The cited source's display name.")
+    root_name: str | None = Field(
+        None,
+        description="Name of the cited source's parent root (e.g. the periodical a cited issue belongs to), so a child renders in context; null on roots.",
+    )
     source_type: str = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
     )
@@ -527,6 +531,10 @@ class InlineCitationSchema(Schema):
         description="The citation's sequential number in the text, shown as ``[1]``, ``[2]``, …"
     )
     source_name: str = Field(description="Name of the cited source.")
+    root_name: str | None = Field(
+        None,
+        description="Name of the cited source's parent root (e.g. the periodical a cited issue belongs to), so a child renders in context; null on roots.",
+    )
     source_type: str = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
     )
@@ -679,6 +687,10 @@ class CitationInstanceBatchSchema(Schema):
 
     id: int = Field(description="The citation instance's identifier.")
     source_name: str = Field(description="Name of the cited source.")
+    root_name: str | None = Field(
+        None,
+        description="Name of the cited source's parent root (e.g. the periodical a cited issue belongs to), so a child renders in context; null on roots.",
+    )
     source_type: str = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
     )

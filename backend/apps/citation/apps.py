@@ -33,10 +33,16 @@ def _collect_citation_metadata(obj: CitationInstance, index: int) -> dict[str, A
     """
     from apps.citation.deep_links import deep_linked_url
 
+    # The parent root, so a child (a periodical issue) renders in context —
+    # "Vol. 1" alone is ambiguous without "GameRoom Magazine". None on a root.
+    # select_related on the cite link type, so this costs no query.
+    root = obj.citation_source.parent
+
     return {
         "id": obj.pk,
         "index": index,
         "source_name": obj.citation_source.name,
+        "root_name": root.name if root is not None else None,
         "source_type": obj.citation_source.source_type,
         "author": obj.citation_source.author,
         "year": obj.citation_source.year,
@@ -112,7 +118,7 @@ class CitationConfig(AppConfig):
             PickerType(
                 name="cite",
                 label="Citation",
-                description="Cite a source (book, web, magazine)",
+                description="Cite a source (book, web, etc)",
                 sort_order=1,
                 flow="custom",
             )

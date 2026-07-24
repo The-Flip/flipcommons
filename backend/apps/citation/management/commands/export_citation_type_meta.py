@@ -3,10 +3,11 @@
 The declarative half of the citation-type plugin channel (see
 ``docs/plans/citations/VideoCitations.md``): per-type facts the frontend
 locator UX reads — label, locator kind, placeholder, invalid message,
-child-skips flag — exported from the backend registry so the two sides can't
-drift. Behavior (the client-side grammar mirror, UX-only) lives in the
-hand-written per-type modules beside the generated file; their registry
-asserts exhaustiveness against the generated key union at compile time.
+child-skips flag, and slug-addressed flag — exported from the backend registry
+so the two sides can't drift. Behavior (the client-side grammar mirror, UX-only)
+lives in the hand-written per-type modules beside the generated file; their
+registry asserts exhaustiveness against the generated key union at compile
+time.
 
 Run via ``make codegen`` or directly::
 
@@ -51,6 +52,7 @@ class Command(BaseCommand):
                     "locatorDisplayPrefix": spec.locator.display_prefix,
                     "locatorInvalidMessage": spec.locator.invalid_message,
                     "childSkipsLocator": spec.child_skips_locator,
+                    "slugAddressed": spec.slug_addressed,
                 },
                 indent=2,
             )
@@ -69,7 +71,9 @@ class Command(BaseCommand):
             " * `locatorLabel`/`locatorHelp` are the field label and persistent",
             " * format guidance the cite picker shows (not placeholder text).",
             " * `locatorDisplayPrefix` prefixes the locator on the read side",
-            " * (tooltip, references) — e.g. video's `starting at` prefix. */",
+            " * (tooltip, references) — e.g. video's `starting at` prefix.",
+            " * `slugAddressed` marks types addressed by an authored kebab slug",
+            " * (periodical issues) — the create UI shows a slug field for these. */",
             "export interface CitationTypeMeta {",
             "  key: CitationTypeKey;",
             "  label: string;",
@@ -80,6 +84,7 @@ class Command(BaseCommand):
             "  locatorDisplayPrefix: string;",
             "  locatorInvalidMessage: string;",
             "  childSkipsLocator: boolean;",
+            "  slugAddressed: boolean;",
             "}",
             "",
             "export const CITATION_TYPE_META: Record<CitationTypeKey, CitationTypeMeta> = {",
