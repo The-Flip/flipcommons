@@ -2,6 +2,15 @@
 
 This doc is about using our DuckDB analytics layer to explore the Flipcommons localhost dev database — both ad-hoc, and via analysis files that back planning docs and data patch campaigns with reproducible queries.
 
+## What this layer is
+
+**A curated semantic layer over the catalog, not a mirror of it.** Every view encodes the liveness rule, declares its grain, decodes foreign keys to stable slugs and states the specific way it would otherwise hand you a confident wrong answer. That is the whole value, and it is why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is answered wrong more often than it looks.
+
+Two consequences to hold onto, because both have bitten:
+
+- **A view is not its table.** `models` is live-filtered and denormalized across four joins; `countries` is the parentless slice of `locations`; `tags` is keyed by model while `tag_vocab` is keyed by tag. Matching names do not mean matching columns or matching grain.
+- **A field missing from a view has not been dropped, and does not fail to exist.** Views carry what analyses have needed. Absence almost always means nobody has promoted it yet — read the Django model before concluding otherwise, then [promote it](EDITING.md). Grepping the SQL is not a test of what the catalog holds.
+
 ## Quick start
 
 ```bash

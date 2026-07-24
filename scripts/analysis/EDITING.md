@@ -2,9 +2,17 @@
 
 For changing [`catalog.sql`](catalog.sql) or its self-test [`catalog_checks.sql`](catalog_checks.sql). If you're writing an analysis on top of the foundation, you want [README.md](README.md) instead — this file is about the foundation itself.
 
+## What this layer is
+
+**A semantic layer, not a staging layer.** The distinction decides most of the questions below, so it is worth being explicit: a staging layer mirrors its source one view per table, exists to give downstream a stable name and adds no meaning. This is the other kind. `fc` is attached read-only and every view already reads it directly, so a passthrough view would buy nothing — a view here earns its place by doing at least one of five jobs: applying the liveness rule, decoding (FK to slug, JSON to column, polymorphic id to typed subject), declaring a grain, deriving a measure, or documenting the trap that would otherwise return a confident wrong answer.
+
+Two things follow. Adding a view is not free bookkeeping to be minimized, and neither is it automatic per table — the [entity/derived split](#what-belongs-in-the-foundation) below is what governs which get one. And **a column absent from a view says nothing about the Django model**; it means nobody promoted it. That is the assumption to correct on arrival, because the default guess runs the other way and has produced wrong answers twice.
+
 ## What belongs in the foundation
 
 **The foundation carries counts and mechanics; consumers carry thresholds and semantics.**
+
+("Semantics" there means judgment — cutoffs, conventions, what a number is taken to prove. Not the sense in which this whole layer is a semantic one; that is the section above. The two are compatible: the layer supplies meaning about the DATA, the consumer supplies meaning about the QUESTION.)
 
 The recurring temptation when an analysis finds a gap is to fold its judgment into the foundation alongside the fact — a maker "era" that quietly requires 3 dated models, an `alone_in_title` boolean, a stem macro encoding one maker's numbering convention. Each is right for the consumer that needs it and lossy for the next one, which inherits a cutoff it never chose and can't see.
 
