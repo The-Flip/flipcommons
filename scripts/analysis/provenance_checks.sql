@@ -166,6 +166,48 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   JOIN citation_sources s ON s.citation_source_id = d.root_citation_source_id
   WHERE NOT s.is_root
 
+  -- ─── The root_* family travels together ──────────────────────────────────
+  -- Any view that identifies a root citation source carries ALL FOUR of the family —
+  -- id, name, slug, identifier_key — and this asserts it structurally rather than by
+  -- review. The failure it prevents is not a broken query but a confidently wrong one:
+  -- a consumer that can reach the root's id and display name but not its stable key
+  -- does not go and join, it reaches for `citation_source_type` instead, and filtering
+  -- IPDB as type = 'web' silently sweeps in every other web-rooted work. Both holes
+  -- this closes were found that way — citation_instances had no key at all, and
+  -- citation_roots spelled it `identifier_key`, so a grep for the family name across
+  -- the layer returned nothing and read as "the column doesn't exist".
+  --
+  -- Reads information_schema, like `unanchored_view` above it, and carries the same
+  -- assumption: foundation_checks is only ever loaded by the self-test, so `main` holds
+  -- the foundation's views and not a consumer's.
+  UNION ALL
+  SELECT 'root_family_incomplete', v.table_name || ' missing ' || f.col
+  FROM (SELECT DISTINCT table_name FROM information_schema.columns
+        WHERE table_schema = 'main' AND column_name = 'root_citation_source_id') v
+  CROSS JOIN (SELECT unnest(['root_citation_source_name',
+                             'root_citation_source_slug',
+                             'root_identifier_key']) AS col) f
+  WHERE NOT EXISTS (
+    SELECT 1 FROM information_schema.columns c
+    WHERE c.table_schema = 'main'
+      AND c.table_name = v.table_name
+      AND c.column_name = f.col)
+
+  -- ─── The Source kill switch has two spellings; they must agree ───────────
+  -- `is_enabled` is authored on Source, `resolution_status` is the Actor mirror that
+  -- the winner-pick actually reads. They are synced by Source.save(), so a disagreement
+  -- means an Actor row written around it — and in that state the catalog resolves one
+  -- way while every human-facing surface says the other. Carrying both columns on
+  -- ingest_sources is what makes the drift visible at all.
+  UNION ALL
+  SELECT 'ingest_source_enabled_desyncs',
+         'ingest_source_slug=' || ingest_source_slug
+           || ' is_enabled=' || is_enabled::VARCHAR
+           || ' resolution_status=' || resolution_status
+  FROM ingest_sources
+  WHERE resolution_status IS DISTINCT FROM
+        CASE WHEN is_enabled THEN 'active' ELSE 'suppressed' END
+
   -- The evidence bridge names a claim and an instance that both exist. A dangling side
   -- would make claim_citations over-report coverage relative to what can be joined.
   UNION ALL

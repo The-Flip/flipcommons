@@ -186,6 +186,9 @@ CREATE OR REPLACE VIEW foundation_summary AS
   UNION ALL SELECT 'model_abbreviations',   count(*) FROM model_abbreviations
   UNION ALL SELECT 'title_abbreviations',   count(*) FROM title_abbreviations
   UNION ALL SELECT 'game_formats',        count(*) FROM game_formats
+  UNION ALL SELECT 'corporate_entities',  count(*) FROM corporate_entities
+  UNION ALL SELECT 'titles',              count(*) FROM titles
+  UNION ALL SELECT 'people',              count(*) FROM people
   UNION ALL SELECT 'title_size',          count(*) FROM title_size
   UNION ALL SELECT 'domain_vocab',        count(*) FROM domain_vocab
   UNION ALL SELECT 'claims',              count(*) FROM claims
@@ -277,6 +280,9 @@ CREATE OR REPLACE VIEW _anchor_scan AS
   UNION ALL SELECT 'model_edges',            col, live FROM _dark_cols('model_edges')
   UNION ALL SELECT 'model_edges_bidir',      col, live FROM _dark_cols('model_edges_bidir')
   UNION ALL SELECT 'manufacturers',          col, live FROM _dark_cols('manufacturers')
+  UNION ALL SELECT 'corporate_entities',     col, live FROM _dark_cols('corporate_entities')
+  UNION ALL SELECT 'titles',                 col, live FROM _dark_cols('titles')
+  UNION ALL SELECT 'people',                 col, live FROM _dark_cols('people')
   UNION ALL SELECT 'model_number_collisions',col, live FROM _dark_cols('model_number_collisions')
   UNION ALL SELECT 'model_lineage',          col, live FROM _dark_cols('model_lineage')
   UNION ALL SELECT 'model_relationships',    col, live FROM _dark_cols('model_relationships')
@@ -325,7 +331,13 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     ('ingest_source_default_license_slug',  'pending'),
     ('default_license_slug',                'pending'),
     -- no ingest run has rejected a claim yet; all-zero, not all-NULL
-    ('ingest_runs.claims_rejected',         'pending')
+    ('ingest_runs.claims_rejected',         'pending'),
+    -- Modelled and reachable, populated by nothing yet. Both are `pending`, not
+    -- `sparse`: each has a live write path (a maker QID is a patch field, a citation
+    -- day is what a dated magazine issue carries), so the day one lands,
+    -- expired_anchor_skip turns anchoring on rather than someone remembering to.
+    ('manufacturers.wikidata_id',           'pending'),
+    ('citation_sources.day',                'pending')
   ) AS t(col, kind);
 
 -- Every LIST-typed facet in a swept view (any element type), and how it is anchored.

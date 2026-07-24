@@ -40,7 +40,7 @@ Guidance that belongs to no single view.
 
 ### Model vs Title
 
-When a user asks a question about "models" (aka `MachineModel`) they often mean Titles, or models-as-users-see-them — and for a Title with exactly one Model the UI collapses the two (see `SingleModelTitles.md`). Decide which grain the question wants before counting. title_size on the model row is the test: title_size = 1 is a model that is its own Title in the UI.
+When a user asks a question about "models" (aka `MachineModel`) they often mean Titles, or models-as-users-see-them — and for a Title with exactly one Model the UI collapses the two (see `SingleModelTitles.md`). Decide which grain the question wants before counting. title_size on the model row is the test: title_size = 1 is a model that is its own Title in the UI. When the Title is the grain rather than the qualifier, `titles` is the entity view — franchise and series groupings live there and nowhere else.
 
 ### Matching source records to models
 

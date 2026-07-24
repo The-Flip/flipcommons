@@ -118,3 +118,5 @@ host match loses the label boundary	macro_citation_root_for_host	CREATE OR REPLA
 host match stops preferring the longest	macro_citation_root_for_host	CREATE OR REPLACE MACRO citation_root_for_host(h) AS (SELECT d.root_citation_source_id FROM citation_root_domains d WHERE host_norm(h) = d.host OR ends_with(host_norm(h), '.' || d.host) ORDER BY length(d.host) ASC LIMIT 1);
 recognition host on a child source	root_domain_on_non_root	CREATE TABLE _m AS SELECT * FROM citation_sources; CREATE OR REPLACE VIEW citation_sources AS SELECT * REPLACE (false AS is_root) FROM _m;
 macro comment dropped	undocumented_macro	COMMENT ON MACRO name_key IS NULL;
+root family loses the stable key	root_family_incomplete	CREATE TABLE _m AS SELECT * FROM citation_instances; CREATE OR REPLACE VIEW citation_instances AS SELECT * EXCLUDE (root_identifier_key) FROM _m;
+source kill switch desyncs from its actor mirror	ingest_source_enabled_desyncs	CREATE TABLE _m AS SELECT * FROM ingest_sources; CREATE OR REPLACE VIEW ingest_sources AS SELECT * REPLACE (NOT is_enabled AS is_enabled) FROM _m;

@@ -29,6 +29,7 @@ Alias lookups are the exception to demand-driven promotion: expose every concret
 - **`_provenance_checks` is private** so the runner's sweep doesn't report every provenance failure twice, once on its own and once through `foundation_checks`.
 - **`.read provenance_checks.sql` sits immediately above `foundation_checks`.** `check-mutations` collects declared check names from the first checks view to end-of-file; read it any earlier and `foundation_summary`'s view-name literals land in that range as check names that don't exist.
 - **Views bind at `CREATE`**, so `citation_roots` must follow the views it aggregates.
+- **The `root_*` family travels together, and `root_family_incomplete` enforces it.** Any view carrying `root_citation_source_id` carries the name, the slug and `root_identifier_key` too. This is a coverage rule rather than a style preference because a partial family fails in the direction of a confident wrong answer: a consumer that can reach the root's id and display name but not its stable key does not go and join, it substitutes `citation_source_type`, and filtering IPDB as `type = 'web'` sweeps in every other web-rooted work. Three views were partial when the rule was written, in three different ways — a missing column, a column spelled without the prefix (so grepping the family name found nothing and read as "it doesn't exist"), and a grain view that only ever carried two of the four.
 
 ## Every public view declares its own one-liner
 
