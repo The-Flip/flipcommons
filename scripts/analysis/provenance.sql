@@ -43,6 +43,79 @@
 -- resolved gameplay-feature edge and theme edge, which is what keeps the ranking
 -- honest against the real resolver.
 
+-- ═══ ACTORS — the one thing that can assert ═════════════════════════════════
+-- AN ACTOR IS AN INGEST SOURCE **XOR** A USER, and this is the fact in the attribution
+-- model most easily missed, because nothing in the shape of the data announces it. The
+-- polymorphism is spelled as a `backing_model` discriminator on `actors_actor` plus a
+-- nullable `actor_id` on each of the two backing tables, so a reader who arrives at
+-- `provenance_source` first sees a complete-looking attribution story and never learns
+-- there is a second kind. `claims.actor_kind` has always exposed the split with nowhere
+-- to go from it, and `ingest_sources` covers 25 of the 27 actors while looking total.
+--
+-- Everything the winner-pick reads lives HERE, not on the backing table: `priority` and
+-- `resolution_status` are actor columns (`ingest_sources.priority` is this view's, one
+-- join away). So "the ranking model is per-source" is wrong in a way that survives
+-- casual inspection — it is per-ACTOR, and a user's edit competes with IPDB on exactly
+-- the same ladder.
+--
+--   actor_name / actor_slug : the UNIFORM handles, resolved across both kinds, so an
+--             analysis attributing a claim never branches on actor_kind to display or
+--             group it. A source contributes its name and slug; a user contributes its
+--             username for both. Two invariants license this and both are checked:
+--             `actor_backing_unresolved` (every actor decodes to exactly one side — no
+--             orphans, no doubles) and `actor_slug_collision` (source slugs and
+--             usernames share one namespace here, so a source slugged `moses` would
+--             make actor_slug ambiguous as a key).
+--   USERNAME, NOT EMAIL. `accounts_user` also holds email and workos_user_id, and this
+--             layer gets copied wholesale into shareable .duckdb snapshots. The
+--             username is the public handle; the rest is PII that has no business
+--             crossing into an analytics surface. Don't add it "for matching".
+--   n_claims / n_changesets : usage, over `claims` (not live-filtered) and every
+--             changeset attributed to this actor. Both 0 is a real state — an account
+--             that exists and has never edited.
+CREATE OR REPLACE VIEW actors AS
+  SELECT
+    a.id                  AS actor_id,
+    a.backing_model       AS actor_kind,
+    coalesce(s.name, u.username)  AS actor_name,
+    coalesce(s.slug, u.username)  AS actor_slug,
+    a.priority            AS actor_priority,
+    a.resolution_status   AS actor_resolution_status,
+    -- Kind-specific tails. Read actor_kind before reading either; a source carries no
+    -- username and a user carries no ingest_source_*.
+    s.id                  AS ingest_source_id,
+    s.slug                AS ingest_source_slug,
+    s.name                AS ingest_source_name,
+    s.source_type         AS ingest_source_type,
+    l.slug                AS ingest_source_default_license_slug,
+    u.username            AS username,
+    (SELECT count(*) FROM fc.provenance_claim c      WHERE c.actor_id = a.id) AS n_claims,
+    (SELECT count(*) FROM fc.provenance_changeset cs WHERE cs.actor_id = a.id) AS n_changesets,
+    a.created_at          AS created_at
+  FROM fc.actors_actor a
+  LEFT JOIN fc.provenance_source s ON s.actor_id = a.id
+  LEFT JOIN fc.accounts_user u     ON u.actor_id = a.id
+  LEFT JOIN fc.core_license l      ON l.id = s.default_license_id;
+COMMENT ON VIEW actors IS
+  'One row per ACTOR — the single thing that can assert a claim, an ingest source XOR a user. actor_name/actor_slug are uniform across both kinds; priority and resolution_status live here, not on the backing table, so the winner-pick ladder is per-actor.';
+
+-- _claim_actor — the join helper `claims` and `ingest_sources` decode through. A
+-- projection of `actors` rather than its own decode, so the two cannot drift; it keeps
+-- the column names those views already publish.
+CREATE OR REPLACE VIEW _claim_actor AS
+  SELECT
+    actor_id,
+    actor_kind,
+    actor_name,
+    actor_slug,
+    actor_priority,
+    actor_resolution_status,
+    ingest_source_slug,
+    ingest_source_name,
+    ingest_source_type,
+    ingest_source_default_license_slug
+  FROM actors;
+
 -- ═══ CLAIMS — who asserted what, and how claims compete ══════════════════
 -- Claims compete within a REGISTER — the grouping key the winner-pick partitions on.
 -- pick_winners groups membership sets on `claim_key` but scalar registers on
@@ -102,25 +175,6 @@ CREATE OR REPLACE VIEW _claim_ref AS
   GROUP BY claim_id
   HAVING count(*) = 1 AND bool_and(regexp_matches(part_value, '^[0-9]+$'));
 
--- _claim_actor — the actor behind a claim, decoded. One row per actor.
--- `actors_actor` is the uniform attribution column: an actor backs EITHER an ingest
--- source (25 today) or a user (2), carries the `priority` that drives the winner-pick
--- and the `resolution_status` kill switch. ingest_source_* is NULL for a user actor;
--- read actor_kind before reading them.
-CREATE OR REPLACE VIEW _claim_actor AS
-  SELECT
-    a.id                  AS actor_id,
-    a.backing_model       AS actor_kind,
-    a.priority            AS actor_priority,
-    a.resolution_status   AS actor_resolution_status,
-    s.slug                AS ingest_source_slug,
-    s.name                AS ingest_source_name,
-    s.source_type         AS ingest_source_type,
-    l.slug                AS ingest_source_default_license_slug
-  FROM fc.actors_actor a
-  LEFT JOIN fc.provenance_source s ON s.actor_id = a.id
-  LEFT JOIN fc.core_license l      ON l.id = s.default_license_id;
-
 -- ─── claims ────────────────────────────────────────────────────────────────
 -- The spine of this file. One row per claim across EVERY subject type — 21 of them, so
 -- the content-type decode is generic (subject_type = 'catalog.machinemodel') and no
@@ -148,6 +202,11 @@ CREATE OR REPLACE VIEW _claim_actor AS
 --             inactive or from a suppressed actor, which is a different thing from
 --             "ranked last" and is why this is NULL rather than a large number.
 --             A RANKING, not a verdict — read the catalog for the outcome.
+--   actor_name / actor_slug : who asserted it, uniform across both actor kinds — see
+--             the ACTORS block. Use these to attribute or group; `ingest_source_slug`
+--             is NULL on the 67 user claims, so grouping by it silently collapses every
+--             human edit into one unlabelled bucket. The ingest_source_* columns remain
+--             for questions that are genuinely about ingest sources.
 --   license_slug : the per-claim license OVERRIDE only. NULL means "inherits", and the
 --             inheritance chain (source field license, then ingest source default) is
 --             not resolved here; ingest_source_default_license_slug is the tail of it,
@@ -185,7 +244,8 @@ CREATE OR REPLACE VIEW claims AS
                 ORDER BY a.actor_priority DESC, c.created_at DESC, c.id DESC)
     END                                           AS rank,
     c.is_active                                   AS is_active,
-    a.actor_id, a.actor_kind, a.actor_priority, a.actor_resolution_status,
+    a.actor_id, a.actor_kind, a.actor_name, a.actor_slug,
+    a.actor_priority, a.actor_resolution_status,
     a.ingest_source_slug, a.ingest_source_name, a.ingest_source_type,
     a.ingest_source_default_license_slug,
     l.slug                                        AS license_slug,
@@ -285,7 +345,10 @@ COMMENT ON VIEW ingest_sources IS
 
 -- ingest_runs — one row per IngestRun: the patch-level ledger. `patch_id` is the
 -- flippatch `NNNN-slug` file, NULL for a non-patch run. Interactive edits have no run
--- at all and appear here not at all — they are ChangeSets with action set instead.
+-- at all and appear here not at all — they are ChangeSets with action set instead, and
+-- `changesets` below is where they DO appear. A run groups changesets, so the two are a
+-- coarse/fine pair over the same history: read this one when the subject is the patch,
+-- that one when it is an individual act of writing.
 CREATE OR REPLACE VIEW ingest_runs AS
   SELECT
     ir.id               AS ingest_run_id,
@@ -303,6 +366,71 @@ CREATE OR REPLACE VIEW ingest_runs AS
   LEFT JOIN fc.provenance_source s ON s.id = ir.source_id;
 COMMENT ON VIEW ingest_runs IS
   'One row per ingest run — patch_id, ingest source, status, fingerprint and the asserted/retracted/rejected claim counts. Reach for it when the subject is a patch rather than what the patch wrote.';
+
+-- changesets — one row per ChangeSet: a single grouped act of writing, ingest and
+-- interactive alike. The finest attribution grain there is, and the only view that can
+-- enumerate them.
+--
+-- BUILT ON THE PHYSICAL TABLE, NOT ON `claims`, AND THAT IS THE WHOLE POINT. 739 of the
+-- 32,126 changesets wrote no claim at all — they only RETRACTED — and `claims.
+-- changeset_id` names only changesets that wrote, so every one of them is invisible to
+-- anything derived from it. 737 are patch retractions and 2 are user reverts; not one
+-- is inert (`inert_changeset` holds that). Deriving this view from `claims` for
+-- convenience would reproduce exactly the gap it exists to close, which is why the FROM
+-- clause here is `fc.provenance_changeset` with everything else LEFT JOINed onto it.
+--
+-- flippatch hit this from the other side: `_patch_acts` in its patches.sql UNIONs
+-- assertions with retractions to rebuild this grain by hand, and records that an
+-- entries view built from assertions alone misses 737 of 4798 entries and seven whole
+-- patches. That reconstruction is the promotion signal; this is the base view it wanted.
+--
+--   note    : free text explaining the write, and the reason `note` is a first-class
+--             column rather than a curiosity: 717 of the 737 invisible retraction
+--             changesets carry one. The explanation of WHY a patch took a claim back
+--             was, until this view, unreachable from the foundation entirely — no view
+--             referenced the column. It reads the other way round from what you would
+--             expect (2 of 45 interactive changesets have a note, against 97% of patch
+--             retractions) because it is the retraction that needs explaining.
+--   is_interactive : a human edit, i.e. no ingest run. Carried as a column rather than
+--             as a filter on this view because the ingest side is not noise — it is
+--             where the invisible rows live. `action` is present exactly when this is
+--             true (`provenance_changeset_action_iff_interactive`), and is spelled ''
+--             for ingest to match `claims.changeset_action`, not NULL.
+--   n_claims / n_retracted : what the changeset actually did. `n_claims = 0 AND
+--             n_retracted > 0` is the 739; both zero is the state `inert_changeset`
+--             forbids. Counted over ALL claims, not live subjects — a changeset that
+--             edited a since-deleted model still did the work.
+--   actor_* : who, uniform across both kinds, from `actors`. Interactive changesets
+--             resolve to a username here; before this view they resolved to nothing.
+CREATE OR REPLACE VIEW changesets AS
+  WITH wrote AS (
+    SELECT changeset_id, count(*) AS n
+    FROM fc.provenance_claim GROUP BY changeset_id
+  ),
+  retracted AS (
+    SELECT retracted_by_changeset_id AS changeset_id, count(*) AS n
+    FROM fc.provenance_claim
+    WHERE retracted_by_changeset_id IS NOT NULL
+    GROUP BY retracted_by_changeset_id
+  )
+  SELECT
+    cs.id                             AS changeset_id,
+    cs.ingest_run_id IS NULL          AS is_interactive,
+    coalesce(cs.action, '')           AS action,
+    a.actor_id, a.actor_kind, a.actor_name, a.actor_slug,
+    cs.ingest_run_id                  AS ingest_run_id,
+    ir.patch_id                       AS patch_id,
+    coalesce(w.n, 0)                  AS n_claims,
+    coalesce(r.n, 0)                  AS n_retracted,
+    cs.note                           AS note,
+    cs.created_at                     AS created_at
+  FROM fc.provenance_changeset cs
+  LEFT JOIN actors a                   ON a.actor_id = cs.actor_id
+  LEFT JOIN fc.provenance_ingestrun ir ON ir.id = cs.ingest_run_id
+  LEFT JOIN wrote w                    ON w.changeset_id = cs.id
+  LEFT JOIN retracted r                ON r.changeset_id = cs.id;
+COMMENT ON VIEW changesets IS
+  'One row per ChangeSet — the finest attribution grain, ingest and interactive alike, with its note, actor and n_claims/n_retracted. The ONLY view that sees the 739 retraction-only changesets: claims.changeset_id names only changesets that wrote.';
 
 -- ═══ CITATION SOURCES — external evidence ═══════════════════════════════════
 -- The EVIDENCE side. A citation source is a two-level tree: a ROOT (the work — a book,

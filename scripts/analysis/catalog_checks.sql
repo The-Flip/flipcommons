@@ -194,8 +194,10 @@ CREATE OR REPLACE VIEW foundation_summary AS
   UNION ALL SELECT 'claims',              count(*) FROM claims
   UNION ALL SELECT 'model_claims',        count(*) FROM model_claims
   UNION ALL SELECT 'claim_identity_parts', count(*) FROM claim_identity_parts
+  UNION ALL SELECT 'actors',              count(*) FROM actors
   UNION ALL SELECT 'ingest_sources',      count(*) FROM ingest_sources
   UNION ALL SELECT 'ingest_runs',         count(*) FROM ingest_runs
+  UNION ALL SELECT 'changesets',          count(*) FROM changesets
   UNION ALL SELECT 'citation_sources',    count(*) FROM citation_sources
   UNION ALL SELECT 'citation_roots',      count(*) FROM citation_roots
   UNION ALL SELECT 'citation_instances',  count(*) FROM citation_instances
@@ -292,8 +294,10 @@ CREATE OR REPLACE VIEW _anchor_scan AS
   UNION ALL SELECT 'claims',                col, live FROM _dark_cols('claims')
   UNION ALL SELECT 'model_claims',          col, live FROM _dark_cols('model_claims')
   UNION ALL SELECT 'claim_identity_parts',  col, live FROM _dark_cols('claim_identity_parts')
+  UNION ALL SELECT 'actors',                col, live FROM _dark_cols('actors')
   UNION ALL SELECT 'ingest_sources',        col, live FROM _dark_cols('ingest_sources')
   UNION ALL SELECT 'ingest_runs',           col, live FROM _dark_cols('ingest_runs')
+  UNION ALL SELECT 'changesets',            col, live FROM _dark_cols('changesets')
   UNION ALL SELECT 'citation_sources',      col, live FROM _dark_cols('citation_sources')
   UNION ALL SELECT 'citation_roots',        col, live FROM _dark_cols('citation_roots')
   UNION ALL SELECT 'citation_instances',    col, live FROM _dark_cols('citation_instances')

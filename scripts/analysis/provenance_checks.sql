@@ -135,6 +135,57 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   WHERE (SELECT count(*) FROM fc.provenance_citationinstance)
         IS DISTINCT FROM (SELECT count(*) FROM citation_instances)
 
+  UNION ALL
+  SELECT 'changeset_rows_dropped',
+         'physical=' || (SELECT count(*) FROM fc.provenance_changeset)::VARCHAR
+           || ' view=' || (SELECT count(*) FROM changesets)::VARCHAR
+  WHERE (SELECT count(*) FROM fc.provenance_changeset)
+        IS DISTINCT FROM (SELECT count(*) FROM changesets)
+
+  -- ─── Actors and changesets ───────────────────────────────────────────────
+  -- An actor backs an ingest source XOR a user, and `actor_name`/`actor_slug` coalesce
+  -- across the two. That coalesce is only safe while the XOR holds: an actor backed by
+  -- NEITHER table yields NULL handles that group into one anonymous bucket, and one
+  -- backed by BOTH silently prefers the source. Either way attribution goes quietly
+  -- wrong rather than loudly missing, which is why the XOR is asserted and not assumed.
+  UNION ALL
+  SELECT 'actor_backing_unresolved',
+         'actor_id=' || actor_id::VARCHAR || ' kind=' || coalesce(actor_kind, 'NULL')
+  FROM actors
+  WHERE actor_name IS NULL OR actor_slug IS NULL
+     OR (ingest_source_slug IS NOT NULL AND username IS NOT NULL)
+
+  -- Source slugs and usernames share one namespace in `actor_slug`. Nothing in the
+  -- schema stops a source slugged `moses`, and if one lands, actor_slug stops being a
+  -- key: two actors would group as one. Cheap to assert, impossible to notice otherwise.
+  UNION ALL
+  SELECT 'actor_slug_collision', 'actor_slug=' || actor_slug
+  FROM actors
+  WHERE actor_slug IS NOT NULL
+  GROUP BY actor_slug
+  HAVING count(*) > 1
+
+  -- The DB constraint provenance_changeset_action_iff_interactive, restated where an
+  -- analysis can see it. `action` is spelled '' for ingest here, so the test is on
+  -- emptiness rather than NULL — and it matters because `is_interactive` is what
+  -- consumers filter on while `action` is what they display.
+  UNION ALL
+  SELECT 'changeset_action_iff_interactive',
+         'changeset_id=' || changeset_id::VARCHAR
+           || ' is_interactive=' || is_interactive::VARCHAR
+           || ' action=[' || action || ']'
+  FROM changesets
+  WHERE is_interactive IS DISTINCT FROM (action <> '')
+
+  -- A changeset that neither wrote nor retracted a claim did nothing at all. Zero of
+  -- 32,126 today. One would mean a write path recording the grouping record and then
+  -- failing to record the work — and because `claims` can't see a changeset with no
+  -- claims, it would be invisible everywhere except here.
+  UNION ALL
+  SELECT 'inert_changeset', 'changeset_id=' || changeset_id::VARCHAR
+  FROM changesets
+  WHERE n_claims = 0 AND n_retracted = 0
+
   -- ─── Citation structure ──────────────────────────────────────────────────
   -- The citation source tree is exactly two levels — a root (the work) and its children
   -- (the cited items). citation_sources resolves the root with a SINGLE self-join, so a
