@@ -2,6 +2,15 @@
 
 This doc is about using our DuckDB analytics layer to explore the Flipcommons localhost dev database — both ad-hoc, and via analysis files that back planning docs and data patch campaigns with reproducible queries.
 
+## What this layer is
+
+**A curated semantic layer over the catalog, not a mirror of it.** Every view encodes the liveness rule, declares its grain, decodes foreign keys to stable slugs and states the specific way it would otherwise hand you a confident wrong answer. That is the whole value, and it is why a catalog question answered with `manage.py shell` or raw sqlite3 against `db.sqlite3` is answered wrong more often than it looks.
+
+Two consequences to hold onto, because both have bitten:
+
+- **A view is not its table.** `models` is live-filtered and denormalized across four joins; `countries` is the parentless slice of `locations`; `tags` is keyed by model while `tag_vocab` is keyed by tag. Matching names do not mean matching columns or matching grain.
+- **A field missing from a view has not been dropped, and does not fail to exist.** Views carry what analyses have needed. Absence almost always means nobody has promoted it yet — read the Django model before concluding otherwise, then [promote it](EDITING.md). Grepping the SQL is not a test of what the catalog holds.
+
 ## Quick start
 
 ```bash
@@ -25,7 +34,7 @@ scripts/analysis/analysis describe models
 # Each view's comment block carries what a one-liner cannot — the grain, the
 # liveness rule and the specific way that view will hand you a plausible wrong
 # answer — and it sits next to the SELECT it explains.
-grep '═══' scripts/analysis/catalog.sql scripts/analysis/provenance.sql
+grep '═══' scripts/analysis/catalog.sql scripts/analysis/provenance.sql scripts/analysis/data_patches.sql
 ```
 
 In `catalog.sql`, two headings say where to start: `MODELS — the spine; start here` and `MODEL-TO-MODEL RELATIONSHIPS — start with model_edges`.
@@ -40,7 +49,7 @@ Guidance that belongs to no single view.
 
 ### Model vs Title
 
-When a user asks a question about "models" (aka `MachineModel`) they often mean Titles, or models-as-users-see-them — and for a Title with exactly one Model the UI collapses the two (see `SingleModelTitles.md`). Decide which grain the question wants before counting. title_size on the model row is the test: title_size = 1 is a model that is its own Title in the UI.
+When a user asks a question about "models" (aka `MachineModel`) they often mean Titles, or models-as-users-see-them — and for a Title with exactly one Model the UI collapses the two (see `SingleModelTitles.md`). Decide which grain the question wants before counting. title_size on the model row is the test: title_size = 1 is a model that is its own Title in the UI. When the Title is the grain rather than the qualifier, `titles` is the entity view — franchise and series groupings live there and nowhere else.
 
 ### Matching source records to models
 
@@ -70,6 +79,18 @@ Found a phrasing the catalog lacks? Add it with a [data patch](../../docs/DataPa
 ### Liveness is the default
 
 Catalog records are soft-deleted (see [RecordLifecycle.md](../../docs/RecordLifecycle.md)). `models` excludes them, matching the read APIs; `all_models` is the escape hatch. Liveness applies to what a model _points at_ too: every dim is soft-deleted independently, so a dead dim **de-enriches to NULL** rather than being reported as current. The one deliberate exception is `claims`, which is not live-filtered — provenance of a deleted record is legitimate history. Use `model_claims` for the live-model lens.
+
+The `patch_*` views inherit that exception and are not live-filtered either, for the same reason: what a patch asserted is history. They carry `model_status` instead, so predicate on it rather than assuming the subject is current.
+
+### What our own patches did
+
+`data_patches.sql` is the patch lens on the provenance layer — the same claims, narrowed to the data patches authored in [flippatch](https://github.com/deanmoses/flippatch) and re-grained around the file an author actually edits. It answers a question no other layer does: not what the catalog says, but **which block of which patch file said it, and what evidence that block recorded**.
+
+- `patch_claims` / `patch_retractions` — what a patch asserted, and what it deactivated. They are separate views because a retraction writes no claim: it flips `is_active` on someone else's, so the retracting patch appears nowhere in `patch_claims.patch_id`. A patch that only retracts is invisible to every claim-derived view.
+- `patch_entries` — one row per **effectful authored ChangeSet**: a flat entry or one item of a grouped `changesets:` list, on any entity (not only a model). **The unit a decision is made about**, since a citation added to an entry reaches every claim in it. Driven from `changesets`, so retraction-only entries survive. Not a patch roster: a source-only patch writes no ChangeSet and has no row here.
+- `patch_cites` / `patch_entry_cites` — the **field-level** evidence, at claim grain and at entry grain. They traverse the `ClaimCitationInstance` bridge, so an inline `[[cite:id:N]]` citation embedded in a description is **absent** — an entry missing here is not an uncited entry. Filter these on `root_identifier_key`, never on `citation_source_type`: the type is a shape, so `= 'web'` as a proxy for "the IPDB cite" also admits every other web-rooted work.
+
+Three traps. A membership claim with `member_exists = false` is a **tombstone** — the patch asserted the member is absent — so counting it as an assertion reports the opposite of the record. Absence from `patch_cites` means no _bridged_ citation, not no citation. And to **enumerate applied patches**, start from the ingest ledger — `ingest_runs` where `patch_id` is set **and `status = 'success'`** (the applied set is the successful runs; only those are unique per `patch_id`, so `patch_id` alone counts failed and re-run attempts too). It is the only complete roster; `patch_entries`, `changesets` and `patch_claims` each miss source-only, retraction-only or both.
 
 ### Model relationship shapes
 

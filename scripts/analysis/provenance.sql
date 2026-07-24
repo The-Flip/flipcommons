@@ -43,6 +43,79 @@
 -- resolved gameplay-feature edge and theme edge, which is what keeps the ranking
 -- honest against the real resolver.
 
+-- ═══ ACTORS — the one thing that can assert ═════════════════════════════════
+-- AN ACTOR IS AN INGEST SOURCE **XOR** A USER, and this is the fact in the attribution
+-- model most easily missed, because nothing in the shape of the data announces it. The
+-- polymorphism is spelled as a `backing_model` discriminator on `actors_actor` plus a
+-- nullable `actor_id` on each of the two backing tables, so a reader who arrives at
+-- `provenance_source` first sees a complete-looking attribution story and never learns
+-- there is a second kind. `claims.actor_kind` has always exposed the split with nowhere
+-- to go from it, and `ingest_sources` covers 25 of the 27 actors while looking total.
+--
+-- Everything the winner-pick reads lives HERE, not on the backing table: `priority` and
+-- `resolution_status` are actor columns (`ingest_sources.priority` is this view's, one
+-- join away). So "the ranking model is per-source" is wrong in a way that survives
+-- casual inspection — it is per-ACTOR, and a user's edit competes with IPDB on exactly
+-- the same ladder.
+--
+--   actor_name / actor_slug : the UNIFORM handles, resolved across both kinds, so an
+--             analysis attributing a claim never branches on actor_kind to display or
+--             group it. A source contributes its name and slug; a user contributes its
+--             username for both. Two invariants license this and both are checked:
+--             `actor_backing_unresolved` (every actor decodes to exactly one side — no
+--             orphans, no doubles) and `actor_slug_collision` (source slugs and
+--             usernames share one namespace here, so a source slugged `moses` would
+--             make actor_slug ambiguous as a key).
+--   USERNAME, NOT EMAIL. `accounts_user` also holds email and workos_user_id, and this
+--             layer gets copied wholesale into shareable .duckdb snapshots. The
+--             username is the public handle; the rest is PII that has no business
+--             crossing into an analytics surface. Don't add it "for matching".
+--   n_claims / n_changesets : usage, over `claims` (not live-filtered) and every
+--             changeset attributed to this actor. Both 0 is a real state — an account
+--             that exists and has never edited.
+CREATE OR REPLACE VIEW actors AS
+  SELECT
+    a.id                  AS actor_id,
+    a.backing_model       AS actor_kind,
+    coalesce(s.name, u.username)  AS actor_name,
+    coalesce(s.slug, u.username)  AS actor_slug,
+    a.priority            AS actor_priority,
+    a.resolution_status   AS actor_resolution_status,
+    -- Kind-specific tails. Read actor_kind before reading either; a source carries no
+    -- username and a user carries no ingest_source_*.
+    s.id                  AS ingest_source_id,
+    s.slug                AS ingest_source_slug,
+    s.name                AS ingest_source_name,
+    s.source_type         AS ingest_source_type,
+    l.slug                AS ingest_source_default_license_slug,
+    u.username            AS username,
+    (SELECT count(*) FROM fc.provenance_claim c      WHERE c.actor_id = a.id) AS n_claims,
+    (SELECT count(*) FROM fc.provenance_changeset cs WHERE cs.actor_id = a.id) AS n_changesets,
+    a.created_at          AS created_at
+  FROM fc.actors_actor a
+  LEFT JOIN fc.provenance_source s ON s.actor_id = a.id
+  LEFT JOIN fc.accounts_user u     ON u.actor_id = a.id
+  LEFT JOIN fc.core_license l      ON l.id = s.default_license_id;
+COMMENT ON VIEW actors IS
+  'One row per ACTOR — the single thing that can assert a claim, an ingest source XOR a user. actor_name/actor_slug are uniform across both kinds; priority and resolution_status live here, not on the backing table, so the winner-pick ladder is per-actor.';
+
+-- _claim_actor — the join helper `claims` and `ingest_sources` decode through. A
+-- projection of `actors` rather than its own decode, so the two cannot drift; it keeps
+-- the column names those views already publish.
+CREATE OR REPLACE VIEW _claim_actor AS
+  SELECT
+    actor_id,
+    actor_kind,
+    actor_name,
+    actor_slug,
+    actor_priority,
+    actor_resolution_status,
+    ingest_source_slug,
+    ingest_source_name,
+    ingest_source_type,
+    ingest_source_default_license_slug
+  FROM actors;
+
 -- ═══ CLAIMS — who asserted what, and how claims compete ══════════════════
 -- Claims compete within a REGISTER — the grouping key the winner-pick partitions on.
 -- pick_winners groups membership sets on `claim_key` but scalar registers on
@@ -102,25 +175,6 @@ CREATE OR REPLACE VIEW _claim_ref AS
   GROUP BY claim_id
   HAVING count(*) = 1 AND bool_and(regexp_matches(part_value, '^[0-9]+$'));
 
--- _claim_actor — the actor behind a claim, decoded. One row per actor.
--- `actors_actor` is the uniform attribution column: an actor backs EITHER an ingest
--- source (25 today) or a user (2), carries the `priority` that drives the winner-pick
--- and the `resolution_status` kill switch. ingest_source_* is NULL for a user actor;
--- read actor_kind before reading them.
-CREATE OR REPLACE VIEW _claim_actor AS
-  SELECT
-    a.id                  AS actor_id,
-    a.backing_model       AS actor_kind,
-    a.priority            AS actor_priority,
-    a.resolution_status   AS actor_resolution_status,
-    s.slug                AS ingest_source_slug,
-    s.name                AS ingest_source_name,
-    s.source_type         AS ingest_source_type,
-    l.slug                AS ingest_source_default_license_slug
-  FROM fc.actors_actor a
-  LEFT JOIN fc.provenance_source s ON s.actor_id = a.id
-  LEFT JOIN fc.core_license l      ON l.id = s.default_license_id;
-
 -- ─── claims ────────────────────────────────────────────────────────────────
 -- The spine of this file. One row per claim across EVERY subject type — 21 of them, so
 -- the content-type decode is generic (subject_type = 'catalog.machinemodel') and no
@@ -148,12 +202,27 @@ CREATE OR REPLACE VIEW _claim_actor AS
 --             inactive or from a suppressed actor, which is a different thing from
 --             "ranked last" and is why this is NULL rather than a large number.
 --             A RANKING, not a verdict — read the catalog for the outcome.
+--   actor_name / actor_slug : who asserted it, uniform across both actor kinds — see
+--             the ACTORS block. Use these to attribute or group; `ingest_source_slug`
+--             is NULL on the 67 user claims, so grouping by it silently collapses every
+--             human edit into one unlabelled bucket. The ingest_source_* columns remain
+--             for questions that are genuinely about ingest sources.
 --   license_slug : the per-claim license OVERRIDE only. NULL means "inherits", and the
 --             inheritance chain (source field license, then ingest source default) is
 --             not resolved here; ingest_source_default_license_slug is the tail of it,
 --             so a consumer that needs the effective license can express its own rule.
 --   patch_id : the data patch this claim arrived in, NULL for an interactive edit —
 --             the column a flippatch campaign asks "what did patch NNNN actually do".
+--   retracted_by_changeset_id / retracted_by_patch_id : the changeset that DEACTIVATED
+--             this claim, and the patch that changeset belonged to (NULL for a user
+--             revert). Note the asymmetry against `patch_id`, which names the patch that
+--             WROTE the claim: a patch that only retracts writes no claims at all, so
+--             `patch_id` never mentions it and it is invisible to anything grouping on
+--             that column alone. 780 claims are retracted by a patch today across ten
+--             patches, seven of which assert nothing whatsoever. Always NULL on an active
+--             claim — `provenance_claim_retracted_requires_inactive` constrains the FK to
+--             is_active=false, so this is a strictly narrower signal than `is_active`,
+--             which also goes false on ordinary supersession.
 CREATE OR REPLACE VIEW claims AS
   SELECT
     c.id                                          AS claim_id,
@@ -175,7 +244,8 @@ CREATE OR REPLACE VIEW claims AS
                 ORDER BY a.actor_priority DESC, c.created_at DESC, c.id DESC)
     END                                           AS rank,
     c.is_active                                   AS is_active,
-    a.actor_id, a.actor_kind, a.actor_priority, a.actor_resolution_status,
+    a.actor_id, a.actor_kind, a.actor_name, a.actor_slug,
+    a.actor_priority, a.actor_resolution_status,
     a.ingest_source_slug, a.ingest_source_name, a.ingest_source_type,
     a.ingest_source_default_license_slug,
     l.slug                                        AS license_slug,
@@ -183,6 +253,8 @@ CREATE OR REPLACE VIEW claims AS
     cs.action                                     AS changeset_action,
     cs.ingest_run_id                              AS ingest_run_id,
     ir.patch_id                                   AS patch_id,
+    c.retracted_by_changeset_id                   AS retracted_by_changeset_id,
+    ir_r.patch_id                                 AS retracted_by_patch_id,
     c.created_at                                  AS created_at
   FROM fc.provenance_claim c
   JOIN fc.django_content_type ct   ON ct.id = c.content_type_id
@@ -191,9 +263,11 @@ CREATE OR REPLACE VIEW claims AS
   JOIN _claim_actor a              ON a.actor_id = c.actor_id
   LEFT JOIN _claim_ref r           ON r.claim_id = c.id
   LEFT JOIN fc.core_license l      ON l.id = c.license_id
-  LEFT JOIN fc.provenance_ingestrun ir ON ir.id = cs.ingest_run_id;
+  LEFT JOIN fc.provenance_ingestrun ir ON ir.id = cs.ingest_run_id
+  LEFT JOIN fc.provenance_changeset cs_r ON cs_r.id = c.retracted_by_changeset_id
+  LEFT JOIN fc.provenance_ingestrun ir_r ON ir_r.id = cs_r.ingest_run_id;
 COMMENT ON VIEW claims IS
-  'One row per claim, every subject type — who asserted what, with rank, member_exists, ref_id, ingest source, changeset and patch_id. NOT live-filtered; use model_claims for the live-model lens.';
+  'One row per claim, every subject type — who asserted what, with rank, member_exists, ref_id, ingest source, changeset and patch_id, plus the changeset/patch that later retracted it. NOT live-filtered; use model_claims for the live-model lens.';
 
 -- model_claims — claims about LIVE machine models, keyed model_id so it joins straight
 -- to `models` and the grain views. The live-only lens `claims` deliberately isn't, and
@@ -237,6 +311,15 @@ COMMENT ON VIEW claim_identity_parts IS
 --   n_top_ranked : claims where rank = 1 — how much this source actually DECIDES, which
 --             is the number that separates a high-volume source from an influential one.
 --             A low-priority source can assert a great deal and win almost none of it.
+--   is_enabled / resolution_status : the SAME kill switch in two spellings, and the
+--             pair is carried deliberately. `is_enabled` is the authored toggle on
+--             Source; `resolution_status` is the Actor mirror of it, and the mirror is
+--             what the winner-pick actually reads (`claim_ranking_in_db._annotate_
+--             priority` excludes suppressed ACTORS, not disabled sources). So the two
+--             can only disagree if a Source was written without its Actor resyncing,
+--             and in that state resolution follows `resolution_status` while a human
+--             reading the admin sees `is_enabled`. Predicate on resolution_status;
+--             `ingest_source_enabled_desyncs` fails if they ever part company.
 -- Counts are over `claims`, so they include deleted subjects; that is the honest count
 -- of what the source asserted. Filter through model_claims for a live-only figure.
 CREATE OR REPLACE VIEW ingest_sources AS
@@ -247,6 +330,7 @@ CREATE OR REPLACE VIEW ingest_sources AS
     s.source_type           AS ingest_source_type,
     a.actor_priority        AS priority,
     a.actor_resolution_status AS resolution_status,
+    s.is_enabled            AS is_enabled,
     s.url                   AS url,
     a.ingest_source_default_license_slug AS default_license_slug,
     count(c.claim_id)                                          AS n_claims,
@@ -261,7 +345,10 @@ COMMENT ON VIEW ingest_sources IS
 
 -- ingest_runs — one row per IngestRun: the patch-level ledger. `patch_id` is the
 -- flippatch `NNNN-slug` file, NULL for a non-patch run. Interactive edits have no run
--- at all and appear here not at all — they are ChangeSets with action set instead.
+-- at all and appear here not at all — they are ChangeSets with action set instead, and
+-- `changesets` below is where they DO appear. A run groups changesets, so the two are a
+-- coarse/fine pair over the same history: read this one when the subject is the patch,
+-- that one when it is an individual act of writing.
 CREATE OR REPLACE VIEW ingest_runs AS
   SELECT
     ir.id               AS ingest_run_id,
@@ -279,6 +366,71 @@ CREATE OR REPLACE VIEW ingest_runs AS
   LEFT JOIN fc.provenance_source s ON s.id = ir.source_id;
 COMMENT ON VIEW ingest_runs IS
   'One row per ingest run — patch_id, ingest source, status, fingerprint and the asserted/retracted/rejected claim counts. Reach for it when the subject is a patch rather than what the patch wrote.';
+
+-- changesets — one row per ChangeSet: a single grouped act of writing, ingest and
+-- interactive alike. The finest attribution grain there is, and the only view that can
+-- enumerate them.
+--
+-- BUILT ON THE PHYSICAL TABLE, NOT ON `claims`, AND THAT IS THE WHOLE POINT. 739 of the
+-- 32,126 changesets wrote no claim at all — they only RETRACTED — and `claims.
+-- changeset_id` names only changesets that wrote, so every one of them is invisible to
+-- anything derived from it. 737 are patch retractions and 2 are user reverts; not one
+-- is inert (`inert_changeset` holds that). Deriving this view from `claims` for
+-- convenience would reproduce exactly the gap it exists to close, which is why the FROM
+-- clause here is `fc.provenance_changeset` with everything else LEFT JOINed onto it.
+--
+-- flippatch hit this from the other side: `_patch_acts` in its patches.sql UNIONs
+-- assertions with retractions to rebuild this grain by hand, and records that an
+-- entries view built from assertions alone misses 737 of 4798 entries and seven whole
+-- patches. That reconstruction is the promotion signal; this is the base view it wanted.
+--
+--   note    : free text explaining the write, and the reason `note` is a first-class
+--             column rather than a curiosity: 717 of the 737 invisible retraction
+--             changesets carry one. The explanation of WHY a patch took a claim back
+--             was, until this view, unreachable from the foundation entirely — no view
+--             referenced the column. It reads the other way round from what you would
+--             expect (2 of 45 interactive changesets have a note, against 97% of patch
+--             retractions) because it is the retraction that needs explaining.
+--   is_interactive : a human edit, i.e. no ingest run. Carried as a column rather than
+--             as a filter on this view because the ingest side is not noise — it is
+--             where the invisible rows live. `action` is present exactly when this is
+--             true (`provenance_changeset_action_iff_interactive`), and is spelled ''
+--             for ingest to match `claims.changeset_action`, not NULL.
+--   n_claims / n_retracted : what the changeset actually did. `n_claims = 0 AND
+--             n_retracted > 0` is the 739; both zero is the state `inert_changeset`
+--             forbids. Counted over ALL claims, not live subjects — a changeset that
+--             edited a since-deleted model still did the work.
+--   actor_* : who, uniform across both kinds, from `actors`. Interactive changesets
+--             resolve to a username here; before this view they resolved to nothing.
+CREATE OR REPLACE VIEW changesets AS
+  WITH wrote AS (
+    SELECT changeset_id, count(*) AS n
+    FROM fc.provenance_claim GROUP BY changeset_id
+  ),
+  retracted AS (
+    SELECT retracted_by_changeset_id AS changeset_id, count(*) AS n
+    FROM fc.provenance_claim
+    WHERE retracted_by_changeset_id IS NOT NULL
+    GROUP BY retracted_by_changeset_id
+  )
+  SELECT
+    cs.id                             AS changeset_id,
+    cs.ingest_run_id IS NULL          AS is_interactive,
+    coalesce(cs.action, '')           AS action,
+    a.actor_id, a.actor_kind, a.actor_name, a.actor_slug,
+    cs.ingest_run_id                  AS ingest_run_id,
+    ir.patch_id                       AS patch_id,
+    coalesce(w.n, 0)                  AS n_claims,
+    coalesce(r.n, 0)                  AS n_retracted,
+    cs.note                           AS note,
+    cs.created_at                     AS created_at
+  FROM fc.provenance_changeset cs
+  LEFT JOIN actors a                   ON a.actor_id = cs.actor_id
+  LEFT JOIN fc.provenance_ingestrun ir ON ir.id = cs.ingest_run_id
+  LEFT JOIN wrote w                    ON w.changeset_id = cs.id
+  LEFT JOIN retracted r                ON r.changeset_id = cs.id;
+COMMENT ON VIEW changesets IS
+  'One row per ChangeSet — the finest attribution grain, ingest and interactive alike, with its note, actor and n_claims/n_retracted. The ONLY view that sees the 739 retraction-only changesets: claims.changeset_id names only changesets that wrote.';
 
 -- ═══ CITATION SOURCES — external evidence ═══════════════════════════════════
 -- The EVIDENCE side. A citation source is a two-level tree: a ROOT (the work — a book,
@@ -307,6 +459,26 @@ CREATE OR REPLACE VIEW _citation_root_domains AS
 -- citation_sources — every citation source, root and child alike, with its root
 -- resolved. A root resolves to itself, which is what lets a consumer group by
 -- root_citation_source_id without special-casing.
+--
+--   year / month / day : a PRECISION LADDER, not three independent columns. The DB
+--             enforces the chain (`citation_citationsource_month_requires_year` and
+--             `..._day_requires_month`), so a NULL month means the source is dated to
+--             the YEAR — never that a month went missing from an otherwise full date.
+--             That is what licenses `month IS NULL` as a statement about the source
+--             rather than about our record of it. `day` holds no value at all today.
+--   date_note : the free-text remainder no ladder can hold — 'Published 1974–2018',
+--             'First issue May 1991'. Empty string, never NULL. It sits BESIDE the
+--             ladder rather than instead of it, so a row with both has an approximate
+--             date, not a missing one.
+--   THE DATE COLUMNS MEAN DIFFERENT THINGS ON A ROOT AND ON A CHILD, and nothing in
+--             the schema separates them. On a child (an issue, an edition) they date
+--             the cited ITEM. On a root they date the WORK — for a magazine that is
+--             its publication RUN, which is why every populated `date_note` today
+--             reads like 'Published September 1974 – late 1990s' and why `year` on a
+--             magazine root is a founding year, not an issue year. Averaging or
+--             range-testing `year` across both grains silently mixes the two: filter
+--             on `is_root` first, and take the run's real endpoints from `date_note`,
+--             which is the only column that carries the end.
 CREATE OR REPLACE VIEW citation_sources AS
   SELECT
     c.id                                      AS citation_source_id,
@@ -315,33 +487,67 @@ CREATE OR REPLACE VIEW citation_sources AS
     coalesce(c.parent_id, c.id)               AS root_citation_source_id,
     coalesce(r.name, c.name)                  AS root_citation_source_name,
     c.parent_id IS NULL                       AS is_root,
-    c.author, c.publisher, c.year, c.isbn,
+    c.author, c.publisher,
+    c.year, c.month, c.day, c.date_note,
+    c.isbn,
     c.identifier_key                          AS identifier_key,
-    c.identifier                              AS identifier
+    c.identifier                              AS identifier,
+    -- The root's stable key, resolved the same way its name and slug are. A child
+    -- normally repeats its root's key, but reading it off the ROOT is what makes
+    -- `root_identifier_key = 'ipdb'` a claim about the WORK rather than about one cited
+    -- item, and it keeps the root_* family complete: carrying the root's display name
+    -- but not its stable key pushes consumers onto the name or onto a type proxy.
+    coalesce(r.identifier_key, c.identifier_key) AS root_identifier_key,
+    -- Authored cite handle, present exactly on slug-addressed types (magazine).
+    -- root_citation_source_slug reassembles the patch cite ref: a child's
+    -- '<root_slug>:<slug>' (billboard:1945-09-29). The read path the flippatch
+    -- issue-normalizing utility queries.
+    c.slug                                    AS slug,
+    coalesce(r.slug, c.slug)                  AS root_citation_source_slug
   FROM fc.citation_citationsource c
   LEFT JOIN fc.citation_citationsource r ON r.id = c.parent_id;
 COMMENT ON VIEW citation_sources IS
-  'One row per CITATION SOURCE (external evidence), root and child alike, with its root resolved — a root resolves to itself. Not to be confused with ingest_sources (who asserted the fact).';
+  'One row per CITATION SOURCE (external evidence), root and child alike, with its root resolved — a root resolves to itself. slug/root_citation_source_slug are the authored cite handles on slug-addressed (magazine) rows, null elsewhere. year/month/day is a precision ladder that dates the WORK on a root and the cited ITEM on a child. Not to be confused with ingest_sources (who asserted the fact).';
 
 -- citation_instances — one row per CitationInstance: a specific act of citing, with a
 -- `locator` (a page number, a timestamp) narrowing the work. Both the immediate citation
 -- source and its root are carried, because a consumer almost always wants to group by
 -- the root while displaying the child.
+--
+-- `quote` is the verbatim source text the citing claim rests on — empty string, never
+-- NULL, when none was recorded. It is here because the evidence question a consumer
+-- actually asks is "what did the source SAY", and answering it from `locator` alone is
+-- impossible: a locator narrows the work, the quote is the work's own words. Flippatch's
+-- citation campaigns were reading `fc.provenance_citationinstance` directly to get it,
+-- which is the documented promotion signal in EDITING.md. Note the quote belongs to the
+-- CITING ACT, not to the source: two claims citing the same page carry two instances
+-- with two quotes, which is why it lives here and not on `citation_sources`.
+--
+-- `root_identifier_key` / `root_citation_source_slug` are the STABLE handles on the work
+-- being cited, and they are here so that "which work is this instance citing?" needs no
+-- second join. Without them the honest filter is unreachable from an instance and
+-- consumers reach for `citation_source_type` instead — which is a shape, not an identity:
+-- filtering IPDB's instances as `citation_source_type = 'web'` also picks up every other
+-- web-rooted work, about a third of the web-typed rows in the patch corpus. Non-keyed
+-- roots (a book, most magazines) carry '', not NULL, exactly as on `citation_sources`.
 CREATE OR REPLACE VIEW citation_instances AS
   SELECT
     ci.id                             AS citation_instance_id,
     ci.slug                           AS citation_instance_slug,
     ci.locator                        AS locator,
+    ci.quote                          AS quote,
     s.citation_source_id              AS citation_source_id,
     s.citation_source_name            AS citation_source_name,
     s.root_citation_source_id         AS root_citation_source_id,
     s.root_citation_source_name       AS root_citation_source_name,
+    s.root_identifier_key             AS root_identifier_key,
+    s.root_citation_source_slug       AS root_citation_source_slug,
     s.citation_source_type            AS citation_source_type,
     ci.created_at                     AS created_at
   FROM fc.provenance_citationinstance ci
   JOIN citation_sources s ON s.citation_source_id = ci.citation_source_id;
 COMMENT ON VIEW citation_instances IS
-  'One row per citation instance — a specific act of citing, with its locator (page, timestamp) plus both the immediate and the ROOT citation source.';
+  'One row per citation instance — a specific act of citing, with its locator (page, timestamp) and the verbatim quote it rests on, plus both the immediate and the ROOT citation source, including the root stable key/slug to filter on.';
 
 -- claim_citations — the (claim, citation instance) bridge, M2M in both directions.
 -- ~2% of claims have a row here: an ABSENT row means "no external evidence recorded",
@@ -360,12 +566,23 @@ COMMENT ON VIEW claim_citations IS
 --   n_instances : CitationInstances hung off this work or any of its children.
 --   n_cited_claims : distinct claims those instances cite. Lower than n_instances
 --             whenever one instance is reused, and 0 for a work cited nowhere yet.
+--   root_identifier_key / root_citation_source_slug : the work's two stable handles,
+--             carrying the same names they carry on `citation_sources` and
+--             `citation_instances`. The row IS the root here, so the prefix is
+--             redundant on its face — it is kept because the alternative is a
+--             consumer joining three views on root identity and finding the column
+--             renamed under it on one of them. `root_identifier_key` was spelled bare
+--             `identifier_key` until the family was completed; nothing consumed it.
+--             `root_citation_source_slug` was absent entirely, and flippatch's
+--             print-citations campaign documents reading `citation_sources` filtered
+--             to roots instead — the promotion signal EDITING.md names, now closed.
 CREATE OR REPLACE VIEW citation_roots AS
   SELECT
     s.citation_source_id                      AS root_citation_source_id,
     s.citation_source_name                    AS root_citation_source_name,
     s.citation_source_type                    AS citation_source_type,
-    s.identifier_key                          AS identifier_key,
+    s.identifier_key                          AS root_identifier_key,
+    s.slug                                    AS root_citation_source_slug,
     coalesce(d.root_domains, []::VARCHAR[])   AS root_domains,
     count(DISTINCT ch.citation_source_id) FILTER (NOT ch.is_root) AS n_children,
     count(DISTINCT ci.citation_instance_id)   AS n_instances,
@@ -419,11 +636,15 @@ COMMENT ON MACRO url_host IS
   'A URL authority as a normalized host — scheme, userinfo, port, path, query and fragment removed. Empty string when there is no // authority to read, rather than a guessed host.';
 
 -- citation_root_domains — one row per (root citation source, registered host). The
--- grain twin of citation_roots.root_domains: predicate and join on `host`.
+-- grain twin of citation_roots.root_domains: predicate and join on `host`. Carries the
+-- full root_* family, so recognizing a URL lands on the work's stable key in one step
+-- rather than on an id needing a second join — `root_family_incomplete` enforces that.
 CREATE OR REPLACE VIEW citation_root_domains AS
   SELECT
     rd.source_id      AS root_citation_source_id,
     s.citation_source_name AS root_citation_source_name,
+    s.slug            AS root_citation_source_slug,
+    s.identifier_key  AS root_identifier_key,
     rd.host           AS host
   FROM fc.citation_citationsourcerootdomain rd
   JOIN citation_sources s ON s.citation_source_id = rd.source_id;
@@ -455,6 +676,15 @@ COMMENT ON MACRO citation_root_for_host IS
 
 -- provenance_context — the watermark for this layer, printed alongside analysis_context
 -- by every run (the runner discovers public *_context views by name).
+--
+-- IT IS NOT THE WHOLE PROVENANCE WATERMARK. `latest_patch`, `patch_fingerprint` and
+-- `latest_changeset` are provenance facts that live in `analysis_context` in
+-- catalog.sql, and they stay there: that view is the REPRODUCIBILITY watermark, and
+-- telling "same query, newer catalog" from a broken reproduction needs the patch and
+-- changeset point in the same row as the schema point. Splitting it to group by topic
+-- would break every consumer that records the watermark and buy nothing at runtime,
+-- since both views print together above every result. This layer's counts are here;
+-- the run's position in patch and changeset history is there.
 CREATE OR REPLACE VIEW provenance_context AS
   SELECT
     (SELECT count(*) FROM fc.provenance_claim)                  AS claims_total,

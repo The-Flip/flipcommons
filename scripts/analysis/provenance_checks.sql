@@ -135,6 +135,57 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   WHERE (SELECT count(*) FROM fc.provenance_citationinstance)
         IS DISTINCT FROM (SELECT count(*) FROM citation_instances)
 
+  UNION ALL
+  SELECT 'changeset_rows_dropped',
+         'physical=' || (SELECT count(*) FROM fc.provenance_changeset)::VARCHAR
+           || ' view=' || (SELECT count(*) FROM changesets)::VARCHAR
+  WHERE (SELECT count(*) FROM fc.provenance_changeset)
+        IS DISTINCT FROM (SELECT count(*) FROM changesets)
+
+  -- ─── Actors and changesets ───────────────────────────────────────────────
+  -- An actor backs an ingest source XOR a user, and `actor_name`/`actor_slug` coalesce
+  -- across the two. That coalesce is only safe while the XOR holds: an actor backed by
+  -- NEITHER table yields NULL handles that group into one anonymous bucket, and one
+  -- backed by BOTH silently prefers the source. Either way attribution goes quietly
+  -- wrong rather than loudly missing, which is why the XOR is asserted and not assumed.
+  UNION ALL
+  SELECT 'actor_backing_unresolved',
+         'actor_id=' || actor_id::VARCHAR || ' kind=' || coalesce(actor_kind, 'NULL')
+  FROM actors
+  WHERE actor_name IS NULL OR actor_slug IS NULL
+     OR (ingest_source_slug IS NOT NULL AND username IS NOT NULL)
+
+  -- Source slugs and usernames share one namespace in `actor_slug`. Nothing in the
+  -- schema stops a source slugged `moses`, and if one lands, actor_slug stops being a
+  -- key: two actors would group as one. Cheap to assert, impossible to notice otherwise.
+  UNION ALL
+  SELECT 'actor_slug_collision', 'actor_slug=' || actor_slug
+  FROM actors
+  WHERE actor_slug IS NOT NULL
+  GROUP BY actor_slug
+  HAVING count(*) > 1
+
+  -- The DB constraint provenance_changeset_action_iff_interactive, restated where an
+  -- analysis can see it. `action` is spelled '' for ingest here, so the test is on
+  -- emptiness rather than NULL — and it matters because `is_interactive` is what
+  -- consumers filter on while `action` is what they display.
+  UNION ALL
+  SELECT 'changeset_action_iff_interactive',
+         'changeset_id=' || changeset_id::VARCHAR
+           || ' is_interactive=' || is_interactive::VARCHAR
+           || ' action=[' || action || ']'
+  FROM changesets
+  WHERE is_interactive IS DISTINCT FROM (action <> '')
+
+  -- A changeset that neither wrote nor retracted a claim did nothing at all. Zero of
+  -- 32,126 today. One would mean a write path recording the grouping record and then
+  -- failing to record the work — and because `claims` can't see a changeset with no
+  -- claims, it would be invisible everywhere except here.
+  UNION ALL
+  SELECT 'inert_changeset', 'changeset_id=' || changeset_id::VARCHAR
+  FROM changesets
+  WHERE n_claims = 0 AND n_retracted = 0
+
   -- ─── Citation structure ──────────────────────────────────────────────────
   -- The citation source tree is exactly two levels — a root (the work) and its children
   -- (the cited items). citation_sources resolves the root with a SINGLE self-join, so a
@@ -165,6 +216,48 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   FROM citation_root_domains d
   JOIN citation_sources s ON s.citation_source_id = d.root_citation_source_id
   WHERE NOT s.is_root
+
+  -- ─── The root_* family travels together ──────────────────────────────────
+  -- Any view that identifies a root citation source carries ALL FOUR of the family —
+  -- id, name, slug, identifier_key — and this asserts it structurally rather than by
+  -- review. The failure it prevents is not a broken query but a confidently wrong one:
+  -- a consumer that can reach the root's id and display name but not its stable key
+  -- does not go and join, it reaches for `citation_source_type` instead, and filtering
+  -- IPDB as type = 'web' silently sweeps in every other web-rooted work. Both holes
+  -- this closes were found that way — citation_instances had no key at all, and
+  -- citation_roots spelled it `identifier_key`, so a grep for the family name across
+  -- the layer returned nothing and read as "the column doesn't exist".
+  --
+  -- Reads information_schema, like `unanchored_view` above it, and carries the same
+  -- assumption: foundation_checks is only ever loaded by the self-test, so `main` holds
+  -- the foundation's views and not a consumer's.
+  UNION ALL
+  SELECT 'root_family_incomplete', v.table_name || ' missing ' || f.col
+  FROM (SELECT DISTINCT table_name FROM information_schema.columns
+        WHERE table_schema = 'main' AND column_name = 'root_citation_source_id') v
+  CROSS JOIN (SELECT unnest(['root_citation_source_name',
+                             'root_citation_source_slug',
+                             'root_identifier_key']) AS col) f
+  WHERE NOT EXISTS (
+    SELECT 1 FROM information_schema.columns c
+    WHERE c.table_schema = 'main'
+      AND c.table_name = v.table_name
+      AND c.column_name = f.col)
+
+  -- ─── The Source kill switch has two spellings; they must agree ───────────
+  -- `is_enabled` is authored on Source, `resolution_status` is the Actor mirror that
+  -- the winner-pick actually reads. They are synced by Source.save(), so a disagreement
+  -- means an Actor row written around it — and in that state the catalog resolves one
+  -- way while every human-facing surface says the other. Carrying both columns on
+  -- ingest_sources is what makes the drift visible at all.
+  UNION ALL
+  SELECT 'ingest_source_enabled_desyncs',
+         'ingest_source_slug=' || ingest_source_slug
+           || ' is_enabled=' || is_enabled::VARCHAR
+           || ' resolution_status=' || resolution_status
+  FROM ingest_sources
+  WHERE resolution_status IS DISTINCT FROM
+        CASE WHEN is_enabled THEN 'active' ELSE 'suppressed' END
 
   -- The evidence bridge names a claim and an instance that both exist. A dangling side
   -- would make claim_citations over-report coverage relative to what can be joined.

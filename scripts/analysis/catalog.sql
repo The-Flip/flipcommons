@@ -155,6 +155,11 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             Planets). Some collisions are just bad data (Bally 868 = Safari 1969 +
 --             Mysterian 1982). GROUP BY (manufacturer_id, identifier) before
 --             treating it as an identity. NULL on most live models.
+--   year / month : the release date, as a precision ladder — `catalog_machinemodel_
+--             month_requires_year` means a NULL month is "dated to the year", never a
+--             month lost from a fuller date. Roughly two thirds of live models carry
+--             one. Nothing above the year is modelled, so a model released in a named
+--             quarter or season arrives here as a month or as nothing.
 --   maker   : manufacturer_name is the canonical maker (Manufacturer.name via
 --             corporate_entity) — display/group by it.
 --   location: where the MAKER was based, model -> corporate_entity -> location. This
@@ -195,7 +200,8 @@ CREATE OR REPLACE VIEW all_models AS
     COALESCE(tn.n, 0) AS title_size,
     COALESCE(nk.n, 0) AS namesake_count,
     m.variant_of_id, m.remake_of_id, m.export_edition_of_id,
-    m.opdb_id, m.ipdb_id, m.manufacturer_model_identifier, m.year, m.player_count,
+    m.opdb_id, m.ipdb_id, m.manufacturer_model_identifier,
+    m.year, m.month, m.player_count,
     m.corporate_entity_id, ce.slug AS corporate_entity_slug,
     ce.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
     cel.location_path, cel.country_slug,
@@ -264,15 +270,68 @@ COMMENT ON VIEW models IS
   'One row per LIVE MachineModel — the default view; build analyses on this.';
 
 -- ═══ DIMENSIONS — what a model points at ════════════════════════════════════
--- countries — the country vocabulary: live root Locations (a country has no
--- parent). Carries slug, so models.country_slug (and target_country_slug) joins here
--- for the country name. Add an `all_countries` twin the day an analysis needs the
--- deleted rows.
+-- locations — one row per live Location, at EVERY level. THE ENTITY; `countries` below
+-- is a projection over it and not a peer, which is why it is defined from this view
+-- rather than beside it. A country is simply a Location with no parent — there is no
+-- separate country table, and treating the two as different things is the mistake this
+-- ordering exists to prevent.
+--
+--   location_path : the stable key ('usa/il/chicago'), and the one to join on.
+--             `slug` is unique only WITHIN a parent — there is more than one 'victoria'
+--             in the world — so a join on slug silently merges places. The path is also
+--             the hierarchy: `country_slug` is its first segment, and descendants of a
+--             place are the rows whose path starts with its path plus '/'.
+--   location_type : the level, and it is a 10-value open vocabulary, not a 3-level
+--             ladder — country, state, province, department, community, region,
+--             prefecture, constituent_country, district, city. Only `country` is
+--             structurally guaranteed (it is exactly the parentless rows); the rest
+--             reflect how each country subdivides itself, so any analysis that assumes
+--             country/state/city will silently drop the 57 live places that are none of
+--             those — provinces, departments, communities, prefectures and the rest.
+--             Predicate on path depth when you mean depth.
+--   code / short_name / divisions : sparse by construction. `code` is the subdivision's
+--             own code (VIC, WA) and is empty on every country and every city;
+--             `divisions` is populated on countries alone (all 22), naming how that
+--             country subdivides; `short_name` on 2 rows. None is a general-purpose
+--             identifier — read them at the level that carries them.
+--   n_corporate_entities : live corporate entities based here, DIRECTLY — a country
+--             does not inherit the count of its cities. Use the location_path prefix
+--             for a rolled-up figure, deliberately not precomputed because the rollup a
+--             caller wants (this place, or this place and below) is theirs to choose.
+CREATE OR REPLACE VIEW locations AS
+  WITH ce_n AS (
+    SELECT cel.location_id, count(*) AS n
+    FROM fc.catalog_corporateentitylocation cel
+    JOIN fc.catalog_corporateentity ce
+      ON ce.id = cel.corporate_entity_id AND ce.status IS DISTINCT FROM 'deleted'
+    GROUP BY cel.location_id
+  )
+  SELECT
+    l.id, l.slug, l.name,
+    l.location_path,
+    split_part(l.location_path, '/', 1)      AS country_slug,
+    l.location_type,
+    l.parent_id,
+    l.parent_id IS NULL                      AS is_country,
+    l.code, l.short_name, l.divisions,
+    COALESCE(n.n, 0)                         AS n_corporate_entities,
+    l.description
+  FROM fc.catalog_location l
+  LEFT JOIN ce_n n ON n.location_id = l.id
+  WHERE l.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW locations IS
+  'One row per live Location at EVERY level — the entity; countries is the parentless projection of it. Join on location_path, never slug: slug is unique only within a parent.';
+
+-- countries — the country slice of `locations`: the parentless rows. A projection, not
+-- a peer entity — kept as its own view because `models.country_slug` and
+-- `target_country_slug` join here for the name, and because joining a region or city by
+-- accident is the failure it prevents. Columns are deliberately unchanged from when this
+-- read the physical table directly; consumers outside this repo select from it by name.
+-- Add an `all_countries` twin the day an analysis needs the deleted rows.
 CREATE OR REPLACE VIEW countries AS
-  SELECT id, slug, name FROM fc.catalog_location
-  WHERE parent_id IS NULL AND status IS DISTINCT FROM 'deleted';
+  SELECT id, slug, name FROM locations WHERE is_country;
 COMMENT ON VIEW countries IS
-  'One row per live country (a root Location) — join models.country_slug or target_country_slug here for the name.';
+  'One row per live country (a root Location) — join models.country_slug or target_country_slug here for the name. The parentless projection of locations.';
 
 -- location_aliases — every alias of every live Location, including countries, regions
 -- and cities. country_aliases below is the country-only slice. Uses location_path as its
@@ -342,6 +401,13 @@ COMMENT ON VIEW reward_types IS
 --   country_slug: the maker's home country, and NULL when its models disagree — 3
 --                 makers do. n_countries is carried alongside so an ambiguous home is
 --                 visible rather than silently collapsed to one of its values.
+--   website / wikidata_id : the maker's own site and its Wikidata QID — the two
+--                 outbound handles for enriching a maker from outside the catalog,
+--                 which is why they are here rather than left to a raw join. Both
+--                 sparse: 24 makers have a website and NOTHING carries a QID yet, so
+--                 wikidata_id is a `pending` anchor skip that expires the day one does.
+--                 An empty website is '' and an absent QID is NULL — the model spells
+--                 them differently, and this view does not paper over that.
 CREATE OR REPLACE VIEW manufacturers AS
   WITH agg AS (
     SELECT
@@ -362,12 +428,70 @@ CREATE OR REPLACE VIEW manufacturers AS
     COALESCE(a.n_dated, 0)    AS n_dated,
     a.era_start, a.era_end,
     COALESCE(a.n_countries, 0) AS n_countries,
-    a.country_slug
+    a.country_slug,
+    mf.website, mf.wikidata_id
   FROM fc.catalog_manufacturer mf
   LEFT JOIN agg a ON a.manufacturer_id = mf.id
   WHERE mf.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW manufacturers IS
   'One row per live maker — identity, home country, n_models / n_dated, and the era_start/era_end span of its dated models. Era carries no minimum: apply your own n_dated >= k.';
+
+-- corporate_entities — one row per live CorporateEntity: the LEGAL entity one level
+-- below the brand, the grain `models.corporate_entity_id` actually points at. Reach
+-- for it when the question is about a corporate incarnation (D. Gottlieb & Company vs
+-- Premier Technology) rather than about the brand you display.
+--
+--   TWO SPANS, AND THEY ARE NOT THE SAME CLAIM. `year_start`/`year_end` are the
+--                 ASSERTED corporate lifespan — when the company existed. `era_start`/
+--                 `era_end` are DERIVED from the years of the models attributed to it —
+--                 when it shipped. A company founded in 1931 whose first catalogued
+--                 machine is from 1947 has both, disagreeing, and both are right.
+--                 `n_dated` is the evidence behind the derived pair, exactly as on
+--                 `manufacturers`; the asserted pair has no such backing and is sparse
+--                 (35 of 777 entities carry year_start), so a NULL there means unknown,
+--                 never "still operating".
+--   operating_status : 'ongoing' | 'ended' | 'unknown', and UNKNOWN IS THE COLUMN
+--                 DEFAULT — 734 of 777 entities sit on it because nobody has said
+--                 otherwise, not because the answer was investigated and lost. Counting
+--                 'ended' entities is sound; concluding anything from the size of the
+--                 'unknown' bucket is not. Brand-level rollup is ONGOING > UNKNOWN >
+--                 ENDED (OperatingStatus.rollup in the model), deliberately not
+--                 precomputed here: it is a judgment a consumer should reach for
+--                 knowingly.
+--   ipdb_manufacturer_id : IPDB's ManufacturerId, the join key back to an IPDB scrape.
+--                 This is the level IPDB models makers at, which is why it lives here
+--                 and `opdb_manufacturer_id` lives on `manufacturers` — the two source
+--                 databases split the maker at different grains.
+--   location      : the entity's own place, via _ce_location — the same single-valued
+--                 assumption `models.location_path` rests on, stated in its note.
+CREATE OR REPLACE VIEW corporate_entities AS
+  WITH agg AS (
+    SELECT
+      corporate_entity_id,
+      count(*)                 AS n_models,
+      count(year)              AS n_dated,
+      min(year)                AS era_start,
+      max(year)                AS era_end
+    FROM models WHERE corporate_entity_id IS NOT NULL
+    GROUP BY corporate_entity_id
+  )
+  SELECT
+    ce.id, ce.slug, ce.name,
+    ce.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
+    ce.year_start, ce.year_end, ce.operating_status,
+    ce.ipdb_manufacturer_id,
+    cel.location_path, cel.country_slug,
+    COALESCE(a.n_models, 0)  AS n_models,
+    COALESCE(a.n_dated, 0)   AS n_dated,
+    a.era_start, a.era_end
+  FROM fc.catalog_corporateentity ce
+  LEFT JOIN fc.catalog_manufacturer mf ON mf.id = ce.manufacturer_id
+                                      AND mf.status IS DISTINCT FROM 'deleted'
+  LEFT JOIN _ce_location cel           ON cel.corporate_entity_id = ce.id
+  LEFT JOIN agg a                      ON a.corporate_entity_id = ce.id
+  WHERE ce.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW corporate_entities IS
+  'One row per live corporate entity — the LEGAL entity below the brand. Carries two different spans: year_start/year_end is the asserted corporate life, era_start/era_end is derived from its models. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
 
 -- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
 -- rewards — sorted reward-type names per model (only models that have any). Keyed
@@ -494,6 +618,27 @@ CREATE OR REPLACE VIEW tags AS
   GROUP BY mt.machinemodel_id;
 COMMENT ON VIEW tags IS
   'One row per tagged model — sorted list of tag SLUGS (the stable key you predicate on), keyed by id. conversion_kit and re-themes are ModelRelationship types, not tags.';
+
+-- tag_vocab — one row per live TAG, the vocabulary behind the `tags` name-list. The
+-- entity grain: `tags` is keyed by MODEL and answers "what is this tagged", this is
+-- keyed by tag and answers "what tags exist, and how much is each used". Four live tags
+-- of eight rows — half the vocabulary is soft-deleted, so a hardcoded slug that used to
+-- work is a live possibility and checking it against this view is how you find out.
+-- No DAG: unlike themes and gameplay features, tags are flat.
+CREATE OR REPLACE VIEW tag_vocab AS
+  SELECT
+    tg.id, tg.slug, tg.name, tg.description,
+    -- count(m.id), not count(mt.machinemodel_id): the through-row survives its model's
+    -- soft-delete, so counting the link would report dead models as usage.
+    count(m.id) AS n
+  FROM fc.catalog_tag tg
+  LEFT JOIN fc.catalog_machinemodel_tags mt ON mt.tag_id = tg.id
+  LEFT JOIN fc.catalog_machinemodel m
+    ON m.id = mt.machinemodel_id AND m.status IS DISTINCT FROM 'deleted'
+  WHERE tg.status IS DISTINCT FROM 'deleted'
+  GROUP BY ALL;
+COMMENT ON VIEW tag_vocab IS
+  'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of the model-keyed tags name-list. Flat, no DAG.';
 
 -- ═══ GAMEPLAY FEATURES ══════════════════════════════════════════════════════
 -- model_gameplay_features — one row per (model, directly-attached gameplay feature)
@@ -794,6 +939,87 @@ COMMENT ON VIEW model_edges_bidir IS
   'Two rows per resolved edge, one per end — the CONNECTEDNESS view, with a direction column. relationship_type is always the edge AS STATED, so read it with direction. Never aggregate here: every edge is counted twice.';
 
 -- ═══ TITLES AND MODEL NUMBERS ═══════════════════════════════════════════════
+-- titles — one row per live Title: the entity grain behind `models.title_*`. Reach for
+-- it when the Title itself is the subject; read the decoded columns off a model row
+-- when you already have one.
+--
+--   IT IS NOT `title_size` WITH MORE COLUMNS. `title_size` is built from
+--             `_title_live_n` and so holds only Titles that HAVE a live model; this
+--             view holds every live Title and reports the ones with none at
+--             `n_models = 0` rather than dropping them. The two agree row-for-row
+--             today — every live Title has a live model — so the difference is
+--             structural and will stay invisible until a Title outlives its last
+--             model, which soft-deleting one model of a one-model Title produces
+--             immediately. That is why `n_models` is a COALESCEd 0 and not the NULL a
+--             plain join to `title_size` would give: zero is the answer, not "unknown".
+--   franchise / series : the two optional Title groupings, resolved to slug and name
+--             like any other dim and live-filtered the same way, so a soft-deleted
+--             grouping de-enriches to NULL instead of being reported as current. Both
+--             are sparse by design — 210 Titles carry a franchise, 16 a series — and
+--             they mean different things: a franchise is the IP (Star Trek, spanning
+--             makers and eras), a series is a curated thematic lineage (Eight Ball ->
+--             Eight Ball Deluxe). Nothing ingests either; both are curator-maintained,
+--             so an absent grouping is "not yet curated", never "does not belong".
+--             The groupings themselves have no vocabulary view — GROUP BY the slug
+--             here for their membership, and promote a `franchises` view the day an
+--             analysis needs a franchise that no Title points at.
+--   opdb_id / fandom_page_id : the outbound handles. opdb_id is OPDB's "group" — the
+--             Title is the grain OPDB models identity at, which is why it sits here
+--             and `models.opdb_id` is the machine-level one; they are different
+--             namespaces and must not be compared.
+--   description : SingleModelTitles.md governs how this splits against the model's
+--             own description. Populated on 12 Titles today.
+CREATE OR REPLACE VIEW titles AS
+  SELECT
+    t.id, t.slug, t.name,
+    t.opdb_id,
+    t.franchise_id, f.slug  AS franchise_slug, f.name  AS franchise_name,
+    t.series_id,    se.slug AS series_slug,    se.name AS series_name,
+    t.fandom_page_id,
+    COALESCE(tn.n, 0) AS n_models,
+    t.description
+  FROM fc.catalog_title t
+  LEFT JOIN _title_live_n tn         ON tn.title_id = t.id
+  LEFT JOIN fc.catalog_franchise f   ON f.id  = t.franchise_id
+                                    AND f.status  IS DISTINCT FROM 'deleted'
+  LEFT JOIN fc.catalog_series se     ON se.id = t.series_id
+                                    AND se.status IS DISTINCT FROM 'deleted'
+  WHERE t.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW titles IS
+  'One row per LIVE Title — identity, franchise/series grouping and n_models. Unlike title_size it keeps Titles with no live models, at n_models = 0.';
+
+-- franchises / series — the two Title-grouping vocabularies, entity grain. `titles`
+-- decodes each onto the Title row; these answer the questions that needs a second view:
+-- which groupings EXIST, and which are used by nothing. 140 franchises against 210
+-- grouped Titles, 6 series against 16 — so the average franchise holds one or two
+-- Titles and the shape is nothing like a themes DAG.
+--
+-- Neither is ingested. Both are curator-maintained (Series' docstring says so
+-- outright), which is what makes `n_titles = 0` the interesting row rather than a
+-- defect: it is a grouping someone created and never attached, and it is invisible from
+-- `titles` alone because a Title that points at nothing produces no row to notice.
+CREATE OR REPLACE VIEW franchises AS
+  SELECT f.id, f.slug, f.name, f.description,
+         count(t.id) AS n_titles
+  FROM fc.catalog_franchise f
+  LEFT JOIN fc.catalog_title t
+    ON t.franchise_id = f.id AND t.status IS DISTINCT FROM 'deleted'
+  WHERE f.status IS DISTINCT FROM 'deleted'
+  GROUP BY ALL;
+COMMENT ON VIEW franchises IS
+  'One row per live Franchise — the IP grouping (Star Trek), spanning makers and eras, with n_titles. Curator-maintained, never ingested, so n_titles = 0 is a real state.';
+
+CREATE OR REPLACE VIEW series AS
+  SELECT s.id, s.slug, s.name, s.description,
+         count(t.id) AS n_titles
+  FROM fc.catalog_series s
+  LEFT JOIN fc.catalog_title t
+    ON t.series_id = s.id AND t.status IS DISTINCT FROM 'deleted'
+  WHERE s.status IS DISTINCT FROM 'deleted'
+  GROUP BY ALL;
+COMMENT ON VIEW series IS
+  'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Six of them; not the same thing as a Franchise, which is the IP.';
+
 -- title_size — one row per Title with a live model: its identity (title_slug/
 -- title_name) plus n, the count of LIVE models in it (the "alone in its Title?"
 -- signal — n = 1). A soft-deleted sibling doesn't keep a model company.
@@ -840,6 +1066,153 @@ CREATE OR REPLACE VIEW model_number_collisions AS
   HAVING count(*) > 1;
 COMMENT ON VIEW model_number_collisions IS
   'One row per (maker, model number) claimed by more than one live model — exact numbers only. n_titles = 1 is usually a legitimate catalog split, not bad data.';
+
+-- ═══ PEOPLE AND CREDITS ════════════════════════════════════════════════════
+-- credits — one row per credit: a Person, in a CreditRole, on a subject. THE grain, and
+-- the single definition of what a live credit is — `people` and `credit_roles` below are
+-- both aggregates OF THIS VIEW, so the three cannot disagree about the population they
+-- describe. They used to carry a copy of the liveness rule each, which is how "how many
+-- machines is Roy Parker credited on" (299) had an answer and "which ones" had none.
+--
+--   THE SUBJECT IS POLYMORPHIC, and the minority half is the trap. A Credit hangs off a
+--             MachineModel XOR a Series (`catalog_credit_model_xor_series`), 7244 to 7
+--             today. A model-only grain would look complete, agree with every spot check
+--             and silently be missing a whole KIND of credit — the failure `changesets`
+--             was repaired for, where 739 rows were invisible because the view was
+--             derived from the convenient side. So both halves are carried, decoded the
+--             way `claims` decodes its 21 subject types and spelled the same:
+--             subject_type is 'catalog.machinemodel' / 'catalog.series', so a join
+--             across to `claims` needs no translation. Want the model half? Use
+--             `model_credits`, not a subject_type predicate you wrote yourself.
+--   subject_name : the subject's plain name — `models.label` is the disambiguated form
+--             ("Name (Maker Year)") and is one join from `model_credits.model_id`.
+--   liveness: all four ends are live-filtered — both halves of the XOR, the person and
+--             the role. A credit on a soft-deleted model is not a credit on the live
+--             catalog, and the far end of a grain edge has to be live for the same
+--             reason it does in `model_gameplay_features`. None of the four drops a row
+--             today; the FKs are PROTECT and the soft-delete walker blocks the rest.
+--   provenance: Credit is the compound claim `claim_identity_parts` exists for. Its
+--             claim_key names two entities (`credit|person:100|role:4`), so
+--             `claims.ref_id` is NULL and there is no single-column join — go
+--             `claims` (subject_type/subject_id, field_name = 'credit') →
+--             `claim_identity_parts`, once per part.
+CREATE OR REPLACE VIEW credits AS
+  SELECT
+    c.id                                        AS credit_id,
+    -- Every subject_* column is read off the SAME joined row rather than off the raw
+    -- FK columns, so they cannot describe different subjects: a row that resolved on
+    -- both sides (the constraint forbids it) still reports one subject consistently
+    -- instead of splicing a model's type onto a series' slug.
+    CASE WHEN m.id IS NOT NULL THEN 'catalog.machinemodel'
+         ELSE 'catalog.series' END              AS subject_type,
+    COALESCE(m.id,   s.id)                      AS subject_id,
+    COALESCE(m.slug, s.slug)                    AS subject_slug,
+    COALESCE(m.name, s.name)                    AS subject_name,
+    c.person_id, p.slug AS person_slug, p.name AS person_name,
+    c.role_id,   r.slug AS role_slug,   r.name AS role_name
+  -- Read off the PHYSICAL tables rather than off `models` / `series`, which is the one
+  -- place this file allows the second-definition-of-live pattern it otherwise refuses.
+  -- Two reasons it is safe here and nowhere else: `models` is `all_models` filtered on
+  -- the identical predicate and `all_models` is LEFT JOINs throughout, so neither view
+  -- can drop or add a row relative to this; and `credit_subject_not_live` resolves every
+  -- subject against `models` / `series` themselves, so the moment the two definitions
+  -- disagree the check fires rather than the count quietly shifting. Joining `series`
+  -- here would also drag its n_titles aggregate onto a 7k-row grain for two columns.
+  FROM fc.catalog_credit c
+  JOIN fc.catalog_person p     ON p.id = c.person_id
+                              AND p.status IS DISTINCT FROM 'deleted'
+  JOIN fc.catalog_creditrole r ON r.id = c.role_id
+                              AND r.status IS DISTINCT FROM 'deleted'
+  -- Two LEFT JOINs plus "at least one resolved", not two UNIONed branches: exactly one
+  -- side of the XOR can resolve, so the WHERE keeps the row on either and drops it when
+  -- the side it names is dead.
+  LEFT JOIN fc.catalog_machinemodel m ON m.id = c.model_id
+                                     AND m.status IS DISTINCT FROM 'deleted'
+  LEFT JOIN fc.catalog_series s       ON s.id = c.series_id
+                                     AND s.status IS DISTINCT FROM 'deleted'
+  WHERE m.id IS NOT NULL OR s.id IS NOT NULL;
+COMMENT ON VIEW credits IS
+  'One row per credit (person, role, live subject) — the credit GRAIN, and the definition people/credit_roles count. Subject is a model XOR a series, decoded into subject_type/id/slug/name; model_credits is the model half.';
+
+-- model_credits — the model-attached half of `credits`, keyed model_id so it joins
+-- straight to `models` and the other model grain views. The same move `model_claims` is
+-- on the provenance side, and defined OVER `credits` for the reason `countries` is
+-- defined over `locations`: a projection that re-read `fc.catalog_credit` would be a
+-- second definition of a live credit, waiting to drift from the first.
+--
+-- 7244 of the 7251 credits. The other 7 hang off a Series and are reachable only from
+-- `credits`, so a total taken here is not a total.
+CREATE OR REPLACE VIEW model_credits AS
+  SELECT c.*, c.subject_id AS model_id
+  FROM credits c
+  WHERE c.subject_type = 'catalog.machinemodel';
+COMMENT ON VIEW model_credits IS
+  'One row per credit on a LIVE machine model, keyed model_id — the model half of credits (7244 of 7251; the 7 Series credits appear only there).';
+
+-- credit_roles — the credit-role vocabulary (designer, artist, …), entity grain with
+-- usage. Ten live roles. The role-keyed counterpart to `people`: that view carries
+-- n_roles per person, this one n_credits per role, and `credits` is where either goes
+-- to say WHICH machine.
+--
+-- `n_credits` counts rows of `credits`, so it is the same population `people` counts,
+-- by construction rather than by two matching predicates. Reading it against
+-- `people.n_roles` is how you tell a broad vocabulary from a narrow one: 7 roles are in
+-- use across 589 credited people, so three exist and are attached to nothing.
+-- count(c.credit_id), never count(*): a role with no credits must read 0, and the
+-- LEFT JOIN would otherwise count its own unmatched row as one.
+CREATE OR REPLACE VIEW credit_roles AS
+  SELECT
+    r.id, r.slug, r.name, r.description,
+    count(c.credit_id) AS n_credits
+  FROM fc.catalog_creditrole r
+  LEFT JOIN credits c ON c.role_id = r.id
+  WHERE r.status IS DISTINCT FROM 'deleted'
+  GROUP BY ALL;
+COMMENT ON VIEW credit_roles IS
+  'One row per live CreditRole — the credit vocabulary (designer, artist) with n_credits over live subjects. The role-keyed counterpart to people.n_roles; credits is the grain.';
+
+-- people — one row per live Person, with how much of the catalog they are credited on.
+-- The entity grain behind `person_aliases`, which was for a while the only place a
+-- Person appeared at all: an analysis resolving a credit name had the alias table and
+-- no way to get from the match to the person.
+--
+--   n_credits : rows of `credits` — model- and series-attached together, since that is
+--             what the grain holds. Nearly but not exactly n_credited_models, and
+--             treating either as the other drops the series credits.
+--   n_credited_models : distinct LIVE MODELS, which is why it filters subject_type
+--             rather than counting subject_id. Model and Series pks are separate
+--             namespaces that overlap freely, so an undistinguished count would merge a
+--             series with the model that happens to share its number.
+--   n_roles : distinct roles held. A person credited as designer and artist on one
+--             machine has n_credits = 2, n_credited_models = 1, n_roles = 2.
+--   birth_year / death_year : claim-resolved biography, and all but empty — ONE live
+--             person carries each today. Anchoring them is what will make that visible
+--             if a source ever lands them in bulk. The month and day fields exist on
+--             the model and are entirely unpopulated, so they stay unsurfaced under
+--             the demand-driven rule; promoting them is a line here, and the year is
+--             the full precision on offer until then.
+CREATE OR REPLACE VIEW people AS
+  WITH agg AS (
+    SELECT
+      person_id,
+      count(*)                AS n_credits,
+      count(DISTINCT CASE WHEN subject_type = 'catalog.machinemodel'
+                          THEN subject_id END)  AS n_credited_models,
+      count(DISTINCT role_id) AS n_roles
+    FROM credits
+    GROUP BY person_id
+  )
+  SELECT
+    p.id, p.slug, p.name,
+    COALESCE(a.n_credits, 0)         AS n_credits,
+    COALESCE(a.n_credited_models, 0) AS n_credited_models,
+    COALESCE(a.n_roles, 0)           AS n_roles,
+    p.birth_year, p.death_year
+  FROM fc.catalog_person p
+  LEFT JOIN agg a ON a.person_id = p.id
+  WHERE p.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW people IS
+  'One row per live Person — identity, birth/death year and credit counts over live subjects. Counts only: `credits` is the grain that says WHICH models.';
 
 -- ═══ ALIASES & ABBREVIATIONS — matching source wording ══════════════════════
 -- Alias views contain one row per alias of a live parent, keyed by its stable slug.
@@ -976,6 +1349,10 @@ COMMENT ON VIEW domain_vocab IS
 --       and its content hash — filtered to status='success' with a non-null
 --       patch_id, so a failed/running/interactive ingest can't misreport it.
 --   latest_changeset : catches interactive edits — the drift a patch id can't see.
+-- The last three are provenance facts sitting in the catalog watermark on purpose:
+-- what makes a reproduction checkable is having the schema point, the patch point and
+-- the changeset point in ONE row. `provenance_context` in provenance.sql carries that
+-- layer's counts and deliberately does not restate these; read the two together.
 CREATE OR REPLACE VIEW analysis_context AS
   SELECT
     version()                                    AS duckdb_version,
@@ -996,9 +1373,9 @@ COMMENT ON VIEW analysis_context IS
 -- vocabulary (and because this one is long enough), but `.read` here rather than left
 -- for each analysis to remember, so "the foundation" stays ONE `.read` line for every
 -- consumer including the sister repos.
---
--- It goes LAST on purpose: model_claims is the live-model lens and so depends on
--- `models`, which is defined above. DuckDB BINDS a view body at CREATE time, so a
--- forward reference is an immediate error rather than a lurking one — reordering this
--- `.read` fails loudly the moment you try it.
 .read scripts/analysis/provenance.sql
+
+-- ═══ DATA PATCHES — what our own patches did (data_patches.sql) ═════════════
+-- The patch lens on the provenance layer: which patch asserted a fact, which retracted
+-- one, and what evidence each data patch entry recorded.
+.read scripts/analysis/data_patches.sql
