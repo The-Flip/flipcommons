@@ -25,7 +25,7 @@ export const MOCK_SOURCES = [
   {
     id: 2,
     name: 'Pinball Magazine',
-    source_type: 'magazine',
+    source_type: 'periodical',
     author: '',
     publisher: 'Pinball Mag',
     year: null,

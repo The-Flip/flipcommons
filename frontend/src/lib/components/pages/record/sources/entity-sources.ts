@@ -143,7 +143,7 @@ function keepLatestByActor(
  *  those are one citation, listed once.
  *
  *  `root_name` IS in the key: a child's name need not repeat its parent, so
- *  two works can each hold a "Vol. 2" — or two magazines a "July 1940" — and
+ *  two works can each hold a "Vol. 2" — or two periodicals a "July 1940" — and
  *  without the parent they would pool into one citation. */
 function citationKey(citation: ClaimCitationSchema): string {
   return JSON.stringify([

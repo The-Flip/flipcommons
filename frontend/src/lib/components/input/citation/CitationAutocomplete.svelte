@@ -144,7 +144,7 @@
     />
   {:else if flow.stage === 'create'}
     <!-- A pasted web URL gets the describe-site → page web flow (the seed says
-         whether the site is new or already exists); books and magazines use the
+         whether the site is new or already exists); books and periodicals use the
          authored-work form. -->
     {#if isWebSeed(flow.seed)}
       <!-- flow.parent is set only when the create was started from the identify

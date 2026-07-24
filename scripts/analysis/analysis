@@ -16,6 +16,7 @@
 #
 #   scripts/analysis/analysis describe [<analysis.sql>] [<view>|<macro>]
 #   scripts/analysis/analysis run <analysis.sql> <prefix> [--markdown]
+#   scripts/analysis/analysis browse <analysis.sql>
 #   scripts/analysis/analysis ui  <analysis.sql>
 #   scripts/analysis/analysis snapshot <analysis.sql> <view> [<view>...]
 #   scripts/analysis/analysis query <analysis.sql> "<sql>" [--format json|csv|table] [--check <prefix>]
@@ -40,6 +41,9 @@
 # Both read the session itself, so neither can drift the way a prose table did.
 # Both args are optional and order-free — anything ending in .sql is the analysis
 # file (default: the foundation), anything else is a view or macro name.
+# `browse` materializes every public relation (view or table) into
+# <analysis>.browse.duckdb, a static, disposable database that desktop clients such
+# as TablePlus can open directly.
 set -eu
 
 # flipcommons root = two dirs up from this script (…/scripts/analysis/analysis).
@@ -73,6 +77,12 @@ resolve_and_cd() {
 # view" cannot come to disagree about it.
 pub_where="WHERE database_name = 'memory' AND schema_name = 'main'
            AND NOT starts_with(view_name, '_')"
+
+# Public tables use the same naming convention. Analysis files sometimes materialize
+# an expensive intermediate as a TABLE so downstream views do not recompute it; browse
+# must carry those relations too or a campaign export is incomplete.
+pub_table_where="WHERE database_name = 'memory' AND schema_name = 'main'
+                 AND NOT starts_with(table_name, '_')"
 
 # The same idea for MACROS, which are reference surface too — a view comment can tell
 # you to call citation_root_for_host(), and describe has to be able to answer what that
@@ -262,6 +272,51 @@ case "$cmd" in
     [ $# -ge 1 ] || usage
     resolve_and_cd "$1"
     duckdb -ui -init "$analysis_file" :memory:
+    ;;
+
+  browse)
+    [ $# -eq 1 ] || usage
+    resolve_and_cd "$1"
+    out="${analysis_file%.sql}.browse.duckdb"
+    tmp="${out}.tmp.$$"
+    cleanup_browse() { rm -f "$tmp"; }
+    trap cleanup_browse EXIT
+    trap 'exit 1' HUP INT TERM
+    rm -f "$tmp"
+
+    relations=$(duckdb -init "$analysis_file" -noheader -list :memory: \
+      "SELECT relation_name
+       FROM (
+         SELECT view_name AS relation_name, view_oid AS relation_oid
+         FROM duckdb_views() $pub_where
+         UNION ALL
+         SELECT table_name AS relation_name, table_oid AS relation_oid
+         FROM duckdb_tables() $pub_table_where
+       )
+       ORDER BY relation_oid;")
+    [ -n "$relations" ] || {
+      echo "analysis defines no public views or tables: $analysis_file" >&2
+      exit 2
+    }
+
+    sql_tmp=$(printf '%s' "$tmp" | sed "s/'/''/g")
+    stmts="ATTACH '$sql_tmp' AS browse;"
+    n=0
+    while IFS= read -r relation; do
+      [ -n "$relation" ] || continue
+      sql_relation=$(printf '%s' "$relation" | sed 's/"/""/g')
+      stmts="$stmts CREATE TABLE browse.\"$sql_relation\" AS FROM main.\"$sql_relation\";"
+      n=$((n + 1))
+    done <<EOF
+$relations
+EOF
+
+    duckdb -init "$analysis_file" :memory: "$stmts"
+    mv -f "$tmp" "$out"
+    trap - EXIT HUP INT TERM
+    noun=relations
+    [ "$n" -eq 1 ] && noun=relation
+    printf 'wrote %s (%s public %s)\n' "$out" "$n" "$noun"
     ;;
 
   query)

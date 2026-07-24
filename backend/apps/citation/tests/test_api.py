@@ -146,14 +146,14 @@ class TestSearchCitationSources:
         assert data["identifier_key"] == "ipdb"
 
     def test_search_returns_slug_and_parent_name(self, client, user, db):
-        """A magazine issue row carries its slug and its parent's name, so the
+        """A periodical issue row carries its slug and its parent's name, so the
         picker can render 'September 29, 1945 — Billboard'."""
         root = make_citation_source(
-            name="Billboard", source_type="magazine", slug="billboard"
+            name="Billboard", source_type="periodical", slug="billboard"
         )
         make_citation_source(
             name="September 29, 1945",
-            source_type="magazine",
+            source_type="periodical",
             slug="1945-09-29",
             parent=root,
         )
@@ -375,9 +375,9 @@ class TestSearchComputedFields:
         assert data["is_abstract"] is False
         assert data["skip_locator"] is True
 
-    def test_root_magazine(self, client, user, db):
-        """A root magazine: abstract."""
-        make_citation_source(name="Pinball Magazine", source_type="magazine")
+    def test_root_periodical(self, client, user, db):
+        """A root periodical: abstract."""
+        make_citation_source(name="Pinball Magazine", source_type="periodical")
         client.force_login(user)
         resp = client.get("/api/citation-sources/search/?q=Pinball Magazine")
         data = resp.json()["results"][0]
@@ -474,7 +474,7 @@ class TestCreateCitationSource:
 
     def test_cross_type_authored_child_rejected(self, client, user):
         # Authored children extend their own work's hierarchy (an edition
-        # under its book, an issue under its magazine) — a book "edition"
+        # under its book, an issue under its periodical) — a book "edition"
         # under a video or web root has no meaning and would bypass the
         # parent type's minting rules.
         client.force_login(user)
@@ -539,27 +539,27 @@ class TestCreateCitationSource:
         assert data["parent"]["id"] == citation_source.pk
         assert data["parent"]["name"] == citation_source.name
 
-    def test_magazine_create_requires_a_slug(self, client, user):
+    def test_periodical_create_requires_a_slug(self, client, user):
         client.force_login(user)
         resp = _post(
             client,
             "/api/citation-sources/",
-            {"name": "Billboard", "source_type": "magazine"},
+            {"name": "Billboard", "source_type": "periodical"},
         )
         assert resp.status_code == 422
         assert not CitationSource.objects.filter(name="Billboard").exists()
 
-    def test_magazine_create_with_slug(self, client, user):
+    def test_periodical_create_with_slug(self, client, user):
         client.force_login(user)
         resp = _post(
             client,
             "/api/citation-sources/",
-            {"name": "Billboard", "source_type": "magazine", "slug": "billboard"},
+            {"name": "Billboard", "source_type": "periodical", "slug": "billboard"},
         )
         assert resp.status_code == 201
         data = resp.json()
         assert data["slug"] == "billboard"
-        # A parentless magazine is an abstract container — the create flow
+        # A parentless periodical is an abstract container — the create flow
         # reads this to route to issue identification, not the locator.
         assert data["is_abstract"] is True
 
@@ -573,19 +573,19 @@ class TestCreateCitationSource:
         assert resp.status_code == 201
         assert resp.json()["is_abstract"] is False
 
-    def test_magazine_issue_creates_under_its_root(self, client, user):
-        # The "create the issue while citing the magazine" flow: parent_id from
+    def test_periodical_issue_creates_under_its_root(self, client, user):
+        # The "create the issue while citing the periodical" flow: parent_id from
         # the parent context plus the issue's own slug.
         client.force_login(user)
         root = make_citation_source(
-            name="Billboard", source_type="magazine", slug="billboard"
+            name="Billboard", source_type="periodical", slug="billboard"
         )
         resp = _post(
             client,
             "/api/citation-sources/",
             {
                 "name": "September 29, 1945",
-                "source_type": "magazine",
+                "source_type": "periodical",
                 "parent_id": root.pk,
                 "slug": "1945-09-29",
                 "year": 1945,
@@ -612,17 +612,17 @@ class TestCreateCitationSource:
         resp = _post(
             client,
             "/api/citation-sources/",
-            {"name": "Game Room", "source_type": "magazine", "slug": "game_room"},
+            {"name": "Game Room", "source_type": "periodical", "slug": "game_room"},
         )
         assert resp.status_code == 422
 
     def test_duplicate_root_slug_rejected(self, client, user):
         client.force_login(user)
-        make_citation_source(name="RePlay", source_type="magazine", slug="replay")
+        make_citation_source(name="RePlay", source_type="periodical", slug="replay")
         resp = _post(
             client,
             "/api/citation-sources/",
-            {"name": "Replay", "source_type": "magazine", "slug": "replay"},
+            {"name": "Replay", "source_type": "periodical", "slug": "replay"},
         )
         assert resp.status_code == 422
 
@@ -1415,7 +1415,7 @@ class TestUpdateCitationSource:
         resp = _patch(
             client,
             f"/api/citation-sources/{citation_source.pk}/",
-            {"name": "New Name", "source_type": "magazine"},
+            {"name": "New Name", "source_type": "periodical"},
         )
         assert resp.status_code == 422
         citation_source.refresh_from_db()
@@ -1424,7 +1424,7 @@ class TestUpdateCitationSource:
 
     def test_slug_typo_is_correctable(self, client, user):
         mag = make_citation_source(
-            name="Billboard", source_type="magazine", slug="bilboard"
+            name="Billboard", source_type="periodical", slug="bilboard"
         )
         client.force_login(user)
         resp = _patch(
@@ -1435,9 +1435,9 @@ class TestUpdateCitationSource:
         assert resp.status_code == 200
         assert resp.json()["slug"] == "billboard"
 
-    def test_slug_cannot_be_cleared_on_a_magazine(self, client, user):
+    def test_slug_cannot_be_cleared_on_a_periodical(self, client, user):
         mag = make_citation_source(
-            name="Billboard", source_type="magazine", slug="billboard"
+            name="Billboard", source_type="periodical", slug="billboard"
         )
         client.force_login(user)
         resp = _patch(client, f"/api/citation-sources/{mag.pk}/", {"slug": None})
@@ -1854,16 +1854,16 @@ class TestCreateCitationSourcePage:
         assert resp.status_code == 201
         assert resp.json()["skip_locator"] is True
 
-    def test_accepts_page_under_magazine_root(self, client, user):
+    def test_accepts_page_under_periodical_root(self, client, user):
         # pages/ doesn't restrict the parent's type — a web page under a
-        # magazine/book root is intended (the live "Pinball Magazine" magazine
+        # periodical/book root is intended (the live "Pinball Magazine" periodical
         # root has web children). Pin it so a future "web-only" guard can't land.
         client.force_login(user)
-        root = make_citation_source(name="Pinball Magazine", source_type="magazine")
+        root = make_citation_source(name="Pinball Magazine", source_type="periodical")
         resp = _post(
             client,
             self._url(root.pk),
-            {"url": "https://pinball-magazine.example/post", "page_name": "Post"},
+            {"url": "https://pinball-periodical.example/post", "page_name": "Post"},
         )
         assert resp.status_code == 201
         child = CitationSource.objects.get(pk=resp.json()["id"])

@@ -356,7 +356,7 @@ def _parse_source_node(entry: object, where: str) -> SourceNode:
     if "children" in entry:
         raise PatchError(
             f"{where}: nested 'children' is unsupported — nesting is expressed "
-            f"by reference, not structure: declare a magazine issue as its own "
+            f"by reference, not structure: declare a periodical issue as its own "
             f"node with 'parent: <root-slug>', or create web pages via 'cite:'"
         )
     unknown = set(entry) - ALLOWED_SOURCE_KEYS
@@ -838,7 +838,7 @@ def _parse_cite_value(cite: str, archive: str, ref: str) -> CitationRef:
     * ``scheme:identifier`` — the scheme must be a registered scheme and the
       identifier must normalize (``ipdb:4443``);
     * ``<root-slug>:<child-slug>`` — an already-declared child of a
-      slug-addressed source (a magazine issue, ``billboard:1945-09-29``), both
+      slug-addressed source (a periodical issue, ``billboard:1945-09-29``), both
       segments in the system-wide slug grammar.
 
     ``isbn:`` is checked before the scheme grammar it shape-matches, and is

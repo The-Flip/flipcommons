@@ -107,7 +107,7 @@ class SourceCitationRef:
 
     ``root_slug`` and ``child_slug`` are authored kebab handles in the
     system-wide slug grammar, addressing a child of a slug-addressed source
-    (a magazine issue: ``billboard:1945-09-29``); resolved at apply time via
+    (a periodical issue: ``billboard:1945-09-29``); resolved at apply time via
     ``get_slug_source`` (no DB access to construct one). Like ``isbn:`` and
     unlike the web/scheme forms, this never mints: an issue is an editorial
     record declared in a ``sources:`` block, not something a passing ref can

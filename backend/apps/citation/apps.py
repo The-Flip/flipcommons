@@ -33,7 +33,7 @@ def _collect_citation_metadata(obj: CitationInstance, index: int) -> dict[str, A
     """
     from apps.citation.deep_links import deep_linked_url
 
-    # The parent root, so a child (a magazine issue) renders in context —
+    # The parent root, so a child (a periodical issue) renders in context —
     # "Vol. 1" alone is ambiguous without "GameRoom Magazine". None on a root.
     # select_related on the cite link type, so this costs no query.
     root = obj.citation_source.parent

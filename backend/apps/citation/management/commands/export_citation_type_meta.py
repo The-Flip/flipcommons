@@ -73,7 +73,7 @@ class Command(BaseCommand):
             " * `locatorDisplayPrefix` prefixes the locator on the read side",
             " * (tooltip, references) — e.g. video's `starting at` prefix.",
             " * `slugAddressed` marks types addressed by an authored kebab slug",
-            " * (magazine issues) — the create UI shows a slug field for these. */",
+            " * (periodical issues) — the create UI shows a slug field for these. */",
             "export interface CitationTypeMeta {",
             "  key: CitationTypeKey;",
             "  label: string;",

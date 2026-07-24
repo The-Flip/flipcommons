@@ -180,7 +180,7 @@ class ClaimCitationSchema(Schema):
     source_name: str = Field(description="The cited source's display name.")
     root_name: str | None = Field(
         None,
-        description="Name of the cited source's parent root (e.g. the magazine a cited issue belongs to), so a child renders in context; null on roots.",
+        description="Name of the cited source's parent root (e.g. the periodical a cited issue belongs to), so a child renders in context; null on roots.",
     )
     source_type: str = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
@@ -533,7 +533,7 @@ class InlineCitationSchema(Schema):
     source_name: str = Field(description="Name of the cited source.")
     root_name: str | None = Field(
         None,
-        description="Name of the cited source's parent root (e.g. the magazine a cited issue belongs to), so a child renders in context; null on roots.",
+        description="Name of the cited source's parent root (e.g. the periodical a cited issue belongs to), so a child renders in context; null on roots.",
     )
     source_type: str = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."
@@ -689,7 +689,7 @@ class CitationInstanceBatchSchema(Schema):
     source_name: str = Field(description="Name of the cited source.")
     root_name: str | None = Field(
         None,
-        description="Name of the cited source's parent root (e.g. the magazine a cited issue belongs to), so a child renders in context; null on roots.",
+        description="Name of the cited source's parent root (e.g. the periodical a cited issue belongs to), so a child renders in context; null on roots.",
     )
     source_type: str = Field(
         description="Kind of source: one of ``database``, ``wiki``, ``book``, ``editorial`` or ``other``."

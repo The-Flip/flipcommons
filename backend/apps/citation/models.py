@@ -110,7 +110,7 @@ class CitationSourceQuerySet(models.QuerySet["CitationSource"]):
     """Adds the root/child split the whole citation hierarchy turns on."""
 
     def roots(self) -> CitationSourceQuerySet:
-        """Top-level sources with no parent (books, magazines, website roots)."""
+        """Top-level sources with no parent (books, periodicals, website roots)."""
         return self.filter(parent__isnull=True)
 
     def children(self) -> CitationSourceQuerySet:
@@ -126,7 +126,7 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
 
     NOT claims-controlled — edited directly through admin or future UI.
     Hierarchy via self-referential parent FK enables grouping (e.g., article
-    within magazine issue, edition within book).
+    within periodical issue, edition within book).
     """
 
     id: int
@@ -237,8 +237,8 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         validators=[RegexValidator(SLUG_RE, SLUG_FORMAT_MESSAGE)],
         help_text=(
             "Authored kebab handle addressing this source in patch cite refs "
-            "(<magazine-slug>:<issue-slug>, e.g. billboard:1945-09-29). "
-            "Present exactly on slug-addressed types (magazine); null "
+            "(<periodical-slug>:<issue-slug>, e.g. billboard:1945-09-29). "
+            "Present exactly on slug-addressed types (periodical); null "
             "everywhere else."
         ),
     )
@@ -357,7 +357,7 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
             # slug-addressed type. Both derived from the type registry, so
             # flipping ``slug_addressed`` for a type flows into makemigrations
             # (plus a backfill), never a hand-edit. Required on children too:
-            # a magazine child is never auto-minted (magazine isn't
+            # a periodical child is never auto-minted (periodical isn't
             # flat_hierarchy, so no URL/scheme mint path reaches it), and an
             # unslugged one would be permanently unaddressable.
             models.CheckConstraint(
@@ -409,7 +409,7 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         abstract when it has children (prefer a specific child), or it's a
         platform/site root carrying an ``identifier_key`` (recognition resolves
         a URL to a child under it, so the root is never the cited record), or
-        it's a schemeless parentless root of a container type — a magazine or a
+        it's a schemeless parentless root of a container type — a periodical or a
         website. A standalone book and a movie (a schemeless parentless video)
         are the work themselves, so they stay valid cite targets; abstractness
         is deliberately *not* used to reject a target.
@@ -431,7 +431,7 @@ class CitationSource(TimeStampedModel, ActorAttributedModel):
         if self.identifier_key:
             return True
         # A schemeless parentless root: abstract only when this type's
-        # schemeless parentless form is a container (a magazine, a site) and
+        # schemeless parentless form is a container (a periodical, a site) and
         # not the work itself (a book, a movie).
         return citation_type_spec(self.source_type).schemeless_parentless_abstract
 

@@ -17,7 +17,7 @@ export interface CitationLink {
  *  schema (inline, evidence, field-change) structurally satisfies it. */
 export interface CitationIdentity {
   source_name: string;
-  /** The parent root's name (e.g. the magazine a cited issue belongs to), so
+  /** The parent root's name (e.g. the periodical a cited issue belongs to), so
    *  a child renders in context. Absent/null on a root. */
   root_name?: string | null;
   source_type: string;

@@ -97,7 +97,7 @@ def citation_schema(inst: CitationInstance, *, slug: str | None) -> ClaimCitatio
     """Serialize one citation instance for a claim."""
     source = inst.citation_source
     assert inst.pk is not None
-    # The parent root, so a child (a magazine issue, a book volume) renders in
+    # The parent root, so a child (a periodical issue, a book volume) renders in
     # context — "Vol. 2" alone is ambiguous without the work it belongs to.
     # None on a root; select_related on both instance paths (the inline lookup
     # and the attached-evidence prefetch), so it costs no query.

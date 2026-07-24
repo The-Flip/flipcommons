@@ -448,7 +448,7 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     ('patch_retractions.model_status',      'pending'),
     -- Modelled and reachable, populated by nothing yet. Both are `pending`, not
     -- `sparse`: each has a live write path (a maker QID is a patch field, a citation
-    -- day is what a dated magazine issue carries), so the day one lands,
+    -- day is what a dated periodical issue carries), so the day one lands,
     -- expired_anchor_skip turns anchoring on rather than someone remembering to.
     ('manufacturers.wikidata_id',           'pending'),
     ('citation_sources.day',                'pending')

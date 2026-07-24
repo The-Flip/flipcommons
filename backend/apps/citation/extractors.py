@@ -670,12 +670,12 @@ def get_isbn_source(isbn: str) -> CitationSource:
 
 
 def get_slug_source(root_slug: str, child_slug: str) -> CitationSource:
-    """Resolve a slug-addressed child (a magazine issue) — never minting one.
+    """Resolve a slug-addressed child (a periodical issue) — never minting one.
 
     The authored-slug sibling of :func:`get_isbn_source`, for the ingestion
     path that cites a declared child of a slug-addressed root
     (``billboard:1945-09-29``). An issue is an editorial record — its date,
-    name and place under its magazine are facts someone declares — so an
+    name and place under its periodical are facts someone declares — so an
     undeclared pair raises ``CitationSource.DoesNotExist`` instead of minting
     a nameless row. The message names the known scheme keys because a typo'd
     scheme cite (``ipddb:4443``) parses as this form and lands here — the

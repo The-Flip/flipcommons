@@ -99,7 +99,7 @@ class TestIsAbstract:
         book = CitationSource(name="The Pinball Compendium", source_type="book")
         assert book.is_abstract(has_children=False) is False
 
-    @pytest.mark.parametrize("source_type", ["magazine", "web"])
+    @pytest.mark.parametrize("source_type", ["periodical", "web"])
     def test_schemeless_container_roots_stay_abstract(self, source_type):
         root = CitationSource(name="Container", source_type=source_type)
         assert root.is_abstract(has_children=False) is True
@@ -172,19 +172,19 @@ class TestWebFlatnessGuard:
 
 
 class TestSlugAddressedGuards:
-    """A slug-addressed (magazine) source: two levels, never under a scheme root,
+    """A slug-addressed (periodical) source: two levels, never under a scheme root,
     slug in the system-wide grammar."""
 
-    def test_rejects_a_magazine_grandchild(self, db):
+    def test_rejects_a_periodical_grandchild(self, db):
         root = make_citation_source(
-            name="Billboard", source_type="magazine", slug="billboard"
+            name="Billboard", source_type="periodical", slug="billboard"
         )
         issue = make_citation_source(
-            name="Sep 1945", source_type="magazine", slug="1945-09", parent=root
+            name="Sep 1945", source_type="periodical", slug="1945-09", parent=root
         )
         article = CitationSource(
             name="An Article",
-            source_type="magazine",
+            source_type="periodical",
             slug="an-article",
             parent=issue,
             created_by=default_actor(),
@@ -193,7 +193,7 @@ class TestSlugAddressedGuards:
         with pytest.raises(ValidationError, match="nests only one level"):
             article.full_clean()
 
-    def test_rejects_a_magazine_child_under_a_scheme_root(self, db):
+    def test_rejects_a_periodical_child_under_a_scheme_root(self, db):
         # ``ipdb:<anything>`` is consumed by the scheme parser, so a slugged
         # child under a scheme root could never be reached by its slug.
         ipdb = make_citation_source(
@@ -201,7 +201,7 @@ class TestSlugAddressedGuards:
         )
         issue = CitationSource(
             name="Sep 1945",
-            source_type="magazine",
+            source_type="periodical",
             slug="1945-09",
             parent=ipdb,
             created_by=default_actor(),
@@ -210,13 +210,13 @@ class TestSlugAddressedGuards:
         with pytest.raises(ValidationError, match="scheme root"):
             issue.full_clean()
 
-    def test_accepts_a_magazine_issue_under_a_magazine_root(self, db):
+    def test_accepts_a_periodical_issue_under_a_periodical_root(self, db):
         root = make_citation_source(
-            name="Billboard", source_type="magazine", slug="billboard"
+            name="Billboard", source_type="periodical", slug="billboard"
         )
         issue = CitationSource(
             name="September 29, 1945",
-            source_type="magazine",
+            source_type="periodical",
             slug="1945-09-29",
             parent=root,
             created_by=default_actor(),
@@ -230,7 +230,7 @@ class TestSlugAddressedGuards:
         # API can't mint a handle no cite could resolve.
         row = CitationSource(
             name="Game Room",
-            source_type="magazine",
+            source_type="periodical",
             slug="game_room",
             created_by=default_actor(),
             updated_by=default_actor(),
@@ -244,7 +244,7 @@ class TestSlugAddressedGuards:
         # (exact equality) could never reach.
         row = CitationSource(
             name="Billboard",
-            source_type="magazine",
+            source_type="periodical",
             slug="billboard\n",
             created_by=default_actor(),
             updated_by=default_actor(),
@@ -252,20 +252,20 @@ class TestSlugAddressedGuards:
         with pytest.raises(ValidationError, match="lowercase letters"):
             row.full_clean()
 
-    def test_rejects_a_magazine_child_under_a_non_magazine_root(self, db):
-        # A book root carries no slug, so a magazine issue nested under it
+    def test_rejects_a_periodical_child_under_a_non_periodical_root(self, db):
+        # A book root carries no slug, so a periodical issue nested under it
         # would be permanently unaddressable (resolution joins parent__slug).
         # The API's same-type check doesn't protect admin or direct writes.
         book = make_citation_source(name="A Book", source_type="book")
         issue = CitationSource(
             name="Sep 1945",
-            source_type="magazine",
+            source_type="periodical",
             slug="1945-09",
             parent=book,
             created_by=default_actor(),
             updated_by=default_actor(),
         )
-        with pytest.raises(ValidationError, match="magazine root"):
+        with pytest.raises(ValidationError, match="periodical root"):
             issue.full_clean()
 
 

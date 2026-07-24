@@ -39,10 +39,10 @@ class TestCitationTypeSpecs:
         ("source_type", "flat", "schemeless_abstract", "skips_locator", "slugged"),
         [
             (SourceType.BOOK, False, False, False, False),
-            # Magazine is the one slug-addressed type: no natural identifier
+            # Periodical is the one slug-addressed type: no natural identifier
             # (no ISBN, no recognition domain, no scheme key), so issues are
-            # addressed by an authored ``<magazine>:<issue>`` slug pair.
-            (SourceType.MAGAZINE, False, True, False, True),
+            # addressed by an authored ``<periodical>:<issue>`` slug pair.
+            (SourceType.PERIODICAL, False, True, False, True),
             (SourceType.WEB, True, True, True, False),
             # A schemeless parentless video is a movie — a citable work, not a
             # container — so it is NOT abstract; a scheme'd video root (YouTube)
@@ -65,7 +65,7 @@ class TestCitationTypeSpecs:
             for spec in CITATION_TYPE_SPECS.values()
             if spec.slug_addressed
         ]
-        assert slug_addressed_source_types() == [SourceType.MAGAZINE]
+        assert slug_addressed_source_types() == [SourceType.PERIODICAL]
 
     def test_accessor_coerces_a_raw_field_string(self):
         # A model's ``source_type`` CharField arrives as a plain ``str``.

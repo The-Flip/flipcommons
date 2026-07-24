@@ -66,7 +66,7 @@ class TestCitationSourceType:
         with pytest.raises(IntegrityError):
             CitationSource.objects.create(name="Test", source_type="invalid", **_attr())
 
-    @pytest.mark.parametrize("source_type", ["book", "magazine", "web"])
+    @pytest.mark.parametrize("source_type", ["book", "periodical", "web"])
     def test_valid_source_type_accepted(self, db, source_type):
         cs = make_citation_source(name="Test", source_type=source_type)
         assert cs.pk is not None
@@ -430,10 +430,10 @@ class TestIdentifierConstraints:
 # ---------------------------------------------------------------------------
 
 
-def _slugless_magazine(name: str, parent: CitationSource | None = None):
-    """A magazine row with no slug — bypasses the factory's disposable mint."""
+def _slugless_periodical(name: str, parent: CitationSource | None = None):
+    """A periodical row with no slug — bypasses the factory's disposable mint."""
     return CitationSource.objects.create(
-        name=name, source_type="magazine", parent=parent, **_attr()
+        name=name, source_type="periodical", parent=parent, **_attr()
     )
 
 
@@ -444,51 +444,53 @@ class TestAuthoredSlugConstraints:
         with pytest.raises(IntegrityError):
             make_citation_source(name="A Site", source_type="web", slug="a-site")
 
-    def test_slug_required_on_a_magazine_root(self, db):
+    def test_slug_required_on_a_periodical_root(self, db):
         with pytest.raises(IntegrityError):
-            _slugless_magazine("Billboard")
+            _slugless_periodical("Billboard")
 
-    def test_slug_required_on_a_magazine_child(self, db):
+    def test_slug_required_on_a_periodical_child(self, db):
         root = make_citation_source(
-            name="Billboard", source_type="magazine", slug="billboard"
+            name="Billboard", source_type="periodical", slug="billboard"
         )
         with pytest.raises(IntegrityError):
-            _slugless_magazine("September 29, 1945", parent=root)
+            _slugless_periodical("September 29, 1945", parent=root)
 
     def test_empty_slug_rejected(self, db):
         with pytest.raises(IntegrityError):
-            make_citation_source(name="Billboard", source_type="magazine", slug="")
+            make_citation_source(name="Billboard", source_type="periodical", slug="")
 
     def test_duplicate_root_slug_rejected(self, db):
-        make_citation_source(name="RePlay", source_type="magazine", slug="replay")
+        make_citation_source(name="RePlay", source_type="periodical", slug="replay")
         with pytest.raises(IntegrityError):
-            make_citation_source(name="Replay", source_type="magazine", slug="replay")
+            make_citation_source(name="Replay", source_type="periodical", slug="replay")
 
     def test_duplicate_sibling_slug_rejected(self, db):
         root = make_citation_source(
-            name="Billboard", source_type="magazine", slug="billboard"
+            name="Billboard", source_type="periodical", slug="billboard"
         )
         make_citation_source(
-            name="Vol. 2", source_type="magazine", slug="vol-2", parent=root
+            name="Vol. 2", source_type="periodical", slug="vol-2", parent=root
         )
         with pytest.raises(IntegrityError):
             make_citation_source(
-                name="Volume 2", source_type="magazine", slug="vol-2", parent=root
+                name="Volume 2", source_type="periodical", slug="vol-2", parent=root
             )
 
-    def test_same_child_slug_under_different_magazines_accepted(self, db):
-        """The sibling unique is per-parent: two magazines may both have vol-2."""
+    def test_same_child_slug_under_different_periodicals_accepted(self, db):
+        """The sibling unique is per-parent: two periodicals may both have vol-2."""
         a = make_citation_source(
-            name="GameRoom Magazine", source_type="magazine", slug="gameroom-magazine"
+            name="GameRoom Magazine",
+            source_type="periodical",
+            slug="gameroom-periodical",
         )
         b = make_citation_source(
-            name="Play Meter", source_type="magazine", slug="play-meter"
+            name="Play Meter", source_type="periodical", slug="play-meter"
         )
         c1 = make_citation_source(
-            name="Vol. 2", source_type="magazine", slug="vol-2", parent=a
+            name="Vol. 2", source_type="periodical", slug="vol-2", parent=a
         )
         c2 = make_citation_source(
-            name="Vol. 2", source_type="magazine", slug="vol-2", parent=b
+            name="Vol. 2", source_type="periodical", slug="vol-2", parent=b
         )
         assert c1.pk is not None
         assert c2.pk is not None
@@ -497,23 +499,25 @@ class TestAuthoredSlugConstraints:
     def test_reserved_handle_rejected_on_a_root(self, db, handle):
         """A root slug may not shadow ``isbn:`` or a scheme key's cite prefix."""
         with pytest.raises(IntegrityError):
-            make_citation_source(name="A Magazine", source_type="magazine", slug=handle)
+            make_citation_source(
+                name="A Periodical", source_type="periodical", slug=handle
+            )
 
     def test_reserved_handle_accepted_on_a_child(self, db):
         """Child slugs are the ref's right segment — reserved handles aren't
         special there."""
         root = make_citation_source(
-            name="A Magazine", source_type="magazine", slug="a-magazine"
+            name="A Periodical", source_type="periodical", slug="a-periodical"
         )
         child = make_citation_source(
-            name="The ISBN Issue", source_type="magazine", slug="isbn", parent=root
+            name="The ISBN Issue", source_type="periodical", slug="isbn", parent=root
         )
         assert child.pk is not None
 
     def test_uppercase_slug_rejected(self, db):
         with pytest.raises(IntegrityError):
             make_citation_source(
-                name="A Magazine", source_type="magazine", slug="A-Magazine"
+                name="A Periodical", source_type="periodical", slug="A-Periodical"
             )
 
 
@@ -531,7 +535,7 @@ class TestCitationSourceRootDomain:
         assert rd.pk is not None
 
     def test_domain_on_non_web_root_accepted(self, db):
-        """Any-root, not web-only: a book/magazine root may own a host too."""
+        """Any-root, not web-only: a book/periodical root may own a host too."""
         root = make_citation_source(name="A Pinball Book", source_type="book")
         rd = CitationSourceRootDomain(
             source=root,

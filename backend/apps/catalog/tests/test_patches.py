@@ -4248,20 +4248,20 @@ claims:
     assert report.rejected == 0
 
 
-# ── Magazine issues: slug-declared sources + <root>:<child> cite refs ──
+# ── Periodical issues: slug-declared sources + <root>:<child> cite refs ──
 
 
 _BILLBOARD_SOURCES = """
 sources:
   - slug: billboard
     name: Billboard
-    source_type: magazine
+    source_type: periodical
     year: 1894
 
   - parent: billboard
     slug: 1945-09-29
     name: September 29, 1945
-    source_type: magazine
+    source_type: periodical
     year: 1945
     month: 9
     day: 29
@@ -4283,8 +4283,8 @@ claims:
 """
 
 
-def test_magazine_issue_declared_and_cited(machine_model):
-    # The headline flow: declare the magazine + issue, cite the issue by slug
+def test_periodical_issue_declared_and_cited(machine_model):
+    # The headline flow: declare the periodical + issue, cite the issue by slug
     # with a page locator, all in one patch.
     report = _apply(_billboard_patch(machine_model), patch_id="0001-billboard")
     assert report.rejected == 0
@@ -4297,8 +4297,8 @@ def test_magazine_issue_declared_and_cited(machine_model):
     assert inst.locator == "p. 83"
 
 
-def test_magazine_sources_redeclare_as_a_noop(machine_model):
-    # A later patch re-declaring the same magazine + issue finds both rows —
+def test_periodical_sources_redeclare_as_a_noop(machine_model):
+    # A later patch re-declaring the same periodical + issue finds both rows —
     # by slug, not name — and creates nothing. (The claim entry is not
     # repeated: an unchanged claim re-assert is rejected by the empty-diff
     # provenance guard, by design.)
@@ -4310,23 +4310,23 @@ def test_magazine_sources_redeclare_as_a_noop(machine_model):
     assert report.rejected == 0
     assert report.sources_created == 0
     assert report.sources_skipped == 2
-    assert CitationSource.objects.filter(source_type="magazine").count() == 2
+    assert CitationSource.objects.filter(source_type="periodical").count() == 2
 
 
-def test_issue_may_be_declared_before_its_magazine(machine_model):
+def test_issue_may_be_declared_before_its_periodical(machine_model):
     # File order is free: parentless nodes upsert first, so an issue listed
-    # above its magazine still nests correctly.
+    # above its periodical still nests correctly.
     text = f"""
 attribution: flipcommons-catalog
 sources:
   - parent: billboard
     slug: 1945-09-29
     name: September 29, 1945
-    source_type: magazine
+    source_type: periodical
 
   - slug: billboard
     name: Billboard
-    source_type: magazine
+    source_type: periodical
 claims:
   - model.{machine_model.slug}:
       year: 1990
@@ -4338,10 +4338,10 @@ claims:
     assert issue.parent == CitationSource.objects.get(slug="billboard")
 
 
-def test_magazine_node_without_slug_rejected():
+def test_periodical_node_without_slug_rejected():
     with pytest.raises(PatchError, match="requires an authored 'slug'"):
         _apply(
-            _bad_source("name: Billboard\n    source_type: magazine"),
+            _bad_source("name: Billboard\n    source_type: periodical"),
             patch_id="0001-no-slug",
             dry_run=True,
         )
@@ -4360,7 +4360,7 @@ def test_reserved_root_slug_rejected():
     with pytest.raises(PatchError, match="reserved"):
         _apply(
             _bad_source(
-                "name: Ipdb Monthly\n    source_type: magazine\n    slug: ipdb"
+                "name: Ipdb Monthly\n    source_type: periodical\n    slug: ipdb"
             ),
             patch_id="0001-reserved",
             dry_run=True,
@@ -4371,7 +4371,7 @@ def test_unresolvable_parent_rejected_at_dry_run():
     with pytest.raises(PatchError, match="neither an existing"):
         _apply(
             _bad_source(
-                "name: Sep 1945\n    source_type: magazine\n"
+                "name: Sep 1945\n    source_type: periodical\n"
                 "    slug: 1945-09\n    parent: billboard"
             ),
             patch_id="0001-orphan",
@@ -4422,7 +4422,7 @@ attribution: flipcommons-catalog
 sources:
   - slug: billboard
     name: Billboard
-    source_type: magazine
+    source_type: periodical
     domains: [site-a.test, site-b.test]
 """
     dry = _apply(text, patch_id="0001-slug-preview", dry_run=True)
@@ -4439,16 +4439,16 @@ def test_cite_of_a_same_patch_declared_issue_passes_dry_run(machine_model):
     report = _apply(_billboard_patch(machine_model), patch_id="0001-dry", dry_run=True)
     assert report.rejected == 0
     # Dry-run writes nothing — the declared sources are validated, not created.
-    assert not CitationSource.objects.filter(source_type="magazine").exists()
+    assert not CitationSource.objects.filter(source_type="periodical").exists()
 
 
 def test_cite_of_a_previously_seeded_issue_resolves(machine_model):
     root = make_citation_source(
-        name="Billboard", source_type="magazine", slug="billboard"
+        name="Billboard", source_type="periodical", slug="billboard"
     )
     make_citation_source(
         name="September 29, 1945",
-        source_type="magazine",
+        source_type="periodical",
         slug="1945-09-29",
         parent=root,
     )

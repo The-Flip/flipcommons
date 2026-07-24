@@ -85,11 +85,11 @@ class TestSourcesPageCitations:
         assert citations[0]["root_name"] is None
 
     def test_cited_child_carries_its_parent_work(self, client, user, title):
-        """A magazine issue is ambiguous without the magazine it belongs to,
+        """A periodical issue is ambiguous without the periodical it belongs to,
         so the Sources page carries the parent alongside the child."""
-        magazine = make_citation_source(name="Billboard", source_type="magazine")
+        periodical = make_citation_source(name="Billboard", source_type="periodical")
         issue = make_citation_source(
-            name="July 27, 1940", source_type="magazine", parent=magazine
+            name="July 27, 1940", source_type="periodical", parent=periodical
         )
         changeset = user_changeset(user, note="Dated from the trade ad")
         name_claim = make_claim(

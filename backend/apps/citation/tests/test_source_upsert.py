@@ -546,12 +546,12 @@ class TestValidateSchemeRootCitationSourceInfo:
 
 
 # ---------------------------------------------------------------------------
-# Slug-addressed (magazine) nodes: validation + the slug upsert branches
+# Slug-addressed (periodical) nodes: validation + the slug upsert branches
 # ---------------------------------------------------------------------------
 
 
 def _mag(name, slug, parent=None, **extra):
-    node: dict[str, object] = {"name": name, "source_type": "magazine", "slug": slug}
+    node: dict[str, object] = {"name": name, "source_type": "periodical", "slug": slug}
     if parent is not None:
         node["parent"] = parent
     node.update(extra)
@@ -573,9 +573,9 @@ class TestSlugAddressedValidation:
                 {"name": "A Page", "source_type": "web", "parent": "a-site"}
             )
 
-    def test_magazine_without_slug_rejected(self):
+    def test_periodical_without_slug_rejected(self):
         with pytest.raises(ValidationError, match="requires an authored 'slug'"):
-            validate_source_node({"name": "Billboard", "source_type": "magazine"})
+            validate_source_node({"name": "Billboard", "source_type": "periodical"})
 
     def test_slug_grammar_enforced(self):
         with pytest.raises(ValidationError, match="lowercase letters"):
@@ -587,8 +587,8 @@ class TestSlugAddressedValidation:
 
     def test_reserved_handle_fine_on_a_child(self):
         validate_source_node(
-            _mag("The ISBN Issue", "isbn", parent="a-magazine"),
-            declared_root_slugs={"a-magazine"},
+            _mag("The ISBN Issue", "isbn", parent="a-periodical"),
+            declared_root_slugs={"a-periodical"},
         )  # does not raise
 
     def test_unresolvable_parent_rejected(self):
@@ -602,7 +602,9 @@ class TestSlugAddressedValidation:
         )  # does not raise
 
     def test_parent_resolves_via_committed_state(self):
-        make_citation_source(name="Billboard", source_type="magazine", slug="billboard")
+        make_citation_source(
+            name="Billboard", source_type="periodical", slug="billboard"
+        )
         validate_source_node(
             _mag("Sep 1945", "1945-09", parent="billboard")
         )  # does not raise
@@ -619,7 +621,7 @@ class TestSlugAddressedValidation:
         # ValidationError mid-apply that wedges the queue — ``slug`` is
         # excluded from the read-phase full_clean, so this check owns it.
         with pytest.raises(ValidationError, match="200"):
-            validate_source_node(_mag("A Magazine", "a" * 201))
+            validate_source_node(_mag("A Periodical", "a" * 201))
 
     def test_overlong_parent_ref_rejected_at_read_phase(self):
         with pytest.raises(ValidationError, match="200"):
@@ -630,14 +632,14 @@ class TestSlugAddressedValidation:
 
 
 class TestSlugRootUpsert:
-    def test_creates_a_magazine_root(self, actor):
+    def test_creates_a_periodical_root(self, actor):
         warnings: list[str] = []
         result = ensure_source(
             _mag("Billboard", "billboard"), actor=actor, warnings=warnings
         )
         assert result.source_created
         root = CitationSource.objects.get(slug="billboard")
-        assert root.source_type == "magazine"
+        assert root.source_type == "periodical"
         assert root.parent_id is None
         assert warnings == []
 
@@ -652,7 +654,7 @@ class TestSlugRootUpsert:
         assert CitationSource.objects.filter(slug="billboard").count() == 1
 
     def test_slug_is_the_identity_not_the_name(self, actor):
-        # A renamed magazine re-declared under its slug is found, not duplicated,
+        # A renamed periodical re-declared under its slug is found, not duplicated,
         # and the declared-name divergence warns.
         ensure_source(_mag("Bill Board", "billboard"), actor=actor, warnings=[])
         warnings: list[str] = []

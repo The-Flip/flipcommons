@@ -1,4 +1,4 @@
-<!-- @component New-source form for an authored work — book, magazine, or video/movie (a root, or an edition under a parent). -->
+<!-- @component New-source form for an authored work — book, periodical, or video/movie (a root, or an edition under a parent). -->
 <script lang="ts">
   import client from '$lib/api/client';
   import type { ParentContext, CreateSeed } from './citation-types';
@@ -9,7 +9,7 @@
   import TextField from '$lib/components/input/TextField.svelte';
   import { reconcileSlug, slugifyForCatalog } from '$lib/create-form';
 
-  type SourceType = 'book' | 'magazine' | 'video';
+  type SourceType = 'book' | 'periodical' | 'video';
 
   /** The slug column's limit (CITATION_SOURCE_SLUG_MAX_LENGTH backend-side).
    *  Names run to 500 chars, so an unclamped proposal could exceed what the
@@ -39,7 +39,7 @@
 
   // These props are intentionally captured once at mount — the orchestrator
   // creates a fresh component for each stage transition, so they won't change.
-  // This stage creates authored works (book/magazine/video) — a root, or an
+  // This stage creates authored works (book/periodical/video) — a root, or an
   // edition under a parent. All web creation goes through
   // CitationWebCreateStage, so a `web` seed never arrives here and an
   // `extraction` seed is always a book.
@@ -79,7 +79,7 @@
   // Year is also prompted for a manually-created video: a movie's year is its
   // main disambiguator across remakes.
   let showYear = $derived(showExtractedFields || sourceType === 'video');
-  // A slug-addressed type (magazine, per the generated meta — never a
+  // A slug-addressed type (periodical, per the generated meta — never a
   // hardcoded type name) requires an authored cite handle.
   let slugAddressed = $derived(citationTypeMeta(sourceType).slugAddressed);
 
@@ -149,7 +149,7 @@
       sourceName: data.name,
       sourceType: data.source_type,
       skipLocator: data.skip_locator,
-      // An abstract result (a parentless magazine) routes the flow to child
+      // An abstract result (a parentless periodical) routes the flow to child
       // identification under it; author rides along for the parent context.
       isAbstract: data.is_abstract,
       author: data.author,
@@ -172,7 +172,7 @@
       <!-- Authored works only — web sources are created by pasting a URL
            (CitationWebCreateStage), never typed in here. A video here is a
            movie (a standalone work); platform videos mint from their URLs. -->
-      {#each ['book', 'magazine', 'video'] as t (t)}
+      {#each ['book', 'periodical', 'video'] as t (t)}
         <button
           type="button"
           class="type-chip"
@@ -182,7 +182,7 @@
             sourceType = t as SourceType;
           }}
         >
-          {t}
+          {citationTypeMeta(t).label}
         </button>
       {/each}
     </div>

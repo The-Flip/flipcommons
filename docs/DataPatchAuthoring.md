@@ -101,12 +101,12 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 
 ### Prefer primary sources
 
-**Cite primary sources over secondary ones.** A maker's own site, a period magazine scan, a government registry, an interview in the subject's own words, an original-research catalog hosting its own artifacts — these beat any site that compiles facts from elsewhere. Encyclopedias, databases and aggregators are **secondary**: Wikipedia, weblio, IPDB, OPDB, Kineticist, Pinside, company-registry aggregators (b2bhint, bisprofiles) and the like.
+**Cite primary sources over secondary ones.** A maker's own site, a period periodical scan, a government registry, an interview in the subject's own words, an original-research catalog hosting its own artifacts — these beat any site that compiles facts from elsewhere. Encyclopedias, databases and aggregators are **secondary**: Wikipedia, weblio, IPDB, OPDB, Kineticist, Pinside, company-registry aggregators (b2bhint, bisprofiles) and the like.
 
 Before quoting a secondary source, do both of these:
 
 1. **Web-search for the same fact from a primary source** and cite that instead.
-2. **Follow the secondary source's own citations** (a Wikipedia article's references, an IPDB note naming the magazine it read) to the primary material and cite that instead.
+2. **Follow the secondary source's own citations** (a Wikipedia article's references, an IPDB note naming the periodical it read) to the primary material and cite that instead.
 
 Prioritize, don't forbid: when the primary is unreachable — a script-rendered page the cache can't capture, an unlinkable registry, trade press that would take issue-by-issue reading to locate — cite the secondary with a quote and say in the `note:` what the true primary is, so a later pass can upgrade the cite.
 
@@ -128,9 +128,9 @@ Write a root's `description:` to only describe **the source itself** — what it
 
 This is because a root is reusable, so a reason-specific description goes stale the moment the next patch cites the same root for an unrelated fact. Leave per-fact reasoning to the citing entry's `note:`.
 
-### Magazine issues
+### Periodical issues
 
-A print-issue attribution — "Victory Game's ad in Billboard 09/29/1945 p83" — cites the **issue**, a declared child of its magazine (grammar and mechanics in [DataPatches.md → Citation sources](DataPatches.md#citation-sources)). The recipe:
+A print-issue attribution — "Victory Game's ad in Billboard 09/29/1945 p83" — cites the **issue**, a declared child of its periodical (grammar and mechanics in [DataPatches.md → Citation sources](DataPatches.md#citation-sources)). The recipe:
 
 - **Two cites when the fact arrives secondhand.** IPDB reporting what Billboard printed is the book pairing's shape exactly: cite IPDB with the verbatim `quote:` (that text is in hand) and the issue with a `locator:` and no quote (the scan text isn't):
 

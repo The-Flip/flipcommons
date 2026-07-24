@@ -31,9 +31,9 @@ describe('CitationCreateStage', () => {
       onback: noop,
     });
 
-    // Books and magazines only — web sources are created by pasting a URL.
-    expect(screen.getByRole('button', { name: 'book' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'magazine' })).toBeInTheDocument();
+    // Books and periodicals only — web sources are created by pasting a URL.
+    expect(screen.getByRole('button', { name: 'Book' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Periodical' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'web' })).not.toBeInTheDocument();
     // No URL field anywhere in this stage.
     expect(screen.queryByLabelText('URL')).not.toBeInTheDocument();
@@ -63,7 +63,7 @@ describe('CitationCreateStage', () => {
     });
 
     // A parent locks the type, so no picker.
-    expect(screen.queryByRole('button', { name: 'book' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Book' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Continue/ }));
 
     await waitFor(() => expect(mockPOST).toHaveBeenCalled());
@@ -86,10 +86,10 @@ describe('CitationCreateStage', () => {
       onback: noop,
     });
 
-    expect(screen.getByRole('button', { name: 'video' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Video' })).toBeInTheDocument();
     // Year appears only once video is selected (a movie's main disambiguator).
     expect(screen.queryByLabelText(/Year/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'video' }));
+    await user.click(screen.getByRole('button', { name: 'Video' }));
     await user.type(screen.getByLabelText(/Year/), '2009');
 
     await user.click(screen.getByRole('button', { name: /Continue/ }));
@@ -114,8 +114,8 @@ describe('CitationCreateStage', () => {
     });
 
     // Picker stays visible (the user can override), video selected, Year shown.
-    expect(screen.getByRole('button', { name: 'video' })).toHaveClass('selected');
-    expect(screen.getByRole('button', { name: 'book' })).not.toHaveClass('selected');
+    expect(screen.getByRole('button', { name: 'Video' })).toHaveClass('selected');
+    expect(screen.getByRole('button', { name: 'Book' })).not.toHaveClass('selected');
     expect(screen.getByLabelText(/Year/)).toBeInTheDocument();
   });
 
@@ -131,9 +131,9 @@ describe('CitationCreateStage', () => {
 
     // Book (the default) is not slug-addressed — no Slug field.
     expect(screen.queryByLabelText(/Slug/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'magazine' }));
+    await user.click(screen.getByRole('button', { name: 'Periodical' }));
     expect(screen.getByLabelText(/Slug/)).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'book' }));
+    await user.click(screen.getByRole('button', { name: 'Book' }));
     expect(screen.queryByLabelText(/Slug/)).not.toBeInTheDocument();
   });
 
@@ -147,7 +147,7 @@ describe('CitationCreateStage', () => {
       onback: noop,
     });
 
-    await user.click(screen.getByRole('button', { name: 'magazine' }));
+    await user.click(screen.getByRole('button', { name: 'Periodical' }));
     await user.type(screen.getByLabelText('Name'), 'GameRoom Magazine');
     expect((screen.getByLabelText(/Slug/) as HTMLInputElement).value).toBe('gameroom-magazine');
 
@@ -169,7 +169,7 @@ describe('CitationCreateStage', () => {
       onback: noop,
     });
 
-    await user.click(screen.getByRole('button', { name: 'magazine' }));
+    await user.click(screen.getByRole('button', { name: 'Periodical' }));
     const slug = (screen.getByLabelText(/Slug/) as HTMLInputElement).value;
     expect(slug.length).toBeLessThanOrEqual(200);
     expect(slug.length).toBeGreaterThan(190); // clamped near the limit, not emptied
@@ -183,7 +183,7 @@ describe('CitationCreateStage', () => {
       data: {
         id: 70,
         name: 'Billboard',
-        source_type: 'magazine',
+        source_type: 'periodical',
         skip_locator: false,
         is_abstract: true,
         author: '',
@@ -198,7 +198,7 @@ describe('CitationCreateStage', () => {
       onback: noop,
     });
 
-    await user.click(screen.getByRole('button', { name: 'magazine' }));
+    await user.click(screen.getByRole('button', { name: 'Periodical' }));
     await user.click(screen.getByRole('button', { name: /Continue/ }));
     await waitFor(() => expect(onsourcecreated).toHaveBeenCalled());
     expect(onsourcecreated).toHaveBeenCalledWith(
@@ -206,7 +206,7 @@ describe('CitationCreateStage', () => {
     );
   });
 
-  it('submits the slug for a magazine and null for other types', async () => {
+  it('submits the slug for a periodical and null for other types', async () => {
     const user = userEvent.setup();
     mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
     render(CitationCreateStage, {
@@ -217,20 +217,20 @@ describe('CitationCreateStage', () => {
       onback: noop,
     });
 
-    await user.click(screen.getByRole('button', { name: 'magazine' }));
+    await user.click(screen.getByRole('button', { name: 'Periodical' }));
     await user.click(screen.getByRole('button', { name: /Continue/ }));
     await waitFor(() => expect(mockPOST).toHaveBeenCalled());
     expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {
       body: expect.objectContaining({
         name: 'Billboard',
-        source_type: 'magazine',
+        source_type: 'periodical',
         slug: 'billboard',
       }),
     });
 
     mockPOST.mockReset();
     mockPOST.mockResolvedValueOnce({ data: CREATED_SOURCE });
-    await user.click(screen.getByRole('button', { name: 'book' }));
+    await user.click(screen.getByRole('button', { name: 'Book' }));
     await user.click(screen.getByRole('button', { name: /Continue/ }));
     await waitFor(() => expect(mockPOST).toHaveBeenCalled());
     expect(mockPOST).toHaveBeenCalledWith('/api/citation-sources/', {

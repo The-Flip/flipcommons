@@ -58,7 +58,7 @@ beforeEach(() => {
         id: 2,
         source_name: 'Vol. 10 No. 6, March 1994',
         root_name: 'GameRoom Magazine',
-        source_type: 'magazine',
+        source_type: 'periodical',
         author: '',
         year: 1994,
         locator: '',
@@ -133,13 +133,13 @@ describe('CitationTooltip', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
   });
 
-  it('leads a cited issue with its parent magazine', async () => {
+  it('leads a cited issue with its parent periodical', async () => {
     renderTooltip('<p>Fact <sup data-cite-id="2" tabindex="0">[2]</sup>.</p>');
     await vi.waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
 
     await fireEvent.mouseEnter(getCitation('2'));
     const tooltip = await screen.findByRole('tooltip');
-    // The container reads before the specific item, so the magazine name
+    // The container reads before the specific item, so the periodical name
     // precedes the issue it contains.
     expect(tooltip.textContent).toMatch(/GameRoom Magazine[\s\S]*Vol\. 10 No\. 6, March 1994/);
   });

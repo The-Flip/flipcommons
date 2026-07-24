@@ -17,7 +17,7 @@
 --                   per-entity AI-description sources. Carries the `priority` that
 --                   decides conflicts. Present on EVERY claim, no exceptions.
 --   CITATION SOURCE (citation_citationsource) — EXTERNAL EVIDENCE for the fact.
---                   A book, a magazine, an IPDB page. Present on ~2% of claims.
+--                   A book, a periodical, an IPDB page. Present on ~2% of claims.
 --
 -- They are unrelated tables with unrelated cardinality, and the failure they invite is
 -- specific: an analysis asks "is this cited?", gets no citation and concludes the fact
@@ -434,7 +434,7 @@ COMMENT ON VIEW changesets IS
 
 -- ═══ CITATION SOURCES — external evidence ═══════════════════════════════════
 -- The EVIDENCE side. A citation source is a two-level tree: a ROOT (the work — a book,
--- a magazine, a website) and its children (the specific cited item — IPDB page #5235).
+-- a periodical, a website) and its children (the specific cited item — IPDB page #5235).
 -- Exactly two levels today, and `citation_tree_too_deep` asserts it: root resolution
 -- here is a single self-join, so a grandchild would silently attribute to the middle
 -- node rather than the real root.
@@ -472,10 +472,10 @@ CREATE OR REPLACE VIEW _citation_root_domains AS
 --             date, not a missing one.
 --   THE DATE COLUMNS MEAN DIFFERENT THINGS ON A ROOT AND ON A CHILD, and nothing in
 --             the schema separates them. On a child (an issue, an edition) they date
---             the cited ITEM. On a root they date the WORK — for a magazine that is
+--             the cited ITEM. On a root they date the WORK — for a periodical that is
 --             its publication RUN, which is why every populated `date_note` today
 --             reads like 'Published September 1974 – late 1990s' and why `year` on a
---             magazine root is a founding year, not an issue year. Averaging or
+--             periodical root is a founding year, not an issue year. Averaging or
 --             range-testing `year` across both grains silently mixes the two: filter
 --             on `is_root` first, and take the run's real endpoints from `date_note`,
 --             which is the only column that carries the end.
@@ -498,7 +498,7 @@ CREATE OR REPLACE VIEW citation_sources AS
     -- item, and it keeps the root_* family complete: carrying the root's display name
     -- but not its stable key pushes consumers onto the name or onto a type proxy.
     coalesce(r.identifier_key, c.identifier_key) AS root_identifier_key,
-    -- Authored cite handle, present exactly on slug-addressed types (magazine).
+    -- Authored cite handle, present exactly on slug-addressed types (periodical).
     -- root_citation_source_slug reassembles the patch cite ref: a child's
     -- '<root_slug>:<slug>' (billboard:1945-09-29). The read path the flippatch
     -- issue-normalizing utility queries.
@@ -507,7 +507,7 @@ CREATE OR REPLACE VIEW citation_sources AS
   FROM fc.citation_citationsource c
   LEFT JOIN fc.citation_citationsource r ON r.id = c.parent_id;
 COMMENT ON VIEW citation_sources IS
-  'One row per CITATION SOURCE (external evidence), root and child alike, with its root resolved — a root resolves to itself. slug/root_citation_source_slug are the authored cite handles on slug-addressed (magazine) rows, null elsewhere. year/month/day is a precision ladder that dates the WORK on a root and the cited ITEM on a child. Not to be confused with ingest_sources (who asserted the fact).';
+  'One row per CITATION SOURCE (external evidence), root and child alike, with its root resolved — a root resolves to itself. slug/root_citation_source_slug are the authored cite handles on slug-addressed (periodical) rows, null elsewhere. year/month/day is a precision ladder that dates the WORK on a root and the cited ITEM on a child. Not to be confused with ingest_sources (who asserted the fact).';
 
 -- citation_instances — one row per CitationInstance: a specific act of citing, with a
 -- `locator` (a page number, a timestamp) narrowing the work. Both the immediate citation
@@ -529,7 +529,7 @@ COMMENT ON VIEW citation_sources IS
 -- consumers reach for `citation_source_type` instead — which is a shape, not an identity:
 -- filtering IPDB's instances as `citation_source_type = 'web'` also picks up every other
 -- web-rooted work, about a third of the web-typed rows in the patch corpus. Non-keyed
--- roots (a book, most magazines) carry '', not NULL, exactly as on `citation_sources`.
+-- roots (a book, most periodicals) carry '', not NULL, exactly as on `citation_sources`.
 CREATE OR REPLACE VIEW citation_instances AS
   SELECT
     ci.id                             AS citation_instance_id,
@@ -595,7 +595,7 @@ CREATE OR REPLACE VIEW citation_roots AS
   WHERE s.is_root
   GROUP BY ALL;
 COMMENT ON VIEW citation_roots IS
-  'One row per ROOT citation source (the work — a book, a magazine, a website) with its registered root_domains and usage counts. Reach for it when the subject is what evidence exists rather than what a claim cites.';
+  'One row per ROOT citation source (the work — a book, a periodical, a website) with its registered root_domains and usage counts. Reach for it when the subject is what evidence exists rather than what a claim cites.';
 
 -- ─── Recognizing a host: which work does this URL belong to? ────────────────
 -- citation_roots.root_domains carries the hosts as a LIST, which displays well and

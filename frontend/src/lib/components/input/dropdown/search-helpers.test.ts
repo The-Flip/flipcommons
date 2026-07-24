@@ -154,7 +154,7 @@ describe('formatCitationResult', () => {
     );
   });
 
-  it('a child leads with its parent (a magazine issue in context)', () => {
+  it('a child leads with its parent (a periodical issue in context)', () => {
     expect(
       formatCitationResult({
         name: 'September 29, 1945',

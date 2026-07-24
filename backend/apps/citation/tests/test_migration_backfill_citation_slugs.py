@@ -1,8 +1,8 @@
 """Tests for the authored-slug backfill data migration.
 
-The 0023 backfill is exercised against the frozen migration state at 0023 —
-after the nullable ``slug`` column lands but *before* 0024 adds the
-required-slug constraint, the only state where a slugless magazine row can
+The 0024 backfill is exercised against the frozen migration state at 0024 —
+after the nullable ``slug`` column lands but *before* 0025 adds the
+required-slug constraint, the only state where a slugless periodical row can
 exist to backfill. Each test builds its own rows at that state, so it relies
 on no production data.
 """
@@ -13,11 +13,11 @@ import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
-# The split point: slug column + backfill applied, constraints (0024) not yet.
-_AT = [("citation", "0023_citationsource_slug")]
+# The split point: slug column + backfill applied, constraints (0025) not yet.
+_AT = [("citation", "0024_citationsource_slug")]
 
 _migration = importlib.import_module(
-    "apps.citation.migrations.0023_citationsource_slug"
+    "apps.citation.migrations.0024_citationsource_slug"
 )
 backfill_slugs = _migration.backfill_slugs
 
@@ -26,11 +26,11 @@ pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.migration]
 
 @pytest.fixture
 def state():
-    """Historical app registry at citation 0023 (column present, no constraints).
+    """Historical app registry at citation 0024 (column present, no constraints).
 
-    Rewinds the citation app to 0023, yields that frozen ``apps``, then drops
+    Rewinds the citation app to 0024, yields that frozen ``apps``, then drops
     the rows built here and restores to the latest schema — the leaf includes
-    0024, whose required-slug constraint the deliberately-slugless test rows
+    0025, whose required-slug constraint the deliberately-slugless test rows
     would violate on later inserts, and 0011's attribution fail-fast rejects
     them outright.
     """
@@ -53,7 +53,7 @@ def _actor(apps):
     return Actor.objects.create(backing_model="user", priority=1)
 
 
-def _source(apps, name, *, source_type="magazine", parent=None, slug=None):
+def _source(apps, name, *, source_type="periodical", parent=None, slug=None):
     CitationSource = apps.get_model("citation", "CitationSource")
     actor = _actor(apps)
     return CitationSource.objects.create(
@@ -145,6 +145,6 @@ class TestBackfillSlugs:
             assert row.slug is not None
             assert len(row.slug) <= 200
             # The truncation cut must not leave a trailing hyphen — the slug
-            # grammar (and the lowercase/not-empty CHECKs in 0024) reject it.
+            # grammar (and the lowercase/not-empty CHECKs in 0025) reject it.
             assert not row.slug.endswith("-")
         assert first.slug != second.slug

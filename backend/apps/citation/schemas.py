@@ -1,17 +1,17 @@
 """API schemas for the citation app — the "Sources" UI for cited evidence.
 
 A :class:`~apps.citation.models.CitationSource` is a work or evidence object
-that can be cited: a book, magazine or web page. Sources form a one-level
+that can be cited: a book, periodical or web page. Sources form a one-level
 hierarchy through a self FK — a *root* source (e.g. the IPDB website, or a
-magazine title) groups *child* sources (e.g. one IPDB machine page, or a
+periodical title) groups *child* sources (e.g. one IPDB machine page, or a
 single issue/article). ``source_type`` is one of the registered
-citation types (``book`` / ``magazine`` / ``web`` / ``video``).
+citation types (``book`` / ``periodical`` / ``web`` / ``video``).
 
 Two derived notions recur across these schemas:
 
 - **abstract** — a source that is a container rather than a directly-citable
   work: any source that has children, or a parentless source of a container
-  type (``magazine`` / ``web`` / ``video`` — a publication, a site, a platform).
+  type (``periodical`` / ``web`` / ``video`` — a publication, a site, a platform).
   The UI offers such a source's children for citation instead of the source
   itself.
 - **skip_locator** — citing a web *child* doesn't prompt for a locator: its
@@ -84,7 +84,7 @@ class CitationSourceSearchSchema(Schema):
     id: int = Field(description="The source's identifier.")
     name: str = Field(description="The source's display name.")
     source_type: str = Field(
-        description='Kind of citation source: "book", "magazine", "web" or "video".'
+        description='Kind of citation source: "book", "periodical", "web" or "video".'
     )
     author: str = Field(description="Author or creator, or an empty string.")
     publisher: str = Field(description="Publisher, or an empty string.")
@@ -92,7 +92,7 @@ class CitationSourceSearchSchema(Schema):
     isbn: str | None = Field(None, description="ISBN, if known.")
     slug: str | None = Field(
         None,
-        description="Authored cite handle for a slug-addressed (magazine) source; null on other types.",
+        description="Authored cite handle for a slug-addressed (periodical) source; null on other types.",
     )
     parent_id: int | None = Field(
         None,
@@ -100,7 +100,7 @@ class CitationSourceSearchSchema(Schema):
     )
     parent_name: str | None = Field(
         None,
-        description="Display name of the parent root, so a child (a magazine issue) can render in context; null on roots.",
+        description="Display name of the parent root, so a child (a periodical issue) can render in context; null on roots.",
     )
     has_children: bool = Field(
         False,
@@ -111,7 +111,7 @@ class CitationSourceSearchSchema(Schema):
         description=(
             "Whether this source is a container rather than a directly-citable "
             "work (it has children, or is a parentless source of a container "
-            "type — magazine, web or video); the UI "
+            "type — periodical, web or video); the UI "
             "cites its children instead."
         ),
     )
@@ -142,7 +142,7 @@ class CitationSourceMatchSchema(Schema):
     name: str = Field(description="The matched source's display name.")
     source_type: str = Field(
         description=(
-            "The matched citation source's type (book/magazine/web/video) — "
+            "The matched citation source's type (book/periodical/web/video) — "
             "the frontend's key into the per-type locator behavior."
         ),
     )
@@ -207,7 +207,7 @@ class CitationSourceSearchResponseSchema(Schema):
 
 
 class CitationSourceCreateSchema(Schema):
-    """Input to create an authored root (book/magazine/movie) or a linkless child.
+    """Input to create an authored root (book/periodical/movie) or a linkless child.
 
     This endpoint creates plain authored sources only. Web roots/children are
     minted by ``cite-url``/``pages/`` and scheme children by ``records/``, so
@@ -221,8 +221,8 @@ class CitationSourceCreateSchema(Schema):
     model_config = ConfigDict(extra="forbid")
 
     name: NameStr = Field(description="The source's display name.")
-    source_type: Literal["book", "magazine", "video"] = Field(
-        description='Kind of source: "book", "magazine", or "video" (a movie).'
+    source_type: Literal["book", "periodical", "video"] = Field(
+        description='Kind of source: "book", "periodical", or "video" (a movie).'
     )
     author: AuthorStr = Field("", description="Author or creator.")
     publisher: PublisherStr = Field("", description="Publisher.")
@@ -246,7 +246,7 @@ class CitationSourceCreateSchema(Schema):
         None,
         description=(
             "Authored cite handle, in the system slug grammar. Required when "
-            "the chosen type is slug-addressed (magazine) and rejected "
+            "the chosen type is slug-addressed (periodical) and rejected "
             "otherwise."
         ),
     )
@@ -372,7 +372,7 @@ class CitationSourceUpdateSchema(Schema):
         None,
         description=(
             "New authored cite handle (a typo fix). Only valid on a "
-            "slug-addressed (magazine) source, and cannot be cleared — the "
+            "slug-addressed (periodical) source, and cannot be cleared — the "
             "model requires one there."
         ),
     )
@@ -403,13 +403,13 @@ class CitationSourceChildSchema(Schema):
     id: int = Field(description="The child source's identifier.")
     name: str = Field(description="The child source's display name.")
     source_type: str = Field(
-        description='Kind of citation source: "book", "magazine", "web" or "video".'
+        description='Kind of citation source: "book", "periodical", "web" or "video".'
     )
     year: int | None = Field(None, description="Publication year, if known.")
     isbn: str | None = Field(None, description="ISBN, if known.")
     slug: str | None = Field(
         None,
-        description="Authored cite handle for a slug-addressed (magazine) child; null on other types.",
+        description="Authored cite handle for a slug-addressed (periodical) child; null on other types.",
     )
     skip_locator: bool = Field(
         False,
@@ -441,7 +441,7 @@ class CitationSourceDetailSchema(Schema):
     id: int = Field(description="The source's identifier.")
     name: str = Field(description="The source's display name.")
     source_type: str = Field(
-        description='Kind of citation source: "book", "magazine", "web" or "video".'
+        description='Kind of citation source: "book", "periodical", "web" or "video".'
     )
     author: str = Field(description="Author or creator, or an empty string.")
     publisher: str = Field(description="Publisher, or an empty string.")
@@ -454,7 +454,7 @@ class CitationSourceDetailSchema(Schema):
     isbn: str | None = Field(None, description="ISBN, if known.")
     slug: str | None = Field(
         None,
-        description="Authored cite handle for a slug-addressed (magazine) source; null on other types.",
+        description="Authored cite handle for a slug-addressed (periodical) source; null on other types.",
     )
     description: str = Field(description="Free-text description, or an empty string.")
     identifier_key: str = Field(

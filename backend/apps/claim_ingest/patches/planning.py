@@ -895,7 +895,7 @@ def _plan_citation_sources(plan: IngestPlan, sources: list[SourceNode]) -> None:
 
     A node's ``parent:`` may reference a root declared elsewhere in the same
     block (``declared_root_slugs``), in either file order — the hook processes
-    parentless nodes first, so an author may list issues before their magazine.
+    parentless nodes first, so an author may list issues before their periodical.
 
     Also registers a dry-run preview hook so a host collision (recognition hosts
     spanning >1 root → a whole-node skip) surfaces as a warning at ``--dry-run``,

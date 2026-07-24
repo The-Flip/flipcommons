@@ -5,7 +5,7 @@ here, each with its own author module and its own framework module, meeting
 only at the registry's composition weaves (see
 ``docs/plans/citations/CitationPluginSystem.md``):
 
-- **Citation types** (book, magazine, web, video — first-party, allowed real
+- **Citation types** (book, periodical, web, video — first-party, allowed real
   programming): authors declare in ``citation_type_specs`` and write their
   grammar code in their type module; the framework runs it via
   ``citation_type_driver``.

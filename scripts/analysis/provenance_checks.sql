@@ -306,4 +306,4 @@ CREATE OR REPLACE VIEW _provenance_checks AS
   UNION ALL
   SELECT 'unknown_citation_source_type', v
   FROM (SELECT DISTINCT citation_source_type AS v FROM citation_sources)
-  WHERE v NOT IN ('book', 'magazine', 'web', 'video');
+  WHERE v NOT IN ('book', 'periodical', 'web', 'video');

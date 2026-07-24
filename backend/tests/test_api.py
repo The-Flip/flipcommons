@@ -35,14 +35,14 @@ def test_version_endpoint_reports_commit_and_highest_applied_patch():
     """
     source = make_ingest_source(name="Data patches")
     _applied_patch(source, "0183-earlier")
-    _applied_patch(source, "0184-magazine-citations")
+    _applied_patch(source, "0184-periodical-citations")
 
     response = Client().get("/api/version")
 
     assert response.status_code == 200
     assert response.json() == {
         "commit": "abc123",
-        "data_patch": "0184-magazine-citations",
+        "data_patch": "0184-periodical-citations",
     }
 
 
@@ -51,12 +51,12 @@ def test_version_endpoint_reports_commit_and_highest_applied_patch():
 def test_version_endpoint_reports_high_water_mark_when_patches_applied_out_of_order():
     """A backfilled lower-numbered patch doesn't roll the reported version back."""
     source = make_ingest_source(name="Data patches")
-    _applied_patch(source, "0184-magazine-citations")
+    _applied_patch(source, "0184-periodical-citations")
     _applied_patch(source, "0183-backfilled-later")
 
     body = Client().get("/api/version").json()
 
-    assert body["data_patch"] == "0184-magazine-citations"
+    assert body["data_patch"] == "0184-periodical-citations"
 
 
 @pytest.mark.django_db

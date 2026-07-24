@@ -321,7 +321,7 @@ def search_citation_sources(
 def create_citation_source(
     request: HttpRequest, data: CitationSourceCreateSchema
 ) -> Status[CitationSourceDetailSchema]:
-    """Create an authored root (book/magazine/movie) or a linkless child.
+    """Create an authored root (book/periodical/movie) or a linkless child.
 
     This endpoint owns neither URLs nor links: web roots/children are minted by
     ``cite-url``/``pages/`` and scheme children by ``records/``. It creates a
@@ -344,7 +344,7 @@ def create_citation_source(
             )
         parent = get_object_or_404(CitationSource, pk=data.parent_id)
         # Authored children extend their own work's hierarchy — an edition
-        # under its book, an issue under its magazine. A cross-type authored
+        # under its book, an issue under its periodical. A cross-type authored
         # child (a book "edition" under a video or web root) has no meaning
         # and would sidestep the parent type's minting rules.
         if parent.source_type != data.source_type:
@@ -353,7 +353,7 @@ def create_citation_source(
                 f"A {data.source_type} child can't nest under a "
                 f"{parent.source_type} source — an authored child belongs to "
                 f"its own work's hierarchy (an edition under its book, an "
-                f"issue under its magazine).",
+                f"issue under its periodical).",
             )
 
     source = CitationSource(
@@ -665,7 +665,7 @@ def create_citation_source_page(
 
     The contributor already chose the parent (the identify path), so the URL is
     not re-recognized — the page nests directly under *source_id*. The parent may
-    be any root type (a web page under a magazine/book/video root is intended —
+    be any root type (a web page under a periodical/book/video root is intended —
     a platform's terms or channel page is a page, not a record); the structural
     rules are the uncitable-URL classification below (deliverer copies and
     scheme records never mint as pages) and the web-flatness guard, which 422s

@@ -227,13 +227,13 @@ class TestBatchCitationInstances:
         assert resp.json()[0]["root_name"] is None
 
     def test_root_name_names_the_parent_for_a_child_source(self, client, db):
-        magazine = make_citation_source(
-            name="GameRoom Magazine", source_type="magazine"
+        periodical = make_citation_source(
+            name="GameRoom Magazine", source_type="periodical"
         )
         issue = make_citation_source(
             name="Vol. 10 No. 6, March 1994",
-            source_type="magazine",
-            parent=magazine,
+            source_type="periodical",
+            parent=periodical,
         )
         ci = make_citation_instance(citation_source=issue, locator="p. 42")
         resp = client.get(f"/api/citation-instances/batch/?ids={ci.pk}")

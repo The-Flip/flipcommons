@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Final, NamedTuple
 
-from apps.citation.citation_types import book, magazine, video, web
+from apps.citation.citation_types import book, periodical, video, web
 from apps.citation.citation_types import schemes as scheme_package
 from apps.citation.citation_types.citation_scheme_driver import (
     SchemeDriver,
@@ -32,7 +32,7 @@ from apps.citation.citation_types.vocabulary import SourceType, StartSeconds
 
 _CITATION_TYPES: Final[tuple[CitationTypeSpec, ...]] = (
     book.BOOK,
-    magazine.MAGAZINE,
+    periodical.PERIODICAL,
     web.WEB,
     video.VIDEO,
 )

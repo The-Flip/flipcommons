@@ -6,7 +6,7 @@ warning, never a failure — so a user-created source can't wedge the ingest
 queue. See ``docs/DataPatches.md``.
 
 Three shapes, dispatched on the node: a slug-addressed child (``parent:`` set,
-a magazine issue), a slug-addressed root (``slug:`` set, a magazine), and the
+a periodical issue), a slug-addressed root (``slug:`` set, a periodical), and the
 plain root every other type declares — the original host-then-ISBN-then-name
 chain, untouched. Nesting is expressed by ``parent:``, never by structure.
 """
@@ -597,9 +597,9 @@ def _ensure_slug_root(
 ) -> SourceUpsertResult:
     """Get-or-create a slug-addressed root, resolved by its authored slug.
 
-    The slug is the identity — the name key never runs, so a renamed magazine
+    The slug is the identity — the name key never runs, so a renamed periodical
     re-declared under its slug is found, not duplicated. Recognition-domain
-    handling matches the plain-root path (a magazine may declare a homepage).
+    handling matches the plain-root path (a periodical may declare a homepage).
     """
     from apps.citation.models import CitationSource
 

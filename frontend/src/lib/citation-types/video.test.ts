@@ -95,7 +95,7 @@ describe('registry lookup', () => {
   });
 
   it('freeform types pass locators through', () => {
-    for (const key of ['book', 'magazine', 'web']) {
+    for (const key of ['book', 'periodical', 'web']) {
       expect(citationTypeFrontend(key).normalizeLocator('p. 42')).toBe('p. 42');
     }
   });

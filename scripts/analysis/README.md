@@ -163,6 +163,10 @@ scripts/analysis/analysis query <analysis>.sql "FROM my_finding;" --format json 
 # GUI: browse every view live in the local DuckDB UI (localhost:4213)
 scripts/analysis/analysis ui <analysis>.sql
 
+# Desktop GUI: freeze every public view and table into a standalone database for TablePlus,
+# DBeaver, Beekeeper Studio or another DuckDB client
+scripts/analysis/analysis browse <analysis>.sql
+
 # snapshot: freeze selected views as real tables into a standalone <analysis>.duckdb
 scripts/analysis/analysis snapshot <analysis>.sql my_finding another_view
 ```
@@ -175,7 +179,9 @@ The **gate is not limited to that pair**: `run` discovers every public `*_checks
 
 For a generator or pipeline, pass `--check <prefix>` to `query` so the same gate as `run` executes before any data is emitted. The runner is a convenience: raw `duckdb -init <analysis>.sql :memory: "FROM my_finding LIMIT 20;"` from the repo root still works.
 
-`*.duckdb` is gitignored — a snapshot is a throwaway to hand to someone who can't run the pipeline, never a committed artifact.
+`browse` writes `<analysis>.browse.duckdb` beside the analysis file and replaces it atomically on every run. It discovers and materializes every public relation — both views and deliberately materialized tables — including relations contributed by the foundation or another `.read` file, while excluding private `_underscore` helpers. The result is static: disconnect the desktop client, rerun `browse`, then reconnect whenever the localhost catalog or analysis changes. Any edits made through the client are disposable and disappear on the next rebuild.
+
+`*.duckdb` is gitignored — browse databases and snapshots are throwaways to inspect or hand to someone who can't run the pipeline, never committed artifacts.
 
 ## Conventions
 
