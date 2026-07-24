@@ -270,15 +270,68 @@ COMMENT ON VIEW models IS
   'One row per LIVE MachineModel — the default view; build analyses on this.';
 
 -- ═══ DIMENSIONS — what a model points at ════════════════════════════════════
--- countries — the country vocabulary: live root Locations (a country has no
--- parent). Carries slug, so models.country_slug (and target_country_slug) joins here
--- for the country name. Add an `all_countries` twin the day an analysis needs the
--- deleted rows.
+-- locations — one row per live Location, at EVERY level. THE ENTITY; `countries` below
+-- is a projection over it and not a peer, which is why it is defined from this view
+-- rather than beside it. A country is simply a Location with no parent — there is no
+-- separate country table, and treating the two as different things is the mistake this
+-- ordering exists to prevent.
+--
+--   location_path : the stable key ('usa/il/chicago'), and the one to join on.
+--             `slug` is unique only WITHIN a parent — there is more than one 'victoria'
+--             in the world — so a join on slug silently merges places. The path is also
+--             the hierarchy: `country_slug` is its first segment, and descendants of a
+--             place are the rows whose path starts with its path plus '/'.
+--   location_type : the level, and it is a 10-value open vocabulary, not a 3-level
+--             ladder — country, state, province, department, community, region,
+--             prefecture, constituent_country, district, city. Only `country` is
+--             structurally guaranteed (it is exactly the parentless rows); the rest
+--             reflect how each country subdivides itself, so any analysis that assumes
+--             country/state/city will silently drop the 57 live places that are none of
+--             those — provinces, departments, communities, prefectures and the rest.
+--             Predicate on path depth when you mean depth.
+--   code / short_name / divisions : sparse by construction. `code` is the subdivision's
+--             own code (VIC, WA) and is empty on every country and every city;
+--             `divisions` is populated on countries alone (all 22), naming how that
+--             country subdivides; `short_name` on 2 rows. None is a general-purpose
+--             identifier — read them at the level that carries them.
+--   n_corporate_entities : live corporate entities based here, DIRECTLY — a country
+--             does not inherit the count of its cities. Use the location_path prefix
+--             for a rolled-up figure, deliberately not precomputed because the rollup a
+--             caller wants (this place, or this place and below) is theirs to choose.
+CREATE OR REPLACE VIEW locations AS
+  WITH ce_n AS (
+    SELECT cel.location_id, count(*) AS n
+    FROM fc.catalog_corporateentitylocation cel
+    JOIN fc.catalog_corporateentity ce
+      ON ce.id = cel.corporate_entity_id AND ce.status IS DISTINCT FROM 'deleted'
+    GROUP BY cel.location_id
+  )
+  SELECT
+    l.id, l.slug, l.name,
+    l.location_path,
+    split_part(l.location_path, '/', 1)      AS country_slug,
+    l.location_type,
+    l.parent_id,
+    l.parent_id IS NULL                      AS is_country,
+    l.code, l.short_name, l.divisions,
+    COALESCE(n.n, 0)                         AS n_corporate_entities,
+    l.description
+  FROM fc.catalog_location l
+  LEFT JOIN ce_n n ON n.location_id = l.id
+  WHERE l.status IS DISTINCT FROM 'deleted';
+COMMENT ON VIEW locations IS
+  'One row per live Location at EVERY level — the entity; countries is the parentless projection of it. Join on location_path, never slug: slug is unique only within a parent.';
+
+-- countries — the country slice of `locations`: the parentless rows. A projection, not
+-- a peer entity — kept as its own view because `models.country_slug` and
+-- `target_country_slug` join here for the name, and because joining a region or city by
+-- accident is the failure it prevents. Columns are deliberately unchanged from when this
+-- read the physical table directly; consumers outside this repo select from it by name.
+-- Add an `all_countries` twin the day an analysis needs the deleted rows.
 CREATE OR REPLACE VIEW countries AS
-  SELECT id, slug, name FROM fc.catalog_location
-  WHERE parent_id IS NULL AND status IS DISTINCT FROM 'deleted';
+  SELECT id, slug, name FROM locations WHERE is_country;
 COMMENT ON VIEW countries IS
-  'One row per live country (a root Location) — join models.country_slug or target_country_slug here for the name.';
+  'One row per live country (a root Location) — join models.country_slug or target_country_slug here for the name. The parentless projection of locations.';
 
 -- location_aliases — every alias of every live Location, including countries, regions
 -- and cities. country_aliases below is the country-only slice. Uses location_path as its
@@ -565,6 +618,27 @@ CREATE OR REPLACE VIEW tags AS
   GROUP BY mt.machinemodel_id;
 COMMENT ON VIEW tags IS
   'One row per tagged model — sorted list of tag SLUGS (the stable key you predicate on), keyed by id. conversion_kit and re-themes are ModelRelationship types, not tags.';
+
+-- tag_vocab — one row per live TAG, the vocabulary behind the `tags` name-list. The
+-- entity grain: `tags` is keyed by MODEL and answers "what is this tagged", this is
+-- keyed by tag and answers "what tags exist, and how much is each used". Four live tags
+-- of eight rows — half the vocabulary is soft-deleted, so a hardcoded slug that used to
+-- work is a live possibility and checking it against this view is how you find out.
+-- No DAG: unlike themes and gameplay features, tags are flat.
+CREATE OR REPLACE VIEW tag_vocab AS
+  SELECT
+    tg.id, tg.slug, tg.name, tg.description,
+    -- count(m.id), not count(mt.machinemodel_id): the through-row survives its model's
+    -- soft-delete, so counting the link would report dead models as usage.
+    count(m.id) AS n
+  FROM fc.catalog_tag tg
+  LEFT JOIN fc.catalog_machinemodel_tags mt ON mt.tag_id = tg.id
+  LEFT JOIN fc.catalog_machinemodel m
+    ON m.id = mt.machinemodel_id AND m.status IS DISTINCT FROM 'deleted'
+  WHERE tg.status IS DISTINCT FROM 'deleted'
+  GROUP BY ALL;
+COMMENT ON VIEW tag_vocab IS
+  'One row per live tag — the tag VOCABULARY with usage count n, the entity twin of the model-keyed tags name-list. Flat, no DAG.';
 
 -- ═══ GAMEPLAY FEATURES ══════════════════════════════════════════════════════
 -- model_gameplay_features — one row per (model, directly-attached gameplay feature)
@@ -914,6 +988,38 @@ CREATE OR REPLACE VIEW titles AS
 COMMENT ON VIEW titles IS
   'One row per LIVE Title — identity, franchise/series grouping and n_models. Unlike title_size it keeps Titles with no live models, at n_models = 0.';
 
+-- franchises / series — the two Title-grouping vocabularies, entity grain. `titles`
+-- decodes each onto the Title row; these answer the questions that needs a second view:
+-- which groupings EXIST, and which are used by nothing. 140 franchises against 210
+-- grouped Titles, 6 series against 16 — so the average franchise holds one or two
+-- Titles and the shape is nothing like a themes DAG.
+--
+-- Neither is ingested. Both are curator-maintained (Series' docstring says so
+-- outright), which is what makes `n_titles = 0` the interesting row rather than a
+-- defect: it is a grouping someone created and never attached, and it is invisible from
+-- `titles` alone because a Title that points at nothing produces no row to notice.
+CREATE OR REPLACE VIEW franchises AS
+  SELECT f.id, f.slug, f.name, f.description,
+         count(t.id) AS n_titles
+  FROM fc.catalog_franchise f
+  LEFT JOIN fc.catalog_title t
+    ON t.franchise_id = f.id AND t.status IS DISTINCT FROM 'deleted'
+  WHERE f.status IS DISTINCT FROM 'deleted'
+  GROUP BY ALL;
+COMMENT ON VIEW franchises IS
+  'One row per live Franchise — the IP grouping (Star Trek), spanning makers and eras, with n_titles. Curator-maintained, never ingested, so n_titles = 0 is a real state.';
+
+CREATE OR REPLACE VIEW series AS
+  SELECT s.id, s.slug, s.name, s.description,
+         count(t.id) AS n_titles
+  FROM fc.catalog_series s
+  LEFT JOIN fc.catalog_title t
+    ON t.series_id = s.id AND t.status IS DISTINCT FROM 'deleted'
+  WHERE s.status IS DISTINCT FROM 'deleted'
+  GROUP BY ALL;
+COMMENT ON VIEW series IS
+  'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Six of them; not the same thing as a Franchise, which is the IP.';
+
 -- title_size — one row per Title with a live model: its identity (title_slug/
 -- title_name) plus n, the count of LIVE models in it (the "alone in its Title?"
 -- signal — n = 1). A soft-deleted sibling doesn't keep a model company.
@@ -986,6 +1092,34 @@ COMMENT ON VIEW model_number_collisions IS
 --             the model and are entirely unpopulated, so they stay unsurfaced under
 --             the demand-driven rule; promoting them is a line here, and the year is
 --             the full precision on offer until then.
+-- credit_roles — the credit-role vocabulary (designer, artist, …), entity grain with
+-- usage. Ten live roles. The counterpart to `people`: that view carries n_roles per
+-- person, this one carries n_credits per role, and neither says which model — see the
+-- note on `people` about the missing credit grain.
+--
+-- `n_credits` counts credits on a live subject, model- and series-attached alike, the
+-- same population `people` counts. Reading it against `people.n_roles` is how you tell
+-- a broad vocabulary from a narrow one: 7 roles are in use across 589 credited people,
+-- so three exist and are attached to nothing.
+CREATE OR REPLACE VIEW credit_roles AS
+  SELECT
+    r.id, r.slug, r.name, r.description,
+    count(lc.person_id) AS n_credits
+  FROM fc.catalog_creditrole r
+  LEFT JOIN (
+    SELECT c.role_id, c.person_id
+    FROM fc.catalog_credit c
+    LEFT JOIN fc.catalog_machinemodel m ON m.id = c.model_id
+                                       AND m.status IS DISTINCT FROM 'deleted'
+    LEFT JOIN fc.catalog_series s       ON s.id = c.series_id
+                                       AND s.status IS DISTINCT FROM 'deleted'
+    WHERE m.id IS NOT NULL OR s.id IS NOT NULL
+  ) lc ON lc.role_id = r.id
+  WHERE r.status IS DISTINCT FROM 'deleted'
+  GROUP BY ALL;
+COMMENT ON VIEW credit_roles IS
+  'One row per live CreditRole — the credit vocabulary (designer, artist) with n_credits over live subjects. The role-keyed counterpart to people.n_roles.';
+
 CREATE OR REPLACE VIEW people AS
   WITH live_credit AS (
     -- A credit whose subject was soft-deleted is not a credit on the live catalog.

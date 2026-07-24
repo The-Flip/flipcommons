@@ -153,6 +153,81 @@ CREATE OR REPLACE VIEW _dim_vocab AS
 CREATE OR REPLACE VIEW _live_dim_vocab AS
   SELECT dim, slug FROM _dim_vocab WHERE status IS DISTINCT FROM 'deleted';
 
+-- ─── Entity coverage ────────────────────────────────────────────────────────
+-- EVERY FIRST-CLASS CATALOG ENTITY IS EITHER EXPOSED AS A VIEW OR EXEMPTED ON THE
+-- RECORD. This is the same argument `unexposed_alias_table` makes, one level up, and it
+-- is here because the failure recurred on entities: two sessions in a row read a
+-- missing view as a missing Django field and reported the concept as nonexistent.
+-- Demand is the wrong signal for an entity for exactly the reason it is the wrong
+-- signal for a vocabulary — not knowing it exists looks identical to not needing it,
+-- and neither session raised a promotion request because neither knew there was
+-- anything to promote.
+--
+-- _entity_table — the entity set, DERIVED. A first-class catalog entity is a
+-- `catalog_*` table carrying both `slug` and `status`: slug because it is an addressable
+-- thing with a stable handle, status because it participates in the soft-delete
+-- lifecycle. That pair selects exactly the 21 concrete LinkableModels today and nothing
+-- else — no alias table, no through table, no Django internal — so adding a model puts
+-- it in scope automatically rather than depending on someone editing a list. Reads
+-- duckdb_columns() rather than information_schema, which covers only the current
+-- database and cannot see the attached `fc`.
+CREATE OR REPLACE VIEW _entity_table AS
+  SELECT table_name FROM duckdb_columns()
+  WHERE database_name = 'fc' AND table_name LIKE 'catalog\_%' ESCAPE '\'
+  GROUP BY table_name
+  HAVING bool_or(column_name = 'slug') AND bool_or(column_name = 'status');
+
+-- _entity_view — hand-input: which view exposes each entity, and the exemptions. Only
+-- the MAPPING is hand-maintained; the entity set above is derived, so the hand-list can
+-- fall behind in exactly one direction and `unexposed_entity` catches that.
+--   view  the named view is the entity grain for this table.
+--   dim   deliberately NOT exposed as an entity view. The seven taxonomy dims are
+--         slug-only on `models` by an explicit decision documented on `all_models`:
+--         the slug is both the readable label and, being unique per dim table, the
+--         raw-join key back to `fc.catalog_<dim>`, so neither the FK id nor the display
+--         name earns a column. That is a documented reach-past, not an accident, and
+--         writing it here is what keeps it one.
+-- Anything whose kind is not exactly 'dim' is required to name a real view, so a
+-- typo'd kind fails CLOSED — it demands a view that will not be found — rather than
+-- silently exempting the entity the way an unrecognized _anchor_skip kind would.
+--
+-- Provenance entities are listed too even though they are outside the derived set
+-- (their tables carry no `status`, so no structural signal picks them out). They get
+-- the missing-view and stale-table checks; only the "is anything unlisted" direction is
+-- catalog-only. If the provenance side grows a third entity, nothing here will notice.
+CREATE OR REPLACE VIEW _entity_view AS
+  SELECT * FROM (VALUES
+    ('catalog_machinemodel',            'models',                 'view'),
+    ('catalog_title',                   'titles',                 'view'),
+    ('catalog_manufacturer',            'manufacturers',          'view'),
+    ('catalog_corporateentity',         'corporate_entities',     'view'),
+    ('catalog_person',                  'people',                 'view'),
+    ('catalog_location',                'locations',              'view'),
+    ('catalog_franchise',               'franchises',             'view'),
+    ('catalog_series',                  'series',                 'view'),
+    ('catalog_creditrole',              'credit_roles',           'view'),
+    ('catalog_tag',                     'tag_vocab',              'view'),
+    ('catalog_theme',                   'theme_vocab',            'view'),
+    ('catalog_gameplayfeature',         'gameplay_feature_vocab', 'view'),
+    ('catalog_rewardtype',              'reward_types',           'view'),
+    ('catalog_gameformat',              'game_formats',           'view'),
+    -- Taxonomy dims — slug-only on `models`, by the decision recorded on all_models.
+    ('catalog_cabinet',                  NULL,                    'dim'),
+    ('catalog_displaytype',              NULL,                    'dim'),
+    ('catalog_displaysubtype',           NULL,                    'dim'),
+    ('catalog_system',                   NULL,                    'dim'),
+    ('catalog_productionstatus',         NULL,                    'dim'),
+    ('catalog_technologygeneration',     NULL,                    'dim'),
+    ('catalog_technologysubgeneration',  NULL,                    'dim'),
+    -- Provenance entities: outside the derived set, listed so they get the same
+    -- missing-view guarantee.
+    ('actors_actor',                    'actors',                 'view'),
+    ('provenance_changeset',            'changesets',             'view'),
+    ('provenance_source',               'ingest_sources',         'view'),
+    ('provenance_ingestrun',            'ingest_runs',            'view'),
+    ('citation_citationsource',         'citation_sources',       'view')
+  ) AS t(entity_table, view_name, kind);
+
 
 
 -- foundation_summary — row count per public view; doubles as a health dashboard.
@@ -176,6 +251,11 @@ CREATE OR REPLACE VIEW foundation_summary AS
   UNION ALL SELECT 'theme_aliases',       count(*) FROM theme_aliases
   UNION ALL SELECT 'model_export_markets', count(*) FROM model_export_markets
   UNION ALL SELECT 'countries',           count(*) FROM countries
+  UNION ALL SELECT 'locations',           count(*) FROM locations
+  UNION ALL SELECT 'tag_vocab',           count(*) FROM tag_vocab
+  UNION ALL SELECT 'franchises',          count(*) FROM franchises
+  UNION ALL SELECT 'series',              count(*) FROM series
+  UNION ALL SELECT 'credit_roles',        count(*) FROM credit_roles
   UNION ALL SELECT 'country_aliases',     count(*) FROM country_aliases
   UNION ALL SELECT 'location_aliases',    count(*) FROM location_aliases
   UNION ALL SELECT 'reward_types',          count(*) FROM reward_types
@@ -260,6 +340,11 @@ CREATE OR REPLACE VIEW _anchor_scan AS
             SELECT 'all_models'              AS view_name, col, live FROM _dark_cols('all_models')
   UNION ALL SELECT 'models',                 col, live FROM _dark_cols('models')
   UNION ALL SELECT 'countries',              col, live FROM _dark_cols('countries')
+  UNION ALL SELECT 'locations',              col, live FROM _dark_cols('locations')
+  UNION ALL SELECT 'tag_vocab',              col, live FROM _dark_cols('tag_vocab')
+  UNION ALL SELECT 'franchises',             col, live FROM _dark_cols('franchises')
+  UNION ALL SELECT 'series',                 col, live FROM _dark_cols('series')
+  UNION ALL SELECT 'credit_roles',           col, live FROM _dark_cols('credit_roles')
   UNION ALL SELECT 'country_aliases',        col, live FROM _dark_cols('country_aliases')
   UNION ALL SELECT 'location_aliases',       col, live FROM _dark_cols('location_aliases')
   UNION ALL SELECT 'reward_types',             col, live FROM _dark_cols('reward_types')
@@ -927,6 +1012,34 @@ CREATE OR REPLACE VIEW foundation_checks AS
     AND table_name NOT IN ('foundation_summary', 'foundation_checks',
                            'analysis_context', 'provenance_context')
     AND table_name NOT IN (SELECT DISTINCT view_name FROM scan)
+
+  -- ── every first-class entity is exposed or exempted on the record ──
+  -- See the _entity_table / _entity_view block above for why this is structural rather
+  -- than left to review. Three directions, because a one-directional list rots: an
+  -- entity nobody listed, a listing for a table that no longer exists, and a listing
+  -- naming a view that was never created or has since been renamed.
+  UNION ALL
+  SELECT 'unexposed_entity', t.table_name
+  FROM _entity_table t
+  WHERE t.table_name NOT IN (SELECT entity_table FROM _entity_view)
+
+  UNION ALL
+  SELECT 'stale_entity_view', e.entity_table
+  FROM _entity_view e
+  WHERE NOT EXISTS (SELECT 1 FROM duckdb_tables()
+                    WHERE database_name = 'fc' AND table_name = e.entity_table)
+
+  -- kind IS DISTINCT FROM 'dim', not kind = 'view', so an unrecognized kind demands a
+  -- view rather than quietly exempting the entity.
+  UNION ALL
+  SELECT 'missing_entity_view',
+         e.entity_table || ' -> ' || coalesce(e.view_name, 'NULL')
+           || ' (' || coalesce(e.kind, 'NULL') || ')'
+  FROM _entity_view e
+  WHERE e.kind IS DISTINCT FROM 'dim'
+    AND (e.view_name IS NULL
+         OR NOT EXISTS (SELECT 1 FROM information_schema.tables
+                        WHERE table_schema = 'main' AND table_name = e.view_name))
 
   -- ── every alias/abbreviation lookup table is exposed ──
   -- This one exists because of a PROCESS failure, not a code failure, and it's the only

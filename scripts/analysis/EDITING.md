@@ -18,6 +18,15 @@ The same signal works for stable keys and vocabularies: **a consumer reaching pa
 
 When adding a new relationship view, match it to one of the [model relationship shapes](README.md#model-relationship-shapes) rather than inventing a fifth. A payload-bearing relationship should follow the counted-payload grain of `model_gameplay_features` rather than be flattened to a name-list, which would drop the payload.
 
+**Entity views are the other exception, and they are exhaustive.** Every first-class catalog entity gets a view whether or not anyone has asked for one, because the argument that carves aliases out of demand-driven promotion is not about aliases — it is about absence being indistinguishable from non-existence. That failure recurred on entities: two sessions running analyses read a missing view as a missing Django field and reported `Actor` and `ChangeSet` as concepts the system did not have. Neither raised a promotion request, for the same reason the country-map and reward-type campaigns didn't.
+
+So the split is by KIND of view, not by demand:
+
+- **Entity grain — exhaustive.** One view per first-class entity. `unexposed_entity` derives the entity set structurally (a `catalog_*` table carrying both `slug` and `status`, which selects exactly the concrete `LinkableModel`s) and fails for one that is neither exposed nor exempted, with `stale_entity_view` and `missing_entity_view` closing the other two directions. The seven taxonomy dims are exempted `dim` on the record rather than silently absent, because `all_models` already documents why they are slug-only.
+- **Derived, relationship and measure views — demand-driven, as before.** `model_edges_bidir`, `model_number_collisions`, the vocabulary DAG columns. There is no bound on the questions these answer, and promoting them speculatively is how a foundation grows surface nobody reads.
+
+Watch the entity-vs-projection line when adding one. `countries` is not the Location entity — it is the parentless slice of it, and it is defined over `locations` rather than beside it so the two cannot disagree about what a live location is. A projection that reads the physical table independently is a second definition waiting to drift.
+
 Alias lookups are the exception to demand-driven promotion: expose every concrete `AliasModel` so an undiscoverable catalog mapping is not rebuilt in consumer SQL. Each alias view has one row per alias of a live parent, includes the parent id and stable key, and leaves the stored value unnormalized; `location_aliases` uses `location_path` because location slugs are only parent-scoped. Keep abbreviations separate because they are community shorthand, not alternate names. `unexposed_alias_table` catches a new physical alias table with no view, but it cannot detect a view that exposes only part of that table, so review must verify complete exposure.
 
 ## The provenance layer
