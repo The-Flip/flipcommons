@@ -256,6 +256,8 @@ CREATE OR REPLACE VIEW foundation_summary AS
   UNION ALL SELECT 'franchises',          count(*) FROM franchises
   UNION ALL SELECT 'series',              count(*) FROM series
   UNION ALL SELECT 'credit_roles',        count(*) FROM credit_roles
+  UNION ALL SELECT 'credits',             count(*) FROM credits
+  UNION ALL SELECT 'model_credits',       count(*) FROM model_credits
   UNION ALL SELECT 'country_aliases',     count(*) FROM country_aliases
   UNION ALL SELECT 'location_aliases',    count(*) FROM location_aliases
   UNION ALL SELECT 'reward_types',          count(*) FROM reward_types
@@ -283,6 +285,11 @@ CREATE OR REPLACE VIEW foundation_summary AS
   UNION ALL SELECT 'citation_instances',  count(*) FROM citation_instances
   UNION ALL SELECT 'claim_citations',     count(*) FROM claim_citations
   UNION ALL SELECT 'citation_root_domains', count(*) FROM citation_root_domains
+  UNION ALL SELECT 'patch_claims',          count(*) FROM patch_claims
+  UNION ALL SELECT 'patch_retractions',     count(*) FROM patch_retractions
+  UNION ALL SELECT 'patch_cites',           count(*) FROM patch_cites
+  UNION ALL SELECT 'patch_entries',         count(*) FROM patch_entries
+  UNION ALL SELECT 'patch_entry_cites',     count(*) FROM patch_entry_cites
   ORDER BY view_name;
 
 -- ─── Generated dark anchors ─────────────────────────────────────────────────
@@ -345,6 +352,8 @@ CREATE OR REPLACE VIEW _anchor_scan AS
   UNION ALL SELECT 'franchises',             col, live FROM _dark_cols('franchises')
   UNION ALL SELECT 'series',                 col, live FROM _dark_cols('series')
   UNION ALL SELECT 'credit_roles',           col, live FROM _dark_cols('credit_roles')
+  UNION ALL SELECT 'credits',                col, live FROM _dark_cols('credits')
+  UNION ALL SELECT 'model_credits',          col, live FROM _dark_cols('model_credits')
   UNION ALL SELECT 'country_aliases',        col, live FROM _dark_cols('country_aliases')
   UNION ALL SELECT 'location_aliases',       col, live FROM _dark_cols('location_aliases')
   UNION ALL SELECT 'reward_types',             col, live FROM _dark_cols('reward_types')
@@ -387,7 +396,12 @@ CREATE OR REPLACE VIEW _anchor_scan AS
   UNION ALL SELECT 'citation_roots',        col, live FROM _dark_cols('citation_roots')
   UNION ALL SELECT 'citation_instances',    col, live FROM _dark_cols('citation_instances')
   UNION ALL SELECT 'claim_citations',       col, live FROM _dark_cols('claim_citations')
-  UNION ALL SELECT 'citation_root_domains', col, live FROM _dark_cols('citation_root_domains');
+  UNION ALL SELECT 'citation_root_domains', col, live FROM _dark_cols('citation_root_domains')
+  UNION ALL SELECT 'patch_claims',          col, live FROM _dark_cols('patch_claims')
+  UNION ALL SELECT 'patch_retractions',     col, live FROM _dark_cols('patch_retractions')
+  UNION ALL SELECT 'patch_cites',           col, live FROM _dark_cols('patch_cites')
+  UNION ALL SELECT 'patch_entries',         col, live FROM _dark_cols('patch_entries')
+  UNION ALL SELECT 'patch_entry_cites',     col, live FROM _dark_cols('patch_entry_cites');
 
 -- Two kinds of entry, and the difference is whether the exemption can EXPIRE:
 --   sparse   allowed to be empty indefinitely — an optional dim the app barely
@@ -421,6 +435,17 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     ('default_license_slug',                'pending'),
     -- no ingest run has rejected a claim yet; all-zero, not all-NULL
     ('ingest_runs.claims_rejected',         'pending'),
+    -- No patch has retracted a MEMBER claim yet — every retraction so far is a scalar —
+    -- so the two member-only facets are empty on this view alone and populated on
+    -- patch_claims. Qualified for exactly that reason. `pending`: a patch retracting a
+    -- relationship is ordinary authoring, and expired_anchor_skip turns anchoring on the
+    -- day one does.
+    ('patch_retractions.member_exists',     'pending'),
+    ('patch_retractions.ref_id',            'pending'),
+    -- MachineModel.status is NULL for a live, unflagged model — the overwhelming majority
+    -- — so this anchors only once a patch retracts a claim about a model that carries a
+    -- status at all. Populated on patch_claims, hence qualified.
+    ('patch_retractions.model_status',      'pending'),
     -- Modelled and reachable, populated by nothing yet. Both are `pending`, not
     -- `sparse`: each has a live write path (a maker QID is a patch field, a citation
     -- day is what a dated magazine issue carries), so the day one lands,
@@ -465,6 +490,12 @@ CREATE OR REPLACE VIEW _anchor_array AS
 -- inside that range and invent check names that don't exist.
 .read scripts/analysis/provenance_checks.sql
 
+-- The patch layer's own invariants, `_data_patch_checks`, on the same terms and read
+-- inside the same range. Its own file rather than a tail on provenance_checks.sql
+-- because it binds `_patch_acts` from data_patches.sql, which sits ABOVE provenance.sql
+-- — see the note at the top of it.
+.read scripts/analysis/data_patches_checks.sql
+
 -- foundation_checks — invariants. EMPTY = healthy; any row is a violation with a
 -- check_name and a diagnostic detail.
 --
@@ -507,7 +538,24 @@ CREATE OR REPLACE VIEW foundation_checks AS
   gameplay_feature_vocab  AS MATERIALIZED (SELECT * FROM main.gameplay_feature_vocab),
   model_number_collisions AS MATERIALIZED (SELECT * FROM main.model_number_collisions),
   _ce_location_n      AS MATERIALIZED (SELECT * FROM main._ce_location_n),
-  model_export_markets    AS MATERIALIZED (SELECT * FROM main.model_export_markets)
+  model_export_markets    AS MATERIALIZED (SELECT * FROM main.model_export_markets),
+  credits             AS MATERIALIZED (SELECT * FROM main.credits),
+  -- The credit population counted off the PHYSICAL tables — an INDEPENDENT restatement
+  -- of what `credits` selects, so `credit_rows_dropped` below compares two derivations
+  -- instead of comparing the view against itself. Keep the four liveness tests in step
+  -- with the view's joins: a rule added there and not here reports as a dropped row.
+  _credit_physical    AS MATERIALIZED (
+    SELECT count(*) AS n
+    FROM fc.catalog_credit c
+    WHERE EXISTS (SELECT 1 FROM fc.catalog_person p
+                  WHERE p.id = c.person_id AND p.status IS DISTINCT FROM 'deleted')
+      AND EXISTS (SELECT 1 FROM fc.catalog_creditrole r
+                  WHERE r.id = c.role_id   AND r.status IS DISTINCT FROM 'deleted')
+      AND (EXISTS (SELECT 1 FROM fc.catalog_machinemodel m
+                   WHERE m.id = c.model_id AND m.status IS DISTINCT FROM 'deleted')
+        OR EXISTS (SELECT 1 FROM fc.catalog_series s
+                   WHERE s.id = c.series_id AND s.status IS DISTINCT FROM 'deleted'))
+  )
 
   -- ── structural: data-independent; a row means the SQL logic broke ──
 
@@ -559,6 +607,24 @@ CREATE OR REPLACE VIEW foundation_checks AS
      -- guessing would attribute 'ipdb.org/x' and 'notes about ipdb.org' alike
      OR url_host('ipdb.org/x') IS DISTINCT FROM ''
      OR url_host(NULL)         IS DISTINCT FROM ''
+  UNION ALL
+
+  -- The patch ordinal parse (data_patches.sql), pinned in all three directions. Kept in
+  -- this block with the others rather than in data_patches_checks.sql: the macros come
+  -- from three different files and gathering their smoke tests in one place is what made
+  -- a missing one noticeable at all.
+  SELECT 'macro_patch_number_of',
+         coalesce(patch_number_of('0189-print-citations')::VARCHAR, 'NULL')
+  WHERE patch_number_of('0189-print-citations') IS DISTINCT FROM 189   -- leading zeros
+     -- an id carrying no ordinal is NULL, not a crash. TRY_CAST is the whole reason:
+     -- plain CAST raises on the '' that a failed regexp_extract returns, which takes
+     -- down every analysis reading this layer over one malformed id.
+     OR patch_number_of('draft-slug') IS NOT NULL
+     OR patch_number_of(NULL)         IS NOT NULL
+     -- and the ordinal is not truncated to flippatch's CURRENT four-digit width. A
+     -- `{4}` parse reads 12345-slug as 1234 — no error, no NULL, just a wrong number
+     -- feeding an operator's `WHERE patch_number > N` cutoff.
+     OR patch_number_of('12345-slug') IS DISTINCT FROM 12345
   UNION ALL
   -- Data-dependent, unlike the macro checks above, because the rule only has teeth when
   -- one registered host nests inside another — and the nesting is exactly what a
@@ -776,6 +842,43 @@ CREATE OR REPLACE VIEW foundation_checks AS
   UNION ALL
   SELECT 'theme_subject_not_live', 'model_id=' || model_id::VARCHAR
   FROM model_themes WHERE model_id NOT IN (SELECT id FROM models)
+
+  -- ── credits: the polymorphic subject, in both of the ways it can go wrong ──
+  -- `credits` is the one grain view whose subject is not a machine model: it is a live
+  -- MachineModel XOR a live Series, decoded into subject_type/subject_id. Two checks,
+  -- because the decode and the population fail differently and neither implies the other.
+  --
+  -- RESOLUTION — a row whose subject names nothing live. Three failure modes in one
+  -- predicate: a NULL subject_id (the XOR resolved on neither side), a subject_type
+  -- outside the two-value vocabulary, and a decoded id that isn't in the view its type
+  -- names. `ELSE true` makes an unrecognized type fail CLOSED rather than skip the
+  -- lookup, and the NULL test has to LEAD because `NOT IN` returns NULL on a NULL
+  -- left-hand side, which selects nothing — the house rule at the top of this view.
+  UNION ALL
+  SELECT 'credit_subject_not_live',
+         'credit_id=' || credit_id::VARCHAR
+           || ' ' || coalesce(subject_type, 'NULL')
+           || ':' || coalesce(subject_id::VARCHAR, 'NULL')
+  FROM credits
+  WHERE subject_id IS NULL
+     OR CASE subject_type
+          WHEN 'catalog.machinemodel' THEN subject_id NOT IN (SELECT id FROM models)
+          WHEN 'catalog.series'       THEN subject_id NOT IN (SELECT id FROM series)
+          ELSE true
+        END
+
+  -- POPULATION — every credit whose subject, person and role are all live is HERE,
+  -- compared against the independent physical count above. This is the check for the
+  -- failure the view is shaped to avoid: 7 of 7251 credits hang off a Series, so a grain
+  -- narrowed to the model half stays plausible under every spot check and is quietly
+  -- short by a tenth of a percent. A tiny minority is the dangerous case, not the safe
+  -- one. The same comparison catches the opposite defect, a join that fanned out.
+  UNION ALL
+  SELECT 'credit_rows_dropped',
+         'physical=' || (SELECT n FROM _credit_physical)::VARCHAR
+           || ' view=' || (SELECT count(*) FROM credits)::VARCHAR
+  WHERE (SELECT n FROM _credit_physical)
+        IS DISTINCT FROM (SELECT count(*) FROM credits)
 
   -- the grain view and the display list describe the SAME memberships — compared by
   -- VALUE, not by count. They're built by different paths (model_themes filters live
@@ -1013,6 +1116,39 @@ CREATE OR REPLACE VIEW foundation_checks AS
                            'analysis_context', 'provenance_context')
     AND table_name NOT IN (SELECT DISTINCT view_name FROM scan)
 
+  -- A public foundation view missing from `foundation_summary` — the same coverage
+  -- claim as `unanchored_view` above, for the other hand-list. It was the last one in
+  -- this file with no both-directions guard, and it drifted the first time it could: a
+  -- whole layer's five views were anchored and never summarized, so the health readout
+  -- silently stopped describing the foundation while the self-test stayed green. Same
+  -- exclusions as `unanchored_view`, for the same reasons.
+  --
+  -- Matched against the summary's own SQL rather than by selecting from it, the way
+  -- `unexposed_alias_table` matches view text. Reading `SELECT view_name FROM
+  -- foundation_summary` would be the direct statement and costs ~1.7s — it evaluates
+  -- every count in the summary — on a checks run that is ~8s. This claim is structural
+  -- and shouldn't be paying for row counts to make it.
+  --
+  -- BOTH the quoted label and the FROM clause, because neither is exact alone. The
+  -- label is quote-delimited so `'models'` cannot match inside `'all_models'`; the FROM
+  -- test is a bare prefix so `FROM model_edges` does match inside `FROM
+  -- model_edges_bidir`. ANDing them takes the label's exactness and adds the assertion
+  -- that the view is actually COUNTED rather than merely named.
+  UNION ALL
+  SELECT 'unsummarized_view', v.table_name
+  FROM information_schema.tables v
+  WHERE v.table_schema = 'main' AND v.table_type = 'VIEW'
+    AND v.table_name NOT LIKE '\_%' ESCAPE '\'
+    AND v.table_name NOT IN ('foundation_summary', 'foundation_checks',
+                             'analysis_context', 'provenance_context')
+    AND NOT EXISTS (
+      SELECT 1 FROM duckdb_views() s
+      WHERE s.database_name = 'memory' AND s.schema_name = 'main'
+        AND s.view_name = 'foundation_summary'
+        AND s.sql LIKE '%''' || v.table_name || '''%'
+        AND s.sql LIKE '%FROM ' || v.table_name || '%'
+    )
+
   -- ── every first-class entity is exposed or exempted on the record ──
   -- See the _entity_table / _entity_view block above for why this is structural rather
   -- than left to review. Three directions, because a one-directional list rots: an
@@ -1213,4 +1349,10 @@ CREATE OR REPLACE VIEW foundation_checks AS
   -- folded in here so the gate and the mutation harness keep a single entry point.
   -- Same (check_name, detail) shape, so these read as more branches of this UNION.
   UNION ALL
-  SELECT check_name, detail FROM _provenance_checks;
+  SELECT check_name, detail FROM _provenance_checks
+
+  -- ─── Data patch layer ──────────────────────────────────────────────────────
+  -- The patch-lens invariants, from data_patches_checks.sql, folded in on the same
+  -- terms. Every layer catalog.sql reads ends up in this one view.
+  UNION ALL
+  SELECT check_name, detail FROM _data_patch_checks;

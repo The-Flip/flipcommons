@@ -118,7 +118,13 @@ host match loses the label boundary	macro_citation_root_for_host	CREATE OR REPLA
 host match stops preferring the longest	macro_citation_root_for_host	CREATE OR REPLACE MACRO citation_root_for_host(h) AS (SELECT d.root_citation_source_id FROM citation_root_domains d WHERE host_norm(h) = d.host OR ends_with(host_norm(h), '.' || d.host) ORDER BY length(d.host) ASC LIMIT 1);
 recognition host on a child source	root_domain_on_non_root	CREATE TABLE _m AS SELECT * FROM citation_sources; CREATE OR REPLACE VIEW citation_sources AS SELECT * REPLACE (false AS is_root) FROM _m;
 macro comment dropped	undocumented_macro	COMMENT ON MACRO name_key IS NULL;
-root family loses the stable key	root_family_incomplete	CREATE TABLE _m AS SELECT * FROM citation_instances; CREATE OR REPLACE VIEW citation_instances AS SELECT * EXCLUDE (root_identifier_key) FROM _m;
+# root_family_incomplete must be mutated on a LEAF view. It scans information_schema for
+# every view carrying root_citation_source_id, so any of them proves it fires — but
+# EXCLUDEing the column from citation_instances no longer binds: patch_cites selects
+# ci.root_identifier_key off it, so the mutation dies as a binder error instead of
+# reaching the check. patch_entry_cites is the leaf. Don't 'restore' this to the
+# canonical view — it was moved here because it had to be.
+root family loses the stable key	root_family_incomplete	CREATE TABLE _m AS SELECT * FROM patch_entry_cites; CREATE OR REPLACE VIEW patch_entry_cites AS SELECT * EXCLUDE (root_identifier_key) FROM _m;
 source kill switch desyncs from its actor mirror	ingest_source_enabled_desyncs	CREATE TABLE _m AS SELECT * FROM ingest_sources; CREATE OR REPLACE VIEW ingest_sources AS SELECT * REPLACE (NOT is_enabled AS is_enabled) FROM _m;
 changesets derived from claims, losing retraction-only rows	changeset_rows_dropped	CREATE TABLE _m AS SELECT * FROM changesets; CREATE OR REPLACE VIEW changesets AS SELECT * FROM _m WHERE changeset_id IN (SELECT changeset_id FROM claims);
 changeset that neither wrote nor retracted	inert_changeset	CREATE TABLE _m AS SELECT * FROM changesets; CREATE OR REPLACE VIEW changesets AS SELECT * REPLACE (CASE WHEN changeset_id = (SELECT min(changeset_id) FROM _m) THEN 0::BIGINT ELSE n_claims END AS n_claims, CASE WHEN changeset_id = (SELECT min(changeset_id) FROM _m) THEN 0::BIGINT ELSE n_retracted END AS n_retracted) FROM _m;
@@ -128,3 +134,8 @@ a source slug collides with a username	actor_slug_collision	CREATE TABLE _m AS S
 entity dropped from the exposure list	unexposed_entity	CREATE TABLE _m AS SELECT * FROM _entity_view; CREATE OR REPLACE VIEW _entity_view AS SELECT * FROM _m WHERE entity_table <> 'catalog_tag';
 exposure list names a table that no longer exists	stale_entity_view	CREATE TABLE _m AS SELECT * FROM _entity_view; CREATE OR REPLACE VIEW _entity_view AS SELECT * FROM _m UNION ALL SELECT 'catalog_renamed_away', NULL::VARCHAR, 'dim';
 exposure list names a view that was never created	missing_entity_view	CREATE TABLE _m AS SELECT * FROM _entity_view; CREATE OR REPLACE VIEW _entity_view AS SELECT * REPLACE (CASE WHEN entity_table = 'catalog_tag' THEN 'tag_vocabulary' ELSE view_name END AS view_name) FROM _m;
+patch entry grain spans two subjects	patch_entry_spans_subjects	CREATE TABLE _m AS SELECT * FROM _patch_acts; CREATE OR REPLACE VIEW _patch_acts AS SELECT * FROM _m UNION ALL (SELECT patch_id, changeset_id, 'catalog.title', 999999, model_slug, model_status, field_name, 'retract' FROM _m LIMIT 1);
+series half of the credit grain dropped	credit_rows_dropped	CREATE TABLE _m AS SELECT * FROM credits; CREATE OR REPLACE VIEW credits AS SELECT * FROM _m WHERE subject_type = 'catalog.machinemodel';
+credit subject id resolves to nothing	credit_subject_not_live	CREATE TABLE _m AS SELECT * FROM credits; CREATE OR REPLACE VIEW credits AS SELECT * REPLACE (CASE WHEN credit_id = (SELECT min(credit_id) FROM _m) THEN 999999999 ELSE subject_id END AS subject_id) FROM _m;
+patch ordinal truncated to four digits	macro_patch_number_of	CREATE OR REPLACE MACRO patch_number_of(pid) AS TRY_CAST(regexp_extract(pid, '^([0-9]{4})', 1) AS INTEGER);
+public view added without a summary line	unsummarized_view	CREATE OR REPLACE VIEW zz_unsummarized AS SELECT 1 AS x; CREATE TABLE _m AS SELECT * FROM _anchor_scan; CREATE OR REPLACE VIEW _anchor_scan AS SELECT * FROM _m UNION ALL SELECT 'zz_unsummarized', col, live FROM _dark_cols('zz_unsummarized');

@@ -1067,79 +1067,139 @@ CREATE OR REPLACE VIEW model_number_collisions AS
 COMMENT ON VIEW model_number_collisions IS
   'One row per (maker, model number) claimed by more than one live model — exact numbers only. n_titles = 1 is usually a legitimate catalog split, not bad data.';
 
--- ═══ PEOPLE ════════════════════════════════════════════════════════════════
--- people — one row per live Person, with how much of the catalog they are credited on.
--- The entity grain behind `person_aliases`, which until now was the only place a Person
--- appeared at all: an analysis resolving a credit name had the alias table and no way
--- to get from the match to the person.
+-- ═══ PEOPLE AND CREDITS ════════════════════════════════════════════════════
+-- credits — one row per credit: a Person, in a CreditRole, on a subject. THE grain, and
+-- the single definition of what a live credit is — `people` and `credit_roles` below are
+-- both aggregates OF THIS VIEW, so the three cannot disagree about the population they
+-- describe. They used to carry a copy of the liveness rule each, which is how "how many
+-- machines is Roy Parker credited on" (299) had an answer and "which ones" had none.
 --
---   THE CREDITS THEMSELVES ARE NOT EXPOSED. There is no (model, person, role) grain
---             view, so these counts answer "how much" and nothing answers "which".
---             Promoting one means modelling Credit's XOR subject (a credit hangs off a
---             MachineModel or a Series, never both) and the CreditRole vocabulary, and
---             that is its own decision — this view is deliberately the smaller half.
---             Until it exists, drilling in means reaching into `fc.catalog_credit`.
---   n_credits : credits on a LIVE subject, model- and series-attached together. 7 of
---             the 7251 credits hang off a Series; the rest off a model, so the two
---             counts below are nearly but not exactly the same number, and treating
---             either as the other quietly drops the series credits.
---   n_credited_models / n_roles : distinct live models, and distinct roles held. A
---             person credited as designer and artist on one machine has n_credits = 2,
---             n_credited_models = 1, n_roles = 2.
+--   THE SUBJECT IS POLYMORPHIC, and the minority half is the trap. A Credit hangs off a
+--             MachineModel XOR a Series (`catalog_credit_model_xor_series`), 7244 to 7
+--             today. A model-only grain would look complete, agree with every spot check
+--             and silently be missing a whole KIND of credit — the failure `changesets`
+--             was repaired for, where 739 rows were invisible because the view was
+--             derived from the convenient side. So both halves are carried, decoded the
+--             way `claims` decodes its 21 subject types and spelled the same:
+--             subject_type is 'catalog.machinemodel' / 'catalog.series', so a join
+--             across to `claims` needs no translation. Want the model half? Use
+--             `model_credits`, not a subject_type predicate you wrote yourself.
+--   subject_name : the subject's plain name — `models.label` is the disambiguated form
+--             ("Name (Maker Year)") and is one join from `model_credits.model_id`.
+--   liveness: all four ends are live-filtered — both halves of the XOR, the person and
+--             the role. A credit on a soft-deleted model is not a credit on the live
+--             catalog, and the far end of a grain edge has to be live for the same
+--             reason it does in `model_gameplay_features`. None of the four drops a row
+--             today; the FKs are PROTECT and the soft-delete walker blocks the rest.
+--   provenance: Credit is the compound claim `claim_identity_parts` exists for. Its
+--             claim_key names two entities (`credit|person:100|role:4`), so
+--             `claims.ref_id` is NULL and there is no single-column join — go
+--             `claims` (subject_type/subject_id, field_name = 'credit') →
+--             `claim_identity_parts`, once per part.
+CREATE OR REPLACE VIEW credits AS
+  SELECT
+    c.id                                        AS credit_id,
+    -- Every subject_* column is read off the SAME joined row rather than off the raw
+    -- FK columns, so they cannot describe different subjects: a row that resolved on
+    -- both sides (the constraint forbids it) still reports one subject consistently
+    -- instead of splicing a model's type onto a series' slug.
+    CASE WHEN m.id IS NOT NULL THEN 'catalog.machinemodel'
+         ELSE 'catalog.series' END              AS subject_type,
+    COALESCE(m.id,   s.id)                      AS subject_id,
+    COALESCE(m.slug, s.slug)                    AS subject_slug,
+    COALESCE(m.name, s.name)                    AS subject_name,
+    c.person_id, p.slug AS person_slug, p.name AS person_name,
+    c.role_id,   r.slug AS role_slug,   r.name AS role_name
+  -- Read off the PHYSICAL tables rather than off `models` / `series`, which is the one
+  -- place this file allows the second-definition-of-live pattern it otherwise refuses.
+  -- Two reasons it is safe here and nowhere else: `models` is `all_models` filtered on
+  -- the identical predicate and `all_models` is LEFT JOINs throughout, so neither view
+  -- can drop or add a row relative to this; and `credit_subject_not_live` resolves every
+  -- subject against `models` / `series` themselves, so the moment the two definitions
+  -- disagree the check fires rather than the count quietly shifting. Joining `series`
+  -- here would also drag its n_titles aggregate onto a 7k-row grain for two columns.
+  FROM fc.catalog_credit c
+  JOIN fc.catalog_person p     ON p.id = c.person_id
+                              AND p.status IS DISTINCT FROM 'deleted'
+  JOIN fc.catalog_creditrole r ON r.id = c.role_id
+                              AND r.status IS DISTINCT FROM 'deleted'
+  -- Two LEFT JOINs plus "at least one resolved", not two UNIONed branches: exactly one
+  -- side of the XOR can resolve, so the WHERE keeps the row on either and drops it when
+  -- the side it names is dead.
+  LEFT JOIN fc.catalog_machinemodel m ON m.id = c.model_id
+                                     AND m.status IS DISTINCT FROM 'deleted'
+  LEFT JOIN fc.catalog_series s       ON s.id = c.series_id
+                                     AND s.status IS DISTINCT FROM 'deleted'
+  WHERE m.id IS NOT NULL OR s.id IS NOT NULL;
+COMMENT ON VIEW credits IS
+  'One row per credit (person, role, live subject) — the credit GRAIN, and the definition people/credit_roles count. Subject is a model XOR a series, decoded into subject_type/id/slug/name; model_credits is the model half.';
+
+-- model_credits — the model-attached half of `credits`, keyed model_id so it joins
+-- straight to `models` and the other model grain views. The same move `model_claims` is
+-- on the provenance side, and defined OVER `credits` for the reason `countries` is
+-- defined over `locations`: a projection that re-read `fc.catalog_credit` would be a
+-- second definition of a live credit, waiting to drift from the first.
+--
+-- 7244 of the 7251 credits. The other 7 hang off a Series and are reachable only from
+-- `credits`, so a total taken here is not a total.
+CREATE OR REPLACE VIEW model_credits AS
+  SELECT c.*, c.subject_id AS model_id
+  FROM credits c
+  WHERE c.subject_type = 'catalog.machinemodel';
+COMMENT ON VIEW model_credits IS
+  'One row per credit on a LIVE machine model, keyed model_id — the model half of credits (7244 of 7251; the 7 Series credits appear only there).';
+
+-- credit_roles — the credit-role vocabulary (designer, artist, …), entity grain with
+-- usage. Ten live roles. The role-keyed counterpart to `people`: that view carries
+-- n_roles per person, this one n_credits per role, and `credits` is where either goes
+-- to say WHICH machine.
+--
+-- `n_credits` counts rows of `credits`, so it is the same population `people` counts,
+-- by construction rather than by two matching predicates. Reading it against
+-- `people.n_roles` is how you tell a broad vocabulary from a narrow one: 7 roles are in
+-- use across 589 credited people, so three exist and are attached to nothing.
+-- count(c.credit_id), never count(*): a role with no credits must read 0, and the
+-- LEFT JOIN would otherwise count its own unmatched row as one.
+CREATE OR REPLACE VIEW credit_roles AS
+  SELECT
+    r.id, r.slug, r.name, r.description,
+    count(c.credit_id) AS n_credits
+  FROM fc.catalog_creditrole r
+  LEFT JOIN credits c ON c.role_id = r.id
+  WHERE r.status IS DISTINCT FROM 'deleted'
+  GROUP BY ALL;
+COMMENT ON VIEW credit_roles IS
+  'One row per live CreditRole — the credit vocabulary (designer, artist) with n_credits over live subjects. The role-keyed counterpart to people.n_roles; credits is the grain.';
+
+-- people — one row per live Person, with how much of the catalog they are credited on.
+-- The entity grain behind `person_aliases`, which was for a while the only place a
+-- Person appeared at all: an analysis resolving a credit name had the alias table and
+-- no way to get from the match to the person.
+--
+--   n_credits : rows of `credits` — model- and series-attached together, since that is
+--             what the grain holds. Nearly but not exactly n_credited_models, and
+--             treating either as the other drops the series credits.
+--   n_credited_models : distinct LIVE MODELS, which is why it filters subject_type
+--             rather than counting subject_id. Model and Series pks are separate
+--             namespaces that overlap freely, so an undistinguished count would merge a
+--             series with the model that happens to share its number.
+--   n_roles : distinct roles held. A person credited as designer and artist on one
+--             machine has n_credits = 2, n_credited_models = 1, n_roles = 2.
 --   birth_year / death_year : claim-resolved biography, and all but empty — ONE live
 --             person carries each today. Anchoring them is what will make that visible
 --             if a source ever lands them in bulk. The month and day fields exist on
 --             the model and are entirely unpopulated, so they stay unsurfaced under
 --             the demand-driven rule; promoting them is a line here, and the year is
 --             the full precision on offer until then.
--- credit_roles — the credit-role vocabulary (designer, artist, …), entity grain with
--- usage. Ten live roles. The counterpart to `people`: that view carries n_roles per
--- person, this one carries n_credits per role, and neither says which model — see the
--- note on `people` about the missing credit grain.
---
--- `n_credits` counts credits on a live subject, model- and series-attached alike, the
--- same population `people` counts. Reading it against `people.n_roles` is how you tell
--- a broad vocabulary from a narrow one: 7 roles are in use across 589 credited people,
--- so three exist and are attached to nothing.
-CREATE OR REPLACE VIEW credit_roles AS
-  SELECT
-    r.id, r.slug, r.name, r.description,
-    count(lc.person_id) AS n_credits
-  FROM fc.catalog_creditrole r
-  LEFT JOIN (
-    SELECT c.role_id, c.person_id
-    FROM fc.catalog_credit c
-    LEFT JOIN fc.catalog_machinemodel m ON m.id = c.model_id
-                                       AND m.status IS DISTINCT FROM 'deleted'
-    LEFT JOIN fc.catalog_series s       ON s.id = c.series_id
-                                       AND s.status IS DISTINCT FROM 'deleted'
-    WHERE m.id IS NOT NULL OR s.id IS NOT NULL
-  ) lc ON lc.role_id = r.id
-  WHERE r.status IS DISTINCT FROM 'deleted'
-  GROUP BY ALL;
-COMMENT ON VIEW credit_roles IS
-  'One row per live CreditRole — the credit vocabulary (designer, artist) with n_credits over live subjects. The role-keyed counterpart to people.n_roles.';
-
 CREATE OR REPLACE VIEW people AS
-  WITH live_credit AS (
-    -- A credit whose subject was soft-deleted is not a credit on the live catalog.
-    -- The subject is model XOR series (catalog_credit_model_xor_series), so exactly
-    -- one side of this join resolves and the WHERE keeps the row on either.
-    SELECT c.person_id, c.role_id, c.model_id
-    FROM fc.catalog_credit c
-    LEFT JOIN fc.catalog_machinemodel m ON m.id = c.model_id
-                                       AND m.status IS DISTINCT FROM 'deleted'
-    LEFT JOIN fc.catalog_series s       ON s.id = c.series_id
-                                       AND s.status IS DISTINCT FROM 'deleted'
-    WHERE m.id IS NOT NULL OR s.id IS NOT NULL
-  ),
-  agg AS (
+  WITH agg AS (
     SELECT
       person_id,
-      count(*)                   AS n_credits,
-      count(DISTINCT model_id)   AS n_credited_models,
-      count(DISTINCT role_id)    AS n_roles
-    FROM live_credit
+      count(*)                AS n_credits,
+      count(DISTINCT CASE WHEN subject_type = 'catalog.machinemodel'
+                          THEN subject_id END)  AS n_credited_models,
+      count(DISTINCT role_id) AS n_roles
+    FROM credits
     GROUP BY person_id
   )
   SELECT
@@ -1152,7 +1212,7 @@ CREATE OR REPLACE VIEW people AS
   LEFT JOIN agg a ON a.person_id = p.id
   WHERE p.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW people IS
-  'One row per live Person — identity, birth/death year and credit counts over live subjects. Counts only: there is no (model, person, role) grain view, so nothing here says WHICH models.';
+  'One row per live Person — identity, birth/death year and credit counts over live subjects. Counts only: `credits` is the grain that says WHICH models.';
 
 -- ═══ ALIASES & ABBREVIATIONS — matching source wording ══════════════════════
 -- Alias views contain one row per alias of a live parent, keyed by its stable slug.
@@ -1313,9 +1373,9 @@ COMMENT ON VIEW analysis_context IS
 -- vocabulary (and because this one is long enough), but `.read` here rather than left
 -- for each analysis to remember, so "the foundation" stays ONE `.read` line for every
 -- consumer including the sister repos.
---
--- It goes LAST on purpose: model_claims is the live-model lens and so depends on
--- `models`, which is defined above. DuckDB BINDS a view body at CREATE time, so a
--- forward reference is an immediate error rather than a lurking one — reordering this
--- `.read` fails loudly the moment you try it.
 .read scripts/analysis/provenance.sql
+
+-- ═══ DATA PATCHES — what our own patches did (data_patches.sql) ═════════════
+-- The patch lens on the provenance layer: which patch asserted a fact, which retracted
+-- one, and what evidence each data patch entry recorded.
+.read scripts/analysis/data_patches.sql
