@@ -2,7 +2,9 @@ import importlib
 from typing import Never
 
 from django.apps import apps
+from django.conf import settings
 from django.db import connection
+from django.db.models import Max
 from django.http import HttpRequest, JsonResponse
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError, ValidationError
@@ -13,6 +15,7 @@ from apps.catalog.engine.entity_api.field_constraints import FieldConstraintSche
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.exceptions import StructuredApiError, StructuredValidationError
+from apps.provenance.models import IngestRun
 
 # Internal API: every listing/read/write endpoint that powers this site's own UI.
 # Its OpenAPI + docs endpoints are DISABLED, so the internal surface is never
@@ -85,6 +88,38 @@ def health(request: HttpRequest) -> dict[str, str]:
     with connection.cursor() as cursor:
         cursor.execute("SELECT 1")
     return {"status": "ok"}
+
+
+class VersionSchema(Schema):
+    """What code is running and which data patch the catalog is current to.
+
+    Deliberately narrow. Runtime, library and migration detail is pure
+    reconnaissance value with no consumer value, so it stays out.
+    """
+
+    commit: str
+    data_patch: str | None
+
+
+@api.get("/version", response=VersionSchema, tags=["private"])
+def version(request: HttpRequest) -> VersionSchema:
+    """Build and data-freshness identity.
+
+    Kept off ``/health`` on purpose: that route is the load balancer's
+    liveness probe and shouldn't grow a table read.
+
+    ``data_patch`` is the applied-ledger high-water mark: the highest-numbered
+    patch this database has successfully applied. Failed attempts rolled back,
+    so they changed nothing and don't count.
+    """
+    applied = IngestRun.objects.filter(
+        status=IngestRun.Status.SUCCESS,
+        patch_id__isnull=False,
+    ).aggregate(patch=Max("patch_id"))
+    return VersionSchema(
+        commit=settings.GIT_COMMIT_SHA,
+        data_patch=applied["patch"],
+    )
 
 
 class _SentryTestError(RuntimeError):
