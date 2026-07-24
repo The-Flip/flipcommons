@@ -20,6 +20,13 @@ if DEBUG:
 else:
     SECRET_KEY = os.environ["SECRET_KEY"].strip()  # crash if missing in production
 
+# Commit the running build was made from. Railway auto-injects this for
+# GitHub-triggered deploys; the Dockerfile also forwards it into the frontend
+# build, which stamps it into SvelteKit's public /_app/version.json. Empty
+# outside Railway. Read once here so the Sentry release and /api/version can't
+# disagree about what's deployed.
+GIT_COMMIT_SHA = os.environ.get("RAILWAY_GIT_COMMIT_SHA", "").strip()
+
 ALLOWED_HOSTS = [
     h.strip()
     for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
@@ -386,7 +393,7 @@ if SENTRY_DSN:
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         environment="production",
-        release=os.environ.get("RAILWAY_GIT_COMMIT_SHA", "").strip(),
+        release=GIT_COMMIT_SHA,
         send_default_pii=False,
         # Drop request bodies entirely. With ``"never"`` the SDK does
         # not extract POST/PATCH payloads at all, replacing them with
