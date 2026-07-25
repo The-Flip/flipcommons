@@ -682,6 +682,8 @@ layers = [
     "api | admin | management | middleware",
     "models | schemas | auth_errors",
     "backends | pending | reserved | usernames | workos_client",
+    # Imports nothing, so it sits at the bottom where every layer can reach it.
+    "types",
 ]
 
 # ----- actors -----
