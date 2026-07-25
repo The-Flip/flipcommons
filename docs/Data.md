@@ -26,6 +26,22 @@ make pull-patches     # fetch flippatch's data patches from R2
 make ingest-patches   # apply pending patches (idempotent)
 ```
 
+## Refreshing localhost DB from prod
+
+`scripts/prod-to-sqlite.sh` rebuilds the local `db.sqlite3` from the current production database. User PII is scrubbed.
+
+The script exempts a few developers from the PII scrub — their usernames are listed in [`scrub_prod_dump.py`](../backend/apps/accounts/management/commands/scrub_prod_dump.py) — and carries their WorkOS link forward so they can sign back in as Django admins.
+
+## Postgres
+
+[Refreshing localhost DB from prod](#refreshing-localhost-db-from-prod) leaves a scrubbed, prod-shaped Postgres Docker container (`flipcommons-postgres`) running afterwards. This is useful for testing migrations and other SQL that SQLite can't stand in for.
+
+```bash
+docker exec -it flipcommons-postgres psql -U postgres
+```
+
+`docker inspect flipcommons-postgres` has the port mapping and password if you need a `DATABASE_URL`.
+
 ## I want to…
 
 - **Ask an empirical question about the current local catalog** → the [read-only DuckDB analysis foundation](../scripts/analysis/README.md) can answer it (its README covers both ad-hoc queries and doc-backing analyses).
@@ -33,5 +49,6 @@ make ingest-patches   # apply pending patches (idempotent)
 - **Understand the catalog model** (titles, models, variants, manufacturers, taxonomy) → [DomainModel.md](DomainModel.md).
 - **Correct or update a catalog value** → author a [data patch](DataPatches.md), attributed to the source the fact came from. Snapshot localhost first so you can iterate.
 - **Bootstrap a fresh local database** → import a database export (Django `loaddata`, or copy a `db.sqlite3` snapshot).
+- **Refresh localhost with current production data** → [`./scripts/prod-to-sqlite.sh`](#refreshing-localhost-db-from-prod); user PII is scrubbed on the way in.
 - **Apply pending corrections** to a running DB → `make pull-patches && make ingest-patches`.
 - **Understand how a field's value is resolved** and audited → [Provenance.md](Provenance.md) (claims and resolution).

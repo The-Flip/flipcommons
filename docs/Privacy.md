@@ -22,6 +22,8 @@ Analytics and operational data collection must always support:
 
 Collect the smallest amount of data necessary to answer legitimate product and operational questions. Avoid speculative collection.
 
+This applies to copies as much as to collection: developer databases refreshed from production are de-identified on the way in, and only the developers who have consented keep their own details. See [Data.md](Data.md#refreshing-localhost-db-from-prod).
+
 ### Minimal Public Disclosure
 
 Display the minimum amount of personal information needed for community participation.

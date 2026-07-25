@@ -8,6 +8,8 @@ equals the stem.
 
 from __future__ import annotations
 
+from apps.accounts.types import Username
+
 # normalize() strips hyphens and other non-letters, so hyphenated variants
 # like "flip-commons" and "the-museum" fold automatically — only the folded
 # forms need to be listed here.
@@ -72,7 +74,7 @@ def normalize(s: str) -> str:
     return "".join(c for c in s if c.isalpha())
 
 
-def is_reserved(candidate: str) -> bool:
+def is_reserved(candidate: Username) -> bool:
     """Return True if *candidate* matches a reserved entry.
 
     Match rule: normalize both sides; reject if the normalized candidate
