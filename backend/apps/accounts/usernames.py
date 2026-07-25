@@ -15,6 +15,8 @@ from typing import Literal
 
 from django.core.exceptions import ValidationError
 
+from apps.accounts.types import Username
+
 USERNAME_MIN_LEN = 3
 USERNAME_MAX_LEN = 20
 
@@ -49,7 +51,7 @@ as one of several "why this handle isn't available" answers.
 """
 
 
-def validate_username_format(value: str) -> None:
+def validate_username_format(value: Username) -> None:
     """Raise ValidationError carrying a `UsernameRejectReason` code if invalid.
 
     The `code` attribute on the ValidationError is the machine-readable

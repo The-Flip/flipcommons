@@ -19,6 +19,8 @@ from typing import Protocol, TypedDict
 
 from django.http import HttpRequest
 
+from apps.accounts.types import WorkOsUserId
+
 
 class WorkOSUser(Protocol):
     """The subset of the WorkOS SDK's user object we depend on.
@@ -28,7 +30,7 @@ class WorkOSUser(Protocol):
     duck-conforms — no adapter needed.
     """
 
-    id: str
+    id: WorkOsUserId
     email: str
     email_verified: bool
     first_name: str | None
@@ -42,7 +44,7 @@ PENDING_TTL = timedelta(minutes=30)
 
 
 class PendingPayload(TypedDict):
-    workos_user_id: str
+    workos_user_id: WorkOsUserId
     email: str
     email_verified: bool
     first_name: str

@@ -33,6 +33,7 @@ from apps.accounts.schemas import (
     UsernameRejectedErrorSchema,
     UsernameTakenErrorSchema,
 )
+from apps.accounts.types import Username
 from apps.accounts.usernames import UsernameFormatRejectReason, validate_username_format
 from apps.accounts.workos_client import get_workos_client
 from apps.core.authz.markers import public_mutation
@@ -83,7 +84,7 @@ def _require_pending(request: HttpRequest) -> PendingPayload:
     return payload
 
 
-def _format_reject_reason(username: str) -> UsernameFormatRejectReason | None:
+def _format_reject_reason(username: Username) -> UsernameFormatRejectReason | None:
     """Return the format reject reason, or None when valid.
 
     The validator carries a `code` matching `UsernameFormatRejectReason`
