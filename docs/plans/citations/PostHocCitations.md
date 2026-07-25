@@ -101,7 +101,13 @@ Whatever viewing and editing UX the [global changelog](#global-changelog) uses w
 
 Like `/models/medieval-madness/sources`.
 
-This page doesn't currently show citations at all, so for v1 we're not going to touch it. However, it's a pretty important gap. Nowhere does the system show what citations support each existing value, regardless of what claim or changeset they come from. The sources page is the logical place to do that. This should be done as a close [follow-up](#citations-on-entity-source-page).
+#### Viewing
+
+This page shows what citations support each existing value, regardless of what claim or changeset they come from. THIS is the page where we need to see these new citations.
+
+#### Editing
+
+It would be useful for a user to be able to add a citation here for a value that is NOT currently the winner. But not for v1.
 
 ### Entity record detail
 
@@ -117,6 +123,8 @@ The system doesn't currently have a detail page for showing an individual claim.
 - **Labels**: even though this is the claim detail page, we haven't exposed the word 'claim' to users thus far. We won't use the word 'claim' in the UI, such as labels, text and error messages shown to users. Instead we'll call this a 'change'. A 'ChangeSet' has multiple 'Change' items in it. I'm not super happy with this, feel free to argue. TBD.
 - **Superseded claims**. Viewable, but read-only: no citation instance gardening.
 - **Inline [[cite:]] footnotes**. Inline cites on a description claim carry no edges. Show them read-only on the page (they are evidence for that claim's text), but they're edited in the markdown, not here. Needs to be visually distinct from edges or it'll confuse.
+
+If we want to reduce scope, we could cut this from v1, and only enable this from data patches, which is the actual current pain point.
 
 ### An "I agree" UI
 
@@ -165,15 +173,6 @@ Another version of this is better, adding provenance on the edge. Edge gains `ad
 - **Attribution**. Attribution flows through `ChangeSet.actor`; `Claim.actor` is explicitly just a denormalized copy. This approach adds a second, parallel attribution channel that doesn't go through a `ChangeSet`.
 - **Revert**. Today revert is per-`ChangeSet` (on the global changelog) or per-`Claim` (on entity's edit history). How do we revert a citation edition? You don't want revert the entire `Claim`. You'd have to add a bespoke path.
 
-### ❌ Rewrite existing data patches
-
-As of July 21 2026, the last data patch ingested on prod was 0038-model-game-formats; we can rewrite any patch after that to include the full set of citations. That wouldn't catch all of them, but it'd catch most.
-
-This might work _THIS_ time, and in fact we'll probably do it in order to have cleaner data -- see [follow ups](#rewrite-existing-data-patches-in-flipcommons) -- but whether we do or not, it's not the long term solution:
-
-- It won't work the next time we want to enhance citations and all these patches have shipped.
-- I'd like people to be able to add citations after the fact.
-
 ### ❌ Invent new ingest sources for these citation updates
 
 This would suck: it might work this once, but:
@@ -194,14 +193,6 @@ It sounds like the backend uses `change_detail` to refer to something that shoul
 
 ## Follow-ups
 
-### Rewrite existing data patches in Flipcommons
-
-See [Rewrite existing data patches](#-rewrite-existing-data-patches).
-
-### Citations on entity source page
-
-See [entity source page](#entity-sources).
-
 ### Adding citations from entity detail page
 
 See [Entity Detail Page](#entity-record-detail) and [I Agree UI](#an-i-agree-ui).
@@ -209,7 +200,3 @@ See [Entity Detail Page](#entity-record-detail) and [I Agree UI](#an-i-agree-ui)
 ### Citation instance edit
 
 Add a UI for editing a the `CitationInstance` attached to a claim, but under the hood it would be a remove + add.
-
-## Technical design
-
-TBD
