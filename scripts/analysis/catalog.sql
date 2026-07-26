@@ -118,9 +118,8 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             live models.
 --   year / month : the release date as a precision ladder — `catalog_machinemodel_month_
 --             requires_year` means a NULL month is "dated to the year", never a month
---             lost from a fuller date. About two thirds of live models carry a year.
---             Nothing above the year is modelled, so a named quarter or season arrives
---             as a month or as nothing.
+--             lost from a fuller date. Nothing above the year is modelled, so a named
+--             quarter or season arrives as a month or as nothing.
 --   manufacturer : manufacturer_name is the canonical name on the cabinet — display and
 --             group by it.
 --   location: where the MANUFACTURER was based (model -> corporate_entity -> location).
@@ -226,16 +225,16 @@ COMMENT ON VIEW models IS
 --             world — so a join on slug silently merges places. The path is also the
 --             hierarchy: country_slug is its first segment, and a place's descendants are
 --             the rows whose path starts with its path plus '/'.
---   location_type : a 10-value OPEN vocabulary, not a 3-level ladder — country, state,
+--   location_type : an OPEN vocabulary, not a 3-level ladder — country, state,
 --             province, department, community, region, prefecture, constituent_country,
 --             district, city. Only `country` is structurally guaranteed (exactly the
 --             parentless rows); the rest reflect how each country subdivides itself, so
---             an analysis assuming country/state/city silently drops the 57 live places
---             that are none of those. Predicate on path depth when you mean depth.
+--             an analysis assuming country/state/city silently drops the live places that
+--             are none of those. Predicate on path depth when you mean depth.
 --   code / short_name / divisions : sparse by construction. `code` is the subdivision's
 --             own code (VIC, WA), empty on every country and city; `divisions` is on
---             countries alone (all 22), naming how that country subdivides; `short_name`
---             on 2 rows. Read each at the level that carries it.
+--             countries alone, naming how that country subdivides; `short_name` is rarer
+--             still. Read each at the level that carries it.
 --   n_corporate_entities : live corporate entities based here DIRECTLY — a country does
 --             not inherit its cities' counts. Roll up with a location_path prefix.
 CREATE OR REPLACE VIEW locations AS
@@ -406,7 +405,7 @@ CREATE OR REPLACE VIEW _mfr_location AS
 --                 counts and span beside them — so a maker with n_models = 0 still
 --                 reports the address its CEs carry.
 --   website / wikidata_id : the two outbound handles for enriching from outside the
---                 catalog. Both sparse — 24 have a website, nothing carries a QID yet.
+--                 catalog. Both sparse.
 --                 An empty website is '' and an absent QID is NULL; the model spells them
 --                 differently and this view doesn't paper over it.
 CREATE OR REPLACE VIEW manufacturers AS
@@ -453,8 +452,8 @@ COMMENT ON VIEW manufacturers IS
 --   operating_status / presumed_producing : as on `manufacturers`, but for the ONE
 --                 incarnation — the stored column, not a rollup. Ask the manufacturer
 --                 view unless the incarnation is the subject; that is the grain the
---                 site's verdict is published at. UNKNOWN IS THE COLUMN DEFAULT — 732 of
---                 777 entities sit on it because nobody has said otherwise, so counting
+--                 site's verdict is published at. UNKNOWN IS THE COLUMN DEFAULT — most
+--                 entities sit on it because nobody has said otherwise, so counting
 --                 'ended' is sound and reading anything into the size of the 'unknown'
 --                 bucket is not.
 --   location_path / country_slug : this incarnation's own place, spelled as on `models`.
@@ -608,9 +607,8 @@ COMMENT ON VIEW tags IS
 
 -- tag_vocab — one row per live TAG: the vocabulary behind the `tags` name-list. `tags` is
 -- keyed by MODEL and answers "what is this tagged"; this is keyed by tag and answers "what
--- tags exist, and how much is each used". Four live tags of eight rows — half the
--- vocabulary is soft-deleted, so check a hardcoded slug against this view before trusting
--- it. Flat, no DAG.
+-- tags exist, and how much is each used". Much of the vocabulary is soft-deleted, so check
+-- a hardcoded slug against this view before trusting it. Flat, no DAG.
 CREATE OR REPLACE VIEW tag_vocab AS
   SELECT
     tg.id, tg.slug, tg.name, tg.description,
@@ -910,17 +908,16 @@ COMMENT ON VIEW model_edges_bidir IS
 --             so the difference stays invisible until a Title outlives its last model —
 --             which soft-deleting the one model of a one-model Title produces at once.
 --   franchise / series : the two optional Title groupings, resolved to slug and name.
---             Both sparse by design — 210 Titles carry a franchise, 16 a series — and
---             they mean different things: a franchise is the IP (Star Trek, spanning
---             manufacturers and eras), a series is a curated thematic lineage (Eight Ball
---             -> Eight Ball Deluxe). Neither is ingested, so an absent grouping is "not
---             yet curated", never "does not belong". `franchises` / `series` below are the
---             entity views.
+--             Both sparse by design, and they mean different things: a franchise is the
+--             IP (Star Trek, spanning manufacturers and eras), a series is a curated
+--             thematic lineage (Eight Ball -> Eight Ball Deluxe). Neither is ingested, so
+--             an absent grouping is "not yet curated", never "does not belong".
+--             `franchises` / `series` below are the entity views.
 --   opdb_id / fandom_page_id : the outbound handles. opdb_id is OPDB's "group" — the
 --             Title is the grain OPDB models identity at, so this and `models.opdb_id`
 --             are different namespaces and must not be compared.
 --   description : SingleModelTitles.md governs how this splits against the model's own
---             description. Populated on 12 Titles today.
+--             description.
 CREATE OR REPLACE VIEW titles AS
   SELECT
     t.id, t.slug, t.name,
@@ -942,10 +939,9 @@ COMMENT ON VIEW titles IS
 
 -- franchises / series — the two Title-grouping vocabularies at entity grain. `titles`
 -- decodes each onto the Title row; these answer what needs a second view: which groupings
--- EXIST, and which are used by nothing. 140 franchises across 210 grouped Titles, 6 series
--- across 16 — flat, nothing like a themes DAG. Both are curator-maintained, which makes
--- `n_titles = 0` the interesting row rather than a defect: a grouping someone created and
--- never attached, invisible from `titles` alone.
+-- EXIST, and which are used by nothing. Both flat, nothing like a themes DAG, and both
+-- curator-maintained — which makes `n_titles = 0` the interesting row rather than a
+-- defect: a grouping someone created and never attached, invisible from `titles` alone.
 CREATE OR REPLACE VIEW franchises AS
   SELECT f.id, f.slug, f.name, f.description,
          count(t.id) AS n_titles
@@ -966,7 +962,7 @@ CREATE OR REPLACE VIEW series AS
   WHERE s.status IS DISTINCT FROM 'deleted'
   GROUP BY ALL;
 COMMENT ON VIEW series IS
-  'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Six of them; not the same thing as a Franchise, which is the IP.';
+  'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Not the same thing as a Franchise, which is the IP.';
 
 -- title_size — one row per Title with a live model: identity plus n, the count of LIVE
 -- models in it (the "alone in its Title?" signal — n = 1; a soft-deleted sibling doesn't
@@ -1013,9 +1009,9 @@ COMMENT ON VIEW model_number_collisions IS
 -- aggregates OF THIS VIEW, so the three cannot disagree about the population.
 --
 --   THE SUBJECT IS POLYMORPHIC, and the minority half is the trap. A Credit hangs off a
---             MachineModel XOR a Series (`catalog_credit_model_xor_series`), 7244 to 7
---             today, so a model-only grain would look complete, agree with every spot
---             check and silently miss a whole KIND of credit. Both halves are carried and
+--             MachineModel XOR a Series (`catalog_credit_model_xor_series`), and the
+--             Series half is tiny — so a model-only grain would look complete, agree with
+--             every spot check and silently miss a whole KIND of credit. Both halves are
 --             spelled the way `claims` spells its subject types —
 --             'catalog.machinemodel' / 'catalog.series' — so a join across needs no
 --             translation. For the model half use `model_credits`, not a subject_type
@@ -1060,19 +1056,18 @@ COMMENT ON VIEW credits IS
 
 -- model_credits — the model-attached half of `credits`, keyed model_id so it joins
 -- straight to `models` and the other model-grain views (the same move `model_claims` is on
--- the provenance side). 7244 of the 7251 credits; the other 7 hang off a Series and are
--- reachable only from `credits`, so a total taken here is not a total.
+-- the provenance side). A handful of credits hang off a Series instead and are reachable
+-- only from `credits`, so a total taken here is not a total.
 CREATE OR REPLACE VIEW model_credits AS
   SELECT c.*, c.subject_id AS model_id
   FROM credits c
   WHERE c.subject_type = 'catalog.machinemodel';
 COMMENT ON VIEW model_credits IS
-  'One row per credit on a LIVE machine model, keyed model_id — the model half of credits (7244 of 7251; the 7 Series credits appear only there).';
+  'One row per credit on a LIVE machine model, keyed model_id — the model half of credits; Series-attached credits appear only there.';
 
 -- credit_roles — the credit-role vocabulary (designer, artist, …) at entity grain with
 -- usage. The role-keyed counterpart to `people`; `credits` is where either goes to say
--- WHICH machine. Ten live roles, 7 of them in use across 589 credited people — so three
--- exist and are attached to nothing.
+-- WHICH machine.
 -- count(c.credit_id), never count(*): the LEFT JOIN would count an unused role as 1.
 CREATE OR REPLACE VIEW credit_roles AS
   SELECT
@@ -1097,9 +1092,9 @@ COMMENT ON VIEW credit_roles IS
 --             sharing its number.
 --   n_roles : distinct roles held. A person credited as designer and artist on one machine
 --             has n_credits = 2, n_credited_models = 1, n_roles = 2.
---   birth_year / death_year : claim-resolved biography, all but empty — ONE live person
---             carries each today. The month and day fields exist on the model and are
---             entirely unpopulated, so the year is the full precision on offer.
+--   birth_year / death_year : claim-resolved biography, all but empty. The month and day
+--             fields exist on the model and are entirely unpopulated, so the year is the
+--             full precision on offer.
 CREATE OR REPLACE VIEW people AS
   WITH agg AS (
     SELECT
