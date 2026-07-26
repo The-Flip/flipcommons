@@ -179,7 +179,7 @@ The **gate is not limited to that pair**: `run` discovers every public `*_checks
 
 For a generator or pipeline, pass `--check <prefix>` to `query` so the same gate as `run` executes before any data is emitted. The runner is a convenience: raw `duckdb -init <analysis>.sql :memory: "FROM my_finding LIMIT 20;"` from the repo root still works.
 
-`browse` writes `<analysis>.browse.duckdb` beside the analysis file and replaces it atomically on every run. It discovers and materializes every public relation — both views and deliberately materialized tables — including relations contributed by the foundation or another `.read` file, while excluding private `_underscore` helpers. The result is static: disconnect the desktop client, rerun `browse`, then reconnect whenever the localhost catalog or analysis changes. Any edits made through the client are disposable and disappear on the next rebuild.
+`browse` writes `<analysis>.browse.duckdb` beside the analysis file and replaces it atomically on every run. It discovers and materializes every public relation — both views and deliberately materialized tables — including relations contributed by the foundation or another `.read` file, while excluding private `_underscore` helpers. Macros do not travel: a view comment pointing you at `citation_root_for_host()` describes something only the live session has. The result is static: disconnect the desktop client, rerun `browse`, then reconnect whenever the localhost catalog or analysis changes. Any edits made through the client are disposable and disappear on the next rebuild.
 
 `*.duckdb` is gitignored — browse databases and snapshots are throwaways to inspect or hand to someone who can't run the pipeline, never committed artifacts.
 

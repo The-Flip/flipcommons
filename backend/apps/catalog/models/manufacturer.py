@@ -204,13 +204,25 @@ class CorporateEntity(
     year_start = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
-        help_text="Year this corporate entity was established.",
+        help_text=(
+            "DEAD FIELD — do not read or write. The asserted corporate founding "
+            "year, retired because it answers the wrong question: a company can "
+            "incorporate years before its first machine and linger years after "
+            "its last. Use the derived year_of_first_model instead, as the page "
+            "and export APIs do. Kept only so the cited claims behind it survive."
+        ),
         validators=[MinValueValidator(YEAR_MIN), MaxValueValidator(YEAR_MAX)],
     )
     year_end = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
-        help_text="Year this corporate entity ceased operations.",
+        help_text=(
+            "DEAD FIELD — do not read or write. The asserted year the corporate "
+            "entity ceased operations; see year_start for why it was retired. Use "
+            "the derived year_of_last_model instead, with operating_status for "
+            "whether the maker has actually stopped. Kept only so the cited "
+            "claims behind it survive."
+        ),
         validators=[MinValueValidator(YEAR_MIN), MaxValueValidator(YEAR_MAX)],
     )
     operating_status = models.CharField(

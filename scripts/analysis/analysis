@@ -311,12 +311,32 @@ case "$cmd" in
 $relations
 EOF
 
-    duckdb -init "$analysis_file" :memory: "$stmts"
+    # CREATE TABLE … AS carries rows and types, not the COMMENT, so the comments must be
+    # re-attached explicitly. Not folded into the loop above: comments are multi-line, so
+    # there is no line-oriented read of them. Views become tables here, so COMMENT ON
+    # TABLE is right for both. The count rides along on one query to avoid a fourth run.
+    comments=$(duckdb -init "$analysis_file" -noheader -list :memory: \
+      "SELECT count(*) || '|' || coalesce(string_agg(
+                'COMMENT ON TABLE browse.\"' || replace(relation_name, '\"', '\"\"')
+                || '\" IS ''' || replace(comment, '''', '''''') || ''';',
+                ' ' ORDER BY relation_oid), '')
+       FROM (
+         SELECT view_name AS relation_name, view_oid AS relation_oid, comment
+         FROM duckdb_views() $pub_where AND comment IS NOT NULL
+         UNION ALL
+         SELECT table_name AS relation_name, table_oid AS relation_oid, comment
+         FROM duckdb_tables() $pub_table_where AND comment IS NOT NULL
+       );")
+
+    documented=${comments%%|*}
+    comment_stmts=${comments#*|}
+
+    duckdb -init "$analysis_file" :memory: "$stmts $comment_stmts"
     mv -f "$tmp" "$out"
     trap - EXIT HUP INT TERM
     noun=relations
     [ "$n" -eq 1 ] && noun=relation
-    printf 'wrote %s (%s public %s)\n' "$out" "$n" "$noun"
+    printf 'wrote %s (%s public %s, %s documented)\n' "$out" "$n" "$noun" "$documented"
     ;;
 
   query)

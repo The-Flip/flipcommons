@@ -446,12 +446,10 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     -- — so this anchors only once a patch retracts a claim about a model that carries a
     -- status at all. Populated on patch_claims, hence qualified.
     ('patch_retractions.model_status',      'pending'),
-    -- Modelled and reachable, populated by nothing yet. Both are `pending`, not
-    -- `sparse`: each has a live write path (a maker QID is a patch field, a citation
-    -- day is what a dated periodical issue carries), so the day one lands,
-    -- expired_anchor_skip turns anchoring on rather than someone remembering to.
-    ('manufacturers.wikidata_id',           'pending'),
-    ('citation_sources.day',                'pending')
+    -- no interactive claim is about a machine model yet; a UI edit writes one
+    ('model_claims.changeset_action',       'pending'),
+    -- no patch has filled a maker QID yet
+    ('manufacturers.wikidata_id',           'pending')
   ) AS t(col, kind);
 
 -- Every LIST-typed facet in a swept view (any element type), and how it is anchored.
@@ -988,20 +986,23 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE n_countries IS NULL
      OR (n_countries = 1) IS DISTINCT FROM (country_slug IS NOT NULL)
 
-  -- era_* is set IFF the maker has a dated model, and is a well-formed span.
-  -- BOTH ends are tested for presence: `era_start > era_end` goes NULL when era_end is
-  -- NULL, so an era_start-only row would otherwise pass a comparison that never ran.
+  -- The year pair is set IFF the maker has a dated non-variant model, and is a
+  -- well-formed span. BOTH ends are tested for presence: `first > last` goes NULL when
+  -- the last is NULL, so a first-only row would otherwise pass a comparison that never
+  -- ran. The n_dated <= n_nonvariant_models <= n_models ladder pins n_dated to the year
+  -- pair's variant scope.
   UNION ALL
-  SELECT 'manufacturer_era_malformed',
+  SELECT 'manufacturer_year_span_malformed',
          slug || ' n_dated=' || n_dated::VARCHAR
-           || ' era=' || COALESCE(era_start::VARCHAR, 'NULL')
-           || '..'    || COALESCE(era_end::VARCHAR, 'NULL')
+           || ' span=' || COALESCE(year_of_first_model::VARCHAR, 'NULL')
+           || '..'     || COALESCE(year_of_last_model::VARCHAR, 'NULL')
   FROM manufacturers
-  WHERE n_dated IS NULL OR n_models IS NULL
-     OR (n_dated > 0) IS DISTINCT FROM (era_start IS NOT NULL)
-     OR (n_dated > 0) IS DISTINCT FROM (era_end IS NOT NULL)
-     OR era_start > era_end
-     OR n_dated > n_models
+  WHERE n_dated IS NULL OR n_models IS NULL OR n_nonvariant_models IS NULL
+     OR (n_dated > 0) IS DISTINCT FROM (year_of_first_model IS NOT NULL)
+     OR (n_dated > 0) IS DISTINCT FROM (year_of_last_model IS NOT NULL)
+     OR year_of_first_model > year_of_last_model
+     OR n_dated > n_nonvariant_models
+     OR n_nonvariant_models > n_models
 
   -- every collision row is a real collision (n > 1) and its lists match the count
   UNION ALL
