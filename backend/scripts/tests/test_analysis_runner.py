@@ -30,6 +30,7 @@ def test_browse_materializes_public_relations_and_replaces_previous_output(
     analysis.write_text(
         """
         CREATE VIEW visible AS SELECT 1 AS value;
+        COMMENT ON VIEW visible IS 'One row, for the counter to find.';
         CREATE TABLE materialized AS SELECT 2 AS value;
         CREATE VIEW _private AS SELECT 2 AS value;
         """,
@@ -43,7 +44,7 @@ def test_browse_materializes_public_relations_and_replaces_previous_output(
     )
 
     assert output.exists()
-    assert first.stdout.strip() == f"wrote {output} (2 public relations)"
+    assert first.stdout.strip() == f"wrote {output} (2 public relations, 1 documented)"
     assert (
         query(output, "SELECT table_name FROM duckdb_tables() ORDER BY table_name;")
         == "materialized\nvisible"
@@ -63,7 +64,7 @@ def test_browse_materializes_public_relations_and_replaces_previous_output(
         text=True,
     )
 
-    assert second.stdout.strip() == f"wrote {output} (2 public relations)"
+    assert second.stdout.strip() == f"wrote {output} (2 public relations, 0 documented)"
     assert (
         query(output, "SELECT table_name FROM duckdb_tables() ORDER BY table_name;")
         == "added\nvisible"
