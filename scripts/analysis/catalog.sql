@@ -338,6 +338,26 @@ CREATE OR REPLACE VIEW _mfr_status AS
   WHERE status IS DISTINCT FROM 'deleted' AND manufacturer_id IS NOT NULL
   GROUP BY manufacturer_id;
 
+-- _mfr_location — a manufacturer's place rolled up over its LIVE corporate entities, at
+-- both rungs. Read it through manufacturers.location_path / country_slug.
+-- Derived from the CEs and NOT from `models`, same shape as _mfr_status above and for the
+-- same reason: a location is a fact about the COMPANY, and models are only the
+-- denormalization path that usually reaches it. Aggregating models instead reports any
+-- maker whose models are all gone or not yet seeded as location-unknown, though its CEs
+-- carry an address. DISTINCT ignores NULL, so a CE with no location lowers neither count.
+CREATE OR REPLACE VIEW _mfr_location AS
+  SELECT ce.manufacturer_id,
+         count(DISTINCT cel.location_path)  AS n_locations,
+         CASE WHEN count(DISTINCT cel.location_path) = 1
+              THEN min(cel.location_path) END AS location_path,
+         count(DISTINCT cel.country_slug)   AS n_countries,
+         CASE WHEN count(DISTINCT cel.country_slug) = 1
+              THEN min(cel.country_slug) END  AS country_slug
+  FROM fc.catalog_corporateentity ce
+  LEFT JOIN _ce_location cel ON cel.corporate_entity_id = ce.id
+  WHERE ce.status IS DISTINCT FROM 'deleted' AND ce.manufacturer_id IS NOT NULL
+  GROUP BY ce.manufacturer_id;
+
 -- manufacturers — one row per live manufacturer: identity, where it was based, how much
 -- it made and WHEN. The span columns matter because a MODEL with no year often has its
 -- manufacturer's span as the only evidence available.
@@ -375,13 +395,16 @@ CREATE OR REPLACE VIEW _mfr_status AS
 --                 resolve INDEPENDENTLY, each NULL when its own disagrees — a maker with
 --                 two Chicago-area plants is country_slug 'usa' and location_path NULL,
 --                 which answers both questions honestly instead of letting one paper over
---                 the other. 654 of 753 resolve at both, so read location_path first and
+--                 the other. Most makers resolve at both, so read location_path first and
 --                 fall back to country.
 --                 A NULL HAS TWO CAUSES AND THE COUNT SEPARATES THEM: n = 0 is no known
---                 location (92 makers), n > 1 is a maker genuinely spanning places (3
---                 countries, 7 towns). Unrecorded vs recorded-and-plural are opposite
---                 states, and the bare NULL conflates them. Drop to `corporate_entities`
---                 to enumerate a plural maker's places rather than collapse them.
+--                 location, n > 1 is a maker genuinely spanning places. Unrecorded vs
+--                 recorded-and-plural are opposite states, and the bare NULL conflates
+--                 them. Drop to `corporate_entities` to enumerate a plural maker's places
+--                 rather than collapse them.
+--                 Rolled up over live CEs (_mfr_location), NOT over models like the
+--                 counts and span beside them — so a maker with n_models = 0 still
+--                 reports the address its CEs carry.
 --   website / wikidata_id : the two outbound handles for enriching from outside the
 --                 catalog. Both sparse — 24 have a website, nothing carries a QID yet.
 --                 An empty website is '' and an absent QID is NULL; the model spells them
@@ -394,13 +417,7 @@ CREATE OR REPLACE VIEW manufacturers AS
       count(*) FILTER (variant_of_id IS NULL)     AS n_nonvariant_models,
       count(year) FILTER (variant_of_id IS NULL)  AS n_dated,
       min(year) FILTER (variant_of_id IS NULL)    AS year_of_first_model,
-      max(year) FILTER (variant_of_id IS NULL)    AS year_of_last_model,
-      count(DISTINCT country_slug)                AS n_countries,
-      CASE WHEN count(DISTINCT country_slug) = 1
-           THEN min(country_slug) END             AS country_slug,
-      count(DISTINCT location_path)               AS n_locations,
-      CASE WHEN count(DISTINCT location_path) = 1
-           THEN min(location_path) END            AS location_path
+      max(year) FILTER (variant_of_id IS NULL)    AS year_of_last_model
     FROM models WHERE manufacturer_id IS NOT NULL
     GROUP BY manufacturer_id
   )
@@ -413,14 +430,15 @@ CREATE OR REPLACE VIEW manufacturers AS
     COALESCE(s.operating_status, 'unknown')                            AS operating_status,
     presumed_producing(COALESCE(s.operating_status, 'unknown'),
                        a.year_of_last_model)                           AS presumed_producing,
-    COALESCE(a.n_locations, 0) AS n_locations,
-    a.location_path,
-    COALESCE(a.n_countries, 0) AS n_countries,
-    a.country_slug,
+    COALESCE(l.n_locations, 0) AS n_locations,
+    l.location_path,
+    COALESCE(l.n_countries, 0) AS n_countries,
+    l.country_slug,
     mf.website, mf.wikidata_id
   FROM fc.catalog_manufacturer mf
-  LEFT JOIN agg a         ON a.manufacturer_id = mf.id
-  LEFT JOIN _mfr_status s ON s.manufacturer_id = mf.id
+  LEFT JOIN agg a           ON a.manufacturer_id = mf.id
+  LEFT JOIN _mfr_status s   ON s.manufacturer_id = mf.id
+  LEFT JOIN _mfr_location l ON l.manufacturer_id = mf.id
   WHERE mf.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW manufacturers IS
   'One row per live manufacturer — identity, home location/country, model counts, the year_of_first_model/year_of_last_model span and the site''s operating_status/presumed_producing verdict. Read location and country each with its n_ count (0 = unknown, >1 = plural), and the span with n_dated.';
