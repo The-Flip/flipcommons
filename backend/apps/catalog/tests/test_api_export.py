@@ -60,7 +60,7 @@ class TestExportShape:
 
     def test_consolidated_manufacturer_slug_on_row(self, client, machine_model):
         # The model links to the granular corporate entity, but the row also
-        # carries the consolidated brand slug so consumers can key on it without
+        # carries the consolidated manufacturer slug so consumers can key on it without
         # a second hop through /export/corporate-entities/.
         row = _row(client, "models", machine_model.slug)
         assert row["corporate_entity"] == "williams-electronics"
@@ -197,7 +197,7 @@ class TestExportDriftGuard:
             "cabinet",
             "game_format",
             "production_status",
-            # derived: consolidated brand slug (corporate_entity -> manufacturer)
+            # derived: consolidated manufacturer slug (corporate_entity -> manufacturer)
             "manufacturer",
             # media
             "thumbnail_url",

@@ -53,9 +53,9 @@ When a user asks a question about "models" (aka `MachineModel`) they often mean 
 
 ### Matching source records to models
 
-Match models on `name_key(name)`, `manufacturer_slug` and `year`; a name alone is often ambiguous. No result means unresolved, not absent — a missing year or an alternate maker name can prevent a match.
+Match models on `name_key(name)`, `manufacturer_slug` and `year`; a name alone is often ambiguous. No result means unresolved, not absent — a missing year or an alternate manufacturer name can prevent a match.
 
-If maker or year is unavailable, use `namesake_count`: `1` means the `name_key` is unique among live models; greater than `1` requires another signal or manual review. The count already uses `name_key`. Read it after a match succeeds too — greater than `1` means the maker or year carried the match alone, so an uncertain one makes the result uncertain.
+If manufacturer or year is unavailable, use `namesake_count`: `1` means the `name_key` is unique among live models; greater than `1` requires another signal or manual review. The count already uses `name_key`. Read it after a match succeeds too — greater than `1` means the manufacturer or year carried the match alone, so an uncertain one makes the result uncertain.
 
 ### Matching free text source wording
 
@@ -65,8 +65,8 @@ Before maintaining a manual mapping, check the alias views. They map source word
 | -------------------------------------------- | ------------------------------------------------------------------------- |
 | `country_aliases`                            | West Germany, Holland, England, R.O.C. → the modelled country             |
 | `location_aliases`                           | the same at any level — regions and cities too (Firenze, Milano)          |
-| `manufacturer_aliases`                       | native-script, accented and trade-name maker names                        |
-| `corporate_entity_aliases`                   | the legal entity below the brand                                          |
+| `manufacturer_aliases`                       | native-script, accented and trade-name manufacturer names                 |
+| `corporate_entity_aliases`                   | the legal entity below the manufacturer                                   |
 | `person_aliases`                             | aka / maiden forms on a credit                                            |
 | `reward_type_aliases`                        | a payout phrasing → the reward type                                       |
 | `theme_aliases`, `gameplay_feature_aliases`  | a source's wording → the controlled term                                  |

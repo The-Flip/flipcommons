@@ -706,7 +706,7 @@ class TestQueryCountDoesNotScale:
             for _ in range(n):
                 counter += 1
                 man = Manufacturer.objects.create(
-                    name=f"Maker {counter}", slug=f"maker-{counter}"
+                    name=f"Manufacturer {counter}", slug=f"manufacturer-{counter}"
                 )
                 resp = client.patch(
                     f"/api/models/{pm.slug}/claims/",

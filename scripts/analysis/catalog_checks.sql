@@ -448,7 +448,7 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     ('patch_retractions.model_status',      'pending'),
     -- no interactive claim is about a machine model yet; a UI edit writes one
     ('model_claims.changeset_action',       'pending'),
-    -- no patch has filled a maker QID yet
+    -- no patch has filled a manufacturer QID yet
     ('manufacturers.wikidata_id',           'pending')
   ) AS t(col, kind);
 
@@ -583,6 +583,51 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE name_key('On Beam (Italy)') IS DISTINCT FROM 'on beam'
      OR name_key('KISS (Limited Edition)') IS DISTINCT FROM 'kiss'   -- the documented collapse
      OR name_key(NULL) IS DISTINCT FROM ''
+  UNION ALL
+
+  SELECT 'macro_presumed_producing',
+         concat_ws('/', presumed_producing('ongoing', 1932),
+                        presumed_producing('unknown', year(current_date) - 5),
+                        presumed_producing('unknown', year(current_date) - 6),
+                        presumed_producing('unknown', NULL),
+                        presumed_producing('ended', year(current_date)))
+  WHERE presumed_producing('ongoing', 1932)                  IS DISTINCT FROM true
+     OR presumed_producing('unknown', year(current_date) - 5) IS DISTINCT FROM true
+     OR presumed_producing('unknown', year(current_date) - 6) IS DISTINCT FROM false  -- exclusive
+     -- an undated entity is a plain false, not the NULL that silently drops it from
+     -- both `WHERE presumed_producing` and `WHERE NOT presumed_producing`
+     OR presumed_producing('unknown', NULL)                   IS DISTINCT FROM false
+     -- editorial 'ended' beats recency, which is the whole point of the field
+     OR presumed_producing('ended', year(current_date))       IS DISTINCT FROM false
+  UNION ALL
+  -- ...and its window against the frontend constant it exists to mirror. Nothing else
+  -- couples them, and a change to either side is silent in the other.
+  SELECT 'presumed_producing_window_drift',
+         'macro=' || w.macro_years::VARCHAR || ' utils.ts=' || COALESCE(w.ts_years::VARCHAR, 'unparsed')
+  FROM (SELECT
+          (SELECT max(k) + 1 FROM range(0, 100) t(k)
+            WHERE presumed_producing('unknown', year(current_date) - k)) AS macro_years,
+          (SELECT TRY_CAST(regexp_extract(content, 'UNKNOWN_RECENCY_YEARS = ([0-9]+)', 1) AS INTEGER)
+             FROM read_text('frontend/src/lib/utils.ts'))                AS ts_years
+       ) w
+  WHERE w.macro_years IS DISTINCT FROM w.ts_years
+  UNION ALL
+
+  -- manufacturers.operating_status recomputed from corporate_entities — a second
+  -- derivation of the same rollup, off the public CE view rather than the private helper
+  -- reading fc. Nothing materializes the backend's answer (it is computed per request),
+  -- so this is the only thing holding the precedence and the CE population honest.
+  SELECT 'mfr_status_rollup_disagrees',
+         m.slug || ': ' || m.operating_status || ' vs ' || r.expected
+  FROM manufacturers m
+  LEFT JOIN (
+    SELECT manufacturer_id,
+           CASE WHEN bool_or(operating_status = 'ongoing') THEN 'ongoing'
+                WHEN bool_and(operating_status = 'ended')  THEN 'ended'
+                ELSE 'unknown' END AS expected
+    FROM corporate_entities WHERE manufacturer_id IS NOT NULL GROUP BY manufacturer_id
+  ) r ON r.manufacturer_id = m.id
+  WHERE m.operating_status IS DISTINCT FROM COALESCE(r.expected, 'unknown')
   UNION ALL
 
   -- The citation host-recognition macros (provenance.sql), pinned against
@@ -977,8 +1022,8 @@ CREATE OR REPLACE VIEW foundation_checks AS
   SELECT 'namesake_count_zero_on_live', 'model_id=' || id::VARCHAR
   FROM models WHERE namesake_count IS NULL OR namesake_count < 1
 
-  -- manufacturers.country_slug is set IFF the maker's models agree on one country —
-  -- the guard against a multi-country maker being silently collapsed to one value
+  -- manufacturers.country_slug is set IFF the manufacturer's models agree on one country —
+  -- the guard against a multi-country manufacturer being silently collapsed to one value
   UNION ALL
   SELECT 'manufacturer_country_collapsed',
          slug || ' n_countries=' || n_countries::VARCHAR
@@ -986,7 +1031,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE n_countries IS NULL
      OR (n_countries = 1) IS DISTINCT FROM (country_slug IS NOT NULL)
 
-  -- The year pair is set IFF the maker has a dated non-variant model, and is a
+  -- The year pair is set IFF the manufacturer has a dated non-variant model, and is a
   -- well-formed span. BOTH ends are tested for presence: `first > last` goes NULL when
   -- the last is NULL, so a first-only row would otherwise pass a comparison that never
   -- ran. The n_dated <= n_nonvariant_models <= n_models ladder pins n_dated to the year

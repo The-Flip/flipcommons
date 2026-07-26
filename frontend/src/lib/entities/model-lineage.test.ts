@@ -62,12 +62,12 @@ describe('modelLineageSections', () => {
   });
 
   describe('manufacturer disambiguation', () => {
-    // A remake often keeps the original's name, so with no maker shown it reads
-    // as a relation to itself. The maker is surfaced only when it differs.
+    // A remake often keeps the original's name, so with no manufacturer shown it reads
+    // as a relation to itself. The manufacturer is surfaced only when it differs.
     const gottlieb = { name: 'D. Gottlieb & Company', public_id: 'gottlieb' };
     const zaccaria = { name: 'Zaccaria', public_id: 'zaccaria' };
 
-    it('shows the maker when it differs from the subject', () => {
+    it('shows the manufacturer when it differs from the subject', () => {
       const model = makeModelDetail({
         manufacturer: gottlieb,
         remakes: [
@@ -76,11 +76,11 @@ describe('modelLineageSections', () => {
       });
 
       const [section] = modelLineageSections(model);
-      // Keeps the full ref (name + public_id) so the maker renders as a link.
+      // Keeps the full ref (name + public_id) so the manufacturer renders as a link.
       expect(section.links[0].manufacturer).toEqual({ kind: 'known', ref: zaccaria });
     });
 
-    it('omits the maker when it matches the subject', () => {
+    it('omits the manufacturer when it matches the subject', () => {
       const model = makeModelDetail({
         manufacturer: gottlieb,
         remakes: [{ name: 'Jungle Life 2', public_id: 'jungle-life-2', manufacturer: gottlieb }],
@@ -90,7 +90,7 @@ describe('modelLineageSections', () => {
       expect(section.links[0].manufacturer).toBeNull();
     });
 
-    it('shows the maker when the subject has none (still disambiguating)', () => {
+    it('shows the manufacturer when the subject has none (still disambiguating)', () => {
       const model = makeModelDetail({
         manufacturer: null,
         remakes: [
@@ -102,7 +102,7 @@ describe('modelLineageSections', () => {
       expect(section.links[0].manufacturer).toEqual({ kind: 'known', ref: zaccaria });
     });
 
-    it('surfaces an unknown maker against a known subject (also disambiguating)', () => {
+    it('surfaces an unknown manufacturer against a known subject (also disambiguating)', () => {
       const model = makeModelDetail({
         manufacturer: gottlieb,
         remakes: [{ name: 'Jungle Life', public_id: 'jungle-life-emmepi' }],
@@ -112,7 +112,7 @@ describe('modelLineageSections', () => {
       expect(section.links[0].manufacturer).toEqual({ kind: 'unknown' });
     });
 
-    it('omits the maker when neither the subject nor the link has one', () => {
+    it('omits the manufacturer when neither the subject nor the link has one', () => {
       const model = makeModelDetail({
         manufacturer: null,
         remakes: [{ name: 'Jungle Life', public_id: 'jungle-life-emmepi' }],
@@ -188,7 +188,7 @@ describe('modelEdgeSections', () => {
       'This game is an unauthorized copy of:',
     ]);
 
-    // A machine target resolves like any lineage link (name + maker + year);
+    // A machine target resolves like any lineage link (name + manufacturer + year);
     // the label target has no machine to link.
     const [kit, bootleg] = sections;
     expect(kit.targets).toEqual([
@@ -209,7 +209,7 @@ describe('modelEdgeSections', () => {
     expect(bootleg.targets[0].machine?.public_id).toBe('galaxie');
   });
 
-  it('suppresses a machine target maker that matches the subject, like lineage links', () => {
+  it('suppresses a machine target manufacturer that matches the subject, like lineage links', () => {
     const model = makeModelDetail({
       manufacturer: { name: 'D. Gottlieb & Company', public_id: 'gottlieb' },
       relationships: [
@@ -323,7 +323,7 @@ describe('titleModelsSubject', () => {
   const gottlieb = { name: 'D. Gottlieb & Company', public_id: 'gottlieb' };
   const zaccaria = { name: 'Zaccaria', public_id: 'zaccaria' };
 
-  it('treats a maker and year every model shares as the subject', () => {
+  it('treats a manufacturer and year every model shares as the subject', () => {
     const subject = titleModelsSubject([
       { name: 'A', public_id: 'a', year: 1979, manufacturer: gottlieb },
       { name: 'B', public_id: 'b', year: 1979, manufacturer: gottlieb },
@@ -332,7 +332,7 @@ describe('titleModelsSubject', () => {
     expect(subject).toEqual({ manufacturer: 'D. Gottlieb & Company', year: 1979 });
   });
 
-  it('yields no subject for a mixed list, so makers and years stay visible', () => {
+  it('yields no subject for a mixed list, so manufacturers and years stay visible', () => {
     const subject = titleModelsSubject([
       { name: 'A', public_id: 'a', year: 1979, manufacturer: gottlieb },
       { name: 'B', public_id: 'b', year: 1981, manufacturer: zaccaria },
@@ -345,7 +345,7 @@ describe('titleModelsSubject', () => {
     expect(titleModelsSubject([])).toEqual({ manufacturer: null, year: null });
   });
 
-  it('lets an explicit maker and year override the unanimous fallback', () => {
+  it('lets an explicit manufacturer and year override the unanimous fallback', () => {
     const subject = titleModelsSubject(
       [{ name: 'A', public_id: 'a', year: 1979, manufacturer: gottlieb }],
       { manufacturer: 'Zaccaria', year: 1981 },

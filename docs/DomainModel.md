@@ -103,7 +103,7 @@ The edge records what was copied; the copy's Title placement is a separate edito
 
 A **re-theme** keeps another machine's gameplay and re-skins it with new art and theme. Unlike the other edge types, a re-theme's donor is always a known, seeded machine, so a re-theme edge always carries `target_machine` and never `target_label` (a text-target re-theme is rejected). A single re-theme can name more than one donor — two edges — when its origin is genuinely ambiguous.
 
-For re-themes the `license_status` reads as **official** (`licensed`) versus **unofficial** (`unlicensed`), and renders that way in the UI ("Official re-theme of…" / "Unofficial re-theme of…"). A same-maker re-theme is official; a re-theme by another party is often unofficial, but with no licensing evidence either way it stays `unknown` rather than being assumed.
+For re-themes the `license_status` reads as **official** (`licensed`) versus **unofficial** (`unlicensed`), and renders that way in the UI ("Official re-theme of…" / "Unofficial re-theme of…"). A same-manufacturer re-theme is official; a re-theme by another party is often unofficial, but with no licensing evidence either way it stays `unknown` rather than being assumed.
 
 | Model                  | Manufacturer | Target                           | License status |
 | ---------------------- | ------------ | -------------------------------- | -------------- |
@@ -160,7 +160,7 @@ The WMS cluster illustrates how Manufacturers and CorporateEntities relate:
 | Bally        | Bally Midway Manufacturing Company                                     |
 | Bally        | Midway Manufacturing Company, a subsidiary of WMS Industries, Inc.     |
 
-- **Manufacturer**: a pinball brand as users know it — the name on the cabinet.
+- **Manufacturer**: a pinball manufacturer as users know it — the brand name shown on the cabinet.
 - **CorporateEntity**: a specific corporate incarnation of a Manufacturer. Companies reorganize, get acquired, and change names over the decades. Models link to CorporateEntity (not Manufacturer) to record exactly which corporate incarnation produced them.
 
 ### CorporateEntityLocation

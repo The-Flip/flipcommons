@@ -261,7 +261,7 @@ def test_has_more_counts_name_and_description_combined(client, db, bootstrap_sou
             f"Filler {i}",
             f"combo-desc-{i}",
             bootstrap_source,
-            description="a combo maker",
+            description="a combo manufacturer",
         )
 
     section = client.get("/api/pages/search?q=combo").json()["manufacturers"]

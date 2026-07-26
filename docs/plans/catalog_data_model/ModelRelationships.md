@@ -138,7 +138,7 @@ The edge's target is one of two representations, exactly one set (XOR):
 
 A model holds at most **one** label edge. The label's identity is its slot, not its wording (see [Claim identity](#claim-identity)): all of a model's unresolved-target knowledge lives in one row, and rewording it edits that row in place. What this can't represent: two unseeded-target relationships of different types on one model ("copy of an unknown design" + "conversion of whatever cabinets were available") — no observed example, and the escape hatch is the same bounded claim_key rewrite as promoting type into identity.
 
-We considered a third rung — a `target_manufacturer` FK for "a Gottlieb game" — and dropped it: the UX didn't work. When the maker is known but the machine isn't, the maker just lives in the label text, unlinked.
+We considered a third rung — a `target_manufacturer` FK for "a Gottlieb game" — and dropped it: the UX didn't work. When the manufacturer is known but the machine isn't, the manufacturer just lives in the label text, unlinked.
 
 Display:
 

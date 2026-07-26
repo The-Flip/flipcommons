@@ -195,7 +195,7 @@ claims:
 def test_create_manufacturer():
     text = """
 attribution: flipcommons-catalog
-description: new brand
+description: new manufacturer
 claims:
   - manufacturer.acme-pinball:
       name: Acme Pinball
@@ -1399,7 +1399,7 @@ def test_grouped_create_header_plus_companions():
     # companion edit on the record just created (replaces the positional dance).
     text = """
 attribution: flipcommons-catalog
-description: new brand with a companion edit
+description: new manufacturer with a companion edit
 claims:
   - manufacturer.acme-pinball:
       create: true
@@ -1889,20 +1889,20 @@ def test_create_with_fk_onto_deleted_rejected(db, flipcommons_catalog):
     # miss it (creates carry no perturbed cell). The fresh manufacturer has no
     # other referrers, so only the onto-guard — not the delete-blocker — can catch
     # this.
-    Manufacturer.objects.create(name="Doomed Brand", slug="doomed-brand")
+    Manufacturer.objects.create(name="Doomed Mfr", slug="doomed-mfr")
     text = """
 attribution: flipcommons-catalog
 claims:
   - corporate-entity.new-incarnation:
       create: true
       name: New Incarnation
-      manufacturer: doomed-brand
-  - manufacturer.doomed-brand:
+      manufacturer: doomed-mfr
+  - manufacturer.doomed-mfr:
       delete: true
 """
     with pytest.raises(PatchError, match="points at"):
         _apply(text, patch_id="0001-onto-create")
-    assert Manufacturer.objects.get(slug="doomed-brand").status != "deleted"
+    assert Manufacturer.objects.get(slug="doomed-mfr").status != "deleted"
     assert not CorporateEntity.objects.filter(slug="new-incarnation").exists()
 
 

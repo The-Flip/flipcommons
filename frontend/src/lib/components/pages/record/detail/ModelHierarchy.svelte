@@ -1,4 +1,4 @@
-<!-- @component Renders a title's machine models (variants nested under their parent) as `RelatedModelLink` lines — the model page's "Other Models In Title" and the title page's "Models" sidebar section. `subjectManufacturer`/`subjectYear` drive the shared disambiguation rule; when omitted, a value shared by every listed model is treated as the subject's (so only mixed lists show makers/years). -->
+<!-- @component Renders a title's machine models (variants nested under their parent) as `RelatedModelLink` lines — the model page's "Other Models In Title" and the title page's "Models" sidebar section. `subjectManufacturer`/`subjectYear` drive the shared disambiguation rule; when omitted, a value shared by every listed model is treated as the subject's (so only mixed lists show manufacturers/years). -->
 <script lang="ts">
   import RelatedModelLink from './RelatedModelLink.svelte';
   import SidebarList from '$lib/components/layout/page/sidebar/SidebarList.svelte';
@@ -56,9 +56,9 @@
     </li>
     {#each sortedVariants(parent.variants) as variant (variant.public_id)}
       <li class="variant-indent">
-        <!-- A variant is a cosmetic variation of its parent and shares its maker,
+        <!-- A variant is a cosmetic variation of its parent and shares its manufacturer,
              which this projection doesn't carry on the variant itself; inherit the
-             parent's so an unknown maker isn't inferred from the missing field. -->
+             parent's so an unknown manufacturer isn't inferred from the missing field. -->
         <RelatedModelLink
           link={toModelLinkView({ ...variant, manufacturer: parent.manufacturer }, subject)}
         />

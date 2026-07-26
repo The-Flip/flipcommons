@@ -50,13 +50,13 @@ Reach for a different attribution only in these cases:
 
 ### One quote supports one fact
 
-**Each quote should support exactly one fact, so it can be checked — or challenged — on its own.** Fields share a changeset only when they share the evidence: a catalog row stating year, name and maker in one line is a single fact cluster; a machine's format tag two lines below it is a separate fact and gets its own `changesets:` item with its own cite and quote. The `[...]` join is for one statement whose text spans several passages — never for gluing unrelated sentences together so one quote can blanket-cover an entry's fields.
+**Each quote should support exactly one fact, so it can be checked — or challenged — on its own.** Fields share a changeset only when they share the evidence: a catalog row stating year, name and manufacturer in one line is a single fact cluster; a machine's format tag two lines below it is a separate fact and gets its own `changesets:` item with its own cite and quote. The `[...]` join is for one statement whose text spans several passages — never for gluing unrelated sentences together so one quote can blanket-cover an entry's fields.
 
 Three boundaries:
 
 - **A fact with no quotable evidence rides the header.** An inference the patch is allowed to make (a 1960s machine's `technology_generation`, a theme read off the name) has no span of its own; it stays on the entry header rather than getting an evidence-free item.
 - **A reassertion that changes nothing can't carry its own changeset.** The apply engine rejects a provenance-carrying unit whose value already matches the record ("changes nothing"), so a field you're re-stating purely to add evidence must ride a unit that changes something — or be dropped.
-- **A maker description citing a machine catalog may aggregate rows.** Several of the maker's machine rows joined with `[...]` are collectively the page's one statement about that maker's activity and years — a sanctioned reading of "one statement", not unrelated facts glued together. Keep it to the minimum rows that support the claimed span.
+- **A manufacturer description citing a machine catalog may aggregate rows.** Several of the manufacturer's machine rows joined with `[...]` are collectively the page's one statement about that manufacturer's activity and years — a sanctioned reading of "one statement", not unrelated facts glued together. Keep it to the minimum rows that support the claimed span.
 
 ### Quote the evidence on the cite
 
@@ -86,7 +86,7 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 
 **A scheme cite's `quote:` verifies against a fixed evidence corpus, not an ad-hoc fetch** (flippatch's `make verify-quotes` checks every quote against it):
 
-- **`ipdb:<id>`** — the `ipdb_machines` table in pinexplore's `explore.duckdb`. The quotable text mirrors what the IPDB page renders: the title as a bare heading, then `Manufacturer:` / `Type:` / `Players:` / `Theme:` label-value rows, then the Notable Features and Notes prose — so a structured-field quote like `Type: Electro-mechanical (EM) [...] Players: 1` is legitimate and stays ctrl-F honest on the page. Cite the machine page whose record carries the field; IPDB has no maker pages, so a maker-level fact (a location, say) cites one of that maker's machine pages.
+- **`ipdb:<id>`** — the `ipdb_machines` table in pinexplore's `explore.duckdb`. The quotable text mirrors what the IPDB page renders: the title as a bare heading, then `Manufacturer:` / `Type:` / `Players:` / `Theme:` label-value rows, then the Notable Features and Notes prose — so a structured-field quote like `Type: Electro-mechanical (EM) [...] Players: 1` is legitimate and stays ctrl-F honest on the page. Cite the machine page whose record carries the field; IPDB has no manufacturer pages, so a manufacturer-level fact (a location, say) cites one of that manufacturer's machine pages.
 - **`opdb:<id>`** — the cached `https://opdb.org/machines/<id>` page in pinexplore's web cache. OPDB renders only label-value fields, so quotes read as terse spans (`Cactus Canyon Continued [...] Manufacturer - Eric Priepke [...] Converted game`); a fact implied by OPDB's group structure (the donor title of a conversion) is never stated as text and stays partially supported.
 - **`youtube:<id>`** — the cached canonical watch URL, whose page text is the video's caption-track transcript. See [Video citations](#video-citations).
 
@@ -97,11 +97,11 @@ Target-creating entries can be **scaffolding** — obvious records like Titles b
 - **Quote the transcript** like any web quote; `verify-quotes` resolves `youtube:<id>` to the cached watch URL.
 - **Add a timestamp `locator:`** to point at the moment; the stored `.vtt` blob keeps the cue timing for finding it.
 - **Auto-captions are ASR text.** Verbatim means verbatim ASR — a misheard name stays as the transcript has it, like any source typo. A machine-translated caption track is not evidence; quote the original language.
-- **A captionless video can't carry a quote.** Livestream archives often have no caption track at all; the fetcher warns loudly and caches nothing. Cite the written record the video's description usually links (an awards show's results page, a maker's announcement post) for the fact itself, and keep the video footnote — quote-less — as provenance for the event.
+- **A captionless video can't carry a quote.** Livestream archives often have no caption track at all; the fetcher warns loudly and caches nothing. Cite the written record the video's description usually links (an awards show's results page, a manufacturer's announcement post) for the fact itself, and keep the video footnote — quote-less — as provenance for the event.
 
 ### Prefer primary sources
 
-**Cite primary sources over secondary ones.** A maker's own site, a period periodical scan, a government registry, an interview in the subject's own words, an original-research catalog hosting its own artifacts — these beat any site that compiles facts from elsewhere. Encyclopedias, databases and aggregators are **secondary**: Wikipedia, weblio, IPDB, OPDB, Kineticist, Pinside, company-registry aggregators (b2bhint, bisprofiles) and the like.
+**Cite primary sources over secondary ones.** A manufacturer's own site, a period periodical scan, a government registry, an interview in the subject's own words, an original-research catalog hosting its own artifacts — these beat any site that compiles facts from elsewhere. Encyclopedias, databases and aggregators are **secondary**: Wikipedia, weblio, IPDB, OPDB, Kineticist, Pinside, company-registry aggregators (b2bhint, bisprofiles) and the like.
 
 Before quoting a secondary source, do both of these:
 
@@ -114,8 +114,8 @@ Prioritize, don't forbid: when the primary is unreachable — a script-rendered 
 
 Every patch should contain a top-level description. It maps to the `IngestRun` note — visible only in Django admin (and git), where it reads like a commit-message title, not a place for detail. Keep it to **a single short sentence (the flippatch lint caps it at 80 characters)**: a general summary of what the patch does, not a per-changeset rundown. Stay general enough that it survives adding another change before the patch is finalized — don't restate the details of each changeset, and don't reference other patches by number (that cross-patch bookkeeping goes stale and belongs nowhere public; per-change reasoning belongs in `note:` fields). Examples:
 
-- ❌ NO: Models for the new active makers, one per game. Each model's title (0053) and corporate entity (0051) already exist. Production status reflects each game's real state: Alice Goes to Wonderland is shipping (produced); the rest are announced (a pre-order, an intended launch, a trademark filing). Corporate inception years stay off the entities; these model years carry the makers' timeline. The Wonderland and Pawlowski home machines carry the home-use tag; the already-catalogued Ramp's Road Trip is tagged widebody.
-- ✅ YES: Models for the new active makers created in a previous patch.
+- ❌ NO: Models for the new active manufacturers, one per game. Each model's title (0053) and corporate entity (0051) already exist. Production status reflects each game's real state: Alice Goes to Wonderland is shipping (produced); the rest are announced (a pre-order, an intended launch, a trademark filing). Corporate inception years stay off the entities; these model years carry the manufacturers' timeline. The Wonderland and Pawlowski home machines carry the home-use tag; the already-catalogued Ramp's Road Trip is tagged widebody.
+- ✅ YES: Models for the new active manufacturers created in a previous patch.
 
 ## Citation sources
 
@@ -179,20 +179,20 @@ One behavior to know:
 
 ## Creating new catalog entities
 
-Creating records (rather than correcting seeded ones) has its own discipline. Precedents: the early-Japanese sweep (0043–0046 + 0049), the active-makers sweep (0050–0054), and the CEFF pilot (0081) from the tilt.it Italian sweep.
+Creating records (rather than correcting seeded ones) has its own discipline. Precedents: the early-Japanese sweep (0043–0046 + 0049), the active-manufacturers sweep (0050–0054), and the CEFF pilot (0081) from the tilt.it Italian sweep.
 
 ### Creation order and patch layout
 
 Dependencies point one way: **Manufacturer → CorporateEntity → Title → Model**. A FK target must exist in the seed, an earlier patch, or an **earlier entry in the same patch** — forward references within a patch are unsupported, and a Location parent must exist in an _earlier patch_ (same-patch location parents don't resolve). Citation website roots must be seeded in the same or an earlier patch before any URL cite against them.
 
-**Prefer the vertical per-manufacturer layout**: one maker's manufacturer → corporate entity → title(s) → model(s) in a single dependency-ordered patch. All the related data reviews as one unit, and a generated sweep emits one such patch per maker. Split across patches only where the dependency genuinely spans them — a Location parent, or a citation root shared by many makers.
+**Prefer the vertical per-manufacturer layout**: one manufacturer's whole stack — manufacturer → corporate entity → title(s) → model(s) — in a single dependency-ordered patch. All the related data reviews as one unit, and a generated sweep emits one such patch per manufacturer. Split across patches only where the dependency genuinely spans them — a Location parent, or a citation root shared by many manufacturers.
 
 ### Fill every field you can — grounded in DomainModel.md
 
 A new record should carry every field the evidence supports, and no field it doesn't. [DomainModel.md](DomainModel.md) is the authority on what fields exist and what their values may be. Per-type checklists:
 
-- **Manufacturer** — `name` (the brand as it appeared on the cabinet), `manufacturer_alias` for spelling/legal variants, `operating_status` when a source states it (leave unknown rather than guess — the 0049 Kato precedent).
-- **CorporateEntity** — `name` (the legal/corporate incarnation, distinct from the brand), `manufacturer`, city-level `location` (see [Corporate Entity locations](#corporate-entity-locations)), active years when stated, `corporate_entity_alias` for native-script or variant names.
+- **Manufacturer** — `name` (the name as it appeared on the cabinet), `manufacturer_alias` for spelling/legal variants, `operating_status` when a source states it (leave unknown rather than guess — the 0049 Kato precedent).
+- **CorporateEntity** — `name` (the legal/corporate incarnation, distinct from the manufacturer), `manufacturer`, city-level `location` (see [Corporate Entity locations](#corporate-entity-locations)), active years when stated, `corporate_entity_alias` for native-script or variant names.
 - **Title** — a thin identity shell: `name`, `abbreviation` where established; `franchise`/`series` only with evidence. Credits, themes and hardware live on the Model.
 - **Model** — `name`, `year`, `title`, `corporate_entity`, `technology_generation`, `game_format`, player count, `production_status`, display and system where known, `ipdb_id`/`opdb_id` when the machine is cross-listed, `theme` and credits when a source states them.
 
@@ -214,11 +214,11 @@ Corroborate wherever possible — IPDB first (scheme-citable, quotable), then ta
 
 ### Titles for one-off machines
 
-Every Model gets a Title, even a one-off from a maker with one machine. Disambiguate colliding title slugs with a maker or era suffix (`home-run-nihon-tenbo`), keeping the display `name` clean.
+Every Model gets a Title, even a one-off from a manufacturer with one machine. Disambiguate colliding title slugs with a manufacturer or era suffix (`home-run-nihon-tenbo`), keeping the display `name` clean.
 
-### Re-releases, kits and conversions across makers
+### Re-releases, kits and conversions across manufacturers
 
-When a machine is another maker's game re-released, rebadged, kitted or converted, first classify the relationship per [DomainModel.md](DomainModel.md): remakes share the original's Title; `variant_of` links cosmetic variants; copies, complete conversions and conversion kits use `model_relationship` edges as described below; a build for a foreign market is `export_edition_of` plus its export markets ([below](#export-editions-and-markets)), and is **independent** of the other three — an export edition is often also a `copy`. A source listing electromechanical and solid-state versions of a game, or 1P/2P/4P editions, describes **separate Models**, not `variant_of` variants: reserve `variant_of` for cosmetic or packaging variants of one product. Cite the source line that states the relationship, and when sources disagree, prefer the better-evidenced attribution and document the disagreement in the `note:`.
+When a machine is another manufacturer's game re-released, rebadged, kitted or converted, first classify the relationship per [DomainModel.md](DomainModel.md): remakes share the original's Title; `variant_of` links cosmetic variants; copies, complete conversions and conversion kits use `model_relationship` edges as described below; a build for a foreign market is `export_edition_of` plus its export markets ([below](#export-editions-and-markets)), and is **independent** of the other three — an export edition is often also a `copy`. A source listing electromechanical and solid-state versions of a game, or 1P/2P/4P editions, describes **separate Models**, not `variant_of` variants: reserve `variant_of` for cosmetic or packaging variants of one product. Cite the source line that states the relationship, and when sources disagree, prefer the better-evidenced attribution and document the disagreement in the `note:`.
 
 ## Corporate Entity locations
 
@@ -300,12 +300,12 @@ claims:
         - target_market_location: italy
 ```
 
-- **Export is maker-relative.** A model built for the country its maker is based in is domestic, not an export — a Portuguese maker's Portuguese-market game is not an export edition however the note phrases it. Check the maker's home country before treating a named market as a destination.
+- **Export is manufacturer-relative.** A model built for the country its manufacturer is based in is domestic, not an export — a Portuguese manufacturer's Portuguese-market game is not an export edition however the note phrases it. Check the manufacturer's home country before treating a named market as a destination.
 - **The two facts are separate claims, separately sourced.** Most export models have no known original: record the market alone and leave `export_edition_of` null. Do **not** infer the original from a shared Title — a title-mate is a lead to verify against the source, not evidence. Conversely a known original with no stated destination gets the FK and an unknown-market row.
 - **The unknown-market row is a positive claim.** `- {}` asserts "this model was built for export, destination unknown". It needs a cite establishing the export fact, exactly like a country row — it is not a placeholder for "we haven't looked yet". If the source doesn't establish that the model was built for export, author no row at all.
 - **Only a genuine multi-country region is a label.** `target_market_label` is for a destination that isn't a country ("Europe"); a country always goes in `target_market_location` so it joins the location graph. One label per model, and a later assert rewords it in place.
 - **Nothing stops you mixing row kinds — check yourself.** A country row and a `{}`/label row on one model is illegal but applies silently on the patch path, including when the two arrive in different patches. Before adding a market row, check what the model already carries.
-- **`export_edition_of` doesn't replace a copy edge.** An unauthorized build isn't an export — it's a `copy` with `license_status: unlicensed`. When a model is both an authorized export edition and a copy of another maker's design, author both, each from its own evidence.
+- **`export_edition_of` doesn't replace a copy edge.** An unauthorized build isn't an export — it's a `copy` with `license_status: unlicensed`. When a model is both an authorized export edition and a copy of another manufacturer's design, author both, each from its own evidence.
 
 ## Validation process
 

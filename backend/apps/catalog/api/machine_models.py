@@ -141,9 +141,9 @@ class ModelVariantSchema(Schema):
     public_id: str
     year: int | None = None
     variant_features: list[str] = []
-    # Variants are same-maker cosmetic editions by definition, so this usually
+    # Variants are same-manufacturer cosmetic editions by definition, so this usually
     # matches the subject and stays hidden — but nothing enforces that, so the
-    # ref carries the maker to disambiguate the anomaly like every other lineage
+    # ref carries the manufacturer to disambiguate the anomaly like every other lineage
     # link rather than being the one surface that structurally can't.
     manufacturer: EntityRef | None = None
 
@@ -152,7 +152,7 @@ class ModelRef(Schema):
     """A reference to a machine model by its public id, with optional year and
     manufacturer. The manufacturer lets a reader distinguish same-named lineage
     links (e.g. a game and the bootlegs that copied its name) whose surfaces
-    don't otherwise show a maker."""
+    don't otherwise show a manufacturer."""
 
     name: str
     public_id: str
@@ -206,7 +206,7 @@ class InboundModelRelationshipSchema(Schema):
 
 def _manufacturer_ref(pm: MachineModel | None) -> EntityRef | None:
     """The model's manufacturer as an `EntityRef`, resolved via its corporate
-    entity (the manufacturer is a property of the maker, not the model)."""
+    entity (the manufacturer is a property of the corporate entity, not the model)."""
     if pm is None:
         return None
     mfr = (
@@ -624,7 +624,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             "game_format",
             "production_status",
             # `__corporate_entity__manufacturer` so the lineage ModelRefs can
-            # carry a maker for disambiguating same-named links without an
+            # carry a manufacturer for disambiguating same-named links without an
             # N+1 per related row.
             "variant_of__corporate_entity__manufacturer",
             "remake_of__corporate_entity__manufacturer",
@@ -638,7 +638,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
             # list would link the deleted model's 404. Forward FKs need no
             # filter: their targets can't be soft-deleted while referenced.
             #
-            # Variants and sibling variants also carry a maker; select the
+            # Variants and sibling variants also carry a manufacturer; select the
             # manufacturer join so building their refs stays query-free.
             Prefetch(
                 "variants",
@@ -653,7 +653,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
                 ),
             ),
             # Relationship edges render their machine target as a ModelRef
-            # with a maker; join it here so the ref build stays query-free.
+            # with a manufacturer; join it here so the ref build stays query-free.
             # (Outbound targets are delete-blocked while this model is live,
             # so no liveness filter is needed on the target side.)
             Prefetch(
@@ -670,7 +670,7 @@ def _model_detail_qs() -> QuerySet[MachineModel]:
                     active_status_q("machine_model")
                 ).select_related("machine_model__corporate_entity__manufacturer"),
             ),
-            # Reverse lineage lists render as ModelRefs with a maker; select the
+            # Reverse lineage lists render as ModelRefs with a manufacturer; select the
             # manufacturer join here to keep the ref build query-free.
             Prefetch(
                 "remakes",

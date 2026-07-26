@@ -86,7 +86,7 @@ This is non-negotiable, and it's already met by reusing the description pipeline
 
 Do we allow claims on other types of records to cite Articles?
 
-Epistemically, most Articles will be project-internal synthesis, not a primary source. However, we also want to support original content, like interviews with pinball makers, though we do not yet have any of that.
+Epistemically, most Articles will be project-internal synthesis, not a primary source. However, we also want to support original content, like interviews with pinball manufacturers, though we do not yet have any of that.
 
 If we do allow it, how do we keep it from laundering unsourced claims?
 
@@ -107,7 +107,7 @@ An Article can present lists of entities.
 - **Conversions** — every machine actually built out of a donor machine (the j-martina games).
 - **Rethemes** — every machine that reskins another one's gameplay with new art (Metallica reskins, Shrek).
 - **All the variants of one game** — e.g. every variant of Godzilla, on the Godzilla-related Article.
-- **One maker's whole output** — every machine RMG ever built.
+- **One manufacturer's whole output** — every machine RMG ever built.
 
 These lists are dynamic; as new machines get catalogued, "Italian bootlegs" pick them up without re-editing the Article.
 

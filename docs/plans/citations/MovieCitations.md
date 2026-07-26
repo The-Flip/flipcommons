@@ -249,7 +249,7 @@ Deliberately broad — everything where pinball is the subject or a load-bearing
 | Wizard Mode                                                | 2016            | Autistic champion Robert Gagno's competitive run.            |
 | Shoot Again: The Resurgence of Pinball                     | 2017 _(verify)_ | The modern comeback wave.                                    |
 | The History of Pinball                                     | 2018 _(verify)_ | Survey documentary.                                          |
-| Things That Go Bump in the Night: The Spooky Pinball Story | _(verify)_      | Portrait of boutique maker Spooky Pinball.                   |
+| Things That Go Bump in the Night: The Spooky Pinball Story | _(verify)_      | Portrait of boutique manufacturer Spooky Pinball.            |
 | A World Under Glass                                        | _(verify)_      | Design/artistry-focused documentary.                         |
 | Ball Runnings: A Pinball Story                             | _(verify)_      | Competitive-scene documentary.                               |
 | Road to Pinball (a.k.a. Gladbeck Freaks Out)               | _(verify)_      | European scene documentary.                                  |
