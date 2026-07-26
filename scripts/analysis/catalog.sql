@@ -370,9 +370,18 @@ CREATE OR REPLACE VIEW _mfr_status AS
 --                 qualifies — an entity marked ended can still carry the manufacturer's
 --                 most recent model. FALSE IS NOT 'ENDED'; it pools the known-ended with
 --                 the unknown-and-not-recent, and unknown is a default nobody set.
---   country_slug: the home country, NULL when the manufacturer's models disagree (3 do).
---                 n_countries sits alongside so an ambiguous home is visible rather than
---                 collapsed to one of its values.
+--   location_path / country_slug, with n_locations / n_countries : where the manufacturer
+--                 was based, at both rungs (both spelled as on `models`). The rungs
+--                 resolve INDEPENDENTLY, each NULL when its own disagrees — a maker with
+--                 two Chicago-area plants is country_slug 'usa' and location_path NULL,
+--                 which answers both questions honestly instead of letting one paper over
+--                 the other. 654 of 753 resolve at both, so read location_path first and
+--                 fall back to country.
+--                 A NULL HAS TWO CAUSES AND THE COUNT SEPARATES THEM: n = 0 is no known
+--                 location (92 makers), n > 1 is a maker genuinely spanning places (3
+--                 countries, 7 towns). Unrecorded vs recorded-and-plural are opposite
+--                 states, and the bare NULL conflates them. Drop to `corporate_entities`
+--                 to enumerate a plural maker's places rather than collapse them.
 --   website / wikidata_id : the two outbound handles for enriching from outside the
 --                 catalog. Both sparse — 24 have a website, nothing carries a QID yet.
 --                 An empty website is '' and an absent QID is NULL; the model spells them
@@ -388,7 +397,10 @@ CREATE OR REPLACE VIEW manufacturers AS
       max(year) FILTER (variant_of_id IS NULL)    AS year_of_last_model,
       count(DISTINCT country_slug)                AS n_countries,
       CASE WHEN count(DISTINCT country_slug) = 1
-           THEN min(country_slug) END             AS country_slug
+           THEN min(country_slug) END             AS country_slug,
+      count(DISTINCT location_path)               AS n_locations,
+      CASE WHEN count(DISTINCT location_path) = 1
+           THEN min(location_path) END            AS location_path
     FROM models WHERE manufacturer_id IS NOT NULL
     GROUP BY manufacturer_id
   )
@@ -401,6 +413,8 @@ CREATE OR REPLACE VIEW manufacturers AS
     COALESCE(s.operating_status, 'unknown')                            AS operating_status,
     presumed_producing(COALESCE(s.operating_status, 'unknown'),
                        a.year_of_last_model)                           AS presumed_producing,
+    COALESCE(a.n_locations, 0) AS n_locations,
+    a.location_path,
     COALESCE(a.n_countries, 0) AS n_countries,
     a.country_slug,
     mf.website, mf.wikidata_id
@@ -409,7 +423,7 @@ CREATE OR REPLACE VIEW manufacturers AS
   LEFT JOIN _mfr_status s ON s.manufacturer_id = mf.id
   WHERE mf.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW manufacturers IS
-  'One row per live manufacturer — identity, home country, model counts, the year_of_first_model/year_of_last_model span and the site''s operating_status/presumed_producing verdict. Span carries no minimum: apply your own n_dated >= k.';
+  'One row per live manufacturer — identity, home location/country, model counts, the year_of_first_model/year_of_last_model span and the site''s operating_status/presumed_producing verdict. Read location and country each with its n_ count (0 = unknown, >1 = plural), and the span with n_dated.';
 
 -- corporate_entities — one row per live CorporateEntity: the LEGAL entity one level
 -- below the manufacturer, the grain `models.corporate_entity_id` actually points at.
@@ -425,6 +439,10 @@ COMMENT ON VIEW manufacturers IS
 --                 777 entities sit on it because nobody has said otherwise, so counting
 --                 'ended' is sound and reading anything into the size of the 'unknown'
 --                 bucket is not.
+--   location_path / country_slug : this incarnation's own place, spelled as on `models`.
+--                 The grain to use when a manufacturer spans places — `manufacturers`
+--                 collapses those to NULL, while this view keeps each CE's separate.
+--                 Both NULL when the CE carries no location, a common state.
 --   ipdb_manufacturer_id : IPDB's ManufacturerId, the join key back to an IPDB scrape.
 --                 It lives here and `opdb_manufacturer_id` lives on `manufacturers`
 --                 because the two source databases split the manufacturer at different
@@ -459,7 +477,7 @@ CREATE OR REPLACE VIEW corporate_entities AS
   LEFT JOIN agg a                      ON a.corporate_entity_id = ce.id
   WHERE ce.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW corporate_entities IS
-  'One row per live corporate entity — the LEGAL entity below the manufacturer, with the same derived span, counts and producing verdict as manufacturers, scoped to the one incarnation. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
+  'One row per live corporate entity — the LEGAL entity below the manufacturer, with the same derived span, counts, location and producing verdict as manufacturers, scoped to the one incarnation. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
 
 -- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
 -- rewards — sorted reward-type names per model (only models that have any). Keyed by id,
