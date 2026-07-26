@@ -386,18 +386,23 @@ COMMENT ON VIEW reward_types IS
 -- maker can own more than one CE. This view is at the MANUFACTURER level (the brand you
 -- group and display by); drop to models.corporate_entity_* for the legal entity.
 --
---   n_models    : live models attributed to this maker. 0 is normal — the catalog
---                 carries makers it has no models for yet.
---   n_dated     : how many of those carry a year. THE denominator for era_* below:
---                 a span resting on 2 models is not the same claim as one resting on
---                 40, and only this column tells them apart.
---   era_start/  : min/max year over the dated models — the span the maker's output
---   era_end       occupies. NOT filtered by any minimum: a 1-model "era" is reported
---                 as exactly that, n_dated = 1, and the CALLER decides what it will
---                 accept (`WHERE n_dated >= 3` is a reasonable bar, and is the analysis's
---                 to set, not this view's). Gaps are invisible — a maker active
---                 1932-1935 and again 1975-1979 reads as a 47-year era, so treat the
---                 span as an outer bound, not a continuous run.
+--   n_models    : live models attributed to this maker, VARIANTS INCLUDED. 0 is normal
+--                 — the catalog carries makers it has no models for yet.
+--   n_nonvariant_models : the same count with variants excluded — what
+--                 /api/export/manufacturers/ publishes as `model_count`. 25 makers
+--                 disagree with n_models.
+--   n_dated     : non-variant models carrying a year — the year pair's own scope, and
+--                 THE denominator for it: a span resting on 2 models is not the same
+--                 claim as one resting on 40, and only this column tells them apart.
+--   year_of_first_model / year_of_last_model : min/max year over those models — the span
+--                 the maker's output occupies, and the same values
+--                 /api/export/manufacturers/ publishes under these names.
+--                 NOT filtered by any minimum: a 1-model span is reported as exactly
+--                 that, n_dated = 1, and the CALLER decides what it will accept
+--                 (`WHERE n_dated >= 3` is a reasonable bar, and is the analysis's to
+--                 set, not this view's). Gaps are invisible — a maker active 1932-1935
+--                 and again 1975-1979 reads as a 47-year span, so treat it as an outer
+--                 bound, not a continuous run.
 --   country_slug: the maker's home country, and NULL when its models disagree — 3
 --                 makers do. n_countries is carried alongside so an ambiguous home is
 --                 visible rather than silently collapsed to one of its values.
@@ -413,9 +418,10 @@ CREATE OR REPLACE VIEW manufacturers AS
     SELECT
       manufacturer_id,
       count(*)                                    AS n_models,
-      count(year)                                 AS n_dated,
-      min(year)                                   AS era_start,
-      max(year)                                   AS era_end,
+      count(*) FILTER (variant_of_id IS NULL)     AS n_nonvariant_models,
+      count(year) FILTER (variant_of_id IS NULL)  AS n_dated,
+      min(year) FILTER (variant_of_id IS NULL)    AS year_of_first_model,
+      max(year) FILTER (variant_of_id IS NULL)    AS year_of_last_model,
       count(DISTINCT country_slug)                AS n_countries,
       CASE WHEN count(DISTINCT country_slug) = 1
            THEN min(country_slug) END             AS country_slug
@@ -424,9 +430,10 @@ CREATE OR REPLACE VIEW manufacturers AS
   )
   SELECT
     mf.id, mf.slug, mf.name,
-    COALESCE(a.n_models, 0)   AS n_models,
-    COALESCE(a.n_dated, 0)    AS n_dated,
-    a.era_start, a.era_end,
+    COALESCE(a.n_models, 0)            AS n_models,
+    COALESCE(a.n_nonvariant_models, 0) AS n_nonvariant_models,
+    COALESCE(a.n_dated, 0)             AS n_dated,
+    a.year_of_first_model, a.year_of_last_model,
     COALESCE(a.n_countries, 0) AS n_countries,
     a.country_slug,
     mf.website, mf.wikidata_id
@@ -434,22 +441,15 @@ CREATE OR REPLACE VIEW manufacturers AS
   LEFT JOIN agg a ON a.manufacturer_id = mf.id
   WHERE mf.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW manufacturers IS
-  'One row per live maker — identity, home country, n_models / n_dated, and the era_start/era_end span of its dated models. Era carries no minimum: apply your own n_dated >= k.';
+  'One row per live maker — identity, home country, the model counts and the year_of_first_model/year_of_last_model span of its dated models. Span carries no minimum: apply your own n_dated >= k.';
 
 -- corporate_entities — one row per live CorporateEntity: the LEGAL entity one level
 -- below the brand, the grain `models.corporate_entity_id` actually points at. Reach
 -- for it when the question is about a corporate incarnation (D. Gottlieb & Company vs
 -- Premier Technology) rather than about the brand you display.
 --
---   TWO SPANS, AND THEY ARE NOT THE SAME CLAIM. `year_start`/`year_end` are the
---                 ASSERTED corporate lifespan — when the company existed. `era_start`/
---                 `era_end` are DERIVED from the years of the models attributed to it —
---                 when it shipped. A company founded in 1931 whose first catalogued
---                 machine is from 1947 has both, disagreeing, and both are right.
---                 `n_dated` is the evidence behind the derived pair, exactly as on
---                 `manufacturers`; the asserted pair has no such backing and is sparse
---                 (35 of 777 entities carry year_start), so a NULL there means unknown,
---                 never "still operating".
+--   year_of_first_model / year_of_last_model, and the n_* counts behind them : exactly
+--                 as on `manufacturers`, scoped to the one entity rather than the brand.
 --   operating_status : 'ongoing' | 'ended' | 'unknown', and UNKNOWN IS THE COLUMN
 --                 DEFAULT — 734 of 777 entities sit on it because nobody has said
 --                 otherwise, not because the answer was investigated and lost. Counting
@@ -468,22 +468,24 @@ CREATE OR REPLACE VIEW corporate_entities AS
   WITH agg AS (
     SELECT
       corporate_entity_id,
-      count(*)                 AS n_models,
-      count(year)              AS n_dated,
-      min(year)                AS era_start,
-      max(year)                AS era_end
+      count(*)                                    AS n_models,
+      count(*) FILTER (variant_of_id IS NULL)     AS n_nonvariant_models,
+      count(year) FILTER (variant_of_id IS NULL)  AS n_dated,
+      min(year) FILTER (variant_of_id IS NULL)    AS year_of_first_model,
+      max(year) FILTER (variant_of_id IS NULL)    AS year_of_last_model
     FROM models WHERE corporate_entity_id IS NOT NULL
     GROUP BY corporate_entity_id
   )
   SELECT
     ce.id, ce.slug, ce.name,
     ce.manufacturer_id, mf.slug AS manufacturer_slug, mf.name AS manufacturer_name,
-    ce.year_start, ce.year_end, ce.operating_status,
+    ce.operating_status,
     ce.ipdb_manufacturer_id,
     cel.location_path, cel.country_slug,
-    COALESCE(a.n_models, 0)  AS n_models,
-    COALESCE(a.n_dated, 0)   AS n_dated,
-    a.era_start, a.era_end
+    COALESCE(a.n_models, 0)            AS n_models,
+    COALESCE(a.n_nonvariant_models, 0) AS n_nonvariant_models,
+    COALESCE(a.n_dated, 0)             AS n_dated,
+    a.year_of_first_model, a.year_of_last_model
   FROM fc.catalog_corporateentity ce
   LEFT JOIN fc.catalog_manufacturer mf ON mf.id = ce.manufacturer_id
                                       AND mf.status IS DISTINCT FROM 'deleted'
@@ -491,7 +493,7 @@ CREATE OR REPLACE VIEW corporate_entities AS
   LEFT JOIN agg a                      ON a.corporate_entity_id = ce.id
   WHERE ce.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW corporate_entities IS
-  'One row per live corporate entity — the LEGAL entity below the brand. Carries two different spans: year_start/year_end is the asserted corporate life, era_start/era_end is derived from its models. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
+  'One row per live corporate entity — the LEGAL entity below the brand, with the same derived span and counts as manufacturers. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
 
 -- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
 -- rewards — sorted reward-type names per model (only models that have any). Keyed
