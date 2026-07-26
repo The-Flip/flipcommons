@@ -446,12 +446,10 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     -- — so this anchors only once a patch retracts a claim about a model that carries a
     -- status at all. Populated on patch_claims, hence qualified.
     ('patch_retractions.model_status',      'pending'),
-    -- Modelled and reachable, populated by nothing yet. Both are `pending`, not
-    -- `sparse`: each has a live write path (a maker QID is a patch field, a citation
-    -- day is what a dated periodical issue carries), so the day one lands,
-    -- expired_anchor_skip turns anchoring on rather than someone remembering to.
-    ('manufacturers.wikidata_id',           'pending'),
-    ('citation_sources.day',                'pending')
+    -- no interactive claim is about a machine model yet; a UI edit writes one
+    ('model_claims.changeset_action',       'pending'),
+    -- no patch has filled a maker QID yet
+    ('manufacturers.wikidata_id',           'pending')
   ) AS t(col, kind);
 
 -- Every LIST-typed facet in a swept view (any element type), and how it is anchored.
