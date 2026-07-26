@@ -191,8 +191,8 @@ Dependencies point one way: **Manufacturer → CorporateEntity → Title → Mod
 
 A new record should carry every field the evidence supports, and no field it doesn't. [DomainModel.md](DomainModel.md) is the authority on what fields exist and what their values may be. Per-type checklists:
 
-- **Manufacturer** — `name` (the brand as it appeared on the cabinet), `manufacturer_alias` for spelling/legal variants, `operating_status` when a source states it (leave unknown rather than guess — the 0049 Kato precedent).
-- **CorporateEntity** — `name` (the legal/corporate incarnation, distinct from the brand), `manufacturer`, city-level `location` (see [Corporate Entity locations](#corporate-entity-locations)), active years when stated, `corporate_entity_alias` for native-script or variant names.
+- **Manufacturer** — `name` (the name as it appeared on the cabinet), `manufacturer_alias` for spelling/legal variants, `operating_status` when a source states it (leave unknown rather than guess — the 0049 Kato precedent).
+- **CorporateEntity** — `name` (the legal/corporate incarnation, distinct from the manufacturer), `manufacturer`, city-level `location` (see [Corporate Entity locations](#corporate-entity-locations)), active years when stated, `corporate_entity_alias` for native-script or variant names.
 - **Title** — a thin identity shell: `name`, `abbreviation` where established; `franchise`/`series` only with evidence. Credits, themes and hardware live on the Model.
 - **Model** — `name`, `year`, `title`, `corporate_entity`, `technology_generation`, `game_format`, player count, `production_status`, display and system where known, `ipdb_id`/`opdb_id` when the machine is cross-listed, `theme` and credits when a source states them.
 

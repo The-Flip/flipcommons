@@ -70,7 +70,7 @@ But openness is still a core differentiator. The goal is to make pinball knowled
 This project treats the structure of pinball knowledge as the most critical part of the product, via a rich [domain model](DomainModel.md),
 
 - games are modeled at multiple levels, including Titles, Models, variants, remakes, and conversions
-- makers are not treated as one flat name field; brands, manufacturers, corporate entities, and hardware systems can each be represented precisely
+- makers are not treated as one flat name field; manufacturers, corporate entities, and hardware systems can each be represented precisely
 - people, credits, taxonomy, and other descriptive dimensions are treated as first-class parts of the domain rather than loose free-form notes
 - the same underlying structure supports both a more approachable Title-based user experience and deeper exploration across many dimensions
 

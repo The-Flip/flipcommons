@@ -59,22 +59,22 @@ When a source re-asserts a field, the old claim is marked `is_active=False` and 
 
 ### Manufacturer (brand-level grouping)
 
-User-facing brand. Corporate incarnations are tracked separately in ManufacturerEntity. For example, "Gottlieb" is one Manufacturer with four ManufacturerEntity records spanning different ownership eras.
+User-facing manufacturer. Corporate incarnations are tracked separately in ManufacturerEntity. For example, "Gottlieb" is one Manufacturer with four ManufacturerEntity records spanning different ownership eras.
 
 | Field                  | Type                                   | Notes                                                            |
 | ---------------------- | -------------------------------------- | ---------------------------------------------------------------- |
-| `name`                 | CharField(200), unique                 | Brand name                                                       |
+| `name`                 | CharField(200), unique                 | Manufacturer name                                                |
 | `slug`                 | SlugField(200), unique                 | Auto-generated                                                   |
-| `trade_name`           | CharField(200), blank                  | Brand name if different (e.g., "Bally" for Midway Manufacturing) |
+| `trade_name`           | CharField(200), blank                  | Trade name if different (e.g., "Bally" for Midway Manufacturing) |
 | `opdb_manufacturer_id` | PositiveIntegerField, unique, nullable | OPDB's manufacturer_id for cross-referencing                     |
 
 ### ManufacturerEntity (corporate incarnation)
 
-IPDB tracks corporate entities rather than brands — e.g., four separate entries for Gottlieb across its ownership eras. Each entity maps to one brand-level Manufacturer and carries the IPDB cross-reference ID.
+IPDB tracks corporate entities rather than manufacturers — e.g., four separate entries for Gottlieb across its ownership eras. Each entity maps to one Manufacturer and carries the IPDB cross-reference ID.
 
 | Field                  | Type                                   | Notes                                              |
 | ---------------------- | -------------------------------------- | -------------------------------------------------- |
-| `manufacturer`         | FK → Manufacturer, CASCADE             | Parent brand                                       |
+| `manufacturer`         | FK → Manufacturer, CASCADE             | Parent manufacturer                                |
 | `name`                 | CharField(300)                         | Full corporate name, e.g., "D. Gottlieb & Company" |
 | `ipdb_manufacturer_id` | PositiveIntegerField, unique, nullable | IPDB's ManufacturerId for cross-referencing        |
 | `years_active`         | CharField(50), blank                   | Operating period, e.g., "1931-1977"                |

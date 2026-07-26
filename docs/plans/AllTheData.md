@@ -200,7 +200,7 @@ name: Williams
 ---
 
 Williams was one of the central American pinball manufacturers of the solid
-state era and the parent brand behind many canonical tables.
+state era and the parent manufacturer behind many canonical tables.
 ```
 
 ### Example corporate entity record

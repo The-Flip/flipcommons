@@ -160,7 +160,7 @@ The WMS cluster illustrates how Manufacturers and CorporateEntities relate:
 | Bally        | Bally Midway Manufacturing Company                                     |
 | Bally        | Midway Manufacturing Company, a subsidiary of WMS Industries, Inc.     |
 
-- **Manufacturer**: a pinball brand as users know it — the name on the cabinet.
+- **Manufacturer**: a pinball manufacturer as users know it — the brand name shown on the cabinet.
 - **CorporateEntity**: a specific corporate incarnation of a Manufacturer. Companies reorganize, get acquired, and change names over the decades. Models link to CorporateEntity (not Manufacturer) to record exactly which corporate incarnation produced them.
 
 ### CorporateEntityLocation

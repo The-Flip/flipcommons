@@ -66,7 +66,7 @@ Before maintaining a manual mapping, check the alias views. They map source word
 | `country_aliases`                            | West Germany, Holland, England, R.O.C. → the modelled country             |
 | `location_aliases`                           | the same at any level — regions and cities too (Firenze, Milano)          |
 | `manufacturer_aliases`                       | native-script, accented and trade-name maker names                        |
-| `corporate_entity_aliases`                   | the legal entity below the brand                                          |
+| `corporate_entity_aliases`                   | the legal entity below the manufacturer                                   |
 | `person_aliases`                             | aka / maiden forms on a credit                                            |
 | `reward_type_aliases`                        | a payout phrasing → the reward type                                       |
 | `theme_aliases`, `gameplay_feature_aliases`  | a source's wording → the controlled term                                  |

@@ -150,9 +150,9 @@ class TestCreateRateLimit:
     def test_sixth_create_returns_429(self, client, user):
         client.force_login(user)
         for i in range(5):
-            resp = _post(client, _body(name=f"Brand {i}", slug=f"brand-{i}"))
+            resp = _post(client, _body(name=f"Mfr {i}", slug=f"mfr-{i}"))
             assert resp.status_code == 201, resp.content
-        resp = _post(client, _body(name="Brand six", slug="brand-six"))
+        resp = _post(client, _body(name="Mfr six", slug="mfr-six"))
         assert resp.status_code == 429
         assert "Retry-After" in resp.headers
 

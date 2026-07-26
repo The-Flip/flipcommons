@@ -115,7 +115,7 @@ class TestCorporateEntity:
         )
         assert str(entity) == "Williams Manufacturing Company"
 
-    def test_multiple_entities_per_brand(self, manufacturer):
+    def test_multiple_entities_per_manufacturer(self, manufacturer):
         CorporateEntity.objects.create(
             manufacturer=manufacturer,
             name="Williams Manufacturing Company",

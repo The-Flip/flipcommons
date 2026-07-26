@@ -57,7 +57,7 @@ class OperatingStatus(models.TextChoices):
     def rollup(cls, statuses: Iterable[str]) -> OperatingStatus:
         """Aggregate operating status for a parent over its corporate entities.
 
-        Precedence ONGOING > UNKNOWN > ENDED: a brand is ongoing if any
+        Precedence ONGOING > UNKNOWN > ENDED: a manufacturer is ongoing if any
         incarnation is, ended only when every incarnation is known-ended, and
         unknown otherwise — including when it has no entities. Accepts wire
         strings or enum members (both normalize to the wire value).
@@ -77,10 +77,10 @@ class Manufacturer(
     TimeStampedModel,
     WikilinkableModel,
 ):
-    """A pinball machine brand (user-facing grouping).
+    """A pinball manufacturer as users know it — the name on the cabinet.
 
-    Corporate incarnations are tracked separately in ManufacturerEntity.
-    For example, "Gottlieb" is one Manufacturer with four ManufacturerEntity
+    Corporate incarnations are tracked separately in CorporateEntity.
+    For example, "Gottlieb" is one Manufacturer with four CorporateEntity
     records spanning different ownership eras.
     """
 
@@ -90,7 +90,7 @@ class Manufacturer(
     entities: models.Manager[CorporateEntity]
 
     link_sort_order = 30
-    # Match on the brand name and its direct aliases. Matching CorporateEntity
+    # Match on the manufacturer name and its direct aliases. Matching CorporateEntity
     # names is deliberately dropped — the listing's active-entity guard can't be
     # expressed as a flat field path; that nuance stays on the /manufacturers
     # listing.
@@ -101,7 +101,7 @@ class Manufacturer(
         unique=True,
         null=True,
         blank=True,
-        help_text="OPDB manufacturer_id for this brand.",
+        help_text="OPDB's manufacturer_id for this manufacturer.",
         validators=[MinValueValidator(EXTERNAL_ID_MIN)],
     )
     wikidata_id = models.CharField(
@@ -174,10 +174,10 @@ class CorporateEntity(
     TimeStampedModel,
     WikilinkableModel,
 ):
-    """A specific corporate incarnation of a manufacturer brand.
+    """A specific corporate incarnation of a Manufacturer.
 
     IPDB tracks corporate entities (e.g., four separate entries for Gottlieb
-    across its ownership eras). Each entity maps to one brand-level Manufacturer.
+    across its ownership eras). Each entity maps to one Manufacturer.
     """
 
     entity_type = "corporate-entity"

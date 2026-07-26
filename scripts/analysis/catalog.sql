@@ -383,8 +383,9 @@ COMMENT ON VIEW reward_types IS
 -- evidence available — so the derived columns below are the ones worth having.
 --
 -- Grain note: the physical chain is model -> CorporateEntity -> Manufacturer, and a
--- maker can own more than one CE. This view is at the MANUFACTURER level (the brand you
--- group and display by); drop to models.corporate_entity_* for the legal entity.
+-- maker can own more than one CE. This view is at the MANUFACTURER level (the name on
+-- the cabinet, what you group and display by); drop to models.corporate_entity_* for
+-- the legal entity.
 --
 --   n_models    : live models attributed to this maker, VARIANTS INCLUDED. 0 is normal
 --                 — the catalog carries makers it has no models for yet.
@@ -444,17 +445,18 @@ COMMENT ON VIEW manufacturers IS
   'One row per live maker — identity, home country, the model counts and the year_of_first_model/year_of_last_model span of its dated models. Span carries no minimum: apply your own n_dated >= k.';
 
 -- corporate_entities — one row per live CorporateEntity: the LEGAL entity one level
--- below the brand, the grain `models.corporate_entity_id` actually points at. Reach
--- for it when the question is about a corporate incarnation (D. Gottlieb & Company vs
--- Premier Technology) rather than about the brand you display.
+-- below the manufacturer, the grain `models.corporate_entity_id` actually points at.
+-- Reach for it when the question is about a corporate incarnation (D. Gottlieb &
+-- Company vs Premier Technology) rather than about the manufacturer you display.
 --
 --   year_of_first_model / year_of_last_model, and the n_* counts behind them : exactly
---                 as on `manufacturers`, scoped to the one entity rather than the brand.
+--                 as on `manufacturers`, scoped to the one entity rather than the whole
+--                 manufacturer.
 --   operating_status : 'ongoing' | 'ended' | 'unknown', and UNKNOWN IS THE COLUMN
 --                 DEFAULT — 734 of 777 entities sit on it because nobody has said
 --                 otherwise, not because the answer was investigated and lost. Counting
 --                 'ended' entities is sound; concluding anything from the size of the
---                 'unknown' bucket is not. Brand-level rollup is ONGOING > UNKNOWN >
+--                 'unknown' bucket is not. Manufacturer-level rollup is ONGOING > UNKNOWN >
 --                 ENDED (OperatingStatus.rollup in the model), deliberately not
 --                 precomputed here: it is a judgment a consumer should reach for
 --                 knowingly.
@@ -493,7 +495,7 @@ CREATE OR REPLACE VIEW corporate_entities AS
   LEFT JOIN agg a                      ON a.corporate_entity_id = ce.id
   WHERE ce.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW corporate_entities IS
-  'One row per live corporate entity — the LEGAL entity below the brand, with the same derived span and counts as manufacturers. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
+  'One row per live corporate entity — the LEGAL entity below the manufacturer, with the same derived span and counts as manufacturers. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
 
 -- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
 -- rewards — sorted reward-type names per model (only models that have any). Keyed
@@ -1237,7 +1239,7 @@ CREATE OR REPLACE VIEW manufacturer_aliases AS
 COMMENT ON VIEW manufacturer_aliases IS
   'One row per alias of a live maker — alias GRAIN, for resolving a source name (native-script, accented, trade name) to the canonical Manufacturer.';
 
--- Corporate entity, not manufacturer: the legal entity below the brand. An alias
+-- Corporate entity, not manufacturer: the legal entity below the manufacturer. An alias
 -- resolved here may be finer-grained than the maker used for grouping.
 CREATE OR REPLACE VIEW corporate_entity_aliases AS
   SELECT ca.corporate_entity_id, ce.slug AS corporate_entity_slug, ca.value AS alias

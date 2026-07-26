@@ -195,7 +195,7 @@ class TestQBranches:
     def test_matches_active_ce_name(self, db):
         mfr = _mfr("williams", name="Williams")
         _ce(mfr, "wec", name="Williams Electronic Games")
-        # The CE-name term reaches it via a different string than the brand name.
+        # The CE-name term reaches it via a different string than the manufacturer name.
         assert _slugs(MfrFilters(q="electronic")) == {"williams"}
 
     def test_matches_active_ce_alias(self, db):
@@ -214,9 +214,9 @@ class TestQGuardScoping:
         """A pure *name* match must survive even when the manufacturer has **no
         active CE** — the manufacturers analogue of titles' first-model ``q`` parity
         trap. A global ``AND active-CE`` guard would silently drop it."""
-        mfr = _mfr("zzz-brand", name="Zzz Brand")
+        mfr = _mfr("zzz-mfr", name="Zzz Mfr")
         _ce(mfr, "dead-ce", name="Defunct", status=EntityStatus.DELETED)
-        assert _slugs(MfrFilters(q="zzz")) == {"zzz-brand"}
+        assert _slugs(MfrFilters(q="zzz")) == {"zzz-mfr"}
 
     def test_inactive_ce_name_does_not_match(self, db):
         """An inactive CE's **name** must not match — its only signal is behind the
@@ -328,10 +328,10 @@ class TestQDiacritics:
         """The SQL-folded name branch folds diacritics on **Postgres** only; SQLite
         falls back to bare ``icontains``. Production is Postgres, so this is a
         documented dev/CI gap, not a user-facing regression."""
-        _mfr("cafe-brand", name="Café Royale")
+        _mfr("cafe-mfr", name="Café Royale")
         matched = _slugs(MfrFilters(q="cafe"))
         if connection.vendor == "postgresql":
-            assert matched == {"cafe-brand"}
+            assert matched == {"cafe-mfr"}
         else:
             assert matched == set()
 
@@ -340,9 +340,9 @@ class TestQDiacritics:
         unlike the SQL name branch above. ``q=montreal`` matches a Montréal CE on
         Postgres **and** SQLite."""
         montreal = _loc("montreal", "Montréal")
-        mfr = _mfr("ms-brand", name="MS Brand")
+        mfr = _mfr("ms-mfr", name="MS Mfr")
         _ce(mfr, "ms-ce", location=montreal)
-        assert _slugs(MfrFilters(q="montreal")) == {"ms-brand"}
+        assert _slugs(MfrFilters(q="montreal")) == {"ms-mfr"}
 
 
 # ---------------------------------------------------------------------------

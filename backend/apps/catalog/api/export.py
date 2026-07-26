@@ -726,14 +726,14 @@ def _build_registry() -> dict[type[CatalogModel], ExportSpec]:
             },
             derived={
                 # corporate_entity is the granular incarnation; this is the
-                # consolidated brand slug (the manufacturer name on the cabinet),
-                # so consumers can key models on the brand without a second hop
-                # through /export/corporate-entities/.
+                # consolidated manufacturer slug (the name on the cabinet), so
+                # consumers can key models on the manufacturer without a second
+                # hop through /export/corporate-entities/.
                 "manufacturer": DerivedField(
                     str | None,
                     "_export_mfr",
                     "Consolidated manufacturer slug for this model's "
-                    "corporate entity (the brand on the cabinet).",
+                    "corporate entity (the name on the cabinet).",
                 ),
             },
             annotate=_annotate_machine_model,
@@ -882,10 +882,10 @@ def _annotate_manufacturer(qs: QuerySet[Any]) -> QuerySet[Any]:
     nonvariant = Q(entities__models__variant_of__isnull=True) & active_status_q(
         "entities__models"
     )
-    # Brand operating status rolls up over its active corporate entities by
-    # precedence ONGOING > UNKNOWN > ENDED — the SQL mirror of
+    # Manufacturer operating status rolls up over its active corporate entities
+    # by precedence ONGOING > UNKNOWN > ENDED — the SQL mirror of
     # OperatingStatus.rollup. The correlated subquery takes the highest-priority
-    # entity's status; a brand with no active entity yields null → UNKNOWN
+    # entity's status; a manufacturer with no active entity yields null → UNKNOWN
     # (never ENDED).
     status_rollup = (
         CorporateEntity.objects.active()
