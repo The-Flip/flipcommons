@@ -150,7 +150,7 @@ def test_quoted_residual_refused():
     assert (
         extract_quote(
             'The eremeka catalog lists "1970 Jumbo Kick"; flipcommons held it '
-            'with no maker (IPDB: "Unknown Manufacturer").'
+            'with no manufacturer (IPDB: "Unknown Manufacturer").'
         )
         is None
     )

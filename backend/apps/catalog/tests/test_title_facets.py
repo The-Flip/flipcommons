@@ -93,7 +93,7 @@ def _display(slug: str) -> DisplayType:
 
 def _system(slug: str) -> System:
     sys_mfr, _ = Manufacturer.objects.get_or_create(
-        slug="system-maker", defaults={"name": "System Maker"}
+        slug="system-manufacturer", defaults={"name": "System Manufacturer"}
     )
     obj, _ = System.objects.get_or_create(
         slug=slug, defaults={"name": slug.upper(), "manufacturer": sys_mfr}

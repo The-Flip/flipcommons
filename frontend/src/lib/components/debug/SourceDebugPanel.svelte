@@ -24,7 +24,7 @@
   ];
 
   /** Parked keys that are real and expected, but not worth showing: media blobs
-   * and the maker-name fields that duplicate resolved columns. Listed rather
+   * and the manufacturer-name fields that duplicate resolved columns. Listed rather
    * than filtered server-side so the "unrecognized" bucket below stays
    * meaningful — anything absent from both lists is genuinely a surprise. */
   const SUPPRESSED = new Set([

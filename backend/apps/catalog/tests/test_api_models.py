@@ -158,8 +158,8 @@ class TestModelsAPI:
 
     def test_lineage_refs_carry_manufacturer(self, client, machine_model, stern_entity):
         # A same-named lineage link (a copy keeps the original's name) reads as
-        # a relation to itself unless the ref carries a maker. Variants carry
-        # one too, so a different-maker variant disambiguates like any other
+        # a relation to itself unless the ref carries a manufacturer. Variants carry
+        # one too, so a different-manufacturer variant disambiguates like any other
         # lineage link rather than being the one that can't. (Edge refs are
         # covered by test_relationship_edge_serialized_both_directions.)
         make_machine_model(
@@ -176,7 +176,7 @@ class TestModelsAPI:
     ):
         # One edge appears outbound on the subject (`relationships`) and
         # inbound on the target (`inbound_relationships`), each side carrying
-        # a maker-bearing ref like the legacy lineage links.
+        # a manufacturer-bearing ref like the legacy lineage links.
         copy = make_machine_model(
             name="Medieval Madness",
             slug="medieval-madness-copy",

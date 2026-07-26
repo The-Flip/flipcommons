@@ -448,7 +448,7 @@ CREATE OR REPLACE VIEW _anchor_skip AS
     ('patch_retractions.model_status',      'pending'),
     -- no interactive claim is about a machine model yet; a UI edit writes one
     ('model_claims.changeset_action',       'pending'),
-    -- no patch has filled a maker QID yet
+    -- no patch has filled a manufacturer QID yet
     ('manufacturers.wikidata_id',           'pending')
   ) AS t(col, kind);
 
@@ -977,8 +977,8 @@ CREATE OR REPLACE VIEW foundation_checks AS
   SELECT 'namesake_count_zero_on_live', 'model_id=' || id::VARCHAR
   FROM models WHERE namesake_count IS NULL OR namesake_count < 1
 
-  -- manufacturers.country_slug is set IFF the maker's models agree on one country —
-  -- the guard against a multi-country maker being silently collapsed to one value
+  -- manufacturers.country_slug is set IFF the manufacturer's models agree on one country —
+  -- the guard against a multi-country manufacturer being silently collapsed to one value
   UNION ALL
   SELECT 'manufacturer_country_collapsed',
          slug || ' n_countries=' || n_countries::VARCHAR
@@ -986,7 +986,7 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE n_countries IS NULL
      OR (n_countries = 1) IS DISTINCT FROM (country_slug IS NOT NULL)
 
-  -- The year pair is set IFF the maker has a dated non-variant model, and is a
+  -- The year pair is set IFF the manufacturer has a dated non-variant model, and is a
   -- well-formed span. BOTH ends are tested for presence: `first > last` goes NULL when
   -- the last is NULL, so a first-only row would otherwise pass a comparison that never
   -- ran. The n_dated <= n_nonvariant_models <= n_models ladder pins n_dated to the year

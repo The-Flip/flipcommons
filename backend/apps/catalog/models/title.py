@@ -59,8 +59,8 @@ class Title(
     link_sort_order = 10
     # Match on the title name and its abbreviations (Title has no alias
     # relation — ``abbreviations`` are its only alternate names). A title
-    # typeahead matches title text, not its maker, so manufacturer is not a
-    # search field.
+    # typeahead matches title text, not manufacturer names, so manufacturer is not
+    # a search field.
     autocomplete_search_fields = ("name", "abbreviations__value")
     # Set by ``autocomplete_annotations`` (Subquery annotations); read by
     # ``autocomplete_sublabel``. Absent on instances fetched any other way.

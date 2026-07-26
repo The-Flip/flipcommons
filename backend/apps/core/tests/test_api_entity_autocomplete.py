@@ -100,10 +100,10 @@ class TestEntityAutocomplete:
         from apps.catalog.models import Manufacturer
 
         Manufacturer.objects.bulk_create(
-            Manufacturer(name=f"Maker {i:03d}", slug=f"maker-{i:03d}")
+            Manufacturer(name=f"Manufacturer {i:03d}", slug=f"manufacturer-{i:03d}")
             for i in range(AUTOCOMPLETE_RESULT_LIMIT + 10)
         )
-        resp = api.get(ENDPOINT, {"type": "manufacturer", "q": "maker"})
+        resp = api.get(ENDPOINT, {"type": "manufacturer", "q": "manufacturer"})
         assert len(resp.json()["results"]) == AUTOCOMPLETE_RESULT_LIMIT
 
     def test_matches_manufacturer_alias(self, api, db):

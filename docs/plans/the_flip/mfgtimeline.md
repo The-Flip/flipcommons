@@ -39,15 +39,15 @@ Flipcommons will not model cross-brand lineage. The general principle: unless/un
 The Flip wanted the raw `year_start`/`year_end` incorporation/dissolution years populated.
 Flipcommons went a different way.
 
-Corporate years are misleading: a company can incorporate years before its first pinball machine or linger years after its last. We tried having AIs populate years and it actually created a mess _because_ the AIs got accurate corporate inception dates. We realized that what people actually care about is the years a maker was actually making pinball.
+Corporate years are misleading: a company can incorporate years before its first pinball machine or linger years after its last. We tried having AIs populate years and it actually created a mess _because_ the AIs got accurate corporate inception dates. We realized that what people actually care about is the years a manufacturer was actually making pinball.
 
 So Flipcommons _removed_ the physical corporate year fields entirely. Instead, there's now:
 
 - `year_of_first_model` / `year_of_last_model` — computed from the production years of its
   (non-variant) models.
-- `operating_status` — enum `ongoing` / `ended` / `unknown`. Many makers are explicitly set
-  `ended`. A maker that is `unknown` and has not produced a machine in 6 years is treated as
-  ended in the UI (an `unknown` maker with a recent machine is still rendered open-ended). API clients like mfgtimeline should do the same.
+- `operating_status` — enum `ongoing` / `ended` / `unknown`. Many manufacturers are explicitly set
+  `ended`. A manufacturer that is `unknown` and has not produced a machine in 6 years is treated as
+  ended in the UI (an `unknown` manufacturer with a recent machine is still rendered open-ended). API clients like mfgtimeline should do the same.
 
 These are included on `/api/export/corporate-entities/` and `/api/export/manufacturers/`, where
 `operating_status` rolls up across a brand's entities (precedence ongoing > unknown > ended).
@@ -91,10 +91,10 @@ for most, and a known unreleased game like Mazatron looked identical to a shippe
 This exposed a real hole in the Flipcommons (and IPDB) data. To solve it, Flipcommons added a `Model.production_status` enum:
 
 - 0 `produced` — commercially produced.
-- 3 `announced` — announced by the maker but not in production.
+- 3 `announced` — announced by the manufacturer but not in production.
 - 111 `unreleased` — intended for production but cancelled, shelved or abandoned.
-- 10 `one-off` — maker-built single unit, never meant for sale (gifts, props, test pieces).
-- 39 `aftermarket` — modified by someone other than the maker (fan re-themes, modders).
+- 10 `one-off` — manufacturer-built single unit, never meant for sale (gifts, props, test pieces).
+- 39 `aftermarket` — modified by someone other than the manufacturer (fan re-themes, modders).
 
 A good chunk of the world's non-`produced` models have now been marked as such. All five of The Flip's named prototypes — Mazatron, Pinball Circus, King Kong, Big Bang Bar, Kingpin — are set `unreleased`.
 
@@ -108,7 +108,7 @@ The `conversion-kit` tag has been retired. Models returned by `/api/export/model
 
 **Workaround**: filter out models with any `model_relationships` entry whose `relationship_type` is `conversion_kit`.
 
-### 9. Aftermarket re-themes attributed to the original maker: DONE
+### 9. Aftermarket re-themes attributed to the original manufacturer: DONE
 
 Flipcommons now separates rethemes into `unofficial-retheme` and `manufacturer-retheme` tags. The 37 models tagged `unofficial-retheme` also have `production_status` = `aftermarket`, so I don't believe you need to look at rethemes to figure out whether the machine was produced commercially.
 
@@ -152,9 +152,9 @@ This remains TODO. It's a pretty hard data acquisition problem. The data is not 
 
 This remains TODO. It's a pretty hard data acquisition problem. The data is not in IPDB or OPDB.
 
-### Early Japanese makers: DONE
+### Early Japanese manufacturers: DONE
 
-**The issue**: Flipcommons is thin on early Japanese pinball. The Flip cross-checked against the thetastates.com/eremeka catalog of early Japanese flipper games and found makers that Flipcommons doesn't surface at all.
+**The issue**: Flipcommons is thin on early Japanese pinball. The Flip cross-checked against the thetastates.com/eremeka catalog of early Japanese flipper games and found manufacturers that Flipcommons doesn't surface at all.
 
 **Resolution**: Flipcommons imported the eremeka catalog plus info from a few other Japanese sources:
 

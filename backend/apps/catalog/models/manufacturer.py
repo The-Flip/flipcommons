@@ -41,8 +41,8 @@ class OperatingStatus(models.TextChoices):
     """Whether a corporate entity is still producing pinball.
 
     An explicit editorial signal that ``max(model.year)`` can't express — it
-    distinguishes a defunct maker whose last title was recent from an active
-    maker currently on a multi-year gap (the MusicBrainz "ended" pattern).
+    distinguishes a defunct entity whose last title was recent from an active one
+    currently on a multi-year gap (the MusicBrainz "ended" pattern).
 
     Member names are UPPERCASE, wire/DB/JSON values lowercase, matching the
     ``EntityStatus`` precedent. Every wire/claim/frontend value is the
@@ -220,7 +220,7 @@ class CorporateEntity(
             "DEAD FIELD — do not read or write. The asserted year the corporate "
             "entity ceased operations; see year_start for why it was retired. Use "
             "the derived year_of_last_model instead, with operating_status for "
-            "whether the maker has actually stopped. Kept only so the cited "
+            "whether the entity has actually stopped. Kept only so the cited "
             "claims behind it survive."
         ),
         validators=[MinValueValidator(YEAR_MIN), MaxValueValidator(YEAR_MAX)],

@@ -288,7 +288,7 @@ claims:
 
 Rules:
 
-- **Exactly one target key.** `target_machine` plus `target_label` on one member is rejected, as is a member with neither. Don't restate the machine's maker in a label when `target_machine` is set — the model row already knows it.
+- **Exactly one target key.** `target_machine` plus `target_label` on one member is rejected, as is a member with neither. Don't restate the machine's manufacturer in a label when `target_machine` is set — the model row already knows it.
 - **Some types require a seeded machine target.** A `retheme` member must use `target_machine`; a `target_label` on a re-theme is rejected (a re-theme's donor is always a known, seeded machine). For re-themes, `license_status` records official (`licensed`) vs unofficial (`unlicensed`), or `unknown` when no source establishes it.
 - **`license_status` is deliberately explicit** — there is no silent default in patches. Write `unknown` when no source establishes authorization either way; an unlicensed copy is `relationship_type: copy` + `license_status: unlicensed`, and the source must establish both facts.
 - **Identity is the machine target only; a model holds one label slot.** Re-asserting a machine-target member with a different `relationship_type`/`license_status` supersedes the old values in place; two members with the same target in one entry are a duplicate and rejected. The label edge is keyed by its _slot_, not its wording: a model has at most one `target_label` edge, re-asserting one with different wording rewords that edge in place (same edge, citations intact) and a same-actor label assert in a later patch supersedes the earlier one rather than adding a second edge.

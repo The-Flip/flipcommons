@@ -19,7 +19,7 @@ describe('TitleCard manufacturer line', () => {
   });
 
   it('omits the manufacturer line entirely when the caller suppresses it', () => {
-    // Manufacturer and corporate-entity pages already name the maker; repeating
+    // Manufacturer and corporate-entity pages already name the manufacturer; repeating
     // it on every tile is noise, and "Unknown Manufacturer" is plainly wrong.
     render(TitleCard, {
       props: { slug: 'big-ben', name: 'Big Ben', year: 1975, showManufacturer: false },

@@ -1,7 +1,7 @@
 import { asset, resolve } from '$app/paths';
 import type { CorporateEntityDetailSchema } from '$lib/api/schema';
 
-/** Years within which a maker of unknown status is presumed still producing. */
+/** Years within which an unknown operating status is presumed to still be producing. */
 const UNKNOWN_RECENCY_YEARS = 6;
 
 /** The three production-status values, derived from the generated schema. */
@@ -28,18 +28,18 @@ export function pluralize(n: number, one: string, many?: string): string {
 }
 
 /**
- * Format a maker's production-year span for display, resolving the open-ended
- * "present" marker from `operatingStatus`:
+ * Format the production-year span of a manufacturer or corporate entity for display,
+ * resolving the open-ended "present" marker from `operatingStatus`:
  *
  * - `ongoing` → `"{first}–present"`
  * - `ended` → closed `"{first}–{last}"`
  * - `unknown` → closed when the last model predates `UNKNOWN_RECENCY_YEARS`,
- *   else `"{first}–present"` (a recent maker is presumed still producing).
+ *   else `"{first}–present"` (a recent last model is presumed to mean still producing).
  *
  * Equal first/last years collapse to a single year in the closed cases
  * (`"1985"`, not `"1985–1985"`). Returns null when the span has no anchoring
  * year — `firstYear`/`lastYear` are a coupled min/max, so both are null
- * together when the maker has no dated models.
+ * together when there are no dated models.
  */
 export function formatActiveRange(
   firstYear: number | null | undefined,

@@ -52,8 +52,8 @@ ATTACH IF NOT EXISTS 'backend/db.sqlite3' AS fc (TYPE sqlite, READ_ONLY);
 --                     it would then match every other such name. This is not
 --                     hypothetical: 'Pokémon' keyed as 'pok mon' and 'Competición
 --                     Penalty' as 'competici n penalty' — a couple of dozen model
---                     names, mostly the Spanish-maker cohort that the export and
---                     bingo campaigns work in.
+--                     names, mostly the Spanish-manufacturer cohort that the
+--                     export and bingo campaigns work in.
 --                     Known limits, both preferable to the word-break they replace:
 --                     ordinal indicators survive as letters ('1ª División' ->
 --                     '1ª division', so a source writing '1a' will not match), and
@@ -84,8 +84,8 @@ COMMENT ON MACRO name_key IS
   'name_norm(name_strip_paren(s)) — the name comparison key for the common case. Use name_norm alone when a trailing parenthetical distinguishes the records.';
 
 -- ═══ MODELS — the spine; start here ═════════════════════════════════════════
--- _ce_location — the MAKER's home location per corporate entity, collapsed to ONE
--- row per CE so joining it to all_models can't fan out the one-row-per-model grain.
+-- _ce_location — the MANUFACTURER's home location per corporate entity, collapsed to
+-- ONE row per CE so joining it to all_models can't fan out the one-row-per-model grain.
 -- A CE MAY carry several locations (CorporateEntityLocation is 1:N), but every CE in
 -- the catalog has exactly one today: while that holds this is exact, and the day it
 -- stops catalog_checks fires (ce_multi_location) so we add a model_locations grain
@@ -145,25 +145,26 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             on `all_models` when no live model carries a deleted model's name key.
 --             See README.md#matching-source-records-to-models for the procedure.
 --   status  : 'active' | 'deleted' | NULL — live is anything but 'deleted'.
---   manufacturer_model_identifier : the MAKER's own model number (Gottlieb '654',
---             Stern 'PINBALL I-00M1 * JURAS. PARK PRO'). NOT unique — and not unique
---             paired with manufacturer_id either, for two different reasons: makers
---             number independently from 1 (low integers collide across makers), AND the
---             catalog splits finer than they numbered, so one number spans several
---             of our models — within a Title (Gottlieb 409 = Cleopatra + Cleopatra
---             (EM)) or across Titles for a re-theme family (Williams 394 = Zodiac +
---             Planets). Some collisions are just bad data (Bally 868 = Safari 1969 +
---             Mysterian 1982). GROUP BY (manufacturer_id, identifier) before
---             treating it as an identity. NULL on most live models.
+--   manufacturer_model_identifier : the MANUFACTURER's own model number (Gottlieb
+--             '654', Stern 'PINBALL I-00M1 * JURAS. PARK PRO'). NOT unique — and not
+--             unique paired with manufacturer_id either, for two different reasons:
+--             manufacturers number independently from 1 (low integers collide across
+--             manufacturers), AND the catalog splits finer than they numbered, so one
+--             number spans several of our models — within a Title (Gottlieb 409 =
+--             Cleopatra + Cleopatra (EM)) or across Titles for a re-theme family
+--             (Williams 394 = Zodiac + Planets). Some collisions are just bad data
+--             (Bally 868 = Safari 1969 + Mysterian 1982). GROUP BY
+--             (manufacturer_id, identifier) before treating it as an identity.
+--             NULL on most live models.
 --   year / month : the release date, as a precision ladder — `catalog_machinemodel_
 --             month_requires_year` means a NULL month is "dated to the year", never a
 --             month lost from a fuller date. Roughly two thirds of live models carry
 --             one. Nothing above the year is modelled, so a model released in a named
 --             quarter or season arrives here as a month or as nothing.
---   maker   : manufacturer_name is the canonical maker (Manufacturer.name via
---             corporate_entity) — display/group by it.
---   location: where the MAKER was based, model -> corporate_entity -> location. This
---             is the maker's ORIGIN, NOT an export-market destination — those are
+--   manufacturer : manufacturer_name is the canonical name on the cabinet
+--             (Manufacturer.name via corporate_entity) — display/group by it.
+--   location: where the MANUFACTURER was based, model -> corporate_entity ->
+--             location. This is its ORIGIN, NOT an export-market destination — those are
 --             `model_export_markets`. location_path ('usa/il/chicago') is the most-
 --             specific known place and doubles as the stable key; country_slug ('usa')
 --             is its root, the field to join/group by (-> countries.slug for the name).
@@ -377,40 +378,40 @@ CREATE OR REPLACE VIEW reward_types AS
 COMMENT ON VIEW reward_types IS
   'One row per live reward type — the payout vocabulary behind the rewards name-list; join reward_type_aliases to resolve a source phrasing into it.';
 
--- manufacturers — one row per live maker: identity, where it was based, how much it
--- made and WHEN. "When was this maker active" turns out to be a question most
--- campaigns ask, usually because a MODEL has no year and its maker's span is the only
--- evidence available — so the derived columns below are the ones worth having.
+-- manufacturers — one row per live manufacturer: identity, where it was based, how
+-- much it made and WHEN. "When was this manufacturer active" turns out to be a question
+-- most campaigns ask, usually because a MODEL has no year and its manufacturer's span is
+-- the only evidence available — so the derived columns below are the ones worth having.
 --
 -- Grain note: the physical chain is model -> CorporateEntity -> Manufacturer, and a
--- maker can own more than one CE. This view is at the MANUFACTURER level (the name on
--- the cabinet, what you group and display by); drop to models.corporate_entity_* for
--- the legal entity.
+-- manufacturer can own more than one CE. This view is at the MANUFACTURER level (the
+-- name on the cabinet, what you group and display by); drop to
+-- models.corporate_entity_* for the legal entity.
 --
---   n_models    : live models attributed to this maker, VARIANTS INCLUDED. 0 is normal
---                 — the catalog carries makers it has no models for yet.
+--   n_models    : live models attributed to this manufacturer, VARIANTS INCLUDED. 0 is
+--                 normal — the catalog carries manufacturers with no models yet.
 --   n_nonvariant_models : the same count with variants excluded — what
---                 /api/export/manufacturers/ publishes as `model_count`. 25 makers
---                 disagree with n_models.
+--                 /api/export/manufacturers/ publishes as `model_count`. 25
+--                 manufacturers disagree with n_models.
 --   n_dated     : non-variant models carrying a year — the year pair's own scope, and
 --                 THE denominator for it: a span resting on 2 models is not the same
 --                 claim as one resting on 40, and only this column tells them apart.
 --   year_of_first_model / year_of_last_model : min/max year over those models — the span
---                 the maker's output occupies, and the same values
+--                 the manufacturer's output occupies, and the same values
 --                 /api/export/manufacturers/ publishes under these names.
 --                 NOT filtered by any minimum: a 1-model span is reported as exactly
 --                 that, n_dated = 1, and the CALLER decides what it will accept
 --                 (`WHERE n_dated >= 3` is a reasonable bar, and is the analysis's to
---                 set, not this view's). Gaps are invisible — a maker active 1932-1935
---                 and again 1975-1979 reads as a 47-year span, so treat it as an outer
---                 bound, not a continuous run.
---   country_slug: the maker's home country, and NULL when its models disagree — 3
---                 makers do. n_countries is carried alongside so an ambiguous home is
---                 visible rather than silently collapsed to one of its values.
---   website / wikidata_id : the maker's own site and its Wikidata QID — the two
---                 outbound handles for enriching a maker from outside the catalog,
---                 which is why they are here rather than left to a raw join. Both
---                 sparse: 24 makers have a website and NOTHING carries a QID yet, so
+--                 set, not this view's). Gaps are invisible — a manufacturer active
+--                 1932-1935 and again 1975-1979 reads as a 47-year span, so treat it as
+--                 an outer bound, not a continuous run.
+--   country_slug: the manufacturer's home country, and NULL when its models disagree —
+--                 3 manufacturers do. n_countries is carried alongside so an ambiguous
+--                 home is visible rather than silently collapsed to one of its values.
+--   website / wikidata_id : the manufacturer's own site and its Wikidata QID — the two
+--                 outbound handles for enriching one from outside the catalog, which is
+--                 why they are here rather than left to a raw join. Both sparse: 24
+--                 manufacturers have a website and NOTHING carries a QID yet, so
 --                 wikidata_id is a `pending` anchor skip that expires the day one does.
 --                 An empty website is '' and an absent QID is NULL — the model spells
 --                 them differently, and this view does not paper over that.
@@ -442,7 +443,7 @@ CREATE OR REPLACE VIEW manufacturers AS
   LEFT JOIN agg a ON a.manufacturer_id = mf.id
   WHERE mf.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW manufacturers IS
-  'One row per live maker — identity, home country, the model counts and the year_of_first_model/year_of_last_model span of its dated models. Span carries no minimum: apply your own n_dated >= k.';
+  'One row per live manufacturer — identity, home country, the model counts and the year_of_first_model/year_of_last_model span of its dated models. Span carries no minimum: apply your own n_dated >= k.';
 
 -- corporate_entities — one row per live CorporateEntity: the LEGAL entity one level
 -- below the manufacturer, the grain `models.corporate_entity_id` actually points at.
@@ -461,9 +462,9 @@ COMMENT ON VIEW manufacturers IS
 --                 precomputed here: it is a judgment a consumer should reach for
 --                 knowingly.
 --   ipdb_manufacturer_id : IPDB's ManufacturerId, the join key back to an IPDB scrape.
---                 This is the level IPDB models makers at, which is why it lives here
---                 and `opdb_manufacturer_id` lives on `manufacturers` — the two source
---                 databases split the maker at different grains.
+--                 This is the grain IPDB models a manufacturer at, which is why it
+--                 lives here and `opdb_manufacturer_id` lives on `manufacturers` — the
+--                 two source databases split the manufacturer at different grains.
 --   location      : the entity's own place, via _ce_location — the same single-valued
 --                 assumption `models.location_path` rests on, stated in its note.
 CREATE OR REPLACE VIEW corporate_entities AS
@@ -734,10 +735,10 @@ COMMENT ON VIEW gameplay_feature_vocab IS
   'One row per live gameplay feature — the feature VOCABULARY, columns matching theme_vocab. Read n WITH children: n = 0 on an interior node is by design.';
 
 -- _model_target — the distinguishing facts surfaced for the OTHER end of a
--- relationship edge (a lineage or relationship target): identity (including the maker's
--- own model number), year, genre (game_format), reward types, player count, maker and
--- where the maker was based (location) — the pieces a reviewer uses to tell two models
--- apart, and genre is the most fundamental ("is my target a bingo?").
+-- relationship edge (a lineage or relationship target): identity (including the
+-- manufacturer's own model number), year, genre (game_format), reward types, player
+-- count, manufacturer and where it was based (location) — the pieces a reviewer uses to
+-- tell two models apart, and genre is the most fundamental ("is my target a bingo?").
 -- A pure projection of `models` (live-only) + `rewards`, with columns named
 -- target_* so both edge views pull the whole block via `* EXCLUDE (id)` and never
 -- restate the list. Private: read it through model_lineage / model_relationships.
@@ -797,8 +798,8 @@ CREATE OR REPLACE VIEW _model_target AS
 -- bypassed — catalog_checks flags it (lineage_target_not_live).
 --   edge_kind : 'variant_of' | 'remake_of' | 'export_edition_of'
 --   target_*  : the origin model's identity (incl. manufacturer_model_identifier),
---               year, genre, reward types, player count
---               and maker (see _model_target; predicate on ids/slugs, display names)
+--               year, genre, reward types, player count and manufacturer
+--               (see _model_target; predicate on ids/slugs, display names)
 CREATE OR REPLACE VIEW model_lineage AS
   WITH edges AS (
     SELECT id AS model_id, variant_of_id AS target_id, 'variant_of' AS edge_kind
@@ -961,9 +962,10 @@ COMMENT ON VIEW model_edges_bidir IS
 --             grouping de-enriches to NULL instead of being reported as current. Both
 --             are sparse by design — 210 Titles carry a franchise, 16 a series — and
 --             they mean different things: a franchise is the IP (Star Trek, spanning
---             makers and eras), a series is a curated thematic lineage (Eight Ball ->
---             Eight Ball Deluxe). Nothing ingests either; both are curator-maintained,
---             so an absent grouping is "not yet curated", never "does not belong".
+--             manufacturers and eras), a series is a curated thematic lineage (Eight
+--             Ball -> Eight Ball Deluxe). Nothing ingests either; both are
+--             curator-maintained, so an absent grouping is "not yet curated", never
+--             "does not belong".
 --             The groupings themselves have no vocabulary view — GROUP BY the slug
 --             here for their membership, and promote a `franchises` view the day an
 --             analysis needs a franchise that no Title points at.
@@ -1011,7 +1013,7 @@ CREATE OR REPLACE VIEW franchises AS
   WHERE f.status IS DISTINCT FROM 'deleted'
   GROUP BY ALL;
 COMMENT ON VIEW franchises IS
-  'One row per live Franchise — the IP grouping (Star Trek), spanning makers and eras, with n_titles. Curator-maintained, never ingested, so n_titles = 0 is a real state.';
+  'One row per live Franchise — the IP grouping (Star Trek), spanning manufacturers and eras, with n_titles. Curator-maintained, never ingested, so n_titles = 0 is a real state.';
 
 CREATE OR REPLACE VIEW series AS
   SELECT s.id, s.slug, s.name, s.description,
@@ -1037,23 +1039,23 @@ CREATE OR REPLACE VIEW title_size AS
 COMMENT ON VIEW title_size IS
   'One row per Title with a live model — Title identity plus n, the live model count. The "alone in its Title?" signal is n = 1.';
 
--- model_number_collisions — one row per (maker, model number) that more than one live
--- model claims. `models.manufacturer_model_identifier` is documented as not unique;
+-- model_number_collisions — one row per (manufacturer, model number) that more than one
+-- live model claims. `models.manufacturer_model_identifier` is documented as not unique;
 -- this is that fact made queryable, so an analysis matching a source's model number
 -- can see up front whether its key resolves.
 --
--- The column doc lists the three reasons a number repeats — the catalog splitting
--- finer than the maker numbered (within a Title, or across Titles for a re-theme
+-- The column doc lists the three reasons a number repeats — the catalog splitting finer
+-- than the manufacturer numbered (within a Title, or across Titles for a re-theme
 -- family), and plain bad data. `n_titles` is the cheap discriminator: 1 means the
 -- collision is contained in one Title and is probably a legitimate split; >1 wants a
 -- look. Reported, never judged — deciding which kind a row is needs a human.
 --
--- EXACT numbers only, no stem matching. A maker's suffix convention is a fact about
--- THAT MAKER, not about the column: Bally's trailing letter marks a different game
--- (#634 'Fun Way' vs #634-A 'Lotta Fun'), which is not something to assume of anyone
--- else. An analysis needing loose matching should own the rule, and record the maker
--- it holds for, rather than inherit a stem macro that would answer confidently for
--- makers it was never calibrated on.
+-- EXACT numbers only, no stem matching. A manufacturer's suffix convention is a fact
+-- about THAT MANUFACTURER, not about the column: Bally's trailing letter marks a
+-- different game (#634 'Fun Way' vs #634-A 'Lotta Fun'), which is not something to
+-- assume of anyone else. An analysis needing loose matching should own the rule, and
+-- record the manufacturer it holds for, rather than inherit a stem macro that would
+-- answer confidently for manufacturers it was never calibrated on.
 CREATE OR REPLACE VIEW model_number_collisions AS
   SELECT
     manufacturer_id,
@@ -1069,7 +1071,7 @@ CREATE OR REPLACE VIEW model_number_collisions AS
   GROUP BY manufacturer_id, manufacturer_model_identifier
   HAVING count(*) > 1;
 COMMENT ON VIEW model_number_collisions IS
-  'One row per (maker, model number) claimed by more than one live model — exact numbers only. n_titles = 1 is usually a legitimate catalog split, not bad data.';
+  'One row per (manufacturer, model number) claimed by more than one live model — exact numbers only. n_titles = 1 is usually a legitimate catalog split, not bad data.';
 
 -- ═══ PEOPLE AND CREDITS ════════════════════════════════════════════════════
 -- credits — one row per credit: a Person, in a CreditRole, on a subject. THE grain, and
@@ -1089,7 +1091,7 @@ COMMENT ON VIEW model_number_collisions IS
 --             across to `claims` needs no translation. Want the model half? Use
 --             `model_credits`, not a subject_type predicate you wrote yourself.
 --   subject_name : the subject's plain name — `models.label` is the disambiguated form
---             ("Name (Maker Year)") and is one join from `model_credits.model_id`.
+--             ("Name (Manufacturer Year)") and is one join from `model_credits.model_id`.
 --   liveness: all four ends are live-filtered — both halves of the XOR, the person and
 --             the role. A credit on a soft-deleted model is not a credit on the live
 --             catalog, and the far end of a grain edge has to be live for the same
@@ -1237,10 +1239,10 @@ CREATE OR REPLACE VIEW manufacturer_aliases AS
   FROM fc.catalog_manufactureralias ma
   JOIN manufacturers mf ON mf.id = ma.manufacturer_id;
 COMMENT ON VIEW manufacturer_aliases IS
-  'One row per alias of a live maker — alias GRAIN, for resolving a source name (native-script, accented, trade name) to the canonical Manufacturer.';
+  'One row per alias of a live manufacturer — alias GRAIN, for resolving a source name (native-script, accented, trade name) to the canonical Manufacturer.';
 
 -- Corporate entity, not manufacturer: the legal entity below the manufacturer. An alias
--- resolved here may be finer-grained than the maker used for grouping.
+-- resolved here may be finer-grained than the manufacturer used for grouping.
 CREATE OR REPLACE VIEW corporate_entity_aliases AS
   SELECT ca.corporate_entity_id, ce.slug AS corporate_entity_slug, ca.value AS alias
   FROM fc.catalog_corporateentityalias ca

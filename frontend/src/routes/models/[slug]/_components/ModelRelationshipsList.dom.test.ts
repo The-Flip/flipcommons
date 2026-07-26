@@ -24,7 +24,7 @@ describe('ModelRelationshipsList relationship edges', () => {
     render(ModelRelationshipsList, { props: { model } });
 
     expect(screen.getByRole('heading', { name: 'Conversion kit for' })).toBeInTheDocument();
-    // Rendered like every lineage link: name link + maker link + year.
+    // Rendered like every lineage link: name link + manufacturer link + year.
     const link = screen.getByRole('link', { name: 'Galaxie' });
     expect(link).toHaveAttribute('href', expect.stringContaining('galaxie'));
     expect(screen.getByRole('link', { name: 'Gottlieb' })).toHaveAttribute(

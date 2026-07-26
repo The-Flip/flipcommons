@@ -306,7 +306,7 @@ def _manufacturer_qs() -> QuerySet[Manufacturer]:
         Prefetch(
             "entities",
             # Order companies by when they began producing (earliest active,
-            # non-variant model year), undated makers last — mirroring the
+            # non-variant model year), undated manufacturers last — mirroring the
             # production-derived range now shown for each. The Min filter matches
             # the prefetched ``models`` scope so the sort key equals the displayed
             # ``year_of_first_model``.

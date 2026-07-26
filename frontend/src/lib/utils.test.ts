@@ -41,11 +41,11 @@ describe('formatActiveRange', () => {
   const recent = thisYear - 2; // within the 6-year recency window
   const old = thisYear - 20; // well outside it
 
-  it('renders ongoing makers as open-ended, regardless of last model age', () => {
+  it('renders ongoing manufacturers as open-ended, regardless of last model age', () => {
     expect(formatActiveRange(1971, old, 'ongoing')).toBe(`1971–present`);
   });
 
-  it('renders ended makers as a closed range', () => {
+  it('renders ended manufacturers as a closed range', () => {
     expect(formatActiveRange(1931, 1998, 'ended')).toBe('1931–1998');
   });
 
@@ -54,11 +54,11 @@ describe('formatActiveRange', () => {
     expect(formatActiveRange(old, old, 'unknown')).toBe(`${old}`);
   });
 
-  it('treats a recent unknown maker as still producing', () => {
+  it('treats a recent unknown manufacturer as still producing', () => {
     expect(formatActiveRange(1990, recent, 'unknown')).toBe(`1990–present`);
   });
 
-  it('closes an unknown maker whose last model is older than the window', () => {
+  it('closes an unknown manufacturer whose last model is older than the window', () => {
     expect(formatActiveRange(1990, old, 'unknown')).toBe(`1990–${old}`);
   });
 

@@ -165,7 +165,7 @@ class TestManufacturersAPI:
     def test_manufacturer_production_span_null_when_no_years(
         self, client, manufacturer, williams_entity
     ):
-        # A maker whose only model lacks a year → null bounds, no crash.
+        # A manufacturer whose only model lacks a year → null bounds, no crash.
         make_machine_model(
             name="Undated", slug="undated", corporate_entity=williams_entity
         )
