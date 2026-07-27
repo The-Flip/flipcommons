@@ -15,7 +15,7 @@ Decision: we are NOT going to model 'contested'. That sort of uncertainty could 
 
 ### Multiple relationships
 
-We've seen multiple examples of a machine being created / inspired by multiple source machines. Examples:
+We've seen multiple examples of a model being created / inspired by multiple source models. Examples:
 
 - `bootleg_of` / `licensed_build_of` (a copy): `punky-willy` (copies both Rock and Rock Encore).
 - `converted_from` (a conversion): `the-happy-musketeers` (Hi-Score and Super Score), `summer-time-4` (Hit-A-Card and Solitaire), `mondial-bank`.
@@ -25,13 +25,13 @@ We've seen multiple examples of a machine being created / inspired by multiple s
 
 Conversions also sometimes carry licensing status (headsup-pinball's note literally says "a licensed conversion kit for Gottlieb's Team One").
 
-### Unknown target machine
+### Unknown target model
 
-The target machine isn't always known. This has two sub-issues:
+The target model isn't always known. This has two sub-issues:
 
 #### Duplicate info
 
-Right now we have a `bootleg` tag because we can't model 'unknown target machine' with `bootleg_of`. But for machines where `bootleg_of` _is_ known, we have to remember to set the tag. We'd prefer a model where we don't have to duplicate info like that.
+Right now we have a `bootleg` tag because we can't model 'unknown target model' with `bootleg_of`. But for models where `bootleg_of` _is_ known, we have to remember to set the tag. We'd prefer a model where we don't have to duplicate info like that.
 
 #### Unrepresentable target info
 
@@ -45,25 +45,25 @@ It would be nice to be able to record what we _DO_ know, instead of dropping the
 
 ## Solution
 
-Store this information in a join table, so that a single machine can have multiple relationships.
+Store this information in a join table, so that a single model can have multiple relationships.
 
 ### Join table name
 
 Call it `ModelRelationship`. It matches the existing `?edit=related-models` editor vocabulary.
 
-We considered names like Derived From? Derivation? Based On? However, conversion kits aren't really 'derived' from the machines they're related to.
+We considered names like Derived From? Derivation? Based On? However, conversion kits aren't really 'derived' from the models they're related to.
 
 ### Relationship type — a code enum, grown by release
 
 Each edge carries `relationship_type`, a CHECK-constrained enum (`RelationshipType` TextChoices — the state already shipped on this branch). The vocabulary:
 
-- `conversion`: take a physical source machine and use it or components of it. These are complete converted machines, not conversion kits. The target means "built from this donor". Examples:
-  - j-martina (patch 0144) = conversions. Header explicitly says "complete converted machines, not conversion kits, so no conversion-kit tag."
-- `conversion-kit`: a kit to take a physical machine and convert it to a different machine. The target means "compatible with this donor".
+- `conversion`: take a physical source model and use it or components of it. These are complete converted models, not conversion kits. The target means "built from this donor". Examples:
+  - j-martina (patch 0144) = conversions. Header explicitly says "complete converted models, not conversion kits, so no conversion-kit tag."
+- `conversion-kit`: a kit to take a physical model and convert it to a different model. The target means "compatible with this donor".
   - Geiger (patch 0142) = conversion kits.
-- `copy`: reproduce a design of another machine using new hardware.
+- `copy`: reproduce a design of another model using new hardware.
 
-A fourth type, `retheme` (keep another machine's gameplay, re-skin the art), is planned as a follow-up in its own branch — see [Rethemes.md](Rethemes.md). It is not part of the shipped enum.
+A fourth type, `retheme` (keep another model's gameplay, re-skin the art), is planned as a follow-up in its own branch — see [Rethemes.md](Rethemes.md). It is not part of the shipped enum.
 
 Why an enum and not a claims-controlled vocabulary entity (decided 2026-07-15; see [Claims-controlled data, or code?](#claims-controlled-data-or-code) and the [decision record](#vocabulary-entity)): the type set will probably grow — the conversion/conversion-kit distinction emerged mid-campaign, and the planned `retheme` type ([Rethemes.md](Rethemes.md)) is exactly such a growth — but a **new type is behavior-heavy**: it must decide subordination and phrasing across six surfaces. Those decisions belong in code review, not in a contributor's YAML patch.
 
@@ -98,7 +98,7 @@ We must present the UI in a way that works for both AND'ing and OR'ing (so avoid
 
 A model can have multiple `conversion` targets. Examples:
 
-- `playtime-5` (patch 0143): "a conversion of Recel's 1978 'Fair Fight' or maybe Petaco's 'Fair Fight'." That's a conversion with two machine targets whose connective is disjunctive-with-uncertainty — "one of these, we don't know which"
+- `playtime-5` (patch 0143): "a conversion of Recel's 1978 'Fair Fight' or maybe Petaco's 'Fair Fight'." That's a conversion with two model targets whose connective is disjunctive-with-uncertainty — "one of these, we don't know which"
 - `robin-hood-4` (patch 0144): "used for their conversion whatever used cabinets they had available." That's a conversion whose donor is disjunctive by nature.
 - `the-happy-musketeers`: "a conversion of Hi-Score AND Super Score". Does that mean they converted from one or the other, or both at the same time?
 - `summer-time-4`: "a conversion of both Hit-A-Card and Solitaire". Does that mean they converted from one or the other, or both at the same time?
@@ -116,7 +116,7 @@ All the examples we've seen mean it's compatible with multiple donors, thus OR'e
 
 #### `copy`
 
-A `copy` can be a mashup of multiple machines. Examples:
+A `copy` can be a mashup of multiple models. Examples:
 
 - `punky-willy`: "copy of Premier's Rock and Rock Encore"
 
@@ -133,16 +133,16 @@ Never model relationships whose cardinality is 1:1 in this join table:
 
 The edge's target is one of two representations, exactly one set (XOR):
 
-- `target_machine` (nullable FK): the fully-resolved donor, when we know it and it's seeded.
+- `target_model` (nullable FK): the fully-resolved donor, when we know it and it's seeded.
 - `target_label` (text, `""` = absent): plain-text descriptor when the donor isn't seeded ("several Gottlieb EM models", "an unknown 1960s replay game").
 
 A model holds at most **one** label edge. The label's identity is its slot, not its wording (see [Claim identity](#claim-identity)): all of a model's unresolved-target knowledge lives in one row, and rewording it edits that row in place. What this can't represent: two unseeded-target relationships of different types on one model ("copy of an unknown design" + "conversion of whatever cabinets were available") — no observed example, and the escape hatch is the same bounded claim_key rewrite as promoting type into identity.
 
-We considered a third rung — a `target_manufacturer` FK for "a Gottlieb game" — and dropped it: the UX didn't work. When the manufacturer is known but the machine isn't, the manufacturer just lives in the label text, unlinked.
+We considered a third rung — a `target_manufacturer` FK for "a Gottlieb game" — and dropped it: the UX didn't work. When the manufacturer is known but the model isn't, the manufacturer just lives in the label text, unlinked.
 
 Display:
 
-- Machine target: "Conversion kit for [Galaxie (Gottlieb 1971)]" — the target hyperlinks to the model.
+- Model target: "Conversion kit for [Galaxie (Gottlieb 1971)]" — the target hyperlinks to the model.
 - Label target: "Conversion kit for several Gottlieb EM models" — plain text, no hyperlink (not even on Gottlieb).
 
 ### Citations
@@ -153,21 +153,21 @@ Decision record: we considered making the target and `license_status` independen
 
 ### Claim identity
 
-Decision: the edge's claim identity is `target_machine` alone (nullable — `claim_key` already serializes null identity parts). `relationship_type`, `license_status` and `target_label` are all non-identity: a label edge's claim key is constant per model, so the label wording is data _on_ the edge, not the name _of_ it.
+Decision: the edge's claim identity is `target_model` alone (nullable — `claim_key` already serializes null identity parts). `relationship_type`, `license_status` and `target_label` are all non-identity: a label edge's claim key is constant per model, so the label wording is data _on_ the edge, not the name _of_ it.
 
 Why the label is out of identity: the label is prose and gets copyedited. If the wording were identity, editing a single word would tombstone the edge and mint a new one — the citation history stranded on the dead edge, the edit history reading "removed X, added Y" for what was a correction. Out of identity, a rewording supersedes in place like any other correction, and two actors disagreeing on wording contest one edge instead of materializing two. It also kills the near-duplicate problem structurally: "an unknown Gottlieb game" and "an unidentified Gottlieb" can no longer coexist as two edges.
 
-Consequences: corrections ("actually it's a kit, not a conversion"; "actually the donor was a 2-player") supersede in place and keep the edge's citation history, and disagreements contest one edge instead of materializing two coexisting edges under different claim keys. One edge per (model, machine target) plus at most one label edge per model, enforced with two partial UNIQUE constraints on the through table: `(machine_model, target_machine)` where the machine is set, and `(machine_model)` alone where it is null.
+Consequences: corrections ("actually it's a kit, not a conversion"; "actually the donor was a 2-player") supersede in place and keep the edge's citation history, and disagreements contest one edge instead of materializing two coexisting edges under different claim keys. One edge per (model, model target) plus at most one label edge per model, enforced with two partial UNIQUE constraints on the through table: `(model, target_model)` where the model is set, and `(model)` alone where it is null.
 
 What we give up — both losses sit on the start-restrictive side of the same asymmetry: (a) a model can't hold two relationship types to the same target — no observed counterexample; the real multi-type case (copy of design G + conversion of donor D) has different targets; (b) a model can't hold two label edges (see [Target](#target)). If a counterexample surfaces, promoting type or label wording into identity is a bounded claim_key-rewrite migration, whereas the reverse would mean merging duplicate edges — which is why we start on this side.
 
 ### Claims-spec surgery
 
-The edge table must be claims-based (every user-inputted catalog field is), and the existing `ClaimRelationshipSpec` vocabulary can't express it: members cardinality is validated to 1–2, members are single-column FKs, and there's no XOR/nullable identity shape. The target XOR (`target_machine` / `target_label`) needs a new member shape in `apps/provenance/model_bases` — spec vocabulary, validation-schema derivation and resolution projection. The core `Claim` model is untouched: `claim_key` already serializes null identity parts, so identities with holes were anticipated.
+The edge table must be claims-based (every user-inputted catalog field is), and the existing `ClaimRelationshipSpec` vocabulary can't express it: members cardinality is validated to 1–2, members are single-column FKs, and there's no XOR/nullable identity shape. The target XOR (`target_model` / `target_label`) needs a new member shape in `apps/provenance/model_bases` — spec vocabulary, validation-schema derivation and resolution projection. The core `Claim` model is untouched: `claim_key` already serializes null identity parts, so identities with holes were anticipated.
 
 **Non-identity member**: with the label out of the claim key ([Claim identity](#claim-identity)), the spec needs one new concept — a field that carries claim data and participates in validation (the XOR, requiredness) but contributes nothing to `claim_key`. `target_label` is its only user: `relationship_type`/`license_status` stay scalar payload (`PayloadField` with `choices`-derived validation — already shipped). (`MemberField.identity` is already optional in the dataclass; the work is in the consumers — claim-key derivation already filters on it, but the resolution reconcile keys rows by the full member tuple and must key by identity parts only.)
 
-Cost of the identity narrowing: prod is untouched (its 0021-materialized edges are all machine-target), but label-edge claims already authored on dev DBs carry the wording in their claim_key and need a one-time claim_key rewrite — or a dev rebuild plus patch replay. Cheap while no edge patch has shipped; strictly more expensive after.
+Cost of the identity narrowing: prod is untouched (its 0021-materialized edges are all model-target), but label-edge claims already authored on dev DBs carry the wording in their claim_key and need a one-time claim_key rewrite — or a dev rebuild plus patch replay. Cheap while no edge patch has shipped; strictly more expensive after.
 
 ### Claims-controlled data, or code?
 
@@ -189,7 +189,7 @@ Two editor changes the [claim-identity narrowing](#claim-identity) requires: the
 
 ### Viewing UX
 
-Implemented on this branch (`08eceacf` unified related-model display and legacy-lineage retirement, `196ccc57`/`c886b0d3` detail render path, `ae8323bd` related-title display): machine targets link, label targets render as plain text. There is deliberately no list-filtering UX for relationship concepts (see [Derived concepts](#derived-concepts-bootleg-and-licensed-build)).
+Implemented on this branch (`08eceacf` unified related-model display and legacy-lineage retirement, `196ccc57`/`c886b0d3` detail render path, `ae8323bd` related-title display): model targets link, label targets render as plain text. There is deliberately no list-filtering UX for relationship concepts (see [Derived concepts](#derived-concepts-bootleg-and-licensed-build)).
 
 ## Migration map
 
@@ -219,9 +219,9 @@ Sequencing of this PR.
 4. ✅ DONE: **Retire the old-FK display/API surfaces** — done on same branch: `converted_from`/`conversions`, `bootleg_of`/`bootlegs` and `licensed_build_of`/`licensed_builds` are no longer serialized in `ModelDetailSchema` or read by the title page's cross-title collector, and the lineage display descriptors are gone. The 53 seed-derived `converted_from` claims temporarily lose that display path within the branch until step 5 materializes their replacement edges; these steps must therefore ship together. The columns remain writable via the claims patch until step 9.
 5. ✅ DONE: **Data migration** (`catalog/0021_lineage_fk_claims_to_edges`) — done on same branch: rewrites every remaining legacy-FK claim **in place** into an edge claim (same row, so citations and attribution survive), tag-aware for the conversion-kit mapping, then materializes the edge rows and nulls the legacy columns. Collision rule: where a reworked patch already asserts the same edge from the same actor, the legacy claim transforms but deactivates — the reworked patch's per-row-sourced values win, so nothing is laundered.
 6. ✅ DONE: **Rework the unshipped 0039–0150 patches** — done on same branch: every patch authors `model_relationship` edges with per-row-sourced `license_status`; no patch authors the old FKs or tag memberships. (0039 was temporarily restored to author the `bootleg`/`licensed-build` tag rows as wikilink targets; step 8 removes that again — the links become plain text until filter pages provide targets.)
-7. ✅ DONE: **Claim-identity narrowing** — done on same branch; the worked plan is [ClaimIdentityNarrowing.md](ClaimIdentityNarrowing.md): the edge claim identity is `target_machine` alone, `target_label` is a non-identity member (the lossless members/payload schema split landed first as its own commit), the label-rung UNIQUE is `(machine_model)` where the machine FK is null, dev was rebuilt rather than key-rewritten (verified: 53 prod claims transform through `0021` with narrowed keys; exactly 24 label edges across 24 models match the authored patches; ingest and resolve converge), and both editor changes shipped. The [exhaustiveness guards](#relationship-type--a-code-enum-grown-by-release) also landed: `RELATIONSHIP_TYPE_BEHAVIOR` drives `first_model_candidates()` with a per-value classification test, and the editor's kind picker is backed by a `Record<RelationshipKind, …>`.
+7. ✅ DONE: **Claim-identity narrowing** — done on same branch; the worked plan is [ClaimIdentityNarrowing.md](ClaimIdentityNarrowing.md): the edge claim identity is `target_model` alone, `target_label` is a non-identity member (the lossless members/payload schema split landed first as its own commit), the label-rung UNIQUE is `(machine_model)` where the model FK is null, dev was rebuilt rather than key-rewritten (verified: 53 prod claims transform through `0021` with narrowed keys; exactly 24 label edges across 24 models match the authored patches; ingest and resolve converge), and both editor changes shipped. The [exhaustiveness guards](#relationship-type--a-code-enum-grown-by-release) also landed: `RELATIONSHIP_TYPE_BEHAVIOR` drives `first_model_candidates()` with a per-value classification test, and the editor's kind picker is backed by a `Record<RelationshipKind, …>`.
 8. ✅ DONE: **flippatch rework**: 0039 drops its two tag creates — nothing replaces them; this design has no vocabulary rows. The 21 `[[tag:...]]` wikilinks across 0111/0112/0126/0134 (12× bootleg, 1× licensed-build, 8× conversion-kit) are rewritten to plain emphasized text, to be re-linked as `[[page:...]]` when filter pages land; 0126's composite descriptions are parked until then (they become the bootleg/licensed-build page articles, citations intact). Editing an applied-but-unshipped patch trips the ledger's fingerprint check, so dev DBs rebuild — the standard cost of unshipped-patch rework.
-9. ✅ DONE: **Drop the old columns; retire the composite tags** — done on same branch: `catalog/0022` re-runs the `0021` transform as a final sweep then drops the three columns; the model, `_SELF_REF_FIELDS`, the `first_model_candidates()` dual-read and the frontend `NON_DISPLAYED_FORWARD_FKS` exemption are gone; `bootleg`/`licensed-build` needed no data work because their creates were removed in step 8; `conversion-kit` proved seed-shipped (see the corrected audit) and is retired by patches 0153 (opdb membership sweep) + 0154 (tag `delete:`); verified by a full rebuild — pre-0039 snapshot → migrate through 0022 → replay 151 patches → tag `status=deleted`, zero memberships, 24 label edges intact, ingest and resolve converge. A model targeted by another active model's edge **blocks** soft delete via the `inbound_relationship_sources` usage blocker (the edge row has no lifecycle, so the walk hops through it to the owning source model — the Tag member-models channel) — preserving the referential rule the `converted_from` FK used to enforce; a soft-deleted source releases the block. Pinned by test both ways. Original scope: first **re-run the step-5 transform** (import `transform_lineage_claims` from `0021` into the drop migration) to sweep any legacy claims authored since 0021 ran. Then remove `bootleg_of`, `licensed_build_of` and `converted_from` from `MachineModel`, their reverse accessors and remaining write-path surfaces (`_SELF_REF_FIELDS`, the `first_model_candidates()` dual-read, the `NON_DISPLAYED_FORWARD_FKS` exemption in `model-lineage.test.ts`), and retire the three composite tags (`bootleg`/`licensed-build`/`conversion-kit`) — each row and its authored memberships retracted at the data level; where a composite tag proves prod-shipped (see the audit above), its retraction's attribution must outrank the shipped source. The former gate — kit models whose kit-ness lived only in the tag — is closed: `0151-conversion-kits` authors their `conversion_kit` edges (machine targets where sourced, `target_label` for the fits-many kits). Sequencing: the membership sweep must land in an earlier patch than the tag's `delete:` (the delete planner's referrer check reads live DB state). The `retheme` tags are **not** retired here — they belong to the Retheme PR ([Rethemes.md](Rethemes.md)); the dead `export` tag to the Export PR ([Exports.md](Exports.md)). Each PR retires only the tags and columns it is responsible for.
+9. ✅ DONE: **Drop the old columns; retire the composite tags** — done on same branch: `catalog/0022` re-runs the `0021` transform as a final sweep then drops the three columns; the model, `_SELF_REF_FIELDS`, the `first_model_candidates()` dual-read and the frontend `NON_DISPLAYED_FORWARD_FKS` exemption are gone; `bootleg`/`licensed-build` needed no data work because their creates were removed in step 8; `conversion-kit` proved seed-shipped (see the corrected audit) and is retired by patches 0153 (opdb membership sweep) + 0154 (tag `delete:`); verified by a full rebuild — pre-0039 snapshot → migrate through 0022 → replay 151 patches → tag `status=deleted`, zero memberships, 24 label edges intact, ingest and resolve converge. A model targeted by another active model's edge **blocks** soft delete via the `inbound_relationship_sources` usage blocker (the edge row has no lifecycle, so the walk hops through it to the owning source model — the Tag member-models channel) — preserving the referential rule the `converted_from` FK used to enforce; a soft-deleted source releases the block. Pinned by test both ways. Original scope: first **re-run the step-5 transform** (import `transform_lineage_claims` from `0021` into the drop migration) to sweep any legacy claims authored since 0021 ran. Then remove `bootleg_of`, `licensed_build_of` and `converted_from` from `MachineModel`, their reverse accessors and remaining write-path surfaces (`_SELF_REF_FIELDS`, the `first_model_candidates()` dual-read, the `NON_DISPLAYED_FORWARD_FKS` exemption in `model-lineage.test.ts`), and retire the three composite tags (`bootleg`/`licensed-build`/`conversion-kit`) — each row and its authored memberships retracted at the data level; where a composite tag proves prod-shipped (see the audit above), its retraction's attribution must outrank the shipped source. The former gate — kit models whose kit-ness lived only in the tag — is closed: `0151-conversion-kits` authors their `conversion_kit` edges (model targets where sourced, `target_label` for the fits-many kits). Sequencing: the membership sweep must land in an earlier patch than the tag's `delete:` (the delete planner's referrer check reads live DB state). The `retheme` tags are **not** retired here — they belong to the Retheme PR ([Rethemes.md](Rethemes.md)); the dead `export` tag to the Export PR ([Exports.md](Exports.md)). Each PR retires only the tags and columns it is responsible for.
 10. ✅ DONE: **`make codegen` + remaining derived surfaces** — folded into step 9: `entity-meta.ts` no longer carries the three FKs and the lineage test needs no exemption list.
 
 Guidance for the patch-rework sessions (the value mapping, per row — not a mechanical migration):
