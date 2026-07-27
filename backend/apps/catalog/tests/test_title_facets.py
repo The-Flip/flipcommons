@@ -45,9 +45,12 @@ from apps.catalog.models import (
     DisplayType,
     Franchise,
     GameplayFeature,
+    LicenseStatus,
     MachineModel,
     Manufacturer,
+    ModelRelationship,
     Person,
+    RelationshipType,
     RewardType,
     Series,
     System,
@@ -880,6 +883,19 @@ class TestPageEndpoint:
         # Range dims are bounds, not value lists.
         assert set(opts["year"]) == {"min", "max"}
 
+    @staticmethod
+    def _badge_and_results(client, slug: str) -> tuple[int | None, int]:
+        """The manufacturer facet's badge for *slug* (``None`` when the value
+        isn't offered) alongside the number of titles `/api/titles/` returns for
+        that value alone — the two halves of the badge == result-count
+        invariant."""
+        facets = client.get("/api/pages/titles").json()["filter_options"]
+        option = next(
+            (o for o in facets["manufacturer"] if o["public_id"] == slug), None
+        )
+        result_count = client.get(f"/api/titles/?manufacturer={slug}").json()["count"]
+        return (option["count"] if option else None), result_count
+
     def test_badge_equals_result_count_for_single_filter(self, client, db):
         """A facet value's count (with no other filter active) equals the number
         of titles `/api/titles/` returns for that value alone."""
@@ -888,12 +904,32 @@ class TestPageEndpoint:
         for i in range(2):
             _model(_title(f"S{i}", f"s{i}"), f"s{i}-m", manufacturer="stern")
 
-        facets = client.get("/api/pages/titles").json()["filter_options"]
-        williams = next(
-            o for o in facets["manufacturer"] if o["public_id"] == "williams"
+        assert self._badge_and_results(client, "williams") == (3, 3)
+
+    def test_badge_equals_result_count_for_subordinate_copy_title(self, client, db):
+        """The invariant holds under the Big Ben rule too: the badge must pick a
+        title's representative model with the *same* rule the filter uses,
+        subordination included.
+
+        The Segasa copy is the earliest by year, so a count ordering by ``(year,
+        name)`` alone tallies segasa — offering a clickable badge that returns
+        nothing — while williams, which the filter actually matches, is
+        undercounted to zero and never offered.
+        """
+        t = _title("Big Ben", "big-ben")
+        original = _model(t, "big-ben-williams", manufacturer="williams", year=1975)
+        copy = _model(t, "big-ben-segasa", manufacturer="segasa", year=1974)
+        ModelRelationship.objects.create(
+            machine_model=copy,
+            target_machine=original,
+            relationship_type=RelationshipType.COPY,
+            license_status=LicenseStatus.LICENSED,
         )
-        result_count = client.get("/api/titles/?manufacturer=williams").json()["count"]
-        assert williams["count"] == result_count == 3
+
+        assert self._badge_and_results(client, "williams") == (1, 1)
+        # segasa heads no title, so it must not be offered at all (count 0 is
+        # pruned) — an offered value that returns nothing is the bug.
+        assert self._badge_and_results(client, "segasa") == (None, 0)
 
     def test_no_filter_response_is_cached(self, client, db):
         _model(_title("Cached", "cached"), "cached-m", manufacturer="williams")

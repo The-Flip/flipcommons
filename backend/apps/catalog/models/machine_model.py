@@ -58,6 +58,13 @@ FLIPPER_COUNT_MIN, FLIPPER_COUNT_MAX = 0, 20
 RATING_MIN, RATING_MAX = 0, 10
 EXTERNAL_ID_MIN = 1
 
+# The "first model" ordering — the single spelling of the rule
+# :meth:`MachineModel.first_model_candidates` applies (and
+# :meth:`MachineModel.first_models_by_title` prefixes with ``title_id``). Never
+# re-spell it at a call site: a caller that drops the leading subordination term
+# silently disagrees with every other reader of the rule.
+_FIRST_MODEL_ORDER: tuple[str, ...] = ("_is_subordinate_copy", "year", "name")
+
 
 class MachineModel(
     CatalogModel,
@@ -487,8 +494,23 @@ class MachineModel(
             cls.objects.active()
             .filter(variant_of__isnull=True)
             .alias(_is_subordinate_copy=is_copy)
-            .order_by("_is_subordinate_copy", "year", "name")
+            .order_by(*_FIRST_MODEL_ORDER)
         )
+
+    @classmethod
+    def first_models_by_title(cls) -> models.QuerySet[MachineModel]:
+        """:meth:`first_model_candidates` regrouped for a **per-title rollup**:
+        same candidate set, same rule, re-sorted so each title's rows are
+        contiguous and its representative is the first row of its group.
+
+        For callers that need every title's representative at once and would
+        otherwise pay for the correlated :meth:`Title.first_model_subquery` per
+        title — one ordered scan, take the first row per ``title_id`` in Python.
+        The manufacturer facet count does exactly that; going through here is
+        what keeps its representative identical to the one the manufacturer
+        *filter* resolves through the subquery.
+        """
+        return cls.first_model_candidates().order_by("title_id", *_FIRST_MODEL_ORDER)
 
     @property
     def inbound_relationship_sources(self) -> models.QuerySet[MachineModel]:

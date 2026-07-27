@@ -374,16 +374,21 @@ def _count_title_fk(ids: QuerySet[Title], path: str) -> list[FacetOption]:
 def _count_manufacturer(ids: QuerySet[Title]) -> list[FacetOption]:
     """Count titles per first-model manufacturer.
 
-    Derives each title's first model (earliest non-variant active by year, name)
-    from **one** ordered query and rolls up in Python, rather than grouping by the
-    correlated first-model subquery — which Postgres profiling showed runs ~2× per
-    title and dominates the no-filter fan-out (~280 ms → ~11 ms). DB-agnostic (no
-    ``DISTINCT ON``); the data is small (~7k models). One manufacturer per title,
-    so the tally is exact title counts."""
+    Derives each title's first model from **one** ordered query
+    (:meth:`MachineModel.first_models_by_title`) and rolls up in Python, rather
+    than grouping by the correlated first-model subquery — which Postgres
+    profiling showed runs ~2× per title and dominates the no-filter fan-out
+    (~280 ms → ~11 ms). DB-agnostic (no ``DISTINCT ON``); the data is small (~7k
+    models). One manufacturer per title, so the tally is exact title counts.
+
+    The rollup reuses the shared *ordering rule* — not the correlated subquery —
+    so it keeps that speed while picking the same representative the
+    ``manufacturer`` filter does. Re-spelling the order here is what let the
+    count drop the subordination term and drift from the filter (a copy heading
+    its title in the badge but never in the results)."""
     rows = (
-        MachineModel.objects.filter(title_id__in=ids, variant_of__isnull=True)
-        .active()
-        .order_by("title_id", "year", "name")
+        MachineModel.first_models_by_title()
+        .filter(title_id__in=ids)
         .values_list(
             "title_id",
             "corporate_entity__manufacturer__slug",
