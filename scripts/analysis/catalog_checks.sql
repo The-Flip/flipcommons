@@ -630,6 +630,33 @@ CREATE OR REPLACE VIEW foundation_checks AS
   WHERE m.operating_status IS DISTINCT FROM COALESCE(r.expected, 'unknown')
   UNION ALL
 
+  -- manufacturers' location rungs rolled up again from corporate_entities — the same
+  -- second-derivation trick as the status check above, off the public CE view rather than
+  -- the private helper reading fc. It pins the SOURCE as much as the arithmetic: these
+  -- were once aggregated from `models`, which reports a maker whose models are all gone or
+  -- not yet seeded as location-unknown even though its CEs carry an address. That failure
+  -- produces a plausible NULL, not an error, so nothing else in the sweep can see it.
+  SELECT 'mfr_location_rollup_disagrees',
+         m.slug || ': ' || COALESCE(m.location_path, '(null)') || '/' || m.n_locations
+                || ' vs ' || COALESCE(r.location_path, '(null)') || '/'
+                || COALESCE(r.n_locations, 0)
+  FROM manufacturers m
+  LEFT JOIN (
+    SELECT manufacturer_id,
+           count(DISTINCT location_path) AS n_locations,
+           CASE WHEN count(DISTINCT location_path) = 1
+                THEN min(location_path) END AS location_path,
+           count(DISTINCT country_slug)  AS n_countries,
+           CASE WHEN count(DISTINCT country_slug) = 1
+                THEN min(country_slug) END AS country_slug
+    FROM corporate_entities WHERE manufacturer_id IS NOT NULL GROUP BY manufacturer_id
+  ) r ON r.manufacturer_id = m.id
+  WHERE m.n_locations   IS DISTINCT FROM COALESCE(r.n_locations, 0)
+     OR m.location_path IS DISTINCT FROM r.location_path
+     OR m.n_countries   IS DISTINCT FROM COALESCE(r.n_countries, 0)
+     OR m.country_slug  IS DISTINCT FROM r.country_slug
+  UNION ALL
+
   -- The citation host-recognition macros (provenance.sql), pinned against
   -- apps/citation/hosts.py — these mirror backend code, so drift is the whole risk.
   SELECT 'macro_host_norm', host_norm('  WWW.WWW.IPDB.org.  ')

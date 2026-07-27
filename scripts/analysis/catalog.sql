@@ -118,9 +118,8 @@ CREATE OR REPLACE VIEW _namesake_live_n AS
 --             live models.
 --   year / month : the release date as a precision ladder — `catalog_machinemodel_month_
 --             requires_year` means a NULL month is "dated to the year", never a month
---             lost from a fuller date. About two thirds of live models carry a year.
---             Nothing above the year is modelled, so a named quarter or season arrives
---             as a month or as nothing.
+--             lost from a fuller date. Nothing above the year is modelled, so a named
+--             quarter or season arrives as a month or as nothing.
 --   manufacturer : manufacturer_name is the canonical name on the cabinet — display and
 --             group by it.
 --   location: where the MANUFACTURER was based (model -> corporate_entity -> location).
@@ -226,16 +225,16 @@ COMMENT ON VIEW models IS
 --             world — so a join on slug silently merges places. The path is also the
 --             hierarchy: country_slug is its first segment, and a place's descendants are
 --             the rows whose path starts with its path plus '/'.
---   location_type : a 10-value OPEN vocabulary, not a 3-level ladder — country, state,
+--   location_type : an OPEN vocabulary, not a 3-level ladder — country, state,
 --             province, department, community, region, prefecture, constituent_country,
 --             district, city. Only `country` is structurally guaranteed (exactly the
 --             parentless rows); the rest reflect how each country subdivides itself, so
---             an analysis assuming country/state/city silently drops the 57 live places
---             that are none of those. Predicate on path depth when you mean depth.
+--             an analysis assuming country/state/city silently drops the live places that
+--             are none of those. Predicate on path depth when you mean depth.
 --   code / short_name / divisions : sparse by construction. `code` is the subdivision's
 --             own code (VIC, WA), empty on every country and city; `divisions` is on
---             countries alone (all 22), naming how that country subdivides; `short_name`
---             on 2 rows. Read each at the level that carries it.
+--             countries alone, naming how that country subdivides; `short_name` is rarer
+--             still. Read each at the level that carries it.
 --   n_corporate_entities : live corporate entities based here DIRECTLY — a country does
 --             not inherit its cities' counts. Roll up with a location_path prefix.
 CREATE OR REPLACE VIEW locations AS
@@ -338,6 +337,26 @@ CREATE OR REPLACE VIEW _mfr_status AS
   WHERE status IS DISTINCT FROM 'deleted' AND manufacturer_id IS NOT NULL
   GROUP BY manufacturer_id;
 
+-- _mfr_location — a manufacturer's place rolled up over its LIVE corporate entities, at
+-- both rungs. Read it through manufacturers.location_path / country_slug.
+-- Derived from the CEs and NOT from `models`, same shape as _mfr_status above and for the
+-- same reason: a location is a fact about the COMPANY, and models are only the
+-- denormalization path that usually reaches it. Aggregating models instead reports any
+-- maker whose models are all gone or not yet seeded as location-unknown, though its CEs
+-- carry an address. DISTINCT ignores NULL, so a CE with no location lowers neither count.
+CREATE OR REPLACE VIEW _mfr_location AS
+  SELECT ce.manufacturer_id,
+         count(DISTINCT cel.location_path)  AS n_locations,
+         CASE WHEN count(DISTINCT cel.location_path) = 1
+              THEN min(cel.location_path) END AS location_path,
+         count(DISTINCT cel.country_slug)   AS n_countries,
+         CASE WHEN count(DISTINCT cel.country_slug) = 1
+              THEN min(cel.country_slug) END  AS country_slug
+  FROM fc.catalog_corporateentity ce
+  LEFT JOIN _ce_location cel ON cel.corporate_entity_id = ce.id
+  WHERE ce.status IS DISTINCT FROM 'deleted' AND ce.manufacturer_id IS NOT NULL
+  GROUP BY ce.manufacturer_id;
+
 -- manufacturers — one row per live manufacturer: identity, where it was based, how much
 -- it made and WHEN. The span columns matter because a MODEL with no year often has its
 -- manufacturer's span as the only evidence available.
@@ -370,11 +389,23 @@ CREATE OR REPLACE VIEW _mfr_status AS
 --                 qualifies — an entity marked ended can still carry the manufacturer's
 --                 most recent model. FALSE IS NOT 'ENDED'; it pools the known-ended with
 --                 the unknown-and-not-recent, and unknown is a default nobody set.
---   country_slug: the home country, NULL when the manufacturer's models disagree (3 do).
---                 n_countries sits alongside so an ambiguous home is visible rather than
---                 collapsed to one of its values.
+--   location_path / country_slug, with n_locations / n_countries : where the manufacturer
+--                 was based, at both rungs (both spelled as on `models`). The rungs
+--                 resolve INDEPENDENTLY, each NULL when its own disagrees — a maker with
+--                 two Chicago-area plants is country_slug 'usa' and location_path NULL,
+--                 which answers both questions honestly instead of letting one paper over
+--                 the other. Most makers resolve at both, so read location_path first and
+--                 fall back to country.
+--                 A NULL HAS TWO CAUSES AND THE COUNT SEPARATES THEM: n = 0 is no known
+--                 location, n > 1 is a maker genuinely spanning places. Unrecorded vs
+--                 recorded-and-plural are opposite states, and the bare NULL conflates
+--                 them. Drop to `corporate_entities` to enumerate a plural maker's places
+--                 rather than collapse them.
+--                 Rolled up over live CEs (_mfr_location), NOT over models like the
+--                 counts and span beside them — so a maker with n_models = 0 still
+--                 reports the address its CEs carry.
 --   website / wikidata_id : the two outbound handles for enriching from outside the
---                 catalog. Both sparse — 24 have a website, nothing carries a QID yet.
+--                 catalog. Both sparse.
 --                 An empty website is '' and an absent QID is NULL; the model spells them
 --                 differently and this view doesn't paper over it.
 CREATE OR REPLACE VIEW manufacturers AS
@@ -385,10 +416,7 @@ CREATE OR REPLACE VIEW manufacturers AS
       count(*) FILTER (variant_of_id IS NULL)     AS n_nonvariant_models,
       count(year) FILTER (variant_of_id IS NULL)  AS n_dated,
       min(year) FILTER (variant_of_id IS NULL)    AS year_of_first_model,
-      max(year) FILTER (variant_of_id IS NULL)    AS year_of_last_model,
-      count(DISTINCT country_slug)                AS n_countries,
-      CASE WHEN count(DISTINCT country_slug) = 1
-           THEN min(country_slug) END             AS country_slug
+      max(year) FILTER (variant_of_id IS NULL)    AS year_of_last_model
     FROM models WHERE manufacturer_id IS NOT NULL
     GROUP BY manufacturer_id
   )
@@ -401,15 +429,18 @@ CREATE OR REPLACE VIEW manufacturers AS
     COALESCE(s.operating_status, 'unknown')                            AS operating_status,
     presumed_producing(COALESCE(s.operating_status, 'unknown'),
                        a.year_of_last_model)                           AS presumed_producing,
-    COALESCE(a.n_countries, 0) AS n_countries,
-    a.country_slug,
+    COALESCE(l.n_locations, 0) AS n_locations,
+    l.location_path,
+    COALESCE(l.n_countries, 0) AS n_countries,
+    l.country_slug,
     mf.website, mf.wikidata_id
   FROM fc.catalog_manufacturer mf
-  LEFT JOIN agg a         ON a.manufacturer_id = mf.id
-  LEFT JOIN _mfr_status s ON s.manufacturer_id = mf.id
+  LEFT JOIN agg a           ON a.manufacturer_id = mf.id
+  LEFT JOIN _mfr_status s   ON s.manufacturer_id = mf.id
+  LEFT JOIN _mfr_location l ON l.manufacturer_id = mf.id
   WHERE mf.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW manufacturers IS
-  'One row per live manufacturer — identity, home country, model counts, the year_of_first_model/year_of_last_model span and the site''s operating_status/presumed_producing verdict. Span carries no minimum: apply your own n_dated >= k.';
+  'One row per live manufacturer — identity, home location/country, model counts, the year_of_first_model/year_of_last_model span and the site''s operating_status/presumed_producing verdict. Read location and country each with its n_ count (0 = unknown, >1 = plural), and the span with n_dated.';
 
 -- corporate_entities — one row per live CorporateEntity: the LEGAL entity one level
 -- below the manufacturer, the grain `models.corporate_entity_id` actually points at.
@@ -421,10 +452,14 @@ COMMENT ON VIEW manufacturers IS
 --   operating_status / presumed_producing : as on `manufacturers`, but for the ONE
 --                 incarnation — the stored column, not a rollup. Ask the manufacturer
 --                 view unless the incarnation is the subject; that is the grain the
---                 site's verdict is published at. UNKNOWN IS THE COLUMN DEFAULT — 732 of
---                 777 entities sit on it because nobody has said otherwise, so counting
+--                 site's verdict is published at. UNKNOWN IS THE COLUMN DEFAULT — most
+--                 entities sit on it because nobody has said otherwise, so counting
 --                 'ended' is sound and reading anything into the size of the 'unknown'
 --                 bucket is not.
+--   location_path / country_slug : this incarnation's own place, spelled as on `models`.
+--                 The grain to use when a manufacturer spans places — `manufacturers`
+--                 collapses those to NULL, while this view keeps each CE's separate.
+--                 Both NULL when the CE carries no location, a common state.
 --   ipdb_manufacturer_id : IPDB's ManufacturerId, the join key back to an IPDB scrape.
 --                 It lives here and `opdb_manufacturer_id` lives on `manufacturers`
 --                 because the two source databases split the manufacturer at different
@@ -459,7 +494,7 @@ CREATE OR REPLACE VIEW corporate_entities AS
   LEFT JOIN agg a                      ON a.corporate_entity_id = ce.id
   WHERE ce.status IS DISTINCT FROM 'deleted';
 COMMENT ON VIEW corporate_entities IS
-  'One row per live corporate entity — the LEGAL entity below the manufacturer, with the same derived span, counts and producing verdict as manufacturers, scoped to the one incarnation. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
+  'One row per live corporate entity — the LEGAL entity below the manufacturer, with the same derived span, counts, location and producing verdict as manufacturers, scoped to the one incarnation. operating_status defaults to unknown, so that bucket means unasked, not unknowable.';
 
 -- ═══ REWARDS, THEMES, TAGS — model attributes ═══════════════════════════════
 -- rewards — sorted reward-type names per model (only models that have any). Keyed by id,
@@ -572,9 +607,8 @@ COMMENT ON VIEW tags IS
 
 -- tag_vocab — one row per live TAG: the vocabulary behind the `tags` name-list. `tags` is
 -- keyed by MODEL and answers "what is this tagged"; this is keyed by tag and answers "what
--- tags exist, and how much is each used". Four live tags of eight rows — half the
--- vocabulary is soft-deleted, so check a hardcoded slug against this view before trusting
--- it. Flat, no DAG.
+-- tags exist, and how much is each used". Much of the vocabulary is soft-deleted, so check
+-- a hardcoded slug against this view before trusting it. Flat, no DAG.
 CREATE OR REPLACE VIEW tag_vocab AS
   SELECT
     tg.id, tg.slug, tg.name, tg.description,
@@ -874,17 +908,16 @@ COMMENT ON VIEW model_edges_bidir IS
 --             so the difference stays invisible until a Title outlives its last model —
 --             which soft-deleting the one model of a one-model Title produces at once.
 --   franchise / series : the two optional Title groupings, resolved to slug and name.
---             Both sparse by design — 210 Titles carry a franchise, 16 a series — and
---             they mean different things: a franchise is the IP (Star Trek, spanning
---             manufacturers and eras), a series is a curated thematic lineage (Eight Ball
---             -> Eight Ball Deluxe). Neither is ingested, so an absent grouping is "not
---             yet curated", never "does not belong". `franchises` / `series` below are the
---             entity views.
+--             Both sparse by design, and they mean different things: a franchise is the
+--             IP (Star Trek, spanning manufacturers and eras), a series is a curated
+--             thematic lineage (Eight Ball -> Eight Ball Deluxe). Neither is ingested, so
+--             an absent grouping is "not yet curated", never "does not belong".
+--             `franchises` / `series` below are the entity views.
 --   opdb_id / fandom_page_id : the outbound handles. opdb_id is OPDB's "group" — the
 --             Title is the grain OPDB models identity at, so this and `models.opdb_id`
 --             are different namespaces and must not be compared.
 --   description : SingleModelTitles.md governs how this splits against the model's own
---             description. Populated on 12 Titles today.
+--             description.
 CREATE OR REPLACE VIEW titles AS
   SELECT
     t.id, t.slug, t.name,
@@ -906,10 +939,9 @@ COMMENT ON VIEW titles IS
 
 -- franchises / series — the two Title-grouping vocabularies at entity grain. `titles`
 -- decodes each onto the Title row; these answer what needs a second view: which groupings
--- EXIST, and which are used by nothing. 140 franchises across 210 grouped Titles, 6 series
--- across 16 — flat, nothing like a themes DAG. Both are curator-maintained, which makes
--- `n_titles = 0` the interesting row rather than a defect: a grouping someone created and
--- never attached, invisible from `titles` alone.
+-- EXIST, and which are used by nothing. Both flat, nothing like a themes DAG, and both
+-- curator-maintained — which makes `n_titles = 0` the interesting row rather than a
+-- defect: a grouping someone created and never attached, invisible from `titles` alone.
 CREATE OR REPLACE VIEW franchises AS
   SELECT f.id, f.slug, f.name, f.description,
          count(t.id) AS n_titles
@@ -930,7 +962,7 @@ CREATE OR REPLACE VIEW series AS
   WHERE s.status IS DISTINCT FROM 'deleted'
   GROUP BY ALL;
 COMMENT ON VIEW series IS
-  'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Six of them; not the same thing as a Franchise, which is the IP.';
+  'One row per live Series — a curated thematic lineage (Eight Ball -> Eight Ball Deluxe), with n_titles. Not the same thing as a Franchise, which is the IP.';
 
 -- title_size — one row per Title with a live model: identity plus n, the count of LIVE
 -- models in it (the "alone in its Title?" signal — n = 1; a soft-deleted sibling doesn't
@@ -977,9 +1009,9 @@ COMMENT ON VIEW model_number_collisions IS
 -- aggregates OF THIS VIEW, so the three cannot disagree about the population.
 --
 --   THE SUBJECT IS POLYMORPHIC, and the minority half is the trap. A Credit hangs off a
---             MachineModel XOR a Series (`catalog_credit_model_xor_series`), 7244 to 7
---             today, so a model-only grain would look complete, agree with every spot
---             check and silently miss a whole KIND of credit. Both halves are carried and
+--             MachineModel XOR a Series (`catalog_credit_model_xor_series`), and the
+--             Series half is tiny — so a model-only grain would look complete, agree with
+--             every spot check and silently miss a whole KIND of credit. Both halves are
 --             spelled the way `claims` spells its subject types —
 --             'catalog.machinemodel' / 'catalog.series' — so a join across needs no
 --             translation. For the model half use `model_credits`, not a subject_type
@@ -1024,19 +1056,18 @@ COMMENT ON VIEW credits IS
 
 -- model_credits — the model-attached half of `credits`, keyed model_id so it joins
 -- straight to `models` and the other model-grain views (the same move `model_claims` is on
--- the provenance side). 7244 of the 7251 credits; the other 7 hang off a Series and are
--- reachable only from `credits`, so a total taken here is not a total.
+-- the provenance side). A handful of credits hang off a Series instead and are reachable
+-- only from `credits`, so a total taken here is not a total.
 CREATE OR REPLACE VIEW model_credits AS
   SELECT c.*, c.subject_id AS model_id
   FROM credits c
   WHERE c.subject_type = 'catalog.machinemodel';
 COMMENT ON VIEW model_credits IS
-  'One row per credit on a LIVE machine model, keyed model_id — the model half of credits (7244 of 7251; the 7 Series credits appear only there).';
+  'One row per credit on a LIVE machine model, keyed model_id — the model half of credits; Series-attached credits appear only there.';
 
 -- credit_roles — the credit-role vocabulary (designer, artist, …) at entity grain with
 -- usage. The role-keyed counterpart to `people`; `credits` is where either goes to say
--- WHICH machine. Ten live roles, 7 of them in use across 589 credited people — so three
--- exist and are attached to nothing.
+-- WHICH machine.
 -- count(c.credit_id), never count(*): the LEFT JOIN would count an unused role as 1.
 CREATE OR REPLACE VIEW credit_roles AS
   SELECT
@@ -1061,9 +1092,9 @@ COMMENT ON VIEW credit_roles IS
 --             sharing its number.
 --   n_roles : distinct roles held. A person credited as designer and artist on one machine
 --             has n_credits = 2, n_credited_models = 1, n_roles = 2.
---   birth_year / death_year : claim-resolved biography, all but empty — ONE live person
---             carries each today. The month and day fields exist on the model and are
---             entirely unpopulated, so the year is the full precision on offer.
+--   birth_year / death_year : claim-resolved biography, all but empty. The month and day
+--             fields exist on the model and are entirely unpopulated, so the year is the
+--             full precision on offer.
 CREATE OR REPLACE VIEW people AS
   WITH agg AS (
     SELECT
