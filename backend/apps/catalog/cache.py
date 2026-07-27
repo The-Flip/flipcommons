@@ -54,14 +54,16 @@ from pydantic import TypeAdapter
 
 from apps.core.licensing import current_audience
 
-# Bump when a cached payload's JSON shape changes. FileBasedCache writes with
+# Bump when a code change alters a cached payload — its JSON shape *or* the
+# values it computes (a fixed aggregate is as stale as a renamed field).
+# FileBasedCache writes with
 # ``timeout=None`` and can survive a deploy (its dir is not always wiped), while
 # ``invalidate_response_cache()`` only runs on data mutation — never on deploy.
 # So a shape change without a bump can keep serving old-shaped JSON to the new
 # frontend until the next write; versioning the keys orphans the stale entries.
 # The version is shared across all bases, so a bump also harmlessly orphans
 # unchanged payloads, which rebuild on first read. (Per-bump history: git blame.)
-_CACHE_VERSION = "v6"
+_CACHE_VERSION = "v7"
 
 # No-filter facet option lists for the /titles page (GET /api/pages/titles). Static
 # between catalog edits, so cached and cleared by invalidate_response_cache().
