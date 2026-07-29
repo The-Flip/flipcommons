@@ -13,7 +13,7 @@
     type CardDistressCorner,
     type CardDistressType,
   } from '$lib/components/collections/cards/Card.svelte';
-  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
 
   const distressCases: {
     label: string;
@@ -271,21 +271,24 @@
     </div>
 
     <div class="card-grid">
-      <MachineCard
+      <GameCard
+        entityType="model"
         slug="go-go"
         name="Go Go"
         thumbnailUrl="/fakes/fake_backglass1.avif"
         manufacturerName="Williams"
         year={1966}
       />
-      <MachineCard
+      <GameCard
+        entityType="model"
         slug="critters"
         name="Critters"
         thumbnailUrl="/fakes/fake_backglass2.avif"
         manufacturerName="Jersey Jack"
         year={2023}
       />
-      <MachineCard
+      <GameCard
+        entityType="model"
         slug="astro-blitz"
         name="Astro Blitz"
         thumbnailUrl="/fakes/fake_backglass3.avif"

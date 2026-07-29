@@ -3,7 +3,7 @@
   import { unwrapPage } from '$lib/paginated-loader.svelte';
   import FacetedCatalogListing from '$lib/components/pages/listing/FacetedCatalogListing.svelte';
   import TitleFilterSidebar from './_components/TitleFilterSidebar.svelte';
-  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import { filtersFromParams, filtersToParams } from '$lib/facet-engine';
   import { titleFilterChips } from './titles-filter-chips';
 
@@ -34,7 +34,8 @@
   {fetchPage}
 >
   {#snippet children(title)}
-    <TitleCard
+    <GameCard
+      entityType="title"
       slug={title.slug}
       name={title.name}
       thumbnailUrl={title.thumbnail_url}

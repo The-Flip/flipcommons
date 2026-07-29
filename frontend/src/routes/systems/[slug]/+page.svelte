@@ -2,7 +2,7 @@
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
   import ClientFilteredGrid from '$lib/components/collections/grid/ClientFilteredGrid.svelte';
-  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
 
   let { data } = $props();
   let system = $derived(data.profile);
@@ -22,7 +22,8 @@
   {:else}
     <ClientFilteredGrid items={system.titles} showCount={false}>
       {#snippet children(title)}
-        <TitleCard
+        <GameCard
+          entityType="title"
           slug={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}

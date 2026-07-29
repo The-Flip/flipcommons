@@ -3,7 +3,7 @@
   import ClientFilteredGrid from '$lib/components/collections/grid/ClientFilteredGrid.svelte';
   import HierarchicalTaxonomyChildrenAccordion from '$lib/components/pages/record/detail/HierarchicalTaxonomyChildrenAccordion.svelte';
   import HierarchicalTaxonomyMobileMetaBar from '$lib/components/pages/record/detail/HierarchicalTaxonomyMobileMetaBar.svelte';
-  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
 
   let { data } = $props();
@@ -40,7 +40,8 @@
 {:else}
   <ClientFilteredGrid items={theme.machines} showCount={false}>
     {#snippet children(machine)}
-      <MachineCard
+      <GameCard
+        entityType="model"
         slug={machine.public_id}
         name={machine.name}
         thumbnailUrl={machine.thumbnail_url}

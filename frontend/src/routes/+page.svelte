@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { resolve } from '$app/paths';
   import client from '$lib/api/client';
-  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import { SITE_TITLE } from '$lib/constants';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
@@ -99,7 +99,8 @@
       <h2 class="recent-heading">Newest Machines</h2>
       <div class="recent-grid">
         {#each recentModels as model (model.slug)}
-          <MachineCard
+          <GameCard
+            entityType="model"
             slug={model.slug}
             name={model.name}
             thumbnailUrl={model.thumbnail_url}

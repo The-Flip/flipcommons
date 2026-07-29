@@ -1,9 +1,12 @@
+<!-- @component The one listing card for a game — a Title or a Model. Identical rendering for both; only the href differs, resolved through the entity registry rather than a branch. -->
 <script lang="ts">
-  import { resolve } from '$app/paths';
+  import { ENTITY_META } from '$lib/entities/entity-meta';
   import { UNKNOWN_MANUFACTURER_LABEL } from '$lib/entities/manufacturer';
+  import { resolveHref } from '$lib/utils';
   import Card from './Card.svelte';
 
   let {
+    entityType,
     slug,
     name,
     thumbnailUrl = null,
@@ -12,6 +15,8 @@
     roles = null,
     showManufacturer = true,
   }: {
+    /** Which record the card fronts. Decides only the href, via ENTITY_META. */
+    entityType: 'title' | 'model';
     slug: string;
     name: string;
     thumbnailUrl?: string | null;
@@ -34,7 +39,11 @@
   );
 </script>
 
-<Card href={resolve(`/titles/${slug}`)} title={name} {thumbnailUrl}>
+<Card
+  href={resolveHref(`/${ENTITY_META[entityType].entity_type_plural}/${slug}`)}
+  title={name}
+  {thumbnailUrl}
+>
   {#if subtitle}
     <p class="card-subtitle">{subtitle}</p>
   {/if}
