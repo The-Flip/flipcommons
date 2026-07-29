@@ -56,7 +56,7 @@ describe('title +layout.server jsonLd', () => {
       name: 'Doctor Who',
       public_id: 'doctor-who',
       slug: 'doctor-who',
-      machines: [machine('Doctor Who', 'doctor-who-1992')],
+      models: [machine('Doctor Who', 'doctor-who-1992')],
       model_detail: MODEL_DETAIL,
     });
 
@@ -78,7 +78,7 @@ describe('title +layout.server jsonLd', () => {
   it('multi-Model title emits one Title node with a workExample array, no Model node', async () => {
     const graph = await graphOf({
       ...BASE_TITLE,
-      machines: [machine('MM A', 'mm-a'), machine('MM B', 'mm-b')],
+      models: [machine('MM A', 'mm-a'), machine('MM B', 'mm-b')],
       model_detail: null,
     });
 
@@ -93,8 +93,8 @@ describe('title +layout.server jsonLd', () => {
     expect(graph[1]['@type']).toBe('BreadcrumbList');
   });
 
-  it('omits workExample when the title has no machines', async () => {
-    const graph = await graphOf({ ...BASE_TITLE, machines: [], model_detail: null });
+  it('omits workExample when the title has no models', async () => {
+    const graph = await graphOf({ ...BASE_TITLE, models: [], model_detail: null });
     expect(graph[0]).not.toHaveProperty('workExample');
   });
 });

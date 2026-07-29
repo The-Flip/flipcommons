@@ -396,8 +396,8 @@
         onEdit={editAction('title:franchise')}
       />
 
-      {#if title.machines.length > 0}
-        <ModelHierarchy models={title.machines} />
+      {#if title.models.length > 0}
+        <ModelHierarchy models={title.models} />
       {/if}
 
       {#if title.related_titles && title.related_titles.length > 0}

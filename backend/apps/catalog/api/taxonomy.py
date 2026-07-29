@@ -47,7 +47,7 @@ from ..models import (
 )
 from ._counts import bulk_title_counts_via_models
 from ._typing import HasTitleCount
-from .helpers import serialize_title_machine
+from .helpers import serialize_title_model
 from .images import extract_image_urls, fetch_model_media_map
 from .people import PersonCardSchema
 from .schemas import (
@@ -722,15 +722,13 @@ def _reward_type_detail_qs() -> QuerySet[RewardType]:
 
 def _serialize_reward_type_detail(rt: RewardType) -> RewardTypeDetailSchema:
     min_rank = get_minimum_display_rank()
-    machines_list = list(rt.machine_models.all())
-    media_by_model = fetch_model_media_map(pm.pk for pm in machines_list)
+    models_list = list(rt.machine_models.all())
+    media_by_model = fetch_model_media_map(pm.pk for pm in models_list)
     return RewardTypeDetailSchema(
         **_serialize_taxonomy(rt).model_dump(),
         machines=[
-            serialize_title_machine(
-                pm, min_rank=min_rank, media_by_model=media_by_model
-            )
-            for pm in machines_list
+            serialize_title_model(pm, min_rank=min_rank, media_by_model=media_by_model)
+            for pm in models_list
         ],
     )
 

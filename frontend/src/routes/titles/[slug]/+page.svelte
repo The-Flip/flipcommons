@@ -40,7 +40,7 @@
       thumbnailUrl: string | null | undefined;
       manufacturerName: string | null;
     }> = [];
-    for (const m of title.machines) {
+    for (const m of title.models) {
       out.push({
         slug: m.public_id,
         name: m.name,

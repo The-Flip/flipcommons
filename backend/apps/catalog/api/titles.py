@@ -97,7 +97,7 @@ from .edit_claims import plan_abbreviation_claims
 from .helpers import (
     _intersect_facet_sets,
     serialize_credit,
-    serialize_title_machine,
+    serialize_title_model,
 )
 from .images import extract_image_urls, fetch_model_media_map
 from .machine_models import (
@@ -370,7 +370,7 @@ class TitleDetailSchema(EntityDetailSchema):
     abbreviations: list[str] = []
     hero_image_url: str | None = None
     franchise: EntityRef | None = None
-    machines: list[TitleModelSchema]
+    models: list[TitleModelSchema]
     series: EntityRef | None = None
     credits: list[CreditSchema] = []
     agreed_specs: AgreedSpecsSchema = AgreedSpecsSchema()
@@ -634,8 +634,8 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
         if "variants" in getattr(pm, "_prefetched_objects_cache", {}):
             variant_ids.extend(v.pk for v in pm.variants.all())
     media_by_model = fetch_model_media_map([pm.pk for pm in model_objs] + variant_ids)
-    machines = [
-        serialize_title_machine(pm, min_rank=min_rank, media_by_model=media_by_model)
+    models = [
+        serialize_title_model(pm, min_rank=min_rank, media_by_model=media_by_model)
         for pm in model_objs
     ]
     series = (
@@ -675,8 +675,8 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
 
     # For single-model titles with no variants, include full model detail inline.
     model_detail: ModelDetailSchema | None = None
-    if len(machines) == 1 and not machines[0].variants:
-        pm = _model_detail_qs().get(slug=machines[0].public_id)
+    if len(models) == 1 and not models[0].variants:
+        pm = _model_detail_qs().get(slug=models[0].public_id)
         model_detail = _serialize_model_detail(pm)
 
     return TitleDetailSchema(
@@ -694,7 +694,7 @@ def _serialize_title_detail(title: Title) -> TitleDetailSchema:
             if title.franchise
             else None
         ),
-        machines=machines,
+        models=models,
         series=series,
         credits=credits,
         agreed_specs=agreed_specs,
