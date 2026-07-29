@@ -139,7 +139,8 @@ class FilterOptions:
 _MODEL = Q(machine_models__variant_of__isnull=True) & active_status_q("machine_models")
 
 # The same active-non-variant rule expressed at the **MachineModel root** (no
-# ``machine_models__`` prefix) — the *guard* the shared count/bounds leaves apply.
+# ``machine_models__`` prefix) — the *guard* applied by the shared count/bounds
+# leaves and by this module's own count leaves.
 # Equivalent to ``.filter(variant_of__isnull=True).active()``; spelled as one Q so it
 # can be passed as an argument. ``active()`` is null-inclusive for legacy ingest.
 _MODEL_COUNT_GUARD = Q(variant_of__isnull=True) & active_status_q()
@@ -428,15 +429,11 @@ def _count_player(ids: QuerySet[Title]) -> list[PlayerCountOption]:
     conditional aggregation (not one COUNT per bucket). The ``6`` bucket counts
     titles with any model of player_count >= 6; the others are exact matches —
     mirroring matchesPlayerCount."""
-    row = (
-        MachineModel.objects.filter(title_id__in=ids, variant_of__isnull=True)
-        .active()
-        .aggregate(
-            **{
-                f"b{bucket}": Count("title_id", filter=_bucket_q(bucket), distinct=True)
-                for bucket in PLAYER_BUCKETS
-            }
-        )
+    row = MachineModel.objects.filter(_MODEL_COUNT_GUARD, title_id__in=ids).aggregate(
+        **{
+            f"b{bucket}": Count("title_id", filter=_bucket_q(bucket), distinct=True)
+            for bucket in PLAYER_BUCKETS
+        }
     )
     return [PlayerCountOption(bucket, row[f"b{bucket}"]) for bucket in PLAYER_BUCKETS]
 
@@ -456,8 +453,7 @@ def _count_hierarchical(
     ancestors = ancestor_map(model_cls, "slug", "parents__slug")
     names = dict(model_cls.objects.values_list("slug", "name"))
     pairs = (
-        MachineModel.objects.filter(title_id__in=ids, variant_of__isnull=True)
-        .active()
+        MachineModel.objects.filter(_MODEL_COUNT_GUARD, title_id__in=ids)
         .exclude(**{f"{path}__slug": None})
         .values_list("title_id", f"{path}__slug")
     )
