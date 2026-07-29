@@ -21,7 +21,7 @@ class TestTitlesAPI:
         )
 
     @pytest.fixture
-    def title_with_machines(self, title, williams_entity):
+    def title_with_models(self, title, williams_entity):
         make_machine_model(
             name="Medieval Madness",
             slug="medieval-madness",
@@ -39,7 +39,7 @@ class TestTitlesAPI:
         )
         return title
 
-    def test_list_titles(self, client, title_with_machines):
+    def test_list_titles(self, client, title_with_models):
         resp = client.get("/api/titles/")
         assert resp.status_code == 200
         data = resp.json()
@@ -59,7 +59,7 @@ class TestTitlesAPI:
             "thumbnail_url",
         }
 
-    def test_list_titles_thumbnail(self, client, title_with_machines):
+    def test_list_titles_thumbnail(self, client, title_with_models):
         resp = client.get("/api/titles/")
         data = resp.json()
         assert data["items"][0]["thumbnail_url"] == "https://img.opdb.org/md.jpg"
@@ -92,49 +92,49 @@ class TestTitlesAPI:
         assert exact == 1
         assert folded == (1 if connection.vendor == "postgresql" else 0)
 
-    def test_get_title_detail(self, client, title_with_machines):
-        resp = client.get(f"/api/pages/title/{title_with_machines.slug}")
+    def test_get_title_detail(self, client, title_with_models):
+        resp = client.get(f"/api/pages/title/{title_with_models.slug}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Medieval Madness"
-        assert len(data["machines"]) == 2
+        assert len(data["models"]) == 2
 
-    def test_get_title_detail_excludes_variants(self, client, title_with_machines):
+    def test_get_title_detail_excludes_variants(self, client, title_with_models):
         parent = MachineModel.objects.get(name="Medieval Madness")
         make_machine_model(
             name="Medieval Madness (LE)",
             slug="medieval-madness-le",
-            title=title_with_machines,
+            title=title_with_models,
             variant_of=parent,
         )
-        resp = client.get(f"/api/pages/title/{title_with_machines.slug}")
+        resp = client.get(f"/api/pages/title/{title_with_models.slug}")
         data = resp.json()
-        assert len(data["machines"]) == 2
-        names = [m["name"] for m in data["machines"]]
+        assert len(data["models"]) == 2
+        names = [m["name"] for m in data["models"]]
         assert "Medieval Madness (LE)" not in names
 
-    def test_title_detail_excludes_deleted_variants(self, client, title_with_machines):
+    def test_title_detail_excludes_deleted_variants(self, client, title_with_models):
         # A soft-deleted variant (its delete is never blocked) must not render
         # a nested variant card — same reverse-liveness rule as the model page.
         parent = MachineModel.objects.get(name="Medieval Madness")
         make_machine_model(
             name="Medieval Madness (Zombie LE)",
             slug="medieval-madness-zombie-le",
-            title=title_with_machines,
+            title=title_with_models,
             variant_of=parent,
             status="deleted",
         )
-        resp = client.get(f"/api/pages/title/{title_with_machines.slug}")
+        resp = client.get(f"/api/pages/title/{title_with_models.slug}")
         data = resp.json()
-        variants = [v for m in data["machines"] for v in m.get("variants", [])]
+        variants = [v for m in data["models"] for v in m.get("variants", [])]
         assert variants == []
 
-    def test_model_count_excludes_variants(self, client, title_with_machines):
+    def test_model_count_excludes_variants(self, client, title_with_models):
         parent = MachineModel.objects.get(name="Medieval Madness")
         make_machine_model(
             name="Medieval Madness (LE)",
             slug="medieval-madness-le",
-            title=title_with_machines,
+            title=title_with_models,
             variant_of=parent,
         )
         resp = client.get("/api/titles/")

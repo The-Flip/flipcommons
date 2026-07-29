@@ -3,7 +3,7 @@
   import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import CardGrid from '$lib/components/collections/grid/CardGrid.svelte';
   import CreditsList from '$lib/components/pages/record/detail/CreditsList.svelte';
-  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import ModelLineageGroups from '$lib/components/pages/record/detail/ModelLineageGroups.svelte';
   import ModelSpecsSidebar from '$lib/components/pages/record/detail/ModelSpecsSidebar.svelte';
@@ -40,7 +40,7 @@
       thumbnailUrl: string | null | undefined;
       manufacturerName: string | null;
     }> = [];
-    for (const m of title.machines) {
+    for (const m of title.models) {
       out.push({
         slug: m.public_id,
         name: m.name,
@@ -184,7 +184,8 @@
     <AccordionSection heading="Models ({flatModels.length})">
       <CardGrid>
         {#each flatModels as m (m.slug)}
-          <MachineCard
+          <GameCard
+            entityType="model"
             slug={m.slug}
             name={m.name}
             thumbnailUrl={m.thumbnailUrl}

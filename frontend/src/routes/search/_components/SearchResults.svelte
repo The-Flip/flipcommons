@@ -3,7 +3,7 @@
   import CardGrid from '$lib/components/collections/grid/CardGrid.svelte';
   import ManufacturerCard from '$lib/components/collections/cards/ManufacturerCard.svelte';
   import PersonCard from '$lib/components/collections/cards/PersonCard.svelte';
-  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import type { SearchResultsSchema } from '$lib/api/schema';
 
   let { results, q }: { results: SearchResultsSchema; q: string } = $props();
@@ -40,7 +40,8 @@
       <h2>Titles</h2>
       <CardGrid>
         {#each results.titles.items as title (title.slug)}
-          <TitleCard
+          <GameCard
+            entityType="title"
             slug={title.slug}
             name={title.name}
             thumbnailUrl={title.thumbnail_url}

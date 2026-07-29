@@ -1,5 +1,5 @@
 <script lang="ts">
-  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import CardGrid from '$lib/components/collections/grid/CardGrid.svelte';
 
   type Title = {
@@ -26,7 +26,8 @@
   {:else}
     <CardGrid>
       {#each titles as title (title.public_id)}
-        <TitleCard
+        <GameCard
+          entityType="title"
           slug={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}

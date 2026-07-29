@@ -6,7 +6,7 @@
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
   import { personEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
-  import TitleCard from '$lib/components/collections/cards/TitleCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
 
   let { data } = $props();
@@ -101,7 +101,8 @@
       entityName="title"
     >
       {#snippet children(title)}
-        <TitleCard
+        <GameCard
+          entityType="title"
           slug={title.public_id}
           name={title.name}
           year={title.year}

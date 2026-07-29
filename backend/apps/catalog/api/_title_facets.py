@@ -35,9 +35,11 @@ from dataclasses import dataclass, field
 from django.db import connection
 from django.db.models import (
     Count,
+    Exists,
     F,
     Max,
     Model,
+    OuterRef,
     Q,
     QuerySet,
     Subquery,
@@ -70,6 +72,7 @@ from ..models import (
     TechnologyGeneration,
     Theme,
     Title,
+    TitleAbbreviation,
 )
 
 # ---------------------------------------------------------------------------
@@ -139,9 +142,14 @@ class FilterOptions:
 _MODEL = Q(machine_models__variant_of__isnull=True) & active_status_q("machine_models")
 
 # The same active-non-variant rule expressed at the **MachineModel root** (no
-# ``machine_models__`` prefix) — the *guard* the shared count/bounds leaves apply.
+# ``machine_models__`` prefix) — the *guard* applied by the shared count/bounds
+# leaves and by this module's own count leaves.
 # Equivalent to ``.filter(variant_of__isnull=True).active()``; spelled as one Q so it
 # can be passed as an argument. ``active()`` is null-inclusive for legacy ingest.
+# NOTE: this is the *legacy title-grain* count guard. It must NOT become the
+# candidate-set guard for card-grain roll-up counts (PR.HET): there the
+# candidate set is active Models INCLUDING Variants, which are excluded only
+# by absorption into a matching parent — never up front.
 _MODEL_COUNT_GUARD = Q(variant_of__isnull=True) & active_status_q()
 
 # The title's "first model" — see ``Title.first_model_subquery`` for the rule.
@@ -235,11 +243,16 @@ def apply_dimension(
                 name_match = Q(_q_name_fold__contains=_fold(q))
             else:
                 name_match = Q(name__icontains=q)
-            return qs.filter(
-                name_match
-                | Q(abbreviations__value__icontains=q)
-                | Q(_q_mfr_name__icontains=q)
+            # Abbreviations via Exists, not a Q traversing the join: a join Q
+            # duplicates a title's row per matching abbreviation (masked today
+            # by filtered_titles' .distinct()), and Exists keeps the whole
+            # predicate single-valued so it can double as a row-level boolean.
+            abbrev_match = Exists(
+                TitleAbbreviation.objects.filter(
+                    title=OuterRef("pk"), value__icontains=q
+                )
             )
+            return qs.filter(name_match | abbrev_match | Q(_q_mfr_name__icontains=q))
         case "manufacturer" if f.manufacturer:
             # First-model manufacturer, annotated on demand (see q above).
             return qs.annotate(_mfr_slug=_MFR_SLUG_SQ).filter(_mfr_slug=f.manufacturer)
@@ -428,15 +441,11 @@ def _count_player(ids: QuerySet[Title]) -> list[PlayerCountOption]:
     conditional aggregation (not one COUNT per bucket). The ``6`` bucket counts
     titles with any model of player_count >= 6; the others are exact matches —
     mirroring matchesPlayerCount."""
-    row = (
-        MachineModel.objects.filter(title_id__in=ids, variant_of__isnull=True)
-        .active()
-        .aggregate(
-            **{
-                f"b{bucket}": Count("title_id", filter=_bucket_q(bucket), distinct=True)
-                for bucket in PLAYER_BUCKETS
-            }
-        )
+    row = MachineModel.objects.filter(_MODEL_COUNT_GUARD, title_id__in=ids).aggregate(
+        **{
+            f"b{bucket}": Count("title_id", filter=_bucket_q(bucket), distinct=True)
+            for bucket in PLAYER_BUCKETS
+        }
     )
     return [PlayerCountOption(bucket, row[f"b{bucket}"]) for bucket in PLAYER_BUCKETS]
 
@@ -456,8 +465,7 @@ def _count_hierarchical(
     ancestors = ancestor_map(model_cls, "slug", "parents__slug")
     names = dict(model_cls.objects.values_list("slug", "name"))
     pairs = (
-        MachineModel.objects.filter(title_id__in=ids, variant_of__isnull=True)
-        .active()
+        MachineModel.objects.filter(_MODEL_COUNT_GUARD, title_id__in=ids)
         .exclude(**{f"{path}__slug": None})
         .values_list("title_id", f"{path}__slug")
     )

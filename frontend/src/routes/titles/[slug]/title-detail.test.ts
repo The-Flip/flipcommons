@@ -14,7 +14,7 @@ const MOCK_TITLE = {
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
   hero_image_url: null,
   franchise: null,
-  machines: [
+  models: [
     {
       name: 'Medieval Madness',
       public_id: 'medieval-madness',

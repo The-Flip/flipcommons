@@ -5,7 +5,7 @@
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import HierarchicalTaxonomyChildrenAccordion from '$lib/components/pages/record/detail/HierarchicalTaxonomyChildrenAccordion.svelte';
   import HierarchicalTaxonomyMobileMetaBar from '$lib/components/pages/record/detail/HierarchicalTaxonomyMobileMetaBar.svelte';
-  import MachineCard from '$lib/components/collections/cards/MachineCard.svelte';
+  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import PaginatedSection from '$lib/components/collections/grid/PaginatedSection.svelte';
@@ -65,7 +65,8 @@
   emptyMessage="No machines with this feature."
 >
   {#snippet children(machine)}
-    <MachineCard
+    <GameCard
+      entityType="model"
       slug={machine.slug}
       name={machine.name}
       thumbnailUrl={machine.thumbnail_url}

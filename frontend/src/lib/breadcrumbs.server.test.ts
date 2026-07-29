@@ -80,7 +80,7 @@ const PARENTS: Partial<Record<CatalogEntityKey, Record<string, unknown>>> = {
       { name: 'Illinois', public_id: 'usa/il' },
     ],
   },
-  title: { machines: [], model_detail: null },
+  title: { models: [], model_detail: null },
   'display-subtype': { display_type: { name: 'Dot Matrix', public_id: 'dot-matrix' } },
   'technology-subgeneration': {
     technology_generation: { name: 'Solid State', public_id: 'solid-state' },
