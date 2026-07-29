@@ -35,9 +35,11 @@ from dataclasses import dataclass, field
 from django.db import connection
 from django.db.models import (
     Count,
+    Exists,
     F,
     Max,
     Model,
+    OuterRef,
     Q,
     QuerySet,
     Subquery,
@@ -70,6 +72,7 @@ from ..models import (
     TechnologyGeneration,
     Theme,
     Title,
+    TitleAbbreviation,
 )
 
 # ---------------------------------------------------------------------------
@@ -236,11 +239,16 @@ def apply_dimension(
                 name_match = Q(_q_name_fold__contains=_fold(q))
             else:
                 name_match = Q(name__icontains=q)
-            return qs.filter(
-                name_match
-                | Q(abbreviations__value__icontains=q)
-                | Q(_q_mfr_name__icontains=q)
+            # Abbreviations via Exists, not a Q traversing the join: a join Q
+            # duplicates a title's row per matching abbreviation (masked today
+            # by filtered_titles' .distinct()), and Exists keeps the whole
+            # predicate single-valued so it can double as a row-level boolean.
+            abbrev_match = Exists(
+                TitleAbbreviation.objects.filter(
+                    title=OuterRef("pk"), value__icontains=q
+                )
             )
+            return qs.filter(name_match | abbrev_match | Q(_q_mfr_name__icontains=q))
         case "manufacturer" if f.manufacturer:
             # First-model manufacturer, annotated on demand (see q above).
             return qs.annotate(_mfr_slug=_MFR_SLUG_SQ).filter(_mfr_slug=f.manufacturer)
