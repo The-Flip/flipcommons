@@ -33,6 +33,9 @@ from apps.catalog.api._title_facets import (
     FacetOption,
     FilterOptions,
     TitleFilters,
+    _expand_taxonomy,
+    apply_dimension,
+    base_titles,
     facet_counts,
     filtered_titles,
     ordered_titles,
@@ -243,6 +246,20 @@ class TestPredicates:
         t = _title("Attack from Mars", "afm")
         TitleAbbreviation.objects.create(title=t, value="AFM")
         assert _slugs(TitleFilters(q="afm")) == {"afm"}
+
+    def test_q_two_matching_abbreviations_yield_one_row(self, db):
+        """The abbreviation arm is an ``Exists``, so a title with several
+        matching abbreviations contributes ONE row *before* ``.distinct()`` —
+        the single-valued property the card-grain roll-up will lean on. A ``Q``
+        traversing the join would emit one row per matching abbreviation and
+        only ``.distinct()`` would hide it."""
+        f = TitleFilters(q="afm")
+        t = _title("Attack from Mars", "afm")
+        TitleAbbreviation.objects.create(title=t, value="AFM")
+        TitleAbbreviation.objects.create(title=t, value="AFM-LE")
+
+        rows = apply_dimension(base_titles(), "q", f, _expand_taxonomy(f))
+        assert list(rows.values_list("slug", flat=True)) == ["afm"]
 
     def test_q_matches_first_model_manufacturer_not_later_models(self, db):
         """`q` on a manufacturer name hits the first model's manufacturer only —

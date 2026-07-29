@@ -146,6 +146,10 @@ _MODEL = Q(machine_models__variant_of__isnull=True) & active_status_q("machine_m
 # leaves and by this module's own count leaves.
 # Equivalent to ``.filter(variant_of__isnull=True).active()``; spelled as one Q so it
 # can be passed as an argument. ``active()`` is null-inclusive for legacy ingest.
+# NOTE: this is the *legacy title-grain* count guard. It must NOT become the
+# candidate-set guard for card-grain roll-up counts (PR.HET): there the
+# candidate set is active Models INCLUDING Variants, which are excluded only
+# by absorption into a matching parent — never up front.
 _MODEL_COUNT_GUARD = Q(variant_of__isnull=True) & active_status_q()
 
 # The title's "first model" — see ``Title.first_model_subquery`` for the rule.
