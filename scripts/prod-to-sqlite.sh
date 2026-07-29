@@ -21,6 +21,12 @@
 # a separate container seeded from a dump taken after the scrub, and therefore never
 # receives an unscrubbed byte — which is what makes it safe to pass to someone else.
 #
+# THE ARCHIVE COPY. The rebuilt dev DB is also written out as
+# db.prod.patch-NNNN.YYYY-MM-DD.sqlite3 next to it — the same bytes db.sqlite3 has, under
+# a name that records which data patch the catalog had reached and when prod was sampled.
+# db.sqlite3 gets overwritten by the next run; these accumulate, and are what you keep or
+# hand to someone.
+#
 # THE SNAPSHOT survives as 'flipcommons-postgres' on 127.0.0.1:5433: scrubbed and
 # prod-shaped, for testing migrations and other SQL that SQLite can't stand in for.
 # The previous one keeps serving until the download, scrub and dumpdata have all
@@ -92,6 +98,60 @@ start_postgres() {
 drop_container()   { docker rm -f -v "$@" >/dev/null 2>&1 || true; }
 drop_disposables() { drop_container "$LOAD_CONTAINER" "$CAND_CONTAINER"; }
 
+# port_taken PORT — is anything on the host already listening there? bash's own /dev/tcp,
+# so this adds nothing to the required-command list. The subshell confines the fd.
+port_taken() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+# require_port PORT [CONTAINER-ALLOWED-TO-HOLD-IT]
+# A stray Postgres of your own on either port would otherwise surface as a failure from
+# start_postgres — and on KEEP_PORT that lands *after* the previous snapshot has been
+# dropped, so someone else's container costs you the snapshot you already had. Cheap to
+# catch here instead.
+require_port() {
+  port_taken "$1" || return 0
+  # The kept container legitimately holds KEEP_PORT between runs: it's the previous
+  # snapshot, and it gets dropped before its replacement is started.
+  if [ -n "${2:-}" ] && [ -n "$(docker ps -q -f "name=^${2}$" -f "publish=${1}")" ]; then
+    return 0
+  fi
+  die "127.0.0.1:$1 is already in use by something other than this script — free that port and retry. This script needs $LOAD_PORT for the throwaway loader and $KEEP_PORT for the kept snapshot."
+}
+
+# sqlite_patch_high_water DB — highest applied data-patch number, zero-padded, or empty
+# if none has been applied. The applied-ledger is IngestRun rows that succeeded with a
+# patch_id, and patch_id is the NNNN-slug stem, so the leading four digits are the
+# number. Read with stdlib sqlite3 rather than manage.py, whose startup chatter would
+# have to be filtered back out of the captured value. 'success' is bound rather than
+# quoted because this whole program is inside a single-quoted shell string.
+sqlite_patch_high_water() {
+  uv run --project "$BACKEND_DIR" python -c '
+import sqlite3, sys
+
+con = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+n = con.execute(
+    "select max(cast(substr(patch_id, 1, 4) as integer)) from provenance_ingestrun"
+    " where status = ? and patch_id is not null",
+    ("success",),
+).fetchone()[0]
+print("" if n is None else f"{n:04d}")
+' "$1"
+}
+
+# sqlite_archive SRC DST — consistent copy of a possibly-live SQLite DB. VACUUM INTO
+# rather than cp because the dev server may hold db.sqlite3 open, and copying a
+# rollback-journal database mid-write can produce a torn file; it also compacts. VACUUM
+# INTO refuses to overwrite, which is what the rm is for.
+sqlite_archive() {
+  rm -f "$2"
+  uv run --project "$BACKEND_DIR" python -c '
+import sqlite3, sys
+
+sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True).execute(
+    "vacuum into ?", (sys.argv[2],)
+)
+' "$1" "$2"
+}
+
 cleanup() {
   # Both disposables go on every exit path: the loader holds a raw copy of prod, and a
   # half-restored candidate is worse than no snapshot. After a successful promote the
@@ -134,6 +194,11 @@ drop_disposables
 if [ -n "${DATABASE_URL:-}" ] && [ "${DATABASE_URL#sqlite}" = "${DATABASE_URL}" ]; then
   die "DATABASE_URL points at a non-SQLite database — refusing to run. Unset it (and don't run this under 'railway run') so the rebuild targets local SQLite only."
 fi
+
+# Checked after the sweep above, which is what releases LOAD_PORT if a dead run was
+# still squatting it.
+require_port "$LOAD_PORT"
+require_port "$KEEP_PORT" "$KEEP_CONTAINER"
 
 # The remaining checks all turn a post-download failure into an instant one. The
 # `manage` call is the first of the run, so it also resolves the uv environment
@@ -241,5 +306,23 @@ log "Loading prod data into SQLite"
 manage "$SQLITE_URL" loaddata "$DATA_FILE"
 
 REBUILD_DONE=1
+
+# --- 8. archive the same build under a self-describing name -------------------
+# db.sqlite3 has to keep its name for Django to find it, so the build is written a second
+# time as db.prod.patch-NNNN.YYYY-MM-DD.sqlite3: the patch high-water mark says how
+# current the catalog is, the date says when prod was sampled. Identical names therefore
+# mean identical prod state, so a re-run on a day that brought no new patches overwrites
+# instead of accumulating near-duplicates.
+#
+# After REBUILD_DONE, deliberately: db.sqlite3 is complete and correct by this point, and
+# a failure to write the archive must not roll it back. It does still abort the run, so
+# the archive can't be silently missing.
+PATCH="$(sqlite_patch_high_water "$SQLITE_DB")"
+ARCHIVE="${BACKEND_DIR}/db.prod.patch-${PATCH:-none}.$(date +%Y-%m-%d).sqlite3"
+log "Archiving the build as $(basename "$ARCHIVE")"
+sqlite_archive "$SQLITE_DB" "$ARCHIVE"
+
 log "Done. Local db.sqlite3 now holds prod data, with user PII scrubbed."
-log "Scrubbed Postgres kept as '${KEEP_CONTAINER}' — psql '${KEEP_URL}'"
+log "Archived alongside it as $(basename "$ARCHIVE")"
+log "Scrubbed Postgres kept as '${KEEP_CONTAINER}' — docker exec -it ${KEEP_CONTAINER} psql -U postgres"
+log "  (that needs no host psql; clients that have one can use ${KEEP_URL})"

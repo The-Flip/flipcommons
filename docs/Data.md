@@ -34,13 +34,19 @@ The script exempts a few developers from the PII scrub — their usernames are l
 
 ## Postgres
 
-[Refreshing localhost DB from prod](#refreshing-localhost-db-from-prod) leaves a scrubbed, prod-shaped Postgres Docker container (`flipcommons-postgres`) running afterwards. This is useful for testing migrations and other SQL that SQLite can't stand in for.
+[Refreshing localhost DB from prod](#refreshing-localhost-db-from-prod) leaves a prod-shaped PII-scrubbed Postgres container (`flipcommons-postgres`) on `127.0.0.1:5433`. Use it to test migrations and anything else SQLite can't represent.
+
+SQL prompt — there is no `psql` on the host, so `manage.py dbshell` won't work:
 
 ```bash
 docker exec -it flipcommons-postgres psql -U postgres
 ```
 
-`docker inspect flipcommons-postgres` has the port mapping and password if you need a `DATABASE_URL`.
+Point Django at it:
+
+```bash
+DATABASE_URL='postgresql://postgres:dev@127.0.0.1:5433/postgres' uv run --project backend python backend/manage.py migrate  # pragma: allowlist secret
+```
 
 ## I want to…
 
@@ -50,5 +56,6 @@ docker exec -it flipcommons-postgres psql -U postgres
 - **Correct or update a catalog value** → author a [data patch](DataPatches.md), attributed to the source the fact came from. Snapshot localhost first so you can iterate.
 - **Bootstrap a fresh local database** → import a database export (Django `loaddata`, or copy a `db.sqlite3` snapshot).
 - **Refresh localhost with current production data** → [`./scripts/prod-to-sqlite.sh`](#refreshing-localhost-db-from-prod); user PII is scrubbed on the way in.
+- **Test a migration, or SQL that SQLite can't represent** → the [prod-shaped Postgres container](#postgres) the refresh script leaves running.
 - **Apply pending corrections** to a running DB → `make pull-patches && make ingest-patches`.
 - **Understand how a field's value is resolved** and audited → [Provenance.md](Provenance.md) (claims and resolution).
