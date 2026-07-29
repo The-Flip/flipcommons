@@ -20,10 +20,6 @@ Measured against the local dev catalog at patch `0188-model-lineage`: 6,180 Titl
 
 A number carrying no label is an assertion nobody can check. This document has shipped three of those; do not add a fourth.
 
-## Open questions
-
-**None block starting.** The two that used to sit here — whether facet badges count cards or Models, and what shape produces card-grain rows — are owned by [COMMIT.HET.PROVE](#commithetprove--prove-the-foundation), which exists to answer them with a measurement rather than an argument.
-
 ## What is broken today
 
 Five defects, all reproducible against the dev server, and all one defect underneath: **the listing answers Model-shaped questions at Title grain.**
@@ -197,20 +193,31 @@ Answering "there are surely other consumers than the following, we need to do an
 
 The export API stays out of it deliberately. It already carries `model_relationships[]` and `export_markets[]` in full, so nothing here is missing from it — what The Flip lacks is not data but a way to ask a question, which is the filtering API's job and not the export's.
 
-## Pre-refactors
+## ✅ DONE: <a href id="pr-pre"></a>Pre-refactors
 
-Three commits land on the branch before [COMMIT.HET.PROVE](#commithetprove--prove-the-foundation), each separately reviewable, each shrinking PR.HET's blast radius without changing what any query returns:
+Three commits land on the branch before [COMMIT.HET.PROVE](#commit-het-prove), each separately reviewable, each shrinking PR.HET's blast radius without changing what any query returns:
 
-- **PRE.GUARD — one spelling per guard in `_title_facets.py`.** `_count_player` and `_count_hierarchical` re-spell the count-hygiene guard by hand (`variant_of__isnull=True` plus active), invisible to a grep for `_MODEL` or `_MODEL_COUNT_GUARD`. Route them through `_MODEL_COUNT_GUARD`, so PR.HET's "list exclusion comes off, count hygiene stays" split becomes a symbol-level edit instead of a per-site judgement call.
-- **PRE.ABBREV — the title-abbreviation predicate arm becomes an `Exists`.** Behaviourally identical today, and it is what makes `title_own_match_q` single-valued so the same object can later serve as a row-level boolean. Landing it separately de-risks the name-predicate commit.
-- **PRE.VOCAB — no non-ORM identifier says "machine" when it means Model.** `TitleDetailSchema.machines` → `models`, `serialize_title_machine` → `serialize_title_model`, plus locals and frontend consumers. The theme/taxonomy page schemas keep their `machines` field because PR.DETAIL deletes those payloads; the ORM layer (`MachineModel`, `machine_models`, `target_machine` and its published export mirror, with their frontend mirrors like `machineTarget`) keeps its names per the CLAUDE.md rule.
-- **PRE.CARD — `GameCard` replaces `TitleCard` and `MachineCard`.** Pure frontend: the unified styling and the registry-derived href, with every call site passing a literal `entity_type` until the wire carries one. 21 importing files change appearance and deserve eyeballing in their own diff, not inside PR.HET's. The specification stays in [The frontend](#the-frontend) below.
+### ✅ DONE: <a href id="pre-guard"></a>PRE.GUARD
+
+One spelling per guard in `_title_facets.py`. `_count_player` and `_count_hierarchical` re-spell the count-hygiene guard by hand (`variant_of__isnull=True` plus active), invisible to a grep for `_MODEL` or `_MODEL_COUNT_GUARD`. Route them through `_MODEL_COUNT_GUARD`, so PR.HET's "list exclusion comes off, count hygiene stays" split becomes a symbol-level edit instead of a per-site judgement call.
+
+### ✅ DONE: <a href id="pre-abbrev"></a>PRE.ABBREV
+
+The title-abbreviation predicate arm becomes an `Exists`. Behaviourally identical today, and it is what makes `title_own_match_q` single-valued so the same object can later serve as a row-level boolean. Landing it separately de-risks the name-predicate commit.
+
+### ✅ DONE: <a href id="pre-vocab"></a>PRE.VOCAB
+
+No non-ORM identifier says "machine" when it means Model. `TitleDetailSchema.machines` → `models`, `serialize_title_machine` → `serialize_title_model`, plus locals and frontend consumers. The theme/taxonomy page schemas keep their `machines` field because PR.DETAIL deletes those payloads; the ORM layer (`MachineModel`, `machine_models`, `target_machine` and its published export mirror, with their frontend mirrors like `machineTarget`) keeps its names per the CLAUDE.md rule.
+
+### ✅ DONE: <a href id="pre-card"></a>PRE.CARD
+
+`GameCard` replaces `TitleCard` and `MachineCard`. Pure frontend: the unified styling and the registry-derived href, with every call site passing a literal `entity_type` until the wire carries one. 21 importing files change appearance and deserve eyeballing in their own diff, not inside PR.HET's. The specification stays in [The frontend](#the-frontend) below.
 
 ## PR.HET — heterogenous results
 
-Everything in this section ships in one PR — except the card unification, extracted to [PRE.CARD](#pre-refactors) — because the card schema forces it. Change the schema and `_serialize_card` moves; `title_search_section` composes `ordered_titles()` with `_serialize_card`, so global search moves with it; the frontend consumes that schema, so the cards move, and 13 files import `MachineCard`.
+Everything in this section ships in one PR — except the card unification, extracted to [PRE.CARD](#pre-card) — because the card schema forces it. Change the schema and `_serialize_card` moves; `title_search_section` composes `ordered_titles()` with `_serialize_card`, so global search moves with it; the frontend consumes that schema, so the cards move, and 13 files import `MachineCard`.
 
-### COMMIT.HET.PROVE — prove the foundation
+### ✅ DONE: <a href id="commit-het-prove"></a>COMMIT.HET.PROVE — prove the foundation
 
 Three decisions qualify as the riskiest bits, because everything else is built on top of them and reversing any one means rewriting the seam the rest sits on.
 
@@ -241,6 +248,31 @@ Two other things to settle here, both cheap and both shape-deciding. That `Expre
 
 **Write the three answers into this section when it lands.** A proving commit that merges without them recorded did not prove anything.
 
+#### <a id="prove-answers"></a>The answers
+
+The proving work landed as a commit, not a spike: `apps/catalog/api/_game_rows.py` (the two-set split, the three rungs, both row seams, the yardstick facet with all three totals methods), `test_game_rows.py` (71 cases — every rung, the two-set split's three traps, multi-select, both seams, the badge == result-count invariant including under an active `q`, and the two lifecycle states the Title-grain listing never faced: empty active Titles, and live Models under deleted Titles), and the harness `apps/catalog/tests/benchmark_game_rows.py` (run from `backend/` as `uv run python -m apps.catalog.tests.benchmark_game_rows`; it lives in the exempt tests layer because a management command may not import the api layer), which prints every figure below for whatever `DATABASE_URL` points at — re-run it rather than trusting these numbers. Measured against the scrubbed prod-shaped Docker Postgres (6,180 Titles / 6,913 live Models — the same catalog as this document's other figures), medians of 5 runs after a warmup, with today's Title-grain paths timed on the same container as the baseline: no-filter listing page 16.4 ms, no-filter Title-grain manufacturer facet 17.3 ms. Every correctness prediction in this document is checked by the harness on both backends — the listing counts (6,180 unfiltered, vifico 13, chicago-gaming 15, williams 487, solid-state 1,432, fantasy 396, `q=godzilla` 3) and the no-filter badge sum of 6,147 per totals method.
+
+**The benchmark host was an M3 MacBook Air with the database in local Docker** — far faster than the Railway containers production runs on, and with no real network between app and database. So the absolute milliseconds below are optimistic; the **ratios** are the portable numbers, because both sides of each comparison are mostly database work that slows down together. Where a conclusion depends on the app-CPU-vs-database split or on data transfer — only the row-seam decision does — it is marked provisional below.
+
+**This is slower than the Title-grain system, by design — but the cost lands on filtered requests, not the unfiltered page.** The rule computes something the old system never computed at all — a per-Title unanimity count over the Model join — and card rows need a Model query beside the Title query. But the unanimity aggregates run only when a Model-only dimension is active (the conditional in [the rungs](#the-three-rungs)), so the unfiltered listing stays a plain active-Titles query plus one cheap Model-rows query. Head-to-head on the same container, row layer only:
+
+| path (no filter)     | Title grain today | card grain             | delta     |
+| -------------------- | ----------------- | ---------------------- | --------- |
+| listing page + count | 16.4 ms           | 22.7 ms (merge)        | **+38%**  |
+| manufacturer facet   | 17.3 ms           | 36.0 ms (grouped join) | **+108%** |
+
+So the hottest path — the unfiltered listing — is barely slower, the facet fan-out is about 2× (and its no-filter case is cached, rebuilt only on catalog edits), and filtered listing requests run 15–21 ms against a 16.4 ms unfiltered baseline. Roughly 1.4–2× at the row layer where the new work actually runs is the price of the feature, not an implementation accident, and the user-visible delta is smaller still because the row layer is only part of a request — hydration, serialization and HTTP are unchanged between the systems. Expect the ratios to survive the hardware change roughly intact and the absolute deltas (+6–19 ms here) to scale with however much slower Railway's Postgres and vCPU are than the benchmark host.
+
+**1. Row shape: the Python merge — provisional until re-measured on Railway.** Both seams work on both backends, so this was decided on speed and simplicity rather than survival, and the picture is mixed rather than one-sided. On filtered requests — where the row algebra actually runs — the merge wins clearly (Postgres page+count: `tech_gen=solid-state` 21.1 ms vs 31.2, `manufacturer=williams` 15.0 vs 26.6), because the union runs the whole algebra twice per request (once for the page, once for `count`) while the merge materializes the four-column rows once and `count` is the list's length (the `_count_manufacturer` precedent, and the same ~6k-row ceiling). On the unfiltered fast path the union wins (17.0 ms vs 22.7): with no aggregates to run twice, the union's page query is nearly free while the merge still materializes all ~6.2k rows. The merge stays the pick — the filtered gap is the larger one and the filtered path is what the feature exists for — but the split result is exactly why the Railway re-measurement below matters. Findings that stay true for whoever revisits this: `.union()` demands `.order_by()` cleared on both arms (SQLite rejects ORDER BY inside compound arms) and then takes the full `nulls_last` ordering on both backends; the union's `count()` was verified to wrap the identical combined subquery the page slices (membership predicates intact, ordering dropped); and the two seams order ties differently — the union inherits each backend's collation (Postgres `en_US` sorts "De Luxe" after "Deluxe"; SQLite is code-point), while the merge sorts on a diacritic/case-folded name key, backend-independent, which is the ordering that ships.
+
+Why provisional: this is the one decision of the three that trades database work against app work, and two of its costs are invisible with the database in local Docker. The merge transfers every matching row's four columns per request — ~6.2k rows, roughly 200–400 KB — where the union transfers one page plus a count; and the ~6k-row parse-and-sort that is trivial on an M3 is merely cheap on a starved vCPU. The hardware-independent argument still favors the merge (the union's 2× algebra execution holds on any hardware), so it stays the pick — at medium confidence. **Before PR.HET wires the listing endpoint, run the harness against production hardware** — it is read-only and takes any `DATABASE_URL`, so `railway run` prints the same table, and running it from inside the deployed container also captures the app-CPU side. The union implementation is kept in the tree through the proving commit precisely so that re-measurement can flip the decision cheaply; whichever seam loses is deleted when the listing is wired — the done condition's "1 function producing listing rows" applies at PR merge.
+
+**2. Facet grain: card counts.** The no-filter manufacturer facet at card grain costs 36–42 ms on Postgres against 17.3 ms for today's Title-grain rollup on the same container — about 2×, and an order of magnitude under the 280 ms failure mode. The filtered fan-out — the one that is actually served live, since the no-filter payload is cached — costs 13–16 ms. The badge == result-count invariant holds at card grain and is pinned by tests, including the two-set-split cases where unanimity reads `model_only` while contributions read `carding`. The complexity price was ~120 lines including all three totals methods, so card counts are affordable and the badges mean what the page shows. Unlike the seam decision, this one is environment-robust: both sides of the 2× are database work, so the ratio travels to Railway even though the milliseconds won't. One number for PR.HET to watch, not a blocker: the full fan-out is twelve facets, so a filtered request extrapolates to roughly 12 × 13–22 ms serially; the shared totals dict below is the first lever if that needs shaving.
+
+**3. Live-Model totals: the grouped join.** All three methods return identical results everywhere (pinned by a test) and land close together — Postgres no-filter: aggregate 36.4 ms, grouped join 36.0, scan 41.7; filtered: 13.3 / 15.5 / 22.1. Decided for the grouped join on a structural property the timings don't show: its totals query (`Model` grouped by `title_id`, no filter inputs) is the same for every facet, so the twelve-facet fan-out computes it once and shares the dict, where the aggregate method recomputes totals inside each facet's own `GROUP BY`. The scan stays the fallback shape; **denormalization is rejected** — the measurement it was waiting on came back three ways affordable, so it buys nothing for the price of a migration plus an invalidation path.
+
+Two ancillary questions this section carried are settled by the shape that won. The `ExpressionWrapper`-accepts-`Exists` question is moot: nothing needs a row-level boolean annotation, because rung 2's "its Title did not card" is `exclude(title__in=<rung-1 queryset>.values("pk"))` — a grouped-`HAVING` subquery that compiles on both backends. And "what `count` counts" is the final card-row algebra on both seams, verified as above.
+
 ### Record-local shared dimensions
 
 The product doc's [Dimensions are tested on the record that owns it](ModelFiltering.md#dimensions-are-tested-on-the-record-that-owns-it) sorts every dimension into three classes, and the engine has to keep them apart:
@@ -266,7 +298,7 @@ carding    = model_only.filter(shared_dimension_q(filters)) # + the record-local
 
 Chaining is **mandatory** for the multi-select dimensions — `.filter(themes=A, themes=B)` joins once, so a single theme row would have to be both, and the result is always empty. Chaining from the `MachineModel` root gives both properties at once: multi-select works, and every dimension lands on the same Model, which is what [Multi-select](ModelFiltering.md#multi-select) requires.
 
-**The candidate set is active Models including Variants**, per the rule. `_MODEL`'s `variant_of__isnull=True` is a policy guard and it comes off. `first_model_candidates()` keeps its own exclusion, so the representative is still always a non-Variant.
+**The candidate set is active Models including Variants — under live Titles.** `_MODEL`'s `variant_of__isnull=True` is a policy guard and it comes off. `first_model_candidates()` keeps its own exclusion, so the representative is still always a non-Variant. The Title-liveness guard is new work the Title-grain listing never needed: it rooted at `Title.objects.active()`, where the card-grain engine roots at the Model — and an active Model under a deleted Title is a reachable state, because `restore_model` deliberately leaves a deleted parent untouched. Without the guard such a Model would card at rung 2 and could even tally as a unanimous Title card in the facet bags.
 
 ### The name predicate
 
@@ -302,7 +334,7 @@ n_models = Count("machine_models", filter=_ACTIVE, distinct=True)
 n_match  = Count("machine_models", filter=_ACTIVE & Q(machine_models__in=model_only), distinct=True)
 ```
 
-**Rung 1 — a Title cards** when `n_match == n_models`, `n_models > 0`, its Title-only dimensions hold and its own record-local shared values match.
+**Rung 1 — a Title cards** when its Title-only dimensions hold, its own record-local shared values match and — **only when a Model-only dimension is active** — `n_match == n_models` with `n_models > 0`. The unanimity clause is conditional deliberately: with no Model-only dimension active it is vacuous, and an active Title with zero live Models still cards — the listing supports empty Titles (deleting the last Model orphans one; `test_list_titles_empty_title` pins it). Under an active Model-only dimension the `n_models > 0` guard is what keeps vacuous truth from carding an empty Title for a value it never had. The conditional also makes the unfiltered listing a plain active-Titles query, with no aggregates on the hottest path. (An earlier draft required `n_models > 0` unconditionally, which silently dropped empty Titles from the unfiltered listing and from name search.)
 
 **Rung 2 — a Model cards** when it is in `carding`, its Title did not card and its Title satisfies every Title-only dimension. That last clause is the binding half of the Title-only class and it is easy to drop: without it, `franchise=harley-davidson&manufacturer=sega` returns Sega Models from every franchise.
 
@@ -335,7 +367,7 @@ Two different entity types have to arrive as one ordered, paginated list. The sh
 
 `sort_year` is `Max(model year)` for a Title row, matching today's `latest_year`, and the Model's own year for a Model row. It is selected rather than derived because the ordering keys have to be in the select list.
 
-Whether step 2 is `.union()` or a Python merge is [COMMIT.HET.PROVE](#commithetprove--prove-the-foundation)'s first decision. The precedent for the merge is `_count_manufacturer`, which pulls ~7k rows and rolls up in Python precisely because the clever SQL was 25× slower. Hydration is unchanged either way.
+Whether step 2 is `.union()` or a Python merge is [COMMIT.HET.PROVE](#commit-het-prove)'s first decision. The precedent for the merge is `_count_manufacturer`, which pulls ~7k rows and rolls up in Python precisely because the clever SQL was 25× slower. Hydration is unchanged either way.
 
 ### Facet counts
 

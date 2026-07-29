@@ -473,7 +473,9 @@ I leave the specifics of this work up to the [plan](#plan), but here are questio
 
 It must prove it out on Postgres. Use [Docker Postgres](../../Data.md#postgres). It must ALSO prove that it works on SQLite because that's the dev DB. SQLite perf is secondary.
 
-If this proving doesn't make sense to be a standalone commit, then make it a spike. I'm fine with deleting spike work if that's what's needed. If it should be multiple commits, I'm also fine with that.
+###### Outcome
+
+The proving commit landed and the foundation holds: the roll-up is implementable, card counts are affordable (so the facet badges count visible cards, not Models) and the engine is small enough to hand to the next maintainer. It is slower than the Title-only system by design, but the cost lands where the new work runs: the unfiltered listing is barely slower (+38% at the query layer, since the roll-up aggregates only run when a Model-only filter is active), filtered requests and the facet fan-out run roughly 1.4–2×, and the cached no-filter facet path is unaffected; the user-visible delta is smaller still because hydration and serialization are unchanged. One implementation decision, the row seam (SQL union vs Python merge), is provisional until re-measured on Railway hardware, because the benchmark ran on a fast laptop with a local database and that is the one decision that trades database work against app work. Figures, decisions and the re-measurement instructions: [the plan's answers](./ModelFilteringPlan.md#prove-answers).
 
 #### <a id="PR.DETAIL"></a>PR.DETAIL: refactor dimension detail pages
 
