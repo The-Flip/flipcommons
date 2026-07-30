@@ -8,6 +8,7 @@ Auto-discovered via the ``routers`` list convention in config/api.py.
 from .corporate_entities import corporate_entities_router
 from .franchises import franchises_router
 from .gameplay_features import gameplay_features_router
+from .games import games_router
 from .locations import locations_router
 from .locations_write import locations_write_router
 from .machine_models import models_router
@@ -40,6 +41,7 @@ __all__ = [
     "franchises_router",
     "game_formats_router",
     "gameplay_features_router",
+    "games_router",
     "locations_router",
     "locations_write_router",
     "manufacturers_router",
@@ -64,6 +66,7 @@ routers = [
     ("/technology-generations/", technology_generations_router),
     ("/models/", models_router),
     ("/titles/", titles_router),
+    ("/games/", games_router),
     ("/manufacturers/", manufacturers_router),
     ("/people/", people_router),
     ("/themes/", themes_router),

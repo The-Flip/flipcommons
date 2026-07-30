@@ -28,12 +28,20 @@ function section<T>(items: T[], hasMore = false) {
 
 function results(overrides: Partial<SearchResultsSchema> = {}): SearchResultsSchema {
   return {
-    titles: section([
+    games: section([
       {
+        entity_type: 'title' as const,
         name: 'Medieval Madness',
         slug: 'medieval-madness',
         year: 1997,
-        model_count: 2,
+        manufacturer: { public_id: 'williams', name: 'Williams' },
+        thumbnail_url: null,
+      },
+      {
+        entity_type: 'model' as const,
+        name: 'Medieval Madness (Remake)',
+        slug: 'medieval-madness-remake',
+        year: 2015,
         manufacturer: { public_id: 'williams', name: 'Williams' },
         thumbnail_url: null,
       },
@@ -61,13 +69,19 @@ describe('/search page', () => {
     expect(screen.queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
   });
 
-  it('renders the three sections in order: Titles, Manufacturers, People', () => {
+  it('renders the three sections in order: Games, Manufacturers, People', () => {
     render(Page, { props: { data: { q: 'medieval', results: results() } } });
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(['Titles', 'Manufacturers', 'People']);
+    expect(headings).toEqual(['Games', 'Manufacturers', 'People']);
     expect(screen.getByText('Medieval Madness')).toBeInTheDocument();
     expect(screen.getByText('Medieval Co')).toBeInTheDocument();
     expect(screen.getByText('Medi Designer')).toBeInTheDocument();
+  });
+
+  it('links a Model row to its model page', () => {
+    render(Page, { props: { data: { q: 'medieval', results: results() } } });
+    const link = screen.getByRole('link', { name: /Medieval Madness \(Remake\)/ });
+    expect(link).toHaveAttribute('href', '/models/medieval-madness-remake');
   });
 
   it('hides empty sections', () => {
@@ -80,7 +94,7 @@ describe('/search page', () => {
       },
     });
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-    expect(headings).toEqual(['Titles']);
+    expect(headings).toEqual(['Games']);
   });
 
   it('renders a "See all" listing link when a section has_more', () => {
@@ -89,12 +103,12 @@ describe('/search page', () => {
         data: {
           q: 'medieval',
           results: results({
-            titles: section(results().titles.items, true),
+            games: section(results().games.items, true),
           }),
         },
       },
     });
-    const link = screen.getByRole('link', { name: /see all titles matching "medieval"/i });
+    const link = screen.getByRole('link', { name: /see all games matching "medieval"/i });
     expect(link).toHaveAttribute('href', '/titles?q=medieval');
   });
 
@@ -109,7 +123,7 @@ describe('/search page', () => {
         data: {
           q: 'zzz',
           results: results({
-            titles: section([]),
+            games: section([]),
             manufacturers: section([]),
             people: section([]),
           }),
@@ -159,7 +173,7 @@ describe('/search page', () => {
 
   it('announces the visible result count to assistive tech', () => {
     render(Page, { props: { data: { q: 'medieval', results: results() } } });
-    const live = screen.getByText(/showing 3 results/i);
+    const live = screen.getByText(/showing 4 results/i);
     // The polite live region wraps the announcement.
     expect(live.closest('[aria-live="polite"]')).not.toBeNull();
   });

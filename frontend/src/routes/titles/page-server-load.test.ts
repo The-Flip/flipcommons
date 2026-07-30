@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { load } from './+page.server';
 
 const CARD = {
+  entity_type: 'title' as const,
   name: 'Godzilla',
   slug: 'godzilla',
   year: 2021,
-  model_count: 1,
   manufacturer: null,
   thumbnail_url: null,
 };
@@ -13,7 +13,7 @@ const CARD = {
 /** Route the mocked fetch by path: cards vs the streamed facet endpoint. */
 function routedFetch(cards: Response) {
   return vi.fn((input: Request) => {
-    if (new URL(input.url).pathname.startsWith('/api/pages/titles')) {
+    if (new URL(input.url).pathname.startsWith('/api/pages/games')) {
       return Promise.resolve(
         new Response(JSON.stringify({ filter_options: {}, query_count: 0 }), {
           status: 200,
@@ -54,14 +54,14 @@ describe('/titles +page.server load', () => {
     await expect(result.query_count).resolves.toBe(0);
     // Cards are fetched for page 1.
     const cardCall = fetch.mock.calls.find(
-      (c) => new URL((c[0] as Request).url).pathname === '/api/titles/',
+      (c) => new URL((c[0] as Request).url).pathname === '/api/games/',
     );
     expect(cardCall).toBeDefined();
     expect((cardCall![0] as Request).url).toContain('page=1');
   });
 
   it('throws instead of degrading to empty when the card fetch fails', async () => {
-    // A 500 must surface as an error page, not a silent "0 titles" success
+    // A 500 must surface as an error page, not a silent "0 games" success
     // (which could also mislead the create prompt on a query).
     const fetch = routedFetch(new Response('boom', { status: 500 }));
 

@@ -182,7 +182,11 @@ export function listingMeta(catalogKey: CatalogEntityKey): {
  * empty). Filtered/paginated variants (`?manufacturer=…`, `?page=2`)
  * canonicalize to the bare path, so publishing their partial/filtered subset
  * under that canonical `@id` would misrepresent the page; the `CollectionPage`
- * and breadcrumb (URL-only) still match the canonical and stay.
+ * and breadcrumb (URL-only) still match the canonical and stay. The guard also
+ * carries the heterogeneous-listing half of the invariant: Model rows exist
+ * only under an active filter, so every emitted item is a Title and the
+ * listing-key `@id` below is right — under a filter a Model row would
+ * otherwise be emitted with a Title-listing `@id`.
  *
  * Item `@id`s use `item.slug`: valid for every listing entity because the one
  * entity whose `public_id ≠ slug` (Location) has no listing route.

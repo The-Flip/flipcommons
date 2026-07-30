@@ -1,7 +1,7 @@
 """The facet fan-out at card grain — every sidebar badge counts *cards*.
 
-Generalizes the manufacturer yardstick that proved the shape (see
-``_game_rows.py`` and docs/plans/filtering_and_search/ModelFilteringPlan.md):
+One cell algebra serves every counted dimension, over the two sets and rungs
+``_game_rows.py`` defines:
 per dimension, group the matching Models by facet value and Title, compare each
 (value, Title) cell against that Title's live-Model total, tally a unanimous
 Title as one card and a shattered one as one card per matching Model, less
@@ -10,7 +10,7 @@ Variants absorbed by a matching parent.
 Shared across the whole fan-out (computed once per request):
 
 - the live-Model total per Title (the unanimity denominator) — one grouped
-  query over the Model table, the ``grouped_join`` decision;
+  query over the Model table, shared by every dimension's fan-out;
 - the Titles passing their own record-local shared values (``q``);
 - the Models passing the shared class (``q``) — dimension-independent, so one
   query serves every dimension's carding test.
@@ -21,7 +21,7 @@ a card only if it also passes the shared class. Counting both off one set makes
 every badge disagree with the result page for exactly the queries the split
 exists to get right.
 
-Two facet shapes the yardstick did not exercise (the plan names both):
+Two facet shapes need more than that algebra:
 
 - **Title-only dimensions** (franchise, series) group the same per-Title cells
   by the Title's own value. When no Model-only dimension is active, rung 1's
@@ -71,6 +71,7 @@ from ._game_rows import (
     _title_only_q,
     carding_models,
     expand_taxonomy,
+    facet_exclude,
     model_only_models,
     title_own_match_q,
 )
@@ -94,8 +95,7 @@ class PlayerCountOption:
 class GameFacetOptions:
     """The full set of sidebar option lists at card grain — value-pruned,
     counted, active selections re-included at zero. Field names use the
-    frontend/URL facet vocabulary (singular), like today's payload. No ``year``
-    field: the bounds were a dead wire and come off with the schema rename."""
+    frontend/URL facet vocabulary (singular)."""
 
     manufacturer: list[FacetOption] = field(default_factory=list)
     person: list[FacetOption] = field(default_factory=list)
@@ -240,19 +240,24 @@ def _tally_options(
 def _value_rows(
     f: GameFilters,
     shared: _SharedFanout,
-    exclude: ModelDimension,
+    dimension: ModelDimension,
     slug_path: str,
     name_path: str,
 ) -> tuple[list[_FacetValueRow], dict[str, str]]:
     """Value rows for a Model-attributed dimension (FK or M2M): each candidate
-    Model paired with each of its values, over the N-1 ``model_only`` set.
-    ``.distinct()`` collapses join duplicates (two credits by one person)."""
+    Model paired with each of its values, over the base :func:`facet_exclude`
+    picks for *dimension* — N-1 where a selection replaces, the full set where
+    selections accumulate. ``.distinct()`` collapses join duplicates (two
+    credits by one person)."""
     gate = _title_only_q(f, prefix="title__")
     # ``.filter(isnull=False)``, never ``.exclude(isnull=True)``: on a
     # multivalued path (credits, reward_types) exclude compiles to a NOT-IN
-    # subquery that measured ~40× slower; filter is a plain join condition.
+    # subquery that benchmarked more than an order of magnitude slower, where
+    # filter is a plain join condition.
     raw = (
-        model_only_models(f, exclude=exclude, expansion=shared.expansion)
+        model_only_models(
+            f, exclude=facet_exclude(dimension), expansion=shared.expansion
+        )
         .filter(gate)
         .filter(**{f"{slug_path}__isnull": False})
         .values_list("pk", "title_id", "variant_of_id", slug_path, name_path)
@@ -268,18 +273,22 @@ def _value_rows(
 def _hierarchical_value_rows(
     f: GameFilters,
     shared: _SharedFanout,
-    exclude: ModelDimension,
+    dimension: ModelDimension,
     taxonomy: type[Theme] | type[GameplayFeature],
     path: str,
 ) -> tuple[list[_FacetValueRow], dict[str, str]]:
     """Value rows for a taxonomy dimension: each Model's direct tags exploded
     to every ancestor value, de-duplicated per ``(pk, value)`` — the DAG can
-    reach one ancestor twice."""
+    reach one ancestor twice. Base per :func:`facet_exclude`, as in
+    :func:`_value_rows`; themes and features accumulate, so theirs stays
+    applied."""
     ancestors = ancestor_map(taxonomy, "slug", "parents__slug")
     names: dict[str, str] = dict(taxonomy._default_manager.values_list("slug", "name"))
     gate = _title_only_q(f, prefix="title__")
     raw = (
-        model_only_models(f, exclude=exclude, expansion=shared.expansion)
+        model_only_models(
+            f, exclude=facet_exclude(dimension), expansion=shared.expansion
+        )
         .filter(gate)
         # filter, not exclude — see _value_rows on multivalued isnull.
         .filter(**{f"{path}__slug__isnull": False})
@@ -308,7 +317,9 @@ def _player_value_rows(f: GameFilters, shared: _SharedFanout) -> list[_FacetValu
     fold nowhere, mirroring ``_bucket_q``'s exact-match buckets)."""
     gate = _title_only_q(f, prefix="title__")
     raw = (
-        model_only_models(f, exclude="player_count", expansion=shared.expansion)
+        model_only_models(
+            f, exclude=facet_exclude("player_count"), expansion=shared.expansion
+        )
         .filter(gate)
         .filter(player_count__isnull=False)
         .values_list("pk", "title_id", "variant_of_id", "player_count")
@@ -383,22 +394,22 @@ def _vacuous_title_cells(
 def _model_facet(
     f: GameFilters,
     shared: _SharedFanout,
-    exclude: ModelDimension,
+    dimension: ModelDimension,
     slug_path: str,
     name_path: str,
 ) -> list[FacetOption]:
-    rows, names = _value_rows(f, shared, exclude, slug_path, name_path)
+    rows, names = _value_rows(f, shared, dimension, slug_path, name_path)
     return _tally_options(rows, _unanimous_cells(rows, shared), names, shared)
 
 
 def _hierarchical_facet(
     f: GameFilters,
     shared: _SharedFanout,
-    exclude: ModelDimension,
+    dimension: ModelDimension,
     taxonomy: type[Theme] | type[GameplayFeature],
     path: str,
 ) -> list[FacetOption]:
-    rows, names = _hierarchical_value_rows(f, shared, exclude, taxonomy, path)
+    rows, names = _hierarchical_value_rows(f, shared, dimension, taxonomy, path)
     return _tally_options(rows, _unanimous_cells(rows, shared), names, shared)
 
 

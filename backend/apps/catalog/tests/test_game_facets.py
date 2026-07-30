@@ -2,7 +2,7 @@
 
 A badge must count the cards its filter click yields: a unanimous Title one, a
 shattered Title one per matching Model, an absorbed Variant none. The
-manufacturer cases carry over from the proving yardstick; each further shape
+manufacturer cases cover the base cell algebra; each further shape
 gets the case that distinguishes it — hierarchy ancestor roll-up, player
 buckets, and the Title-only vacuity branch including empty Titles — and the
 badge == result-count invariant runs across every dimension, which is what
@@ -12,14 +12,19 @@ pins all of them to the rows engine at once.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import fields, replace
 
-from apps.catalog.api._game_facets import game_facet_counts
-from apps.catalog.api._game_rows import GameFilters, game_rows_merged
+from apps.catalog.api._game_facets import GameFacetOptions, game_facet_counts
+from apps.catalog.api._game_rows import (
+    MULTI_DIMENSIONS,
+    GameFilters,
+    game_rows_merged,
+)
 from apps.catalog.engine.query.facet_helpers import FacetOption
-from apps.catalog.tests.test_title_facets import (
+from apps.catalog.tests.game_builders import (
     _franchise,
     _model,
+    _series,
     _theme,
     _title,
 )
@@ -34,7 +39,7 @@ def _counts(options: list[FacetOption]) -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# The yardstick cases, carried over from the proving commit
+# Manufacturer — the base cell algebra
 # ---------------------------------------------------------------------------
 
 
@@ -87,7 +92,7 @@ class TestManufacturerFacet:
 
 
 # ---------------------------------------------------------------------------
-# The shapes the yardstick did not exercise
+# Title-only and hierarchical dimensions
 # ---------------------------------------------------------------------------
 
 
@@ -170,22 +175,82 @@ class TestShapes:
         assert counts == {"rock": 1}
 
 
+class TestAccumulatingDimensions:
+    """The multi-select dimensions AND their values, so clicking one adds it to
+    what is already chosen. Their badges must predict *that*, not the value on
+    its own — the N-1 exclusion that is right for a replacing control promises a
+    count the click can't deliver here."""
+
+    def _catalog(self) -> None:
+        t1 = _title("Both", "both")
+        _model(t1, "both-m", reward_types=("replay", "add-a-ball"))
+        t2 = _title("Replay Only", "replay-only")
+        _model(t2, "replay-only-m", reward_types=("replay",))
+        t3 = _title("Ball Only", "ball-only")
+        _model(t3, "ball-only-m", reward_types=("add-a-ball",))
+
+    def test_badge_predicts_the_added_selection(self, db):
+        self._catalog()
+        f = GameFilters(reward_types=("replay",))
+        badge = _counts(game_facet_counts(f).reward_type)["add-a-ball"]
+        clicked = len(
+            game_rows_merged(GameFilters(reward_types=("replay", "add-a-ball")))
+        )
+        # Only "Both" carries each of them; "Ball Only" is add-a-ball alone and
+        # the active Replay selection excludes it.
+        assert (badge, clicked) == (1, 1)
+
+    def test_unselected_dimension_is_unaffected(self, db):
+        """With nothing chosen the dimension isn't applied at all, so the base
+        is identical either way — which is what keeps the cached no-filter
+        payload off the blast radius."""
+        self._catalog()
+        counts = _counts(game_facet_counts(GameFilters()).reward_type)
+        assert counts == {"replay": 2, "add-a-ball": 2}
+
+
 # ---------------------------------------------------------------------------
 # The badge == result-count invariant, across every dimension
 # ---------------------------------------------------------------------------
 
-# How clicking a facet value narrows the ambient filter set. replace() keeps
-# every other dimension as the facet saw it; for the multi-select dimensions a
-# single-value selection is exactly what the N-1 badge predicts.
+# Facet output field → the ``GameFilters`` field it narrows. The singular →
+# plural hops are the existing vocabulary split (the facet payload is singular,
+# ``GameFilters`` carries Django's plural M2M names), not typos.
+FACET_FILTER_FIELD: dict[str, str] = {
+    "manufacturer": "manufacturer",
+    "person": "person",
+    "tech_gen": "tech_gen",
+    "display_type": "display_type",
+    "system": "system",
+    "reward_type": "reward_types",
+    "theme": "themes",
+    "feature": "features",
+    "franchise": "franchise",
+    "series": "series",
+}
+
+
+def _add(current: tuple[str, ...], value: str) -> tuple[str, ...]:
+    """A click on an accumulating dimension: the value joins the selection.
+    Re-clicking a chosen value deselects it in the UI, so it is a no-op here —
+    a selected value's badge reports the current result count."""
+    return current if value in current else (*current, value)
+
+
+# How clicking a facet value narrows the ambient filter set. Spelled out rather
+# than built from ``FACET_FILTER_FIELD`` because a dynamic ``replace(**{...})``
+# is untyped, and this dict is the thing most worth type-checking: modelling
+# every click as a *replace* is precisely what hid the multi-select badge bug.
+# ``test_multi_dimension_narrowers_accumulate`` is the derived guard over it.
 NARROWERS: dict[str, Callable[[GameFilters, str], GameFilters]] = {
     "manufacturer": lambda f, v: replace(f, manufacturer=v),
     "person": lambda f, v: replace(f, person=v),
     "tech_gen": lambda f, v: replace(f, tech_gen=v),
     "display_type": lambda f, v: replace(f, display_type=v),
     "system": lambda f, v: replace(f, system=v),
-    "reward_type": lambda f, v: replace(f, reward_types=(v,)),
-    "theme": lambda f, v: replace(f, themes=(v,)),
-    "feature": lambda f, v: replace(f, features=(v,)),
+    "reward_type": lambda f, v: replace(f, reward_types=_add(f.reward_types, v)),
+    "theme": lambda f, v: replace(f, themes=_add(f.themes, v)),
+    "feature": lambda f, v: replace(f, features=_add(f.features, v)),
     "franchise": lambda f, v: replace(f, franchise=v),
     "series": lambda f, v: replace(f, series=v),
 }
@@ -193,7 +258,10 @@ NARROWERS: dict[str, Callable[[GameFilters, str], GameFilters]] = {
 
 def _build_catalog() -> None:
     """A small catalog exercising every shape at once: a shattering Title, a
-    Variant, a single-Model Title, an empty Title, a theme hierarchy."""
+    Variant, a single-Model Title in a Series, an empty Title in a Franchise,
+    a theme hierarchy. ``test_fixture_exercises_every_facet`` pins that every
+    dimension gets at least one option out of this — extend it there when a
+    dimension is added."""
     liquid = _theme("liquid")
     _theme("water", parents=(liquid,))
     fr = _franchise("alpha-verse")
@@ -222,17 +290,27 @@ def _build_catalog() -> None:
         tech_gen="em",
         player_count=2,
         themes=("liquid",),
+        features=("ramps",),
+        reward_types=("extra-ball",),
     )
     t2 = _title("Beta", "beta")
-    parent = _model(t2, "beta-m", manufacturer="stern", themes=("water",))
+    parent = _model(
+        t2,
+        "beta-m",
+        manufacturer="stern",
+        themes=("water",),
+        features=("multiball", "ramps"),
+        reward_types=("replay", "extra-ball"),
+    )
     _model(t2, "beta-le", manufacturer="stern", themes=("water",), variant_of=parent)
-    t3 = _title("Gamma", "gamma")
+    t3 = _title("Gamma", "gamma", series=_series("gamma-saga"))
     _model(
         t3,
         "gamma-m",
         manufacturer="gottlieb",
         player_count=7,
         features=("multiball",),
+        reward_types=("replay",),
         persons=("lawlor",),
     )
     _title("Empty", "empty", franchise=fr)
@@ -245,19 +323,76 @@ class TestBadgeEqualsResultCount:
         GameFilters(q="Encore"),
         GameFilters(manufacturer="stern"),
         GameFilters(franchise="alpha-verse"),
+        GameFilters(series="gamma-saga"),
         GameFilters(themes=("water",)),
         GameFilters(player_count=4),
         GameFilters(person="lawlor", themes=("liquid",)),
+        # One per accumulating dimension, so the loop reaches the second-click
+        # path each of them takes.
+        GameFilters(features=("multiball",)),
+        GameFilters(reward_types=("replay",)),
+        GameFilters(themes=("liquid",), reward_types=("extra-ball",)),
     )
+
+    def test_narrowers_cover_every_facet(self):
+        """A facet output field without a narrower would silently drop out of
+        the invariant loop — the completeness half a Literal can't prove."""
+        field_names = {f.name for f in fields(GameFacetOptions)}
+        assert set(FACET_FILTER_FIELD) | {"player_count"} == field_names
+
+    def test_every_narrowed_field_exists_on_the_filter_set(self):
+        """The singular → plural hop is hand-written, so pin that each target
+        names a real field — the mapping the guard below reads."""
+        filter_fields = {f.name for f in fields(GameFilters)}
+        assert set(FACET_FILTER_FIELD.values()) <= filter_fields
+        assert set(FACET_FILTER_FIELD) == set(NARROWERS)
+
+    def test_multi_dimension_narrowers_accumulate(self):
+        """Derived from the engine's own arity: every dimension the engine
+        treats as accumulating must be *modelled* as accumulating here.
+
+        This guard exists because the miss already happened once: a dimension
+        modelled as replacing where the engine accumulates left the invariant
+        below never exercising a second selection in that dimension, and a
+        badge that promised 6 and delivered 0 passed the whole suite."""
+        for facet, field in FACET_FILTER_FIELD.items():
+            if field not in MULTI_DIMENSIONS:
+                continue
+            after: object = getattr(
+                NARROWERS[facet](NARROWERS[facet](GameFilters(), "one"), "two"), field
+            )
+            assert after == ("one", "two"), facet
+
+    def test_fixture_exercises_every_facet(self, db):
+        """A dimension the fixture yields zero options for turns the invariant
+        loop into a silent no-op — this guard is what catches a fixture gap
+        (it caught ``series`` carrying no coverage at all)."""
+        _build_catalog()
+        opts = game_facet_counts(GameFilters())
+        for facet in NARROWERS:
+            assert getattr(opts, facet), facet
+        assert any(p.count for p in opts.player_count)
+
+    def test_fixture_offers_a_second_click_per_multi_dimension(self, db):
+        """An accumulating dimension only diverges from the N-1 reading once one
+        value is chosen, so the loop stays blind to it unless the fixture offers
+        a *second* value to click while the first is active."""
+        _build_catalog()
+        for facet, field in FACET_FILTER_FIELD.items():
+            if field not in MULTI_DIMENSIONS:
+                continue
+            first = getattr(game_facet_counts(GameFilters()), facet)[0].public_id
+            active = NARROWERS[facet](GameFilters(), first)
+            assert len(getattr(game_facet_counts(active), facet)) > 1, facet
 
     def test_every_badge_matches_its_click(self, db):
         _build_catalog()
         for f in self.FILTERS:
             opts = game_facet_counts(f)
-            for field_name, narrow in NARROWERS.items():
-                for o in getattr(opts, field_name):
+            for facet, narrow in NARROWERS.items():
+                for o in getattr(opts, facet):
                     got = len(game_rows_merged(narrow(f, o.public_id)))
-                    assert o.count == got, (field_name, o.public_id, f)
+                    assert o.count == got, (facet, o.public_id, f)
             for p in opts.player_count:
                 got = len(game_rows_merged(replace(f, player_count=p.value)))
                 assert p.count == got, ("player_count", p.value, f)

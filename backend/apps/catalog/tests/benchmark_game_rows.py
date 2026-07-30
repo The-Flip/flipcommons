@@ -1,5 +1,4 @@
-"""Benchmark the card-grain roll-up engine — the proving harness behind the
-figures in docs/plans/filtering_and_search/ModelFilteringPlan.md.
+"""Benchmark the card-grain roll-up engine.
 
 Prints the no-filter listing page, the manufacturer facet at card grain and
 the full facet fan-out, against whatever database ``DATABASE_URL`` points at.
@@ -14,15 +13,8 @@ measurement tooling over the api layer: a management command may not import
 ``apps.catalog.api`` (the api/admin/management layers are independent entry
 surfaces), while the tests layer is exempt from the app's layer contract.
 
-The yardstick (ModelFilteringPlan.md → COMMIT.HET.PROVE): the manufacturer
-facet's documented Postgres profile is ~11 ms for the ordered-scan rollup that
-serves today's Title-grain badge, against ~280 ms for the correlated-subquery
-shape it replaced. Card counts have to come in at the former order. The
-baseline section times today's Title-grain paths on the same database so the
-comparison never leans on a stale number.
-
-Also prints the correctness counts the plan predicts from ``mf_card_counts``
-so a regression is visible next to its timing.
+Also prints the count each case is expected to return, derived from
+``mf_card_counts``, so a correctness regression is visible next to its timing.
 """
 
 from __future__ import annotations
@@ -39,13 +31,6 @@ def main() -> None:
 
     from apps.catalog.api._game_facets import game_facet_counts
     from apps.catalog.api._game_rows import GameFilters, game_rows_merged
-    from apps.catalog.api._title_facets import (
-        TitleFilters,
-        _count_manufacturer,
-        _expand_taxonomy,
-        _facet_base,
-        ordered_titles,
-    )
     from apps.catalog.engine.query.constants import DEFAULT_PAGE_SIZE
 
     parser = argparse.ArgumentParser(description=__doc__)
@@ -88,19 +73,6 @@ def main() -> None:
         rows[:DEFAULT_PAGE_SIZE]
         return len(rows)
 
-    def baseline_listing_page() -> int:
-        """Today's no-filter listing page: ordered Titles, page 1 + count."""
-        qs = ordered_titles(TitleFilters())
-        list(qs[:DEFAULT_PAGE_SIZE])
-        return qs.count()
-
-    def baseline_manufacturer_facet() -> int:
-        """Today's Title-grain manufacturer facet count (the documented ~11 ms
-        ordered-scan rollup), on the same database as the card-grain figures."""
-        f = TitleFilters()
-        expansion = _expand_taxonomy(f)
-        return len(_count_manufacturer(_facet_base(f, "manufacturer", expansion)))
-
     def timed[T](fn: Callable[[], T]) -> tuple[float, T]:
         """Median wall-clock ms over *runs* (one discarded warmup)."""
         result = fn()
@@ -118,12 +90,6 @@ def main() -> None:
         got = len(game_rows_merged(f))
         mark = "ok" if got == expected else f"MISMATCH (expected {expected})"
         print(f"  {label:32s} {got:6d}  {mark}")
-
-    print("\n== baseline — today's Title-grain paths, same database ==")
-    ms, _ = timed(baseline_listing_page)
-    print(f"  no-filter listing page (ordered_titles)      {ms:8.1f} ms")
-    ms, _ = timed(baseline_manufacturer_facet)
-    print(f"  no-filter manufacturer facet (Title grain)   {ms:8.1f} ms")
 
     print("\n== listing page (page 1 + count) ==")
     for label, f in fanout_filters:

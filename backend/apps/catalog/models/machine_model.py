@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from django.contrib.contenttypes.fields import GenericRelation
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -83,7 +83,8 @@ class MachineModel(
     ``MachineModel`` but the public-facing identifier drops the prefix.
     """
 
-    entity_type = "model"
+    # Literal, not bare str — see Title.entity_type.
+    entity_type: ClassVar[Literal["model"]] = "model"
     entity_type_plural = "models"
     # A model targeted by another *active* model's relationship edge can't be
     # soft-deleted: the edge row itself has no lifecycle (so the PROTECT pass

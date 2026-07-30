@@ -8,9 +8,9 @@ deliberately small.
 
 What is cached, who reads it, and the cost it avoids:
 
-- Title facet options (``GET /api/pages/titles``) — the /titles browse-page
-  filter sidebar (every theme/year/tag you can filter by). Avoids re-aggregating
-  the option lists across the whole title corpus.
+- Game facet options (``GET /api/pages/games``) — the games listing's filter
+  sidebar (manufacturer, theme, feature, player count and the rest). Avoids
+  re-aggregating the option lists across the whole catalog.
 - Manufacturer facet options (``GET /api/pages/manufacturers``) — the
   /manufacturers filter sidebar.
 - Locations tree — the locations-page hierarchy.
@@ -65,9 +65,9 @@ from apps.core.licensing import current_audience
 # unchanged payloads, which rebuild on first read. (Per-bump history: git blame.)
 _CACHE_VERSION = "v7"
 
-# No-filter facet option lists for the /titles page (GET /api/pages/titles). Static
-# between catalog edits, so cached and cleared by invalidate_response_cache().
-_TITLES_FACETS_BASE = f"catalog:titles:facets:{_CACHE_VERSION}"
+# No-filter facet option lists for the games listing page (GET /api/pages/games).
+# Static between catalog edits, so cached and cleared by invalidate_response_cache().
+_GAMES_FACETS_BASE = f"catalog:games:facets:{_CACHE_VERSION}"
 # Same, for the /manufacturers page (GET /api/pages/manufacturers).
 _MANUFACTURERS_FACETS_BASE = f"catalog:manufacturers:facets:{_CACHE_VERSION}"
 _LOCATIONS_TREE_BASE = f"catalog:locations:tree:{_CACHE_VERSION}"
@@ -96,7 +96,7 @@ def export_entity_types() -> tuple[str, ...]:
 
 
 _BASES: tuple[str, ...] = (
-    _TITLES_FACETS_BASE,
+    _GAMES_FACETS_BASE,
     _MANUFACTURERS_FACETS_BASE,
     _LOCATIONS_TREE_BASE,
 )
@@ -104,8 +104,8 @@ _BASES: tuple[str, ...] = (
 _AUDIENCES: tuple[str, ...] = ("default", "kiosk")
 
 
-def titles_facets_key() -> str:
-    return f"{_TITLES_FACETS_BASE}:{current_audience()}"
+def games_facets_key() -> str:
+    return f"{_GAMES_FACETS_BASE}:{current_audience()}"
 
 
 def manufacturers_facets_key() -> str:

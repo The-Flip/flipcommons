@@ -1,8 +1,9 @@
 """Tests for the global search page endpoint ``GET /api/pages/search``.
 
-The endpoint stacks three entity sections (Titles → Manufacturers → People), each
+The endpoint stacks three sections (Games → Manufacturers → People), each
 reusing its listing-page ``q`` + card serializer, capped at 10 with a ``has_more``
-flag. These tests pin: the ``<3``-char no-work guard, per-section matching + card
+flag. The games section is heterogeneous: Title and Model cards under the
+roll-up, discriminated by ``entity_type``. These tests pin: the ``<3``-char no-work guard, per-section matching + card
 shape, the 10-cap, the diacritic dev/prod split, fixed section order, that a section
 preserves its listing sort, the all-empty case, and a constant-query N+1 guard.
 
@@ -23,7 +24,7 @@ from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim
 
 CARD_KEYS = {
-    "titles": {"name", "slug", "year", "model_count", "manufacturer", "thumbnail_url"},
+    "games": {"entity_type", "name", "slug", "year", "manufacturer", "thumbnail_url"},
     "manufacturers": {"name", "slug", "model_count", "thumbnail_url"},
     "people": {"name", "slug", "aliases", "credit_count", "thumbnail_url"},
 }
@@ -59,7 +60,7 @@ def test_short_q_returns_empty_sections_and_does_no_db_work(
         resp = client.get("/api/pages/search?q=no")
     assert resp.status_code == 200
     data = resp.json()
-    for section in ("titles", "manufacturers", "people"):
+    for section in ("games", "manufacturers", "people"):
         assert data[section] == {"items": [], "has_more": False}
 
 
@@ -67,14 +68,14 @@ def test_whitespace_q_is_trimmed_below_threshold(client, db):
     """A two-char term padded with spaces is still below the 3-char floor."""
     resp = client.get("/api/pages/search?q=%20%20ab%20%20")
     data = resp.json()
-    assert all(not data[s]["items"] for s in ("titles", "manufacturers", "people"))
+    assert all(not data[s]["items"] for s in ("games", "manufacturers", "people"))
 
 
 def test_basic_q_matches_each_section_with_card_shape(client, nova_in_each_section):
     resp = client.get("/api/pages/search?q=nova")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["titles"]["items"][0]["name"] == "Nova Madness"
+    assert data["games"]["items"][0]["name"] == "Nova Madness"
     assert data["manufacturers"]["items"][0]["name"] == "Nova Games"
     assert data["people"]["items"][0]["name"] == "Nova Lawlor"
     for section, keys in CARD_KEYS.items():
@@ -89,7 +90,7 @@ def test_section_caps_at_ten_and_sets_has_more(client, db, bootstrap_source):
     data = client.get("/api/pages/search?q=capco").json()
     assert len(data["manufacturers"]["items"]) == 10
     assert data["manufacturers"]["has_more"] is True
-    assert data["titles"] == {"items": [], "has_more": False}
+    assert data["games"] == {"items": [], "has_more": False}
     assert data["people"] == {"items": [], "has_more": False}
 
 
@@ -106,22 +107,22 @@ def test_q_diacritic_is_backend_specific(client, db):
     — the same documented gap the listing endpoints carry. Exact spelling matches on
     both backends."""
     Title.objects.create(name="Pokémon Pinball", slug="pokemon-pinball-search")
-    folded = client.get("/api/pages/search?q=pokemon").json()["titles"]
-    exact = client.get("/api/pages/search?q=Pok%C3%A9mon").json()["titles"]
+    folded = client.get("/api/pages/search?q=pokemon").json()["games"]
+    exact = client.get("/api/pages/search?q=Pok%C3%A9mon").json()["games"]
     assert len(exact["items"]) == 1
     expected = 1 if connection.vendor == "postgresql" else 0
     assert len(folded["items"]) == expected
 
 
-def test_section_order_is_titles_manufacturers_people(client, nova_in_each_section):
+def test_section_order_is_games_manufacturers_people(client, nova_in_each_section):
     """The wire payload renders sections in fixed declaration order."""
     data = client.get("/api/pages/search?q=nova").json()
-    assert list(data.keys()) == ["titles", "manufacturers", "people"]
+    assert list(data.keys()) == ["games", "manufacturers", "people"]
 
 
 def test_no_match_returns_all_empty_sections(client, nova_in_each_section):
     data = client.get("/api/pages/search?q=zzzznomatch").json()
-    for section in ("titles", "manufacturers", "people"):
+    for section in ("games", "manufacturers", "people"):
         assert data[section] == {"items": [], "has_more": False}
 
 
@@ -200,6 +201,31 @@ def test_query_count_is_constant_across_result_size(
 # ---------------------------------------------------------------------------
 
 
+def test_model_name_match_yields_model_card(client, db):
+    """The games section is heterogeneous: a Model matched by its own name
+    arrives as a Model card with the composite-key fields the frontend needs."""
+    t = Title.objects.create(name="Rock", slug="rock")
+    make_machine_model(name="Rock", slug="rock-m", title=t)
+    make_machine_model(name="Rock Encore", slug="rock-encore", title=t)
+    items = client.get("/api/pages/search?q=Rock%20Encore").json()["games"]["items"]
+    assert [(i["entity_type"], i["slug"]) for i in items] == [("model", "rock-encore")]
+
+
+def test_description_title_does_not_suppress_model_row(client, db):
+    """The description-tier carve-out: a Title added by a description match is
+    an extra card and never absorbs a Model row carding under the same Title."""
+    t = Title.objects.create(
+        name="Rock", slug="rock", description="the encore mode is famous"
+    )
+    make_machine_model(name="Rock", slug="rock-m", title=t)
+    make_machine_model(name="Rock Encore", slug="rock-encore", title=t)
+    items = client.get("/api/pages/search?q=encore").json()["games"]["items"]
+    assert [(i["entity_type"], i["slug"]) for i in items] == [
+        ("model", "rock-encore"),
+        ("title", "rock"),
+    ]
+
+
 def test_description_only_match_surfaces_in_each_section(client, db, bootstrap_source):
     """A row whose ``name`` does NOT contain the term but whose ``description`` does
     still appears in its section — the ``DescribedModel`` tier, applied uniformly to
@@ -223,7 +249,7 @@ def test_description_only_match_surfaces_in_each_section(client, db, bootstrap_s
     )
 
     data = client.get("/api/pages/search?q=xylophone").json()
-    assert [t["name"] for t in data["titles"]["items"]] == ["Bright Star"]
+    assert [t["name"] for t in data["games"]["items"]] == ["Bright Star"]
     assert [m["name"] for m in data["manufacturers"]["items"]] == ["Acme Corp"]
     assert [p["name"] for p in data["people"]["items"]] == ["Jane Doe"]
 
@@ -246,7 +272,7 @@ def test_name_matches_rank_above_description_matches(client, db, williams_entity
 
     names = [
         t["name"]
-        for t in client.get("/api/pages/search?q=zeta").json()["titles"]["items"]
+        for t in client.get("/api/pages/search?q=zeta").json()["games"]["items"]
     ]
     assert names == ["Zeta Classic", "Retro Blast"]
 
@@ -286,9 +312,9 @@ def test_description_match_does_not_feed_the_create_gate(client, db, bootstrap_s
 
     # Global search DOES surface them (description tier)…
     search = client.get("/api/pages/search?q=widget").json()
-    assert [t["name"] for t in search["titles"]["items"]] == ["Blank Slate"]
+    assert [t["name"] for t in search["games"]["items"]] == ["Blank Slate"]
     assert [m["name"] for m in search["manufacturers"]["items"]] == ["Empty Co"]
 
     # …but the record-creation gate stays blind, so the prompt still fires.
-    assert client.get("/api/pages/titles?q=widget").json()["query_count"] == 0
+    assert client.get("/api/pages/games?q=widget").json()["query_count"] == 0
     assert client.get("/api/pages/manufacturers?q=widget").json()["query_count"] == 0

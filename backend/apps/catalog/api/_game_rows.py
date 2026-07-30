@@ -1,13 +1,12 @@
 """Card-grain listing rows — the Title ➡ Model ➡ Variant roll-up engine.
 
-The proving core for the heterogeneous listing
-(docs/plans/filtering_and_search/ModelFilteringPlan.md, COMMIT.HET.PROVE):
-one row per *card*, where a card is a Title when every one of its live Models
-matches the Model-only dimensions (rung 1), else one card per matching Model
-(rung 2), with a Variant absorbed into a matching parent (rung 3).
+The row engine behind ``GET /api/games/``: one row per *card*,
+where a card is a Title when every one of its live Models matches the
+Model-only dimensions (rung 1), else one card per matching Model (rung 2),
+with a Variant absorbed into a matching parent (rung 3).
 
-Deliberately unwired from any route: no serialization, no wire contract. The
-facet fan-out at card grain lives in ``_game_facets.py``, built on this
+Rows only — serialization and the wire contract live in ``games.py``, and the
+facet fan-out at card grain in ``_game_facets.py``, both built on this
 module's two sets and rungs. The filter vocabulary is the full listing set,
 by semantics class:
 
@@ -31,20 +30,26 @@ examples (``q=Ice Fever`` would return the Ice Fever Model where the Title
 card is specified) — a plausible-looking wrong answer, not an error.
 
 Rows come from :func:`game_rows_merged` — two queries merged and ordered in
-Python (the ``_count_manufacturer`` precedent: ~7k-row scan + rollup). The
-proving commit also carried a ``.union()`` seam; the merge won on the benchmark
-(the union ran the whole row algebra twice per request, once for the page and
-once for ``count``) and the union was deleted when the seam was wired. The
-decision and the findings that outlive the code — the compound-arm ORDER BY
-rules, the collation divergence, the Railway re-measurement instructions — are
-recorded in ModelFilteringPlan.md's proving answers.
+Python (the ``_count_manufacturer`` precedent: ~7k-row scan + rollup). Two
+properties of that seam the rest of the engine depends on: ``count`` is the
+built list's length, so it can never drift from what the page slices, and the
+ordering runs on a diacritic- and case-folded name key in Python, so it does
+not vary with the database's collation.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Final, Literal, NamedTuple, TypedDict, get_args
+from typing import (
+    Final,
+    Literal,
+    NamedTuple,
+    TypedDict,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from django.db import connection
 from django.db.models import (
@@ -139,6 +144,50 @@ _DIMENSION_ACTIVE: Final[Mapping[ModelDimension, Callable[[GameFilters], bool]]]
 
 # A Literal proves key validity, not completeness — this does, at import time.
 assert set(_DIMENSION_ACTIVE) == set(MODEL_DIMENSIONS)
+
+# Filter-field types, resolved once. ``get_type_hints`` rather than raw
+# ``__annotations__`` because this module uses ``from __future__ import
+# annotations``, so the annotations are strings until resolved.
+_FILTER_TYPES: Final[Mapping[str, object]] = get_type_hints(GameFilters)
+
+# Dimensions whose selections **accumulate** (ANDed together) instead of
+# replacing one another — derived from ``GameFilters``' own arity, since a
+# tuple-typed field is precisely one that holds several values at once. Derived,
+# not declared, so a new multi-valued dimension classifies itself.
+#
+# Deliberately NOT derived from ``MachineModel._meta`` many-to-many-ness: that
+# is a different fact and would misclassify. ``person`` filters through the
+# multivalued ``credits__person`` path yet takes a single value, so its relation
+# is many-valued while its *filter* is not.
+MULTI_DIMENSIONS: Final[frozenset[ModelDimension]] = frozenset(
+    key for key in MODEL_DIMENSIONS if get_origin(_FILTER_TYPES.get(key)) is tuple
+)
+
+# ``year`` is the one dimension key naming no field of its own (it spans
+# ``year_min``/``year_max``). Pin that, so a renamed or retyped field can't
+# quietly read as single-valued and re-open the badge bug ``facet_exclude``
+# below exists to prevent.
+assert {key for key in MODEL_DIMENSIONS if key not in _FILTER_TYPES} == {"year"}
+
+
+def facet_exclude(key: ModelDimension) -> ModelDimension | None:
+    """The N-1 exclusion for *key*'s own facet base — ``None`` meaning
+    "exclude nothing".
+
+    Dropping a dimension answers *"what would I get if this value were the
+    selection"*, which is exactly what a click does where selecting **replaces**
+    the current value (manufacturer, tech gen, player count…). Where selections
+    accumulate, a click ANDs the value onto what is already chosen, so the
+    dimension has to stay applied — otherwise the badge counts the value in
+    isolation and promises a total the click cannot deliver (with Replay active,
+    "Cash Payout (6)" landing on 0 results).
+
+    Free when the dimension is inactive: ``model_only_models`` skips an unset
+    dimension either way, so on an unfiltered request both branches build the
+    same query.
+    """
+    return None if key in MULTI_DIMENSIONS else key
+
 
 # Live rows across the Title→Model join (no variant exclusion: the candidate
 # set is active Models INCLUDING Variants, which leave only by absorption).

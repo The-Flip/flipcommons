@@ -1,6 +1,6 @@
 """Tests for the card-grain roll-up engine (``apps.catalog.api._game_rows``).
 
-Coverage, per the COMMIT.HET.PROVE test list in ModelFilteringPlan.md:
+Coverage:
 
 - **The three rungs** — a unanimous Title yields one Title card; a shattered
   Title yields one card per matching Model; a Variant is absorbed when its
@@ -30,7 +30,7 @@ from apps.catalog.models import (
     Title,
     TitleAbbreviation,
 )
-from apps.catalog.tests.test_title_facets import (
+from apps.catalog.tests.game_builders import (
     _feature,
     _franchise,
     _model,
@@ -313,8 +313,9 @@ class TestRungThree:
 class TestMultiSelect:
     def test_values_split_across_models_do_not_match(self, db):
         """AND across selections lands on a single Model — a Title carrying the
-        two themes on two different Models matches neither rung (this inverts
-        today's any-Model listing semantics)."""
+        two themes on two different Models matches neither rung. One Model must
+        satisfy every selection; spreading them across siblings is not a
+        match."""
         t = _title("Split", "split")
         _model(t, "split-a", themes=("water",))
         _model(t, "split-b", themes=("fire",))
@@ -424,6 +425,6 @@ class TestRows:
 def _model_theme(slug: str):
     """A one-element theme list for ``m.themes.add(*...)`` — reuses the
     get-or-create builder so repeated slugs mean the same Theme row."""
-    from apps.catalog.tests.test_title_facets import _theme
+    from apps.catalog.tests.game_builders import _theme
 
     return [_theme(slug)]
