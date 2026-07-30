@@ -122,14 +122,14 @@ describe('DeletePage', () => {
       referrers: [
         {
           entity_type: 'model',
-          slug: 'medieval-madness-pro',
+          public_id: 'medieval-madness-pro',
           name: 'Medieval Madness (Pro)',
           relation: 'system',
           blocked_target_type: 'system',
-          blocked_target_slug: null,
+          blocked_target_public_id: 'stern-spike',
         },
       ],
-      renderReferrerHref: (r) => (r.slug ? `/models/${r.slug}` : null),
+      renderReferrerHref: (r) => `/models/${r.public_id}`,
       renderReferrerHint: (r) => `references this title via ${r.relation}`,
       footer: 'Resolve these references, then try again.',
     };
@@ -160,11 +160,11 @@ describe('DeletePage', () => {
   it('renderReferrerHref returning null renders plain text instead of a link', () => {
     const referrer: BlockingReferrer = {
       entity_type: 'person',
-      slug: null,
+      public_id: 'steve-ritchie',
       name: 'Steve Ritchie',
       relation: 'designer',
       blocked_target_type: 'person',
-      blocked_target_slug: null,
+      blocked_target_public_id: 'steve-ritchie',
     };
     const blocked: BlockedState = {
       kind: 'referrers',

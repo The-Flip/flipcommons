@@ -1,7 +1,7 @@
 <script lang="ts">
   import DeletePage from '$lib/components/pages/record/delete/DeletePage.svelte';
   import type { BlockedState } from '$lib/components/pages/record/delete/delete-page';
-  import type { BlockingReferrer } from '$lib/delete-flow';
+  import { referrerHref, type BlockingReferrer } from '$lib/delete-flow';
   import { pluralize } from '$lib/utils';
   import { submitDelete } from './title-delete';
 
@@ -19,10 +19,9 @@
             blockedReferrers.length === 1 ? 'it' : 'parts of it'
           }:`,
           referrers: blockedReferrers,
-          renderReferrerHref: (r: BlockingReferrer) =>
-            r.slug && r.entity_type === 'model' ? `/models/${r.slug}` : null,
+          renderReferrerHref: referrerHref,
           renderReferrerHint: (r: BlockingReferrer) =>
-            `references ${r.blocked_target_slug ?? 'this title'} via ${r.relation}`,
+            `references ${r.blocked_target_public_id} via ${r.relation}`,
           footer: 'Resolve these references, then try again.',
         },
   );

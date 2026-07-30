@@ -180,7 +180,7 @@ class TestDeleteBlocked:
         assert resp.status_code == 422
         blocked = resp.json()["blocked_by"]
         assert len(blocked) == 1
-        assert blocked[0]["slug"] == "mm-le"
+        assert blocked[0]["public_id"] == "mm-le"
         assert blocked[0]["relation"] == "variant_of"
 
         pro.refresh_from_db()
@@ -197,7 +197,7 @@ class TestDeleteBlocked:
         assert resp.status_code == 422
         blocked = resp.json()["blocked_by"]
         assert len(blocked) == 1
-        assert blocked[0]["slug"] == "other-variant"
+        assert blocked[0]["public_id"] == "other-variant"
 
     def test_inbound_relationship_edge_blocks(self, client, user, bootstrap_source):
         # The edge row itself has no lifecycle, so the PROTECT pass skips it —
@@ -224,7 +224,8 @@ class TestDeleteBlocked:
         assert resp.status_code == 422
         blocked = resp.json()["blocked_by"]
         assert any(
-            b["relation"] == "inbound_relationship_sources" and b["slug"] == "conv-game"
+            b["relation"] == "inbound_relationship_sources"
+            and b["public_id"] == "conv-game"
             for b in blocked
         )
 
@@ -354,7 +355,7 @@ class TestDeletePreview:
         assert resp.status_code == 200
         body = resp.json()
         assert len(body["blocked_by"]) == 1
-        assert body["blocked_by"][0]["slug"] == "mm-le"
+        assert body["blocked_by"][0]["public_id"] == "mm-le"
 
 
 # ── Restore ─────────────────────────────────────────────────────────

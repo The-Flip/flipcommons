@@ -23,11 +23,11 @@ class BlockingReferrerSchema(Schema):
     """
 
     entity_type: str
-    slug: str | None = None
+    public_id: str
     name: str
     relation: str
     blocked_target_type: str
-    blocked_target_slug: str | None = None
+    blocked_target_public_id: str
 
 
 class SoftDeleteBlockedSchema(Schema):

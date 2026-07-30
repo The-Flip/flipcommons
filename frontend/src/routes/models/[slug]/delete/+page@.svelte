@@ -1,7 +1,7 @@
 <script lang="ts">
   import DeletePage from '$lib/components/pages/record/delete/DeletePage.svelte';
   import type { BlockedState } from '$lib/components/pages/record/delete/delete-page';
-  import type { BlockingReferrer } from '$lib/delete-flow';
+  import { referrerHref, type BlockingReferrer } from '$lib/delete-flow';
   import { pluralize } from '$lib/utils';
   import { submitDelete } from './model-delete';
 
@@ -17,7 +17,7 @@
           kind: 'referrers',
           lead: "This model can't be deleted because active records still point at it:",
           referrers: blockedReferrers,
-          renderReferrerHref: (r: BlockingReferrer) => (r.slug ? `/models/${r.slug}` : null),
+          renderReferrerHref: referrerHref,
           renderReferrerHint: (r: BlockingReferrer) => `references this model via ${r.relation}`,
           footer: 'Resolve these references, then try again.',
         },
