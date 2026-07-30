@@ -21,7 +21,7 @@ dependencies = [
     # Pinned exactly: the package bundles a Public Suffix List snapshot in its
     # version, so `==` keeps the snapshot deliberate — it moves only via a
     # reviewed dependabot bump, never a silent `uv sync`. See apps/citation/psl.py.
-    "publicsuffixlist==1.0.2.20260716",
+    "publicsuffixlist==1.0.2.20260726",
 ]
 
 [dependency-groups]
