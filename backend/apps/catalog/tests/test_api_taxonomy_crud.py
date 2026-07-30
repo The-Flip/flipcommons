@@ -613,7 +613,7 @@ class TestThemeDelete:
         client.force_login(user)
         resp = _post(client, f"/api/themes/{parent.slug}/delete/", {})
         assert resp.status_code == 422
-        assert any(b["slug"] == "slasher" for b in resp.json()["blocked_by"])
+        assert any(b["public_id"] == "slasher" for b in resp.json()["blocked_by"])
         parent.refresh_from_db()
         assert parent.status == "active"
 
@@ -912,7 +912,7 @@ class TestFranchiseDelete:
         resp = client.get(f"/api/franchises/{fr.slug}/delete-preview/")
         assert resp.status_code == 200
         body = resp.json()
-        assert any(b["slug"] == "indy-title" for b in body["blocked_by"])
+        assert any(b["public_id"] == "indy-title" for b in body["blocked_by"])
 
 
 @pytest.mark.django_db

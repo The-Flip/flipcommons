@@ -101,9 +101,9 @@ class TestProtectBlocker:
         assert len(plan.blockers) == 1
         blocker = plan.blockers[0]
         assert blocker.entity_type == "model"
-        assert blocker.slug == "other-variant"
+        assert blocker.public_id == "other-variant"
         assert blocker.relation == "variant_of"
-        assert blocker.blocked_target_slug == "target-pro"
+        assert blocker.blocked_target_public_id == "target-pro"
 
     def test_internal_variant_does_not_block(self):
         """Variant within the same cascade tree cascades with its parent."""
@@ -152,7 +152,7 @@ class TestUsageBlockers:
         plan = plan_soft_delete(tag)
         assert plan.is_blocked
         assert any(
-            b.entity_type == "model" and b.slug == "mm-pro" for b in plan.blockers
+            b.entity_type == "model" and b.public_id == "mm-pro" for b in plan.blockers
         )
 
     def test_tag_not_blocked_by_soft_deleted_machine_model(self):
@@ -173,7 +173,7 @@ class TestUsageBlockers:
 
         plan = plan_soft_delete(theme)
         assert plan.is_blocked
-        assert any(b.slug == "mm-pro" for b in plan.blockers)
+        assert any(b.public_id == "mm-pro" for b in plan.blockers)
 
     def test_theme_blocked_by_active_child_theme(self):
         """Self-ref hierarchy — a parent Theme can't be deleted while an
@@ -184,7 +184,7 @@ class TestUsageBlockers:
 
         plan = plan_soft_delete(parent)
         assert plan.is_blocked
-        assert any(b.slug == "football" for b in plan.blockers)
+        assert any(b.public_id == "football" for b in plan.blockers)
 
     def test_theme_not_blocked_by_soft_deleted_child(self):
         parent = Theme.objects.create(name="Sports", slug="sports", status="active")
@@ -204,7 +204,7 @@ class TestUsageBlockers:
 
         plan = plan_soft_delete(feature)
         assert plan.is_blocked
-        assert any(b.slug == "mm-pro" for b in plan.blockers)
+        assert any(b.public_id == "mm-pro" for b in plan.blockers)
 
     def test_gameplay_feature_blocked_by_active_child(self):
         parent = GameplayFeature.objects.create(
@@ -217,7 +217,7 @@ class TestUsageBlockers:
 
         plan = plan_soft_delete(parent)
         assert plan.is_blocked
-        assert any(b.slug == "spinning-ramp" for b in plan.blockers)
+        assert any(b.public_id == "spinning-ramp" for b in plan.blockers)
 
     def test_title_cascade_with_tagged_children_not_self_blocked(
         self, bootstrap_source
@@ -267,7 +267,7 @@ class TestExecute:
 
         with pytest.raises(SoftDeleteBlockedError) as exc:
             execute_soft_delete(target, user=user)
-        assert exc.value.blockers[0].slug == "blocker"
+        assert exc.value.blockers[0].public_id == "blocker"
         target.refresh_from_db()
         assert target.status == "active"
 
@@ -309,11 +309,11 @@ class TestCascadeToSubgenerations:
 
         child_plan = plan_soft_delete(sub)
         assert child_plan.is_blocked
-        assert any(b.slug == "mm-pro" for b in child_plan.blockers)
+        assert any(b.public_id == "mm-pro" for b in child_plan.blockers)
 
         parent_plan = plan_soft_delete(gen)
         assert parent_plan.is_blocked
-        assert any(b.slug == "mm-pro" for b in parent_plan.blockers)
+        assert any(b.public_id == "mm-pro" for b in parent_plan.blockers)
 
 
 class TestExportMarketLocationBlocker:
@@ -333,7 +333,7 @@ class TestExportMarketLocationBlocker:
         plan = plan_soft_delete(italy)
         assert plan.is_blocked
         assert any(
-            b.slug == pm.slug and b.relation == "export_market_models"
+            b.public_id == pm.public_id and b.relation == "export_market_models"
             for b in plan.blockers
         )
 

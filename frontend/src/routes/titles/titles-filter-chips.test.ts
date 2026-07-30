@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { emptyFilterState } from '$lib/facet-engine';
-import type { FilterOptionsSchema } from '$lib/api/schema';
+import type { GameFilterOptionsSchema } from '$lib/api/schema';
 import { titleFilterChips } from './titles-filter-chips';
 
-function options(overrides: Partial<FilterOptionsSchema> = {}): FilterOptionsSchema {
+function options(overrides: Partial<GameFilterOptionsSchema> = {}): GameFilterOptionsSchema {
   return {
     manufacturer: [],
     person: [],
@@ -16,7 +16,6 @@ function options(overrides: Partial<FilterOptionsSchema> = {}): FilterOptionsSch
     franchise: [],
     series: [],
     player_count: [],
-    year: { min: null, max: null },
     ...overrides,
   };
 }

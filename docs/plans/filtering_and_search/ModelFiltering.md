@@ -461,20 +461,6 @@ At the same time I'm afraid AI sessions will spam the word 'Game' everywhere. Th
 
 Do NOT rename Svelte route; that's a separate PR.
 
-##### <a id="COMMIT.HET.PROVE"></a>COMMIT.HET.PROVE: prove the foundation
-
-The first work in the PR should prove out the riskiest bits.
-
-I leave the specifics of this work up to the [plan](#plan), but here are questions I imagine it answers:
-
-- Can we implement the overall roll-up concept, or is it too slow / doesn't scale?
-- Can we return card counts instead of model counts, or is it too slow / doesn't scale? How much complexity does it add to do card counts, and is that complexity worth it?
-- Does implementing the basic search & filtering concept turn out to be super complicated, and the next maintainer after me's just not going to be able to understand it?
-
-It must prove it out on Postgres. Use [Docker Postgres](../../Data.md#postgres). It must ALSO prove that it works on SQLite because that's the dev DB. SQLite perf is secondary.
-
-If this proving doesn't make sense to be a standalone commit, then make it a spike. I'm fine with deleting spike work if that's what's needed. If it should be multiple commits, I'm also fine with that.
-
 #### <a id="PR.DETAIL"></a>PR.DETAIL: refactor dimension detail pages
 
 Refactor any dimension detail page that currently includes a title or model listing. This excludes, for example, `credit-roles` because that lists people.

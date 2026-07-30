@@ -16,7 +16,7 @@
   const peopleHref = $derived(`${resolve('/people')}?q=${encodeURIComponent(q)}`);
 
   const shownCount = $derived(
-    results.titles.items.length + results.manufacturers.items.length + results.people.items.length,
+    results.games.items.length + results.manufacturers.items.length + results.people.items.length,
   );
   const empty = $derived(shownCount === 0);
 
@@ -35,23 +35,26 @@
        to assistive tech, so don't read it a second time in the reading order. -->
   <p class="no-results" aria-hidden="true">No results for "{q}"</p>
 {:else}
-  {#if results.titles.items.length > 0}
+  {#if results.games.items.length > 0}
     <section class="result-group">
-      <h2>Titles</h2>
+      <h2>Games</h2>
       <CardGrid>
-        {#each results.titles.items as title (title.slug)}
+        <!-- Composite key: slugs are unique per table, not across tables — a
+             Title and a Model can share one, and a mixed section must not
+             collide. -->
+        {#each results.games.items as game (`${game.entity_type}:${game.slug}`)}
           <GameCard
-            entityType="title"
-            slug={title.slug}
-            name={title.name}
-            thumbnailUrl={title.thumbnail_url}
-            manufacturerName={title.manufacturer?.name}
-            year={title.year}
+            entityType={game.entity_type}
+            slug={game.slug}
+            name={game.name}
+            thumbnailUrl={game.thumbnail_url}
+            manufacturerName={game.manufacturer?.name}
+            year={game.year}
           />
         {/each}
       </CardGrid>
-      {#if results.titles.has_more}
-        <a class="see-all" href={titlesHref}>See all Titles matching "{q}" →</a>
+      {#if results.games.has_more}
+        <a class="see-all" href={titlesHref}>See all games matching "{q}" →</a>
       {/if}
     </section>
   {/if}

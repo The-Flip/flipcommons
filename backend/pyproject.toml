@@ -91,6 +91,7 @@ ignore = [
 "manage.py" = ["T20"]
 "apps/*/management/commands/*.py" = ["T20", "S603", "S607", "B904"]  # print, subprocess, raise-from in commands
 "scripts/*.py" = ["T201"]
+"apps/catalog/tests/benchmark_game_rows.py" = ["T201"]  # a __main__ CLI harness, not a test
 "**/__init__.py" = ["F401"]  # re-exports from barrel modules are the whole point of __init__.py
 
 [tool.ruff.lint.isort]

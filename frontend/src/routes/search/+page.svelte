@@ -51,7 +51,7 @@
 <div class="search-page">
   <SearchBox
     bind:value={queryInput}
-    placeholder="Search titles, manufacturers, people..."
+    placeholder="Search games, manufacturers, people..."
     autofocus
   />
 

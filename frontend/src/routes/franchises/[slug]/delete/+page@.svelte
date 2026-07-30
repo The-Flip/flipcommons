@@ -1,7 +1,7 @@
 <script lang="ts">
   import DeletePage from '$lib/components/pages/record/delete/DeletePage.svelte';
   import type { BlockedState } from '$lib/components/pages/record/delete/delete-page';
-  import type { BlockingReferrer } from '$lib/delete-flow';
+  import { referrerHref, type BlockingReferrer } from '$lib/delete-flow';
   import { pluralize } from '$lib/utils';
   import { submitDelete } from './franchise-delete';
 
@@ -16,7 +16,7 @@
           kind: 'referrers',
           lead: "This franchise can't be deleted because active titles still point at it:",
           referrers: blockedReferrers,
-          renderReferrerHref: (r: BlockingReferrer) => (r.slug ? `/titles/${r.slug}` : null),
+          renderReferrerHref: referrerHref,
           renderReferrerHint: (r: BlockingReferrer) =>
             `references this franchise via ${r.relation}`,
           footer: 'Resolve these references, then try again.',

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -54,7 +54,9 @@ class Title(
     from claims, just like MachineModel and Manufacturer.
     """
 
-    entity_type = "title"
+    # Literal, not bare str: the games listing wire contract narrows on this
+    # value, so the type system carries it from the single source.
+    entity_type: ClassVar[Literal["title"]] = "title"
     entity_type_plural = "titles"
     link_sort_order = 10
     # Match on the title name and its abbreviations (Title has no alias

@@ -42,8 +42,7 @@
     reload: false,
   };
 
-  // Copy is final per .claude/plans/usernames-implementation.md. The two
-  // operator-intervention cases deliberately offer no support-contact CTA —
+  // The two operator-intervention cases deliberately offer no support-contact CTA —
   // this is a volunteer site with no support team, and a fake "Contact
   // support" link would be theater.
   const COPY: Record<AuthErrorCode, Content> = {

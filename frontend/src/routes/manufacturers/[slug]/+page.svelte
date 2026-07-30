@@ -22,7 +22,7 @@
     formatActiveRange(mfr.year_of_first_model, mfr.year_of_last_model, mfr.operating_status),
   );
   let hasCompanyDetails = $derived(!!(yearsActive || mfr.entities.length > 0 || mfr.website));
-  let titlesHeading = $derived(`Titles (${mfr.titles.length})`);
+  let titlesHeading = $derived(`Games (${mfr.titles.length})`);
   let systemsHeading = $derived(`Systems (${mfr.systems.length})`);
   let peopleHeading = $derived(`People (${mfr.persons.length})`);
   let mediaHeading = $derived(`Media (${mfr.uploaded_media.length})`);

@@ -4,13 +4,16 @@ import type { EntityInfo } from './types';
 export const title: EntityInfo<TitleDetailSchema> = {
   entityType: 'title',
   listing: {
-    // "Titles" alone is ambiguous out of context (browser tab, social card,
-    // search result); spell it out for those title surfaces. The visible
-    // heading stays the shorter, friendlier "Pinball Machines".
-    title: 'Pinball Machine Titles',
-    heading: 'Pinball Machines',
+    // The label everywhere (tab/SEO, visible heading, breadcrumb) matches the
+    // listing's row noun — a game is a Title or a Model; the site name
+    // supplies the pinball context.
+    title: 'Games',
     description:
       'Browse every pinball title in the Flipcommons catalog — the games, their themes, manufacturers and the machines that brought them to life.',
+    // A listing row is a Title or a Model under the roll-up, so reader-facing
+    // strings call it a game — the either/both case the word is reserved for.
+    itemLabel: 'game',
+    itemLabelPlural: 'games',
   },
   schemaOrg: {
     types: ['Game'],

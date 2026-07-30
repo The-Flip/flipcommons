@@ -9,8 +9,8 @@
   let { data } = $props();
   let profile = $derived(data.profile);
 
-  const titles = createPaginatedLoader(async (page) => {
-    const { data: result } = await client.GET('/api/titles/', {
+  const games = createPaginatedLoader(async (page) => {
+    const { data: result } = await client.GET('/api/games/', {
       params: { query: { display_type: profile.slug, page } },
     });
     return unwrapPage(result);
@@ -24,15 +24,15 @@
   </section>
 {/if}
 
-<PaginatedSection loader={titles} heading="Titles" emptyMessage="No titles with this display type.">
-  {#snippet children(title)}
+<PaginatedSection loader={games} heading="Games" emptyMessage="No games with this display type.">
+  {#snippet children(game)}
     <GameCard
-      entityType="title"
-      slug={title.slug}
-      name={title.name}
-      thumbnailUrl={title.thumbnail_url}
-      manufacturerName={title.manufacturer?.name}
-      year={title.year}
+      entityType={game.entity_type}
+      slug={game.slug}
+      name={game.name}
+      thumbnailUrl={game.thumbnail_url}
+      manufacturerName={game.manufacturer?.name}
+      year={game.year}
     />
   {/snippet}
 </PaginatedSection>

@@ -13,12 +13,12 @@
   // effect doesn't re-run on every load.
   const engine = { fromParams: filtersFromParams, toParams: filtersToParams };
 
-  // Typed page fetcher: the `/api/titles/` path literal is baked in here so the
-  // response stays typed (`TitleCardSchema`), then flows generically through
+  // Typed page fetcher: the `/api/games/` path literal is baked in here so the
+  // response stays typed (`GameCardSchema`), then flows generically through
   // FacetedCatalogListing. Reuses the committed `data.query` for load-more.
   const fetchPage = (page: number) =>
     client
-      .GET('/api/titles/', { params: { query: { ...data.query, page } } })
+      .GET('/api/games/', { params: { query: { ...data.query, page } } })
       .then((r) => unwrapPage(r.data));
 </script>
 
@@ -33,14 +33,14 @@
   initial={{ items: data.items, count: data.count }}
   {fetchPage}
 >
-  {#snippet children(title)}
+  {#snippet children(game)}
     <GameCard
-      entityType="title"
-      slug={title.slug}
-      name={title.name}
-      thumbnailUrl={title.thumbnail_url}
-      manufacturerName={title.manufacturer?.name}
-      year={title.year}
+      entityType={game.entity_type}
+      slug={game.slug}
+      name={game.name}
+      thumbnailUrl={game.thumbnail_url}
+      manufacturerName={game.manufacturer?.name}
+      year={game.year}
     />
   {/snippet}
 </FacetedCatalogListing>

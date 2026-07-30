@@ -3,13 +3,13 @@
  *
  * Kept local to the route (not in a generic harness): people is search-only and
  * manufacturers differ, so we apply the rule of three before extracting. Because
- * the URL params already use the real `TitleFilterQuery` field names (one
+ * the URL params already use the real `GameFilterQuerySchema` field names (one
  * vocabulary end to end — see `PARAM_MAP` in facet-engine), this is a near
  * passthrough: read each param, coerce numbers, read repeated multi-value params
  * with `getAll`.
  */
 
-/** The `/api/titles/` query object (every filter dimension; `page` added by the caller). */
+/** The `/api/games/` query object (every filter dimension; `page` added by the caller). */
 export interface TitlesQuery {
   q?: string;
   manufacturer?: string;
