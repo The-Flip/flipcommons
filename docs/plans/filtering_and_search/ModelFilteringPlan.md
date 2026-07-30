@@ -52,7 +52,7 @@ GET /api/titles/?q=Remake           → count 0
 
 `apply_dimension` issues one `.filter()` per dimension, so Django emits a fresh join each time. The semantics are _AND across dimensions, OR across a Title's Models_: `alien-poker` holds Alien Poker (Williams 1980), Lunelle (Taito do Brasil 1981) and Space Poker (LTD do Brasil 1982), and filtering Williams × 1981 returns it — Williams through one Model, 1981 through another — carding a 1980 machine that is in neither the year asked for nor the manufacturer's own row.
 
-That is coherent only while every card is a Title card. The moment a card can be a Model, the rule needs a Model to point at and there may not be one. The product doc's [Multi-select](ModelFiltering.md#multi-select) section settles it: one Model must satisfy everything.
+That is coherent only while every card is a Title card. The moment a card can be a Model, the rule needs a Model to point at and there may not be one. The product doc's [multi-select section](ModelFiltering.md#multi-select) settles it: one Model must satisfy everything.
 
 `alien-poker` is the readable case, but it is not a rarity. **Ad-hoc**, counting Titles that match a dimension pair today where no single Model satisfies both, restricted to pairs where both values are recorded on both Models — so this is genuine disagreement rather than a missing value:
 
@@ -79,7 +79,7 @@ The one exception is worth knowing because it is a considered decision rather th
 
 That loses real information, because a Variant is not a copy of its parent: of 139 Variants, **10 carry a theme that no non-Variant Model under their Title carries** — 19 tag rows in total. Those Models are tagged with a theme, and no page on the site lists them under it.
 
-Separate the mechanism from the policy, because the difference decides the size of the fix. It is **not** a prefetch that someone forgot: it is an explicit exclusion, written deliberately — `variant_of__isnull=True` appears ~24 times across 13 files under `backend/apps/catalog/`, and within `_title_facets.py` alone the guard is spelled three ways: `_MODEL`, `_MODEL_COUNT_GUARD` and hand-written inline in `_count_player` and `_count_hierarchical` ([PRE.GUARD](#pre-refactors) unifies those spellings before the policy split is attempted). Variant exclusion elsewhere in the backend does two other jobs — count hygiene on taxonomy pages, and representative selection — and **neither may change**, or a theme starts counting Godzilla three times. Only the list exclusion is the policy the rule overturns.
+Separate the mechanism from the policy, because the difference decides the size of the fix. It is **not** a prefetch that someone forgot: it is an explicit exclusion, written deliberately — `variant_of__isnull=True` appears ~24 times across 13 files under `backend/apps/catalog/`, and within `_title_facets.py` alone the guard is spelled three ways: `_MODEL`, `_MODEL_COUNT_GUARD` and hand-written inline in `_count_player` and `_count_hierarchical` ([PRE.GUARD](#pre-guard) unifies those spellings before the policy split is attempted). Variant exclusion elsewhere in the backend does two other jobs — count hygiene on taxonomy pages, and representative selection — and **neither may change**, or a theme starts counting Godzilla three times. Only the list exclusion is the policy the rule overturns.
 
 ### Relationship filtering does not exist, and three ordinary dimensions are missing
 
@@ -193,321 +193,98 @@ Answering "there are surely other consumers than the following, we need to do an
 
 The export API stays out of it deliberately. It already carries `model_relationships[]` and `export_markets[]` in full, so nothing here is missing from it — what The Flip lacks is not data but a way to ask a question, which is the filtering API's job and not the export's.
 
-## ✅ DONE: <a href id="pr-pre"></a>Pre-refactors
+## ✅ DONE: <a id="pr-pre"></a>Pre-refactors
 
-Three commits land on the branch before [COMMIT.HET.PROVE](#commit-het-prove), each separately reviewable, each shrinking PR.HET's blast radius without changing what any query returns:
+Four commits, each separately reviewable, each shrinking PR.HET's blast radius without changing what any query returns — all landed on main (PR #669) ahead of the proving commit:
 
-### ✅ DONE: <a href id="pre-guard"></a>PRE.GUARD
+### ✅ DONE: <a id="pre-guard"></a>PRE.GUARD
 
 One spelling per guard in `_title_facets.py`. `_count_player` and `_count_hierarchical` re-spell the count-hygiene guard by hand (`variant_of__isnull=True` plus active), invisible to a grep for `_MODEL` or `_MODEL_COUNT_GUARD`. Route them through `_MODEL_COUNT_GUARD`, so PR.HET's "list exclusion comes off, count hygiene stays" split becomes a symbol-level edit instead of a per-site judgement call.
 
-### ✅ DONE: <a href id="pre-abbrev"></a>PRE.ABBREV
+### ✅ DONE: <a id="pre-abbrev"></a>PRE.ABBREV
 
 The title-abbreviation predicate arm becomes an `Exists`. Behaviourally identical today, and it is what makes `title_own_match_q` single-valued so the same object can later serve as a row-level boolean. Landing it separately de-risks the name-predicate commit.
 
-### ✅ DONE: <a href id="pre-vocab"></a>PRE.VOCAB
+### ✅ DONE: <a id="pre-vocab"></a>PRE.VOCAB
 
 No non-ORM identifier says "machine" when it means Model. `TitleDetailSchema.machines` → `models`, `serialize_title_machine` → `serialize_title_model`, plus locals and frontend consumers. The theme/taxonomy page schemas keep their `machines` field because PR.DETAIL deletes those payloads; the ORM layer (`MachineModel`, `machine_models`, `target_machine` and its published export mirror, with their frontend mirrors like `machineTarget`) keeps its names per the CLAUDE.md rule.
 
-### ✅ DONE: <a href id="pre-card"></a>PRE.CARD
+### ✅ DONE: <a id="pre-card"></a>PRE.CARD
 
-`GameCard` replaces `TitleCard` and `MachineCard`. Pure frontend: the unified styling and the registry-derived href, with every call site passing a literal `entity_type` until the wire carries one. 21 importing files change appearance and deserve eyeballing in their own diff, not inside PR.HET's. The specification stays in [The frontend](#the-frontend) below.
+`GameCard` replaces `TitleCard` and `MachineCard`. Pure frontend: the unified styling and the registry-derived href, with every call site passing a literal `entity_type` until the wire carries one. 21 importing files change appearance and deserve eyeballing in their own diff, not inside PR.HET's. Its specification lived in this document until it shipped; `GameCard.svelte` and `GameCard.dom.test.ts` are the source of truth.
 
-## PR.HET — heterogenous results
+## ✅ DONE:<a id="pr-het"></a>PR.HET — heterogenous results
 
 Everything in this section ships in one PR — except the card unification, extracted to [PRE.CARD](#pre-card) — because the card schema forces it. Change the schema and `_serialize_card` moves; `title_search_section` composes `ordered_titles()` with `_serialize_card`, so global search moves with it; the frontend consumes that schema, so the cards move, and 13 files import `MachineCard`.
 
-### ✅ DONE: <a href id="commit-het-prove"></a>COMMIT.HET.PROVE — prove the foundation
+### ✅ DONE: <a id="commit-het-prove"></a>COMMIT.HET.PROVE — prove the foundation
 
-Three decisions qualify as the riskiest bits, because everything else is built on top of them and reversing any one means rewriting the seam the rest sits on.
-
-**1. Row shape — `.union()` or a Python merge.** `count`, offset pagination, hydration and the base each facet counts over all read off this seam.
-
-**2. Facet grain — card counts or Model counts.** The difference between one facet engine and two. Decided late, every badge changes meaning after the frontend has been built against the other reading. (3) is the cost input to this one, not a separate feature.
-
-**3. How each Title's live-Model total is obtained.** A card count needs that denominator, and there are at least four ways to get it. Measure them against each other:
-
-- a `Count("machine_models", filter=_ACTIVE)` aggregate on the same `GROUP BY` the facet already does — `model_filtering.sql`'s `_mf_title_size` is exactly this shape and it is trivial there;
-- a join against a subquery grouping the Model table once;
-- the ~7,000-row scan plus Python rollup that `_count_manufacturer` already uses for its own values;
-- a denormalized `Title.live_model_count`.
-
-**Do not treat the 280 ms figure as evidence for the last one.** That measurement belongs to `_MFR_SLUG_SQ` / `_MFR_NAME_SQ` ([`_title_facets.py:152`](../../../backend/apps/catalog/api/_title_facets.py:152)) — correlated subqueries that resolve a Title's _representative manufacturer_, which means running the whole `first_model_candidates()` ordering with its subordination `Exists` per Title, twice. A live-child count is a plain aggregate with none of that in it, so the two are not the same query and the old number says nothing about the new one.
-
-Denormalization may still win, but it costs a migration plus an invalidation path on Model create, delete and soft-delete, so it should be the conclusion of the measurement rather than its premise. If it does win, note that it is system-generated like `Location.location_path` and so sits outside the claims layer.
-
-Two things belong in the commit that are not decisions. The **two-set split and the three rungs**, because measuring the wrong semantics produces a worthless number — and because the way that fails is a plausible-looking card rather than an error. And a **benchmark** printing three figures: the no-filter listing page, the no-filter `manufacturer` facet, and a filtered facet fan-out.
-
-Count exactly one facet at card grain — `manufacturer`. It is the only facet with a documented Postgres profile to compare against: `_count_manufacturer` records the correlated first-model subquery running ~2× per Title and dominating the no-filter fan-out at **~280 ms, against ~11 ms** for the ordered-scan rollup that replaced it. Card counts have to come in at that order, at no-filter fan-out. No other facet has a yardstick, so no other facet's timing means anything yet.
-
-Keep out: serialization, the wire contract, `entity_type`, the frontend, global search, the other eleven facets, and every rename. None of them can surprise anyone, and including them delays the answer.
-
-**Performance on Postgres, feasibility on both backends.** The row-shape question is not only which is faster. Django orders a combined query only by columns in its select list, and `nulls_last` compiles to a `CASE` expression on SQLite rather than native syntax — so if `.union()` cannot take the ordering there, the shape is dead regardless of its Postgres timing, because SQLite is what dev and CI run.
-
-Two other things to settle here, both cheap and both shape-deciding. That `ExpressionWrapper(Q(...), output_field=BooleanField())` accepts an `Exists` inside the `Q` and resolves a reference to a sibling annotation — if not, the fallback is a self-correlated `Exists` over `Title` with the annotations applied inside, same single-source property, one extra correlated subquery per output row. And **what `count` actually counts**. (An earlier draft claimed the codebase advises counting before annotating; no such advice exists anywhere in the code — `list_titles` already counts the annotated, `.distinct()` queryset.) Under card grain the annotations and `Exists` expressions _are_ the row-set definition, so there is no earlier unannotated queryset that means the same thing, and stripping them would count a different set. Count the final card-row algebra, then verify it directly: on the union path, read the emitted count SQL and confirm it selects the same set the page slices; on the merge path, `count` is the merged list's length and there is no count SQL to check. Ordering may be dropped before counting; membership predicates may not.
-
-**Write the three answers into this section when it lands.** A proving commit that merges without them recorded did not prove anything.
+Three decisions carried the risk, because everything else is built on them and reversing any one means rewriting the seam the rest sits on: the **row shape** (`.union()` or a Python merge — `count`, offset pagination, hydration and the base each facet counts over all read off it), the **facet grain** (card counts or Model counts, the difference between one facet engine and two), and **how each Title's live-Model total is obtained**, the denominator a card count needs. All three were settled by measurement, and the answers are recorded below.
 
 #### <a id="prove-answers"></a>The answers
 
-The proving work landed as a commit, not a spike: `apps/catalog/api/_game_rows.py` (the two-set split, the three rungs, both row seams, the yardstick facet with all three totals methods), `test_game_rows.py` (71 cases — every rung, the two-set split's three traps, multi-select, both seams, the badge == result-count invariant including under an active `q`, and the two lifecycle states the Title-grain listing never faced: empty active Titles, and live Models under deleted Titles), and the harness `apps/catalog/tests/benchmark_game_rows.py` (run from `backend/` as `uv run python -m apps.catalog.tests.benchmark_game_rows`; it lives in the exempt tests layer because a management command may not import the api layer), which prints every figure below for whatever `DATABASE_URL` points at — re-run it rather than trusting these numbers. Measured against the scrubbed prod-shaped Docker Postgres (6,180 Titles / 6,913 live Models — the same catalog as this document's other figures), medians of 5 runs after a warmup, with today's Title-grain paths timed on the same container as the baseline: no-filter listing page 16.4 ms, no-filter Title-grain manufacturer facet 17.3 ms. Every correctness prediction in this document is checked by the harness on both backends — the listing counts (6,180 unfiltered, vifico 13, chicago-gaming 15, williams 487, solid-state 1,432, fantasy 396, `q=godzilla` 3) and the no-filter badge sum of 6,147 per totals method.
+The proving work lives in `apps/catalog/api/_game_rows.py` (the two-set split, the three rungs, the row seam), `test_game_rows.py` (every rung, the two-set split's three traps, multi-select, the badge == result-count invariant including under an active `q`, and the two lifecycle states the Title-grain listing never faced: empty active Titles, and live Models under deleted Titles), and the harness `apps/catalog/tests/benchmark_game_rows.py` (run from `backend/` as `uv run python -m apps.catalog.tests.benchmark_game_rows`; it lives in the exempt tests layer because a management command may not import the api layer), which prints these figures for whatever `DATABASE_URL` points at — re-run it rather than trusting these numbers. It survives PR.HET as the standing instrument, minus the union arm and the Title-grain baseline, both of which went when the code they timed was deleted. Every correctness prediction in this document is checked by the harness on both backends — the listing counts (6,180 unfiltered, vifico 13, chicago-gaming 15, williams 487, solid-state 1,432, fantasy 396, `q=godzilla` 3) and the no-filter badge sum of 6,147 per totals method.
 
-**The benchmark host was an M3 MacBook Air with the database in local Docker** — far faster than the Railway containers production runs on, and with no real network between app and database. So the absolute milliseconds below are optimistic; the **ratios** are the portable numbers, because both sides of each comparison are mostly database work that slows down together. Where a conclusion depends on the app-CPU-vs-database split or on data transfer — only the row-seam decision does — it is marked provisional below.
+**[The production figures](#railway) are the live ones; the figures in this subsection are a dev host against a scrubbed prod-shaped Postgres** (6,180 Titles / 6,913 live Models — the same catalog as this document's other figures), medians of 5 after a warmup. They are kept because two of them can no longer be reproduced anywhere: the merge-vs-union head-to-head, since the union is deleted, and the Title-grain baseline below, since `_title_facets.py` and `ordered_titles` went with the old listing. Those two comparisons exist only here.
 
-**This is slower than the Title-grain system, by design — but the cost lands on filtered requests, not the unfiltered page.** The rule computes something the old system never computed at all — a per-Title unanimity count over the Model join — and card rows need a Model query beside the Title query. But the unanimity aggregates run only when a Model-only dimension is active (the conditional in [the rungs](#the-three-rungs)), so the unfiltered listing stays a plain active-Titles query plus one cheap Model-rows query. Head-to-head on the same container, row layer only:
+**This is slower than the Title-grain system, by design — but the cost lands on filtered requests, not the unfiltered page.** The rule computes something the old system never computed at all — a per-Title unanimity count over the Model join — and card rows need a Model query beside the Title query. But the unanimity aggregates run only when a Model-only dimension is active (the vacuity conditional in `title_rows_qs`), so the unfiltered listing stays a plain active-Titles query plus one cheap Model-rows query. Head-to-head on the same container, row layer only:
 
 | path (no filter)     | Title grain today | card grain             | delta     |
 | -------------------- | ----------------- | ---------------------- | --------- |
 | listing page + count | 16.4 ms           | 22.7 ms (merge)        | **+38%**  |
 | manufacturer facet   | 17.3 ms           | 36.0 ms (grouped join) | **+108%** |
 
-So the hottest path — the unfiltered listing — is barely slower, the facet fan-out is about 2× (and its no-filter case is cached, rebuilt only on catalog edits), and filtered listing requests run 15–21 ms against a 16.4 ms unfiltered baseline. Roughly 1.4–2× at the row layer where the new work actually runs is the price of the feature, not an implementation accident, and the user-visible delta is smaller still because the row layer is only part of a request — hydration, serialization and HTTP are unchanged between the systems. Expect the ratios to survive the hardware change roughly intact and the absolute deltas (+6–19 ms here) to scale with however much slower Railway's Postgres and vCPU are than the benchmark host.
+So the hottest path — the unfiltered listing — is barely slower, the facet fan-out is about 2× (and its no-filter case is cached, rebuilt only on catalog edits), and filtered listing requests run 15–21 ms against a 16.4 ms unfiltered baseline. Roughly 1.4–2× at the row layer where the new work actually runs is the price of the feature, not an implementation accident, and the user-visible delta is smaller still because the row layer is only part of a request — hydration, serialization and HTTP are unchanged between the systems. The ratios did survive the hardware change: Railway measured 1.6–2.2× this host on every path, [below](#railway).
 
-**1. Row shape: the Python merge — provisional until re-measured on Railway.** Both seams work on both backends, so this was decided on speed and simplicity rather than survival, and the picture is mixed rather than one-sided. On filtered requests — where the row algebra actually runs — the merge wins clearly (Postgres page+count: `tech_gen=solid-state` 21.1 ms vs 31.2, `manufacturer=williams` 15.0 vs 26.6), because the union runs the whole algebra twice per request (once for the page, once for `count`) while the merge materializes the four-column rows once and `count` is the list's length (the `_count_manufacturer` precedent, and the same ~6k-row ceiling). On the unfiltered fast path the union wins (17.0 ms vs 22.7): with no aggregates to run twice, the union's page query is nearly free while the merge still materializes all ~6.2k rows. The merge stays the pick — the filtered gap is the larger one and the filtered path is what the feature exists for — but the split result is exactly why the Railway re-measurement below matters. Findings that stay true for whoever revisits this: `.union()` demands `.order_by()` cleared on both arms (SQLite rejects ORDER BY inside compound arms) and then takes the full `nulls_last` ordering on both backends; the union's `count()` was verified to wrap the identical combined subquery the page slices (membership predicates intact, ordering dropped); and the two seams order ties differently — the union inherits each backend's collation (Postgres `en_US` sorts "De Luxe" after "Deluxe"; SQLite is code-point), while the merge sorts on a diacritic/case-folded name key, backend-independent, which is the ordering that ships.
+**1. Row shape: the Python merge — confirmed on Railway, [below](#railway).** Both seams work on both backends, so this was decided on speed and simplicity rather than survival, and the picture is mixed rather than one-sided. On filtered requests — where the row algebra actually runs — the merge wins clearly (Postgres page+count: `tech_gen=solid-state` 21.1 ms vs 31.2, `manufacturer=williams` 15.0 vs 26.6), because the union runs the whole algebra twice per request (once for the page, once for `count`) while the merge materializes the four-column rows once and `count` is the list's length (the `_count_manufacturer` precedent, and the same ~6k-row ceiling). On the unfiltered fast path the union wins (17.0 ms vs 22.7): with no aggregates to run twice, the union's page query is nearly free while the merge still materializes all ~6.2k rows. The merge takes it — the filtered gap is the larger one and the filtered path is what the feature exists for — and the split result is what sent the decision to Railway before it was called final. Findings that stay true for whoever revisits this: `.union()` demands `.order_by()` cleared on both arms (SQLite rejects ORDER BY inside compound arms) and then takes the full `nulls_last` ordering on both backends; the union's `count()` was verified to wrap the identical combined subquery the page slices (membership predicates intact, ordering dropped); and the two seams order ties differently — the union inherits each backend's collation (Postgres `en_US` sorts "De Luxe" after "Deluxe"; SQLite is code-point), while the merge sorts on a diacritic/case-folded name key, backend-independent, which is the ordering that ships.
 
-Why provisional: this is the one decision of the three that trades database work against app work, and two of its costs are invisible with the database in local Docker. The merge transfers every matching row's four columns per request — ~6.2k rows, roughly 200–400 KB — where the union transfers one page plus a count; and the ~6k-row parse-and-sort that is trivial on an M3 is merely cheap on a starved vCPU. The hardware-independent argument still favors the merge (the union's 2× algebra execution holds on any hardware), so it stays the pick — at medium confidence. **Before PR.HET wires the listing endpoint, run the harness against production hardware** — it is read-only and takes any `DATABASE_URL`, so `railway run` prints the same table, and running it from inside the deployed container also captures the app-CPU side. The union implementation is kept in the tree through the proving commit precisely so that re-measurement can flip the decision cheaply; whichever seam loses is deleted when the listing is wired — the done condition's "1 function producing listing rows" applies at PR merge.
+This was the one decision of the three that trades database work against app work — the merge moves every matching row's four columns per request (~6.2k rows, 200–400 KB) and sorts them in Python, where the union moves one page plus a count — so it shipped at medium confidence and went to production for the real numbers. **Revisiting it means writing the union again.** It is not recoverable from history: the commits that carried it were squashed into the single engine commit, whose tree holds only the merge. What outlived the code is the paragraph above, and that is the half that was expensive to learn — so a re-do is an afternoon's work rather than a rescue, and [the production measurement](#railway) is the reason not to spend it.
 
-**2. Facet grain: card counts.** The no-filter manufacturer facet at card grain costs 36–42 ms on Postgres against 17.3 ms for today's Title-grain rollup on the same container — about 2×, and an order of magnitude under the 280 ms failure mode. The filtered fan-out — the one that is actually served live, since the no-filter payload is cached — costs 13–16 ms. The badge == result-count invariant holds at card grain and is pinned by tests, including the two-set-split cases where unanimity reads `model_only` while contributions read `carding`. The complexity price was ~120 lines including all three totals methods, so card counts are affordable and the badges mean what the page shows. Unlike the seam decision, this one is environment-robust: both sides of the 2× are database work, so the ratio travels to Railway even though the milliseconds won't. One number for PR.HET to watch, not a blocker: the full fan-out is twelve facets, so a filtered request extrapolates to roughly 12 × 13–22 ms serially; the shared totals dict below is the first lever if that needs shaving.
+#### <a id="railway"></a>The Railway re-measurement
+
+Run in-container against the production database, on the whole branch deployed to the live service, medians of 5 after a warmup. Railway comes in at **1.6–2.2× the benchmark host, uniformly** — no path degraded out of band, and all seven predicted listing counts plus the 6,147 badge sum reproduced against the live catalog:
+
+| path                             | dev host | Railway    | ratio     |
+| -------------------------------- | -------- | ---------- | --------- |
+| listing, no filter               | 22.7 ms  | 36.2 ms    | **1.60×** |
+| listing, `tech_gen=solid-state`  | 21.1 ms  | 43.2 ms    | 2.05×     |
+| listing, `manufacturer=williams` | 15.0 ms  | 26.2 ms    | 1.75×     |
+| fan-out, no filter               | 192 ms   | 358.7 ms   | 1.87×     |
+| fan-out, filtered                | 60–98 ms | 102–213 ms | ~1.7–2.2× |
+
+**That table answers the question the head-to-head was going to answer, so the head-to-head was not run.** The two costs the provisional flag was hedging against — row transfer and the app-side parse-and-sort — are both maximized by the unfiltered listing, which moves all ~6.2k rows and sorts them. If either carried a penalty specific to Railway's hardware or its app-to-database network, that path would have degraded worst. It degraded **best**, and by less than the facet fan-out, which is pure database work with no transfer and no app-side sort. The app-CPU and transfer side therefore scales no worse than the database side does, which is exactly what the flag was uncertain about. Applying the measured 1.6–2× band to the head-to-head figures above leaves the trade where it was: the union still takes the unfiltered path by ~9 ms and still loses the filtered paths by ~16–23 ms. **The merge is final; a flip would need new evidence, not this measurement.**
+
+End-to-end confirmation from outside, TTFB against a ~565 ms network floor: `/api/games/?page=1` costs ~65 ms of server work against 36.2 ms at the row layer, and `/api/pages/games?manufacturer=williams` ~145 ms against 128 ms — so hydration, serialization and the wire add ~17–29 ms on top of the row layer, and the whole system reconciles with the harness. The no-filter `/api/pages/games` costs ~15 ms against the 358.7 ms it would take to compute, which is the facets cache doing its job.
+
+**2. Facet grain: card counts.** The no-filter manufacturer facet at card grain costs 36–42 ms on Postgres against 17.3 ms for the Title-grain rollup it replaced, on the same container — about 2×, and an order of magnitude under the ~280 ms failure mode it had to clear — the correlated first-model subquery that `_count_manufacturer` ran ~2× per Title before an ordered-scan rollup replaced it at ~11 ms. The filtered fan-out — the one that is actually served live, since the no-filter payload is cached — costs 13–16 ms. The badge == result-count invariant holds at card grain and is pinned by tests, including the two-set-split cases where unanimity reads `model_only` while contributions read `carding`. The complexity price was ~120 lines including all three totals methods, so card counts are affordable and the badges mean what the page shows. Unlike the seam decision, this one is environment-robust — both sides of the 2× are database work — and the ratio did travel: 1.87× on Railway. The twelve-facet fan-out it implies is the number to watch as dimensions are added, measured at 358.7 ms unfiltered (cached) and 102–213 ms filtered; the shared totals dict below is the first lever if that needs shaving.
 
 **3. Live-Model totals: the grouped join.** All three methods return identical results everywhere (pinned by a test) and land close together — Postgres no-filter: aggregate 36.4 ms, grouped join 36.0, scan 41.7; filtered: 13.3 / 15.5 / 22.1. Decided for the grouped join on a structural property the timings don't show: its totals query (`Model` grouped by `title_id`, no filter inputs) is the same for every facet, so the twelve-facet fan-out computes it once and shares the dict, where the aggregate method recomputes totals inside each facet's own `GROUP BY`. The scan stays the fallback shape; **denormalization is rejected** — the measurement it was waiting on came back three ways affordable, so it buys nothing for the price of a migration plus an invalidation path.
 
-Two ancillary questions this section carried are settled by the shape that won. The `ExpressionWrapper`-accepts-`Exists` question is moot: nothing needs a row-level boolean annotation, because rung 2's "its Title did not card" is `exclude(title__in=<rung-1 queryset>.values("pk"))` — a grouped-`HAVING` subquery that compiles on both backends. And "what `count` counts" is the final card-row algebra on both seams, verified as above.
+Two ancillary questions this section carried are settled by the shape that won. The `ExpressionWrapper`-accepts-`Exists` question is moot: nothing needs a row-level boolean annotation, because rung 2's "its Title did not card" is `exclude(title__in=<rung-1 queryset>.values("pk"))` — a grouped-`HAVING` subquery that compiles on both backends. And "what `count` counts" is the final card-row algebra, verified on both seams as above.
 
-### Record-local shared dimensions
+### Outcome — where it landed
 
-The product doc's [Dimensions are tested on the record that owns it](ModelFiltering.md#dimensions-are-tested-on-the-record-that-owns-it) sorts every dimension into three classes, and the engine has to keep them apart:
+Everything below this PR's proving commit is implemented on the branch; the code and its tests are the source of truth now. The detailed subsections this document used to carry (the two-set split, the name predicate, the three rungs, rows at card grain, facet counts, serialization, global search, the frontend, the renames, the deletion list, the done condition) were removed when they landed — git history has them if the reasoning behind a line ever needs excavating. The map:
 
-| class                   | dimensions                              | tested on                                                  |
-| ----------------------- | --------------------------------------- | ---------------------------------------------------------- |
-| **Title-only**          | franchise, series                       | the Title, binding all of its Models                       |
-| **Model-only**          | manufacturer, year, tech gen, themes, … | the Model; a Title passes only when every Model passes     |
-| **record-local shared** | name, abbreviations                     | the record being decided, propagating in neither direction |
+| what                                                       | where                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| filters, the two sets, the three rungs, row production     | `apps/catalog/api/_game_rows.py` — the two-set split, the empty-Title vacuity rule and the closed `ModelDimension` / `TitleDimension` key vocabularies are documented in its docstrings                                                                                                                                 |
+| the facet fan-out at card grain                            | `apps/catalog/api/_game_facets.py` — one cell algebra for all eleven counted facets, the Title-only vacuous branch, hierarchical ancestor explosion, shared per-request inputs                                                                                                                                          |
+| wire contract, hydration, endpoints, global-search section | `apps/catalog/api/games.py` — `GET /api/games/`, `GET /api/pages/games`, `GameCardSchema` discriminated by `entity_type`, the description-tier carve-out                                                                                                                                                                |
+| behavior pins                                              | `test_game_rows.py` (rungs, shared class, the dimension-activation registry), `test_game_facets.py` (badge == result-count across every dimension, plus the completeness and fixture-coverage guards), `test_api_games.py` (wire shape, create gate, N+1 guard), `test_api_search.py` (the heterogeneous games section) |
+| shared test fixtures                                       | `apps/catalog/tests/game_builders.py` (extracted from the deleted `test_title_facets.py`)                                                                                                                                                                                                                               |
 
-The third is the class an implementation loses, and it is a **class** rather than a quirk of the search predicate. Name and abbreviations are shared because `Title` and `MachineModel` both carry them. If a dimension were ever added to both records — themes on Title, say — it would join this class, and the engine would need an entry rather than a restructuring.
+Done condition, audited at completion: 1 listing card schema (`GameCardSchema`), 1 card component (`GameCard`), 0 components branching on `entity_type` (two pre-existing delete-page href builders are tracked as a separate cleanup), 1 function producing listing rows (`game_rows_merged`), 1 name/alias predicate family, representative Model display-only, 0 occurrences of `TitleCardSchema`, `GET /api/titles/` and `GET /api/pages/titles` gone. Grep survivors that are **not** missed deletions: `model_count` lives on the Manufacturer/System/TitleRef schemas, `YearBoundsSchema` on the manufacturers facet payload and `apply_dimension` in `_manufacturer_facets.py` — different surfaces, out of scope by the product doc's own line.
 
-The class has exactly two members, name and abbreviations. `description` is **not** one of them, and naming the class is what makes that legible: description is a field both records carry, but the product doc rules it a tier rather than a dimension, so it never enters the shared predicate at all. Its matches live in the search page's section builders instead, which is why a description match can never suppress the record-creation prompt. `_search_sections.py`'s module docstring already says so — keep that true through the refactor, because a shared field deliberately kept out of the shared class looks like an oversight, and someone will eventually try to "fix" it.
+Verification results are recorded in [Verification](#verification).
 
-So the engine takes a set, not a search string:
+Three landings that weren't in the spec, worth knowing before touching the engine:
 
-```python
-model_only = MachineModel.objects.active().filter(...)      # Model-only dimensions, chained
-carding    = model_only.filter(shared_dimension_q(filters)) # + the record-local shared class
-```
+- **`.filter(isnull=False)`, never `.exclude(isnull=True)`, on multivalued paths.** Django compiles the exclude form to a NOT-IN subquery; on the person and theme facets that measured ~40× slower (no-filter fan-out 1,437 ms → 192 ms on the proving host). The query sites carry comments.
+- **`Title.entity_type` and `MachineModel.entity_type` are `ClassVar[Literal[...]]`** so the wire contract's `Literal` is satisfied from the registry ClassVars, with no casts and no re-spelled literals.
+- **The facets cache is rekeyed** to `catalog:games:*` (`games_facets_key` in `cache.py`), and the create prompt deliberately still says "title" — what it creates is a Title.
 
-`carding` is `model_only` plus one conjunct, so this is one queryset built twice rather than two predicates that can disagree. With no shared dimension active the two are the same object and every reference below collapses to one set.
-
-Chaining is **mandatory** for the multi-select dimensions — `.filter(themes=A, themes=B)` joins once, so a single theme row would have to be both, and the result is always empty. Chaining from the `MachineModel` root gives both properties at once: multi-select works, and every dimension lands on the same Model, which is what [Multi-select](ModelFiltering.md#multi-select) requires.
-
-**The candidate set is active Models including Variants — under live Titles.** `_MODEL`'s `variant_of__isnull=True` is a policy guard and it comes off. `first_model_candidates()` keeps its own exclusion, so the representative is still always a non-Variant. The Title-liveness guard is new work the Title-grain listing never needed: it rooted at `Title.objects.active()`, where the card-grain engine roots at the Model — and an active Model under a deleted Title is a reachable state, because `restore_model` deliberately leaves a deleted parent untouched. Without the guard such a Model would card at rung 2 and could even tally as a unanimous Title card in the facet bags.
-
-### The name predicate
-
-A Model's own name and its `ModelAbbreviation` values join the Title fields already matched. A name is a name: Model names belong in the same tier as Title names, in the same shared predicate the listing and the record-creation gate both consume.
-
-**Two silent Django traps**, both found by measurement, and the obvious implementation hits both. _Annotating across the join creates a second alias_ — `Lower(_Unaccent(F("machine_models__name")))` on the Title queryset gets its own join alias, separate from the one `_MODEL` guards, so the active guard can land on a different Model row than the name match. And _a `Q` traversing `machine_models__abbreviations__value` duplicates rows_ — on the Title queryset that yields two rows per Title with different flag values, which `.distinct()` cannot collapse, breaking `count` and pagination; on the prefetch it duplicates entries in the prefetched Model list, so the card can render the same Model twice.
-
-Use `Exists` throughout, behind a shared name-or-alias helper carrying the existing vendor split (Postgres `Lower(_Unaccent(...))` against `_fold(q)`, SQLite `icontains`):
-
-- `title_own_match_q(q) -> Q` rooted at `Title` — name fold, abbreviation `Exists`
-- `model_match_q(q) -> Q` rooted at `MachineModel` — name fold, abbreviation `Exists`
-
-Converting the existing `Q(abbreviations__value__icontains=q)` arm to an `Exists` is behaviourally identical today and is what makes `title_own_match_q` single-valued, so the same object can be reused as a row-level boolean.
-
-**Drop the representative-manufacturer arm entirely.** It exists to serve the parity trap, and the parity trap is a representative-model artefact the roll-up removes. Searching a manufacturer name is what the manufacturer facet is for.
-
-**Broadening the predicate rarely doubles up a Title.** The worry is that a query matching two Models under one Title returns two near-identical Model cards, which can only happen where their names overlap. **Ad-hoc**, counting Titles holding two Models that both differ from the Title's name and where one Model name contains the other: **12 Titles**, of which 3 are a parent and its own Variant — absorbed at rung 3 — leaving **9** that can card twice. The cases are ordinary: _Grande Domino_ beside _Domino_, _Super Soccer_ beside _Soccer_, _Jungle King_ beside _Jungle_. Search therefore never buries a second match behind a first, and needs no de-duplication rung beyond the three the rule already has.
-
-#### The create-prompt gate moves with it, and should
-
-`_query_only_count` counts Titles matching the search term alone, ignoring active facets, and the listing shows "create this title?" when it is zero. It is built as `filtered_titles(TitleFilters(q=filters.q)).count()` — the same predicate search uses, so the two cannot drift. Broadening the predicate therefore moves the gate with no separate change, which is the wanted behaviour: **a search that finds a Model must not offer to create it.**
-
-Today it does. `q=Rock Encore` and `q=Godzilla (Pro)` both return `query_count` 0 against machines the catalog holds, so an authenticated user is invited to create a duplicate of the Model they just failed to find.
-
-The narrow cost is that the prompt creates a _Title_ while what suppresses it may be a _Model_: someone who wants a Title named "Rock Encore" — which exists only as a Model, under the Title _Rock_ — reaches `/titles/new` directly instead of being prompted. That is a curation operation, not a reader failing to find a game.
-
-### The three rungs
-
-Unanimity is measured over `model_only`, never over `carding`:
-
-```python
-n_models = Count("machine_models", filter=_ACTIVE, distinct=True)
-n_match  = Count("machine_models", filter=_ACTIVE & Q(machine_models__in=model_only), distinct=True)
-```
-
-**Rung 1 — a Title cards** when its Title-only dimensions hold, its own record-local shared values match and — **only when a Model-only dimension is active** — `n_match == n_models` with `n_models > 0`. The unanimity clause is conditional deliberately: with no Model-only dimension active it is vacuous, and an active Title with zero live Models still cards — the listing supports empty Titles (deleting the last Model orphans one; `test_list_titles_empty_title` pins it). Under an active Model-only dimension the `n_models > 0` guard is what keeps vacuous truth from carding an empty Title for a value it never had. The conditional also makes the unfiltered listing a plain active-Titles query, with no aggregates on the hottest path. (An earlier draft required `n_models > 0` unconditionally, which silently dropped empty Titles from the unfiltered listing and from name search.)
-
-**Rung 2 — a Model cards** when it is in `carding`, its Title did not card and its Title satisfies every Title-only dimension. That last clause is the binding half of the Title-only class and it is easy to drop: without it, `franchise=harley-davidson&manufacturer=sega` returns Sega Models from every franchise.
-
-**Rung 3 — a Variant cards** only when its parent Model is not in `carding`. Inside this branch the Title is known not to be showing and the parent shares the Title's franchise, so "the parent is showing" reduces to "the parent is in `carding`" — which is what makes rung 3 a one-line `NOT EXISTS` rather than a recursion.
-
-Feeding `carding` into the unanimity count silently inverts the product doc's own worked examples rather than erroring. Under one set, `q=Ice Fever` sees the sibling Model _Ice Mania_ fail the name test, loses unanimity and drops to rung 2 — returning the _Ice Fever_ **Model** card where the Title card is specified. `q=Karate Fight` likewise returns the Karate Fight Model instead of the "Black Belt / Karate Fight" Title. Both look reasonable on screen, which is what makes them expensive to find later.
-
-Worked, in the order the product doc lists them:
-
-| filter                                        | rung 1                                                         | result                                                                            |
-| --------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `q=Ice Fever`                                 | no Model-only dimension, unanimity vacuous; Title name matches | the _Ice Fever_ Title card                                                        |
-| `q=Ice Mania`                                 | Title name fails                                               | the _Ice Mania_ Model card                                                        |
-| `q=Ice Fever&theme=X`                         | unanimity over `theme=X` fails                                 | nothing — `carding` is empty, because the only theme-carrier is named _Ice Mania_ |
-| `franchise=harley-davidson&manufacturer=sega` | unanimity over manufacturer fails                              | the Sega Models, bound to the franchise at rung 2                                 |
-| `theme=monster` over Godzilla                 | unanimity fails                                                | the 70th Anniversary Variant, its parent not in `carding`                         |
-| `manufacturer=vifico`                         | unanimity fails on every Title                                 | 13 Model cards                                                                    |
-
-The first three are the whole argument for the split: the shared class decides rungs 1 and 2 independently and constrains neither.
-
-**`Title.first_model_subquery()`, `_MFR_SLUG_SQ` and `_MFR_NAME_SQ` stop being filter inputs.** The representative Model returns to deciding one thing only: which backglass and year a Title card shows.
-
-### Rows at card grain
-
-Two different entity types have to arrive as one ordered, paginated list. The shape that works without materializing the catalog:
-
-1. Two `.values("kind", "pk", "sort_year", "name")` querysets — one for rung 1, one covering rungs 2 and 3, which differ by a clause rather than by shape — each with a literal discriminator.
-2. Combine them, ordered by `(sort_year desc nulls last, name, kind, pk)` — the product doc's [Sorting](ModelFiltering.md#sorting) rule, with `kind` and `pk` as the tie-break that gives offset pagination a total order.
-3. Slice the page, then hydrate each kind by id with its own prefetch.
-
-`sort_year` is `Max(model year)` for a Title row, matching today's `latest_year`, and the Model's own year for a Model row. It is selected rather than derived because the ordering keys have to be in the select list.
-
-Whether step 2 is `.union()` or a Python merge is [COMMIT.HET.PROVE](#commit-het-prove)'s first decision. The precedent for the merge is `_count_manufacturer`, which pulls ~7k rows and rolls up in Python precisely because the clever SQL was 25× slower. Hydration is unchanged either way.
-
-### Facet counts
-
-Each facet keeps the N-1 rule and changes what it tallies. Per dimension: group the matching Models by facet value and Title, compare each group against that Title's live-Model total, tally unanimous Titles as one card and the rest as one card per Model, less absorbed Variants. `mf_card_counts` is that computation in SQL and is the reference for what the badges should say.
-
-**The two-set split survives into the facet counts.** A record-local shared dimension is a dimension like any other under N-1, so it stays active while the others are counted — which means the unanimity comparison runs over `model_only` less the excluded dimension while the per-Model contribution runs over `carding` less the same. Counting both off one set makes every badge disagree with the result page for exactly the queries the split exists to get right. `mf_card_counts` does not model the shared class at all, so it is silent on this and cannot be the reference for it.
-
-Count hygiene still holds — a Title whose three Variants all carry a theme counts once, because it either rolls up to one card or contributes only the Models that matched.
-
-**The fan-out is twelve, and eleven of those carry counts.** `DIMENSIONS` has thirteen entries, but the search term is never excluded or counted; `facet_counts` makes twelve `_facet_base` calls, and of the twelve `FilterOptions` fields `year` returns `Bounds` rather than a counted list. Size the measurement against twelve. One dead wire to resolve while the schema is open: nothing on the frontend consumes those year bounds — `YearRangeInput` takes only its bound min/max props — so PR.HET either wires them into the control or deletes the field, rather than carrying dead weight through the schema rename.
-
-The no-filter payload is cached under `titles_facets_key()`, which is scoped by audience alone — **not** by the active filter set, since `title_facets_response` consults the cache only when `filters == TitleFilters()`. So the cached path costs once per catalog edit and the live cost is the filtered fan-out. Measure that one.
-
-The two facet modules in service — `_title_facets.py` and `_manufacturer_facets.py` — are near-clones already. Counting at card grain makes three, which is where the shared engine gets extracted rather than a third module written.
-
-### Serialization and the wire contract
-
-`_serialize_card` reads `models[0]` off `card_models`. `_card_models_prefetch()` already loads each Title's full ordered Model list with manufacturer and media attached, so **rendering a different Model costs no queries.** That is the cost argument for the whole feature.
-
-The one real addition is that the prefetch is built on `first_model_candidates()` and carries no Variants today. If a card can be a Variant the prefetch has to load them, ordered so non-Variants still come first.
-
-**`model_count` comes off the schema.** It has no answer at card grain — a Model row would have to report its Title's non-Variant count, or 1, or 0, and every option is a different lie — and it turns out nothing needs one: **no component reads a listing card's `model_count`.** The only consumers of a field by that name are `Manufacturer`, `System` and `TitleRef`, which are different schemas on different pages. The card renders name, year, manufacturer and thumbnail, which is what the schema's own docstring says it is for — slim by design, only the fields list rows render. Removing it is the deletion rule applied to a field that was already dead weight rather than a loss.
-
-The card schema gains `entity_type: Literal["title", "model"]`. Not `kind`: the codebase has exactly one channel for "which entity is this and where does it live" — `LinkableModel.entity_type`, codegen'd into `entity-meta.ts` — so the frontend resolves it through the same registry every other polymorphic surface uses, by lookup rather than by branch. **The serializer reads `Title.entity_type` / `MachineModel.entity_type` off the ClassVars and never writes the literals**; the `Literal[...]` is the narrowed wire contract, not a second source of truth.
-
-Two shapes to avoid. A **schema union** forces `anyOf` into the OpenAPI and makes every consumer narrow, for the same information. An **optional `matched_model` ref** leaves `year` / `manufacturer` / `thumbnail_url` describing the representative, so a row reads "Rock Encore · Gottlieb · 1986" with _Rock_'s year — fixing which means moving those onto the ref too, a union in disguise.
-
-`TitleCardSchema` is renamed. A card is either a Title or a Model, which is the either/both case the product doc reserves the word "game" for, so `GameCardSchema` is the right name and `GameCard` the right component. That reverses this document's earlier advice, which read the naming rule as barring "game" anywhere outside URLs and reader copy; the rule is narrower — it bars the word where we mean one specific record type, which this is not. Avoid `CatalogCardSchema`, which overclaims: it does not cover Person or Manufacturer.
-
-### Global search
-
-`title_search_section` composes `ordered_titles()` with `_serialize_card` so name matches rank exactly as the listing does. **It keeps one section rather than gaining a Models section** — a sectioned interface plus an absorption rule fights itself, since suppressing Models whose Title already appears leaves a Models section mysteriously empty for the commonest queries, and not suppressing them makes "Godzilla" appear twice under two headings.
-
-**`tiered_search_rows` needs a new contract, and this is not free.** It is generic over `ModelT: Model`: it slices a `QuerySet`, gates the description tier on `issubclass(ordered_base.model, DescribedModel)`, and de-duplicates with `.exclude(pk__in=seen)`. None of that survives a heterogeneous card list — there is no single `.model`, and `pk__in` de-duplicates within one table when the collision is now across two. It is the same duplicate-key hazard the frontend has at `SearchResults.svelte:42`, sitting somewhere that looks type-safe.
-
-The description tier needs one carve-out to match the product doc: a Title added by a description match must not suppress its own Models, because that Title is not showing _by dimension match_. That is a matter of not routing the description tier through the roll-up rather than new logic.
-
-### The frontend
-
-The card unification itself ships early, as [PRE.CARD](#pre-refactors); its specification lives here so the design and the rule stay together.
-
-**A Model card and a Title card must be visually identical**, per the product doc's card UX call. A Model card that reads as a different kind of object puts us back to teaching the reader our data model.
-
-`TitleCard.svelte` and `MachineCard.svelte` have drifted three ways: `--font-size-1` versus `--font-size-0`, `", "` versus `·` as the separator, and a `showManufacturer` prop plus `UNKNOWN_MANUFACTURER_LABEL` fallback that only `TitleCard` has. Unifying those is the point of the extraction — and once they are unified, **the only thing left that differs between the two cards is the href**, which means there is nothing to branch on.
-
-**`GameCard` branches on `entity_type` zero times.** The link comes out of the registry:
-
-```svelte
-href={resolveHref(`/${ENTITY_META[entity_type].entity_type_plural}/${slug}`)}
-```
-
-That is the pattern the codebase already uses in seven places — `route-metadata.server.ts:308`, `schema-org.ts:48`, `FacetedCatalogListing.svelte:82`, `CatalogListing.svelte:68` and others — and it is what the project rule against branching on type in shared code actually asks for. `resolveHref` rather than `resolve` is correct here for the documented reason: the route _pattern_ is not known at the call site, which is the one case the wrapper exists for.
-
-So `TitleCard` and `MachineCard` are **deleted**, not kept as href suppliers. Every one of their 21 importing files (23 render sites) changes appearance anyway under the unified styling, so passing `entity_type` alongside `slug` is the same edit either way. An earlier draft of this document said to keep both leaves and put a single branch in the discriminating component; that left three components where the done condition says one, and put an `entity_type ===` test in shared code for a value the registry already resolves.
-
-One interim state to expect rather than work around: the non-listing call sites are detail pages fed by `TitleModelSchema`, `RelatedTitleSchema`, `PersonTitleSchema` and `TitleRef`, **none of which carries `entity_type`**, so those sites pass a literal — `entity_type="title"` — until [PR.DETAIL](#prdetail--the-dimension-detail-pages) converges the schemas and it arrives on the wire. That is a call site stating what it holds, not shared code testing what it was handed, so the zero-branch property is intact. It is also the moment someone will be tempted to keep `TitleCard` as a one-line wrapper "so the call sites don't change". Don't: that is the parallel path the PR exists to remove, reintroduced as convenience.
-
-**A Model card does not name its parent Title**, per the product doc. Of the non-Variant Models, 2,973 share a name with another Model but only 31 stay ambiguous once manufacturer and year are shown — and nearly all of those are apparent duplicate records under identically-named Titles, which the parent Title would not disambiguate either.
-
-Blast radius: 13 files import `MachineCard` and 8 import `TitleCard`; all of them change appearance. The font-size and separator deltas are _required_ for visual identity. Adopting "Unknown Manufacturer" is _chosen_, affects 378 of 6,913 Models (5.5%), and is not a new concept — the listing already shows it for Titles whose representative has none. Eyeball before merge.
-
-#### The shared card must keep `showManufacturer`
-
-It is a capability, not drift. Manufacturer and corporate-entity detail pages do not print the manufacturer on their cards, because every card on the page has the same one and repeating it 487 times is noise. Both routes pass `showManufacturer={false}` today — `manufacturers/[slug]/+page.svelte:111` and `corporate-entities/[slug]/+page.svelte:36`.
-
-**Suppress by not rendering, never by nulling the field.** This is the trap: `manufacturer: null` already means _this record genuinely has no manufacturer_ and renders as "Unknown Manufacturer" for the 378 Models that have none. Encode "don't show it here" the same way and every card on the VIFICO page reads "Unknown Manufacturer". Two meanings, one encoding, and the failure is silent and site-wide on the exact pages this work is fixing.
-
-Suppression stays correct under the roll-up, on both card types: a Title cards on a manufacturer page only when **every** one of its Models matches, so its representative is that manufacturer too, and a Model card is by construction the matching Model. Test it — the property comes from the rule rather than from anything visible at the call site.
-
-Manufacturer is the only field this applies to. Of the four things a card displays — name, year, manufacturer, thumbnail — it is the only one that is also a dimension with a detail page of its own.
-
-#### Two hazards to pin
-
-**The global-search section will throw a duplicate-key error.** `SearchResults.svelte:42` keys on `title.slug`. Slugs are unique per table but not across tables — 5,945 slugs exist in both — so a mixed section can produce two rows with the same key. Key on `entity_type` and slug together.
-
-**JSON-LD is safe only by coincidence.** `buildListingJsonLd` builds `@id`s as `/${entity_type_plural}/${item.slug}` from the _listing's_ key, which is wrong for a Model row — but it emits the `ItemList` only when `pageUrl.search === ''`, and Model rows only exist under an active filter. The guard, an invariant comment and a regression test already exist (`schema-org.ts` and the filtered-URL case in `schema-org.test.ts`); the comment argues from canonicalization, so extend it with the Model-row half of the invariant — under a filter a Model row would otherwise be emitted with a Title-listing `@id`. Nothing else to add.
-
-### The renames in this PR
-
-The product doc requires the system not be left half-migrated. Three renames land here, and none of them is the Svelte route.
-
-**The listing endpoint becomes `GET /api/games/`. The Title resource API stays where it is.**
-
-This is a split, not a wholesale router rename, because `titles_router` is mounted at `/titles/` and owns both:
-
-| route                                                | what it is                   | after PR.HET                    |
-| ---------------------------------------------------- | ---------------------------- | ------------------------------- |
-| `GET /api/titles/`                                   | the heterogeneous listing    | **moves** to `GET /api/games/`  |
-| `GET /api/pages/titles`                              | that listing's page payload  | **moves** to `/api/pages/games` |
-| `POST /api/titles/`                                  | create a Title               | stays                           |
-| `POST /api/titles/{id}/models/`                      | create a Model under a Title | stays                           |
-| `PATCH /api/titles/{id}/claims/`                     | edit a Title                 | stays                           |
-| the `{id}` delete-preview, delete and restore routes | Title lifecycle              | stays                           |
-
-Renaming the router wholesale would make `POST /api/games/` create a **Title**, which is the same lie in the other direction — a "game" is not a record type anything can be created as. So the listing GET and the page endpoint move to a new `games_router`, and everything left under `/api/titles/` is genuinely Title-grain. `GET /api/titles/` then ceases to exist, which is correct: there is no Title collection any more, because the collection is not Title-grain.
-
-The move is cheap and unpublished — the internal `NinjaAPI` is built `openapi_url=None, docs_url=None`, so there is no contract and no external consumer, and the listing has five call sites today. It happens now rather than in PR.MOVE because [PR.DETAIL](#prdetail--the-dimension-detail-pages) points every detail page at it; deferring means renaming twenty-odd call sites instead of five.
-
-**The card schema**, per [the wire contract](#serialization-and-the-wire-contract).
-
-**The reader-facing labels.** Add `itemLabel` / `itemLabelPlural` to `ListingInfo` in `frontend/src/lib/entities/types.ts` and set them in `title.ts`, alongside the existing `heading: 'Pinball Machines'` override. `FacetedCatalogListing.svelte` feeds four strings from there (count line, search placeholder, filter drawer, create prompt); `schema-org.ts` already prefers the override; `/manufacturers` shares the component and falls back untouched. Three tails move with it — `routes/titles/new/+page.svelte` hardcodes `entityLabel="Title"`, `search/+page.svelte` hardcodes its placeholder, and `manufacturers/[slug]/+page.svelte:25` builds `Titles (${mfr.titles.length})`. This does not touch the generated `label` / `label_plural`, which come from Django `verbose_name` and reach the admin.
-
-### The deletion list
-
-The product doc's rule is _delete the things that you replace_. This is that list, so it is a grep rather than a judgement call. None of these may exist when PR.HET merges:
-
-| symbol                                                     | why it goes                                                                           |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `TitleCardSchema` (the name)                               | a card is not a Title                                                                 |
-| `_MFR_SLUG_SQ`, `_MFR_NAME_SQ`                             | the representative stops being a filter input                                         |
-| the `_q_mfr_name` annotation and its arm of the predicate  | the parity trap goes with the representative pin                                      |
-| `_MODEL`'s `variant_of__isnull=True`                       | the **list-exclusion** half only — see below                                          |
-| `test_q_matches_first_model_manufacturer_not_later_models` | it pins the behaviour being removed                                                   |
-| `TitleCard.svelte`, `MachineCard.svelte` and their tests   | `GameCard` replaces both in [PRE.CARD](#pre-refactors); neither survives as a wrapper |
-| `model_count` on the listing card                          | no answer at card grain, and no component read it                                     |
-| `GET /api/titles/` and `GET /api/pages/titles`             | moved to `games_router`, not aliased                                                  |
-
-Two qualifications, because each looks like the same symbol as something that stays:
-
-- **`_MODEL_COUNT_GUARD` stays.** Variant exclusion does three jobs — list exclusion, count hygiene and representative selection — and only the first is the policy being overturned. Delete the count guard and a theme starts counting Godzilla three times. After [PRE.GUARD](#pre-refactors) it is also the only other spelling in the module, so the split really is a symbol-level edit.
-- **`Title.first_model_subquery()` survives as a method** and stops being a filter input. It still decides which backglass and year a Title card shows.
-
-One conditional deletion: `_count_manufacturer`'s bespoke ordered-scan-plus-Python rollup should collapse into the same shared count every other facet uses, but it carries the documented 280 ms → 11 ms history. Delete it only once the replacement is measured at no-filter fan-out.
-
-### Done condition
-
-Each of these reads 1 when the PR is ready. They are countable, which is the point — "consolidated" is not.
-
-| axis                                           | at merge     |
-| ---------------------------------------------- | ------------ |
-| listing card schemas                           | 1            |
-| listing card components                        | 1            |
-| components branching on `entity_type`          | 0            |
-| functions producing listing rows               | 1            |
-| name/alias predicates                          | 1            |
-| consumers of the representative Model          | display only |
-| occurrences of `TitleCardSchema`               | 0            |
-| `GET /api/titles/` and `GET /api/pages/titles` | gone         |
-
-## PR.DETAIL — the dimension detail pages
+## <a id="pr-detail"></a>PR.DETAIL — the dimension detail pages
 
 The product doc scopes this by criterion: every dimension detail page carrying a Title or Model listing, which excludes `credit-roles` because it lists People. `locations` is out for the same reason — it lists manufacturers, and manufacturer location is not a dimension here.
 
@@ -515,16 +292,16 @@ The product doc scopes this by criterion: every dimension detail page carrying a
 
 The point is not fewer lines, it is fewer things that can disagree. Eight axes, each verified against the routes as they stand, each collapsing to one:
 
-| axis                    | today                                                                                                                                 |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| backend card schema     | 4 — `TitleModelSchema`, `RelatedTitleSchema`, `PersonTitleSchema`, `TitleRef` — plus the listing card                                 |
-| frontend card component | `TitleCard` imported by 8 files, `MachineCard` by 13 — **collapsed by [PRE.CARD](#pre-refactors)**, which deletes both for `GameCard` |
-| grain                   | some list Titles, some Models, and it does not track which record owns the dimension                                                  |
-| list source             | embedded in the page payload (8 routes) vs a second client call (9 routes)                                                            |
-| pagination              | none (8) vs `createPaginatedLoader` (9)                                                                                               |
-| hierarchy               | the listing expands to descendants; detail pages list direct tags only                                                                |
-| variant policy          | `variant_of__isnull=True` hand-written per queryset                                                                                   |
-| sort                    | `_franchise_titles_qs()` and its series twin never order the Titles at all — only the prefetched Models                               |
+| axis                    | today                                                                                                                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| backend card schema     | 4 — `TitleModelSchema`, `RelatedTitleSchema`, `PersonTitleSchema`, `TitleRef` — plus the listing card                            |
+| frontend card component | `TitleCard` imported by 8 files, `MachineCard` by 13 — **collapsed by [PRE.CARD](#pre-card)**, which deletes both for `GameCard` |
+| grain                   | some list Titles, some Models, and it does not track which record owns the dimension                                             |
+| list source             | embedded in the page payload (8 routes) vs a second client call (9 routes)                                                       |
+| pagination              | none (8) vs `createPaginatedLoader` (9)                                                                                          |
+| hierarchy               | the listing expands to descendants; detail pages list direct tags only                                                           |
+| variant policy          | `variant_of__isnull=True` hand-written per queryset                                                                              |
+| sort                    | `_franchise_titles_qs()` and its series twin never order the Titles at all — only the prefetched Models                          |
 
 That table is the specification and the done condition. "Onto a shared substrate" has no edge; "these eight read 1" does. Seven of the eight are PR.DETAIL's work — the card component collapses one PR earlier, and it is listed here so the axis is not re-opened by a detail page reaching for a Title-shaped card it no longer needs.
 
@@ -537,7 +314,7 @@ An earlier version of this document inventoried the backend schemas and inferred
 | **client-paginated** via a second call to `/api/models/` or `/api/titles/` | cabinets, display-subtypes, display-types, game-formats, gameplay-features, production-statuses, tags, technology-generations, technology-subgenerations |
 | **flat**, list embedded in the page endpoint                               | corporate-entities, franchises, manufacturers, people, reward-types, series, systems, themes                                                             |
 
-So the pages whose schemas carry no game list mostly do show one — `/game-formats/pinball` paginates against `/api/models/` today. The work is migration and consolidation rather than construction, and "none of them paginate" is false for half of them. One of the nine client-paginated routes is already at Title grain: `display-types/[slug]` paginates `/api/titles/` and renders Title cards, so for that route the change is the roll-up itself rather than a grain flip.
+So the pages whose schemas carry no game list mostly do show one — `/game-formats/pinball` paginates against `/api/models/` today. The work is migration and consolidation rather than construction, and "none of them paginate" is false for half of them. One of the nine is already **done**: the PR.HET flip pointed `display-types/[slug]` at `GET /api/games/` with wire-driven `entity_type` (it was the one non-listing consumer of the listing endpoint, so leaving it would have rendered Model rows as Titles). It is the model for what the other eight become.
 
 One addition is genuine: `display_subtype`, `tag` and `technology_subgeneration` have no listing param yet and need one, which is what the product doc's [Hidden dimensions](ModelFiltering.md#hidden-dimensions) section supplies. A detail page that _is_ the listing pinned to a dimension cannot exist for a dimension the listing cannot express. That is why hidden dimensions belong to this PR rather than to PR.SPARSE.
 
@@ -549,7 +326,7 @@ A reader will otherwise assume the rule only ever adds Model cards.
 
 **Most Model-dimension pages roll _up_, and return fewer cards.** Themes, systems, reward types, gameplay features and people list games today; under the rule a Title absorbs its Models whenever all of them match.
 
-**Manufacturer and corporate-entity pages roll _down_, and it is a correction rather than a refinement.** They list Titles today through `collect_titles` with any-Model semantics. `/api/pages/manufacturer/vifico` returns 13 cards — Arena, Bad Girls, Chicago Cubs 'Triple Play', Diamond Lady, Excalibur, Genesis and the rest — every one a Gottlieb game, because VIFICO built copies and a copy never heads its Title. Under the rule those become 13 VIFICO Model cards linking to VIFICO Model pages. These two pages carry the [`showManufacturer`](#the-shared-card-must-keep-showmanufacturer) requirement the others do not.
+**Manufacturer and corporate-entity pages roll _down_, and it is a correction rather than a refinement.** They list Titles today through `collect_titles` with any-Model semantics. `/api/pages/manufacturer/vifico` returns 13 cards — Arena, Bad Girls, Chicago Cubs 'Triple Play', Diamond Lady, Excalibur, Genesis and the rest — every one a Gottlieb game, because VIFICO built copies and a copy never heads its Title. Under the rule those become 13 VIFICO Model cards linking to VIFICO Model pages. These two pages carry the `showManufacturer` requirement the others do not: every card on the page has the same manufacturer, so both routes pass `showManufacturer={false}` today. The trap, restated here because these are the pages that will hit it — **suppress by not rendering, never by nulling the field**. `manufacturer: null` already means _this record genuinely has no manufacturer_ and renders as "Unknown Manufacturer"; encode "don't show it here" the same way and every card on the VIFICO page reads "Unknown Manufacturer". Suppression stays correct under the roll-up on both card types — a Title cards on a manufacturer page only when every one of its Models matches, so its representative is that manufacturer too, and a Model card is by construction the matching Model. Test that property here; it comes from the rule, not from anything visible at the call site.
 
 The backend half of today's manufacturer suppression goes away with `collect_titles`, and should. `include_manufacturer` defaults to `False` and **no caller anywhere passes `True`**, so the field is unconditionally omitted server-side and the frontend prop is what actually makes the pages correct. Suppression is applied twice today, and it is the second one doing the work.
 
@@ -594,13 +371,15 @@ The listing itself is the deliberate exception to the one-call rule, not the pat
 
 This is what makes the embedded listing safe: it cannot drift from the listing, because it _is_ the listing.
 
+The substrate exists as of PR.HET: `game_rows_merged` + `_hydrate_cards` + the serializers in `games.py` are what a detail endpoint embeds (page 1 with its dimension pinned), and the client continues from page 2 against `GET /api/games/`. Whether the hydration helpers are imported or lightly extracted for the detail endpoints is an implementation call; the constraint is that the cards come from the games code path, not a re-derivation.
+
 The frontend machinery already exists and is what every taxonomy _index_ page uses — `CatalogListing` → `PaginatedListPage` → `PaginatedListLoader`. Nine detail routes have their own loader against a different endpoint; those converge onto it rather than keeping a second mechanism.
 
 ### The facet work does not grow
 
-**Facet counts exist on exactly two surfaces.** `facet_counts` is imported by `titles.py` and `manufacturers.py` and nowhere else; `FacetedCatalogListing.svelte` is imported by two routes and nowhere else. **Not one dimension detail page has a facet sidebar.** So the card-grain facet counts stay a listing problem exactly as they are today, and COMMIT.HET.PROVE's measurement is unaffected by how far the rule travels.
+**Facet counts exist on exactly two surfaces.** `game_facet_counts` is consumed only by `games.py`, the manufacturers facet engine only by `manufacturers.py`; `FacetedCatalogListing.svelte` is imported by two routes and nowhere else. **Not one dimension detail page has a facet sidebar.** So the card-grain facet counts stay a listing problem exactly as they are today, and COMMIT.HET.PROVE's measurement is unaffected by how far the rule travels.
 
-## PR.REL — the relationship vocabulary
+## <a id="pr-rel"></a>PR.REL — the relationship vocabulary
 
 The catalog stores these relationships three different ways and the split should be invisible at the read layer. It already is in the editing interface.
 
@@ -683,15 +462,19 @@ The lineage fields are the asymmetric half of this, and one of them is a surpris
 
 ### The dimension cost, and what to do about it
 
-Adding a dimension touches `TitleFilters` → `DIMENSIONS` → `apply_dimension` → the query schema → `to_filters()` → `FilterOptions` → `facet_counts()` → `FilterState` → `emptyFilterState()` → `PARAM_MAP` → `hasActiveFilters` → the query type → `queryFromUrl` → the chip builder → the sidebar. Five are near-clones of each other, and a parallel set exists for manufacturers. `edge` is one dimension slot with a key registry and a direction axis behind it, so it pays this in full.
+PR.HET replaced the old chain. Adding a dimension now touches, on the backend: the `ModelDimension` Literal → `_DIMENSION_ACTIVE` → a narrowing arm in `model_only_models` → `GameFilterQuerySchema` + `to_filters()` → a value-rows shape and assembly entry in `_game_facets.py` → `GameFacetOptions` + the payload dict in `games.py`. On the frontend: `FilterState` → `emptyFilterState()` → `PARAM_MAP` → `hasActiveFilters` → `TitlesQuery` / `queryFromUrl` → the chip builder → the sidebar. `edge` is one dimension slot with a key registry and a direction axis behind it, so it pays this in full.
 
-**Declare a `FilterDimension` spec on the backend — the narrower, the facet binding and the `surfaced` flag in one place — and stop there.** That collapses the five backend near-clones and gives hidden dimensions somewhere to live. Do **not** generate the TypeScript half from it. Cross-language codegen here is the giant new subsystem the product doc is afraid of, and the project's own escalation order puts codegen last, after a `_meta` walk and a typed spec. Take the rung that fits and leave the frontend hand-written until it hurts.
+**Declare the `FilterDimension` spec — the narrower, the facet binding and the `surfaced` flag in one place — and build it FIRST in this PR, not mid-way.** PR.HET hardened the chain three ways, and all three are patches over one structural hole: per-dimension wiring passes valid-but-possibly-wrong string keys. The `ModelDimension` / `TitleDimension` Literals make an _invalid_ key a type error but cannot catch a _wrong valid_ one — review found the `series` dimension wired everywhere yet exercised by no test, meaning a `fk="franchise"` transposition on the series facet would have passed the whole suite. Three test-level guards now close that: `ACTIVATING` vs `MODEL_DIMENSIONS` in `test_game_rows.py`, and `NARROWERS` key-completeness plus the fixture non-emptiness guard in `test_game_facets.py`. The spec subsumes all three — one declaration per dimension driving the narrower, the activeness predicate, the facet binding and the test vocabulary means a wrong-valid-key cannot be written, and the guards collapse into one registry-completeness check. Build it, migrate the eleven existing dimensions onto it, then add `edge` as its first new entry. It also gives PR.SPARSE's `surfaced` flag and designated-default somewhere to live. The multi-select badge fix added a fourth per-dimension registry to fold in: `MULTI_DIMENSIONS` in `_game_rows.py` — whether a dimension's selections accumulate (ANDed, full facet base) or replace (N-1), currently derived from `GameFilters`' tuple arity with its own derived test guards. On the spec that becomes a declared-or-derived property per dimension; `edge` accumulates (repeated `edge=` params AND, per the coverage ledger).
+
+Do **not** generate the TypeScript half from it. Cross-language codegen here is the giant new subsystem the product doc is afraid of, and the project's own escalation order puts codegen last, after a `_meta` walk and a typed spec. Take the rung that fits and leave the frontend hand-written until it hurts.
+
+One mapping note for `edge`: in the card-grain facet engine a relationship key is an ordinary **multi-valued Model dimension** — value rows distinct per `(model pk, key)`, the reward-types shape — which is what makes "a Model satisfying two keys is carded once by each" fall out of the existing tally with no edge-row de-duplication of its own.
 
 ### Stored filters constrain the syntax
 
 [Articles.md](../catalog_data_model/Articles.md) requires a dynamic list to be a stored filter that validates against the real listing-filter vocabulary. That is a live constraint on the syntax: a stored filter has to round-trip against a vocabulary that has since gained keys, and it has to **fail legibly** when a key disappears — a retired relationship type should surface as a broken stored filter with a nameable cause rather than a list that silently goes empty. That is the argument for named keys over raw `(type, status)` tuples, since a key can be deprecated with a message. It also pushes toward flat serializable params over nested target-attribute predicates.
 
-## PR.SPARSE — the sparse dimensions
+## <a id="pr-sparse"></a>PR.SPARSE — the sparse dimensions
 
 Three dimensions, all already implemented on `/api/models/` and none needing a relationship predicate.
 
@@ -751,17 +534,19 @@ Backfilling remains rejected in all three cases: every user-inputtable catalog f
 
 `game_format` is multi-select — bingo-pinball, slot-machine and video-game are separately meaningful. **No dimension excludes anything by default**; the listing hides nothing until asked.
 
-## PR.MOVE — the route rename
+## <a id="pr-move"></a>PR.MOVE — the route rename
 
 The Svelte listing route moves to `/games`. Detail routes do not, so `routes/titles/` keeps `[slug]` and `new` while the listing files move; `/games` needs no `[slug]` route of its own, because a card links to `/titles/<slug>` or `/models/<slug>`.
 
-Everything else the rename used to carry — the API path, the card schema, the reader-facing labels — landed in [PR.HET](#the-renames-in-this-pr). What is left is the route, the redirect, the sitemap and the SEO tails.
+Everything else the rename used to carry — the API path, the card schema, the reader-facing labels — landed in [PR.HET](#pr-het). What is left is the route, the redirect, the sitemap and the SEO tails — plus the route-co-located frontend identifiers that still say titles (`TitlesQuery` / `titles-query.ts`, `titleFilterChips`, `TitleFilterSidebar`): they rename to game terms here, when the directory moves anyway, so the files are touched once instead of twice. Their doc comments already say `/api/games/` / `GameFilterQuerySchema`; only the identifiers wait.
 
 **`/titles` would otherwise 404 rather than redirect.** Moving `routes/titles/+page.*` out while keeping `[slug]` and `new` leaves `/titles` as a route segment with children and no index page. The product doc calls for the redirect.
 
 `resolve()` is typed against the generated route tree, so every internal link to the listing fails at compile time rather than at runtime. That is the safety net that makes this a mechanical change.
 
-## After V1 — the public filtering API
+## <a id="post-v1"></a>After V1
+
+### <a id="public-filtering-api"></a>Public filtering API
 
 The follow-up the product doc names under [Consumers → Public API](ModelFiltering.md#public-api), and the "To discuss" item The Flip left at [mfgtimeline.md item 8](../the_flip/mfgtimeline.md): filtering the catalog is a lot of work to do client-side, because a consumer must first understand the relationships and only then design the filtering.
 
@@ -778,7 +563,7 @@ The frontend consumers are the reason the [response shape](#response-shape) belo
 
 **It carries no vocabulary the UI does not have.** The product doc's rule is that the API does not run in advance of the UI, so this endpoint exposes include-only relationship keys for as long as the sidebar does. The conversion-kit exclusion at the top of The Flip's list therefore waits on the exclusion UX, not on this endpoint.
 
-### It does not apply the roll-up
+#### It does not apply the roll-up
 
 The load-bearing design point, and it runs the opposite way from the listing.
 
@@ -788,13 +573,13 @@ So the seam is: **the predicate is shared, the roll-up is not.** The dimension n
 
 That leaves the codebase with two Model filter vocabularies, which is only defensible if they differ by grain rather than by spelling. Today they differ by both: `ModelFilterQuerySchema` says `type`, `display` and `subgeneration` with a single-valued `feature`, where the listing says `tech_gen`, `display_type` and a repeatable `theme`. **Converge the param names when this is published** — and note that doing so is a breaking change for the one blessed external consumer, which is an argument for doing it before publication rather than after.
 
-### Response shape
+#### Response shape
 
 Today's `ModelListItemSchema` is a **display** shape: `thumbnail_url` is resolved through `get_minimum_display_rank()`, which means nothing to a consumer joining against its own cached export.
 
 The published shape is identity only — the Model slug plus its Title slug, so a consumer can join at either grain — against their cached copy of `/api/export/models/`. The two surfaces are companions by design: the export carries the records, this one carries the answer to "which ones".
 
-### Decisions publishing forces, not taken here
+#### Decisions publishing forces, not taken here
 
 - **Whether it moves to `export_api`.** Publishing is what makes it a documented contract, and the internal API's OpenAPI is disabled precisely so external systems get no real-time target. A filtering API is a partial reversal of that posture, so it should be argued rather than assumed.
 - **The rate-limit budget.** The export API is 120 requests/hour per IP shared across all export endpoints. Whether a filter API shares that pool or gets its own is a policy call — and note the export's own published description tells consumers to save their copy and work locally, which this endpoint quietly invites them to stop doing.
@@ -857,37 +642,17 @@ Forty rows against thirty-nine examples: "all the variants of one game" splits, 
 
 **The one row still genuinely undecided** is the widest original-to-copy gap. If the year delta annotates onto the edge it is an ordinary sort key; if it cannot, the question wants a row per _pair_ and lands with the manufacturer pairings as a won't-do.
 
-## Tests
+## ✅ DONE: <a id="tests"></a>Tests
 
-PR.HET is a bug fix, so the failing tests go in first.
+Landed as specified; the suites in the [PR.HET outcome map](#pr-het) are the source of truth. The three exact-key-set assertions flipped in both directions as predicted (`entity_type` arriving, `model_count` leaving). Review then added the completeness and fixture-coverage guards described under [the dimension cost](#the-dimension-cost-and-what-to-do-about-it), after finding `series` wired everywhere but exercised nowhere.
 
-**Backend.** Extend the search class in `test_title_facets.py` near `test_q_matches_first_model_manufacturer_not_later_models` — which itself is deleted, since the behaviour it pins is the representative pin being removed. Add: Model name match, Model abbreviation match, a Variant Model matches when named specifically, a retired Model does not match.
+## ✅ DONE: <a id="verification"></a>Verification
 
-The roll-up wants a test per rung and per boundary: a Title whose every Model matches yields one Title card; a Title where one Model fails yields one card per matching Model; a Variant is absorbed when its parent matches and surfaces when it does not. Multi-select needs the case a single Model must carry both values, since that inverts today's behaviour.
+All executed at completion, live at the API and in the browser. Every predicted value reproduced exactly: `q=Godzilla (Pro)` and `q=Rock Encore` return their Model rows, `?manufacturer=vifico` 13 (was 0), `?manufacturer=chicago-gaming` 15 (was 2), `manufacturer=williams` 487, `tech_gen=solid-state` 1,432, `theme=fantasy` 396, the unfiltered listing 6,180 and `q=Godzilla` 3, unchanged. `q=Remake` returns 14 (the plan guessed "about six"; the catalog had more).
 
-**The two-set split needs three tests of its own**, because getting it wrong produces plausible cards rather than an error. A record-local shared dimension must not break unanimity — `q=Ice Fever` returns the Title even though the sibling Model is named _Ice Mania_, and `q=Karate Fight` returns the "Black Belt / Karate Fight" Title rather than the Karate Fight Model. It must still gate rung 2 — `q=Ice Fever&theme=X` returns nothing when only _Ice Mania_ carries the theme. And a Title-only dimension must bind at rung 2 — `franchise=harley-davidson&manufacturer=sega` returns no Sega Model outside the franchise.
+The eyeball tokens, and the judgement call on them: `q=pro` 106 → 91 (Model `(Pro)` names arrive, Pro-something manufacturer matches leave); `q=rock` 95 → 42 (the Rock-Ola catalog belongs to the manufacturer facet, not the search box); `q=williams` 470 → **0** — checked against the data and not a bug: no Title or Model name or abbreviation contains "williams", so every old match was the representative-manufacturer arm. The new predicate reads as intended.
 
-In `test_api_titles.py`, update the key set, assert a Model row carries the _matched_ Model's year, manufacturer and thumbnail, and wrap a search request in `django_assert_num_queries` to pin that the card-grain rows add no per-row query. In `test_api_search.py`, update `CARD_KEYS`, add a Model-name match, and pin that **a description-only match still yields `entity_type == "title"` and does not suppress a Model row under the same Title**.
-
-Facet counts keep the existing "badge equals result count" invariant, which is now a stronger statement than it was — assert it at card grain for at least one shattering value such as `manufacturer=chicago-gaming`.
-
-**Three exact-key-set assertions will fail**, and they fail in both directions — `entity_type` arriving and `model_count` leaving: `CARD_KEYS` in `test_api_search.py:25`, the `set(item) ==` assertion in `test_api_titles.py:53`, and `CARD` in `frontend/src/routes/titles/page-server-load.test.ts:4`. That is what makes them useful here rather than merely noisy: an exact key set is the one assertion that catches a field being dropped.
-
-**Frontend.** The manufacturer-line cases move to `GameCard`, which is the point of the extraction. `GameCard` gets one case per `entity_type` asserting the registry-derived href resolves to `/titles/…` and `/models/…`, plus one asserting the two render an **identical subtitle** — that pair is the regression guard against the drift being removed, and against anyone reintroducing a branch to restore it. Add `entity_type` to the `CARD` fixture, add a Model-row fixture to the search page tests asserting the `/models/` href, and pin that a listing URL bearing a query emits no `ItemList`. The `TitleCard` and `MachineCard` test files are deleted with their components.
-
-## Verification
-
-Run `make codegen` first — the typed client will not see the new field until you do, and `schema.d.ts` is gitignored so do not stage it. Then `make quality` and `make test`.
-
-These must go from empty or wrong to right: `q=Godzilla (Pro)` returns the Stern Pro Model row with `entity_type: "model"`; `q=Rock Encore` returns a row linking to `/models/rock-encore`; `q=Remake` returns about six rows; `?manufacturer=vifico` returns 13 cards against today's 0; `?manufacturer=chicago-gaming` returns 15 against today's 2.
-
-These must move to the values `mf_card_counts` predicts: `manufacturer=williams` 469 → 487, `tech_gen=solid-state` 1,407 → 1,432, `theme=fantasy` 371 → 396. Re-run the analysis file rather than trusting the numbers printed here — the catalog moves.
-
-These must be unchanged: the unfiltered listing at 6,180 cards, and `q=Godzilla` at 3.
-
-**Eyeball a short common token before merging.** The predicate moves in both directions at once — Model names and abbreviations widen it, dropping the representative-manufacturer arm narrows it — so a net figure hides two large offsetting changes. `q=pro` is **106** today and is the case to look at: substring matching on three letters hits `(Pro)` across many Stern Models on the widening side, while every Title reached today only through a manufacturer name called Pro-something falls off the narrowing side. `q=rock` (95 today) and `q=williams` (470 today) are the other two worth reading by eye, the last because it is almost entirely manufacturer-arm matches and should collapse to near nothing. None of these has a predicted value — they are a judgement call about whether the new predicate reads better than the old one, not an assertion to pin with a test.
-
-## Deferred
+## <a id="deferred"></a>Deferred
 
 - **Exclusion on relationship keys** — `edge=-bootleg`, as a visually separate group rather than a hidden third state on the same checkbox. [Not in V1 by product decision.](ModelFiltering.md#exclude-relationships) Open when it gets designed: whether it ships as one negative key per type, or as a named preset, since "not a copy, not a re-theme, not a conversion kit" is really the single idea _distinct original machines_.
 - **Relationship context on a Model card.** Under a relationship filter the interesting fact about a copy is what it _copies_, and that is the edge target rather than the parent Title — so `edge=copy` returns a page of Model cards that do not say what any of them copied. Deliberately not solved by naming the parent Title, which is a different fact and often the wrong one. Revisit once PR.REL ships and the page can be looked at.
@@ -900,7 +665,7 @@ These must be unchanged: the unfiltered listing at 6,180 cards, and `q=Godzilla`
 - **A public filtering API** for consumers like The Flip. Shaped in [After V1](#after-v1--the-public-filtering-api): `GET /api/models/` repurposed, at Model grain with no roll-up. It depends on **all three** of PR.DETAIL, PR.REL and PR.SPARSE — DETAIL frees its eight existing consumers so the response shape can change, REL supplies the relationship keys and SPARSE completes the shared dimension vocabulary.
 - **The 128 edition-tier clusters.** Chicago Gaming's Medieval Madness remake tiers are not recorded as Variants where Stern's LE tiers are, so they card individually. A data campaign, not a code change; the rule returns fewer cards as it lands.
 
-## Explicitly not doing
+## <a id="not-doing"></a>Explicitly not doing
 
 - **Converting the relationship enums into claims-controlled vocabulary entities.** Relationship types are behaviour-heavy, so patch-authorable behaviour columns would hand Title-representative decisions to any contributor, and the privileged-edit protection that would mitigate that is unbuilt. The conversion remains the escape hatch if type growth ever outpaces release cadence.
 - **Autogenerated pages keyed on a relationship-type vocabulary** (`/relationship_type/<slug>`). Reaches only four of the ten concepts: it cannot reach the three lineage fields, which have no vocabulary table behind them, nor the composites. It would create two tiers of concept page where filter-backed pages serve all ten uniformly.

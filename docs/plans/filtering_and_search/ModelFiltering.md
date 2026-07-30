@@ -461,22 +461,6 @@ At the same time I'm afraid AI sessions will spam the word 'Game' everywhere. Th
 
 Do NOT rename Svelte route; that's a separate PR.
 
-##### <a id="COMMIT.HET.PROVE"></a>COMMIT.HET.PROVE: prove the foundation
-
-The first work in the PR should prove out the riskiest bits.
-
-I leave the specifics of this work up to the [plan](#plan), but here are questions I imagine it answers:
-
-- Can we implement the overall roll-up concept, or is it too slow / doesn't scale?
-- Can we return card counts instead of model counts, or is it too slow / doesn't scale? How much complexity does it add to do card counts, and is that complexity worth it?
-- Does implementing the basic search & filtering concept turn out to be super complicated, and the next maintainer after me's just not going to be able to understand it?
-
-It must prove it out on Postgres. Use [Docker Postgres](../../Data.md#postgres). It must ALSO prove that it works on SQLite because that's the dev DB. SQLite perf is secondary.
-
-###### Outcome
-
-The proving commit landed and the foundation holds: the roll-up is implementable, card counts are affordable (so the facet badges count visible cards, not Models) and the engine is small enough to hand to the next maintainer. It is slower than the Title-only system by design, but the cost lands where the new work runs: the unfiltered listing is barely slower (+38% at the query layer, since the roll-up aggregates only run when a Model-only filter is active), filtered requests and the facet fan-out run roughly 1.4–2×, and the cached no-filter facet path is unaffected; the user-visible delta is smaller still because hydration and serialization are unchanged. One implementation decision, the row seam (SQL union vs Python merge), is provisional until re-measured on Railway hardware, because the benchmark ran on a fast laptop with a local database and that is the one decision that trades database work against app work. Figures, decisions and the re-measurement instructions: [the plan's answers](./ModelFilteringPlan.md#prove-answers).
-
 #### <a id="PR.DETAIL"></a>PR.DETAIL: refactor dimension detail pages
 
 Refactor any dimension detail page that currently includes a title or model listing. This excludes, for example, `credit-roles` because that lists people.
