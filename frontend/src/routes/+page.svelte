@@ -65,7 +65,7 @@
   <form class="hero-search" onsubmit={handleSubmit}>
     <input
       type="search"
-      placeholder="Search titles, manufacturers, people..."
+      placeholder="Search games, manufacturers, people..."
       aria-label="Search the catalog"
       bind:value={searchQuery}
     />
@@ -73,7 +73,7 @@
 
   <nav class="explore-links">
     <a href={resolve('/titles')} class="explore-card">
-      <span class="explore-label">Titles</span>
+      <span class="explore-label">Games</span>
       <span class="explore-desc"
         >{titleCount !== null ? fmt(titleCount) : 'Thousands of'} pinball machines from the 1930s to today</span
       >

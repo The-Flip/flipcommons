@@ -41,8 +41,8 @@ import { load as title } from '../routes/titles/[slug]/+layout.server';
  * scannable table below is also an executable assertion about what ships.
  */
 const CRUMBS = {
-  title: ['Home', 'Pinball Machines', 'Godzilla'],
-  model: ['Home', 'Pinball Machines', 'Godzilla', 'Godzilla Pro'],
+  title: ['Home', 'Games', 'Godzilla'],
+  model: ['Home', 'Games', 'Godzilla', 'Godzilla Pro'],
   manufacturer: ['Home', 'Pinball Manufacturers', 'Stern'],
   'corporate-entity': ['Home', 'Pinball Manufacturers', 'Stern', 'Stern, Inc.'],
   person: ['Home', 'Notable People', 'Pat Lawlor'],

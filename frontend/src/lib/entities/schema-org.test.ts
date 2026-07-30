@@ -171,6 +171,8 @@ describe('listingMeta', () => {
       heading: 'Franchises',
       breadcrumb: 'Franchises',
       description: franchise.listing?.description,
+      itemLabel: 'franchise',
+      itemLabelPlural: 'franchises',
     });
   });
 
@@ -180,15 +182,21 @@ describe('listingMeta', () => {
       heading: 'Pinball Machine Themes',
       breadcrumb: 'Pinball Machine Themes',
       description: theme.listing?.description,
+      itemLabel: 'theme',
+      itemLabelPlural: 'themes',
     });
   });
 
-  test('heading overrides the visible label independently of the SEO title; breadcrumb follows heading', () => {
+  test('the games listing resolves every label from its title', () => {
+    // No entity currently overrides `heading`; if one returns, cover the
+    // heading-independent-of-title branch with it here.
     expect(listingMeta('title')).toEqual({
-      title: 'Pinball Machine Titles',
-      heading: 'Pinball Machines',
-      breadcrumb: 'Pinball Machines',
+      title: 'Games',
+      heading: 'Games',
+      breadcrumb: 'Games',
       description: title.listing?.description,
+      itemLabel: 'game',
+      itemLabelPlural: 'games',
     });
   });
 
@@ -198,6 +206,8 @@ describe('listingMeta', () => {
       heading: 'Notable Pinball People',
       breadcrumb: 'Notable People',
       description: person.listing?.description,
+      itemLabel: 'person',
+      itemLabelPlural: 'people',
     });
   });
 });

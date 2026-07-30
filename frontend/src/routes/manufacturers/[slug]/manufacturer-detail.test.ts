@@ -49,7 +49,7 @@ describe('manufacturer detail SSR route', () => {
 
     expect(body).toContain('Overview');
     expect(body).toContain('Companies');
-    expect(body).toContain('Titles (1)');
+    expect(body).toContain('Games (1)');
     expect(body).toContain('Systems (1)');
     expect(body).toContain('People (1)');
     expect(body).toContain('Media (1)');

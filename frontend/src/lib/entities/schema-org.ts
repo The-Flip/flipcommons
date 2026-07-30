@@ -159,6 +159,8 @@ export function listingMeta(catalogKey: CatalogEntityKey): {
   heading: string;
   breadcrumb: string;
   description: string;
+  itemLabel: string;
+  itemLabelPlural: string;
 } {
   const meta = ENTITY_META[catalogKey];
   const listing = ENTITY_INFO[catalogKey].listing;
@@ -169,6 +171,8 @@ export function listingMeta(catalogKey: CatalogEntityKey): {
     heading,
     breadcrumb: listing?.breadcrumb ?? heading,
     description: listing?.description ?? `${meta.label_plural} in the Flipcommons pinball catalog.`,
+    itemLabel: listing?.itemLabel ?? meta.label.toLowerCase(),
+    itemLabelPlural: listing?.itemLabelPlural ?? meta.label_plural.toLowerCase(),
   };
 }
 

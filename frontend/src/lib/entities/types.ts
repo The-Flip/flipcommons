@@ -34,8 +34,7 @@ export type ExternalReference =
  * - `title` — the SEO label: browser `<title>`, `og`/`twitter` title, and the
  *   JSON-LD `CollectionPage` name. Defaults to the entity's plural label.
  * - `heading` — the visible `<h1>`. Defaults to `title`; set it only when the
- *   on-page heading should read differently from the SEO title (e.g. titles
- *   list: heading "Pinball Machines", title "Pinball Machine Titles").
+ *   on-page heading should read differently from the SEO title.
  * - `breadcrumb` — the label for this listing in a detail page's breadcrumb
  *   trail (the JSON-LD `BreadcrumbList`, and the visible trail on taxonomy
  *   detail pages). Defaults to `heading`, since a crumb should read the way the
@@ -43,12 +42,18 @@ export type ExternalReference =
  *   people: heading "Notable Pinball People", breadcrumb "Notable People").
  * - `description` — feeds both the visible subtitle and the machine-readable
  *   `<meta>`/JSON-LD description.
+ * - `itemLabel` / `itemLabelPlural` — what one row of the listing is called in
+ *   reader-facing strings (the count line, search placeholder, filter drawer).
+ *   Defaults to the entity's own labels; set only when a row is not the entity
+ *   (the games listing lists Titles *and* Models, so a row is a "game").
  */
 export interface ListingInfo {
   title?: string;
   heading?: string;
   breadcrumb?: string;
   description: string;
+  itemLabel?: string;
+  itemLabelPlural?: string;
 }
 
 /**
