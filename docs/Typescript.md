@@ -19,3 +19,5 @@ export const USERNAME_MAX_LENGTH = 32;
 ```
 
 The bar for writing a comment is unchanged — most declarations don't need one. But when you do write one, use the format that shows up where readers look. Inline `//` comments inside a function body are still fine; they're for the next person editing the code, not for callers.
+
+Also ensure the comment says the right things as mandated in [CodeComments.md](CodeComments.md).

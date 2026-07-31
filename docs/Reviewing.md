@@ -101,6 +101,10 @@ In particular:
 - health checks should reflect real readiness, not only partial readiness
 - features that introduce new production env vars or configuration should be gated by a refusal check per [DeployAutomation.md](DeployAutomation.md) — typically a [BuildChecks.md](BuildChecks.md) ARG declaration for build-time secrets, a [DeployChecks.md](DeployChecks.md) preflight for runtime vars, or both — so a missing or malformed value fails the deploy instead of degrading silently
 
+### Code comments
+
+Check code comments against [CodeComments.md](CodeComments.md).
+
 ## Generated And Derived Artifacts
 
 Review whether the change also needed to update derived artifacts.

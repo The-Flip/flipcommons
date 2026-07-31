@@ -195,6 +195,10 @@ The frontend uses **Svelte 5 runes mode** (`runes: true` in compiler options). D
 
 Use JSDoc `/** */` (not `//`) for comments on TypeScript functions, classes, types, and exported constants, so they appear in IDE hover tooltips.
 
+### Comments don't reference plan docs or prior state
+
+A comment should only exist if it explains something the code doesn't. Do NOT reference plan docs (`docs/plans/`, `~/.claude/plans/`) or carry phase/step labels like `PRE3`, and do NOT justify code by contrasting it with what it used to do — a future reader has no way to picture the old version. Prior state is load-bearing only in rare cases, such as a regression test comment. See [CodeComments.md](CodeComments.md).
+
 ### No `:global` in Svelte styles
 
 NEVER use `:global` in Svelte component styles without explicit approval from the user. Scoped styles are the default and preferred approach. We rearchitect components rather than use `:global`.

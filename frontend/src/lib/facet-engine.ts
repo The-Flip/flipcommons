@@ -19,11 +19,65 @@ export interface FilterState {
   rewardTypes: string[];
   /** Relationship-filter wire values (`copy`, `copy:in`, `bootleg`…). */
   edges: string[];
+  /**
+   * The sparse dimensions hold raw wire values — vocabulary slugs plus the
+   * reserved `unclassified` — because one UI selection can be two values
+   * (`presetValues`); the shown selection derives via `sparseSelection`.
+   */
+  gameFormats: string[];
+  productionStatuses: string[];
+  cabinets: string[];
   displayType: string | null;
   playerCount: number | null;
   system: string | null;
   franchise: string | null;
   series: string | null;
+}
+
+/**
+ * The reserved sparse-dimension wire value: "the field is unset". Never a
+ * facet-payload option; labeled by the literal below.
+ */
+export const UNCLASSIFIED = 'unclassified';
+
+/** Reader-facing label for the reserved `unclassified` value. */
+export const UNCLASSIFIED_LABEL = 'Unclassified';
+
+/**
+ * What a null sparse field is read as at query time — not a pre-selected
+ * filter. Twin of the backend `default_slug` declarations; a rename must
+ * update both.
+ */
+export const SPARSE_DEFAULTS = {
+  gameFormats: 'pinball',
+  productionStatuses: 'produced',
+  cabinets: 'floor',
+} as const;
+
+/** The sparse dimensions' `FilterState` field names. */
+export type SparseField = keyof typeof SPARSE_DEFAULTS;
+
+/**
+ * The wire values a UI selection writes: the designated default widens to
+ * `[slug, UNCLASSIFIED]`, any other value stays exact. Mirror of the backend
+ * `preset_values`.
+ */
+export function presetValues(field: SparseField, slug: string): string[] {
+  return slug === SPARSE_DEFAULTS[field] ? [slug, UNCLASSIFIED] : [slug];
+}
+
+/**
+ * The dropdown selection a sparse dimension's raw values display as: the
+ * preset pair reads as the default, a lone value as itself, any other union
+ * as no selection (it degrades to per-value chips).
+ */
+export function sparseSelection(field: SparseField, values: string[]): string | null {
+  if (values.length === 1) return values[0];
+  const def = SPARSE_DEFAULTS[field];
+  if (values.length === 2 && values.includes(def) && values.includes(UNCLASSIFIED)) {
+    return def;
+  }
+  return null;
 }
 
 export function emptyFilterState(): FilterState {
@@ -38,6 +92,9 @@ export function emptyFilterState(): FilterState {
     features: [],
     rewardTypes: [],
     edges: [],
+    gameFormats: [],
+    productionStatuses: [],
+    cabinets: [],
     displayType: null,
     playerCount: null,
     system: null,
@@ -64,6 +121,9 @@ export function hasActiveFilters(f: FilterState): boolean {
     f.features.length > 0 ||
     f.rewardTypes.length > 0 ||
     f.edges.length > 0 ||
+    f.gameFormats.length > 0 ||
+    f.productionStatuses.length > 0 ||
+    f.cabinets.length > 0 ||
     f.displayType != null ||
     f.playerCount != null ||
     f.system != null ||
@@ -142,6 +202,24 @@ const PARAM_MAP: (SingleParam | MultiParam)[] = [
     multi: true,
     get: (f) => f.edges,
     set: (f, v) => (f.edges = v),
+  },
+  {
+    param: 'game_format',
+    multi: true,
+    get: (f) => f.gameFormats,
+    set: (f, v) => (f.gameFormats = v),
+  },
+  {
+    param: 'production_status',
+    multi: true,
+    get: (f) => f.productionStatuses,
+    set: (f, v) => (f.productionStatuses = v),
+  },
+  {
+    param: 'cabinet',
+    multi: true,
+    get: (f) => f.cabinets,
+    set: (f, v) => (f.cabinets = v),
   },
   { param: 'display_type', get: (f) => f.displayType, set: (f, v) => (f.displayType = v) },
   {

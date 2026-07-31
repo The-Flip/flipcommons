@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyFilterState } from '$lib/facet-engine';
+import { UNCLASSIFIED, emptyFilterState } from '$lib/facet-engine';
 import type { GameFilterOptionsSchema } from '$lib/api/schema';
 import { titleFilterChips } from './titles-filter-chips';
 
@@ -12,6 +12,9 @@ function options(overrides: Partial<GameFilterOptionsSchema> = {}): GameFilterOp
     system: [],
     reward_type: [],
     edge: [],
+    cabinet: [],
+    game_format: [],
+    production_status: [],
     theme: [],
     feature: [],
     franchise: [],
@@ -99,6 +102,53 @@ describe('titleFilterChips', () => {
     chips[0].remove();
     expect(filters.yearMin).toBeNull();
     expect(filters.yearMax).toBeNull();
+  });
+
+  it('shows one chip for the canonical preset pair, labeled like the dropdown selection', () => {
+    const filters = { ...emptyFilterState(), gameFormats: ['pinball', UNCLASSIFIED] };
+    const chips = titleFilterChips(
+      filters,
+      options({ game_format: [{ public_id: 'pinball', name: 'Pinball', count: 5659 }] }),
+    );
+
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toMatchObject({ key: 'gameFormats:pinball', label: 'Pinball' });
+    chips[0].remove();
+    expect(filters.gameFormats).toEqual([]);
+  });
+
+  it('shows one chip for a lone sparse value, including unclassified', () => {
+    const exact = { ...emptyFilterState(), gameFormats: ['bingo-pinball'] };
+    const exactChips = titleFilterChips(
+      exact,
+      options({ game_format: [{ public_id: 'bingo-pinball', name: 'Bingo Pinball', count: 3 }] }),
+    );
+    expect(exactChips.map((c) => c.label)).toEqual(['Bingo Pinball']);
+
+    // The reserved value's label is the frontend literal — it is never a
+    // payload option to resolve a name from.
+    const nulls = { ...emptyFilterState(), cabinets: [UNCLASSIFIED] };
+    const nullChips = titleFilterChips(nulls, options());
+    expect(nullChips.map((c) => c.label)).toEqual(['Unclassified']);
+    nullChips[0].remove();
+    expect(nulls.cabinets).toEqual([]);
+  });
+
+  it('degrades an arbitrary sparse union to one removable chip per raw value', () => {
+    const filters = { ...emptyFilterState(), gameFormats: ['pinball', 'shuffle'] };
+    const chips = titleFilterChips(
+      filters,
+      options({
+        game_format: [
+          { public_id: 'pinball', name: 'Pinball', count: 5659 },
+          { public_id: 'shuffle', name: 'Shuffle', count: 40 },
+        ],
+      }),
+    );
+
+    expect(chips.map((c) => c.label)).toEqual(['Pinball', 'Shuffle']);
+    chips[1].remove();
+    expect(filters.gameFormats).toEqual(['pinball']);
   });
 
   it('keeps a stable order across mixed dimensions', () => {

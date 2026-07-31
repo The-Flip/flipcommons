@@ -18,8 +18,11 @@ from apps.catalog.api._game_facets import GameFacetOptions, game_facet_counts
 from apps.catalog.api._game_rows import (
     ACCUMULATING_DIMENSIONS,
     MODEL_DIMENSION_SPECS,
+    UNCLASSIFIED,
     GameFilters,
+    ModelDimension,
     game_rows_merged,
+    preset_values,
 )
 from apps.catalog.engine.query.facet_helpers import FacetOption
 from apps.catalog.models import LicenseStatus, RelationshipType
@@ -207,6 +210,58 @@ class TestEdgeFacet:
         assert counts == {"bogus": 0}
 
 
+class TestSparseFacet:
+    """Null FKs fold into the default value's count; the option list stays
+    real vocabulary values only."""
+
+    def _catalog(self) -> None:
+        t1 = _title("Plain", "plain")
+        _model(t1, "plain-m")  # no format recorded — the default bucket
+        t2 = _title("Explicit", "explicit")
+        _model(t2, "explicit-m", game_format="pinball")
+        t3 = _title("Bingo", "bingo")
+        _model(t3, "bingo-m", game_format="bingo-pinball")
+
+    def test_null_folds_into_the_default_count(self, db):
+        self._catalog()
+        counts = _counts(game_facet_counts(GameFilters()).game_format)
+        # The unclassified Model counts under pinball beside the explicit one;
+        # there is never an "unclassified" option.
+        assert counts == {"pinball": 2, "bingo-pinball": 1}
+
+    def test_mixed_title_shatters_under_each_value(self, db):
+        """A Title mixing formats cards one Model under each value, so the
+        badges sum to more than the unfiltered listing — union counts aren't
+        additive at card grain."""
+        t = _title("Mixed", "mixed")
+        _model(t, "mixed-pin", game_format="pinball")
+        _model(t, "mixed-bingo", name="Mixed Bingo", game_format="bingo-pinball")
+        counts = _counts(game_facet_counts(GameFilters()).game_format)
+        assert counts == {"pinball": 1, "bingo-pinball": 1}
+        assert len(game_rows_merged(GameFilters())) == 1  # one unfiltered card
+        preset = preset_values(MODEL_DIMENSION_SPECS["game_format"], "pinball")
+        assert len(game_rows_merged(GameFilters(game_format=preset))) == 1
+        assert len(game_rows_merged(GameFilters(game_format=("bingo-pinball",)))) == 1
+
+    def test_no_unclassified_option_even_when_selected(self, db):
+        """The canonical preset URL always carries UNCLASSIFIED; the payload
+        must still offer real vocabulary values only."""
+        self._catalog()
+        preset = preset_values(MODEL_DIMENSION_SPECS["game_format"], "pinball")
+        counts = _counts(game_facet_counts(GameFilters(game_format=preset)).game_format)
+        assert UNCLASSIFIED not in counts
+        # N-1: the own-dimension selection doesn't narrow its own option list.
+        assert counts == {"pinball": 2, "bingo-pinball": 1}
+
+    def test_selected_real_slug_stays_visible_at_zero(self, db):
+        self._catalog()
+        f = GameFilters(game_format=("bingo-pinball",), q="zzz")
+        counts = _counts(game_facet_counts(f).game_format)
+        # Name resolution comes from the vocabulary table (standard
+        # with_selected), and the pruned selection re-enters at 0.
+        assert counts["bingo-pinball"] == 0
+
+
 class TestAccumulatingDimensions:
     """The multi-select dimensions AND their values, so clicking one adds it to
     what is already chosen. Their badges must predict *that*, not the value on
@@ -256,11 +311,21 @@ FACET_FILTER_FIELD: dict[str, str] = {
     "system": "system",
     "reward_type": "reward_types",
     "edge": "edge",
+    "cabinet": "cabinet",
+    "game_format": "game_format",
+    "production_status": "production_status",
     "theme": "themes",
     "feature": "features",
     "franchise": "franchise",
     "series": "series",
 }
+
+
+def _sparse_click(key: ModelDimension, value: str) -> tuple[str, ...]:
+    """A sparse-dimension click: replace semantics through the preset — a
+    badge must equal what the UI's click writes, and it writes
+    ``preset_values``."""
+    return preset_values(MODEL_DIMENSION_SPECS[key], value)
 
 
 def _add(current: tuple[str, ...], value: str) -> tuple[str, ...]:
@@ -283,6 +348,11 @@ NARROWERS: dict[str, Callable[[GameFilters, str], GameFilters]] = {
     "system": lambda f, v: replace(f, system=v),
     "reward_type": lambda f, v: replace(f, reward_types=_add(f.reward_types, v)),
     "edge": lambda f, v: replace(f, edge=_add(f.edge, v)),
+    "cabinet": lambda f, v: replace(f, cabinet=_sparse_click("cabinet", v)),
+    "game_format": lambda f, v: replace(f, game_format=_sparse_click("game_format", v)),
+    "production_status": lambda f, v: replace(
+        f, production_status=_sparse_click("production_status", v)
+    ),
     "theme": lambda f, v: replace(f, themes=_add(f.themes, v)),
     "feature": lambda f, v: replace(f, features=_add(f.features, v)),
     "franchise": lambda f, v: replace(f, franchise=v),
@@ -314,6 +384,8 @@ def _build_catalog() -> None:
         features=("multiball",),
         reward_types=("replay",),
         persons=("lawlor",),
+        # Alpha mixes formats, so the default-bucket click shatters it.
+        game_format="pinball",
     )
     alpha_bally = _model(
         t1,
@@ -326,6 +398,7 @@ def _build_catalog() -> None:
         themes=("liquid",),
         features=("ramps",),
         reward_types=("extra-ball",),
+        game_format="bingo-pinball",
     )
     t2 = _title("Beta", "beta")
     parent = _model(
@@ -335,6 +408,8 @@ def _build_catalog() -> None:
         themes=("water",),
         features=("multiball", "ramps"),
         reward_types=("replay", "extra-ball"),
+        # Explicit default beside a null: both land in the floor bucket.
+        cabinet="floor",
     )
     _model(t2, "beta-le", manufacturer="stern", themes=("water",), variant_of=parent)
     t3 = _title("Gamma", "gamma", series=_series("gamma-saga"))
@@ -346,6 +421,8 @@ def _build_catalog() -> None:
         features=("multiball",),
         reward_types=("replay",),
         persons=("lawlor",),
+        cabinet="cocktail",
+        production_status="announced",
     )
     # Gamma bootlegs Alpha's design on converted Alpha Encore cabinets — one
     # Model satisfying two edge keys (plus the composite), the shape that
@@ -379,6 +456,13 @@ class TestBadgeEqualsResultCount:
         GameFilters(edge=("copy",)),
         GameFilters(edge=("bootleg", "conversion")),
         GameFilters(edge=("copy:in",), q="Alpha"),
+        # The sparse states: the canonical preset pair, a lone true-null
+        # selection, a minority value, and the preset composed with another
+        # dimension.
+        GameFilters(game_format=("pinball", UNCLASSIFIED)),
+        GameFilters(game_format=(UNCLASSIFIED,)),
+        GameFilters(cabinet=("cocktail",)),
+        GameFilters(production_status=("produced", UNCLASSIFIED), themes=("water",)),
     )
 
     def test_narrowers_cover_every_facet(self):

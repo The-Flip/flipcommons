@@ -42,7 +42,7 @@ from apps.catalog.models import (
 from apps.core.licensing import get_minimum_display_rank
 
 from ..engine.entity_api.detail import plain_page, register_entity_detail_page
-from ._game_rows import GameFilters
+from ._game_rows import MODEL_DIMENSION_SPECS, GameFilters, preset_values
 from .corporate_entities import CorporateEntityDetailPageSchema
 from .corporate_entities import _detail_qs as _corp_entity_detail_qs
 from .corporate_entities import _serialize_detail as _serialize_corp_entity_detail
@@ -333,7 +333,11 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(Cabinet),
     serialize_page=with_games(
         _serialize_taxonomy,
-        lambda obj: GameFilters(cabinet=(obj.slug,)),
+        # Sparse pin: the default value's page embeds the widened bucket
+        # (preset_values); every other value stays exact.
+        lambda obj: GameFilters(
+            cabinet=preset_values(MODEL_DIMENSION_SPECS["cabinet"], obj.slug)
+        ),
         TaxonomyDetailPageSchema,
     ),
     response_schema=TaxonomyDetailPageSchema,
@@ -368,7 +372,10 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(GameFormat),
     serialize_page=with_games(
         _serialize_taxonomy,
-        lambda obj: GameFilters(game_format=(obj.slug,)),
+        # Sparse pin — see the Cabinet registration above.
+        lambda obj: GameFilters(
+            game_format=preset_values(MODEL_DIMENSION_SPECS["game_format"], obj.slug)
+        ),
         TaxonomyDetailPageSchema,
     ),
     response_schema=TaxonomyDetailPageSchema,
@@ -379,7 +386,12 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(ProductionStatus),
     serialize_page=with_games(
         _serialize_taxonomy,
-        lambda obj: GameFilters(production_status=(obj.slug,)),
+        # Sparse pin — see the Cabinet registration above.
+        lambda obj: GameFilters(
+            production_status=preset_values(
+                MODEL_DIMENSION_SPECS["production_status"], obj.slug
+            )
+        ),
         TaxonomyDetailPageSchema,
     ),
     response_schema=TaxonomyDetailPageSchema,

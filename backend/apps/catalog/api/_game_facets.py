@@ -48,12 +48,15 @@ from ..engine.query.facet_helpers import (
     with_selected,
 )
 from ..models import (
+    Cabinet,
     DisplayType,
     Franchise,
+    GameFormat,
     GameplayFeature,
     MachineModel,
     Manufacturer,
     Person,
+    ProductionStatus,
     RewardType,
     Series,
     System,
@@ -71,10 +74,12 @@ from ._edge_vocabulary import (
 from ._game_rows import (
     MODEL_DIMENSION_SPECS,
     PLAYER_BUCKETS,
+    UNCLASSIFIED,
     EdgeFacet,
     GameFilters,
     ModelDimension,
     PathFacet,
+    SparseFacet,
     TaxonomyExpansion,
     TaxonomyFacet,
     TitleDimension,
@@ -115,6 +120,11 @@ class GameFacetOptions:
     system: list[FacetOption] = field(default_factory=list)
     reward_type: list[FacetOption] = field(default_factory=list)
     edge: list[FacetOption] = field(default_factory=list)
+    # The sparse dimensions: option lists are real vocabulary values only
+    # (never UNCLASSIFIED); the default value's count is the null-folded one.
+    cabinet: list[FacetOption] = field(default_factory=list)
+    game_format: list[FacetOption] = field(default_factory=list)
+    production_status: list[FacetOption] = field(default_factory=list)
     theme: list[FacetOption] = field(default_factory=list)
     feature: list[FacetOption] = field(default_factory=list)
     franchise: list[FacetOption] = field(default_factory=list)
@@ -357,6 +367,39 @@ def _edge_value_rows(
     return rows, names
 
 
+def _sparse_value_rows(
+    f: GameFilters,
+    shared: _SharedFanout,
+    dimension: ModelDimension,
+    binding: SparseFacet,
+    default_slug: str,
+) -> tuple[list[_FacetValueRow], dict[str, str]]:
+    """Value rows for a sparse dimension: **every** candidate Model paired
+    with its single value, a null FK folded into *default_slug*. Names
+    resolve from the vocabulary table — a folded null row carries none — and
+    a missing default row degrades to the raw slug rather than raising."""
+    names: dict[str, str] = dict(
+        binding.vocabulary._default_manager.values_list("slug", "name")
+    )
+    names.setdefault(default_slug, default_slug)
+    gate = _title_only_q(f, prefix="title__")
+    raw = (
+        model_only_models(
+            f, exclude=facet_exclude(dimension), expansion=shared.expansion
+        )
+        .filter(gate)
+        .values_list("pk", "title_id", "variant_of_id", f"{binding.path}__slug")
+        .distinct()
+    )
+    rows: list[_FacetValueRow] = []
+    for pk, title_id, variant_of_id, slug in raw:
+        value = slug if slug is not None else default_slug
+        rows.append(
+            _FacetValueRow(pk, title_id, variant_of_id, value, names.get(value, value))
+        )
+    return rows, names
+
+
 def _player_value_rows(f: GameFilters, shared: _SharedFanout) -> list[_FacetValueRow]:
     """Value rows for the player-count buckets: each counted Model mapped to
     its bucket (``6`` collects 6-or-more; values outside ``PLAYER_BUCKETS``
@@ -454,6 +497,11 @@ def _counted_facets(
                 rows, names = _hierarchical_value_rows(f, shared, spec.key, binding)
             case EdgeFacet() as binding:
                 rows, names = _edge_value_rows(f, shared)
+            case SparseFacet() as binding:
+                assert spec.default_slug is not None  # paired at import time
+                rows, names = _sparse_value_rows(
+                    f, shared, spec.key, binding, spec.default_slug
+                )
             case _:
                 continue
         counted[binding.name] = _tally_options(
@@ -489,6 +537,13 @@ def _player_facet(f: GameFilters, shared: _SharedFanout) -> list[PlayerCountOpti
 
 def _selected(value: str | None) -> tuple[str, ...]:
     return (value,) if value else ()
+
+
+def _real_slugs(values: tuple[str, ...]) -> tuple[str, ...]:
+    """A sparse selection's vocabulary slugs, ``UNCLASSIFIED`` dropped —
+    ``with_selected`` must never put an ``unclassified`` option row in the
+    payload (the canonical preset URL always carries the value)."""
+    return tuple(v for v in values if v != UNCLASSIFIED)
 
 
 def _with_selected_edges(
@@ -528,6 +583,15 @@ def game_facet_counts(f: GameFilters) -> GameFacetOptions:
         system=with_selected(counted["system"], _selected(f.system), System),
         reward_type=with_selected(counted["reward_type"], f.reward_types, RewardType),
         edge=_with_selected_edges(counted["edge"], f.edge),
+        cabinet=with_selected(counted["cabinet"], _real_slugs(f.cabinet), Cabinet),
+        game_format=with_selected(
+            counted["game_format"], _real_slugs(f.game_format), GameFormat
+        ),
+        production_status=with_selected(
+            counted["production_status"],
+            _real_slugs(f.production_status),
+            ProductionStatus,
+        ),
         theme=with_selected(counted["theme"], f.themes, Theme),
         feature=with_selected(counted["feature"], f.features, GameplayFeature),
         franchise=with_selected(

@@ -135,7 +135,7 @@ Summed over every value of each dimension, comparing today's cards against the r
 
 `edge` and `game_format` carry no "today" figure because neither dimension exists on the listing. There is no baseline to compare against, and a number in that column would be a counterfactual wearing a measurement's clothes.
 
-`edge` is the dimension the roll-up was built for — half its cards are Model cards, against 8.6% for manufacturer. It arrives in [PR.REL](#prrel--the-relationship-vocabulary), so PR.HET builds the machinery and PR.REL is where it visibly pays off.
+`edge` is the dimension the roll-up was built for — half its cards are Model cards, against 8.6% for manufacturer. It arrives in [PR.REL](#pr-rel), so PR.HET builds the machinery and PR.REL is where it visibly pays off.
 
 `game_format`'s figure is the [default-bucket](#game_format-and-production_status-unclassified-joins-the-default-bucket) reading. **Every number in this table is a sum over all of a dimension's values, not what one filter click returns** — the column heading says so, and for `game_format` the distinction is a factor of sixty, so it is worth restating here. Summed over values: 6,181 bucketed against 619 raw. The single click a reader actually makes:
 
@@ -180,16 +180,16 @@ Over half of 2020s Titles and better than a third of 2010s Titles can shatter, a
 
 Answering "there are surely other consumers than the following, we need to do an inventory" from [ModelFiltering.md → Consumers](ModelFiltering.md#consumers). Three were named there; these are all of them.
 
-| surface                                                     | state                                                                                         | what happens to it                                                                               |
-| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `GET /api/titles/`, `GET /api/pages/titles`                 | `TitleFilterQuerySchema` → `TitleFilters` → `DIMENSIONS` / `apply_dimension` → `facet_counts` | PR.HET. This is the work, and the route is renamed `/api/games/`                                 |
-| `GET /api/pages/search`                                     | composes `ordered_titles()` with `_serialize_card`                                            | PR.HET — same predicate, same serializer, same rule                                              |
-| `GET /api/pages/manufacturer/<slug>`, corporate entities    | `collect_titles` with any-Model semantics                                                     | PR.DETAIL                                                                                        |
-| the other 15 dimension detail routes                        | four card schemas, two list mechanisms, no shared path                                        | PR.DETAIL                                                                                        |
-| `GET /api/pages/manufacturers`                              | `MfrFilters`, already carries `location`                                                      | unchanged                                                                                        |
-| `GET /api/models/` (the list route)                         | internal API, **eight** detail-route consumers, one blessed external consumer                 | freed by PR.DETAIL, then becomes [the public filtering API](#after-v1--the-public-filtering-api) |
-| `GET /api/export/models/`                                   | the documented public API. Ships every edge unfiltered, rate-limited per IP                   | **unchanged.** A bulk export is not a filter surface                                             |
-| [Articles](../catalog_data_model/Articles.md) dynamic lists | unbuilt                                                                                       | a stored filter over the same key space                                                          |
+| surface                                                     | state                                                                                         | what happens to it                                                                 |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `GET /api/titles/`, `GET /api/pages/titles`                 | `TitleFilterQuerySchema` → `TitleFilters` → `DIMENSIONS` / `apply_dimension` → `facet_counts` | PR.HET. This is the work, and the route is renamed `/api/games/`                   |
+| `GET /api/pages/search`                                     | composes `ordered_titles()` with `_serialize_card`                                            | PR.HET — same predicate, same serializer, same rule                                |
+| `GET /api/pages/manufacturer/<slug>`, corporate entities    | `collect_titles` with any-Model semantics                                                     | PR.DETAIL                                                                          |
+| the other 15 dimension detail routes                        | four card schemas, two list mechanisms, no shared path                                        | PR.DETAIL                                                                          |
+| `GET /api/pages/manufacturers`                              | `MfrFilters`, already carries `location`                                                      | unchanged                                                                          |
+| `GET /api/models/` (the list route)                         | internal API, **eight** detail-route consumers, one blessed external consumer                 | freed by PR.DETAIL, then becomes [the public filtering API](#public-filtering-api) |
+| `GET /api/export/models/`                                   | the documented public API. Ships every edge unfiltered, rate-limited per IP                   | **unchanged.** A bulk export is not a filter surface                               |
+| [Articles](../catalog_data_model/Articles.md) dynamic lists | unbuilt                                                                                       | a stored filter over the same key space                                            |
 
 The export API stays out of it deliberately. It already carries `model_relationships[]` and `export_markets[]` in full, so nothing here is missing from it — what The Flip lacks is not data but a way to ask a question, which is the filtering API's job and not the export's.
 
@@ -213,7 +213,7 @@ No non-ORM identifier says "machine" when it means Model. `TitleDetailSchema.mac
 
 `GameCard` replaces `TitleCard` and `MachineCard`. Pure frontend: the unified styling and the registry-derived href, with every call site passing a literal `entity_type` until the wire carries one. 21 importing files change appearance and deserve eyeballing in their own diff, not inside PR.HET's. Its specification lived in this document until it shipped; `GameCard.svelte` and `GameCard.dom.test.ts` are the source of truth.
 
-## ✅ DONE:<a id="pr-het"></a>PR.HET — heterogenous results
+## ✅ DONE: <a id="pr-het"></a>PR.HET — heterogenous results
 
 Everything in this section ships in one PR — except the card unification, extracted to [PRE.CARD](#pre-card) — because the card schema forces it. Change the schema and `_serialize_card` moves; `title_search_section` composes `ordered_titles()` with `_serialize_card`, so global search moves with it; the frontend consumes that schema, so the cards move, and 13 files import `MachineCard`.
 
@@ -276,13 +276,21 @@ Everything below this PR's proving commit is implemented on the branch; the code
 
 Done condition, audited at completion: 1 listing card schema (`GameCardSchema`), 1 card component (`GameCard`), 0 components branching on `entity_type` (two pre-existing delete-page href builders are tracked as a separate cleanup), 1 function producing listing rows (`game_rows_merged`), 1 name/alias predicate family, representative Model display-only, 0 occurrences of `TitleCardSchema`, `GET /api/titles/` and `GET /api/pages/titles` gone. Grep survivors that are **not** missed deletions: `model_count` lives on the Manufacturer/System/TitleRef schemas, `YearBoundsSchema` on the manufacturers facet payload and `apply_dimension` in `_manufacturer_facets.py` — different surfaces, out of scope by the product doc's own line.
 
-Verification results are recorded in [Verification](#verification).
-
 Three landings that weren't in the spec, worth knowing before touching the engine:
 
 - **`.filter(isnull=False)`, never `.exclude(isnull=True)`, on multivalued paths.** Django compiles the exclude form to a NOT-IN subquery; on the person and theme facets that measured ~40× slower (no-filter fan-out 1,437 ms → 192 ms on the proving host). The query sites carry comments.
 - **`Title.entity_type` and `MachineModel.entity_type` are `ClassVar[Literal[...]]`** so the wire contract's `Literal` is satisfied from the registry ClassVars, with no casts and no re-spelled literals.
 - **The facets cache is rekeyed** to `catalog:games:*` (`games_facets_key` in `cache.py`), and the create prompt deliberately still says "title" — what it creates is a Title.
+
+### ✅ DONE: <a id="tests"></a>Tests
+
+Landed as specified; the suites in the [outcome map](#pr-het) above are the source of truth. The three exact-key-set assertions flipped in both directions as predicted (`entity_type` arriving, `model_count` leaving). Review then added the completeness and fixture-coverage guards described under [the dimension cost](#the-dimension-cost-and-what-to-do-about-it), after finding `series` wired everywhere but exercised nowhere.
+
+### ✅ DONE: <a id="verification"></a>Verification
+
+All executed at completion, live at the API and in the browser. Every predicted value reproduced exactly: `q=Godzilla (Pro)` and `q=Rock Encore` return their Model rows, `?manufacturer=vifico` 13 (was 0), `?manufacturer=chicago-gaming` 15 (was 2), `manufacturer=williams` 487, `tech_gen=solid-state` 1,432, `theme=fantasy` 396, the unfiltered listing 6,180 and `q=Godzilla` 3, unchanged. `q=Remake` returns 14 (the plan guessed "about six"; the catalog had more).
+
+The eyeball tokens, and the judgement call on them: `q=pro` 106 → 91 (Model `(Pro)` names arrive, Pro-something manufacturer matches leave); `q=rock` 95 → 42 (the Rock-Ola catalog belongs to the manufacturer facet, not the search box); `q=williams` 470 → **0** — checked against the data and not a bug: no Title or Model name or abbreviation contains "williams", so every old match was the representative-manufacturer arm. The new predicate reads as intended.
 
 ## ✅ DONE: <a id="pr-detail"></a>PR.DETAIL — the dimension detail pages
 
@@ -453,9 +461,24 @@ One mapping note for `edge`: in the card-grain facet engine a relationship key i
 
 [Articles.md](../catalog_data_model/Articles.md) requires a dynamic list to be a stored filter that validates against the real listing-filter vocabulary. That is a live constraint on the syntax: a stored filter has to round-trip against a vocabulary that has since gained keys, and it has to **fail legibly** when a key disappears — a retired relationship type should surface as a broken stored filter with a nameable cause rather than a list that silently goes empty. That is the argument for named keys over raw `(type, status)` tuples, since a key can be deprecated with a message. It also pushes toward flat serializable params over nested target-attribute predicates.
 
-## <a id="pr-sparse"></a>PR.SPARSE — the sparse dimensions
+## ✅ DONE: <a id="pr-sparse"></a>PR.SPARSE — the sparse dimensions
 
 Three dimensions, none needing a relationship predicate. All three enter the listing vocabulary in [PR.DETAIL](#pr-detail) as raw, hidden dimensions (their detail pages need the pin); what this PR adds is the semantics and the visibility — the reserved `unclassified` value, the default-bucket presets and the surfaced sidebar controls.
+
+### Outcome — where it landed (2026-07-31)
+
+Everything in this PR is implemented on the branch; the code and its tests are the source of truth, and the working execution plan lived outside the repo. The map:
+
+| what               | where                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the reserved value | `UNCLASSIFIED` in `_game_rows.py`, translated to `<field>__isnull=True` by `_sparse_q` (the null-treatment inversion is commented there); the reserved-word collision is watched by `reserved_slug_unclassified_absent` in `model_filtering.sql` — deliberately **no** model validation or constraint, this PR touches no Django models or migrations                                                                              |
+| the preset         | `default_slug` on `FilterDimension` (`production_status`'s references `PRODUCED_SLUG`); `preset_values(spec, slug)` expands the default to the two-value pair; the three detail-page pins in `page_endpoints.py` go through it                                                                                                                                                                                                     |
+| the facet          | `SparseFacet` binding → `_sparse_value_rows` (`_game_facets.py`): null FKs fold into the default value's tally, names resolve from the vocabulary table; standard `with_selected` over real slugs only — the payload never carries an `unclassified` option; facets cache bumped (`_CACHE_VERSION` v9)                                                                                                                             |
+| the frontend       | three `SearchableSelect` compact single dropdowns in `TitleFilterSidebar`; raw wire values in `FilterState` (`gameFormats`/`productionStatuses`/`cabinets`); `SPARSE_DEFAULTS` + `presetValues` + `sparseSelection` in `facet-engine.ts` (the client-side twin of the backend defaults); `unclassified` display is client-side (`UNCLASSIFIED_LABEL`, option appended only when it is the shown selection)                         |
+| chips              | canonical states one chip per dimension (labeled like the dropdown selection, remove clears the pair); an arbitrary hand-edited union degrades to one chip per raw value                                                                                                                                                                                                                                                           |
+| behavior pins      | `test_game_rows.py` (`TestSparseDimensions` — the reserved value, the preset, the mixed and half-recorded Titles), `test_game_facets.py` (`TestSparseFacet` — null folding, no `unclassified` option even when selected, badge == preset click via the invariant loop), `test_api_games.py` (wire), `test_page_endpoints.py` (default page embeds the bucket, minority page stays exact), the facet-engine and chips vitest suites |
+
+Decisions taken with the product owner (2026-07-31): **single-select dropdowns** (superseding the multi-select line below); **no data-model changes of any kind** — the reserved-slug guard is the analysis check, not validation (the patch-ingest path bulk-creates and never runs validators, so model validation would not have covered it); **the backend never injects `unclassified` into a facet option list** — its display is entirely the frontend's; **`/api/models/` untouched** — its vocabulary converges once, at public-filtering-API publication, resolving this section's "both surfaces" hedge.
 
 **Manufacturer location is not among them** — see [Deferred](#deferred), along with export markets. Where a machine was _built_ and where it was _sold_ are different questions over different relations.
 
@@ -492,7 +515,7 @@ Every Model lands in exactly one bucket and the reader gets the set they meant. 
 
 **The widening is explicit in the query, not implied by which surface you are on.** The filter vocabulary gains a reserved value meaning _is unset_, and the preset selects two values: `?game_format=pinball&game_format=unclassified`. That is what keeps the two halves from colliding — the bare param `game_format=pinball` goes on meaning exactly `pinball` everywhere, a shared URL round-trips, and a stored [Article](../catalog_data_model/Articles.md) filter serializes the reader's actual intent rather than a surface-dependent reading of it. It is also what the product doc asks for when it says the API must stay able to find true nulls.
 
-**Repeatable params are new work here, not something already in place.** PR.DETAIL adds these three to the listing vocabulary as single-valued raw dimensions, and on `/api/models/` `game_format` is a single `str` — as is every other field on `ModelFilterQuerySchema`. The preset's two-value selection (`?game_format=pinball&game_format=unclassified`) therefore needs `list[str]` handling added for the three, on both surfaces if the shared narrower is to serve both. Not difficult, but it is a line item rather than a free ride on an existing mechanism.
+**Repeatable params are new work here, not something already in place.** PR.DETAIL adds these three to the listing vocabulary as single-valued raw dimensions, and on `/api/models/` `game_format` is a single `str` — as is every other field on `ModelFilterQuerySchema`. The preset's two-value selection (`?game_format=pinball&game_format=unclassified`) therefore needs `list[str]` handling added for the three — landed for the listing as a pre-refactor ahead of this PR. `/api/models/` was deliberately **skipped** (decided 2026-07-31): its vocabulary converges once, at [public-filtering-API publication](#public-filtering-api), not twice.
 
 **The designated default belongs on the `FilterDimension` spec**, beside `surfaced` — one declaration driving the sidebar control, the facet count and the detail page, rather than the mapping being spelled in each.
 
@@ -511,7 +534,7 @@ All three ship. Selecting the default bucket is **not** a no-op — it excludes 
 
 Backfilling remains rejected in all three cases: every user-inputtable catalog field is claims-based, so writing `game_format=pinball` onto 6,279 Models asserts a per-Model claim nobody verified per Model. The mapping is a reading applied at query time by one control; it never becomes a stored value.
 
-`game_format` is multi-select — bingo-pinball, slot-machine and video-game are separately meaningful. **No dimension excludes anything by default**; the listing hides nothing until asked.
+All three controls are **single-select** dropdowns (decided 2026-07-31, superseding an earlier multi-select line here) — one value at a time, the wire staying repeatable (`list[str]`) so the UI could grow multi later with zero backend change. **No dimension excludes anything by default**; the listing hides nothing until asked.
 
 ## <a id="pr-move"></a>PR.MOVE — the route rename
 
@@ -523,7 +546,106 @@ Everything else the rename used to carry — the API path, the card schema, the 
 
 `resolve()` is typed against the generated route tree, so every internal link to the listing fails at compile time rather than at runtime. That is the safety net that makes this a mechanical change.
 
-## <a id="post-v1"></a>After V1
+## Coverage ledger
+
+One row per example in [ModelFiltering.md's Examples](ModelFiltering.md#examples), in that document's order, so the two can be read side by side.
+
+**Tier** is what a request hands back. **Filter** returns a set of entities, **Sort** returns the same set ranked, **Distribute** returns counts per value over that set, **Novel shape** returns rows that are not catalog entities. The first three take one filtered set as input, so they are three views of one query and compose for free; a novel shape changes what a row _is_, which is the one place scope has a natural edge.
+
+**Status**: a **PR name** is the PR that ships it. **[Deferred](#deferred)** is real work left for later, and every one of those rows is covered by a named item there. **Won't do** is a rejection on the merits. **Elsewhere** means the question is real and this is the wrong surface for it.
+
+To cut something, don't drop the row; change its status, with a reason beside it.
+
+| Example                                               | Tier        | Status    | Covered by                                                                                                                     |
+| ----------------------------------------------------- | ----------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Conversion kits                                       | Filter      | PR.REL    | `edge=conversion_kit` — 139 cards                                                                                              |
+| Conversions                                           | Filter      | PR.REL    | `edge=conversion` — 137 cards                                                                                                  |
+| Rethemes                                              | Filter      | PR.REL    | `edge=retheme` — 38 cards                                                                                                      |
+| Copies                                                | Filter      | PR.REL    | `edge=copy` — 172 cards                                                                                                        |
+| Bootlegs                                              | Filter      | PR.REL    | `edge=bootleg`, the `(copy, unlicensed)` composite — 5 cards                                                                   |
+| Licensed copies                                       | Filter      | PR.REL    | `edge=licensed_build`                                                                                                          |
+| Remakes                                               | Filter      | PR.REL    | `edge=remake_of` — 19 cards                                                                                                    |
+| Export editions                                       | Filter      | PR.REL    | `edge=export_edition_of` — 57 cards                                                                                            |
+| Filter OUT bootlegs                                   | Filter      | Deferred  | `edge=-bootleg`; [exclusion is not in V1](ModelFiltering.md#exclude-relationships)                                             |
+| Filter out conversion kits                            | Filter      | Deferred  | `edge=-conversion_kit`. The Flip's ask — they filter client-side meanwhile                                                     |
+| Models that have had bootlegs made of them            | Filter      | PR.REL    | `edge=bootleg:in`                                                                                                              |
+| Models that have been copied at all                   | Filter      | PR.REL    | `edge=copy:in` — 147 Models                                                                                                    |
+| All the variants of one game                          | Filter      | PR.REL    | `edge=variant_of` + a search term; the roll-up surfaces Variants. No target picker in the panel                                |
+| …the same list composed by an Article                 | Filter      | Deferred  | `target=` on the edge subquery — a column on the edge row, no join                                                             |
+| Models that have been remade                          | Filter      | PR.REL    | `edge=remake_of:in` — 10 Models                                                                                                |
+| Italian bootlegs                                      | Filter      | Deferred  | `edge=bootleg` × manufacturer location, which is deferred                                                                      |
+| Bootlegs everywhere                                   | Filter      | PR.REL    | `edge=bootleg` on its own — the unqualified list is the whole ask                                                              |
+| The Chicago bingo-pinball industry                    | Filter      | Deferred  | `game_format=bingo-pinball` ships in PR.SPARSE; the Chicago half needs manufacturer location                                   |
+| Spanish EM manufacturers                              | Filter      | Deferred  | `tech_gen=electromechanical` ships; the Spanish half needs manufacturer location                                               |
+| Models copied across a national boundary              | Filter      | Deferred  | far-end country constraint                                                                                                     |
+| One manufacturer's whole output                       | Filter      | PR.HET    | `manufacturer=`                                                                                                                |
+| All the variants for a specific manufacturer          | Filter      | PR.REL    | `edge=variant_of` × `manufacturer=`                                                                                            |
+| The rise of the remake industry                       | Distribute  | Deferred  | needs a decade dimension; `year` is a min/max range today, not a counted value list                                            |
+| How export models were adapted to different laws      | Distribute  | Deferred  | the reward-type sidebar over `export_market=italy`, once export markets ship                                                   |
+| All the Williams models copied by other firms         | Filter      | Deferred  | negated far-end manufacturer                                                                                                   |
+| Models copied by Spanish firms                        | Filter      | Deferred  | far-end country                                                                                                                |
+| Conversions built from Gottlieb donors                | Filter      | Deferred  | far-end manufacturer                                                                                                           |
+| Conversion kits that fit an EM model                  | Filter      | Deferred  | far-end technology generation                                                                                                  |
+| Models that are both a copy and a conversion          | Filter      | PR.REL    | repeated `edge=`, ANDed                                                                                                        |
+| Models that were both remade and copied               | Filter      | PR.REL    | `edge=remake_of:in` + `edge=copy:in`                                                                                           |
+| The most copied models of all time                    | Sort        | Deferred  | inbound-copy `Count` annotation plus a `sort` param. Tops out at 4 today, with ties                                            |
+| The most copied titles of all time                    | Sort        | Deferred  | the same annotation rolled to Title grain                                                                                      |
+| The manufacturers that have been copied the most      | Distribute  | Deferred  | target-side facet count rooted at `ModelRelationship`. The engine supports it; nothing exposes it                              |
+| The first variant ever created                        | Sort        | Deferred  | `edge=variant_of&sort=year`                                                                                                    |
+| The widest gap between an original and its copy       | Sort        | Deferred  | target year minus subject year, annotated onto the edge. Becomes a novel shape if it cannot be                                 |
+| The average variant count per model, per manufacturer | Novel shape | won't do  | a per-manufacturer average is not a catalog row                                                                                |
+| Manufacturer pairings                                 | Novel shape | won't do  | both marginals come free from Distribute; only the pairing is missing, and it wants a matrix or chord diagram. Author as prose |
+| Models whose donor is unknown                         | Filter      | elsewhere | 29 label-only edges. A predicate over what the catalog _doesn't_ know — a curator worklist, not a reader-facing facet          |
+| Export editions with no export market recorded        | Filter      | elsewhere | same, and a `NOT EXISTS` across two relations. Currently 0 rows — the catalog is clean here                                    |
+| Copies with no licensing status                       | Filter      | elsewhere | 122. A research to-do; the `(all)` catch-all means the panel doesn't need it to make its counts add up                         |
+
+Forty rows against thirty-nine examples: "all the variants of one game" splits, because the reader-browsing form and the stored-list form have different costs and only the first is free.
+
+**The one row still genuinely undecided** is the widest original-to-copy gap. If the year delta annotates onto the edge it is an ordinary sort key; if it cannot, the question wants a row per _pair_ and lands with the manufacturer pairings as a won't-do.
+
+## <a id="deferred"></a>Deferred
+
+Work this program leaves for later. Every **Deferred** row in the [coverage ledger](#coverage-ledger) is covered by an item here.
+
+### <a id="edge-exclusion"></a>Exclusion on relationship keys
+
+`edge=-bootleg`, as a visually separate group rather than a hidden third state on the same checkbox. [Not in V1 by product decision.](ModelFiltering.md#exclude-relationships) Open when it gets designed: whether it ships as one negative key per type, or as a named preset, since "not a copy, not a re-theme, not a conversion kit" is really the single idea _distinct original machines_.
+
+### <a id="relationship-context"></a>Relationship context on a Model card
+
+Under a relationship filter the interesting fact about a copy is what it _copies_, and that is the edge target rather than the parent Title — so `edge=copy` returns a page of Model cards that do not say what any of them copied. Deliberately not solved by naming the parent Title, which is a different fact and often the wrong one. Revisit now that PR.REL has shipped and the page can be looked at.
+
+### <a id="far-end-constraints"></a>Far-end constraints
+
+Target _identity_ is a column on the edge row and nearly free; target _attributes_ need a join. Their absence is why the five far-end rows in the ledger are deferred.
+
+### <a id="manufacturer-location"></a>Manufacturer location as a dimension
+
+Where a machine was _built_, via `MachineModel → CorporateEntity → CorporateEntityLocation → Location`. Deferred by product decision; the manufacturers listing already filters on it. Its absence holds three ledger rows here: Italian bootlegs, Chicago bingo-pinball, Spanish EM manufacturers.
+
+### <a id="export-markets"></a>Export markets as a filter
+
+`ModelExportMarket` targets a Location rather than a Model, so it stays outside the PR.REL edge vocabulary and carries no direction axis. The Model-to-Model half of the export story ships as the `export_edition_of` lineage key.
+
+### <a id="sort-and-distribute"></a>Sort and distribute
+
+Ranking needs a `sort` param and a per-key annotation; remakes-by-decade needs a decade dimension; manufacturers-copied-most is a target-side facet count rooted at `ModelRelationship`. Every Sort and Distribute row in the ledger waits on these.
+
+### <a id="name-matching"></a>Token-insensitive matching and edition synonyms
+
+**Token and punctuation-insensitive matching**, then **edition synonyms** (LE ↔ Limited Edition and a small closed set like it). The naming convention is `Name (Edition)`, so substring matching can never match `"<name> <edition>"` — a single colon is enough on its own, and the Model "The Getaway High Speed II" does not substring-match its Title "The Getaway: High Speed II". Additional to the existing diacritic folding, which is Postgres-only and whose dev/prod gap should not be widened.
+
+### <a id="trigram-indexing"></a>Trigram indexing
+
+On Model and Title names, if search latency regresses at full catalog scale. Today's `ILIKE '%x%'` cannot use a btree index either, so this is not a new problem being introduced.
+
+### <a id="edition-tier-clusters"></a>The 128 edition-tier clusters
+
+Chicago Gaming's Medieval Madness remake tiers are not recorded as Variants where Stern's LE tiers are, so they card individually. A data campaign, not a code change; the rule returns fewer cards as it lands.
+
+### <a id="articles-for-relationships"></a>Editorial pages over the vocabulary
+
+The long-term home for "every unlicensed copy" is a written page whose prose carries what a bare list cannot — that unlicensed copying was widespread across Spain, Italy and Brazil, and that only a handful of cases are sourced so far. That mechanism is [Articles](../catalog_data_model/Articles.md), and building interim filter-pages with hardcoded prose creates something Articles then replaces. The vocabulary lands first and the packaging follows; the filter ships either way.
 
 ### <a id="public-filtering-api"></a>Public filtering API
 
@@ -552,7 +674,7 @@ So the seam is: **the predicate is shared, the roll-up is not.** The dimension n
 
 That leaves the codebase with two Model filter vocabularies, which is only defensible if they differ by grain rather than by spelling. Today they differ by both: `ModelFilterQuerySchema` says `type`, `display` and `subgeneration` with a single-valued `feature`, where the listing says `tech_gen`, `display_type` and a repeatable `theme`. **Converge the param names when this is published** — and note that doing so is a breaking change for the one blessed external consumer, which is an argument for doing it before publication rather than after.
 
-#### Response shape
+#### <a id="response-shape"></a>Response shape
 
 Today's `ModelListItemSchema` is a **display** shape: `thumbnail_url` is resolved through `get_minimum_display_rank()`, which means nothing to a consumer joining against its own cached export.
 
@@ -564,88 +686,14 @@ The published shape is identity only — the Model slug plus its Title slug, so 
 - **The rate-limit budget.** The export API is 120 requests/hour per IP shared across all export endpoints. Whether a filter API shares that pool or gets its own is a policy call — and note the export's own published description tells consumers to save their copy and work locally, which this endpoint quietly invites them to stop doing.
 - **What hardens into contract.** `include_variants` and `ordering` become promises the moment they are documented.
 
-## Coverage ledger
+## <a id="not-doing"></a>Never'ed
 
-One row per example in [ModelFiltering.md → Examples](ModelFiltering.md#examples), in that document's order, so the two can be read side by side.
+Rejections on the merits.
 
-**Tier** is what a request hands back. **Filter** returns a set of entities, **Sort** returns the same set ranked, **Distribute** returns counts per value over that set, **Novel shape** returns rows that are not catalog entities. The first three take one filtered set as input, so they are three views of one query and compose for free; a novel shape changes what a row _is_, which is the one place scope has a natural edge.
+### Converting the relationship enums into claims-controlled vocabulary entities
 
-**Status** is one of four. A PR name and **post-V1** are the plan. **Won't do** is a rejection on the merits. **Elsewhere** means the question is real and this is the wrong surface for it.
+Relationship types are behaviour-heavy, so patch-authorable behaviour columns would hand Title-representative decisions to any contributor, and the privileged-edit protection that would mitigate that is unbuilt. The conversion remains the escape hatch if type growth ever outpaces release cadence.
 
-Dropping a row is not a status. Cutting something means changing its status to won't-do with a reason beside it.
+### Autogenerated pages keyed on a relationship-type vocabulary
 
-| example                                               | tier        | status    | covered by                                                                                                                     |
-| ----------------------------------------------------- | ----------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Conversion kits                                       | Filter      | PR.REL    | `edge=conversion_kit` — 139 cards                                                                                              |
-| Conversions                                           | Filter      | PR.REL    | `edge=conversion` — 137 cards                                                                                                  |
-| Rethemes                                              | Filter      | PR.REL    | `edge=retheme` — 38 cards                                                                                                      |
-| Copies                                                | Filter      | PR.REL    | `edge=copy` — 172 cards                                                                                                        |
-| Bootlegs                                              | Filter      | PR.REL    | `edge=bootleg`, the `(copy, unlicensed)` composite — 5 cards                                                                   |
-| Licensed copies                                       | Filter      | PR.REL    | `edge=licensed_build`                                                                                                          |
-| Remakes                                               | Filter      | PR.REL    | `edge=remake_of` — 19 cards                                                                                                    |
-| Export editions                                       | Filter      | PR.REL    | `edge=export_edition_of` — 57 cards                                                                                            |
-| Filter OUT bootlegs                                   | Filter      | post-V1   | `edge=-bootleg`; [exclusion is not in V1](ModelFiltering.md#exclude-relationships)                                             |
-| Filter out conversion kits                            | Filter      | post-V1   | `edge=-conversion_kit`. The Flip's ask — they filter client-side meanwhile                                                     |
-| Models that have had bootlegs made of them            | Filter      | PR.REL    | `edge=bootleg:in`                                                                                                              |
-| Models that have been copied at all                   | Filter      | PR.REL    | `edge=copy:in` — 147 Models                                                                                                    |
-| All the variants of one game                          | Filter      | PR.REL    | `edge=variant_of` + a search term; the roll-up surfaces Variants. No target picker in the panel                                |
-| …the same list composed by an Article                 | Filter      | post-V1   | `target=` on the edge subquery — a column on the edge row, no join                                                             |
-| Models that have been remade                          | Filter      | PR.REL    | `edge=remake_of:in` — 10 Models                                                                                                |
-| Italian bootlegs                                      | Filter      | post-V1   | `edge=bootleg` × manufacturer location, which is deferred                                                                      |
-| Bootlegs everywhere                                   | Filter      | PR.REL    | `edge=bootleg` on its own — the unqualified list is the whole ask                                                              |
-| The Chicago bingo-pinball industry                    | Filter      | post-V1   | `game_format=bingo-pinball` ships in PR.SPARSE; the Chicago half needs manufacturer location                                   |
-| Spanish EM manufacturers                              | Filter      | post-V1   | `tech_gen=electromechanical` ships; the Spanish half needs manufacturer location                                               |
-| Models copied across a national boundary              | Filter      | post-V1   | far-end country constraint                                                                                                     |
-| One manufacturer's whole output                       | Filter      | PR.HET    | `manufacturer=`                                                                                                                |
-| All the variants for a specific manufacturer          | Filter      | PR.REL    | `edge=variant_of` × `manufacturer=`                                                                                            |
-| The rise of the remake industry                       | Distribute  | post-V1   | needs a decade dimension; `year` is a min/max range today, not a counted value list                                            |
-| How export models were adapted to different laws      | Distribute  | post-V1   | the reward-type sidebar over `export_market=italy`, once export markets ship                                                   |
-| All the Williams models copied by other firms         | Filter      | post-V1   | negated far-end manufacturer                                                                                                   |
-| Models copied by Spanish firms                        | Filter      | post-V1   | far-end country                                                                                                                |
-| Conversions built from Gottlieb donors                | Filter      | post-V1   | far-end manufacturer                                                                                                           |
-| Conversion kits that fit an EM model                  | Filter      | post-V1   | far-end technology generation                                                                                                  |
-| Models that are both a copy and a conversion          | Filter      | PR.REL    | repeated `edge=`, ANDed                                                                                                        |
-| Models that were both remade and copied               | Filter      | PR.REL    | `edge=remake_of:in` + `edge=copy:in`                                                                                           |
-| The most copied models of all time                    | Sort        | post-V1   | inbound-copy `Count` annotation plus a `sort` param. Tops out at 4 today, with ties                                            |
-| The most copied titles of all time                    | Sort        | post-V1   | the same annotation rolled to Title grain                                                                                      |
-| The manufacturers that have been copied the most      | Distribute  | post-V1   | target-side facet count rooted at `ModelRelationship`. The engine supports it; nothing exposes it                              |
-| The first variant ever created                        | Sort        | post-V1   | `edge=variant_of&sort=year`                                                                                                    |
-| The widest gap between an original and its copy       | Sort        | post-V1   | target year minus subject year, annotated onto the edge. Becomes a novel shape if it cannot be                                 |
-| The average variant count per model, per manufacturer | Novel shape | won't do  | a per-manufacturer average is not a catalog row                                                                                |
-| Manufacturer pairings                                 | Novel shape | won't do  | both marginals come free from Distribute; only the pairing is missing, and it wants a matrix or chord diagram. Author as prose |
-| Models whose donor is unknown                         | Filter      | elsewhere | 29 label-only edges. A predicate over what the catalog _doesn't_ know — a curator worklist, not a reader-facing facet          |
-| Export editions with no export market recorded        | Filter      | elsewhere | same, and a `NOT EXISTS` across two relations. Currently 0 rows — the catalog is clean here                                    |
-| Copies with no licensing status                       | Filter      | elsewhere | 122. A research to-do; the `(all)` catch-all means the panel doesn't need it to make its counts add up                         |
-
-Forty rows against thirty-nine examples: "all the variants of one game" splits, because the reader-browsing form and the stored-list form have different costs and only the first is free.
-
-**The one row still genuinely undecided** is the widest original-to-copy gap. If the year delta annotates onto the edge it is an ordinary sort key; if it cannot, the question wants a row per _pair_ and lands with the manufacturer pairings as a won't-do.
-
-## ✅ DONE: <a id="tests"></a>Tests
-
-Landed as specified; the suites in the [PR.HET outcome map](#pr-het) are the source of truth. The three exact-key-set assertions flipped in both directions as predicted (`entity_type` arriving, `model_count` leaving). Review then added the completeness and fixture-coverage guards described under [the dimension cost](#the-dimension-cost-and-what-to-do-about-it), after finding `series` wired everywhere but exercised nowhere.
-
-## ✅ DONE: <a id="verification"></a>Verification
-
-All executed at completion, live at the API and in the browser. Every predicted value reproduced exactly: `q=Godzilla (Pro)` and `q=Rock Encore` return their Model rows, `?manufacturer=vifico` 13 (was 0), `?manufacturer=chicago-gaming` 15 (was 2), `manufacturer=williams` 487, `tech_gen=solid-state` 1,432, `theme=fantasy` 396, the unfiltered listing 6,180 and `q=Godzilla` 3, unchanged. `q=Remake` returns 14 (the plan guessed "about six"; the catalog had more).
-
-The eyeball tokens, and the judgement call on them: `q=pro` 106 → 91 (Model `(Pro)` names arrive, Pro-something manufacturer matches leave); `q=rock` 95 → 42 (the Rock-Ola catalog belongs to the manufacturer facet, not the search box); `q=williams` 470 → **0** — checked against the data and not a bug: no Title or Model name or abbreviation contains "williams", so every old match was the representative-manufacturer arm. The new predicate reads as intended.
-
-## <a id="deferred"></a>Deferred
-
-- **Exclusion on relationship keys** — `edge=-bootleg`, as a visually separate group rather than a hidden third state on the same checkbox. [Not in V1 by product decision.](ModelFiltering.md#exclude-relationships) Open when it gets designed: whether it ships as one negative key per type, or as a named preset, since "not a copy, not a re-theme, not a conversion kit" is really the single idea _distinct original machines_.
-- **Relationship context on a Model card.** Under a relationship filter the interesting fact about a copy is what it _copies_, and that is the edge target rather than the parent Title — so `edge=copy` returns a page of Model cards that do not say what any of them copied. Deliberately not solved by naming the parent Title, which is a different fact and often the wrong one. Revisit once PR.REL ships and the page can be looked at.
-- **Far-end constraints.** Target _identity_ is a column on the edge row and nearly free; target _attributes_ need a join. Their absence is why the four far-end rows in the ledger sit at post-V1.
-- **Manufacturer location as a dimension** — where a machine was _built_, via `MachineModel → CorporateEntity → CorporateEntityLocation → Location`. Deferred by product decision; the manufacturers listing already filters on it. Its absence holds three ledger rows at post-V1: Italian bootlegs, Chicago bingo-pinball, Spanish EM manufacturers.
-- **Export markets as a filter.** `ModelExportMarket` targets a Location rather than a Model, so it stays outside the PR.REL edge vocabulary and carries no direction axis. The Model-to-Model half of the export story ships as the `export_edition_of` lineage key.
-- **Sort and distribute.** Ranking needs a `sort` param and a per-key annotation; remakes-by-decade needs a decade dimension; manufacturers-copied-most is a target-side facet count rooted at `ModelRelationship`. Every Sort and Distribute row in the ledger waits on these.
-- **Token and punctuation-insensitive matching**, then **edition synonyms** (LE ↔ Limited Edition and a small closed set like it). The naming convention is `Name (Edition)`, so substring matching can never match `"<name> <edition>"` — a single colon is enough on its own, and the Model "The Getaway High Speed II" does not substring-match its Title "The Getaway: High Speed II". Additional to the existing diacritic folding, which is Postgres-only and whose dev/prod gap should not be widened.
-- **Trigram indexing** on Model and Title names, if search latency regresses at full catalog scale. Today's `ILIKE '%x%'` cannot use a btree index either, so this is not a new problem being introduced.
-- **A public filtering API** for consumers like The Flip. Shaped in [After V1](#after-v1--the-public-filtering-api): `GET /api/models/` repurposed, at Model grain with no roll-up. It depends on **all three** of PR.DETAIL, PR.REL and PR.SPARSE — DETAIL frees its eight existing consumers so the response shape can change, REL supplies the relationship keys and SPARSE completes the shared dimension vocabulary.
-- **The 128 edition-tier clusters.** Chicago Gaming's Medieval Madness remake tiers are not recorded as Variants where Stern's LE tiers are, so they card individually. A data campaign, not a code change; the rule returns fewer cards as it lands.
-
-## <a id="not-doing"></a>Explicitly not doing
-
-- **Converting the relationship enums into claims-controlled vocabulary entities.** Relationship types are behaviour-heavy, so patch-authorable behaviour columns would hand Title-representative decisions to any contributor, and the privileged-edit protection that would mitigate that is unbuilt. The conversion remains the escape hatch if type growth ever outpaces release cadence.
-- **Autogenerated pages keyed on a relationship-type vocabulary** (`/relationship_type/<slug>`). Reaches only four of the ten concepts: it cannot reach the three lineage fields, which have no vocabulary table behind them, nor the composites. It would create two tiers of concept page where filter-backed pages serve all ten uniformly.
-- **Editorial pages over the vocabulary, built now.** The long-term home for "every unlicensed copy" is a written page whose prose carries what a bare list cannot — that unlicensed copying was widespread across Spain, Italy and Brazil, and that only a handful of cases are sourced so far. That mechanism is [Articles](../catalog_data_model/Articles.md), and building interim filter-pages with hardcoded prose creates something Articles then replaces. The vocabulary lands first and the packaging follows; the filter ships either way.
+Like `/relationship_type/<slug>`. Not doing because it reaches only four of the ten concepts: it cannot reach the three lineage fields, which have no vocabulary table behind them, nor the composites. It would create two tiers of concept page where filter-backed pages serve all ten uniformly. Instead we'll do [editorial pages](#articles-for-relationships) at some point

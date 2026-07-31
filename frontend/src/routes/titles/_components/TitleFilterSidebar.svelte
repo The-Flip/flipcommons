@@ -2,7 +2,16 @@
   import ChipGroup from '$lib/components/ui/ChipGroup.svelte';
   import SearchableSelect from '$lib/components/input/SearchableSelect.svelte';
   import YearRangeInput from '$lib/components/input/YearRangeInput.svelte';
-  import { emptyFilterState, hasActiveFilters, type FilterState } from '$lib/facet-engine';
+  import {
+    UNCLASSIFIED,
+    UNCLASSIFIED_LABEL,
+    emptyFilterState,
+    hasActiveFilters,
+    presetValues,
+    sparseSelection,
+    type FilterState,
+    type SparseField,
+  } from '$lib/facet-engine';
   import type { FacetOptionSchema, GameFilterOptionsSchema } from '$lib/api/schema';
   import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
 
@@ -46,6 +55,37 @@
         }))
       : [],
   );
+  // The sparse dimensions: single-select controls over multi-value state,
+  // reading through sparseSelection and writing through presetValues. A lone
+  // `unclassified` selection needs its option appended client-side — it is
+  // never a payload option, and the input resolves its label from `options`.
+  let gameFormatSelection = $derived(sparseSelection('gameFormats', filters.gameFormats));
+  let productionStatusSelection = $derived(
+    sparseSelection('productionStatuses', filters.productionStatuses),
+  );
+  let cabinetSelection = $derived(sparseSelection('cabinets', filters.cabinets));
+
+  function sparseOptions(
+    opts: FacetOptionSchema[] | undefined,
+    selection: string | null,
+  ): { value: string; label: string; count?: number }[] {
+    const options: { value: string; label: string; count?: number }[] = opts ? toOptions(opts) : [];
+    if (selection === UNCLASSIFIED) {
+      options.push({ value: UNCLASSIFIED, label: UNCLASSIFIED_LABEL });
+    }
+    return options;
+  }
+
+  let gameFormatOptions = $derived(sparseOptions(filterOptions?.game_format, gameFormatSelection));
+  let productionStatusOptions = $derived(
+    sparseOptions(filterOptions?.production_status, productionStatusSelection),
+  );
+  let cabinetOptions = $derived(sparseOptions(filterOptions?.cabinet, cabinetSelection));
+
+  function setSparse(field: SparseField, value: string | null) {
+    filters[field] = value == null ? [] : presetValues(field, value);
+  }
+
   let techGenOptions = $derived(filterOptions ? toOptions(filterOptions.tech_gen) : []);
   let displayTypeOptions = $derived(filterOptions ? toOptions(filterOptions.display_type) : []);
   let systemOptions = $derived(filterOptions ? toOptions(filterOptions.system) : []);
@@ -164,6 +204,42 @@
       {disabled}
       placeholder="Search relationships..."
       emptyMessage="No relationships match your other filters"
+    />
+  </div>
+
+  <div class="filter-section">
+    <SearchableSelect
+      compact
+      label="Game format"
+      options={gameFormatOptions}
+      bind:selected={() => gameFormatSelection, (v) => setSparse('gameFormats', v)}
+      {disabled}
+      placeholder="Search game formats..."
+      emptyMessage="No game formats match your other filters"
+    />
+  </div>
+
+  <div class="filter-section">
+    <SearchableSelect
+      compact
+      label="Production status"
+      options={productionStatusOptions}
+      bind:selected={() => productionStatusSelection, (v) => setSparse('productionStatuses', v)}
+      {disabled}
+      placeholder="Search production statuses..."
+      emptyMessage="No production statuses match your other filters"
+    />
+  </div>
+
+  <div class="filter-section">
+    <SearchableSelect
+      compact
+      label="Cabinet"
+      options={cabinetOptions}
+      bind:selected={() => cabinetSelection, (v) => setSparse('cabinets', v)}
+      {disabled}
+      placeholder="Search cabinets..."
+      emptyMessage="No cabinets match your other filters"
     />
   </div>
 

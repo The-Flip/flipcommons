@@ -29,11 +29,11 @@ by semantics class:
   (``surfaced=False``): honored from the query string with full roll-up
   semantics, but no sidebar control and no facet counts.
   ``technology_subgeneration`` matches the Model's own FK *or* its system's
-- ``cabinet`` / ``game_format`` / ``production_status`` — multi-select
-  Model-only (**OR** of the supplied slugs — a Model carries exactly one
-  value of each, so selections widen), hidden, and raw: null means
-  unclassified and never matches, so ``game_format=pinball`` is exactly
-  the classified minority
+- ``cabinet`` / ``game_format`` / ``production_status`` — sparse Model-only
+  (**OR** of the supplied values): vocabulary slugs plus the reserved
+  :data:`UNCLASSIFIED`, which matches a null field. A bare slug stays exact;
+  the sidebar's default selection sends the two-value preset built by
+  :func:`preset_values`
 
 The two-set split is the engine's load-bearing invariant: **unanimity is
 measured over** :func:`model_only_models` **(Model-only dimensions alone),
@@ -81,14 +81,23 @@ from apps.core.models import active_status_q
 from apps.core.search import fold as _fold
 
 from ..models import (
+    PRODUCED_SLUG,
+    Cabinet,
+    GameFormat,
     GameplayFeature,
     MachineModel,
     ModelAbbreviation,
+    ProductionStatus,
     Theme,
     Title,
     TitleAbbreviation,
 )
 from ._edge_vocabulary import edge_q, parse_edge_value
+
+# The reserved wire value for the sparse dimensions: "the field is unset",
+# translated to ``<field>__isnull=True`` by the narrowers. A vocabulary row
+# carrying this slug would be shadowed — nothing enforces its absence.
+UNCLASSIFIED: Final = "unclassified"
 
 # ---------------------------------------------------------------------------
 # Inputs
@@ -289,7 +298,18 @@ class EdgeFacet(NamedTuple):
     name: str
 
 
-FacetBinding = PathFacet | TaxonomyFacet | BucketFacet | EdgeFacet
+class SparseFacet(NamedTuple):
+    """Facet binding for a sparsely classified FK vocabulary: value rows fold
+    a null FK into the spec's ``default_slug`` (``_sparse_value_rows``).
+    :data:`UNCLASSIFIED` is never an option."""
+
+    name: str
+    vocabulary: type[Cabinet] | type[GameFormat] | type[ProductionStatus]
+    # The FK's field name on ``MachineModel`` (``"game_format"``).
+    path: str
+
+
+FacetBinding = PathFacet | TaxonomyFacet | BucketFacet | EdgeFacet | SparseFacet
 
 # How one active dimension narrows the candidate Model set — chained one
 # ``.filter()`` at a time from the ``MachineModel`` root (the Multi-select
@@ -330,6 +350,11 @@ class FilterDimension:
     # for single-valued dimensions. Must agree with the ``GameFilters`` field's
     # arity; an import-time check below pins it.
     combine: Literal["and", "or"] | None = None
+    # The sparse dimensions' designated default: the value a null field is
+    # read as at query time (never stored or displayed). Drives the preset
+    # expansion, the facet's null-folding and the detail-page pin. Declared
+    # exactly on the ``SparseFacet``-bound dimensions (pinned below).
+    default_slug: str | None = None
 
 
 def _narrow_player_count(
@@ -372,6 +397,30 @@ def _narrow_reward_types(
     for slug in f.reward_types:
         qs = qs.filter(reward_types__slug=slug)
     return qs
+
+
+def _sparse_q(field: str, values: tuple[str, ...]) -> Q:
+    """OR of the selected vocabulary slugs, with :data:`UNCLASSIFIED` matching
+    a **null** FK. Nulls matching here deliberately inverts every other
+    dimension, where missing is never-matching — the reserved value asks for
+    the unset bucket explicitly."""
+    real = tuple(v for v in values if v != UNCLASSIFIED)
+    # An empty __in is a no-match branch, so a lone UNCLASSIFIED selection
+    # reduces to the isnull arm.
+    q = Q(**{f"{field}__slug__in": real})
+    if UNCLASSIFIED in values:
+        q = q | Q(**{f"{field}__isnull": True})
+    return q
+
+
+def preset_values(spec: FilterDimension, slug: str) -> tuple[str, ...]:
+    """The wire selection for choosing *slug*: the designated default widens
+    to ``(slug, UNCLASSIFIED)`` — picking "Pinball" means the whole default
+    bucket — while any other slug stays exact. The sidebar and the
+    detail-page pins both write this."""
+    if spec.default_slug is not None and slug == spec.default_slug:
+        return (slug, UNCLASSIFIED)
+    return (slug,)
 
 
 def _narrow_edge(
@@ -502,33 +551,37 @@ MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
             ),
             surfaced=False,
         ),
-        # These three combine as OR: a Model carries exactly one value of
-        # each, so ANDing two selections could only ever return nothing —
-        # the selection is a set of acceptable values, not a conjunction.
+        # The sparse dimensions. OR combine: a Model carries exactly one
+        # value of each, so ANDing selections could only return nothing.
         FilterDimension(
             key="cabinet",
             active=lambda f: bool(f.cabinet),
-            narrow=lambda qs, f, expansion: qs.filter(cabinet__slug__in=f.cabinet),
-            surfaced=False,
+            narrow=lambda qs, f, expansion: qs.filter(_sparse_q("cabinet", f.cabinet)),
+            facet=SparseFacet("cabinet", Cabinet, "cabinet"),
             combine="or",
+            default_slug="floor",
         ),
         FilterDimension(
             key="game_format",
             active=lambda f: bool(f.game_format),
             narrow=lambda qs, f, expansion: qs.filter(
-                game_format__slug__in=f.game_format
+                _sparse_q("game_format", f.game_format)
             ),
-            surfaced=False,
+            facet=SparseFacet("game_format", GameFormat, "game_format"),
             combine="or",
+            default_slug="pinball",
         ),
         FilterDimension(
             key="production_status",
             active=lambda f: bool(f.production_status),
             narrow=lambda qs, f, expansion: qs.filter(
-                production_status__slug__in=f.production_status
+                _sparse_q("production_status", f.production_status)
             ),
-            surfaced=False,
+            facet=SparseFacet(
+                "production_status", ProductionStatus, "production_status"
+            ),
             combine="or",
+            default_slug=PRODUCED_SLUG,
         ),
         FilterDimension(
             key="corporate_entity",
@@ -553,6 +606,16 @@ assert tuple(MODEL_DIMENSION_SPECS) == MODEL_DIMENSIONS
 assert {
     key for key, spec in MODEL_DIMENSION_SPECS.items() if spec.combine is not None
 } == {key for key in MODEL_DIMENSIONS if get_origin(_FILTER_TYPES.get(key)) is tuple}
+
+# A sparse facet needs the default it folds nulls into, and a declared
+# default is meaningless without one — pin the pairing.
+assert {
+    key for key, spec in MODEL_DIMENSION_SPECS.items() if spec.default_slug is not None
+} == {
+    key
+    for key, spec in MODEL_DIMENSION_SPECS.items()
+    if isinstance(spec.facet, SparseFacet)
+}
 
 # Dimensions whose selections **accumulate** (ANDed together) instead of
 # replacing one another. An ``"or"`` dimension is multi-valued but NOT in this
