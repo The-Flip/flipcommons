@@ -64,7 +64,12 @@ the listing page's own mechanism, so the server load re-runs and reseeds. -->
   let showSearch = $derived(games.count >= SEARCH_THRESHOLD || q.trim() !== '');
 </script>
 
+<!-- Hosts an infinite scroller, so this section must be the LAST thing on its
+     page — content placed after it is unreachable until every page has been
+     scrolled in. -->
 <section>
+  <h2>Games ({games.count})</h2>
+
   {#if showSearch}
     <SearchBox bind:value={queryInput} placeholder="Search games..." />
   {/if}
@@ -72,7 +77,6 @@ the listing page's own mechanism, so the server load re-runs and reseeds. -->
   {#if games.count === 0}
     <p class="empty">{q ? 'No matching games.' : 'No games.'}</p>
   {:else}
-    <h2>Games ({games.count})</h2>
     {#key q}
       <PaginatedCardLoader initial={games} {fetchPage}>
         {#snippet children(game)}
@@ -93,6 +97,12 @@ the listing page's own mechanism, so the server load re-runs and reseeds. -->
 </section>
 
 <style>
+  section {
+    /* Breathing room from whatever precedes the section — detail pages place
+       it after prose or accordion stacks, neither of which brings a gap. */
+    margin-top: var(--size-5);
+  }
+
   h2 {
     font-size: var(--font-size-3);
     font-weight: 600;

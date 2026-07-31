@@ -16,9 +16,9 @@
   </section>
 {/if}
 
-<GamesSection games={series.games} q={data.q} pinned={{ series: series.slug }} />
-
 <CreditsList credits={series.credits} />
+
+<GamesSection games={series.games} q={data.q} pinned={{ series: series.slug }} />
 
 <style>
   .description {

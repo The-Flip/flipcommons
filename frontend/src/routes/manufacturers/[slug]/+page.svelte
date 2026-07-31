@@ -93,13 +93,6 @@
   </AccordionSection>
 {/if}
 
-<GamesSection
-  games={mfr.games}
-  q={data.q}
-  pinned={{ manufacturer: mfr.slug }}
-  showManufacturer={false}
-/>
-
 {#if mfr.systems.length > 0}
   <AccordionSection heading={systemsHeading}>
     <ul class="stack-list">
@@ -140,6 +133,13 @@
 {/if}
 
 <RichTextReferencesAccordion richText={mfr.description} state={richTextState} />
+
+<GamesSection
+  games={mfr.games}
+  q={data.q}
+  pinned={{ manufacturer: mfr.slug }}
+  showManufacturer={false}
+/>
 
 <style>
   .company-section {
