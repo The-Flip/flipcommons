@@ -228,6 +228,52 @@ class TestGameFormatPageEndpoint:
     def test_404(self, client, db):
         assert client.get("/api/pages/game-format/nonexistent").status_code == 404
 
+    def test_embed_is_raw_unclassified_never_matches(self, client, db):
+        """The sparse dimension enters raw: the page lists only the classified
+        minority. The default-bucket widening is PR.SPARSE, not this."""
+        from apps.catalog.tests.game_builders import _model, _title
+
+        t1 = _title("Classified", "classified")
+        _model(t1, "classified-m", game_format="pinball")
+        t2 = _title("Unclassified", "unclassified")
+        _model(t2, "unclassified-m")
+        data = client.get("/api/pages/game-format/pinball").json()
+        assert [c["name"] for c in data["games"]["items"]] == ["Classified"]
+
+
+# ---------------------------------------------------------------------------
+# Production Statuses
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestProductionStatusPageEndpoint:
+    def test_variant_with_own_status_cards_beside_its_parent(self, client, db):
+        """What the deleted ``include_variants`` flag existed for, preserved by
+        the roll-up: an announced LE Variant of a shipped parent surfaces on
+        the announced page by construction — the parent fails the dimension,
+        so it absorbs nothing."""
+        from apps.catalog.tests.game_builders import (
+            _model,
+            _production_status,
+            _title,
+        )
+
+        _production_status("announced")
+        t = _title("Tiered", "tiered")
+        parent = _model(t, "tiered-premium", name="Tiered Premium")
+        _model(
+            t,
+            "tiered-le",
+            name="Tiered LE",
+            variant_of=parent,
+            production_status="announced",
+        )
+        data = client.get("/api/pages/production-status/announced").json()
+        assert [(c["entity_type"], c["name"]) for c in data["games"]["items"]] == [
+            ("model", "Tiered LE")
+        ]
+
 
 # ---------------------------------------------------------------------------
 # Reward Types
@@ -283,6 +329,22 @@ class TestTechnologySubgenerationPageEndpoint:
         resp = client.get("/api/pages/technology-subgeneration/early-ss")
         assert resp.status_code == 200
         assert resp.json()["name"] == "Early SS"
+
+    def test_embed_matches_directly_or_through_system(self, client, db):
+        """The OR arm travels to the page: a Model in the subgeneration via its
+        system lists beside one carrying the FK directly."""
+        from apps.catalog.tests.game_builders import _model, _subgen, _system, _title
+
+        _subgen("mpu")
+        t1 = _title("Direct", "direct")
+        _model(t1, "direct-m", subgen="mpu")
+        t2 = _title("Via System", "via-system")
+        sys = _system("wpc-95")
+        sys.technology_subgeneration = _subgen("mpu")
+        sys.save()
+        _model(t2, "via-system-m", system="wpc-95")
+        data = client.get("/api/pages/technology-subgeneration/mpu").json()
+        assert {c["name"] for c in data["games"]["items"]} == {"Direct", "Via System"}
 
     def test_404(self, client, db):
         assert (

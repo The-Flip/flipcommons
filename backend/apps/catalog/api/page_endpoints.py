@@ -51,7 +51,7 @@ from .franchises import (
     _franchise_detail_qs,
     _serialize_franchise_detail,
 )
-from .gameplay_features import GameplayFeatureDetailSchema
+from .gameplay_features import GameplayFeaturePageSchema
 from .gameplay_features import _detail_qs as _gf_detail_qs
 from .gameplay_features import _serialize_detail as _serialize_gf_detail
 from .games import (
@@ -88,10 +88,10 @@ from .series import SeriesDetailSchema, _serialize_series_detail, _series_detail
 from .systems import SystemDetailSchema, _serialize_system_detail, _system_detail_qs
 from .taxonomy import (
     CreditRoleDetailSchema,
-    DisplaySubtypeDetailSchema,
+    DisplaySubtypePageSchema,
     RewardTypeDetailSchema,
-    TaxonomySchema,
-    TechnologySubgenerationDetailSchema,
+    TaxonomyPageSchema,
+    TechnologySubgenerationPageSchema,
     _credit_role_detail_qs,
     _reward_type_detail_qs,
     _serialize_credit_role_detail,
@@ -229,8 +229,12 @@ register_entity_detail_page(
     pages_router,
     GameplayFeature,
     detail_qs=_gf_detail_qs,
-    serialize_page=plain_page(_serialize_gf_detail),
-    response_schema=GameplayFeatureDetailSchema,
+    serialize_page=with_games(
+        _serialize_gf_detail,
+        lambda gf: GameFilters(features=(gf.slug,)),
+        GameplayFeaturePageSchema,
+    ),
+    response_schema=GameplayFeaturePageSchema,
 )
 register_entity_detail_page(
     pages_router,
@@ -288,22 +292,34 @@ register_entity_detail_page(
     pages_router,
     Tag,
     detail_qs=lambda: _taxonomy_detail_qs(Tag),
-    serialize_page=plain_page(_serialize_taxonomy),
-    response_schema=TaxonomySchema,
+    serialize_page=with_games(
+        _serialize_taxonomy,
+        lambda obj: GameFilters(tag=obj.slug),
+        TaxonomyPageSchema,
+    ),
+    response_schema=TaxonomyPageSchema,
 )
 register_entity_detail_page(
     pages_router,
     Cabinet,
     detail_qs=lambda: _taxonomy_detail_qs(Cabinet),
-    serialize_page=plain_page(_serialize_taxonomy),
-    response_schema=TaxonomySchema,
+    serialize_page=with_games(
+        _serialize_taxonomy,
+        lambda obj: GameFilters(cabinet=obj.slug),
+        TaxonomyPageSchema,
+    ),
+    response_schema=TaxonomyPageSchema,
 )
 register_entity_detail_page(
     pages_router,
     DisplayType,
     detail_qs=lambda: _taxonomy_detail_qs(DisplayType),
-    serialize_page=plain_page(_serialize_taxonomy),
-    response_schema=TaxonomySchema,
+    serialize_page=with_games(
+        _serialize_taxonomy,
+        lambda obj: GameFilters(display_type=obj.slug),
+        TaxonomyPageSchema,
+    ),
+    response_schema=TaxonomyPageSchema,
 )
 register_entity_detail_page(
     pages_router,
@@ -311,29 +327,45 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(DisplaySubtype).select_related(
         "display_type"
     ),
-    serialize_page=plain_page(_serialize_display_subtype),
-    response_schema=DisplaySubtypeDetailSchema,
+    serialize_page=with_games(
+        _serialize_display_subtype,
+        lambda obj: GameFilters(display_subtype=obj.slug),
+        DisplaySubtypePageSchema,
+    ),
+    response_schema=DisplaySubtypePageSchema,
 )
 register_entity_detail_page(
     pages_router,
     GameFormat,
     detail_qs=lambda: _taxonomy_detail_qs(GameFormat),
-    serialize_page=plain_page(_serialize_taxonomy),
-    response_schema=TaxonomySchema,
+    serialize_page=with_games(
+        _serialize_taxonomy,
+        lambda obj: GameFilters(game_format=obj.slug),
+        TaxonomyPageSchema,
+    ),
+    response_schema=TaxonomyPageSchema,
 )
 register_entity_detail_page(
     pages_router,
     ProductionStatus,
     detail_qs=lambda: _taxonomy_detail_qs(ProductionStatus),
-    serialize_page=plain_page(_serialize_taxonomy),
-    response_schema=TaxonomySchema,
+    serialize_page=with_games(
+        _serialize_taxonomy,
+        lambda obj: GameFilters(production_status=obj.slug),
+        TaxonomyPageSchema,
+    ),
+    response_schema=TaxonomyPageSchema,
 )
 register_entity_detail_page(
     pages_router,
     TechnologyGeneration,
     detail_qs=lambda: _taxonomy_detail_qs(TechnologyGeneration),
-    serialize_page=plain_page(_serialize_taxonomy),
-    response_schema=TaxonomySchema,
+    serialize_page=with_games(
+        _serialize_taxonomy,
+        lambda obj: GameFilters(tech_gen=obj.slug),
+        TaxonomyPageSchema,
+    ),
+    response_schema=TaxonomyPageSchema,
 )
 register_entity_detail_page(
     pages_router,
@@ -341,6 +373,10 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(TechnologySubgeneration).select_related(
         "technology_generation"
     ),
-    serialize_page=plain_page(_serialize_technology_subgeneration),
-    response_schema=TechnologySubgenerationDetailSchema,
+    serialize_page=with_games(
+        _serialize_technology_subgeneration,
+        lambda obj: GameFilters(technology_subgeneration=obj.slug),
+        TechnologySubgenerationPageSchema,
+    ),
+    response_schema=TechnologySubgenerationPageSchema,
 )

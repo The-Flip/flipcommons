@@ -47,6 +47,7 @@ from ..models import (
 )
 from ._counts import bulk_title_counts_via_models
 from ._typing import HasTitleCount
+from .games import GameListPageSchema
 from .helpers import serialize_title_model
 from .images import extract_image_urls, fetch_model_media_map
 from .people import PersonCardSchema
@@ -114,6 +115,21 @@ class DisplaySubtypeDetailSchema(TaxonomySchema):
 
 class TechnologySubgenerationDetailSchema(TaxonomySchema):
     technology_generation: EntityRef
+
+
+# The detail-*page* payloads: the record plus page 1 of its games — the
+# listing pinned to the taxonomy's dimension. Mutation responses keep the
+# slim schemas above; only the page endpoints carry the embedded listing.
+class TaxonomyPageSchema(TaxonomySchema):
+    games: GameListPageSchema
+
+
+class DisplaySubtypePageSchema(DisplaySubtypeDetailSchema):
+    games: GameListPageSchema
+
+
+class TechnologySubgenerationPageSchema(TechnologySubgenerationDetailSchema):
+    games: GameListPageSchema
 
 
 # ---------------------------------------------------------------------------

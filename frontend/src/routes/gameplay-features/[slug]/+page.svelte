@@ -1,17 +1,15 @@
+<!-- @component Gameplay-feature detail page: description, hierarchy, media and the games listing pinned to the feature (sub-features included). -->
 <script lang="ts">
-  import client from '$lib/api/client';
   import { ENTITY_META } from '$lib/entities/entity-meta';
   import AccordionSection from '$lib/components/ui/AccordionSection.svelte';
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
   import HierarchicalTaxonomyChildrenAccordion from '$lib/components/pages/record/detail/HierarchicalTaxonomyChildrenAccordion.svelte';
   import HierarchicalTaxonomyMobileMetaBar from '$lib/components/pages/record/detail/HierarchicalTaxonomyMobileMetaBar.svelte';
-  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
+  import GamesSection from '$lib/components/pages/record/detail/GamesSection.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
-  import PaginatedSection from '$lib/components/collections/grid/PaginatedSection.svelte';
   import { hierarchicalTaxonomyEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
   import { displayAliasesFor } from '$lib/hierarchy-edit';
-  import { createPaginatedLoader, unwrapPage } from '$lib/paginated-loader.svelte';
 
   let { data } = $props();
   let profile = $derived(data.profile);
@@ -20,13 +18,6 @@
 
   let displayAliases = $derived(displayAliasesFor(profile.name, profile.aliases ?? []));
   let mediaHeading = $derived(`Media (${profile.uploaded_media?.length ?? 0})`);
-
-  const machines = createPaginatedLoader(async (page) => {
-    const { data: result } = await client.GET('/api/models/', {
-      params: { query: { feature: profile.slug, page } },
-    });
-    return unwrapPage(result);
-  });
 </script>
 
 {#if profile.description?.html}
@@ -59,22 +50,7 @@
   </AccordionSection>
 {/if}
 
-<PaginatedSection
-  loader={machines}
-  heading="Machines"
-  emptyMessage="No machines with this feature."
->
-  {#snippet children(machine)}
-    <GameCard
-      entityType="model"
-      publicId={machine.slug}
-      name={machine.name}
-      thumbnailUrl={machine.thumbnail_url}
-      manufacturerName={machine.manufacturer?.name}
-      year={machine.year}
-    />
-  {/snippet}
-</PaginatedSection>
+<GamesSection games={profile.games} q={data.q} pinned={{ feature: [profile.slug] }} />
 
 <style>
   .description {

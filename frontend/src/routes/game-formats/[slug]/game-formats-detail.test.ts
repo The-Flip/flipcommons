@@ -1,4 +1,4 @@
-import type { TaxonomySchema } from '$lib/api/schema';
+import type { TaxonomyPageSchema } from '$lib/api/schema';
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+layout.server';
 
@@ -10,7 +10,8 @@ const MOCK_DATA = {
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
   last_modified: '2024-01-01T00:00:00Z',
   aliases: [],
-} satisfies TaxonomySchema;
+  games: { items: [], count: 0 },
+} satisfies TaxonomyPageSchema;
 
 describe('game-formats detail SSR route', () => {
   it('loads from the page endpoint', async () => {
@@ -29,6 +30,7 @@ describe('game-formats detail SSR route', () => {
 
     expect(result).toEqual({
       profile: MOCK_DATA,
+      q: '',
       jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
     });
     const request = fetch.mock.calls[0]?.[0];

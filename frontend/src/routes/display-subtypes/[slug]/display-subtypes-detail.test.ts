@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { DisplaySubtypeDetailSchema } from '$lib/api/schema';
+import type { DisplaySubtypePageSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_DATA = {
@@ -11,7 +11,8 @@ const MOCK_DATA = {
   aliases: [],
   last_modified: '2024-01-01T00:00:00Z',
   display_type: { name: 'Dot Matrix', public_id: 'dot-matrix' },
-} satisfies DisplaySubtypeDetailSchema;
+  games: { items: [], count: 0 },
+} satisfies DisplaySubtypePageSchema;
 
 describe('display-subtypes detail SSR route', () => {
   it('loads from the page endpoint', async () => {
@@ -30,6 +31,7 @@ describe('display-subtypes detail SSR route', () => {
 
     expect(result).toEqual({
       profile: MOCK_DATA,
+      q: '',
       jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
     });
     const request = fetch.mock.calls[0]?.[0];
