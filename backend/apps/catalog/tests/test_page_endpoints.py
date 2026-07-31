@@ -230,17 +230,34 @@ class TestGameFormatPageEndpoint:
     def test_404(self, client, db):
         assert client.get("/api/pages/game-format/nonexistent").status_code == 404
 
-    def test_embed_is_raw_unclassified_never_matches(self, client, db):
-        """The sparse dimension is raw: the page lists only the classified
-        minority, with no default-bucket widening."""
+    def test_default_value_page_embeds_the_preset_bucket(self, client, db):
+        """The default value's page inherits the preset: classified and
+        unclassified Models both card."""
         from apps.catalog.tests.game_builders import _model, _title
 
         t1 = _title("Classified", "classified")
         _model(t1, "classified-m", game_format="pinball")
-        t2 = _title("Unclassified", "unclassified")
-        _model(t2, "unclassified-m")
+        t2 = _title("Unrecorded", "unrecorded")
+        _model(t2, "unrecorded-m")
+        t3 = _title("Bingo", "bingo")
+        _model(t3, "bingo-m", game_format="bingo-pinball")
         data = client.get("/api/pages/game-format/pinball").json()
-        assert [c["name"] for c in data["games"]["items"]] == ["Classified"]
+        assert sorted(c["name"] for c in data["games"]["items"]) == [
+            "Classified",
+            "Unrecorded",
+        ]
+
+    def test_minority_value_page_stays_exact(self, client, db):
+        """A non-default value's page is exactly the classified set — the
+        preset widens only the designated default."""
+        from apps.catalog.tests.game_builders import _model, _title
+
+        t1 = _title("Bingo", "bingo")
+        _model(t1, "bingo-m", game_format="bingo-pinball")
+        t2 = _title("Unrecorded", "unrecorded")
+        _model(t2, "unrecorded-m")
+        data = client.get("/api/pages/game-format/bingo-pinball").json()
+        assert [c["name"] for c in data["games"]["items"]] == ["Bingo"]
 
 
 # ---------------------------------------------------------------------------

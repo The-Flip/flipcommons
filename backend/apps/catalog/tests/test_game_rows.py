@@ -18,11 +18,14 @@ from __future__ import annotations
 import pytest
 
 from apps.catalog.api._game_rows import (
+    MODEL_DIMENSION_SPECS,
     MODEL_DIMENSIONS,
+    UNCLASSIFIED,
     GameFilters,
     GameRow,
     ModelDimension,
     game_rows_merged,
+    preset_values,
 )
 from apps.catalog.models import (
     LicenseStatus,
@@ -542,9 +545,9 @@ class TestHiddenDimensions:
         _model(t, "mixed-bingo", name="Mixed Bingo", game_format="bingo")
         assert _cards(GameFilters(game_format=("bingo",))) == {("model", "Mixed Bingo")}
 
-    def test_sparse_dimension_is_raw_null_never_matches(self, db):
-        """The sparse dimensions are raw: an unclassified Model is not
-        pinball, so only the classified minority cards (no default bucket)."""
+    def test_sparse_dimension_bare_slug_stays_exact(self, db):
+        """A bare vocabulary slug means exactly that slug; widening is
+        explicit (``TestSparseDimensions``)."""
         t1 = _title("Classified", "classified")
         _model(t1, "classified-m", game_format="pinball")
         t2 = _title("Unclassified", "unclassified")
@@ -622,6 +625,77 @@ class TestHiddenDimensions:
         )
         _model(t, "kit-other", name="Kit Other")
         assert _cards(GameFilters(tag="licensed")) == {("model", "Kit Parent")}
+
+
+# ---------------------------------------------------------------------------
+# The sparse dimensions: the reserved value and the preset
+# ---------------------------------------------------------------------------
+
+
+class TestSparseDimensions:
+    def _catalog(self) -> None:
+        t1 = _title("Classified", "classified")
+        _model(t1, "classified-m", game_format="pinball")
+        t2 = _title("Unrecorded", "unrecorded")
+        _model(t2, "unrecorded-m")
+        t3 = _title("Bingo", "bingo")
+        _model(t3, "bingo-m", game_format="bingo-pinball")
+
+    def test_unclassified_matches_true_nulls_only(self, db):
+        """The reserved value finds Models with no value recorded."""
+        self._catalog()
+        assert _cards(GameFilters(game_format=(UNCLASSIFIED,))) == {
+            ("title", "Unrecorded")
+        }
+
+    def test_preset_pair_unions_slug_and_nulls(self, db):
+        self._catalog()
+        assert _cards(GameFilters(game_format=("pinball", UNCLASSIFIED))) == {
+            ("title", "Classified"),
+            ("title", "Unrecorded"),
+        }
+
+    def test_unclassified_composes_with_real_slugs(self, db):
+        """UNCLASSIFIED is one more OR arm, not a mode switch: it widens any
+        selection, not just the designated default's."""
+        self._catalog()
+        assert _cards(GameFilters(game_format=("bingo-pinball", UNCLASSIFIED))) == {
+            ("title", "Bingo"),
+            ("title", "Unrecorded"),
+        }
+
+    def test_title_mixing_slug_and_null_is_unanimous_under_the_preset(self, db):
+        """The bucket reading at Title grain: explicit default beside an
+        unrecorded sibling rolls up under the pair and shatters under the
+        bare slug."""
+        t = _title("Half Recorded", "half-recorded")
+        _model(t, "half-pin", name="Half Pin", game_format="pinball")
+        _model(t, "half-null", name="Half Null")
+        assert _cards(GameFilters(game_format=("pinball", UNCLASSIFIED))) == {
+            ("title", "Half Recorded")
+        }
+        assert _cards(GameFilters(game_format=("pinball",))) == {("model", "Half Pin")}
+
+    def test_preset_values_expands_only_the_default(self):
+        spec = MODEL_DIMENSION_SPECS["game_format"]
+        assert preset_values(spec, "pinball") == ("pinball", UNCLASSIFIED)
+        assert preset_values(spec, "bingo-pinball") == ("bingo-pinball",)
+        # A spec with no designated default never widens.
+        assert preset_values(MODEL_DIMENSION_SPECS["tag"], "pinball") == ("pinball",)
+
+    def test_every_sparse_default_is_declared(self):
+        """The three designated defaults, pinned — a silently edited default
+        changes what every preset click and detail-page pin means."""
+        defaults = {
+            key: spec.default_slug
+            for key, spec in MODEL_DIMENSION_SPECS.items()
+            if spec.default_slug is not None
+        }
+        assert defaults == {
+            "cabinet": "floor",
+            "game_format": "pinball",
+            "production_status": "produced",
+        }
 
 
 # ---------------------------------------------------------------------------

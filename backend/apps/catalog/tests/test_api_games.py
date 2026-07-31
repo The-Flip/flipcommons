@@ -279,6 +279,25 @@ class TestHiddenDimensionParams:
         }
         assert data["count"] == 2
 
+    def test_unclassified_reserved_value_on_the_wire(self, client, db):
+        """`unclassified` finds true nulls, and the canonical preset pair
+        unions them with the slug — the two URL states the sidebar writes."""
+        from apps.catalog.tests.game_builders import _model, _title
+
+        t1 = _title("Plain Pin", "plain-pin")
+        _model(t1, "plain-pin-m", game_format="pinball")
+        t2 = _title("Unrecorded", "unrecorded")
+        _model(t2, "unrecorded-m")
+        nulls = client.get("/api/games/?game_format=unclassified").json()
+        assert [item["name"] for item in nulls["items"]] == ["Unrecorded"]
+        pair = client.get(
+            "/api/games/?game_format=pinball&game_format=unclassified"
+        ).json()
+        assert {item["name"] for item in pair["items"]} == {
+            "Plain Pin",
+            "Unrecorded",
+        }
+
 
 class TestEdgeParams:
     """The repeatable ``edge`` param end to end — key, ``:in`` direction and
@@ -326,6 +345,9 @@ class TestGamesFacetsPage:
             "system",
             "reward_type",
             "edge",
+            "cabinet",
+            "game_format",
+            "production_status",
             "theme",
             "feature",
             "franchise",

@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
+  UNCLASSIFIED,
   emptyFilterState,
   filtersFromParams,
   filtersToParams,
   hasActiveFilters,
+  presetValues,
+  sparseSelection,
   type FilterState,
 } from './facet-engine';
 
@@ -98,5 +101,62 @@ describe('filtersToParams', () => {
     const sp = filtersToParams(original, new URLSearchParams());
     const restored = filtersFromParams(sp);
     expect(restored).toEqual(original);
+  });
+
+  it('round-trips the sparse dimensions as repeated raw wire values', () => {
+    const original: FilterState = {
+      ...emptyFilterState(),
+      gameFormats: ['pinball', UNCLASSIFIED],
+      productionStatuses: [UNCLASSIFIED],
+      cabinets: ['cocktail'],
+    };
+    const sp = filtersToParams(original, new URLSearchParams());
+    expect(sp.getAll('game_format')).toEqual(['pinball', UNCLASSIFIED]);
+    expect(sp.getAll('production_status')).toEqual([UNCLASSIFIED]);
+    expect(sp.getAll('cabinet')).toEqual(['cocktail']);
+    expect(filtersFromParams(sp)).toEqual(original);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The sparse dimensions: preset expansion and displayed selection
+// ---------------------------------------------------------------------------
+
+describe('presetValues', () => {
+  it('widens the designated default to the preset pair', () => {
+    expect(presetValues('gameFormats', 'pinball')).toEqual(['pinball', UNCLASSIFIED]);
+    expect(presetValues('productionStatuses', 'produced')).toEqual(['produced', UNCLASSIFIED]);
+    expect(presetValues('cabinets', 'floor')).toEqual(['floor', UNCLASSIFIED]);
+  });
+
+  it('keeps every other value exact', () => {
+    expect(presetValues('gameFormats', 'bingo-pinball')).toEqual(['bingo-pinball']);
+    expect(presetValues('gameFormats', UNCLASSIFIED)).toEqual([UNCLASSIFIED]);
+  });
+});
+
+describe('sparseSelection', () => {
+  it('reads the canonical states', () => {
+    expect(sparseSelection('gameFormats', [])).toBeNull();
+    expect(sparseSelection('gameFormats', ['pinball', UNCLASSIFIED])).toBe('pinball');
+    expect(sparseSelection('gameFormats', [UNCLASSIFIED, 'pinball'])).toBe('pinball');
+    expect(sparseSelection('gameFormats', ['bingo-pinball'])).toBe('bingo-pinball');
+    expect(sparseSelection('gameFormats', [UNCLASSIFIED])).toBe(UNCLASSIFIED);
+  });
+
+  it('reads a lone default as itself (hand-edited exact URL, honored until the next UI write)', () => {
+    expect(sparseSelection('gameFormats', ['pinball'])).toBe('pinball');
+  });
+
+  it('refuses to name an arbitrary union', () => {
+    expect(sparseSelection('gameFormats', ['pinball', 'shuffle'])).toBeNull();
+    expect(sparseSelection('gameFormats', ['bingo-pinball', UNCLASSIFIED])).toBeNull();
+    expect(sparseSelection('gameFormats', ['pinball', UNCLASSIFIED, 'shuffle'])).toBeNull();
+  });
+
+  it('round-trips every UI write: what presetValues writes, sparseSelection reads back', () => {
+    for (const slug of ['pinball', 'bingo-pinball', UNCLASSIFIED]) {
+      expect(sparseSelection('gameFormats', presetValues('gameFormats', slug))).toBe(slug);
+    }
   });
 });

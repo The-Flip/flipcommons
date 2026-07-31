@@ -194,25 +194,33 @@ class GameFilterQuerySchema(Schema):
     cabinet: list[str] = Field(
         [],
         description=(
-            "Cabinet slug (see `GET /api/cabinets/`). Repeatable; a model "
-            "matches any of the supplied slugs. Matches only explicitly "
-            "classified models."
+            "Cabinet slug (see `GET /api/cabinets/`), or the reserved value "
+            "`unclassified` to match models with no cabinet recorded. "
+            "Repeatable; a model matches any of the supplied values. A bare "
+            "slug matches only explicitly classified models; the sidebar's "
+            "Floor selection sends `cabinet=floor&cabinet=unclassified`."
         ),
     )
     game_format: list[str] = Field(
         [],
         description=(
-            "Game-format slug (see `GET /api/game-formats/`). Repeatable; a "
-            "model matches any of the supplied slugs. Matches only explicitly "
-            "classified models."
+            "Game-format slug (see `GET /api/game-formats/`), or the reserved "
+            "value `unclassified` to match models with no format recorded. "
+            "Repeatable; a model matches any of the supplied values. A bare "
+            "slug matches only explicitly classified models; the sidebar's "
+            "Pinball selection sends "
+            "`game_format=pinball&game_format=unclassified`."
         ),
     )
     production_status: list[str] = Field(
         [],
         description=(
-            "Production-status slug (see `GET /api/production-statuses/`). "
-            "Repeatable; a model matches any of the supplied slugs. Matches "
-            "only explicitly classified models."
+            "Production-status slug (see `GET /api/production-statuses/`), or "
+            "the reserved value `unclassified` to match models with no status "
+            "recorded. Repeatable; a model matches any of the supplied "
+            "values. A bare slug matches only explicitly classified models; "
+            "the sidebar's Produced selection sends "
+            "`production_status=produced&production_status=unclassified`."
         ),
     )
     corporate_entity: str | None = Field(
@@ -265,6 +273,11 @@ class GameFilterOptionsSchema(Schema):
     # Edge options' public_id/name are both the wire value (`copy`, `copy:in`);
     # reader-facing labels are the frontend's relationship vocabulary.
     edge: list[FacetOptionSchema] = []
+    # The sparse dimensions: real vocabulary values only — never an
+    # `unclassified` row. The default value's count folds in the nulls.
+    cabinet: list[FacetOptionSchema] = []
+    game_format: list[FacetOptionSchema] = []
+    production_status: list[FacetOptionSchema] = []
     theme: list[FacetOptionSchema] = []
     feature: list[FacetOptionSchema] = []
     franchise: list[FacetOptionSchema] = []
@@ -532,6 +545,9 @@ def _filter_options_payload(opts: GameFacetOptions) -> dict[str, object]:
             "system": _facet_option_dicts(opts.system),
             "reward_type": _facet_option_dicts(opts.reward_type),
             "edge": _facet_option_dicts(opts.edge),
+            "cabinet": _facet_option_dicts(opts.cabinet),
+            "game_format": _facet_option_dicts(opts.game_format),
+            "production_status": _facet_option_dicts(opts.production_status),
             "theme": _facet_option_dicts(opts.theme),
             "feature": _facet_option_dicts(opts.feature),
             "franchise": _facet_option_dicts(opts.franchise),

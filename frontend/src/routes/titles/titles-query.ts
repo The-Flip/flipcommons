@@ -26,6 +26,9 @@ export interface TitlesQuery {
   feature?: string[];
   reward_type?: string[];
   edge?: string[];
+  game_format?: string[];
+  production_status?: string[];
+  cabinet?: string[];
 }
 
 export function queryFromUrl(url: URL): TitlesQuery {
@@ -58,5 +61,8 @@ export function queryFromUrl(url: URL): TitlesQuery {
     feature: multi('feature'),
     reward_type: multi('reward_type'),
     edge: multi('edge'),
+    game_format: multi('game_format'),
+    production_status: multi('production_status'),
+    cabinet: multi('cabinet'),
   };
 }

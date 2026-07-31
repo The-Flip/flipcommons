@@ -380,6 +380,18 @@ CREATE OR REPLACE VIEW model_filtering_checks AS
         GROUP BY dimension)
   WHERE bucket_rows <> (SELECT count(*) FROM models)
   UNION ALL
+  -- Reserved word: `unclassified` is the filter API's spelling of "the field
+  -- is unset" (PR.SPARSE), translated to an IS NULL predicate before any slug
+  -- comparison — so a real vocabulary row carrying that slug would be
+  -- shadowed: unreachable by filter, its detail page pinned to true nulls.
+  -- Nothing in the data model forbids the row (PR.SPARSE deliberately touched
+  -- no models or migrations); this check is the guard.
+  SELECT 'reserved_slug_unclassified_absent', vocabulary || '/' || slug
+  FROM (          SELECT 'game_format' AS vocabulary, slug FROM fc.catalog_gameformat
+        UNION ALL SELECT 'production_status', slug FROM fc.catalog_productionstatus
+        UNION ALL SELECT 'cabinet', slug FROM fc.catalog_cabinet)
+  WHERE slug = 'unclassified'
+  UNION ALL
   -- Anchor: VIFICO represents no Title, so it must card as 13 Models and no
   -- Title. This is the bug the whole plan exists to fix; if it ever reads as a
   -- Title card the roll-up has regressed.
