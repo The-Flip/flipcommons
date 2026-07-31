@@ -351,7 +351,7 @@ class FilterDimension:
     facet: FacetBinding | None = None
     # Whether the /games sidebar offers a control for this dimension. A
     # non-surfaced dimension is still honored from the query string (the
-    # product doc's Hidden dimensions); every current dimension is surfaced.
+    # product doc's Hidden dimensions — the detail-page pin dimensions).
     surfaced: bool = True
 
 
