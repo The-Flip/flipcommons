@@ -28,7 +28,7 @@ from ..engine.query.constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PagePara
 from ..models import Theme
 from ._counts import bulk_title_counts_via_models
 from .edit_claims import plan_alias_claims, plan_parent_claims
-from .games import GameListPageSchema
+from .games import GameListSchema
 from .schemas import (
     EntityDetailSchema,
     EntityRef,
@@ -65,9 +65,9 @@ class ThemeListSchema(Schema):
 
 
 class ThemeDetailSchema(EntityDetailSchema):
-    """The theme record — the response of the claims PATCH and the
-    create/delete registrars. The detail *page* payload is
-    :class:`ThemePageSchema`."""
+    """The theme record — the response of create, delete/restore and the
+    claims PATCH (what a section editor receives after a save). The read-only
+    detail page's payload is :class:`ThemeDetailPageSchema`."""
 
     slug: str
     aliases: list[str] = []
@@ -75,13 +75,13 @@ class ThemeDetailSchema(EntityDetailSchema):
     children: list[EntityRef] = []
 
 
-class ThemePageSchema(ThemeDetailSchema):
+class ThemeDetailPageSchema(ThemeDetailSchema):
     """The theme detail-page payload: the record plus page 1 of its games —
     the listing pinned to ``theme=<slug>`` (descendants included, rolled up).
     Mutation responses stay :class:`ThemeDetailSchema`; only the page endpoint
     carries the embedded listing."""
 
-    games: GameListPageSchema
+    games: GameListSchema
 
 
 # ---------------------------------------------------------------------------

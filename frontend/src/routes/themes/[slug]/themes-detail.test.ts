@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
-import type { ThemePageSchema } from '$lib/api/schema';
+import type { ThemeDetailPageSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Medieval',
@@ -26,7 +26,7 @@ const MOCK_DATA = {
     ],
     count: 1,
   },
-} satisfies ThemePageSchema;
+} satisfies ThemeDetailPageSchema;
 
 describe('themes detail SSR route', () => {
   it('loads from the page endpoint', async () => {

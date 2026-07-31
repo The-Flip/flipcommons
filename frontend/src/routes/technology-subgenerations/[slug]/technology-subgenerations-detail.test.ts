@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { TechnologySubgenerationPageSchema } from '$lib/api/schema';
+import type { TechnologySubgenerationDetailPageSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_DATA = {
@@ -12,7 +12,7 @@ const MOCK_DATA = {
   description: { text: '', html: '', plain: '', citations: [], attribution: null },
   technology_generation: { name: 'Solid State', public_id: 'solid-state' },
   games: { items: [], count: 0 },
-} satisfies TechnologySubgenerationPageSchema;
+} satisfies TechnologySubgenerationDetailPageSchema;
 
 describe('technology-subgenerations detail SSR route', () => {
   it('loads from the page endpoint', async () => {

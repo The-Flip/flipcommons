@@ -1,4 +1,4 @@
-import type { TaxonomyPageSchema } from '$lib/api/schema';
+import type { TaxonomyDetailPageSchema } from '$lib/api/schema';
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+layout.server';
 
@@ -11,7 +11,7 @@ const MOCK_DATA = {
   last_modified: '2024-01-01T00:00:00Z',
   aliases: [],
   games: { items: [], count: 0 },
-} satisfies TaxonomyPageSchema;
+} satisfies TaxonomyDetailPageSchema;
 
 describe('game-formats detail SSR route', () => {
   it('loads from the page endpoint', async () => {

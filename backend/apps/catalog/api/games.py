@@ -86,7 +86,7 @@ class GameCardSchema(Schema):
     )
 
 
-class GameListPageSchema(Schema):
+class GameListSchema(Schema):
     """A page of game cards: ``items`` holds this page's rows; ``count`` is the
     total number of matching cards across all pages."""
 
@@ -433,14 +433,14 @@ def _hydrate_cards(
 games_router = Router(tags=["games"])
 
 
-def game_list_page(f: GameFilters, *, page: int = 1) -> GameListPageSchema:
+def game_list_page(f: GameFilters, *, page: int = 1) -> GameListSchema:
     """One page of cards plus the total count — the single production path for
     listing pages, shared by ``GET /api/games/`` and every detail-page embed
     (:func:`with_games`), so an embedded list cannot drift from the listing."""
     rows = game_rows_merged(f)
     size = DEFAULT_PAGE_SIZE
     start = (max(page, 1) - 1) * size
-    return GameListPageSchema(
+    return GameListSchema(
         items=_hydrate_cards(
             rows[start : start + size],
             min_rank=get_minimum_display_rank(),
@@ -459,7 +459,7 @@ def with_games[ModelT: SitemappedModel, PageT: Schema](
     ``register_entity_detail_page``: the page payload is the detail fields plus
     page 1 of the listing pinned to the entity (*pin*) narrowed by the
     request's search term. *page_schema* must be the detail schema plus a
-    ``games: GameListPageSchema`` field — the page/edit-response split: only
+    ``games: GameListSchema`` field — the page/edit-response split: only
     the page endpoint carries (and pays for) the embedded listing."""
 
     def _serialize(obj: ModelT, ctx: DetailPageContext) -> PageT:
@@ -473,12 +473,12 @@ def with_games[ModelT: SitemappedModel, PageT: Schema](
     return _serialize
 
 
-@games_router.get("/", response=GameListPageSchema)
+@games_router.get("/", response=GameListSchema)
 def list_games(
     request: HttpRequest,
     filters: Query[GameFilterQuerySchema],
     page: Annotated[int, QueryParam(1, description="Page number, 1-based.")] = 1,
-) -> GameListPageSchema:
+) -> GameListSchema:
     """Pinball titles and models at card grain, paginated. Narrow with the
     filters and the search (``q``). Ordered by release year (newest first),
     then alphabetically.

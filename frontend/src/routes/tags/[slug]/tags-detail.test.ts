@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { TaxonomyPageSchema } from '$lib/api/schema';
+import type { TaxonomyDetailPageSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_DATA = {
@@ -11,7 +11,7 @@ const MOCK_DATA = {
   last_modified: '2026-01-01T00:00:00Z',
   aliases: [],
   games: { items: [], count: 0 },
-} satisfies TaxonomyPageSchema;
+} satisfies TaxonomyDetailPageSchema;
 
 describe('tags detail SSR route', () => {
   it('loads from the page endpoint', async () => {

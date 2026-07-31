@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { GameplayFeaturePageSchema } from '$lib/api/schema';
+import type { GameplayFeatureDetailPageSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_DATA = {
@@ -13,7 +13,7 @@ const MOCK_DATA = {
   children: [],
   uploaded_media: [],
   games: { items: [], count: 0 },
-} satisfies GameplayFeaturePageSchema;
+} satisfies GameplayFeatureDetailPageSchema;
 
 describe('gameplay-features detail SSR route', () => {
   it('loads from the page endpoint', async () => {

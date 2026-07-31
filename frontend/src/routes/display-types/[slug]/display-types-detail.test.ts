@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+layout.server';
-import type { TaxonomyPageSchema } from '$lib/api/schema';
+import type { TaxonomyDetailPageSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Dot Matrix',
@@ -11,7 +11,7 @@ const MOCK_DATA = {
   last_modified: '2024-01-01T00:00:00Z',
   aliases: [],
   games: { items: [], count: 0 },
-} satisfies TaxonomyPageSchema;
+} satisfies TaxonomyDetailPageSchema;
 
 describe('display-types detail SSR route', () => {
   it('loads from the page endpoint', async () => {
