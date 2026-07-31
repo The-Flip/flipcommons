@@ -16,8 +16,8 @@ from dataclasses import fields, replace
 
 from apps.catalog.api._game_facets import GameFacetOptions, game_facet_counts
 from apps.catalog.api._game_rows import (
+    ACCUMULATING_DIMENSIONS,
     MODEL_DIMENSION_SPECS,
-    MULTI_DIMENSIONS,
     GameFilters,
     game_rows_merged,
 )
@@ -432,7 +432,7 @@ class TestBadgeEqualsResultCount:
         below never exercising a second selection in that dimension, and a
         badge that promised 6 and delivered 0 passed the whole suite."""
         for facet, field in FACET_FILTER_FIELD.items():
-            if field not in MULTI_DIMENSIONS:
+            if field not in ACCUMULATING_DIMENSIONS:
                 continue
             after: object = getattr(
                 NARROWERS[facet](NARROWERS[facet](GameFilters(), "one"), "two"), field
@@ -455,7 +455,7 @@ class TestBadgeEqualsResultCount:
         a *second* value to click while the first is active."""
         _build_catalog()
         for facet, field in FACET_FILTER_FIELD.items():
-            if field not in MULTI_DIMENSIONS:
+            if field not in ACCUMULATING_DIMENSIONS:
                 continue
             first = getattr(game_facet_counts(GameFilters()), facet)[0].public_id
             active = NARROWERS[facet](GameFilters(), first)

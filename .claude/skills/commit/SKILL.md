@@ -44,8 +44,14 @@ test(api): add health endpoint integration test
 
 1. Run `git diff --staged` to see staged changes
 2. Analyze the changes and determine the appropriate type
-3. Write a concise description (under 72 characters)
-4. Add body only if the "why" isn't obvious from the description
+3. Write a concise description (under 72 characters) - adhere to "title and body quality" below.
+4. Add body only if the "why" isn't obvious from the description - adhere to "title and body quality" below.
+
+## Commit title and body quality
+
+**No references to plan docs**. Neither plans in `/docs/plans/` nor `~/.claude/plans/`. Future readers of git history will not have access to these. Instead, describe the actual change or goal or idea.
+
+**No planning ephemera** — phase/step labels like "PRE3", "REF1", "POST2", "phase", "step N". These are scaffolding from plan docs, not durable facts about the code. Those labels mean nothing to a future reader of git history; they age out the moment the plan is done. Instead, describe the actual change.
 
 ## Verifying the commit actually happened
 

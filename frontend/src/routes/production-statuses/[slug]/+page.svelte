@@ -15,7 +15,7 @@
   </section>
 {/if}
 
-<GamesSection games={profile.games} q={data.q} pinned={{ production_status: profile.slug }} />
+<GamesSection games={profile.games} q={data.q} pinned={{ production_status: [profile.slug] }} />
 
 <style>
   .description {

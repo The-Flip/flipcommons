@@ -333,7 +333,7 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(Cabinet),
     serialize_page=with_games(
         _serialize_taxonomy,
-        lambda obj: GameFilters(cabinet=obj.slug),
+        lambda obj: GameFilters(cabinet=(obj.slug,)),
         TaxonomyDetailPageSchema,
     ),
     response_schema=TaxonomyDetailPageSchema,
@@ -368,7 +368,7 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(GameFormat),
     serialize_page=with_games(
         _serialize_taxonomy,
-        lambda obj: GameFilters(game_format=obj.slug),
+        lambda obj: GameFilters(game_format=(obj.slug,)),
         TaxonomyDetailPageSchema,
     ),
     response_schema=TaxonomyDetailPageSchema,
@@ -379,7 +379,7 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(ProductionStatus),
     serialize_page=with_games(
         _serialize_taxonomy,
-        lambda obj: GameFilters(production_status=obj.slug),
+        lambda obj: GameFilters(production_status=(obj.slug,)),
         TaxonomyDetailPageSchema,
     ),
     response_schema=TaxonomyDetailPageSchema,
