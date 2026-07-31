@@ -30,16 +30,22 @@ interface EntityPageLoadEvent {
  * `path` literal stays at the call site so its typed response flows into
  * `profile`; the `as never` casts are localized here because openapi-fetch
  * can't resolve params/response against the generic `P`.
+ *
+ * Forwards the URL's `q` to the endpoint — it narrows the page's embedded
+ * games list, and reading it here also registers the search-param dependency
+ * so a `?q=` navigation re-runs the load. Committed `q` is returned so the
+ * page's games section can seed its search box without re-deriving trim rules.
  */
 export async function loadEntityPage<P extends EntityPagePath>(
   event: EntityPageLoadEvent,
   path: P,
   label: string,
-): Promise<{ profile: EntityPageData<P> }> {
+): Promise<{ profile: EntityPageData<P>; q: string }> {
   const { fetch, url, request, params } = event;
   const client = createServerClient(fetch, url, request);
+  const q = url.searchParams.get('q')?.trim() ?? '';
   const { data, response } = await client.GET(path, {
-    params: { path: { public_id: params.slug } },
+    params: { path: { public_id: params.slug }, query: q ? { q } : {} },
   } as never);
 
   if (!data) {
@@ -47,5 +53,5 @@ export async function loadEntityPage<P extends EntityPagePath>(
     throw error(response?.status || 500, 'Failed to load page');
   }
 
-  return { profile: data as EntityPageData<P> };
+  return { profile: data as EntityPageData<P>, q };
 }

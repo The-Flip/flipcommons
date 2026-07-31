@@ -816,10 +816,12 @@ class TestSeriesRestore:
         series.refresh_from_db()
         assert series.status == "active"
 
-        # Restore returns the full detail shape, not a minimal status echo.
+        # Restore returns the record detail shape, not a minimal status echo —
+        # and stays slim (no embedded game list; that is the page payload's).
         body = resp.json()
         assert body["slug"] == "eight-ball"
-        assert "titles" in body
+        assert "credits" in body
+        assert "games" not in body
         assert "credits" in body
 
     def test_restore_rejects_active(self, client, user):
@@ -927,10 +929,11 @@ class TestFranchiseRestore:
         fr.refresh_from_db()
         assert fr.status == "active"
 
-        # Restore returns the full detail shape, not a minimal status echo.
+        # Restore returns the record detail shape, not a minimal status echo —
+        # and stays slim (no embedded game list; that is the page payload's).
         body = resp.json()
         assert body["slug"] == "indiana-jones"
-        assert "titles" in body
+        assert "games" not in body
 
 
 # The franchise list endpoint (paginated ``GET /``) is covered by

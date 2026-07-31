@@ -5,7 +5,7 @@ import { detailCrumbs } from '$lib/route-metadata.server';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async (event) => {
-  const { profile } = await loadEntityPage(
+  const { profile, q } = await loadEntityPage(
     event,
     '/api/pages/display-subtype/{public_id}',
     'Display subtype',
@@ -17,5 +17,5 @@ export const load: LayoutServerLoad = async (event) => {
     label: profile.display_type.name,
     href: `/display-types/${profile.display_type.public_id}`,
   });
-  return { profile, jsonLd: buildEntityJsonLd(profile, displaySubtype, event.url, crumbs) };
+  return { profile, q, jsonLd: buildEntityJsonLd(profile, displaySubtype, event.url, crumbs) };
 };

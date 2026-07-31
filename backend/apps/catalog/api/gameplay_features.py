@@ -30,6 +30,7 @@ from ..engine.query.constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PagePara
 from ..models import GameplayFeature
 from ._counts import bulk_title_counts_via_models
 from .edit_claims import plan_alias_claims, plan_parent_claims
+from .games import GameListSchema
 from .schemas import (
     EntityDetailSchema,
     EntityRef,
@@ -68,10 +69,21 @@ class GameplayFeatureListSchema(Schema):
 
 
 class GameplayFeatureDetailSchema(EntityDetailSchema, OwnMediaSchema):
+    """The gameplay-feature record — the response of create, delete/restore
+    and the claims PATCH (what a section editor receives after a save). The
+    read-only detail page's payload is :class:`GameplayFeatureDetailPageSchema`."""
+
     slug: str
     aliases: list[str] = []
     parents: list[EntityRef] = []
     children: list[EntityRef] = []
+
+
+class GameplayFeatureDetailPageSchema(GameplayFeatureDetailSchema):
+    """The detail-page payload: the record plus page 1 of its games — the
+    listing pinned to ``feature=<slug>`` (descendants included, rolled up)."""
+
+    games: GameListSchema
 
 
 # ---------------------------------------------------------------------------

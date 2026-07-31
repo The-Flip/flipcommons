@@ -5,6 +5,10 @@ import { detailCrumbs } from '$lib/route-metadata.server';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async (event) => {
-  const { profile } = await loadEntityPage(event, '/api/pages/person/{public_id}', 'Person');
-  return { profile, jsonLd: buildEntityJsonLd(profile, person, event.url, detailCrumbs('person')) };
+  const { profile, q } = await loadEntityPage(event, '/api/pages/person/{public_id}', 'Person');
+  return {
+    profile,
+    q,
+    jsonLd: buildEntityJsonLd(profile, person, event.url, detailCrumbs('person')),
+  };
 };

@@ -16,6 +16,7 @@ from dataclasses import fields, replace
 
 from apps.catalog.api._game_facets import GameFacetOptions, game_facet_counts
 from apps.catalog.api._game_rows import (
+    MODEL_DIMENSION_SPECS,
     MULTI_DIMENSIONS,
     GameFilters,
     game_rows_merged,
@@ -339,6 +340,35 @@ class TestBadgeEqualsResultCount:
         the invariant loop — the completeness half a Literal can't prove."""
         field_names = {f.name for f in fields(GameFacetOptions)}
         assert set(FACET_FILTER_FIELD) | {"player_count"} == field_names
+
+    def test_registry_bindings_cover_the_payload(self):
+        """The registry is the one place a Model dimension declares its facet;
+        pin that the declared facet names are exactly the Model-dimension
+        payload fields. Franchise/series are Title-only (no registry entry);
+        player_count's bucket assembly is bespoke but its ``BucketFacet``
+        still declares the name, so an undeclared payload field fails here."""
+        declared = {
+            spec.facet.name
+            for spec in MODEL_DIMENSION_SPECS.values()
+            if spec.facet is not None
+        }
+        field_names = {f.name for f in fields(GameFacetOptions)}
+        assert declared | {"franchise", "series"} == field_names
+
+    def test_facet_filter_field_matches_the_registry(self):
+        """The test vocabulary's facet → filter-field mapping must agree with
+        the registry — the transposition guard (a facet counted against one
+        dimension while its clicks narrow another)."""
+        from_registry = {
+            spec.facet.name: spec.key
+            for spec in MODEL_DIMENSION_SPECS.values()
+            if spec.facet is not None and spec.facet.name != "player_count"
+        }
+        assert {
+            **from_registry,
+            "franchise": "franchise",
+            "series": "series",
+        } == FACET_FILTER_FIELD
 
     def test_every_narrowed_field_exists_on_the_filter_set(self):
         """The singular → plural hop is hand-written, so pin that each target

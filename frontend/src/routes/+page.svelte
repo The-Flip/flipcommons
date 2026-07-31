@@ -101,7 +101,7 @@
         {#each recentModels as model (model.slug)}
           <GameCard
             entityType="model"
-            slug={model.slug}
+            publicId={model.slug}
             name={model.name}
             thumbnailUrl={model.thumbnail_url}
             manufacturerName={model.manufacturer_name}

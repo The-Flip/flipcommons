@@ -156,6 +156,13 @@ ACTIVATING: dict[ModelDimension, GameFilters] = {
     "themes": GameFilters(themes=("nothing",)),
     "features": GameFilters(features=("nothing",)),
     "reward_types": GameFilters(reward_types=("nothing",)),
+    "display_subtype": GameFilters(display_subtype="nothing"),
+    "tag": GameFilters(tag="nothing"),
+    "technology_subgeneration": GameFilters(technology_subgeneration="nothing"),
+    "cabinet": GameFilters(cabinet="nothing"),
+    "game_format": GameFilters(game_format="nothing"),
+    "production_status": GameFilters(production_status="nothing"),
+    "corporate_entity": GameFilters(corporate_entity="nothing"),
 }
 
 
@@ -394,6 +401,101 @@ class TestVocabulary:
             reward_types=("replay", "extra-ball"),
         )
         assert _cards(both) == {("model", "Prizes Both")}
+
+
+# ---------------------------------------------------------------------------
+# The hidden dimensions — full roll-up semantics, no sidebar, no facets
+# ---------------------------------------------------------------------------
+
+
+class TestHiddenDimensions:
+    def test_every_hidden_dimension_narrows_and_rolls_up(self, db):
+        """One unanimous Title and one non-carrying Title per dimension: the
+        carrying Title rolls up (rung 1 applies to hidden dimensions too), the
+        other vanishes."""
+        cases: list[tuple[GameFilters, dict[str, object]]] = [
+            (GameFilters(display_subtype="hd-lcd"), {"display_subtype": "hd-lcd"}),
+            (GameFilters(tag="licensed"), {"tags": ("licensed",)}),
+            (GameFilters(cabinet="cocktail"), {"cabinet": "cocktail"}),
+            (GameFilters(game_format="bingo"), {"game_format": "bingo"}),
+            (
+                GameFilters(production_status="announced"),
+                {"production_status": "announced"},
+            ),
+        ]
+        for i, (f, kwargs) in enumerate(cases):
+            t = _title(f"Carrier {i}", f"carrier-{i}")
+            _model(t, f"carrier-{i}-m", **kwargs)  # type: ignore[arg-type]
+            other = _title(f"Other {i}", f"other-{i}")
+            _model(other, f"other-{i}-m")
+            assert _cards(f) == {("title", f"Carrier {i}")}, f
+
+    def test_hidden_dimension_shatters(self, db):
+        t = _title("Mixed Formats", "mixed-formats")
+        _model(t, "mixed-pin", name="Mixed Pin", game_format="pinball")
+        _model(t, "mixed-bingo", name="Mixed Bingo", game_format="bingo")
+        assert _cards(GameFilters(game_format="bingo")) == {("model", "Mixed Bingo")}
+
+    def test_sparse_dimension_is_raw_null_never_matches(self, db):
+        """The sparse dimensions are raw: an unclassified Model is not
+        pinball, so only the classified minority cards (no default bucket)."""
+        t1 = _title("Classified", "classified")
+        _model(t1, "classified-m", game_format="pinball")
+        t2 = _title("Unclassified", "unclassified")
+        _model(t2, "unclassified-m")
+        assert _cards(GameFilters(game_format="pinball")) == {("title", "Classified")}
+
+    def test_subgeneration_matches_directly_or_through_system(self, db):
+        from apps.catalog.tests.game_builders import _subgen, _system
+
+        t1 = _title("Direct", "direct")
+        _model(t1, "direct-m", subgen="mpu")
+        t2 = _title("Via System", "via-system")
+        sys = _system("wpc-95")
+        sys.technology_subgeneration = _subgen("mpu")
+        sys.save()
+        _model(t2, "via-system-m", system="wpc-95")
+        t3 = _title("Neither", "neither")
+        _model(t3, "neither-m")
+        assert _cards(GameFilters(technology_subgeneration="mpu")) == {
+            ("title", "Direct"),
+            ("title", "Via System"),
+        }
+
+    def test_corporate_entity_is_narrower_than_manufacturer(self, db):
+        """Two corporate entities under one manufacturer: the manufacturer
+        dimension unifies them, the corporate_entity dimension splits them."""
+        from apps.catalog.tests.game_builders import _mfr
+
+        ce_a = _mfr("stern")  # slug stern-ce
+        t = _title("Two Plants", "two-plants")
+        _model(t, "plant-a", name="Plant A", manufacturer="stern")
+        b = _model(t, "plant-b", name="Plant B")
+        ce_b = type(ce_a).objects.create(
+            slug="stern-second-ce", name="Stern Second", manufacturer=ce_a.manufacturer
+        )
+        b.corporate_entity = ce_b
+        b.save()
+        assert _cards(GameFilters(manufacturer="stern")) == {("title", "Two Plants")}
+        assert _cards(GameFilters(corporate_entity="stern-ce")) == {
+            ("model", "Plant A")
+        }
+        assert _cards(GameFilters(corporate_entity="stern-second-ce")) == {
+            ("model", "Plant B")
+        }
+
+    def test_variant_absorption_applies_to_hidden_dimensions(self, db):
+        t = _title("Kit", "kit")
+        parent = _model(t, "kit-parent", name="Kit Parent", tags=("licensed",))
+        _model(
+            t,
+            "kit-variant",
+            name="Kit Variant",
+            variant_of=parent,
+            tags=("licensed",),
+        )
+        _model(t, "kit-other", name="Kit Other")
+        assert _cards(GameFilters(tag="licensed")) == {("model", "Kit Parent")}
 
 
 # ---------------------------------------------------------------------------

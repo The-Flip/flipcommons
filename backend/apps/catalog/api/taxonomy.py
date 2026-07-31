@@ -47,14 +47,13 @@ from ..models import (
 )
 from ._counts import bulk_title_counts_via_models
 from ._typing import HasTitleCount
-from .helpers import serialize_title_model
+from .games import GameListSchema
 from .images import extract_image_urls, fetch_model_media_map
 from .people import PersonCardSchema
 from .schemas import (
     ClaimPatchSchema,
     EntityDetailSchema,
     EntityRef,
-    TitleModelSchema,
 )
 
 # ---------------------------------------------------------------------------
@@ -114,6 +113,21 @@ class DisplaySubtypeDetailSchema(TaxonomySchema):
 
 class TechnologySubgenerationDetailSchema(TaxonomySchema):
     technology_generation: EntityRef
+
+
+# The detail-*page* payloads: the record plus page 1 of its games — the
+# listing pinned to the taxonomy's dimension. Mutation responses keep the
+# slim schemas above; only the page endpoints carry the embedded listing.
+class TaxonomyDetailPageSchema(TaxonomySchema):
+    games: GameListSchema
+
+
+class DisplaySubtypeDetailPageSchema(DisplaySubtypeDetailSchema):
+    games: GameListSchema
+
+
+class TechnologySubgenerationDetailPageSchema(TechnologySubgenerationDetailSchema):
+    games: GameListSchema
 
 
 # ---------------------------------------------------------------------------
@@ -701,36 +715,23 @@ register_taxonomy_router(
 
 
 class RewardTypeDetailSchema(TaxonomySchema):
-    machines: list[TitleModelSchema] = []
+    """The reward-type record — the response of the mutation endpoints. The
+    read-only detail page's payload is :class:`RewardTypeDetailPageSchema`."""
+
+
+class RewardTypeDetailPageSchema(RewardTypeDetailSchema):
+    games: GameListSchema
 
 
 reward_types_router = Router(tags=["reward-types"])
 
 
 def _reward_type_detail_qs() -> QuerySet[RewardType]:
-    return RewardType.objects.active().prefetch_related(
-        claims_prefetch(),
-        Prefetch(
-            "machine_models",
-            queryset=MachineModel.objects.active()
-            .filter(variant_of__isnull=True)
-            .select_related("corporate_entity__manufacturer", "technology_generation")
-            .order_by(F("year").desc(nulls_last=True), "name"),
-        ),
-    )
+    return RewardType.objects.active().prefetch_related("aliases", claims_prefetch())
 
 
 def _serialize_reward_type_detail(rt: RewardType) -> RewardTypeDetailSchema:
-    min_rank = get_minimum_display_rank()
-    models_list = list(rt.machine_models.all())
-    media_by_model = fetch_model_media_map(pm.pk for pm in models_list)
-    return RewardTypeDetailSchema(
-        **_serialize_taxonomy(rt).model_dump(),
-        machines=[
-            serialize_title_model(pm, min_rank=min_rank, media_by_model=media_by_model)
-            for pm in models_list
-        ],
-    )
+    return RewardTypeDetailSchema(**_serialize_taxonomy(rt).model_dump())
 
 
 class RewardTypeListSchema(Schema):

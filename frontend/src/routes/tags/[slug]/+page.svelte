@@ -1,20 +1,11 @@
+<!-- @component Tag detail page: description and the games listing pinned to the tag. -->
 <script lang="ts">
-  import client from '$lib/api/client';
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
+  import GamesSection from '$lib/components/pages/record/detail/GamesSection.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
-  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
-  import PaginatedSection from '$lib/components/collections/grid/PaginatedSection.svelte';
-  import { createPaginatedLoader, unwrapPage } from '$lib/paginated-loader.svelte';
 
   let { data } = $props();
   let profile = $derived(data.profile);
-
-  const machines = createPaginatedLoader(async (page) => {
-    const { data: result } = await client.GET('/api/models/', {
-      params: { query: { tag: profile.slug, page } },
-    });
-    return unwrapPage(result);
-  });
 </script>
 
 {#if profile.description?.html}
@@ -24,18 +15,7 @@
   </section>
 {/if}
 
-<PaginatedSection loader={machines} heading="Machines" emptyMessage="No machines with this tag.">
-  {#snippet children(machine)}
-    <GameCard
-      entityType="model"
-      slug={machine.slug}
-      name={machine.name}
-      thumbnailUrl={machine.thumbnail_url}
-      manufacturerName={machine.manufacturer?.name}
-      year={machine.year}
-    />
-  {/snippet}
-</PaginatedSection>
+<GamesSection games={profile.games} q={data.q} pinned={{ tag: profile.slug }} />
 
 <style>
   .description {

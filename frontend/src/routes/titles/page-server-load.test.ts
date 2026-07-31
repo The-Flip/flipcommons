@@ -4,7 +4,7 @@ import { load } from './+page.server';
 const CARD = {
   entity_type: 'title' as const,
   name: 'Godzilla',
-  slug: 'godzilla',
+  public_id: 'godzilla',
   year: 2021,
   manufacturer: null,
   thumbnail_url: null,

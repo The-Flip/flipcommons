@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import cast
 
-from django.db.models import Count, F, Prefetch, Q, QuerySet
+from django.db.models import Count, F, Prefetch, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
@@ -27,18 +27,15 @@ from ..engine.entity_api.create import register_entity_create
 from ..engine.entity_api.delete import register_entity_delete_restore
 from ..engine.entity_api.listing import paginated_list_response
 from ..engine.query.constants import NameQuery, PageParam
-from ..models import Credit, MachineModel, Series, Title
+from ..models import Credit, MachineModel, Series
 from ._typing import HasTitleCount
-from .helpers import (
-    serialize_credit,
-    serialize_title_ref,
-)
-from .images import extract_image_urls, fetch_model_media_map, fetch_title_media_map
+from .games import GameListSchema
+from .helpers import serialize_credit
+from .images import extract_image_urls, fetch_model_media_map
 from .schemas import (
     ClaimPatchSchema,
     CreditSchema,
     EntityDetailSchema,
-    TitleRef,
 )
 
 # ---------------------------------------------------------------------------
@@ -70,37 +67,24 @@ class SeriesListSchema(Schema):
 
 
 class SeriesDetailSchema(EntityDetailSchema):
+    """The series record — the response of the mutation endpoints. The
+    read-only detail page's payload is :class:`SeriesDetailPageSchema`."""
+
     slug: str
-    titles: list[TitleRef]
     credits: list[CreditSchema] = []
+
+
+class SeriesDetailPageSchema(SeriesDetailSchema):
+    """The detail-page payload: the record plus page 1 of its games — the
+    listing pinned to ``series=<slug>`` (a Title-only dimension, so the cards
+    stay Titles) in the listing's defined order."""
+
+    games: GameListSchema
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _series_titles_qs() -> QuerySet[Title]:
-    return (
-        Title.objects.active()
-        .annotate(
-            model_count=Count(
-                "machine_models",
-                filter=Q(machine_models__variant_of__isnull=True)
-                & active_status_q("machine_models"),
-            )
-        )
-        .prefetch_related(
-            "abbreviations",
-            Prefetch(
-                "machine_models",
-                queryset=MachineModel.objects.active()
-                .filter(variant_of__isnull=True)
-                .select_related("corporate_entity__manufacturer")
-                .order_by("year", "name"),
-            ),
-        )
-    )
 
 
 def _series_credits_qs() -> QuerySet[Credit]:
@@ -109,26 +93,18 @@ def _series_credits_qs() -> QuerySet[Credit]:
 
 def _series_detail_qs() -> QuerySet[Series]:
     return Series.objects.active().prefetch_related(
-        Prefetch("titles", queryset=_series_titles_qs()),
         Prefetch("credits", queryset=_series_credits_qs()),
         claims_prefetch(),
     )
 
 
 def _serialize_series_detail(series: Series) -> SeriesDetailSchema:
-    min_rank = get_minimum_display_rank()
-    titles_list = list(series.titles.all())
-    media_by_model = fetch_title_media_map(titles_list)
     return SeriesDetailSchema(
         name=series.name,
         public_id=series.public_id,
         last_modified=series.last_modified,
         slug=series.slug,
         description=describe(series),
-        titles=[
-            serialize_title_ref(t, min_rank=min_rank, media_by_model=media_by_model)
-            for t in titles_list
-        ],
         credits=[serialize_credit(c) for c in series.credits.all()],
     )
 

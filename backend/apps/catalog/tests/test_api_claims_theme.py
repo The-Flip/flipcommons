@@ -41,6 +41,14 @@ class TestPatchThemeClaims:
         assert resp.status_code == 200
         assert resp.json()["description"]["text"] == "Updated"
 
+    def test_mutation_response_stays_slim(self, client, user, theme):
+        """The page/edit-response split: the embedded games list lives on the
+        page schema only — a claims PATCH must not carry (or recompute) it."""
+        client.force_login(user)
+        resp = _patch(client, theme.slug, {"fields": {"description": "Updated"}})
+        assert resp.status_code == 200
+        assert "games" not in resp.json()
+
     def test_add_parent(self, client, user, theme, parent_theme):
         client.force_login(user)
         resp = _patch(client, theme.slug, {"parents": ["competition"]})

@@ -1,9 +1,9 @@
+<!-- @component Theme detail page: description, hierarchy and the games listing pinned to the theme. -->
 <script lang="ts">
   import AttributionLine from '$lib/components/provenance/AttributionLine.svelte';
-  import ClientFilteredGrid from '$lib/components/collections/grid/ClientFilteredGrid.svelte';
+  import GamesSection from '$lib/components/pages/record/detail/GamesSection.svelte';
   import HierarchicalTaxonomyChildrenAccordion from '$lib/components/pages/record/detail/HierarchicalTaxonomyChildrenAccordion.svelte';
   import HierarchicalTaxonomyMobileMetaBar from '$lib/components/pages/record/detail/HierarchicalTaxonomyMobileMetaBar.svelte';
-  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
   import Markdown from '$lib/components/markdown/Markdown.svelte';
 
   let { data } = $props();
@@ -33,40 +33,10 @@
   headingSize="var(--font-size-3)"
 />
 
-<h2 class="section-heading">Titles</h2>
-
-{#if theme.machines.length === 0}
-  <p class="empty">No machines with this theme.</p>
-{:else}
-  <ClientFilteredGrid items={theme.machines} showCount={false}>
-    {#snippet children(machine)}
-      <GameCard
-        entityType="model"
-        slug={machine.public_id}
-        name={machine.name}
-        thumbnailUrl={machine.thumbnail_url}
-        manufacturerName={machine.manufacturer?.name}
-        year={machine.year}
-      />
-    {/snippet}
-  </ClientFilteredGrid>
-{/if}
+<GamesSection games={theme.games} q={data.q} pinned={{ theme: [theme.slug] }} />
 
 <style>
   .description {
     margin-bottom: var(--size-6);
-  }
-
-  .section-heading {
-    font-size: var(--font-size-3);
-    font-weight: 600;
-    margin: 0 0 var(--size-3);
-  }
-
-  .empty {
-    color: var(--color-text-muted);
-    font-size: var(--font-size-2);
-    padding: var(--size-8) 0;
-    text-align: center;
   }
 </style>

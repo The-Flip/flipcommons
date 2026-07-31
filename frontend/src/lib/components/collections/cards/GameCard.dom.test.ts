@@ -6,7 +6,7 @@ import GameCard from './GameCard.svelte';
 describe('GameCard href', () => {
   it('links a title card to /titles/<slug> via the entity registry', () => {
     render(GameCard, {
-      props: { entityType: 'title', slug: 'medieval-madness', name: 'Medieval Madness' },
+      props: { entityType: 'title', publicId: 'medieval-madness', name: 'Medieval Madness' },
     });
 
     expect(screen.getByRole('link')).toHaveAttribute('href', '/titles/medieval-madness');
@@ -14,7 +14,7 @@ describe('GameCard href', () => {
 
   it('links a model card to /models/<slug> via the entity registry', () => {
     render(GameCard, {
-      props: { entityType: 'model', slug: 'medieval-madness-remake', name: 'Medieval Madness' },
+      props: { entityType: 'model', publicId: 'medieval-madness-remake', name: 'Medieval Madness' },
     });
 
     expect(screen.getByRole('link')).toHaveAttribute('href', '/models/medieval-madness-remake');
@@ -26,7 +26,7 @@ describe('GameCard visual identity', () => {
     // The regression guard for the drift GameCard removed (font size, separator,
     // manufacturer fallback) — and against reintroducing a branch to restore it.
     const props = {
-      slug: 'big-valley',
+      publicId: 'big-valley',
       name: 'Big Valley',
       manufacturerName: 'R.M.G.',
       year: 1970,
@@ -48,7 +48,7 @@ describe('GameCard manufacturer line', () => {
     render(GameCard, {
       props: {
         entityType: 'title',
-        slug: 'medieval-madness',
+        publicId: 'medieval-madness',
         name: 'Medieval Madness',
         manufacturerName: 'Williams',
       },
@@ -59,7 +59,7 @@ describe('GameCard manufacturer line', () => {
 
   it('reads a missing manufacturer as "Unknown Manufacturer"', () => {
     render(GameCard, {
-      props: { entityType: 'title', slug: 'big-ben', name: 'Big Ben', year: 1975 },
+      props: { entityType: 'title', publicId: 'big-ben', name: 'Big Ben', year: 1975 },
     });
 
     expect(screen.getByText(/Unknown Manufacturer/)).toBeInTheDocument();
@@ -71,7 +71,7 @@ describe('GameCard manufacturer line', () => {
     render(GameCard, {
       props: {
         entityType: 'model',
-        slug: 'big-ben',
+        publicId: 'big-ben',
         name: 'Big Ben',
         year: 1975,
         showManufacturer: false,

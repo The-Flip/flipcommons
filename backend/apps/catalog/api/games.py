@@ -14,22 +14,25 @@ record type anything can be created as.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
-from typing import Annotated, Any, Literal
+from collections.abc import Callable, Sequence
+from dataclasses import replace
+from typing import Annotated, Any, Literal, NamedTuple
 
-from django.db.models import F, Max, Prefetch
+from django.db.models import F, Max, Prefetch, Q
 from django.http import HttpRequest, HttpResponse
 from ninja import Query, Router, Schema
 from ninja.params.functions import Query as QueryParam
 from pydantic import Field, TypeAdapter
 
 from apps.core.licensing import get_minimum_display_rank
+from apps.core.models import SitemappedModel, active_status_q
 from apps.media.helpers import displayed_primary_media, media_prefetch
 
 from ..cache import games_facets_key, get_cached_response, set_cached_response
+from ..engine.entity_api.detail import DetailPageContext
 from ..engine.query.constants import DEFAULT_PAGE_SIZE
 from ..engine.query.facet_helpers import FacetOption
-from ..models import MachineModel, Title
+from ..models import Credit, MachineModel, Title
 from ._game_facets import GameFacetOptions, PlayerCountOption, game_facet_counts
 from ._game_rows import (
     _SORT_YEAR_GUARD,
@@ -62,7 +65,7 @@ class GameCardSchema(Schema):
         description="Which record this card is: a title or a machine model."
     )
     name: str = Field(description="The record's display name.")
-    slug: str = Field(description="The record's URL slug.")
+    public_id: str = Field(description="The record's URL-identity value.")
     year: int | None = Field(None, description="Release year, if known.")
     manufacturer: EntityRef | None = Field(
         None, description="The record's manufacturer."
@@ -70,9 +73,20 @@ class GameCardSchema(Schema):
     thumbnail_url: str | None = Field(
         None, description="URL of a thumbnail image, if available."
     )
+    # Person-contextual card annotation: present only when the `person`
+    # dimension is active, so a page of one person's games can say what they
+    # did on each. The pattern for dimension-contingent annotations — a future
+    # relationship-context field works the same way.
+    roles: list[str] | None = Field(
+        None,
+        description=(
+            "Only when filtering by `person`: that person's role names on this "
+            "record (for a title, across its models). Otherwise omitted."
+        ),
+    )
 
 
-class GameListPageSchema(Schema):
+class GameListSchema(Schema):
     """A page of game cards: ``items`` holds this page's rows; ``count`` is the
     total number of matching cards across all pages."""
 
@@ -150,6 +164,49 @@ class GameFilterQuerySchema(Schema):
             "supplied slugs must match."
         ),
     )
+    display_subtype: str | None = Field(
+        None,
+        description="Display-subtype slug (see `GET /api/display-subtypes/`).",
+    )
+    tag: str | None = Field(
+        None,
+        description="Tag slug (see `GET /api/tags/`).",
+    )
+    technology_subgeneration: str | None = Field(
+        None,
+        description=(
+            "Technology-subgeneration slug (see `GET /api/technology-subgenerations/`). "
+            "Matches models carrying the subgeneration directly or through their system."
+        ),
+    )
+    cabinet: str | None = Field(
+        None,
+        description=(
+            "Cabinet slug (see `GET /api/cabinets/`). Matches only explicitly "
+            "classified models."
+        ),
+    )
+    game_format: str | None = Field(
+        None,
+        description=(
+            "Game-format slug (see `GET /api/game-formats/`). Matches only "
+            "explicitly classified models."
+        ),
+    )
+    production_status: str | None = Field(
+        None,
+        description=(
+            "Production-status slug (see `GET /api/production-statuses/`). "
+            "Matches only explicitly classified models."
+        ),
+    )
+    corporate_entity: str | None = Field(
+        None,
+        description=(
+            "Corporate-entity slug (see `GET /api/corporate-entities/`). Narrower "
+            "than `manufacturer`: matches records built by this specific entity."
+        ),
+    )
 
     def to_filters(self) -> GameFilters:
         return GameFilters(
@@ -167,6 +224,13 @@ class GameFilterQuerySchema(Schema):
             themes=tuple(self.theme),
             features=tuple(self.feature),
             reward_types=tuple(self.reward_type),
+            display_subtype=self.display_subtype,
+            tag=self.tag,
+            technology_subgeneration=self.technology_subgeneration,
+            cabinet=self.cabinet,
+            game_format=self.game_format,
+            production_status=self.production_status,
+            corporate_entity=self.corporate_entity,
         )
 
 
@@ -235,7 +299,9 @@ def _manufacturer_ref(model: MachineModel | None) -> EntityRef | None:
     return EntityRef(public_id=mfr.public_id, name=mfr.name)
 
 
-def _serialize_title_card(title: Title, *, min_rank: int) -> GameCardSchema:
+def _serialize_title_card(
+    title: Title, *, min_rank: int, roles: list[str] | None = None
+) -> GameCardSchema:
     """A Title card: identity from the Title, display fields from the
     representative (``card_models[0]``)."""
     models: list[MachineModel] = getattr(title, "card_models", [])
@@ -250,14 +316,17 @@ def _serialize_title_card(title: Title, *, min_rank: int) -> GameCardSchema:
     return GameCardSchema(
         entity_type=Title.entity_type,
         name=title.name,
-        slug=title.slug,
+        public_id=title.public_id,
         year=first.year if first else None,
         manufacturer=_manufacturer_ref(first),
         thumbnail_url=thumbnail_url,
+        roles=roles,
     )
 
 
-def _serialize_model_card(model: MachineModel, *, min_rank: int) -> GameCardSchema:
+def _serialize_model_card(
+    model: MachineModel, *, min_rank: int, roles: list[str] | None = None
+) -> GameCardSchema:
     """A Model card: every field is the Model's own."""
     thumbnail_url, _ = extract_image_urls(
         model.extra_data or {},
@@ -267,15 +336,65 @@ def _serialize_model_card(model: MachineModel, *, min_rank: int) -> GameCardSche
     return GameCardSchema(
         entity_type=MachineModel.entity_type,
         name=model.name,
-        slug=model.slug,
+        public_id=model.public_id,
         year=model.year,
         manufacturer=_manufacturer_ref(model),
         thumbnail_url=thumbnail_url,
+        roles=roles,
     )
 
 
-def _hydrate_cards(rows: Sequence[GameRow], *, min_rank: int) -> list[GameCardSchema]:
-    """One query per kind (plus prefetches), then serialize in row order."""
+class _PersonRoles(NamedTuple):
+    """The active person's deduped role names per carded record, keyed by pk —
+    a Title's collected across its live Models."""
+
+    by_title: dict[int, list[str]]
+    by_model: dict[int, list[str]]
+
+
+def _person_roles(rows: Sequence[GameRow], person: str) -> _PersonRoles:
+    """Two bulk Credit queries for the page's cards.
+
+    Title cards keep the person page's historical role order — credit order,
+    newest Model first — over **live** Models only, matching what the roll-up
+    counted. A Model card's roles are
+    its own, in the role vocabulary's display order."""
+    by_title: dict[int, list[str]] = {}
+    by_model: dict[int, list[str]] = {}
+    title_pks = [r.pk for r in rows if r.kind == Title.entity_type]
+    model_pks = [r.pk for r in rows if r.kind == MachineModel.entity_type]
+    credits = Credit.objects.filter(person__slug=person, model__isnull=False)
+    title_credits = (
+        credits.filter(Q(model__title_id__in=title_pks) & active_status_q("model"))
+        .order_by(
+            F("model__year").desc(nulls_last=True),
+            "model__name",
+            "role__display_order",
+        )
+        .values_list("model__title_id", "role__name")
+    )
+    for title_id, role_name in title_credits:
+        names = by_title.setdefault(title_id, [])
+        if role_name not in names:
+            names.append(role_name)
+    model_credits = (
+        credits.filter(model_id__in=model_pks)
+        .order_by("role__display_order", "role__name")
+        .values_list("model_id", "role__name")
+    )
+    for model_id, role_name in model_credits:
+        names = by_model.setdefault(model_id, [])
+        if role_name not in names:
+            names.append(role_name)
+    return _PersonRoles(by_title=by_title, by_model=by_model)
+
+
+def _hydrate_cards(
+    rows: Sequence[GameRow], *, min_rank: int, person: str | None = None
+) -> list[GameCardSchema]:
+    """One query per kind (plus prefetches), then serialize in row order.
+    *person* is the active person dimension, if any — it annotates each card
+    with that person's roles on the record."""
     title_pks = [r.pk for r in rows if r.kind == Title.entity_type]
     model_pks = [r.pk for r in rows if r.kind == MachineModel.entity_type]
     titles = {
@@ -290,10 +409,19 @@ def _hydrate_cards(rows: Sequence[GameRow], *, min_rank: int) -> list[GameCardSc
         .select_related("corporate_entity__manufacturer")
         .prefetch_related(media_prefetch())
     }
+    roles = _person_roles(rows, person) if person else None
     return [
-        _serialize_title_card(titles[r.pk], min_rank=min_rank)
+        _serialize_title_card(
+            titles[r.pk],
+            min_rank=min_rank,
+            roles=roles.by_title.get(r.pk, []) if roles else None,
+        )
         if r.kind == Title.entity_type
-        else _serialize_model_card(models[r.pk], min_rank=min_rank)
+        else _serialize_model_card(
+            models[r.pk],
+            min_rank=min_rank,
+            roles=roles.by_model.get(r.pk, []) if roles else None,
+        )
         for r in rows
     ]
 
@@ -305,25 +433,58 @@ def _hydrate_cards(rows: Sequence[GameRow], *, min_rank: int) -> list[GameCardSc
 games_router = Router(tags=["games"])
 
 
-@games_router.get("/", response=GameListPageSchema)
+def game_list_page(f: GameFilters, *, page: int = 1) -> GameListSchema:
+    """One page of cards plus the total count — the single production path for
+    listing pages, shared by ``GET /api/games/`` and every detail-page embed
+    (:func:`with_games`), so an embedded list cannot drift from the listing."""
+    rows = game_rows_merged(f)
+    size = DEFAULT_PAGE_SIZE
+    start = (max(page, 1) - 1) * size
+    return GameListSchema(
+        items=_hydrate_cards(
+            rows[start : start + size],
+            min_rank=get_minimum_display_rank(),
+            person=f.person,
+        ),
+        count=len(rows),
+    )
+
+
+def with_games[ModelT: SitemappedModel, PageT: Schema](
+    serialize_detail: Callable[[ModelT], Schema],
+    pin: Callable[[ModelT], GameFilters],
+    page_schema: type[PageT],
+) -> Callable[[ModelT, DetailPageContext], PageT]:
+    """Compose an entity serializer with the games embed, for
+    ``register_entity_detail_page``: the page payload is the detail fields plus
+    page 1 of the listing pinned to the entity (*pin*) narrowed by the
+    request's search term. *page_schema* must be the detail schema plus a
+    ``games: GameListSchema`` field — the page/edit-response split: only
+    the page endpoint carries (and pays for) the embedded listing."""
+
+    def _serialize(obj: ModelT, ctx: DetailPageContext) -> PageT:
+        detail = serialize_detail(obj)
+        embed = game_list_page(replace(pin(obj), q=ctx.q))
+        # model_validate (not a kwargs constructor): PageT is generic here, so
+        # mypy sees only Schema's signature; validation also enforces that
+        # *page_schema* really is the detail schema plus ``games``.
+        return page_schema.model_validate({**detail.model_dump(), "games": embed})
+
+    return _serialize
+
+
+@games_router.get("/", response=GameListSchema)
 def list_games(
     request: HttpRequest,
     filters: Query[GameFilterQuerySchema],
     page: Annotated[int, QueryParam(1, description="Page number, 1-based.")] = 1,
-) -> GameListPageSchema:
+) -> GameListSchema:
     """Pinball titles and models at card grain, paginated. Narrow with the
     filters and the search (``q``). Ordered by release year (newest first),
     then alphabetically.
 
     All filters combine with AND."""
-    rows = game_rows_merged(filters.to_filters())
-    size = DEFAULT_PAGE_SIZE
-    start = (max(page, 1) - 1) * size
-    min_rank = get_minimum_display_rank()
-    return GameListPageSchema(
-        items=_hydrate_cards(rows[start : start + size], min_rank=min_rank),
-        count=len(rows),
-    )
+    return game_list_page(filters.to_filters(), page=page)
 
 
 # ---------------------------------------------------------------------------

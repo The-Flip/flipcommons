@@ -85,7 +85,7 @@ class TestSystemsAPI:
         assert data["slug"] == "wpc-95"
         assert data["manufacturer"]["name"] == "Williams"
         assert data["technology_subgeneration"] is None
-        assert len(data["titles"]) == 2
+        assert data["games"]["count"] == 2
 
     def test_get_system_detail_titles_sorted_year_desc(
         self, client, system_with_machines
@@ -100,7 +100,7 @@ class TestSystemsAPI:
         )
         resp = client.get("/api/pages/system/wpc-95")
         data = resp.json()
-        years = [t["year"] for t in data["titles"] if t["year"]]
+        years = [c["year"] for c in data["games"]["items"] if c["year"]]
         assert years == sorted(years, reverse=True)
 
     def test_get_system_404(self, client, db):

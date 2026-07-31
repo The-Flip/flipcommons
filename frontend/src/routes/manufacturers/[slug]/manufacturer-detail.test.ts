@@ -21,6 +21,7 @@ describe('manufacturer detail SSR route', () => {
 
     expect(result).toEqual({
       profile: MOCK_MANUFACTURER,
+      q: '',
       jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
     });
     const request = fetch.mock.calls[0]?.[0];
@@ -43,7 +44,7 @@ describe('manufacturer detail SSR route', () => {
   it('renders meaningful manufacturer content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: MOCK_MANUFACTURER, jsonLd: {} },
+        data: { profile: MOCK_MANUFACTURER, q: '', jsonLd: {} },
       },
     });
 

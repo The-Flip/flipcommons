@@ -9,19 +9,25 @@ that module was deleted with the path it pinned.
 from __future__ import annotations
 
 from apps.catalog.models import (
+    Cabinet,
     CorporateEntity,
     Credit,
     CreditRole,
+    DisplaySubtype,
     DisplayType,
     Franchise,
+    GameFormat,
     GameplayFeature,
     MachineModel,
     Manufacturer,
     Person,
+    ProductionStatus,
     RewardType,
     Series,
     System,
+    Tag,
     TechnologyGeneration,
+    TechnologySubgeneration,
     Theme,
     Title,
 )
@@ -60,6 +66,55 @@ def _system(slug: str) -> System:
     )
     obj, _ = System.objects.get_or_create(
         slug=slug, defaults={"name": slug.upper(), "manufacturer": sys_mfr}
+    )
+    return obj
+
+
+def _display_subtype(slug: str) -> DisplaySubtype:
+    """A DisplaySubtype under an auto-created parent DisplayType."""
+    obj, _ = DisplaySubtype.objects.get_or_create(
+        slug=slug,
+        defaults={"name": slug.upper(), "display_type": _display(f"{slug}-parent")},
+    )
+    return obj
+
+
+def _subgen(slug: str) -> TechnologySubgeneration:
+    """A TechnologySubgeneration under an auto-created parent generation."""
+    obj, _ = TechnologySubgeneration.objects.get_or_create(
+        slug=slug,
+        defaults={
+            "name": slug.upper(),
+            "technology_generation": _tech(f"{slug}-parent"),
+        },
+    )
+    return obj
+
+
+def _tag(slug: str) -> Tag:
+    obj, _ = Tag.objects.get_or_create(
+        slug=slug, defaults={"name": slug.replace("-", " ").title()}
+    )
+    return obj
+
+
+def _cabinet(slug: str) -> Cabinet:
+    obj, _ = Cabinet.objects.get_or_create(
+        slug=slug, defaults={"name": slug.replace("-", " ").title()}
+    )
+    return obj
+
+
+def _game_format(slug: str) -> GameFormat:
+    obj, _ = GameFormat.objects.get_or_create(
+        slug=slug, defaults={"name": slug.replace("-", " ").title()}
+    )
+    return obj
+
+
+def _production_status(slug: str) -> ProductionStatus:
+    obj, _ = ProductionStatus.objects.get_or_create(
+        slug=slug, defaults={"name": slug.replace("-", " ").title()}
     )
     return obj
 
@@ -132,11 +187,17 @@ def _model(
     year: int | None = None,
     tech_gen: str | None = None,
     display_type: str | None = None,
+    display_subtype: str | None = None,
     system: str | None = None,
+    subgen: str | None = None,
+    cabinet: str | None = None,
+    game_format: str | None = None,
+    production_status: str | None = None,
     player_count: int | None = None,
     themes: tuple[str, ...] = (),
     features: tuple[str, ...] = (),
     reward_types: tuple[str, ...] = (),
+    tags: tuple[str, ...] = (),
     persons: tuple[str, ...] = (),
     variant_of: MachineModel | None = None,
 ) -> MachineModel:
@@ -148,7 +209,14 @@ def _model(
         year=year,
         technology_generation=_tech(tech_gen) if tech_gen else None,
         display_type=_display(display_type) if display_type else None,
+        display_subtype=_display_subtype(display_subtype) if display_subtype else None,
         system=_system(system) if system else None,
+        technology_subgeneration=_subgen(subgen) if subgen else None,
+        cabinet=_cabinet(cabinet) if cabinet else None,
+        game_format=_game_format(game_format) if game_format else None,
+        production_status=_production_status(production_status)
+        if production_status
+        else None,
         player_count=player_count,
         variant_of=variant_of,
     )
@@ -158,6 +226,8 @@ def _model(
         m.gameplay_features.add(_feature(s))
     for s in reward_types:
         m.reward_types.add(_reward(s))
+    for s in tags:
+        m.tags.add(_tag(s))
     for s in persons:
         Credit.objects.create(model=m, person=_person(s), role=_role())
     return m

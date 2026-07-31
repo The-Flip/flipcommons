@@ -284,100 +284,57 @@ Three landings that weren't in the spec, worth knowing before touching the engin
 - **`Title.entity_type` and `MachineModel.entity_type` are `ClassVar[Literal[...]]`** so the wire contract's `Literal` is satisfied from the registry ClassVars, with no casts and no re-spelled literals.
 - **The facets cache is rekeyed** to `catalog:games:*` (`games_facets_key` in `cache.py`), and the create prompt deliberately still says "title" — what it creates is a Title.
 
-## <a id="pr-detail"></a>PR.DETAIL — the dimension detail pages
+## ✅ DONE: <a id="pr-detail"></a>PR.DETAIL — the dimension detail pages
 
 The product doc scopes this by criterion: every dimension detail page carrying a Title or Model listing, which excludes `credit-roles` because it lists People. `locations` is out for the same reason — it lists manufacturers, and manufacturer location is not a dimension here.
 
+### ✅ DONE: <a id="pre-detail-refactors"></a>Pre-refactors
+
+Two zero-behavior-change commits landed ahead of PR.DETAIL, in the PRE.GUARD tradition:
+
+- **PRE.ID** — the games card identifies by `public_id`, not `slug`. `GameCardSchema.slug` → `public_id`, the `GameCard` prop and every consumer. Byte-identical values (Title and Model both default `public_id_field = "slug"`), but `public_id` is the URL-identity abstraction that works for every entity type, and PR.DETAIL multiplies the card's consumers by seventeen. The card-grid loader host (`PaginatedCardLoader`) split from the row host in the same commit — only row lists link by `slug`, so only they constrain on it.
+- **PRE.SPEC** — the `FilterDimension` registry, pulled forward from [PR.REL's plan](#the-dimension-cost-and-what-to-do-about-it) because PR.DETAIL is the largest single dimension expansion in the program (~7 keys) and wiring them through the hand-built chain only to re-migrate them one PR later pays the per-dimension tax twice. One declaration per Model-only dimension — activeness, narrower, facet binding, `surfaced` flag — in `MODEL_DIMENSION_SPECS` (`_game_rows.py`); the facet fan-out dispatches value-rows shapes from it, and registry-completeness tests pin bindings to the payload fields and the test vocabulary. All 11 existing dimensions migrated; `surfaced` is `True` for all of them and exists for PR.DETAIL's hidden dimensions.
+
+### Outcome — where it landed (2026-07-31)
+
+Everything in this PR is implemented on the branch; the code and its tests are the source of truth. The planning subsections this document carried (the dimension additions, the embedded-listing shape, the card-set directions, the hierarchy fix, the deletion list) were removed when they landed — git history has them, and the working execution plan lived outside the repo. The map:
+
+| what                        | where                                                                                                                                                                                                                                           |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the seven hidden dimensions | `MODEL_DIMENSION_SPECS` in `_game_rows.py` — `surfaced=False`, `facet=None`, honored from the query string; wire params on `GameFilterQuerySchema`. The sparse three entered **raw**; bucket semantics remain PR.SPARSE's                       |
+| the embed seam              | `register_entity_detail_page` serializes via `(entity, DetailPageContext)`; `with_games()` + `game_list_page()` in `games.py` produce every embed through the listing code path, so an embedded list cannot drift from the listing              |
+| page/edit-response split    | `XDetailPageSchema = XDetailSchema + games: GameListSchema` per entity; create/claims-PATCH/delete responses stay slim (pinned by the flipped response-shape tests)                                                                             |
+| person roles                | `GameCardSchema.roles`, hydration-populated only under the `person` dimension, pages 2+ included — the pattern PR.REL's relationship-context annotation inherits                                                                                |
+| the frontend host           | `GamesSection.svelte` (`pages/record/detail/`): SSR-seeded page 1, pages 2+ from `GET /api/games/` with the pin applied, threshold-gated debounced `?q=` search round-tripping through the URL                                                  |
+| behavior pins               | `test_page_endpoints.py` (embed == listing, `q` passthrough, subgeneration OR-arm, the production-status variant case, game-format raw semantics), `test_api_games.py` (roles, hidden dimensions), the flipped response-shape and restore tests |
+
+Decisions taken in flight with the product owner (2026-07-30/31):
+
+- **Search box on all 17 routes**, threshold-gated (`count >= 12`) — uniform, so no per-route search flag exists.
+- **No flat pages remain.** Every route embeds page 1 (`DEFAULT_PAGE_SIZE`) + count; a short list fits inside page 1 and behaves exactly like the flat page it replaced.
+- **Converged copy**: heading "Games (N)", empty state "No games…".
+- **Naming**: detail-page payloads are `XDetailPageSchema`; the paginated card wrapper joined the `<Entity>ListSchema` family as `GameListSchema` — "Page" in a schema name now only ever means a detail page's payload.
+- Two of the nine client-paginated routes needed **no new dimension**, only call-site renames (`technology-generations` `type` → `tech_gen`; `gameplay-features` `feature` single → repeated).
+- The person page's undocumented liveness gap — credits on deleted Models and on Variants carded — closed by construction under the listing semantics, and is pinned.
+
+Done condition, audited at completion: the eight axes of [the variation being removed](#the-variation-being-removed) read 1 — one card schema, one card component, one grain rule, one list source (the embedded page 1), one pagination path, one hierarchy behavior, one variant policy, one sort. The deletion grep is clean (`collect_titles`, `serialize_title_ref`, `RelatedTitleSchema`, `PersonTitleSchema`, `TitleRef`, both accumulators, `TitleList.svelte`, `PaginatedSection.svelte`, the nine per-route loaders, `SearchableGrid` on manufacturers/people/corporate-entities, the `include_variants` fetch flag). The frontend has **zero** consumers of the `GET /api/models/` list route, which is now freed for [the public filtering API](#public-filtering-api). The surviving `variant_of` guards are count hygiene and representative selection only — the two jobs the rule deliberately leaves untouched.
+
+Verification, live at the dev API: every migrated page's embed equals its pinned listing exactly. `/themes/racing` 337 (was 10 — the hierarchy fix), `/themes/sports` 1,422 (was 1,163), `/themes/medieval` 27, `manufacturer/vifico` 13 Model cards linking to Model pages (was 13 Gottlieb Title cards), `chicago-gaming` 15, `technology-generation/solid-state` 1,432 — the predicted count exactly — and `q` composes with every pin.
+
 ### The variation being removed
 
-The point is not fewer lines, it is fewer things that can disagree. Eight axes, each verified against the routes as they stand, each collapsing to one:
+The point is not fewer lines, it is fewer things that can disagree. Eight axes, each now reading 1 (this table was the specification and is kept as the done condition's ledger):
 
-| axis                    | today                                                                                                                            |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| backend card schema     | 4 — `TitleModelSchema`, `RelatedTitleSchema`, `PersonTitleSchema`, `TitleRef` — plus the listing card                            |
-| frontend card component | `TitleCard` imported by 8 files, `MachineCard` by 13 — **collapsed by [PRE.CARD](#pre-card)**, which deletes both for `GameCard` |
-| grain                   | some list Titles, some Models, and it does not track which record owns the dimension                                             |
-| list source             | embedded in the page payload (8 routes) vs a second client call (9 routes)                                                       |
-| pagination              | none (8) vs `createPaginatedLoader` (9)                                                                                          |
-| hierarchy               | the listing expands to descendants; detail pages list direct tags only                                                           |
-| variant policy          | `variant_of__isnull=True` hand-written per queryset                                                                              |
-| sort                    | `_franchise_titles_qs()` and its series twin never order the Titles at all — only the prefetched Models                          |
-
-That table is the specification and the done condition. "Onto a shared substrate" has no edge; "these eight read 1" does. Seven of the eight are PR.DETAIL's work — the card component collapses one PR earlier, and it is listed here so the axis is not re-opened by a detail page reaching for a Title-shaped card it no longer needs.
-
-### What is actually there today
-
-An earlier version of this document inventoried the backend schemas and inferred the pages, which was wrong in both directions. What the routes actually do:
-
-| pattern                                                                    | routes                                                                                                                                                   |
-| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **client-paginated** via a second call to `/api/models/` or `/api/titles/` | cabinets, display-subtypes, display-types, game-formats, gameplay-features, production-statuses, tags, technology-generations, technology-subgenerations |
-| **flat**, list embedded in the page endpoint                               | corporate-entities, franchises, manufacturers, people, reward-types, series, systems, themes                                                             |
-
-So the pages whose schemas carry no game list mostly do show one — `/game-formats/pinball` paginates against `/api/models/` today. The work is migration and consolidation rather than construction, and "none of them paginate" is false for half of them. One of the nine is already **done**: the PR.HET flip pointed `display-types/[slug]` at `GET /api/games/` with wire-driven `entity_type` (it was the one non-listing consumer of the listing endpoint, so leaving it would have rendered Model rows as Titles). It is the model for what the other eight become.
-
-One addition is genuine: `display_subtype`, `tag` and `technology_subgeneration` have no listing param yet and need one, which is what the product doc's [Hidden dimensions](ModelFiltering.md#hidden-dimensions) section supplies. A detail page that _is_ the listing pinned to a dimension cannot exist for a dimension the listing cannot express. That is why hidden dimensions belong to this PR rather than to PR.SPARSE.
-
-### The card set moves in both directions
-
-A reader will otherwise assume the rule only ever adds Model cards.
-
-**Title-dimension pages — franchises and series — keep the cards they have.** Franchise and series are Title-only dimensions, so on those pages no Model-only dimension is active and the unanimity clause is vacuous: every Title trivially satisfies "every one of its Models matches every Model-only dimension" because there are none to match. Same mechanism that makes the unfiltered listing all Title cards. The one condition that could break it never fires — **0 Titles in the catalog have zero live Models.**
-
-**Most Model-dimension pages roll _up_, and return fewer cards.** Themes, systems, reward types, gameplay features and people list games today; under the rule a Title absorbs its Models whenever all of them match.
-
-**Manufacturer and corporate-entity pages roll _down_, and it is a correction rather than a refinement.** They list Titles today through `collect_titles` with any-Model semantics. `/api/pages/manufacturer/vifico` returns 13 cards — Arena, Bad Girls, Chicago Cubs 'Triple Play', Diamond Lady, Excalibur, Genesis and the rest — every one a Gottlieb game, because VIFICO built copies and a copy never heads its Title. Under the rule those become 13 VIFICO Model cards linking to VIFICO Model pages. These two pages carry the `showManufacturer` requirement the others do not: every card on the page has the same manufacturer, so both routes pass `showManufacturer={false}` today. The trap, restated here because these are the pages that will hit it — **suppress by not rendering, never by nulling the field**. `manufacturer: null` already means _this record genuinely has no manufacturer_ and renders as "Unknown Manufacturer"; encode "don't show it here" the same way and every card on the VIFICO page reads "Unknown Manufacturer". Suppression stays correct under the roll-up on both card types — a Title cards on a manufacturer page only when every one of its Models matches, so its representative is that manufacturer too, and a Model card is by construction the matching Model. Test that property here; it comes from the rule, not from anything visible at the call site.
-
-The backend half of today's manufacturer suppression goes away with `collect_titles`, and should. `include_manufacturer` defaults to `False` and **no caller anywhere passes `True`**, so the field is unconditionally omitted server-side and the frontend prop is what actually makes the pages correct. Suppression is applied twice today, and it is the second one doing the work.
-
-### An unchanged card set is not an unchanged page
-
-Franchises and series get the same treatment as everything else. Three things change even though the cards do not.
-
-**Their card schema converges.** `TitleRef` is closer to the listing card than the other three — it already carries `year`, `manufacturer_name` and `thumbnail_url`, and a `model_count` the games card does not have and does not need. It differs in three ways that matter: it identifies by `public_id` where the listing card uses `slug`, it carries `manufacturer_name: str | None` flagged as "display-only, no paired slug", so **the card cannot link to the manufacturer** where a listing card can, and it has no `entity_type`, so it structurally cannot carry a Model card if one ever belonged there.
-
-**Their sort becomes defined.** `_franchise_titles_qs()` and its series twin order the _prefetched Models_ (`.order_by("year", "name")`) and never order the Titles at all, so the card order is whatever the database returns. It currently comes out newest-first and matches the listing by luck. Unspecified order is survivable on a flat list and is not survivable under pagination, where it means rows can repeat or vanish across page boundaries.
-
-**They move onto the shared path**, which is what stops all of the above from drifting back.
-
-**Model detail pages are unchanged**, so a Model card always has somewhere to link.
-
-### Hierarchy, not just grain
-
-A theme detail page and the listing filtered by that theme are one question, and today they give two answers differing on **two** axes rather than one. Read from the dev API:
-
-```text
-/api/pages/theme/medieval    → 15 cards
-/api/titles/?theme=medieval  → 24 cards
-```
-
-Grain is the visible half. The other half is that the listing dimension rolls the taxonomy hierarchy up and the detail page lists **direct tags only** — `medieval` has six child themes, so the listing counts them and the page does not. The product doc calls that an oversight and fixes it by definition: the detail page's list _is_ the listing's, descendants included.
-
-That is the larger half of the change, and on some pages it dominates:
-
-| page              | cards today | the listing pinned to the same value | why the gap                                    |
-| ----------------- | ----------- | ------------------------------------ | ---------------------------------------------- |
-| `/themes/racing`  | **10**      | **335**                              | almost everything is tagged under child themes |
-| `/themes/sports`  | 1,163       | 1,401                                | broad direct tagging plus 58 direct children   |
-| `/themes/fantasy` | 324         | 371                                  | mostly tagged directly                         |
-
-`/themes/racing` showing 10 machines for a catalog holding 335 racing games is the clearest single argument for the change. Note also that the theme hierarchy is a **DAG rather than a tree** — `horse-racing` has parents `racing` _and_ `sports`, `bicycle-racing` has three — so descendant traversal has to de-duplicate. It already does: the listing returns 1,401 for `sports` today. That is what makes "no new filtering logic" literally true rather than aspirational.
-
-### The shape: an embedded listing, in one call
-
-The product doc settles this: every route fetches its first page of games embedded in the initial page API call, and subsequent pages call the shared games endpoint. [ApiDesign.md](../../ApiDesign.md#core-rule) makes one page endpoint returning one page model the standard, so the detail endpoint returns the record's own data **plus page 1 of the rolled-up cards plus a count**, in the games card schema, produced by the games code path. The client's pagination loader continues from page 2 against `/api/games/` with the dimension pinned.
-
-The listing itself is the deliberate exception to the one-call rule, not the pattern to copy: it awaits the cards on the critical path (~16 ms) and returns facet options as an unawaited promise streamed after (~107 ms). Detail pages need no facets, so they collapse to the single call cleanly.
-
-This is what makes the embedded listing safe: it cannot drift from the listing, because it _is_ the listing.
-
-The substrate exists as of PR.HET: `game_rows_merged` + `_hydrate_cards` + the serializers in `games.py` are what a detail endpoint embeds (page 1 with its dimension pinned), and the client continues from page 2 against `GET /api/games/`. Whether the hydration helpers are imported or lightly extracted for the detail endpoints is an implementation call; the constraint is that the cards come from the games code path, not a re-derivation.
-
-The frontend machinery already exists and is what every taxonomy _index_ page uses — `CatalogListing` → `PaginatedListPage` → `PaginatedListLoader`. Nine detail routes have their own loader against a different endpoint; those converge onto it rather than keeping a second mechanism.
-
-### The facet work does not grow
-
-**Facet counts exist on exactly two surfaces.** `game_facet_counts` is consumed only by `games.py`, the manufacturers facet engine only by `manufacturers.py`; `FacetedCatalogListing.svelte` is imported by two routes and nowhere else. **Not one dimension detail page has a facet sidebar.** So the card-grain facet counts stay a listing problem exactly as they are today, and COMMIT.HET.PROVE's measurement is unaffected by how far the rule travels.
+| axis                    | was                                                                                     | now                                               |
+| ----------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| backend card schema     | 4 (`TitleModelSchema`, `RelatedTitleSchema`, `PersonTitleSchema`, `TitleRef`) + listing | 1 — `GameCardSchema`                              |
+| frontend card component | 2 (collapsed by PRE.CARD)                                                               | 1 — `GameCard`                                    |
+| grain                   | mixed, untracked                                                                        | 1 — the roll-up                                   |
+| list source             | embedded (8) vs second client call (9)                                                  | 1 — embedded page 1                               |
+| pagination              | none (8) vs `createPaginatedLoader` (9)                                                 | 1 — seeded loader continuing on `GET /api/games/` |
+| hierarchy               | listing expands descendants; detail pages direct tags only                              | 1 — the listing's                                 |
+| variant policy          | `variant_of__isnull=True` hand-written per queryset                                     | 1 — rung 3                                        |
+| sort                    | accumulator/prefetch order, franchises/series undefined                                 | 1 — the listing's                                 |
 
 ## <a id="pr-rel"></a>PR.REL — the relationship vocabulary
 
@@ -462,9 +419,9 @@ The lineage fields are the asymmetric half of this, and one of them is a surpris
 
 ### The dimension cost, and what to do about it
 
-PR.HET replaced the old chain. Adding a dimension now touches, on the backend: the `ModelDimension` Literal → `_DIMENSION_ACTIVE` → a narrowing arm in `model_only_models` → `GameFilterQuerySchema` + `to_filters()` → a value-rows shape and assembly entry in `_game_facets.py` → `GameFacetOptions` + the payload dict in `games.py`. On the frontend: `FilterState` → `emptyFilterState()` → `PARAM_MAP` → `hasActiveFilters` → `TitlesQuery` / `queryFromUrl` → the chip builder → the sidebar. `edge` is one dimension slot with a key registry and a direction axis behind it, so it pays this in full.
+**✅ The `FilterDimension` spec exists** — built as [PRE.SPEC](#pre-detail-refactors) ahead of PR.DETAIL rather than mid-PR.REL as this section originally planned, because PR.DETAIL's seven hidden dimensions made it the larger migration. `MODEL_DIMENSION_SPECS` in `_game_rows.py` carries one declaration per Model-only dimension — activeness, narrower, facet binding, `surfaced` — with all eleven existing dimensions migrated; the facet fan-out dispatches value-rows shapes from it and registry-completeness tests pin bindings to the payload fields and the test vocabulary. The structural hole it closes: per-dimension wiring passing valid-but-possibly-wrong string keys — the Literals make an _invalid_ key a type error but could not catch a _wrong valid_ one (review found `series` wired everywhere yet exercised by no test, meaning a `fk="franchise"` transposition would have passed the whole suite). `MULTI_DIMENSIONS` (accumulate vs replace) remains a derived property beside the registry, from `GameFilters`' tuple arity, so a new multi-valued dimension classifies itself; `edge` accumulates (repeated `edge=` params AND, per the coverage ledger). PR.SPARSE's designated-default belongs on the spec when it lands.
 
-**Declare the `FilterDimension` spec — the narrower, the facet binding and the `surfaced` flag in one place — and build it FIRST in this PR, not mid-way.** PR.HET hardened the chain three ways, and all three are patches over one structural hole: per-dimension wiring passes valid-but-possibly-wrong string keys. The `ModelDimension` / `TitleDimension` Literals make an _invalid_ key a type error but cannot catch a _wrong valid_ one — review found the `series` dimension wired everywhere yet exercised by no test, meaning a `fk="franchise"` transposition on the series facet would have passed the whole suite. Three test-level guards now close that: `ACTIVATING` vs `MODEL_DIMENSIONS` in `test_game_rows.py`, and `NARROWERS` key-completeness plus the fixture non-emptiness guard in `test_game_facets.py`. The spec subsumes all three — one declaration per dimension driving the narrower, the activeness predicate, the facet binding and the test vocabulary means a wrong-valid-key cannot be written, and the guards collapse into one registry-completeness check. Build it, migrate the eleven existing dimensions onto it, then add `edge` as its first new entry. It also gives PR.SPARSE's `surfaced` flag and designated-default somewhere to live. The multi-select badge fix added a fourth per-dimension registry to fold in: `MULTI_DIMENSIONS` in `_game_rows.py` — whether a dimension's selections accumulate (ANDed, full facet base) or replace (N-1), currently derived from `GameFilters`' tuple arity with its own derived test guards. On the spec that becomes a declared-or-derived property per dimension; `edge` accumulates (repeated `edge=` params AND, per the coverage ledger).
+Adding a dimension now touches, on the backend: the `ModelDimension` Literal → a `MODEL_DIMENSION_SPECS` entry → `GameFilters` + `GameFilterQuerySchema` + `to_filters()` → and, when surfaced, `GameFacetOptions` + the payload dict + schema in `games.py`. On the frontend (surfaced dimensions only): `FilterState` → `emptyFilterState()` → `PARAM_MAP` → `hasActiveFilters` → `TitlesQuery` / `queryFromUrl` → the chip builder → the sidebar. `edge` is one dimension slot with a key registry and a direction axis behind it — its facet needs a shape the registry doesn't carry yet (per-key existence over the edge relations), added as its first new `FacetBinding` variant.
 
 Do **not** generate the TypeScript half from it. Cross-language codegen here is the giant new subsystem the product doc is afraid of, and the project's own escalation order puts codegen last, after a `_meta` walk and a typed spec. Take the rung that fits and leave the frontend hand-written until it hurts.
 
@@ -476,7 +433,7 @@ One mapping note for `edge`: in the card-grain facet engine a relationship key i
 
 ## <a id="pr-sparse"></a>PR.SPARSE — the sparse dimensions
 
-Three dimensions, all already implemented on `/api/models/` and none needing a relationship predicate.
+Three dimensions, none needing a relationship predicate. All three enter the listing vocabulary in [PR.DETAIL](#the-dimension-additions) as raw, hidden dimensions (their detail pages need the pin); what this PR adds is the semantics and the visibility — the reserved `unclassified` value, the default-bucket presets and the surfaced sidebar controls.
 
 **Manufacturer location is not among them** — see [Deferred](#deferred), along with export markets. Where a machine was _built_ and where it was _sold_ are different questions over different relations.
 
@@ -513,7 +470,7 @@ Every Model lands in exactly one bucket and the reader gets the set they meant. 
 
 **The widening is explicit in the query, not implied by which surface you are on.** The filter vocabulary gains a reserved value meaning _is unset_, and the preset selects two values: `?game_format=pinball&game_format=unclassified`. That is what keeps the two halves from colliding — the bare param `game_format=pinball` goes on meaning exactly `pinball` everywhere, a shared URL round-trips, and a stored [Article](../catalog_data_model/Articles.md) filter serializes the reader's actual intent rather than a surface-dependent reading of it. It is also what the product doc asks for when it says the API must stay able to find true nulls.
 
-**Repeatable params are new work here, not something already in place.** These three dimensions are absent from the listing filter vocabulary entirely, and on `/api/models/` `game_format` is a single `str` — as is every other field on `ModelFilterQuerySchema`. So this PR adds `list[str]` handling for the three, on both surfaces if the shared narrower is to serve both. Not difficult, but it is a line item rather than a free ride on an existing mechanism.
+**Repeatable params are new work here, not something already in place.** PR.DETAIL adds these three to the listing vocabulary as single-valued raw dimensions, and on `/api/models/` `game_format` is a single `str` — as is every other field on `ModelFilterQuerySchema`. The preset's two-value selection (`?game_format=pinball&game_format=unclassified`) therefore needs `list[str]` handling added for the three, on both surfaces if the shared narrower is to serve both. Not difficult, but it is a line item rather than a free ride on an existing mechanism.
 
 **The designated default belongs on the `FilterDimension` spec**, beside `surfaced` — one declaration driving the sidebar control, the facet count and the detail page, rather than the mapping being spelled in each.
 

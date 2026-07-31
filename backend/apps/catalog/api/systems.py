@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Annotated, cast
 
 from django.db import models
-from django.db.models import Count, F, Max, Prefetch, Q, QuerySet
+from django.db.models import Count, F, Max, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_control
@@ -27,7 +26,6 @@ from apps.claim_edit.claim_write import (
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
 from apps.core.exceptions import StructuredValidationError
-from apps.core.licensing import get_minimum_display_rank
 from apps.core.models import active_status_q
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
@@ -47,15 +45,14 @@ from ..engine.entity_api.create import (
 from ..engine.entity_api.delete import register_entity_delete_restore
 from ..engine.entity_api.listing import paginated_list_response
 from ..engine.query.constants import NameQuery, PageParam
-from ..models import MachineModel, Manufacturer, System
+from ..models import Manufacturer, System
 from ._typing import HasModelCount
-from .images import extract_image_urls, fetch_model_media_map
+from .games import GameListSchema
 from .schemas import (
     ClaimPatchSchema,
     EntityCreateInputSchema,
     EntityDetailSchema,
     EntityRef,
-    RelatedTitleSchema,
 )
 
 # ---------------------------------------------------------------------------
@@ -85,11 +82,21 @@ class SystemCreateSchema(EntityCreateInputSchema):
 
 
 class SystemDetailSchema(EntityDetailSchema):
+    """The system record — the response of create, delete/restore and the
+    claims PATCH (what a section editor receives after a save). The read-only
+    detail page's payload is :class:`SystemDetailPageSchema`."""
+
     slug: str
     manufacturer: EntityRef
     technology_subgeneration: EntityRef | None = None
-    titles: list[RelatedTitleSchema]
     sibling_systems: list[EntityRef] = []
+
+
+class SystemDetailPageSchema(SystemDetailSchema):
+    """The detail-page payload: the record plus page 1 of its games — the
+    listing pinned to ``system=<slug>`` (rolled up)."""
+
+    games: GameListSchema
 
 
 # ---------------------------------------------------------------------------
@@ -101,66 +108,11 @@ def _system_detail_qs() -> QuerySet[System]:
     return (
         System.objects.active()
         .select_related("manufacturer", "technology_subgeneration")
-        .prefetch_related(
-            claims_prefetch(),
-            Prefetch(
-                "machine_models",
-                queryset=MachineModel.objects.active()
-                .filter(variant_of__isnull=True)
-                .select_related("corporate_entity__manufacturer", "title")
-                .order_by(F("year").desc(nulls_last=True), "name"),
-            ),
-        )
+        .prefetch_related(claims_prefetch())
     )
 
 
-@dataclass
-class _RelatedTitleAccum:
-    name: str
-    public_id: str
-    year: int | None
-    manufacturer_name: str | None
-    thumbnail_url: str | None
-
-
 def _serialize_system_detail(system: System) -> SystemDetailSchema:
-    min_rank = get_minimum_display_rank()
-    models_list = list(system.machine_models.all())
-    media_by_model = fetch_model_media_map(m.pk for m in models_list)
-    accum: dict[str, _RelatedTitleAccum] = {}
-    for m in models_list:
-        if m.title is None:
-            continue
-        key = m.title.slug
-        thumbnail_url = extract_image_urls(
-            m.extra_data or {}, media_by_model.get(m.pk), min_rank=min_rank
-        )[0]
-        if key not in accum:
-            mfr = (
-                m.corporate_entity.manufacturer
-                if m.corporate_entity and m.corporate_entity.manufacturer
-                else None
-            )
-            accum[key] = _RelatedTitleAccum(
-                name=m.title.name,
-                public_id=m.title.public_id,
-                year=m.year,
-                manufacturer_name=mfr.name if mfr else None,
-                thumbnail_url=thumbnail_url,
-            )
-        elif accum[key].thumbnail_url is None and thumbnail_url:
-            accum[key].thumbnail_url = thumbnail_url
-    titles = [
-        RelatedTitleSchema(
-            name=a.name,
-            public_id=a.public_id,
-            year=a.year,
-            manufacturer_name=a.manufacturer_name,
-            thumbnail_url=a.thumbnail_url,
-        )
-        for a in accum.values()
-    ]
-
     sibling_systems: list[EntityRef] = []
     if system.manufacturer:
         sibling_systems = [
@@ -191,7 +143,6 @@ def _serialize_system_detail(system: System) -> SystemDetailSchema:
             if system.technology_subgeneration
             else None
         ),
-        titles=titles,
         sibling_systems=sibling_systems,
     )
 
