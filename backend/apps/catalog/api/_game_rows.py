@@ -157,43 +157,11 @@ MODEL_DIMENSIONS: tuple[ModelDimension, ...] = get_args(ModelDimension)
 # annotations``, so the annotations are strings until resolved.
 _FILTER_TYPES: Final[Mapping[str, object]] = get_type_hints(GameFilters)
 
-# Dimensions whose selections **accumulate** (ANDed together) instead of
-# replacing one another — derived from ``GameFilters``' own arity, since a
-# tuple-typed field is precisely one that holds several values at once. Derived,
-# not declared, so a new multi-valued dimension classifies itself.
-#
-# Deliberately NOT derived from ``MachineModel._meta`` many-to-many-ness: that
-# is a different fact and would misclassify. ``person`` filters through the
-# multivalued ``credits__person`` path yet takes a single value, so its relation
-# is many-valued while its *filter* is not.
-MULTI_DIMENSIONS: Final[frozenset[ModelDimension]] = frozenset(
-    key for key in MODEL_DIMENSIONS if get_origin(_FILTER_TYPES.get(key)) is tuple
-)
-
 # ``year`` is the one dimension key naming no field of its own (it spans
 # ``year_min``/``year_max``). Pin that, so a renamed or retyped field can't
 # quietly read as single-valued and re-open the badge bug ``facet_exclude``
 # below exists to prevent.
 assert {key for key in MODEL_DIMENSIONS if key not in _FILTER_TYPES} == {"year"}
-
-
-def facet_exclude(key: ModelDimension) -> ModelDimension | None:
-    """The N-1 exclusion for *key*'s own facet base — ``None`` meaning
-    "exclude nothing".
-
-    Dropping a dimension answers *"what would I get if this value were the
-    selection"*, which is exactly what a click does where selecting **replaces**
-    the current value (manufacturer, tech gen, player count…). Where selections
-    accumulate, a click ANDs the value onto what is already chosen, so the
-    dimension has to stay applied — otherwise the badge counts the value in
-    isolation and promises a total the click cannot deliver (with Replay active,
-    "Cash Payout (6)" landing on 0 results).
-
-    Free when the dimension is inactive: ``model_only_models`` skips an unset
-    dimension either way, so on an unfiltered request both branches build the
-    same query.
-    """
-    return None if key in MULTI_DIMENSIONS else key
 
 
 # Live rows across the Title→Model join (no variant exclusion: the candidate
@@ -353,6 +321,12 @@ class FilterDimension:
     # non-surfaced dimension is still honored from the query string (the
     # product doc's Hidden dimensions — the detail-page pin dimensions).
     surfaced: bool = True
+    # How several selections in this dimension combine — ``"and"`` (each
+    # selection narrows further: themes, edge) or ``"or"`` (the selection is a
+    # set of acceptable values over a per-Model single-valued field). ``None``
+    # for single-valued dimensions. Must agree with the ``GameFilters`` field's
+    # arity; an import-time check below pins it.
+    combine: Literal["and", "or"] | None = None
 
 
 def _narrow_player_count(
@@ -472,24 +446,28 @@ MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
             active=lambda f: bool(f.themes),
             narrow=_narrow_themes,
             facet=TaxonomyFacet("theme", Theme, "themes"),
+            combine="and",
         ),
         FilterDimension(
             key="features",
             active=lambda f: bool(f.features),
             narrow=_narrow_features,
             facet=TaxonomyFacet("feature", GameplayFeature, "gameplay_features"),
+            combine="and",
         ),
         FilterDimension(
             key="reward_types",
             active=lambda f: bool(f.reward_types),
             narrow=_narrow_reward_types,
             facet=PathFacet("reward_type", "reward_types__slug", "reward_types__name"),
+            combine="and",
         ),
         FilterDimension(
             key="edge",
             active=lambda f: bool(f.edge),
             narrow=_narrow_edge,
             facet=EdgeFacet("edge"),
+            combine="and",
         ),
         # The hidden dimensions (the product doc's Hidden dimensions): honored
         # from the query string so a dimension detail page can pin the listing,
@@ -557,6 +535,41 @@ MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
 # hit the SQL in the vocabulary's declared order, keeping query shape
 # deterministic across registry edits.
 assert tuple(MODEL_DIMENSION_SPECS) == MODEL_DIMENSIONS
+
+# A tuple-typed filter field holds several selections at once, so its spec
+# MUST declare how they combine, and a single-valued field must not. A set
+# comparison, so a failure names the offending keys.
+assert {
+    key for key, spec in MODEL_DIMENSION_SPECS.items() if spec.combine is not None
+} == {key for key in MODEL_DIMENSIONS if get_origin(_FILTER_TYPES.get(key)) is tuple}
+
+# Dimensions whose selections **accumulate** (ANDed together) instead of
+# replacing one another. An ``"or"`` dimension is multi-valued but NOT in this
+# set: its selection is one replaceable set of acceptable values, so for facet
+# purposes it behaves like a single-select.
+ACCUMULATING_DIMENSIONS: Final[frozenset[ModelDimension]] = frozenset(
+    key for key, spec in MODEL_DIMENSION_SPECS.items() if spec.combine == "and"
+)
+
+
+def facet_exclude(key: ModelDimension) -> ModelDimension | None:
+    """The N-1 exclusion for *key*'s own facet base — ``None`` meaning
+    "exclude nothing".
+
+    Dropping a dimension answers *"what would I get if this value were the
+    selection"*, which is exactly what a click does where selecting **replaces**
+    the current selection (manufacturer, tech gen, player count — and ``"or"``
+    dimensions, whose whole value-set is replaced at once). Where selections
+    accumulate (``combine="and"``), a click ANDs the value onto what is already
+    chosen, so the dimension has to stay applied — otherwise the badge counts
+    the value in isolation and promises a total the click cannot deliver (with
+    Replay active, "Cash Payout (6)" landing on 0 results).
+
+    Free when the dimension is inactive: ``model_only_models`` skips an unset
+    dimension either way, so on an unfiltered request both branches build the
+    same query.
+    """
+    return None if key in ACCUMULATING_DIMENSIONS else key
 
 
 # ---------------------------------------------------------------------------
