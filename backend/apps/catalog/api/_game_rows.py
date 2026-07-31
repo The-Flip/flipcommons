@@ -21,6 +21,13 @@ by semantics class:
 - ``franchise`` / ``series`` — Title-only, binding all of a Title's Models
 - ``q`` — the record-local shared class (name + abbreviations), tested on the
   record being decided and propagating in neither direction
+- ``display_subtype`` / ``tag`` / ``technology_subgeneration`` / ``cabinet`` /
+  ``game_format`` / ``production_status`` / ``corporate_entity`` — single-valued
+  Model-only, **hidden** (``surfaced=False``): honored from the query string
+  with full roll-up semantics, but no sidebar control and no facet counts.
+  ``technology_subgeneration`` matches the Model's own FK *or* its system's;
+  the sparse three (``cabinet``/``game_format``/``production_status``) are raw
+  — ``game_format=pinball`` means exactly the classified minority
 
 The two-set split is the engine's load-bearing invariant: **unanimity is
 measured over** :func:`model_only_models` **(Model-only dimensions alone),
@@ -100,6 +107,13 @@ class GameFilters:
     themes: tuple[str, ...] = ()
     features: tuple[str, ...] = ()
     reward_types: tuple[str, ...] = ()
+    display_subtype: str | None = None
+    tag: str | None = None
+    technology_subgeneration: str | None = None
+    cabinet: str | None = None
+    game_format: str | None = None
+    production_status: str | None = None
+    corporate_entity: str | None = None
 
 
 # The closed dimension-key vocabularies. Literal, not str: an ``exclude``
@@ -116,6 +130,13 @@ ModelDimension = Literal[
     "themes",
     "features",
     "reward_types",
+    "display_subtype",
+    "tag",
+    "technology_subgeneration",
+    "cabinet",
+    "game_format",
+    "production_status",
+    "corporate_entity",
 ]
 TitleDimension = Literal["franchise", "series"]
 
@@ -433,6 +454,64 @@ MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
             active=lambda f: bool(f.reward_types),
             narrow=_narrow_reward_types,
             facet=PathFacet("reward_type", "reward_types__slug", "reward_types__name"),
+        ),
+        # The hidden dimensions (the product doc's Hidden dimensions): honored
+        # from the query string so a dimension detail page can pin the listing,
+        # but surfaced=False — no sidebar control — and facet=None — no counts.
+        FilterDimension(
+            key="display_subtype",
+            active=lambda f: bool(f.display_subtype),
+            narrow=lambda qs, f, expansion: qs.filter(
+                display_subtype__slug=f.display_subtype
+            ),
+            surfaced=False,
+        ),
+        FilterDimension(
+            key="tag",
+            active=lambda f: bool(f.tag),
+            narrow=lambda qs, f, expansion: qs.filter(tags__slug=f.tag),
+            surfaced=False,
+        ),
+        FilterDimension(
+            key="technology_subgeneration",
+            active=lambda f: bool(f.technology_subgeneration),
+            # A Model belongs to a subgeneration directly or through its
+            # system — the OR mirrors the /api/models/ narrower, whose two
+            # arms both matter (a WPC game rarely re-declares its system's
+            # subgeneration on the Model row).
+            narrow=lambda qs, f, expansion: qs.filter(
+                Q(technology_subgeneration__slug=f.technology_subgeneration)
+                | Q(system__technology_subgeneration__slug=f.technology_subgeneration)
+            ),
+            surfaced=False,
+        ),
+        FilterDimension(
+            key="cabinet",
+            active=lambda f: bool(f.cabinet),
+            narrow=lambda qs, f, expansion: qs.filter(cabinet__slug=f.cabinet),
+            surfaced=False,
+        ),
+        FilterDimension(
+            key="game_format",
+            active=lambda f: bool(f.game_format),
+            narrow=lambda qs, f, expansion: qs.filter(game_format__slug=f.game_format),
+            surfaced=False,
+        ),
+        FilterDimension(
+            key="production_status",
+            active=lambda f: bool(f.production_status),
+            narrow=lambda qs, f, expansion: qs.filter(
+                production_status__slug=f.production_status
+            ),
+            surfaced=False,
+        ),
+        FilterDimension(
+            key="corporate_entity",
+            active=lambda f: bool(f.corporate_entity),
+            narrow=lambda qs, f, expansion: qs.filter(
+                corporate_entity__slug=f.corporate_entity
+            ),
+            surfaced=False,
         ),
     )
 }

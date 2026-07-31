@@ -150,6 +150,49 @@ class GameFilterQuerySchema(Schema):
             "supplied slugs must match."
         ),
     )
+    display_subtype: str | None = Field(
+        None,
+        description="Display-subtype slug (see `GET /api/display-subtypes/`).",
+    )
+    tag: str | None = Field(
+        None,
+        description="Tag slug (see `GET /api/tags/`).",
+    )
+    technology_subgeneration: str | None = Field(
+        None,
+        description=(
+            "Technology-subgeneration slug (see `GET /api/technology-subgenerations/`). "
+            "Matches models carrying the subgeneration directly or through their system."
+        ),
+    )
+    cabinet: str | None = Field(
+        None,
+        description=(
+            "Cabinet slug (see `GET /api/cabinets/`). Matches only explicitly "
+            "classified models."
+        ),
+    )
+    game_format: str | None = Field(
+        None,
+        description=(
+            "Game-format slug (see `GET /api/game-formats/`). Matches only "
+            "explicitly classified models."
+        ),
+    )
+    production_status: str | None = Field(
+        None,
+        description=(
+            "Production-status slug (see `GET /api/production-statuses/`). "
+            "Matches only explicitly classified models."
+        ),
+    )
+    corporate_entity: str | None = Field(
+        None,
+        description=(
+            "Corporate-entity slug (see `GET /api/corporate-entities/`). Narrower "
+            "than `manufacturer`: matches records built by this specific entity."
+        ),
+    )
 
     def to_filters(self) -> GameFilters:
         return GameFilters(
@@ -167,6 +210,13 @@ class GameFilterQuerySchema(Schema):
             themes=tuple(self.theme),
             features=tuple(self.feature),
             reward_types=tuple(self.reward_type),
+            display_subtype=self.display_subtype,
+            tag=self.tag,
+            technology_subgeneration=self.technology_subgeneration,
+            cabinet=self.cabinet,
+            game_format=self.game_format,
+            production_status=self.production_status,
+            corporate_entity=self.corporate_entity,
         )
 
 

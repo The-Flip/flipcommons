@@ -164,6 +164,33 @@ class TestGamesList:
         assert query_count() == small
 
 
+class TestHiddenDimensionParams:
+    """The hidden dimensions are honored from the query string (a dimension
+    detail page pins the listing through them) while staying out of the facet
+    payload — ``test_payload_shape`` below pins the absence half."""
+
+    def test_hidden_dimension_filters_the_listing(self, client, db):
+        from apps.catalog.tests.game_builders import _model, _title
+
+        t = _title("Tagged", "tagged")
+        _model(t, "tagged-m", tags=("licensed",))
+        t2 = _title("Untagged", "untagged")
+        _model(t2, "untagged-m")
+        data = client.get("/api/games/?tag=licensed").json()
+        assert [item["name"] for item in data["items"]] == ["Tagged"]
+        assert data["count"] == 1
+
+    def test_hidden_dimension_composes_with_q(self, client, db):
+        from apps.catalog.tests.game_builders import _model, _title
+
+        t = _title("Cocktail Alpha", "cocktail-alpha")
+        _model(t, "cocktail-alpha-m", cabinet="cocktail")
+        t2 = _title("Cocktail Beta", "cocktail-beta")
+        _model(t2, "cocktail-beta-m")
+        data = client.get("/api/games/?cabinet=cocktail&q=cocktail").json()
+        assert [item["name"] for item in data["items"]] == ["Cocktail Alpha"]
+
+
 class TestGamesFacetsPage:
     def test_payload_shape(self, client, db):
         data = client.get("/api/pages/games").json()
