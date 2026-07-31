@@ -18,10 +18,13 @@ from apps.catalog.models import (
     Franchise,
     GameFormat,
     GameplayFeature,
+    LicenseStatus,
     MachineModel,
     Manufacturer,
+    ModelRelationship,
     Person,
     ProductionStatus,
+    RelationshipType,
     RewardType,
     Series,
     System,
@@ -200,6 +203,8 @@ def _model(
     tags: tuple[str, ...] = (),
     persons: tuple[str, ...] = (),
     variant_of: MachineModel | None = None,
+    remake_of: MachineModel | None = None,
+    export_edition_of: MachineModel | None = None,
 ) -> MachineModel:
     m = make_machine_model(
         title=title,
@@ -219,6 +224,8 @@ def _model(
         else None,
         player_count=player_count,
         variant_of=variant_of,
+        remake_of=remake_of,
+        export_edition_of=export_edition_of,
     )
     for s in themes:
         m.themes.add(_theme(s))
@@ -231,3 +238,22 @@ def _model(
     for s in persons:
         Credit.objects.create(model=m, person=_person(s), role=_role())
     return m
+
+
+def _edge(
+    subject: MachineModel,
+    target: MachineModel | None,
+    rel_type: RelationshipType,
+    *,
+    license_status: LicenseStatus = LicenseStatus.UNKNOWN,
+    target_label: str = "",
+) -> ModelRelationship:
+    """A typed relationship edge; ``target=None`` with a *target_label* builds
+    the free-text-donor form."""
+    return ModelRelationship.objects.create(
+        machine_model=subject,
+        target_machine=target,
+        target_label=target_label,
+        relationship_type=rel_type,
+        license_status=license_status,
+    )

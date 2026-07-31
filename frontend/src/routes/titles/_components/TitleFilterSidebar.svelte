@@ -4,6 +4,7 @@
   import YearRangeInput from '$lib/components/input/YearRangeInput.svelte';
   import { emptyFilterState, hasActiveFilters, type FilterState } from '$lib/facet-engine';
   import type { FacetOptionSchema, GameFilterOptionsSchema } from '$lib/api/schema';
+  import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
 
   let {
     filterOptions,
@@ -34,6 +35,17 @@
   let themeOptions = $derived(filterOptions ? toOptions(filterOptions.theme) : []);
   let featureOptions = $derived(filterOptions ? toOptions(filterOptions.feature) : []);
   let rewardTypeOptions = $derived(filterOptions ? toOptions(filterOptions.reward_type) : []);
+  // Edge options arrive named by wire value; the labels are the relationship
+  // vocabulary's, resolved client-side.
+  let edgeOptions = $derived(
+    filterOptions
+      ? filterOptions.edge.map((o) => ({
+          value: o.public_id,
+          label: edgeFilterLabel(o.public_id),
+          count: o.count,
+        }))
+      : [],
+  );
   let techGenOptions = $derived(filterOptions ? toOptions(filterOptions.tech_gen) : []);
   let displayTypeOptions = $derived(filterOptions ? toOptions(filterOptions.display_type) : []);
   let systemOptions = $derived(filterOptions ? toOptions(filterOptions.system) : []);
@@ -139,6 +151,19 @@
       {disabled}
       placeholder="Search reward types..."
       emptyMessage="No reward types match your other filters"
+    />
+  </div>
+
+  <div class="filter-section">
+    <SearchableSelect
+      compact
+      label="Relationship"
+      options={edgeOptions}
+      bind:selected={filters.edges}
+      multi
+      {disabled}
+      placeholder="Search relationships..."
+      emptyMessage="No relationships match your other filters"
     />
   </div>
 

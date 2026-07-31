@@ -336,9 +336,31 @@ The point is not fewer lines, it is fewer things that can disagree. Eight axes, 
 | variant policy          | `variant_of__isnull=True` hand-written per queryset                                     | 1 — rung 3                                        |
 | sort                    | accumulator/prefetch order, franchises/series undefined                                 | 1 — the listing's                                 |
 
-## <a id="pr-rel"></a>PR.REL — the relationship vocabulary
+## ✅ DONE: <a id="pr-rel"></a>PR.REL — the relationship vocabulary
 
 The catalog stores these relationships three different ways and the split should be invisible at the read layer. It already is in the editing interface.
+
+### Outcome — where it landed (2026-07-31)
+
+Everything in this PR is implemented on the branch; the code and its tests are the source of truth, and the working execution plan lived outside the repo. The map:
+
+| what             | where                                                                                                                                                                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the key registry | `apps/catalog/api/_edge_vocabulary.py` — lineage keys introspected from `_meta`, type keys iterated from `RelationshipType`, the two composites declared; `edge_q(selection)` / `parse_edge_value`; an unknown or malformed value matches nothing                           |
+| the dimension    | `edge` in `MODEL_DIMENSION_SPECS` (`_game_rows.py`), tuple-typed so it self-classifies as accumulating; repeatable `edge=` wire param, direction as the `:in` value suffix                                                                                                  |
+| the facet        | `EdgeFacet` binding → `_edge_value_rows` (`_game_facets.py`): one existence query per (key, direction) over the accumulating base; options named by wire value; a bespoke selected-at-zero arm (edge keys have no catalog table); facets cache version bumped               |
+| the frontend     | a Relationship `SearchableSelect` multi dropdown (the Themes pattern) in `TitleFilterSidebar`; labels in `relationship-phrase.ts` (`edgeFilterLabel`, wire-value fallback for unknown keys); `FilterState.edges` through `PARAM_MAP` / `TitlesQuery` / the chip builder     |
+| behavior pins    | `test_edge_vocabulary.py` (registry, parsing, the liveness asymmetry), `test_game_rows.py` (roll-up under `edge`), `test_game_facets.py` (badge == click, including the accumulating second-click case), `test_api_games.py` (wire), `relationship-phrase.test.ts` (labels) |
+
+Decisions taken with the product owner (2026-07-30):
+
+- **`remake_of` does not subordinate** — closing the question this section raises below. Every remake postdates its original, so the representative's earliest-year ordering already surfaces the original; subordination would be a second mechanism doing the same job. The existing behavior stands, pinned in `test_first_model_candidates.py` (which also already pins the per-type display consequences: copy and retheme subordinate, conversion and conversion_kit stay eligible).
+- **The panel is a dropdown, not a checkbox list** — all 18 (key × direction) entries in one count-ranked `SearchableSelect`, so every label stands alone ("Has variants", never a bare "Variants").
+- **No retheme licensing composites in v1** — the composite set is exactly `bootleg` and `licensed_build`; retheme's cells stay unnamed until the data fills in (2 classified rows of 38). Additive later.
+- **Far-end liveness is asymmetric** — outbound keeps a deleted far end (the fact is recorded about the subject, and label-only edges must count); inbound requires the far-end Model and its Title live (a filter must not surface a claim no visible record backs).
+- **Direction spelling** — `edge=<key>` / `edge=<key>:in`, one repeatable param.
+
+Verification, live at the dev API: every ledger prediction reproduced exactly — `edge=copy` 172, `conversion` 137, `conversion_kit` 139, `retheme` 38, `remake_of` 19, `export_edition_of` 57, `bootleg` 5, `variant_of` 139, `copy:in` 147, `remake_of:in` 10 — and the full 18-entry facet payload serves the sidebar; clicking "Is a copy" yields `?edge=copy` and 172 cards, badge == result. Benchmark (sqlite dev host, medians of 5): the 18 existence queries cost the facet fan-out ~60 ms unfiltered (185.8 → 246.2 ms — the path production serves from cache) and 15–31 ms filtered; the listing page itself is unchanged within noise.
 
 **An edge is `(subject, relationship_type, direction, target)`, with `license_status` as an orthogonal payload axis.** Two operators here — select and flip direction — over one closed key set. Exclusion is [not in V1](ModelFiltering.md#exclude-relationships).
 
@@ -399,7 +421,7 @@ Every option names its relationship; licensing appears only as a qualifier on a 
 
 Three properties this gives the panel. **No orphan option**: "Authorized (48)" on its own says a machine has _some_ authorized relationship with _some_ other machine, which is not a thought anyone had. **The word does not collide**: "licensed" in a pinball catalog reads as theme licensing first, so the reader-facing qualifier is _authorized_ or _official_, chosen per cell — "official copy" is an oxymoron where "authorized copy" is not. **The named cells need not partition**: 5 + 45 falls 122 short of 172, and that reads as fine because a `(all)` catch-all is sitting there saying the set is bigger. Closing the gap would mean inventing a name for "copy nobody has researched" — a worklist, not a thing to browse.
 
-Only `copy` and `retheme` get qualifiers. The lineage keys have no licensing column at all.
+Only `copy` gets qualifiers in v1 (retheme's cells stay unnamed until the data fills in — the decision above). The lineage keys have no licensing column at all.
 
 **Rejected: exposing `license_status` as a filter axis of its own**, orthogonal to type — `?edge=copy&license=licensed` rather than only the named composites. The composites are needed for the domain words regardless, so the raw axis is strictly additional surface; it produces the orphan option above as a legal query, it puts a second spelling of "bootleg" in the URL space, and a stored filter would then have two ways to serialize one idea. **This is a reversible call** — the composite registry already resolves to a `(type, status)` pair internally, so exposing the axis later is additive rather than a re-design.
 
@@ -407,21 +429,21 @@ Only `copy` and `retheme` get qualifiers. The lineage keys have no licensing col
 
 ### The panel
 
-A flat checkbox list, one entry per key, composing with every other dimension exactly as any facet does — `edge=copy` crossed with `manufacturer=` or `year=` needs no new concept.
+A `SearchableSelect` multi dropdown (the Themes pattern), one entry per (key, direction), composing with every other dimension exactly as any facet does — `edge=copy` crossed with `manufacturer=` or `year=` needs no new concept. The options are count-ranked with no group headings, so every label stands alone.
 
-Reader-facing copy is largely done. [`relationship-phrase.ts`](../../../frontend/src/lib/entities/relationship-phrase.ts) is the declared single source, carrying every (edge kind × license) cell with four slots each, and the three lineage relations have their headings in `model-lineage.ts`. Both already ship on the Model detail page, so the filter renders from them rather than spelling a second vocabulary. What it needs is one more slot per cell: neither existing form works as a checkbox, because the outbound lead dangles ("Bootleg of" — of what?) and the inbound heading reads as outbound in a sidebar, where "Bootlegs" looks like _is a bootleg_ rather than _has been bootlegged_.
+Reader-facing copy lives in [`relationship-phrase.ts`](../../../frontend/src/lib/entities/relationship-phrase.ts), the declared single source, carrying every (edge kind × license) cell with four slots each; the three lineage relations have their headings in `model-lineage.ts`. Both already ship on the Model detail page, so the filter renders from them rather than spelling a second vocabulary. The filter needed one more vocabulary beside those cells — `edgeFilterLabel` and its per-key `{out, in}` label map — because neither existing form works as a standalone option: the outbound lead dangles ("Bootleg of" — of what?) and the inbound heading reads as outbound in a sidebar, where "Bootlegs" looks like _is a bootleg_ rather than _has been bootlegged_.
 
 ### Subordination does per-type semantic work
 
 `copy` and `retheme` subordinate; `conversion` and `conversion_kit` do not. Subordination plays no part in filtering — the roll-up never consults the representative — but it still decides which Model heads a Title card, so `edge=conversion_kit` cards the kit's donor Title whenever every Model under it matches. Test this explicitly: the display consequence varies by type through a derived property rather than a declared one.
 
-The lineage fields are the asymmetric half of this, and one of them is a surprise: `variant_of` excludes a Model from representative candidacy entirely, `export_edition_of` subordinates, and `remake_of` does **neither** — `_is_subordinate_copy` keys on `export_edition_of` and the subordinating edge types only. The Chicago Gaming remakes lose representative status today on the year tiebreak alone (2015 against 1997), a weaker cause than the VIFICO one. Whether `remake_of` should subordinate is a product call to raise; PR.REL must not change it quietly.
+The lineage fields are the asymmetric half of this, and one of them is a surprise: `variant_of` excludes a Model from representative candidacy entirely, `export_edition_of` subordinates, and `remake_of` does **neither** — `_is_subordinate_copy` keys on `export_edition_of` and the subordinating edge types only. The Chicago Gaming remakes lose representative status today on the year tiebreak alone (2015 against 1997), a weaker cause than the VIFICO one. Whether `remake_of` should subordinate was the product call this section existed to raise — **decided: it does not** (see the outcome above for the reasoning).
 
 ### The dimension cost, and what to do about it
 
 **✅ The `FilterDimension` spec exists** — built as [PRE.SPEC](#pre-detail-refactors) ahead of PR.DETAIL rather than mid-PR.REL as this section originally planned, because PR.DETAIL's seven hidden dimensions made it the larger migration. `MODEL_DIMENSION_SPECS` in `_game_rows.py` carries one declaration per Model-only dimension — activeness, narrower, facet binding, `surfaced` — with all eleven existing dimensions migrated; the facet fan-out dispatches value-rows shapes from it and registry-completeness tests pin bindings to the payload fields and the test vocabulary. The structural hole it closes: per-dimension wiring passing valid-but-possibly-wrong string keys — the Literals make an _invalid_ key a type error but could not catch a _wrong valid_ one (review found `series` wired everywhere yet exercised by no test, meaning a `fk="franchise"` transposition would have passed the whole suite). `MULTI_DIMENSIONS` (accumulate vs replace) remains a derived property beside the registry, from `GameFilters`' tuple arity, so a new multi-valued dimension classifies itself; `edge` accumulates (repeated `edge=` params AND, per the coverage ledger). PR.SPARSE's designated-default belongs on the spec when it lands.
 
-Adding a dimension now touches, on the backend: the `ModelDimension` Literal → a `MODEL_DIMENSION_SPECS` entry → `GameFilters` + `GameFilterQuerySchema` + `to_filters()` → and, when surfaced, `GameFacetOptions` + the payload dict + schema in `games.py`. On the frontend (surfaced dimensions only): `FilterState` → `emptyFilterState()` → `PARAM_MAP` → `hasActiveFilters` → `TitlesQuery` / `queryFromUrl` → the chip builder → the sidebar. `edge` is one dimension slot with a key registry and a direction axis behind it — its facet needs a shape the registry doesn't carry yet (per-key existence over the edge relations), added as its first new `FacetBinding` variant.
+Adding a dimension now touches, on the backend: the `ModelDimension` Literal → a `MODEL_DIMENSION_SPECS` entry → `GameFilters` + `GameFilterQuerySchema` + `to_filters()` → and, when surfaced, `GameFacetOptions` + the payload dict + schema in `games.py`. On the frontend (surfaced dimensions only): `FilterState` → `emptyFilterState()` → `PARAM_MAP` → `hasActiveFilters` → `TitlesQuery` / `queryFromUrl` → the chip builder → the sidebar. `edge` is one dimension slot with a key registry and a direction axis behind it — its facet shape (per-key existence over the edge relations) landed as `EdgeFacet`, the registry's first new `FacetBinding` variant since PRE.SPEC.
 
 Do **not** generate the TypeScript half from it. Cross-language codegen here is the giant new subsystem the product doc is afraid of, and the project's own escalation order puts codegen last, after a `_meta` walk and a typed spec. Take the rung that fits and leave the frontend hand-written until it hurts.
 

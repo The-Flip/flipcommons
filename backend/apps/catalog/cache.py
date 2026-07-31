@@ -63,7 +63,7 @@ from apps.core.licensing import current_audience
 # frontend until the next write; versioning the keys orphans the stale entries.
 # The version is shared across all bases, so a bump also harmlessly orphans
 # unchanged payloads, which rebuild on first read. (Per-bump history: git blame.)
-_CACHE_VERSION = "v7"
+_CACHE_VERSION = "v8"
 
 # No-filter facet option lists for the games listing page (GET /api/pages/games).
 # Static between catalog edits, so cached and cleared by invalidate_response_cache().

@@ -22,7 +22,9 @@ from apps.catalog.api._game_rows import (
     game_rows_merged,
 )
 from apps.catalog.engine.query.facet_helpers import FacetOption
+from apps.catalog.models import LicenseStatus, RelationshipType
 from apps.catalog.tests.game_builders import (
+    _edge,
     _franchise,
     _model,
     _series,
@@ -176,6 +178,35 @@ class TestShapes:
         assert counts == {"rock": 1}
 
 
+class TestEdgeFacet:
+    def test_options_tally_distinct_models_not_edge_rows(self, db):
+        """Two copy edges on one Model (different targets) are one matching
+        Model, and its two targets each count under the inbound key."""
+        t = _title("Sources", "sources")
+        a = _model(t, "sources-a", name="Sources A")
+        b = _model(t, "sources-b", name="Sources B")
+        prolific = _model(t, "sources-prolific", name="Sources Prolific")
+        _edge(prolific, a, RelationshipType.COPY)
+        _edge(prolific, b, RelationshipType.COPY)
+        counts = _counts(game_facet_counts(GameFilters()).edge)
+        assert counts == {"copy": 1, "copy:in": 2}
+
+    def test_unanimous_title_counts_one_card(self, db):
+        t_orig = _title("Original", "original")
+        original = _model(t_orig, "original-m")
+        t_copy = _title("Copy Town", "copy-town")
+        _edge(_model(t_copy, "copy-town-m"), original, RelationshipType.COPY)
+        counts = _counts(game_facet_counts(GameFilters()).edge)
+        # The single-Model copy Title rolls up to one card either way round.
+        assert counts == {"copy": 1, "copy:in": 1}
+
+    def test_selected_unknown_key_stays_visible_at_zero(self, db):
+        t = _title("Solo", "solo")
+        _model(t, "solo-m")
+        counts = _counts(game_facet_counts(GameFilters(edge=("bogus",))).edge)
+        assert counts == {"bogus": 0}
+
+
 class TestAccumulatingDimensions:
     """The multi-select dimensions AND their values, so clicking one adds it to
     what is already chosen. Their badges must predict *that*, not the value on
@@ -224,6 +255,7 @@ FACET_FILTER_FIELD: dict[str, str] = {
     "display_type": "display_type",
     "system": "system",
     "reward_type": "reward_types",
+    "edge": "edge",
     "theme": "themes",
     "feature": "features",
     "franchise": "franchise",
@@ -250,6 +282,7 @@ NARROWERS: dict[str, Callable[[GameFilters, str], GameFilters]] = {
     "display_type": lambda f, v: replace(f, display_type=v),
     "system": lambda f, v: replace(f, system=v),
     "reward_type": lambda f, v: replace(f, reward_types=_add(f.reward_types, v)),
+    "edge": lambda f, v: replace(f, edge=_add(f.edge, v)),
     "theme": lambda f, v: replace(f, themes=_add(f.themes, v)),
     "feature": lambda f, v: replace(f, features=_add(f.features, v)),
     "franchise": lambda f, v: replace(f, franchise=v),
@@ -267,7 +300,7 @@ def _build_catalog() -> None:
     _theme("water", parents=(liquid,))
     fr = _franchise("alpha-verse")
     t1 = _title("Alpha", "alpha", franchise=fr)
-    _model(
+    alpha_stern = _model(
         t1,
         "alpha-stern",
         name="Alpha",
@@ -282,7 +315,7 @@ def _build_catalog() -> None:
         reward_types=("replay",),
         persons=("lawlor",),
     )
-    _model(
+    alpha_bally = _model(
         t1,
         "alpha-bally",
         name="Alpha Encore",
@@ -305,7 +338,7 @@ def _build_catalog() -> None:
     )
     _model(t2, "beta-le", manufacturer="stern", themes=("water",), variant_of=parent)
     t3 = _title("Gamma", "gamma", series=_series("gamma-saga"))
-    _model(
+    gamma = _model(
         t3,
         "gamma-m",
         manufacturer="gottlieb",
@@ -314,6 +347,16 @@ def _build_catalog() -> None:
         reward_types=("replay",),
         persons=("lawlor",),
     )
+    # Gamma bootlegs Alpha's design on converted Alpha Encore cabinets — one
+    # Model satisfying two edge keys (plus the composite), the shape that
+    # gives the edge facet a second click while a first selection is active.
+    _edge(
+        gamma,
+        alpha_stern,
+        RelationshipType.COPY,
+        license_status=LicenseStatus.UNLICENSED,
+    )
+    _edge(gamma, alpha_bally, RelationshipType.CONVERSION)
     _title("Empty", "empty", franchise=fr)
 
 
@@ -333,6 +376,9 @@ class TestBadgeEqualsResultCount:
         GameFilters(features=("multiball",)),
         GameFilters(reward_types=("replay",)),
         GameFilters(themes=("liquid",), reward_types=("extra-ball",)),
+        GameFilters(edge=("copy",)),
+        GameFilters(edge=("bootleg", "conversion")),
+        GameFilters(edge=("copy:in",), q="Alpha"),
     )
 
     def test_narrowers_cover_every_facet(self):

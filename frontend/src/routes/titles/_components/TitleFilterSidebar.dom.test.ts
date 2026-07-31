@@ -10,6 +10,7 @@ describe('TitleFilterSidebar — cold load (no options)', () => {
     render(TitleFilterSidebarFixture);
 
     expect(screen.getByRole('combobox', { name: /manufacturer/i })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: /relationship/i })).toBeDisabled();
     expect(screen.getByLabelText('Year from')).toBeDisabled();
     // The option-backed pill groups render just their labels (no pills) while loading.
     expect(screen.getByText('Player count')).toBeInTheDocument();

@@ -61,9 +61,17 @@ from ..models import (
     Theme,
     Title,
 )
+from ._edge_vocabulary import (
+    EDGE_DIRECTIONS,
+    EDGE_KEYS,
+    EdgeSelection,
+    edge_q,
+    edge_wire_value,
+)
 from ._game_rows import (
     MODEL_DIMENSION_SPECS,
     PLAYER_BUCKETS,
+    EdgeFacet,
     GameFilters,
     ModelDimension,
     PathFacet,
@@ -106,6 +114,7 @@ class GameFacetOptions:
     display_type: list[FacetOption] = field(default_factory=list)
     system: list[FacetOption] = field(default_factory=list)
     reward_type: list[FacetOption] = field(default_factory=list)
+    edge: list[FacetOption] = field(default_factory=list)
     theme: list[FacetOption] = field(default_factory=list)
     feature: list[FacetOption] = field(default_factory=list)
     franchise: list[FacetOption] = field(default_factory=list)
@@ -316,6 +325,38 @@ def _hierarchical_value_rows(
     return rows, names
 
 
+def _edge_value_rows(
+    f: GameFilters, shared: _SharedFanout
+) -> tuple[list[_FacetValueRow], dict[str, str]]:
+    """Value rows for the relationship keys: one existence-filtered query per
+    ``(key, direction)`` entry over the candidate set (accumulating dimension,
+    so the base keeps the current edge selections — :func:`facet_exclude`).
+    Rows are distinct Models per entry, so a Model carrying two edges of one
+    kind counts once; a Model satisfying two entries counts once under each.
+
+    ``value_slug`` and ``value_name`` are both the wire value (``copy:in``) —
+    reader-facing labels live in the frontend's relationship vocabulary, not
+    here."""
+    gate = _title_only_q(f, prefix="title__")
+    base = model_only_models(
+        f, exclude=facet_exclude("edge"), expansion=shared.expansion
+    ).filter(gate)
+    rows: list[_FacetValueRow] = []
+    names: dict[str, str] = {}
+    for key in EDGE_KEYS:
+        for direction in EDGE_DIRECTIONS:
+            wire = edge_wire_value(EdgeSelection(key, direction))
+            raw = (
+                base.filter(edge_q(EdgeSelection(key, direction)))
+                .values_list("pk", "title_id", "variant_of_id")
+                .distinct()
+            )
+            for pk, title_id, variant_of_id in raw:
+                rows.append(_FacetValueRow(pk, title_id, variant_of_id, wire, wire))
+            names[wire] = wire
+    return rows, names
+
+
 def _player_value_rows(f: GameFilters, shared: _SharedFanout) -> list[_FacetValueRow]:
     """Value rows for the player-count buckets: each counted Model mapped to
     its bucket (``6`` collects 6-or-more; values outside ``PLAYER_BUCKETS``
@@ -411,6 +452,8 @@ def _counted_facets(
                 rows, names = _value_rows(f, shared, spec.key, binding)
             case TaxonomyFacet() as binding:
                 rows, names = _hierarchical_value_rows(f, shared, spec.key, binding)
+            case EdgeFacet() as binding:
+                rows, names = _edge_value_rows(f, shared)
             case _:
                 continue
         counted[binding.name] = _tally_options(
@@ -448,6 +491,19 @@ def _selected(value: str | None) -> tuple[str, ...]:
     return (value,) if value else ()
 
 
+def _with_selected_edges(
+    options: list[FacetOption], selected: tuple[str, ...]
+) -> list[FacetOption]:
+    """The ``with_selected`` rule for edge keys, which have no catalog table
+    to resolve names from: a selected value pruned to zero re-enters as its
+    wire value at count 0 (an unknown key stays deselectable the same way)."""
+    present = {o.public_id for o in options}
+    extra = [FacetOption(v, v, 0) for v in selected if v not in present]
+    if not extra:
+        return options
+    return sorted(options + extra, key=lambda o: o.name)
+
+
 def game_facet_counts(f: GameFilters) -> GameFacetOptions:
     """Assemble every sidebar option list at card grain, each counted by the
     N-1 rule (its own dimension excluded), active selections re-included at
@@ -471,6 +527,7 @@ def game_facet_counts(f: GameFilters) -> GameFacetOptions:
         ),
         system=with_selected(counted["system"], _selected(f.system), System),
         reward_type=with_selected(counted["reward_type"], f.reward_types, RewardType),
+        edge=_with_selected_edges(counted["edge"], f.edge),
         theme=with_selected(counted["theme"], f.themes, Theme),
         feature=with_selected(counted["feature"], f.features, GameplayFeature),
         franchise=with_selected(

@@ -25,12 +25,15 @@ from apps.catalog.api._game_rows import (
     game_rows_merged,
 )
 from apps.catalog.models import (
+    LicenseStatus,
     MachineModel,
     ModelAbbreviation,
+    RelationshipType,
     Title,
     TitleAbbreviation,
 )
 from apps.catalog.tests.game_builders import (
+    _edge,
     _feature,
     _franchise,
     _model,
@@ -156,6 +159,7 @@ ACTIVATING: dict[ModelDimension, GameFilters] = {
     "themes": GameFilters(themes=("nothing",)),
     "features": GameFilters(features=("nothing",)),
     "reward_types": GameFilters(reward_types=("nothing",)),
+    "edge": GameFilters(edge=("copy",)),
     "display_subtype": GameFilters(display_subtype="nothing"),
     "tag": GameFilters(tag="nothing"),
     "technology_subgeneration": GameFilters(technology_subgeneration="nothing"),
@@ -343,6 +347,108 @@ class TestMultiSelect:
         t = _title("Derby", "derby")
         _model(t, "derby-m", themes=("horse-racing",))
         assert _cards(GameFilters(themes=("sports",))) == {("title", "Derby")}
+
+
+# ---------------------------------------------------------------------------
+# The edge dimension — relationship keys under the roll-up
+# ---------------------------------------------------------------------------
+
+
+class TestEdgeDimension:
+    def _copied(self) -> tuple[Title, MachineModel, MachineModel]:
+        """One Title holding an original and its unlicensed copy — the shape
+        the roll-up was built for (a copy sits under the Title it copies)."""
+        t = _title("Big Valley", "big-valley")
+        original = _model(t, "big-valley-bally", name="Big Valley", year=1970)
+        rmg = _model(t, "big-valley-rmg", name="Big Valley (RMG)", year=1970)
+        _edge(
+            rmg,
+            original,
+            RelationshipType.COPY,
+            license_status=LicenseStatus.UNLICENSED,
+        )
+        return t, original, rmg
+
+    def test_copy_shatters_the_shared_title(self, db):
+        """The original does not match ``edge=copy``, so the Title is not
+        unanimous and only the copy cards."""
+        self._copied()
+        assert _cards(GameFilters(edge=("copy",))) == {("model", "Big Valley (RMG)")}
+
+    def test_unanimous_title_rolls_up(self, db):
+        """A single-Model Title whose Model is a copy cards as the Title."""
+        t_orig = _title("Original", "original")
+        original = _model(t_orig, "original-m")
+        t_copy = _title("Copy Town", "copy-town")
+        copycat = _model(t_copy, "copy-town-m")
+        _edge(copycat, original, RelationshipType.COPY)
+        assert _cards(GameFilters(edge=("copy",))) == {("title", "Copy Town")}
+
+    def test_inbound_direction(self, db):
+        """``edge=copy:in`` finds the original; its Title shatters because the
+        copy sibling doesn't match the inbound key."""
+        self._copied()
+        assert _cards(GameFilters(edge=("copy:in",))) == {("model", "Big Valley")}
+
+    def test_composite_narrows_to_the_licensing_cell(self, db):
+        t, original, _rmg = self._copied()
+        unknown = _model(t, "big-valley-x", name="Big Valley (X)")
+        _edge(unknown, original, RelationshipType.COPY)
+        assert _cards(GameFilters(edge=("copy",))) == {
+            ("model", "Big Valley (RMG)"),
+            ("model", "Big Valley (X)"),
+        }
+        assert _cards(GameFilters(edge=("bootleg",))) == {("model", "Big Valley (RMG)")}
+
+    def test_selections_accumulate_on_one_model(self, db):
+        """Repeated ``edge=`` values AND on the same Model — a copy that is
+        also a conversion matches both; a plain copy does not."""
+        t = _title("Sources", "sources")
+        design = _model(t, "sources-design", name="Sources Design")
+        donor = _model(t, "sources-donor", name="Sources Donor")
+        both = _model(t, "sources-both", name="Sources Both")
+        plain = _model(t, "sources-plain", name="Sources Plain")
+        _edge(both, design, RelationshipType.COPY)
+        _edge(both, donor, RelationshipType.CONVERSION)
+        _edge(plain, design, RelationshipType.COPY)
+        assert _cards(GameFilters(edge=("copy", "conversion"))) == {
+            ("model", "Sources Both")
+        }
+
+    def test_variants_card_individually(self, db):
+        """``edge=variant_of``: the parent never matches, so the Title can't
+        roll up and rung 3 can't absorb — each Variant cards itself."""
+        t = _title("Godzilla", "godzilla")
+        premium = _model(t, "godzilla-premium", name="Godzilla (Premium)")
+        _model(t, "godzilla-70th", name="Godzilla (70th)", variant_of=premium)
+        assert _cards(GameFilters(edge=("variant_of",))) == {
+            ("model", "Godzilla (70th)")
+        }
+
+    def test_unknown_key_matches_nothing(self, db):
+        _t, _original, _rmg = self._copied()
+        assert _cards(GameFilters(edge=("bogus",))) == set()
+        # A malformed value poisons the whole selection, known keys included.
+        assert _cards(GameFilters(edge=("copy", "bogus"))) == set()
+
+    def test_composes_with_other_dimensions(self, db):
+        t = _title("Twins", "twins")
+        original = _model(t, "twins-orig", name="Twins")
+        _edge(
+            _model(t, "twins-rmg", name="Twins (RMG)", manufacturer="rmg"),
+            original,
+            RelationshipType.COPY,
+        )
+        _edge(
+            _model(t, "twins-petaco", name="Twins (Petaco)", manufacturer="petaco"),
+            original,
+            RelationshipType.COPY,
+        )
+        f = GameFilters(edge=("copy",), manufacturer="rmg")
+        assert _cards(f) == {("model", "Twins (RMG)")}
+        assert _cards(GameFilters(edge=("copy",), q="petaco")) == {
+            ("model", "Twins (Petaco)")
+        }
 
 
 # ---------------------------------------------------------------------------
