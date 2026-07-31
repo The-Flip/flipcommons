@@ -308,7 +308,17 @@ class BucketFacet(NamedTuple):
     name: str
 
 
-FacetBinding = PathFacet | TaxonomyFacet | BucketFacet
+class EdgeFacet(NamedTuple):
+    """Facet binding for the relationship keys: one option per
+    ``(key, direction)`` entry of the edge vocabulary, value rows from an
+    existence test per entry (``_edge_value_rows``). Option ``public_id``s are
+    the wire values (``copy``, ``copy:in``); display labels are the
+    frontend's."""
+
+    name: str
+
+
+FacetBinding = PathFacet | TaxonomyFacet | BucketFacet | EdgeFacet
 
 # How one active dimension narrows the candidate Model set — chained one
 # ``.filter()`` at a time from the ``MachineModel`` root (the Multi-select
@@ -479,6 +489,7 @@ MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
             key="edge",
             active=lambda f: bool(f.edge),
             narrow=_narrow_edge,
+            facet=EdgeFacet("edge"),
         ),
         # The hidden dimensions (the product doc's Hidden dimensions): honored
         # from the query string so a dimension detail page can pin the listing,

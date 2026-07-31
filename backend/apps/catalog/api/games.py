@@ -259,6 +259,9 @@ class GameFilterOptionsSchema(Schema):
     display_type: list[FacetOptionSchema] = []
     system: list[FacetOptionSchema] = []
     reward_type: list[FacetOptionSchema] = []
+    # Edge options' public_id/name are both the wire value (`copy`, `copy:in`);
+    # reader-facing labels are the frontend's relationship vocabulary.
+    edge: list[FacetOptionSchema] = []
     theme: list[FacetOptionSchema] = []
     feature: list[FacetOptionSchema] = []
     franchise: list[FacetOptionSchema] = []
@@ -525,6 +528,7 @@ def _filter_options_payload(opts: GameFacetOptions) -> dict[str, object]:
             "display_type": _facet_option_dicts(opts.display_type),
             "system": _facet_option_dicts(opts.system),
             "reward_type": _facet_option_dicts(opts.reward_type),
+            "edge": _facet_option_dicts(opts.edge),
             "theme": _facet_option_dicts(opts.theme),
             "feature": _facet_option_dicts(opts.feature),
             "franchise": _facet_option_dicts(opts.franchise),

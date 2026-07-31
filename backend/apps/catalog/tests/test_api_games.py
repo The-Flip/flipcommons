@@ -305,6 +305,7 @@ class TestGamesFacetsPage:
             "display_type",
             "system",
             "reward_type",
+            "edge",
             "theme",
             "feature",
             "franchise",

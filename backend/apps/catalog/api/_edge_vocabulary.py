@@ -33,7 +33,7 @@ existence test per key — a Model satisfying two keys matches both.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Final, Literal, NamedTuple, assert_never
+from typing import Final, Literal, NamedTuple, assert_never, get_args
 
 from django.db.models import Exists, OuterRef, Q
 
@@ -42,6 +42,10 @@ from apps.core.models import active_status_q
 from ..models import LicenseStatus, MachineModel, ModelRelationship, RelationshipType
 
 EdgeDirection = Literal["out", "in"]
+
+# The runtime direction tuple, derived from the Literal so the two can't
+# diverge (the MODEL_DIMENSIONS pattern).
+EDGE_DIRECTIONS: Final[tuple[EdgeDirection, ...]] = get_args(EdgeDirection)
 
 _IN_SUFFIX: Final = ":in"
 
