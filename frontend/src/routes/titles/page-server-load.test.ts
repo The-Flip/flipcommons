@@ -60,6 +60,19 @@ describe('/titles +page.server load', () => {
     expect((cardCall![0] as Request).url).toContain('page=1');
   });
 
+  it('passes repeated edge params through to the API query', async () => {
+    const fetch = routedFetch(
+      new Response(JSON.stringify({ items: [], count: 0 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const result = await load(event(fetch, '?edge=copy&edge=bootleg:in'));
+    if (!result) throw new Error('expected load to return page data');
+    expect(result.query.edge).toEqual(['copy', 'bootleg:in']);
+  });
+
   it('throws instead of degrading to empty when the card fetch fails', async () => {
     // A 500 must surface as an error page, not a silent "0 games" success
     // (which could also mislead the create prompt on a query).

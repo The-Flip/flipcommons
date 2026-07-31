@@ -25,6 +25,7 @@ export interface TitlesQuery {
   theme?: string[];
   feature?: string[];
   reward_type?: string[];
+  edge?: string[];
 }
 
 export function queryFromUrl(url: URL): TitlesQuery {
@@ -56,5 +57,6 @@ export function queryFromUrl(url: URL): TitlesQuery {
     theme: multi('theme'),
     feature: multi('feature'),
     reward_type: multi('reward_type'),
+    edge: multi('edge'),
   };
 }

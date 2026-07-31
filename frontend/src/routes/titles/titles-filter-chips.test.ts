@@ -11,6 +11,7 @@ function options(overrides: Partial<GameFilterOptionsSchema> = {}): GameFilterOp
     display_type: [],
     system: [],
     reward_type: [],
+    edge: [],
     theme: [],
     feature: [],
     franchise: [],
@@ -59,6 +60,24 @@ describe('titleFilterChips', () => {
     expect(chips.map((c) => c.label)).toEqual(['Sci-Fi', 'Horror']);
     chips[0].remove();
     expect(filters.themes).toEqual(['horror']);
+  });
+
+  it('labels edge chips from the relationship vocabulary, not the option names', () => {
+    const filters = { ...emptyFilterState(), edges: ['bootleg', 'copy:in'] };
+    // The payload names edge options by wire value; the chip must not echo it.
+    const chips = titleFilterChips(
+      filters,
+      options({
+        edge: [
+          { public_id: 'bootleg', name: 'bootleg', count: 2 },
+          { public_id: 'copy:in', name: 'copy:in', count: 1 },
+        ],
+      }),
+    );
+
+    expect(chips.map((c) => c.label)).toEqual(['Bootleg', 'Has been copied']);
+    chips[0].remove();
+    expect(filters.edges).toEqual(['copy:in']);
   });
 
   it('formats the player-count chip, folding 6+', () => {

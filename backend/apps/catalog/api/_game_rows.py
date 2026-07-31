@@ -17,6 +17,9 @@ by semantics class:
 - ``themes`` / ``features`` — multi-select Model-only (AND of ORs,
   descendant-expanded)
 - ``reward_types`` — multi-select Model-only (AND, no hierarchy)
+- ``edge`` — multi-select Model-only (AND, no hierarchy): relationship keys
+  with an optional ``:in`` direction suffix (``_edge_vocabulary.py``); an
+  unknown key matches nothing
 - ``year_min``/``year_max`` — range, Model-only
 - ``franchise`` / ``series`` — Title-only, binding all of a Title's Models
 - ``q`` — the record-local shared class (name + abbreviations), tested on the
@@ -82,6 +85,7 @@ from ..models import (
     Title,
     TitleAbbreviation,
 )
+from ._edge_vocabulary import edge_q, parse_edge_value
 
 # ---------------------------------------------------------------------------
 # Inputs
@@ -107,6 +111,7 @@ class GameFilters:
     themes: tuple[str, ...] = ()
     features: tuple[str, ...] = ()
     reward_types: tuple[str, ...] = ()
+    edge: tuple[str, ...] = ()
     display_subtype: str | None = None
     tag: str | None = None
     technology_subgeneration: str | None = None
@@ -130,6 +135,7 @@ ModelDimension = Literal[
     "themes",
     "features",
     "reward_types",
+    "edge",
     "display_subtype",
     "tag",
     "technology_subgeneration",
@@ -302,7 +308,17 @@ class BucketFacet(NamedTuple):
     name: str
 
 
-FacetBinding = PathFacet | TaxonomyFacet | BucketFacet
+class EdgeFacet(NamedTuple):
+    """Facet binding for the relationship keys: one option per
+    ``(key, direction)`` entry of the edge vocabulary, value rows from an
+    existence test per entry (``_edge_value_rows``). Option ``public_id``s are
+    the wire values (``copy``, ``copy:in``); display labels are the
+    frontend's."""
+
+    name: str
+
+
+FacetBinding = PathFacet | TaxonomyFacet | BucketFacet | EdgeFacet
 
 # How one active dimension narrows the candidate Model set — chained one
 # ``.filter()`` at a time from the ``MachineModel`` root (the Multi-select
@@ -335,7 +351,7 @@ class FilterDimension:
     facet: FacetBinding | None = None
     # Whether the /games sidebar offers a control for this dimension. A
     # non-surfaced dimension is still honored from the query string (the
-    # product doc's Hidden dimensions); every current dimension is surfaced.
+    # product doc's Hidden dimensions — the detail-page pin dimensions).
     surfaced: bool = True
 
 
@@ -378,6 +394,20 @@ def _narrow_reward_types(
 ) -> QuerySet[MachineModel]:
     for slug in f.reward_types:
         qs = qs.filter(reward_types__slug=slug)
+    return qs
+
+
+def _narrow_edge(
+    qs: QuerySet[MachineModel], f: GameFilters, expansion: TaxonomyExpansion
+) -> QuerySet[MachineModel]:
+    """Each selection is an existence predicate ANDed on (a Model can be both
+    a copy and a conversion). An unknown or malformed value matches nothing —
+    the nonexistent-tag feel, not a validation error."""
+    for value in f.edge:
+        selection = parse_edge_value(value)
+        if selection is None:
+            return qs.none()
+        qs = qs.filter(edge_q(selection))
     return qs
 
 
@@ -454,6 +484,12 @@ MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
             active=lambda f: bool(f.reward_types),
             narrow=_narrow_reward_types,
             facet=PathFacet("reward_type", "reward_types__slug", "reward_types__name"),
+        ),
+        FilterDimension(
+            key="edge",
+            active=lambda f: bool(f.edge),
+            narrow=_narrow_edge,
+            facet=EdgeFacet("edge"),
         ),
         # The hidden dimensions (the product doc's Hidden dimensions): honored
         # from the query string so a dimension detail page can pin the listing,
