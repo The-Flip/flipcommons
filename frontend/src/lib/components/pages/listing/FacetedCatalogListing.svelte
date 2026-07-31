@@ -1,7 +1,4 @@
-<script
-  lang="ts"
-  generics="F extends { query: string }, O, T extends { slug: string; name: string }"
->
+<script lang="ts" generics="F extends { query: string }, O, T extends ListingJsonLdItem">
   import type { Component, Snippet } from 'svelte';
   import { afterNavigate, goto, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
@@ -12,11 +9,15 @@
   import FilterDrawer from '$lib/components/collections/filters/FilterDrawer.svelte';
   import NoResultsCreatePrompt from './NoResultsCreatePrompt.svelte';
   import SearchBox from '$lib/components/ui/SearchBox.svelte';
-  import PaginatedListLoader from './PaginatedListLoader.svelte';
+  import PaginatedCardLoader from './PaginatedCardLoader.svelte';
   import { ENTITY_META, type CatalogEntityKey } from '$lib/entities/entity-meta';
   import MetaTags from '$lib/components/layout/page/head/MetaTags.svelte';
   import JsonLd from '$lib/components/layout/page/head/JsonLd.svelte';
-  import { buildListingJsonLd, listingMeta } from '$lib/entities/schema-org';
+  import {
+    buildListingJsonLd,
+    listingMeta,
+    type ListingJsonLdItem,
+  } from '$lib/entities/schema-org';
   import { decideCreatePrompt } from '$lib/create-prompt';
   import { streamed } from '$lib/streamed.svelte';
   import { resolveHref } from '$lib/utils';
@@ -210,7 +211,7 @@
 
       <!-- Remount (reseed the loader to page 1) only when the filters actually change. -->
       {#key gridKey}
-        <PaginatedListLoader {initial} {fetchPage} {basePath} layout="card" {children} />
+        <PaginatedCardLoader {initial} {fetchPage} {children} />
       {/key}
 
       {#await queryCount then count}

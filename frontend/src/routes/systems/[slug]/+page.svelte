@@ -24,7 +24,7 @@
       {#snippet children(title)}
         <GameCard
           entityType="title"
-          slug={title.public_id}
+          publicId={title.public_id}
           name={title.name}
           thumbnailUrl={title.thumbnail_url}
           manufacturerName={title.manufacturer_name}

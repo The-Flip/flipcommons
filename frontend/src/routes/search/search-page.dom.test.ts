@@ -32,7 +32,7 @@ function results(overrides: Partial<SearchResultsSchema> = {}): SearchResultsSch
       {
         entity_type: 'title' as const,
         name: 'Medieval Madness',
-        slug: 'medieval-madness',
+        public_id: 'medieval-madness',
         year: 1997,
         manufacturer: { public_id: 'williams', name: 'Williams' },
         thumbnail_url: null,
@@ -40,7 +40,7 @@ function results(overrides: Partial<SearchResultsSchema> = {}): SearchResultsSch
       {
         entity_type: 'model' as const,
         name: 'Medieval Madness (Remake)',
-        slug: 'medieval-madness-remake',
+        public_id: 'medieval-madness-remake',
         year: 2015,
         manufacturer: { public_id: 'williams', name: 'Williams' },
         thumbnail_url: null,

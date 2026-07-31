@@ -62,10 +62,13 @@ from ..models import (
     Title,
 )
 from ._game_rows import (
+    MODEL_DIMENSION_SPECS,
     PLAYER_BUCKETS,
     GameFilters,
     ModelDimension,
+    PathFacet,
     TaxonomyExpansion,
+    TaxonomyFacet,
     TitleDimension,
     _model_dimensions_active,
     _title_only_q,
@@ -241,8 +244,7 @@ def _value_rows(
     f: GameFilters,
     shared: _SharedFanout,
     dimension: ModelDimension,
-    slug_path: str,
-    name_path: str,
+    binding: PathFacet,
 ) -> tuple[list[_FacetValueRow], dict[str, str]]:
     """Value rows for a Model-attributed dimension (FK or M2M): each candidate
     Model paired with each of its values, over the base :func:`facet_exclude`
@@ -259,8 +261,10 @@ def _value_rows(
             f, exclude=facet_exclude(dimension), expansion=shared.expansion
         )
         .filter(gate)
-        .filter(**{f"{slug_path}__isnull": False})
-        .values_list("pk", "title_id", "variant_of_id", slug_path, name_path)
+        .filter(**{f"{binding.slug_path}__isnull": False})
+        .values_list(
+            "pk", "title_id", "variant_of_id", binding.slug_path, binding.name_path
+        )
         .distinct()
     )
     rows = [_FacetValueRow(*r) for r in raw]
@@ -274,16 +278,17 @@ def _hierarchical_value_rows(
     f: GameFilters,
     shared: _SharedFanout,
     dimension: ModelDimension,
-    taxonomy: type[Theme] | type[GameplayFeature],
-    path: str,
+    binding: TaxonomyFacet,
 ) -> tuple[list[_FacetValueRow], dict[str, str]]:
     """Value rows for a taxonomy dimension: each Model's direct tags exploded
     to every ancestor value, de-duplicated per ``(pk, value)`` — the DAG can
     reach one ancestor twice. Base per :func:`facet_exclude`, as in
     :func:`_value_rows`; themes and features accumulate, so theirs stays
     applied."""
-    ancestors = ancestor_map(taxonomy, "slug", "parents__slug")
-    names: dict[str, str] = dict(taxonomy._default_manager.values_list("slug", "name"))
+    ancestors = ancestor_map(binding.taxonomy, "slug", "parents__slug")
+    names: dict[str, str] = dict(
+        binding.taxonomy._default_manager.values_list("slug", "name")
+    )
     gate = _title_only_q(f, prefix="title__")
     raw = (
         model_only_models(
@@ -291,8 +296,8 @@ def _hierarchical_value_rows(
         )
         .filter(gate)
         # filter, not exclude — see _value_rows on multivalued isnull.
-        .filter(**{f"{path}__slug__isnull": False})
-        .values_list("pk", "title_id", "variant_of_id", f"{path}__slug")
+        .filter(**{f"{binding.path}__slug__isnull": False})
+        .values_list("pk", "title_id", "variant_of_id", f"{binding.path}__slug")
         .distinct()
     )
     seen: set[tuple[int, str]] = set()
@@ -391,26 +396,27 @@ def _vacuous_title_cells(
 # ---------------------------------------------------------------------------
 
 
-def _model_facet(
-    f: GameFilters,
-    shared: _SharedFanout,
-    dimension: ModelDimension,
-    slug_path: str,
-    name_path: str,
-) -> list[FacetOption]:
-    rows, names = _value_rows(f, shared, dimension, slug_path, name_path)
-    return _tally_options(rows, _unanimous_cells(rows, shared), names, shared)
-
-
-def _hierarchical_facet(
-    f: GameFilters,
-    shared: _SharedFanout,
-    dimension: ModelDimension,
-    taxonomy: type[Theme] | type[GameplayFeature],
-    path: str,
-) -> list[FacetOption]:
-    rows, names = _hierarchical_value_rows(f, shared, dimension, taxonomy, path)
-    return _tally_options(rows, _unanimous_cells(rows, shared), names, shared)
+def _counted_facets(
+    f: GameFilters, shared: _SharedFanout
+) -> dict[str, list[FacetOption]]:
+    """Options for every Model dimension carrying a countable facet binding,
+    keyed by the binding's facet name — the value-rows shape is dispatched
+    from the registry, so a dimension cannot count against the wrong paths.
+    Bucket facets (player count) have a bespoke output type and are assembled
+    by :func:`_player_facet`; ``facet=None`` dimensions (year) count nothing."""
+    counted: dict[str, list[FacetOption]] = {}
+    for spec in MODEL_DIMENSION_SPECS.values():
+        match spec.facet:
+            case PathFacet() as binding:
+                rows, names = _value_rows(f, shared, spec.key, binding)
+            case TaxonomyFacet() as binding:
+                rows, names = _hierarchical_value_rows(f, shared, spec.key, binding)
+            case _:
+                continue
+        counted[binding.name] = _tally_options(
+            rows, _unanimous_cells(rows, shared), names, shared
+        )
+    return counted
 
 
 def _title_facet(
@@ -445,69 +451,28 @@ def _selected(value: str | None) -> tuple[str, ...]:
 def game_facet_counts(f: GameFilters) -> GameFacetOptions:
     """Assemble every sidebar option list at card grain, each counted by the
     N-1 rule (its own dimension excluded), active selections re-included at
-    count 0 via the shared :func:`with_selected` leaf."""
+    count 0 via the shared :func:`with_selected` leaf.
+
+    The counted lists come from the registry (:func:`_counted_facets`); this
+    assembly stays explicit because it *is* the payload contract — each field
+    pairs a counted list with its selected values and option model."""
     shared = _shared_fanout(f)
+    counted = _counted_facets(f, shared)
     return GameFacetOptions(
         manufacturer=with_selected(
-            _model_facet(
-                f,
-                shared,
-                "manufacturer",
-                "corporate_entity__manufacturer__slug",
-                "corporate_entity__manufacturer__name",
-            ),
-            _selected(f.manufacturer),
-            Manufacturer,
+            counted["manufacturer"], _selected(f.manufacturer), Manufacturer
         ),
-        person=with_selected(
-            _model_facet(
-                f, shared, "person", "credits__person__slug", "credits__person__name"
-            ),
-            _selected(f.person),
-            Person,
-        ),
+        person=with_selected(counted["person"], _selected(f.person), Person),
         tech_gen=with_selected(
-            _model_facet(
-                f,
-                shared,
-                "tech_gen",
-                "technology_generation__slug",
-                "technology_generation__name",
-            ),
-            _selected(f.tech_gen),
-            TechnologyGeneration,
+            counted["tech_gen"], _selected(f.tech_gen), TechnologyGeneration
         ),
         display_type=with_selected(
-            _model_facet(
-                f, shared, "display_type", "display_type__slug", "display_type__name"
-            ),
-            _selected(f.display_type),
-            DisplayType,
+            counted["display_type"], _selected(f.display_type), DisplayType
         ),
-        system=with_selected(
-            _model_facet(f, shared, "system", "system__slug", "system__name"),
-            _selected(f.system),
-            System,
-        ),
-        reward_type=with_selected(
-            _model_facet(
-                f, shared, "reward_types", "reward_types__slug", "reward_types__name"
-            ),
-            f.reward_types,
-            RewardType,
-        ),
-        theme=with_selected(
-            _hierarchical_facet(f, shared, "themes", Theme, "themes"),
-            f.themes,
-            Theme,
-        ),
-        feature=with_selected(
-            _hierarchical_facet(
-                f, shared, "features", GameplayFeature, "gameplay_features"
-            ),
-            f.features,
-            GameplayFeature,
-        ),
+        system=with_selected(counted["system"], _selected(f.system), System),
+        reward_type=with_selected(counted["reward_type"], f.reward_types, RewardType),
+        theme=with_selected(counted["theme"], f.themes, Theme),
+        feature=with_selected(counted["feature"], f.features, GameplayFeature),
         franchise=with_selected(
             _title_facet(f, shared, "franchise", "franchise"),
             _selected(f.franchise),

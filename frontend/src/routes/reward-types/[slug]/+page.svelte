@@ -24,7 +24,7 @@
       {#snippet children(machine)}
         <GameCard
           entityType="model"
-          slug={machine.public_id}
+          publicId={machine.public_id}
           name={machine.name}
           thumbnailUrl={machine.thumbnail_url}
           manufacturerName={machine.manufacturer?.name}

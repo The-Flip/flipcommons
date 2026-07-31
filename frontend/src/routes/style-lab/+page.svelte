@@ -273,7 +273,7 @@
     <div class="card-grid">
       <GameCard
         entityType="model"
-        slug="go-go"
+        publicId="go-go"
         name="Go Go"
         thumbnailUrl="/fakes/fake_backglass1.avif"
         manufacturerName="Williams"
@@ -281,7 +281,7 @@
       />
       <GameCard
         entityType="model"
-        slug="critters"
+        publicId="critters"
         name="Critters"
         thumbnailUrl="/fakes/fake_backglass2.avif"
         manufacturerName="Jersey Jack"
@@ -289,7 +289,7 @@
       />
       <GameCard
         entityType="model"
-        slug="astro-blitz"
+        publicId="astro-blitz"
         name="Astro Blitz"
         thumbnailUrl="/fakes/fake_backglass3.avif"
         manufacturerName="Williams"

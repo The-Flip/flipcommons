@@ -42,10 +42,10 @@
         <!-- Composite key: slugs are unique per table, not across tables — a
              Title and a Model can share one, and a mixed section must not
              collide. -->
-        {#each results.games.items as game (`${game.entity_type}:${game.slug}`)}
+        {#each results.games.items as game (`${game.entity_type}:${game.public_id}`)}
           <GameCard
             entityType={game.entity_type}
-            slug={game.slug}
+            publicId={game.public_id}
             name={game.name}
             thumbnailUrl={game.thumbnail_url}
             manufacturerName={game.manufacturer?.name}
