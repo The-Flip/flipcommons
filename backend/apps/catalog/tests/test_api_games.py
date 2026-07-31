@@ -24,6 +24,7 @@ CARD_KEYS = {
     "year",
     "manufacturer",
     "thumbnail_url",
+    "roles",
 }
 
 
@@ -162,6 +163,74 @@ class TestGamesList:
         for i in range(2, 9):
             add_rows(i)
         assert query_count() == small
+
+
+class TestPersonRoles:
+    """The person-contextual card annotation: `roles` is populated only when
+    the `person` dimension is active — a Model card carries that person's
+    roles on the Model, a Title card the deduped union across its live
+    Models. The pattern future dimension-contingent annotations follow."""
+
+    @pytest.fixture
+    def credited(self, db):
+        from apps.catalog.models import Credit, CreditRole
+        from apps.catalog.tests.game_builders import _model, _person, _title
+
+        design, _ = CreditRole.objects.get_or_create(
+            slug="design", defaults={"name": "Design", "display_order": 10}
+        )
+        art, _ = CreditRole.objects.get_or_create(
+            slug="artwork", defaults={"name": "Artwork", "display_order": 20}
+        )
+        lawlor = _person("lawlor")
+        t = _title("Unified", "unified")
+        a = _model(t, "unified-a", name="Unified A", year=1990)
+        b = _model(t, "unified-b", name="Unified B", year=1992)
+        Credit.objects.create(model=a, person=lawlor, role=design)
+        Credit.objects.create(model=b, person=lawlor, role=art)
+        Credit.objects.create(model=b, person=lawlor, role=design)
+        return t
+
+    def test_title_card_unions_roles_across_models(self, client, credited):
+        data = client.get("/api/games/?person=lawlor").json()
+        assert data["count"] == 1
+        card = data["items"][0]
+        assert card["entity_type"] == "title"
+        # Newest Model first, roles in display order within it: 1992's
+        # Design/Artwork, then 1990's Design (deduped).
+        assert card["roles"] == ["Design", "Artwork"]
+
+    def test_model_card_carries_its_own_roles(self, client, credited):
+        from apps.catalog.tests.game_builders import _model
+
+        # A third, uncredited Model shatters the Title; only B cards for the
+        # combined person+year query.
+        _model(credited, "unified-c", name="Unified C")
+        data = client.get("/api/games/?person=lawlor&year_min=1991").json()
+        assert [c["entity_type"] for c in data["items"]] == ["model"]
+        assert data["items"][0]["name"] == "Unified B"
+        assert data["items"][0]["roles"] == ["Design", "Artwork"]
+
+    def test_roles_absent_without_person_dimension(self, client, credited):
+        data = client.get("/api/games/").json()
+        assert data["items"][0]["roles"] is None
+
+    def test_deleted_model_credit_does_not_leak_roles(self, client, credited):
+        """The liveness cleanup: a credit on a deleted Model contributes
+        neither a card nor a role name."""
+        from apps.catalog.models import Credit, CreditRole
+        from apps.catalog.tests.game_builders import _model, _person
+
+        translator, _ = CreditRole.objects.get_or_create(
+            slug="translation", defaults={"name": "Translation", "display_order": 30}
+        )
+        dead = _model(credited, "unified-dead", name="Unified Dead", year=1999)
+        Credit.objects.create(model=dead, person=_person("lawlor"), role=translator)
+        dead.status = "deleted"
+        dead.save()
+        card = client.get("/api/games/?person=lawlor").json()["items"][0]
+        assert card["entity_type"] == "title"
+        assert "Translation" not in card["roles"]
 
 
 class TestHiddenDimensionParams:

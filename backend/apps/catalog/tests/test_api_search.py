@@ -31,6 +31,7 @@ CARD_KEYS = {
         "year",
         "manufacturer",
         "thumbnail_url",
+        "roles",
     },
     "manufacturers": {"name", "slug", "model_count", "thumbnail_url"},
     "people": {"name", "slug", "aliases", "credit_count", "thumbnail_url"},

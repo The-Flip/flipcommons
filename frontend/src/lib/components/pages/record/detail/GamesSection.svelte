@@ -83,6 +83,7 @@ the listing page's own mechanism, so the server load re-runs and reseeds. -->
             thumbnailUrl={game.thumbnail_url}
             manufacturerName={game.manufacturer?.name}
             year={game.year}
+            roles={game.roles}
             {showManufacturer}
           />
         {/snippet}

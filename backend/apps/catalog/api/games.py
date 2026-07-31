@@ -16,23 +16,23 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NamedTuple
 
-from django.db.models import F, Max, Prefetch
+from django.db.models import F, Max, Prefetch, Q
 from django.http import HttpRequest, HttpResponse
 from ninja import Query, Router, Schema
 from ninja.params.functions import Query as QueryParam
 from pydantic import Field, TypeAdapter
 
 from apps.core.licensing import get_minimum_display_rank
-from apps.core.models import SitemappedModel
+from apps.core.models import SitemappedModel, active_status_q
 from apps.media.helpers import displayed_primary_media, media_prefetch
 
 from ..cache import games_facets_key, get_cached_response, set_cached_response
 from ..engine.entity_api.detail import DetailPageContext
 from ..engine.query.constants import DEFAULT_PAGE_SIZE
 from ..engine.query.facet_helpers import FacetOption
-from ..models import MachineModel, Title
+from ..models import Credit, MachineModel, Title
 from ._game_facets import GameFacetOptions, PlayerCountOption, game_facet_counts
 from ._game_rows import (
     _SORT_YEAR_GUARD,
@@ -72,6 +72,17 @@ class GameCardSchema(Schema):
     )
     thumbnail_url: str | None = Field(
         None, description="URL of a thumbnail image, if available."
+    )
+    # Person-contextual card annotation: present only when the `person`
+    # dimension is active, so a page of one person's games can say what they
+    # did on each. The pattern for dimension-contingent annotations — a future
+    # relationship-context field works the same way.
+    roles: list[str] | None = Field(
+        None,
+        description=(
+            "Only when filtering by `person`: that person's role names on this "
+            "record (for a title, across its models). Otherwise omitted."
+        ),
     )
 
 
@@ -288,7 +299,9 @@ def _manufacturer_ref(model: MachineModel | None) -> EntityRef | None:
     return EntityRef(public_id=mfr.public_id, name=mfr.name)
 
 
-def _serialize_title_card(title: Title, *, min_rank: int) -> GameCardSchema:
+def _serialize_title_card(
+    title: Title, *, min_rank: int, roles: list[str] | None = None
+) -> GameCardSchema:
     """A Title card: identity from the Title, display fields from the
     representative (``card_models[0]``)."""
     models: list[MachineModel] = getattr(title, "card_models", [])
@@ -307,10 +320,13 @@ def _serialize_title_card(title: Title, *, min_rank: int) -> GameCardSchema:
         year=first.year if first else None,
         manufacturer=_manufacturer_ref(first),
         thumbnail_url=thumbnail_url,
+        roles=roles,
     )
 
 
-def _serialize_model_card(model: MachineModel, *, min_rank: int) -> GameCardSchema:
+def _serialize_model_card(
+    model: MachineModel, *, min_rank: int, roles: list[str] | None = None
+) -> GameCardSchema:
     """A Model card: every field is the Model's own."""
     thumbnail_url, _ = extract_image_urls(
         model.extra_data or {},
@@ -324,11 +340,61 @@ def _serialize_model_card(model: MachineModel, *, min_rank: int) -> GameCardSche
         year=model.year,
         manufacturer=_manufacturer_ref(model),
         thumbnail_url=thumbnail_url,
+        roles=roles,
     )
 
 
-def _hydrate_cards(rows: Sequence[GameRow], *, min_rank: int) -> list[GameCardSchema]:
-    """One query per kind (plus prefetches), then serialize in row order."""
+class _PersonRoles(NamedTuple):
+    """The active person's deduped role names per carded record, keyed by pk —
+    a Title's collected across its live Models."""
+
+    by_title: dict[int, list[str]]
+    by_model: dict[int, list[str]]
+
+
+def _person_roles(rows: Sequence[GameRow], person: str) -> _PersonRoles:
+    """Two bulk Credit queries for the page's cards.
+
+    Title cards keep the person page's historical role order — credit order,
+    newest Model first (the ``_PersonTitleAccum`` semantics), over **live**
+    Models only, matching what the roll-up counted. A Model card's roles are
+    its own, in the role vocabulary's display order."""
+    by_title: dict[int, list[str]] = {}
+    by_model: dict[int, list[str]] = {}
+    title_pks = [r.pk for r in rows if r.kind == Title.entity_type]
+    model_pks = [r.pk for r in rows if r.kind == MachineModel.entity_type]
+    credits = Credit.objects.filter(person__slug=person, model__isnull=False)
+    title_credits = (
+        credits.filter(Q(model__title_id__in=title_pks) & active_status_q("model"))
+        .order_by(
+            F("model__year").desc(nulls_last=True),
+            "model__name",
+            "role__display_order",
+        )
+        .values_list("model__title_id", "role__name")
+    )
+    for title_id, role_name in title_credits:
+        names = by_title.setdefault(title_id, [])
+        if role_name not in names:
+            names.append(role_name)
+    model_credits = (
+        credits.filter(model_id__in=model_pks)
+        .order_by("role__display_order", "role__name")
+        .values_list("model_id", "role__name")
+    )
+    for model_id, role_name in model_credits:
+        names = by_model.setdefault(model_id, [])
+        if role_name not in names:
+            names.append(role_name)
+    return _PersonRoles(by_title=by_title, by_model=by_model)
+
+
+def _hydrate_cards(
+    rows: Sequence[GameRow], *, min_rank: int, person: str | None = None
+) -> list[GameCardSchema]:
+    """One query per kind (plus prefetches), then serialize in row order.
+    *person* is the active person dimension, if any — it annotates each card
+    with that person's roles on the record."""
     title_pks = [r.pk for r in rows if r.kind == Title.entity_type]
     model_pks = [r.pk for r in rows if r.kind == MachineModel.entity_type]
     titles = {
@@ -343,10 +409,19 @@ def _hydrate_cards(rows: Sequence[GameRow], *, min_rank: int) -> list[GameCardSc
         .select_related("corporate_entity__manufacturer")
         .prefetch_related(media_prefetch())
     }
+    roles = _person_roles(rows, person) if person else None
     return [
-        _serialize_title_card(titles[r.pk], min_rank=min_rank)
+        _serialize_title_card(
+            titles[r.pk],
+            min_rank=min_rank,
+            roles=roles.by_title.get(r.pk, []) if roles else None,
+        )
         if r.kind == Title.entity_type
-        else _serialize_model_card(models[r.pk], min_rank=min_rank)
+        else _serialize_model_card(
+            models[r.pk],
+            min_rank=min_rank,
+            roles=roles.by_model.get(r.pk, []) if roles else None,
+        )
         for r in rows
     ]
 
@@ -367,7 +442,9 @@ def game_list_page(f: GameFilters, *, page: int = 1) -> GameListPageSchema:
     start = (max(page, 1) - 1) * size
     return GameListPageSchema(
         items=_hydrate_cards(
-            rows[start : start + size], min_rank=get_minimum_display_rank()
+            rows[start : start + size],
+            min_rank=get_minimum_display_rank(),
+            person=f.person,
         ),
         count=len(rows),
     )
