@@ -231,8 +231,8 @@ class TestGameFormatPageEndpoint:
         assert client.get("/api/pages/game-format/nonexistent").status_code == 404
 
     def test_embed_is_raw_unclassified_never_matches(self, client, db):
-        """The sparse dimension enters raw: the page lists only the classified
-        minority. The default-bucket widening is PR.SPARSE, not this."""
+        """The sparse dimension is raw: the page lists only the classified
+        minority, with no default-bucket widening."""
         from apps.catalog.tests.game_builders import _model, _title
 
         t1 = _title("Classified", "classified")

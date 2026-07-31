@@ -437,8 +437,8 @@ class TestHiddenDimensions:
         assert _cards(GameFilters(game_format="bingo")) == {("model", "Mixed Bingo")}
 
     def test_sparse_dimension_is_raw_null_never_matches(self, db):
-        """PR.SPARSE's default bucket does not exist yet: an unclassified Model
-        is not pinball, so only the classified minority cards."""
+        """The sparse dimensions are raw: an unclassified Model is not
+        pinball, so only the classified minority cards (no default bucket)."""
         t1 = _title("Classified", "classified")
         _model(t1, "classified-m", game_format="pinball")
         t2 = _title("Unclassified", "unclassified")
