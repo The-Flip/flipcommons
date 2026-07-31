@@ -17,7 +17,14 @@ from django.test.utils import CaptureQueriesContext
 from apps.catalog.models import Title
 from apps.catalog.tests.conftest import SAMPLE_IMAGES, make_machine_model
 
-CARD_KEYS = {"entity_type", "name", "slug", "year", "manufacturer", "thumbnail_url"}
+CARD_KEYS = {
+    "entity_type",
+    "name",
+    "public_id",
+    "year",
+    "manufacturer",
+    "thumbnail_url",
+}
 
 
 class TestGamesList:
@@ -84,7 +91,7 @@ class TestGamesList:
         assert data["count"] == 1
         item = data["items"][0]
         assert item["entity_type"] == "model"
-        assert item["slug"] == "medieval-madness-bootleg"
+        assert item["public_id"] == "medieval-madness-bootleg"
         assert item["year"] == 2001
         assert item["manufacturer"]["name"] == "Stern"
         assert item["thumbnail_url"] == "https://img.opdb.org/md.jpg"
@@ -107,7 +114,7 @@ class TestGamesList:
         data = client.get("/api/games/?q=Remake").json()
         assert data["count"] == 1
         assert data["items"][0]["entity_type"] == "model"
-        assert data["items"][0]["slug"] == "medieval-madness-remake"
+        assert data["items"][0]["public_id"] == "medieval-madness-remake"
 
     def test_whitespace_q_is_no_filter(self, client, title):
         assert client.get("/api/games/?q=%20%20").json()["count"] == 1

@@ -8,6 +8,7 @@
   import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
   import EditSectionMenu from '$lib/components/layout/page/EditSectionMenu.svelte';
   import NoResultsCreatePrompt from './NoResultsCreatePrompt.svelte';
+  import PaginatedCardLoader from './PaginatedCardLoader.svelte';
   import PaginatedListLoader from './PaginatedListLoader.svelte';
   import type { EditSectionMenuItem } from '$lib/components/layout/page/edit-section-menu';
   import { SEARCH_THRESHOLD } from '$lib/components/collections/grid/search-threshold';
@@ -229,7 +230,11 @@
     {/if}
   {:else}
     {#key gridKey}
-      <PaginatedListLoader {initial} {fetchPage} {basePath} {layout} {children} />
+      {#if layout === 'card'}
+        <PaginatedCardLoader {initial} {fetchPage} {children} />
+      {:else}
+        <PaginatedListLoader {initial} {fetchPage} {basePath} {children} />
+      {/if}
     {/key}
   {/if}
 </Page>

@@ -7,7 +7,7 @@
 
   let {
     entityType,
-    slug,
+    publicId,
     name,
     thumbnailUrl = null,
     manufacturerName = null,
@@ -17,7 +17,7 @@
   }: {
     /** Which record the card fronts. Decides only the href, via ENTITY_META. */
     entityType: 'title' | 'model';
-    slug: string;
+    publicId: string;
     name: string;
     thumbnailUrl?: string | null;
     manufacturerName?: string | null;
@@ -40,7 +40,7 @@
 </script>
 
 <Card
-  href={resolveHref(`/${ENTITY_META[entityType].entity_type_plural}/${slug}`)}
+  href={resolveHref(`/${ENTITY_META[entityType].entity_type_plural}/${publicId}`)}
   title={name}
   {thumbnailUrl}
 >

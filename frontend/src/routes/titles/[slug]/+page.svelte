@@ -186,7 +186,7 @@
         {#each flatModels as m (m.slug)}
           <GameCard
             entityType="model"
-            slug={m.slug}
+            publicId={m.slug}
             name={m.name}
             thumbnailUrl={m.thumbnailUrl}
             manufacturerName={m.manufacturerName}

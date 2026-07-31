@@ -24,7 +24,14 @@ from apps.provenance.models import Source
 from apps.provenance.test_factories import make_claim
 
 CARD_KEYS = {
-    "games": {"entity_type", "name", "slug", "year", "manufacturer", "thumbnail_url"},
+    "games": {
+        "entity_type",
+        "name",
+        "public_id",
+        "year",
+        "manufacturer",
+        "thumbnail_url",
+    },
     "manufacturers": {"name", "slug", "model_count", "thumbnail_url"},
     "people": {"name", "slug", "aliases", "credit_count", "thumbnail_url"},
 }
@@ -208,7 +215,9 @@ def test_model_name_match_yields_model_card(client, db):
     make_machine_model(name="Rock", slug="rock-m", title=t)
     make_machine_model(name="Rock Encore", slug="rock-encore", title=t)
     items = client.get("/api/pages/search?q=Rock%20Encore").json()["games"]["items"]
-    assert [(i["entity_type"], i["slug"]) for i in items] == [("model", "rock-encore")]
+    assert [(i["entity_type"], i["public_id"]) for i in items] == [
+        ("model", "rock-encore")
+    ]
 
 
 def test_description_title_does_not_suppress_model_row(client, db):
@@ -220,7 +229,7 @@ def test_description_title_does_not_suppress_model_row(client, db):
     make_machine_model(name="Rock", slug="rock-m", title=t)
     make_machine_model(name="Rock Encore", slug="rock-encore", title=t)
     items = client.get("/api/pages/search?q=encore").json()["games"]["items"]
-    assert [(i["entity_type"], i["slug"]) for i in items] == [
+    assert [(i["entity_type"], i["public_id"]) for i in items] == [
         ("model", "rock-encore"),
         ("title", "rock"),
     ]

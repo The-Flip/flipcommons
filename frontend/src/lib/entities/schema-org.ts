@@ -177,6 +177,15 @@ export function listingMeta(catalogKey: CatalogEntityKey): {
 }
 
 /**
+ * One listing row as the JSON-LD builder needs it: a name plus the row's URL
+ * identity. The newer card schemas (the games card) carry `public_id`, the
+ * older list schemas still say `slug`; the two are byte-identical for every
+ * entity with a listing route (`public_id_field` defaults to `"slug"`), and
+ * `public_id` wins where both exist.
+ */
+export type ListingJsonLdItem = { name: string } & ({ public_id: string } | { slug: string });
+
+/**
  * Build the `@graph` for a catalog listing page: a `CollectionPage` node whose
  * `mainEntity` is an `ItemList` of the page's items (named, `@id`-referenced —
  * cheap payload that lets crawlers/LLMs reach every member with anchor text),
@@ -192,15 +201,17 @@ export function listingMeta(catalogKey: CatalogEntityKey): {
  * listing-key `@id` below is right — under a filter a Model row would
  * otherwise be emitted with a Title-listing `@id`.
  *
- * Item `@id`s use `item.slug`: valid for every listing entity because the one
- * entity whose `public_id ≠ slug` (Location) has no listing route.
+ * Item `@id`s use the row's URL identity — `public_id` on the newer card
+ * schemas, `slug` on the older list schemas (byte-identical for every listing
+ * entity: the one entity whose `public_id ≠ slug`, Location, has no listing
+ * route).
  *
  * @param totalCount the full collection size for `ItemList.numberOfItems`
  *   (the listed items are page 1); defaults to the number of items passed.
  */
 export function buildListingJsonLd(
   catalogKey: CatalogEntityKey,
-  items: readonly { slug: string; name: string }[],
+  items: readonly ListingJsonLdItem[],
   pageUrl: URL,
   totalCount?: number,
 ): Record<string, unknown> {
@@ -220,7 +231,10 @@ export function buildListingJsonLd(
         '@type': 'ListItem',
         position: i + 1,
         item: {
-          '@id': absolutize(pageUrl, `/${entity_type_plural}/${item.slug}`),
+          '@id': absolutize(
+            pageUrl,
+            `/${entity_type_plural}/${'public_id' in item ? item.public_id : item.slug}`,
+          ),
           name: item.name,
         },
       })),

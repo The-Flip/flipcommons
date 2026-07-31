@@ -62,7 +62,7 @@ class GameCardSchema(Schema):
         description="Which record this card is: a title or a machine model."
     )
     name: str = Field(description="The record's display name.")
-    slug: str = Field(description="The record's URL slug.")
+    public_id: str = Field(description="The record's URL-identity value.")
     year: int | None = Field(None, description="Release year, if known.")
     manufacturer: EntityRef | None = Field(
         None, description="The record's manufacturer."
@@ -250,7 +250,7 @@ def _serialize_title_card(title: Title, *, min_rank: int) -> GameCardSchema:
     return GameCardSchema(
         entity_type=Title.entity_type,
         name=title.name,
-        slug=title.slug,
+        public_id=title.public_id,
         year=first.year if first else None,
         manufacturer=_manufacturer_ref(first),
         thumbnail_url=thumbnail_url,
@@ -267,7 +267,7 @@ def _serialize_model_card(model: MachineModel, *, min_rank: int) -> GameCardSche
     return GameCardSchema(
         entity_type=MachineModel.entity_type,
         name=model.name,
-        slug=model.slug,
+        public_id=model.public_id,
         year=model.year,
         manufacturer=_manufacturer_ref(model),
         thumbnail_url=thumbnail_url,
