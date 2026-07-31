@@ -14,7 +14,8 @@ record type anything can be created as.
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import replace
 from typing import Annotated, Any, Literal
 
 from django.db.models import F, Max, Prefetch
@@ -24,9 +25,11 @@ from ninja.params.functions import Query as QueryParam
 from pydantic import Field, TypeAdapter
 
 from apps.core.licensing import get_minimum_display_rank
+from apps.core.models import SitemappedModel
 from apps.media.helpers import displayed_primary_media, media_prefetch
 
 from ..cache import games_facets_key, get_cached_response, set_cached_response
+from ..engine.entity_api.detail import DetailPageContext
 from ..engine.query.constants import DEFAULT_PAGE_SIZE
 from ..engine.query.facet_helpers import FacetOption
 from ..models import MachineModel, Title
@@ -355,6 +358,44 @@ def _hydrate_cards(rows: Sequence[GameRow], *, min_rank: int) -> list[GameCardSc
 games_router = Router(tags=["games"])
 
 
+def game_list_page(f: GameFilters, *, page: int = 1) -> GameListPageSchema:
+    """One page of cards plus the total count — the single production path for
+    listing pages, shared by ``GET /api/games/`` and every detail-page embed
+    (:func:`with_games`), so an embedded list cannot drift from the listing."""
+    rows = game_rows_merged(f)
+    size = DEFAULT_PAGE_SIZE
+    start = (max(page, 1) - 1) * size
+    return GameListPageSchema(
+        items=_hydrate_cards(
+            rows[start : start + size], min_rank=get_minimum_display_rank()
+        ),
+        count=len(rows),
+    )
+
+
+def with_games[ModelT: SitemappedModel, PageT: Schema](
+    serialize_detail: Callable[[ModelT], Schema],
+    pin: Callable[[ModelT], GameFilters],
+    page_schema: type[PageT],
+) -> Callable[[ModelT, DetailPageContext], PageT]:
+    """Compose an entity serializer with the games embed, for
+    ``register_entity_detail_page``: the page payload is the detail fields plus
+    page 1 of the listing pinned to the entity (*pin*) narrowed by the
+    request's search term. *page_schema* must be the detail schema plus a
+    ``games: GameListPageSchema`` field — the page/edit-response split: only
+    the page endpoint carries (and pays for) the embedded listing."""
+
+    def _serialize(obj: ModelT, ctx: DetailPageContext) -> PageT:
+        detail = serialize_detail(obj)
+        embed = game_list_page(replace(pin(obj), q=ctx.q))
+        # model_validate (not a kwargs constructor): PageT is generic here, so
+        # mypy sees only Schema's signature; validation also enforces that
+        # *page_schema* really is the detail schema plus ``games``.
+        return page_schema.model_validate({**detail.model_dump(), "games": embed})
+
+    return _serialize
+
+
 @games_router.get("/", response=GameListPageSchema)
 def list_games(
     request: HttpRequest,
@@ -366,14 +407,7 @@ def list_games(
     then alphabetically.
 
     All filters combine with AND."""
-    rows = game_rows_merged(filters.to_filters())
-    size = DEFAULT_PAGE_SIZE
-    start = (max(page, 1) - 1) * size
-    min_rank = get_minimum_display_rank()
-    return GameListPageSchema(
-        items=_hydrate_cards(rows[start : start + size], min_rank=min_rank),
-        count=len(rows),
-    )
+    return game_list_page(filters.to_filters(), page=page)
 
 
 # ---------------------------------------------------------------------------

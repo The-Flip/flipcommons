@@ -41,7 +41,8 @@ from apps.catalog.models import (
 )
 from apps.core.licensing import get_minimum_display_rank
 
-from ..engine.entity_api.detail import register_entity_detail_page
+from ..engine.entity_api.detail import plain_page, register_entity_detail_page
+from ._game_rows import GameFilters
 from .corporate_entities import CorporateEntityDetailSchema
 from .corporate_entities import _detail_qs as _corp_entity_detail_qs
 from .corporate_entities import _serialize_detail as _serialize_corp_entity_detail
@@ -59,6 +60,7 @@ from .games import (
     GameSearchSectionSchema,
     game_search_section,
     games_facets_response,
+    with_games,
 )
 from .machine_models import (
     ModelDetailSchema,
@@ -99,7 +101,7 @@ from .taxonomy import (
     _serialize_technology_subgeneration,
     _taxonomy_detail_qs,
 )
-from .themes import ThemeDetailSchema
+from .themes import ThemePageSchema
 from .themes import _detail_qs as _theme_detail_qs
 from .themes import _serialize_detail as _serialize_theme_detail
 from .titles import TitleDetailSchema, _serialize_title_detail
@@ -185,84 +187,88 @@ register_entity_detail_page(
     pages_router,
     Title,
     detail_qs=_title_detail_qs,
-    serialize_detail=_serialize_title_detail,
+    serialize_page=plain_page(_serialize_title_detail),
     response_schema=TitleDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     Manufacturer,
     detail_qs=_manufacturer_qs,
-    serialize_detail=_serialize_manufacturer_detail,
+    serialize_page=plain_page(_serialize_manufacturer_detail),
     response_schema=ManufacturerDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     MachineModel,
     detail_qs=_model_detail_qs,
-    serialize_detail=_serialize_model_detail,
+    serialize_page=plain_page(_serialize_model_detail),
     response_schema=ModelDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     Person,
     detail_qs=_person_qs,
-    serialize_detail=_serialize_person_detail,
+    serialize_page=plain_page(_serialize_person_detail),
     response_schema=PersonDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     Series,
     detail_qs=_series_detail_qs,
-    serialize_detail=_serialize_series_detail,
+    serialize_page=plain_page(_serialize_series_detail),
     response_schema=SeriesDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     CorporateEntity,
     detail_qs=_corp_entity_detail_qs,
-    serialize_detail=_serialize_corp_entity_detail,
+    serialize_page=plain_page(_serialize_corp_entity_detail),
     response_schema=CorporateEntityDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     GameplayFeature,
     detail_qs=_gf_detail_qs,
-    serialize_detail=_serialize_gf_detail,
+    serialize_page=plain_page(_serialize_gf_detail),
     response_schema=GameplayFeatureDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     Franchise,
     detail_qs=_franchise_detail_qs,
-    serialize_detail=_serialize_franchise_detail,
+    serialize_page=plain_page(_serialize_franchise_detail),
     response_schema=FranchiseDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     Theme,
     detail_qs=_theme_detail_qs,
-    serialize_detail=_serialize_theme_detail,
-    response_schema=ThemeDetailSchema,
+    serialize_page=with_games(
+        _serialize_theme_detail,
+        lambda theme: GameFilters(themes=(theme.slug,)),
+        ThemePageSchema,
+    ),
+    response_schema=ThemePageSchema,
 )
 register_entity_detail_page(
     pages_router,
     System,
     detail_qs=_system_detail_qs,
-    serialize_detail=_serialize_system_detail,
+    serialize_page=plain_page(_serialize_system_detail),
     response_schema=SystemDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     RewardType,
     detail_qs=_reward_type_detail_qs,
-    serialize_detail=_serialize_reward_type_detail,
+    serialize_page=plain_page(_serialize_reward_type_detail),
     response_schema=RewardTypeDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     CreditRole,
     detail_qs=_credit_role_detail_qs,
-    serialize_detail=_serialize_credit_role_detail,
+    serialize_page=plain_page(_serialize_credit_role_detail),
     response_schema=CreditRoleDetailSchema,
 )
 
@@ -282,21 +288,21 @@ register_entity_detail_page(
     pages_router,
     Tag,
     detail_qs=lambda: _taxonomy_detail_qs(Tag),
-    serialize_detail=_serialize_taxonomy,
+    serialize_page=plain_page(_serialize_taxonomy),
     response_schema=TaxonomySchema,
 )
 register_entity_detail_page(
     pages_router,
     Cabinet,
     detail_qs=lambda: _taxonomy_detail_qs(Cabinet),
-    serialize_detail=_serialize_taxonomy,
+    serialize_page=plain_page(_serialize_taxonomy),
     response_schema=TaxonomySchema,
 )
 register_entity_detail_page(
     pages_router,
     DisplayType,
     detail_qs=lambda: _taxonomy_detail_qs(DisplayType),
-    serialize_detail=_serialize_taxonomy,
+    serialize_page=plain_page(_serialize_taxonomy),
     response_schema=TaxonomySchema,
 )
 register_entity_detail_page(
@@ -305,28 +311,28 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(DisplaySubtype).select_related(
         "display_type"
     ),
-    serialize_detail=_serialize_display_subtype,
+    serialize_page=plain_page(_serialize_display_subtype),
     response_schema=DisplaySubtypeDetailSchema,
 )
 register_entity_detail_page(
     pages_router,
     GameFormat,
     detail_qs=lambda: _taxonomy_detail_qs(GameFormat),
-    serialize_detail=_serialize_taxonomy,
+    serialize_page=plain_page(_serialize_taxonomy),
     response_schema=TaxonomySchema,
 )
 register_entity_detail_page(
     pages_router,
     ProductionStatus,
     detail_qs=lambda: _taxonomy_detail_qs(ProductionStatus),
-    serialize_detail=_serialize_taxonomy,
+    serialize_page=plain_page(_serialize_taxonomy),
     response_schema=TaxonomySchema,
 )
 register_entity_detail_page(
     pages_router,
     TechnologyGeneration,
     detail_qs=lambda: _taxonomy_detail_qs(TechnologyGeneration),
-    serialize_detail=_serialize_taxonomy,
+    serialize_page=plain_page(_serialize_taxonomy),
     response_schema=TaxonomySchema,
 )
 register_entity_detail_page(
@@ -335,6 +341,6 @@ register_entity_detail_page(
     detail_qs=lambda: _taxonomy_detail_qs(TechnologySubgeneration).select_related(
         "technology_generation"
     ),
-    serialize_detail=_serialize_technology_subgeneration,
+    serialize_page=plain_page(_serialize_technology_subgeneration),
     response_schema=TechnologySubgenerationDetailSchema,
 )

@@ -101,6 +101,44 @@ class TestThemePageEndpoint:
     def test_404(self, client, db):
         assert client.get("/api/pages/theme/nonexistent").status_code == 404
 
+    def test_embeds_page_one_of_the_listing(self, client, db):
+        """The embed *is* the listing pinned to the dimension: same cards, same
+        count as ``GET /api/games/?theme=`` — descendants included (the page no
+        longer lists direct tags only) and rolled up (a unanimous Title
+        absorbs its Models)."""
+        from apps.catalog.tests.game_builders import _model, _theme, _title
+
+        medieval = _theme("medieval")
+        _theme("castles", parents=(medieval,))
+        t1 = _title("Excalibur", "excalibur")
+        _model(t1, "excalibur-m", themes=("medieval",), year=1988)
+        t2 = _title("Camelot", "camelot")
+        _model(t2, "camelot-m", themes=("castles",), year=1990)  # child theme
+        _title("Unthemed", "unthemed")
+
+        page = client.get("/api/pages/theme/medieval").json()
+        listing = client.get("/api/games/?theme=medieval").json()
+        assert page["games"] == listing
+        assert page["games"]["count"] == 2
+        assert [c["name"] for c in page["games"]["items"]] == ["Camelot", "Excalibur"]
+        assert {c["entity_type"] for c in page["games"]["items"]} == {"title"}
+
+    def test_embed_honors_q(self, client, db):
+        """The detail page's search box narrows the same pinned listing call."""
+        from apps.catalog.tests.game_builders import _model, _theme, _title
+
+        _theme("medieval")
+        t1 = _title("Excalibur", "excalibur")
+        _model(t1, "excalibur-m", themes=("medieval",))
+        t2 = _title("Camelot", "camelot")
+        _model(t2, "camelot-m", themes=("medieval",))
+
+        data = client.get("/api/pages/theme/medieval?q=excal").json()
+        assert data["games"]["count"] == 1
+        assert data["games"]["items"][0]["name"] == "Excalibur"
+        # The entity's own fields are unaffected by q.
+        assert data["name"] == "Medieval"
+
 
 # ---------------------------------------------------------------------------
 # Tags

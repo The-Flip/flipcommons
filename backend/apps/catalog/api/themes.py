@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from django.db.models import F, Prefetch, QuerySet
+from django.db.models import Prefetch, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
@@ -17,7 +17,6 @@ from apps.claim_edit.claim_write import (
 )
 from apps.core.authz.markers import requires
 from apps.core.authz.types import Activity
-from apps.core.licensing import get_minimum_display_rank
 from apps.core.schemas import RateLimitErrorSchema, ValidationErrorSchema
 from apps.provenance.helpers import claims_prefetch
 from apps.provenance.rate_limits import EDIT_RATE_LIMIT_SPEC, rate_limited
@@ -26,16 +25,14 @@ from ..engine.entity_api.create import register_entity_create
 from ..engine.entity_api.delete import register_entity_delete_restore
 from ..engine.entity_api.listing import _apply_list_q
 from ..engine.query.constants import DEFAULT_PAGE_SIZE, NameAliasQuery, PageParam
-from ..models import MachineModel, Theme
+from ..models import Theme
 from ._counts import bulk_title_counts_via_models
 from .edit_claims import plan_alias_claims, plan_parent_claims
-from .helpers import serialize_title_model
-from .images import fetch_model_media_map
+from .games import GameListPageSchema
 from .schemas import (
     EntityDetailSchema,
     EntityRef,
     HierarchyClaimPatchSchema,
-    TitleModelSchema,
 )
 
 # ---------------------------------------------------------------------------
@@ -68,11 +65,23 @@ class ThemeListSchema(Schema):
 
 
 class ThemeDetailSchema(EntityDetailSchema):
+    """The theme record — the response of the claims PATCH and the
+    create/delete registrars. The detail *page* payload is
+    :class:`ThemePageSchema`."""
+
     slug: str
     aliases: list[str] = []
     parents: list[EntityRef] = []
     children: list[EntityRef] = []
-    machines: list[TitleModelSchema]
+
+
+class ThemePageSchema(ThemeDetailSchema):
+    """The theme detail-page payload: the record plus page 1 of its games —
+    the listing pinned to ``theme=<slug>`` (descendants included, rolled up).
+    Mutation responses stay :class:`ThemeDetailSchema`; only the page endpoint
+    carries the embedded listing."""
+
+    games: GameListPageSchema
 
 
 # ---------------------------------------------------------------------------
@@ -86,20 +95,10 @@ def _detail_qs() -> QuerySet[Theme]:
         Prefetch("children", queryset=Theme.objects.active()),
         "aliases",
         claims_prefetch(),
-        Prefetch(
-            "machine_models",
-            queryset=MachineModel.objects.active()
-            .filter(variant_of__isnull=True)
-            .select_related("corporate_entity__manufacturer", "technology_generation")
-            .order_by(F("year").desc(nulls_last=True), "name"),
-        ),
     )
 
 
 def _serialize_detail(theme: Theme) -> ThemeDetailSchema:
-    min_rank = get_minimum_display_rank()
-    models_list = list(theme.machine_models.all())
-    media_by_model = fetch_model_media_map(pm.pk for pm in models_list)
     return ThemeDetailSchema(
         name=theme.name,
         public_id=theme.public_id,
@@ -113,10 +112,6 @@ def _serialize_detail(theme: Theme) -> ThemeDetailSchema:
         children=[
             EntityRef(name=t.name, public_id=t.public_id)
             for t in theme.children.order_by("name")
-        ],
-        machines=[
-            serialize_title_model(pm, min_rank=min_rank, media_by_model=media_by_model)
-            for pm in models_list
         ],
     )
 

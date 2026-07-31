@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
-import type { ThemeDetailSchema } from '$lib/api/schema';
+import type { ThemePageSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Medieval',
@@ -13,17 +13,20 @@ const MOCK_DATA = {
   aliases: [],
   parents: [],
   children: [],
-  machines: [
-    {
-      name: 'Medieval Madness',
-      public_id: 'medieval-madness',
-      year: 1997,
-      manufacturer: { name: 'Williams', public_id: 'williams' },
-      thumbnail_url: null,
-      variants: [],
-    },
-  ],
-} satisfies ThemeDetailSchema;
+  games: {
+    items: [
+      {
+        entity_type: 'title' as const,
+        name: 'Medieval Madness',
+        public_id: 'medieval-madness',
+        year: 1997,
+        manufacturer: { name: 'Williams', public_id: 'williams' },
+        thumbnail_url: null,
+      },
+    ],
+    count: 1,
+  },
+} satisfies ThemePageSchema;
 
 describe('themes detail SSR route', () => {
   it('loads from the page endpoint', async () => {
@@ -42,11 +45,31 @@ describe('themes detail SSR route', () => {
 
     expect(result).toEqual({
       profile: MOCK_DATA,
+      q: '',
       jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
     });
     const request = fetch.mock.calls[0]?.[0];
     expect(request).toBeInstanceOf(Request);
     expect(request.url).toBe('http://localhost:5173/api/pages/theme/medieval');
+  });
+
+  it('forwards q to the page endpoint', async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(MOCK_DATA), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const result = await load({
+      fetch,
+      url: new URL('http://localhost:5173/themes/medieval?q=excal'),
+      params: { slug: 'medieval' },
+    } as unknown as Parameters<typeof load>[0]);
+
+    expect(result).toMatchObject({ q: 'excal' });
+    const request = fetch.mock.calls[0]?.[0];
+    expect(request.url).toBe('http://localhost:5173/api/pages/theme/medieval?q=excal');
   });
 
   it('throws 404 when not found', async () => {
@@ -61,13 +84,14 @@ describe('themes detail SSR route', () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
-  it('renders meaningful content into initial HTML', () => {
+  it('renders the embedded games into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: MOCK_DATA, jsonLd: {} },
+        data: { profile: MOCK_DATA, q: '', jsonLd: {} },
       },
     });
 
     expect(body).toContain('Medieval Madness');
+    expect(body).toContain('Games (1)');
   });
 });
