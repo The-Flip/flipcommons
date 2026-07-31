@@ -179,3 +179,54 @@ export function machineTargetText(ref: Pick<ModelRef, 'name' | 'year' | 'manufac
   const qualifier = [ref.manufacturer?.name, ref.year].filter(Boolean).join(' ');
   return qualifier ? `${ref.name} (${qualifier})` : ref.name;
 }
+
+/**
+ * The relationship-filter keys of the games listing's `edge` dimension — the
+ * backend's `_edge_vocabulary.py` registry, mirrored by hand (no codegen
+ * channel carries it; `edgeFilterLabel` falls back to the wire value for a
+ * key this map doesn't know yet).
+ */
+export type EdgeFilterKey =
+  EdgeKind | 'variant_of' | 'remake_of' | 'export_edition_of' | 'bootleg' | 'licensed_build';
+
+/** The two sidebar labels of one filter key, keyed by direction. */
+interface EdgeFilterLabels {
+  /** Outbound: the record carries the relationship ("Is a copy"). */
+  out: string;
+  /** Inbound: the record is the relationship's target ("Has been copied"). */
+  in: string;
+}
+
+/**
+ * Sidebar/chip labels for every edge filter entry. Each label must stand alone
+ * in a flat count-ranked dropdown — no group headings, so an inbound label
+ * can't lean on its neighbor ("Has variants", never a bare "Variants" that
+ * reads as *is one*).
+ */
+const EDGE_FILTER_LABELS: Record<EdgeFilterKey, EdgeFilterLabels> = {
+  copy: { out: 'Is a copy', in: 'Has been copied' },
+  bootleg: { out: 'Bootleg', in: 'Has been bootlegged' },
+  licensed_build: { out: 'Authorized copy', in: 'Has authorized copies' },
+  conversion: { out: 'Is a conversion', in: 'Has been converted into another game' },
+  conversion_kit: { out: 'Is a conversion kit', in: 'Has been donor for a conversion kit' },
+  retheme: { out: 'Is a re-theme', in: 'Has been re-themed' },
+  variant_of: { out: 'Is a variant', in: 'Has variants' },
+  remake_of: { out: 'Is a remake', in: 'Has been remade' },
+  export_edition_of: { out: 'Is an export edition', in: 'Has export editions' },
+};
+
+function isEdgeFilterKey(key: string): key is EdgeFilterKey {
+  return key in EDGE_FILTER_LABELS;
+}
+
+/**
+ * The label for one wire value of the `edge` filter — `"copy"` → "Is a copy",
+ * `"copy:in"` → "Has been copied". An unknown key renders as its wire value
+ * (the backend vocabulary can gain a key before this map learns it).
+ */
+export function edgeFilterLabel(wire: string): string {
+  const inbound = wire.endsWith(':in');
+  const key = inbound ? wire.slice(0, -':in'.length) : wire;
+  if (!isEdgeFilterKey(key)) return wire;
+  return inbound ? EDGE_FILTER_LABELS[key].in : EDGE_FILTER_LABELS[key].out;
+}

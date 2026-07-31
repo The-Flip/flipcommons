@@ -17,6 +17,8 @@ export interface FilterState {
   themes: string[];
   features: string[];
   rewardTypes: string[];
+  /** Relationship-filter wire values (`copy`, `copy:in`, `bootleg`…). */
+  edges: string[];
   displayType: string | null;
   playerCount: number | null;
   system: string | null;
@@ -35,6 +37,7 @@ export function emptyFilterState(): FilterState {
     themes: [],
     features: [],
     rewardTypes: [],
+    edges: [],
     displayType: null,
     playerCount: null,
     system: null,
@@ -60,6 +63,7 @@ export function hasActiveFilters(f: FilterState): boolean {
     f.themes.length > 0 ||
     f.features.length > 0 ||
     f.rewardTypes.length > 0 ||
+    f.edges.length > 0 ||
     f.displayType != null ||
     f.playerCount != null ||
     f.system != null ||
@@ -132,6 +136,12 @@ const PARAM_MAP: (SingleParam | MultiParam)[] = [
     multi: true,
     get: (f) => f.rewardTypes,
     set: (f, v) => (f.rewardTypes = v),
+  },
+  {
+    param: 'edge',
+    multi: true,
+    get: (f) => f.edges,
+    set: (f, v) => (f.edges = v),
   },
   { param: 'display_type', get: (f) => f.displayType, set: (f, v) => (f.displayType = v) },
   {

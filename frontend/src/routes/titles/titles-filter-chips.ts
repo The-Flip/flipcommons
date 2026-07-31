@@ -1,6 +1,7 @@
 import type { FilterState } from '$lib/facet-engine';
 import type { FacetOptionSchema, GameFilterOptionsSchema } from '$lib/api/schema';
 import type { FilterChipSpec } from '$lib/components/collections/filters/ActiveFilterChips.svelte';
+import { edgeFilterLabel } from '$lib/entities/relationship-phrase';
 
 /**
  * Build the active-filter chips for /titles from the current filter state.
@@ -63,6 +64,15 @@ export function titleFilterChips(
   multi(filters.themes, 'themes', options.theme);
   multi(filters.features, 'features', options.feature);
   multi(filters.rewardTypes, 'rewardTypes', options.reward_type);
+  // Edge labels come from the relationship vocabulary, not the option names —
+  // the payload's option names are the wire values.
+  for (const value of filters.edges) {
+    chips.push({
+      key: `edges:${value}`,
+      label: edgeFilterLabel(value),
+      remove: () => (filters.edges = filters.edges.filter((s) => s !== value)),
+    });
+  }
   single(filters.system, 'system', options.system);
   single(filters.franchise, 'franchise', options.franchise);
   single(filters.series, 'series', options.series);

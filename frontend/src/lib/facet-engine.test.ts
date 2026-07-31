@@ -36,7 +36,7 @@ describe('filtersFromParams', () => {
 
   it('parses all param types', () => {
     const sp = new URLSearchParams(
-      'q=medieval&tech_gen=solid-state&year_min=1990&year_max=2000&manufacturer=williams&person=pat-lawlor&theme=medieval&theme=sports&display_type=dmd&player_count=4&system=wpc-95&franchise=star-wars&series=castle',
+      'q=medieval&tech_gen=solid-state&year_min=1990&year_max=2000&manufacturer=williams&person=pat-lawlor&theme=medieval&theme=sports&edge=copy&edge=bootleg:in&display_type=dmd&player_count=4&system=wpc-95&franchise=star-wars&series=castle',
     );
     const f = filtersFromParams(sp);
     expect(f.query).toBe('medieval');
@@ -46,6 +46,7 @@ describe('filtersFromParams', () => {
     expect(f.manufacturer).toBe('williams');
     expect(f.person).toBe('pat-lawlor');
     expect(f.themes).toEqual(['medieval', 'sports']);
+    expect(f.edges).toEqual(['copy', 'bootleg:in']);
     expect(f.displayType).toBe('dmd');
     expect(f.playerCount).toBe(4);
     expect(f.system).toBe('wpc-95');
@@ -66,13 +67,16 @@ describe('filtersFromParams', () => {
       ...emptyFilterState(),
       themes: ['medieval', 'sports'],
       features: ['multiball'],
+      edges: ['copy', 'variant_of:in'],
     };
     const sp = filtersToParams(state, new URLSearchParams());
     expect(sp.getAll('theme')).toEqual(['medieval', 'sports']);
     expect(sp.getAll('feature')).toEqual(['multiball']);
+    expect(sp.getAll('edge')).toEqual(['copy', 'variant_of:in']);
     // and back
     expect(filtersFromParams(sp).themes).toEqual(['medieval', 'sports']);
     expect(filtersFromParams(sp).features).toEqual(['multiball']);
+    expect(filtersFromParams(sp).edges).toEqual(['copy', 'variant_of:in']);
   });
 });
 
