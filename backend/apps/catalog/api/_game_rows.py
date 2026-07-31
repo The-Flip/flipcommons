@@ -24,13 +24,16 @@ by semantics class:
 - ``franchise`` / ``series`` — Title-only, binding all of a Title's Models
 - ``q`` — the record-local shared class (name + abbreviations), tested on the
   record being decided and propagating in neither direction
-- ``display_subtype`` / ``tag`` / ``technology_subgeneration`` / ``cabinet`` /
-  ``game_format`` / ``production_status`` / ``corporate_entity`` — single-valued
-  Model-only, **hidden** (``surfaced=False``): honored from the query string
-  with full roll-up semantics, but no sidebar control and no facet counts.
-  ``technology_subgeneration`` matches the Model's own FK *or* its system's;
-  the sparse three (``cabinet``/``game_format``/``production_status``) are raw
-  — ``game_format=pinball`` means exactly the classified minority
+- ``display_subtype`` / ``tag`` / ``technology_subgeneration`` /
+  ``corporate_entity`` — single-valued Model-only, **hidden**
+  (``surfaced=False``): honored from the query string with full roll-up
+  semantics, but no sidebar control and no facet counts.
+  ``technology_subgeneration`` matches the Model's own FK *or* its system's
+- ``cabinet`` / ``game_format`` / ``production_status`` — multi-select
+  Model-only (**OR** of the supplied slugs — a Model carries exactly one
+  value of each, so selections widen), hidden, and raw: null means
+  unclassified and never matches, so ``game_format=pinball`` is exactly
+  the classified minority
 
 The two-set split is the engine's load-bearing invariant: **unanimity is
 measured over** :func:`model_only_models` **(Model-only dimensions alone),
@@ -115,9 +118,9 @@ class GameFilters:
     display_subtype: str | None = None
     tag: str | None = None
     technology_subgeneration: str | None = None
-    cabinet: str | None = None
-    game_format: str | None = None
-    production_status: str | None = None
+    cabinet: tuple[str, ...] = ()
+    game_format: tuple[str, ...] = ()
+    production_status: tuple[str, ...] = ()
     corporate_entity: str | None = None
 
 
@@ -499,25 +502,33 @@ MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
             ),
             surfaced=False,
         ),
+        # These three combine as OR: a Model carries exactly one value of
+        # each, so ANDing two selections could only ever return nothing —
+        # the selection is a set of acceptable values, not a conjunction.
         FilterDimension(
             key="cabinet",
             active=lambda f: bool(f.cabinet),
-            narrow=lambda qs, f, expansion: qs.filter(cabinet__slug=f.cabinet),
+            narrow=lambda qs, f, expansion: qs.filter(cabinet__slug__in=f.cabinet),
             surfaced=False,
+            combine="or",
         ),
         FilterDimension(
             key="game_format",
             active=lambda f: bool(f.game_format),
-            narrow=lambda qs, f, expansion: qs.filter(game_format__slug=f.game_format),
+            narrow=lambda qs, f, expansion: qs.filter(
+                game_format__slug__in=f.game_format
+            ),
             surfaced=False,
+            combine="or",
         ),
         FilterDimension(
             key="production_status",
             active=lambda f: bool(f.production_status),
             narrow=lambda qs, f, expansion: qs.filter(
-                production_status__slug=f.production_status
+                production_status__slug__in=f.production_status
             ),
             surfaced=False,
+            combine="or",
         ),
         FilterDimension(
             key="corporate_entity",

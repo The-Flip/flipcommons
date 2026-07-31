@@ -163,9 +163,9 @@ ACTIVATING: dict[ModelDimension, GameFilters] = {
     "display_subtype": GameFilters(display_subtype="nothing"),
     "tag": GameFilters(tag="nothing"),
     "technology_subgeneration": GameFilters(technology_subgeneration="nothing"),
-    "cabinet": GameFilters(cabinet="nothing"),
-    "game_format": GameFilters(game_format="nothing"),
-    "production_status": GameFilters(production_status="nothing"),
+    "cabinet": GameFilters(cabinet=("nothing",)),
+    "game_format": GameFilters(game_format=("nothing",)),
+    "production_status": GameFilters(production_status=("nothing",)),
     "corporate_entity": GameFilters(corporate_entity="nothing"),
 }
 
@@ -522,10 +522,10 @@ class TestHiddenDimensions:
         cases: list[tuple[GameFilters, dict[str, object]]] = [
             (GameFilters(display_subtype="hd-lcd"), {"display_subtype": "hd-lcd"}),
             (GameFilters(tag="licensed"), {"tags": ("licensed",)}),
-            (GameFilters(cabinet="cocktail"), {"cabinet": "cocktail"}),
-            (GameFilters(game_format="bingo"), {"game_format": "bingo"}),
+            (GameFilters(cabinet=("cocktail",)), {"cabinet": "cocktail"}),
+            (GameFilters(game_format=("bingo",)), {"game_format": "bingo"}),
             (
-                GameFilters(production_status="announced"),
+                GameFilters(production_status=("announced",)),
                 {"production_status": "announced"},
             ),
         ]
@@ -540,7 +540,7 @@ class TestHiddenDimensions:
         t = _title("Mixed Formats", "mixed-formats")
         _model(t, "mixed-pin", name="Mixed Pin", game_format="pinball")
         _model(t, "mixed-bingo", name="Mixed Bingo", game_format="bingo")
-        assert _cards(GameFilters(game_format="bingo")) == {("model", "Mixed Bingo")}
+        assert _cards(GameFilters(game_format=("bingo",))) == {("model", "Mixed Bingo")}
 
     def test_sparse_dimension_is_raw_null_never_matches(self, db):
         """The sparse dimensions are raw: an unclassified Model is not
@@ -549,7 +549,27 @@ class TestHiddenDimensions:
         _model(t1, "classified-m", game_format="pinball")
         t2 = _title("Unclassified", "unclassified")
         _model(t2, "unclassified-m")
-        assert _cards(GameFilters(game_format="pinball")) == {("title", "Classified")}
+        assert _cards(GameFilters(game_format=("pinball",))) == {
+            ("title", "Classified")
+        }
+
+    def test_sparse_dimension_selections_widen(self, db):
+        """A combine="or" dimension returns the union of its selected slugs
+        (a Model carries exactly one game format) — and a Title mixing two
+        selected values is unanimous under the pair while shattering under
+        either slug alone."""
+        t = _title("Mixed Formats", "mixed-formats")
+        _model(t, "mixed-pin", name="Mixed Pin", game_format="pinball")
+        _model(t, "mixed-bingo", name="Mixed Bingo", game_format="bingo")
+        other = _title("Shuffle Only", "shuffle-only")
+        _model(other, "shuffle-m", game_format="shuffle")
+        assert _cards(GameFilters(game_format=("pinball", "bingo"))) == {
+            ("title", "Mixed Formats")
+        }
+        assert _cards(GameFilters(game_format=("bingo", "shuffle"))) == {
+            ("model", "Mixed Bingo"),
+            ("title", "Shuffle Only"),
+        }
 
     def test_subgeneration_matches_directly_or_through_system(self, db):
         from apps.catalog.tests.game_builders import _subgen, _system

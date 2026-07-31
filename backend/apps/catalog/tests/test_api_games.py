@@ -259,6 +259,26 @@ class TestHiddenDimensionParams:
         data = client.get("/api/games/?cabinet=cocktail&q=cocktail").json()
         assert [item["name"] for item in data["items"]] == ["Cocktail Alpha"]
 
+    def test_sparse_dimension_params_repeat_and_widen(self, client, db):
+        """``game_format`` (likewise ``cabinet`` and ``production_status``)
+        is repeatable on the wire; a Model holds exactly one value, so
+        repeated slugs select the union (roll-up semantics pinned in
+        ``test_game_rows.py``)."""
+        from apps.catalog.tests.game_builders import _model, _title
+
+        t1 = _title("Bingo Hall", "bingo-hall")
+        _model(t1, "bingo-hall-m", game_format="bingo")
+        t2 = _title("Shuffle Bowl", "shuffle-bowl")
+        _model(t2, "shuffle-bowl-m", game_format="shuffle")
+        t3 = _title("Plain Pin", "plain-pin")
+        _model(t3, "plain-pin-m", game_format="pinball")
+        data = client.get("/api/games/?game_format=bingo&game_format=shuffle").json()
+        assert {item["name"] for item in data["items"]} == {
+            "Bingo Hall",
+            "Shuffle Bowl",
+        }
+        assert data["count"] == 2
+
 
 class TestEdgeParams:
     """The repeatable ``edge`` param end to end — key, ``:in`` direction and
