@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { GameplayFeatureDetailSchema } from '$lib/api/schema';
+import type { GameplayFeatureDetailPageSchema } from '$lib/api/schema';
 import { load } from './+layout.server';
 
 const MOCK_DATA = {
@@ -12,7 +12,8 @@ const MOCK_DATA = {
   parents: [],
   children: [],
   uploaded_media: [],
-} satisfies GameplayFeatureDetailSchema;
+  games: { items: [], count: 0 },
+} satisfies GameplayFeatureDetailPageSchema;
 
 describe('gameplay-features detail SSR route', () => {
   it('loads from the page endpoint', async () => {
@@ -31,6 +32,7 @@ describe('gameplay-features detail SSR route', () => {
 
     expect(result).toEqual({
       profile: MOCK_DATA,
+      q: '',
       jsonLd: expect.objectContaining({ '@context': 'https://schema.org' }),
     });
     const request = fetch.mock.calls[0]?.[0];

@@ -140,7 +140,7 @@ class TestGetCorporateEntity:
         resp = client.get(f"/api/pages/corporate-entity/{entity.slug}")
         assert "Gottlieb Co" in resp.json()["aliases"]
 
-    def test_detail_includes_titles(self, client, entity):
+    def test_detail_embeds_games(self, client, entity):
         title = Title.objects.create(name="Ace High", slug="ace-high")
         make_machine_model(
             name="Ace High",
@@ -150,9 +150,9 @@ class TestGetCorporateEntity:
             year=1957,
         )
         resp = client.get(f"/api/pages/corporate-entity/{entity.slug}")
-        titles = resp.json()["titles"]
-        assert len(titles) == 1
-        assert titles[0]["name"] == "Ace High"
+        games = resp.json()["games"]
+        assert games["count"] == 1
+        assert games["items"][0]["name"] == "Ace High"
 
     def test_detail_production_span(self, client, entity):
         make_machine_model(

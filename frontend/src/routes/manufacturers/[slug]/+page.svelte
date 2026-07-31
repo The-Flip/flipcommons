@@ -1,3 +1,4 @@
+<!-- @component Manufacturer detail page: overview, companies, the games listing pinned to the manufacturer, systems, people and media. -->
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { ENTITY_META } from '$lib/entities/entity-meta';
@@ -6,9 +7,8 @@
   import RichTextOverviewAccordion from '$lib/components/markdown/RichTextOverviewAccordion.svelte';
   import RichTextReferencesAccordion from '$lib/components/markdown/RichTextReferencesAccordion.svelte';
   import { createRichTextAccordionState } from '$lib/components/markdown/rich-text-accordion-state.svelte';
-  import GameCard from '$lib/components/collections/cards/GameCard.svelte';
+  import GamesSection from '$lib/components/pages/record/detail/GamesSection.svelte';
   import { manufacturerEditActionContext } from '$lib/components/pages/record/edit/editors/edit-action-context';
-  import SearchableGrid from '$lib/components/collections/grid/SearchableGrid.svelte';
   import LocationLink from '$lib/components/entity-links/LocationLink.svelte';
   import MediaGrid from '$lib/components/media/MediaGrid.svelte';
   import { formatActiveRange, websiteHostname } from '$lib/utils';
@@ -22,7 +22,6 @@
     formatActiveRange(mfr.year_of_first_model, mfr.year_of_last_model, mfr.operating_status),
   );
   let hasCompanyDetails = $derived(!!(yearsActive || mfr.entities.length > 0 || mfr.website));
-  let titlesHeading = $derived(`Games (${mfr.titles.length})`);
   let systemsHeading = $derived(`Systems (${mfr.systems.length})`);
   let peopleHeading = $derived(`People (${mfr.persons.length})`);
   let mediaHeading = $derived(`Media (${mfr.uploaded_media.length})`);
@@ -94,28 +93,6 @@
   </AccordionSection>
 {/if}
 
-{#if mfr.titles.length > 0}
-  <AccordionSection heading={titlesHeading}>
-    <SearchableGrid
-      items={mfr.titles}
-      filterFields={(item) => [item.name]}
-      placeholder="Search titles..."
-      entityName="title"
-    >
-      {#snippet children(title)}
-        <GameCard
-          entityType="title"
-          publicId={title.public_id}
-          name={title.name}
-          thumbnailUrl={title.thumbnail_url}
-          year={title.year}
-          showManufacturer={false}
-        />
-      {/snippet}
-    </SearchableGrid>
-  </AccordionSection>
-{/if}
-
 {#if mfr.systems.length > 0}
   <AccordionSection heading={systemsHeading}>
     <ul class="stack-list">
@@ -156,6 +133,13 @@
 {/if}
 
 <RichTextReferencesAccordion richText={mfr.description} state={richTextState} />
+
+<GamesSection
+  games={mfr.games}
+  q={data.q}
+  pinned={{ manufacturer: mfr.slug }}
+  showManufacturer={false}
+/>
 
 <style>
   .company-section {

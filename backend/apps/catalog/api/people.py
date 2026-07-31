@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from typing import cast
 
 from django.db import models
-from django.db.models import Count, F, Prefetch, Q, QuerySet
+from django.db.models import Count, F, Q, QuerySet
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from ninja import Router, Schema
@@ -62,6 +61,7 @@ from ..engine.query.constants import NameAliasQuery, PageParam
 from ..models import Credit, MachineModel, Person
 from ._search_sections import tiered_search_rows
 from ._typing import HasCreditCount
+from .games import GameListSchema
 from .images import (
     extract_image_urls,
     fetch_model_media_map,
@@ -75,7 +75,6 @@ from .schemas import (
     OwnMediaSchema,
     PersonDeletePreviewSchema,
     PersonSoftDeleteBlockedSchema,
-    RelatedTitleSchema,
 )
 
 
@@ -95,11 +94,10 @@ class PersonCardSchema(Schema):
     )
 
 
-class PersonTitleSchema(RelatedTitleSchema):
-    roles: list[str] = []
-
-
 class PersonDetailSchema(EntityDetailSchema, OwnMediaSchema):
+    """The person record — the response of the mutation endpoints. The
+    read-only detail page's payload is :class:`PersonDetailPageSchema`."""
+
     slug: str
     birth_year: int | None = None
     birth_month: int | None = None
@@ -111,7 +109,15 @@ class PersonDetailSchema(EntityDetailSchema, OwnMediaSchema):
     nationality: str | None = None
     photo_url: str | None = None
     wikidata_id: str | None = None
-    titles: list[PersonTitleSchema]
+
+
+class PersonDetailPageSchema(PersonDetailSchema):
+    """The detail-page payload: the record plus page 1 of its games — the
+    listing pinned to ``person=<slug>``, each card annotated with the person's
+    roles on that record. Liveness comes with the listing: credits on deleted
+    Models (which the old accumulator carded) no longer surface."""
+
+    games: GameListSchema
 
 
 # ---------------------------------------------------------------------------
@@ -119,69 +125,13 @@ class PersonDetailSchema(EntityDetailSchema, OwnMediaSchema):
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class _PersonTitleAccum:
-    name: str
-    public_id: str
-    year: int | None
-    manufacturer_name: str | None
-    thumbnail_url: str | None
-    roles: list[str] = field(default_factory=list)
-
-
 @own_media(Person)
 def _serialize_person_detail(person: Person) -> PersonDetailSchema:
     """Serialize a Person into the detail response schema.
 
-    Expects *person* to have been fetched with prefetch_related for credits
-    (select_related model, model__title, model__manufacturer) and claims
-    (to_attr="active_claims").
+    Expects *person* fetched with claims (to_attr="active_claims") and media
+    prefetched.
     """
-    min_rank = get_minimum_display_rank()
-    credits = list(person.credits.all())
-    media_by_model = fetch_model_media_map(
-        c.model_id for c in credits if c.model_id is not None
-    )
-    accum: dict[str, _PersonTitleAccum] = {}
-    for c in credits:
-        if c.model is None or c.model.title is None:
-            continue
-        title = c.model.title
-        key = title.slug
-        thumbnail_url = extract_image_urls(
-            c.model.extra_data or {},
-            media_by_model.get(c.model.pk),
-            min_rank=min_rank,
-        )[0]
-        if key not in accum:
-            accum[key] = _PersonTitleAccum(
-                name=title.name,
-                public_id=title.public_id,
-                year=c.model.year,
-                manufacturer_name=(
-                    c.model.corporate_entity.manufacturer.name
-                    if c.model.corporate_entity
-                    and c.model.corporate_entity.manufacturer
-                    else None
-                ),
-                thumbnail_url=thumbnail_url,
-            )
-        elif accum[key].thumbnail_url is None and thumbnail_url:
-            accum[key].thumbnail_url = thumbnail_url
-        role_display = c.role.name
-        if role_display not in accum[key].roles:
-            accum[key].roles.append(role_display)
-    titles = [
-        PersonTitleSchema(
-            name=a.name,
-            public_id=a.public_id,
-            year=a.year,
-            manufacturer_name=a.manufacturer_name,
-            thumbnail_url=a.thumbnail_url,
-            roles=a.roles,
-        )
-        for a in accum.values()
-    ]
     return PersonDetailSchema(
         name=person.name,
         public_id=person.public_id,
@@ -198,23 +148,11 @@ def _serialize_person_detail(person: Person) -> PersonDetailSchema:
         nationality=person.nationality,
         photo_url=person.photo_url,
         wikidata_id=person.wikidata_id,
-        titles=titles,
     )
 
 
 def _person_qs() -> QuerySet[Person]:
-    return Person.objects.active().prefetch_related(
-        Prefetch(
-            "credits",
-            queryset=Credit.objects.filter(model__isnull=False)
-            .select_related(
-                "model__title", "model__corporate_entity__manufacturer", "role"
-            )
-            .order_by(F("model__year").desc(nulls_last=True), "model__name"),
-        ),
-        claims_prefetch(),
-        media_prefetch(),
-    )
+    return Person.objects.active().prefetch_related(claims_prefetch(), media_prefetch())
 
 
 def _people_thumbnails(person_pks: Sequence[int]) -> dict[int, str | None]:

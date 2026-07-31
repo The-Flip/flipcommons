@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render } from 'svelte/server';
 import Page from './+page.svelte';
 import { load } from './+layout.server';
-import type { SeriesDetailSchema } from '$lib/api/schema';
+import type { SeriesDetailPageSchema } from '$lib/api/schema';
 
 const MOCK_DATA = {
   name: 'Eight Ball',
@@ -10,19 +10,21 @@ const MOCK_DATA = {
   last_modified: '2026-01-01T00:00:00Z',
   slug: 'eight-ball',
   description: { text: '', plain: '', html: '', citations: [], attribution: null },
-  titles: [
-    {
-      name: 'Eight Ball Deluxe',
-      public_id: 'eight-ball-deluxe',
-      abbreviations: [],
-      model_count: 1,
-      year: 1981,
-      manufacturer_name: 'Bally',
-      thumbnail_url: null,
-    },
-  ],
+  games: {
+    items: [
+      {
+        entity_type: 'title' as const,
+        name: 'Eight Ball Deluxe',
+        public_id: 'eight-ball-deluxe',
+        year: 1981,
+        manufacturer: { name: 'Bally', public_id: 'bally' },
+        thumbnail_url: null,
+      },
+    ],
+    count: 1,
+  },
   credits: [],
-} satisfies SeriesDetailSchema;
+} satisfies SeriesDetailPageSchema;
 
 describe('series detail SSR route', () => {
   it('loads from the page endpoint', async () => {
@@ -60,7 +62,7 @@ describe('series detail SSR route', () => {
   it('renders meaningful content into initial HTML', () => {
     const { body } = render(Page, {
       props: {
-        data: { profile: MOCK_DATA, jsonLd: {} },
+        data: { profile: MOCK_DATA, q: '', jsonLd: {} },
       },
     });
 

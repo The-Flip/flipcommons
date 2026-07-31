@@ -29,8 +29,10 @@ class TestManufacturersAPI:
         assert data["name"] == "Williams"
         assert len(data["entities"]) == 1
         assert data["entities"][0]["name"] == "Williams Electronics"
-        assert len(data["titles"]) == 1
-        assert data["titles"][0]["name"] == "Medieval Madness"
+        # The games embed: one unanimous Title rolls up to one Title card.
+        assert data["games"]["count"] == 1
+        assert data["games"]["items"][0]["name"] == "Medieval Madness"
+        assert data["games"]["items"][0]["entity_type"] == "title"
 
     def test_get_manufacturer_detail_external_ids(self, client, manufacturer):
         manufacturer.opdb_manufacturer_id = 42
@@ -98,7 +100,7 @@ class TestManufacturersAPI:
             year=2020,
         )
         resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
-        years = [t["year"] for t in resp.json()["titles"]]
+        years = [c["year"] for c in resp.json()["games"]["items"]]
         assert years == [2020, 1995, 1960]
 
     def test_get_manufacturer_detail_nulls_last(
@@ -125,7 +127,7 @@ class TestManufacturersAPI:
         )
         resp = client.get(f"/api/pages/manufacturer/{manufacturer.slug}")
         data = resp.json()
-        names = [t["name"] for t in data["titles"]]
+        names = [c["name"] for c in data["games"]["items"]]
         assert names[-1] == "No Year Title"
 
     def test_get_manufacturer_production_span(

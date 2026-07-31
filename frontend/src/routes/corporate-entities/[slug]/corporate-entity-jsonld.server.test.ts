@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+layout.server';
-import type { CorporateEntityDetailSchema } from '$lib/api/schema';
+import type { CorporateEntityDetailPageSchema } from '$lib/api/schema';
 import { MOCK_CORPORATE_ENTITY } from './corporate-entity.fixtures';
 
 const ORIGIN = 'http://localhost:5173';
@@ -13,10 +13,10 @@ const CE = {
   public_id: 'bally',
   slug: 'bally',
   manufacturer: { name: 'Bally', public_id: 'bally-mfr' },
-  titles: [],
-} satisfies CorporateEntityDetailSchema;
+  games: { items: [], count: 0 },
+} satisfies CorporateEntityDetailPageSchema;
 
-function event(profile: CorporateEntityDetailSchema, slug = profile.slug) {
+function event(profile: CorporateEntityDetailPageSchema, slug = profile.slug) {
   const fetch = vi.fn().mockResolvedValue(
     new Response(JSON.stringify(profile), {
       status: 200,

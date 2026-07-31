@@ -1,10 +1,10 @@
-import type { ManufacturerDetailSchema } from '$lib/api/schema';
+import type { ManufacturerDetailPageSchema } from '$lib/api/schema';
 
 /**
  * Canonical manufacturer page payload for SSR route tests. Typed with
  * `satisfies` so a new backend field is a compile-time error here rather than a
  * silent gap in every test that mocks the page endpoint. Tests spread-and-override
- * for their variations (e.g. `{ ...MOCK_MANUFACTURER, titles: [] }`).
+ * for their variations (e.g. `{ ...MOCK_MANUFACTURER, games: { items: [], count: 0 } }`).
  */
 export const MOCK_MANUFACTURER = {
   name: 'Williams',
@@ -56,14 +56,19 @@ export const MOCK_MANUFACTURER = {
       locations: [],
     },
   ],
-  titles: [
-    {
-      name: 'Medieval Madness',
-      public_id: 'medieval-madness',
-      year: 1997,
-      thumbnail_url: null,
-    },
-  ],
+  games: {
+    items: [
+      {
+        entity_type: 'title' as const,
+        name: 'Medieval Madness',
+        public_id: 'medieval-madness',
+        year: 1997,
+        manufacturer: { name: 'Williams', public_id: 'williams' },
+        thumbnail_url: null,
+      },
+    ],
+    count: 1,
+  },
   systems: [{ name: 'WPC-95', public_id: 'wpc-95' }],
   persons: [{ name: 'Pat Lawlor', public_id: 'pat-lawlor', roles: ['Designer'] }],
   uploaded_media: [
@@ -77,4 +82,4 @@ export const MOCK_MANUFACTURER = {
       },
     },
   ],
-} satisfies ManufacturerDetailSchema;
+} satisfies ManufacturerDetailPageSchema;

@@ -438,7 +438,7 @@ class TestAdditionalPatchClaimEndpoints:
 
 @pytest.mark.django_db
 class TestPatchSeriesResponseShape:
-    def test_patch_preserves_titles_and_credits(
+    def test_patch_response_stays_slim_and_preserves_credits(
         self, client, user, williams_entity, credit_roles
     ):
         series = Series.objects.create(name="Eight Ball", slug="eight-ball")
@@ -466,17 +466,9 @@ class TestPatchSeriesResponseShape:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["titles"] == [
-            {
-                "name": title.name,
-                "public_id": title.public_id,
-                "abbreviations": [],
-                "model_count": 1,
-                "manufacturer_name": "Williams",
-                "year": 1981,
-                "thumbnail_url": None,
-            }
-        ]
+        # The page/edit-response split: no embedded game list on a save.
+        assert "titles" not in data
+        assert "games" not in data
         assert data["credits"] == [
             {
                 "person": {"name": person.name, "public_id": person.public_id},
@@ -489,7 +481,7 @@ class TestPatchSeriesResponseShape:
 
 @pytest.mark.django_db
 class TestPatchSystemResponseShape:
-    def test_patch_preserves_manufacturer_titles_and_siblings(
+    def test_patch_response_stays_slim_and_preserves_siblings(
         self, client, user, manufacturer, williams_entity, solid_state
     ):
         source = make_ingest_source(
@@ -529,15 +521,9 @@ class TestPatchSystemResponseShape:
             "name": manufacturer.name,
             "public_id": manufacturer.public_id,
         }
-        assert data["titles"] == [
-            {
-                "name": title.name,
-                "public_id": title.public_id,
-                "year": 1997,
-                "manufacturer_name": manufacturer.name,
-                "thumbnail_url": None,
-            }
-        ]
+        # The page/edit-response split: no embedded game list on a save.
+        assert "titles" not in data
+        assert "games" not in data
         assert data["sibling_systems"] == [
             {"name": sibling.name, "public_id": sibling.public_id}
         ]
@@ -545,7 +531,7 @@ class TestPatchSystemResponseShape:
 
 @pytest.mark.django_db
 class TestPatchRewardTypeResponseShape:
-    def test_patch_preserves_machine_list(
+    def test_patch_response_stays_slim(
         self, client, user, williams_entity, solid_state
     ):
         reward_type = RewardType.objects.create(name="Replay", slug="replay")
@@ -569,17 +555,10 @@ class TestPatchRewardTypeResponseShape:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["machines"] == [
-            {
-                "name": model.name,
-                "public_id": model.public_id,
-                "year": 1980,
-                "manufacturer": {"name": "Williams", "public_id": "williams"},
-                "technology_generation_name": "Solid State",
-                "thumbnail_url": None,
-                "variants": [],
-            }
-        ]
+        # The page/edit-response split: no embedded game list on a save.
+        assert "machines" not in data
+        assert "games" not in data
+        assert data["name"] == "Replay"
 
     def test_patch_can_attach_edit_citation_to_reward_type_claim(
         self, client, user, citation_source
