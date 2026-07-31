@@ -125,26 +125,6 @@ TitleDimension = Literal["franchise", "series"]
 # of the three is a Model-only dimension.
 MODEL_DIMENSIONS: tuple[ModelDimension, ...] = get_args(ModelDimension)
 
-# Whether each Model-only dimension is active on a filter set — the single
-# source read by the narrowing chain (``model_only_models``) and the
-# unanimity-vacuity check (``_model_dimensions_active``), so the two can't
-# drift when a dimension is added.
-_DIMENSION_ACTIVE: Final[Mapping[ModelDimension, Callable[[GameFilters], bool]]] = {
-    "manufacturer": lambda f: bool(f.manufacturer),
-    "person": lambda f: bool(f.person),
-    "tech_gen": lambda f: bool(f.tech_gen),
-    "display_type": lambda f: bool(f.display_type),
-    "system": lambda f: bool(f.system),
-    "player_count": lambda f: f.player_count is not None,
-    "year": lambda f: f.year_min is not None or f.year_max is not None,
-    "themes": lambda f: bool(f.themes),
-    "features": lambda f: bool(f.features),
-    "reward_types": lambda f: bool(f.reward_types),
-}
-
-# A Literal proves key validity, not completeness — this does, at import time.
-assert set(_DIMENSION_ACTIVE) == set(MODEL_DIMENSIONS)
-
 # Filter-field types, resolved once. ``get_type_hints`` rather than raw
 # ``__annotations__`` because this module uses ``from __future__ import
 # annotations``, so the annotations are strings until resolved.
@@ -268,6 +248,203 @@ def expand_taxonomy(f: GameFilters) -> TaxonomyExpansion:
 
 
 # ---------------------------------------------------------------------------
+# The dimension registry
+# ---------------------------------------------------------------------------
+
+
+class PathFacet(NamedTuple):
+    """Facet binding for a Model-attributed value reached by ORM path (FK or
+    M2M): value rows are ``(slug_path, name_path)`` pairs per candidate Model
+    (``_value_rows`` in ``_game_facets.py``)."""
+
+    # The facet's output/URL name — singular where the filter field is plural
+    # ("theme" for the ``themes`` dimension); keys the payload field.
+    name: str
+    slug_path: str
+    name_path: str
+
+
+class TaxonomyFacet(NamedTuple):
+    """Facet binding for a DAG taxonomy: each Model's direct tags explode to
+    every ancestor value (``_hierarchical_value_rows``)."""
+
+    name: str
+    taxonomy: type[Theme] | type[GameplayFeature]
+    path: str
+
+
+class BucketFacet(NamedTuple):
+    """Facet binding for a fixed bucket list (player count). Its value rows
+    are bespoke (``_player_value_rows``); the binding marks the dimension
+    counted so the registry-completeness guard sees it."""
+
+    name: str
+
+
+FacetBinding = PathFacet | TaxonomyFacet | BucketFacet
+
+# How one active dimension narrows the candidate Model set — chained one
+# ``.filter()`` at a time from the ``MachineModel`` root (the Multi-select
+# rule; see ``model_only_models``). The ``TaxonomyExpansion`` argument is the
+# request's pre-built theme/feature descendant sets; most narrowers ignore it.
+DimensionNarrower = Callable[
+    [QuerySet[MachineModel], GameFilters, TaxonomyExpansion], QuerySet[MachineModel]
+]
+
+
+@dataclass(frozen=True)
+class FilterDimension:
+    """One Model-only filter dimension, declared once.
+
+    The single source the narrowing chain (``model_only_models``), the
+    unanimity-vacuity check (``_model_dimensions_active``), the facet fan-out
+    (``_game_facets.py``) and the test vocabularies read — so a dimension
+    cannot narrow the candidate set while leaving the unanimity clause
+    vacuous, or count its facet against the wrong value paths. Adding a
+    dimension is one ``MODEL_DIMENSION_SPECS`` entry plus its
+    ``GameFilters``/wire params (and, when counted, its payload field).
+    """
+
+    key: ModelDimension
+    # Whether the dimension narrows this filter set at all. Inactive means
+    # "not asked", never "matches nothing".
+    active: Callable[[GameFilters], bool]
+    narrow: DimensionNarrower
+    # ``None`` — no counted option list (``year`` is a range with bounds UI).
+    facet: FacetBinding | None = None
+    # Whether the /games sidebar offers a control for this dimension. A
+    # non-surfaced dimension is still honored from the query string (the
+    # product doc's Hidden dimensions); every current dimension is surfaced.
+    surfaced: bool = True
+
+
+def _narrow_player_count(
+    qs: QuerySet[MachineModel], f: GameFilters, expansion: TaxonomyExpansion
+) -> QuerySet[MachineModel]:
+    if f.player_count is None:  # activeness guarantees not-None; narrows the type
+        return qs
+    return qs.filter(_bucket_q(f.player_count))
+
+
+def _narrow_year(
+    qs: QuerySet[MachineModel], f: GameFilters, expansion: TaxonomyExpansion
+) -> QuerySet[MachineModel]:
+    if f.year_min is not None:
+        qs = qs.filter(year__gte=f.year_min)
+    if f.year_max is not None:
+        qs = qs.filter(year__lte=f.year_max)
+    return qs
+
+
+def _narrow_themes(
+    qs: QuerySet[MachineModel], f: GameFilters, expansion: TaxonomyExpansion
+) -> QuerySet[MachineModel]:
+    for descendants in expansion.themes:
+        qs = qs.filter(themes__slug__in=descendants)
+    return qs
+
+
+def _narrow_features(
+    qs: QuerySet[MachineModel], f: GameFilters, expansion: TaxonomyExpansion
+) -> QuerySet[MachineModel]:
+    for descendants in expansion.features:
+        qs = qs.filter(gameplay_features__slug__in=descendants)
+    return qs
+
+
+def _narrow_reward_types(
+    qs: QuerySet[MachineModel], f: GameFilters, expansion: TaxonomyExpansion
+) -> QuerySet[MachineModel]:
+    for slug in f.reward_types:
+        qs = qs.filter(reward_types__slug=slug)
+    return qs
+
+
+MODEL_DIMENSION_SPECS: Final[Mapping[ModelDimension, FilterDimension]] = {
+    spec.key: spec
+    for spec in (
+        FilterDimension(
+            key="manufacturer",
+            active=lambda f: bool(f.manufacturer),
+            narrow=lambda qs, f, expansion: qs.filter(
+                corporate_entity__manufacturer__slug=f.manufacturer
+            ),
+            facet=PathFacet(
+                "manufacturer",
+                "corporate_entity__manufacturer__slug",
+                "corporate_entity__manufacturer__name",
+            ),
+        ),
+        FilterDimension(
+            key="person",
+            active=lambda f: bool(f.person),
+            narrow=lambda qs, f, expansion: qs.filter(credits__person__slug=f.person),
+            facet=PathFacet("person", "credits__person__slug", "credits__person__name"),
+        ),
+        FilterDimension(
+            key="tech_gen",
+            active=lambda f: bool(f.tech_gen),
+            narrow=lambda qs, f, expansion: qs.filter(
+                technology_generation__slug=f.tech_gen
+            ),
+            facet=PathFacet(
+                "tech_gen", "technology_generation__slug", "technology_generation__name"
+            ),
+        ),
+        FilterDimension(
+            key="display_type",
+            active=lambda f: bool(f.display_type),
+            narrow=lambda qs, f, expansion: qs.filter(
+                display_type__slug=f.display_type
+            ),
+            facet=PathFacet("display_type", "display_type__slug", "display_type__name"),
+        ),
+        FilterDimension(
+            key="system",
+            active=lambda f: bool(f.system),
+            narrow=lambda qs, f, expansion: qs.filter(system__slug=f.system),
+            facet=PathFacet("system", "system__slug", "system__name"),
+        ),
+        FilterDimension(
+            key="player_count",
+            active=lambda f: f.player_count is not None,
+            narrow=_narrow_player_count,
+            facet=BucketFacet("player_count"),
+        ),
+        FilterDimension(
+            key="year",
+            active=lambda f: f.year_min is not None or f.year_max is not None,
+            narrow=_narrow_year,
+        ),
+        FilterDimension(
+            key="themes",
+            active=lambda f: bool(f.themes),
+            narrow=_narrow_themes,
+            facet=TaxonomyFacet("theme", Theme, "themes"),
+        ),
+        FilterDimension(
+            key="features",
+            active=lambda f: bool(f.features),
+            narrow=_narrow_features,
+            facet=TaxonomyFacet("feature", GameplayFeature, "gameplay_features"),
+        ),
+        FilterDimension(
+            key="reward_types",
+            active=lambda f: bool(f.reward_types),
+            narrow=_narrow_reward_types,
+            facet=PathFacet("reward_type", "reward_types__slug", "reward_types__name"),
+        ),
+    )
+}
+
+# A Literal proves key validity, not completeness or order — this does, at
+# import time. Order is pinned (not just the key set) so the chained filters
+# hit the SQL in the vocabulary's declared order, keeping query shape
+# deterministic across registry edits.
+assert tuple(MODEL_DIMENSION_SPECS) == MODEL_DIMENSIONS
+
+
+# ---------------------------------------------------------------------------
 # The two sets
 # ---------------------------------------------------------------------------
 
@@ -295,37 +472,12 @@ def model_only_models(
     # deleted parent Title untouched, so an active Model under a deleted Title
     # is a reachable state — it must not card or count. (The Title-grain
     # listing got this for free by rooting at ``Title.objects.active()``.)
-    qs = MachineModel.objects.active().filter(active_status_q("title"))
-
-    def on(key: ModelDimension) -> bool:
-        return _DIMENSION_ACTIVE[key](f) and exclude != key
-
-    if on("manufacturer"):
-        qs = qs.filter(corporate_entity__manufacturer__slug=f.manufacturer)
-    if on("person"):
-        qs = qs.filter(credits__person__slug=f.person)
-    if on("tech_gen"):
-        qs = qs.filter(technology_generation__slug=f.tech_gen)
-    if on("display_type"):
-        qs = qs.filter(display_type__slug=f.display_type)
-    if on("system"):
-        qs = qs.filter(system__slug=f.system)
-    if on("player_count") and f.player_count is not None:  # None check narrows
-        qs = qs.filter(_bucket_q(f.player_count))
-    if on("year"):
-        if f.year_min is not None:
-            qs = qs.filter(year__gte=f.year_min)
-        if f.year_max is not None:
-            qs = qs.filter(year__lte=f.year_max)
-    if on("themes"):
-        for descendants in expansion.themes:
-            qs = qs.filter(themes__slug__in=descendants)
-    if on("features"):
-        for descendants in expansion.features:
-            qs = qs.filter(gameplay_features__slug__in=descendants)
-    if on("reward_types"):
-        for slug in f.reward_types:
-            qs = qs.filter(reward_types__slug=slug)
+    qs: QuerySet[MachineModel] = MachineModel.objects.active().filter(
+        active_status_q("title")
+    )
+    for key, spec in MODEL_DIMENSION_SPECS.items():
+        if spec.active(f) and exclude != key:
+            qs = spec.narrow(qs, f, expansion)
     return qs
 
 
@@ -404,9 +556,9 @@ def _title_only_q(
 def _model_dimensions_active(f: GameFilters) -> bool:
     """Whether any **Model-only** dimension narrows the candidate set. ``q``
     (record-local shared) and franchise/series (Title-only) are not among
-    them. Reads the ``_DIMENSION_ACTIVE`` registry, so a new dimension can't
-    narrow the candidate set while leaving rung 1's unanimity clause vacuous."""
-    return any(active(f) for active in _DIMENSION_ACTIVE.values())
+    them. Reads ``MODEL_DIMENSION_SPECS``, so a new dimension can't narrow
+    the candidate set while leaving rung 1's unanimity clause vacuous."""
+    return any(spec.active(f) for spec in MODEL_DIMENSION_SPECS.values())
 
 
 def title_rows_qs(
